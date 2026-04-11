@@ -1,4 +1,4 @@
-// TODO: Import Navbar from Plan 02
+import { Navbar } from "@/components/landing/navbar";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { BenefitsSection } from "@/components/landing/benefits-section";
@@ -10,8 +10,8 @@ import { ScrollFade } from "@/components/landing/scroll-fade";
 
 export default function LandingPage() {
   return (
-    <main className="flex flex-col">
-      {/* <Navbar /> -- Plan 02 */}
+    <main className="flex min-h-screen flex-col">
+      <Navbar />
       <HeroSection />
       <ScrollFade>
         <HowItWorks />
