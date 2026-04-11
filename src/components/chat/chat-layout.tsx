@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -9,17 +10,34 @@ interface ChatLayoutProps {
 }
 
 export function ChatLayout({ children, onReset }: ChatLayoutProps) {
+  // Virtual keyboard handling — scroll message list to bottom when keyboard opens
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const handleResize = () => {
+      document.querySelector("[data-message-list]")?.scrollTo({
+        top: Number.MAX_SAFE_INTEGER,
+        behavior: "smooth",
+      });
+    };
+
+    viewport.addEventListener("resize", handleResize);
+    return () => viewport.removeEventListener("resize", handleResize);
+  }, []);
+
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="flex h-dvh flex-col overflow-x-hidden bg-background">
       {/* Header — 48px, sticky top */}
       <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-4">
         <h1 className="text-base font-semibold text-foreground">Aja Agora</h1>
         {onReset && (
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onReset}
             aria-label="Nova conversa"
+            className="size-10"
           >
             <RefreshCw className="size-4" />
           </Button>

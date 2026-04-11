@@ -70,6 +70,7 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
             handleInput();
           }}
           onKeyDown={handleKeyDown}
+          inputMode="text"
           placeholder="Diga o que voce quer realizar..."
           disabled={isStreaming}
           rows={1}
@@ -89,7 +90,7 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
           onClick={handleSend}
           disabled={!canSend}
           aria-label="Enviar mensagem"
-          className="shrink-0"
+          className="size-11 shrink-0"
         >
           <Send className="size-4" />
         </Button>

@@ -54,6 +54,7 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
   return (
     <div
       ref={scrollContainerRef}
+      data-message-list
       className="flex-1 overflow-y-auto"
       role="log"
       aria-live="polite"

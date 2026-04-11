@@ -32,7 +32,10 @@ export function ComparisonTable({
   }
 
   return (
-    <div className="w-full overflow-x-auto rounded-lg border border-border">
+    <div className="relative w-full rounded-lg border border-border">
+      {/* Scroll hint gradient on right edge */}
+      <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-6 bg-gradient-to-l from-background to-transparent" />
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
       <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
@@ -87,6 +90,7 @@ export function ComparisonTable({
           })}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }
