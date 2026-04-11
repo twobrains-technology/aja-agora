@@ -9,11 +9,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Foundation
 
-- [ ] **FOUND-01**: Projeto Next.js 16 scaffolded com App Router, Turbopack e Docker Compose
-- [ ] **FOUND-02**: Design system inicializado com shadcn/ui CLI (componentes locais) + Tailwind CSS 4
-- [ ] **FOUND-03**: PostgreSQL 16+ configurado com Drizzle ORM e migrations type-safe
-- [ ] **FOUND-04**: Biome configurado para linting e formatting
-- [ ] **FOUND-05**: Docker standalone output para deploy em VPS
+- [x] **FOUND-01**: Projeto Next.js 16 scaffolded com App Router, Turbopack e Docker Compose
+- [x] **FOUND-02**: Design system inicializado com shadcn/ui CLI (componentes locais) + Tailwind CSS 4
+- [x] **FOUND-03**: PostgreSQL 16+ configurado com Drizzle ORM e migrations type-safe
+- [x] **FOUND-04**: Biome configurado para linting e formatting
+- [x] **FOUND-05**: Docker standalone output para deploy em VPS
 
 ### Agent Core
 
@@ -60,7 +60,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Data & Security
 
-- [ ] **DATA-01**: Schema de banco para conversas, mensagens, artefatos e leads
+- [x] **DATA-01**: Schema de banco para conversas, mensagens, artefatos e leads
 - [ ] **DATA-02**: Isolamento de sessão — conversas nunca vazam dados entre usuários
 - [ ] **DATA-03**: PII separado dos logs de conversa
 - [ ] **DATA-04**: Rate limiting básico no endpoint de chat
@@ -108,11 +108,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Phase 1: Project Foundation & Infrastructure | Pending |
-| FOUND-02 | Phase 1: Project Foundation & Infrastructure | Pending |
-| FOUND-03 | Phase 1: Project Foundation & Infrastructure | Pending |
-| FOUND-04 | Phase 1: Project Foundation & Infrastructure | Pending |
-| FOUND-05 | Phase 1: Project Foundation & Infrastructure | Pending |
+| FOUND-01 | Phase 1: Project Foundation & Infrastructure | Complete |
+| FOUND-02 | Phase 1: Project Foundation & Infrastructure | Complete |
+| FOUND-03 | Phase 1: Project Foundation & Infrastructure | Complete |
+| FOUND-04 | Phase 1: Project Foundation & Infrastructure | Complete |
+| FOUND-05 | Phase 1: Project Foundation & Infrastructure | Complete |
 | AGENT-01 | Phase 2: Agent Core & Adapter Layer | Pending |
 | AGENT-02 | Phase 2: Agent Core & Adapter Layer | Pending |
 | AGENT-03 | Phase 2: Agent Core & Adapter Layer | Pending |
@@ -137,7 +137,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONV-01 | Phase 5: Conversion & Progressive Auth | Pending |
 | CONV-02 | Phase 5: Conversion & Progressive Auth | Pending |
 | CONV-03 | Phase 5: Conversion & Progressive Auth | Pending |
-| DATA-01 | Phase 1: Project Foundation & Infrastructure | Pending |
+| DATA-01 | Phase 1: Project Foundation & Infrastructure | Complete |
 | DATA-02 | Phase 2: Agent Core & Adapter Layer | Pending |
 | DATA-03 | Phase 5: Conversion & Progressive Auth | Pending |
 | DATA-04 | Phase 2: Agent Core & Adapter Layer | Pending |
