@@ -3,6 +3,7 @@ import { GroupCard } from "./artifacts/group-card";
 import { ComparisonTable } from "./artifacts/comparison-table";
 import { SimulationResult } from "./artifacts/simulation-result";
 import { RecommendationCard } from "./artifacts/recommendation-card";
+import { LeadForm } from "./artifacts/lead-form";
 import type { ComponentType } from "react";
 
 const ARTIFACT_COMPONENTS: Record<
@@ -13,6 +14,7 @@ const ARTIFACT_COMPONENTS: Record<
   comparison_table: ComparisonTable as ComponentType<{ payload: unknown }>,
   simulation_result: SimulationResult as ComponentType<{ payload: unknown }>,
   recommendation_card: RecommendationCard as ComponentType<{ payload: unknown }>,
+  lead_form: LeadForm as ComponentType<{ payload: unknown }>,
 };
 
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
