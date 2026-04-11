@@ -5,6 +5,7 @@ export default defineConfig({
 	schema: "./src/db/schema.ts",
 	out: "./drizzle",
 	dbCredentials: {
+		// biome-ignore lint/style/noNonNullAssertion: drizzle-kit requires DATABASE_URL at CLI runtime
 		url: process.env.DATABASE_URL!,
 	},
 });

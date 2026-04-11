@@ -1,19 +1,8 @@
-import {
-	jsonb,
-	pgEnum,
-	pgTable,
-	text,
-	timestamp,
-	uuid,
-} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Enums
-export const messageRoleEnum = pgEnum("message_role", [
-	"user",
-	"assistant",
-	"system",
-]);
+export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
 
 export const artifactTypeEnum = pgEnum("artifact_type", [
 	"group_card",
@@ -27,12 +16,8 @@ export const artifactTypeEnum = pgEnum("artifact_type", [
 export const conversations = pgTable("conversations", {
 	id: uuid().defaultRandom().primaryKey(),
 	metadata: jsonb().$type<Record<string, unknown>>(),
-	createdAt: timestamp("created_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Messages
@@ -43,9 +28,7 @@ export const messages = pgTable("messages", {
 		.references(() => conversations.id, { onDelete: "cascade" }),
 	role: messageRoleEnum().notNull(),
 	content: text().notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Artifacts
@@ -56,9 +39,7 @@ export const artifacts = pgTable("artifacts", {
 		.references(() => messages.id, { onDelete: "cascade" }),
 	type: artifactTypeEnum().notNull(),
 	payload: jsonb().notNull().$type<Record<string, unknown>>(),
-	createdAt: timestamp("created_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Leads (PII separate from conversation logs)
@@ -70,12 +51,8 @@ export const leads = pgTable("leads", {
 	name: text(),
 	phone: text(),
 	email: text(),
-	createdAt: timestamp("created_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true })
-		.defaultNow()
-		.notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Relations
