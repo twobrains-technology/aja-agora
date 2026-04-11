@@ -38,28 +38,31 @@ export function Navbar() {
       )}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-8 px-4 py-4 sm:px-6">
-        <div className="flex flex-1 items-center gap-8">
-          <Link href="/" className="text-foreground text-xl font-semibold">
-            Aja Agora
-          </Link>
+        <Link href="/" className="font-serif text-xl font-semibold">
+          Aja Agora
+        </Link>
 
-          <nav className="text-muted-foreground hidden items-center gap-6 font-medium md:flex">
-            {navigationItems.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="hover:text-primary transition-colors"
-              >
-                {item.title}
-              </a>
-            ))}
-          </nav>
-        </div>
+        <nav className="text-muted-foreground hidden items-center gap-6 font-medium md:flex">
+          {navigationItems.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className="hover:text-primary transition-colors"
+            >
+              {item.title}
+            </a>
+          ))}
+        </nav>
 
         <div className="flex items-center gap-4">
-          <Link href="/chat">
-            <Button size="lg">Começar agora</Button>
-          </Link>
+          <Button
+            size="lg"
+            className="hidden sm:inline-flex"
+            render={<Link href="/chat" />}
+            nativeButton={false}
+          >
+            Começar
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger
