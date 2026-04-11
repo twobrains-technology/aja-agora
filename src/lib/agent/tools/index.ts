@@ -13,7 +13,9 @@ import {
 	presentComparisonTable,
 	presentSimulationResult,
 	presentRecommendation,
+	presentLeadForm,
 } from "./presentation";
+import { captureLead } from "./capture";
 
 /**
  * Domain tools for the consórcio agent.
@@ -172,5 +174,7 @@ export const consorcioServer = createSdkMcpServer({
 		presentComparisonTable,
 		presentSimulationResult,
 		presentRecommendation,
+		presentLeadForm,
+		captureLead,
 	],
 });

@@ -110,6 +110,29 @@ export const presentSimulationResult = tool(
 	},
 );
 
+export const presentLeadForm = tool(
+	"present_lead_form",
+	"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio, por exemplo apos clicar 'Tenho interesse' no RecommendationCard.",
+	{
+		conversationId: z.string().describe("ID da conversa atual"),
+		recommendationId: z
+			.string()
+			.optional()
+			.describe("ID da recomendacao que gerou o interesse"),
+	},
+	async (args) => {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: "[Formulario de captura de dados do lead apresentado ao usuario]",
+				},
+			],
+			_artifact: { type: "lead_form", payload: args },
+		};
+	},
+);
+
 export const presentRecommendation = tool(
 	"present_recommendation",
 	"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario. Inclua o score e breakdown dos fatores.",
