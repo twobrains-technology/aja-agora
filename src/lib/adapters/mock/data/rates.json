@@ -1,0 +1,66 @@
+[
+	{
+		"administradora": "Consorcio Estrela",
+		"category": "auto",
+		"adminFeePercent": 15.5,
+		"reserveFundPercent": 2.5,
+		"insurancePercent": 0.03,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Consorcio Estrela",
+		"category": "imovel",
+		"adminFeePercent": 19,
+		"reserveFundPercent": 4,
+		"insurancePercent": 0.025,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Grupo Alianca",
+		"category": "auto",
+		"adminFeePercent": 13.5,
+		"reserveFundPercent": 2,
+		"insurancePercent": 0.03,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Grupo Alianca",
+		"category": "imovel",
+		"adminFeePercent": 17,
+		"reserveFundPercent": 3,
+		"insurancePercent": 0.025,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Grupo Alianca",
+		"category": "servicos",
+		"adminFeePercent": 16.5,
+		"reserveFundPercent": 2.5,
+		"insurancePercent": 0.03,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Nacional Consorcios",
+		"category": "imovel",
+		"adminFeePercent": 16,
+		"reserveFundPercent": 3,
+		"insurancePercent": 0.025,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Nacional Consorcios",
+		"category": "auto",
+		"adminFeePercent": 14.5,
+		"reserveFundPercent": 2,
+		"insurancePercent": 0.03,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Nacional Consorcios",
+		"category": "servicos",
+		"adminFeePercent": 18,
+		"reserveFundPercent": 3,
+		"insurancePercent": 0.03,
+		"updatedAt": "2026-04-01"
+	}
+]
