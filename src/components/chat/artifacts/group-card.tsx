@@ -4,8 +4,11 @@ import type { GroupCardPayload } from "@/lib/chat/types";
 import { motion } from "motion/react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { useChatStore, type ChatState } from "@/lib/chat/store";
 import { cn } from "@/lib/utils";
+import { ChevronRight } from "lucide-react";
 
 const CATEGORY_STYLES: Record<
   GroupCardPayload["category"],
@@ -39,6 +42,14 @@ const cardSpring = { type: "spring" as const, stiffness: 400, damping: 17 };
 export function GroupCard({ payload }: { payload: GroupCardPayload }) {
   const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.servicos;
   const prefersReduced = useReducedMotion();
+  const sendMessage = useChatStore((s: ChatState) => s.sendMessage);
+  const isStreaming = useChatStore((s: ChatState) => s.isStreaming);
+
+  const handleClick = () => {
+    if (!isStreaming) {
+      sendMessage(`Quero saber mais sobre esse grupo da ${payload.administradora} com crédito de ${formatBRL(payload.creditValue)}`);
+    }
+  };
 
   return (
     <motion.div
@@ -55,10 +66,11 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
       role="button"
       tabIndex={0}
       aria-label={`Grupo ${payload.administradora} — credito ${formatBRL(payload.creditValue)}, parcela ${formatBRL(payload.monthlyPayment)}`}
+      onClick={handleClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          e.currentTarget.click();
+          handleClick();
         }
       }}
     >
@@ -123,10 +135,17 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
           </div>
         </div>
 
-        {/* CTA link */}
-        <p className="text-sm font-medium text-accent-foreground pt-1">
-          Ver detalhes
-        </p>
+        {/* CTA */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full gap-1 text-xs"
+          disabled={isStreaming}
+          onClick={(e) => { e.stopPropagation(); handleClick(); }}
+        >
+          Quero esse
+          <ChevronRight className="size-3.5" />
+        </Button>
       </CardContent>
     </Card>
     </motion.div>
