@@ -25,7 +25,7 @@ export function ScrollReveal({
   once = true,
 }: ScrollRevealProps) {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once, margin: "-64px" });
+  const isInView = useInView(ref, { once, amount: 0.1 });
 
   const offset = directionMap[direction];
 
@@ -60,7 +60,7 @@ export function StaggerChildren({
   direction = "up",
 }: StaggerChildrenProps) {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-64px" });
+  const isInView = useInView(ref, { once: true, amount: 0.1 });
 
   const offset = directionMap[direction];
 
