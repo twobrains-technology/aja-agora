@@ -1,6 +1,7 @@
 "use client";
 
 import type { RecommendationCardPayload } from "@/lib/chat/types";
+import { useChatStore } from "@/lib/chat/store";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -56,12 +57,10 @@ export function RecommendationCard({
 	const [expanded, setExpanded] = useState(false);
 	const prefersReduced = useReducedMotion();
 
+	const sendMessage = useChatStore((s) => s.sendMessage);
+
 	const handleCTA = () => {
-		window.dispatchEvent(
-			new CustomEvent("aja:send-message", {
-				detail: "Tenho interesse nessa recomendacao",
-			}),
-		);
+		sendMessage("Tenho interesse nessa recomendacao");
 	};
 
 	return (
