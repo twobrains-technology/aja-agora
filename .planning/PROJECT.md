@@ -46,7 +46,7 @@ O usuário diz o que quer ("comprar um carro em dois anos gastando R$ 800/mês")
 
 ## Constraints
 
-- **Stack:** Next.js (latest stable) + shadcn/ui + Tailwind CSS — padrão TwoBrains
+- **Stack:** Next.js (latest stable) + shadcn/ui + shadcn/studio Pro + Tailwind CSS — padrão TwoBrains
 - **IA:** Anthropic Agent SDK (Claude) — multi-agent com tool use nativo
 - **Deploy:** Docker/VPS — não serverless
 - **Adapter Pattern:** Toda integração com administradoras passa por camada de abstração — facilita trocar mock por real

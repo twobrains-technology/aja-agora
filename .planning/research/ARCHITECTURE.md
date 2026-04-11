@@ -76,7 +76,7 @@ The platform is a layered system where a Next.js frontend communicates with a ba
 
 | Layer | Responsibility | Key Tech |
 |-------|---------------|----------|
-| Frontend | Chat UI, artifact rendering, streaming display, progressive auth | Next.js, React, shadcn/ui, Tailwind |
+| Frontend | Chat UI, artifact rendering, streaming display, progressive auth | Next.js, React, shadcn/ui + shadcn/studio Pro, Tailwind |
 | API Routes | HTTP endpoints, SSE streaming, session management, rate limiting | Next.js Route Handlers |
 | Agent Orchestrator | Conversation logic, intent routing, subagent delegation, tool use | @anthropic-ai/claude-agent-sdk |
 | Adapter Layer | Unified interface to administradora data, mock/real swap | TypeScript interfaces + DI |

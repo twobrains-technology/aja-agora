@@ -42,6 +42,7 @@
 | **Biome** | 2.x | Linting + formatting | Replaces ESLint + Prettier. Single tool, 10-100x faster. Native TypeScript support. |
 | **drizzle-kit** | latest | Database migrations | `drizzle-kit push` for dev, `drizzle-kit migrate` for production. Schema introspection < 1s. |
 | **Turbopack** | (built into Next.js 16) | Dev server / bundler | Default in Next.js 16. No config needed. Microsecond incremental builds. |
+| **shadcn/studio Pro** | MCP + CLI | Premium UI components | Licença Pro com registries `@ss-components`, `@ss-blocks`, `@ss-themes`. MCP server (`shadcn-studio-mcp`) integrado ao Claude Code para gerar componentes via linguagem natural. CLI para instalação direta (`npx shadcn@latest add @ss-components/<name>`). |
 
 ## Architecture Decisions
 
