@@ -17,20 +17,20 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Agent Core
 
-- [ ] **AGENT-01**: Agente conversacional Claude com system prompt especializado em consórcio e guardrails de compliance
-- [ ] **AGENT-02**: Tool `search_groups` — busca grupos disponíveis por categoria (imóvel, auto, serviços) e faixa de crédito
-- [ ] **AGENT-03**: Tool `simulate_quota` — calcula parcela, taxa de administração, fundo de reserva e prazo
-- [ ] **AGENT-04**: Tool `get_rates` — retorna taxas de administração vigentes por administradora e categoria
-- [ ] **AGENT-05**: Tool `get_group_details` — detalhes do grupo incluindo histórico de contemplação
-- [ ] **AGENT-06**: Pipeline de recomendação determinístico — scoring em código, não em LLM
+- [x] **AGENT-01**: Agente conversacional Claude com system prompt especializado em consórcio e guardrails de compliance
+- [x] **AGENT-02**: Tool `search_groups` — busca grupos disponíveis por categoria (imóvel, auto, serviços) e faixa de crédito
+- [x] **AGENT-03**: Tool `simulate_quota` — calcula parcela, taxa de administração, fundo de reserva e prazo
+- [x] **AGENT-04**: Tool `get_rates` — retorna taxas de administração vigentes por administradora e categoria
+- [x] **AGENT-05**: Tool `get_group_details` — detalhes do grupo incluindo histórico de contemplação
+- [x] **AGENT-06**: Pipeline de recomendação determinístico — scoring em código, não em LLM
 - [ ] **AGENT-07**: Presentation tools para entrega de artefatos via SSE (cards, tabelas, simulações)
-- [ ] **AGENT-08**: System prompt com disclaimers BACEN obrigatórios e proibição de gerar dados financeiros
+- [x] **AGENT-08**: System prompt com disclaimers BACEN obrigatórios e proibição de gerar dados financeiros
 
 ### Adapter Layer
 
-- [ ] **ADAPT-01**: Interface TypeScript `AdministradoraAdapter` com contratos tipados para todas as operações
-- [ ] **ADAPT-02**: `MockBeviAdapter` implementando a interface com dados realistas de consórcio
-- [ ] **ADAPT-03**: Factory pattern com swap via variável de ambiente `ADMINISTRADORA_ADAPTER`
+- [x] **ADAPT-01**: Interface TypeScript `AdministradoraAdapter` com contratos tipados para todas as operações
+- [x] **ADAPT-02**: `MockBeviAdapter` implementando a interface com dados realistas de consórcio
+- [x] **ADAPT-03**: Factory pattern com swap via variável de ambiente `ADMINISTRADORA_ADAPTER`
 
 ### Chat UX
 
@@ -61,9 +61,9 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Data & Security
 
 - [x] **DATA-01**: Schema de banco para conversas, mensagens, artefatos e leads
-- [ ] **DATA-02**: Isolamento de sessão — conversas nunca vazam dados entre usuários
+- [x] **DATA-02**: Isolamento de sessão — conversas nunca vazam dados entre usuários
 - [ ] **DATA-03**: PII separado dos logs de conversa
-- [ ] **DATA-04**: Rate limiting básico no endpoint de chat
+- [x] **DATA-04**: Rate limiting básico no endpoint de chat
 
 ## v2 Requirements
 
@@ -113,17 +113,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FOUND-03 | Phase 1: Project Foundation & Infrastructure | Complete |
 | FOUND-04 | Phase 1: Project Foundation & Infrastructure | Complete |
 | FOUND-05 | Phase 1: Project Foundation & Infrastructure | Complete |
-| AGENT-01 | Phase 2: Agent Core & Adapter Layer | Pending |
-| AGENT-02 | Phase 2: Agent Core & Adapter Layer | Pending |
-| AGENT-03 | Phase 2: Agent Core & Adapter Layer | Pending |
-| AGENT-04 | Phase 2: Agent Core & Adapter Layer | Pending |
-| AGENT-05 | Phase 2: Agent Core & Adapter Layer | Pending |
-| AGENT-06 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-01 | Phase 2: Agent Core & Adapter Layer | Complete |
+| AGENT-02 | Phase 2: Agent Core & Adapter Layer | Complete |
+| AGENT-03 | Phase 2: Agent Core & Adapter Layer | Complete |
+| AGENT-04 | Phase 2: Agent Core & Adapter Layer | Complete |
+| AGENT-05 | Phase 2: Agent Core & Adapter Layer | Complete |
+| AGENT-06 | Phase 2: Agent Core & Adapter Layer | Complete |
 | AGENT-07 | Phase 3: Chat UI & Artifact Rendering | Pending |
-| AGENT-08 | Phase 2: Agent Core & Adapter Layer | Pending |
-| ADAPT-01 | Phase 2: Agent Core & Adapter Layer | Pending |
-| ADAPT-02 | Phase 2: Agent Core & Adapter Layer | Pending |
-| ADAPT-03 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-08 | Phase 2: Agent Core & Adapter Layer | Complete |
+| ADAPT-01 | Phase 2: Agent Core & Adapter Layer | Complete |
+| ADAPT-02 | Phase 2: Agent Core & Adapter Layer | Complete |
+| ADAPT-03 | Phase 2: Agent Core & Adapter Layer | Complete |
 | CHAT-01 | Phase 3: Chat UI & Artifact Rendering | Pending |
 | CHAT-02 | Phase 3: Chat UI & Artifact Rendering | Pending |
 | CHAT-03 | Phase 3: Chat UI & Artifact Rendering | Pending |
@@ -138,9 +138,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONV-02 | Phase 5: Conversion & Progressive Auth | Pending |
 | CONV-03 | Phase 5: Conversion & Progressive Auth | Pending |
 | DATA-01 | Phase 1: Project Foundation & Infrastructure | Complete |
-| DATA-02 | Phase 2: Agent Core & Adapter Layer | Pending |
+| DATA-02 | Phase 2: Agent Core & Adapter Layer | Complete |
 | DATA-03 | Phase 5: Conversion & Progressive Auth | Pending |
-| DATA-04 | Phase 2: Agent Core & Adapter Layer | Pending |
+| DATA-04 | Phase 2: Agent Core & Adapter Layer | Complete |
 | LAND-01 | Phase 6: Landing Page | Pending |
 | LAND-02 | Phase 6: Landing Page | Pending |
 | LAND-03 | Phase 6: Landing Page | Pending |
