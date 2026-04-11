@@ -52,6 +52,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 | **Biome** | 2.x | Linting + formatting | Replaces ESLint + Prettier. Single tool, 10-100x faster. Native TypeScript support. |
 | **drizzle-kit** | latest | Database migrations | `drizzle-kit push` for dev, `drizzle-kit migrate` for production. Schema introspection < 1s. |
 | **Turbopack** | (built into Next.js 16) | Dev server / bundler | Default in Next.js 16. No config needed. Microsecond incremental builds. |
+| **shadcn/studio Pro** | MCP + CLI | Premium UI components | Registries `@ss-components`, `@ss-blocks`, `@ss-themes` configurados em `components.json`. MCP `shadcn-studio-mcp` integrado ao Claude Code. CLI: `npx shadcn@latest add @ss-components/<name>`. |
 ## Architecture Decisions
 ### Streaming: SSE via AI SDK (not raw WebSocket)
 - Natively supported in all browsers
@@ -65,9 +66,12 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - **Concurrent writes** -- multiple users chatting simultaneously. SQLite's write lock becomes a bottleneck.
 - **Docker-native** -- `postgres:16-alpine` in Compose, zero setup.
 - **Migration path** -- if the platform scales, PostgreSQL scales vertically and horizontally (read replicas). SQLite doesn't.
-### Two SDKs: Claude Agent SDK + Vercel AI SDK
-- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): Backend orchestration. Defines agents, tools, multi-agent routing. The "brain" that decides what to do.
-- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`): Frontend streaming. `useChat` hook, SSE protocol, tool invocation UI. The "mouth" that streams responses to the user.
+### Two SDKs: Claude Agent SDK + Vercel AI SDK (DECISÃO DO ARQUITETO — NÃO ALTERAR)
+- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): Backend orchestration. Define tools de domínio via `tool()` + `createSdkMcpServer()`, executa o agent loop via `query()` com tool calling automático. O SDK fornece o loop completo — Claude decide quais tools chamar, o SDK executa, e devolve o resultado pro Claude continuar. O "cérebro" da aplicação.
+- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`): Frontend streaming. `useChat` hook, SSE protocol, UI de chat. O "rosto" que o usuário vê.
+- **Ponte API Route**: `src/app/api/chat/route.ts` recebe mensagens do frontend (AI SDK), passa para o Agent SDK via `query()`, e faz streaming da resposta de volta como SSE.
+- **NÃO usar** AI SDK `streamText()`/`tool()` no backend para orquestração — essa responsabilidade é do Agent SDK.
+- **NÃO usar** `@anthropic-ai/sdk` (SDK padrão) diretamente — o Agent SDK abstrai o loop de tool calling.
 ### State Management: Zustand (not Redux, not Jotai)
 - Chat has app-wide state (active conversation, user profile, auth state) -- store-based model fits better than atomic.
 - AI SDK 6 explicitly supports Zustand integration for decoupled `useChat` state.
