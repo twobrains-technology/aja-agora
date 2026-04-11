@@ -17,7 +17,7 @@ Build the conversational agent with Claude, domain tools, deterministic recommen
 - Agent runs in API Route handler (`src/app/api/chat/route.ts`) — SSE streaming via Vercel AI SDK's `useChat` on frontend, Agent SDK orchestrates on backend
 - System prompt in a single file (`src/lib/agent/system-prompt.ts`) with template literals — sections for role, consórcio domain, BACEN disclaimers, tool instructions
 - Conversation state is database-backed — load conversation from PostgreSQL on each request, pass message history to Claude. Stateless server, schema from Phase 1
-- Vercel AI SDK 6 handles BOTH tool orchestration AND streaming — use `streamText()` with `tool()` definitions for backend, `useChat()` for frontend. Do NOT use `@anthropic-ai/claude-agent-sdk` (it's for Claude Code file editing, not domain agents)
+- Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) handles backend orchestration — `tool()` + `createSdkMcpServer()` define custom domain tools, `query()` runs the agent loop with automatic tool calling. Vercel AI SDK (`ai`) handles frontend streaming only via `useChat()`
 
 ### Tool Design & Adapter Pattern
 - Tool parameters/returns use Zod schemas (`src/lib/agent/tools/schemas.ts`) — single source of truth for params AND validation. Agent SDK uses Zod natively
@@ -55,7 +55,7 @@ Build the conversational agent with Claude, domain tools, deterministic recommen
 ### Integration Points
 - `src/app/api/chat/route.ts` — new API route for agent
 - `src/db/schema.ts` — use existing conversation/message tables
-- `package.json` — add ai, @ai-sdk/anthropic (NOT @anthropic-ai/claude-agent-sdk)
+- `package.json` — add @anthropic-ai/claude-agent-sdk (backend), ai + @ai-sdk/anthropic (frontend)
 
 </code_context>
 
