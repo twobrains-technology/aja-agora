@@ -1,29 +1,54 @@
 "use client";
 
 import type { ChatMessage as ChatMessageType } from "@/lib/chat/types";
+import { motion, AnimatePresence } from "motion/react";
 import { ArtifactRenderer } from "./artifact-renderer";
 import { StreamingDots } from "./streaming-dots";
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** When true, the message animates in. Set false for messages loaded from history. */
+  isNew?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+const messageSpring = {
+  type: "spring" as const,
+  stiffness: 300,
+  damping: 30,
+};
+
+export function ChatMessage({ message, isNew = false }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isError = message.status === "error";
   const isStreamingEmpty =
     message.status === "streaming" && message.content.length === 0;
+  const prefersReduced = useReducedMotion();
+
+  // Only animate the newest message; skip for history/re-renders
+  const animationProps =
+    isNew && !prefersReduced
+      ? {
+          initial: { opacity: 0, y: 12 } as const,
+          animate: { opacity: 1, y: 0 } as const,
+          transition: messageSpring,
+        }
+      : {
+          initial: false as const,
+          animate: { opacity: 1, y: 0 } as const,
+        };
 
   return (
-    <div
+    <motion.div
+      {...animationProps}
       className={cn("flex w-full flex-col gap-1", isUser ? "items-end" : "items-start")}
     >
       {/* Message bubble */}
       <div
         className={cn(
-          "max-w-[90%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-base sm:max-w-[80%]",
+          "max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-base sm:max-w-[80%] sm:px-4 sm:py-2.5",
           isUser
             ? "rounded-br-lg bg-primary text-primary-foreground"
             : "rounded-bl-lg bg-muted text-foreground",
@@ -50,11 +75,36 @@ export function ChatMessage({ message }: ChatMessageProps) {
             isUser ? "items-end" : "items-start"
           )}
         >
-          {message.artifacts.map((artifact) => (
-            <ArtifactRenderer key={artifact.id} artifact={artifact} />
-          ))}
+          <AnimatePresence mode="popLayout">
+            {message.artifacts.map((artifact, i) => (
+              <motion.div
+                key={artifact.id}
+                layout={!prefersReduced}
+                initial={
+                  prefersReduced
+                    ? false
+                    : { opacity: 0, scale: 0.96, y: 8 }
+                }
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={
+                  prefersReduced
+                    ? { opacity: 0 }
+                    : { opacity: 0, scale: 0.96 }
+                }
+                transition={{
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: prefersReduced ? 0 : i * 0.06,
+                }}
+                className="w-full"
+              >
+                <ArtifactRenderer artifact={artifact} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

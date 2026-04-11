@@ -61,8 +61,12 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
       <div className="flex flex-col gap-6 px-4 py-4 sm:px-6">
         {!hasMessages && <EmptyState />}
 
-        {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+        {messages.map((message, index) => (
+          <ChatMessage
+            key={message.id}
+            message={message}
+            isNew={index >= messages.length - 2}
+          />
         ))}
 
         {/* Bottom sentinel for IntersectionObserver + input clearance */}
