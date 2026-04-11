@@ -53,6 +53,30 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 | **drizzle-kit** | latest | Database migrations | `drizzle-kit push` for dev, `drizzle-kit migrate` for production. Schema introspection < 1s. |
 | **Turbopack** | (built into Next.js 16) | Dev server / bundler | Default in Next.js 16. No config needed. Microsecond incremental builds. |
 | **shadcn/studio Pro** | MCP + CLI | Premium UI components | Registries `@ss-components`, `@ss-blocks`, `@ss-themes` configurados em `components.json`. MCP `shadcn-studio-mcp` integrado ao Claude Code. CLI: `npx shadcn@latest add @ss-components/<name>`. |
+## Design System: shadcn/studio Pro (OBRIGATÓRIO)
+
+**Todo layout e design visual DEVE usar blocos do shadcn/studio Pro via MCP.**
+
+### Workflow de Design
+1. **`/cui` (Create UI)** — Buscar e instalar blocos Pro para construir páginas (hero, features, footer, etc.)
+2. **`/iui` (Inspire UI)** — Usar blocos como inspiração e adaptar ao contexto do Aja Agora
+3. **`/rui` (Refine UI)** — Refinar componentes individuais (buttons, cards, inputs) com variantes Pro
+
+### Blocos Mapeados por Fase
+
+| Fase | Blocos shadcn/studio Pro |
+|------|--------------------------|
+| Phase 3: Chat UI | `/rui` para refinar Button, Card, Input. Inspiração de `application-shell` para layout do chat |
+| Phase 4: Recommendation | `/rui` para cards premium. `statistics-component` para score breakdown |
+| Phase 5: Progressive Auth | `multi-step-form` (3 variações). Inspiração de `login-page`, `register` |
+| Phase 6: Landing Page | `hero-section` (15 var.), `features-section` (7 var.), `social-proof` (3 var.), `testimonials` (4 var.), `faq` (2 var.), `cta-section`, `footer`, `navbar` (2 var.), `bento-grid` para "como funciona" |
+
+### Regras
+- **NUNCA** criar componentes de UI do zero se existir um bloco Pro equivalente
+- **SEMPRE** buscar blocos via MCP (`get-blocks-metadata` → `get-block-meta-content` → instalar) antes de codar
+- Customizar conteúdo e cores dos blocos Pro para o contexto do Aja Agora
+- Usar temas do shadcn/studio quando disponível (`install-theme`)
+
 ## Architecture Decisions
 ### Streaming: SSE via AI SDK (not raw WebSocket)
 - Natively supported in all browsers
