@@ -1,0 +1,14 @@
+.git
+.gitignore
+.planning
+.claude
+.DS_Store
+node_modules
+.next
+.env*.local
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+drizzle
