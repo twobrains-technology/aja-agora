@@ -5,7 +5,7 @@ import { create } from "zustand";
 import type { Artifact, ChatMessage, SSEEvent } from "./types";
 import { parseSSEChunk } from "./sse-parser";
 
-interface ChatState {
+export interface ChatState {
   // Data
   conversationId: string | null;
   messages: ChatMessage[];

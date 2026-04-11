@@ -1,7 +1,7 @@
 // src/lib/chat/use-chat.ts
 "use client";
 
-import { useChatStore } from "./store";
+import { useChatStore, type ChatState } from "./store";
 
 /**
  * Convenience hook for chat components.
@@ -9,13 +9,13 @@ import { useChatStore } from "./store";
  * Uses individual selectors to minimize re-renders.
  */
 export function useChat() {
-  const messages = useChatStore((s) => s.messages);
-  const conversationId = useChatStore((s) => s.conversationId);
-  const isStreaming = useChatStore((s) => s.isStreaming);
-  const error = useChatStore((s) => s.error);
-  const sendMessage = useChatStore((s) => s.sendMessage);
-  const retry = useChatStore((s) => s.retry);
-  const reset = useChatStore((s) => s.reset);
+  const messages = useChatStore((s: ChatState) => s.messages);
+  const conversationId = useChatStore((s: ChatState) => s.conversationId);
+  const isStreaming = useChatStore((s: ChatState) => s.isStreaming);
+  const error = useChatStore((s: ChatState) => s.error);
+  const sendMessage = useChatStore((s: ChatState) => s.sendMessage);
+  const retry = useChatStore((s: ChatState) => s.retry);
+  const reset = useChatStore((s: ChatState) => s.reset);
 
   return {
     messages,
