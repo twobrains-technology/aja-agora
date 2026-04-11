@@ -11,8 +11,6 @@ import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { AlertCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -97,24 +95,14 @@ export function ChatMessage({ message, isNew = false, onRetry, isStreaming = fal
         </Button>
       )}
 
-      {/* Skeleton loading cards — show only when agent is actively fetching results */}
-      {!isUser && message.status === "streaming" && message.content.length > 20 && message.artifacts.length === 0 && /busca|opcoe|opcõe|resultado|encontr|melhor/i.test(message.content) && (
+      {/* Loading indicator — show while agent is processing tools after text */}
+      {!isUser && message.status === "streaming" && message.content.length > 20 && message.artifacts.length === 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex w-full max-w-[90%] gap-2.5 overflow-hidden sm:max-w-[80%]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="pl-1"
         >
-          {[0, 1, 2].map((i) => (
-            <Card key={i} className="w-[160px] shrink-0 animate-pulse">
-              <CardContent className="space-y-2 p-3">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-px w-full" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-20" />
-              </CardContent>
-            </Card>
-          ))}
+          <StreamingDots />
         </motion.div>
       )}
 
