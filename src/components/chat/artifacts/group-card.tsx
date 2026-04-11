@@ -1,8 +1,10 @@
 "use client";
 
 import type { GroupCardPayload } from "@/lib/chat/types";
+import { motion } from "motion/react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_STYLES: Record<
@@ -32,13 +34,21 @@ const formatBRL = (value: number): string =>
 const formatPercent = (value: number): string =>
   `${value.toFixed(1)}%`;
 
+const cardSpring = { type: "spring" as const, stiffness: 400, damping: 17 };
+
 export function GroupCard({ payload }: { payload: GroupCardPayload }) {
   const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.servicos;
+  const prefersReduced = useReducedMotion();
 
   return (
+    <motion.div
+      whileHover={prefersReduced ? undefined : { scale: 1.02 }}
+      whileTap={prefersReduced ? undefined : { scale: 0.98 }}
+      transition={cardSpring}
+    >
     <Card
       className={cn(
-        "w-full max-w-sm cursor-pointer transition-colors",
+        "w-full cursor-pointer transition-colors",
         "hover:ring-accent/50 hover:ring-2",
         "focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2",
       )}
@@ -61,7 +71,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
             {category.label}
           </Badge>
         </div>
-        <p className="text-sm text-muted-foreground">{payload.administradora}</p>
+        <p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -119,5 +129,6 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
         </p>
       </CardContent>
     </Card>
+    </motion.div>
   );
 }
