@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
 							"mcp__consorcio__present_group_card",
 							"mcp__consorcio__present_comparison_table",
 							"mcp__consorcio__present_simulation_result",
+							"mcp__consorcio__present_recommendation",
 						],
 						maxTurns: 5,
 					},

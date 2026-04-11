@@ -109,3 +109,56 @@ export const presentSimulationResult = tool(
 		};
 	},
 );
+
+export const presentRecommendation = tool(
+	"present_recommendation",
+	"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario. Inclua o score e breakdown dos fatores.",
+	{
+		id: z.string().describe("ID do grupo recomendado"),
+		administradora: z.string().describe("Nome da administradora"),
+		category: z
+			.enum(["imovel", "auto", "servicos"])
+			.describe("Categoria do bem"),
+		creditValue: z.number().describe("Valor do credito em reais"),
+		monthlyPayment: z.number().describe("Parcela mensal em reais"),
+		adminFeePercent: z
+			.number()
+			.describe("Taxa de administracao em percentual"),
+		termMonths: z.number().int().describe("Prazo em meses"),
+		contemplationRate: z
+			.number()
+			.describe("Taxa media de contemplacao por assembleia"),
+		score: z
+			.number()
+			.min(0)
+			.max(1)
+			.describe("Score de compatibilidade 0-1"),
+		scoreBreakdown: z
+			.object({
+				monthlyFit: z
+					.number()
+					.describe("Score de adequacao ao orcamento 0-1"),
+				contemplation: z
+					.number()
+					.describe("Score de taxa de contemplacao 0-1"),
+				adminFee: z
+					.number()
+					.describe("Score de taxa de administracao 0-1"),
+				termMatch: z
+					.number()
+					.describe("Score de adequacao ao prazo 0-1"),
+			})
+			.describe("Detalhamento do score por fator"),
+	},
+	async (args) => {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`,
+				},
+			],
+			_artifact: { type: "recommendation_card", payload: args },
+		};
+	},
+);

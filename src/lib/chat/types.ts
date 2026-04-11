@@ -31,14 +31,32 @@ export interface SimulationResultPayload {
   effectiveRate: number;
 }
 
+export interface RecommendationCardPayload {
+  id: string;
+  administradora: string;
+  category: "imovel" | "auto" | "servicos";
+  creditValue: number;
+  monthlyPayment: number;
+  adminFeePercent: number;
+  termMonths: number;
+  contemplationRate: number;
+  score: number; // 0-1 composite score from rankGroups()
+  scoreBreakdown: {
+    monthlyFit: number;
+    contemplation: number;
+    adminFee: number;
+    termMatch: number;
+  };
+}
+
 // ---- Artifact union ----
 
-export type ArtifactType = "group_card" | "comparison_table" | "simulation_result";
+export type ArtifactType = "group_card" | "comparison_table" | "simulation_result" | "recommendation_card";
 
 export interface Artifact {
   id: string;
   type: ArtifactType;
-  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload;
+  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload | RecommendationCardPayload;
 }
 
 // ---- Chat message ----

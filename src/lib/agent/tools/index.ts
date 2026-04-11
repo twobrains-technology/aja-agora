@@ -12,6 +12,7 @@ import {
 	presentGroupCard,
 	presentComparisonTable,
 	presentSimulationResult,
+	presentRecommendation,
 } from "./presentation";
 
 /**
@@ -170,5 +171,6 @@ export const consorcioServer = createSdkMcpServer({
 		presentGroupCard,
 		presentComparisonTable,
 		presentSimulationResult,
+		presentRecommendation,
 	],
 });
