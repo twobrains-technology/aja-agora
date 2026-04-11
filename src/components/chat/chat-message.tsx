@@ -97,8 +97,8 @@ export function ChatMessage({ message, isNew = false, onRetry, isStreaming = fal
         </Button>
       )}
 
-      {/* Skeleton loading cards — show while agent is processing tools */}
-      {!isUser && message.status === "streaming" && message.content.length > 0 && message.artifacts.length === 0 && (
+      {/* Skeleton loading cards — show only when agent is actively fetching results */}
+      {!isUser && message.status === "streaming" && message.content.length > 20 && message.artifacts.length === 0 && /busca|opcoe|opcõe|resultado|encontr|melhor/i.test(message.content) && (
         <motion.div
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}

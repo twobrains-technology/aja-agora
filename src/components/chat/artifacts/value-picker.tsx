@@ -33,7 +33,11 @@ const categoryConfig = {
 
 function formatValue(value: number, format?: "currency" | "months"): string {
   if (format === "currency") {
-    if (value >= 1000) return `R$ ${(value / 1000).toFixed(0)} mil`;
+    if (value >= 1_000_000) {
+      const m = value / 1_000_000;
+      return m % 1 === 0 ? `R$ ${m.toFixed(0)} mi` : `R$ ${m.toFixed(1)} mi`;
+    }
+    if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)} mil`;
     return `R$ ${value.toLocaleString("pt-BR")}`;
   }
   if (format === "months") return `${value} meses`;
