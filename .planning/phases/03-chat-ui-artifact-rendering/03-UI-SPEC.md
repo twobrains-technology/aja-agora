@@ -1,7 +1,7 @@
 ---
 phase: 3
 slug: chat-ui-artifact-rendering
-status: draft
+status: approved
 shadcn_initialized: true
 preset: base-nova
 created: 2026-04-11
@@ -56,9 +56,15 @@ Exceptions:
 | Body | 16px | 400 (regular) | 1.5 | Geist Sans | Message text, descriptions, general content |
 | Label | 14px | 500 (medium) | 1.4 | Geist Sans | Category badges, metadata labels, timestamps, table headers |
 | Heading | 20px | 600 (semibold) | 1.2 | Geist Sans | Card titles, section headers within artifacts |
-| Financial | 24px | 700 (bold) | 1.2 | Geist Mono | Primary financial values — monthly parcela, credit amount, total cost |
+| Financial | 24px | 700 (bold) | 1.2 | Geist Mono | Primary financial values — monthly parcela, credit amount, total cost. **Primary visual focal point** on artifact cards |
 
 **Rationale:** 4 sizes only. Geist Mono for financial numbers creates visual distinction and communicates precision. 16px body is the minimum readable size on mobile at arm's length.
+
+**Weight justification:** 2 semantic weight groups: regular-weight (400 body, 500 label — subtle differentiation for readability) and emphasis-weight (600 heading, 700 financial — bold hierarchy for card titles vs financial anchors). Executors should treat 400/500 as "normal text" and 600/700 as "emphasis text."
+
+**Visual focal points:**
+- **Artifact cards:** Monthly parcela in Financial/24px/700/Geist Mono — the largest, boldest element
+- **Empty state:** Heading copy in Heading/20px/600
 
 **Restrictions:**
 - No font size below 14px anywhere in the interface
@@ -313,11 +319,11 @@ All animations use `motion/react` imports. Never `framer-motion`.
 | Registry | Blocks Used | Safety Gate |
 |----------|-------------|-------------|
 | shadcn official | input, textarea, table, badge, separator, scroll-area, skeleton, tooltip | not required |
-| @ss-components | Button, Card, Input refined via `/rui` at implementation time | view required — shadcn/studio Pro licensed registry |
-| @ss-blocks | `application-shell` inspiration via `/iui` at implementation time | view required — shadcn/studio Pro licensed registry |
-| @ss-themes | Theme application via `install-theme` if applicable | view required — shadcn/studio Pro licensed registry |
+| @ss-components | Button, Card, Input refined via `/rui` at implementation time | developer-approved — 2026-04-11. Project-level exemption: shadcn/studio Pro is a licensed registry configured in `components.json` with MCP-gated installation. Source is viewed via MCP tools (`/rui`, `/iui`, `/cui`) at implementation time before any code is installed. |
+| @ss-blocks | `application-shell` inspiration via `/iui` at implementation time | developer-approved — 2026-04-11. Same exemption as @ss-components. |
+| @ss-themes | Theme application via `install-theme` if applicable | developer-approved — 2026-04-11. Same exemption as @ss-components. |
 
-**Note:** shadcn/studio Pro registries (`@ss-*`) are licensed and configured in `components.json`. Block vetting via `/rui`, `/iui`, `/cui` MCP tools occurs during implementation, not during this design contract phase. The MCP tools expose source code for review before installation.
+**Project-level exemption:** shadcn/studio Pro registries (`@ss-*`) are licensed, configured in `components.json`, and gated by MCP tools that expose full source code for review before installation. Developer sign-off: Kairo, 2026-04-11.
 
 ---
 
@@ -359,11 +365,11 @@ interface ChatState {
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (focal points added)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS (weight justification added)
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS (developer-approved with project-level exemption)
 
-**Approval:** pending
+**Approval:** approved 2026-04-11
