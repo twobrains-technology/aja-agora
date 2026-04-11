@@ -3,7 +3,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { conversations, messages as messagesTable } from "@/db/schema";
+import { conversations, messages as messagesTable, artifacts as artifactsTable } from "@/db/schema";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { consorcioServer } from "@/lib/agent/tools";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
@@ -76,6 +76,11 @@ export async function POST(req: NextRequest) {
 		async start(controller) {
 			try {
 				let fullResponse = "";
+				const emittedArtifacts: Array<{
+					id: string;
+					type: string;
+					payload: Record<string, unknown>;
+				}> = [];
 
 				for await (const message of query({
 					prompt: conversationHistory,
@@ -88,11 +93,14 @@ export async function POST(req: NextRequest) {
 							"mcp__consorcio__get_rates",
 							"mcp__consorcio__get_group_details",
 							"mcp__consorcio__recommend_groups",
+							"mcp__consorcio__present_group_card",
+							"mcp__consorcio__present_comparison_table",
+							"mcp__consorcio__present_simulation_result",
 						],
 						maxTurns: 5,
 					},
 				})) {
-					// Stream text content to the client as SSE
+					// Stream text content and detect artifact tool calls
 					if (message.type === "assistant") {
 						for (const block of message.message.content) {
 							if (block.type === "text") {
@@ -103,6 +111,28 @@ export async function POST(req: NextRequest) {
 								});
 								controller.enqueue(
 									encoder.encode(`data: ${data}\n\n`),
+								);
+							} else if (
+								block.type === "tool_use" &&
+								block.name.startsWith("mcp__consorcio__present_")
+							) {
+								// Extract artifact type from tool name: "mcp__consorcio__present_group_card" -> "group_card"
+								const artifactType = block.name.replace(
+									"mcp__consorcio__present_",
+									"",
+								);
+								const artifact = {
+									id: block.id,
+									type: artifactType,
+									payload: block.input as Record<string, unknown>,
+								};
+								emittedArtifacts.push(artifact);
+								const artifactData = JSON.stringify({
+									type: "artifact",
+									artifact,
+								});
+								controller.enqueue(
+									encoder.encode(`data: ${artifactData}\n\n`),
 								);
 							}
 						}
@@ -125,12 +155,38 @@ export async function POST(req: NextRequest) {
 				}
 
 				// Save assistant response to DB
+				let assistantMessageId: string | undefined;
 				if (fullResponse) {
-					await db.insert(messagesTable).values({
-						conversationId: conversationId!,
-						role: "assistant",
-						content: fullResponse,
-					});
+					const [assistantMsg] = await db
+						.insert(messagesTable)
+						.values({
+							conversationId: conversationId!,
+							role: "assistant",
+							content: fullResponse,
+						})
+						.returning({ id: messagesTable.id });
+					assistantMessageId = assistantMsg?.id;
+				}
+
+				// Persist emitted artifacts to DB
+				if (emittedArtifacts.length > 0 && assistantMessageId) {
+					try {
+						await db.insert(artifactsTable).values(
+							emittedArtifacts.map((a) => ({
+								messageId: assistantMessageId!,
+								type: a.type as
+									| "group_card"
+									| "comparison_table"
+									| "simulation_result"
+									| "recommendation_card"
+									| "lead_form",
+								payload: a.payload,
+							})),
+						);
+					} catch (artifactErr) {
+						console.error("Failed to persist artifacts:", artifactErr);
+						// Don't break the stream — user already saw the artifacts via SSE
+					}
 				}
 
 				// Send done event
