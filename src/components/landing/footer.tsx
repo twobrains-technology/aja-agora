@@ -1,46 +1,41 @@
 import Link from "next/link";
 
+import { Separator } from "@/components/ui/separator";
+
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-card px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col items-center gap-8 md:flex-row md:items-start md:justify-between">
-          {/* Brand */}
-          <div className="text-center md:text-left">
-            <p className="text-lg font-bold text-foreground">Aja Agora</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Consorcio inteligente com IA
-            </p>
-          </div>
+    <footer>
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 max-md:flex-col sm:px-6 sm:py-6 md:gap-6 md:py-8">
+        <Link href="/" className="text-xl font-semibold">
+          Aja Agora
+        </Link>
 
-          {/* Links */}
-          <nav className="flex gap-6 text-sm" aria-label="Footer">
-            <Link
-              href="/chat"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Comecar conversa
-            </Link>
-            <Link
-              href="#faq"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Perguntas frequentes
-            </Link>
-          </nav>
+        <div className="flex items-center gap-5 whitespace-nowrap">
+          <a
+            href="#"
+            className="opacity-80 transition-opacity duration-300 hover:opacity-100"
+          >
+            Termos de Uso
+          </a>
+          <a
+            href="#"
+            className="opacity-80 transition-opacity duration-300 hover:opacity-100"
+          >
+            Política de Privacidade
+          </a>
         </div>
+      </div>
 
-        {/* Legal */}
-        <div className="mt-10 border-t border-border pt-8">
-          <p className="text-center text-xs leading-relaxed text-muted-foreground">
-            Aja Agora nao e uma administradora de consorcio. Atuamos como
-            plataforma de recomendacao. Todos os grupos sao geridos por
-            administradoras autorizadas pelo Banco Central do Brasil.
-          </p>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            &copy; 2026 Aja Agora. Todos os direitos reservados.
-          </p>
-        </div>
+      <Separator />
+
+      <div className="mx-auto flex max-w-7xl justify-center px-4 py-8 sm:px-6">
+        <p className="text-center font-medium text-balance">
+          {`\u00A9${new Date().getFullYear()}`}{" "}
+          <Link href="/" className="hover:underline">
+            Aja Agora
+          </Link>
+          . Todos os direitos reservados.
+        </p>
       </div>
     </footer>
   );

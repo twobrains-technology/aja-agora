@@ -1,62 +1,78 @@
 import Link from "next/link";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MessageCircle } from "lucide-react";
 
 export function HeroSection() {
   return (
-    <section
-      id="hero"
-      className="relative flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center overflow-hidden px-4 pt-20 pb-16 sm:px-6 lg:px-8"
-    >
-      {/* Background gradient */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-primary/5 via-background to-background"
-      />
-
-      {/* Decorative circles */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute top-1/4 -left-32 h-64 w-64 rounded-full bg-primary/10 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute right-0 bottom-1/4 h-48 w-48 rounded-full bg-accent/15 blur-3xl"
-      />
-
-      <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
-        {/* Badge */}
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
-          <MessageCircle className="h-4 w-4" />
-          <span>Consultor de consorcio com IA</span>
+    <section className="flex min-h-[calc(100dvh-4rem)] flex-1 flex-col justify-center gap-12 overflow-x-hidden pt-8 sm:gap-16 sm:pt-16 lg:gap-24 lg:pt-24">
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-8 px-4 text-center sm:px-6 lg:px-8">
+        <div className="bg-muted flex items-center gap-2.5 rounded-full border px-3 py-2">
+          <Badge>IA</Badge>
+          <span className="text-muted-foreground">
+            Consórcio inteligente com IA
+          </span>
         </div>
 
-        {/* Headline */}
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
-          Seu consorcio, do sonho{" "}
-          <span className="text-primary">a assinatura</span>
+        <h1 className="text-3xl leading-tight font-bold text-balance sm:text-4xl lg:text-5xl">
+          Seu consórcio, do sonho
+          <br />
+          <span className="relative">
+            à assinatura
+            <svg
+              width="223"
+              height="12"
+              viewBox="0 0 223 12"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="absolute inset-x-0 bottom-0 w-full translate-y-1/2 max-sm:hidden"
+            >
+              <path
+                d="M1.11716 10.428C39.7835 4.97282 75.9074 2.70494 114.894 1.98894C143.706 1.45983 175.684 0.313587 204.212 3.31596C209.925 3.60546 215.144 4.59884 221.535 5.74551"
+                stroke="url(#paint0_linear_hero)"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <defs>
+                <linearGradient
+                  id="paint0_linear_hero"
+                  x1="18.8541"
+                  y1="3.72033"
+                  x2="42.6487"
+                  y2="66.6308"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop stopColor="var(--primary)" />
+                  <stop offset="1" stopColor="var(--primary-foreground)" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
         </h1>
 
-        {/* Sub-headline */}
-        <p className="mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-          Converse com nosso consultor de IA e receba recomendacoes
-          personalizadas de consorcio em segundos. 100% digital, sem corretor,
-          sem formulario.
+        <p className="text-muted-foreground max-w-2xl text-lg sm:text-xl">
+          Converse com nosso consultor de IA e receba recomendações
+          personalizadas de consórcio em segundos. Sem formulário, sem corretor.
         </p>
 
-        {/* CTA */}
-        <div className="mt-10 flex flex-col items-center gap-4">
-          <Link href="/chat">
-            <Button
-              size="lg"
-              className="h-14 cursor-pointer px-8 text-lg font-semibold shadow-lg shadow-primary/25 transition-shadow hover:shadow-xl hover:shadow-primary/30"
-            >
-              Comecar agora
-            </Button>
-          </Link>
-          <p className="text-sm text-muted-foreground">
-            Gratis, sem compromisso
-          </p>
+        <div className="flex flex-col items-center gap-4 sm:flex-row">
+          <Button
+            size="lg"
+            className="h-12 px-8 text-base font-semibold"
+            render={<Link href="/chat" />}
+            nativeButton={false}
+          >
+            Começar agora
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            className="h-12 px-8 text-base shadow-none"
+            render={<a href="#como-funciona" />}
+            nativeButton={false}
+          >
+            Veja como funciona
+          </Button>
         </div>
       </div>
     </section>

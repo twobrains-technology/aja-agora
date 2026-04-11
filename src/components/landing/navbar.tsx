@@ -2,8 +2,24 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { MenuIcon } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
+const navigationItems = [
+  { title: "Como funciona", href: "#como-funciona" },
+  { title: "Benefícios", href: "#beneficios" },
+  { title: "Depoimentos", href: "#depoimentos" },
+  { title: "FAQ", href: "#faq" },
+];
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -15,25 +31,59 @@ export function Navbar() {
   }, []);
 
   return (
-    <nav
+    <header
       className={cn(
-        "fixed top-0 z-50 w-full transition-all duration-300",
-        scrolled
-          ? "bg-background/80 backdrop-blur-md border-b border-border"
-          : "bg-transparent"
+        "bg-background sticky top-0 z-50 transition-shadow duration-300",
+        scrolled && "shadow-sm"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="text-lg font-semibold text-foreground">
-          Aja Agora
-        </Link>
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-8 px-4 py-4 sm:px-6">
+        <div className="flex flex-1 items-center gap-8">
+          <Link href="/" className="text-foreground text-xl font-semibold">
+            Aja Agora
+          </Link>
 
-        <Link href="/chat">
-          <Button variant="default" size="sm">
-            Começar agora
-          </Button>
-        </Link>
+          <nav className="text-muted-foreground hidden items-center gap-6 font-medium md:flex">
+            {navigationItems.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="hover:text-primary transition-colors"
+              >
+                {item.title}
+              </a>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <Link href="/chat">
+            <Button size="lg">Começar agora</Button>
+          </Link>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="md:hidden"
+              render={<Button variant="outline" size="icon" />}
+            >
+              <MenuIcon />
+              <span className="sr-only">Menu</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="end">
+              <DropdownMenuGroup>
+                {navigationItems.map((item) => (
+                  <DropdownMenuItem key={item.href}>
+                    <a href={item.href}>{item.title}</a>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem>
+                  <Link href="/chat">Começar agora</Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

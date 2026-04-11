@@ -1,38 +1,33 @@
 import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function CtaSection() {
   return (
-    <section
-      id="cta"
-      className="relative overflow-hidden px-4 py-20 sm:px-6 sm:py-28 lg:px-8"
-    >
-      {/* Background */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-primary/10 via-primary/5 to-background"
-      />
-
-      <div className="mx-auto max-w-3xl text-center">
-        <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Pronto para realizar seu sonho?
-        </h2>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Converse com nosso consultor agora e descubra o melhor consorcio pra
-          voce. E rapido, gratis e sem compromisso.
-        </p>
-        <div className="mt-10">
-          <Link href="/chat">
+    <section className="bg-muted py-8 sm:py-16 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <Card className="rounded-3xl border-none py-8 shadow-lg sm:py-16 lg:py-24">
+          <CardContent className="flex flex-col items-center gap-8 px-8 text-center sm:px-16 lg:px-24">
+            <div className="max-w-lg">
+              <h2 className="mb-4 text-3xl font-bold">
+                Pronto para realizar seu sonho?
+              </h2>
+              <p className="text-muted-foreground text-lg font-medium">
+                Converse agora com nosso consultor de IA e descubra o consórcio
+                ideal para você.
+              </p>
+            </div>
             <Button
               size="lg"
-              className="h-14 cursor-pointer px-8 text-lg font-semibold shadow-lg shadow-primary/25 transition-shadow hover:shadow-xl hover:shadow-primary/30"
+              className="h-12 px-8 text-base font-semibold"
+              render={<Link href="/chat" />}
+              nativeButton={false}
             >
-              Comecar agora
-              <ArrowRight className="ml-2 h-5 w-5" />
+              Começar agora
             </Button>
-          </Link>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );

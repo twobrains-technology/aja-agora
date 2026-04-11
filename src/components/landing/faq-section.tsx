@@ -5,52 +5,50 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
-const faqs = [
+const faqItems = [
   {
-    question: "O que e consorcio?",
+    question: "O que é consórcio?",
     answer:
-      "Consorcio e uma forma de compra colaborativa onde um grupo de pessoas contribui mensalmente para um fundo comum. Periodicamente, um participante e contemplado e recebe o credito para realizar sua compra.",
+      "Consórcio é uma modalidade de compra programada onde um grupo de pessoas contribui mensalmente para formar uma poupança coletiva.",
   },
   {
-    question: "O Aja Agora e seguro?",
+    question: "Como funciona a IA?",
     answer:
-      "Sim. Trabalhamos apenas com administradoras autorizadas pelo Banco Central. Seus dados sao protegidos e nunca compartilhados.",
+      "Nosso consultor de IA analisa centenas de grupos disponíveis e encontra o melhor plano baseado no seu perfil, orçamento e prazo.",
   },
   {
-    question: "Preciso pagar para usar?",
+    question: "Preciso pagar algo para usar?",
     answer:
-      "Nao. A consulta e a recomendacao sao 100% gratuitas. Voce so paga quando decidir aderir a um grupo de consorcio.",
+      "Não! A consulta com nosso consultor de IA é totalmente gratuita. Você só paga quando decidir assinar um consórcio.",
   },
   {
-    question: "Quanto tempo demora para ser contemplado?",
+    question: "É seguro?",
     answer:
-      "Depende do grupo e da modalidade (lance ou sorteio). Nosso consultor mostra o historico de contemplacao de cada grupo para voce decidir com informacao.",
+      "Sim. Seus dados são protegidos e nunca compartilhados. O consórcio é regulado pelo Banco Central do Brasil.",
   },
 ];
 
 export function FaqSection() {
   return (
-    <section id="faq" className="px-4 py-20 sm:px-6 sm:py-28 lg:px-8">
-      <div className="mx-auto max-w-3xl">
-        {/* Section header */}
-        <div className="text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+    <section id="faq" className="py-8 sm:py-16 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-12 space-y-4 text-center sm:mb-16 lg:mb-24">
+          <h2 className="text-2xl font-semibold md:text-3xl lg:text-4xl">
             Perguntas frequentes
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Tudo o que voce precisa saber sobre consorcio e o Aja Agora
+          <p className="text-muted-foreground text-xl">
+            Tudo o que você precisa saber sobre consórcio e o Aja Agora.
           </p>
         </div>
 
-        {/* Accordion */}
-        <Accordion className="mt-12">
-          {faqs.map((faq, i) => (
-            <AccordionItem key={i} value={`item-${i}`}>
-              <AccordionTrigger className="text-left text-base font-medium">
-                {faq.question}
+        <Accordion className="w-full" defaultValue={["item-1"]}>
+          {faqItems.map((item, index) => (
+            <AccordionItem key={index} value={`item-${index + 1}`}>
+              <AccordionTrigger className="text-lg">
+                {item.question}
               </AccordionTrigger>
-              <AccordionContent className="text-base text-muted-foreground">
-                {faq.answer}
+              <AccordionContent className="text-muted-foreground">
+                {item.answer}
               </AccordionContent>
             </AccordionItem>
           ))}

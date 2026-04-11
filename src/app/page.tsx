@@ -6,28 +6,17 @@ import { SocialProof } from "@/components/landing/social-proof";
 import { FaqSection } from "@/components/landing/faq-section";
 import { CtaSection } from "@/components/landing/cta-section";
 import { Footer } from "@/components/landing/footer";
-import { ScrollFade } from "@/components/landing/scroll-fade";
 
 export default function LandingPage() {
   return (
     <main className="flex min-h-screen flex-col">
       <Navbar />
       <HeroSection />
-      <ScrollFade>
-        <HowItWorks />
-      </ScrollFade>
-      <ScrollFade>
-        <BenefitsSection />
-      </ScrollFade>
-      <ScrollFade>
-        <SocialProof />
-      </ScrollFade>
-      <ScrollFade>
-        <FaqSection />
-      </ScrollFade>
-      <ScrollFade>
-        <CtaSection />
-      </ScrollFade>
+      <HowItWorks />
+      <BenefitsSection />
+      <SocialProof />
+      <FaqSection />
+      <CtaSection />
       <Footer />
     </main>
   );

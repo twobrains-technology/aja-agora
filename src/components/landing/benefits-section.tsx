@@ -1,79 +1,115 @@
+import type { ComponentType } from "react";
 import {
-  Zap,
-  Shield,
   Smartphone,
+  Zap,
   Bot,
-  DollarSign,
-  Clock,
+  Eye,
+  MonitorSmartphone,
+  ShieldCheck,
 } from "lucide-react";
-import { ScrollFade } from "./scroll-fade";
 
-const benefits = [
-  {
-    icon: Zap,
-    title: "Rapido",
-    description: "Recomendacao em segundos, nao dias.",
-  },
-  {
-    icon: Shield,
-    title: "Transparente",
-    description: "Taxas, custos e simulacoes abertas, sem surpresas.",
-  },
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+type Benefit = {
+  icon: ComponentType;
+  title: string;
+  description: string;
+  cardBorderColor: string;
+  avatarTextColor: string;
+  avatarBgColor: string;
+};
+
+const benefits: Benefit[] = [
   {
     icon: Smartphone,
     title: "100% digital",
-    description: "Do sonho a assinatura sem sair do celular.",
+    description: "Sem papel, sem agência, sem filas.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
+  },
+  {
+    icon: Zap,
+    title: "Análise em segundos",
+    description: "A IA compara planos instantaneamente.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
   {
     icon: Bot,
-    title: "IA especialista",
-    description: "Consultor que entende de consorcio de verdade.",
-  },
-  {
-    icon: DollarSign,
     title: "Sem corretor",
-    description: "Economize a comissao do intermediario.",
+    description: "Você conversa direto com a IA.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
   {
-    icon: Clock,
-    title: "Disponivel 24h",
-    description: "Converse quando quiser, sem agendamento.",
+    icon: Eye,
+    title: "Transparência total",
+    description: "Taxas, custos e simulações claras.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
+  },
+  {
+    icon: MonitorSmartphone,
+    title: "Mobile-first",
+    description: "Funciona perfeitamente no celular.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Dados protegidos",
+    description: "Suas informações estão seguras.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
 ];
 
 export function BenefitsSection() {
   return (
-    <section
-      id="beneficios"
-      className="px-4 py-20 sm:px-6 sm:py-28 lg:px-8"
-    >
-      <div className="mx-auto max-w-7xl">
-        {/* Section header */}
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+    <section id="beneficios" className="py-8 sm:py-16 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-12 space-y-4 sm:mb-16 lg:mb-24">
+          <h2 className="text-2xl font-semibold md:text-3xl lg:text-4xl">
             Por que usar o Aja Agora?
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            A forma mais inteligente de encontrar seu consorcio
+          <p className="text-muted-foreground text-xl">
+            A forma mais inteligente de encontrar seu consórcio.
           </p>
         </div>
 
-        {/* Benefits grid */}
-        <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {benefits.map((benefit, i) => (
-            <ScrollFade key={benefit.title} delay={i * 0.1}>
-              <div className="group relative rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/30 hover:bg-primary/5">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-                  <benefit.icon className="h-6 w-6" strokeWidth={1.5} />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground">
-                  {benefit.title}
-                </h3>
-                <p className="mt-2 text-base text-muted-foreground">
-                  {benefit.description}
-                </p>
-              </div>
-            </ScrollFade>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {benefits.map((benefit, index) => (
+            <Card
+              key={index}
+              className={cn(
+                "shadow-none transition-colors duration-300",
+                benefit.cardBorderColor
+              )}
+            >
+              <CardContent>
+                <Avatar className="mb-6 size-10 rounded-md">
+                  <AvatarFallback
+                    className={cn(
+                      "rounded-md [&>svg]:size-6",
+                      benefit.avatarBgColor,
+                      benefit.avatarTextColor
+                    )}
+                  >
+                    <benefit.icon />
+                  </AvatarFallback>
+                </Avatar>
+                <h6 className="mb-2 text-lg font-semibold">{benefit.title}</h6>
+                <p className="text-muted-foreground">{benefit.description}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </div>

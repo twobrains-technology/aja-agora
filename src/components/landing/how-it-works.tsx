@@ -1,77 +1,87 @@
+import type { ComponentType } from "react";
 import { MessageCircle, Search, CheckCircle } from "lucide-react";
-import { ScrollFade } from "./scroll-fade";
 
-const steps = [
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+type Step = {
+  icon: ComponentType;
+  title: string;
+  description: string;
+  cardBorderColor: string;
+  avatarTextColor: string;
+  avatarBgColor: string;
+};
+
+const steps: Step[] = [
   {
     icon: MessageCircle,
-    step: "01",
     title: "Diga o que quer",
     description:
-      "Conte seu sonho: um carro, imovel, ou servico. Sem formularios, sem burocracia.",
+      "Conte seu sonho: um carro, imóvel ou serviço. Nosso consultor entende suas necessidades.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
   {
     icon: Search,
-    step: "02",
-    title: "Receba recomendacoes",
+    title: "Receba recomendações",
     description:
-      "Nosso consultor analisa centenas de grupos e encontra o melhor pra voce.",
+      "A IA analisa centenas de grupos e encontra o melhor plano para seu bolso e prazo.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
   {
     icon: CheckCircle,
-    step: "03",
     title: "Escolha e assine",
     description:
-      "Revise a recomendacao, tire duvidas, e assine. Tudo no chat.",
+      "Compare opções, simule parcelas e feche seu consórcio. Tudo dentro do chat.",
+    cardBorderColor: "hover:border-primary",
+    avatarTextColor: "text-primary",
+    avatarBgColor: "bg-primary/10",
   },
 ];
 
 export function HowItWorks() {
   return (
-    <section
-      id="como-funciona"
-      className="bg-muted/30 px-4 py-20 sm:px-6 sm:py-28 lg:px-8"
-    >
-      <div className="mx-auto max-w-7xl">
-        {/* Section header */}
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+    <section id="como-funciona" className="py-8 sm:py-16 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-12 space-y-4 sm:mb-16 lg:mb-24">
+          <h2 className="text-2xl font-semibold md:text-3xl lg:text-4xl">
             Como funciona
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Tres passos simples para o seu consorcio ideal
+          <p className="text-muted-foreground text-xl">
+            Três passos simples para encontrar o consórcio ideal para você.
           </p>
         </div>
 
-        {/* Steps grid */}
-        <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-12">
-          {steps.map((item, i) => (
-            <ScrollFade key={item.step} delay={i * 0.1}>
-              <div className="group relative flex flex-col items-center text-center">
-                {/* Connector line (hidden on mobile, visible between cards on sm+) */}
-                {i < steps.length - 1 && (
-                  <div
-                    aria-hidden="true"
-                    className="absolute top-10 left-[calc(50%+2.5rem)] hidden h-0.5 w-[calc(100%-5rem)] bg-gradient-to-r from-primary/30 to-primary/10 sm:block"
-                  />
-                )}
-
-                {/* Icon container */}
-                <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-                  <item.icon className="h-8 w-8" strokeWidth={1.5} />
-                  <span className="absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                    {item.step}
-                  </span>
-                </div>
-
-                {/* Text */}
-                <h3 className="mt-6 text-xl font-semibold text-foreground">
-                  {item.title}
-                </h3>
-                <p className="mt-3 max-w-xs text-base text-muted-foreground">
-                  {item.description}
-                </p>
-              </div>
-            </ScrollFade>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {steps.map((step, index) => (
+            <Card
+              key={index}
+              className={cn(
+                "shadow-none transition-colors duration-300",
+                step.cardBorderColor
+              )}
+            >
+              <CardContent>
+                <Avatar className="mb-6 size-10 rounded-md">
+                  <AvatarFallback
+                    className={cn(
+                      "rounded-md [&>svg]:size-6",
+                      step.avatarBgColor,
+                      step.avatarTextColor
+                    )}
+                  >
+                    <step.icon />
+                  </AvatarFallback>
+                </Avatar>
+                <h6 className="mb-2 text-lg font-semibold">{step.title}</h6>
+                <p className="text-muted-foreground">{step.description}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </div>
