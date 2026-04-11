@@ -55,7 +55,7 @@ Build the conversational agent with Claude, domain tools, deterministic recommen
 ### Integration Points
 - `src/app/api/chat/route.ts` — new API route for agent
 - `src/db/schema.ts` — use existing conversation/message tables
-- `package.json` — add @anthropic-ai/claude-agent-sdk, ai, @ai-sdk/anthropic
+- `package.json` — add ai, @ai-sdk/anthropic (NOT @anthropic-ai/claude-agent-sdk)
 
 </code_context>
 
