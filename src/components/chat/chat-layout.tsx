@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
-import { RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChatLayoutProps {
   children: React.ReactNode;
   onReset?: () => void;
+  error?: string | null;
 }
 
-export function ChatLayout({ children, onReset }: ChatLayoutProps) {
+export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const showError = error && error !== dismissedError;
+
   // Virtual keyboard handling — scroll message list to bottom when keyboard opens
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -43,6 +47,22 @@ export function ChatLayout({ children, onReset }: ChatLayoutProps) {
           </Button>
         )}
       </header>
+
+      {/* Dismissible error banner */}
+      {showError && (
+        <div className="flex items-center justify-between gap-2 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          <span>{error}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setDismissedError(error)}
+            className="size-7 shrink-0 text-destructive hover:text-destructive"
+            aria-label="Fechar erro"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* Content area — scrollable messages + fixed input */}
       <div className="relative flex flex-1 flex-col overflow-hidden">

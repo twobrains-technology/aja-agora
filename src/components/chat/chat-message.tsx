@@ -6,12 +6,17 @@ import { ArtifactRenderer } from "./artifact-renderer";
 import { StreamingDots } from "./streaming-dots";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ChatMessageProps {
   message: ChatMessageType;
   /** When true, the message animates in. Set false for messages loaded from history. */
   isNew?: boolean;
+  /** Callback to retry sending the last message on error. */
+  onRetry?: () => void;
+  /** Whether the chat is currently streaming (disables retry button). */
+  isStreaming?: boolean;
 }
 
 const messageSpring = {
@@ -20,7 +25,7 @@ const messageSpring = {
   damping: 30,
 };
 
-export function ChatMessage({ message, isNew = false }: ChatMessageProps) {
+export function ChatMessage({ message, isNew = false, onRetry, isStreaming = false }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isError = message.status === "error";
   const isStreamingEmpty =
@@ -66,6 +71,20 @@ export function ChatMessage({ message, isNew = false }: ChatMessageProps) {
           </div>
         )}
       </div>
+
+      {/* Retry button for error messages */}
+      {isError && onRetry && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRetry}
+          disabled={isStreaming}
+          className="gap-1.5 text-destructive hover:text-destructive"
+        >
+          <RotateCcw className="size-3.5" />
+          <span>Tentar novamente</span>
+        </Button>
+      )}
 
       {/* Artifacts — rendered below bubble, full available width */}
       {message.artifacts.length > 0 && (

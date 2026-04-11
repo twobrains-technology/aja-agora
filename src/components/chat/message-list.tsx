@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 interface MessageListProps {
   messages: ChatMessageType[];
   isStreaming: boolean;
+  onRetry?: () => void;
 }
 
-export function MessageList({ messages, isStreaming }: MessageListProps) {
+export function MessageList({ messages, isStreaming, onRetry }: MessageListProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -67,6 +68,8 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
             key={message.id}
             message={message}
             isNew={index >= messages.length - 2}
+            onRetry={message.status === "error" ? onRetry : undefined}
+            isStreaming={isStreaming}
           />
         ))}
 
