@@ -108,19 +108,57 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01..05 | Phase 1 | Pending |
-| AGENT-01..08 | Phase 2 | Pending |
-| ADAPT-01..03 | Phase 2 | Pending |
-| CHAT-01..10 | Phase 3 | Pending |
-| CONV-01..03 | Phase 4 | Pending |
-| LAND-01..04 | Phase 5 | Pending |
-| DATA-01..04 | Phase 1-2 | Pending |
+| FOUND-01 | Phase 1: Project Foundation & Infrastructure | Pending |
+| FOUND-02 | Phase 1: Project Foundation & Infrastructure | Pending |
+| FOUND-03 | Phase 1: Project Foundation & Infrastructure | Pending |
+| FOUND-04 | Phase 1: Project Foundation & Infrastructure | Pending |
+| FOUND-05 | Phase 1: Project Foundation & Infrastructure | Pending |
+| AGENT-01 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-02 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-03 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-04 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-05 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-06 | Phase 2: Agent Core & Adapter Layer | Pending |
+| AGENT-07 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| AGENT-08 | Phase 2: Agent Core & Adapter Layer | Pending |
+| ADAPT-01 | Phase 2: Agent Core & Adapter Layer | Pending |
+| ADAPT-02 | Phase 2: Agent Core & Adapter Layer | Pending |
+| ADAPT-03 | Phase 2: Agent Core & Adapter Layer | Pending |
+| CHAT-01 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-02 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-03 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-04 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-05 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-06 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-07 | Phase 4: Recommendation & What-If Scenarios | Pending |
+| CHAT-08 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-09 | Phase 3: Chat UI & Artifact Rendering | Pending |
+| CHAT-10 | Phase 4: Recommendation & What-If Scenarios | Pending |
+| CONV-01 | Phase 5: Conversion & Progressive Auth | Pending |
+| CONV-02 | Phase 5: Conversion & Progressive Auth | Pending |
+| CONV-03 | Phase 5: Conversion & Progressive Auth | Pending |
+| DATA-01 | Phase 1: Project Foundation & Infrastructure | Pending |
+| DATA-02 | Phase 2: Agent Core & Adapter Layer | Pending |
+| DATA-03 | Phase 5: Conversion & Progressive Auth | Pending |
+| DATA-04 | Phase 2: Agent Core & Adapter Layer | Pending |
+| LAND-01 | Phase 6: Landing Page | Pending |
+| LAND-02 | Phase 6: Landing Page | Pending |
+| LAND-03 | Phase 6: Landing Page | Pending |
+| LAND-04 | Phase 6: Landing Page | Pending |
 
 **Coverage:**
 - v1 requirements: 30 total
 - Mapped to phases: 30
 - Unmapped: 0
 
+**Phase summary:**
+- Phase 1: 6 requirements (FOUND-01..05, DATA-01)
+- Phase 2: 12 requirements (AGENT-01..06, AGENT-08, ADAPT-01..03, DATA-02, DATA-04)
+- Phase 3: 9 requirements (CHAT-01..06, CHAT-08..09, AGENT-07)
+- Phase 4: 2 requirements (CHAT-07, CHAT-10)
+- Phase 5: 4 requirements (CONV-01..03, DATA-03)
+- Phase 6: 4 requirements (LAND-01..04)
+
 ---
 *Requirements defined: 2026-04-11*
-*Last updated: 2026-04-11 after initialization*
+*Last updated: 2026-04-11 after roadmap creation*
