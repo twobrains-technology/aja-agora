@@ -139,7 +139,7 @@ export function HeroSection({ onGoalSelected }: HeroSectionProps) {
                 >
                   <Bot className="size-4 text-primary-foreground" />
                 </motion.div>
-                <div className="flex-1">
+                <div className="flex flex-col gap-3">
                   <motion.div
                     className="inline-block max-w-[90%] rounded-2xl rounded-tl-sm border bg-card px-4 py-3"
                     initial={{ opacity: 0, x: -8 }}
@@ -162,7 +162,7 @@ export function HeroSection({ onGoalSelected }: HeroSectionProps) {
                   <AnimatePresence>
                     {(phase === "question" || phase === "cards" || phase === "selected") && (
                       <motion.div
-                        className="mt-3 inline-block max-w-[90%] rounded-2xl rounded-tl-sm border bg-card px-4 py-3"
+                        className="inline-block max-w-[90%] rounded-2xl rounded-tl-sm border bg-card px-4 py-3"
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}

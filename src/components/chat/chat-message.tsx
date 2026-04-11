@@ -2,8 +2,11 @@
 
 import type { ChatMessage as ChatMessageType } from "@/lib/chat/types";
 import { motion, AnimatePresence } from "motion/react";
+import ReactMarkdown from "react-markdown";
 import { ArtifactRenderer } from "./artifact-renderer";
+import { QuickReplies } from "./quick-replies";
 import { StreamingDots } from "./streaming-dots";
+import type { QuickReplyPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { AlertCircle, RotateCcw } from "lucide-react";
@@ -67,7 +70,13 @@ export function ChatMessage({ message, isNew = false, onRetry, isStreaming = fal
             {isError && (
               <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
             )}
-            <span>{message.content}</span>
+            {isUser ? (
+              <span>{message.content}</span>
+            ) : (
+              <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-0.5 prose-p:leading-snug prose-ul:my-0.5 prose-ol:my-0.5 prose-li:my-0 prose-strong:text-foreground prose-headings:text-foreground prose-headings:text-sm prose-headings:font-semibold prose-headings:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -56,14 +56,26 @@ export interface LeadFormPayload {
   recommendationId?: string;
 }
 
+// ---- Quick reply payload ----
+
+export interface QuickReplyOption {
+  label: string;
+  value: string;
+  emoji?: string;
+}
+
+export interface QuickReplyPayload {
+  options: QuickReplyOption[];
+}
+
 // ---- Artifact union ----
 
-export type ArtifactType = "group_card" | "comparison_table" | "simulation_result" | "recommendation_card" | "lead_form";
+export type ArtifactType = "group_card" | "comparison_table" | "simulation_result" | "recommendation_card" | "lead_form" | "quick_reply" | "value_picker";
 
 export interface Artifact {
   id: string;
   type: ArtifactType;
-  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload | RecommendationCardPayload | LeadFormPayload;
+  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload | RecommendationCardPayload | LeadFormPayload | QuickReplyPayload;
 }
 
 // ---- Chat message ----

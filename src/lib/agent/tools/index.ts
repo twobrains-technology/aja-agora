@@ -14,6 +14,7 @@ import {
 	presentSimulationResult,
 	presentRecommendation,
 	presentLeadForm,
+	presentValuePicker,
 } from "./presentation";
 import { captureLead } from "./capture";
 
@@ -175,6 +176,7 @@ export const consorcioServer = createSdkMcpServer({
 		presentSimulationResult,
 		presentRecommendation,
 		presentLeadForm,
+		presentValuePicker,
 		captureLead,
 	],
 });

@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
 							"mcp__consorcio__present_recommendation",
 							"mcp__consorcio__present_lead_form",
 							"mcp__consorcio__capture_lead",
+							"mcp__consorcio__present_value_picker",
 						],
 						maxTurns: 5,
 					},

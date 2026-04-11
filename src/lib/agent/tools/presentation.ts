@@ -185,3 +185,38 @@ export const presentRecommendation = tool(
 		};
 	},
 );
+
+export const presentValuePicker = tool(
+	"present_value_picker",
+	"Apresenta um seletor interativo de valores com sliders para o usuario configurar orcamento, valor de credito, ou prazo. Use em vez de perguntar valores por texto — o usuario arrasta os sliders e clica em 'Buscar opcoes'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+	{
+		category: z
+			.enum(["imovel", "auto", "servicos"])
+			.describe("Categoria do bem para personalizar o visual"),
+		fields: z.array(
+			z.object({
+				id: z.string().describe("Identificador do campo (ex: creditValue, monthlyBudget, term)"),
+				label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
+				min: z.number().describe("Valor minimo do slider"),
+				max: z.number().describe("Valor maximo do slider"),
+				step: z.number().describe("Incremento do slider"),
+				default: z.number().describe("Valor inicial padrao"),
+				format: z
+					.enum(["currency", "months"])
+					.optional()
+					.describe("Formato de exibicao do valor"),
+			}),
+		).describe("Campos/sliders a exibir no seletor"),
+	},
+	async (args) => {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `[Seletor de valores apresentado para ${args.category}]`,
+				},
+			],
+			_artifact: { type: "value_picker", payload: args },
+		};
+	},
+);
