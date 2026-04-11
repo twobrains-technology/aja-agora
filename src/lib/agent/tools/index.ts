@@ -8,6 +8,11 @@ import {
 	getRatesInput,
 	getGroupDetailsInput,
 } from "./schemas";
+import {
+	presentGroupCard,
+	presentComparisonTable,
+	presentSimulationResult,
+} from "./presentation";
 
 /**
  * Domain tools for the consórcio agent.
@@ -156,5 +161,14 @@ const recommendGroups = tool(
 export const consorcioServer = createSdkMcpServer({
 	name: "consorcio",
 	version: "1.0.0",
-	tools: [searchGroups, simulateQuota, getRates, getGroupDetails, recommendGroups],
+	tools: [
+		searchGroups,
+		simulateQuota,
+		getRates,
+		getGroupDetails,
+		recommendGroups,
+		presentGroupCard,
+		presentComparisonTable,
+		presentSimulationResult,
+	],
 });
