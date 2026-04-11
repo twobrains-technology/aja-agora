@@ -55,6 +55,11 @@
 **Goal:** Deliver the RecommendationCard with actionable CTA and enable real-time scenario exploration where users alter parameters and the agent recalculates instantly.
 **Requirements:** CHAT-07, CHAT-10
 **UI hint:** yes
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — RecommendationCard component + presentRecommendation tool + type/dispatch/route wiring
+- [ ] 04-02-PLAN.md — What-if scenario detection + recommendation presentation instructions in system prompt
 
 ### Success Criteria
 1. Agent delivers a RecommendationCard with administradora, prazo, taxa, historico, and a visible action button
