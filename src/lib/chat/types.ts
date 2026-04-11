@@ -49,14 +49,21 @@ export interface RecommendationCardPayload {
   };
 }
 
+// ---- Lead form payload (NO PII — only metadata for artifact storage) ----
+
+export interface LeadFormPayload {
+  conversationId: string;
+  recommendationId?: string;
+}
+
 // ---- Artifact union ----
 
-export type ArtifactType = "group_card" | "comparison_table" | "simulation_result" | "recommendation_card";
+export type ArtifactType = "group_card" | "comparison_table" | "simulation_result" | "recommendation_card" | "lead_form";
 
 export interface Artifact {
   id: string;
   type: ArtifactType;
-  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload | RecommendationCardPayload;
+  payload: GroupCardPayload | ComparisonTablePayload | SimulationResultPayload | RecommendationCardPayload | LeadFormPayload;
 }
 
 // ---- Chat message ----
