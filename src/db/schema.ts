@@ -15,15 +15,22 @@ export const artifactTypeEnum = pgEnum("artifact_type", [
 // Conversations
 export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);
 
+export const conversationStatusEnum = pgEnum("conversation_status", ["active", "handed_off", "closed"]);
+
 export const conversations = pgTable("conversations", {
 	id: uuid().defaultRandom().primaryKey(),
 	waId: varchar("wa_id", { length: 32 }),
 	channel: channelEnum().default("web").notNull(),
+	status: conversationStatusEnum().default("active").notNull(),
+	handedOffTo: varchar("handed_off_to", { length: 32 }),
+	agentName: varchar("agent_name", { length: 100 }),
+	contactName: varchar("contact_name", { length: 100 }),
 	metadata: jsonb().$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	index("conversations_wa_id_idx").on(table.waId),
+	index("conversations_handed_off_to_idx").on(table.handedOffTo),
 ]);
 
 // Messages

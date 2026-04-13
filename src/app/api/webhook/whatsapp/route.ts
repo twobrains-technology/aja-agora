@@ -68,11 +68,15 @@ export async function POST(req: NextRequest) {
 
 	// ---- Incoming messages ----
 	if (value?.messages) {
+		// Extract contact name from payload
+		const contacts = value.contacts;
+		const contactName = contacts?.[0]?.profile?.name;
+
 		for (const message of value.messages) {
 			const from = message.from;
 			const msgType = message.type;
 
-			console.log(`[whatsapp] Message from ${from} | type: ${msgType}`);
+			console.log(`[whatsapp] Message from ${from} (${contactName ?? "unknown"}) | type: ${msgType}`);
 
 			// Mark as read immediately
 			markAsRead(message.id).catch(() => {});
@@ -82,8 +86,7 @@ export async function POST(req: NextRequest) {
 					const text = message.text?.body;
 					if (text) {
 						console.log(`[whatsapp] Text: "${text}"`);
-						// Process async — don't block the 200 response
-						processTextMessage(from, text).catch((err) =>
+						processTextMessage(from, text, contactName).catch((err) =>
 							console.error("[whatsapp] Processor error:", err),
 						);
 					}
@@ -95,13 +98,13 @@ export async function POST(req: NextRequest) {
 					if (interactive?.type === "button_reply") {
 						const reply = interactive.button_reply;
 						console.log(`[whatsapp] Button reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title).catch((err) =>
+						processInteractiveReply(from, reply.id, reply.title, contactName).catch((err) =>
 							console.error("[whatsapp] Interactive processor error:", err),
 						);
 					} else if (interactive?.type === "list_reply") {
 						const reply = interactive.list_reply;
 						console.log(`[whatsapp] List reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title).catch((err) =>
+						processInteractiveReply(from, reply.id, reply.title, contactName).catch((err) =>
 							console.error("[whatsapp] Interactive processor error:", err),
 						);
 					}
