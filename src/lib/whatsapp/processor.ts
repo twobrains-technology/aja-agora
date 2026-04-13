@@ -8,7 +8,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { WHATSAPP_SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
-import { sendTextMessage } from "./api";
+import { sendTextMessage, sendReplyButtons } from "./api";
 import {
 	formatTextForWhatsApp,
 	splitMessage,
@@ -112,10 +112,23 @@ async function processWithAI(
 	contactName?: string,
 ): Promise<void> {
 	// 1. Get or create conversation
-	const conversationId = await getOrCreateConversation(from);
+	const { id: conversationId, isNew } = await getOrCreateConversation(from);
 
 	// 2. Save user message
 	await saveMessage(conversationId, "user", text);
+
+	// 2.5. First message → send welcome + category buttons
+	// Only if user didn't already specify a category
+	const mentionsCategory = /im[oó]vel|casa|apartamento|carro|auto|ve[ií]culo|servi[cç]o|reforma|viagem/i.test(text);
+	if (isNew && !mentionsCategory) {
+		await sendTextMessage(from, "Olá! 👋 Eu sou o consultor do *Aja Agora*. Vou te ajudar a encontrar o consórcio perfeito!");
+		await sendReplyButtons(from, "O que você está buscando?", [
+			{ id: "cat_imovel", title: "🏠 Imóvel" },
+			{ id: "cat_auto", title: "🚗 Carro" },
+			{ id: "cat_servicos", title: "💼 Serviços" },
+		]);
+		return;
+	}
 
 	// 3. Load conversation history
 	const history = await loadConversationHistory(conversationId);
@@ -207,6 +220,17 @@ export async function processInteractiveReply(
 	replyTitle: string,
 	contactName?: string,
 ): Promise<void> {
+	// Category buttons → translate to natural text for the AI
+	const categoryMap: Record<string, string> = {
+		cat_imovel: "Quero comprar um imóvel, me ajude a encontrar o melhor consórcio",
+		cat_auto: "Quero comprar um carro, qual o melhor consórcio para mim?",
+		cat_servicos: "Quero fazer um consórcio de serviços, o que vocês têm disponível?",
+	};
+	if (categoryMap[replyId]) {
+		await processTextMessage(from, categoryMap[replyId], contactName);
+		return;
+	}
+
 	// "Tenho interesse!" button → ask for name, then handoff
 	if (replyId.startsWith("interest_")) {
 		const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
