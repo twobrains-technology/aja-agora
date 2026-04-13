@@ -80,6 +80,16 @@ Plans:
 3. `capture_lead` tool saves lead data to the database with a reference to the conversation
 4. PII (nome, telefone, email) is stored separately from conversation logs — verified by inspecting DB tables
 
+### Phase 7: WhatsApp Cloud API integration — route AI agent through WhatsApp with Meta native components
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
+
 ---
 
 ## Phase 6: Landing Page

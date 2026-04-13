@@ -42,3 +42,9 @@ None
 ## Notes
 
 Project initialized 2026-04-11
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 7 added: WhatsApp Cloud API integration — route AI agent through WhatsApp with Meta native components
