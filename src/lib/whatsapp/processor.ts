@@ -13,6 +13,7 @@ import {
 	formatTextForWhatsApp,
 	splitMessage,
 	artifactToWhatsApp,
+	resolveRange,
 } from "./formatter";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -228,6 +229,24 @@ export async function processInteractiveReply(
 	};
 	if (categoryMap[replyId]) {
 		await processTextMessage(from, categoryMap[replyId], contactName);
+		return;
+	}
+
+	// Range/value picker selection → translate to natural search request
+	if (replyId.startsWith("range_")) {
+		const range = resolveRange(replyId);
+		if (range) {
+			const catLabel: Record<string, string> = { auto: "carro", imovel: "imóvel", servicos: "serviço" };
+			const prompt = `Quero um ${catLabel[range.category] ?? "consórcio"} de até R$ ${range.credit.toLocaleString("pt-BR")} com orçamento mensal de R$ ${range.budget.toLocaleString("pt-BR")}. Busque as melhores opções.`;
+			await processTextMessage(from, prompt, contactName);
+			return;
+		}
+	}
+
+	// Old picker_ buttons (legacy) → same treatment
+	if (replyId.startsWith("picker_")) {
+		// Extract value from title and forward as natural text
+		await processTextMessage(from, `Meu orçamento é ${replyTitle}`, contactName);
 		return;
 	}
 

@@ -169,39 +169,67 @@ export function leadFormToWhatsApp(): WhatsAppResponse {
 	};
 }
 
-export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const fields = payload.fields as Array<Record<string, unknown>>;
-	const category = payload.category as string;
+/** Pre-defined ranges by category — realistic market values */
+const RANGES: Record<string, Array<{ id: string; title: string; desc: string; credit: number; budget: number }>> = {
+	auto: [
+		{ id: "range_auto_50", title: "Até R$ 50 mil", desc: "Parcela ~R$ 600/mês • Seminovos", credit: 50000, budget: 600 },
+		{ id: "range_auto_80", title: "R$ 50 mil - R$ 80 mil", desc: "Parcela ~R$ 900/mês • Populares", credit: 80000, budget: 900 },
+		{ id: "range_auto_120", title: "R$ 80 mil - R$ 120 mil", desc: "Parcela ~R$ 1.300/mês • Sedãs", credit: 120000, budget: 1300 },
+		{ id: "range_auto_180", title: "R$ 120 mil - R$ 180 mil", desc: "Parcela ~R$ 2.000/mês • SUVs", credit: 180000, budget: 2000 },
+		{ id: "range_auto_300", title: "Acima de R$ 180 mil", desc: "Parcela ~R$ 3.500/mês • Premium", credit: 300000, budget: 3500 },
+	],
+	imovel: [
+		{ id: "range_imovel_200", title: "Até R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Aptos compactos", credit: 200000, budget: 2000 },
+		{ id: "range_imovel_400", title: "R$ 200 mil - R$ 400 mil", desc: "Parcela ~R$ 3.500/mês • Aptos 2-3 quartos", credit: 400000, budget: 3500 },
+		{ id: "range_imovel_600", title: "R$ 400 mil - R$ 600 mil", desc: "Parcela ~R$ 5.000/mês • Casas", credit: 600000, budget: 5000 },
+		{ id: "range_imovel_1000", title: "R$ 600 mil - R$ 1 milhão", desc: "Parcela ~R$ 8.000/mês • Alto padrão", credit: 1000000, budget: 8000 },
+		{ id: "range_imovel_2000", title: "Acima de R$ 1 milhão", desc: "Parcela ~R$ 15.000/mês • Luxo", credit: 2000000, budget: 15000 },
+	],
+	servicos: [
+		{ id: "range_serv_30", title: "Até R$ 30 mil", desc: "Parcela ~R$ 400/mês • Reformas simples", credit: 30000, budget: 400 },
+		{ id: "range_serv_60", title: "R$ 30 mil - R$ 60 mil", desc: "Parcela ~R$ 700/mês • Reformas médias", credit: 60000, budget: 700 },
+		{ id: "range_serv_100", title: "R$ 60 mil - R$ 100 mil", desc: "Parcela ~R$ 1.100/mês • Reformas completas", credit: 100000, budget: 1100 },
+		{ id: "range_serv_200", title: "R$ 100 mil - R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Grandes projetos", credit: 200000, budget: 2000 },
+		{ id: "range_serv_500", title: "Acima de R$ 200 mil", desc: "Parcela ~R$ 4.000/mês • Investimentos", credit: 500000, budget: 4000 },
+	],
+};
 
-	// Build preset buttons from the first field's range
-	const field = fields[0];
-	if (!field) {
-		return { type: "text", text: "Me diga os valores que você procura:" };
+/** Exported so processor can resolve range IDs to search params */
+export function resolveRange(rangeId: string): { credit: number; budget: number; category: string } | null {
+	for (const [cat, ranges] of Object.entries(RANGES)) {
+		const found = ranges.find((r) => r.id === rangeId);
+		if (found) return { credit: found.credit, budget: found.budget, category: cat };
 	}
+	return null;
+}
 
-	const min = field.min as number;
-	const max = field.max as number;
-	const mid = Math.round((min + max) / 2);
+export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const category = payload.category as string;
+	const ranges = RANGES[category] ?? RANGES.auto;
 
-	const presets = [
-		{ id: `picker_${field.id}_${min}`, title: formatBRL(min) },
-		{ id: `picker_${field.id}_${mid}`, title: formatBRL(mid) },
-		{ id: `picker_${field.id}_${max}`, title: formatBRL(max) },
-	];
+	const categoryLabel: Record<string, string> = {
+		imovel: "Imóvel",
+		auto: "Carro",
+		servicos: "Serviço",
+	};
 
-	const label = (field.label as string) || "Valor";
-	const body = `*${label}*\nEscolha uma faixa ou me diga o valor exato:`;
+	const body = `Escolha a faixa de valor do seu *${categoryLabel[category] ?? "bem"}*:`;
 
 	return {
 		type: "interactive",
 		interactive: {
-			type: "button",
+			type: "list",
 			body: { text: body },
 			action: {
-				buttons: presets.map((p) => ({
-					type: "reply",
-					reply: { id: p.id, title: p.title.slice(0, 20) },
-				})),
+				button: "Ver faixas de valor",
+				sections: [{
+					title: `Faixas — ${categoryLabel[category] ?? "Consórcio"}`,
+					rows: ranges.map((r) => ({
+						id: r.id,
+						title: r.title.slice(0, 24),
+						description: r.desc.slice(0, 72),
+					})),
+				}],
 			},
 		},
 	};
