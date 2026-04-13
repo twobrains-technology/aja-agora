@@ -36,6 +36,19 @@ export async function processTextMessage(
 	contactName?: string,
 ): Promise<void> {
 	try {
+		// DEV: /reset command clears conversation state
+		if (text.trim().toLowerCase() === "/reset") {
+			const conv = await db.query.conversations.findFirst({
+				where: eq(conversations.waId, from),
+			});
+			if (conv) {
+				await db.delete(conversations).where(eq(conversations.id, conv.id));
+			}
+			await sendTextMessage(from, "🔄 Conversa resetada. Manda um oi pra começar de novo!");
+			console.log(`[whatsapp-processor] Reset conversation for ${from}`);
+			return;
+		}
+
 		// Check if this sender is an agent replying to a handed-off conversation
 		const agentRelayed = await relayAgentToUser(from, text);
 		if (agentRelayed) return;
