@@ -14,6 +14,9 @@ import {
 	splitMessage,
 	artifactToWhatsApp,
 } from "./formatter";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations } from "@/db/schema";
 import {
 	getHandoffState,
 	relayUserToAgent,
@@ -42,6 +45,37 @@ export async function processTextMessage(
 		if (handoff?.isHandedOff) {
 			await relayUserToAgent(from, text);
 			return;
+		}
+
+		// Check if we're waiting for the user's name before handoff
+		if (handoff?.conversationId) {
+			const conv = await db.query.conversations.findFirst({
+				where: eq(conversations.id, handoff.conversationId),
+			});
+			const meta = conv?.metadata as Record<string, unknown> | null;
+			if (meta?.awaitingName) {
+				// User just sent their name — do the handoff
+				const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
+				if (agentPhone) {
+					// Clear the awaiting flag
+					await db.update(conversations).set({
+						metadata: { ...meta, awaitingName: false },
+						contactName: text,
+						updatedAt: new Date(),
+					}).where(eq(conversations.id, handoff.conversationId));
+
+					const history = await loadConversationHistory(handoff.conversationId);
+					const summary = buildConversationSummary(history, []);
+					await handoffToAgent(
+						handoff.conversationId,
+						from,
+						text, // user's name
+						agentPhone,
+						summary,
+					);
+					return;
+				}
+			}
 		}
 
 		// Normal AI processing
@@ -160,20 +194,21 @@ export async function processInteractiveReply(
 	replyTitle: string,
 	contactName?: string,
 ): Promise<void> {
-	// "Tenho interesse!" button triggers handoff check
+	// "Tenho interesse!" button → ask for name, then handoff
 	if (replyId.startsWith("interest_")) {
 		const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
 		if (agentPhone) {
 			const handoff = await getHandoffState(from);
 			if (handoff?.conversationId && !handoff.isHandedOff) {
-				const history = await loadConversationHistory(handoff.conversationId);
-				const summary = buildConversationSummary(history, []);
-				await handoffToAgent(
-					handoff.conversationId,
+				// Set awaiting_name flag and ask for name
+				await db.update(conversations).set({
+					metadata: { awaitingName: true },
+					updatedAt: new Date(),
+				}).where(eq(conversations.id, handoff.conversationId));
+
+				await sendTextMessage(
 					from,
-					contactName ?? from,
-					agentPhone,
-					summary,
+					"Ótima escolha! 🎉 Pra te conectar com nosso consultor, me diz: *qual seu nome completo?*",
 				);
 				return;
 			}
