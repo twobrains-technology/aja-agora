@@ -142,21 +142,8 @@ async function processWithAI(
 			});
 		}
 
-		// Check if this artifact triggers a handoff (lead_form = user showed interest)
-		if (artifact.type === "lead_form") {
-			const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
-			if (agentPhone) {
-				// Build conversation summary for the agent
-				const summary = buildConversationSummary(history, artifacts);
-				await handoffToAgent(
-					conversationId,
-					from,
-					contactName ?? from,
-					agentPhone,
-					summary,
-				);
-			}
-		}
+		// lead_form artifact is skipped on WhatsApp — handoff handles data collection
+		// Handoff only triggers on explicit "Tenho interesse" button click (see processInteractiveReply)
 	}
 
 	console.log(
