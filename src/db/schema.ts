@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 // Enums
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
@@ -13,12 +13,18 @@ export const artifactTypeEnum = pgEnum("artifact_type", [
 ]);
 
 // Conversations
+export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);
+
 export const conversations = pgTable("conversations", {
 	id: uuid().defaultRandom().primaryKey(),
+	waId: varchar("wa_id", { length: 32 }),
+	channel: channelEnum().default("web").notNull(),
 	metadata: jsonb().$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	index("conversations_wa_id_idx").on(table.waId),
+]);
 
 // Messages
 export const messages = pgTable("messages", {
@@ -28,6 +34,7 @@ export const messages = pgTable("messages", {
 		.references(() => conversations.id, { onDelete: "cascade" }),
 	role: messageRoleEnum().notNull(),
 	content: text().notNull(),
+	channel: channelEnum().default("web").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
