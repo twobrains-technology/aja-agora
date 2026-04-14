@@ -2,17 +2,9 @@ import { db } from "@/db";
 import { leads, leadEvents } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export const STAGE_ORDER = [
-  "novo",
-  "engajado",
-  "qualificado",
-  "em_negociacao",
-  "proposta_enviada",
-  "fechado_ganho",
-  "perdido",
-] as const;
-
-export type LeadStage = (typeof STAGE_ORDER)[number];
+// Re-export from client-safe module for backward compatibility
+export { STAGE_ORDER, type LeadStage } from "./lead-stages";
+import { STAGE_ORDER as _STAGE_ORDER, type LeadStage } from "./lead-stages";
 
 /**
  * Transition a lead to a new stage, logging the event to lead_events.
@@ -37,8 +29,8 @@ export async function transitionLeadStage(
 
   // Only advance forward check (D-11)
   if (options?.onlyAdvance) {
-    const currentIdx = STAGE_ORDER.indexOf(lead.stage);
-    const targetIdx = STAGE_ORDER.indexOf(toStage);
+    const currentIdx = _STAGE_ORDER.indexOf(lead.stage);
+    const targetIdx = _STAGE_ORDER.indexOf(toStage);
     if (targetIdx <= currentIdx) return lead; // No-op
   }
 
