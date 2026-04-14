@@ -71,7 +71,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BACK-02**: Layout admin com sidebar, header e rotas protegidas sob /admin
 - [x] **BACK-03**: Schema de banco para estágios do funil, eventos de transição e insights AI
 - [ ] **BACK-04**: Kanban board com drag-and-drop para gestão de leads por estágio do funil
-- [ ] **BACK-05**: Cards de lead no Kanban com resumo (nome, canal, estágio, tempo no estágio, valor de crédito)
+- [x] **BACK-05**: Cards de lead no Kanban com resumo (nome, canal, estágio, tempo no estágio, valor de crédito)
 - [ ] **BACK-06**: Filtros por canal (web/whatsapp), estágio, data e busca por nome/telefone
 - [ ] **BACK-07**: Replay completo de conversa — timeline de mensagens com artifacts inline
 - [ ] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
@@ -83,7 +83,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **BSEC-01**: Rotas /admin protegidas por middleware de autenticação
 - [x] **BSEC-02**: Separação de roles (admin vs viewer) no sistema de auth
-- [ ] **BSEC-03**: Audit log de ações no backoffice (quem moveu lead, quando)
+- [x] **BSEC-03**: Audit log de ações no backoffice (quem moveu lead, quando)
 
 ## v2 Requirements
 
