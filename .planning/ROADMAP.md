@@ -108,16 +108,21 @@ Plans:
 
 ## Phase 8: Backoffice Auth & Layout
 
-**Goal:** Implement admin authentication with NextAuth credentials provider and build the backoffice shell (sidebar, header, protected routes) with database schema extensions for funnel stages, lead events, and AI insights.
+**Goal:** Implement admin authentication with Better Auth (email+password, Drizzle adapter) and build the backoffice shell (sidebar, header, protected routes) with database schema extensions for funnel stages, lead events, and AI insights.
 **Requirements:** BACK-01, BACK-02, BACK-03, BSEC-01, BSEC-02
 **Depends on:** Phase 5
 **UI hint:** yes
+**Plans:** 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Better Auth setup, DB schema extensions (auth + funnel tables), proxy.ts route protection, seed script
+- [ ] 08-02-PLAN.md — Login page, admin layout shell (sidebar + header), placeholder pages, role-gated helper
 
 ### Success Criteria
 1. Admin can login at `/admin/login` with email/password credentials
 2. Unauthenticated access to `/admin/*` redirects to login page
 3. Admin layout renders with sidebar navigation (Pipeline, Conversas, Dashboard) and user header
-4. Database migrations create `lead_stages`, `lead_events`, `lead_insights`, and `admin_users` tables without errors
+4. Database schema includes `lead_events`, `lead_insights` tables and `lead_stage` enum without errors
 5. Two admin roles (admin, viewer) are enforced — viewer cannot move leads between stages
 
 ---
