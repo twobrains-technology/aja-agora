@@ -115,7 +115,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Better Auth setup, DB schema extensions (auth + funnel tables), proxy.ts route protection, seed script
+- [x] 08-01-PLAN.md — Better Auth setup, DB schema extensions (auth + funnel tables), proxy.ts route protection, seed script
 - [ ] 08-02-PLAN.md — Login page, admin layout shell (sidebar + header), placeholder pages, role-gated helper
 
 ### Success Criteria
