@@ -76,8 +76,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BACK-07**: Replay completo de conversa — timeline de mensagens com artifacts inline
 - [x] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
 - [x] **BACK-09**: Transição automática de estágio baseada em eventos do chat (lead capturado → Novo, simulou → Engajado, recomendação → Qualificado)
-- [ ] **BACK-10**: Dashboard com funil visual, KPIs (leads/dia, tempo médio por estágio, taxa de conversão) e breakdown por canal
-- [ ] **BACK-11**: Timeline de volume de leads e gráfico de conversão ao longo do tempo
+- [x] **BACK-10**: Dashboard com funil visual, KPIs (leads/dia, tempo médio por estágio, taxa de conversão) e breakdown por canal
+- [x] **BACK-11**: Timeline de volume de leads e gráfico de conversão ao longo do tempo
 
 ### Data & Security (Backoffice)
 
