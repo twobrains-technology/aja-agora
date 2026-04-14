@@ -1,37 +1,20 @@
 "use client";
 
 import { useSession, signOut } from "@/lib/auth-client";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { LogOut, ChevronsUpDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BellIcon, SearchIcon } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-const PAGE_TITLES: Record<string, string> = {
-  "/admin": "Dashboard",
-  "/admin/pipeline": "Pipeline",
-  "/admin/conversations": "Conversas",
-};
+import SearchDialog from "@/components/shadcn-studio/blocks/dialog-search";
+import NotificationDropdown from "@/components/shadcn-studio/blocks/dropdown-notification";
+import ProfileDropdown from "@/components/shadcn-studio/blocks/dropdown-profile";
 
 export function AdminHeader() {
   const { data: session } = useSession();
   const router = useRouter();
-  const pathname = usePathname();
 
   async function handleLogout() {
     await signOut();
@@ -47,52 +30,55 @@ export function AdminHeader() {
     .toUpperCase()
     .slice(0, 2);
 
-  const pageTitle = PAGE_TITLES[pathname] ?? "Admin";
-
   return (
-    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="mr-2 h-4" />
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbPage className="text-sm font-medium">
-              {pageTitle}
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-      <div className="flex-1" />
-      <div className="flex items-center gap-2">
-        <ThemeToggle />
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-            <Avatar className="size-7">
-              <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <span className="font-medium hidden sm:inline">{userName}</span>
-            <ChevronsUpDown className="size-3.5 text-muted-foreground" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium leading-none">{userName}</p>
-                {userEmail && (
-                  <p className="text-xs text-muted-foreground leading-none">
-                    {userEmail}
-                  </p>
-                )}
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 size-4" />
-              Sair
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <header className="before:bg-background/60 sticky top-0 z-50 before:absolute before:inset-0 before:mask-[linear-gradient(var(--card),var(--card)_18%,transparent_100%)] before:backdrop-blur-md">
+      <div className="bg-card relative z-[51] mx-auto mt-3 flex w-[calc(100%-2rem)] max-w-[calc(1280px-3rem)] items-center justify-between rounded-xl border px-6 py-2 sm:w-[calc(100%-3rem)]">
+        <div className="flex items-center gap-1.5 sm:gap-4">
+          <SidebarTrigger className="[&_svg]:!size-5" />
+          <Separator orientation="vertical" className="hidden !h-4 sm:block" />
+          <SearchDialog
+            trigger={
+              <>
+                <Button variant="ghost" className="hidden !bg-transparent px-1 py-0 font-normal sm:block">
+                  <div className="text-muted-foreground hidden items-center gap-1.5 text-sm sm:flex">
+                    <SearchIcon />
+                    <span>Buscar...</span>
+                  </div>
+                </Button>
+                <Button variant="ghost" size="icon" className="sm:hidden">
+                  <SearchIcon />
+                  <span className="sr-only">Buscar</span>
+                </Button>
+              </>
+            }
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
+          <NotificationDropdown
+            trigger={
+              <Button variant="ghost" size="icon" className="relative">
+                <BellIcon />
+                <span className="bg-destructive absolute top-2 right-2.5 size-2 rounded-full" />
+              </Button>
+            }
+          />
+          <ProfileDropdown
+            trigger={
+              <Button variant="ghost" size="icon" className="size-9.5">
+                <Avatar className="size-9.5 rounded-md">
+                  <AvatarFallback className="rounded-md bg-primary text-primary-foreground text-xs">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            }
+            userName={userName}
+            userEmail={userEmail}
+            userInitials={initials}
+            onLogout={handleLogout}
+          />
+        </div>
       </div>
     </header>
   );
