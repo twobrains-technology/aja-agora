@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const navigationItems = [
   { title: "Como funciona", href: "#como-funciona" },
@@ -55,6 +56,7 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           <Button
             size="lg"
             className="hidden sm:inline-flex"
