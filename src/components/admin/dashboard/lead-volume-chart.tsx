@@ -35,7 +35,7 @@ export function LeadVolumeChart({ data }: { data: DailyVolume[] }) {
   const isEmpty = data.length === 0 || data.every((d) => d.count === 0);
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle>Volume de Leads</CardTitle>
       </CardHeader>

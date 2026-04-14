@@ -33,9 +33,22 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon" className="[&_[data-slot=sidebar-inner]]:bg-card">
       <SidebarHeader className="border-b px-4 py-3">
-        <span className="text-lg font-bold tracking-tight">Aja Agora</span>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              className="!bg-transparent group-data-[collapsible=icon]:!size-9 group-data-[collapsible=icon]:!p-1"
+              render={<Link href="/admin" />}
+            >
+              <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <span className="text-sm font-bold">A</span>
+              </div>
+              <span className="text-lg font-bold tracking-tight">Aja Agora</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -47,6 +60,8 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     render={<Link href={item.href} />}
                     isActive={isActive(item.href)}
+                    tooltip={item.title}
+                    className="[&>svg]:text-primary"
                   >
                     <item.icon className="size-4" />
                     <span>{item.title}</span>

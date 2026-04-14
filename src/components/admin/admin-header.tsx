@@ -1,12 +1,18 @@
 "use client";
 
 import { useSession, signOut } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { LogOut, ChevronsUpDown } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "@/components/ui/breadcrumb";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,9 +22,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+const PAGE_TITLES: Record<string, string> = {
+  "/admin": "Dashboard",
+  "/admin/pipeline": "Pipeline",
+  "/admin/conversations": "Conversas",
+};
+
 export function AdminHeader() {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
   async function handleLogout() {
     await signOut();
@@ -34,10 +47,21 @@ export function AdminHeader() {
     .toUpperCase()
     .slice(0, 2);
 
+  const pageTitle = PAGE_TITLES[pathname] ?? "Admin";
+
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b bg-background px-4">
+    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
       <SidebarTrigger />
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="mr-2 h-4" />
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbPage className="text-sm font-medium">
+              {pageTitle}
+            </BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       <div className="flex-1" />
       <div className="flex items-center gap-2">
         <ThemeToggle />

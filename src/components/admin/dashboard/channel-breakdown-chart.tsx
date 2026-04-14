@@ -31,7 +31,7 @@ export function ChannelBreakdownChart({ data }: { data: ChannelBreakdown[] }) {
   }));
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Canais</CardTitle>
         <span className="text-sm text-muted-foreground">{total} total</span>

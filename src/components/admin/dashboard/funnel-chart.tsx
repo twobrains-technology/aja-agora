@@ -22,7 +22,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
   const firstCount = stages[0]?.count ?? 0;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle>Funil de Conversao</CardTitle>
       </CardHeader>

@@ -43,31 +43,31 @@ function KpiCard({
   const TrendIcon = trend >= 0 ? ChevronUp : ChevronDown;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
-        <Avatar className="size-8">
-          <AvatarFallback className="bg-muted">
-            <Icon className="size-4 text-foreground" />
+        <Avatar className="size-9">
+          <AvatarFallback className="bg-primary/10">
+            <Icon className="size-4 text-primary" />
           </AvatarFallback>
         </Avatar>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">
+        <div className="text-2xl font-bold tracking-tight">
           {prefix}
           <NumberTicker value={value} decimalPlaces={decimalPlaces} />
           {suffix}
         </div>
-        <p
-          className={`text-xs flex items-center gap-0.5 mt-1 ${
-            isPositive ? "text-chart-2" : "text-destructive"
+        <div
+          className={`text-xs flex items-center gap-0.5 mt-1.5 ${
+            isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
           }`}
         >
           <TrendIcon className="size-3.5" />
-          {Math.abs(trend)}% vs periodo anterior
-        </p>
+          <span>{Math.abs(trend)}% vs periodo anterior</span>
+        </div>
       </CardContent>
     </Card>
   );
