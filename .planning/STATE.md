@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-last_updated: "2026-04-14T04:44:03.571Z"
+status: executing
+last_updated: "2026-04-14T04:51:32.330Z"
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 23
-  completed_plans: 21
-  percent: 91
+  completed_plans: 22
+  percent: 96
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 
 Phase: 09
 Name: Lead Pipeline Kanban
-Status: In Progress (Plan 01 done, Plans 02-03 remaining)
+Status: In Progress (Plans 01-02 done, Plan 03 remaining)
 
 ## Progress
 
@@ -30,7 +30,7 @@ Status: In Progress (Plan 01 done, Plans 02-03 remaining)
 - Phase 6: Complete
 - Phase 7: Discussed (WhatsApp - deferred)
 - Phase 8: Complete (auth + schema + admin layout shell)
-- Phase 9: In Progress (Plan 01 complete — schema fix, API routes, transition logic)
+- Phase 9: In Progress (Plans 01-02 complete — schema fix, API routes, Kanban board UI with DnD + filters)
 - Phase 10: Not Started
 - Phase 11: Not Started
 
@@ -59,3 +59,4 @@ Phases 8-11 (Backoffice) added 2026-04-14 for lead funnel management
 - Phase 8 Plan 01: Better Auth installed with Drizzle adapter, auth tables + funnel tables (lead_events, lead_insights, lead_stage enum) pushed to DB, proxy.ts route protection, admin seed script
 - Phase 8 Plan 02: Admin login page (/admin/login), sidebar layout shell (Dashboard/Pipeline/Conversas), header with role badge + logout, requireRole API helper. Used render prop instead of asChild for shadcn/ui v4 SidebarMenuButton.
 - Phase 9 Plan 01: Fixed lead_events.actorId uuid->text (Better Auth compat), added creditValue numeric(12,2) to leads, created transitionLeadStage shared function with forward-only guard, GET/PATCH API routes for lead pipeline, NuqsAdapter in admin layout, installed @hello-pangea/dnd + nuqs + date-fns + shadcn select/popover/calendar.
+- Phase 9 Plan 02: Kanban board UI with @hello-pangea/dnd drag-and-drop, lead cards (name/channel/value/timing), 30s polling, optimistic DnD updates with rollback, client-side filters (channel/text/date) via nuqs URL state. Extracted STAGE_ORDER to client-safe lead-stages.ts. Suspense boundary for nuqs compatibility.

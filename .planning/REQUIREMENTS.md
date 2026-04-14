@@ -70,9 +70,9 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BACK-01**: Autenticação admin com credenciais protegidas (NextAuth)
 - [x] **BACK-02**: Layout admin com sidebar, header e rotas protegidas sob /admin
 - [x] **BACK-03**: Schema de banco para estágios do funil, eventos de transição e insights AI
-- [ ] **BACK-04**: Kanban board com drag-and-drop para gestão de leads por estágio do funil
+- [x] **BACK-04**: Kanban board com drag-and-drop para gestão de leads por estágio do funil
 - [x] **BACK-05**: Cards de lead no Kanban com resumo (nome, canal, estágio, tempo no estágio, valor de crédito)
-- [ ] **BACK-06**: Filtros por canal (web/whatsapp), estágio, data e busca por nome/telefone
+- [x] **BACK-06**: Filtros por canal (web/whatsapp), estágio, data e busca por nome/telefone
 - [ ] **BACK-07**: Replay completo de conversa — timeline de mensagens com artifacts inline
 - [ ] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
 - [ ] **BACK-09**: Transição automática de estágio baseada em eventos do chat (lead capturado → Novo, simulou → Engajado, recomendação → Qualificado)

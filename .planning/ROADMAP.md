@@ -137,7 +137,7 @@ Plans:
 
 Plans:
 - [x] 09-01-PLAN.md — Schema fixes (actorId text, creditValue), deps install, API routes, shared transition logic
-- [ ] 09-02-PLAN.md — Kanban board UI with DnD, lead cards, filters with nuqs URL state
+- [x] 09-02-PLAN.md — Kanban board UI with DnD, lead cards, filters with nuqs URL state
 - [ ] 09-03-PLAN.md — Auto-transitions in chat route (simulate_quota->engajado, recommend_groups->qualificado)
 
 ### Success Criteria
