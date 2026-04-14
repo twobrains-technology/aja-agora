@@ -1,27 +1,30 @@
 import Link from "next/link";
 
+import Logo from "@/components/shadcn-studio/logo";
 import { Separator } from "@/components/ui/separator";
 
 export function Footer() {
   return (
     <footer>
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 max-md:flex-col sm:px-6 sm:py-6 md:gap-6 md:py-8">
-        <Link href="/" className="font-serif text-xl font-semibold">
-          Aja Agora
+      <Separator />
+
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-6 max-md:flex-col sm:px-6 md:py-8">
+        <Link href="/">
+          <Logo />
         </Link>
 
-        <div className="flex items-center gap-5 whitespace-nowrap">
+        <div className="flex items-center gap-6 text-sm">
           <a
             href="#"
-            className="opacity-60 transition-opacity duration-300 hover:opacity-100"
+            className="text-muted-foreground transition-colors duration-200 hover:text-foreground"
           >
             Termos de Uso
           </a>
           <a
             href="#"
-            className="opacity-60 transition-opacity duration-300 hover:opacity-100"
+            className="text-muted-foreground transition-colors duration-200 hover:text-foreground"
           >
-            Política de Privacidade
+            Politica de Privacidade
           </a>
         </div>
       </div>
@@ -29,7 +32,7 @@ export function Footer() {
       <Separator />
 
       <div className="mx-auto flex max-w-7xl justify-center px-4 py-8 sm:px-6">
-        <p className="text-muted-foreground text-center text-sm font-medium text-balance">
+        <p className="text-muted-foreground text-center text-sm text-balance">
           {`\u00A9${new Date().getFullYear()}`}{" "}
           <Link href="/" className="hover:underline">
             Aja Agora

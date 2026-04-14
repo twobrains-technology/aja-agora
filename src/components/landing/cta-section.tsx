@@ -1,42 +1,37 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ScrollReveal } from "./scroll-reveal";
+import { MotionPreset } from "@/components/ui/motion-preset";
 
 export function CtaSection() {
   return (
-    <section className="bg-muted py-8 sm:py-16 lg:py-24">
+    <section className="py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <ScrollReveal>
-          <Card className="rounded-3xl border-none py-8 shadow-lg sm:py-16 lg:py-24">
-            <CardContent className="flex flex-col items-center gap-8 px-8 text-center sm:px-16 lg:px-24">
-              <div className="max-w-lg">
-                <h2 className="font-serif mb-4 text-3xl font-bold">
-                  Pronto para realizar seu{" "}
-                  <span className="bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                    sonho
-                  </span>
-                  ?
-                </h2>
-                <p className="text-muted-foreground text-lg font-medium">
-                  Converse agora com nosso consultor de IA e descubra o consórcio
-                  ideal para você.
-                </p>
-              </div>
+        <MotionPreset fade blur="4px" slide={{ direction: "up", offset: 24 }}>
+          <div className="rounded-3xl bg-foreground px-8 py-16 text-center sm:px-16 sm:py-20 lg:px-24 lg:py-24">
+            <div className="mx-auto flex max-w-lg flex-col items-center gap-6">
+              <h2 className="text-2xl font-bold tracking-tight text-background sm:text-3xl lg:text-4xl">
+                Pronto para realizar seu sonho?
+              </h2>
+              <p className="text-background/70 text-base sm:text-lg">
+                Converse agora com nosso consultor de IA e descubra o consorcio
+                ideal para voce.
+              </p>
               <Button
                 size="lg"
-                className="h-12 px-8 text-base font-semibold"
+                className="mt-2 gap-2 bg-background text-foreground hover:bg-background/90"
                 render={<Link href="/chat" />}
                 nativeButton={false}
               >
-                Começar agora
+                Comecar agora
+                <ArrowRight className="size-4" />
               </Button>
-            </CardContent>
-          </Card>
-        </ScrollReveal>
+            </div>
+          </div>
+        </MotionPreset>
       </div>
     </section>
   );

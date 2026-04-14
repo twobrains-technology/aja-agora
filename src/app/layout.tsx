@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
 const inter = Inter({
@@ -49,8 +50,12 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html lang="pt-BR" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}>
-			<body className="min-h-full flex flex-col">{children}</body>
+		<html lang="pt-BR" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`} suppressHydrationWarning>
+			<body className="min-h-full flex flex-col">
+				<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+					{children}
+				</ThemeProvider>
+			</body>
 		</html>
 	);
 }

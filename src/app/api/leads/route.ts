@@ -2,9 +2,10 @@ import { type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { conversations, leads } from "@/db/schema";
+import { conversations, leads, messages as messagesTable } from "@/db/schema";
 import { leadSchema } from "@/lib/validations/lead";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { handoffToAgents } from "@/lib/whatsapp/proxy";
 
 export async function POST(req: NextRequest) {
 	// ---- Rate limiting ----
@@ -78,6 +79,26 @@ export async function POST(req: NextRequest) {
 				email: parsed.data.email,
 			})
 			.returning();
+
+		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
+		if (conv.channel === "web" && conv.status === "active") {
+			const recentMsgs = await db.query.messages.findMany({
+				where: eq(messagesTable.conversationId, conversationId as string),
+				orderBy: (m, { desc }) => [desc(m.createdAt)],
+				limit: 6,
+			});
+			const summary = recentMsgs
+				.reverse()
+				.map((m) => `${m.role === "user" ? "👤" : "🤖"} ${m.content.slice(0, 200)}`)
+				.join("\n");
+
+			handoffToAgents(
+				conversationId as string,
+				"", // no waId for web users
+				parsed.data.name,
+				`📱 *Lead via Web*\n📧 ${parsed.data.email}\n📞 ${parsed.data.phone}\n\n${summary}`,
+			).catch((err) => console.error("[leads] Handoff error:", err));
+		}
 
 		return Response.json({ ok: true, leadId: lead.id });
 	} catch (err) {

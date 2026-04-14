@@ -114,7 +114,7 @@ export const presentLeadForm = tool(
 	"present_lead_form",
 	"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio, por exemplo apos clicar 'Tenho interesse' no RecommendationCard.",
 	{
-		conversationId: z.string().describe("ID da conversa atual"),
+		conversationId: z.string().optional().describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
 		recommendationId: z
 			.string()
 			.optional()
@@ -134,7 +134,7 @@ export const presentLeadForm = tool(
 );
 
 export const presentRecommendation = tool(
-	"present_recommendation",
+	"present_recommendation_card",
 	"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario. Inclua o score e breakdown dos fatores.",
 	{
 		id: z.string().describe("ID do grupo recomendado"),

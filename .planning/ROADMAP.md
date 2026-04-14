@@ -2,8 +2,8 @@
 
 **Milestone:** v1.0 — MVP
 **Created:** 2026-04-11
-**Phases:** 6
-**Requirements:** 30 mapped
+**Phases:** 11
+**Requirements:** 44 mapped
 
 ## Phase 1: Project Foundation & Infrastructure
 
@@ -80,6 +80,16 @@ Plans:
 3. `capture_lead` tool saves lead data to the database with a reference to the conversation
 4. PII (nome, telefone, email) is stored separately from conversation logs — verified by inspecting DB tables
 
+### Phase 7: WhatsApp Cloud API integration — route AI agent through WhatsApp with Meta native components
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
+
 ---
 
 ## Phase 6: Landing Page
@@ -93,3 +103,88 @@ Plans:
 2. CTA button navigates the user to the chat experience
 3. Page scores 90+ on Lighthouse mobile performance
 4. Design is consistent with the shadcn/ui design system used in the chat
+
+---
+
+## Phase 8: Backoffice Auth & Layout
+
+**Goal:** Implement admin authentication with Better Auth (email+password, Drizzle adapter) and build the backoffice shell (sidebar, header, protected routes) with database schema extensions for funnel stages, lead events, and AI insights.
+**Requirements:** BACK-01, BACK-02, BACK-03, BSEC-01, BSEC-02
+**Depends on:** Phase 5
+**UI hint:** yes
+**Plans:** 2 plans
+
+Plans:
+- [x] 08-01-PLAN.md — Better Auth setup, DB schema extensions (auth + funnel tables), proxy.ts route protection, seed script
+- [x] 08-02-PLAN.md — Login page, admin layout shell (sidebar + header), placeholder pages, role-gated helper
+
+### Success Criteria
+1. Admin can login at `/admin/login` with email/password credentials
+2. Unauthenticated access to `/admin/*` redirects to login page
+3. Admin layout renders with sidebar navigation (Pipeline, Conversas, Dashboard) and user header
+4. Database schema includes `lead_events`, `lead_insights` tables and `lead_stage` enum without errors
+5. Two admin roles (admin, viewer) are enforced — viewer cannot move leads between stages
+
+---
+
+## Phase 9: Lead Pipeline Kanban
+
+**Goal:** Build the Kanban board for lead pipeline management with drag-and-drop between funnel stages, lead cards with summary info, filters, and automatic stage transitions based on chat events.
+**Requirements:** BACK-04, BACK-05, BACK-06, BACK-09, BSEC-03
+**Depends on:** Phase 8
+**UI hint:** yes
+**Plans:** 3 plans
+
+Plans:
+- [x] 09-01-PLAN.md — Schema fixes (actorId text, creditValue), deps install, API routes, shared transition logic
+- [x] 09-02-PLAN.md — Kanban board UI with DnD, lead cards, filters with nuqs URL state
+- [x] 09-03-PLAN.md — Auto-transitions in chat route (simulate_quota->engajado, recommend_groups->qualificado)
+
+### Success Criteria
+1. Kanban board at `/admin/pipeline` shows columns for each funnel stage (Novo, Engajado, Qualificado, Em Negociacao, Proposta Enviada, Fechado Ganho, Perdido)
+2. Lead cards display name, channel icon (web/whatsapp), time in stage, and credit value
+3. Dragging a card between columns updates the stage in the database and logs an event
+4. Filters by channel, stage, date range, and text search work correctly
+5. When a new lead is captured via chat, it automatically appears in the "Novo" column within 5 seconds (polling or real-time)
+
+---
+
+## Phase 10: Conversation Replay & AI Insights
+
+**Goal:** Build a conversation viewer that replays the full chat history with inline artifacts, and generate AI-powered insights per lead (intent, budget, objections, suggested next action).
+**Requirements:** BACK-07, BACK-08
+**Depends on:** Phase 9
+**UI hint:** yes
+**Plans:** 2/2 plans complete
+
+Plans:
+- [x] 10-01-PLAN.md — Conversation API route, LeadCard click wiring, Sheet panel with ConversationTimeline and ArtifactPreview
+- [x] 10-02-PLAN.md — AI insights prompt, POST API with 1hr caching, InsightCards component wired into Insights tab
+
+### Success Criteria
+1. Clicking a lead card opens a detail panel with the full conversation timeline
+2. Messages render with role indicators (user/assistant) and timestamps
+3. Artifacts (GroupCard, SimulationResult, RecommendationCard) render inline in the timeline as visual previews
+4. AI insights panel shows: detected intent, estimated budget, key objections, and recommended next action
+5. Insights are generated on-demand when admin views a lead for the first time, then cached
+
+---
+
+## Phase 11: Dashboard & Funnel Analytics
+
+**Goal:** Build the analytics dashboard with funnel visualization, KPI cards, lead volume timeline, and channel breakdown so business owners can track conversion performance at a glance.
+**Requirements:** BACK-10, BACK-11
+**Depends on:** Phase 9
+**UI hint:** yes
+**Plans:** 2/2 plans complete
+
+Plans:
+- [x] 11-01-PLAN.md — Dashboard API route, Drizzle aggregation queries, TypeScript types, DB index
+- [x] 11-02-PLAN.md — KPI cards, CSS funnel chart, recharts area/donut charts, date range filter, page assembly
+
+### Success Criteria
+1. Dashboard at `/admin` shows a funnel chart with conversion rates between each stage
+2. KPI cards display: total leads, leads today, average time in funnel, overall conversion rate
+3. Timeline chart shows lead volume over the last 30 days
+4. Channel breakdown (web vs whatsapp) is visible as a pie/donut chart
+5. All metrics update when date range filter is changed

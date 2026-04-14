@@ -1,14 +1,32 @@
 import { type NextRequest } from "next/server";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { streamText, stepCountIs } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { conversations, messages as messagesTable, artifacts as artifactsTable } from "@/db/schema";
+import {
+	conversations,
+	messages as messagesTable,
+	artifacts as artifactsTable,
+	leads,
+} from "@/db/schema";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { consorcioServer } from "@/lib/agent/tools";
+import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { sendTextMessage } from "@/lib/whatsapp/api";
+import { publishMessage } from "@/lib/chat/message-bus";
 
 export const maxDuration = 60;
+
+// Auto-transition: map tool executions to lead stage advances (D-09, D-10)
+// capture_lead is NOT here — leads default to "novo" on creation (D-08)
+const TOOL_STAGE_MAP: Record<string, "engajado" | "qualificado"> = {
+	simulate_quota: "engajado",
+	recommend_groups: "qualificado",
+};
+
+const anthropic = createAnthropic();
 
 export async function POST(req: NextRequest) {
 	// ---- Rate limiting ----
@@ -40,6 +58,8 @@ export async function POST(req: NextRequest) {
 		return new Response("Messages array is required", { status: 400 });
 	}
 
+	const lastMessage = messages[messages.length - 1];
+
 	// ---- Session isolation: create or load conversation ----
 	let conversationId = existingId;
 
@@ -53,10 +73,60 @@ export async function POST(req: NextRequest) {
 		if (!conv) {
 			return new Response("Conversation not found", { status: 404 });
 		}
+
+		// ---- Handoff relay: if conversation is handed off, forward to vendor via WhatsApp ----
+		if (conv.status === "handed_off" && lastMessage?.role === "user") {
+			const userText = lastMessage.content;
+
+			// Save user message to DB
+			await db.insert(messagesTable).values({
+				conversationId,
+				role: "user",
+				content: userText,
+			});
+
+			// Relay to vendor via WhatsApp
+			const userName = conv.contactName ?? "Cliente";
+			if (conv.handedOffTo) {
+				await sendTextMessage(conv.handedOffTo, `*${userName}:*\n${userText}`);
+			}
+
+			// Publish to SSE bus so the user's own message confirms delivery
+			publishMessage(conversationId, {
+				id: crypto.randomUUID(),
+				role: "user",
+				content: userText,
+				createdAt: new Date().toISOString(),
+			});
+
+			// Return a simple SSE stream with confirmation
+			const encoder = new TextEncoder();
+			const ackStream = new ReadableStream({
+				start(controller) {
+					const agentName = conv.agentName ?? "Consultor";
+					const ack = JSON.stringify({
+						type: "text-delta",
+						textDelta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
+					});
+					controller.enqueue(encoder.encode(`data: ${ack}\n\n`));
+					controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+					controller.close();
+				},
+			});
+
+			return new Response(ackStream, {
+				headers: {
+					"Content-Type": "text/event-stream",
+					"Cache-Control": "no-cache",
+					Connection: "keep-alive",
+					"X-Conversation-Id": conversationId,
+					"X-Handed-Off": "true",
+				},
+			});
+		}
 	}
 
 	// ---- Save user message to DB ----
-	const lastMessage = messages[messages.length - 1];
 	if (lastMessage && lastMessage.role === "user") {
 		await db.insert(messagesTable).values({
 			conversationId,
@@ -65,12 +135,15 @@ export async function POST(req: NextRequest) {
 		});
 	}
 
-	// ---- Build prompt from conversation history ----
-	const conversationHistory = messages
-		.map((m) => `${m.role === "user" ? "Human" : "Assistant"}: ${m.content}`)
-		.join("\n\n");
+	// ---- Build core messages (filter out empty assistant placeholders) ----
+	const coreMessages = messages
+		.filter((m) => m.content.length > 0)
+		.map((m) => ({
+			role: m.role as "user" | "assistant",
+			content: m.content,
+		}));
 
-	// ---- Stream response via Agent SDK ----
+	// ---- Stream response via AI SDK streamText ----
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		async start(controller) {
@@ -82,53 +155,44 @@ export async function POST(req: NextRequest) {
 					payload: Record<string, unknown>;
 				}> = [];
 
-				for await (const message of query({
-					prompt: conversationHistory,
-					options: {
-						systemPrompt: SYSTEM_PROMPT,
-						mcpServers: { consorcio: consorcioServer },
-						allowedTools: [
-							"mcp__consorcio__search_groups",
-							"mcp__consorcio__simulate_quota",
-							"mcp__consorcio__get_rates",
-							"mcp__consorcio__get_group_details",
-							"mcp__consorcio__recommend_groups",
-							"mcp__consorcio__present_group_card",
-							"mcp__consorcio__present_comparison_table",
-							"mcp__consorcio__present_simulation_result",
-							"mcp__consorcio__present_recommendation",
-							"mcp__consorcio__present_lead_form",
-							"mcp__consorcio__capture_lead",
-							"mcp__consorcio__present_value_picker",
-						],
-						maxTurns: 50,
-					},
-				})) {
-					// Stream text content and detect artifact tool calls
-					if (message.type === "assistant") {
-						for (const block of message.message.content) {
-							if (block.type === "text") {
-								fullResponse += block.text;
-								const data = JSON.stringify({
-									type: "text-delta",
-									textDelta: block.text,
-								});
-								controller.enqueue(
-									encoder.encode(`data: ${data}\n\n`),
-								);
-							} else if (
-								block.type === "tool_use" &&
-								block.name.startsWith("mcp__consorcio__present_")
-							) {
-								// Extract artifact type from tool name: "mcp__consorcio__present_group_card" -> "group_card"
-								const artifactType = block.name.replace(
-									"mcp__consorcio__present_",
-									"",
-								);
+				const result = streamText({
+					model: anthropic(
+						process.env.AI_MODEL ?? "claude-sonnet-4-20250514",
+					),
+					system: SYSTEM_PROMPT,
+					messages: coreMessages,
+					tools: consorcioTools,
+					stopWhen: stepCountIs(10),
+				});
+
+				for await (const part of result.fullStream) {
+					switch (part.type) {
+						case "text-delta": {
+							fullResponse += part.text;
+							const data = JSON.stringify({
+								type: "text-delta",
+								textDelta: part.text,
+							});
+							controller.enqueue(
+								encoder.encode(`data: ${data}\n\n`),
+							);
+							break;
+						}
+
+						case "tool-call": {
+							// Presentation tools emit artifact events for the frontend
+							const shortName = part.toolName.replace(
+								"present_",
+								"",
+							);
+							if (PRESENTATION_TOOLS.has(part.toolName)) {
 								const artifact = {
-									id: block.id,
-									type: artifactType,
-									payload: block.input as Record<string, unknown>,
+									id: part.toolCallId,
+									type: shortName,
+									payload: part.input as Record<
+										string,
+										unknown
+									>,
 								};
 								emittedArtifacts.push(artifact);
 								const artifactData = JSON.stringify({
@@ -136,29 +200,51 @@ export async function POST(req: NextRequest) {
 									artifact,
 								});
 								controller.enqueue(
-									encoder.encode(`data: ${artifactData}\n\n`),
+									encoder.encode(
+										`data: ${artifactData}\n\n`,
+									),
 								);
 							}
+
+							// Auto-transition: advance lead stage based on tool execution (D-09, D-10, D-13)
+							const targetStage = TOOL_STAGE_MAP[part.toolName];
+							if (targetStage && conversationId) {
+								try {
+									const lead = await db.query.leads.findFirst({
+										where: eq(leads.conversationId, conversationId),
+									});
+									if (lead) {
+										await transitionLeadStage(
+											lead.id,
+											targetStage,
+											{ type: "system" },
+											{ onlyAdvance: true }, // Never regress (D-11)
+										);
+									}
+								} catch (err) {
+									console.error("Auto-transition failed:", err);
+								}
+							}
+							break;
 						}
-					} else if (
-						message.type === "result" &&
-						message.subtype === "success"
-					) {
-						// Final result
-						if (message.result && !fullResponse) {
-							fullResponse = message.result;
-							const data = JSON.stringify({
-								type: "text-delta",
-								textDelta: message.result,
+
+						case "error": {
+							const errorData = JSON.stringify({
+								type: "error",
+								error:
+									part.error instanceof Error
+										? part.error.message
+										: "Erro interno",
 							});
 							controller.enqueue(
-								encoder.encode(`data: ${data}\n\n`),
+								encoder.encode(`data: ${errorData}\n\n`),
 							);
+							break;
 						}
 					}
 				}
 
-				// Save assistant response to DB
+				// ---- Persist assistant response ----
 				let assistantMessageId: string | undefined;
 				if (fullResponse) {
 					const [assistantMsg] = await db
@@ -172,7 +258,7 @@ export async function POST(req: NextRequest) {
 					assistantMessageId = assistantMsg?.id;
 				}
 
-				// Persist emitted artifacts to DB
+				// ---- Persist emitted artifacts ----
 				if (emittedArtifacts.length > 0 && assistantMessageId) {
 					try {
 						await db.insert(artifactsTable).values(
@@ -188,12 +274,13 @@ export async function POST(req: NextRequest) {
 							})),
 						);
 					} catch (artifactErr) {
-						console.error("Failed to persist artifacts:", artifactErr);
-						// Don't break the stream — user already saw the artifacts via SSE
+						console.error(
+							"Failed to persist artifacts:",
+							artifactErr,
+						);
 					}
 				}
 
-				// Send done event
 				controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 				controller.close();
 			} catch (error) {
