@@ -13,17 +13,30 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { NumberTicker } from "@/components/ui/number-ticker";
 import type { KpiData } from "@/lib/admin/dashboard-types";
 
 interface KpiCardProps {
   title: string;
-  value: string | number;
+  value: number;
+  suffix?: string;
+  prefix?: string;
+  decimalPlaces?: number;
   trend: number;
   icon: React.ComponentType<{ className?: string }>;
   invertTrend?: boolean;
 }
 
-function KpiCard({ title, value, trend, icon: Icon, invertTrend }: KpiCardProps) {
+function KpiCard({
+  title,
+  value,
+  suffix,
+  prefix,
+  decimalPlaces = 0,
+  trend,
+  icon: Icon,
+  invertTrend,
+}: KpiCardProps) {
   // For avgFunnelDays, lower is better — invert the color logic
   const isPositive = invertTrend ? trend <= 0 : trend >= 0;
   const TrendIcon = trend >= 0 ? TrendingUp : TrendingDown;
@@ -37,7 +50,11 @@ function KpiCard({ title, value, trend, icon: Icon, invertTrend }: KpiCardProps)
         <Icon className="size-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold">
+          {prefix}
+          <NumberTicker value={value} decimalPlaces={decimalPlaces} />
+          {suffix}
+        </div>
         <p
           className={`text-xs flex items-center gap-1 mt-1 ${
             isPositive ? "text-green-600" : "text-red-600"
@@ -68,14 +85,17 @@ export function KpiCards({ kpis }: { kpis: KpiData }) {
       />
       <KpiCard
         title="Tempo Medio no Funil"
-        value={`${kpis.avgFunnelDays} dias`}
+        value={kpis.avgFunnelDays}
+        suffix=" dias"
         trend={kpis.trends.avgFunnelDays}
         icon={Clock}
         invertTrend
       />
       <KpiCard
         title="Taxa de Conversao"
-        value={`${kpis.conversionRate.toFixed(1)}%`}
+        value={kpis.conversionRate}
+        suffix="%"
+        decimalPlaces={1}
         trend={kpis.trends.conversionRate}
         icon={TrendingUp}
       />
