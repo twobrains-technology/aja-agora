@@ -1,6 +1,5 @@
 "use client";
 
-import type { ComponentType } from "react";
 import {
   Smartphone,
   Zap,
@@ -10,105 +9,88 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { ScrollReveal, StaggerChildren, StaggerItem } from "./scroll-reveal";
+import { MotionPreset } from "@/components/ui/motion-preset";
 
-type Benefit = {
-  icon: ComponentType;
-  title: string;
-  description: string;
-  avatarTextColor: string;
-  avatarBgColor: string;
-};
-
-const benefits: Benefit[] = [
+const benefits = [
   {
     icon: Smartphone,
     title: "100% digital",
-    description: "Sem papel, sem agência, sem filas.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
+    description: "Sem papel, sem agencia, sem filas.",
   },
   {
     icon: Zap,
-    title: "Análise em segundos",
+    title: "Analise em segundos",
     description: "A IA compara planos instantaneamente.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
   },
   {
     icon: Bot,
     title: "Sem corretor",
-    description: "Você conversa direto com a IA.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
+    description: "Voce conversa direto com a IA.",
   },
   {
     icon: Eye,
-    title: "Transparência total",
-    description: "Taxas, custos e simulações claras.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
+    title: "Transparencia total",
+    description: "Taxas, custos e simulacoes claras.",
   },
   {
     icon: MonitorSmartphone,
     title: "Mobile-first",
     description: "Funciona perfeitamente no celular.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
   },
   {
     icon: ShieldCheck,
     title: "Dados protegidos",
-    description: "Suas informações estão seguras.",
-    avatarTextColor: "text-primary",
-    avatarBgColor: "bg-primary/10",
+    description: "Suas informacoes estao seguras.",
   },
 ];
 
 export function BenefitsSection() {
   return (
-    <section id="beneficios" className="py-8 sm:py-16 lg:py-24">
+    <section id="beneficios" className="py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <ScrollReveal>
-          <div className="mb-12 space-y-4 sm:mb-16 lg:mb-24">
-            <h2 className="font-serif text-2xl font-semibold md:text-3xl lg:text-4xl">
+        {/* Section Header */}
+        <MotionPreset fade blur="4px" slide={{ direction: "up", offset: 16 }}>
+          <div className="mb-12 space-y-4 sm:mb-16">
+            <Badge variant="outline">Beneficios</Badge>
+            <h2 className="text-2xl font-bold tracking-tight md:text-3xl lg:text-4xl">
               Por que usar o Aja Agora?
             </h2>
-            <p className="text-muted-foreground text-xl">
-              A forma mais inteligente de encontrar seu consórcio.
+            <p className="text-muted-foreground text-lg max-w-lg">
+              A forma mais inteligente de encontrar seu consorcio.
             </p>
           </div>
-        </ScrollReveal>
+        </MotionPreset>
 
-        <StaggerChildren
-          className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
-          staggerDelay={0.1}
-        >
+        {/* Cards Grid */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {benefits.map((benefit, index) => (
-            <StaggerItem key={index}>
-              <Card className="shadow-none transition-colors duration-300 hover:border-primary">
-                <CardContent>
-                  <Avatar className="mb-6 size-10 rounded-md">
-                    <AvatarFallback
-                      className={cn(
-                        "rounded-md [&>svg]:size-6",
-                        benefit.avatarBgColor,
-                        benefit.avatarTextColor
-                      )}
-                    >
-                      <benefit.icon />
-                    </AvatarFallback>
-                  </Avatar>
-                  <h3 className="mb-2 text-lg font-semibold">{benefit.title}</h3>
-                  <p className="text-muted-foreground">{benefit.description}</p>
+            <MotionPreset
+              key={index}
+              fade
+              blur="4px"
+              slide={{ direction: "up", offset: 24 }}
+              delay={index * 0.08}
+            >
+              <Card className="h-full shadow-none transition-colors duration-300 hover:border-foreground/20">
+                <CardContent className="flex flex-col gap-4">
+                  <div className="flex size-11 items-center justify-center rounded-xl bg-foreground text-background">
+                    <benefit.icon className="size-5" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <h3 className="mb-1.5 text-lg font-semibold">
+                      {benefit.title}
+                    </h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed">
+                      {benefit.description}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
-            </StaggerItem>
+            </MotionPreset>
           ))}
-        </StaggerChildren>
+        </div>
       </div>
     </section>
   );

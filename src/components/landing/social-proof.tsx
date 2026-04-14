@@ -1,127 +1,112 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import Image from "next/image";
+import { Star } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
-import { Rating } from "@/components/ui/rating";
-import { ScrollReveal } from "./scroll-reveal";
+import { MotionPreset } from "@/components/ui/motion-preset";
 
-type TestimonialItem = {
-  name: string;
-  location: string;
-  rating: number;
-  content: string;
-};
-
-const testimonials: TestimonialItem[] = [
+const testimonials = [
   {
     name: "Maria S.",
-    location: "São Paulo",
-    rating: 5,
+    role: "Compradora de imovel",
+    avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-1.png",
     content:
-      "Achei meu consórcio em 5 minutos. Nunca foi tão fácil!",
+      "Achei meu consorcio em 5 minutos. Nunca foi tao facil!",
+    rating: 5,
   },
   {
     name: "Carlos R.",
-    location: "Belo Horizonte",
-    rating: 5,
+    role: "Comprador de automovel",
+    avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-2.png",
     content:
-      "A IA me mostrou opções que nenhum corretor apresentou.",
+      "A IA me mostrou opcoes que nenhum corretor apresentou.",
+    rating: 5,
   },
   {
     name: "Ana L.",
-    location: "Curitiba",
-    rating: 5,
+    role: "Consorcio de servicos",
+    avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-3.png",
     content:
-      "Simulei diferentes cenários até encontrar a parcela ideal.",
+      "Simulei diferentes cenarios ate encontrar a parcela ideal.",
+    rating: 5,
   },
 ];
 
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array.from({ length: rating }).map((_, i) => (
+        <Star
+          key={i}
+          className="size-4 fill-foreground text-foreground"
+          strokeWidth={1.5}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function SocialProof() {
   return (
-    <section id="depoimentos" className="py-8 sm:py-16 lg:py-24">
-      <ScrollReveal>
-        <Carousel
-          className="mx-auto flex max-w-7xl gap-12 px-4 max-sm:flex-col sm:items-center sm:gap-16 sm:px-6 lg:gap-24 lg:px-8"
-          opts={{
-            align: "start",
-            slidesToScroll: 1,
-          }}
-        >
-          {/* Left Content */}
-          <div className="space-y-4 sm:w-1/2 lg:w-1/3">
-            <p className="text-primary text-sm font-medium uppercase">
-              Depoimentos reais
-            </p>
-
-            <h2 className="font-serif text-2xl font-semibold sm:text-3xl lg:text-4xl">
-              O que nossos usuários dizem
+    <section id="depoimentos" className="py-12 sm:py-20 lg:py-28">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* Section Header */}
+        <MotionPreset fade blur="4px" slide={{ direction: "up", offset: 16 }}>
+          <div className="mb-12 space-y-4 text-center sm:mb-16">
+            <Badge variant="outline">Depoimentos</Badge>
+            <h2 className="text-2xl font-bold tracking-tight md:text-3xl lg:text-4xl">
+              O que nossos usuarios dizem
             </h2>
-
-            <p className="text-muted-foreground text-xl">
-              Experiências reais de quem já usou o Aja Agora para encontrar o
-              consórcio ideal.
+            <p className="text-muted-foreground mx-auto max-w-lg text-lg">
+              Experiencias reais de quem ja usou o Aja Agora para encontrar o
+              consorcio ideal.
             </p>
-
-            <div className="flex items-center gap-4">
-              <CarouselPrevious
-                variant="default"
-                className="disabled:bg-primary/10 disabled:text-primary static translate-y-0 rounded-md disabled:opacity-100"
-              />
-              <CarouselNext
-                variant="default"
-                className="disabled:bg-primary/10 disabled:text-primary static translate-y-0 rounded-md disabled:opacity-100"
-              />
-            </div>
           </div>
+        </MotionPreset>
 
-          {/* Right Testimonial Carousel */}
-          <div className="relative max-w-196 sm:w-1/2 lg:w-2/3">
-            <CarouselContent className="sm:-ml-6">
-              {testimonials.map((testimonial, index) => (
-                <CarouselItem key={index} className="sm:pl-6 lg:basis-1/2">
-                  <Card className="h-full transition-colors duration-300 hover:border-primary">
-                    <CardContent className="space-y-5">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10 rounded-full">
-                          <AvatarFallback className="rounded-full text-sm">
-                            {testimonial.name
-                              .split(" ", 2)
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
+        {/* Testimonial Cards */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {testimonials.map((testimonial, index) => (
+            <MotionPreset
+              key={index}
+              fade
+              blur="4px"
+              slide={{ direction: "up", offset: 24 }}
+              delay={index * 0.1}
+            >
+              <Card className="h-full shadow-none transition-colors duration-300 hover:border-foreground/20">
+                <CardContent className="flex flex-col gap-5">
+                  <StarRating rating={testimonial.rating} />
 
-                        <div className="flex-1">
-                          <h4 className="font-medium">{testimonial.name}</h4>
-                          <p className="text-muted-foreground text-sm">
-                            {testimonial.location}
-                          </p>
-                        </div>
-                      </div>
+                  <p className="text-sm leading-relaxed sm:text-base">
+                    &ldquo;{testimonial.content}&rdquo;
+                  </p>
 
-                      <Rating
-                        readOnly
-                        variant="yellow"
-                        size={24}
-                        value={testimonial.rating}
-                        precision={0.5}
-                      />
-                      <p>{testimonial.content}</p>
-                    </CardContent>
-                  </Card>
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </div>
-        </Carousel>
-      </ScrollReveal>
+                  <div className="flex items-center gap-3 pt-2">
+                    <Image
+                      src={testimonial.avatar}
+                      alt={testimonial.name}
+                      width={40}
+                      height={40}
+                      className="size-10 rounded-full object-cover"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {testimonial.name}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {testimonial.role}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </MotionPreset>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
