@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, X } from "lucide-react";
+import Link from "next/link";
+import { RefreshCw, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import LogoSvg from "@/assets/svg/logo";
 
 interface ChatLayoutProps {
   children: React.ReactNode;
@@ -33,19 +36,30 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-background">
       {/* Header — 48px, sticky top */}
-      <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-4">
-        <h1 className="text-base font-semibold text-foreground">Aja Agora</h1>
-        {onReset && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onReset}
-            aria-label="Nova conversa"
-            className="size-10"
-          >
-            <RefreshCw className="size-4" />
+      <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="size-8" render={<Link href="/" />} nativeButton={false}>
+            <ArrowLeft className="size-4" />
           </Button>
-        )}
+          <Link href="/" className="flex items-center gap-2">
+            <LogoSvg className="size-7" />
+            <span className="text-sm font-semibold">Aja Agora</span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          {onReset && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onReset}
+              aria-label="Nova conversa"
+              className="size-8"
+            >
+              <RefreshCw className="size-4" />
+            </Button>
+          )}
+        </div>
       </header>
 
       {/* Dismissible error banner */}
