@@ -155,6 +155,11 @@ Plans:
 **Requirements:** BACK-07, BACK-08
 **Depends on:** Phase 9
 **UI hint:** yes
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Conversation API route, LeadCard click wiring, Sheet panel with ConversationTimeline and ArtifactPreview
+- [ ] 10-02-PLAN.md — AI insights prompt, POST API with 1hr caching, InsightCards component wired into Insights tab
 
 ### Success Criteria
 1. Clicking a lead card opens a detail panel with the full conversation timeline
