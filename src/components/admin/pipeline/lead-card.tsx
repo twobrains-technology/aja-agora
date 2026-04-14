@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Globe, Smartphone, Clock, DollarSign, MessageSquare } from "lucide-react";
@@ -44,10 +45,16 @@ function ChannelIcon({ channel }: { channel: "web" | "whatsapp" }) {
 export function LeadCard({
   lead,
   isDragging,
+  onLeadClick,
 }: {
   lead: Lead;
   isDragging: boolean;
+  onLeadClick?: (leadId: string) => void;
 }) {
+  const wasDragging = useRef(false);
+  useEffect(() => {
+    wasDragging.current = isDragging;
+  }, [isDragging]);
   const timeInStage = formatDistanceToNow(new Date(lead.updatedAt), {
     addSuffix: true,
     locale: ptBR,
@@ -67,7 +74,8 @@ export function LeadCard({
       size="sm"
       className={`cursor-pointer transition-opacity ${isDragging ? "opacity-50" : ""}`}
       onClick={() => {
-        window.alert("Em breve: detalhes da conversa");
+        if (wasDragging.current) return;
+        onLeadClick?.(lead.id);
       }}
     >
       <CardContent className="space-y-2">

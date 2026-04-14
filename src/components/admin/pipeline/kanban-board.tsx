@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DragDropContext,
   type DropResult,
 } from "@hello-pangea/dnd";
 import { STAGE_ORDER } from "@/lib/admin/lead-stages";
 import { KanbanColumn } from "./kanban-column";
+import { LeadDetailPanel } from "./lead-detail-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { Lead } from "./lead-card";
@@ -28,8 +29,18 @@ export function KanbanBoard({
     return init;
   });
   const [loading, setLoading] = useState(true);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
+
+  const selectedLead = useMemo(() => {
+    if (!selectedLeadId) return null;
+    for (const stage of STAGE_ORDER) {
+      const found = (columns[stage] ?? []).find((l) => l.id === selectedLeadId);
+      if (found) return found;
+    }
+    return null;
+  }, [selectedLeadId, columns]);
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -115,6 +126,7 @@ export function KanbanBoard({
   }
 
   return (
+    <>
     <DragDropContext onDragEnd={onDragEnd}>
       <ScrollArea className="w-full">
         <div className="flex gap-3 pb-4 min-w-max">
@@ -122,12 +134,19 @@ export function KanbanBoard({
             const leads = columns[stage] ?? [];
             const filtered = filterFn ? leads.filter(filterFn) : leads;
             return (
-              <KanbanColumn key={stage} stage={stage} leads={filtered} />
+              <KanbanColumn key={stage} stage={stage} leads={filtered} onLeadClick={setSelectedLeadId} />
             );
           })}
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </DragDropContext>
+
+    <LeadDetailPanel
+      lead={selectedLead}
+      open={!!selectedLeadId}
+      onClose={() => setSelectedLeadId(null)}
+    />
+    </>
   );
 }

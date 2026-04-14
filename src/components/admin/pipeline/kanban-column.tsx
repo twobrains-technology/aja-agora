@@ -18,9 +18,11 @@ const STAGE_LABELS: Record<string, string> = {
 export function KanbanColumn({
   stage,
   leads,
+  onLeadClick,
 }: {
   stage: string;
   leads: Lead[];
+  onLeadClick?: (leadId: string) => void;
 }) {
   const label = STAGE_LABELS[stage] ?? stage;
   const isWon = stage === "fechado_ganho";
@@ -88,6 +90,7 @@ export function KanbanColumn({
                     <LeadCard
                       lead={lead}
                       isDragging={dragSnapshot.isDragging}
+                      onLeadClick={onLeadClick}
                     />
                   </div>
                 )}
