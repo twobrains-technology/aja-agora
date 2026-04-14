@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Globe, Smartphone } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
@@ -13,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConversationTimeline } from "./conversation-timeline";
+import { InsightCards } from "./insight-cards";
 import type { Lead } from "./lead-card";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -40,6 +42,20 @@ export function LeadDetailPanel({
   open: boolean;
   onClose: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState("conversa");
+  const [insightsLoaded, setInsightsLoaded] = useState(false);
+
+  // Reset insights state when lead changes
+  useEffect(() => {
+    setInsightsLoaded(false);
+    setActiveTab("conversa");
+  }, [lead?.id]);
+
+  // Track when insights tab is first activated
+  useEffect(() => {
+    if (activeTab === "insights") setInsightsLoaded(true);
+  }, [activeTab]);
+
   return (
     <Sheet
       open={open}
@@ -75,7 +91,11 @@ export function LeadDetailPanel({
               </div>
             </SheetHeader>
 
-            <Tabs defaultValue="conversa" className="flex-1 flex flex-col min-h-0">
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="flex-1 flex flex-col min-h-0"
+            >
               <TabsList className="mx-4 mt-2">
                 <TabsTrigger value="conversa">Conversa</TabsTrigger>
                 <TabsTrigger value="insights">Insights</TabsTrigger>
@@ -84,11 +104,15 @@ export function LeadDetailPanel({
                 <ConversationTimeline leadId={lead.id} />
               </TabsContent>
               <TabsContent value="insights" className="p-4">
-                <div className="flex items-center justify-center py-8">
-                  <p className="text-sm text-muted-foreground">
-                    Insights em breve
-                  </p>
-                </div>
+                {insightsLoaded ? (
+                  <InsightCards leadId={lead.id} />
+                ) : (
+                  <div className="flex items-center justify-center py-8">
+                    <p className="text-sm text-muted-foreground">
+                      Selecione esta aba para gerar insights
+                    </p>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </>
