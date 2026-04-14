@@ -7,7 +7,7 @@
 <domain>
 ## Phase Boundary
 
-Implement admin authentication with NextAuth credentials provider and build the backoffice shell (sidebar navigation, header, protected routes) with database schema extensions for funnel stages, lead transition events, and AI-generated insights. This phase delivers the foundation — no business logic or data visualization yet.
+Implement admin authentication with Better Auth (email+password, Drizzle adapter) and build the backoffice shell (sidebar navigation, header, protected routes) with database schema extensions for funnel stages, lead transition events, and AI-generated insights. This phase delivers the foundation — no business logic or data visualization yet.
 
 </domain>
 
@@ -15,16 +15,17 @@ Implement admin authentication with NextAuth credentials provider and build the 
 ## Implementation Decisions
 
 ### Authentication Strategy
-- **D-01:** Use NextAuth.js with CredentialsProvider — email + bcrypt-hashed password
-- **D-02:** Session strategy: JWT (stateless, no session table needed for MVP)
-- **D-03:** Admin users stored in `admin_users` table (separate from consumer leads)
-- **D-04:** Login page at `/admin/login` — standalone page, not part of the admin layout shell
-- **D-05:** Middleware protects all `/admin/*` routes except `/admin/login` — redirect to login if unauthenticated
+- **D-01:** Use Better Auth (`better-auth`) with email+password plugin and Drizzle adapter (`drizzleAdapter(db, { provider: "pg" })`)
+- **D-02:** Better Auth manages its own tables (user, session, account, verification) — generate schema with `npx @better-auth/cli generate` then add to Drizzle migrations
+- **D-03:** Auth handler at `src/app/api/auth/[...all]/route.ts` using `toNextJsHandler(auth)`
+- **D-04:** Client-side auth via `createAuthClient()` from `better-auth/react` — provides `useSession`, `signIn`, `signOut` hooks
+- **D-05:** Login page at `/admin/login` — standalone page, not part of the admin layout shell
+- **D-06:** Middleware protects all `/admin/*` routes except `/admin/login` — redirect to login if unauthenticated
 
 ### Role System
-- **D-06:** Two roles: `admin` (full access, can move leads, edit) and `viewer` (read-only, can view pipeline and conversations)
-- **D-07:** Role stored as enum column on `admin_users` table
-- **D-08:** Role enforcement at API route level (middleware checks role before mutations)
+- **D-07:** Two roles: `admin` (full access, can move leads, edit) and `viewer` (read-only, can view pipeline and conversations)
+- **D-08:** Role stored as `role` column on Better Auth's `user` table (custom field via schema extension)
+- **D-09:** Role enforcement at API route level (middleware checks role before mutations)
 
 ### Admin Layout
 - **D-09:** Sidebar layout with three main sections: Pipeline (Kanban), Conversas (list), Dashboard (analytics)
@@ -37,15 +38,16 @@ Implement admin authentication with NextAuth credentials provider and build the 
 - **D-14:** Add `stage` column to `leads` table — enum: `novo`, `engajado`, `qualificado`, `em_negociacao`, `proposta_enviada`, `fechado_ganho`, `perdido`. Default: `novo`
 - **D-15:** New `lead_events` table: id (uuid), lead_id (FK→leads), from_stage, to_stage, actor_type (enum: `system`, `admin`), actor_id (nullable uuid), notes (text), created_at
 - **D-16:** New `lead_insights` table: id (uuid), lead_id (FK→leads), insight_type (enum: `summary`, `intent`, `budget`, `objections`, `next_action`), content (text), generated_at, model (varchar) — for caching AI-generated insights
-- **D-17:** New `admin_users` table: id (uuid), name (varchar 100), email (varchar 255, unique), password_hash (text), role (enum: `admin`, `viewer`), created_at, updated_at
-- **D-18:** Seed script to create initial admin user (email/password from env vars: `ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+- **D-17:** Better Auth manages its own auth tables (user, session, account, verification) — generated via `npx @better-auth/cli generate` and added to Drizzle schema. Add custom `role` field (enum: `admin`, `viewer`) to user table.
+- **D-18:** Seed script to create initial admin user via Better Auth API (email/password from env vars: `ADMIN_EMAIL`, `ADMIN_PASSWORD`)
 
 ### Route Structure
-- **D-19:** `/admin/login` — login page (public)
-- **D-20:** `/admin` — dashboard (protected, default redirect after login)
-- **D-21:** `/admin/pipeline` — Kanban board (protected)
-- **D-22:** `/admin/conversations` — conversation list (protected)
-- **D-23:** All admin API routes under `/api/admin/*` — protected by auth middleware
+- **D-19:** `/api/auth/[...all]` — Better Auth handler (public, handles login/logout/session)
+- **D-20:** `/admin/login` — login page (public)
+- **D-21:** `/admin` — dashboard (protected, default redirect after login)
+- **D-22:** `/admin/pipeline` — Kanban board (protected)
+- **D-23:** `/admin/conversations` — conversation list (protected)
+- **D-24:** All admin API routes under `/api/admin/*` — protected by auth middleware
 
 ### Claude's Discretion
 - Exact sidebar visual design and animations
