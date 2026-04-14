@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-last_updated: "2026-04-14T05:44:55.884Z"
+last_updated: "2026-04-14T05:50:21.381Z"
 progress:
   total_phases: 11
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 27
-  completed_plans: 26
-  percent: 96
+  completed_plans: 27
+  percent: 100
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Status: Complete (all 3 plans done)
 - Phase 8: Complete (auth + schema + admin layout shell)
 - Phase 9: Complete (schema fix, API routes, Kanban board UI with DnD + filters, chat auto-transitions)
 - Phase 10: Complete (conversation replay + AI insights)
-- Phase 11: In Progress (plan 01 complete — dashboard data layer API)
+- Phase 11: Complete (dashboard data layer API + dashboard UI with KPIs, funnel, charts)
 
 ## Project Reference
 
@@ -64,3 +64,4 @@ Phases 8-11 (Backoffice) added 2026-04-14 for lead funnel management
 - Phase 10 Plan 01: Conversation replay panel — GET /api/admin/leads/[id]/conversation, Sheet slide-over with Conversa/Insights tabs, chat timeline with role bubbles + artifact previews, drag-safe click handling via wasDragging ref. Sheet rendered outside DragDropContext to avoid portal conflicts.
 - Phase 10 Plan 02: AI insights — POST /api/admin/leads/[id]/insights generates intent/budget/objections/next_action via Claude Haiku with 1hr cache TTL. InsightCards component with 4 colored cards, on-demand rendering only when Insights tab opened. Markdown fence stripping for JSON parse safety.
 - Phase 11 Plan 01: Dashboard data layer — GET /api/admin/dashboard with KPIs (totalLeads, leadsToday with America/Sao_Paulo TZ, avgFunnelDays, conversionRate + trends), funnel stages excluding "perdido", gap-filled daily volume timeline, web/whatsapp channel breakdown. Parallel SQL aggregations via Promise.all. Added leads_created_at_idx index.
+- Phase 11 Plan 02: Dashboard UI — recharts via shadcn chart, 4 KPI cards with trend arrows (inverted for avgFunnelDays), CSS clip-path horizontal funnel (6 stages, no "perdido"), recharts AreaChart for lead volume, recharts PieChart donut for channels, DateRangeFilter with nuqs URL state, skeleton loading, responsive layout.

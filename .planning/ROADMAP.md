@@ -176,11 +176,11 @@ Plans:
 **Requirements:** BACK-10, BACK-11
 **Depends on:** Phase 9
 **UI hint:** yes
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 11-01-PLAN.md — Dashboard API route, Drizzle aggregation queries, TypeScript types, DB index
-- [ ] 11-02-PLAN.md — KPI cards, CSS funnel chart, recharts area/donut charts, date range filter, page assembly
+- [x] 11-02-PLAN.md — KPI cards, CSS funnel chart, recharts area/donut charts, date range filter, page assembly
 
 ### Success Criteria
 1. Dashboard at `/admin` shows a funnel chart with conversion rates between each stage
