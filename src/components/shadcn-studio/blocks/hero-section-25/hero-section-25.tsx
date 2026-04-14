@@ -230,11 +230,11 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                       exit='exit'
                       variants={{
                         hidden: {},
-                        visible: { transition: { staggerChildren: 0.12 } },
+                        visible: { transition: { staggerChildren: 0.15, delayChildren: 0.1 } },
                         exit: { transition: { staggerChildren: 0.05 } }
                       }}
                     >
-                      {goals.map(goal => {
+                      {goals.map((goal, idx) => {
                         const isSelected = selectedGoal === goal.id
                         const isOther = selectedGoal !== null && !isSelected
 
@@ -244,39 +244,87 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                             onClick={() => phase === 'cards' && handleSelect(goal)}
                             disabled={phase === 'selected'}
                             variants={{
-                              hidden: { opacity: 0, y: 16, scale: 0.95 },
+                              hidden: { opacity: 0, y: 24, scale: 0.9, rotateX: 15 },
                               visible: {
                                 opacity: 1,
                                 y: 0,
                                 scale: 1,
-                                transition: { type: 'spring', stiffness: 200, damping: 20 }
+                                rotateX: 0,
+                                transition: {
+                                  type: 'spring',
+                                  stiffness: 180,
+                                  damping: 18,
+                                  mass: 0.8
+                                }
                               },
-                              exit: { opacity: 0, scale: 0.9, transition: { duration: 0.2 } }
+                              exit: { opacity: 0, y: -8, scale: 0.9, transition: { duration: 0.15 } }
                             }}
                             whileHover={
                               phase === 'cards'
-                                ? { scale: 1.03, y: -2, transition: { type: 'spring', stiffness: 400, damping: 15 } }
+                                ? {
+                                    y: -6,
+                                    scale: 1.04,
+                                    transition: { type: 'spring', stiffness: 500, damping: 15 }
+                                  }
                                 : undefined
                             }
-                            whileTap={phase === 'cards' ? { scale: 0.97 } : undefined}
+                            whileTap={phase === 'cards' ? { scale: 0.96, y: 0 } : undefined}
                             animate={
                               isSelected
-                                ? { scale: 1.05, borderColor: 'var(--primary)' }
+                                ? {
+                                    scale: 1.06,
+                                    y: -4,
+                                    transition: { type: 'spring', stiffness: 300, damping: 15 }
+                                  }
                                 : isOther
-                                  ? { opacity: 0.3, scale: 0.95 }
+                                  ? { opacity: 0.2, scale: 0.92, y: 4, filter: 'blur(1px)' }
                                   : undefined
                             }
-                            className={`group flex flex-col items-center gap-3 rounded-xl border bg-card p-5 text-center transition-all ${
-                              phase === 'cards' ? 'cursor-pointer hover:border-foreground/20 hover:shadow-md' : ''
-                            } ${isSelected ? 'border-foreground shadow-md' : ''}`}
+                            className={`group relative flex flex-col items-center gap-3 rounded-2xl border p-5 text-center transition-colors ${
+                              phase === 'cards' ? 'cursor-pointer bg-card/80 backdrop-blur-sm hover:bg-card' : 'bg-card/80'
+                            } ${isSelected ? 'border-foreground bg-card shadow-lg' : 'border-border/50'}`}
                           >
-                            <div className='flex size-10 items-center justify-center rounded-lg bg-foreground text-background'>
-                              <goal.icon className='size-5' />
-                            </div>
-                            <div>
+                            {/* Glow effect on hover */}
+                            <motion.div
+                              className='pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity group-hover:opacity-100'
+                              style={{
+                                background: 'radial-gradient(circle at 50% 0%, var(--foreground) 0%, transparent 70%)',
+                                opacity: 0.03
+                              }}
+                            />
+
+                            <motion.div
+                              className='relative flex size-11 items-center justify-center rounded-xl bg-foreground text-background'
+                              animate={
+                                phase === 'cards' && !isSelected
+                                  ? {
+                                      y: [0, -3, 0],
+                                    }
+                                  : undefined
+                              }
+                              transition={{
+                                duration: 3,
+                                repeat: Infinity,
+                                ease: 'easeInOut',
+                                delay: idx * 0.4
+                              }}
+                            >
+                              <goal.icon className='size-5' strokeWidth={1.5} />
+                            </motion.div>
+
+                            <div className='relative'>
                               <span className='text-sm font-semibold block'>{goal.label}</span>
-                              <span className='text-xs text-muted-foreground'>{goal.sub}</span>
+                              <span className='text-[11px] text-muted-foreground mt-0.5 block'>{goal.sub}</span>
                             </div>
+
+                            {/* Selection indicator */}
+                            {isSelected && (
+                              <motion.div
+                                className='absolute -bottom-px left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-foreground'
+                                layoutId='selected-indicator'
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                              />
+                            )}
                           </motion.button>
                         )
                       })}
