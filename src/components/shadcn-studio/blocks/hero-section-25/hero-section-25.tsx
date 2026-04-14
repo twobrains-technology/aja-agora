@@ -112,7 +112,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.15, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className='font-serif text-3xl font-bold leading-tight sm:text-4xl lg:text-5xl xl:text-6xl'
+              className='text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl xl:text-6xl'
             >
               Seu consorcio, do sonho{' '}
               <span className='bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent'>
