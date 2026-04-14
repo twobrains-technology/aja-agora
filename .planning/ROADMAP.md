@@ -116,7 +116,7 @@ Plans:
 
 Plans:
 - [x] 08-01-PLAN.md — Better Auth setup, DB schema extensions (auth + funnel tables), proxy.ts route protection, seed script
-- [ ] 08-02-PLAN.md — Login page, admin layout shell (sidebar + header), placeholder pages, role-gated helper
+- [x] 08-02-PLAN.md — Login page, admin layout shell (sidebar + header), placeholder pages, role-gated helper
 
 ### Success Criteria
 1. Admin can login at `/admin/login` with email/password credentials

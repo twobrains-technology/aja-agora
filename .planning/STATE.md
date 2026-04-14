@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to discuss
-last_updated: "2026-04-14T04:20:17.084Z"
+status: executing
+last_updated: "2026-04-14T04:25:21.305Z"
 progress:
   total_phases: 11
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 20
-  completed_plans: 19
-  percent: 95
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 
 Phase: 08
 Name: Backoffice Auth & Layout
-Status: In Progress (Plan 01 complete, Plan 02 pending)
+Status: Complete (Plan 01 + Plan 02 done)
 
 ## Progress
 
@@ -29,7 +29,7 @@ Status: In Progress (Plan 01 complete, Plan 02 pending)
 - Phase 5: Complete
 - Phase 6: Complete
 - Phase 7: Discussed (WhatsApp - deferred)
-- Phase 8: In Progress (Plan 01 complete — auth + schema foundation)
+- Phase 8: Complete (auth + schema + admin layout shell)
 - Phase 9: Not Started
 - Phase 10: Not Started
 - Phase 11: Not Started
@@ -57,3 +57,4 @@ Phases 8-11 (Backoffice) added 2026-04-14 for lead funnel management
 - Phase 7 added: WhatsApp Cloud API integration — route AI agent through WhatsApp with Meta native components
 - Phases 8-11 added: Backoffice with auth, Kanban pipeline, conversation replay + AI insights, dashboard analytics
 - Phase 8 Plan 01: Better Auth installed with Drizzle adapter, auth tables + funnel tables (lead_events, lead_insights, lead_stage enum) pushed to DB, proxy.ts route protection, admin seed script
+- Phase 8 Plan 02: Admin login page (/admin/login), sidebar layout shell (Dashboard/Pipeline/Conversas), header with role badge + logout, requireRole API helper. Used render prop instead of asChild for shadcn/ui v4 SidebarMenuButton.
