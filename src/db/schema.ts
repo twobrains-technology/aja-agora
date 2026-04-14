@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -164,6 +164,7 @@ export const leads = pgTable("leads", {
 	phone: text(),
 	email: text(),
 	stage: leadStageEnum("stage").default("novo").notNull(),
+	creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -177,7 +178,7 @@ export const leadEvents = pgTable("lead_events", {
 	fromStage: leadStageEnum("from_stage"),
 	toStage: leadStageEnum("to_stage").notNull(),
 	actorType: actorTypeEnum("actor_type").notNull(),
-	actorId: uuid("actor_id"),
+	actorId: text("actor_id"),
 	notes: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
