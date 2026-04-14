@@ -220,6 +220,67 @@ async function processWithAI(
 	console.log(
 		`[whatsapp-processor] Processed: ${from} | ${artifacts.length} artifacts, ${fullResponse.length} chars`,
 	);
+
+	// Auto-follow-up: if simulation was shown but no recommendation, force it
+	const hasSimulation = artifacts.some((a) => a.type === "simulation_result");
+	const hasRecommendation = artifacts.some((a) => a.type === "recommendation_card");
+	if (hasSimulation && !hasRecommendation) {
+		console.log(`[whatsapp-processor] Auto-triggering recommendation after simulation`);
+		// Reload history (now includes the simulation response)
+		const updatedHistory = await loadConversationHistory(conversationId);
+		let recResponse = "";
+		const recArtifacts: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
+		const recResult = streamText({
+			model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-20250514"),
+			system: WHATSAPP_SYSTEM_PROMPT,
+			messages: [
+				...updatedHistory,
+				{
+					role: "user" as const,
+					content: "Agora me mostra a recomendação final com o card de compatibilidade e o botão para eu fechar.",
+				},
+			],
+			tools: consorcioTools,
+			stopWhen: stepCountIs(5),
+		});
+
+		for await (const part of recResult.fullStream) {
+			if (part.type === "text-delta") {
+				recResponse += part.text;
+			} else if (part.type === "tool-call") {
+				const shortName = part.toolName.replace("present_", "");
+				if (PRESENTATION_TOOLS.has(part.toolName)) {
+					recArtifacts.push({ type: shortName, payload: part.input as Record<string, unknown> });
+				}
+			}
+		}
+
+		if (recResponse) {
+			await saveMessage(conversationId, "assistant", recResponse);
+			const formatted = formatTextForWhatsApp(recResponse);
+			for (const chunk of splitMessage(formatted)) {
+				await sendTextMessage(from, chunk);
+			}
+		}
+
+		for (const artifact of recArtifacts) {
+			const waResponse = artifactToWhatsApp(artifact.type, artifact.payload);
+			if (!waResponse) continue;
+			if (waResponse.type === "text" && waResponse.text) {
+				await sendTextMessage(from, waResponse.text);
+			} else if (waResponse.type === "interactive" && waResponse.interactive) {
+				const { accessToken, phoneNumberId } = getWhatsAppConfig();
+				await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+					method: "POST",
+					headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+					body: JSON.stringify({ messaging_product: "whatsapp", to: from, type: "interactive", interactive: waResponse.interactive }),
+				});
+			}
+		}
+
+		console.log(`[whatsapp-processor] Auto-recommendation: ${recArtifacts.length} artifacts, ${recResponse.length} chars`);
+	}
 }
 
 /**
