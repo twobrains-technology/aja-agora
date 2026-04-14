@@ -167,7 +167,9 @@ export const leads = pgTable("leads", {
 	creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	index("leads_created_at_idx").on(table.createdAt),
+]);
 
 // Lead Events (funnel transition audit trail)
 export const leadEvents = pgTable("lead_events", {
