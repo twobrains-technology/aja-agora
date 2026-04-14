@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export function AdminHeader() {
   const { data: session } = useSession();
@@ -30,6 +31,7 @@ export function AdminHeader() {
         <Badge variant={userRole === "admin" ? "default" : "secondary"}>
           {userRole}
         </Badge>
+        <ThemeToggle />
         <Button
           variant="ghost"
           size="icon"
