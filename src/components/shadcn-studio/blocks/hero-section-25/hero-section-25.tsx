@@ -22,28 +22,22 @@ const goals = [
     id: 'imovel',
     icon: Home,
     label: 'Imovel',
-    sub: 'Casa ou apartamento dos sonhos',
+    sub: 'Casa ou apartamento',
     message: 'Quero comprar um imovel, me ajude a encontrar o melhor consorcio',
-    color: 'from-blue-500 to-cyan-400',
-    bgHover: 'hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20'
   },
   {
     id: 'auto',
     icon: Car,
     label: 'Carro',
-    sub: 'Carro novo ou seminovo',
+    sub: 'Novo ou seminovo',
     message: 'Quero comprar um carro, qual o melhor consorcio para mim?',
-    color: 'from-violet-500 to-purple-400',
-    bgHover: 'hover:border-violet-400/50 hover:bg-violet-50/50 dark:hover:bg-violet-950/20'
   },
   {
     id: 'servicos',
     icon: Briefcase,
     label: 'Servicos',
-    sub: 'Reforma, viagem ou investimento',
+    sub: 'Reforma ou viagem',
     message: 'Quero fazer um consorcio de servicos, o que voces tem disponivel?',
-    color: 'from-emerald-500 to-teal-400',
-    bgHover: 'hover:border-emerald-400/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20'
   }
 ]
 
@@ -261,7 +255,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                             }}
                             whileHover={
                               phase === 'cards'
-                                ? { scale: 1.04, y: -4, transition: { type: 'spring', stiffness: 400, damping: 15 } }
+                                ? { scale: 1.03, y: -2, transition: { type: 'spring', stiffness: 400, damping: 15 } }
                                 : undefined
                             }
                             whileTap={phase === 'cards' ? { scale: 0.97 } : undefined}
@@ -272,17 +266,17 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                                   ? { opacity: 0.3, scale: 0.95 }
                                   : undefined
                             }
-                            className={`group flex flex-col items-center gap-2 rounded-xl border-2 border-transparent bg-muted/30 p-4 text-center transition-colors sm:p-5 ${
-                              phase === 'cards' ? `cursor-pointer ${goal.bgHover}` : ''
-                            } ${isSelected ? 'border-primary bg-primary/5' : ''}`}
+                            className={`group flex flex-col items-center gap-3 rounded-xl border bg-card p-5 text-center transition-all ${
+                              phase === 'cards' ? 'cursor-pointer hover:border-foreground/20 hover:shadow-md' : ''
+                            } ${isSelected ? 'border-foreground shadow-md' : ''}`}
                           >
-                            <div
-                              className={`flex size-12 items-center justify-center rounded-xl bg-gradient-to-br ${goal.color} text-white shadow-lg shadow-primary/10 transition-shadow group-hover:shadow-xl`}
-                            >
-                              <goal.icon className='size-6' />
+                            <div className='flex size-10 items-center justify-center rounded-lg bg-foreground text-background'>
+                              <goal.icon className='size-5' />
                             </div>
-                            <span className='text-sm font-semibold'>{goal.label}</span>
-                            <span className='text-xs text-muted-foreground'>{goal.sub}</span>
+                            <div>
+                              <span className='text-sm font-semibold block'>{goal.label}</span>
+                              <span className='text-xs text-muted-foreground'>{goal.sub}</span>
+                            </div>
                           </motion.button>
                         )
                       })}
