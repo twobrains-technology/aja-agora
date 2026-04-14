@@ -3,8 +3,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
-import { Navbar } from "@/components/landing/navbar";
-import { HeroSection } from "@/components/landing/hero-section";
+import Header from "@/components/shadcn-studio/blocks/hero-section-25/header";
+import { HeroSection25 } from "@/components/shadcn-studio/blocks/hero-section-25/hero-section-25";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { BenefitsSection } from "@/components/landing/benefits-section";
 import { SocialProof } from "@/components/landing/social-proof";
@@ -61,8 +61,8 @@ export default function LandingPage() {
             className="flex min-h-screen flex-col"
             exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.3 } }}
           >
-            <Navbar />
-            <HeroSection onGoalSelected={handleGoalSelected} />
+            <Header />
+            <HeroSection25 onGoalSelected={handleGoalSelected} />
             <HowItWorks />
             <BenefitsSection />
             <SocialProof />
