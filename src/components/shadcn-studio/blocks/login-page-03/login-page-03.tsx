@@ -20,23 +20,23 @@ const Login = () => {
       </div>
 
       {/* Right — Brand panel */}
-      <div className='relative hidden h-full overflow-hidden rounded-l-3xl bg-zinc-900 lg:flex lg:flex-col lg:justify-between p-10'>
-        <LogoVector className='pointer-events-none absolute -right-24 -bottom-24 size-96 text-white/[0.04]' />
+      <div className='relative hidden h-full overflow-hidden bg-primary lg:flex lg:flex-col lg:justify-between p-10'>
+        <LogoVector className='pointer-events-none absolute -right-24 -bottom-24 size-96 text-primary-foreground/[0.06]' />
 
         <div />
 
         <div className='relative z-10 space-y-4'>
-          <h1 className='text-4xl font-bold tracking-tight text-white'>
+          <h1 className='text-4xl font-bold tracking-tight text-primary-foreground'>
             Aja Agora
           </h1>
-          <p className='text-lg text-zinc-400 max-w-sm'>
+          <p className='text-lg text-primary-foreground/70 max-w-sm'>
             Painel de vendas inteligente para a sua operacao de consorcio.
           </p>
         </div>
 
         <div className='relative z-10 flex items-center gap-2'>
-          <div className='size-2 rounded-full bg-emerald-500 animate-pulse' />
-          <span className='text-sm text-zinc-500'>IA ativa — atendendo clientes agora</span>
+          <div className='size-2 rounded-full bg-green-300 animate-pulse' />
+          <span className='text-sm text-primary-foreground/50'>IA ativa — atendendo clientes agora</span>
         </div>
       </div>
     </div>
