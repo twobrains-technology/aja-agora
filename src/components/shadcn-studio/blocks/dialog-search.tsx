@@ -1,99 +1,78 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import type { ReactNode } from 'react'
-
+import { useRouter } from "next/navigation";
 import {
-  UsersIcon,
-  ShoppingCartIcon,
-  MonitorSmartphoneIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  Undo2Icon,
-  MoreVerticalIcon
-} from 'lucide-react'
+  LayoutDashboardIcon,
+  KanbanIcon,
+  MessageSquareTextIcon,
+  SearchIcon,
+} from "lucide-react";
 
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from "@/components/ui/button";
 import {
-  CommandDialog,
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Command,
+  CommandInput,
+  CommandList,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
-  CommandList,
-  CommandSeparator
-} from '@/components/ui/command'
+} from "@/components/ui/command";
 
-type Props = {
-  trigger: ReactNode
-  defaultOpen?: boolean
-  className?: string
-}
+const navItems = [
+  { label: "Dashboard", href: "/admin", icon: LayoutDashboardIcon },
+  { label: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
+  { label: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
+];
 
-const SearchDialog = ({ defaultOpen = false, trigger, className }: Props) => {
-  const [open, setOpen] = useState(defaultOpen)
-  const [search, setSearch] = useState('')
+export default function SearchDialog() {
+  const router = useRouter();
 
   return (
-    <div className={className}>
-      <div onClick={() => setOpen(true)}>{trigger}</div>
-      <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput
-          placeholder='Buscar...'
-          value={search}
-          onValueChange={setSearch}
-          className='text-base [svg:has(+&)]:size-5 [svg:has(+&)]:opacity-100'
-        />
-
-        <CommandList className='max-h-[65vh]'>
-          <CommandEmpty>Nenhum resultado encontrado.</CommandEmpty>
-
-          <CommandGroup
-            heading='Sugestoes'
-            className='[&_[cmdk-group-heading]]:text-muted-foreground !px-4 !py-6 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-normal [&_[cmdk-group-heading]]:uppercase'
-          >
-            <CommandItem onSelect={() => setOpen(false)} className='!py-1.5 text-base'>
-              <UsersIcon className='text-foreground !size-4.5' />
-              <span>Dashboard</span>
-            </CommandItem>
-            <CommandItem onSelect={() => setOpen(false)} className='!py-1.5 text-base'>
-              <ShoppingCartIcon className='text-foreground !size-4.5' />
-              <span>Pipeline</span>
-            </CommandItem>
-            <CommandItem onSelect={() => setOpen(false)} className='!py-1.5 text-base'>
-              <MonitorSmartphoneIcon className='text-foreground !size-4.5' />
-              <span>Conversas</span>
-            </CommandItem>
-          </CommandGroup>
-        </CommandList>
-
-        <CommandSeparator />
-
-        <div className='text-muted-foreground flex flex-wrap items-center gap-4 p-6'>
-          <div className='flex flex-1 items-center gap-2'>
-            <kbd className='rounded border px-1 text-sm'>esc</kbd>
-            <span>Para fechar</span>
-          </div>
-          <div className='flex items-center gap-2'>
-            <div className='flex size-5 items-center justify-center rounded border'>
-              <Undo2Icon className='size-4' />
-            </div>
-            <span>Para selecionar</span>
-          </div>
-          <div className='flex items-center gap-2'>
-            <div className='flex size-5 items-center justify-center rounded border'>
-              <ArrowUpIcon className='size-4' />
-            </div>
-            <div className='flex size-5 items-center justify-center rounded border'>
-              <ArrowDownIcon className='size-4' />
-            </div>
-            <span>Para navegar</span>
-          </div>
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button variant="ghost" className="!bg-transparent px-1 py-0 font-normal" />
+        }
+      >
+        <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
+          <SearchIcon className="size-4" />
+          <span className="hidden sm:inline">Buscar...</span>
         </div>
-      </CommandDialog>
-    </div>
-  )
+      </DialogTrigger>
+      <DialogContent
+        className="top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0 sm:max-w-lg"
+        showCloseButton={false}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Buscar</DialogTitle>
+          <DialogDescription>Busque paginas e acoes</DialogDescription>
+        </DialogHeader>
+        <Command>
+          <CommandInput placeholder="Buscar..." />
+          <CommandList className="max-h-[50vh]">
+            <CommandEmpty>Nenhum resultado encontrado.</CommandEmpty>
+            <CommandGroup heading="Paginas">
+              {navItems.map((item) => (
+                <CommandItem
+                  key={item.href}
+                  onSelect={() => router.push(item.href)}
+                >
+                  <item.icon className="size-4" />
+                  <span>{item.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
+  );
 }
-
-export default SearchDialog

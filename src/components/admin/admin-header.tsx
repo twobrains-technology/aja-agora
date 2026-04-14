@@ -4,10 +4,7 @@ import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import { BellIcon, SearchIcon } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import SearchDialog from "@/components/shadcn-studio/blocks/dialog-search";
 import NotificationDropdown from "@/components/shadcn-studio/blocks/dropdown-notification";
 import ProfileDropdown from "@/components/shadcn-studio/blocks/dropdown-profile";
@@ -36,43 +33,12 @@ export function AdminHeader() {
         <div className="flex items-center gap-1.5 sm:gap-4">
           <SidebarTrigger className="[&_svg]:!size-5" />
           <Separator orientation="vertical" className="hidden !h-4 sm:block" />
-          <SearchDialog
-            trigger={
-              <>
-                <Button variant="ghost" className="hidden !bg-transparent px-1 py-0 font-normal sm:block">
-                  <div className="text-muted-foreground hidden items-center gap-1.5 text-sm sm:flex">
-                    <SearchIcon />
-                    <span>Buscar...</span>
-                  </div>
-                </Button>
-                <Button variant="ghost" size="icon" className="sm:hidden">
-                  <SearchIcon />
-                  <span className="sr-only">Buscar</span>
-                </Button>
-              </>
-            }
-          />
+          <SearchDialog />
         </div>
         <div className="flex items-center gap-1.5">
           <ThemeToggle />
-          <NotificationDropdown
-            trigger={
-              <Button variant="ghost" size="icon" className="relative">
-                <BellIcon />
-                <span className="bg-destructive absolute top-2 right-2.5 size-2 rounded-full" />
-              </Button>
-            }
-          />
+          <NotificationDropdown />
           <ProfileDropdown
-            trigger={
-              <Button variant="ghost" size="icon" className="size-9.5">
-                <Avatar className="size-9.5 rounded-md">
-                  <AvatarFallback className="rounded-md bg-primary text-primary-foreground text-xs">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            }
             userName={userName}
             userEmail={userEmail}
             userInitials={initials}
