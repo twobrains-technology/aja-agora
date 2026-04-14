@@ -74,7 +74,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BACK-05**: Cards de lead no Kanban com resumo (nome, canal, estágio, tempo no estágio, valor de crédito)
 - [x] **BACK-06**: Filtros por canal (web/whatsapp), estágio, data e busca por nome/telefone
 - [ ] **BACK-07**: Replay completo de conversa — timeline de mensagens com artifacts inline
-- [ ] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
+- [x] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
 - [x] **BACK-09**: Transição automática de estágio baseada em eventos do chat (lead capturado → Novo, simulou → Engajado, recomendação → Qualificado)
 - [ ] **BACK-10**: Dashboard com funil visual, KPIs (leads/dia, tempo médio por estágio, taxa de conversão) e breakdown por canal
 - [ ] **BACK-11**: Timeline de volume de leads e gráfico de conversão ao longo do tempo
