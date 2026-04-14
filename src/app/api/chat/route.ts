@@ -8,7 +8,9 @@ import {
 	conversations,
 	messages as messagesTable,
 	artifacts as artifactsTable,
+	leads,
 } from "@/db/schema";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
@@ -16,6 +18,13 @@ import { sendTextMessage } from "@/lib/whatsapp/api";
 import { publishMessage } from "@/lib/chat/message-bus";
 
 export const maxDuration = 60;
+
+// Auto-transition: map tool executions to lead stage advances (D-09, D-10)
+// capture_lead is NOT here — leads default to "novo" on creation (D-08)
+const TOOL_STAGE_MAP: Record<string, "engajado" | "qualificado"> = {
+	simulate_quota: "engajado",
+	recommend_groups: "qualificado",
+};
 
 const anthropic = createAnthropic();
 
@@ -195,6 +204,26 @@ export async function POST(req: NextRequest) {
 										`data: ${artifactData}\n\n`,
 									),
 								);
+							}
+
+							// Auto-transition: advance lead stage based on tool execution (D-09, D-10, D-13)
+							const targetStage = TOOL_STAGE_MAP[part.toolName];
+							if (targetStage && conversationId) {
+								try {
+									const lead = await db.query.leads.findFirst({
+										where: eq(leads.conversationId, conversationId),
+									});
+									if (lead) {
+										await transitionLeadStage(
+											lead.id,
+											targetStage,
+											{ type: "system" },
+											{ onlyAdvance: true }, // Never regress (D-11)
+										);
+									}
+								} catch (err) {
+									console.error("Auto-transition failed:", err);
+								}
 							}
 							break;
 						}
