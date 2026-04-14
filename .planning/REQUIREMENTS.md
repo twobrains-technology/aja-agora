@@ -65,6 +65,26 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **DATA-03**: PII separado dos logs de conversa
 - [x] **DATA-04**: Rate limiting básico no endpoint de chat
 
+### Backoffice
+
+- [ ] **BACK-01**: Autenticação admin com credenciais protegidas (NextAuth)
+- [ ] **BACK-02**: Layout admin com sidebar, header e rotas protegidas sob /admin
+- [ ] **BACK-03**: Schema de banco para estágios do funil, eventos de transição e insights AI
+- [ ] **BACK-04**: Kanban board com drag-and-drop para gestão de leads por estágio do funil
+- [ ] **BACK-05**: Cards de lead no Kanban com resumo (nome, canal, estágio, tempo no estágio, valor de crédito)
+- [ ] **BACK-06**: Filtros por canal (web/whatsapp), estágio, data e busca por nome/telefone
+- [ ] **BACK-07**: Replay completo de conversa — timeline de mensagens com artifacts inline
+- [ ] **BACK-08**: Insights AI por conversa — resumo automático: intenção, orçamento, objeções, próxima ação sugerida
+- [ ] **BACK-09**: Transição automática de estágio baseada em eventos do chat (lead capturado → Novo, simulou → Engajado, recomendação → Qualificado)
+- [ ] **BACK-10**: Dashboard com funil visual, KPIs (leads/dia, tempo médio por estágio, taxa de conversão) e breakdown por canal
+- [ ] **BACK-11**: Timeline de volume de leads e gráfico de conversão ao longo do tempo
+
+### Data & Security (Backoffice)
+
+- [ ] **BSEC-01**: Rotas /admin protegidas por middleware de autenticação
+- [ ] **BSEC-02**: Separação de roles (admin vs viewer) no sistema de auth
+- [ ] **BSEC-03**: Audit log de ações no backoffice (quem moveu lead, quando)
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -79,7 +99,7 @@ Deferred to future release. Tracked but not in current roadmap.
 
 - **ADV-01**: KYC automatizado via agente especializado
 - **ADV-02**: Chat persistence com encryption (histórico salvo)
-- **ADV-03**: Dashboard admin para analytics de leads e conversões
+- **ADV-03**: Dashboard admin para analytics de leads e conversões (substituído por BACK-10/BACK-11)
 - **ADV-04**: Assembly monitoring agent (candidato a Agent SDK)
 
 ### Growth
