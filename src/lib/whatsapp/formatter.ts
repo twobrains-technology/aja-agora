@@ -86,8 +86,9 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 			body: { text: body },
 			action: {
 				buttons: [
-					{ type: "reply", reply: { id: `detail_${p.id}`, title: "Ver detalhes" } },
+					{ type: "reply", reply: { id: `interest_${p.id}`, title: "Tenho interesse!" } },
 					{ type: "reply", reply: { id: `simulate_${p.id}`, title: "Simular" } },
+					{ type: "reply", reply: { id: `detail_${p.id}`, title: "Ver detalhes" } },
 				],
 			},
 		},
