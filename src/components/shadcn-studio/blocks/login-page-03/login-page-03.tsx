@@ -1,8 +1,32 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { BarChart3, MessageSquare, BrainCircuit, ShieldCheck } from 'lucide-react'
 
 import Logo from '@/components/shadcn-studio/logo'
 import LogoVector from '@/assets/svg/logo-vector'
 import LoginForm from '@/components/shadcn-studio/blocks/login-page-03/login-form'
+
+const features = [
+  {
+    icon: BarChart3,
+    title: 'Pipeline em tempo real',
+    description: 'Acompanhe cada lead do primeiro contato ao fechamento',
+  },
+  {
+    icon: MessageSquare,
+    title: 'Historico de conversas',
+    description: 'Revise tudo que a IA conversou com o cliente',
+  },
+  {
+    icon: BrainCircuit,
+    title: 'Insights automaticos',
+    description: 'Intencao, orcamento e proxima acao sugerida por IA',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Controle total',
+    description: 'Assuma a negociacao no momento certo',
+  },
+]
 
 const Login = () => {
   return (
@@ -25,47 +49,44 @@ const Login = () => {
       <div className='bg-muted h-screen p-5 max-lg:hidden'>
         <Card className='bg-primary relative h-full justify-between overflow-hidden border-none py-8'>
           <CardHeader className='gap-6 px-8'>
+            <div className='flex items-center gap-2 text-primary-foreground/60 text-sm font-medium uppercase tracking-widest'>
+              <ShieldCheck className='size-4' />
+              Acesso restrito — Equipe Aja Agora
+            </div>
             <CardTitle className='text-primary-foreground text-4xl font-bold xl:text-5xl/15.5'>
-              Gerencie seus leads de consorcio com inteligencia artificial
+              Seu painel de vendas com inteligencia artificial
             </CardTitle>
-            <p className='text-primary-foreground text-xl'>
-              Acompanhe o funil de vendas, visualize conversas e receba insights automaticos sobre cada lead.
+            <p className='text-primary-foreground/80 text-lg'>
+              A IA conduz os clientes ate a recomendacao. Voce assume quando importa — com contexto completo e insights prontos.
             </p>
           </CardHeader>
 
           <LogoVector className='text-secondary/10 pointer-events-none absolute bottom-30 -left-50 size-130' />
 
-          <CardContent className='relative z-1 mx-8 h-62 overflow-hidden rounded-2xl px-0'>
-            <svg
-              width='1094'
-              height='249'
-              viewBox='0 0 1094 249'
-              fill='none'
-              xmlns='http://www.w3.org/2000/svg'
-              className='pointer-events-none absolute right-0 -z-1 select-none'
-            >
-              <path
-                d='M0.263672 16.8809C0.263672 8.0443 7.42712 0.880859 16.2637 0.880859H786.394H999.115C1012.37 0.880859 1023.12 11.626 1023.12 24.8808L1023.12 47.3809C1023.12 60.6357 1033.86 71.3809 1047.12 71.3809H1069.6C1082.85 71.3809 1093.6 82.126 1093.6 95.3809L1093.6 232.881C1093.6 241.717 1086.43 248.881 1077.6 248.881H16.2637C7.42716 248.881 0.263672 241.717 0.263672 232.881V16.8809Z'
-                fill='var(--card)'
-              />
-            </svg>
-
-            <div className='bg-card absolute top-0 right-0 flex size-15 items-center justify-center rounded-2xl'>
-              <LogoVector className='size-15' />
+          <CardContent className='relative z-1 mx-8 px-0'>
+            <div className='grid grid-cols-2 gap-4'>
+              {features.map((feature) => (
+                <div
+                  key={feature.title}
+                  className='bg-card/10 backdrop-blur-sm rounded-xl p-5 border border-primary-foreground/10'
+                >
+                  <div className='flex items-center gap-3 mb-3'>
+                    <div className='flex size-9 items-center justify-center rounded-lg bg-primary-foreground/15'>
+                      <feature.icon className='size-5 text-primary-foreground' />
+                    </div>
+                  </div>
+                  <p className='text-primary-foreground font-semibold text-sm mb-1'>{feature.title}</p>
+                  <p className='text-primary-foreground/70 text-xs leading-relaxed'>{feature.description}</p>
+                </div>
+              ))}
             </div>
 
-            <div className='flex flex-col gap-5 p-6'>
-              <p className='line-clamp-2 pr-12 text-3xl font-bold'>Pipeline de vendas inteligente</p>
-              <p className='line-clamp-2 text-lg'>
-                Kanban visual, replay de conversas, insights AI e dashboard com metricas do funil — tudo em um so lugar.
-              </p>
-
-              <div className='flex items-center gap-3 self-end'>
-                <div className='flex items-center gap-2 rounded-full bg-card/80 px-4 py-2'>
-                  <div className='size-2 rounded-full bg-green-500 animate-pulse' />
-                  <span className='text-sm font-medium'>AI ativa 24/7</span>
-                </div>
+            <div className='mt-6 flex items-center justify-between'>
+              <div className='flex items-center gap-2'>
+                <div className='size-2 rounded-full bg-green-400 animate-pulse' />
+                <span className='text-primary-foreground/60 text-xs'>IA ativa — atendendo clientes agora</span>
               </div>
+              <span className='text-primary-foreground/40 text-xs'>v1.0</span>
             </div>
           </CardContent>
         </Card>
