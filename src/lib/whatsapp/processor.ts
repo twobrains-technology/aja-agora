@@ -21,8 +21,10 @@ import { conversations } from "@/db/schema";
 import {
 	getHandoffState,
 	relayUserToAgent,
-	relayAgentToUser,
-	handoffToAgent,
+	handleAgentMessage,
+	handoffToAgents,
+	isAgentPhone,
+	getAgentList,
 } from "./proxy";
 
 const anthropic = createAnthropic();
@@ -50,19 +52,14 @@ export async function processTextMessage(
 			return;
 		}
 
-		// If sender is an agent, only relay — never treat as buyer
-		const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
-		if (agentPhone && from === agentPhone) {
-			const relayed = await relayAgentToUser(from, text);
-			if (!relayed) {
+		// If sender is an agent, route to proxy — never treat as buyer
+		if (isAgentPhone(from)) {
+			const handled = await handleAgentMessage(from, text);
+			if (!handled) {
 				await sendTextMessage(from, "⏳ Nenhuma conversa ativa no momento. Quando um cliente demonstrar interesse, você receberá o resumo aqui.");
 			}
 			return;
 		}
-
-		// Check if this sender is an agent replying to a handed-off conversation
-		const agentRelayed = await relayAgentToUser(from, text);
-		if (agentRelayed) return;
 
 		// Check if this user's conversation is handed off
 		const handoff = await getHandoffState(from);
@@ -78,9 +75,8 @@ export async function processTextMessage(
 			});
 			const meta = conv?.metadata as Record<string, unknown> | null;
 			if (meta?.awaitingName) {
-				// User just sent their name — do the handoff
-				const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
-				if (agentPhone) {
+				const agents = getAgentList();
+				if (agents.length > 0) {
 					// Clear the awaiting flag
 					await db.update(conversations).set({
 						metadata: { ...meta, awaitingName: false },
@@ -90,11 +86,10 @@ export async function processTextMessage(
 
 					const history = await loadConversationHistory(handoff.conversationId);
 					const summary = buildConversationSummary(history, []);
-					await handoffToAgent(
+					await handoffToAgents(
 						handoff.conversationId,
 						from,
 						text, // user's name
-						agentPhone,
 						summary,
 					);
 					return;
@@ -321,13 +316,12 @@ export async function processInteractiveReply(
 		return;
 	}
 
-	// "Tenho interesse!" button → ask for name, then handoff
+	// "Tenho interesse!" button → ask for name, then handoff to all agents
 	if (replyId.startsWith("interest_")) {
-		const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
-		if (agentPhone) {
+		const agents = getAgentList();
+		if (agents.length > 0) {
 			const handoff = await getHandoffState(from);
 			if (handoff?.conversationId && !handoff.isHandedOff) {
-				// Set awaiting_name flag and ask for name
 				await db.update(conversations).set({
 					metadata: { awaitingName: true },
 					updatedAt: new Date(),
