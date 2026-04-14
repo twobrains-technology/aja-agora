@@ -45,11 +45,9 @@ export function DateRangeFilter() {
 
       {/* From date picker */}
       <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
-            <CalendarIcon className="size-3.5" />
-            {from ? format(from, "dd/MM/yyyy", { locale: ptBR }) : "De"}
-          </Button>
+        <PopoverTrigger className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs h-8 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+          <CalendarIcon className="size-3.5" />
+          {from ? format(from, "dd/MM/yyyy", { locale: ptBR }) : "De"}
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
           <Calendar
@@ -65,11 +63,9 @@ export function DateRangeFilter() {
 
       {/* To date picker */}
       <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
-            <CalendarIcon className="size-3.5" />
-            {to ? format(to, "dd/MM/yyyy", { locale: ptBR }) : "Ate"}
-          </Button>
+        <PopoverTrigger className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs h-8 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+          <CalendarIcon className="size-3.5" />
+          {to ? format(to, "dd/MM/yyyy", { locale: ptBR }) : "Ate"}
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
           <Calendar

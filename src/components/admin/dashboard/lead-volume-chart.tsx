@@ -56,7 +56,7 @@ export function LeadVolumeChart({ data }: { data: DailyVolume[] }) {
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
               <ChartTooltip
                 content={<ChartTooltipContent />}
-                labelFormatter={formatTick}
+                labelFormatter={(label) => formatTick(String(label))}
               />
               <Area
                 type="monotone"

@@ -36,13 +36,13 @@ export async function computeKpis(
   const [
     [totalResult],
     [todayResult],
-    [avgResult],
-    [convResult],
+    avgResult,
+    convResult,
     // Previous period queries
     [prevTotalResult],
     [prevTodayResult],
-    [prevAvgResult],
-    [prevConvResult],
+    prevAvgResult,
+    prevConvResult,
   ] = await Promise.all([
     // --- Current period ---
     db
@@ -125,13 +125,17 @@ export async function computeKpis(
 
   const totalLeads = totalResult.count;
   const leadsToday = todayResult.count;
-  const avgFunnelDays = Number(avgResult.avg_days) || 0;
-  const conversionRate = Math.round((Number(convResult.rate) || 0) * 10) / 10;
+  const avgRow = (avgResult as { rows: Array<Record<string, unknown>> }).rows?.[0] ?? avgResult;
+  const avgFunnelDays = Number((avgRow as Record<string, unknown>).avg_days) || 0;
+  const convRow = (convResult as { rows: Array<Record<string, unknown>> }).rows?.[0] ?? convResult;
+  const conversionRate = Math.round((Number((convRow as Record<string, unknown>).rate) || 0) * 10) / 10;
 
   const prevTotal = prevTotalResult.count;
   const prevToday = prevTodayResult.count;
-  const prevAvg = Number(prevAvgResult.avg_days) || 0;
-  const prevConv = Math.round((Number(prevConvResult.rate) || 0) * 10) / 10;
+  const prevAvgRow = (prevAvgResult as { rows: Array<Record<string, unknown>> }).rows?.[0] ?? prevAvgResult;
+  const prevAvg = Number((prevAvgRow as Record<string, unknown>).avg_days) || 0;
+  const prevConvRow = (prevConvResult as { rows: Array<Record<string, unknown>> }).rows?.[0] ?? prevConvResult;
+  const prevConv = Math.round((Number((prevConvRow as Record<string, unknown>).rate) || 0) * 10) / 10;
 
   return {
     totalLeads,
