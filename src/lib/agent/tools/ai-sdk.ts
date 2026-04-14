@@ -73,7 +73,7 @@ const recommendationSchema = z.object({
 });
 
 const leadFormSchema = z.object({
-	conversationId: z.string().describe("ID da conversa atual"),
+	conversationId: z.string().optional().describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
 	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
 });
 
@@ -204,7 +204,7 @@ export const consorcioTools = {
 		},
 	}),
 
-	present_recommendation: tool({
+	present_recommendation_card: tool({
 		description:
 			"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario.",
 		inputSchema: recommendationSchema,
@@ -275,7 +275,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_group_card",
 	"present_comparison_table",
 	"present_simulation_result",
-	"present_recommendation",
+	"present_recommendation_card",
 	"present_lead_form",
 	"present_value_picker",
 ]);

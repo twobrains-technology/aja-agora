@@ -11,6 +11,7 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { sendTextMessage } from "./api";
 import { saveMessage } from "./session";
+import { publishMessage } from "@/lib/chat/message-bus";
 
 /** Parse comma-separated agent phones and names from env */
 export function getAgentList(): Array<{ phone: string; name: string }> {
@@ -118,19 +119,23 @@ export async function findConversationByAgent(
 	agentWaId: string,
 ): Promise<{
 	conversationId: string;
-	userWaId: string;
+	userWaId: string | null;
 	contactName: string;
+	channel: "web" | "whatsapp";
 } | null> {
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.handedOffTo, agentWaId),
 	});
 
-	if (!conv || !conv.waId) return null;
+	if (!conv) return null;
+	// WhatsApp conversations need waId; web conversations don't
+	if (conv.channel === "whatsapp" && !conv.waId) return null;
 
 	return {
 		conversationId: conv.id,
-		userWaId: conv.waId,
+		userWaId: conv.waId ?? null,
 		contactName: conv.contactName ?? "Cliente",
+		channel: (conv.channel as "web" | "whatsapp") ?? "web",
 	};
 }
 
@@ -139,21 +144,24 @@ export async function findConversationByAgent(
  */
 async function findUnclaimedConversation(): Promise<{
 	conversationId: string;
-	userWaId: string;
+	userWaId: string | null;
 	contactName: string;
+	channel: "web" | "whatsapp";
 } | null> {
 	// Find handed_off conversations with no agent claimed
 	const allConvs = await db.query.conversations.findMany({
 		where: eq(conversations.status, "handed_off"),
 	});
 
-	const unclaimed = allConvs.find((c) => !c.handedOffTo && c.waId);
-	if (!unclaimed || !unclaimed.waId) return null;
+	// Accept both web and whatsapp conversations (web has no waId)
+	const unclaimed = allConvs.find((c) => !c.handedOffTo && (c.waId || c.channel === "web"));
+	if (!unclaimed) return null;
 
 	return {
 		conversationId: unclaimed.id,
-		userWaId: unclaimed.waId,
+		userWaId: unclaimed.waId ?? null,
 		contactName: unclaimed.contactName ?? "Cliente",
+		channel: (unclaimed.channel as "web" | "whatsapp") ?? "web",
 	};
 }
 
@@ -170,10 +178,23 @@ export async function handleAgentMessage(
 	// 1. Check if this agent already owns a conversation
 	const ownedConv = await findConversationByAgent(agentWaId);
 	if (ownedConv) {
-		// Relay to user
+		// Relay to user — different delivery per channel
 		await saveMessage(ownedConv.conversationId, "assistant", `[${agentName}] ${text}`);
-		await sendTextMessage(ownedConv.userWaId, `*${agentName}:*\n${text}`);
-		console.log(`[whatsapp-proxy] Agent→User: ${agentName} → ${ownedConv.userWaId} | "${text.slice(0, 50)}"`);
+
+		if (ownedConv.channel === "whatsapp" && ownedConv.userWaId) {
+			await sendTextMessage(ownedConv.userWaId, `*${agentName}:*\n${text}`);
+		} else {
+			// Web channel — publish to SSE bus (frontend picks up in real time)
+			publishMessage(ownedConv.conversationId, {
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: text,
+				agentName,
+				createdAt: new Date().toISOString(),
+			});
+		}
+
+		console.log(`[whatsapp-proxy] Agent→User (${ownedConv.channel}): ${agentName} → ${ownedConv.userWaId ?? "web"} | "${text.slice(0, 50)}"`);
 		return true;
 	}
 
@@ -203,7 +224,18 @@ export async function handleAgentMessage(
 
 		// Relay the first message to user
 		await saveMessage(unclaimed.conversationId, "assistant", `[${agentName}] ${text}`);
-		await sendTextMessage(unclaimed.userWaId, `*${agentName}:*\n${text}`);
+
+		if (unclaimed.channel === "whatsapp" && unclaimed.userWaId) {
+			await sendTextMessage(unclaimed.userWaId, `*${agentName}:*\n${text}`);
+		} else {
+			publishMessage(unclaimed.conversationId, {
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: text,
+				agentName,
+				createdAt: new Date().toISOString(),
+			});
+		}
 
 		console.log(`[whatsapp-proxy] Agent ${agentName} claimed conversation ${unclaimed.conversationId}`);
 		return true;

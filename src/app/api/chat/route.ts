@@ -12,6 +12,8 @@ import {
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { sendTextMessage } from "@/lib/whatsapp/api";
+import { publishMessage } from "@/lib/chat/message-bus";
 
 export const maxDuration = 60;
 
@@ -47,6 +49,8 @@ export async function POST(req: NextRequest) {
 		return new Response("Messages array is required", { status: 400 });
 	}
 
+	const lastMessage = messages[messages.length - 1];
+
 	// ---- Session isolation: create or load conversation ----
 	let conversationId = existingId;
 
@@ -60,10 +64,60 @@ export async function POST(req: NextRequest) {
 		if (!conv) {
 			return new Response("Conversation not found", { status: 404 });
 		}
+
+		// ---- Handoff relay: if conversation is handed off, forward to vendor via WhatsApp ----
+		if (conv.status === "handed_off" && lastMessage?.role === "user") {
+			const userText = lastMessage.content;
+
+			// Save user message to DB
+			await db.insert(messagesTable).values({
+				conversationId,
+				role: "user",
+				content: userText,
+			});
+
+			// Relay to vendor via WhatsApp
+			const userName = conv.contactName ?? "Cliente";
+			if (conv.handedOffTo) {
+				await sendTextMessage(conv.handedOffTo, `*${userName}:*\n${userText}`);
+			}
+
+			// Publish to SSE bus so the user's own message confirms delivery
+			publishMessage(conversationId, {
+				id: crypto.randomUUID(),
+				role: "user",
+				content: userText,
+				createdAt: new Date().toISOString(),
+			});
+
+			// Return a simple SSE stream with confirmation
+			const encoder = new TextEncoder();
+			const ackStream = new ReadableStream({
+				start(controller) {
+					const agentName = conv.agentName ?? "Consultor";
+					const ack = JSON.stringify({
+						type: "text-delta",
+						textDelta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
+					});
+					controller.enqueue(encoder.encode(`data: ${ack}\n\n`));
+					controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+					controller.close();
+				},
+			});
+
+			return new Response(ackStream, {
+				headers: {
+					"Content-Type": "text/event-stream",
+					"Cache-Control": "no-cache",
+					Connection: "keep-alive",
+					"X-Conversation-Id": conversationId,
+					"X-Handed-Off": "true",
+				},
+			});
+		}
 	}
 
 	// ---- Save user message to DB ----
-	const lastMessage = messages[messages.length - 1];
 	if (lastMessage && lastMessage.role === "user") {
 		await db.insert(messagesTable).values({
 			conversationId,

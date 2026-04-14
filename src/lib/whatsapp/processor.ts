@@ -316,6 +316,39 @@ export async function processInteractiveReply(
 		return;
 	}
 
+	// Group selection from comparison table list → simulate + recommend
+	if (replyId.startsWith("group_")) {
+		const groupId = replyId.replace("group_", "");
+		await processTextMessage(
+			from,
+			`[sistema: o usuario selecionou o grupo ${groupId} da lista. Use simulate_quota com esse groupId e depois present_recommendation_card. NAO mencione IDs ou termos tecnicos na resposta.]`,
+			contactName,
+		);
+		return;
+	}
+
+	// Simulate button on group card → run simulation
+	if (replyId.startsWith("simulate_")) {
+		const groupId = replyId.replace("simulate_", "");
+		await processTextMessage(
+			from,
+			`[sistema: o usuario quer simular o grupo ${groupId}. Use simulate_quota com esse groupId e present_simulation_result. NAO mencione IDs na resposta.]`,
+			contactName,
+		);
+		return;
+	}
+
+	// Detail button on group card → show full details
+	if (replyId.startsWith("detail_")) {
+		const groupId = replyId.replace("detail_", "");
+		await processTextMessage(
+			from,
+			`[sistema: o usuario quer detalhes do grupo ${groupId}. Use get_group_details com esse groupId. NAO mencione IDs na resposta.]`,
+			contactName,
+		);
+		return;
+	}
+
 	// "Tenho interesse!" button → ask for name, then handoff to all agents
 	if (replyId.startsWith("interest_")) {
 		const agents = getAgentList();

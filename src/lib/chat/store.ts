@@ -12,19 +12,29 @@ export interface ChatState {
 
   // UI state
   isStreaming: boolean;
+  isHandedOff: boolean;
+  agentName: string | null;
   error: string | null;
+
+  // SSE connection for handoff
+  _eventSource: EventSource | null;
 
   // Actions
   sendMessage: (content: string) => Promise<void>;
   retry: () => void;
   reset: () => void;
+  connectHandoff: () => void;
+  disconnectHandoff: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: null,
   messages: [],
   isStreaming: false,
+  isHandedOff: false,
+  agentName: null,
   error: null,
+  _eventSource: null,
 
   sendMessage: async (content: string) => {
     const { isStreaming } = get();
@@ -86,6 +96,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const convId = response.headers.get("X-Conversation-Id");
       if (convId && !get().conversationId) {
         set({ conversationId: convId });
+      }
+
+      // Detect handoff — connect SSE for real-time vendor messages
+      if (response.headers.get("X-Handed-Off") === "true") {
+        set({ isHandedOff: true });
+        get().connectHandoff();
       }
 
       // Process SSE stream
@@ -163,12 +179,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().sendMessage(lastUserContent);
   },
 
+  connectHandoff: () => {
+    const { conversationId, _eventSource } = get();
+    if (!conversationId || _eventSource) return;
+
+    const es = new EventSource(`/api/chat/stream?conversationId=${conversationId}`);
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "message") {
+          const msg = data.message;
+          const chatMsg: ChatMessage = {
+            id: msg.id ?? crypto.randomUUID(),
+            role: msg.role,
+            content: msg.agentName ? `**${msg.agentName}:** ${msg.content}` : msg.content,
+            artifacts: [],
+            createdAt: new Date(msg.createdAt),
+            status: "complete",
+          };
+          set((state) => ({
+            messages: [...state.messages, chatMsg],
+            agentName: msg.agentName ?? state.agentName,
+          }));
+        } else if (data.type === "connected" && data.agentName) {
+          set({ agentName: data.agentName });
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    es.onerror = () => {
+      // Auto-reconnect is built into EventSource
+      console.warn("[handoff-sse] Connection error, will auto-reconnect");
+    };
+
+    set({ _eventSource: es });
+  },
+
+  disconnectHandoff: () => {
+    const { _eventSource } = get();
+    if (_eventSource) {
+      _eventSource.close();
+      set({ _eventSource: null, isHandedOff: false, agentName: null });
+    }
+  },
+
   reset: () => {
+    get().disconnectHandoff();
     set({
       conversationId: null,
       messages: [],
       isStreaming: false,
+      isHandedOff: false,
+      agentName: null,
       error: null,
+      _eventSource: null,
     });
   },
 }));
