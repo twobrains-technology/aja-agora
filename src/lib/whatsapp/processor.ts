@@ -50,6 +50,16 @@ export async function processTextMessage(
 			return;
 		}
 
+		// If sender is an agent, only relay — never treat as buyer
+		const agentPhone = process.env.WHATSAPP_AGENT_PHONE;
+		if (agentPhone && from === agentPhone) {
+			const relayed = await relayAgentToUser(from, text);
+			if (!relayed) {
+				await sendTextMessage(from, "⏳ Nenhuma conversa ativa no momento. Quando um cliente demonstrar interesse, você receberá o resumo aqui.");
+			}
+			return;
+		}
+
 		// Check if this sender is an agent replying to a handed-off conversation
 		const agentRelayed = await relayAgentToUser(from, text);
 		if (agentRelayed) return;
