@@ -96,7 +96,7 @@ export async function POST(
 
   try {
     const { text } = await generateText({
-      model: anthropic("claude-haiku-3-5-latest"),
+      model: anthropic("claude-haiku-4-5-20251001"),
       system: INSIGHTS_SYSTEM_PROMPT,
       prompt: buildInsightPrompt(lead.conversation.messages),
     });
@@ -108,9 +108,11 @@ export async function POST(
       .trim();
 
     parsed = JSON.parse(cleaned);
-  } catch {
+  } catch (err) {
+    console.error("[insights] Failed to generate insights:", err);
+    const message = err instanceof Error ? err.message : "Erro desconhecido";
     return Response.json(
-      { error: "Falha ao processar insights" },
+      { error: `Falha ao processar insights: ${message}` },
       { status: 500 },
     );
   }
@@ -119,7 +121,7 @@ export async function POST(
   await db.delete(leadInsights).where(eq(leadInsights.leadId, leadId));
 
   const now = new Date();
-  const modelName = "claude-haiku-3-5-latest";
+  const modelName = "claude-haiku-4-5-20251001";
 
   await db.insert(leadInsights).values([
     {
