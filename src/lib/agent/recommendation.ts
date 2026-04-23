@@ -30,8 +30,10 @@ export function monthlyFitScore(payment: number, budget: number): number {
 /**
  * Normalize contemplation rate to 0-1.
  * Typical range: 2-8% per month. 8%+ gets a perfect score.
+ * 0 = "sem dado" (mock sem histórico) → neutro 0.5, não zero.
  */
 export function contemplationScore(ratePercent: number): number {
+	if (ratePercent <= 0) return 0.5;
 	return Math.min(1, Math.max(0, ratePercent / 8));
 }
 
