@@ -171,35 +171,35 @@ export function leadFormToWhatsApp(): WhatsAppResponse {
 }
 
 /** Pre-defined ranges by category — realistic market values */
-const RANGES: Record<string, Array<{ id: string; title: string; desc: string; credit: number; budget: number }>> = {
+const RANGES: Record<string, Array<{ id: string; title: string; desc: string; creditMin: number; creditMax: number; budget: number }>> = {
 	auto: [
-		{ id: "range_auto_50", title: "Até R$ 50 mil", desc: "Parcela ~R$ 600/mês • Seminovos", credit: 50000, budget: 600 },
-		{ id: "range_auto_80", title: "R$ 50 mil - R$ 80 mil", desc: "Parcela ~R$ 900/mês • Populares", credit: 80000, budget: 900 },
-		{ id: "range_auto_120", title: "R$ 80 mil - R$ 120 mil", desc: "Parcela ~R$ 1.300/mês • Sedãs", credit: 120000, budget: 1300 },
-		{ id: "range_auto_180", title: "R$ 120 mil - R$ 180 mil", desc: "Parcela ~R$ 2.000/mês • SUVs", credit: 180000, budget: 2000 },
-		{ id: "range_auto_300", title: "Acima de R$ 180 mil", desc: "Parcela ~R$ 3.500/mês • Premium", credit: 300000, budget: 3500 },
+		{ id: "range_auto_50", title: "Até R$ 50 mil", desc: "Parcela ~R$ 600/mês • Seminovos", creditMin: 0, creditMax: 50000, budget: 600 },
+		{ id: "range_auto_80", title: "R$ 50 mil - R$ 80 mil", desc: "Parcela ~R$ 900/mês • Populares", creditMin: 50000, creditMax: 80000, budget: 900 },
+		{ id: "range_auto_120", title: "R$ 80 mil - R$ 120 mil", desc: "Parcela ~R$ 1.300/mês • Sedãs", creditMin: 80000, creditMax: 120000, budget: 1300 },
+		{ id: "range_auto_180", title: "R$ 120 mil - R$ 180 mil", desc: "Parcela ~R$ 2.000/mês • SUVs", creditMin: 120000, creditMax: 180000, budget: 2000 },
+		{ id: "range_auto_300", title: "Acima de R$ 180 mil", desc: "Parcela ~R$ 3.500/mês • Premium", creditMin: 180000, creditMax: 300000, budget: 3500 },
 	],
 	imovel: [
-		{ id: "range_imovel_200", title: "Até R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Aptos compactos", credit: 200000, budget: 2000 },
-		{ id: "range_imovel_400", title: "R$ 200 mil - R$ 400 mil", desc: "Parcela ~R$ 3.500/mês • Aptos 2-3 quartos", credit: 400000, budget: 3500 },
-		{ id: "range_imovel_600", title: "R$ 400 mil - R$ 600 mil", desc: "Parcela ~R$ 5.000/mês • Casas", credit: 600000, budget: 5000 },
-		{ id: "range_imovel_1000", title: "R$ 600 mil - R$ 1 milhão", desc: "Parcela ~R$ 8.000/mês • Alto padrão", credit: 1000000, budget: 8000 },
-		{ id: "range_imovel_2000", title: "Acima de R$ 1 milhão", desc: "Parcela ~R$ 15.000/mês • Luxo", credit: 2000000, budget: 15000 },
+		{ id: "range_imovel_200", title: "Até R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Aptos compactos", creditMin: 0, creditMax: 200000, budget: 2000 },
+		{ id: "range_imovel_400", title: "R$ 200 mil - R$ 400 mil", desc: "Parcela ~R$ 3.500/mês • Aptos 2-3 quartos", creditMin: 200000, creditMax: 400000, budget: 3500 },
+		{ id: "range_imovel_600", title: "R$ 400 mil - R$ 600 mil", desc: "Parcela ~R$ 5.000/mês • Casas", creditMin: 400000, creditMax: 600000, budget: 5000 },
+		{ id: "range_imovel_1000", title: "R$ 600 mil - R$ 1 milhão", desc: "Parcela ~R$ 8.000/mês • Alto padrão", creditMin: 600000, creditMax: 1000000, budget: 8000 },
+		{ id: "range_imovel_2000", title: "Acima de R$ 1 milhão", desc: "Parcela ~R$ 15.000/mês • Luxo", creditMin: 1000000, creditMax: 2000000, budget: 15000 },
 	],
 	servicos: [
-		{ id: "range_serv_30", title: "Até R$ 30 mil", desc: "Parcela ~R$ 400/mês • Reformas simples", credit: 30000, budget: 400 },
-		{ id: "range_serv_60", title: "R$ 30 mil - R$ 60 mil", desc: "Parcela ~R$ 700/mês • Reformas médias", credit: 60000, budget: 700 },
-		{ id: "range_serv_100", title: "R$ 60 mil - R$ 100 mil", desc: "Parcela ~R$ 1.100/mês • Reformas completas", credit: 100000, budget: 1100 },
-		{ id: "range_serv_200", title: "R$ 100 mil - R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Grandes projetos", credit: 200000, budget: 2000 },
-		{ id: "range_serv_500", title: "Acima de R$ 200 mil", desc: "Parcela ~R$ 4.000/mês • Investimentos", credit: 500000, budget: 4000 },
+		{ id: "range_serv_30", title: "Até R$ 30 mil", desc: "Parcela ~R$ 400/mês • Reformas simples", creditMin: 0, creditMax: 30000, budget: 400 },
+		{ id: "range_serv_60", title: "R$ 30 mil - R$ 60 mil", desc: "Parcela ~R$ 700/mês • Reformas médias", creditMin: 30000, creditMax: 60000, budget: 700 },
+		{ id: "range_serv_100", title: "R$ 60 mil - R$ 100 mil", desc: "Parcela ~R$ 1.100/mês • Reformas completas", creditMin: 60000, creditMax: 100000, budget: 1100 },
+		{ id: "range_serv_200", title: "R$ 100 mil - R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Grandes projetos", creditMin: 100000, creditMax: 200000, budget: 2000 },
+		{ id: "range_serv_500", title: "Acima de R$ 200 mil", desc: "Parcela ~R$ 4.000/mês • Investimentos", creditMin: 200000, creditMax: 500000, budget: 4000 },
 	],
 };
 
 /** Exported so processor can resolve range IDs to search params */
-export function resolveRange(rangeId: string): { credit: number; budget: number; category: string } | null {
+export function resolveRange(rangeId: string): { creditMin: number; creditMax: number; budget: number; category: string } | null {
 	for (const [cat, ranges] of Object.entries(RANGES)) {
 		const found = ranges.find((r) => r.id === rangeId);
-		if (found) return { credit: found.credit, budget: found.budget, category: cat };
+		if (found) return { creditMin: found.creditMin, creditMax: found.creditMax, budget: found.budget, category: cat };
 	}
 	return null;
 }
