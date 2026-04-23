@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useQueryState, parseAsIsoDate } from "nuqs";
 import { subDays } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,7 +51,7 @@ function ChartSkeleton({ title }: { title: string }) {
   );
 }
 
-export default function AdminDashboardPage() {
+function DashboardContent() {
   const [from] = useQueryState(
     "from",
     parseAsIsoDate.withDefault(defaultFrom()),
@@ -96,8 +96,8 @@ export default function AdminDashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             Visao geral do funil de vendas
           </p>
         </div>
@@ -136,5 +136,26 @@ export default function AdminDashboardPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function DashboardFallback() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-64 mt-2" />
+      </div>
+      <KpiSkeleton />
+      <ChartSkeleton title="Funil" />
+    </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense fallback={<DashboardFallback />}>
+      <DashboardContent />
+    </Suspense>
   );
 }

@@ -35,7 +35,7 @@ export function LeadVolumeChart({ data }: { data: DailyVolume[] }) {
   const isEmpty = data.length === 0 || data.every((d) => d.count === 0);
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle>Volume de Leads</CardTitle>
       </CardHeader>
@@ -47,23 +47,36 @@ export function LeadVolumeChart({ data }: { data: DailyVolume[] }) {
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
             <AreaChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <defs>
+                <linearGradient id="leadVolumeGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-count)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="var(--color-count)" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted/50" />
               <XAxis
                 dataKey="date"
                 tickFormatter={formatTick}
                 tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
               />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+              />
               <ChartTooltip
-                content={<ChartTooltipContent />}
+                content={<ChartTooltipContent indicator="line" />}
                 labelFormatter={(label) => formatTick(String(label))}
               />
               <Area
                 type="monotone"
                 dataKey="count"
-                fill="var(--color-count)"
+                fill="url(#leadVolumeGradient)"
                 stroke="var(--color-count)"
-                fillOpacity={0.3}
+                strokeWidth={2}
               />
             </AreaChart>
           </ChartContainer>

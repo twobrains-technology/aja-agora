@@ -303,7 +303,13 @@ export async function processInteractiveReply(
 		const range = resolveRange(replyId);
 		if (range) {
 			const catLabel: Record<string, string> = { auto: "carro", imovel: "imóvel", servicos: "serviço" };
-			const prompt = `Quero um ${catLabel[range.category] ?? "consórcio"} de até R$ ${range.credit.toLocaleString("pt-BR")} com orçamento mensal de R$ ${range.budget.toLocaleString("pt-BR")}. Busque as melhores opções.`;
+			const label = catLabel[range.category] ?? "consórcio";
+			const budgetFmt = range.budget.toLocaleString("pt-BR");
+			const minFmt = range.creditMin.toLocaleString("pt-BR");
+			const maxFmt = range.creditMax.toLocaleString("pt-BR");
+			const prompt = range.creditMin > 0
+				? `Quero um ${label} entre R$ ${minFmt} e R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque apenas grupos com creditValue dentro dessa faixa (creditMin=${range.creditMin}, creditMax=${range.creditMax}).`
+				: `Quero um ${label} de até R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque com creditMax=${range.creditMax}.`;
 			await processTextMessage(from, prompt, contactName);
 			return;
 		}
@@ -321,7 +327,7 @@ export async function processInteractiveReply(
 		const groupId = replyId.replace("group_", "");
 		await processTextMessage(
 			from,
-			`[sistema: o usuario selecionou o grupo ${groupId} da lista. Use simulate_quota com esse groupId e depois present_recommendation_card. NAO mencione IDs ou termos tecnicos na resposta.]`,
+			`[sistema: o usuario selecionou ESPECIFICAMENTE o grupo ${groupId} da lista. FLUXO OBRIGATORIO: (1) chame simulate_quota com groupId="${groupId}" para pegar os numeros; (2) chame get_group_details com groupId="${groupId}" para pegar contemplationRate; (3) chame present_recommendation_card passando EXATAMENTE os dados desse grupo ${groupId} (administradora, creditValue, monthlyPayment, adminFeePercent, termMonths, contemplationRate e o score/scoreBreakdown calculados desse mesmo grupo). NAO chame recommend_groups — o usuario JA escolheu. NAO troque o grupo por outro do ranking. NAO mencione IDs ou termos tecnicos na resposta textual.]`,
 			contactName,
 		);
 		return;

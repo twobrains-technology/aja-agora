@@ -72,29 +72,29 @@ export function LeadCard({
   return (
     <Card
       size="sm"
-      className={`cursor-pointer transition-opacity ${isDragging ? "opacity-50" : ""}`}
+      className={`cursor-pointer transition-all hover:shadow-md ${isDragging ? "opacity-50 rotate-2 shadow-lg" : "shadow-sm"}`}
       onClick={() => {
         if (wasDragging.current) return;
         onLeadClick?.(lead.id);
       }}
     >
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <span className="font-medium truncate text-sm">
             {getDisplayName(lead)}
           </span>
-          <Badge variant="secondary" className="shrink-0">
+          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 h-5">
             <ChannelIcon channel={lead.conversation.channel} />
-            <span className="ml-0.5 text-[10px]">
+            <span className="ml-0.5">
               {lead.conversation.channel === "whatsapp" ? "WA" : "Web"}
             </span>
           </Badge>
         </div>
 
-        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <DollarSign className="size-3" />
-            <span>{creditDisplay}</span>
+            <DollarSign className="size-3 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-foreground font-medium">{creditDisplay}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="size-3" />

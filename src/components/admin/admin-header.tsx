@@ -3,11 +3,11 @@
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { LogOut } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import SearchDialog from "@/components/shadcn-studio/blocks/dialog-search";
+import NotificationDropdown from "@/components/shadcn-studio/blocks/dropdown-notification";
+import ProfileDropdown from "@/components/shadcn-studio/blocks/dropdown-profile";
 
 export function AdminHeader() {
   const { data: session } = useSession();
@@ -19,27 +19,32 @@ export function AdminHeader() {
   }
 
   const userName = session?.user?.name ?? "Admin";
-  const userRole = (session?.user as { role?: string } | undefined)?.role ?? "viewer";
+  const userEmail = session?.user?.email ?? "";
+  const initials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b bg-background px-4">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="h-6" />
-      <div className="flex-1" />
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium">{userName}</span>
-        <Badge variant={userRole === "admin" ? "default" : "secondary"}>
-          {userRole}
-        </Badge>
-        <ThemeToggle />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleLogout}
-          title="Sair"
-        >
-          <LogOut className="size-4" />
-        </Button>
+    <header className="before:bg-background/60 sticky top-0 z-50 before:absolute before:inset-0 before:mask-[linear-gradient(var(--card),var(--card)_18%,transparent_100%)] before:backdrop-blur-md">
+      <div className="bg-card relative z-[51] mx-auto mt-3 flex w-[calc(100%-2rem)] max-w-[calc(1280px-3rem)] items-center justify-between rounded-xl border px-6 py-2 sm:w-[calc(100%-3rem)]">
+        <div className="flex items-center gap-1.5 sm:gap-4">
+          <SidebarTrigger className="[&_svg]:!size-5" />
+          <Separator orientation="vertical" className="hidden !h-4 sm:block" />
+          <SearchDialog />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
+          <NotificationDropdown />
+          <ProfileDropdown
+            userName={userName}
+            userEmail={userEmail}
+            userInitials={initials}
+            onLogout={handleLogout}
+          />
+        </div>
       </div>
     </header>
   );

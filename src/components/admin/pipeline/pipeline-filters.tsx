@@ -165,11 +165,9 @@ export function PipelineFilters({
 
       {/* Date from */}
       <Popover>
-        <PopoverTrigger>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
-            <CalendarIcon className="size-3.5" />
-            {dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
-          </Button>
+        <PopoverTrigger render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}>
+          <CalendarIcon className="size-3.5" />
+          {dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
           <Calendar
@@ -183,11 +181,9 @@ export function PipelineFilters({
 
       {/* Date to */}
       <Popover>
-        <PopoverTrigger>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
-            <CalendarIcon className="size-3.5" />
-            {dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Ate"}
-          </Button>
+        <PopoverTrigger render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}>
+          <CalendarIcon className="size-3.5" />
+          {dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Ate"}
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
           <Calendar

@@ -15,6 +15,16 @@ const STAGE_LABELS: Record<string, string> = {
   perdido: "Perdido",
 };
 
+const STAGE_DOT_COLORS: Record<string, string> = {
+  novo: "bg-blue-500",
+  engajado: "bg-amber-500",
+  qualificado: "bg-violet-500",
+  em_negociacao: "bg-orange-500",
+  proposta_enviada: "bg-cyan-500",
+  fechado_ganho: "bg-emerald-500",
+  perdido: "bg-gray-400",
+};
+
 export function KanbanColumn({
   stage,
   leads,
@@ -28,36 +38,32 @@ export function KanbanColumn({
   const isWon = stage === "fechado_ganho";
   const isLost = stage === "perdido";
 
+  const dotColor = STAGE_DOT_COLORS[stage] ?? "bg-gray-400";
+
   return (
     <div
       className={cn(
-        "flex flex-col rounded-lg border bg-muted/30 min-w-[260px] w-[260px] shrink-0",
-        isWon && "border-green-500/50 bg-green-50/50 dark:bg-green-950/20",
-        isLost && "bg-muted/50 opacity-80",
+        "flex flex-col rounded-lg border bg-card shadow-sm min-w-[260px] w-[260px] shrink-0",
+        isWon && "border-emerald-500/50",
+        isLost && "opacity-75",
       )}
     >
       {/* Column header */}
-      <div
-        className={cn(
-          "flex items-center justify-between gap-2 px-3 py-2.5 border-b",
-          isWon && "border-green-500/30",
-        )}
-      >
-        <h3
-          className={cn(
-            "text-sm font-semibold truncate",
-            isWon && "text-green-700 dark:text-green-400",
-            isLost && "text-muted-foreground",
-          )}
-        >
-          {label}
-        </h3>
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("size-2 rounded-full shrink-0", dotColor)} />
+          <h3
+            className={cn(
+              "text-sm font-semibold truncate",
+              isLost && "text-muted-foreground",
+            )}
+          >
+            {label}
+          </h3>
+        </div>
         <Badge
-          variant={isWon ? "default" : "secondary"}
-          className={cn(
-            "text-[11px] px-1.5 h-5",
-            isWon && "bg-green-600 text-white",
-          )}
+          variant="secondary"
+          className="text-[11px] px-1.5 h-5 tabular-nums"
         >
           {leads.length}
         </Badge>

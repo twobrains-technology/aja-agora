@@ -178,6 +178,34 @@ export async function handleAgentMessage(
 	// 1. Check if this agent already owns a conversation
 	const ownedConv = await findConversationByAgent(agentWaId);
 	if (ownedConv) {
+		// Commands: /fim, /encerrar, /close → close handoff
+		const normalized = text.trim().toLowerCase();
+		if (normalized === "/fim" || normalized === "/encerrar" || normalized === "/close") {
+			await closeHandoff(ownedConv.conversationId);
+			await saveMessage(ownedConv.conversationId, "assistant", `[sistema] ${agentName} encerrou o atendimento.`);
+
+			// Farewell to user
+			if (ownedConv.channel === "whatsapp" && ownedConv.userWaId) {
+				await sendTextMessage(
+					ownedConv.userWaId,
+					`Obrigado pelo contato, *${ownedConv.contactName}*! 🤝 Seu atendimento com *${agentName}* foi encerrado. Se precisar, é só mandar uma mensagem aqui que a gente te ajuda de novo.`,
+				);
+			} else {
+				publishMessage(ownedConv.conversationId, {
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: `Atendimento encerrado por ${agentName}. Obrigado!`,
+					agentName,
+					createdAt: new Date().toISOString(),
+				});
+			}
+
+			// Confirm to agent
+			await sendTextMessage(agentWaId, `✅ Atendimento de *${ownedConv.contactName}* encerrado.`);
+			console.log(`[whatsapp-proxy] Agent ${agentName} closed conversation ${ownedConv.conversationId}`);
+			return true;
+		}
+
 		// Relay to user — different delivery per channel
 		await saveMessage(ownedConv.conversationId, "assistant", `[${agentName}] ${text}`);
 

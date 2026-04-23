@@ -9,12 +9,12 @@ import {
 import type { FunnelStage } from "@/lib/admin/dashboard-types";
 
 const STAGE_COLORS = [
-  "bg-blue-500",
-  "bg-cyan-500",
-  "bg-teal-500",
-  "bg-green-500",
-  "bg-emerald-500",
-  "bg-lime-600",
+  "bg-chart-1",
+  "bg-chart-2",
+  "bg-chart-3",
+  "bg-chart-4",
+  "bg-chart-5",
+  "bg-chart-1",
 ];
 
 export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
@@ -22,7 +22,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
   const firstCount = stages[0]?.count ?? 0;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle>Funil de Conversao</CardTitle>
       </CardHeader>
@@ -71,7 +71,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
                     key={stage.stage}
                     className="flex-1 text-center text-xs text-muted-foreground"
                   >
-                    <span className="text-red-500">
+                    <span className="text-destructive">
                       -{stage.dropOffRate.toFixed(0)}%
                     </span>
                   </div>
@@ -99,7 +99,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {stage.percentOfTotal.toFixed(0)}%
                       {i > 0 && (
-                        <span className="text-red-500 ml-1">
+                        <span className="text-destructive ml-1">
                           (-{stage.dropOffRate.toFixed(0)}%)
                         </span>
                       )}
