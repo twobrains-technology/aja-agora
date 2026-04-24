@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,12 @@ export const user = pgTable("user", {
 	emailVerified: boolean("email_verified").default(false).notNull(),
 	image: text("image"),
 	role: text("role").default("viewer").notNull(),
+	phone: varchar("phone", { length: 32 }),
+	isActive: boolean("is_active").default(true).notNull(),
+	invitedAt: timestamp("invited_at"),
+	invitedBy: text("invited_by").references((): AnyPgColumn => user.id),
+	inviteToken: text("invite_token").unique(),
+	inviteExpiresAt: timestamp("invite_expires_at"),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 	updatedAt: timestamp("updated_at")
 		.defaultNow()
@@ -120,15 +126,14 @@ export const conversations = pgTable("conversations", {
 	waId: varchar("wa_id", { length: 32 }),
 	channel: channelEnum().default("web").notNull(),
 	status: conversationStatusEnum().default("active").notNull(),
-	handedOffTo: varchar("handed_off_to", { length: 32 }),
-	agentName: varchar("agent_name", { length: 100 }),
+	handedOffUserId: text("handed_off_user_id").references(() => user.id),
 	contactName: varchar("contact_name", { length: 100 }),
 	metadata: jsonb().$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	index("conversations_wa_id_idx").on(table.waId),
-	index("conversations_handed_off_to_idx").on(table.handedOffTo),
+	index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
 ]);
 
 // Messages
@@ -200,9 +205,16 @@ export const leadInsights = pgTable("lead_insights", {
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ one, many }) => ({
 	sessions: many(session),
 	accounts: many(account),
+	invitedByUser: one(user, {
+		fields: [user.invitedBy],
+		references: [user.id],
+		relationName: "userInvites",
+	}),
+	invitedAttendants: many(user, { relationName: "userInvites" }),
+	handedOffConversations: many(conversations),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -220,9 +232,13 @@ export const accountRelations = relations(account, ({ one }) => ({
 }));
 
 // Application relations
-export const conversationsRelations = relations(conversations, ({ many }) => ({
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	messages: many(messages),
 	leads: many(leads),
+	handedOffUser: one(user, {
+		fields: [conversations.handedOffUserId],
+		references: [user.id],
+	}),
 }));
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({

@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
-type Role = "admin" | "viewer";
+type Role = "admin" | "viewer" | "attendant";
 
 export async function requireRole(...allowedRoles: Role[]) {
   const session = await auth.api.getSession({

@@ -15,6 +15,20 @@
       "when": 1776944724022,
       "tag": "0001_mighty_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776970347611,
+      "tag": "0002_cynical_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776972048778,
+      "tag": "0003_huge_wonder_man",
+      "breakpoints": true
     }
   ]
 }

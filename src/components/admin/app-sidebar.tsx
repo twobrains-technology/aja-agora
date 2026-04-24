@@ -18,6 +18,7 @@ import {
   MessageSquareTextIcon,
   SettingsIcon,
   UserIcon,
+  UsersIcon,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -29,6 +30,7 @@ const menuItems = [
 const applicationItems = [
   { title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
   { title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
+  { title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 ];
 
 const settingsItems = [

@@ -69,6 +69,11 @@ export async function POST(req: NextRequest) {
 	} else {
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
+			with: {
+				handedOffUser: {
+					columns: { name: true, phone: true },
+				},
+			},
 		});
 		if (!conv) {
 			return new Response("Conversation not found", { status: 404 });
@@ -85,10 +90,13 @@ export async function POST(req: NextRequest) {
 				content: userText,
 			});
 
-			// Relay to vendor via WhatsApp
+			// Relay to claimed attendant via WhatsApp (if any claimed yet)
 			const userName = conv.contactName ?? "Cliente";
-			if (conv.handedOffTo) {
-				await sendTextMessage(conv.handedOffTo, `*${userName}:*\n${userText}`);
+			if (conv.handedOffUser?.phone) {
+				await sendTextMessage(
+					conv.handedOffUser.phone,
+					`*${userName}:*\n${userText}`,
+				);
 			}
 
 			// Publish to SSE bus so the user's own message confirms delivery
@@ -103,7 +111,7 @@ export async function POST(req: NextRequest) {
 			const encoder = new TextEncoder();
 			const ackStream = new ReadableStream({
 				start(controller) {
-					const agentName = conv.agentName ?? "Consultor";
+					const agentName = conv.handedOffUser?.name ?? "Consultor";
 					const ack = JSON.stringify({
 						type: "text-delta",
 						textDelta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,

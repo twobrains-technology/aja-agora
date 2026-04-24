@@ -23,8 +23,8 @@ import {
 	relayUserToAgent,
 	handleAgentMessage,
 	handoffToAgents,
-	isAgentPhone,
-	getAgentList,
+	isAttendantPhone,
+	getAttendantList,
 } from "./proxy";
 
 const anthropic = createAnthropic();
@@ -52,8 +52,8 @@ export async function processTextMessage(
 			return;
 		}
 
-		// If sender is an agent, route to proxy — never treat as buyer
-		if (isAgentPhone(from)) {
+		// If sender is an attendant, route to proxy — never treat as buyer
+		if (await isAttendantPhone(from)) {
 			const handled = await handleAgentMessage(from, text);
 			if (!handled) {
 				await sendTextMessage(from, "⏳ Nenhuma conversa ativa no momento. Quando um cliente demonstrar interesse, você receberá o resumo aqui.");
@@ -75,7 +75,7 @@ export async function processTextMessage(
 			});
 			const meta = conv?.metadata as Record<string, unknown> | null;
 			if (meta?.awaitingName) {
-				const agents = getAgentList();
+				const agents = await getAttendantList();
 				if (agents.length > 0) {
 					// Clear the awaiting flag
 					await db.update(conversations).set({
@@ -355,9 +355,9 @@ export async function processInteractiveReply(
 		return;
 	}
 
-	// "Tenho interesse!" button → ask for name, then handoff to all agents
+	// "Tenho interesse!" button → ask for name, then handoff to all attendants
 	if (replyId.startsWith("interest_")) {
-		const agents = getAgentList();
+		const agents = await getAttendantList();
 		if (agents.length > 0) {
 			const handoff = await getHandoffState(from);
 			if (handoff?.conversationId && !handoff.isHandedOff) {

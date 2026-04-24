@@ -5,7 +5,7 @@ import { STAGE_ORDER, type LeadStage } from "@/lib/admin/lead-transitions";
 import { desc } from "drizzle-orm";
 
 export async function GET() {
-  const { error } = await requireRole("admin", "viewer");
+  const { error } = await requireRole("admin", "viewer", "attendant");
   if (error) return error;
 
   const allLeads = await db.query.leads.findMany({

@@ -1,7 +1,6 @@
 "use client";
 
 import { useSession, signOut } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -11,11 +10,20 @@ import ProfileDropdown from "@/components/shadcn-studio/blocks/dropdown-profile"
 
 export function AdminHeader() {
   const { data: session } = useSession();
-  const router = useRouter();
 
   async function handleLogout() {
-    await signOut();
-    router.push("/admin/login");
+    try {
+      await signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            window.location.href = "/admin/login";
+          },
+        },
+      });
+    } catch (err) {
+      console.error("[admin-header] signOut failed:", err);
+      window.location.href = "/admin/login";
+    }
   }
 
   const userName = session?.user?.name ?? "Admin";

@@ -9,7 +9,7 @@ import { subDays } from "date-fns";
 import type { DashboardResponse } from "@/lib/admin/dashboard-types";
 
 export async function GET(request: Request) {
-  const { error } = await requireRole("admin", "viewer");
+  const { error } = await requireRole("admin", "viewer", "attendant");
   if (error) return error;
 
   // Parse date range from query params (defaults: last 30 days)

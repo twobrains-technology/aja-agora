@@ -27,6 +27,11 @@ export async function GET(req: NextRequest) {
 	// Verify conversation exists and is handed off
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
+		with: {
+			handedOffUser: {
+				columns: { name: true },
+			},
+		},
 	});
 
 	if (!conv) {
@@ -41,7 +46,7 @@ export async function GET(req: NextRequest) {
 			const initData = JSON.stringify({
 				type: "connected",
 				status: conv.status,
-				agentName: conv.agentName ?? null,
+				agentName: conv.handedOffUser?.name ?? null,
 			});
 			controller.enqueue(encoder.encode(`data: ${initData}\n\n`));
 

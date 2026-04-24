@@ -13,7 +13,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { error, session } = await requireRole("admin");
+  const { error, session } = await requireRole("admin", "attendant");
   if (error) return error;
 
   const { id } = await params;

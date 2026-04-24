@@ -42,7 +42,7 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { error } = await requireRole("admin", "viewer");
+  const { error } = await requireRole("admin", "viewer", "attendant");
   if (error) return error;
 
   const { id: leadId } = await params;
