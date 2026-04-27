@@ -118,3 +118,12 @@ export async function markAsRead(messageId: string) {
 		message_id: messageId,
 	});
 }
+
+export async function sendTypingIndicator(messageId: string) {
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, {
+		status: "read",
+		message_id: messageId,
+		typing_indicator: { type: "text" },
+	});
+}

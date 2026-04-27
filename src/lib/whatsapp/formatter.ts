@@ -49,15 +49,16 @@ export function splitMessage(text: string, maxLen = 4096): string[] {
 	return chunks;
 }
 
-/** Format currency value in BRL */
+/** Format currency value in BRL — precise Brazilian formatting with M abbreviation only for >=1M */
 function formatBRL(value: number): string {
 	if (value >= 1_000_000) {
-		return `R$ ${(value / 1_000_000).toFixed(1).replace(".", ",")}M`;
+		const millions = (value / 1_000_000).toLocaleString("pt-BR", {
+			minimumFractionDigits: 1,
+			maximumFractionDigits: 1,
+		});
+		return `R$ ${millions}M`;
 	}
-	if (value >= 1_000) {
-		return `R$ ${(value / 1_000).toFixed(0)}mil`;
-	}
-	return `R$ ${value.toFixed(0)}`;
+	return `R$ ${value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
 }
 
 // ---- Artifact → WhatsApp component mappers ----

@@ -3,31 +3,34 @@
  * Routes incoming WhatsApp messages through the AI pipeline or
  * the bidirectional proxy (when conversation is handed off to agent).
  */
-import { streamText, stepCountIs } from "ai";
+
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import { WHATSAPP_SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
-import { sendTextMessage, sendReplyButtons } from "./api";
-import {
-	formatTextForWhatsApp,
-	splitMessage,
-	artifactToWhatsApp,
-	resolveRange,
-} from "./formatter";
+import { stepCountIs, streamText } from "ai";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { WHATSAPP_SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { sendTextMessage } from "./api";
+import { artifactToWhatsApp, formatTextForWhatsApp, resolveRange, splitMessage } from "./formatter";
 import {
+	getAttendantList,
 	getHandoffState,
-	relayUserToAgent,
 	handleAgentMessage,
 	handoffToAgents,
 	isAttendantPhone,
-	getAttendantList,
+	relayUserToAgent,
 } from "./proxy";
+import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
 
 const anthropic = createAnthropic();
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+// "Typing" delay curve: 200ms floor, 6ms per char, capped at 1.5s.
+// Short chunk (~50 chars) pauses ~500ms; long chunk (~300 chars) pauses 2s (capped at 1.5s).
+const typingDelay = (chars: number) => Math.min(1500, 200 + chars * 6);
+// Fixed pause between messages where length doesn't apply (e.g. before an interactive card).
+const ARTIFACT_PAUSE_MS = 500;
 
 /**
  * Process an incoming WhatsApp text message.
@@ -56,7 +59,10 @@ export async function processTextMessage(
 		if (await isAttendantPhone(from)) {
 			const handled = await handleAgentMessage(from, text);
 			if (!handled) {
-				await sendTextMessage(from, "⏳ Nenhuma conversa ativa no momento. Quando um cliente demonstrar interesse, você receberá o resumo aqui.");
+				await sendTextMessage(
+					from,
+					"⏳ Nenhuma conversa ativa no momento. Quando um cliente demonstrar interesse, você receberá o resumo aqui.",
+				);
 			}
 			return;
 		}
@@ -78,11 +84,14 @@ export async function processTextMessage(
 				const agents = await getAttendantList();
 				if (agents.length > 0) {
 					// Clear the awaiting flag
-					await db.update(conversations).set({
-						metadata: { ...meta, awaitingName: false },
-						contactName: text,
-						updatedAt: new Date(),
-					}).where(eq(conversations.id, handoff.conversationId));
+					await db
+						.update(conversations)
+						.set({
+							metadata: { ...meta, awaitingName: false },
+							contactName: text,
+							updatedAt: new Date(),
+						})
+						.where(eq(conversations.id, handoff.conversationId));
 
 					const history = await loadConversationHistory(handoff.conversationId);
 					const summary = buildConversationSummary(history, []);
@@ -98,11 +107,14 @@ export async function processTextMessage(
 		}
 
 		// Normal AI processing
-		await processWithAI(from, text, contactName);
+		await processWithAI(from, text);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
 		try {
-			await sendTextMessage(from, "Desculpe, tive um problema processando sua mensagem. Pode tentar novamente?");
+			await sendTextMessage(
+				from,
+				"Desculpe, tive um problema processando sua mensagem. Pode tentar novamente?",
+			);
 		} catch {
 			// Silent
 		}
@@ -112,29 +124,12 @@ export async function processTextMessage(
 /**
  * Process a message through the AI pipeline.
  */
-async function processWithAI(
-	from: string,
-	text: string,
-	contactName?: string,
-): Promise<void> {
+async function processWithAI(from: string, text: string): Promise<void> {
 	// 1. Get or create conversation
-	const { id: conversationId, isNew } = await getOrCreateConversation(from);
+	const { id: conversationId } = await getOrCreateConversation(from);
 
 	// 2. Save user message
 	await saveMessage(conversationId, "user", text);
-
-	// 2.5. First message → send welcome + category buttons
-	// Only if user didn't already specify a category
-	const mentionsCategory = /im[oó]vel|casa|apartamento|carro|auto|ve[ií]culo|servi[cç]o|reforma|viagem/i.test(text);
-	if (isNew && !mentionsCategory) {
-		await sendTextMessage(from, "Olá! 👋 Eu sou o consultor do *Aja Agora*. Vou te ajudar a encontrar o consórcio perfeito!");
-		await sendReplyButtons(from, "O que você está buscando?", [
-			{ id: "cat_imovel", title: "🏠 Imóvel" },
-			{ id: "cat_auto", title: "🚗 Carro" },
-			{ id: "cat_servicos", title: "💼 Serviços" },
-		]);
-		return;
-	}
 
 	// 3. Load conversation history
 	const history = await loadConversationHistory(conversationId);
@@ -169,24 +164,45 @@ async function processWithAI(
 		}
 	}
 
+	// 4.5. Guard: consolidate 2+ group_cards into a single comparison_table.
+	// The prompt already forbids this, but if the agent slips up we merge to avoid card spam.
+	const groupCards = artifacts.filter((a) => a.type === "group_card");
+	if (groupCards.length >= 2) {
+		const nonGroupCards = artifacts.filter((a) => a.type !== "group_card");
+		const consolidated = {
+			type: "comparison_table",
+			payload: { groups: groupCards.map((a) => a.payload) },
+		};
+		artifacts.length = 0;
+		artifacts.push(...nonGroupCards, consolidated);
+		console.log(
+			`[whatsapp-processor] Guard: consolidated ${groupCards.length} group_cards into comparison_table`,
+		);
+	}
+
 	// 5. Save assistant response
 	if (fullResponse) {
 		await saveMessage(conversationId, "assistant", fullResponse);
 	}
 
-	// 6. Send text response(s)
+	// 6. Send text response(s) with human-like pacing between chunks
+	let hasSent = false;
 	if (fullResponse) {
 		const formatted = formatTextForWhatsApp(fullResponse);
 		const chunks = splitMessage(formatted);
 		for (const chunk of chunks) {
+			if (hasSent) await sleep(typingDelay(chunk.length));
 			await sendTextMessage(from, chunk);
+			hasSent = true;
 		}
 	}
 
-	// 7. Send artifact interactive messages
+	// 7. Send artifact interactive messages with a short pause between them
 	for (const artifact of artifacts) {
 		const waResponse = artifactToWhatsApp(artifact.type, artifact.payload);
 		if (!waResponse) continue;
+
+		if (hasSent) await sleep(ARTIFACT_PAUSE_MS);
 
 		if (waResponse.type === "text" && waResponse.text) {
 			await sendTextMessage(from, waResponse.text);
@@ -207,6 +223,7 @@ async function processWithAI(
 				}),
 			});
 		}
+		hasSent = true;
 
 		// lead_form artifact is skipped on WhatsApp — handoff handles data collection
 		// Handoff only triggers on explicit "Tenho interesse" button click (see processInteractiveReply)
@@ -215,67 +232,6 @@ async function processWithAI(
 	console.log(
 		`[whatsapp-processor] Processed: ${from} | ${artifacts.length} artifacts, ${fullResponse.length} chars`,
 	);
-
-	// Auto-follow-up: if simulation was shown but no recommendation, force it
-	const hasSimulation = artifacts.some((a) => a.type === "simulation_result");
-	const hasRecommendation = artifacts.some((a) => a.type === "recommendation_card");
-	if (hasSimulation && !hasRecommendation) {
-		console.log(`[whatsapp-processor] Auto-triggering recommendation after simulation`);
-		// Reload history (now includes the simulation response)
-		const updatedHistory = await loadConversationHistory(conversationId);
-		let recResponse = "";
-		const recArtifacts: Array<{ type: string; payload: Record<string, unknown> }> = [];
-
-		const recResult = streamText({
-			model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-20250514"),
-			system: WHATSAPP_SYSTEM_PROMPT,
-			messages: [
-				...updatedHistory,
-				{
-					role: "user" as const,
-					content: "Agora me mostra a recomendação final com o card de compatibilidade e o botão para eu fechar.",
-				},
-			],
-			tools: consorcioTools,
-			stopWhen: stepCountIs(5),
-		});
-
-		for await (const part of recResult.fullStream) {
-			if (part.type === "text-delta") {
-				recResponse += part.text;
-			} else if (part.type === "tool-call") {
-				const shortName = part.toolName.replace("present_", "");
-				if (PRESENTATION_TOOLS.has(part.toolName)) {
-					recArtifacts.push({ type: shortName, payload: part.input as Record<string, unknown> });
-				}
-			}
-		}
-
-		if (recResponse) {
-			await saveMessage(conversationId, "assistant", recResponse);
-			const formatted = formatTextForWhatsApp(recResponse);
-			for (const chunk of splitMessage(formatted)) {
-				await sendTextMessage(from, chunk);
-			}
-		}
-
-		for (const artifact of recArtifacts) {
-			const waResponse = artifactToWhatsApp(artifact.type, artifact.payload);
-			if (!waResponse) continue;
-			if (waResponse.type === "text" && waResponse.text) {
-				await sendTextMessage(from, waResponse.text);
-			} else if (waResponse.type === "interactive" && waResponse.interactive) {
-				const { accessToken, phoneNumberId } = getWhatsAppConfig();
-				await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
-					method: "POST",
-					headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-					body: JSON.stringify({ messaging_product: "whatsapp", to: from, type: "interactive", interactive: waResponse.interactive }),
-				});
-			}
-		}
-
-		console.log(`[whatsapp-processor] Auto-recommendation: ${recArtifacts.length} artifacts, ${recResponse.length} chars`);
-	}
 }
 
 /**
@@ -287,29 +243,24 @@ export async function processInteractiveReply(
 	replyTitle: string,
 	contactName?: string,
 ): Promise<void> {
-	// Category buttons → translate to natural text for the AI
-	const categoryMap: Record<string, string> = {
-		cat_imovel: "Quero comprar um imóvel, me ajude a encontrar o melhor consórcio",
-		cat_auto: "Quero comprar um carro, qual o melhor consórcio para mim?",
-		cat_servicos: "Quero fazer um consórcio de serviços, o que vocês têm disponível?",
-	};
-	if (categoryMap[replyId]) {
-		await processTextMessage(from, categoryMap[replyId], contactName);
-		return;
-	}
-
 	// Range/value picker selection → translate to natural search request
+	// (legacy — value_picker is no longer emitted by the agent, kept for safety)
 	if (replyId.startsWith("range_")) {
 		const range = resolveRange(replyId);
 		if (range) {
-			const catLabel: Record<string, string> = { auto: "carro", imovel: "imóvel", servicos: "serviço" };
+			const catLabel: Record<string, string> = {
+				auto: "carro",
+				imovel: "imóvel",
+				servicos: "serviço",
+			};
 			const label = catLabel[range.category] ?? "consórcio";
 			const budgetFmt = range.budget.toLocaleString("pt-BR");
 			const minFmt = range.creditMin.toLocaleString("pt-BR");
 			const maxFmt = range.creditMax.toLocaleString("pt-BR");
-			const prompt = range.creditMin > 0
-				? `Quero um ${label} entre R$ ${minFmt} e R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque apenas grupos com creditValue dentro dessa faixa (creditMin=${range.creditMin}, creditMax=${range.creditMax}).`
-				: `Quero um ${label} de até R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque com creditMax=${range.creditMax}.`;
+			const prompt =
+				range.creditMin > 0
+					? `Quero um ${label} entre R$ ${minFmt} e R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque apenas grupos com creditValue dentro dessa faixa (creditMin=${range.creditMin}, creditMax=${range.creditMax}).`
+					: `Quero um ${label} de até R$ ${maxFmt} com orçamento mensal de R$ ${budgetFmt}. Busque com creditMax=${range.creditMax}.`;
 			await processTextMessage(from, prompt, contactName);
 			return;
 		}
@@ -361,10 +312,13 @@ export async function processInteractiveReply(
 		if (agents.length > 0) {
 			const handoff = await getHandoffState(from);
 			if (handoff?.conversationId && !handoff.isHandedOff) {
-				await db.update(conversations).set({
-					metadata: { awaitingName: true },
-					updatedAt: new Date(),
-				}).where(eq(conversations.id, handoff.conversationId));
+				await db
+					.update(conversations)
+					.set({
+						metadata: { awaitingName: true },
+						updatedAt: new Date(),
+					})
+					.where(eq(conversations.id, handoff.conversationId));
 
 				await sendTextMessage(
 					from,
