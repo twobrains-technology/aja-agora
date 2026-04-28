@@ -224,7 +224,7 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores com sliders para o usuario configurar orcamento, valor de credito, ou prazo. Use em vez de perguntar valores por texto — o usuario arrasta os sliders e clica em 'Buscar opcoes'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;

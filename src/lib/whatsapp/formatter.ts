@@ -97,10 +97,16 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 }
 
 export function comparisonTableToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const groups = payload.groups as Array<Record<string, unknown>>;
-	const body = `*Comparativo — ${groups.length} opções encontradas*\nSelecione uma para ver detalhes:`;
+	const allGroups = payload.groups as Array<Record<string, unknown>>;
+	// WhatsApp interactive list limit: 10 rows per section.
+	const groups = allGroups.slice(0, 10);
+	const totalLabel =
+		allGroups.length > groups.length
+			? `${groups.length} de ${allGroups.length} opções`
+			: `${groups.length} opções encontradas`;
+	const body = `*Comparativo — ${totalLabel}*\nSelecione uma para ver detalhes:`;
 
-	const rows = groups.map((g, i) => ({
+	const rows = groups.map((g) => ({
 		id: `group_${g.id}`,
 		title: `${g.administradora}`.slice(0, 24),
 		description: `${formatBRL(g.creditValue as number)} • ${formatBRL(g.monthlyPayment as number)}/mês • ${g.termMonths}m`.slice(0, 72),
@@ -121,20 +127,33 @@ export function comparisonTableToWhatsApp(payload: Record<string, unknown>): Wha
 
 export function simulationResultToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
-	const text = [
-		"*📊 Simulação de Cota*",
+	const groupId = p.groupId as string;
+	const body = [
+		"*📋 Simulação de Cota*",
 		"",
-		`💰 Crédito: ${formatBRL(p.creditValue as number)}`,
-		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📋 Taxa admin: ${formatBRL(p.adminFee as number)}`,
-		`🛡 Fundo reserva: ${formatBRL(p.reserveFund as number)}`,
-		`🔒 Seguro: ${formatBRL(p.insurance as number)}`,
-		`💵 Custo total: ${formatBRL(p.totalCost as number)}`,
-		`⏱ Prazo: ${p.termMonths} meses`,
-		`📈 Taxa efetiva: ${(p.effectiveRate as number).toFixed(2)}%`,
+		`💰 *Crédito:* ${formatBRL(p.creditValue as number)}`,
+		`📅 *Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
+		`📊 *Taxa admin:* ${formatBRL(p.adminFee as number)}`,
+		`🛡 *Fundo reserva:* ${formatBRL(p.reserveFund as number)}`,
+		`🔒 *Seguro:* ${formatBRL(p.insurance as number)}`,
+		`💵 *Custo total:* ${formatBRL(p.totalCost as number)}`,
+		`⏱ *Prazo:* ${p.termMonths} meses`,
+		`📈 *Taxa efetiva:* ${(p.effectiveRate as number).toFixed(2)}%`,
 	].join("\n");
 
-	return { type: "text", text };
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text: body },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: `interest_${groupId}`, title: "Tenho interesse!" } },
+					{ type: "reply", reply: { id: `whatif_${groupId}`, title: "Ajustar valor" } },
+				],
+			},
+		},
+	};
 }
 
 export function recommendationToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
@@ -232,6 +251,49 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 						description: r.desc.slice(0, 72),
 					})),
 				}],
+			},
+		},
+	};
+}
+
+/**
+ * Transition message text shown right BEFORE a specialist takes over.
+ * Two flavors:
+ *  - From the concierge layer (system voice): "Já te conectando com o(a) Helena..."
+ *  - Between specialists: "Tranquilo! Vou te passar pra Helena..."
+ *
+ * Receives only the human-readable name + emoji + categoryLabel from
+ * PERSONA_CONFIG, so this stays decoupled from the personas module.
+ */
+export function transitionMessageText(
+	specialist: { name: string; emoji: string; categoryLabel: string },
+	fromConcierge: boolean,
+): string {
+	const { name, categoryLabel } = specialist;
+	if (fromConcierge) {
+		return `Boa! Já estamos te conectando com o(a) *${name}*, consultor(a) de ${categoryLabel}. \nUm instante ⏳`;
+	}
+	return `Tranquilo! Vou te passar pro(a) *${name}*, que cuida de ${categoryLabel}. \nUm momento ⏳`;
+}
+
+/**
+ * Welcome buttons — anexados pelo sistema (camada de concierge) após a
+ * mensagem de boas-vindas ou após responder uma dúvida geral.
+ * WhatsApp limita a 3 botões; "carro" e "moto" caem juntos em Automóvel
+ * (o especialista Rafael diferencia depois pela conversa).
+ */
+export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text: "Atalho rápido por categoria:" },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
+					{ type: "reply", reply: { id: "category_auto", title: "🚗 Automóvel" } },
+					{ type: "reply", reply: { id: "category_servicos", title: "💼 Serviços" } },
+				],
 			},
 		},
 	};

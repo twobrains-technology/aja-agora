@@ -23,7 +23,7 @@ export const searchGroupsInput = z.object({
 });
 
 export const simulateQuotaInput = z.object({
-	groupId: z.string().uuid().describe("ID do grupo para simulação"),
+	groupId: z.string().min(1).describe("ID do grupo para simulação"),
 	creditValue: z
 		.number()
 		.positive()
@@ -42,7 +42,7 @@ export const getRatesInput = z.object({
 });
 
 export const getGroupDetailsInput = z.object({
-	groupId: z.string().uuid().describe("ID do grupo"),
+	groupId: z.string().min(1).describe("ID do grupo"),
 });
 
 // ---- Inferred types (for use in adapter and tools) ----
