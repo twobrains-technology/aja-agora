@@ -1,29 +1,27 @@
-/**
- * Format AI responses and artifacts for WhatsApp.
- * Converts Markdown to WhatsApp text formatting and maps
- * artifacts to WhatsApp interactive message payloads.
- */
 
-/** Convert basic Markdown to WhatsApp formatting */
 export function formatTextForWhatsApp(text: string): string {
-	return text
-		// Headers → bold
-		.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-		// Bold **text** stays as *text*
-		.replace(/\*\*(.+?)\*\*/g, "*$1*")
-		// Remove code blocks (triple backtick)
-		.replace(/```[\s\S]*?```/g, (match) => {
-			const code = match.replace(/```\w*\n?/g, "").trim();
-			return `\`\`\`${code}\`\`\``;
-		})
-		// Remove block quotes
-		.replace(/^>\s+/gm, "")
-		// Clean up excess newlines
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
+	return (
+		text
+			// Strip leaked system instructions ("[sistema: ...]" / "[contexto: ...]")
+			// that the AI sometimes echoes from conversation history.
+			.replace(/^\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "")
+			.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
+			// Strip hallucinated reproductions of the profile summary template.
+			.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
+			// Add missing space in "frase.Outra" → "frase. Outra".
+			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+			.replace(/\*\*(.+?)\*\*/g, "*$1*")
+			.replace(/```[\s\S]*?```/g, (match) => {
+				const code = match.replace(/```\w*\n?/g, "").trim();
+				return `\`\`\`${code}\`\`\``;
+			})
+			.replace(/^>\s+/gm, "")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim()
+	);
 }
 
-/** Split long text into chunks respecting WhatsApp's 4096 char limit */
 export function splitMessage(text: string, maxLen = 4096): string[] {
 	if (text.length <= maxLen) return [text];
 
@@ -49,7 +47,6 @@ export function splitMessage(text: string, maxLen = 4096): string[] {
 	return chunks;
 }
 
-/** Format currency value in BRL — precise Brazilian formatting with M abbreviation only for >=1M */
 function formatBRL(value: number): string {
 	if (value >= 1_000_000) {
 		const millions = (value / 1_000_000).toLocaleString("pt-BR", {
@@ -61,7 +58,19 @@ function formatBRL(value: number): string {
 	return `R$ ${value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
 }
 
-// ---- Artifact → WhatsApp component mappers ----
+/** Compact form for the profile checklist: 100000 → "R$ 100 mil". */
+function formatBRLCompact(value: number): string {
+	if (value >= 1_000_000) {
+		const millions = (value / 1_000_000)
+			.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+			.replace(",0", "");
+		return `R$ ${millions}M`;
+	}
+	if (value >= 1_000) {
+		return `R$ ${Math.round(value / 1_000)} mil`;
+	}
+	return `R$ ${value}`;
+}
 
 export interface WhatsAppResponse {
 	type: "text" | "interactive";
@@ -190,7 +199,6 @@ export function leadFormToWhatsApp(): WhatsAppResponse {
 	};
 }
 
-/** Pre-defined ranges by category — realistic market values */
 const RANGES: Record<string, Array<{ id: string; title: string; desc: string; creditMin: number; creditMax: number; budget: number }>> = {
 	auto: [
 		{ id: "range_auto_50", title: "Até R$ 50 mil", desc: "Parcela ~R$ 600/mês • Seminovos", creditMin: 0, creditMax: 50000, budget: 600 },
@@ -215,7 +223,6 @@ const RANGES: Record<string, Array<{ id: string; title: string; desc: string; cr
 	],
 };
 
-/** Exported so processor can resolve range IDs to search params */
 export function resolveRange(rangeId: string): { creditMin: number; creditMax: number; budget: number; category: string } | null {
 	for (const [cat, ranges] of Object.entries(RANGES)) {
 		const found = ranges.find((r) => r.id === rangeId);
@@ -256,15 +263,6 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	};
 }
 
-/**
- * Transition message text shown right BEFORE a specialist takes over.
- * Two flavors:
- *  - From the concierge layer (system voice): "Já te conectando com o(a) Helena..."
- *  - Between specialists: "Tranquilo! Vou te passar pra Helena..."
- *
- * Receives only the human-readable name + emoji + categoryLabel from
- * PERSONA_CONFIG, so this stays decoupled from the personas module.
- */
 export function transitionMessageText(
 	specialist: { name: string; emoji: string; categoryLabel: string },
 	fromConcierge: boolean,
@@ -276,30 +274,256 @@ export function transitionMessageText(
 	return `Tranquilo! Vou te passar pro(a) *${name}*, que cuida de ${categoryLabel}. \nUm momento ⏳`;
 }
 
-/**
- * Welcome buttons — anexados pelo sistema (camada de concierge) após a
- * mensagem de boas-vindas ou após responder uma dúvida geral.
- * WhatsApp limita a 3 botões; "carro" e "moto" caem juntos em Automóvel
- * (o especialista Rafael diferencia depois pela conversa).
- */
-export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
+type CreditRange = { token: string; title: string; desc?: string; min: number; max: number };
+
+const CREDIT_RANGES: Record<"imovel" | "auto" | "servicos", CreditRange[]> = {
+	imovel: [
+		{ token: "200", title: "Até R$ 200 mil", desc: "Aptos compactos", min: 0, max: 200000 },
+		{ token: "400", title: "R$ 200 a 400 mil", desc: "Aptos 2-3 quartos", min: 200000, max: 400000 },
+		{ token: "600", title: "R$ 400 a 600 mil", desc: "Casas, aptos maiores", min: 400000, max: 600000 },
+		{ token: "1000", title: "Acima de R$ 600 mil", desc: "Alto padrão, luxo", min: 600000, max: 2000000 },
+	],
+	auto: [
+		{ token: "50", title: "Até R$ 50 mil", desc: "Seminovos, populares", min: 0, max: 50000 },
+		{ token: "100", title: "R$ 50 a 100 mil", desc: "Populares, sedãs", min: 50000, max: 100000 },
+		{ token: "200", title: "R$ 100 a 200 mil", desc: "SUVs, premium", min: 100000, max: 200000 },
+		{ token: "300", title: "Acima de R$ 200 mil", desc: "Top de linha", min: 200000, max: 300000 },
+	],
+	servicos: [
+		{ token: "30", title: "Até R$ 30 mil", desc: "Reformas simples, viagens", min: 0, max: 30000 },
+		{ token: "100", title: "R$ 30 a 100 mil", desc: "Reformas médias, formaturas", min: 30000, max: 100000 },
+		{ token: "500", title: "Acima de R$ 100 mil", desc: "Grandes projetos", min: 100000, max: 500000 },
+	],
+};
+
+const TIMEFRAMES: Array<{ token: string; title: string; desc: string; prazoMeses: number }> = [
+	{ token: "ja", title: "Já! (com lance)", desc: "Quero contemplação rápida", prazoMeses: 0 },
+	{ token: "24", title: "1 a 2 anos", desc: "Prazo curto", prazoMeses: 24 },
+	{ token: "60", title: "3 a 5 anos", desc: "Prazo médio", prazoMeses: 60 },
+	{ token: "120", title: "Sem pressa", desc: "Parcela mais leve", prazoMeses: 120 },
+];
+
+export function creditRangeQuestionToWhatsApp(
+	category: "imovel" | "auto" | "servicos",
+	prefix?: string,
+): WhatsAppResponse {
+	const ranges = CREDIT_RANGES[category];
+	const text = prefix
+		? `${prefix}\n\nQual faixa de crédito faz mais sentido pra você?`
+		: "Qual faixa de crédito faz mais sentido pra você?";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher faixa",
+				sections: [{
+					title: "Faixas de crédito",
+					rows: ranges.map((r) => ({
+						id: `credit_${category}_${r.token}`,
+						title: r.title.slice(0, 24),
+						description: (r.desc ?? "").slice(0, 72),
+					})),
+				}],
+			},
+		},
+	};
+}
+
+const TIMEFRAME_QUESTIONS: Record<"imovel" | "auto" | "servicos", string> = {
+	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
+	auto: "Em quanto tempo você quer estar com o carro novo?",
+	servicos: "Em quanto tempo você quer realizar isso?",
+};
+
+export function timeframeQuestionToWhatsApp(
+	category: "imovel" | "auto" | "servicos",
+	prefix?: string,
+): WhatsAppResponse {
+	const question = TIMEFRAME_QUESTIONS[category];
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher prazo",
+				sections: [{
+					title: "Prazo desejado",
+					rows: TIMEFRAMES.map((t) => ({
+						id: `timeframe_${t.token}`,
+						title: t.title.slice(0, 24),
+						description: t.desc.slice(0, 72),
+					})),
+				}],
+			},
+		},
+	};
+}
+
+export function resolveCreditReply(replyId: string): {
+	category: "imovel" | "auto" | "servicos";
+	min: number;
+	max: number;
+	title: string;
+} | null {
+	if (!replyId.startsWith("credit_")) return null;
+	const parts = replyId.split("_");
+	if (parts.length < 3) return null;
+	const category = parts[1] as "imovel" | "auto" | "servicos";
+	const token = parts[2];
+	const ranges = CREDIT_RANGES[category];
+	if (!ranges) return null;
+	const range = ranges.find((r) => r.token === token);
+	if (!range) return null;
+	return { category, min: range.min, max: range.max, title: range.title };
+}
+
+export function resolveTimeframeReply(replyId: string): {
+	prazoMeses: number;
+	title: string;
+} | null {
+	if (!replyId.startsWith("timeframe_")) return null;
+	const token = replyId.replace("timeframe_", "");
+	const t = TIMEFRAMES.find((x) => x.token === token);
+	if (!t) return null;
+	return { prazoMeses: t.prazoMeses, title: t.title };
+}
+
+export function qualifyConsentToWhatsApp(prefix?: string): WhatsAppResponse {
+	const text = prefix
+		? `${prefix}\n\nPosso te fazer 3 perguntinhas rápidas pra entender seu perfil?`
+		: "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
-			body: { text: "Atalho rápido por categoria:" },
+			body: { text },
 			action: {
 				buttons: [
-					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
-					{ type: "reply", reply: { id: "category_auto", title: "🚗 Automóvel" } },
-					{ type: "reply", reply: { id: "category_servicos", title: "💼 Serviços" } },
+					{ type: "reply", reply: { id: "qualify_start_yes", title: "Bora!" } },
+					{ type: "reply", reply: { id: "qualify_start_more", title: "Entender mais antes" } },
 				],
 			},
 		},
 	};
 }
 
-/** Map artifact type to WhatsApp response */
+const LANCE_OPTIONS = [
+	{ token: "yes", title: "Sim, tenho reserva" },
+	{ token: "maybe", title: "Talvez, depende" },
+	{ token: "no", title: "Por enquanto não" },
+] as const;
+
+type LanceValue = (typeof LANCE_OPTIONS)[number]["token"];
+
+export function lanceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const text = prefix
+		? `${prefix}\n\nVocê teria uma reserva pra dar um lance e antecipar a contemplação?`
+		: "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: LANCE_OPTIONS.map((o) => ({
+					type: "reply",
+					reply: { id: `lance_${o.token}`, title: o.title },
+				})),
+			},
+		},
+	};
+}
+
+export function resolveLanceReply(replyId: string): { value: LanceValue; title: string } | null {
+	if (!replyId.startsWith("lance_")) return null;
+	const token = replyId.replace("lance_", "");
+	const opt = LANCE_OPTIONS.find((o) => o.token === token);
+	if (!opt) return null;
+	return { value: opt.token, title: opt.title };
+}
+
+function prazoLabel(months: number): string {
+	if (months === 0) return "imediato (com lance)";
+	if (months <= 24) return "1 a 2 anos";
+	if (months <= 60) return "3 a 5 anos";
+	return "sem pressa";
+}
+
+function lanceLabel(value: LanceValue): string {
+	if (value === "yes") return "tem reserva";
+	if (value === "maybe") return "depende do valor";
+	return "sem reserva por enquanto";
+}
+
+export function profileSummaryText(answers: {
+	creditMin?: number;
+	creditMax?: number;
+	prazoMeses?: number;
+	hasLance?: LanceValue;
+}): string {
+	const lines: string[] = ["*Show! Já tenho seu perfil pronto:*", ""];
+
+	if (answers.creditMax !== undefined) {
+		const credit =
+			answers.creditMin && answers.creditMin > 0
+				? `${formatBRLCompact(answers.creditMin)} a ${formatBRLCompact(answers.creditMax)}`
+				: `até ${formatBRLCompact(answers.creditMax)}`;
+		lines.push(`✅ Crédito: ${credit}`);
+	}
+	if (answers.prazoMeses !== undefined) {
+		lines.push(`✅ Prazo: ${prazoLabel(answers.prazoMeses)}`);
+	}
+	if (answers.hasLance) {
+		lines.push(`✅ Lance: ${lanceLabel(answers.hasLance)}`);
+	}
+
+	lines.push("", "Vou puxar as melhores opções pra você.");
+	return lines.join("\n");
+}
+
+export function experienceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const text = prefix
+		? `${prefix}\n\nAntes de qualquer coisa, você já fez consórcio antes?`
+		: "Antes de qualquer coisa: você já fez consórcio antes?";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "experience_first", title: "🌱 É a primeira vez" } },
+					{ type: "reply", reply: { id: "experience_returning", title: "✅ Já conheço" } },
+					{ type: "reply", reply: { id: "experience_doubts", title: "🤔 Tenho dúvidas" } },
+				],
+			},
+		},
+	};
+}
+
+export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: "Escolhe abaixo ou digita livremente.",
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
+					{ type: "reply", reply: { id: "category_auto", title: "🚗 Automóvel" } },
+					{ type: "reply", reply: { id: "category_servicos", title: "💼 Outros" } },
+				],
+			},
+		},
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,

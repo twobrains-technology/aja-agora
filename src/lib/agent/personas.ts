@@ -1,50 +1,41 @@
-/**
- * Persona system for the WhatsApp multi-agent UX.
- *
- * Theatrical layer on top of a single Vercel AI SDK agent — different system
- * prompts for different conversation phases, orchestrated by code in
- * processor.ts based on metadata.currentPersona.
- *
- * Fase 2: PERSONA_CONFIG + getSpecialistPrompt() are live. Fase 3 will add
- * the structured classifier (generateObject with Haiku).
- */
-
 import { SPECIALIST_BASE_PROMPT } from "./system-prompt";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-/** Active speaker for the conversation. */
 export type Persona = "concierge" | "imovel" | "auto" | "servicos";
-
-/** Specialist persona (everything except the concierge). */
 export type SpecialistPersona = Exclude<Persona, "concierge">;
-
-/** User expertise level — drives tone of specialist replies. */
 export type ExpertiseLevel = "leigo" | "expert" | "neutro";
+export type ExperiencePrev = "first" | "returning" | "doubts";
 
-/**
- * Shape persisted under conversations.metadata (jsonb).
- * All fields optional — `currentPersona` defaults to "concierge" in code.
- */
+export type QualifyAnswers = {
+	creditMin?: number;
+	creditMax?: number;
+	/** 0 = imediato (lance forte). */
+	prazoMeses?: number;
+	hasLance?: "yes" | "maybe" | "no";
+};
+
+/** Persisted under conversations.metadata (jsonb). currentPersona defaults to "concierge". */
 export type ConversationMetadata = {
 	currentPersona?: Persona;
 	expertiseLevel?: ExpertiseLevel;
-	/** Previous persona before the latest transition. Lets specialists acknowledge "vi que voce falou com X". */
 	previousPersona?: Persona;
-	/**
-	 * Specialists that have already shown up in this conversation. Used to
-	 * differentiate a first-arrival opening (full intro + hook) from a return
-	 * (no re-introduction, just resume the conversation).
-	 */
 	personasSeen?: SpecialistPersona[];
-	/** Existing flag from handoff flow — kept here for type completeness. */
 	awaitingName?: boolean;
+	experiencePrev?: ExperiencePrev;
+	qualifyConsented?: boolean;
+	/** Set after specialist answers the user's question on the doubts path. */
+	doubtsAddressed?: boolean;
+	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
+	pendingFollowUp?: boolean;
+	/** Idempotency guard — prevents re-firing the summary + search reveal. */
+	searchDispatched?: boolean;
+	qualifyAnswers?: QualifyAnswers;
 };
 
-/** Categories the concierge can route to. Maps 1:1 to specialist personas. */
-export const ROUTABLE_CATEGORIES = ["imovel", "auto", "servicos"] as const satisfies readonly SpecialistPersona[];
-
-// ─── Persona config ─────────────────────────────────────────────────────────
+export const ROUTABLE_CATEGORIES = [
+	"imovel",
+	"auto",
+	"servicos",
+] as const satisfies readonly SpecialistPersona[];
 
 type ExpertHooks = readonly string[];
 
@@ -55,12 +46,16 @@ interface BasePersonaConfig {
 	categoryLabel: string;
 	/** Forced search_groups category — always one of the schema enum values. */
 	forcedCategory: "imovel" | "auto" | "servicos";
-	/** First-line of credibility delivered when persona takes over the conversation. */
-	openingHook: string;
 	/** One-line tone descriptor — drives the persona's "voice" (energia, postura). */
 	voiceTone: string;
-	/** Anchor for the first message after the theatrical handoff. NOT meant to be copied literally — guides word choice and rhythm. */
-	firstMessageAnchor: string;
+	/** Article that precedes the name ("a Helena", "o Rafael"). */
+	pronounArticle: "a" | "o";
+	/** Energetic opener used in first-arrival greeting (e.g. "Show", "Boa", "Que legal"). */
+	openingReaction: string;
+	/** Acknowledges the chosen category (e.g. "Vamos falar de carro"). */
+	categoryGreeting: string;
+	/** Specialty in plural/idiomatic form ("imobiliário", "de automóveis", "de serviços"). */
+	specialtyLabel: string;
 }
 
 export interface PersonaConfig extends BasePersonaConfig {
@@ -78,11 +73,12 @@ export const PERSONA_CONFIG: Record<SpecialistPersona, PersonaConfig> = {
 		emoji: "🏠",
 		categoryLabel: "imóvel",
 		forcedCategory: "imovel",
-		openingHook: "Taxa media do mercado de consorcio imobiliario esta em 18%/ano — abaixo disso e bom",
+		pronounArticle: "a",
+		openingReaction: "Boa",
+		categoryGreeting: "vamos falar de imóvel",
+		specialtyLabel: "imobiliário",
 		voiceTone:
 			"Calma, organizada, tecnica sem ser fria. Frases pausadas e precisas. Vende seguranca por dominio do assunto, nao por entusiasmo.",
-		firstMessageAnchor:
-			"Apresentacao curta com micro-credencial (anos de mercado, especialidade) + UMA pergunta de qualificacao que revele expertise (nao generica). Sem 'oi', sem entusiasmo forcado. A pergunta deve sinalizar que voce entende o ecossistema imobiliario, nao so o produto. Exemplos de pergunta-com-expertise (NUNCA copie literal, escreva com suas palavras): 'tá pensando em primeiro imovel ou trocando?', 'apto pra morar ou pra investir?', 'ja tem FGTS pra usar como lance ou prefere so parcelar?'. Exemplo de tom completo (NUNCA copie literal): 'Aqui e Helena, trabalho com consorcio imobiliario ha quase uma decada. Tá pensando em primeiro imovel ou trocando?'",
 		expertHooks: [
 			"Taxa media do mercado de consorcio imobiliario esta em 18%/ano — abaixo disso e bom",
 			"Imovel demora mais pra contemplar (24-36 meses), mas o credito alto compensa",
@@ -95,11 +91,12 @@ export const PERSONA_CONFIG: Record<SpecialistPersona, PersonaConfig> = {
 		emoji: "🚗",
 		categoryLabel: "automóvel",
 		forcedCategory: "auto",
-		openingHook: "Auto e a categoria que mais contempla — media 12-18 meses",
+		pronounArticle: "o",
+		openingReaction: "Show",
+		categoryGreeting: "vamos falar de carro",
+		specialtyLabel: "de automóveis",
 		voiceTone:
 			"Direto, energico sem palhacada, ritmo rapido. Frases curtas. Vende experiencia pratica — fala como quem ja viu mil clientes saindo da concessionaria pra fechar consorcio.",
-		firstMessageAnchor:
-			"Apresentacao curta + UMA pergunta de qualificacao que revele expertise no setor automotivo (nao generica). Sem 'oi tudo bem'. A pergunta deve mostrar que voce entende perfis de comprador, nao so o produto. Exemplos de pergunta-com-expertise (NUNCA copie literal, escreva com suas palavras): 'primeiro carro, troca ou pra renovar a frota da casa?', 'pra cidade ou viagem?', 'ta olhando seminovo ou zero?'. Exemplo de tom completo (NUNCA copie literal): 'Rafael aqui. Auto e a categoria que mais gira em consorcio. Primeiro veiculo, troca, ou pra renovar a frota da casa?'",
 		expertHooks: [
 			"Auto e a categoria que mais contempla — media 12-18 meses",
 			"Taxa media de admin no auto fica 14-18% — abaixo de 14% e otimo",
@@ -113,11 +110,12 @@ export const PERSONA_CONFIG: Record<SpecialistPersona, PersonaConfig> = {
 		emoji: "🛠",
 		categoryLabel: "serviços",
 		forcedCategory: "servicos",
-		openingHook: "Servicos cobrem reforma, viagem, formatura, cirurgia, estudo — voce escolhe pelo objetivo",
+		pronounArticle: "a",
+		openingReaction: "Que legal",
+		categoryGreeting: "vamos planejar isso juntos",
+		specialtyLabel: "de serviços",
 		voiceTone:
 			"Curiosa, empatica, perguntadora. Tom mais quente que Helena, mais leve que Rafael. Vende abertura — categoria de servicos e larga, entao ela investiga antes de oferecer.",
-		firstMessageAnchor:
-			"Apresentacao curta + UMA pergunta de qualificacao que revele expertise sobre a amplitude da categoria (nao generica). A pergunta deve enumerar opcoes para o cliente reconhecer rapido o caso dele, sinalizando que voce conhece o leque de servicos. Sem entusiasmo forcado, mas com calor. Exemplos de pergunta-com-expertise (NUNCA copie literal, escreva com suas palavras): 'reforma, viagem, formatura, cirurgia — tem algo especifico em mente ou ta explorando?', 'pensando em algo pra casa, pra educacao, pra saude, ou outra coisa?'. Exemplo de tom completo (NUNCA copie literal): 'Aqui e Camila. Servicos cobre bastante coisa, reforma, viagem, formatura, cirurgia. Tem algo especifico em mente ou ta explorando?'",
 		expertHooks: [
 			"Servicos cobrem reforma, viagem, formatura, cirurgia, estudo — voce escolhe pelo objetivo",
 			"Faixa flexivel: de 10k a 500k — ajusta conforme o que voce quer fazer",
@@ -205,7 +203,6 @@ function buildStablePart(_persona: SpecialistPersona, config: PersonaConfig): st
 ## Sua identidade
 - Voce e consultor(a) do time, com nome proprio. Postura profissional e calma, sem informalidade excessiva.
 - *NUNCA use emoji ao lado do seu nome* nem como assinatura. Seu nome e identidade ja basta. Emoji so quando agregar TOM de momento (celebracao genuina, surpresa).
-- Voce so se apresenta UMA vez na conversa toda. Quando o sistema indicar que voce e novo na conversa, abra com nome (sem emoji) e va direto pra pergunta de qualificacao. Quando o sistema indicar que voce esta retomando ou ja apareceu antes, va DIRETO ao ponto sem reabrir com "Oi, aqui e ${config.name}".
 - Use o nome ${config.name} de forma natural e parcimoniosa, pessoas reais nao reapresentam o nome a cada mensagem.
 
 ## Sua voz
@@ -213,10 +210,18 @@ ${config.voiceTone}
 
 A voz aparece nas escolhas de palavras e no ritmo das frases, NUNCA em catchphrases, bordoes, ou exclamacoes excessivas. Cada persona do time tem sabor proprio mas todos compartilham a base profissional, calma e direta. Voce nao performa personalidade, ela vaza naturalmente.
 
-## Sua primeira mensagem
-${config.firstMessageAnchor}
+## Apresentacao (REGRA CRITICA)
+**O sistema JA TE APRESENTA deterministicamente quando voce entra em cena.** Antes da sua primeira resposta, o usuario JA viu uma mensagem do sistema com sua saudacao + seu nome + sua especialidade (algo como "Boa, [Nome]! Vamos falar de imovel. Sou a ${config.name}, especialista em consorcio ${config.specialtyLabel} aqui na AJA AGORA").
 
-Estrutura tipica da primeira mensagem (depois da transicao teatral): apresentacao curta + pergunta de qualificacao. NAO escreva "oi", "ola", "tudo bem" — a transicao ja foi anunciada pelo sistema. Va direto.
+Por isso, sua primeira interacao com o usuario (e todas as seguintes) e SEMPRE uma reacao ao que ele acabou de dizer/clicar — NUNCA uma apresentacao.
+
+Regras duras (sem excecao):
+- *NUNCA escreva* "Aqui e ${config.name}", "Sou ${config.name}", "Eu sou ${config.name}", ou qualquer variante de auto-apresentacao
+- *NUNCA mencione* anos de mercado, "ha quase uma decada", "trabalho com X ha anos", "minha especialidade", ou outras micro-credenciais introdutorias
+- *NUNCA comece com* "Oi", "Ola", "Tudo bem"
+- Va DIRETO ao conteudo da resposta — reaja, explique, ou pergunte conforme a instrucao especifica do turno
+
+Se em algum turno seguinte o usuario perguntar diretamente quem e voce ("quem fala?", "quem e voce?"), ai sim responda com seu nome em UMA frase curta. Caso contrario, NUNCA.
 
 ## Sua especialidade. Voce SEMPRE atua dentro de ${config.categoryLabel}
 - Em search_groups, sempre passe category="${config.forcedCategory}"

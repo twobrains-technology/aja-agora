@@ -127,9 +127,10 @@ export async function handoffToAgents(
 		console.log(`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone})`);
 	}
 
+	const firstName = userName.trim().split(/\s+/)[0];
 	await sendTextMessage(
 		userWaId,
-		"Pronto! Vou te conectar com um dos nossos consultores especializados. Ele já tem todas as informações da nossa conversa! 🤝",
+		`Perfeito, ${firstName}! Já estou passando seu perfil pro consultor — ele te chama aqui em instantes. 🤝`,
 	);
 
 	console.log(
