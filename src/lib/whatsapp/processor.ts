@@ -18,7 +18,6 @@ import {
 	formatTextForWhatsApp,
 	handoffConfirmationToWhatsApp,
 	lanceQuestionToWhatsApp,
-	profileSummaryText,
 	qualifyConsentToWhatsApp,
 	resolveCreditReply,
 	resolveLanceReply,
@@ -26,7 +25,7 @@ import {
 	resolveTimeframeReply,
 	splitMessage,
 	timeframeQuestionToWhatsApp,
-	transitionMessageText,
+	transitionBridgeText,
 	welcomeButtonsToWhatsApp,
 } from "./formatter";
 import {
@@ -42,7 +41,13 @@ import { getOrCreateConversation, loadConversationHistory, saveMessage } from ".
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const typingDelay = (chars: number) => Math.min(1500, 200 + chars * 6);
 const ARTIFACT_PAUSE_MS = 500;
-const TRANSITION_DELAY_MS = 2000;
+// WhatsApp interactive (list/buttons) messages render slower than plain text,
+// so a text sent ~800ms after a list can arrive on screen FIRST. Wait longer
+// before queuing anything after an interactive send to preserve visual order.
+const POST_INTERACTIVE_PAUSE_MS = 1800;
+// Pause between the system bridge ("Conectando com Helena...") and the specialist's
+// first turn. Gives the user a beat to read it before the next message arrives.
+const TRANSITION_PAUSE_MS = 1200;
 
 async function transitionToSpecialist(
 	from: string,
@@ -68,21 +73,10 @@ async function transitionToSpecialist(
 	const fromConcierge = fromPersona === "concierge";
 	const meta0 = getCategoryMeta(personaRow);
 
-	const transitionText = transitionMessageText(
-		{
-			name: personaRow.displayName,
-			emoji: meta0.emoji ?? "",
-			categoryLabel: meta0.label,
-		},
-		fromConcierge,
-	);
-	await sendTextMessage(from, transitionText);
-	await sleep(TRANSITION_DELAY_MS);
-
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
-	const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+	const meta = metaOf(conv);
 	const seenSet = new Set<Category>(meta.personasSeen ?? []);
 	const isReturning = seenSet.has(toCategory);
 	seenSet.add(toCategory);
@@ -96,46 +90,68 @@ async function transitionToSpecialist(
 		personasSeen: Array.from(seenSet),
 		qualifyAnswers: fromConcierge ? meta.qualifyAnswers : undefined,
 	};
+	// Persist FIRST so runAgentDirective resolves the new specialist's voice.
 	await persistMeta(conversationId, updated);
 
+	// UX bridge: send a short system message announcing the connection BEFORE the
+	// specialist takes over. Lets the user mentally prepare for the persona change.
+	await sendTextMessage(
+		from,
+		transitionBridgeText({ name: personaRow.displayName, categoryLabel: meta0.label }),
+	);
+	await sleep(TRANSITION_PAUSE_MS);
+
 	const offerCalibration = fromConcierge && !isReturning;
+	const firstName = conv?.contactName?.trim().split(/\s+/)[0] ?? null;
+	const nameHint = firstName
+		? `O usuario se chama ${firstName}, voce pode usar o primeiro nome.`
+		: "";
 
 	if (offerCalibration) {
-		const firstName = conv?.contactName?.trim().split(/\s+/)[0] ?? null;
-		const opener = firstName ? `Boa, ${firstName}!` : "Boa!";
-		const intro = `${opener} Vamos falar de ${meta0.label}.\n\nAqui é *${personaRow.displayName}*, especialista em consórcio de ${meta0.label} na *AJA AGORA*.`;
-
-		if (updated.experiencePrev) {
-			const gate = nextGate(updated);
-			if (gate === "search") {
-				await sendTextMessage(from, intro);
-				await sleep(typingDelay(intro.length));
-				await fireSummaryAndSearch(from, conversationId, updated);
-			} else if (gate !== "doubts-wait") {
-				await fireGate(from, gate, updated, intro);
-			} else {
-				await sendTextMessage(from, intro);
-			}
-			return;
-		}
-
-		const r = experienceQuestionToWhatsApp(intro);
-		if (r.interactive) await sendInteractiveMessage(from, r.interactive);
+		// First contact with this specialist. The directive triggers Helena's welcome.
+		// executeAgentTurn (inside runAgentDirective) auto-fires the next gate at end
+		// of turn — Helena's text becomes the prefix of the experience question, all in
+		// a single interactive WhatsApp message (text + buttons).
+		// See SHARED_SPECIALIST_EXAMPLES "Primeiro turno apos transicao" for tone.
+		const directive = `[sistema acabou de te conectar com o usuario que pediu pra falar sobre ${meta0.label}]${nameHint ? ` ${nameHint}` : ""}`;
+		await runAgentDirective(from, conversationId, directive);
 		return;
 	}
 
 	const directive = isReturning
-		? `Voce esta RETOMANDO uma conversa que ja teve antes nesta sessao. NAO se apresente de novo. NAO solte opening hook. Responda direto a ultima pergunta do usuario, com tom natural de quem esta voltando ao assunto. Pode comecar com "Vamos la,", "Beleza,", ou ja com o conteudo direto.`
-		: `PRIMEIRA aparicao sua, mas o usuario ja conversou com outro especialista do time antes (sobre outra categoria). NAO se apresente, JAMAIS comece com seu nome ou cargo. Comece DIRETO com a resposta a ultima pergunta do usuario, ou com uma reacao curta tipo "Beleza,", "Vamos la,", "Show,". Se o usuario perguntar quem e voce depois, ai sim diga seu nome. Nao mencione o nome do especialista anterior.`;
+		? `Voce esta RETOMANDO uma conversa que ja teve antes nesta sessao. NAO se apresente de novo. Responda direto a ultima mensagem do usuario NO SEU TOM, com naturalidade de quem esta voltando ao assunto. Em 1-2 frases.`
+		: `PRIMEIRA aparicao sua, mas o usuario ja conversou com outro especialista antes (sobre outra categoria). Comece DIRETO com a resposta a ultima mensagem do usuario NO SEU TOM. Nao se apresente nem mencione o especialista anterior. Em 1-2 frases.`;
 
 	await runAgentDirective(from, conversationId, directive);
+}
+
+// Single cast point — `conversations.metadata` is jsonb (Record<string, unknown>)
+// at the schema level, but we know the shape. Avoids repeating the cast everywhere.
+function metaOf(conv: { metadata: unknown } | null | undefined): ConversationMetadata {
+	return (conv?.metadata ?? {}) as ConversationMetadata;
+}
+
+// Last-resort category detection when the Haiku analyzer fails (timeout, network).
+// Conservative — só pega menções explícitas e claras pra evitar falso-positivo.
+const CATEGORY_KEYWORDS: Record<Category, RegExp> = {
+	imovel:
+		/\b(im[oó]vel|im[oó]veis|apartamento|apto|casa|terreno|kitnet|comercial|sala\s+comercial)\b/i,
+	auto: /\b(carro|autom[oó]vel|moto|motocicleta|caminhonete|caminh[aã]o|ve[ií]culo)\b/i,
+	servicos: /\b(reforma|viagem|formatura|cirurgia|tratamento|servi[cç]o)\b/i,
+};
+
+function fallbackDetectCategory(text: string): Category | null {
+	for (const [cat, re] of Object.entries(CATEGORY_KEYWORDS) as Array<[Category, RegExp]>) {
+		if (re.test(text)) return cat;
+	}
+	return null;
 }
 
 async function reloadMeta(conversationId: string): Promise<ConversationMetadata> {
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
-	return (conv?.metadata ?? {}) as ConversationMetadata;
+	return metaOf(conv);
 }
 
 const INTEREST_RE =
@@ -171,6 +187,7 @@ async function startInterestHandoff(
 
 async function fireGate(
 	from: string,
+	conversationId: string,
 	gate: Gate,
 	meta: ConversationMetadata,
 	prefix?: string,
@@ -182,6 +199,11 @@ async function fireGate(
 			return;
 		}
 		case "consent": {
+			// Mark as offered the first time we fire — nextGate uses this to avoid
+			// re-prompting after each free-text doubt the user asks.
+			if (!meta.consentOffered) {
+				await persistMeta(conversationId, { ...meta, consentOffered: true });
+			}
 			const r = qualifyConsentToWhatsApp(prefix);
 			if (r.interactive) await sendInteractiveMessage(from, r.interactive);
 			return;
@@ -224,11 +246,6 @@ async function fireSummaryAndSearch(
 	// Set BEFORE the work so concurrent re-entry sees the flag and bails out.
 	await persistMeta(conversationId, { ...meta, searchDispatched: true });
 
-	const summary = profileSummaryText(q);
-	await sendTextMessage(from, summary);
-	await saveMessage(conversationId, "assistant", summary);
-	await sleep(typingDelay(summary.length));
-
 	const filterParts: string[] = [];
 	if (q.creditMin !== undefined && q.creditMin > 0) {
 		filterParts.push(`creditMin=${q.creditMin}`);
@@ -238,7 +255,21 @@ async function fireSummaryAndSearch(
 	}
 	const filters = filterParts.length > 0 ? `, ${filterParts.join(", ")}` : "";
 
-	const directive = `Usuario completou as 4 perguntas de qualificacao (experiencia=${meta.experiencePrev}, faixa=${q.creditMin ?? 0}-${q.creditMax ?? "?"}, prazo=${q.prazoMeses ?? "?"} meses, lance=${q.hasLance}). O sistema JA mandou o resumo do perfil pro usuario com a frase "Vou puxar as melhores opcoes pra voce" — NAO repita esse texto, NAO escreva texto introdutorio. FLUXO OBRIGATORIO: (1) chame search_groups com category="${category}"${filters}; (2) chame present_comparison_table (ou present_group_card se vier 1 so). Apos os cards aparecerem, escreva UMA frase curta orientando ("qual quer simular?" ou similar). NAO narre passos antes das tools, NAO chame recommend_groups.`;
+	// Single directive: agent summarizes IN voice + then calls the search tools.
+	// Replaces the previous fixed bullet template ("✅ Crédito... ✅ Prazo...").
+	const directive = `O usuario completou as 4 perguntas de qualificacao:
+- experiencia=${meta.experiencePrev}
+- faixa de credito=R$ ${q.creditMin ?? 0} a R$ ${q.creditMax ?? "?"}
+- prazo=${q.prazoMeses ?? "?"} meses
+- lance=${q.hasLance}
+
+FLUXO OBRIGATORIO neste turno:
+1. Em 1-2 frases curtas NO SEU TOM, espelhe esse perfil de volta pro usuario (ex: "Beleza, ${q.creditMax ?? 0} mil em [prazo], com lance — bora ver as opcoes."). NAO use bullets/checkboxes (✅), NAO escreva "Vou puxar as melhores opcoes pra voce", NAO use template.
+2. Chame search_groups com category="${category}"${filters}.
+3. Chame present_comparison_table com os grupos retornados (ou present_group_card se vier so 1).
+4. Apos os cards, em UMA frase curta NO SEU TOM, oriente ("qual quer simular?" ou equivalente).
+
+NAO narre passos antes das tools. NAO chame recommend_groups.`;
 	await runAgentDirective(from, conversationId, directive);
 }
 
@@ -288,6 +319,21 @@ async function executeAgentTurn(args: {
 				break;
 			}
 		}
+	}
+
+	// Per AI SDK 6 docs: check finishReason after fullStream consumption.
+	// "stop" = natural end, "tool-calls" = stopped to wait for tool result.
+	// Anything else (length truncation, content filter, error) means the response
+	// may be incomplete — log so we can spot it in production.
+	try {
+		const finishReason = await result.finishReason;
+		if (finishReason !== "stop" && finishReason !== "tool-calls") {
+			console.warn(
+				`[whatsapp-processor] Agent stream ended with unexpected finishReason="${finishReason}" persona=${currentPersona}`,
+			);
+		}
+	} catch {
+		// finishReason is best-effort — not all providers expose it reliably.
 	}
 
 	// Handoff is exclusive: when the agent flags a trigger, drop AI text + artifacts
@@ -371,43 +417,66 @@ async function executeAgentTurn(args: {
 	}
 
 	let hasSent = false;
-	if (fullResponse && !prefixForNextGate) {
-		const formatted = formatTextForWhatsApp(fullResponse);
-		const chunks = splitMessage(formatted);
-		for (const chunk of chunks) {
-			if (hasSent) await sleep(typingDelay(chunk.length));
-			await sendTextMessage(from, chunk);
-			hasSent = true;
-		}
-	}
-
+	let lastWasInteractive = false;
+	const pauseBeforeNext = () =>
+		sleep(lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : ARTIFACT_PAUSE_MS);
+	// Send artifacts FIRST (cards/comparison/simulation before commentary).
+	// The system prompt instructs the agent to "comente APOS o card aparecer", so
+	// the visual context lands before the text reacting to it. UX win.
 	for (const artifact of artifacts) {
 		const waResponse = artifactToWhatsApp(artifact.type, artifact.payload);
 		if (!waResponse) continue;
-		if (hasSent) await sleep(ARTIFACT_PAUSE_MS);
+		if (hasSent) await pauseBeforeNext();
 		if (waResponse.type === "text" && waResponse.text) {
 			await sendTextMessage(from, waResponse.text);
+			lastWasInteractive = false;
 		} else if (waResponse.type === "interactive" && waResponse.interactive) {
 			await sendInteractiveMessage(from, waResponse.interactive);
+			lastWasInteractive = true;
 		}
 		hasSent = true;
 	}
 
+	// Then text (unless it's being used as prefix of the next gate question).
+	if (fullResponse && !prefixForNextGate) {
+		const formatted = formatTextForWhatsApp(fullResponse);
+		const chunks = splitMessage(formatted);
+		for (let i = 0; i < chunks.length; i++) {
+			const chunk = chunks[i];
+			if (hasSent) {
+				const wait = lastWasInteractive
+					? POST_INTERACTIVE_PAUSE_MS
+					: typingDelay(chunk.length);
+				await sleep(wait);
+			}
+			await sendTextMessage(from, chunk);
+			lastWasInteractive = false;
+			hasSent = true;
+		}
+	}
+
 	if (isConcierge) {
-		if (hasSent) await sleep(ARTIFACT_PAUSE_MS);
+		if (hasSent) await pauseBeforeNext();
 		const buttons = welcomeButtonsToWhatsApp();
 		if (buttons.interactive) {
 			await sendInteractiveMessage(from, buttons.interactive);
+			lastWasInteractive = true;
 		}
 	}
 
 	if (nextGateToFire) {
-		if (hasSent) await sleep(ARTIFACT_PAUSE_MS);
+		if (hasSent) await pauseBeforeNext();
 		const refreshed = await reloadMeta(conversationId);
 		if (nextGateToFire === "search") {
 			await fireSummaryAndSearch(from, conversationId, refreshed);
 		} else {
-			await fireGate(from, nextGateToFire, refreshed, prefixForNextGate ?? undefined);
+			await fireGate(
+				from,
+				conversationId,
+				nextGateToFire,
+				refreshed,
+				prefixForNextGate ?? undefined,
+			);
 		}
 	}
 
@@ -427,7 +496,7 @@ async function runAgentDirective(
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
-	const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+	const meta = metaOf(conv);
 	const currentPersona: Persona = meta.currentPersona ?? "concierge";
 	const knownName = conv?.contactName ?? null;
 
@@ -542,7 +611,7 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
-	const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+	const meta = metaOf(conv);
 	const currentPersona: Persona = meta.currentPersona ?? "concierge";
 
 	if (contactName && contactName !== conv?.contactName) {
@@ -602,6 +671,14 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		meta.qualifyConsented = true;
 		metaChanged = true;
 	}
+	// Volunteering concrete data also implies familiarity with the product.
+	// Skip the "Você já fez consórcio?" gate — feels robotic when user clearly knows
+	// what they want. Treat as "returning"; the analyzer's expertiseLevel still
+	// drives whether to add a brief explanation in the agent's response.
+	if (extractedQualifyField && !meta.experiencePrev) {
+		meta.experiencePrev = "returning";
+		metaChanged = true;
+	}
 
 	if (
 		meta.currentCategory &&
@@ -623,17 +700,25 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		await persistMeta(conversationId, meta);
 	}
 
+	// Use analyzer detection if present; else fall back to regex on the raw text.
+	// Defends against analyzer timeouts/errors when the user clearly mentioned a category.
+	const detectedCategory = analysis.detectedCategory ?? fallbackDetectCategory(text);
 	if (
-		analysis.detectedCategory &&
-		analysis.detectedCategory !== meta.currentCategory &&
+		detectedCategory &&
+		detectedCategory !== meta.currentCategory &&
 		(!meta.currentCategory || analysis.isExplicitSwitch)
 	) {
+		if (!analysis.detectedCategory) {
+			console.log(
+				`[whatsapp-processor] Analyzer missed category — regex fallback detected "${detectedCategory}" in: "${text.slice(0, 80)}"`,
+			);
+		}
 		await saveMessage(conversationId, "user", text);
 		await transitionToSpecialist(
 			from,
 			conversationId,
 			currentPersona,
-			analysis.detectedCategory,
+			detectedCategory,
 			analysis.detectedSubTopic,
 		);
 		return;
@@ -692,7 +777,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		await saveMessage(conversationId, "user", replyTitle);
 		// Clear the lock either way — handoff queue takes over.
 		await persistMeta(conversationId, {
@@ -710,7 +795,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		await saveMessage(conversationId, "user", replyTitle);
 		const cleared: ConversationMetadata = {
 			...meta,
@@ -723,7 +808,7 @@ export async function processInteractiveReply(
 		if (gate === "search") {
 			await fireSummaryAndSearch(from, conversationId, cleared);
 		} else if (gate !== "doubts-wait") {
-			await fireGate(from, gate, cleared);
+			await fireGate(from, conversationId, gate, cleared);
 		} else {
 			await sendTextMessage(from, "Beleza, vamos seguir então. O que você quer saber?");
 		}
@@ -737,7 +822,7 @@ export async function processInteractiveReply(
 			const conv = await db.query.conversations.findFirst({
 				where: eq(conversations.id, conversationId),
 			});
-			const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+			const meta = metaOf(conv);
 			const fromPersona: Persona = meta.currentPersona ?? "concierge";
 			await transitionToSpecialist(from, conversationId, fromPersona, category);
 			return;
@@ -752,7 +837,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		// Reset doubtsAddressed if user loops back through experience.
 		await persistMeta(conversationId, {
 			...meta,
@@ -778,33 +863,23 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		await saveMessage(conversationId, "user", replyTitle);
 
 		if (!meta.currentCategory) return;
 
 		if (replyId === "qualify_start_yes") {
 			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-			const reaction = "Beleza, vamos lá.";
-			await saveMessage(conversationId, "assistant", reaction);
-
-			const refreshed = await reloadMeta(conversationId);
-			const gate = nextGate(refreshed);
-			if (gate === "search") {
-				await sendTextMessage(from, reaction);
-				await sleep(ARTIFACT_PAUSE_MS);
-				await fireSummaryAndSearch(from, conversationId, refreshed);
-			} else if (gate !== "doubts-wait") {
-				// Fold the reaction into the next gate's body — one message instead of two.
-				await fireGate(from, gate, refreshed, reaction);
-			}
+			// Veja exemplo "Usuario aceitou comecar qualificacao" no SHARED_SPECIALIST_EXAMPLES.
+			const directive = `[usuario aceitou comecar a qualificacao]`;
+			await runAgentDirective(from, conversationId, directive);
 			return;
 		}
 
 		// pendingFollowUp keeps nextGate at doubts-wait until the user types
 		// their question and the AI answers; then the post-AI hook clears it.
 		await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
-		const directive = `Usuario quer entender mais antes de responder as perguntas de qualificacao. FLUXO: em UMA mensagem curta (2-3 frases), pergunte do que especificamente ele quer entender melhor (ex: "Claro, do que voce quer entender melhor antes? Pode ser sobre taxa, contemplacao, lance, prazo, ou diferenca de financiamento."). Tom acolhedor. NAO de explicacao longa nem despeje informacao — espere a pergunta especifica dele. NAO chame tools.`;
+		const directive = `[usuario clicou "Entender mais antes" — pergunte em uma frase curta sobre o que especificamente ele quer entender, sem despejar info ainda]`;
 		await runAgentDirective(from, conversationId, directive);
 		return;
 	}
@@ -817,7 +892,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 			...(meta.qualifyAnswers ?? {}),
 			creditMin: resolved.min,
@@ -839,7 +914,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 			...(meta.qualifyAnswers ?? {}),
 			prazoMeses: resolved.prazoMeses,
@@ -862,7 +937,7 @@ export async function processInteractiveReply(
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, conversationId),
 		});
-		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		const meta = metaOf(conv);
 		const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 			...(meta.qualifyAnswers ?? {}),
 			hasLance: resolved.value,

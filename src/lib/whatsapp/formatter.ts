@@ -391,15 +391,11 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	};
 }
 
-export function transitionMessageText(
-	specialist: { name: string; emoji: string; categoryLabel: string },
-	fromConcierge: boolean,
-): string {
-	const { name, categoryLabel } = specialist;
-	if (fromConcierge) {
-		return `Boa! Já estamos te conectando com o(a) *${name}*, consultor(a) de ${categoryLabel}. \nUm instante ⏳`;
-	}
-	return `Tranquilo! Vou te passar pro(a) *${name}*, que cuida de ${categoryLabel}. \nUm momento ⏳`;
+// Bridge message shown right before the specialist takes over. Hardcoded
+// (system voice, not persona's) — purpose é UX: tell the user they're being
+// connected so the persona-voice change doesn't feel abrupt. Quente mas curto.
+export function transitionBridgeText(specialist: { name: string; categoryLabel: string }): string {
+	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
 }
 
 type CreditRange = { token: string; title: string; desc?: string; min: number; max: number };

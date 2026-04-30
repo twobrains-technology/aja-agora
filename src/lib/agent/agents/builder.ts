@@ -59,6 +59,9 @@ export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
 		instructions,
 		tools,
+		// Per-persona temperature lets warm/playful personas differ from precise/technical
+		// ones at sampling level (Claude only exposes temperature, no topP/penalty).
+		temperature: row.temperature,
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
 	});
 }

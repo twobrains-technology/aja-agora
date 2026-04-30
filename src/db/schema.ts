@@ -9,6 +9,7 @@ import {
 	numeric,
 	pgEnum,
 	pgTable,
+	real,
 	serial,
 	text,
 	timestamp,
@@ -240,6 +241,16 @@ export type PersonaForbiddenTopic = {
 	enabled: boolean;
 };
 
+// Few-shot example shown to the model to ground the persona's voice.
+// Anthropic recommends 3-5 examples wrapped in <example> tags — they
+// outperform free-text descriptions for tone steering.
+export type PersonaExample = {
+	id: string;
+	context?: string | null;
+	userMessage: string;
+	assistantResponse: string;
+};
+
 // `version` increments on every admin update — used by the agent cache to
 // invalidate without explicit pub/sub.
 export const personas = pgTable(
@@ -253,6 +264,10 @@ export const personas = pgTable(
 		// the analyzer is anchored to active values per category at call time.
 		expertise: text("expertise"),
 		voiceTone: text("voice_tone").notNull(),
+		examples: jsonb("examples").$type<PersonaExample[]>().default([]).notNull(),
+		// Per-persona temperature kept in DB for tuning, hidden from admin UI.
+		// Claude only exposes temperature (no topP/penalty), so this is the only sampling lever.
+		temperature: real("temperature").default(0.7).notNull(),
 		activeCampaigns: jsonb("active_campaigns").$type<PersonaCampaign[]>().default([]).notNull(),
 		handoffTriggers: jsonb("handoff_triggers")
 			.$type<PersonaHandoffTrigger[]>()
@@ -280,6 +295,10 @@ export const personas = pgTable(
 		check(
 			"personas_specialist_has_category",
 			sql`${table.role} = 'concierge' OR ${table.category} IS NOT NULL`,
+		),
+		check(
+			"personas_temperature_check",
+			sql`${table.temperature} >= 0 AND ${table.temperature} <= 1`,
 		),
 	],
 );

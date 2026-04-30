@@ -19,11 +19,16 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { PersonaCampaign, PersonaForbiddenTopic, PersonaHandoffTrigger } from "@/db/schema";
+import type {
+	PersonaCampaign,
+	PersonaExample,
+	PersonaForbiddenTopic,
+	PersonaHandoffTrigger,
+} from "@/db/schema";
 import { type CreatePersonaInput, createPersonaSchema } from "@/lib/validations/persona";
-import { CampaignListSection } from "./campaign-list-section";
 import { ForbiddenTopicListSection } from "./forbidden-topic-list-section";
 import { HandoffTriggerListSection } from "./handoff-trigger-list-section";
+import { PersonaExamplesSection } from "./persona-examples-section";
 import { PersonaPreviewPanel } from "./persona-preview-panel";
 
 const VOICE_TONE_MAX = 2000;
@@ -51,6 +56,7 @@ type FormValues = {
 	category: "imovel" | "auto" | "servicos" | undefined;
 	expertise: string | null;
 	voiceTone: string;
+	examples: PersonaExample[];
 	activeTools: string[];
 	isActive: boolean;
 	activeCampaigns: PersonaCampaign[];
@@ -69,6 +75,7 @@ export function PersonaCreateForm() {
 			category: undefined,
 			expertise: null,
 			voiceTone: "",
+			examples: [],
 			activeTools: DEFAULT_TOOLS,
 			isActive: true,
 			activeCampaigns: [],
@@ -194,18 +201,22 @@ export function PersonaCreateForm() {
 
 								<div className="space-y-1.5">
 									<div className="flex items-center justify-between">
-										<Label htmlFor="voiceTone">Tom de voz</Label>
+										<Label htmlFor="voiceTone">Tom de voz (descrição livre)</Label>
 										<span className="text-xs text-muted-foreground">
 											{voiceTone?.length ?? 0}/{VOICE_TONE_MAX}
 										</span>
 									</div>
 									<Textarea
 										id="voiceTone"
-										rows={7}
+										rows={6}
 										maxLength={VOICE_TONE_MAX}
-										placeholder="Calma, organizada, técnica sem ser fria. Frases pausadas e precisas..."
+										placeholder="Como essa persona conversa. Ex: calma, organizada, técnica sem ser fria. Frases pausadas, sem exclamação. Vocabulário de regularização fundiária quando o assunto pede."
 										{...register("voiceTone")}
 									/>
+									<p className="text-xs text-muted-foreground">
+										Descreva tudo que define a voz: formalidade, ritmo das frases, vocabulário, uso
+										de exclamação. Os exemplos abaixo ancoram esse tom em conversas reais.
+									</p>
 									{errors.voiceTone?.message && (
 										<p className="text-sm text-destructive">{errors.voiceTone.message}</p>
 									)}
@@ -226,7 +237,7 @@ export function PersonaCreateForm() {
 							</CardContent>
 						</Card>
 
-						<CampaignListSection />
+						<PersonaExamplesSection />
 						<HandoffTriggerListSection />
 						<ForbiddenTopicListSection />
 					</div>

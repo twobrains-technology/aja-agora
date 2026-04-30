@@ -7,7 +7,10 @@ import { listExpertisesByCategory } from "./personas-repo";
 const anthropic = createAnthropic();
 
 const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5-20251001";
-const ANALYZER_TIMEOUT_MS = 4000;
+// 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
+// faz o concierge atender mesmo quando o usuario foi explicito ("quero imovel").
+// 6s permite Haiku completar com folga; usuario nem percebe diferenca.
+const ANALYZER_TIMEOUT_MS = 6000;
 
 export const turnAnalysisSchema = z.object({
 	reasoning: z
@@ -154,21 +157,19 @@ export async function analyzeTurn(
 	}));
 
 	const start = Date.now();
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), ANALYZER_TIMEOUT_MS);
 	try {
-		const result = await Promise.race([
-			generateObject({
-				model: anthropic(ANALYZER_MODEL),
-				schema: turnAnalysisSchema,
-				system: BASE_SYSTEM_INSTRUCTION + renderSubTopicSection(subTopics),
-				prompt: `Persona ativa atualmente: ${currentPersona}
+		const result = await generateObject({
+			model: anthropic(ANALYZER_MODEL),
+			schema: turnAnalysisSchema,
+			system: BASE_SYSTEM_INSTRUCTION + renderSubTopicSection(subTopics),
+			prompt: `Persona ativa atualmente: ${currentPersona}
 Mensagem do usuario: "${text}"${contextHint}
 
 Analise conforme o schema. Use null em campos sem sinal claro.`,
-			}),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error("analyzer timeout")), ANALYZER_TIMEOUT_MS),
-			),
-		]);
+			abortSignal: controller.signal,
+		});
 
 		const elapsed = Date.now() - start;
 		const o = result.object;
@@ -178,7 +179,10 @@ Analise conforme o schema. Use null em campos sem sinal claro.`,
 		return o;
 	} catch (err) {
 		const elapsed = Date.now() - start;
-		console.error(`[analyzer] failed after ${elapsed}ms — falling back to neutral:`, err);
+		const reason = controller.signal.aborted ? "timeout" : "error";
+		console.error(`[analyzer] ${reason} after ${elapsed}ms — falling back to neutral:`, err);
 		return NEUTRAL_FALLBACK;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

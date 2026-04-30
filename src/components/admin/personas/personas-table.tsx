@@ -27,6 +27,7 @@ type PersonaListItem = {
 	activeCampaigns: unknown[];
 	handoffTriggers: unknown[];
 	forbiddenTopics: unknown[];
+	examples: unknown[];
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -48,9 +49,7 @@ function expertiseDisplay(p: PersonaListItem): string {
 function PersonaRow({ p }: { p: PersonaListItem }) {
 	return (
 		<TableRow>
-			<TableCell className="font-medium">
-				{p.displayName}
-			</TableCell>
+			<TableCell className="font-medium">{p.displayName}</TableCell>
 			<TableCell>{categoryDisplay(p)}</TableCell>
 			<TableCell>
 				{p.expertise ? (
@@ -65,10 +64,9 @@ function PersonaRow({ p }: { p: PersonaListItem }) {
 				</Badge>
 			</TableCell>
 			<TableCell className="text-muted-foreground text-sm">
-				{p.activeCampaigns.length} campanhas · {p.handoffTriggers.length} triggers ·{" "}
-				{p.forbiddenTopics.length} guardrails
+				{p.handoffTriggers.length} triggers · {p.forbiddenTopics.length} guardrails ·{" "}
+				{p.examples.length} exemplos
 			</TableCell>
-			<TableCell className="text-muted-foreground">v{p.version}</TableCell>
 			<TableCell className="text-muted-foreground text-sm">
 				{new Date(p.updatedAt).toLocaleDateString("pt-BR")}
 			</TableCell>
@@ -93,7 +91,6 @@ function PersonasTableLoading() {
 						<TableHead>Especialidade</TableHead>
 						<TableHead>Status</TableHead>
 						<TableHead>Configurações</TableHead>
-						<TableHead>Versão</TableHead>
 						<TableHead>Atualizada</TableHead>
 						<TableHead className="w-20" />
 					</TableRow>
@@ -116,9 +113,6 @@ function PersonasTableLoading() {
 							</TableCell>
 							<TableCell>
 								<Skeleton className="h-4 w-32" />
-							</TableCell>
-							<TableCell>
-								<Skeleton className="h-4 w-8" />
 							</TableCell>
 							<TableCell>
 								<Skeleton className="h-4 w-24" />
@@ -200,7 +194,6 @@ export function PersonasTable() {
 								<TableHead>Especialidade</TableHead>
 								<TableHead>Status</TableHead>
 								<TableHead>Configurações</TableHead>
-								<TableHead>Versão</TableHead>
 								<TableHead>Atualizada</TableHead>
 								<TableHead className="w-20" />
 							</TableRow>

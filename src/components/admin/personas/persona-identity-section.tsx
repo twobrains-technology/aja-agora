@@ -93,7 +93,17 @@ export function PersonaIdentitySection({ persona }: { persona: PersonaRow }) {
 							{voiceTone?.length ?? 0}/{VOICE_TONE_MAX}
 						</span>
 					</div>
-					<Textarea id="voiceTone" rows={5} maxLength={VOICE_TONE_MAX} {...register("voiceTone")} />
+					<Textarea
+						id="voiceTone"
+						rows={6}
+						maxLength={VOICE_TONE_MAX}
+						placeholder="Como essa persona conversa. Ex: calma, organizada, técnica sem ser fria. Frases pausadas, sem exclamação. Vocabulário de regularização fundiária quando o assunto pede."
+						{...register("voiceTone")}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Descreva tudo que define a voz: formalidade, ritmo das frases, vocabulário, uso de
+						exclamação. Os exemplos abaixo ancoram esse tom em conversas reais.
+					</p>
 					{errors.voiceTone?.message && (
 						<p className="text-sm text-destructive">{errors.voiceTone.message}</p>
 					)}

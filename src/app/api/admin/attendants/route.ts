@@ -13,10 +13,7 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type AttendantStatus = "pending" | "active" | "inactive";
 
-function deriveStatus(row: {
-	isActive: boolean;
-	inviteToken: string | null;
-}): AttendantStatus {
+function deriveStatus(row: { isActive: boolean; inviteToken: string | null }): AttendantStatus {
 	if (row.inviteToken) return "pending";
 	if (!row.isActive) return "inactive";
 	return "active";

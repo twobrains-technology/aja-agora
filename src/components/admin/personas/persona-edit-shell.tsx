@@ -7,13 +7,18 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
-import type { PersonaCampaign, PersonaForbiddenTopic, PersonaHandoffTrigger } from "@/db/schema";
+import type {
+	PersonaCampaign,
+	PersonaExample,
+	PersonaForbiddenTopic,
+	PersonaHandoffTrigger,
+} from "@/db/schema";
 import { getCategoryMeta } from "@/lib/agent/categories";
 import type { PersonaRow } from "@/lib/agent/system-prompt";
 import { type UpdatePersonaInput, updatePersonaSchema } from "@/lib/validations/persona";
-import { CampaignListSection } from "./campaign-list-section";
 import { ForbiddenTopicListSection } from "./forbidden-topic-list-section";
 import { HandoffTriggerListSection } from "./handoff-trigger-list-section";
+import { PersonaExamplesSection } from "./persona-examples-section";
 import { PersonaIdentitySection } from "./persona-identity-section";
 import { PersonaPreviewPanel } from "./persona-preview-panel";
 
@@ -22,6 +27,7 @@ type FormValues = {
 	voiceTone: string;
 	isActive: boolean;
 	expertise: string | null;
+	examples: PersonaExample[];
 	activeCampaigns: PersonaCampaign[];
 	handoffTriggers: PersonaHandoffTrigger[];
 	forbiddenTopics: PersonaForbiddenTopic[];
@@ -39,6 +45,7 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 			voiceTone: persona.voiceTone,
 			isActive: persona.isActive,
 			expertise: persona.expertise,
+			examples: persona.examples,
 			activeCampaigns: persona.activeCampaigns,
 			handoffTriggers: persona.handoffTriggers,
 			forbiddenTopics: persona.forbiddenTopics,
@@ -81,15 +88,14 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 							Voltar
 						</Button>
 						<h1 className="text-2xl font-bold tracking-tight mt-2">
-							{getCategoryMeta(persona).emoji ? `${getCategoryMeta(persona).emoji} ` : ""}
 							{persona.displayName}
 						</h1>
 						<p className="text-muted-foreground text-sm mt-1">
-							Categoria: {persona.role === "concierge" ? "Atendente" : getCategoryMeta(persona).label}
+							Categoria:{" "}
+							{persona.role === "concierge" ? "Atendente" : getCategoryMeta(persona).label}
 							{persona.expertise
 								? ` · Especialidade: ${persona.expertise.charAt(0).toUpperCase() + persona.expertise.slice(1)}`
-								: ""}{" "}
-							· Versão atual: v{persona.version}
+								: ""}
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -118,7 +124,7 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 					<div className="space-y-6">
 						<PersonaIdentitySection persona={persona} />
-						<CampaignListSection />
+						<PersonaExamplesSection />
 						<HandoffTriggerListSection />
 						<ForbiddenTopicListSection />
 					</div>

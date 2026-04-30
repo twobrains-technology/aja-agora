@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { personas, personaVersions } from "@/db/schema";
+import { type PersonaExample, personas, personaVersions } from "@/db/schema";
 import type { Category } from "./personas";
 import type { PersonaRow } from "./system-prompt";
 
@@ -151,6 +151,8 @@ export async function createPersona(
 		category: Category | null;
 		expertise?: string | null;
 		voiceTone: string;
+		temperature?: number;
+		examples?: PersonaExample[];
 		activeTools?: string[];
 		isActive?: boolean;
 	},
@@ -165,6 +167,8 @@ export async function createPersona(
 			category: input.category,
 			expertise: input.expertise ?? null,
 			voiceTone: input.voiceTone,
+			temperature: input.temperature ?? 0.7,
+			examples: input.examples ?? [],
 			activeTools: input.activeTools ?? [],
 			isActive: input.isActive ?? true,
 		})
@@ -173,7 +177,7 @@ export async function createPersona(
 	await db.insert(personaVersions).values({
 		personaId: created.id,
 		version: created.version,
-		snapshot: created as unknown as Record<string, unknown>,
+		snapshot: created as Record<string, unknown>,
 		changedBy,
 	});
 
@@ -201,7 +205,7 @@ export async function updatePersona(
 	await db.insert(personaVersions).values({
 		personaId: id,
 		version: previous.version,
-		snapshot: previous as unknown as Record<string, unknown>,
+		snapshot: previous as Record<string, unknown>,
 		changedBy,
 	});
 

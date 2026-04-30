@@ -26,6 +26,10 @@ export type ConversationMetadata = {
 	awaitingName?: boolean;
 	experiencePrev?: ExperiencePrev;
 	qualifyConsented?: boolean;
+	/** Set when consent gate fires the first time. Once set, the gate never re-fires —
+	 * user must click "Bora!" / "Entender mais" buttons or volunteer info that triggers
+	 * extraction. Prevents spam re-prompting after each free-text doubt the user asks. */
+	consentOffered?: boolean;
 	/** Set after specialist answers the user's question on the doubts path. */
 	doubtsAddressed?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */

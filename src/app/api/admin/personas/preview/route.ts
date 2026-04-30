@@ -63,6 +63,8 @@ export async function POST(req: Request) {
 		category: draft.category,
 		expertise: draft.expertise,
 		voiceTone: draft.voiceTone,
+		temperature: 0.7,
+		examples: draft.examples,
 		activeCampaigns: draft.activeCampaigns,
 		handoffTriggers: draft.handoffTriggers,
 		forbiddenTopics: draft.forbiddenTopics,

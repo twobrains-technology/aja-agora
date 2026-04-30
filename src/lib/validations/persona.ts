@@ -33,12 +33,20 @@ export const personaForbiddenTopicSchema = z.object({
 	enabled: z.boolean(),
 });
 
+export const personaExampleSchema = z.object({
+	id: z.string().min(1),
+	context: z.string().max(80).optional().nullable(),
+	userMessage: z.string().min(3, "Mensagem do cliente obrigatória").max(500),
+	assistantResponse: z.string().min(3, "Resposta da persona obrigatória").max(800),
+});
+
 export const updatePersonaSchema = z
 	.object({
 		displayName: z.string().min(1).max(50).optional(),
 		voiceTone: z.string().min(1).max(2000).optional(),
 		isActive: z.boolean().optional(),
 		expertise: z.string().max(50).nullable().optional(),
+		examples: z.array(personaExampleSchema).max(10).optional(),
 		activeCampaigns: z.array(personaCampaignSchema).max(20).optional(),
 		handoffTriggers: z.array(personaHandoffTriggerSchema).max(20).optional(),
 		forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20).optional(),
@@ -57,6 +65,7 @@ export const createPersonaSchema = z.object({
 		.nullable()
 		.transform((v) => (v && v.trim().length > 0 ? v.trim() : null)),
 	voiceTone: z.string().min(1, "Tom de voz obrigatório").max(2000),
+	examples: z.array(personaExampleSchema).max(10).default([]),
 	activeTools: z.array(z.string()).max(20).default([]),
 	isActive: z.boolean().default(true),
 	activeCampaigns: z.array(personaCampaignSchema).max(20).default([]),
@@ -68,6 +77,8 @@ export const previewPersonaSchema = z.object({
 	displayName: z.string().min(1).max(50),
 	voiceTone: z.string().min(1).max(2000),
 	isActive: z.boolean(),
+	examples: z.array(personaExampleSchema).max(10).optional(),
+	expertise: z.string().max(50).nullable().optional(),
 	activeCampaigns: z.array(personaCampaignSchema).max(20),
 	handoffTriggers: z.array(personaHandoffTriggerSchema).max(20),
 	forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20),
@@ -86,6 +97,7 @@ export const previewPersonaDraftSchema = z.object({
 		.nullable()
 		.transform((v) => (v && v.trim().length > 0 ? v.trim() : null)),
 	voiceTone: z.string().min(1).max(2000),
+	examples: z.array(personaExampleSchema).max(10).default([]),
 	activeCampaigns: z.array(personaCampaignSchema).max(20).default([]),
 	handoffTriggers: z.array(personaHandoffTriggerSchema).max(20).default([]),
 	forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20).default([]),
