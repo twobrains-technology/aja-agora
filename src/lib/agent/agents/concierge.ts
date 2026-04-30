@@ -1,17 +1,14 @@
 /**
  * Concierge agent — front door of the WhatsApp experience.
  *
- * Singleton: config 100% static (no expertise/subtype to inject), so we
- * instantiate once and reuse across requests.
- *
- * Pattern follows Vercel AI SDK 6 ToolLoopAgent recommendation:
- * https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent
+ * Singleton: config 100% static. No tools — routing decisions are made by the
+ * Haiku classifier (in processor.ts) BEFORE the AI runs. Sofia's job narrows
+ * to greeting + answering general questions about consórcio.
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { CONCIERGE_PROMPT } from "../system-prompt";
-import { conciergeTools } from "../tools/concierge";
 
 const anthropic = createAnthropic();
 
@@ -26,6 +23,6 @@ export const conciergeAgent = new ToolLoopAgent({
 			},
 		},
 	],
-	tools: conciergeTools,
+	tools: {},
 	stopWhen: stepCountIs(1),
 });
