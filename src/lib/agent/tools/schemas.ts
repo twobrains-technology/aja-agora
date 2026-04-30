@@ -10,24 +10,13 @@ export const searchGroupsInput = z.object({
 	category: z
 		.enum(["imovel", "auto", "servicos"])
 		.describe("Categoria do bem: imóvel, automóvel ou serviços"),
-	creditMin: z
-		.number()
-		.min(0)
-		.optional()
-		.describe("Valor mínimo de crédito em reais"),
-	creditMax: z
-		.number()
-		.positive()
-		.optional()
-		.describe("Valor máximo de crédito em reais"),
+	creditMin: z.number().min(0).optional().describe("Valor mínimo de crédito em reais"),
+	creditMax: z.number().positive().optional().describe("Valor máximo de crédito em reais"),
 });
 
 export const simulateQuotaInput = z.object({
 	groupId: z.string().min(1).describe("ID do grupo para simulação"),
-	creditValue: z
-		.number()
-		.positive()
-		.describe("Valor do crédito desejado em reais"),
+	creditValue: z.number().positive().describe("Valor do crédito desejado em reais"),
 });
 
 export const getRatesInput = z.object({
@@ -35,10 +24,7 @@ export const getRatesInput = z.object({
 		.string()
 		.optional()
 		.describe("Nome da administradora (opcional, retorna todas se vazio)"),
-	category: z
-		.enum(["imovel", "auto", "servicos"])
-		.optional()
-		.describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "servicos"]).optional().describe("Categoria do bem"),
 });
 
 export const getGroupDetailsInput = z.object({

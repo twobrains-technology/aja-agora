@@ -1,22 +1,8 @@
-/**
- * Turn analyzer — single Haiku call per user message that returns both
- * routing signals (category, switch intent, expertise) and qualify-extraction
- * fields (experience, credit range, prazo, lance) in one structured output.
- *
- * Replaces the previous classifier+extractor pair (two parallel generateObject
- * calls) with the canonical AI SDK 6 Routing pattern: classify once, then
- * dispatch (https://ai-sdk.dev/docs/agents/workflows).
- *
- * No `confidence` field on purpose — the documented v6 pattern uses `null` as
- * the "I'm not sure" signal. The `reasoning` field is the documented hook for
- * observability (https://ai-sdk.dev/docs/agents/workflows shows `reasoning`
- * inside the classification schema).
- */
-
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
-import type { ConversationMetadata } from "./personas";
+import type { Category, ConversationMetadata } from "./personas";
+import { listExpertisesByCategory } from "./personas-repo";
 
 const anthropic = createAnthropic();
 
@@ -34,6 +20,12 @@ export const turnAnalysisSchema = z.object({
 		.nullable()
 		.describe(
 			"Categoria de consorcio detectada. imovel = apto/casa/terreno/comercial. auto = carro/moto/veiculo. servicos = reforma/viagem/formatura/saude/qualquer outro. null se nao houver indicacao clara nesta mensagem.",
+		),
+	detectedSubTopic: z
+		.string()
+		.nullable()
+		.describe(
+			'Sub-tópico/nicho dentro da categoria detectada. DEVE ser EXATAMENTE um dos valores listados na seção "Sub-topicos disponiveis" do system prompt — qualquer outro valor sera ignorado. null se a mensagem nao casa com nenhum sub-topico ou se nao ha sub-topicos cadastrados pra essa categoria.',
 		),
 	isExplicitSwitch: z
 		.boolean()
@@ -82,6 +74,7 @@ export type TurnAnalysis = z.infer<typeof turnAnalysisSchema>;
 const NEUTRAL_FALLBACK: TurnAnalysis = {
 	reasoning: "fallback",
 	detectedCategory: null,
+	detectedSubTopic: null,
 	isExplicitSwitch: false,
 	expertiseLevel: "neutro",
 	experiencePrev: null,
@@ -91,12 +84,13 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	hasLance: null,
 };
 
-const SYSTEM_INSTRUCTION = `Voce analisa turnos de WhatsApp em portugues brasileiro de um sistema de consorcio.
-Sua resposta sera usada por codigo pra (1) rotear pro especialista certo (Helena=imovel, Rafael=auto, Camila=servicos) e (2) preencher dados de qualificacao da conversa.
+const BASE_SYSTEM_INSTRUCTION = `Voce analisa turnos de WhatsApp em portugues brasileiro de um sistema de consorcio.
+Sua resposta sera usada por codigo pra (1) rotear pro especialista certo e (2) preencher dados de qualificacao da conversa.
 
 Regras gerais:
 - Seja preciso e conservador. Em duvida, retorne null no campo. NAO invente sinais que nao estao no texto.
 - detectedCategory deve refletir o foco da MENSAGEM ATUAL, nao o historico.
+- detectedSubTopic so pode usar valores EXATOS da lista. Se nenhum casa, retorne null. Nao invente sub-topicos novos.
 - isExplicitSwitch e true APENAS quando o usuario sinaliza troca clara ("na verdade", "mudei de ideia", "melhor", "esquece"). Mencionar outra categoria de passagem NAO e switch.
 - expertiseLevel reflete o vocabulario da mensagem atual. Sem sinal claro -> neutro.
 - "100k", "100 mil", "R$ 100000", "cem mil" sao todos 100000.
@@ -104,24 +98,30 @@ Regras gerais:
 - Para hasLance, so retorne yes/no/maybe quando o usuario falar de reserva/lance/capacidade de antecipar — nao confunda com prazo.
 
 Exemplos:
-- "olá" -> { detectedCategory: null, expertiseLevel: "neutro", todos os outros null }
-- "imóvel de 200k" -> { detectedCategory: "imovel", isExplicitSwitch: false, expertiseLevel: "neutro", creditMax: 200000, creditMin: null, todos os outros null }
-- "queria fazer uma reforma" -> { detectedCategory: "servicos", expertiseLevel: "neutro" }
+- "olá" -> { detectedCategory: null, detectedSubTopic: null, expertiseLevel: "neutro", todos os outros null }
+- "imóvel de 200k" -> { detectedCategory: "imovel", detectedSubTopic: null, isExplicitSwitch: false, expertiseLevel: "neutro", creditMax: 200000 }
+- "queria fazer uma reforma" -> { detectedCategory: "servicos", detectedSubTopic: null, expertiseLevel: "neutro" }
 - "quero comprar um carro de uns 80 mil em 2 anos" -> { detectedCategory: "auto", creditMax: 80000, prazoMeses: 24 }
-- "ja conheço, tenho dinheiro pra dar lance" -> { detectedCategory: null, experiencePrev: "returning", hasLance: "yes" }
-- "lance livre embutido na cota" -> { detectedCategory: null, expertiseLevel: "expert" }
+- "ja conheço, tenho dinheiro pra dar lance" -> { experiencePrev: "returning", hasLance: "yes" }
+- "lance livre embutido na cota" -> { expertiseLevel: "expert" }
 - "na verdade prefiro carro" (persona ativa: imovel) -> { detectedCategory: "auto", isExplicitSwitch: true }
 - "primeira vez fazendo isso" -> { experiencePrev: "first", expertiseLevel: "leigo" }
 - "no momento nao" (em resposta a pergunta sobre lance) -> { hasLance: "no" }`;
 
-/**
- * Analyze a single user turn. Returns merged routing + qualify signals or a
- * neutral fallback if the underlying call fails.
- *
- * `currentPersona` and `meta` give the model context about pending fields,
- * which lets it promote short answers ("no momento nao") to filled values
- * instead of null.
- */
+function renderSubTopicSection(subTopics: Record<Category, string[]>): string {
+	const lines: string[] = ["", "## Sub-topicos disponiveis (use EXATO ou null)"];
+	let hasAny = false;
+	for (const [cat, list] of Object.entries(subTopics)) {
+		if (list.length === 0) continue;
+		hasAny = true;
+		lines.push(`- ${cat}: [${list.join(", ")}]`);
+	}
+	if (!hasAny) {
+		return "\n\n## Sub-topicos disponiveis\n(Nenhuma categoria tem sub-topicos cadastrados — sempre retorne null em detectedSubTopic.)";
+	}
+	return lines.join("\n");
+}
+
 export async function analyzeTurn(
 	text: string,
 	currentPersona: string,
@@ -147,13 +147,19 @@ export async function analyzeTurn(
 			? `\n\nContexto: o sistema acabou de perguntar ao usuario sobre estes campos pendentes: ${missing.join(", ")}. A mensagem dele provavelmente e resposta direta a uma dessas perguntas — preencha o campo correspondente quando o sinal for plausivel mesmo que curto.`
 			: "";
 
+	const subTopics = await listExpertisesByCategory().catch(() => ({
+		imovel: [],
+		auto: [],
+		servicos: [],
+	}));
+
 	const start = Date.now();
 	try {
 		const result = await Promise.race([
 			generateObject({
 				model: anthropic(ANALYZER_MODEL),
 				schema: turnAnalysisSchema,
-				system: SYSTEM_INSTRUCTION,
+				system: BASE_SYSTEM_INSTRUCTION + renderSubTopicSection(subTopics),
 				prompt: `Persona ativa atualmente: ${currentPersona}
 Mensagem do usuario: "${text}"${contextHint}
 
@@ -167,7 +173,7 @@ Analise conforme o schema. Use null em campos sem sinal claro.`,
 		const elapsed = Date.now() - start;
 		const o = result.object;
 		console.log(
-			`[analyzer] ${elapsed}ms | cat=${o.detectedCategory} switch=${o.isExplicitSwitch} exp=${o.expertiseLevel}/${o.experiencePrev} credit=${o.creditMin}-${o.creditMax} prazo=${o.prazoMeses} lance=${o.hasLance} | ${o.reasoning}`,
+			`[analyzer] ${elapsed}ms | cat=${o.detectedCategory} sub=${o.detectedSubTopic} switch=${o.isExplicitSwitch} exp=${o.expertiseLevel}/${o.experiencePrev} credit=${o.creditMin}-${o.creditMax} prazo=${o.prazoMeses} lance=${o.hasLance} | ${o.reasoning}`,
 		);
 		return o;
 	} catch (err) {

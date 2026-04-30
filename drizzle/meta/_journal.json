@@ -29,6 +29,27 @@
       "when": 1776972048778,
       "tag": "0003_huge_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777521390827,
+      "tag": "0004_chief_martin_li",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777598400000,
+      "tag": "0005_lonely_skin",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777605000000,
+      "tag": "0006_simplify_personas",
+      "breakpoints": true
     }
   ]
 }

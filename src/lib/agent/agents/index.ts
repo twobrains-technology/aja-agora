@@ -1,34 +1,30 @@
-/**
- * Agent resolver — given the active persona and current conversation
- * metadata, returns the right ToolLoopAgent instance to drive the next turn.
- *
- * Concierge is a singleton (static config). Specialists are built per request
- * because their instructions depend on `expertiseLevel`.
- * See agents/{helena,rafael,camila}.ts for details.
- *
- * Pattern: https://vercel.com/kb/guide/how-to-build-ai-agents-with-vercel-and-the-ai-sdk
- */
+import type { ToolLoopAgent } from "ai";
+import type { ConversationMetadata, ExpertiseLevel, Persona } from "../personas";
+import { getPersona } from "../personas-repo";
+import { buildAgent } from "./builder";
 
-import type { ConversationMetadata, Persona } from "../personas";
-import { buildCamilaAgent } from "./camila";
-import { conciergeAgent } from "./concierge";
-import { buildHelenaAgent } from "./helena";
-import { buildRafaelAgent } from "./rafael";
+const agentCache = new Map<string, ToolLoopAgent>();
 
-export function resolveAgent(persona: Persona, meta: ConversationMetadata) {
-	switch (persona) {
-		case "concierge":
-			return conciergeAgent;
-		case "imovel":
-			return buildHelenaAgent(meta);
-		case "auto":
-			return buildRafaelAgent(meta);
-		case "servicos":
-			return buildCamilaAgent(meta);
-	}
+function cacheKey(id: string, version: number, expertise: ExpertiseLevel): string {
+	return `${id}:v${version}:${expertise}`;
 }
 
-export { conciergeAgent } from "./concierge";
-export { buildHelenaAgent } from "./helena";
-export { buildRafaelAgent } from "./rafael";
-export { buildCamilaAgent } from "./camila";
+export async function resolveAgent(
+	persona: Persona,
+	meta: ConversationMetadata,
+): Promise<ToolLoopAgent> {
+	const expertise: ExpertiseLevel = meta.expertiseLevel ?? "neutro";
+	const row = await getPersona(persona);
+	const key = cacheKey(row.id, row.version, expertise);
+
+	let agent = agentCache.get(key);
+	if (!agent) {
+		agent = buildAgent(row, expertise);
+		agentCache.set(key, agent);
+	}
+	return agent;
+}
+
+export function invalidateAgentCache(): void {
+	agentCache.clear();
+}

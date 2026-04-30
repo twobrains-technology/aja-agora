@@ -29,7 +29,7 @@ function AccordionTrigger({
   ...props
 }: AccordionPrimitive.Trigger.Props) {
   return (
-    <AccordionPrimitive.Header className="flex">
+    <AccordionPrimitive.Header className="flex flex-1">
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(
@@ -59,7 +59,9 @@ function AccordionContent({
     >
       <div
         className={cn(
-          "h-(--accordion-panel-height) pt-0 pb-2.5 data-ending-style:h-0 data-starting-style:h-0 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
+          // px-1 + pt-1 give breathing room so focus rings (ring-3 = 3px) of
+          // inputs near the panel edges aren't clipped by the parent's overflow-hidden.
+          "h-(--accordion-panel-height) px-1 pt-1 pb-2.5 data-ending-style:h-0 data-starting-style:h-0 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
           className
         )}
       >

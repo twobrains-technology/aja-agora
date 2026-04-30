@@ -40,10 +40,7 @@ export function contemplationScore(ratePercent: number): number {
 /**
  * Lower admin fee = higher score. Normalized against market range per category.
  */
-export function adminFeeScore(
-	feePercent: number,
-	category: ConsorcioCategory,
-): number {
+export function adminFeeScore(feePercent: number, category: ConsorcioCategory): number {
 	const ranges: Record<ConsorcioCategory, { min: number; max: number }> = {
 		imovel: { min: 15, max: 22 },
 		auto: { min: 12, max: 18 },
@@ -59,10 +56,7 @@ export function adminFeeScore(
  * How close the term is to user's desired timeline.
  * No preference (0) = neutral score of 0.5.
  */
-export function termMatchScore(
-	termMonths: number,
-	desiredMonths: number,
-): number {
+export function termMatchScore(termMonths: number, desiredMonths: number): number {
 	if (desiredMonths <= 0) return 0.5;
 	const diff = Math.abs(termMonths - desiredMonths);
 	return Math.max(0, 1 - diff / desiredMonths);
@@ -96,11 +90,7 @@ export interface ScoredGroup {
  * DETERMINISTIC: Same inputs always produce same output.
  * No randomness, no LLM involvement.
  */
-export function rankGroups(
-	groups: GroupSummary[],
-	input: ScoringInput,
-	topN = 3,
-): ScoredGroup[] {
+export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3): ScoredGroup[] {
 	const scored: ScoredGroup[] = groups.map((group) => {
 		const factors = {
 			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),

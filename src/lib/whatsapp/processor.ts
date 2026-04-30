@@ -3,13 +3,10 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { resolveAgent } from "@/lib/agent/agents";
-import type {
-	ConversationMetadata,
-	ExperiencePrev,
-	Persona,
-	SpecialistPersona,
-} from "@/lib/agent/personas";
-import { PERSONA_CONFIG, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
+import { getCategoryMeta } from "@/lib/agent/categories";
+import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
+import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
+import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
 import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { analyzeTurn } from "@/lib/agent/turn-analyzer";
@@ -19,6 +16,7 @@ import {
 	creditRangeQuestionToWhatsApp,
 	experienceQuestionToWhatsApp,
 	formatTextForWhatsApp,
+	handoffConfirmationToWhatsApp,
 	lanceQuestionToWhatsApp,
 	profileSummaryText,
 	qualifyConsentToWhatsApp,
@@ -42,7 +40,6 @@ import {
 import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-// 200ms floor + 6ms per char, capped at 1.5s.
 const typingDelay = (chars: number) => Math.min(1500, 200 + chars * 6);
 const ARTIFACT_PAUSE_MS = 500;
 const TRANSITION_DELAY_MS = 2000;
@@ -51,13 +48,32 @@ async function transitionToSpecialist(
 	from: string,
 	conversationId: string,
 	fromPersona: Persona,
-	toPersona: SpecialistPersona,
+	toCategory: Category,
+	expertiseHint?: string | null,
 ): Promise<void> {
-	const config = PERSONA_CONFIG[toPersona];
+	let personaRow: Awaited<ReturnType<typeof pickPersonaForCategory>>;
+	try {
+		personaRow = await pickPersonaForCategory(toCategory, expertiseHint ?? null);
+	} catch (err) {
+		console.error(
+			`[whatsapp-processor] No active specialist persona for category=${toCategory}:`,
+			err,
+		);
+		await sendTextMessage(
+			from,
+			"Desculpe, estou com um problema momentâneo pra te conectar com o especialista. Pode tentar de novo em alguns instantes?",
+		);
+		return;
+	}
 	const fromConcierge = fromPersona === "concierge";
+	const meta0 = getCategoryMeta(personaRow);
 
 	const transitionText = transitionMessageText(
-		{ name: config.name, emoji: config.emoji, categoryLabel: config.categoryLabel },
+		{
+			name: personaRow.displayName,
+			emoji: meta0.emoji ?? "",
+			categoryLabel: meta0.label,
+		},
 		fromConcierge,
 	);
 	await sendTextMessage(from, transitionText);
@@ -67,16 +83,16 @@ async function transitionToSpecialist(
 		where: eq(conversations.id, conversationId),
 	});
 	const meta = (conv?.metadata ?? {}) as ConversationMetadata;
-	const seenSet = new Set<SpecialistPersona>(meta.personasSeen ?? []);
-	const isReturning = seenSet.has(toPersona);
-	seenSet.add(toPersona);
+	const seenSet = new Set<Category>(meta.personasSeen ?? []);
+	const isReturning = seenSet.has(toCategory);
+	seenSet.add(toCategory);
 
-	// Specialist↔specialist switch resets answers (faixa/prazo vary by category);
-	// concierge→specialist preserves them so upfront-extracted values survive.
+	// Specialist↔specialist switch drops faixa/prazo answers (they're category-specific).
 	const updated: ConversationMetadata = {
 		...meta,
 		previousPersona: fromPersona,
-		currentPersona: toPersona,
+		currentPersona: personaRow.id,
+		currentCategory: toCategory,
 		personasSeen: Array.from(seenSet),
 		qualifyAnswers: fromConcierge ? meta.qualifyAnswers : undefined,
 	};
@@ -84,18 +100,11 @@ async function transitionToSpecialist(
 
 	const offerCalibration = fromConcierge && !isReturning;
 
-	// First arrival from concierge: skip the AI intro turn and bundle the
-	// specialist's deterministic intro into the next gate's body.
 	if (offerCalibration) {
 		const firstName = conv?.contactName?.trim().split(/\s+/)[0] ?? null;
-		const opener = firstName
-			? `${config.openingReaction}, ${firstName}!`
-			: `${config.openingReaction}!`;
-		const intro = `${opener} ${config.categoryGreeting}.\n\nSou ${config.pronounArticle} *${config.name}*, especialista em consórcio ${config.specialtyLabel} aqui na *AJA AGORA*.`;
+		const opener = firstName ? `Boa, ${firstName}!` : "Boa!";
+		const intro = `${opener} Vamos falar de ${meta0.label}.\n\nAqui é *${personaRow.displayName}*, especialista em consórcio de ${meta0.label} na *AJA AGORA*.`;
 
-		// If the user already revealed enough upfront (e.g. typed everything to
-		// Sofia), skip the experience question and jump straight to whichever
-		// gate is actually missing.
 		if (updated.experiencePrev) {
 			const gate = nextGate(updated);
 			if (gate === "search") {
@@ -136,11 +145,6 @@ function isInterestExpression(text: string): boolean {
 	return INTEREST_RE.test(text);
 }
 
-/**
- * Trigger the handoff flow when user expresses interest (button or text).
- * Skips the name question if we already have it from the WhatsApp profile.
- * Returns true if the flow was started.
- */
 async function startInterestHandoff(
 	from: string,
 	conversationId: string,
@@ -149,10 +153,6 @@ async function startInterestHandoff(
 	const handoff = await getHandoffState(from);
 	if (!handoff?.conversationId || handoff.isHandedOff) return false;
 
-	// handoffToAgents marks the conversation as handed_off and sends a
-	// user-facing message — handles both the with-attendants and zero-
-	// attendants cases. We MUST go through it (not bail to AI) so the
-	// conversation enters the proxy state and stops reaching the AI.
 	if (storedName && storedName.trim().length > 0) {
 		const history = await loadConversationHistory(conversationId);
 		const summary = buildConversationSummary(history, []);
@@ -187,16 +187,16 @@ async function fireGate(
 			return;
 		}
 		case "credit": {
-			const persona = meta.currentPersona;
-			if (!persona || persona === "concierge") return;
-			const r = creditRangeQuestionToWhatsApp(persona, prefix);
+			const category = meta.currentCategory;
+			if (!category) return;
+			const r = creditRangeQuestionToWhatsApp(category, prefix);
 			if (r.interactive) await sendInteractiveMessage(from, r.interactive);
 			return;
 		}
 		case "timeframe": {
-			const persona = meta.currentPersona;
-			if (!persona || persona === "concierge") return;
-			const r = timeframeQuestionToWhatsApp(persona, prefix);
+			const category = meta.currentCategory;
+			if (!category) return;
+			const r = timeframeQuestionToWhatsApp(category, prefix);
 			if (r.interactive) await sendInteractiveMessage(from, r.interactive);
 			return;
 		}
@@ -217,8 +217,8 @@ async function fireSummaryAndSearch(
 	meta: ConversationMetadata,
 ): Promise<void> {
 	if (meta.searchDispatched) return;
-	const persona = meta.currentPersona;
-	if (!persona || persona === "concierge") return;
+	const category = meta.currentCategory;
+	if (!category) return;
 	const q = meta.qualifyAnswers ?? {};
 
 	// Set BEFORE the work so concurrent re-entry sees the flag and bails out.
@@ -238,20 +238,14 @@ async function fireSummaryAndSearch(
 	}
 	const filters = filterParts.length > 0 ? `, ${filterParts.join(", ")}` : "";
 
-	const directive = `Usuario completou as 4 perguntas de qualificacao (experiencia=${meta.experiencePrev}, faixa=${q.creditMin ?? 0}-${q.creditMax ?? "?"}, prazo=${q.prazoMeses ?? "?"} meses, lance=${q.hasLance}). O sistema JA mandou o resumo do perfil pro usuario com a frase "Vou puxar as melhores opcoes pra voce" — NAO repita esse texto, NAO escreva texto introdutorio. FLUXO OBRIGATORIO: (1) chame search_groups com category="${persona}"${filters}; (2) chame present_comparison_table (ou present_group_card se vier 1 so). Apos os cards aparecerem, escreva UMA frase curta orientando ("qual quer simular?" ou similar). NAO narre passos antes das tools, NAO chame recommend_groups.`;
+	const directive = `Usuario completou as 4 perguntas de qualificacao (experiencia=${meta.experiencePrev}, faixa=${q.creditMin ?? 0}-${q.creditMax ?? "?"}, prazo=${q.prazoMeses ?? "?"} meses, lance=${q.hasLance}). O sistema JA mandou o resumo do perfil pro usuario com a frase "Vou puxar as melhores opcoes pra voce" — NAO repita esse texto, NAO escreva texto introdutorio. FLUXO OBRIGATORIO: (1) chame search_groups com category="${category}"${filters}; (2) chame present_comparison_table (ou present_group_card se vier 1 so). Apos os cards aparecerem, escreva UMA frase curta orientando ("qual quer simular?" ou similar). NAO narre passos antes das tools, NAO chame recommend_groups.`;
 	await runAgentDirective(from, conversationId, directive);
 }
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-/**
- * Run the agent and render its response (text + artifacts) to WhatsApp,
- * then progress the qualify state machine to the next gate. Shared by the
- * user-text path (processWithAI) and the system-directive path (runAgentDirective).
- *
- * `isUserTurn=true` clears doubtsAddressed/pendingFollowUp when the AI replies.
- * `isUserTurn=false` (button-driven directive) leaves those flags as-is.
- */
+// `isUserTurn` distinguishes a real user reply from a server-authored directive
+// (button click etc.) — only user turns clear doubtsAddressed/pendingFollowUp.
 async function executeAgentTurn(args: {
 	from: string;
 	conversationId: string;
@@ -264,9 +258,10 @@ async function executeAgentTurn(args: {
 
 	let fullResponse = "";
 	const artifacts: Array<{ type: string; payload: Record<string, unknown> }> = [];
+	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 
-	const isConcierge = currentPersona === "concierge";
-	const agent = resolveAgent(currentPersona, meta);
+	const isConcierge = !meta.currentCategory;
+	const agent = await resolveAgent(currentPersona, meta);
 	const result = await agent.stream({ messages });
 
 	for await (const part of result.fullStream) {
@@ -275,6 +270,14 @@ async function executeAgentTurn(args: {
 				fullResponse += part.text;
 				break;
 			case "tool-call": {
+				if (part.toolName === "suggest_handoff") {
+					const input = part.input as { triggerId?: string; reason?: string };
+					handoffSignal = {
+						triggerId: input.triggerId,
+						reason: input.reason ?? "trigger satisfied",
+					};
+					break;
+				}
 				const shortName = part.toolName.replace("present_", "");
 				if (PRESENTATION_TOOLS.has(part.toolName)) {
 					artifacts.push({
@@ -285,6 +288,24 @@ async function executeAgentTurn(args: {
 				break;
 			}
 		}
+	}
+
+	// Handoff is exclusive: when the agent flags a trigger, drop AI text + artifacts
+	// and let the system handle the confirmation. Prevents the salad seen in
+	// production where Helena verbalized handoff AND advanced gates in the same turn.
+	if (handoffSignal && !isConcierge) {
+		console.log(
+			`[handoff] persona=${currentPersona} reason="${handoffSignal.reason}" — pausing flow`,
+		);
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, {
+			...refreshed,
+			handoffSuggested: true,
+			handoffReason: handoffSignal.reason,
+		});
+		const r = handoffConfirmationToWhatsApp();
+		if (r.interactive) await sendInteractiveMessage(from, r.interactive);
+		return;
 	}
 
 	try {
@@ -396,19 +417,8 @@ async function executeAgentTurn(args: {
 	);
 }
 
-/**
- * Drive the agent with a server-authored instruction. Used after deterministic
- * events (button clicks, qualify completion) where we want the AI to react
- * in the persona's voice.
- *
- * The directive is appended as the LAST user-role message of the agent input
- * — this is the canonical Anthropic/AI SDK pattern for prompting the model
- * to take action. `system` parameter / role:system is reserved for persistent
- * context (persona, user name); the per-turn prompt goes at the end.
- *
- * The directive is NOT persisted to DB — it exists only in this turn's
- * agent input so it doesn't pollute future conversation history.
- */
+// Directive goes in the LAST user-role message — Anthropic needs a user turn at
+// the end to generate a response. Not persisted, only lives in this turn's input.
 async function runAgentDirective(
 	from: string,
 	conversationId: string,
@@ -541,19 +551,26 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 			.set({ contactName, updatedAt: new Date() })
 			.where(eq(conversations.id, conversationId));
 	}
+
+	// While handoff is pending confirmation, don't run the agent or advance gates.
+	// Re-prompt with the deterministic confirmation buttons so the user sees them again.
+	if (meta.handoffSuggested) {
+		await saveMessage(conversationId, "user", text);
+		const r = handoffConfirmationToWhatsApp();
+		if (r.interactive) await sendInteractiveMessage(from, r.interactive);
+		return;
+	}
+
 	const knownName = contactName ?? conv?.contactName ?? null;
 
-	// Single Haiku call covering both routing signals (category, switch, expertise)
-	// and qualify extraction. AI SDK 6 Routing pattern — null is the "unsure" signal.
 	const analysis = await analyzeTurn(text, currentPersona, meta);
 
 	let metaChanged = false;
-	// Drives a context message later so the AI gives the consorcio overview
-	// when a user *types* "primeira vez" (instead of clicking the button).
+	// Tracked separately from meta because we trigger the consórcio overview
+	// nudge only when extraction *just happened* this turn (vs. a previous one).
 	let newlyExtractedExperience: ExperiencePrev | null = null;
 
-	// Persist BEFORE the AI runs so the prompt and post-AI nextGate() see the
-	// updated state. Each field only fills empty slots — never overwrites.
+	// Each field only fills empty slots — never overwrites a previous answer.
 	let extractedQualifyField = false;
 	if (analysis.experiencePrev && !meta.experiencePrev) {
 		meta.experiencePrev = analysis.experiencePrev;
@@ -580,16 +597,14 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		metaChanged = true;
 		extractedQualifyField = true;
 	}
-	// Typing a qualify value is a stronger opt-in than clicking "Bora!".
+	// Typing a qualify value implies consent — same effect as clicking "Bora!".
 	if (extractedQualifyField && !meta.qualifyConsented) {
 		meta.qualifyConsented = true;
 		metaChanged = true;
 	}
 
-	// Short affirmatives like "sim" / "vamos" advance the consent gate when
-	// the user types instead of clicking the button.
 	if (
-		currentPersona !== "concierge" &&
+		meta.currentCategory &&
 		!meta.qualifyConsented &&
 		meta.experiencePrev &&
 		!meta.pendingFollowUp &&
@@ -608,15 +623,19 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		await persistMeta(conversationId, meta);
 	}
 
-	// Routing: from concierge any detected category dispatches; between specialists
-	// only an explicit switch ("na verdade quero...") triggers a transition.
 	if (
 		analysis.detectedCategory &&
-		analysis.detectedCategory !== currentPersona &&
-		(currentPersona === "concierge" || analysis.isExplicitSwitch)
+		analysis.detectedCategory !== meta.currentCategory &&
+		(!meta.currentCategory || analysis.isExplicitSwitch)
 	) {
 		await saveMessage(conversationId, "user", text);
-		await transitionToSpecialist(from, conversationId, currentPersona, analysis.detectedCategory);
+		await transitionToSpecialist(
+			from,
+			conversationId,
+			currentPersona,
+			analysis.detectedCategory,
+			analysis.detectedSubTopic,
+		);
 		return;
 	}
 
@@ -631,7 +650,6 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		});
 	}
 
-	// Replicates the experience_* button nudge when the user got there via text.
 	if (newlyExtractedExperience === "first") {
 		contextMessages.push({
 			role: "system",
@@ -644,10 +662,8 @@ async function processWithAI(from: string, text: string, contactName?: string): 
 		});
 	}
 
-	// Usuario veio de "Tenho duvidas" e esta perguntando algo especifico agora.
-	// Apos a resposta, o sistema dispara "Posso te fazer 3 perguntinhas?" com
-	// botoes [Bora!] / [Entender mais antes]. Por isso a AI NAO deve fechar
-	// com "tem mais alguma duvida?" — duplica perguntas e cria atrito.
+	// AI shouldn't close with "tem mais alguma duvida?" — system fires consent
+	// buttons right after, the duplicate question creates friction.
 	if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) {
 		contextMessages.push({
 			role: "system",
@@ -671,8 +687,51 @@ export async function processInteractiveReply(
 	replyTitle: string,
 	contactName?: string,
 ): Promise<void> {
+	if (replyId === "handoff_confirm") {
+		const { id: conversationId } = await getOrCreateConversation(from);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId),
+		});
+		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		await saveMessage(conversationId, "user", replyTitle);
+		// Clear the lock either way — handoff queue takes over.
+		await persistMeta(conversationId, {
+			...meta,
+			handoffSuggested: false,
+			handoffReason: undefined,
+		});
+		const storedName = contactName ?? conv?.contactName ?? null;
+		await startInterestHandoff(from, conversationId, storedName);
+		return;
+	}
+
+	if (replyId === "handoff_decline") {
+		const { id: conversationId } = await getOrCreateConversation(from);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId),
+		});
+		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
+		await saveMessage(conversationId, "user", replyTitle);
+		const cleared: ConversationMetadata = {
+			...meta,
+			handoffSuggested: false,
+			handoffReason: undefined,
+		};
+		await persistMeta(conversationId, cleared);
+		// Resume the funnel — fire the next gate that was pending when handoff fired.
+		const gate = nextGate(cleared);
+		if (gate === "search") {
+			await fireSummaryAndSearch(from, conversationId, cleared);
+		} else if (gate !== "doubts-wait") {
+			await fireGate(from, gate, cleared);
+		} else {
+			await sendTextMessage(from, "Beleza, vamos seguir então. O que você quer saber?");
+		}
+		return;
+	}
+
 	if (replyId.startsWith("category_")) {
-		const category = replyId.replace("category_", "") as SpecialistPersona;
+		const category = replyId.replace("category_", "") as Category;
 		if ((ROUTABLE_CATEGORIES as readonly string[]).includes(category)) {
 			const { id: conversationId } = await getOrCreateConversation(from);
 			const conv = await db.query.conversations.findFirst({
@@ -702,9 +761,6 @@ export async function processInteractiveReply(
 		});
 		await saveMessage(conversationId, "user", replyTitle);
 
-		// O sistema JA fez a apresentacao deterministica do especialista no turno
-		// anterior (em transitionToSpecialist). A AI NUNCA deve se reapresentar
-		// aqui — esses nudges reforcam isso pra evitar regressoes do firstMessageAnchor.
 		let directive: string;
 		if (choice === "first") {
 			directive = `Usuario escolheu "${replyTitle}" — e a PRIMEIRA vez dele com consorcio. IMPORTANTE: o sistema JA te apresentou no turno anterior com saudacao + seu nome — NAO se apresente de novo, NAO diga "Aqui e Helena/Rafael/Camila", NAO mencione "anos de experiencia/mercado/especialidade". Va DIRETO ao conteudo. FLUXO: escreva UMA mensagem curta (3-4 frases) explicando o essencial sobre consorcio com SUAS palavras: e um grupo de pessoas que pagam parcelas mensais sem juros, e a cada mes alguem do grupo e contemplado por sorteio ou lance pra receber a carta de credito. Mencione brevemente que e diferente de financiamento (sem juros). NAO faca pergunta no final, NAO chame tools. Tom acolhedor e didatico, sem jargao tecnico (cota, lance livre, fundo reserva).`;
@@ -723,10 +779,9 @@ export async function processInteractiveReply(
 			where: eq(conversations.id, conversationId),
 		});
 		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
-		const persona = meta.currentPersona;
 		await saveMessage(conversationId, "user", replyTitle);
 
-		if (!persona || persona === "concierge") return;
+		if (!meta.currentCategory) return;
 
 		if (replyId === "qualify_start_yes") {
 			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
@@ -785,7 +840,6 @@ export async function processInteractiveReply(
 			where: eq(conversations.id, conversationId),
 		});
 		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
-		const persona = meta.currentPersona;
 		const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 			...(meta.qualifyAnswers ?? {}),
 			prazoMeses: resolved.prazoMeses,
@@ -793,7 +847,7 @@ export async function processInteractiveReply(
 		await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 		await saveMessage(conversationId, "user", replyTitle);
 
-		if (!persona || persona === "concierge") return;
+		if (!meta.currentCategory) return;
 
 		const directive = `Usuario escolheu prazo "${resolved.title}" via botao. FLUXO: escreva UMA frase curta de reacao adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, da pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NAO faca pergunta, NAO chame tools. O sistema vai mandar logo em seguida os botoes da proxima etapa.`;
 		await runAgentDirective(from, conversationId, directive);
@@ -809,7 +863,6 @@ export async function processInteractiveReply(
 			where: eq(conversations.id, conversationId),
 		});
 		const meta = (conv?.metadata ?? {}) as ConversationMetadata;
-		const persona = meta.currentPersona;
 		const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 			...(meta.qualifyAnswers ?? {}),
 			hasLance: resolved.value,
@@ -817,7 +870,7 @@ export async function processInteractiveReply(
 		await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 		await saveMessage(conversationId, "user", replyTitle);
 
-		if (!persona || persona === "concierge") return;
+		if (!meta.currentCategory) return;
 
 		const refreshed = await reloadMeta(conversationId);
 		await fireSummaryAndSearch(from, conversationId, refreshed);
