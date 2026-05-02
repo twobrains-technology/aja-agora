@@ -7,18 +7,18 @@
  * are accepted directly as FlexibleSchema.
  */
 import { tool } from "ai";
-import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db";
+import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { rankGroups } from "@/lib/agent/recommendation";
 import {
+	getGroupDetailsInput,
+	getRatesInput,
 	searchGroupsInput,
 	simulateQuotaInput,
-	getRatesInput,
-	getGroupDetailsInput,
 } from "./schemas";
-import { db } from "@/db";
-import { leads } from "@/db/schema";
 
 // ---- Presentation tool schemas (reused across definition + route) ----
 
@@ -35,10 +35,14 @@ const groupCardSchema = z.object({
 });
 
 const comparisonTableSchema = z.object({
-	groups: z.array(groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
-		availableSlots: z.number(),
-		contemplationRate: z.number(),
-	})).describe("Array de grupos para comparar"),
+	groups: z
+		.array(
+			groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
+				availableSlots: z.number(),
+				contemplationRate: z.number(),
+			}),
+		)
+		.describe("Array de grupos para comparar"),
 	highlightBestIndex: z.number().int().optional().describe("Indice (0-based) do grupo recomendado"),
 });
 
@@ -64,30 +68,41 @@ const recommendationSchema = z.object({
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
-	scoreBreakdown: z.object({
-		monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
-		contemplation: z.number().describe("Score de taxa de contemplacao 0-1"),
-		adminFee: z.number().describe("Score de taxa de administracao 0-1"),
-		termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
-	}).describe("Detalhamento do score por fator"),
+	scoreBreakdown: z
+		.object({
+			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
+			contemplation: z.number().describe("Score de taxa de contemplacao 0-1"),
+			adminFee: z.number().describe("Score de taxa de administracao 0-1"),
+			termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
+		})
+		.describe("Detalhamento do score por fator"),
 });
 
 const leadFormSchema = z.object({
-	conversationId: z.string().optional().describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
+	conversationId: z
+		.string()
+		.optional()
+		.describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
 	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
 });
 
 const valuePickerSchema = z.object({
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem para personalizar o visual"),
-	fields: z.array(z.object({
-		id: z.string().describe("Identificador do campo (ex: creditValue, monthlyBudget, term)"),
-		label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
-		min: z.number().describe("Valor minimo do slider"),
-		max: z.number().describe("Valor maximo do slider"),
-		step: z.number().describe("Incremento do slider"),
-		default: z.number().describe("Valor inicial padrao"),
-		format: z.enum(["currency", "months"]).optional().describe("Formato de exibicao do valor"),
-	})).describe("Campos/sliders a exibir no seletor"),
+	category: z
+		.enum(["imovel", "auto", "servicos"])
+		.describe("Categoria do bem para personalizar o visual"),
+	fields: z
+		.array(
+			z.object({
+				id: z.string().describe("Identificador do campo (ex: creditValue, monthlyBudget, term)"),
+				label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
+				min: z.number().describe("Valor minimo do slider"),
+				max: z.number().describe("Valor maximo do slider"),
+				step: z.number().describe("Incremento do slider"),
+				default: z.number().describe("Valor inicial padrao"),
+				format: z.enum(["currency", "months"]).optional().describe("Formato de exibicao do valor"),
+			}),
+		)
+		.describe("Campos/sliders a exibir no seletor"),
 });
 
 const captureLeadSchema = z.object({
@@ -98,11 +113,18 @@ const captureLeadSchema = z.object({
 });
 
 const recommendGroupsSchema = z.object({
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem: imovel, automovel ou servicos"),
+	category: z
+		.enum(["imovel", "auto", "servicos"])
+		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
-	desiredTermMonths: z.number().int().min(0).default(0).describe("Prazo desejado em meses (0 = sem preferencia)"),
+	desiredTermMonths: z
+		.number()
+		.int()
+		.min(0)
+		.default(0)
+		.describe("Prazo desejado em meses (0 = sem preferencia)"),
 });
 
 // ---- Domain tools (data fetching) ----
@@ -224,10 +246,36 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores com sliders para o usuario configurar orcamento, valor de credito, ou prazo. Use em vez de perguntar valores por texto — o usuario arrasta os sliders e clica em 'Buscar opcoes'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
+		},
+	}),
+
+	// ---- Control signals (intercepted by orchestrator) ----
+
+	suggest_handoff: tool({
+		description:
+			"Sinaliza ao sistema que UMA das condicoes da seção 'Quando sugerir consultor humano' do seu prompt foi satisfeita pela mensagem atual do usuario. Chame APENAS uma vez por turno e SOMENTE quando uma condicao for claramente atendida. Nao escreva texto pedindo o handoff — apenas chame esta tool. O sistema cuida da pergunta de confirmacao com botoes (Sim/Nao). Apos chamar, NAO chame outras tools no mesmo turno (search_groups, simulate_quota etc.) e NAO escreva resposta adicional.",
+		inputSchema: z.object({
+			triggerId: z
+				.string()
+				.optional()
+				.describe(
+					"ID do trigger que casou (opcional, se voce souber o ID exato dos triggers configurados).",
+				),
+			reason: z
+				.string()
+				.describe(
+					"Frase curta e factual descrevendo qual condicao foi satisfeita pela mensagem do usuario. Ex: 'Cliente mencionou valor R$ 1.500.000 (acima do teto)'. Sera usado em logs.",
+				),
+		}),
+		execute: async (args) => {
+			return {
+				acknowledged: true,
+				reason: args.reason,
+			};
 		},
 	}),
 

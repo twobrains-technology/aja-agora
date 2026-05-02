@@ -10,7 +10,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ### Constraints
 
 - **Stack:** Next.js (latest stable) + shadcn/ui + Tailwind CSS — padrão TwoBrains
-- **IA:** Anthropic Agent SDK (Claude) — multi-agent com tool use nativo
+- **IA:** Vercel AI SDK 6 (`ai` + `@ai-sdk/anthropic`) — agente com tool use nativo via Claude
 - **Deploy:** Docker/VPS — não serverless
 - **Adapter Pattern:** Toda integração com administradoras passa por camada de abstração — facilita trocar mock por real
 - **Mobile-first:** Consórcio é produto de massa, maioria acessa por celular
@@ -29,8 +29,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 | **TypeScript** | 5.7+ | Type safety | Non-negotiable for fintech. Zod schemas + Drizzle ORM + AI SDK all leverage TS inference end-to-end. |
 | **Tailwind CSS** | 4.2.x | Styling | CSS-native theme variables (no `tailwind.config.js`), 5x faster full builds, 100x faster incremental. Single CSS import. Works with shadcn/ui out of the box. |
 | **shadcn/ui** | CLI v4 (March 2026) | Component library | Copy-paste components, full ownership. CLI v4 adds design presets, unified `radix-ui` package, and `shadcn/skills` for AI agent integration. Built-in form components use react-hook-form + zod. |
-| **Anthropic Claude Agent SDK** | `@anthropic-ai/claude-agent-sdk` latest | Multi-agent AI orchestration | Official SDK for building agents with Claude's tool use. Supports multi-agent patterns, MCP integrations, in-process tool execution. Powers the conversational core. |
-| **Vercel AI SDK** | 6.x | Streaming UI + chat hooks | `useChat` hook handles SSE streaming, tool invocations, error states. Provider-agnostic (works with Anthropic). Decoupled state management (plugs into Zustand). Human-in-the-loop approval for tool calls. 20M+ monthly downloads. |
+| **Vercel AI SDK** | 6.x (`ai` + `@ai-sdk/anthropic`) | Agente + Streaming UI + chat hooks | SDK único do projeto. `streamText`/`tool` no backend executam o agent loop com tool calling automático via `stepCountIs`. `generateObject` para classificação estruturada. `useChat` no frontend para SSE streaming. Provider-agnostic (atualmente Anthropic Claude). Decoupled state management (plugs into Zustand). 20M+ monthly downloads. |
 | **Drizzle ORM** | 0.45.x (1.0 beta imminent) | Database access | Type-safe SQL, zero overhead, edge-compatible. Built-in Zod validator integration. Excellent migration system with DAG-based conflict detection. |
 | **PostgreSQL** | 16+ | Primary database | Conversations, user profiles, recommendations need relational integrity. JSON columns for flexible artifact storage. Battle-tested for fintech. Docker Compose trivial. |
 ### Supporting Libraries
@@ -38,7 +37,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 |---|---|---|---|
 | **Motion** (ex Framer Motion) | 12.x (latest 12.38) | Animation | Renamed from `framer-motion` to `motion`. Import from `motion/react`. Hardware-accelerated via Web Animations API, 120fps. Spring physics for card animations, layout transitions for artifact cards. |
 | **Zustand** | 5.x | Client state management | ~3KB, single store model. AI SDK 6 `useChat` supports decoupled state with Zustand. Perfect for chat UI state (active conversation, selected artifacts, UI mode). |
-| **Zod** | 3.24+ | Schema validation | Single validation layer shared across: form inputs, API routes, AI tool parameters, Drizzle schemas. Required dependency of Claude Agent SDK. |
+| **Zod** | 3.24+ | Schema validation | Single validation layer shared across: form inputs, API routes, AI tool parameters, Drizzle schemas. Used by Vercel AI SDK `tool({ inputSchema })` and `generateObject({ schema })`. |
 | **react-hook-form** | 7.x | Form handling | Progressive auth forms (name, phone, email). Uncontrolled components = minimal re-renders. `@hookform/resolvers` bridges to Zod. shadcn/ui Form component wraps it natively. |
 | **@ai-sdk/anthropic** | latest | Anthropic provider for AI SDK | Bridges Vercel AI SDK to Claude API. Handles streaming, tool use, and model switching. |
 | **Lucide React** | latest | Icons | Default icon set for shadcn/ui. Tree-shakeable. |
@@ -90,12 +89,13 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - **Concurrent writes** -- multiple users chatting simultaneously. SQLite's write lock becomes a bottleneck.
 - **Docker-native** -- `postgres:16-alpine` in Compose, zero setup.
 - **Migration path** -- if the platform scales, PostgreSQL scales vertically and horizontally (read replicas). SQLite doesn't.
-### Two SDKs: Claude Agent SDK + Vercel AI SDK (DECISÃO DO ARQUITETO — NÃO ALTERAR)
-- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): Backend orchestration. Define tools de domínio via `tool()` + `createSdkMcpServer()`, executa o agent loop via `query()` com tool calling automático. O SDK fornece o loop completo — Claude decide quais tools chamar, o SDK executa, e devolve o resultado pro Claude continuar. O "cérebro" da aplicação.
-- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`): Frontend streaming. `useChat` hook, SSE protocol, UI de chat. O "rosto" que o usuário vê.
-- **Ponte API Route**: `src/app/api/chat/route.ts` recebe mensagens do frontend (AI SDK), passa para o Agent SDK via `query()`, e faz streaming da resposta de volta como SSE.
-- **NÃO usar** AI SDK `streamText()`/`tool()` no backend para orquestração — essa responsabilidade é do Agent SDK.
-- **NÃO usar** `@anthropic-ai/sdk` (SDK padrão) diretamente — o Agent SDK abstrai o loop de tool calling.
+### Single SDK: Vercel AI SDK 6 (revisado em 2026-04-27)
+- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`) é o SDK único do projeto, tanto no backend (orquestração de agente) quanto no frontend (streaming UI).
+- **Backend**: `streamText` executa o agent loop com tool calling automático via `stepCountIs`. Tools de domínio definidas com `tool({ inputSchema, execute })` em `src/lib/agent/tools/ai-sdk.ts`. `generateText` para chamadas one-shot (insights de admin). `generateObject` com schema Zod para classificação estruturada.
+- **Frontend**: `useChat` hook lida com SSE streaming, tool invocations, error states. Estado decoupled (Zustand).
+- **Ponte API Route**: `src/app/api/chat/route.ts` (chat web) e `src/lib/whatsapp/processor.ts` (WhatsApp) consomem `streamText` direto e fazem streaming/envio sequencial conforme o canal.
+- **Histórico**: o Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`) foi usado nas Phases 2-5 e descontinuado em 2026-04-27 — código órfão removido, dependência removida do `package.json`. Se for reintroduzido, deve ser via decisão arquitetural explícita.
+- **NÃO usar** `@anthropic-ai/sdk` (SDK padrão) diretamente — o Vercel AI SDK abstrai o loop de tool calling.
 ### State Management: Zustand (not Redux, not Jotai)
 - Chat has app-wide state (active conversation, user profile, auth state) -- store-based model fits better than atomic.
 - AI SDK 6 explicitly supports Zustand integration for decoupled `useChat` state.
@@ -119,7 +119,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ## Alternatives Considered
 | Alternative | Why Not Chosen |
 |---|---|
-| **LangChain/LangGraph** | Heavy framework with abstractions that fight Claude's native tool use. Anthropic Agent SDK is lighter, official, and purpose-built. |
+| **LangChain/LangGraph** | Heavy framework with abstractions that fight Claude's native tool use. Vercel AI SDK 6 is lighter and provides tool calling, streaming and structured output natively. |
 | **Vercel deployment** | Project requires Docker/VPS. WebSocket-like streaming, long-running agent processes, and PostgreSQL don't fit serverless constraints well. |
 | **SQLite / Turso** | No edge deployment benefit on VPS. PostgreSQL handles concurrent writes and relational integrity better for a multi-user fintech app. |
 | **MongoDB** | Conversation data is relational (user -> conversations -> messages -> artifacts). Document store adds complexity without benefit. |
@@ -136,7 +136,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ## What NOT to Use
 | Technology | Reason |
 |---|---|
-| **LangChain** | Unnecessary abstraction over Claude's native capabilities. Adds 500KB+ bundle for features the Anthropic SDK handles natively. |
+| **LangChain** | Unnecessary abstraction over Claude's native capabilities. Adds 500KB+ bundle for features the Vercel AI SDK handles natively. |
 | **Pages Router** | Legacy Next.js routing. App Router is the only supported path forward in Next.js 16. |
 | **`tailwind.config.js`** | Tailwind CSS v4 uses CSS-native configuration. Config file is deprecated. |
 | **`getServerSideProps` / `getStaticProps`** | Pages Router patterns. Use Server Components and Server Actions instead. |
@@ -153,8 +153,6 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - [Next.js Releases](https://github.com/vercel/next.js/releases)
 - [Next.js Docker Example](https://github.com/vercel/next.js/blob/canary/examples/with-docker/README.md)
 - [Next.js Standalone Output Docs](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
-- [Anthropic Agent SDK Docs](https://platform.claude.com/docs/en/agent-sdk/overview)
-- [@anthropic-ai/claude-agent-sdk on npm](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
 - [AI SDK 6 Announcement](https://vercel.com/blog/ai-sdk-6)
 - [AI SDK Stream Protocols](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
 - [@ai-sdk/anthropic Provider](https://ai-sdk.dev/providers/ai-sdk-providers/anthropic)

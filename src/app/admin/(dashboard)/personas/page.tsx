@@ -1,0 +1,24 @@
+import { Plus } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PersonasTable } from "@/components/admin/personas/personas-table";
+
+export default function PersonasPage() {
+	return (
+		<div className="space-y-4">
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<h1 className="text-2xl font-bold tracking-tight">Personas</h1>
+					<p className="text-muted-foreground text-sm mt-1">
+						Configure voz, campanhas, guardrails e triggers de handoff de cada agente.
+					</p>
+				</div>
+				<Button render={<Link href="/admin/personas/new" />}>
+					<Plus className="size-3.5" />
+					Nova persona
+				</Button>
+			</div>
+			<PersonasTable />
+		</div>
+	);
+}

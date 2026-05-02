@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# bundles gerados em build-time (esbuild)
+scripts/*.bundle.mjs
+scripts/*.bundle.js
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

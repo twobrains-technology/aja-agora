@@ -10,7 +10,9 @@ import { conversations, messages as messagesTable } from "@/db/schema";
  * Get or create a conversation for a WhatsApp phone number.
  * Returns the conversation ID.
  */
-export async function getOrCreateConversation(waId: string): Promise<{ id: string; isNew: boolean }> {
+export async function getOrCreateConversation(
+	waId: string,
+): Promise<{ id: string; isNew: boolean }> {
 	// Look up existing conversation by wa_id
 	const existing = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
@@ -19,10 +21,7 @@ export async function getOrCreateConversation(waId: string): Promise<{ id: strin
 	if (existing) return { id: existing.id, isNew: false };
 
 	// Create new conversation for this phone number
-	const [conv] = await db
-		.insert(conversations)
-		.values({ waId, channel: "whatsapp" })
-		.returning();
+	const [conv] = await db.insert(conversations).values({ waId, channel: "whatsapp" }).returning();
 
 	console.log(`[whatsapp-session] New conversation ${conv.id} for wa_id ${waId}`);
 	return { id: conv.id, isNew: true };

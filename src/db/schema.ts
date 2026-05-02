@@ -1,5 +1,21 @@
-import { relations } from "drizzle-orm";
-import { boolean, index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import {
+	type AnyPgColumn,
+	boolean,
+	check,
+	index,
+	integer,
+	jsonb,
+	numeric,
+	pgEnum,
+	pgTable,
+	real,
+	serial,
+	text,
+	timestamp,
+	uuid,
+	varchar,
+} from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -15,7 +31,11 @@ export const artifactTypeEnum = pgEnum("artifact_type", [
 
 export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);
 
-export const conversationStatusEnum = pgEnum("conversation_status", ["active", "handed_off", "closed"]);
+export const conversationStatusEnum = pgEnum("conversation_status", [
+	"active",
+	"handed_off",
+	"closed",
+]);
 
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
@@ -46,6 +66,12 @@ export const user = pgTable("user", {
 	emailVerified: boolean("email_verified").default(false).notNull(),
 	image: text("image"),
 	role: text("role").default("viewer").notNull(),
+	phone: varchar("phone", { length: 32 }),
+	isActive: boolean("is_active").default(true).notNull(),
+	invitedAt: timestamp("invited_at"),
+	invitedBy: text("invited_by").references((): AnyPgColumn => user.id),
+	inviteToken: text("invite_token").unique(),
+	inviteExpiresAt: timestamp("invite_expires_at"),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 	updatedAt: timestamp("updated_at")
 		.defaultNow()
@@ -115,21 +141,24 @@ export const verification = pgTable(
 // ─── Application Tables ─────────────────────────────────────────────────────
 
 // Conversations
-export const conversations = pgTable("conversations", {
-	id: uuid().defaultRandom().primaryKey(),
-	waId: varchar("wa_id", { length: 32 }),
-	channel: channelEnum().default("web").notNull(),
-	status: conversationStatusEnum().default("active").notNull(),
-	handedOffTo: varchar("handed_off_to", { length: 32 }),
-	agentName: varchar("agent_name", { length: 100 }),
-	contactName: varchar("contact_name", { length: 100 }),
-	metadata: jsonb().$type<Record<string, unknown>>(),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-	index("conversations_wa_id_idx").on(table.waId),
-	index("conversations_handed_off_to_idx").on(table.handedOffTo),
-]);
+export const conversations = pgTable(
+	"conversations",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		waId: varchar("wa_id", { length: 32 }),
+		channel: channelEnum().default("web").notNull(),
+		status: conversationStatusEnum().default("active").notNull(),
+		handedOffUserId: text("handed_off_user_id").references(() => user.id),
+		contactName: varchar("contact_name", { length: 100 }),
+		metadata: jsonb().$type<Record<string, unknown>>(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("conversations_wa_id_idx").on(table.waId),
+		index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
+	],
+);
 
 // Messages
 export const messages = pgTable("messages", {
@@ -155,21 +184,23 @@ export const artifacts = pgTable("artifacts", {
 });
 
 // Leads (PII separate from conversation logs)
-export const leads = pgTable("leads", {
-	id: uuid().defaultRandom().primaryKey(),
-	conversationId: uuid("conversation_id")
-		.notNull()
-		.references(() => conversations.id, { onDelete: "cascade" }),
-	name: text(),
-	phone: text(),
-	email: text(),
-	stage: leadStageEnum("stage").default("novo").notNull(),
-	creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-	index("leads_created_at_idx").on(table.createdAt),
-]);
+export const leads = pgTable(
+	"leads",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		name: text(),
+		phone: text(),
+		email: text(),
+		stage: leadStageEnum("stage").default("novo").notNull(),
+		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("leads_created_at_idx").on(table.createdAt)],
+);
 
 // Lead Events (funnel transition audit trail)
 export const leadEvents = pgTable("lead_events", {
@@ -184,6 +215,108 @@ export const leadEvents = pgTable("lead_events", {
 	notes: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export type CampaignMentionPriority = "low" | "medium" | "high";
+
+export type PersonaCampaign = {
+	id: string;
+	title: string;
+	body: string;
+	startsAt: string | null;
+	endsAt: string | null;
+	enabled: boolean;
+	mentionPriority: CampaignMentionPriority;
+};
+
+export type PersonaHandoffTrigger = {
+	id: string;
+	condition: string;
+	enabled: boolean;
+};
+
+export type PersonaForbiddenTopic = {
+	id: string;
+	topic: string;
+	responseWhenAsked: string;
+	enabled: boolean;
+};
+
+// Few-shot example shown to the model to ground the persona's voice.
+// Anthropic recommends 3-5 examples wrapped in <example> tags — they
+// outperform free-text descriptions for tone steering.
+export type PersonaExample = {
+	id: string;
+	context?: string | null;
+	userMessage: string;
+	assistantResponse: string;
+};
+
+// `version` increments on every admin update — used by the agent cache to
+// invalidate without explicit pub/sub.
+export const personas = pgTable(
+	"personas",
+	{
+		id: text("id").primaryKey(),
+		displayName: text("display_name").notNull(),
+		role: text("role").default("specialist").notNull(),
+		category: text("category"),
+		// Sub-niche within category. NULL = generalist (fallback). Free-form text;
+		// the analyzer is anchored to active values per category at call time.
+		expertise: text("expertise"),
+		voiceTone: text("voice_tone").notNull(),
+		examples: jsonb("examples").$type<PersonaExample[]>().default([]).notNull(),
+		// Per-persona temperature kept in DB for tuning, hidden from admin UI.
+		// Claude only exposes temperature (no topP/penalty), so this is the only sampling lever.
+		temperature: real("temperature").default(0.7).notNull(),
+		activeCampaigns: jsonb("active_campaigns").$type<PersonaCampaign[]>().default([]).notNull(),
+		handoffTriggers: jsonb("handoff_triggers")
+			.$type<PersonaHandoffTrigger[]>()
+			.default([])
+			.notNull(),
+		forbiddenTopics: jsonb("forbidden_topics")
+			.$type<PersonaForbiddenTopic[]>()
+			.default([])
+			.notNull(),
+		activeTools: jsonb("active_tools").$type<string[]>().default([]).notNull(),
+		isActive: boolean("is_active").default(true).notNull(),
+		version: integer("version").default(1).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		check("personas_role_check", sql`${table.role} IN ('concierge', 'specialist')`),
+		check(
+			"personas_category_check",
+			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'servicos')`,
+		),
+		check(
+			"personas_specialist_has_category",
+			sql`${table.role} = 'concierge' OR ${table.category} IS NOT NULL`,
+		),
+		check(
+			"personas_temperature_check",
+			sql`${table.temperature} >= 0 AND ${table.temperature} <= 1`,
+		),
+	],
+);
+
+export const personaVersions = pgTable(
+	"persona_versions",
+	{
+		id: serial("id").primaryKey(),
+		personaId: text("persona_id")
+			.notNull()
+			.references(() => personas.id, { onDelete: "cascade" }),
+		version: integer("version").notNull(),
+		snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+		changedBy: text("changed_by").references((): AnyPgColumn => user.id),
+		changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("persona_versions_persona_id_idx").on(table.personaId)],
+);
 
 // Lead Insights (AI-generated insights cache)
 export const leadInsights = pgTable("lead_insights", {
@@ -200,9 +333,16 @@ export const leadInsights = pgTable("lead_insights", {
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ one, many }) => ({
 	sessions: many(session),
 	accounts: many(account),
+	invitedByUser: one(user, {
+		fields: [user.invitedBy],
+		references: [user.id],
+		relationName: "userInvites",
+	}),
+	invitedAttendants: many(user, { relationName: "userInvites" }),
+	handedOffConversations: many(conversations),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -220,9 +360,13 @@ export const accountRelations = relations(account, ({ one }) => ({
 }));
 
 // Application relations
-export const conversationsRelations = relations(conversations, ({ many }) => ({
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	messages: many(messages),
 	leads: many(leads),
+	handedOffUser: one(user, {
+		fields: [conversations.handedOffUserId],
+		references: [user.id],
+	}),
 }));
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({
@@ -260,5 +404,20 @@ export const leadInsightsRelations = relations(leadInsights, ({ one }) => ({
 	lead: one(leads, {
 		fields: [leadInsights.leadId],
 		references: [leads.id],
+	}),
+}));
+
+export const personasRelations = relations(personas, ({ many }) => ({
+	versions: many(personaVersions),
+}));
+
+export const personaVersionsRelations = relations(personaVersions, ({ one }) => ({
+	persona: one(personas, {
+		fields: [personaVersions.personaId],
+		references: [personas.id],
+	}),
+	changedByUser: one(user, {
+		fields: [personaVersions.changedBy],
+		references: [user.id],
 	}),
 }));

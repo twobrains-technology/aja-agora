@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
-import { processTextMessage, processInteractiveReply } from "@/lib/whatsapp/processor";
-import { markAsRead } from "@/lib/whatsapp/api";
+import { type NextRequest, NextResponse } from "next/server";
+import { sendTypingIndicator } from "@/lib/whatsapp/api";
+import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
@@ -76,10 +76,12 @@ export async function POST(req: NextRequest) {
 			const from = message.from;
 			const msgType = message.type;
 
-			console.log(`[whatsapp] Message from ${from} (${contactName ?? "unknown"}) | type: ${msgType}`);
+			console.log(
+				`[whatsapp] Message from ${from} (${contactName ?? "unknown"}) | type: ${msgType}`,
+			);
 
-			// Mark as read immediately
-			markAsRead(message.id).catch(() => {});
+			// Mark as read + show "typing..." indicator while the AI processes
+			sendTypingIndicator(message.id).catch(() => {});
 
 			switch (msgType) {
 				case "text": {
