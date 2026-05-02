@@ -49,8 +49,76 @@ env:
 jobs:
   # Valida padrão de migrations (entrypoint, migrate runtime, pasta de migrations,
   # detecção de statements destrutivos). Falha o pipeline se faltar.
+  #
+  # Inlined a partir de tb-aws-platform/.github/workflows/check-migration-pattern.yml
+  # (reusable workflow entre repos privados da org bloqueado por settings que
+  # precisam de admin:org pra ajustar — ver tb-aws-platform/reference/conventions.md).
   check-migrations:
-    uses: twobrains-technology/tb-aws-platform/.github/workflows/check-migration-pattern.yml@main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verifica docker-entrypoint.sh
+        run: |
+          if [ ! -f docker-entrypoint.sh ]; then
+            echo "::error::docker-entrypoint.sh ausente. Copie de tb-aws-platform/templates/docker-entrypoint.sh"
+            exit 1
+          fi
+          if [ ! -x docker-entrypoint.sh ]; then
+            echo "::error::docker-entrypoint.sh existe mas não é executável (chmod +x)"
+            exit 1
+          fi
+      - name: Verifica ENTRYPOINT no Dockerfile
+        run: |
+          if ! grep -qE '^[[:space:]]*ENTRYPOINT[[:space:]]+\[.*docker-entrypoint\.sh' Dockerfile; then
+            echo "::error::Dockerfile não declara ENTRYPOINT [\"/app/docker-entrypoint.sh\"]"
+            exit 1
+          fi
+      - name: Verifica migrate runtime command
+        run: |
+          has_drizzle=$(jq -r '.scripts."db:migrate:runtime" // empty' package.json 2>/dev/null)
+          has_prisma=0
+          [ -f prisma/schema.prisma ] && has_prisma=1
+          if [ -z "$has_drizzle" ] && [ "$has_prisma" = "0" ]; then
+            echo "::error::Sem db:migrate:runtime no package.json E sem prisma/schema.prisma."
+            exit 1
+          fi
+      - name: Verifica pasta de migrations
+        run: |
+          if [ -d drizzle ]; then
+            count=$(find drizzle -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')
+            [ "$count" = "0" ] && echo "::warning::Pasta drizzle/ existe mas sem .sql"
+          elif [ -d prisma/migrations ]; then
+            :
+          else
+            echo "::error::Sem pasta de migrations (drizzle/ ou prisma/migrations/)"
+            exit 1
+          fi
+      - name: Detecta statements destrutivos no diff (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -e
+          base="${{ github.base_ref }}"
+          git fetch origin "$base" --depth=1 || true
+          changed=$(git diff --name-only "origin/$base"...HEAD -- '*.sql' || true)
+          [ -z "$changed" ] && exit 0
+          patterns='\b(DROP\s+TABLE|DROP\s+SCHEMA|DROP\s+DATABASE|TRUNCATE|ALTER\s+TABLE\s+\S+\s+DROP\s+(COLUMN|CONSTRAINT)|ALTER\s+TABLE\s+\S+\s+ALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE)\b'
+          findings=""
+          for f in $changed; do
+            [ -f "$f" ] || continue
+            stripped=$(sed -E 's://.*$::g; s/--.*$//g' "$f")
+            if echo "$stripped" | grep -iEq "$patterns"; then
+              findings="$findings\n- $f"
+            fi
+          done
+          if [ -n "$findings" ]; then
+            gh pr edit $PR_NUMBER --add-label "migration:destructive" || true
+            gh pr comment $PR_NUMBER --body "⚠️ **Migration destrutiva detectada:**${findings}\n\nExige aprovação de DBA/sênior. Em prod, deploy aborta sem \`ALLOW_DESTRUCTIVE_MIGRATION=true\` no secret \`tb/prod/<app>/env\`. Ver \`tb-aws-platform/reference/conventions.md → Migrations\`." || true
+          fi
 
   build:
     needs: check-migrations
