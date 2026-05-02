@@ -88,7 +88,9 @@ jobs:
         run: |
           if [ -d drizzle ]; then
             count=$(find drizzle -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')
-            [ "$count" = "0" ] && echo "::warning::Pasta drizzle/ existe mas sem .sql"
+            if [ "$count" = "0" ]; then
+              echo "::warning::Pasta drizzle/ existe mas sem .sql"
+            fi
           elif [ -d prisma/migrations ]; then
             :
           else
