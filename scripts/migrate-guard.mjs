@@ -136,22 +136,26 @@ if (findings.length > 0) {
 
 // ---------- aplicar migrations ----------
 
-const pool = new Pool({ connectionString: DATABASE_URL });
-const db = drizzle(pool);
+async function applyMigrations() {
+	const pool = new Pool({ connectionString: DATABASE_URL });
+	const db = drizzle(pool);
 
-console.log(`[migrate-guard] aplicando migrations de ${MIGRATIONS_FOLDER} ...`);
-try {
-	await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-	console.log("[migrate-guard] OK — schema atualizado");
-	if (IS_PROD && findings.length > 0 && ALLOW_DESTRUCTIVE) {
-		console.warn("");
-		console.warn("ℹ️  Migration destrutiva aplicada com sucesso.");
-		console.warn("   AGORA: remova ALLOW_DESTRUCTIVE_MIGRATION do secret tb/prod/<app>/env");
-		console.warn("   pra evitar que o flag fique ativo pro próximo deploy.");
+	console.log(`[migrate-guard] aplicando migrations de ${MIGRATIONS_FOLDER} ...`);
+	try {
+		await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+		console.log("[migrate-guard] OK — schema atualizado");
+		if (IS_PROD && findings.length > 0 && ALLOW_DESTRUCTIVE) {
+			console.warn("");
+			console.warn("ℹ️  Migration destrutiva aplicada com sucesso.");
+			console.warn("   AGORA: remova ALLOW_DESTRUCTIVE_MIGRATION do secret tb/prod/<app>/env");
+			console.warn("   pra evitar que o flag fique ativo pro próximo deploy.");
+		}
+	} catch (e) {
+		console.error("[migrate-guard] FALHA:", e.message);
+		process.exit(1);
+	} finally {
+		await pool.end();
 	}
-} catch (e) {
-	console.error("[migrate-guard] FALHA:", e.message);
-	process.exit(1);
-} finally {
-	await pool.end();
 }
+
+applyMigrations();
