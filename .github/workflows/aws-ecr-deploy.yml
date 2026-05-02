@@ -22,6 +22,10 @@ on:
     branches:
       - main
       - develop
+  pull_request:
+    branches:
+      - main
+      - develop
   workflow_dispatch:
     inputs:
       env:
@@ -50,6 +54,8 @@ jobs:
 
   build:
     needs: check-migrations
+    # Build/push só em push pra branch real — em PR só validação.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
