@@ -18,6 +18,10 @@ COPY . .
 # resolver node_modules.
 RUN npm run db:migrate:bundle
 
+# DATABASE_URL dummy só em build-time — Next 16 "Collecting page data" carrega
+# api routes que importam src/db/index.ts (que lança se a env não existe).
+# Em runtime, ECS task definition sobreescreve com o valor real do Secrets Manager.
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 RUN npm run build
 
 # === runner ===
