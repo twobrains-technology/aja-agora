@@ -16,3 +16,4 @@ docker-compose.yml
 # Bundle é gerado dentro do build — versão local desatualizada não pode entrar
 scripts/*.bundle.mjs
 scripts/*.bundle.js
+scripts/*.bundle.cjs

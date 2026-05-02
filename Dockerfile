@@ -39,7 +39,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Migrations runtime — pasta de migrations + bundle do guard + package.json
 # (entrypoint chama `npm run --silent db:migrate:runtime` que aponta pro bundle)
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-guard.bundle.mjs ./scripts/migrate-guard.bundle.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-guard.bundle.cjs ./scripts/migrate-guard.bundle.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
 # Entrypoint padrão TwoBrains — roda migrations antes do CMD
