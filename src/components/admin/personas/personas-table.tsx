@@ -64,7 +64,7 @@ function PersonaRow({ p }: { p: PersonaListItem }) {
 				</Badge>
 			</TableCell>
 			<TableCell className="text-muted-foreground text-sm">
-				{p.handoffTriggers.length} triggers · {p.forbiddenTopics.length} guardrails ·{" "}
+				{p.handoffTriggers.length} regras de transferência · {p.forbiddenTopics.length} tópicos sensíveis ·{" "}
 				{p.examples.length} exemplos
 			</TableCell>
 			<TableCell className="text-muted-foreground text-sm">

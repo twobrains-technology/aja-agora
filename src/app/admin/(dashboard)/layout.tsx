@@ -19,7 +19,14 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
 
 	return (
 		<SidebarProvider>
-			<AppSidebar />
+			<AppSidebar
+				flags={{
+					dashboard: featureFlags.dashboard,
+					pipeline: featureFlags.pipeline,
+					attendants: featureFlags.attendants,
+					personas: featureFlags.personas,
+				}}
+			/>
 			<SidebarInset className="overflow-x-hidden">
 				<AdminHeader />
 				<div className="mx-auto w-full max-w-7xl flex-1 overflow-x-auto px-4 py-6 sm:px-6">

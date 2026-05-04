@@ -13,9 +13,114 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, user as userTable } from "@/db/schema";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { sendTextMessage } from "./api";
-import { saveMessage } from "./session";
+import { persistMeta, reloadMeta } from "./meta-helpers";
+import { loadConversationHistory, saveMessage } from "./session";
+
+const INTEREST_RE =
+	/^\s*(tenho\s+interesse|tô\s+interessad[oa]|estou\s+interessad[oa]|quero\s+(?:esse|este|essa|esta|fechar|isso|essa\s+opcao)|me\s+interessa|fechar|bora\s+fechar|vamos\s+fechar|topo|topei|fechado)\s*[!.?]*\s*$/i;
+
+function isInterestExpression(text: string): boolean {
+	return INTEREST_RE.test(text);
+}
+
+function buildConversationSummary(
+	history: Array<{ role: string; content: string }>,
+	artifacts: Array<{ type: string; payload: Record<string, unknown> }>,
+): string {
+	const lines: string[] = [];
+
+	const recent = history.slice(-6);
+	for (const msg of recent) {
+		const prefix = msg.role === "user" ? "👤" : "🤖";
+		lines.push(`${prefix} ${msg.content.slice(0, 200)}`);
+	}
+
+	for (const a of artifacts) {
+		if (a.type === "recommendation_card") {
+			const p = a.payload;
+			lines.push(
+				`\n📋 *Grupo recomendado:* ${p.administradora} — R$ ${(p.creditValue as number)?.toLocaleString("pt-BR")} — ${p.monthlyPayment}/mês — Score ${Math.round((p.score as number) * 100)}%`,
+			);
+		}
+	}
+
+	return lines.join("\n");
+}
+
+export async function startInterestHandoff(
+	from: string,
+	conversationId: string,
+	storedName: string | null,
+): Promise<boolean> {
+	const handoff = await getHandoffState(from);
+	if (!handoff?.conversationId || handoff.isHandedOff) return false;
+
+	if (storedName && storedName.trim().length > 0) {
+		const history = await loadConversationHistory(conversationId);
+		const summary = buildConversationSummary(history, []);
+		await handoffToAgents(conversationId, from, storedName, summary);
+		return true;
+	}
+
+	const meta = await reloadMeta(conversationId);
+	await persistMeta(conversationId, { ...meta, awaitingName: true });
+	await sendTextMessage(
+		from,
+		"Ótima escolha! 🎉 Pra te conectar com nosso consultor, me diz: *qual seu nome completo?*",
+	);
+	return true;
+}
+
+/**
+ * Handles in-flight handoff state when a text message arrives:
+ *   1. If the system was awaiting a name and one is provided, complete the handoff.
+ *   2. If qualification finished and the user expresses interest, start handoff.
+ * Returns true if handled (caller should stop); false to continue with AI flow.
+ */
+export async function handlePendingHandoffText(
+	from: string,
+	text: string,
+	contactName: string | undefined,
+): Promise<boolean> {
+	const handoff = await getHandoffState(from);
+	if (!handoff?.conversationId) return false;
+
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, handoff.conversationId),
+	});
+	const meta = conv?.metadata as Record<string, unknown> | null;
+
+	if (meta?.awaitingName) {
+		const agents = await getAttendantList();
+		if (agents.length > 0) {
+			await db
+				.update(conversations)
+				.set({
+					metadata: { ...meta, awaitingName: false },
+					contactName: text,
+					updatedAt: new Date(),
+				})
+				.where(eq(conversations.id, handoff.conversationId));
+
+			const history = await loadConversationHistory(handoff.conversationId);
+			const summary = buildConversationSummary(history, []);
+			await handoffToAgents(handoff.conversationId, from, text, summary);
+			return true;
+		}
+	}
+
+	const typedMeta = meta as ConversationMetadata | null;
+	if (typedMeta?.searchDispatched && isInterestExpression(text)) {
+		const storedName = contactName ?? conv?.contactName ?? null;
+		const handled = await startInterestHandoff(from, handoff.conversationId, storedName);
+		if (handled) return true;
+	}
+
+	return false;
+}
 
 interface Attendant {
 	id: string;
@@ -315,7 +420,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 	const claimedByOther = allHandedOff.find(
 		(c) => c.handedOffUserId && c.handedOffUserId !== attendant.id,
 	);
-	if (claimedByOther && claimedByOther.handedOffUserId) {
+	if (claimedByOther?.handedOffUserId) {
 		const owner = await getAttendantById(claimedByOther.handedOffUserId);
 		const ownerName = owner?.name ?? "Outro consultor";
 		await sendTextMessage(

@@ -7,15 +7,21 @@ export function formatTextForWhatsApp(text: string): string {
 			.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
 			// Strip hallucinated reproductions of the profile summary template.
 			.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
-			// Add missing space in "frase.Outra" → "frase. Outra".
-			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// Markdown headings → WhatsApp bold.
 			.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
 			.replace(/\*\*(.+?)\*\*/g, "*$1*")
+			// Drop blockquote markers.
+			.replace(/^>\s+/gm, "")
+			// Add missing space in "frase.Outra" → "frase. Outra".
+			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// "frase:Outra" → "frase: Outra" (only when stuck without space).
+			.replace(/(:)([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// Code blocks (preserva).
 			.replace(/```[\s\S]*?```/g, (match) => {
 				const code = match.replace(/```\w*\n?/g, "").trim();
 				return `\`\`\`${code}\`\`\``;
 			})
-			.replace(/^>\s+/gm, "")
+			// Compactar 3+ quebras em 2 (paragrafo).
 			.replace(/\n{3,}/g, "\n\n")
 			.trim()
 	);

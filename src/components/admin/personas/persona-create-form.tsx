@@ -133,8 +133,8 @@ export function PersonaCreateForm() {
 					</div>
 				)}
 
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-					<div className="space-y-6">
+				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+					<div className="space-y-6 lg:col-span-2">
 						<Card>
 							<CardHeader>
 								<CardTitle>Identidade</CardTitle>
@@ -185,7 +185,7 @@ export function PersonaCreateForm() {
 									<Label htmlFor="expertise">Especialidade (opcional)</Label>
 									<Input
 										id="expertise"
-										placeholder="Terrenos, Caminhonete, Alto padrão..."
+										placeholder="Insira a especialidade da persona"
 										value={expertise ?? ""}
 										onChange={(e) =>
 											setValue("expertise", e.target.value || null, { shouldValidate: true })
@@ -242,7 +242,7 @@ export function PersonaCreateForm() {
 						<ForbiddenTopicListSection />
 					</div>
 
-					<div className="lg:sticky lg:top-4 lg:self-start">
+					<div className="lg:sticky lg:top-4 lg:self-start lg:col-span-1">
 						<PersonaPreviewPanel />
 					</div>
 				</div>

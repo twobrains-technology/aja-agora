@@ -89,9 +89,9 @@ export function CampaignListSection() {
 								value={key}
 								className="rounded-md border bg-card mb-2 px-3"
 							>
-								<div className="flex items-center gap-2">
-									<AccordionTrigger className="flex-1 items-center py-3 hover:no-underline [&>[data-slot=accordion-trigger-icon]]:hidden">
-										<span className="flex-1 text-left text-sm font-medium truncate">
+								<div className="flex items-center gap-2 min-w-0">
+									<AccordionTrigger className="flex-1 min-w-0 items-center py-3 hover:no-underline [&>[data-slot=accordion-trigger-icon]]:hidden">
+										<span className="flex-1 min-w-0 text-left text-sm font-medium truncate">
 											{title}
 											{!enabled && (
 												<span className="ml-2 text-xs text-muted-foreground font-normal">

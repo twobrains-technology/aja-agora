@@ -70,6 +70,25 @@ export const turnAnalysisSchema = z.object({
 		.describe(
 			"yes = tem reserva pra lance ('tenho lance', 'tenho 30k de reserva', 'sim tenho'). no = nao tem ('nao tenho', 'sem reserva', 'por enquanto nao'). maybe = depende ('talvez', 'depende do valor', 'pode ser'). null se nao mencionado.",
 		),
+	userIntent: z
+		.enum([
+			"ready_to_proceed",
+			"asking_question",
+			"providing_info",
+			"expressing_doubt",
+			"off_topic",
+			"neutral",
+		])
+		.describe(
+			"Intencao da mensagem atual, usada pra decidir se mostra botoes estruturados ou deixa fluir conversa livre. " +
+				"ready_to_proceed = quer avancar ('bora', 'vamos', 'pode ir', 'ok seguir', 'me mostra'). " +
+				"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
+				"providing_info = ja respondeu/colaborou com dado concreto ('uns 200 mil', '2 anos', 'tenho reserva'). " +
+				"expressing_doubt = hesitando, sem decisao ('nao sei', 'to em duvida', 'depende', 'tenho que pensar'). " +
+				"off_topic = assunto fora do consorcio ('voce e robo?', 'tudo bem?', piadas, smalltalk). " +
+				"neutral = afirmacao curta de acolhimento sem direcao clara ('entendi', 'ah ta', 'legal', 'show'). " +
+				"Em duvida, prefira neutral.",
+		),
 });
 
 export type TurnAnalysis = z.infer<typeof turnAnalysisSchema>;
@@ -85,6 +104,7 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	creditMax: null,
 	prazoMeses: null,
 	hasLance: null,
+	userIntent: "neutral",
 };
 
 const BASE_SYSTEM_INSTRUCTION = `Voce analisa turnos de WhatsApp em portugues brasileiro de um sistema de consorcio.
@@ -99,6 +119,9 @@ Regras gerais:
 - "100k", "100 mil", "R$ 100000", "cem mil" sao todos 100000.
 - Para prazoMeses, traduza: 0=imediato/com lance forte, 12=1ano, 24=2anos, 36=3anos, 60=5anos, 120=10+anos/sem pressa.
 - Para hasLance, so retorne yes/no/maybe quando o usuario falar de reserva/lance/capacidade de antecipar — nao confunda com prazo.
+- Quando o usuario der so o limite inferior ("acima de 500k", "a partir de 300", "uns X pra cima", "no minimo Y"): preencha creditMin com o valor citado E creditMax com uma estimativa razoavel de teto (entre 1.5x e 2x o piso). Isso destrava o sistema sem precisar perguntar de novo. Nao retorne null em creditMax nesses casos.
+- Quando o usuario der so o limite superior ("ate 400 mil", "no maximo 700", "menos de X"): preencha apenas creditMax com o valor; deixe creditMin em null (o sistema usa um piso default).
+- Quando der UM valor isolado ("200 mil", "uns 80k", "tipo 150"): preencha apenas creditMax; creditMin fica null.
 
 Exemplos:
 - "olá" -> { detectedCategory: null, detectedSubTopic: null, expertiseLevel: "neutro", todos os outros null }
@@ -109,7 +132,21 @@ Exemplos:
 - "lance livre embutido na cota" -> { expertiseLevel: "expert" }
 - "na verdade prefiro carro" (persona ativa: imovel) -> { detectedCategory: "auto", isExplicitSwitch: true }
 - "primeira vez fazendo isso" -> { experiencePrev: "first", expertiseLevel: "leigo" }
-- "no momento nao" (em resposta a pergunta sobre lance) -> { hasLance: "no" }`;
+- "no momento nao" (em resposta a pergunta sobre lance) -> { hasLance: "no" }
+- "acima de 500 mil" -> { creditMin: 500000, creditMax: 1000000 }
+- "a partir de 300k" -> { creditMin: 300000, creditMax: 600000 }
+- "uns 200 mil pra cima" -> { creditMin: 200000, creditMax: 400000 }
+- "no minimo 100" -> { creditMin: 100000, creditMax: 200000 }
+- "ate 400 mil" -> { creditMin: null, creditMax: 400000 }
+- "no maximo 700" -> { creditMin: null, creditMax: 700000 }
+- "menos de 80k" -> { creditMin: null, creditMax: 80000 }
+- "uns 80k" -> { creditMin: null, creditMax: 80000 }
+- "bora ver as opcoes" -> { userIntent: "ready_to_proceed" }
+- "como funciona o lance livre?" -> { userIntent: "asking_question" }
+- "uns 200 mil entao" -> { userIntent: "providing_info", creditMax: 200000 }
+- "ainda nao sei direito" -> { userIntent: "expressing_doubt" }
+- "voce e um robo?" -> { userIntent: "off_topic" }
+- "entendi, legal" -> { userIntent: "neutral" }`;
 
 function renderSubTopicSection(subTopics: Record<Category, string[]>): string {
 	const lines: string[] = ["", "## Sub-topicos disponiveis (use EXATO ou null)"];
@@ -174,7 +211,7 @@ Analise conforme o schema. Use null em campos sem sinal claro.`,
 		const elapsed = Date.now() - start;
 		const o = result.object;
 		console.log(
-			`[analyzer] ${elapsed}ms | cat=${o.detectedCategory} sub=${o.detectedSubTopic} switch=${o.isExplicitSwitch} exp=${o.expertiseLevel}/${o.experiencePrev} credit=${o.creditMin}-${o.creditMax} prazo=${o.prazoMeses} lance=${o.hasLance} | ${o.reasoning}`,
+			`[analyzer] ${elapsed}ms | cat=${o.detectedCategory} sub=${o.detectedSubTopic} switch=${o.isExplicitSwitch} exp=${o.expertiseLevel}/${o.experiencePrev} credit=${o.creditMin}-${o.creditMax} prazo=${o.prazoMeses} lance=${o.hasLance} intent=${o.userIntent} | ${o.reasoning}`,
 		);
 		return o;
 	} catch (err) {
