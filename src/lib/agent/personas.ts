@@ -40,6 +40,14 @@ export type ConversationMetadata = {
 	handoffSuggested?: boolean;
 	handoffReason?: string;
 	qualifyAnswers?: QualifyAnswers;
+	/** Active when the agent has triggered `present_lead_form` and we're collecting
+	 * name → phone → email deterministically from the user's free-text replies.
+	 * Cleared after `capture_lead` lands and confirmation goes out. */
+	leadCollection?: {
+		stage: "name" | "phone" | "email";
+		name?: string;
+		phone?: string;
+	};
 };
 
 export const ROUTABLE_CATEGORIES = [

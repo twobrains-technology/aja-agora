@@ -10,20 +10,44 @@
  * Results are cached in-process for 60s; mutations in /api/admin/attendants invalidate via
  * `invalidateAttendantCache()`.
  */
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, user as userTable } from "@/db/schema";
+import { conversations, leads, user as userTable } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
+import { publishToAttendant } from "./simulator-bus";
+
+/**
+ * Sends a WhatsApp message to an attendant AND mirrors it to the dev simulator
+ * bus so /admin/simulator can display it. The Meta call is best-effort — even
+ * if the attendant phone is fake/unreachable, the simulator still receives it.
+ */
+async function sendToAttendant(phone: string, text: string): Promise<void> {
+	console.log(`[proxy] sendToAttendant phone=${phone} text="${text.slice(0, 60)}"`);
+	await sendTextMessage(phone, text);
+	publishToAttendant(phone, text);
+}
 
 const INTEREST_RE =
 	/^\s*(tenho\s+interesse|tô\s+interessad[oa]|estou\s+interessad[oa]|quero\s+(?:esse|este|essa|esta|fechar|isso|essa\s+opcao)|me\s+interessa|fechar|bora\s+fechar|vamos\s+fechar|topo|topei|fechado)\s*[!.?]*\s*$/i;
 
 function isInterestExpression(text: string): boolean {
 	return INTEREST_RE.test(text);
+}
+
+/**
+ * Strip the Brazilian country code (55) from a WhatsApp wa_id so the stored
+ * lead phone matches the format used by the web flow (DDD + number, 10-11
+ * digits). Returns null when the wa_id is empty (web handoff).
+ */
+function normalizeWaIdToPhone(waId: string): string | null {
+	const digits = waId.replace(/\D/g, "");
+	if (!digits) return null;
+	const stripped = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+	return stripped || null;
 }
 
 function buildConversationSummary(
@@ -55,10 +79,22 @@ export async function startInterestHandoff(
 	conversationId: string,
 	storedName: string | null,
 ): Promise<boolean> {
+	console.log(
+		`[whatsapp-proxy] startInterestHandoff entered: from=${from} conversationId=${conversationId} storedName=${storedName ?? "(null)"}`,
+	);
 	const handoff = await getHandoffState(from);
-	if (!handoff?.conversationId || handoff.isHandedOff) return false;
+	console.log(
+		`[whatsapp-proxy] startInterestHandoff handoffState: ${JSON.stringify(handoff)}`,
+	);
+	if (!handoff?.conversationId || handoff.isHandedOff) {
+		console.log(
+			`[whatsapp-proxy] startInterestHandoff bail: conversationId=${handoff?.conversationId ?? "(none)"} isHandedOff=${handoff?.isHandedOff ?? "(none)"}`,
+		);
+		return false;
+	}
 
 	if (storedName && storedName.trim().length > 0) {
+		console.log(`[whatsapp-proxy] startInterestHandoff → handoffToAgents`);
 		const history = await loadConversationHistory(conversationId);
 		const summary = buildConversationSummary(history, []);
 		await handoffToAgents(conversationId, from, storedName, summary);
@@ -192,6 +228,9 @@ export async function handoffToAgents(
 	summary: string,
 ): Promise<void> {
 	const attendants = await getAttendantList();
+	console.log(
+		`[whatsapp-proxy] handoffToAgents: found ${attendants.length} active attendants — ${attendants.map((a) => `${a.name}(${a.phone})`).join(", ") || "(none)"}`,
+	);
 
 	// Mark conversation as handed_off with no claim yet (pending)
 	await db
@@ -203,6 +242,33 @@ export async function handoffToAgents(
 			updatedAt: new Date(),
 		})
 		.where(eq(conversations.id, conversationId));
+
+	// Idempotent lead upsert. Web path inserts the lead in /api/leads before
+	// calling this function, so we skip when one already exists. WhatsApp paths
+	// (interest button, regex, suggest_handoff) reach here without a lead row,
+	// so we create one with whatever PII is available — at minimum name + phone.
+	// userWaId is "" for web calls.
+	try {
+		const existing = await db.query.leads.findFirst({
+			where: eq(leads.conversationId, conversationId),
+		});
+		if (!existing) {
+			const phone = normalizeWaIdToPhone(userWaId);
+			await db.insert(leads).values({
+				conversationId,
+				name: userName,
+				phone,
+				email: null,
+			});
+			console.log(
+				`[whatsapp-proxy] Lead created for handoff: conversation=${conversationId} name=${userName} phone=${phone ?? "(none)"}`,
+			);
+		}
+	} catch (err) {
+		// Don't block the handoff if the lead insert fails — attendants still
+		// need to be notified, and the lead can be reconciled manually.
+		console.error("[whatsapp-proxy] Failed to upsert lead on handoff:", err);
+	}
 
 	if (attendants.length === 0) {
 		await sendTextMessage(
@@ -228,7 +294,7 @@ export async function handoffToAgents(
 	].join("\n");
 
 	for (const attendant of attendants) {
-		await sendTextMessage(attendant.phone, agentMessage);
+		await sendToAttendant(attendant.phone, agentMessage);
 		console.log(`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone})`);
 	}
 
@@ -288,13 +354,19 @@ async function findConversationByAttendant(
 	};
 }
 
-/** Find any unclaimed handed-off conversation (handedOffUserId is null). */
+/** Find any unclaimed handed-off conversation (handedOffUserId is null).
+ * Ordered by updatedAt DESC so the most recent handoff wins — otherwise stale
+ * web conversations stuck in handed_off state get claimed before the fresh one. */
 async function findUnclaimedConversation(): Promise<OwnedConversation | null> {
 	const allConvs = await db.query.conversations.findMany({
 		where: eq(conversations.status, "handed_off"),
+		orderBy: [desc(conversations.updatedAt)],
 	});
 	const unclaimed = allConvs.find((c) => !c.handedOffUserId && (c.waId || c.channel === "web"));
 	if (!unclaimed) return null;
+	console.log(
+		`[whatsapp-proxy] findUnclaimedConversation picked id=${unclaimed.id} channel=${unclaimed.channel} waId=${unclaimed.waId ?? "(null)"} updatedAt=${unclaimed.updatedAt?.toISOString?.() ?? unclaimed.updatedAt}`,
+	);
 	return {
 		conversationId: unclaimed.id,
 		userWaId: unclaimed.waId ?? null,
@@ -339,7 +411,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 				});
 			}
 
-			await sendTextMessage(agentWaId, `✅ Atendimento de *${ownedConv.contactName}* encerrado.`);
+			await sendToAttendant(agentWaId, `✅ Atendimento de *${ownedConv.contactName}* encerrado.`);
 			console.log(
 				`[whatsapp-proxy] Attendant ${agentName} closed conversation ${ownedConv.conversationId}`,
 			);
@@ -377,7 +449,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 			})
 			.where(eq(conversations.id, unclaimed.conversationId));
 
-		await sendTextMessage(
+		await sendToAttendant(
 			agentWaId,
 			`✅ Você assumiu o atendimento de *${unclaimed.contactName}*. Suas mensagens agora vão direto pro cliente.`,
 		);
@@ -386,7 +458,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 		const attendants = await getAttendantList();
 		for (const other of attendants) {
 			if (other.id !== attendant.id) {
-				await sendTextMessage(
+				await sendToAttendant(
 					other.phone,
 					`ℹ️ *${agentName}* já assumiu o atendimento de *${unclaimed.contactName}*.`,
 				);
@@ -423,7 +495,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 	if (claimedByOther?.handedOffUserId) {
 		const owner = await getAttendantById(claimedByOther.handedOffUserId);
 		const ownerName = owner?.name ?? "Outro consultor";
-		await sendTextMessage(
+		await sendToAttendant(
 			agentWaId,
 			`⏳ *${ownerName}* já está atendendo *${claimedByOther.contactName ?? "o cliente"}*.`,
 		);
@@ -447,7 +519,7 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 	if (state.handedOffUserId) {
 		const attendant = await getAttendantById(state.handedOffUserId);
 		if (attendant) {
-			await sendTextMessage(attendant.phone, `*${userName}:*\n${text}`);
+			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`);
 			console.log(
 				`[whatsapp-proxy] User→Attendant: ${userWaId} → ${attendant.phone} | "${text.slice(0, 50)}"`,
 			);
@@ -459,7 +531,7 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 	} else {
 		const attendants = await getAttendantList();
 		for (const a of attendants) {
-			await sendTextMessage(a.phone, `*${userName}:*\n${text}`);
+			await sendToAttendant(a.phone, `*${userName}:*\n${text}`);
 		}
 		console.log(`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}"`);
 	}

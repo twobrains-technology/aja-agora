@@ -2,10 +2,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
+import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 import { type ChatMessage, executeAgentTurn } from "./agent-runner";
 import { sendInteractiveMessage } from "./api";
 import { handoffConfirmationToWhatsApp } from "./formatter";
+import { handleLeadCollectionTurn } from "./lead-collection";
 import { metaOf, persistMeta } from "./meta-helpers";
 import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
 import { transitionToSpecialist } from "./transition";
@@ -169,6 +171,28 @@ function decideRouting(
 	return { kind: "stay" };
 }
 
+// Intra-category re-routing: when the user is already with a specialist of the
+// right category but the analyzer detected a sub-topic that maps to a *different*
+// active persona (e.g. Helena → "alto padrão" specialist), swap to the better-fit
+// specialist. Returns the target category if a swap is warranted, null otherwise.
+async function resolveIntraCategorySwitch(
+	meta: ConversationMetadata,
+	analysis: TurnAnalysis,
+): Promise<Category | null> {
+	if (!analysis.detectedSubTopic) return null;
+	if (!meta.currentCategory) return null;
+	if (analysis.detectedCategory && analysis.detectedCategory !== meta.currentCategory) {
+		return null;
+	}
+	try {
+		const target = await pickPersonaForCategory(meta.currentCategory, analysis.detectedSubTopic);
+		if (target.id === meta.currentPersona) return null;
+		return meta.currentCategory;
+	} catch {
+		return null;
+	}
+}
+
 // ---- System context for the agent turn ----
 
 function buildSystemContext(args: {
@@ -238,6 +262,20 @@ export async function processWithAI(
 		return;
 	}
 
+	// Deterministic lead capture (name → phone → email → insert). Runs BEFORE the
+	// analyzer/agent so the user's reply is treated as a form field, not a chat
+	// message. Returns true when the turn was consumed; agent stays out.
+	if (
+		await handleLeadCollectionTurn({
+			from,
+			conversationId,
+			text,
+			meta,
+		})
+	) {
+		return;
+	}
+
 	const knownName = contactName ?? conv?.contactName ?? null;
 
 	const { analysis, metaChanged, newlyExtractedExperience } = await analyzeAndMerge(
@@ -263,6 +301,22 @@ export async function processWithAI(
 			conversationId,
 			fromPersona: currentPersona,
 			toCategory: decision.toCategory,
+			expertiseHint: analysis.detectedSubTopic,
+		});
+		return;
+	}
+
+	const intraCategoryTarget = await resolveIntraCategorySwitch(meta, analysis);
+	if (intraCategoryTarget) {
+		console.log(
+			`[whatsapp-processor] Intra-category swap: ${meta.currentPersona} → expertise="${analysis.detectedSubTopic}" in category=${intraCategoryTarget}`,
+		);
+		await saveMessage(conversationId, "user", text);
+		await transitionToSpecialist({
+			from,
+			conversationId,
+			fromPersona: currentPersona,
+			toCategory: intraCategoryTarget,
 			expertiseHint: analysis.detectedSubTopic,
 		});
 		return;

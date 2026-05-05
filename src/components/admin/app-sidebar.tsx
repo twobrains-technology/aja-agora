@@ -40,7 +40,7 @@ const conversationsItem = {
 	icon: MessageSquareTextIcon,
 };
 const attendantsItem = { title: "Atendentes", href: "/admin/attendants", icon: UsersIcon };
-const personasItem = { title: "Personas", href: "/admin/personas", icon: BotIcon };
+const personasItem = { title: "Agentes", href: "/admin/personas", icon: BotIcon };
 
 const settingsItems = [
 	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },

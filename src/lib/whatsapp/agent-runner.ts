@@ -19,6 +19,7 @@ import {
 	timeframeQuestionToWhatsApp,
 	welcomeButtonsToWhatsApp,
 } from "./formatter";
+import { detectLeadFormArtifact } from "./lead-collection";
 import { metaOf, persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
 
@@ -274,6 +275,18 @@ export async function executeAgentTurn(args: {
 
 	if (fullResponse) {
 		await saveMessage(conversationId, "assistant", fullResponse);
+	}
+
+	// When the agent emits the lead form, flip on deterministic collection mode
+	// BEFORE the artifact text ("Qual seu nome completo?") is delivered. Persisting
+	// here guarantees the next user reply is intercepted by the state machine in
+	// pipeline.ts, even if the user replies super fast.
+	if (detectLeadFormArtifact(artifacts) && !meta.leadCollection) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, {
+			...refreshed,
+			leadCollection: { stage: "name" },
+		});
 	}
 
 	const producedArtifact = artifacts.length > 0;

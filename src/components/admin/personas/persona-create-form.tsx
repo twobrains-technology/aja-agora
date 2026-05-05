@@ -215,7 +215,7 @@ export function PersonaCreateForm() {
 									/>
 									<p className="text-xs text-muted-foreground">
 										Descreva tudo que define a voz: formalidade, ritmo das frases, vocabulário, uso
-										de exclamação. Os exemplos abaixo ancoram esse tom em conversas reais.
+										de exclamação.
 									</p>
 									{errors.voiceTone?.message && (
 										<p className="text-sm text-destructive">{errors.voiceTone.message}</p>

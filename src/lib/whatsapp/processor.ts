@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { sendTextMessage } from "./api";
+import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
 import { processWithAI } from "./pipeline";
 import {
@@ -16,6 +16,7 @@ export async function processTextMessage(
 	from: string,
 	text: string,
 	contactName?: string,
+	messageId?: string,
 ): Promise<void> {
 	try {
 		if (text.trim().toLowerCase() === "/reset") {
@@ -43,12 +44,15 @@ export async function processTextMessage(
 
 		const handoff = await getHandoffState(from);
 		if (handoff?.isHandedOff) {
+			// Relay to human — don't fake AI typing.
 			await relayUserToAgent(from, text);
 			return;
 		}
 
 		if (await handlePendingHandoffText(from, text, contactName)) return;
 
+		// AI path: show typing indicator while the model processes.
+		if (messageId) sendTypingIndicator(messageId).catch(() => {});
 		await processWithAI(from, text, contactName);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
@@ -68,7 +72,12 @@ export async function processInteractiveReply(
 	replyId: string,
 	replyTitle: string,
 	contactName?: string,
+	messageId?: string,
 ): Promise<void> {
+	// Most interactive paths trigger an AI directive (gates, transitions, group
+	// selection). Fire the typing indicator up front; brief flash on the few
+	// non-AI paths (e.g. handoff_decline) is acceptable.
+	if (messageId) sendTypingIndicator(messageId).catch(() => {});
 	const handled = await dispatchInteractiveReply({
 		from,
 		replyId,
@@ -77,6 +86,6 @@ export async function processInteractiveReply(
 		processTextMessage,
 	});
 	if (!handled) {
-		await processTextMessage(from, replyTitle, contactName);
+		await processTextMessage(from, replyTitle, contactName, messageId);
 	}
 }

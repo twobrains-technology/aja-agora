@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { sendTypingIndicator } from "@/lib/whatsapp/api";
+import { markAsRead } from "@/lib/whatsapp/api";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
@@ -80,15 +80,16 @@ export async function POST(req: NextRequest) {
 				`[whatsapp] Message from ${from} (${contactName ?? "unknown"}) | type: ${msgType}`,
 			);
 
-			// Mark as read + show "typing..." indicator while the AI processes
-			sendTypingIndicator(message.id).catch(() => {});
+			// Mark as read so the customer's blue checks update; typing indicator
+			// is fired later in the processor only on the AI path.
+			markAsRead(message.id).catch(() => {});
 
 			switch (msgType) {
 				case "text": {
 					const text = message.text?.body;
 					if (text) {
 						console.log(`[whatsapp] Text: "${text}"`);
-						processTextMessage(from, text, contactName).catch((err) =>
+						processTextMessage(from, text, contactName, message.id).catch((err) =>
 							console.error("[whatsapp] Processor error:", err),
 						);
 					}
@@ -100,13 +101,13 @@ export async function POST(req: NextRequest) {
 					if (interactive?.type === "button_reply") {
 						const reply = interactive.button_reply;
 						console.log(`[whatsapp] Button reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title, contactName).catch((err) =>
-							console.error("[whatsapp] Interactive processor error:", err),
+						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch(
+							(err) => console.error("[whatsapp] Interactive processor error:", err),
 						);
 					} else if (interactive?.type === "list_reply") {
 						const reply = interactive.list_reply;
 						console.log(`[whatsapp] List reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title, contactName).catch((err) =>
+						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch((err) =>
 							console.error("[whatsapp] Interactive processor error:", err),
 						);
 					}

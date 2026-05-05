@@ -121,8 +121,7 @@ export function PersonaIdentitySection({ persona }: { persona: PersonaRow }) {
           />
           <p className="text-xs text-muted-foreground">
             Descreva tudo que define a voz: formalidade, ritmo das frases,
-            vocabulário, uso de exclamação. Os exemplos abaixo ancoram esse tom
-            em conversas reais.
+            vocabulário, uso de exclamação.
           </p>
           {errors.voiceTone?.message && (
             <p className="text-sm text-destructive">
