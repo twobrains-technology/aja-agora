@@ -10,6 +10,8 @@
 		"format": "biome check --write .",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
+		"db:migrate:bundle": "esbuild scripts/migrate-guard.mjs --bundle --platform=node --target=node22 --format=cjs --packages=bundle --outfile=scripts/migrate-guard.bundle.cjs",
+		"db:migrate:runtime": "node scripts/migrate-guard.bundle.cjs",
 		"db:push": "drizzle-kit push",
 		"db:studio": "drizzle-kit studio"
 	},
@@ -55,6 +57,7 @@
 		"@types/react": "^19",
 		"@types/react-dom": "^19",
 		"drizzle-kit": "^0.31.10",
+		"esbuild": "^0.25.0",
 		"tailwindcss": "^4",
 		"typescript": "^5"
 	}
