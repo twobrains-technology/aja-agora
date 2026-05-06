@@ -438,3 +438,18 @@ export const personaVersionsRelations = relations(personaVersions, ({ one }) => 
 		references: [user.id],
 	}),
 }));
+
+export const personasRelations = relations(personas, ({ many }) => ({
+	versions: many(personaVersions),
+}));
+
+export const personaVersionsRelations = relations(personaVersions, ({ one }) => ({
+	persona: one(personas, {
+		fields: [personaVersions.personaId],
+		references: [personas.id],
+	}),
+	changedByUser: one(user, {
+		fields: [personaVersions.changedBy],
+		references: [user.id],
+	}),
+}));
