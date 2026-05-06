@@ -5,31 +5,12 @@ import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
 import {
-	artifactToWhatsApp,
-	creditRangeQuestionToWhatsApp,
-	experienceQuestionToWhatsApp,
-	formatTextForWhatsApp,
-	handoffConfirmationToWhatsApp,
-	lanceQuestionToWhatsApp,
-	qualifyConsentToWhatsApp,
-	resolveCreditReply,
-	resolveLanceReply,
-	resolveRange,
-	resolveTimeframeReply,
-	splitMessage,
-	timeframeQuestionToWhatsApp,
-	transitionBridgeText,
-	welcomeButtonsToWhatsApp,
-} from "./formatter";
-import {
-	getAttendantList,
 	getHandoffState,
 	handleAgentMessage,
 	handlePendingHandoffText,
 	isAttendantPhone,
 	relayUserToAgent,
 } from "./proxy";
-import { getOrCreateConversation, loadConversationHistory, saveMessage } from "./session";
 
 export async function processTextMessage(
 	from: string,
@@ -37,7 +18,6 @@ export async function processTextMessage(
 	contactName?: string,
 	messageId?: string,
 ): Promise<void> {
-	let personaRow: Awaited<ReturnType<typeof pickPersonaForCategory>>;
 	try {
 		if (text.trim().toLowerCase() === "/reset") {
 			const conv = await db.query.conversations.findFirst({
@@ -84,8 +64,7 @@ export async function processTextMessage(
 			// Silent
 		}
 	}
-	const fromConcierge = fromPersona === "concierge";
-	const meta0 = getCategoryMeta(personaRow);
+}
 
 export async function processInteractiveReply(
 	from: string,

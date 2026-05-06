@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ConversationsTable } from "@/components/admin/conversations/conversations-table";
 
 export default function ConversationsPage() {
@@ -9,7 +10,9 @@ export default function ConversationsPage() {
 					Histórico completo de conversas com leads em todos os canais.
 				</p>
 			</div>
-			<ConversationsTable />
+			<Suspense>
+				<ConversationsTable />
+			</Suspense>
 		</div>
 	);
 }
