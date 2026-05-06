@@ -1,3 +1,5 @@
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+
 export function formatTextForWhatsApp(text: string): string {
 	return (
 		text
@@ -468,9 +470,8 @@ export function creditRangeQuestionToWhatsApp(
 	prefix?: string,
 ): WhatsAppResponse {
 	const ranges = CREDIT_RANGES[category];
-	const text = prefix
-		? `${prefix}\n\nQual faixa de crédito faz mais sentido pra você?`
-		: "Qual faixa de crédito faz mais sentido pra você?";
+	const question = gateQuestion("credit", category) ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -493,17 +494,11 @@ export function creditRangeQuestionToWhatsApp(
 	};
 }
 
-const TIMEFRAME_QUESTIONS: Record<"imovel" | "auto" | "servicos", string> = {
-	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
-	auto: "Em quanto tempo você quer estar com o carro novo?",
-	servicos: "Em quanto tempo você quer realizar isso?",
-};
-
 export function timeframeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "servicos",
 	prefix?: string,
 ): WhatsAppResponse {
-	const question = TIMEFRAME_QUESTIONS[category];
+	const question = gateQuestion("timeframe", category) ?? "";
 	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
@@ -557,9 +552,8 @@ export function resolveTimeframeReply(replyId: string): {
 }
 
 export function qualifyConsentToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nPosso te fazer 3 perguntinhas rápidas pra entender seu perfil?`
-		: "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
+	const question = gateQuestion("consent") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -602,9 +596,8 @@ const LANCE_OPTIONS = [
 type LanceValue = (typeof LANCE_OPTIONS)[number]["token"];
 
 export function lanceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nVocê teria uma reserva pra dar um lance e antecipar a contemplação?`
-		: "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+	const question = gateQuestion("lance") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -668,9 +661,8 @@ export function profileSummaryText(answers: {
 }
 
 export function experienceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nAntes de qualquer coisa, você já fez consórcio antes?`
-		: "Antes de qualquer coisa: você já fez consórcio antes?";
+	const question = gateQuestion("experience") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {

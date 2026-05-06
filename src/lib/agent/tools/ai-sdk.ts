@@ -48,6 +48,7 @@ const comparisonTableSchema = z.object({
 
 const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
+	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFee: z.number().describe("Taxa de administracao total em reais"),

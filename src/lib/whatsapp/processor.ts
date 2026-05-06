@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
-import { processWithAI } from "./pipeline";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -51,9 +51,8 @@ export async function processTextMessage(
 
 		if (await handlePendingHandoffText(from, text, contactName)) return;
 
-		// AI path: show typing indicator while the model processes.
 		if (messageId) sendTypingIndicator(messageId).catch(() => {});
-		await processWithAI(from, text, contactName);
+		await processWithOrchestrator(from, text, contactName);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
 		try {

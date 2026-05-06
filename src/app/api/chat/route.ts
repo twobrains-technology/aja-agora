@@ -1,35 +1,84 @@
-import { type NextRequest } from "next/server";
-import { streamText, stepCountIs } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { eq } from "drizzle-orm";
-
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
+import { conversations } from "@/db/schema";
 import {
-	conversations,
-	messages as messagesTable,
-	artifacts as artifactsTable,
-	leads,
-} from "@/db/schema";
-import { transitionLeadStage } from "@/lib/admin/lead-transitions";
-import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { consorcioTools, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import { checkRateLimit } from "@/lib/middleware/rate-limit";
-import { sendTextMessage } from "@/lib/whatsapp/api";
+	buildCreditReactionDirective,
+	buildExperienceDoubtsDirective,
+	buildExperienceFirstDirective,
+	buildExperienceReturningDirective,
+	buildGroupSelectedDirective,
+	buildQualifyStartMoreDirective,
+	buildQualifyStartYesDirective,
+	buildTimeframeReactionDirective,
+} from "@/lib/agent/orchestrator/directives";
+import {
+	type Category,
+	type ConversationMetadata,
+	type ExperiencePrev,
+	type Persona,
+	ROUTABLE_CATEGORIES,
+} from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
+import type { AjaUIMessage } from "@/lib/chat/ui-message";
+import { saveMessage } from "@/lib/conversation/messages";
+import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import {
+	pipeDirectiveTurn,
+	pipeSearchSummaryTurn,
+	pipeTransitionTurn,
+	pipeUserTurn,
+} from "@/lib/web/adapter";
+import { sendTextMessage } from "@/lib/whatsapp/api";
 
 export const maxDuration = 60;
 
-// Auto-transition: map tool executions to lead stage advances (D-09, D-10)
-// capture_lead is NOT here — leads default to "novo" on creation (D-08)
-const TOOL_STAGE_MAP: Record<string, "engajado" | "qualificado"> = {
-	simulate_quota: "engajado",
-	recommend_groups: "qualificado",
+type GateAction =
+	| { kind: "gate"; gate: "experience"; value: ExperiencePrev; label: string }
+	| { kind: "gate"; gate: "consent"; value: "yes" | "more"; label: string }
+	| {
+			kind: "gate";
+			gate: "credit";
+			value: { credit: number; monthlyBudget: number };
+			label: string;
+	  }
+	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
+	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
+	| { kind: "category"; category: Category }
+	| {
+			kind: "select-group";
+			groupId: string;
+			administradora: string;
+			creditValue: number;
+			termMonths: number;
+			label: string;
+	  }
+	| { kind: "interest"; administradora: string; label: string };
+
+type ChatRequestBody = {
+	id?: string;
+	conversationId?: string;
+	messages?: UIMessage[];
+	action?: GateAction;
 };
 
-const anthropic = createAnthropic();
+function lastUserText(messages: UIMessage[] | undefined): string | null {
+	if (!messages) return null;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "user") continue;
+		const text = msg.parts
+			.filter((p): p is { type: "text"; text: string } => p.type === "text")
+			.map((p) => p.text)
+			.join("");
+		if (text.length > 0) return text;
+	}
+	return null;
+}
 
 export async function POST(req: NextRequest) {
-	// ---- Rate limiting ----
 	const ip =
 		req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
 		req.headers.get("x-real-ip") ??
@@ -40,276 +89,245 @@ export async function POST(req: NextRequest) {
 		return new Response("Too many requests. Please wait a moment.", {
 			status: 429,
 			headers: {
-				"Retry-After": String(
-					Math.ceil((rateLimitResult.retryAfterMs ?? 60000) / 1000),
-				),
+				"Retry-After": String(Math.ceil((rateLimitResult.retryAfterMs ?? 60000) / 1000)),
 			},
 		});
 	}
 
-	// ---- Parse request ----
-	const body = await req.json();
-	const { messages, conversationId: existingId } = body as {
-		messages: Array<{ role: string; content: string }>;
-		conversationId?: string;
-	};
+	const body = (await req.json()) as ChatRequestBody;
+	const providedId = body.conversationId ?? body.id ?? null;
 
-	if (!messages || !Array.isArray(messages) || messages.length === 0) {
-		return new Response("Messages array is required", { status: 400 });
-	}
+	let conversationId: string;
+	let contactName: string | null = null;
+	const conv = providedId
+		? await db.query.conversations.findFirst({
+				where: eq(conversations.id, providedId),
+				with: {
+					handedOffUser: { columns: { name: true, phone: true } },
+				},
+			})
+		: undefined;
 
-	const lastMessage = messages[messages.length - 1];
-
-	// ---- Session isolation: create or load conversation ----
-	let conversationId = existingId;
-
-	if (!conversationId) {
-		const [conv] = await db.insert(conversations).values({}).returning();
+	if (providedId && !conv) {
+		const [created] = await db.insert(conversations).values({ id: providedId }).returning();
+		conversationId = created.id;
+	} else if (conv) {
 		conversationId = conv.id;
+		contactName = conv.contactName ?? null;
 	} else {
-		const conv = await db.query.conversations.findFirst({
-			where: eq(conversations.id, conversationId),
-			with: {
-				handedOffUser: {
-					columns: { name: true, phone: true },
-				},
+		const [created] = await db.insert(conversations).values({}).returning();
+		conversationId = created.id;
+	}
+
+	if (conv?.status === "handed_off" && !body.action) {
+		const userText = lastUserText(body.messages);
+		if (!userText) {
+			return new Response("No user message in payload", { status: 400 });
+		}
+		await saveMessage(conversationId, "user", userText, "web");
+		const userName = conv.contactName ?? "Cliente";
+		if (conv.handedOffUser?.phone) {
+			await sendTextMessage(conv.handedOffUser.phone, `*${userName}:*\n${userText}`);
+		}
+		publishMessage(conversationId, {
+			id: crypto.randomUUID(),
+			role: "user",
+			content: userText,
+			createdAt: new Date().toISOString(),
+		});
+		const agentName = conv.handedOffUser?.name ?? "Consultor";
+		const stream = createUIMessageStream<AjaUIMessage>({
+			execute: ({ writer }) => {
+				const id = crypto.randomUUID();
+				writer.write({ type: "text-start", id });
+				writer.write({
+					type: "text-delta",
+					id,
+					delta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
+				});
+				writer.write({ type: "text-end", id });
 			},
 		});
-		if (!conv) {
-			return new Response("Conversation not found", { status: 404 });
-		}
-
-		// ---- Handoff relay: if conversation is handed off, forward to vendor via WhatsApp ----
-		if (conv.status === "handed_off" && lastMessage?.role === "user") {
-			const userText = lastMessage.content;
-
-			// Save user message to DB
-			await db.insert(messagesTable).values({
-				conversationId,
-				role: "user",
-				content: userText,
-			});
-
-			// Relay to claimed attendant via WhatsApp (if any claimed yet)
-			const userName = conv.contactName ?? "Cliente";
-			if (conv.handedOffUser?.phone) {
-				await sendTextMessage(
-					conv.handedOffUser.phone,
-					`*${userName}:*\n${userText}`,
-				);
-			}
-
-			// Publish to SSE bus so the user's own message confirms delivery
-			publishMessage(conversationId, {
-				id: crypto.randomUUID(),
-				role: "user",
-				content: userText,
-				createdAt: new Date().toISOString(),
-			});
-
-			// Return a simple SSE stream with confirmation
-			const encoder = new TextEncoder();
-			const ackStream = new ReadableStream({
-				start(controller) {
-					const agentName = conv.handedOffUser?.name ?? "Consultor";
-					const ack = JSON.stringify({
-						type: "text-delta",
-						textDelta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
-					});
-					controller.enqueue(encoder.encode(`data: ${ack}\n\n`));
-					controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-					controller.close();
-				},
-			});
-
-			return new Response(ackStream, {
-				headers: {
-					"Content-Type": "text/event-stream",
-					"Cache-Control": "no-cache",
-					Connection: "keep-alive",
-					"X-Conversation-Id": conversationId,
-					"X-Handed-Off": "true",
-				},
-			});
-		}
-	}
-
-	// ---- Save user message to DB ----
-	if (lastMessage && lastMessage.role === "user") {
-		await db.insert(messagesTable).values({
-			conversationId,
-			role: "user",
-			content: lastMessage.content,
+		return createUIMessageStreamResponse({
+			stream,
+			headers: { "X-Conversation-Id": conversationId, "X-Handed-Off": "true" },
 		});
 	}
 
-	// ---- Build core messages (filter out empty assistant placeholders) ----
-	const coreMessages = messages
-		.filter((m) => m.content.length > 0)
-		.map((m) => ({
-			role: m.role as "user" | "assistant",
-			content: m.content,
-		}));
+	const meta = conv ? metaOf(conv) : ({} as ConversationMetadata);
 
-	// ---- Stream response via AI SDK streamText ----
-	const encoder = new TextEncoder();
-	const stream = new ReadableStream({
-		async start(controller) {
-			try {
-				let fullResponse = "";
-				const emittedArtifacts: Array<{
-					id: string;
-					type: string;
-					payload: Record<string, unknown>;
-				}> = [];
+	if (body.action) {
+		const stream = createUIMessageStream<AjaUIMessage>({
+			execute: async ({ writer }) => {
+				if (body.action?.kind === "category") {
+					if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category)) return;
+					const fromPersona: Persona = meta.currentPersona ?? "concierge";
+					await pipeTransitionTurn({
+						conversationId,
+						fromPersona,
+						toCategory: body.action.category,
+						contactName,
+						writer,
+					});
+					return;
+				}
 
-				const result = streamText({
-					model: anthropic(
-						process.env.AI_MODEL ?? "claude-sonnet-4-20250514",
-					),
-					system: SYSTEM_PROMPT,
-					messages: coreMessages,
-					tools: consorcioTools,
-					stopWhen: stepCountIs(10),
-				});
+				if (body.action?.kind === "select-group") {
+					const { groupId, administradora, creditValue, termMonths, label } = body.action;
+					await saveMessage(conversationId, "user", label, "web");
+					await pipeDirectiveTurn({
+						conversationId,
+						directive: buildGroupSelectedDirective(
+							administradora,
+							groupId,
+							creditValue,
+							termMonths,
+						),
+						contactName,
+						writer,
+					});
+					return;
+				}
 
-				for await (const part of result.fullStream) {
-					switch (part.type) {
-						case "text-delta": {
-							fullResponse += part.text;
-							const data = JSON.stringify({
-								type: "text-delta",
-								textDelta: part.text,
-							});
-							controller.enqueue(
-								encoder.encode(`data: ${data}\n\n`),
-							);
-							break;
-						}
+				if (body.action?.kind === "interest") {
+					const { label } = body.action;
+					await saveMessage(conversationId, "user", label, "web");
+					const textId = crypto.randomUUID();
+					writer.write({ type: "text-start", id: textId });
+					writer.write({
+						type: "text-delta",
+						id: textId,
+						delta:
+							"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
+					});
+					writer.write({ type: "text-end", id: textId });
+					writer.write({
+						type: "data-artifact",
+						id: crypto.randomUUID(),
+						data: {
+							type: "lead_form",
+							payload: { conversationId } as Record<string, unknown>,
+						},
+					});
+					return;
+				}
 
-						case "tool-call": {
-							// Presentation tools emit artifact events for the frontend
-							const shortName = part.toolName.replace(
-								"present_",
-								"",
-							);
-							if (PRESENTATION_TOOLS.has(part.toolName)) {
-								const artifact = {
-									id: part.toolCallId,
-									type: shortName,
-									payload: part.input as Record<
-										string,
-										unknown
-									>,
-								};
-								emittedArtifacts.push(artifact);
-								const artifactData = JSON.stringify({
-									type: "artifact",
-									artifact,
-								});
-								controller.enqueue(
-									encoder.encode(
-										`data: ${artifactData}\n\n`,
-									),
-								);
-							}
+				if (body.action?.kind !== "gate") return;
+				const action = body.action;
 
-							// Auto-transition: advance lead stage based on tool execution (D-09, D-10, D-13)
-							const targetStage = TOOL_STAGE_MAP[part.toolName];
-							if (targetStage && conversationId) {
-								try {
-									const lead = await db.query.leads.findFirst({
-										where: eq(leads.conversationId, conversationId),
-									});
-									if (lead) {
-										await transitionLeadStage(
-											lead.id,
-											targetStage,
-											{ type: "system" },
-											{ onlyAdvance: true }, // Never regress (D-11)
-										);
-									}
-								} catch (err) {
-									console.error("Auto-transition failed:", err);
-								}
-							}
-							break;
-						}
+				if (action.gate === "experience") {
+					const choice = action.value;
+					await persistMeta(conversationId, {
+						...meta,
+						experiencePrev: choice,
+						doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
+					});
+					await saveMessage(conversationId, "user", action.label, "web");
+					const directive =
+						choice === "first"
+							? buildExperienceFirstDirective(action.label)
+							: choice === "returning"
+								? buildExperienceReturningDirective(action.label)
+								: buildExperienceDoubtsDirective(action.label);
+					await pipeDirectiveTurn({ conversationId, directive, contactName, writer });
+					return;
+				}
 
-						case "error": {
-							const errorData = JSON.stringify({
-								type: "error",
-								error:
-									part.error instanceof Error
-										? part.error.message
-										: "Erro interno",
-							});
-							controller.enqueue(
-								encoder.encode(`data: ${errorData}\n\n`),
-							);
-							break;
-						}
+				if (action.gate === "consent") {
+					await saveMessage(conversationId, "user", action.label, "web");
+					if (!meta.currentCategory) return;
+					if (action.value === "yes") {
+						await persistMeta(conversationId, { ...meta, qualifyConsented: true });
+						await pipeDirectiveTurn({
+							conversationId,
+							directive: buildQualifyStartYesDirective(),
+							contactName,
+							writer,
+						});
+						return;
 					}
+					await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
+					await pipeDirectiveTurn({
+						conversationId,
+						directive: buildQualifyStartMoreDirective(),
+						contactName,
+						writer,
+					});
+					return;
 				}
 
-				// ---- Persist assistant response ----
-				let assistantMessageId: string | undefined;
-				if (fullResponse) {
-					const [assistantMsg] = await db
-						.insert(messagesTable)
-						.values({
-							conversationId: conversationId!,
-							role: "assistant",
-							content: fullResponse,
-						})
-						.returning({ id: messagesTable.id });
-					assistantMessageId = assistantMsg?.id;
+				if (action.gate === "credit") {
+					const credit = action.value.credit;
+					const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
+					const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+						...(meta.qualifyAnswers ?? {}),
+						creditMin,
+						creditMax: credit,
+						monthlyBudget: action.value.monthlyBudget,
+					};
+					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+					await saveMessage(conversationId, "user", action.label, "web");
+					await pipeDirectiveTurn({
+						conversationId,
+						directive: buildCreditReactionDirective(action.label),
+						contactName,
+						writer,
+					});
+					return;
 				}
 
-				// ---- Persist emitted artifacts ----
-				if (emittedArtifacts.length > 0 && assistantMessageId) {
-					try {
-						await db.insert(artifactsTable).values(
-							emittedArtifacts.map((a) => ({
-								messageId: assistantMessageId!,
-								type: a.type as
-									| "group_card"
-									| "comparison_table"
-									| "simulation_result"
-									| "recommendation_card"
-									| "lead_form",
-								payload: a.payload,
-							})),
-						);
-					} catch (artifactErr) {
-						console.error(
-							"Failed to persist artifacts:",
-							artifactErr,
-						);
-					}
+				if (action.gate === "timeframe") {
+					const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+						...(meta.qualifyAnswers ?? {}),
+						prazoMeses: action.value.prazoMeses,
+					};
+					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+					await saveMessage(conversationId, "user", action.label, "web");
+					if (!meta.currentCategory) return;
+					await pipeDirectiveTurn({
+						conversationId,
+						directive: buildTimeframeReactionDirective(action.label),
+						contactName,
+						writer,
+					});
+					return;
 				}
 
-				controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-				controller.close();
-			} catch (error) {
-				const errorMsg =
-					error instanceof Error ? error.message : "Unknown error";
-				const data = JSON.stringify({
-					type: "error",
-					error: errorMsg,
-				});
-				controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-				controller.close();
-			}
+				if (action.gate === "lance") {
+					const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+						...(meta.qualifyAnswers ?? {}),
+						hasLance: action.value,
+					};
+					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+					await saveMessage(conversationId, "user", action.label, "web");
+					if (!meta.currentCategory) return;
+					await pipeSearchSummaryTurn({ conversationId, contactName, writer });
+				}
+			},
+			onError: (error: unknown) =>
+				error instanceof Error ? error.message : "Erro interno no servidor",
+		});
+		return createUIMessageStreamResponse({
+			stream,
+			headers: { "X-Conversation-Id": conversationId },
+		});
+	}
+
+	const userText = lastUserText(body.messages);
+	if (!userText) {
+		return new Response("No user message in payload", { status: 400 });
+	}
+
+	const stream = createUIMessageStream<AjaUIMessage>({
+		execute: async ({ writer }) => {
+			await pipeUserTurn({ conversationId, userText, contactName, writer });
 		},
+		onError: (error: unknown) =>
+			error instanceof Error ? error.message : "Erro interno no servidor",
 	});
 
-	return new Response(stream, {
-		headers: {
-			"Content-Type": "text/event-stream",
-			"Cache-Control": "no-cache",
-			Connection: "keep-alive",
-			"X-Conversation-Id": conversationId,
-		},
+	return createUIMessageStreamResponse({
+		stream,
+		headers: { "X-Conversation-Id": conversationId },
 	});
 }

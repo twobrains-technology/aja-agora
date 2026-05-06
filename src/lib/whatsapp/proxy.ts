@@ -83,9 +83,7 @@ export async function startInterestHandoff(
 		`[whatsapp-proxy] startInterestHandoff entered: from=${from} conversationId=${conversationId} storedName=${storedName ?? "(null)"}`,
 	);
 	const handoff = await getHandoffState(from);
-	console.log(
-		`[whatsapp-proxy] startInterestHandoff handoffState: ${JSON.stringify(handoff)}`,
-	);
+	console.log(`[whatsapp-proxy] startInterestHandoff handoffState: ${JSON.stringify(handoff)}`);
 	if (!handoff?.conversationId || handoff.isHandedOff) {
 		console.log(
 			`[whatsapp-proxy] startInterestHandoff bail: conversationId=${handoff?.conversationId ?? "(none)"} isHandedOff=${handoff?.isHandedOff ?? "(none)"}`,

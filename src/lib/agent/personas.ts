@@ -12,6 +12,8 @@ export type ExperiencePrev = "first" | "returning" | "doubts";
 export type QualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
+	/** Parcela mensal que o usuário consegue pagar (em reais). */
+	monthlyBudget?: number;
 	/** 0 = imediato (lance forte). */
 	prazoMeses?: number;
 	hasLance?: "yes" | "maybe" | "no";

@@ -5,7 +5,13 @@ import { getAdapter } from "@/lib/adapters";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
-import { fireGate, fireSummaryAndSearch, runAgentDirective } from "./agent-runner";
+import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import {
+	fireGate,
+	runDirectiveWithOrchestrator,
+	runSearchSummaryWithOrchestrator,
+	runTransitionWithOrchestrator,
+} from "./adapter";
 import { sendTextMessage } from "./api";
 import {
 	buildCreditReactionDirective,
@@ -27,10 +33,11 @@ import {
 	resolveRange,
 	resolveTimeframeReply,
 } from "./formatter";
-import { metaOf, persistMeta, reloadMeta } from "./meta-helpers";
 import { getHandoffState, startInterestHandoff } from "./proxy";
 import { getOrCreateConversation, saveMessage } from "./session";
-import { transitionToSpecialist } from "./transition";
+
+const runAgentDirective = (from: string, conversationId: string, directive: string) =>
+	runDirectiveWithOrchestrator({ from, conversationId, directive });
 
 type Ctx = {
 	from: string;
@@ -103,7 +110,7 @@ async function handleHandoffDecline({ from, replyTitle }: Ctx): Promise<boolean>
 	// Resume the funnel — fire the next gate that was pending when handoff fired.
 	const gate = nextGate(cleared);
 	if (gate === "search") {
-		await fireSummaryAndSearch(from, conversationId, cleared);
+		await runSearchSummaryWithOrchestrator({ from, conversationId });
 	} else if (gate !== "doubts-wait") {
 		await fireGate(from, conversationId, gate, cleared);
 	} else {
@@ -122,7 +129,7 @@ async function handleCategory({ from, replyId }: Ctx): Promise<boolean> {
 	});
 	const meta = metaOf(conv);
 	const fromPersona: Persona = meta.currentPersona ?? "concierge";
-	await transitionToSpecialist({ from, conversationId, fromPersona, toCategory: category });
+	await runTransitionWithOrchestrator({ from, conversationId, fromPersona, toCategory: category });
 	return true;
 }
 
@@ -148,7 +155,7 @@ async function handleExperience({ from, replyId, replyTitle }: Ctx): Promise<boo
 	else if (choice === "returning") directive = buildExperienceReturningDirective(replyTitle);
 	else directive = buildExperienceDoubtsDirective(replyTitle);
 
-	await runAgentDirective(from, conversationId, directive);
+	await runDirectiveWithOrchestrator({ from, conversationId, directive });
 	return true;
 }
 
@@ -236,8 +243,7 @@ async function handleLance({ from, replyId, replyTitle }: Ctx): Promise<boolean>
 
 	if (!meta.currentCategory) return true;
 
-	const refreshed = await reloadMeta(conversationId);
-	await fireSummaryAndSearch(from, conversationId, refreshed);
+	await runSearchSummaryWithOrchestrator({ from, conversationId });
 	return true;
 }
 
