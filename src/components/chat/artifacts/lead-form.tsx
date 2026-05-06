@@ -12,8 +12,8 @@ import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
 import type { LeadFormPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { LEAD_FIELDS, type LeadFields, leadSchema } from "@/lib/lead/schema";
 import { cn } from "@/lib/utils";
-import { type LeadFormData, leadSchema } from "@/lib/validations/lead";
 
 const motionEntry = {
 	initial: { opacity: 0, y: 12 },
@@ -31,7 +31,7 @@ const reducedMotionEntry = {
 
 export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 	const [submitted, setSubmitted] = useState(false);
-	const { conversationId, sendUserMessage } = useChatContext();
+	const { conversationId, refreshHandoff } = useChatContext();
 	const prefersReduced = useReducedMotion();
 	const anim = prefersReduced ? reducedMotionEntry : motionEntry;
 
@@ -40,11 +40,11 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		handleSubmit,
 		setError,
 		formState: { errors, isSubmitting },
-	} = useForm<LeadFormData>({
+	} = useForm<LeadFields>({
 		resolver: zodResolver(leadSchema),
 	});
 
-	const onSubmit = async (data: LeadFormData) => {
+	const onSubmit = async (data: LeadFields) => {
 		try {
 			const response = await fetch("/api/leads", {
 				method: "POST",
@@ -62,7 +62,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 
 			setSubmitted(true);
 
-			void sendUserMessage("Dados enviados com sucesso");
+			void refreshHandoff();
 		} catch (err) {
 			setError("root", {
 				message: err instanceof Error ? err.message : "Erro ao enviar dados. Tente novamente.",
@@ -89,63 +89,36 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 							<div className="flex items-center gap-2">
 								<Badge variant="secondary">Seus dados</Badge>
 							</div>
-							<p className="text-sm text-muted-foreground">Para prosseguir com o consorcio</p>
+							<p className="text-sm text-muted-foreground">Para prosseguir com o consórcio</p>
 						</CardHeader>
 						<CardContent>
 							<form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-								{/* Nome */}
-								<div className="space-y-1.5">
-									<label htmlFor="lead-name" className="text-sm font-medium leading-none">
-										Nome
-									</label>
-									<Input
-										id="lead-name"
-										type="text"
-										placeholder="Seu nome completo"
-										autoFocus
-										className={cn("w-full min-h-[44px]", errors.name && "border-destructive")}
-										{...register("name")}
-									/>
-									{errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-								</div>
+								{LEAD_FIELDS.map((field) => (
+									<div key={field.key} className="space-y-1.5">
+										<label
+											htmlFor={`lead-${field.key}`}
+											className="text-sm font-medium leading-none"
+										>
+											{field.label}
+										</label>
+										<Input
+											id={`lead-${field.key}`}
+											type={field.type}
+											inputMode={field.inputMode}
+											placeholder={field.placeholder}
+											autoFocus={field.autoFocus}
+											className={cn(
+												"w-full min-h-[44px]",
+												errors[field.key] && "border-destructive",
+											)}
+											{...register(field.key)}
+										/>
+										{errors[field.key] && (
+											<p className="text-xs text-destructive">{errors[field.key]?.message}</p>
+										)}
+									</div>
+								))}
 
-								{/* Telefone */}
-								<div className="space-y-1.5">
-									<label htmlFor="lead-phone" className="text-sm font-medium leading-none">
-										Telefone
-									</label>
-									<Input
-										id="lead-phone"
-										type="tel"
-										inputMode="numeric"
-										placeholder="11999998888"
-										className={cn("w-full min-h-[44px]", errors.phone && "border-destructive")}
-										{...register("phone")}
-									/>
-									{errors.phone && (
-										<p className="text-xs text-destructive">{errors.phone.message}</p>
-									)}
-								</div>
-
-								{/* Email */}
-								<div className="space-y-1.5">
-									<label htmlFor="lead-email" className="text-sm font-medium leading-none">
-										Email
-									</label>
-									<Input
-										id="lead-email"
-										type="email"
-										inputMode="email"
-										placeholder="seu@email.com"
-										className={cn("w-full min-h-[44px]", errors.email && "border-destructive")}
-										{...register("email")}
-									/>
-									{errors.email && (
-										<p className="text-xs text-destructive">{errors.email.message}</p>
-									)}
-								</div>
-
-								{/* Submit */}
 								<Button
 									type="submit"
 									size="lg"
@@ -155,7 +128,6 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 									{isSubmitting ? "Enviando..." : "Enviar dados"}
 								</Button>
 
-								{/* Root error */}
 								{errors.root && (
 									<p className="text-xs text-destructive text-center">{errors.root.message}</p>
 								)}

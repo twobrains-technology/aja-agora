@@ -5,6 +5,7 @@ import { ptBR } from "date-fns/locale/pt-BR";
 import { Globe, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConversationTimeline } from "@/components/admin/pipeline/conversation-timeline";
+import { InsightCards } from "@/components/admin/pipeline/insight-cards";
 import { Badge } from "@/components/ui/badge";
 import {
 	Sheet,
@@ -14,6 +15,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Detail = {
 	conversation: {
@@ -75,6 +77,18 @@ export function ConversationDetailPanel({
 }) {
 	const [data, setData] = useState<Detail | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [activeTab, setActiveTab] = useState("conversa");
+	const [insightsLoaded, setInsightsLoaded] = useState(false);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: conversationId change is the trigger to reset
+	useEffect(() => {
+		setActiveTab("conversa");
+		setInsightsLoaded(false);
+	}, [conversationId]);
+
+	useEffect(() => {
+		if (activeTab === "insights") setInsightsLoaded(true);
+	}, [activeTab]);
 
 	useEffect(() => {
 		if (!conversationId || !open) {
@@ -149,7 +163,7 @@ export function ConversationDetailPanel({
 					)}
 				</SheetHeader>
 
-				<div className="flex-1 min-h-0 overflow-hidden">
+				<div className="flex-1 min-h-0 overflow-hidden flex flex-col">
 					{error && (
 						<div className="m-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
 							{error}
@@ -163,15 +177,42 @@ export function ConversationDetailPanel({
 						</div>
 					)}
 					{data && (
-						<ConversationTimeline
-							initialMessages={data.messages.map((m) => ({
-								id: m.id,
-								role: m.role,
-								content: m.content,
-								createdAt: m.createdAt,
-								artifacts: m.artifacts,
-							}))}
-						/>
+						<Tabs
+							value={activeTab}
+							onValueChange={setActiveTab}
+							className="flex-1 flex flex-col min-h-0"
+						>
+							<TabsList className="mx-4 mt-2">
+								<TabsTrigger value="conversa">Conversa</TabsTrigger>
+								<TabsTrigger value="insights">Insights</TabsTrigger>
+							</TabsList>
+							<TabsContent value="conversa" className="flex-1 min-h-0">
+								<ConversationTimeline
+									initialMessages={data.messages.map((m) => ({
+										id: m.id,
+										role: m.role,
+										content: m.content,
+										createdAt: m.createdAt,
+										artifacts: m.artifacts,
+									}))}
+								/>
+							</TabsContent>
+							<TabsContent value="insights" className="p-4 overflow-y-auto">
+								{insightsLoaded ? (
+									<InsightCards
+										source="conversation"
+										id={data.conversation.id}
+										messageCount={data.messages.length}
+									/>
+								) : (
+									<div className="flex items-center justify-center py-8">
+										<p className="text-sm text-muted-foreground">
+											Selecione esta aba para gerar insights
+										</p>
+									</div>
+								)}
+							</TabsContent>
+						</Tabs>
 					)}
 				</div>
 			</SheetContent>

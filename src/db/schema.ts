@@ -318,17 +318,29 @@ export const personaVersions = pgTable(
 	(table) => [index("persona_versions_persona_id_idx").on(table.personaId)],
 );
 
-// Lead Insights (AI-generated insights cache)
-export const leadInsights = pgTable("lead_insights", {
-	id: uuid().defaultRandom().primaryKey(),
-	leadId: uuid("lead_id")
-		.notNull()
-		.references(() => leads.id, { onDelete: "cascade" }),
-	insightType: insightTypeEnum("insight_type").notNull(),
-	content: text().notNull(),
-	generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
-	model: varchar("model", { length: 100 }),
-});
+// Lead Insights (AI-generated insights cache, keyed by lead OR conversation)
+export const leadInsights = pgTable(
+	"lead_insights",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "cascade",
+		}),
+		insightType: insightTypeEnum("insight_type").notNull(),
+		content: text().notNull(),
+		generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+		model: varchar("model", { length: 100 }),
+	},
+	(table) => [
+		index("lead_insights_lead_id_idx").on(table.leadId),
+		index("lead_insights_conversation_id_idx").on(table.conversationId),
+		check(
+			"lead_insights_owner_check",
+			sql`(${table.leadId} IS NOT NULL) <> (${table.conversationId} IS NOT NULL)`,
+		),
+	],
+);
 
 // ─── Relations ───────────────────────────────────────────────────────────────
 
@@ -363,6 +375,7 @@ export const accountRelations = relations(account, ({ one }) => ({
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	messages: many(messages),
 	leads: many(leads),
+	insights: many(leadInsights),
 	handedOffUser: one(user, {
 		fields: [conversations.handedOffUserId],
 		references: [user.id],
@@ -404,6 +417,10 @@ export const leadInsightsRelations = relations(leadInsights, ({ one }) => ({
 	lead: one(leads, {
 		fields: [leadInsights.leadId],
 		references: [leads.id],
+	}),
+	conversation: one(conversations, {
+		fields: [leadInsights.conversationId],
+		references: [conversations.id],
 	}),
 }));
 

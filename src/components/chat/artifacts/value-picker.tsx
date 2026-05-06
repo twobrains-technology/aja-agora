@@ -7,23 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { useChatContext } from "@/lib/chat/provider";
+import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
 
-export interface ValuePickerPayload {
-	category: "imovel" | "auto" | "servicos";
-	fields: ValuePickerField[];
-}
-
-export interface ValuePickerField {
-	id: string;
-	label: string;
-	min: number;
-	max: number;
-	step: number;
-	default: number;
-	prefix?: string;
-	suffix?: string;
-	format?: "currency" | "months";
-}
+export type { ValuePickerField, ValuePickerPayload };
 
 function formatValue(value: number, format?: "currency" | "months"): string {
 	if (format === "currency") {

@@ -100,7 +100,7 @@ export function LeadDetailPanel({
 							</TabsContent>
 							<TabsContent value="insights" className="p-4">
 								{insightsLoaded ? (
-									<InsightCards leadId={lead.id} />
+									<InsightCards source="lead" id={lead.id} />
 								) : (
 									<div className="flex items-center justify-center py-8">
 										<p className="text-sm text-muted-foreground">

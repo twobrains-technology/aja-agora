@@ -36,6 +36,13 @@
       "when": 1777650000000,
       "tag": "0004_agents_crud",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778085714776,
+      "tag": "0005_conversation_insights",
+      "breakpoints": true
     }
   ]
 }

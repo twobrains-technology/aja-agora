@@ -13,13 +13,8 @@ import {
 	buildQualifyStartYesDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
-import {
-	type Category,
-	type ConversationMetadata,
-	type ExperiencePrev,
-	type Persona,
-	ROUTABLE_CATEGORIES,
-} from "@/lib/agent/personas";
+import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
+import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -31,37 +26,15 @@ import {
 	pipeTransitionTurn,
 	pipeUserTurn,
 } from "@/lib/web/adapter";
-import { sendTextMessage } from "@/lib/whatsapp/api";
+import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
 
 export const maxDuration = 60;
-
-type GateAction =
-	| { kind: "gate"; gate: "experience"; value: ExperiencePrev; label: string }
-	| { kind: "gate"; gate: "consent"; value: "yes" | "more"; label: string }
-	| {
-			kind: "gate";
-			gate: "credit";
-			value: { credit: number; monthlyBudget: number };
-			label: string;
-	  }
-	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
-	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
-	| { kind: "category"; category: Category }
-	| {
-			kind: "select-group";
-			groupId: string;
-			administradora: string;
-			creditValue: number;
-			termMonths: number;
-			label: string;
-	  }
-	| { kind: "interest"; administradora: string; label: string };
 
 type ChatRequestBody = {
 	id?: string;
 	conversationId?: string;
 	messages?: UIMessage[];
-	action?: GateAction;
+	action?: ChatAction;
 };
 
 function lastUserText(messages: UIMessage[] | undefined): string | null {
@@ -126,9 +99,7 @@ export async function POST(req: NextRequest) {
 		}
 		await saveMessage(conversationId, "user", userText, "web");
 		const userName = conv.contactName ?? "Cliente";
-		if (conv.handedOffUser?.phone) {
-			await sendTextMessage(conv.handedOffUser.phone, `*${userName}:*\n${userText}`);
-		}
+		await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
 			id: crypto.randomUUID(),
 			role: "user",
@@ -204,10 +175,7 @@ export async function POST(req: NextRequest) {
 					writer.write({
 						type: "data-artifact",
 						id: crypto.randomUUID(),
-						data: {
-							type: "lead_form",
-							payload: { conversationId } as Record<string, unknown>,
-						},
+						data: { type: "lead_form", payload: { conversationId } },
 					});
 					return;
 				}

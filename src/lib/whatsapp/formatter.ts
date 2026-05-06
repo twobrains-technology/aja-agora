@@ -406,64 +406,9 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
 }
 
-type CreditRange = { token: string; title: string; desc?: string; min: number; max: number };
+import { CREDIT_BUCKETS, TIMEFRAME_OPTIONS as TIMEFRAMES } from "@/lib/agent/qualify-config";
 
-const CREDIT_RANGES: Record<"imovel" | "auto" | "servicos", CreditRange[]> = {
-	imovel: [
-		{ token: "200", title: "Até R$ 200 mil", desc: "Aptos compactos", min: 0, max: 200000 },
-		{
-			token: "400",
-			title: "R$ 200 a 400 mil",
-			desc: "Aptos 2-3 quartos",
-			min: 200000,
-			max: 400000,
-		},
-		{
-			token: "600",
-			title: "R$ 400 a 600 mil",
-			desc: "Casas, aptos maiores",
-			min: 400000,
-			max: 600000,
-		},
-		{
-			token: "1000",
-			title: "Acima de R$ 600 mil",
-			desc: "Alto padrão, luxo",
-			min: 600000,
-			max: 2000000,
-		},
-	],
-	auto: [
-		{ token: "50", title: "Até R$ 50 mil", desc: "Seminovos, populares", min: 0, max: 50000 },
-		{ token: "100", title: "R$ 50 a 100 mil", desc: "Populares, sedãs", min: 50000, max: 100000 },
-		{ token: "200", title: "R$ 100 a 200 mil", desc: "SUVs, premium", min: 100000, max: 200000 },
-		{ token: "300", title: "Acima de R$ 200 mil", desc: "Top de linha", min: 200000, max: 300000 },
-	],
-	servicos: [
-		{ token: "30", title: "Até R$ 30 mil", desc: "Reformas simples, viagens", min: 0, max: 30000 },
-		{
-			token: "100",
-			title: "R$ 30 a 100 mil",
-			desc: "Reformas médias, formaturas",
-			min: 30000,
-			max: 100000,
-		},
-		{
-			token: "500",
-			title: "Acima de R$ 100 mil",
-			desc: "Grandes projetos",
-			min: 100000,
-			max: 500000,
-		},
-	],
-};
-
-const TIMEFRAMES: Array<{ token: string; title: string; desc: string; prazoMeses: number }> = [
-	{ token: "ja", title: "Já! (com lance)", desc: "Quero contemplação rápida", prazoMeses: 0 },
-	{ token: "24", title: "1 a 2 anos", desc: "Prazo curto", prazoMeses: 24 },
-	{ token: "60", title: "3 a 5 anos", desc: "Prazo médio", prazoMeses: 60 },
-	{ token: "120", title: "Sem pressa", desc: "Parcela mais leve", prazoMeses: 120 },
-];
+const CREDIT_RANGES = CREDIT_BUCKETS;
 
 export function creditRangeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "servicos",

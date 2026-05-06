@@ -1,10 +1,7 @@
 import type { UIMessage } from "ai";
-import type { ArtifactType } from "./types";
+import type { ArtifactByType } from "./types";
 
-export type ArtifactPartData = {
-	type: ArtifactType;
-	payload: Record<string, unknown>;
-};
+export type ArtifactPartData = ArtifactByType;
 
 export type GatePartOption = {
 	value: string;

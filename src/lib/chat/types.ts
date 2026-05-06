@@ -69,25 +69,36 @@ export interface QuickReplyPayload {
 	options: QuickReplyOption[];
 }
 
-// ---- Artifact union ----
+// ---- Value picker payload (legacy tool artifact) ----
 
-export type ArtifactType =
-	| "group_card"
-	| "comparison_table"
-	| "simulation_result"
-	| "recommendation_card"
-	| "lead_form"
-	| "quick_reply"
-	| "value_picker";
-
-export interface Artifact {
+export interface ValuePickerField {
 	id: string;
-	type: ArtifactType;
-	payload:
-		| GroupCardPayload
-		| ComparisonTablePayload
-		| SimulationResultPayload
-		| RecommendationCardPayload
-		| LeadFormPayload
-		| QuickReplyPayload;
+	label: string;
+	min: number;
+	max: number;
+	step: number;
+	default: number;
+	prefix?: string;
+	suffix?: string;
+	format?: "currency" | "months";
 }
+
+export interface ValuePickerPayload {
+	category: "imovel" | "auto" | "servicos";
+	fields: ValuePickerField[];
+}
+
+// ---- Artifact discriminated union ----
+
+export type ArtifactByType =
+	| { type: "group_card"; payload: GroupCardPayload }
+	| { type: "comparison_table"; payload: ComparisonTablePayload }
+	| { type: "simulation_result"; payload: SimulationResultPayload }
+	| { type: "recommendation_card"; payload: RecommendationCardPayload }
+	| { type: "lead_form"; payload: LeadFormPayload }
+	| { type: "quick_reply"; payload: QuickReplyPayload }
+	| { type: "value_picker"; payload: ValuePickerPayload };
+
+export type ArtifactType = ArtifactByType["type"];
+
+export type Artifact = ArtifactByType & { id: string };

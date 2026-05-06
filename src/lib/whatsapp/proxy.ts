@@ -503,6 +503,41 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 	return false;
 }
 
+/**
+ * Relay a message from a web user to the claimed attendant (or all, if unclaimed).
+ * Web users don't have a `waId`, so the conversation is identified directly.
+ */
+export async function relayWebUserToAgent(
+	conversationId: string,
+	text: string,
+	userName: string,
+): Promise<void> {
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+	});
+	if (!conv || conv.status !== "handed_off") return;
+
+	if (conv.handedOffUserId) {
+		const attendant = await getAttendantById(conv.handedOffUserId);
+		if (attendant) {
+			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`);
+			console.log(
+				`[whatsapp-proxy] WebUser→Attendant: ${conversationId} → ${attendant.phone} | "${text.slice(0, 50)}"`,
+			);
+			return;
+		}
+		console.warn(
+			`[whatsapp-proxy] Claimed attendant ${conv.handedOffUserId} not found in active list`,
+		);
+	}
+
+	const attendants = await getAttendantList();
+	for (const a of attendants) {
+		await sendToAttendant(a.phone, `*${userName}:*\n${text}`);
+	}
+	console.log(`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}"`);
+}
+
 /** Relay a message from user to the claimed attendant (or all, if unclaimed). */
 export async function relayUserToAgent(userWaId: string, text: string): Promise<boolean> {
 	const state = await getHandoffState(userWaId);

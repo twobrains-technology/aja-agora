@@ -1,4 +1,3 @@
-import type { ComponentType } from "react";
 import type { Artifact } from "@/lib/chat/types";
 import { ComparisonTable } from "./artifacts/comparison-table";
 import { GroupCard } from "./artifacts/group-card";
@@ -7,20 +6,21 @@ import { RecommendationCard } from "./artifacts/recommendation-card";
 import { SimulationResult } from "./artifacts/simulation-result";
 import { ValuePicker } from "./artifacts/value-picker";
 
-const ARTIFACT_COMPONENTS: Record<string, ComponentType<{ payload: unknown }>> = {
-	group_card: GroupCard as ComponentType<{ payload: unknown }>,
-	comparison_table: ComparisonTable as ComponentType<{ payload: unknown }>,
-	simulation_result: SimulationResult as ComponentType<{ payload: unknown }>,
-	recommendation_card: RecommendationCard as ComponentType<{ payload: unknown }>,
-	lead_form: LeadForm as ComponentType<{ payload: unknown }>,
-	value_picker: ValuePicker as ComponentType<{ payload: unknown }>,
-};
-
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
-	const Component = ARTIFACT_COMPONENTS[artifact.type];
-	if (!Component) {
-		console.warn(`Unknown artifact type: ${artifact.type}`);
-		return null;
+	switch (artifact.type) {
+		case "group_card":
+			return <GroupCard payload={artifact.payload} />;
+		case "comparison_table":
+			return <ComparisonTable payload={artifact.payload} />;
+		case "simulation_result":
+			return <SimulationResult payload={artifact.payload} />;
+		case "recommendation_card":
+			return <RecommendationCard payload={artifact.payload} />;
+		case "lead_form":
+			return <LeadForm payload={artifact.payload} />;
+		case "value_picker":
+			return <ValuePicker payload={artifact.payload} />;
+		case "quick_reply":
+			return null;
 	}
-	return <Component payload={artifact.payload} />;
 }

@@ -8,9 +8,16 @@ import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, Persona } from "@/lib/agent/personas";
+import {
+	type Bounds,
+	CREDIT_BOUNDS,
+	MONTHLY_BOUNDS,
+	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
+} from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
 import type {
 	AjaUIMessage,
+	ArtifactPartData,
 	GatePartData,
 	GatePartOption,
 	SliderField,
@@ -20,72 +27,20 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
-const CREDIT_SLIDER_BY_CATEGORY: Record<Category, SliderField> = {
-	imovel: {
-		id: "credit",
-		label: "Crédito",
-		min: 100_000,
-		max: 2_000_000,
-		step: 50_000,
-		default: 400_000,
-		format: "currency",
-	},
-	auto: {
-		id: "credit",
-		label: "Crédito",
-		min: 20_000,
-		max: 300_000,
-		step: 10_000,
-		default: 80_000,
-		format: "currency",
-	},
-	servicos: {
-		id: "credit",
-		label: "Crédito",
-		min: 10_000,
-		max: 500_000,
-		step: 10_000,
-		default: 60_000,
-		format: "currency",
-	},
+const creditSlider = (category: Category): SliderField => {
+	const b: Bounds = CREDIT_BOUNDS[category];
+	return { id: "credit", label: "Crédito", format: "currency", ...b };
 };
 
-const MONTHLY_SLIDER_BY_CATEGORY: Record<Category, SliderField> = {
-	imovel: {
-		id: "monthlyBudget",
-		label: "Parcela mensal",
-		min: 1_000,
-		max: 15_000,
-		step: 500,
-		default: 3_000,
-		format: "currency",
-	},
-	auto: {
-		id: "monthlyBudget",
-		label: "Parcela mensal",
-		min: 300,
-		max: 3_000,
-		step: 100,
-		default: 800,
-		format: "currency",
-	},
-	servicos: {
-		id: "monthlyBudget",
-		label: "Parcela mensal",
-		min: 200,
-		max: 2_000,
-		step: 100,
-		default: 500,
-		format: "currency",
-	},
+const monthlySlider = (category: Category): SliderField => {
+	const b: Bounds = MONTHLY_BOUNDS[category];
+	return { id: "monthlyBudget", label: "Parcela mensal", format: "currency", ...b };
 };
 
-const TIMEFRAME_OPTIONS: GatePartOption[] = [
-	{ value: "0", label: "Já! (com lance)" },
-	{ value: "24", label: "1 a 2 anos" },
-	{ value: "60", label: "3 a 5 anos" },
-	{ value: "120", label: "Sem pressa" },
-];
+const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
+	value: t.token,
+	label: t.title,
+}));
 
 async function gatePartData(gate: Gate, conversationId: string): Promise<GatePartData | null> {
 	const meta = await reloadMeta(conversationId);
@@ -116,7 +71,7 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 				kind: "slider",
 				gate: "credit",
 				category,
-				fields: [CREDIT_SLIDER_BY_CATEGORY[category], MONTHLY_SLIDER_BY_CATEGORY[category]],
+				fields: [creditSlider(category), monthlySlider(category)],
 			};
 		}
 		case "timeframe": {
@@ -210,7 +165,7 @@ export async function pipeOrchestratorToWriter(
 				writer.write({
 					type: "data-artifact",
 					id: ev.toolCallId,
-					data: { type: ev.artifactType, payload: ev.payload },
+					data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
 				});
 				break;
 

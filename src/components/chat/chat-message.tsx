@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import type { Artifact, ArtifactType } from "@/lib/chat/types";
+import type { Artifact } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
@@ -65,11 +65,7 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 			out.push({
 				kind: "artifact",
 				id: partId,
-				artifact: {
-					id: partId,
-					type: data.type as ArtifactType,
-					payload: data.payload as unknown as Artifact["payload"],
-				},
+				artifact: { id: partId, ...data } as Artifact,
 			});
 			continue;
 		}

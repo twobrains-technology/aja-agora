@@ -57,7 +57,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 	servicos: "Serviços",
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 10;
 
 function ConversationsTableSkeleton() {
 	return (
