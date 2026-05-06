@@ -24,38 +24,20 @@ import {
 	SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-type SidebarFlags = {
-	dashboard: boolean;
-	pipeline: boolean;
-	attendants: boolean;
-	personas: boolean;
-};
-
-const dashboardItem = { title: "Dashboard", href: "/admin", icon: ChartPieIcon };
-
-const pipelineItem = { title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon };
-const conversationsItem = {
-	title: "Conversas",
-	href: "/admin/conversations",
-	icon: MessageSquareTextIcon,
-};
-const attendantsItem = { title: "Atendentes", href: "/admin/attendants", icon: UsersIcon };
-const personasItem = { title: "Agentes", href: "/admin/personas", icon: BotIcon };
-
 const settingsItems = [
 	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },
 	{ title: "Configuracoes", href: "/admin/settings", icon: SettingsIcon },
 ];
 
-export function AppSidebar({ flags }: { flags: SidebarFlags }) {
+export function AppSidebar() {
 	const pathname = usePathname();
 
-	const menuItems = flags.dashboard ? [dashboardItem] : [];
+	const menuItems = [{ title: "Dashboard", href: "/admin", icon: ChartPieIcon }];
 	const applicationItems = [
-		...(flags.pipeline ? [pipelineItem] : []),
-		conversationsItem,
-		...(flags.attendants ? [attendantsItem] : []),
-		...(flags.personas ? [personasItem] : []),
+		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
+		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
+		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
+		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
 	];
 
 	function isActive(href: string) {
