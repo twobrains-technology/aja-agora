@@ -1,17 +1,31 @@
 "use client";
 
+import { ChatInput } from "@/components/chat/chat-input";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { MessageList } from "@/components/chat/message-list";
-import { ChatInput } from "@/components/chat/chat-input";
-import { useChat } from "@/lib/chat/use-chat";
+import { ChatProvider, useChatContext } from "@/lib/chat/provider";
 
 export default function ChatPage() {
-  const { messages, isStreaming, sendMessage, retry, reset, error } = useChat();
+	return (
+		<ChatProvider>
+			<ChatPageContent />
+		</ChatProvider>
+	);
+}
 
-  return (
-    <ChatLayout onReset={reset} error={error}>
-      <MessageList messages={messages} isStreaming={isStreaming} onRetry={retry} />
-      <ChatInput onSend={sendMessage} isStreaming={isStreaming} />
-    </ChatLayout>
-  );
+function ChatPageContent() {
+	const { messages, status, regenerate, reset, error } = useChatContext();
+	const isStreaming = status === "submitted" || status === "streaming";
+
+	return (
+		<ChatLayout onReset={reset} error={error?.message ?? null}>
+			<MessageList
+				messages={messages}
+				isStreaming={isStreaming}
+				hasError={!!error}
+				onRetry={regenerate}
+			/>
+			<ChatInput isStreaming={isStreaming} />
+		</ChatLayout>
+	);
 }

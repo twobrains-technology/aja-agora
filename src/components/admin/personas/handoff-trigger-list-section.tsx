@@ -41,14 +41,14 @@ export function HandoffTriggerListSection() {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>Triggers de handoff humano</CardTitle>
+				<CardTitle>Quando conectar com consultor</CardTitle>
 				<CardDescription>
 					Quando o cliente disparar uma dessas condições, a IA sugere conectar com consultor humano.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-2">
 				{fields.length === 0 && (
-					<p className="text-sm text-muted-foreground py-2">Nenhum trigger configurado.</p>
+					<p className="text-sm text-muted-foreground py-2">Nenhuma regra configurada.</p>
 				)}
 
 				<Accordion multiple value={openKeys} onValueChange={(v) => setOpenKeys(v as string[])}>
@@ -67,9 +67,9 @@ export function HandoffTriggerListSection() {
 								value={key}
 								className="rounded-md border bg-card mb-2 px-3"
 							>
-								<div className="flex items-center gap-2">
-									<AccordionTrigger className="flex-1 items-center py-3 hover:no-underline [&>[data-slot=accordion-trigger-icon]]:hidden">
-										<span className="flex-1 text-left text-sm truncate">
+								<div className="flex items-center gap-2 min-w-0">
+									<AccordionTrigger className="flex-1 min-w-0 items-center py-3 hover:no-underline [&>[data-slot=accordion-trigger-icon]]:hidden">
+										<span className="flex-1 min-w-0 text-left text-sm truncate">
 											{condition}
 											{!enabled && (
 												<span className="ml-2 text-xs text-muted-foreground">(desabilitado)</span>
@@ -124,7 +124,7 @@ export function HandoffTriggerListSection() {
 
 				<Button type="button" variant="outline" size="sm" onClick={addTrigger}>
 					<Plus className="size-3.5" />
-					Adicionar trigger
+					Adicionar regra
 				</Button>
 			</CardContent>
 		</Card>

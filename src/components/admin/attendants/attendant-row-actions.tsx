@@ -145,8 +145,8 @@ export function AttendantRowActions({ attendant, onEdit, onRefresh }: Props) {
 					<DialogHeader>
 						<DialogTitle>Desativar atendente</DialogTitle>
 						<DialogDescription>
-							<strong>{attendant.name}</strong> deixará de receber novas conversas em handoff. Você
-							pode reativar depois pelo menu de ações.
+							<strong>{attendant.name}</strong> deixará de receber novas conversas transferidas pela
+							IA. Você pode reativar depois pelo menu de ações.
 						</DialogDescription>
 					</DialogHeader>
 					<DialogFooter>

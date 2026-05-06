@@ -1,14 +1,14 @@
 "use client";
 
-import type { RecommendationCardPayload } from "@/lib/chat/types";
-import { useChatStore } from "@/lib/chat/store";
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ChevronDown } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { useChatContext } from "@/lib/chat/provider";
+import type { RecommendationCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -20,10 +20,7 @@ const formatBRL = (value: number): string =>
 
 const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
-const FACTOR_LABELS: Record<
-	keyof RecommendationCardPayload["scoreBreakdown"],
-	string
-> = {
+const FACTOR_LABELS: Record<keyof RecommendationCardPayload["scoreBreakdown"], string> = {
 	monthlyFit: "Orcamento",
 	contemplation: "Contemplacao",
 	adminFee: "Taxa adm",
@@ -35,9 +32,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 		<div className="space-y-1">
 			<div className="flex items-center justify-between">
 				<span className="text-xs text-muted-foreground">{label}</span>
-				<span className="text-xs font-mono text-muted-foreground">
-					{(value * 100).toFixed(0)}%
-				</span>
+				<span className="text-xs font-mono text-muted-foreground">{(value * 100).toFixed(0)}%</span>
 			</div>
 			<div className="bg-muted h-2 rounded-full overflow-hidden">
 				<div
@@ -49,37 +44,31 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 	);
 }
 
-export function RecommendationCard({
-	payload,
-}: {
-	payload: RecommendationCardPayload;
-}) {
+export function RecommendationCard({ payload }: { payload: RecommendationCardPayload }) {
 	const [expanded, setExpanded] = useState(false);
 	const prefersReduced = useReducedMotion();
 
-	const sendMessage = useChatStore((s) => s.sendMessage);
+	const { sendAction, status } = useChatContext();
+	const isStreaming = status === "submitted" || status === "streaming";
 
 	const handleCTA = () => {
-		sendMessage("Tenho interesse nessa recomendacao");
+		if (isStreaming) return;
+		const label = "Tenho interesse";
+		void sendAction({ kind: "interest", administradora: payload.administradora, label }, label);
 	};
 
 	return (
 		<Card className={cn("w-full", "border-primary/30 ring-1 ring-primary/20")}>
 			<CardHeader>
 				<div className="flex items-center justify-between gap-2">
-					<Badge
-						variant="outline"
-						className="bg-primary/10 text-primary border-primary/30"
-					>
+					<Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
 						Recomendacao
 					</Badge>
 					<span className="text-sm font-mono font-medium text-primary">
 						{(payload.score * 100).toFixed(0)}% compativel
 					</span>
 				</div>
-				<p className="truncate text-sm text-muted-foreground">
-					{payload.administradora}
-				</p>
+				<p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
 			</CardHeader>
 
 			<CardContent className="space-y-4">
@@ -88,9 +77,7 @@ export function RecommendationCard({
 					<p className="text-xs text-muted-foreground">Parcela mensal</p>
 					<p className="text-2xl font-bold font-mono leading-tight text-primary">
 						{formatBRL(payload.monthlyPayment)}
-						<span className="text-base font-normal text-muted-foreground">
-							/mes
-						</span>
+						<span className="text-base font-normal text-muted-foreground">/mes</span>
 					</p>
 				</div>
 
@@ -98,15 +85,11 @@ export function RecommendationCard({
 				<div className="grid grid-cols-2 gap-3">
 					<div>
 						<p className="text-xs text-muted-foreground">Credito</p>
-						<p className="text-sm font-medium font-mono">
-							{formatBRL(payload.creditValue)}
-						</p>
+						<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
 					</div>
 					<div>
 						<p className="text-xs text-muted-foreground">Prazo</p>
-						<p className="text-sm font-medium font-mono">
-							{payload.termMonths} meses
-						</p>
+						<p className="text-sm font-medium font-mono">{payload.termMonths} meses</p>
 					</div>
 					<div>
 						<p className="text-xs text-muted-foreground">Taxa adm</p>
@@ -133,48 +116,26 @@ export function RecommendationCard({
 					>
 						<span>Por que esta recomendacao?</span>
 						<ChevronDown
-							className={cn(
-								"h-4 w-4 transition-transform duration-200",
-								expanded && "rotate-180",
-							)}
+							className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
 						/>
 					</button>
 					<AnimatePresence>
 						{expanded && (
 							<motion.div
 								id={`score-breakdown-${payload.id}`}
-								initial={
-									prefersReduced
-										? { opacity: 0 }
-										: { height: 0, opacity: 0 }
-								}
-								animate={
-									prefersReduced
-										? { opacity: 1 }
-										: { height: "auto", opacity: 1 }
-								}
-								exit={
-									prefersReduced
-										? { opacity: 0 }
-										: { height: 0, opacity: 0 }
-								}
+								initial={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+								animate={prefersReduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+								exit={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
 								transition={{ duration: 0.2 }}
 								className="overflow-hidden"
 							>
 								<div className="space-y-3 pt-3">
 									{(
 										Object.entries(FACTOR_LABELS) as Array<
-											[
-												keyof RecommendationCardPayload["scoreBreakdown"],
-												string,
-											]
+											[keyof RecommendationCardPayload["scoreBreakdown"], string]
 										>
 									).map(([key, label]) => (
-										<ScoreBar
-											key={key}
-											label={label}
-											value={payload.scoreBreakdown[key]}
-										/>
+										<ScoreBar key={key} label={label} value={payload.scoreBreakdown[key]} />
 									))}
 								</div>
 							</motion.div>
@@ -189,6 +150,7 @@ export function RecommendationCard({
 					className="w-full min-h-[44px]"
 					size="lg"
 					onClick={handleCTA}
+					disabled={isStreaming}
 				>
 					Tenho interesse
 				</Button>

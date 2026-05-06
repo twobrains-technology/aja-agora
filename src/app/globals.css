@@ -171,3 +171,27 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Inline blinking cursor for streaming text bubbles. Targets the last block
+   element inside the prose container so the cursor sits inline at the end of
+   the last paragraph instead of dropping to a new line. */
+.streaming-text > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  background: currentColor;
+  opacity: 0.7;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: streaming-cursor-blink 0.9s ease-in-out infinite;
+}
+@keyframes streaming-cursor-blink {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}

@@ -111,6 +111,18 @@ export async function sendListMessage(
 	});
 }
 
+export async function sendInteractiveMessage(
+	to: string,
+	interactive: Record<string, unknown>,
+): Promise<void> {
+	const { accessToken, phoneNumberId } = getConfig();
+	await callApi(phoneNumberId, accessToken, {
+		to,
+		type: "interactive",
+		interactive,
+	});
+}
+
 export async function markAsRead(messageId: string) {
 	const { accessToken, phoneNumberId } = getConfig();
 	return callApi(phoneNumberId, accessToken, {

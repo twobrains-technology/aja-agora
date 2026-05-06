@@ -1,3 +1,5 @@
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+
 export function formatTextForWhatsApp(text: string): string {
 	return (
 		text
@@ -7,15 +9,21 @@ export function formatTextForWhatsApp(text: string): string {
 			.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
 			// Strip hallucinated reproductions of the profile summary template.
 			.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
-			// Add missing space in "frase.Outra" → "frase. Outra".
-			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// Markdown headings → WhatsApp bold.
 			.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
 			.replace(/\*\*(.+?)\*\*/g, "*$1*")
+			// Drop blockquote markers.
+			.replace(/^>\s+/gm, "")
+			// Add missing space in "frase.Outra" → "frase. Outra".
+			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// "frase:Outra" → "frase: Outra" (only when stuck without space).
+			.replace(/(:)([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// Code blocks (preserva).
 			.replace(/```[\s\S]*?```/g, (match) => {
 				const code = match.replace(/```\w*\n?/g, "").trim();
 				return `\`\`\`${code}\`\`\``;
 			})
-			.replace(/^>\s+/gm, "")
+			// Compactar 3+ quebras em 2 (paragrafo).
 			.replace(/\n{3,}/g, "\n\n")
 			.trim()
 	);
@@ -398,73 +406,17 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
 }
 
-type CreditRange = { token: string; title: string; desc?: string; min: number; max: number };
+import { CREDIT_BUCKETS, TIMEFRAME_OPTIONS as TIMEFRAMES } from "@/lib/agent/qualify-config";
 
-const CREDIT_RANGES: Record<"imovel" | "auto" | "servicos", CreditRange[]> = {
-	imovel: [
-		{ token: "200", title: "Até R$ 200 mil", desc: "Aptos compactos", min: 0, max: 200000 },
-		{
-			token: "400",
-			title: "R$ 200 a 400 mil",
-			desc: "Aptos 2-3 quartos",
-			min: 200000,
-			max: 400000,
-		},
-		{
-			token: "600",
-			title: "R$ 400 a 600 mil",
-			desc: "Casas, aptos maiores",
-			min: 400000,
-			max: 600000,
-		},
-		{
-			token: "1000",
-			title: "Acima de R$ 600 mil",
-			desc: "Alto padrão, luxo",
-			min: 600000,
-			max: 2000000,
-		},
-	],
-	auto: [
-		{ token: "50", title: "Até R$ 50 mil", desc: "Seminovos, populares", min: 0, max: 50000 },
-		{ token: "100", title: "R$ 50 a 100 mil", desc: "Populares, sedãs", min: 50000, max: 100000 },
-		{ token: "200", title: "R$ 100 a 200 mil", desc: "SUVs, premium", min: 100000, max: 200000 },
-		{ token: "300", title: "Acima de R$ 200 mil", desc: "Top de linha", min: 200000, max: 300000 },
-	],
-	servicos: [
-		{ token: "30", title: "Até R$ 30 mil", desc: "Reformas simples, viagens", min: 0, max: 30000 },
-		{
-			token: "100",
-			title: "R$ 30 a 100 mil",
-			desc: "Reformas médias, formaturas",
-			min: 30000,
-			max: 100000,
-		},
-		{
-			token: "500",
-			title: "Acima de R$ 100 mil",
-			desc: "Grandes projetos",
-			min: 100000,
-			max: 500000,
-		},
-	],
-};
-
-const TIMEFRAMES: Array<{ token: string; title: string; desc: string; prazoMeses: number }> = [
-	{ token: "ja", title: "Já! (com lance)", desc: "Quero contemplação rápida", prazoMeses: 0 },
-	{ token: "24", title: "1 a 2 anos", desc: "Prazo curto", prazoMeses: 24 },
-	{ token: "60", title: "3 a 5 anos", desc: "Prazo médio", prazoMeses: 60 },
-	{ token: "120", title: "Sem pressa", desc: "Parcela mais leve", prazoMeses: 120 },
-];
+const CREDIT_RANGES = CREDIT_BUCKETS;
 
 export function creditRangeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "servicos",
 	prefix?: string,
 ): WhatsAppResponse {
 	const ranges = CREDIT_RANGES[category];
-	const text = prefix
-		? `${prefix}\n\nQual faixa de crédito faz mais sentido pra você?`
-		: "Qual faixa de crédito faz mais sentido pra você?";
+	const question = gateQuestion("credit", category) ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -487,17 +439,11 @@ export function creditRangeQuestionToWhatsApp(
 	};
 }
 
-const TIMEFRAME_QUESTIONS: Record<"imovel" | "auto" | "servicos", string> = {
-	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
-	auto: "Em quanto tempo você quer estar com o carro novo?",
-	servicos: "Em quanto tempo você quer realizar isso?",
-};
-
 export function timeframeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "servicos",
 	prefix?: string,
 ): WhatsAppResponse {
-	const question = TIMEFRAME_QUESTIONS[category];
+	const question = gateQuestion("timeframe", category) ?? "";
 	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
@@ -551,9 +497,8 @@ export function resolveTimeframeReply(replyId: string): {
 }
 
 export function qualifyConsentToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nPosso te fazer 3 perguntinhas rápidas pra entender seu perfil?`
-		: "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
+	const question = gateQuestion("consent") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -596,9 +541,8 @@ const LANCE_OPTIONS = [
 type LanceValue = (typeof LANCE_OPTIONS)[number]["token"];
 
 export function lanceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nVocê teria uma reserva pra dar um lance e antecipar a contemplação?`
-		: "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+	const question = gateQuestion("lance") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {
@@ -662,9 +606,8 @@ export function profileSummaryText(answers: {
 }
 
 export function experienceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
-	const text = prefix
-		? `${prefix}\n\nAntes de qualquer coisa, você já fez consórcio antes?`
-		: "Antes de qualquer coisa: você já fez consórcio antes?";
+	const question = gateQuestion("experience") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
 	return {
 		type: "interactive",
 		interactive: {

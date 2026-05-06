@@ -1,9 +1,10 @@
-import { type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
 import { conversations, leads, messages as messagesTable } from "@/db/schema";
-import { leadSchema } from "@/lib/validations/lead";
+import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
+import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { handoffToAgents } from "@/lib/whatsapp/proxy";
 
@@ -19,9 +20,7 @@ export async function POST(req: NextRequest) {
 		return new Response("Too many requests. Please wait a moment.", {
 			status: 429,
 			headers: {
-				"Retry-After": String(
-					Math.ceil((rateLimitResult.retryAfterMs ?? 60000) / 1000),
-				),
+				"Retry-After": String(Math.ceil((rateLimitResult.retryAfterMs ?? 60000) / 1000)),
 			},
 		});
 	}
@@ -31,20 +30,14 @@ export async function POST(req: NextRequest) {
 	try {
 		body = await req.json();
 	} catch {
-		return Response.json(
-			{ ok: false, error: "Invalid JSON body" },
-			{ status: 400 },
-		);
+		return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
 	}
 
 	const { conversationId, ...formFields } = body as Record<string, unknown>;
 
 	// Validate conversationId
 	if (!conversationId || typeof conversationId !== "string") {
-		return Response.json(
-			{ ok: false, error: "conversationId is required" },
-			{ status: 400 },
-		);
+		return Response.json({ ok: false, error: "conversationId is required" }, { status: 400 });
 	}
 
 	// Validate form fields with shared Zod schema
@@ -62,10 +55,7 @@ export async function POST(req: NextRequest) {
 	});
 
 	if (!conv) {
-		return Response.json(
-			{ ok: false, error: "Conversation not found" },
-			{ status: 404 },
-		);
+		return Response.json({ ok: false, error: "Conversation not found" }, { status: 404 });
 	}
 
 	// ---- Insert lead (PII stored only here, never in messages/artifacts) ----
@@ -80,6 +70,10 @@ export async function POST(req: NextRequest) {
 			})
 			.returning();
 
+		// Apply max funnel stage reached during the AI conversation, so the lead
+		// lands in the right kanban column instead of the default "novo".
+		await applyTrackedStageToLead(conversationId as string, lead.id);
+
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
 		if (conv.channel === "web" && conv.status === "active") {
 			const recentMsgs = await db.query.messages.findMany({
@@ -92,20 +86,21 @@ export async function POST(req: NextRequest) {
 				.map((m) => `${m.role === "user" ? "👤" : "🤖"} ${m.content.slice(0, 200)}`)
 				.join("\n");
 
-			handoffToAgents(
-				conversationId as string,
-				"", // no waId for web users
-				parsed.data.name,
-				`📱 *Lead via Web*\n📧 ${parsed.data.email}\n📞 ${parsed.data.phone}\n\n${summary}`,
-			).catch((err) => console.error("[leads] Handoff error:", err));
+			try {
+				await handoffToAgents(
+					conversationId as string,
+					"", // no waId for web users
+					parsed.data.name,
+					`📱 *Lead via Web*\n📧 ${parsed.data.email}\n📞 ${parsed.data.phone}\n\n${summary}`,
+				);
+			} catch (err) {
+				console.error("[leads] Handoff error:", err);
+			}
 		}
 
 		return Response.json({ ok: true, leadId: lead.id });
 	} catch (err) {
 		console.error("Failed to insert lead:", err);
-		return Response.json(
-			{ ok: false, error: "Failed to save lead data" },
-			{ status: 500 },
-		);
+		return Response.json({ ok: false, error: "Failed to save lead data" }, { status: 500 });
 	}
 }

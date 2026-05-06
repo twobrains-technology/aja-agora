@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
+import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups } from "@/lib/agent/recommendation";
 import {
 	getGroupDetailsInput,
@@ -48,6 +49,7 @@ const comparisonTableSchema = z.object({
 
 const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
+	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFee: z.number().describe("Taxa de administracao total em reais"),
@@ -312,6 +314,8 @@ export const consorcioTools = {
 					email: args.email,
 				})
 				.returning();
+
+			await applyTrackedStageToLead(args.conversationId, lead.id);
 
 			return `Lead capturado com sucesso. Nome: ${args.name} (ID: ${lead.id})`;
 		},

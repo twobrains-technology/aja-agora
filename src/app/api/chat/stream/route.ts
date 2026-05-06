@@ -9,11 +9,12 @@
  *   data: { type: "handoff", status: "claimed", agentName: "..." }
  *   data: { type: "ping" }
  */
-import { type NextRequest } from "next/server";
+
 import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { subscribeMessages, type BusMessage } from "@/lib/chat/message-bus";
+import { type BusMessage, subscribeMessages } from "@/lib/chat/message-bus";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,11 @@ export async function GET(req: NextRequest) {
 			req.signal.addEventListener("abort", () => {
 				clearInterval(pingInterval);
 				unsubscribe();
-				try { controller.close(); } catch { /* already closed */ }
+				try {
+					controller.close();
+				} catch {
+					/* already closed */
+				}
 			});
 		},
 	});

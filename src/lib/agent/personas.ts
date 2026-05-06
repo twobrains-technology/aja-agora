@@ -12,6 +12,8 @@ export type ExperiencePrev = "first" | "returning" | "doubts";
 export type QualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
+	/** Parcela mensal que o usuário consegue pagar (em reais). */
+	monthlyBudget?: number;
 	/** 0 = imediato (lance forte). */
 	prazoMeses?: number;
 	hasLance?: "yes" | "maybe" | "no";
@@ -40,6 +42,17 @@ export type ConversationMetadata = {
 	handoffSuggested?: boolean;
 	handoffReason?: string;
 	qualifyAnswers?: QualifyAnswers;
+	/** Active when the agent has triggered `present_lead_form` and we're collecting
+	 * name → phone → email deterministically from the user's free-text replies.
+	 * Cleared after `capture_lead` lands and confirmation goes out. */
+	leadCollection?: {
+		stage: "name" | "phone" | "email";
+		name?: string;
+		phone?: string;
+	};
+	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
+	 * Applied to the lead at creation time so it lands in the correct kanban column. */
+	maxStageReached?: "engajado" | "qualificado";
 };
 
 export const ROUTABLE_CATEGORIES = [
