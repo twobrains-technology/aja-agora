@@ -1,3 +1,4 @@
+import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
@@ -116,8 +117,10 @@ async function consumeEvents(
 			case "artifact":
 				pendingArtifacts.push({ type: ev.artifactType, payload: ev.payload });
 				break;
-			case "tool-call":
 			case "lead-stage":
+				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
+				break;
+			case "tool-call":
 			case "meta-update":
 				break;
 			case "transition": {

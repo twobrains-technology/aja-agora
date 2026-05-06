@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
 import { conversations, leads, messages as messagesTable } from "@/db/schema";
+import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { handoffToAgents } from "@/lib/whatsapp/proxy";
@@ -68,6 +69,10 @@ export async function POST(req: NextRequest) {
 				email: parsed.data.email,
 			})
 			.returning();
+
+		// Apply max funnel stage reached during the AI conversation, so the lead
+		// lands in the right kanban column instead of the default "novo".
+		await applyTrackedStageToLead(conversationId as string, lead.id);
 
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
 		if (conv.channel === "web" && conv.status === "active") {

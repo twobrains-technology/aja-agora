@@ -1,22 +1,20 @@
 "use client";
 
-import { ArrowLeft, RefreshCw, UserCheck, X } from "lucide-react";
+import { ArrowLeft, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import LogoSvg from "@/assets/svg/logo";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import type { HandoffState } from "@/lib/chat/provider";
 
 interface ChatLayoutProps {
 	children: React.ReactNode;
 	onReset?: () => void;
 	error?: string | null;
-	handoff?: HandoffState;
 }
 
-export function ChatLayout({ children, onReset, error, handoff }: ChatLayoutProps) {
+export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 	const router = useRouter();
 	const [dismissedError, setDismissedError] = useState<string | null>(null);
 	const showError = error && error !== dismissedError;
@@ -93,23 +91,6 @@ export function ChatLayout({ children, onReset, error, handoff }: ChatLayoutProp
 					>
 						<X className="size-3.5" />
 					</Button>
-				</div>
-			)}
-
-			{/* Handoff banner — visible while talking to a human consultant */}
-			{handoff?.status === "handed_off" && (
-				<div className="flex items-center gap-2 border-b border-border bg-primary/5 px-4 py-2 text-xs text-foreground">
-					<UserCheck className="size-3.5 shrink-0 text-primary" />
-					<span>
-						{handoff.agentName ? (
-							<>
-								Falando com <span className="font-semibold">{handoff.agentName}</span>, seu
-								consultor humano
-							</>
-						) : (
-							"Aguardando um consultor humano se conectar..."
-						)}
-					</span>
 				</div>
 			)}
 

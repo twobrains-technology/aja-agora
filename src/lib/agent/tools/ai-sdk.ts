@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
+import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups } from "@/lib/agent/recommendation";
 import {
 	getGroupDetailsInput,
@@ -313,6 +314,8 @@ export const consorcioTools = {
 					email: args.email,
 				})
 				.returning();
+
+			await applyTrackedStageToLead(args.conversationId, lead.id);
 
 			return `Lead capturado com sucesso. Nome: ${args.name} (ID: ${lead.id})`;
 		},

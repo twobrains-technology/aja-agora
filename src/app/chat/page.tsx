@@ -14,11 +14,11 @@ export default function ChatPage() {
 }
 
 function ChatPageContent() {
-	const { messages, status, regenerate, reset, error, handoff } = useChatContext();
+	const { messages, status, regenerate, reset, error } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	return (
-		<ChatLayout onReset={reset} error={error?.message ?? null} handoff={handoff}>
+		<ChatLayout onReset={reset} error={error?.message ?? null}>
 			<MessageList
 				messages={messages}
 				isStreaming={isStreaming}

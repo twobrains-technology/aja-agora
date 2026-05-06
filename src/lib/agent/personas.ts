@@ -50,6 +50,9 @@ export type ConversationMetadata = {
 		name?: string;
 		phone?: string;
 	};
+	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
+	 * Applied to the lead at creation time so it lands in the correct kanban column. */
+	maxStageReached?: "engajado" | "qualificado";
 };
 
 export const ROUTABLE_CATEGORIES = [

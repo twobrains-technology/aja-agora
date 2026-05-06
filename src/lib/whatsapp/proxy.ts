@@ -13,6 +13,7 @@
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads, user as userTable } from "@/db/schema";
+import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { sendTextMessage } from "./api";
@@ -252,12 +253,16 @@ export async function handoffToAgents(
 		});
 		if (!existing) {
 			const phone = normalizeWaIdToPhone(userWaId);
-			await db.insert(leads).values({
-				conversationId,
-				name: userName,
-				phone,
-				email: null,
-			});
+			const [created] = await db
+				.insert(leads)
+				.values({
+					conversationId,
+					name: userName,
+					phone,
+					email: null,
+				})
+				.returning();
+			await applyTrackedStageToLead(conversationId, created.id);
 			console.log(
 				`[whatsapp-proxy] Lead created for handoff: conversation=${conversationId} name=${userName} phone=${phone ?? "(none)"}`,
 			);

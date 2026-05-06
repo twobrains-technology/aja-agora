@@ -1,8 +1,5 @@
 import type { UIMessageStreamWriter } from "ai";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { leads } from "@/db/schema";
-import { transitionLeadStage } from "@/lib/admin/lead-transitions";
+import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -96,22 +93,6 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 		case "doubts-wait":
 		case "search":
 			return null;
-	}
-}
-
-async function applyLeadStage(
-	conversationId: string,
-	stage: "engajado" | "qualificado",
-): Promise<void> {
-	try {
-		const lead = await db.query.leads.findFirst({
-			where: eq(leads.conversationId, conversationId),
-		});
-		if (lead) {
-			await transitionLeadStage(lead.id, stage, { type: "system" }, { onlyAdvance: true });
-		}
-	} catch (err) {
-		console.error("[web-adapter] auto-transition failed:", err);
 	}
 }
 
@@ -225,7 +206,7 @@ export async function pipeOrchestratorToWriter(
 				break;
 
 			case "lead-stage":
-				await applyLeadStage(conversationId, ev.stage as "engajado" | "qualificado");
+				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
 				break;
 
 			case "tool-call":
