@@ -10,12 +10,13 @@ import {
 	pgEnum,
 	pgTable,
 	real,
-	serial,
 	text,
 	timestamp,
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
+import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
+import type { UserIntent } from "@/lib/agent/qualify-state";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -253,11 +254,27 @@ export type PersonaForbiddenTopic = {
 // Few-shot example shown to the model to ground the persona's voice.
 // Anthropic recommends 3-5 examples wrapped in <example> tags — they
 // outperform free-text descriptions for tone steering.
+//
+// As condições `when*` filtram dinamicamente quais exemplos vão pro prompt
+// em cada turno (selectExamplesForTurn). Ausente/vazio = sempre aplica.
+// `enabled !== false` é tratado como ativo (default true por omissão pra
+// compat com exemplos legados); `origin` ausente = "manual".
 export type PersonaExample = {
 	id: string;
 	context?: string | null;
 	userMessage: string;
 	assistantResponse: string;
+
+	whenExpertise?: ExpertiseLevel[];
+	whenCategory?: Category[];
+	whenChannel?: "web" | "whatsapp";
+	whenIntent?: UserIntent[];
+
+	tags?: string[];
+
+	enabled?: boolean;
+	origin?: "manual" | "diagnosis";
+	sourceConversationId?: string | null;
 };
 
 // `version` increments on every admin update — used by the agent cache to
@@ -310,21 +327,6 @@ export const personas = pgTable(
 			sql`${table.temperature} >= 0 AND ${table.temperature} <= 1`,
 		),
 	],
-);
-
-export const personaVersions = pgTable(
-	"persona_versions",
-	{
-		id: serial("id").primaryKey(),
-		personaId: text("persona_id")
-			.notNull()
-			.references(() => personas.id, { onDelete: "cascade" }),
-		version: integer("version").notNull(),
-		snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
-		changedBy: text("changed_by").references((): AnyPgColumn => user.id),
-		changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
-	},
-	(table) => [index("persona_versions_persona_id_idx").on(table.personaId)],
 );
 
 // Lead Insights (AI-generated insights cache, keyed by lead OR conversation)
@@ -485,21 +487,6 @@ export const leadInsightsRelations = relations(leadInsights, ({ one }) => ({
 	conversation: one(conversations, {
 		fields: [leadInsights.conversationId],
 		references: [conversations.id],
-	}),
-}));
-
-export const personasRelations = relations(personas, ({ many }) => ({
-	versions: many(personaVersions),
-}));
-
-export const personaVersionsRelations = relations(personaVersions, ({ one }) => ({
-	persona: one(personas, {
-		fields: [personaVersions.personaId],
-		references: [personas.id],
-	}),
-	changedByUser: one(user, {
-		fields: [personaVersions.changedBy],
-		references: [user.id],
 	}),
 }));
 

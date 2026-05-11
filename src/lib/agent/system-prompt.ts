@@ -351,17 +351,35 @@ const SHARED_CONCIERGE_EXAMPLES: ExamplePair[] = [
 	},
 ];
 
-function renderExamples(personaExamples: PersonaRow["examples"], shared: ExamplePair[]): string {
-	const all: ExamplePair[] = [...shared, ...(personaExamples ?? [])];
-	if (all.length === 0) {
-		return "(Sem exemplos. Use o bloco <voice> como guia.)";
-	}
-	return all
+// Renderer compartilhado pros 2 tipos de exemplo (shared estático e persona dinâmico).
+function renderExamplePairs(pairs: ReadonlyArray<ExamplePair>): string {
+	return pairs
 		.map((ex) => {
 			const ctx = ex.context ? `<context>${ex.context}</context>\n` : "";
 			return `<example>\n${ctx}<user_message>${ex.userMessage}</user_message>\n<response>${ex.assistantResponse}</response>\n</example>`;
 		})
 		.join("\n");
+}
+
+// Usado SÓ no prompt estático (cached). Persona examples vão num system
+// message separado, montado por turno (ver buildPersonaExamplesMessage).
+function renderSharedExamples(shared: ExamplePair[]): string {
+	if (shared.length === 0) return "(Sem exemplos compartilhados.)";
+	return renderExamplePairs(shared);
+}
+
+// Renderiza os exemplos da persona já filtrados, pronto pra ir num system
+// message dinâmico per turno. Retorna null se não há exemplos ativos —
+// caller usa pra omitir o bloco inteiro.
+export function renderPersonaExamplesBlock(
+	personaExamples: ReadonlyArray<PersonaRow["examples"][number]>,
+): string | null {
+	if (personaExamples.length === 0) return null;
+	return `<persona_examples>
+Exemplos selecionados pro contexto deste turno. Use como âncora de voz e fluxo, NÃO copie literalmente.
+
+${renderExamplePairs(personaExamples)}
+</persona_examples>`;
 }
 
 function buildSpecialistDynamic(expertise: ExpertiseLevel): string {
@@ -456,7 +474,7 @@ A voz aparece nas escolhas de palavras e no ritmo das frases, NUNCA em catchphra
 <examples>
 Exemplos do seu jeito de conversar e do fluxo correto. Use-os como ancora, nao copie literalmente:
 
-${renderExamples(row.examples, SHARED_SPECIALIST_EXAMPLES)}
+${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 </examples>`;
 
 	return { stable, dynamic: buildSpecialistDynamic(expertise) };
@@ -476,7 +494,7 @@ ${row.voiceTone}
 </voice>
 
 <examples>
-${renderExamples(row.examples, SHARED_CONCIERGE_EXAMPLES)}
+${renderSharedExamples(SHARED_CONCIERGE_EXAMPLES)}
 </examples>`;
 
 	return { stable, dynamic: "" };

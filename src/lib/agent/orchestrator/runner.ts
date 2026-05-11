@@ -1,6 +1,9 @@
 import { resolveAgent } from "@/lib/agent/agents";
+import { selectExamplesForTurn } from "@/lib/agent/example-selector";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
+import { getPersona } from "@/lib/agent/personas-repo";
 import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -53,7 +56,23 @@ export async function* runAgentTurn(args: {
 
 	const isConcierge = !meta.currentCategory;
 	const agent = await resolveAgent(currentPersona, meta);
-	const result = await agent.stream({ messages });
+
+	// Examples filtrados por contexto do turno. Vão num system message separado
+	// pra preservar o cache da Anthropic no system prompt estático (ver
+	// example-selector.ts pra ranking e renderPersonaExamplesBlock pra formato).
+	const row = await getPersona(currentPersona);
+	const selected = selectExamplesForTurn(row.examples, {
+		expertise: meta.expertiseLevel,
+		category: meta.currentCategory,
+		channel,
+		intent: userIntent,
+	});
+	const examplesBlock = renderPersonaExamplesBlock(selected);
+	const messagesWithExamples = examplesBlock
+		? [{ role: "system" as const, content: examplesBlock }, ...messages]
+		: messages;
+
+	const result = await agent.stream({ messages: messagesWithExamples });
 
 	for await (const part of result.fullStream) {
 		switch (part.type) {

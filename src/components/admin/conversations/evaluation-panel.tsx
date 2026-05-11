@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { EvalDimensionPayload, EvalDimensionsPayload, EvalFlagsPayload } from "@/db/schema";
 import { MIN_USER_TURNS } from "@/lib/eval/eligibility";
 import { cn } from "@/lib/utils";
+import { DiagnosisPanel } from "./diagnosis-panel";
 
 type EvalRow = {
 	id: string;
@@ -237,6 +238,10 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 				.map(([k]) => k)
 		: [];
 
+	// Diagnóstico só faz sentido quando há sinal de problema. Eval ok não
+	// precisa de correção e gastar tokens à toa.
+	const hasIssue = (overall !== null && overall < 0.7) || activeFlags.length > 0;
+
 	return (
 		<div className="grid grid-cols-1 gap-3 p-4">
 			{overall !== null && <OverallCard score={overall} />}
@@ -264,6 +269,8 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 					items={data.topIssues}
 				/>
 			)}
+
+			<DiagnosisPanel conversationId={conversationId} canDiagnose={hasIssue} />
 
 			<div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
 				<span>

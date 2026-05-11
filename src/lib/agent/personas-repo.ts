@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { type PersonaExample, personas, personaVersions } from "@/db/schema";
+import { type PersonaExample, personas } from "@/db/schema";
 import type { Category } from "./personas";
 import type { PersonaRow } from "./system-prompt";
 
@@ -143,21 +143,18 @@ export async function listExpertisesByCategory(): Promise<Record<Category, strin
 	return out;
 }
 
-export async function createPersona(
-	input: {
-		id: string;
-		displayName: string;
-		role: "concierge" | "specialist";
-		category: Category | null;
-		expertise?: string | null;
-		voiceTone: string;
-		temperature?: number;
-		examples?: PersonaExample[];
-		activeTools?: string[];
-		isActive?: boolean;
-	},
-	changedBy: string | null = null,
-): Promise<PersonaRow> {
+export async function createPersona(input: {
+	id: string;
+	displayName: string;
+	role: "concierge" | "specialist";
+	category: Category | null;
+	expertise?: string | null;
+	voiceTone: string;
+	temperature?: number;
+	examples?: PersonaExample[];
+	activeTools?: string[];
+	isActive?: boolean;
+}): Promise<PersonaRow> {
 	const [created] = await db
 		.insert(personas)
 		.values({
@@ -174,13 +171,6 @@ export async function createPersona(
 		})
 		.returning();
 
-	await db.insert(personaVersions).values({
-		personaId: created.id,
-		version: created.version,
-		snapshot: created as Record<string, unknown>,
-		changedBy,
-	});
-
 	invalidateAll();
 	return created;
 }
@@ -188,26 +178,19 @@ export async function createPersona(
 export async function updatePersona(
 	id: string,
 	patch: Partial<Omit<PersonaRow, "id" | "version" | "createdAt" | "updatedAt">>,
-	changedBy: string | null = null,
 ): Promise<PersonaRow> {
 	const previous = await db.query.personas.findFirst({
 		where: eq(personas.id, id),
 	});
 	if (!previous) throw new Error(`persona "${id}" not found`);
 
+	// Bump version pra invalidar o cache de agentes (cacheKey usa version).
 	const nextVersion = previous.version + 1;
 	const [updated] = await db
 		.update(personas)
 		.set({ ...patch, version: nextVersion })
 		.where(eq(personas.id, id))
 		.returning();
-
-	await db.insert(personaVersions).values({
-		personaId: id,
-		version: previous.version,
-		snapshot: previous as Record<string, unknown>,
-		changedBy,
-	});
 
 	cache.delete(id);
 	resolveCache.clear();

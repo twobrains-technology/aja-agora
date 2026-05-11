@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-	const { session, error } = await requireRole("admin");
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const body = await req.json().catch(() => null);
@@ -42,19 +42,16 @@ export async function POST(req: Request) {
 	try {
 		const baseSlug = slugifyDisplayName(parsed.data.displayName);
 		const id = await pickAvailableId(baseSlug);
-		const created = await createPersona(
-			{
-				id,
-				displayName: parsed.data.displayName,
-				role: "specialist",
-				category: parsed.data.category,
-				expertise: parsed.data.expertise,
-				voiceTone: parsed.data.voiceTone,
-				activeTools: parsed.data.activeTools,
-				isActive: parsed.data.isActive,
-			},
-			session.user.id,
-		);
+		const created = await createPersona({
+			id,
+			displayName: parsed.data.displayName,
+			role: "specialist",
+			category: parsed.data.category,
+			expertise: parsed.data.expertise,
+			voiceTone: parsed.data.voiceTone,
+			activeTools: parsed.data.activeTools,
+			isActive: parsed.data.isActive,
+		});
 		invalidateAgentCache();
 		return Response.json({ persona: created }, { status: 201 });
 	} catch (err) {
