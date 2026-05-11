@@ -25,6 +25,7 @@ export async function saveMessage(
 	role: "user" | "assistant",
 	content: string,
 	channel: Channel,
+	personaId?: string | null,
 ): Promise<string> {
 	const [msg] = await db
 		.insert(messagesTable)
@@ -33,6 +34,7 @@ export async function saveMessage(
 			role,
 			content,
 			channel,
+			personaId: personaId ?? null,
 		})
 		.returning({ id: messagesTable.id });
 

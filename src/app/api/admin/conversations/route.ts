@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { conversations, messages, user as userTable } from "@/db/schema";
+import { conversationEvaluations, conversations, messages, user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 
 const CHANNELS = ["web", "whatsapp"] as const;
@@ -76,6 +76,22 @@ export async function GET(req: NextRequest) {
 		.groupBy(messages.conversationId)
 		.as("mc");
 
+	// Latest eval por conversa, via DISTINCT ON (mais simples que window function no Drizzle).
+	const latestEvalSubquery = db
+		.select({
+			conversationId: conversationEvaluations.conversationId,
+			overallScore: sql<string | null>`${conversationEvaluations.overallScore}`.as(
+				"latest_overall_score",
+			),
+			evaluatedAt: conversationEvaluations.evaluatedAt,
+			rowNum:
+				sql<number>`row_number() OVER (PARTITION BY ${conversationEvaluations.conversationId} ORDER BY ${conversationEvaluations.evaluatedAt} DESC)`.as(
+					"row_num",
+				),
+		})
+		.from(conversationEvaluations)
+		.as("le");
+
 	const rowsPromise = db
 		.select({
 			id: conversations.id,
@@ -87,12 +103,20 @@ export async function GET(req: NextRequest) {
 			handedOffUserId: conversations.handedOffUserId,
 			handedOffUserName: userTable.name,
 			messageCount: sql<number>`COALESCE(${messageCountSubquery.count}, 0)`.as("msg_count"),
+			latestEvalScore: latestEvalSubquery.overallScore,
 			createdAt: conversations.createdAt,
 			updatedAt: conversations.updatedAt,
 		})
 		.from(conversations)
 		.leftJoin(userTable, eq(conversations.handedOffUserId, userTable.id))
 		.leftJoin(messageCountSubquery, eq(messageCountSubquery.conversationId, conversations.id))
+		.leftJoin(
+			latestEvalSubquery,
+			and(
+				eq(latestEvalSubquery.conversationId, conversations.id),
+				eq(latestEvalSubquery.rowNum, 1),
+			),
+		)
 		.where(whereClause)
 		.orderBy(desc(conversations.updatedAt))
 		.limit(limit)
@@ -118,6 +142,7 @@ export async function GET(req: NextRequest) {
 				? { id: r.handedOffUserId, name: r.handedOffUserName }
 				: null,
 			messageCount: Number(r.messageCount ?? 0),
+			latestEvalScore: r.latestEvalScore !== null ? Number(r.latestEvalScore) : null,
 			createdAt: r.createdAt,
 			updatedAt: r.updatedAt,
 		};

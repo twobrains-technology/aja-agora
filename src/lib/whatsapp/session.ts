@@ -27,6 +27,7 @@ export async function saveMessage(
 	conversationId: string,
 	role: "user" | "assistant",
 	content: string,
+	personaId?: string | null,
 ): Promise<string> {
-	return saveMessageWithChannel(conversationId, role, content, "whatsapp");
+	return saveMessageWithChannel(conversationId, role, content, "whatsapp", personaId);
 }

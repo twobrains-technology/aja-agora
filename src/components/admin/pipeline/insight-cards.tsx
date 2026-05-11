@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, DollarSign, Target } from "lucide-react";
+import { AlertTriangle, ArrowRight, DollarSign, Hourglass, Target } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { EmptyStateCard } from "@/components/admin/empty-state-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -69,9 +69,13 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 
 	if (belowThreshold && !insights) {
 		return (
-			<div className="flex items-center justify-center py-8 text-center">
-				<p className="text-sm text-muted-foreground">Aguardando mais contexto da conversa.</p>
-			</div>
+			<EmptyStateCard
+				icon={Hourglass}
+				iconBg="bg-blue-100 dark:bg-blue-900/30"
+				iconColor="text-blue-600 dark:text-blue-400"
+				title="Aguardando mais contexto"
+				description={`Os insights ficam disponíveis quando a conversa tiver pelo menos ${MIN_MESSAGES} mensagens.`}
+			/>
 		);
 	}
 
@@ -88,12 +92,17 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 
 	if (error) {
 		return (
-			<div className="flex flex-col items-center justify-center gap-3 py-8">
-				<p className="text-sm text-destructive">{error}</p>
-				<Button variant="outline" size="sm" onClick={fetchInsights}>
-					Tentar novamente
-				</Button>
-			</div>
+			<EmptyStateCard
+				icon={AlertTriangle}
+				iconBg="bg-red-100 dark:bg-red-900/30"
+				iconColor="text-red-600 dark:text-red-400"
+				title="Não foi possível carregar"
+				description="Tente novamente em instantes."
+				action={{
+					label: "Tentar novamente",
+					onClick: fetchInsights,
+				}}
+			/>
 		);
 	}
 

@@ -158,7 +158,7 @@ export async function* runAgentTurn(args: {
 	}
 
 	if (fullResponse) {
-		await saveMessage(conversationId, "assistant", fullResponse, channel);
+		await saveMessage(conversationId, "assistant", fullResponse, channel, currentPersona);
 	}
 
 	if (detectLeadFormArtifact(artifacts) && !meta.leadCollection) {

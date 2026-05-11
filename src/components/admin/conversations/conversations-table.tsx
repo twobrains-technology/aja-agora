@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { ConversationDetailPanel } from "./conversation-detail-panel";
 import { ConversationsFilters, type ConversationsFiltersValue } from "./conversations-filters";
+import { EvaluationBadge } from "./evaluation-badge";
 
 type ConversationItem = {
 	id: string;
@@ -28,6 +29,7 @@ type ConversationItem = {
 	currentCategory: string | null;
 	handedOffUser: { id: string; name: string | null } | null;
 	messageCount: number;
+	latestEvalScore: number | null;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -71,6 +73,7 @@ function ConversationsTableSkeleton() {
 						<TableHead>Categoria</TableHead>
 						<TableHead>Atendente</TableHead>
 						<TableHead className="text-right">Mensagens</TableHead>
+						<TableHead>Qualidade</TableHead>
 						<TableHead>Atualizada</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -78,7 +81,7 @@ function ConversationsTableSkeleton() {
 					{Array.from({ length: 6 }).map((_, idx) => (
 						// biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows
 						<TableRow key={idx}>
-							{Array.from({ length: 7 }).map((__, j) => (
+							{Array.from({ length: 8 }).map((__, j) => (
 								// biome-ignore lint/suspicious/noArrayIndexKey: skeleton cells
 								<TableCell key={j}>
 									<Skeleton className="h-4 w-24" />
@@ -185,13 +188,14 @@ export function ConversationsTable() {
 								<TableHead>Categoria</TableHead>
 								<TableHead>Atendente</TableHead>
 								<TableHead className="text-right">Mensagens</TableHead>
+								<TableHead>Qualidade</TableHead>
 								<TableHead>Atualizada</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{items.length === 0 && !loadError && (
 								<TableRow>
-									<TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+									<TableCell colSpan={8} className="text-center text-muted-foreground py-8">
 										Nenhuma conversa encontrada com os filtros atuais.
 									</TableCell>
 								</TableRow>
@@ -224,6 +228,9 @@ export function ConversationsTable() {
 										<TableCell className="text-sm">{c.handedOffUser?.name ?? "—"}</TableCell>
 										<TableCell className="text-right text-sm tabular-nums">
 											{c.messageCount}
+										</TableCell>
+										<TableCell>
+											<EvaluationBadge score={c.latestEvalScore} />
 										</TableCell>
 										<TableCell className="text-sm text-muted-foreground">
 											<span
