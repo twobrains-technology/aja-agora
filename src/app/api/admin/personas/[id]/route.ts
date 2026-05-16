@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error, session } = await requireRole("admin");
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const { id } = await params;
@@ -38,7 +38,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 	}
 
 	try {
-		const updated = await updatePersona(id, parsed.data, session.user.id);
+		const updated = await updatePersona(id, parsed.data);
 		invalidateAgentCache();
 		return Response.json({ id: updated.id, version: updated.version });
 	} catch {

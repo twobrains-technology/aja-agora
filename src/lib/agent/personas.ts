@@ -42,6 +42,9 @@ export type ConversationMetadata = {
 	handoffSuggested?: boolean;
 	handoffReason?: string;
 	qualifyAnswers?: QualifyAnswers;
+	/** Snapshot de qualifyAnswers por categoria visitada. Preservado em transição
+	 * pra eval medir discovery agregado quando a conversa passa por múltiplas categorias. */
+	qualifyAnswersByCategory?: Partial<Record<Category, QualifyAnswers>>;
 	/** Active when the agent has triggered `present_lead_form` and we're collecting
 	 * name → phone → email deterministically from the user's free-text replies.
 	 * Cleared after `capture_lead` lands and confirmation goes out. */

@@ -59,6 +59,13 @@ export async function planTransition(args: {
 	const isReturning = seenSet.has(toCategory);
 	seenSet.add(toCategory);
 
+	// Antes de resetar qualifyAnswers, snapshota no histórico por categoria pra
+	// eval poder medir discovery agregado em conversa multi-persona.
+	const snapshot = { ...(meta.qualifyAnswersByCategory ?? {}) };
+	if (!fromConcierge && meta.currentCategory && meta.qualifyAnswers) {
+		snapshot[meta.currentCategory] = meta.qualifyAnswers;
+	}
+
 	const updated: ConversationMetadata = {
 		...meta,
 		previousPersona: fromPersona,
@@ -66,6 +73,7 @@ export async function planTransition(args: {
 		currentCategory: toCategory,
 		personasSeen: Array.from(seenSet),
 		qualifyAnswers: fromConcierge ? meta.qualifyAnswers : undefined,
+		qualifyAnswersByCategory: snapshot,
 	};
 	await persistMeta(conversationId, updated);
 

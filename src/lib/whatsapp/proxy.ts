@@ -16,6 +16,7 @@ import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
+import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
@@ -310,6 +311,10 @@ export async function handoffToAgents(
 	console.log(
 		`[whatsapp-proxy] Handoff: conversation ${conversationId} | user ${userWaId} → ${attendants.length} attendants notified`,
 	);
+
+	// Fire-and-forget: dispara eval no momento do handoff (atendente sendo chamado).
+	// É o único trigger automático — closeHandoff e capture_lead não disparam mais.
+	void triggerEvalScoring(conversationId, "handoff");
 }
 
 /** Check if a conversation is in handed_off state. */

@@ -10,12 +10,13 @@ import {
 	pgEnum,
 	pgTable,
 	real,
-	serial,
 	text,
 	timestamp,
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
+import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
+import type { UserIntent } from "@/lib/agent/qualify-state";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -161,16 +162,25 @@ export const conversations = pgTable(
 );
 
 // Messages
-export const messages = pgTable("messages", {
-	id: uuid().defaultRandom().primaryKey(),
-	conversationId: uuid("conversation_id")
-		.notNull()
-		.references(() => conversations.id, { onDelete: "cascade" }),
-	role: messageRoleEnum().notNull(),
-	content: text().notNull(),
-	channel: channelEnum().default("web").notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const messages = pgTable(
+	"messages",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		role: messageRoleEnum().notNull(),
+		content: text().notNull(),
+		channel: channelEnum().default("web").notNull(),
+		// Persona slug que produziu este turno; NULL para user/system e mensagens
+		// históricas. Usado pelo eval pra segmentar transcript multi-persona.
+		personaId: text("persona_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("messages_conversation_persona_idx").on(table.conversationId, table.personaId),
+	],
+);
 
 // Artifacts
 export const artifacts = pgTable("artifacts", {
@@ -244,11 +254,27 @@ export type PersonaForbiddenTopic = {
 // Few-shot example shown to the model to ground the persona's voice.
 // Anthropic recommends 3-5 examples wrapped in <example> tags — they
 // outperform free-text descriptions for tone steering.
+//
+// As condições `when*` filtram dinamicamente quais exemplos vão pro prompt
+// em cada turno (selectExamplesForTurn). Ausente/vazio = sempre aplica.
+// `enabled !== false` é tratado como ativo (default true por omissão pra
+// compat com exemplos legados); `origin` ausente = "manual".
 export type PersonaExample = {
 	id: string;
 	context?: string | null;
 	userMessage: string;
 	assistantResponse: string;
+
+	whenExpertise?: ExpertiseLevel[];
+	whenCategory?: Category[];
+	whenChannel?: "web" | "whatsapp";
+	whenIntent?: UserIntent[];
+
+	tags?: string[];
+
+	enabled?: boolean;
+	origin?: "manual" | "diagnosis";
+	sourceConversationId?: string | null;
 };
 
 // `version` increments on every admin update — used by the agent cache to
@@ -303,21 +329,6 @@ export const personas = pgTable(
 	],
 );
 
-export const personaVersions = pgTable(
-	"persona_versions",
-	{
-		id: serial("id").primaryKey(),
-		personaId: text("persona_id")
-			.notNull()
-			.references(() => personas.id, { onDelete: "cascade" }),
-		version: integer("version").notNull(),
-		snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
-		changedBy: text("changed_by").references((): AnyPgColumn => user.id),
-		changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
-	},
-	(table) => [index("persona_versions_persona_id_idx").on(table.personaId)],
-);
-
 // Lead Insights (AI-generated insights cache, keyed by lead OR conversation)
 export const leadInsights = pgTable(
 	"lead_insights",
@@ -338,6 +349,60 @@ export const leadInsights = pgTable(
 		check(
 			"lead_insights_owner_check",
 			sql`(${table.leadId} IS NOT NULL) <> (${table.conversationId} IS NOT NULL)`,
+		),
+	],
+);
+
+// Conversation Evaluations (LLM-as-judge scoring per conversation)
+// Stores the most-recent score; re-evaluations replace prior rows by querying ordered desc.
+export type EvalDimensionPayload = { score: number; reasoning: string };
+
+export type EvalFlagsPayload = {
+	hallucination: boolean;
+	missedHandoff: boolean;
+	incompleteDiscovery: boolean;
+	lowEngagement: boolean;
+};
+
+export type EvalDimensionsPayload = {
+	engajamento: EvalDimensionPayload;
+	discovery: EvalDimensionPayload;
+	continuidade: EvalDimensionPayload;
+	naturalidade: EvalDimensionPayload;
+	assertividade: EvalDimensionPayload;
+	conversao: EvalDimensionPayload;
+};
+
+export const conversationEvaluations = pgTable(
+	"conversation_evaluations",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		personaId: text("persona_id"),
+		personaVersion: integer("persona_version"),
+		rubricVersion: text("rubric_version").notNull(),
+		judgeModel: varchar("judge_model", { length: 100 }).notNull(),
+		overallScore: numeric("overall_score", { precision: 3, scale: 2 }),
+		dimensions: jsonb().$type<EvalDimensionsPayload>(),
+		flags: jsonb().$type<EvalFlagsPayload>(),
+		topIssues: jsonb("top_issues").$type<string[]>(),
+		topStrengths: jsonb("top_strengths").$type<string[]>(),
+		tokensInput: integer("tokens_input"),
+		tokensOutput: integer("tokens_output"),
+		evaluatedUntilMessageId: uuid("evaluated_until_message_id").references(() => messages.id),
+		evaluatedAt: timestamp("evaluated_at", { withTimezone: true }).defaultNow().notNull(),
+		error: text(),
+	},
+	(table) => [
+		index("conversation_evaluations_conversation_id_evaluated_at_idx").on(
+			table.conversationId,
+			table.evaluatedAt.desc(),
+		),
+		check(
+			"conversation_evaluations_overall_score_check",
+			sql`${table.overallScore} IS NULL OR (${table.overallScore} >= 0 AND ${table.overallScore} <= 1)`,
 		),
 	],
 );
@@ -376,6 +441,7 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 	messages: many(messages),
 	leads: many(leads),
 	insights: many(leadInsights),
+	evaluations: many(conversationEvaluations),
 	handedOffUser: one(user, {
 		fields: [conversations.handedOffUserId],
 		references: [user.id],
@@ -424,17 +490,13 @@ export const leadInsightsRelations = relations(leadInsights, ({ one }) => ({
 	}),
 }));
 
-export const personasRelations = relations(personas, ({ many }) => ({
-	versions: many(personaVersions),
-}));
-
-export const personaVersionsRelations = relations(personaVersions, ({ one }) => ({
-	persona: one(personas, {
-		fields: [personaVersions.personaId],
-		references: [personas.id],
+export const conversationEvaluationsRelations = relations(conversationEvaluations, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [conversationEvaluations.conversationId],
+		references: [conversations.id],
 	}),
-	changedByUser: one(user, {
-		fields: [personaVersions.changedBy],
-		references: [user.id],
+	evaluatedUntilMessage: one(messages, {
+		fields: [conversationEvaluations.evaluatedUntilMessageId],
+		references: [messages.id],
 	}),
 }));

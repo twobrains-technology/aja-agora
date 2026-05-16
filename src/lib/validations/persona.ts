@@ -33,11 +33,37 @@ export const personaForbiddenTopicSchema = z.object({
 	enabled: z.boolean(),
 });
 
+// Enums espelhados de qualify-state.ts e personas.ts — Zod precisa do literal,
+// não da `type`. Mantidos sync com as definições canônicas.
+const expertiseLevelEnum = z.enum(["leigo", "expert", "neutro"]);
+const categoryEnum = z.enum(["imovel", "auto", "servicos"]);
+const channelEnum = z.enum(["web", "whatsapp"]);
+const userIntentEnum = z.enum([
+	"ready_to_proceed",
+	"asking_question",
+	"providing_info",
+	"expressing_doubt",
+	"off_topic",
+	"neutral",
+]);
+
 export const personaExampleSchema = z.object({
 	id: z.string().min(1),
 	context: z.string().max(80).optional().nullable(),
 	userMessage: z.string().min(3, "Mensagem do cliente obrigatória").max(500),
 	assistantResponse: z.string().min(3, "Resposta da persona obrigatória").max(800),
+
+	// Condições opcionais — ausente/vazia = sempre aplica.
+	whenExpertise: z.array(expertiseLevelEnum).min(1).optional(),
+	whenCategory: z.array(categoryEnum).min(1).optional(),
+	whenChannel: channelEnum.optional(),
+	whenIntent: z.array(userIntentEnum).min(1).optional(),
+
+	tags: z.array(z.string().min(1).max(40)).max(10).optional(),
+
+	enabled: z.boolean().optional(),
+	origin: z.enum(["manual", "diagnosis"]).optional(),
+	sourceConversationId: z.string().uuid().nullable().optional(),
 });
 
 export const updatePersonaSchema = z
@@ -46,7 +72,7 @@ export const updatePersonaSchema = z
 		voiceTone: z.string().min(1).max(2000).optional(),
 		isActive: z.boolean().optional(),
 		expertise: z.string().max(50).nullable().optional(),
-		examples: z.array(personaExampleSchema).max(10).optional(),
+		examples: z.array(personaExampleSchema).max(50).optional(),
 		activeCampaigns: z.array(personaCampaignSchema).max(20).optional(),
 		handoffTriggers: z.array(personaHandoffTriggerSchema).max(20).optional(),
 		forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20).optional(),
@@ -65,7 +91,7 @@ export const createPersonaSchema = z.object({
 		.nullable()
 		.transform((v) => (v && v.trim().length > 0 ? v.trim() : null)),
 	voiceTone: z.string().min(1, "Tom de voz obrigatório").max(2000),
-	examples: z.array(personaExampleSchema).max(10).default([]),
+	examples: z.array(personaExampleSchema).max(50).default([]),
 	activeTools: z.array(z.string()).max(20).default([]),
 	isActive: z.boolean().default(true),
 	activeCampaigns: z.array(personaCampaignSchema).max(20).default([]),
@@ -77,7 +103,7 @@ export const previewPersonaSchema = z.object({
 	displayName: z.string().min(1).max(50),
 	voiceTone: z.string().min(1).max(2000),
 	isActive: z.boolean(),
-	examples: z.array(personaExampleSchema).max(10).optional(),
+	examples: z.array(personaExampleSchema).max(50).optional(),
 	expertise: z.string().max(50).nullable().optional(),
 	activeCampaigns: z.array(personaCampaignSchema).max(20),
 	handoffTriggers: z.array(personaHandoffTriggerSchema).max(20),
@@ -97,7 +123,7 @@ export const previewPersonaDraftSchema = z.object({
 		.nullable()
 		.transform((v) => (v && v.trim().length > 0 ? v.trim() : null)),
 	voiceTone: z.string().min(1).max(2000),
-	examples: z.array(personaExampleSchema).max(10).default([]),
+	examples: z.array(personaExampleSchema).max(50).default([]),
 	activeCampaigns: z.array(personaCampaignSchema).max(20).default([]),
 	handoffTriggers: z.array(personaHandoffTriggerSchema).max(20).default([]),
 	forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20).default([]),

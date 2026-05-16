@@ -82,6 +82,36 @@ export function PersonaExamplesSection() {
             const itemErrors = errors.examples?.[index];
             const summary = ctx ? `${ctx}: ${userMsg}` : userMsg;
 
+            // Condições + origem aparecem como chips na summary (read-only nesse MVP;
+            // edição inline virá com a aba "Comportamento" dedicada).
+            const whenExpertise = watch(`examples.${index}.whenExpertise`) as
+              | string[]
+              | undefined;
+            const whenCategory = watch(`examples.${index}.whenCategory`) as
+              | string[]
+              | undefined;
+            const whenChannel = watch(`examples.${index}.whenChannel`) as
+              | string
+              | undefined;
+            const whenIntent = watch(`examples.${index}.whenIntent`) as
+              | string[]
+              | undefined;
+            const origin = watch(`examples.${index}.origin`) as
+              | string
+              | undefined;
+            const enabled =
+              (watch(`examples.${index}.enabled`) as boolean | undefined) !==
+              false;
+
+            const conditionChips: string[] = [];
+            if (whenExpertise?.length)
+              conditionChips.push(`exp:${whenExpertise.join("|")}`);
+            if (whenCategory?.length)
+              conditionChips.push(`cat:${whenCategory.join("|")}`);
+            if (whenChannel) conditionChips.push(`canal:${whenChannel}`);
+            if (whenIntent?.length)
+              conditionChips.push(`intent:${whenIntent.join("|")}`);
+
             return (
               <AccordionItem
                 key={itemId}
@@ -90,9 +120,33 @@ export function PersonaExamplesSection() {
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <AccordionTrigger className="flex-1 min-w-0 items-center py-3 hover:no-underline [&>[data-slot=accordion-trigger-icon]]:hidden">
-                    <span className="flex-1 min-w-0 text-left text-sm truncate">
-                      {summary}
-                    </span>
+                    <div className="flex-1 min-w-0 text-left">
+                      <span className="block text-sm truncate">{summary}</span>
+                      {(conditionChips.length > 0 ||
+                        origin === "diagnosis" ||
+                        !enabled) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {!enabled && (
+                            <span className="inline-flex items-center rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              desativado
+                            </span>
+                          )}
+                          {origin === "diagnosis" && (
+                            <span className="inline-flex items-center rounded border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                              diagnóstico
+                            </span>
+                          )}
+                          {conditionChips.map((c) => (
+                            <span
+                              key={c}
+                              className="inline-flex items-center rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium"
+                            >
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <span className="inline-flex items-center justify-center size-7 rounded-[min(var(--radius-md),12px)] hover:bg-muted shrink-0">
                       <ChevronDown className="size-3.5 text-muted-foreground transition-transform group-aria-expanded/accordion-trigger:rotate-180" />
                     </span>
