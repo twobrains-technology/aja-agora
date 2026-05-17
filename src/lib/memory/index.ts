@@ -9,6 +9,7 @@ import type { MemoryAdapter } from "./adapter";
 import { LettaMemoryAdapter } from "./letta-adapter";
 import { lettaHealthCheck } from "./letta-client";
 import { NoopMemoryAdapter } from "./noop-adapter";
+import { logMemoryOp, recordMemoryEvent } from "./observability";
 
 const CIRCUIT_RECHECK_MS = 60_000;
 
@@ -52,10 +53,14 @@ export function getMemoryAdapter(): MemoryAdapter {
 		lettaHealthCheck(1000)
 			.then((ok) => {
 				if (_circuitOpen && ok) {
-					console.info("[memory] Letta health recovered — circuit closed");
+					logMemoryOp({ letta_op: "health_check", circuit: "closed", recovered: true });
 					_circuitOpen = false;
 				} else if (!_circuitOpen && !ok) {
-					console.warn("[memory] Letta health check failed — opening circuit (using NoopAdapter)");
+					logMemoryOp({ letta_op: "fallback_triggered", circuit: "open" }, "warn");
+					void recordMemoryEvent({
+						eventType: "fallback_triggered",
+						payload: { reason: "letta_health_check_failed" },
+					});
 					_circuitOpen = true;
 				}
 			})

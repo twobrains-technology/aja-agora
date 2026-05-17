@@ -6,6 +6,7 @@
 // Registra evento no `memory_events` (audit) — ver schema na task #14.
 
 import type { MemoryAdapter } from "./adapter";
+import { logMemoryOp, maskIdentity, recordMemoryEvent } from "./observability";
 import type { UserIdentity } from "./types";
 
 export interface ReconcileInput {
@@ -39,15 +40,38 @@ export async function reconcileIdentity(input: ReconcileInput): Promise<Reconcil
 		}
 
 		await adapter.reconcileIdentity(from, to);
+		const durationMs = Date.now() - start;
 
-		// TODO(task #14): insert em `memory_events`:
-		//   { conversationId, eventType: "reconciled", payload: { from, to }, latencyMs }
+		// Audit (o adapter Letta já registra recordMemoryEvent internamente quando
+		// faz reconcile real; isso aqui captura o evento da perspectiva do caller
+		// — necessário pra distinguir "tentou e foi idempotente" de "passou
+		// pelo merge real" via diff de durationMs).
+		void recordMemoryEvent({
+			conversationId,
+			eventType: "reconciled",
+			payload: {
+				from_kind: from.kind,
+				from_prefix: maskIdentity(from.value),
+				to_kind: to.kind,
+				to_prefix: maskIdentity(to.value),
+				caller_duration_ms: durationMs,
+			},
+			latencyMs: durationMs,
+		});
 
-		return { success: true, durationMs: Date.now() - start };
+		return { success: true, durationMs };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		console.warn(
-			`[memory] reconcileIdentity failed conv=${conversationId} ${from.kind}:${from.value.slice(0, 8)} → ${to.kind}:${to.value.slice(0, 8)}: ${msg}`,
+		logMemoryOp(
+			{
+				letta_op: "reconcile",
+				letta_latency_ms: Date.now() - start,
+				conversation_id: conversationId,
+				identity_kind: from.kind,
+				identity_value_prefix: maskIdentity(from.value),
+				error: msg,
+			},
+			"warn",
 		);
 		return { success: false, error: msg, durationMs: Date.now() - start };
 	}

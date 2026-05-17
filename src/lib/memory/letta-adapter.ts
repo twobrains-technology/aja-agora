@@ -5,6 +5,7 @@
 
 import type { MemoryAdapter } from "./adapter";
 import { lettaFetch } from "./letta-client";
+import { logMemoryOp, maskIdentity, recordMemoryEvent } from "./observability";
 import type {
 	ArchivalHit,
 	HumanMemoryBlock,
@@ -138,9 +139,20 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		options?: { timeoutMs?: number; archivalQuery?: string },
 	): Promise<MemoryContext | null> {
 		const timeoutMs = options?.timeoutMs ?? 2000;
+		const start = Date.now();
 		try {
 			const agent = await this.findAgent(identity, timeoutMs);
-			if (!agent) return null;
+			if (!agent) {
+				logMemoryOp({
+					letta_op: "load_context",
+					letta_latency_ms: Date.now() - start,
+					identity_kind: identity.kind,
+					identity_value_prefix: maskIdentity(identity.value),
+					namespace: identity.namespace,
+					agent_found: false,
+				});
+				return null;
+			}
 
 			const humanBlock = agent.memory.blocks.find((b) => b.label === HUMAN_BLOCK_LABEL);
 			const block = parseHumanBlock(humanBlock);
@@ -152,6 +164,18 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 				);
 			}
 
+			logMemoryOp({
+				letta_op: "load_context",
+				letta_latency_ms: Date.now() - start,
+				letta_agent_id: agent.id,
+				identity_kind: identity.kind,
+				identity_value_prefix: maskIdentity(identity.value),
+				namespace: identity.namespace,
+				agent_found: true,
+				archival_hits: archivalHits.length,
+				days_since_last_interaction: daysBetween(block.lastInteractionAt, new Date()),
+			});
+
 			return {
 				agentId: agent.id,
 				block,
@@ -160,15 +184,20 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			};
 		} catch (err) {
 			// Circuit breaker: read-side NUNCA throw — log e devolve null.
-			if (err instanceof MemoryTimeoutError) {
-				console.warn(
-					`[memory] loadContext timeout (${timeoutMs}ms) for ${identity.kind}:${identity.value.slice(0, 8)}... — falling back to no memory`,
-				);
-			} else if (err instanceof MemoryError) {
-				console.warn(`[memory] loadContext error: ${err.message}`);
-			} else {
-				console.warn("[memory] loadContext unexpected error", err);
-			}
+			const isTimeout = err instanceof MemoryTimeoutError;
+			logMemoryOp(
+				{
+					letta_op: "load_context",
+					letta_latency_ms: Date.now() - start,
+					letta_fallback: true,
+					identity_kind: identity.kind,
+					identity_value_prefix: maskIdentity(identity.value),
+					namespace: identity.namespace,
+					error: err instanceof Error ? err.message : String(err),
+					timeout: isTimeout,
+				},
+				"warn",
+			);
 			return null;
 		}
 	}
@@ -178,13 +207,21 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		memories: MemoryEntry[],
 		metadata: StoreMetadata,
 	): Promise<void> {
+		const start = Date.now();
 		try {
-			const agent = await this.findOrCreateAgent(identity);
+			const agent = await this.findOrCreateAgent(identity, metadata.conversationId);
 
 			// 1. Inserir cada memory entry no archival
 			for (const entry of memories) {
 				await this.insertArchival(agent.id, entry).catch((err) => {
-					console.warn(`[memory] insertArchival failed for ${entry.kind}: ${String(err)}`);
+					logMemoryOp(
+						{
+							letta_op: "store_memories",
+							letta_agent_id: agent.id,
+							error: `insertArchival ${entry.kind}: ${String(err)}`,
+						},
+						"warn",
+					);
 				});
 			}
 
@@ -205,11 +242,53 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			};
 
 			await this.updateHumanBlock(agent.id, updatedBlock).catch((err) => {
-				console.warn(`[memory] updateHumanBlock failed: ${String(err)}`);
+				logMemoryOp(
+					{
+						letta_op: "store_memories",
+						letta_agent_id: agent.id,
+						error: `updateHumanBlock: ${String(err)}`,
+					},
+					"warn",
+				);
+			});
+
+			const latency = Date.now() - start;
+			logMemoryOp({
+				letta_op: "store_memories",
+				letta_latency_ms: latency,
+				letta_agent_id: agent.id,
+				identity_kind: identity.kind,
+				identity_value_prefix: maskIdentity(identity.value),
+				namespace: identity.namespace,
+				conversation_id: metadata.conversationId,
+				entries_count: memories.length,
+				channel: metadata.channel,
+			});
+
+			void recordMemoryEvent({
+				conversationId: metadata.conversationId,
+				lettaAgentId: agent.id,
+				eventType: "memory_stored",
+				payload: {
+					entries_count: memories.length,
+					kinds: memories.map((m) => m.kind),
+					block_patch_keys: Object.keys(metadata.blockPatch ?? {}),
+				},
+				latencyMs: latency,
 			});
 		} catch (err) {
 			// Fire-and-forget — log e drop.
-			console.warn(`[memory] storeMemories error for ${agentNameFor(identity)}: ${String(err)}`);
+			logMemoryOp(
+				{
+					letta_op: "store_memories",
+					letta_latency_ms: Date.now() - start,
+					identity_kind: identity.kind,
+					identity_value_prefix: maskIdentity(identity.value),
+					conversation_id: metadata.conversationId,
+					error: err instanceof Error ? err.message : String(err),
+				},
+				"warn",
+			);
 		}
 	}
 
@@ -228,6 +307,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 	}
 
 	async reconcileIdentity(from: UserIdentity, to: UserIdentity): Promise<void> {
+		const start = Date.now();
 		const fromAgent = await this.findAgent(from, 2000);
 		if (!fromAgent) return; // nada a migrar
 
@@ -238,7 +318,15 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		const toBlock = parseHumanBlock(
 			toAgent.memory.blocks.find((b) => b.label === HUMAN_BLOCK_LABEL),
 		);
-		if (toBlock.reconciledFrom === fromAgent.id) return;
+		if (toBlock.reconciledFrom === fromAgent.id) {
+			logMemoryOp({
+				letta_op: "reconcile",
+				letta_latency_ms: Date.now() - start,
+				letta_agent_id: toAgent.id,
+				note: "already_reconciled_idempotent",
+			});
+			return;
+		}
 
 		// Copia archival do origem pro destino
 		const archival = await this.listArchival(fromAgent.id);
@@ -248,7 +336,14 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 				kind: "fact",
 				metadata: { tags: [...(entry.tags ?? []), `migrated:${fromAgent.id}`] },
 			}).catch((err) => {
-				console.warn(`[memory] reconcile insert failed: ${String(err)}`);
+				logMemoryOp(
+					{
+						letta_op: "reconcile",
+						letta_agent_id: toAgent.id,
+						error: `archival migrate: ${String(err)}`,
+					},
+					"warn",
+				);
 			});
 		}
 
@@ -268,6 +363,29 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			),
 		};
 		await this.updateHumanBlock(toAgent.id, merged);
+
+		const latency = Date.now() - start;
+		logMemoryOp({
+			letta_op: "reconcile",
+			letta_latency_ms: latency,
+			letta_agent_id: toAgent.id,
+			from_agent_id: fromAgent.id,
+			from_identity_kind: from.kind,
+			to_identity_kind: to.kind,
+			archival_migrated: archival.length,
+		});
+
+		void recordMemoryEvent({
+			lettaAgentId: toAgent.id,
+			eventType: "reconciled",
+			payload: {
+				from_agent_id: fromAgent.id,
+				from_kind: from.kind,
+				to_kind: to.kind,
+				archival_migrated: archival.length,
+			},
+			latencyMs: latency,
+		});
 	}
 
 	// ─── Privates ────────────────────────────────────────────────────────────
@@ -281,12 +399,16 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		return list.find((a) => a.name === name) ?? null;
 	}
 
-	private async findOrCreateAgent(identity: UserIdentity): Promise<LettaAgent> {
+	private async findOrCreateAgent(
+		identity: UserIdentity,
+		conversationId?: string,
+	): Promise<LettaAgent> {
 		const existing = await this.findAgent(identity, 2000);
 		if (existing) return existing;
 
 		const name = agentNameFor(identity);
 		const initialBlock = emptyHumanBlock(identity);
+		const start = Date.now();
 
 		const created = await lettaFetch<LettaAgent>("/v1/agents/", {
 			method: "POST",
@@ -310,6 +432,28 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 				],
 			}),
 		});
+
+		const latency = Date.now() - start;
+		logMemoryOp({
+			letta_op: "agent_created",
+			letta_latency_ms: latency,
+			letta_agent_id: created.id,
+			identity_kind: identity.kind,
+			identity_value_prefix: maskIdentity(identity.value),
+			namespace: identity.namespace,
+		});
+
+		void recordMemoryEvent({
+			conversationId: conversationId ?? null,
+			lettaAgentId: created.id,
+			eventType: "agent_created",
+			payload: {
+				identity_kind: identity.kind,
+				namespace: identity.namespace,
+			},
+			latencyMs: latency,
+		});
+
 		return created;
 	}
 
