@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
-import { conversations, leads, messages as messagesTable } from "@/db/schema";
-import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
+import { conversations, messages as messagesTable } from "@/db/schema";
+import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { handoffToAgents } from "@/lib/whatsapp/proxy";
@@ -60,19 +60,14 @@ export async function POST(req: NextRequest) {
 
 	// ---- Insert lead (PII stored only here, never in messages/artifacts) ----
 	try {
-		const [lead] = await db
-			.insert(leads)
-			.values({
-				conversationId: conversationId as string,
-				name: parsed.data.name,
-				phone: parsed.data.phone,
-				email: parsed.data.email,
-			})
-			.returning();
-
-		// Apply max funnel stage reached during the AI conversation, so the lead
-		// lands in the right kanban column instead of the default "novo".
-		await applyTrackedStageToLead(conversationId as string, lead.id);
+		// Helper único garante: lead herda is_simulated da conversation, e
+		// applyTrackedStageToLead (kanban) só roda em conversa real.
+		const { leadId } = await createLeadFromConversation({
+			conversationId: conversationId as string,
+			name: parsed.data.name,
+			phone: parsed.data.phone,
+			email: parsed.data.email,
+		});
 
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
 		if (conv.channel === "web" && conv.status === "active") {
@@ -98,7 +93,7 @@ export async function POST(req: NextRequest) {
 			}
 		}
 
-		return Response.json({ ok: true, leadId: lead.id });
+		return Response.json({ ok: true, leadId });
 	} catch (err) {
 		console.error("Failed to insert lead:", err);
 		return Response.json({ ok: false, error: "Failed to save lead data" }, { status: 500 });

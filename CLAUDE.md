@@ -200,3 +200,9 @@ Sequência (não inverter ordem):
 - Contexto da feature/bug (referências de arquivo, PRs relacionados)
 - Para QA crítico: **caminho do plano** do PO Lead no prompt (`docs/test-plans/<slug>.md`) para ele ler e validar contra
 - Saída esperada: PO Lead → markdown do plano; QA crítico → relatório de pass/fail por critério com evidência
+
+## Autonomia — NUNCA perguntar "quer que eu siga?"
+
+Kairo odeia perguntas confirmatórias bobas dentro desse fluxo (e em geral). Quando uma fase termina e a próxima já está prevista no plano aprovado ou no workflow PO Lead → TDD → QA crítico, **execute a próxima diretamente** — não confirme.
+
+Proibido: "quer que eu lance o QA crítico?", "devo seguir pra Fase X?", "posso continuar?". Permitido: pause SÓ se aparecer ambiguidade arquitetural real (use `/grill-with-docs`) ou ação destrutiva (push/deploy/drop). Para tudo no meio, **execute e reporte** ("feito X, lançando Y agora").

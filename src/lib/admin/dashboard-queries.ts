@@ -22,6 +22,10 @@ function trendPercent(current: number, previous: number): number {
   return Math.round(((current - previous) / previous) * 100);
 }
 
+// Painéis comerciais não enxergam conversas/leads simulados (criados via /admin/simulator).
+// Reutilizado em TODAS as queries deste arquivo. Se for removido por engano, métrica corrompe.
+const realLeads = eq(leads.isSimulated, false);
+
 // ─── KPIs ───────────────────────────────────────────────────────────────────
 
 export async function computeKpis(
@@ -48,15 +52,18 @@ export async function computeKpis(
     db
       .select({ count: count() })
       .from(leads)
-      .where(and(gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate))),
+      .where(and(realLeads, gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate))),
 
     db
       .select({ count: count() })
       .from(leads)
       .where(
-        gte(
-          leads.createdAt,
-          sql`(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+        and(
+          realLeads,
+          gte(
+            leads.createdAt,
+            sql`(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+          ),
         ),
       ),
 
@@ -68,6 +75,7 @@ export async function computeKpis(
       FROM leads l
       JOIN lead_events le ON le.lead_id = l.id
       WHERE l.created_at BETWEEN ${fromDate} AND ${toDate}
+        AND l.is_simulated = false
         AND le.to_stage IN ('fechado_ganho', 'perdido')
     `),
 
@@ -78,19 +86,21 @@ export async function computeKpis(
       ) as rate
       FROM leads
       WHERE created_at BETWEEN ${fromDate} AND ${toDate}
+        AND is_simulated = false
     `),
 
     // --- Previous period ---
     db
       .select({ count: count() })
       .from(leads)
-      .where(and(gte(leads.createdAt, prevFrom), lte(leads.createdAt, prevTo))),
+      .where(and(realLeads, gte(leads.createdAt, prevFrom), lte(leads.createdAt, prevTo))),
 
     db
       .select({ count: count() })
       .from(leads)
       .where(
         and(
+          realLeads,
           gte(
             leads.createdAt,
             sql`((NOW() AT TIME ZONE 'America/Sao_Paulo') - INTERVAL '1 day')::date`,
@@ -110,6 +120,7 @@ export async function computeKpis(
       FROM leads l
       JOIN lead_events le ON le.lead_id = l.id
       WHERE l.created_at BETWEEN ${prevFrom} AND ${prevTo}
+        AND l.is_simulated = false
         AND le.to_stage IN ('fechado_ganho', 'perdido')
     `),
 
@@ -120,6 +131,7 @@ export async function computeKpis(
       ) as rate
       FROM leads
       WHERE created_at BETWEEN ${prevFrom} AND ${prevTo}
+        AND is_simulated = false
     `),
   ]);
 
@@ -160,7 +172,7 @@ export async function computeFunnelStages(
   const rows = await db
     .select({ stage: leads.stage, count: count() })
     .from(leads)
-    .where(and(gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
+    .where(and(realLeads, gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
     .groupBy(leads.stage);
 
   // Build a lookup map from query results
@@ -211,7 +223,7 @@ export async function computeDailyVolume(
       count: count(),
     })
     .from(leads)
-    .where(and(gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
+    .where(and(realLeads, gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
     .groupBy(
       sql`DATE(${leads.createdAt} AT TIME ZONE 'America/Sao_Paulo')`,
     )
@@ -250,7 +262,7 @@ export async function computeChannelBreakdown(
     })
     .from(leads)
     .innerJoin(conversations, eq(leads.conversationId, conversations.id))
-    .where(and(gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
+    .where(and(realLeads, gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
     .groupBy(conversations.channel);
 
   // Build lookup

@@ -11,6 +11,7 @@ import {
 	isAttendantPhone,
 	relayUserToAgent,
 } from "./proxy";
+import { isSimulatedWaId, publishToClient } from "./simulator-bus";
 
 export async function processTextMessage(
 	from: string,
@@ -51,7 +52,13 @@ export async function processTextMessage(
 
 		if (await handlePendingHandoffText(from, text, contactName)) return;
 
-		if (messageId) sendTypingIndicator(messageId).catch(() => {});
+		// Typing indicator: Meta API real precisa de messageId; simulador precisa
+		// que o painel mostre as bolinhas, sem messageId Meta — publica no bus direto.
+		if (isSimulatedWaId(from)) {
+			publishToClient(from, { type: "typing", on: true });
+		} else if (messageId) {
+			sendTypingIndicator(messageId).catch(() => {});
+		}
 		await processWithOrchestrator(from, text, contactName);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
@@ -76,7 +83,11 @@ export async function processInteractiveReply(
 	// Most interactive paths trigger an AI directive (gates, transitions, group
 	// selection). Fire the typing indicator up front; brief flash on the few
 	// non-AI paths (e.g. handoff_decline) is acceptable.
-	if (messageId) sendTypingIndicator(messageId).catch(() => {});
+	if (isSimulatedWaId(from)) {
+		publishToClient(from, { type: "typing", on: true });
+	} else if (messageId) {
+		sendTypingIndicator(messageId).catch(() => {});
+	}
 	const handled = await dispatchInteractiveReply({
 		from,
 		replyId,

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
-import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
+import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
@@ -125,11 +125,7 @@ export async function* runLeadCollectionTurn(args: {
 				.set({ name, phone, email, updatedAt: new Date() })
 				.where(eq(leads.id, existing.id));
 		} else {
-			const [created] = await db
-				.insert(leads)
-				.values({ conversationId, name, phone, email })
-				.returning();
-			await applyTrackedStageToLead(conversationId, created.id);
+			await createLeadFromConversation({ conversationId, name, phone, email });
 		}
 	} catch (err) {
 		console.error("[lead-collection] insert/update failed:", err);

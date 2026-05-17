@@ -64,6 +64,13 @@
       "when": 1778505259558,
       "tag": "0008_solid_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778985824582,
+      "tag": "0009_spotty_impossible_man",
+      "breakpoints": true
     }
   ]
 }
