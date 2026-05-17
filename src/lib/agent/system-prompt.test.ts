@@ -177,33 +177,41 @@ describe("Primeira vez = explicação básica inline (bug #15)", () => {
 });
 
 describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () => {
-	// Bv2 patches estão em SPECIALIST_BASE_PROMPT (concierge não simula, só roteia)
-	const COMBINED = `${SYSTEM_PROMPT}\n\n${SPECIALIST_BASE_PROMPT}`;
+	// CRÍTICO: o specialist (Helena/Rafael/Bruno/Camila) recebe SOMENTE
+	// SPECIALIST_BASE_PROMPT em runtime (via buildSpecialistPrompt). Regras
+	// regulatórias DEVEM estar nele — falso positivo round 2: testar
+	// COMBINED escondeu que linha 251 instruía o oposto.
 
-	it("Bv2-07: instrui pipeline simulate_quota → present_simulation_result", () => {
-		expect(COMBINED).toMatch(/simulate_quota/);
-		expect(COMBINED).toMatch(/present_simulation_result/);
+	it("Bv2-07: SPECIALIST_BASE_PROMPT instrui encadeamento recommendation → simulation", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_simulation_result/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_recommendation_card/);
 	});
 
-	it("Bv2-08: prompt obriga usar creditValue NOMINAL do grupo", () => {
-		expect(COMBINED).toMatch(/creditValue\s+NOMINAL\s+DO\s+GRUPO/i);
-		expect(COMBINED).toMatch(/creditAdjustmentNotice/);
+	it("Bv2-08: SPECIALIST_BASE_PROMPT obriga creditValue NOMINAL do grupo", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/creditValue\s+NOMINAL\s+DO\s+GRUPO/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/creditAdjustmentNotice/);
 	});
 
-	it("Bv2-08: prompt menciona CDC 30/35/37 ao falar de divergência de preço", () => {
-		expect(COMBINED).toMatch(/CDC.*30.*35.*37/);
+	it("Bv2-08: SPECIALIST_BASE_PROMPT menciona CDC 30/35/37", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/CDC.*30.*35.*37/);
 	});
 
-	it("Bv2-06: prompt PROÍBE arredondar valores monetários na fala (FAIL QA DEV — agente disse R$ 2.800 quando real era R$ 2.778)", () => {
-		expect(COMBINED).toMatch(/NUNCA\s+arredonde/i);
-		expect(COMBINED).toMatch(/literal/i);
+	it("Bv2-06: SPECIALIST_BASE_PROMPT PROÍBE arredondar valores monetários na fala", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA\s+arredonde/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/literal/i);
 	});
 
-	it("Bv2-06: prompt VETA 'taxa dentro da média do mercado' (frase sem fonte — QA DEV achou em fala real)", () => {
-		// Esse claim sem fonte é vetado pelo plano (CDC 37 publicidade enganosa).
-		// O prompt deve INSTRUIR explicitamente o agente a não usar essa frase.
-		expect(COMBINED).toMatch(/taxa\s+dentro\s+da\s+m[ée]dia/i);
-		// (deve aparecer como VETADO/PROIBIDO no texto da instrução)
-		expect(COMBINED).toMatch(/(VETADO|PROIBIDO|NUNCA).*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia.*(VETADO|PROIBIDO|NUNCA|sem fonte)/is);
+	it("Bv2-06: SPECIALIST_BASE_PROMPT NÃO INSTRUI arredondar (anti-regressão linha 251 round 2)", () => {
+		// O bug: linha 251 instruía "arredonde pra múltiplos de R$ 100".
+		// Specialist é o único que recebe esse prompt em runtime.
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/arredonde\s+pra\s+m[úu]ltiplos/i);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/arredonde\s+para\s+m[úu]ltiplos/i);
+	});
+
+	it("Bv2-06: SPECIALIST_BASE_PROMPT VETA 'taxa dentro da média do mercado'", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/taxa\s+dentro\s+da\s+m[ée]dia/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/(VETADO|PROIBIDO|NUNCA|nao\s+escreva).*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia.*(VETADO|PROIBIDO|NUNCA|sem fonte)/is,
+		);
 	});
 });
