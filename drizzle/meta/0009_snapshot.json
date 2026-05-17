@@ -1,5 +1,5 @@
 {
-  "id": "250770ae-b02c-40f1-bffd-3882c20b4853",
+  "id": "9b451c8e-f3c4-440b-90da-d0bec6bb9ebe",
   "prevId": "4f7b233b-f681-452b-b25b-0e3c251d763d",
   "version": "7",
   "dialect": "postgresql",
@@ -402,13 +402,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "is_simulated": {
-          "name": "is_simulated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -727,13 +720,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "is_simulated": {
-          "name": "is_simulated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1007,7 +993,7 @@
         },
         "personas_category_check": {
           "name": "personas_category_check",
-          "value": "\"personas\".\"category\" IS NULL OR \"personas\".\"category\" IN ('imovel', 'auto', 'servicos')"
+          "value": "\"personas\".\"category\" IS NULL OR \"personas\".\"category\" IN ('imovel', 'auto', 'moto', 'servicos')"
         },
         "personas_specialist_has_category": {
           "name": "personas_specialist_has_category",

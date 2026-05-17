@@ -22,6 +22,11 @@ const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; cla
 			className:
 				"bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
 		},
+		moto: {
+			label: "Moto",
+			className:
+				"bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800",
+		},
 		servicos: {
 			label: "Servicos",
 			className:

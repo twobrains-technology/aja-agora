@@ -8,7 +8,7 @@ import type { AjaUIMessage, GatePartOption, TransitionPartData } from "@/lib/cha
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 
-type Category = "imovel" | "auto" | "servicos";
+type Category = "imovel" | "auto" | "moto" | "servicos";
 
 interface MessageListProps {
 	messages: AjaUIMessage[];

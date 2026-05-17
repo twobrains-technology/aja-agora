@@ -30,7 +30,7 @@ export function WelcomeCategories({
 			if (selectedId) return;
 			setSelectedId(option.value);
 			await sendAction(
-				{ kind: "category", category: option.value as "imovel" | "auto" | "servicos" },
+				{ kind: "category", category: option.value as "imovel" | "auto" | "moto" | "servicos" },
 				option.label,
 			);
 		},

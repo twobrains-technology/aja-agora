@@ -4,6 +4,12 @@ import { conversations } from "@/db/schema";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import {
+	loadMemoryContextForTurn,
+	memorySystemMessageFromContext,
+	resolveIdentityForTurn,
+	storeMemoriesForTurn,
+} from "@/lib/memory/orchestrator-bridge";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { buildSearchSummaryDirective } from "./directives";
@@ -26,6 +32,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		skipAnalyzer,
 		skipLeadCollection,
 		userIntent: providedIntent,
+		userKey,
 	} = input;
 
 	const conversationId = providedConversationId;
@@ -60,7 +67,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	}
 
 	if (isUserTurn && !skipLeadCollection && meta.leadCollection) {
-		yield* runLeadCollectionTurn({ conversationId, channel, text: userText, meta });
+		yield* runLeadCollectionTurn({ conversationId, channel, text: userText, meta, userKey });
 		yield { type: "finish", reason: "lead-collection" };
 		return;
 	}
@@ -130,9 +137,35 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		meta,
 	});
 
+	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
+	// Resolve identity, carrega contexto persistente e prepend ao prompt.
+	// Em qualquer erro/timeout/circuit-open, retorna null silenciosamente —
+	// orquestrador segue sem memória. Ver ADR 2026-05-16.
+	const userTurnCount = history.filter((m) => m.role === "user").length;
+	const identity = resolveIdentityForTurn({
+		channel,
+		conv,
+		userKey: userKey ?? undefined,
+		userTurnCount,
+	});
+	const memoryContext = await loadMemoryContextForTurn({ identity, userText });
+	const memorySystemMessage = memorySystemMessageFromContext(memoryContext);
+
+	const memoryPrefix: ChatMessage[] = memorySystemMessage ? [memorySystemMessage] : [];
+
+	// Debug hook (R9 do QA plan): quando AJA_DEBUG_MEMORY=1, persiste o hint
+	// injetado no meta pra E2E inspecionar via SQL. Nunca em produção.
+	if (process.env.AJA_DEBUG_MEMORY === "1") {
+		const debugMeta = await reloadMeta(conversationId);
+		await persistMeta(conversationId, {
+			...debugMeta,
+			lettaDebugHint: memorySystemMessage?.content ?? null,
+		});
+	}
 	const messagesForAgent: ChatMessage[] = isUserTurn
-		? [...systemContext, ...history]
+		? [...memoryPrefix, ...systemContext, ...history]
 		: [
+				...memoryPrefix,
 				...(knownName
 					? [{ role: "system" as const, content: `Nome do usuario: "${knownName}"` }]
 					: []),
@@ -148,6 +181,18 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		messages: messagesForAgent,
 		isUserTurn,
 		userIntent: analyzedIntent,
+	});
+
+	// Fire-and-forget — extrai fatos do turno e persiste no Letta.
+	// Não awaitamos: turno responde mais rápido; se store falhar, próximo turno
+	// re-extrai do meta corrente.
+	void storeMemoriesForTurn({
+		identity,
+		artifacts: result.artifacts,
+		meta,
+		channel,
+		userText,
+		conversationId,
 	});
 
 	if (result.handoffSignaled) {

@@ -36,6 +36,7 @@ export type TimeframeOption = {
 export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 100_000, max: 2_000_000, step: 50_000, default: 400_000 },
 	auto: { min: 20_000, max: 300_000, step: 10_000, default: 80_000 },
+	moto: { min: 8_000, max: 80_000, step: 1_000, default: 25_000 },
 	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };
 
@@ -82,6 +83,12 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 			max: 300_000,
 		},
 	],
+	moto: [
+		{ token: "15", title: "Até R$ 15 mil", desc: "Entrada, custo benefício", min: 0, max: 15_000 },
+		{ token: "30", title: "R$ 15 a 30 mil", desc: "Naked, scooter", min: 15_000, max: 30_000 },
+		{ token: "50", title: "R$ 30 a 50 mil", desc: "Trail, esportivas médias", min: 30_000, max: 50_000 },
+		{ token: "80", title: "Acima de R$ 50 mil", desc: "Big trail, esportiva", min: 50_000, max: 80_000 },
+	],
 	servicos: [
 		{
 			token: "30",
@@ -112,6 +119,7 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 1_000, max: 15_000, step: 500, default: 3_000 },
 	auto: { min: 300, max: 3_000, step: 100, default: 800 },
+	moto: { min: 150, max: 1_500, step: 50, default: 500 },
 	servicos: { min: 200, max: 2_000, step: 100, default: 500 },
 };
 

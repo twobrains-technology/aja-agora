@@ -31,7 +31,8 @@ const scoreConversationMock = vi.fn(async () => ({
 }));
 
 vi.mock("./scorer", () => ({
-	scoreConversation: (...args: unknown[]) => scoreConversationMock(...args),
+	scoreConversation: (...args: Parameters<typeof scoreConversationMock>) =>
+		scoreConversationMock(...args),
 }));
 
 async function setSimulated(value: boolean) {

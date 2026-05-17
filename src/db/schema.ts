@@ -58,6 +58,15 @@ export const insightTypeEnum = pgEnum("insight_type", [
 	"next_action",
 ]);
 
+export const memoryEventTypeEnum = pgEnum("memory_event_type", [
+	"agent_created",
+	"context_loaded",
+	"memory_stored",
+	"reconciled",
+	"fallback_triggered",
+	"purged",
+]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -318,7 +327,7 @@ export const personas = pgTable(
 		check("personas_role_check", sql`${table.role} IN ('concierge', 'specialist')`),
 		check(
 			"personas_category_check",
-			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'servicos')`,
+			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'moto', 'servicos')`,
 		),
 		check(
 			"personas_specialist_has_category",
@@ -406,6 +415,28 @@ export const conversationEvaluations = pgTable(
 			"conversation_evaluations_overall_score_check",
 			sql`${table.overallScore} IS NULL OR (${table.overallScore} >= 0 AND ${table.overallScore} <= 1)`,
 		),
+	],
+);
+
+// Memory Events (audit trail da camada de memória Letta)
+// Ver ADR 2026-05-16-aja-agora-letta-sidecar-integration.
+export const memoryEvents = pgTable(
+	"memory_events",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "set null",
+		}),
+		lettaAgentId: text("letta_agent_id"),
+		eventType: memoryEventTypeEnum("event_type").notNull(),
+		payload: jsonb().$type<Record<string, unknown>>(),
+		latencyMs: integer("latency_ms"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("memory_events_conversation_id_idx").on(table.conversationId),
+		index("memory_events_letta_agent_id_idx").on(table.lettaAgentId),
+		index("memory_events_created_at_idx").on(table.createdAt.desc()),
 	],
 );
 
@@ -500,5 +531,12 @@ export const conversationEvaluationsRelations = relations(conversationEvaluation
 	evaluatedUntilMessage: one(messages, {
 		fields: [conversationEvaluations.evaluatedUntilMessageId],
 		references: [messages.id],
+	}),
+}));
+
+export const memoryEventsRelations = relations(memoryEvents, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [memoryEvents.conversationId],
+		references: [conversations.id],
 	}),
 }));

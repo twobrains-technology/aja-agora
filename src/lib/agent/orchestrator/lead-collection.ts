@@ -6,6 +6,15 @@ import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
+import {
+	getNamespace,
+	identityFromCookie,
+	identityFromPhone,
+	normalizePhoneBR,
+} from "@/lib/memory/identity";
+import { getMemoryAdapter } from "@/lib/memory/index";
+import { logMemoryOp } from "@/lib/memory/observability";
+import { reconcileIdentity as runReconcile } from "@/lib/memory/reconciler";
 import type { Channel, TurnEvent } from "./types";
 
 const emailSchema = z.string().trim().email();
@@ -42,8 +51,9 @@ export async function* runLeadCollectionTurn(args: {
 	channel: Channel;
 	text: string;
 	meta: ConversationMetadata;
+	userKey?: string | null;
 }): AsyncGenerator<TurnEvent> {
-	const { conversationId, channel, text, meta } = args;
+	const { conversationId, channel, text, meta, userKey } = args;
 	const lc = meta.leadCollection;
 	if (!lc) return;
 
@@ -149,4 +159,78 @@ export async function* runLeadCollectionTurn(args: {
 	console.log(
 		`[lead-collection] captured lead conversation=${conversationId} email=${email} phone=${phone}`,
 	);
+
+	// Trigger de reconciliação Letta (ADR 2026-05-16 decisão #3).
+	// Web anônimo (cookie) acabou de virar identificado (phone). Migra memória
+	// do agent cookie pro agent phone. Fire-and-forget — não bloqueia resposta.
+	// Idempotente via `meta.letta.reconciled` flag.
+	if (channel === "web" && userKey && phone && !cleared.letta?.reconciled) {
+		void triggerReconciliationOnLeadCapture({
+			conversationId,
+			cookieValue: userKey,
+			phoneRaw: phone,
+			meta: cleared,
+		});
+	}
+}
+
+/**
+ * Dispara reconciliação Letta após captura de lead web. Fire-and-forget.
+ * Idempotente: marca `meta.letta.reconciled = true` ao terminar pra impedir
+ * re-disparo se a função for chamada de novo.
+ */
+async function triggerReconciliationOnLeadCapture(input: {
+	conversationId: string;
+	cookieValue: string;
+	phoneRaw: string;
+	meta: ConversationMetadata;
+}): Promise<void> {
+	const { conversationId, cookieValue, phoneRaw, meta } = input;
+	try {
+		const phoneE164 = normalizePhoneBR(phoneRaw);
+		if (!phoneE164) {
+			logMemoryOp(
+				{
+					letta_op: "reconcile",
+					conversation_id: conversationId,
+					error: `phone normalize failed: ${phoneRaw}`,
+				},
+				"warn",
+			);
+			return;
+		}
+		const namespace = getNamespace();
+		const fromIdentity = identityFromCookie(cookieValue, namespace);
+		const toIdentity = identityFromPhone(phoneE164, namespace);
+		const adapter = getMemoryAdapter();
+
+		const result = await runReconcile({
+			adapter,
+			from: fromIdentity,
+			to: toIdentity,
+			conversationId,
+		});
+
+		if (result.success) {
+			// Persistir idempotência. Re-read meta pra não sobrescrever updates
+			// concorrentes do mesmo turno.
+			const refreshed: ConversationMetadata = {
+				...meta,
+				letta: {
+					reconciled: true,
+					reconciledAt: new Date().toISOString(),
+				},
+			};
+			await persistMeta(conversationId, refreshed);
+		}
+	} catch (err) {
+		logMemoryOp(
+			{
+				letta_op: "reconcile",
+				conversation_id: conversationId,
+				error: err instanceof Error ? err.message : String(err),
+			},
+			"warn",
+		);
+	}
 }

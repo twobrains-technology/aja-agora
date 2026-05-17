@@ -42,6 +42,14 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 		void sendAction({ kind: "interest", administradora: payload.administradora, label }, label);
 	};
 
+	const handleAction = (action: { label: string; intent: string }) => {
+		if (isStreaming) return;
+		void sendAction(
+			{ kind: "interest", administradora: payload.administradora, label: action.label },
+			action.label,
+		);
+	};
+
 	return (
 		<Card className="w-full max-w-sm">
 			<CardHeader>
@@ -88,17 +96,59 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					<span className="font-mono font-medium">{formatPercent(payload.effectiveRate, 2)}</span>
 				</p>
 
+				{/* Cenário com lance (bug #10) */}
+				{payload.lanceScenario && (
+					<div className="rounded-md bg-muted/40 px-3 py-2">
+						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							Cenário com lance
+						</p>
+						<p className="text-sm mt-1">
+							Com lance de {payload.lanceScenario.lancePercent}% do crédito, expectativa de
+							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses (estimativa, não
+							garantia).
+						</p>
+					</div>
+				)}
+
+				{/* Correção prevista (bug #10) */}
+				{payload.expectedAdjustment && (
+					<p className="text-xs text-muted-foreground">
+						Correção prevista: <span className="font-medium">{payload.expectedAdjustment.index}</span>{" "}
+						~{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
+					</p>
+				)}
+
 				<Separator />
 
 				<Button
 					size="lg"
-					className="w-full gap-1.5 min-h-[44px]"
+					data-testid="tenho-interesse-cta"
+					className="w-full gap-1.5 min-h-[44px] shadow-lg shadow-primary/30 ring-1 ring-primary/40 hover:shadow-primary/50 transition-shadow"
 					onClick={handleInterest}
 					disabled={isStreaming}
 				>
 					<Sparkles className="size-4" />
 					Tenho interesse
 				</Button>
+
+				{/* CTAs secundárias (bug #12) */}
+				{payload.actions && payload.actions.length > 0 && (
+					<div className="flex flex-col gap-2">
+						{payload.actions.map((action) => (
+							<Button
+								key={action.intent}
+								type="button"
+								variant="outline"
+								size="sm"
+								className="w-full min-h-[40px]"
+								onClick={() => handleAction(action)}
+								disabled={isStreaming}
+							>
+								{action.label}
+							</Button>
+						))}
+					</div>
+				)}
 			</CardContent>
 		</Card>
 	);

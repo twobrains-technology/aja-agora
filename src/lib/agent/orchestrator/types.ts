@@ -50,6 +50,12 @@ export type TurnInput = {
 	skipAnalyzer?: boolean;
 	skipLeadCollection?: boolean;
 	userIntent?: UserIntent;
+	/**
+	 * Chave estável da pessoa nesse canal. Web: cookie hex (AJA_UID). WhatsApp:
+	 * geralmente vem `null` aqui — usa `conversations.waId` resolvido dentro
+	 * do orquestrador. Usado pela camada de memória pra mapear pessoa ↔ agent.
+	 */
+	userKey?: string | null;
 };
 
 export type TurnContext = {

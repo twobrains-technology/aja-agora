@@ -8,7 +8,7 @@ import { z } from "zod";
 
 export const searchGroupsInput = z.object({
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem: imóvel, automóvel ou serviços"),
 	creditMin: z.number().min(0).optional().describe("Valor mínimo de crédito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor máximo de crédito em reais"),
@@ -24,7 +24,7 @@ export const getRatesInput = z.object({
 		.string()
 		.optional()
 		.describe("Nome da administradora (opcional, retorna todas se vazio)"),
-	category: z.enum(["imovel", "auto", "servicos"]).optional().describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).optional().describe("Categoria do bem"),
 });
 
 export const getGroupDetailsInput = z.object({
