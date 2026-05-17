@@ -14,6 +14,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
@@ -58,7 +59,7 @@ function isInterestExpression(text: string): boolean {
  * lead phone matches the format used by the web flow (DDD + number, 10-11
  * digits). Returns null when the wa_id is empty (web handoff).
  */
-function normalizeWaIdToPhone(waId: string): string | null {
+export function normalizeWaIdToPhone(waId: string): string | null {
 	const digits = waId.replace(/\D/g, "");
 	if (!digits) return null;
 	const stripped = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
@@ -270,11 +271,25 @@ export async function handoffToAgents(
 	// so we create one with whatever PII is available — at minimum name + phone.
 	// userWaId is "" for web calls.
 	try {
+		// B-03: lead pode já existir (criado em getOrCreateConversation no
+		// início da conversa). Aqui só enriquecemos com PII coletada (name)
+		// e aplicamos stage tracked. Se ainda não existe (legacy ou caminho
+		// web que pula getOrCreateConversation), criamos do zero.
 		const existing = await db.query.leads.findFirst({
 			where: eq(leads.conversationId, conversationId),
 		});
-		if (!existing) {
-			const phone = normalizeWaIdToPhone(userWaId);
+		const phone = normalizeWaIdToPhone(userWaId);
+		let leadId: string;
+		if (existing) {
+			// Atualiza name se ainda não tinha + phone se faltava
+			const patch: Partial<{ name: string | null; phone: string | null }> = {};
+			if (!existing.name && userName) patch.name = userName;
+			if (!existing.phone && phone) patch.phone = phone;
+			if (Object.keys(patch).length > 0) {
+				await db.update(leads).set(patch).where(eq(leads.id, existing.id));
+			}
+			leadId = existing.id;
+		} else {
 			const [created] = await db
 				.insert(leads)
 				.values({
@@ -285,14 +300,24 @@ export async function handoffToAgents(
 					isSimulated,
 				})
 				.returning();
-			// Pula kanban quando origem é simulada (mantém pipeline comercial limpo).
-			if (!isSimulated) {
-				await applyTrackedStageToLead(conversationId, created.id);
-			}
-			console.log(
-				`[whatsapp-proxy] Lead created for handoff: conversation=${conversationId} name=${userName} phone=${phone ?? "(none)"} simulated=${isSimulated}`,
+			leadId = created.id;
+		}
+		// Aplica stage tracked apenas em conversa real (kanban filtra simulada).
+		if (!isSimulated) {
+			await applyTrackedStageToLead(conversationId, leadId);
+			// B-03: handoff = atendente humano vai assumir = potencial fechamento.
+			// Promove lead pra "em_negociacao" (patamar superior), onlyAdvance
+			// pra não regredir leads que já estavam mais avançados.
+			await transitionLeadStage(
+				leadId,
+				"em_negociacao",
+				{ type: "system" },
+				{ onlyAdvance: true },
 			);
 		}
+		console.log(
+			`[whatsapp-proxy] Lead upserted for handoff: conversation=${conversationId} leadId=${leadId} name=${userName} phone=${phone ?? "(none)"} simulated=${isSimulated} existed=${!!existing}`,
+		);
 	} catch (err) {
 		// Don't block the handoff if the lead insert fails — attendants still
 		// need to be notified, and the lead can be reconciled manually.
