@@ -122,7 +122,8 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 
 				<Button
 					size="lg"
-					className="w-full gap-1.5 min-h-[44px]"
+					data-testid="tenho-interesse-cta"
+					className="w-full gap-1.5 min-h-[44px] shadow-lg shadow-primary/30 ring-1 ring-primary/40 hover:shadow-primary/50 transition-shadow"
 					onClick={handleInterest}
 					disabled={isStreaming}
 				>

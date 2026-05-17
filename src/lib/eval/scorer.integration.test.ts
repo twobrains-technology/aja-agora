@@ -4,8 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // "test_sentinel" é a URL placeholder definida em vitest.setup.ts pra módulos
 // que importam @/db mas não tocam queries. Aqui o test PRECISA de DB real,
 // então só roda quando a URL é REAL (não a sentinel).
-const HAS_REAL_DB =
-	Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL.includes("test_sentinel");
+const HAS_REAL_DB = Boolean(
+	process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("test_sentinel"),
+);
 const skipIfNoDb = HAS_REAL_DB ? describe : describe.skip;
 
 skipIfNoDb("scoreConversation (integration, requer DATABASE_URL)", () => {

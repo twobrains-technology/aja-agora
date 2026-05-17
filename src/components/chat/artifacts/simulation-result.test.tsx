@@ -99,6 +99,14 @@ describe("SimulationResult — CTAs explícitos no fechamento (bug #12)", () => 
 		expect(screen.getByRole("button", { name: /tenho interesse/i })).toBeDefined();
 	});
 
+	it("botão 'Tenho interesse' tem afordância elevada — shadow + ring (#13)", () => {
+		render(<SimulationResult payload={basePayload} />);
+		const cta = screen.getByTestId("tenho-interesse-cta");
+		const cls = cta.className;
+		expect(cls).toMatch(/shadow-lg/);
+		expect(cls).toMatch(/ring-1|ring-2|ring-primary/);
+	});
+
 	it("renderiza CTAs secundárias quando payload.actions é populado", () => {
 		const payloadWithActions: SimulationResultPayload = {
 			...basePayload,
