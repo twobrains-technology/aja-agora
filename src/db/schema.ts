@@ -155,7 +155,7 @@ export const conversations = pgTable(
 	"conversations",
 	{
 		id: uuid().defaultRandom().primaryKey(),
-		waId: varchar("wa_id", { length: 32 }),
+		waId: varchar("wa_id", { length: 50 }),
 		channel: channelEnum().default("web").notNull(),
 		status: conversationStatusEnum().default("active").notNull(),
 		handedOffUserId: text("handed_off_user_id").references(() => user.id),

@@ -92,6 +92,13 @@
       "when": 1779100000000,
       "tag": "0012_persona_bruno_moto",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779110000000,
+      "tag": "0013_wa_id_varchar50",
+      "breakpoints": true
     }
   ]
 }
