@@ -676,10 +676,13 @@ export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
 				text: "Escolhe abaixo ou digita livremente.",
 			},
 			action: {
+				// Bv2-01 / Bruna v1 #20: moto SUBSTITUI servicos nos chips
+				// (3 chips, mesma decisão da landing). WhatsApp limita
+				// interactive button a 3.
 				buttons: [
 					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
-					{ type: "reply", reply: { id: "category_auto", title: "🚗 Automóvel" } },
-					{ type: "reply", reply: { id: "category_servicos", title: "💼 Outros" } },
+					{ type: "reply", reply: { id: "category_auto", title: "🚗 Carro" } },
+					{ type: "reply", reply: { id: "category_moto", title: "🏍 Moto" } },
 				],
 			},
 		},

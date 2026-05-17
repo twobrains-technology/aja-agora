@@ -254,6 +254,7 @@ async function handleRange({ from, replyId, replyTitle }: Ctx): Promise<boolean>
 	const catLabel: Record<string, string> = {
 		auto: "carro",
 		imovel: "imóvel",
+		moto: "moto",
 		servicos: "serviço",
 	};
 	const label = catLabel[range.category] ?? "consórcio";
