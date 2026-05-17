@@ -53,4 +53,22 @@ describe("computeScenarios — 3 cenários de contemplação (bug #16)", () => {
 		expect(acelerado.expectedTermMonths).toBeGreaterThanOrEqual(1);
 		expect(acelerado.expectedTermMonths).toBeLessThanOrEqual(24);
 	});
+
+	it("conservador: lanceValue e ownResourcesValue zerados", () => {
+		const { conservador } = computeScenarios(baseInput);
+		expect(conservador.lanceValue).toBe(0);
+		expect(conservador.ownResourcesValue).toBe(0);
+	});
+
+	it("provavel: lanceValue = 20% do creditValue em R$, ownResources zerado", () => {
+		const { provavel } = computeScenarios(baseInput);
+		expect(provavel.lanceValue).toBe(180_000); // 20% de 900k
+		expect(provavel.ownResourcesValue).toBe(0);
+	});
+
+	it("acelerado: lanceValue + ownResourcesValue > 0 (R$ tangível pra Bruna)", () => {
+		const { acelerado } = computeScenarios(baseInput);
+		expect(acelerado.lanceValue).toBe(270_000); // 30% de 900k
+		expect(acelerado.ownResourcesValue).toBe(90_000); // 10% de 900k
+	});
 });

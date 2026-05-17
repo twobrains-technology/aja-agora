@@ -13,7 +13,7 @@ import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
-import { rankGroups } from "@/lib/agent/recommendation";
+import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import {
@@ -266,23 +266,28 @@ export const consorcioTools = {
 
 	recommend_groups: tool({
 		description:
-			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao.",
+			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao. Garante sempre >=3 opcoes (expande faixa de credito ate +-50% se necessario, marcando alternativas com flag).",
 		inputSchema: recommendGroupsSchema,
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = getAdapter();
 			const { budget, desiredTermMonths, ...searchParams } = args;
-			const groups = await adapter.searchGroups(searchParams);
-			const ranked = rankGroups(groups, {
+			const fallbackResult = await recommendWithFallback(adapter, searchParams);
+			const ranked = rankGroups(fallbackResult.groups, {
 				budget,
 				desiredTermMonths: desiredTermMonths ?? 0,
 			});
+			// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
+			const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
 			return {
 				recommendations: ranked.map((r) => ({
 					...r.group,
 					score: r.score,
 					scoreBreakdown: r.factors,
+					alternativa: altById.get(r.group.id) ?? false,
 				})),
 				total: ranked.length,
+				expansionUsed: fallbackResult.expansionUsed,
+				insufficientOptions: fallbackResult.insufficientOptions,
 			};
 		},
 	}),
@@ -390,6 +395,33 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_financing_comparison: tool({
+		description:
+			"Apresenta como artifact visual a comparacao consorcio × financiamento (output de compare_with_financing). Use SEMPRE depois de chamar compare_with_financing — o output da tool de dados vai pro input desta. Bug #17.",
+		inputSchema: z.object({
+			category: z.enum(["imovel", "auto", "moto", "servicos"]),
+			creditValue: z.number().positive(),
+			termMonths: z.number().int().positive(),
+			consorcio: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+			}),
+			financing: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+				annualRate: z.number(),
+			}),
+			diff: z.object({
+				monthlyDelta: z.number(),
+				totalDelta: z.number(),
+			}),
+			disclaimer: z.string(),
+		}),
+		execute: async (args) => {
+			return `[Comparativo apresentado: consorcio ${args.consorcio.monthlyPayment}/mes vs financ. ${args.financing.monthlyPayment}/mes]`;
+		},
+	}),
+
 	// ---- Control signals (intercepted by orchestrator) ----
 
 	suggest_handoff: tool({
@@ -467,4 +499,5 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_value_picker",
 	"present_scenarios",
 	"present_topic_picker",
+	"present_financing_comparison",
 ]);
