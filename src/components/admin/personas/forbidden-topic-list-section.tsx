@@ -15,9 +15,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { generateId } from "@/lib/utils/id";
 
 function makeId() {
-	return crypto.randomUUID();
+	return generateId();
 }
 
 export function ForbiddenTopicListSection() {

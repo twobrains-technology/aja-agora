@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { generateId } from "@/lib/utils/id";
 import type { ChatAction } from "./actions";
 import type { AjaUIMessage } from "./ui-message";
 
@@ -65,7 +66,7 @@ export function ChatProvider({
 	initialConversationId?: string;
 }) {
 	const [conversationId, setConversationId] = useState<string>(
-		() => initialConversationId ?? crypto.randomUUID(),
+		() => initialConversationId ?? generateId(),
 	);
 	const [handoff, setHandoff] = useState<HandoffState>({ status: "active", agentName: null });
 
@@ -172,7 +173,7 @@ export function ChatProvider({
 	const reset = useCallback(() => {
 		chat.setMessages([]);
 		chat.clearError?.();
-		setConversationId(crypto.randomUUID());
+		setConversationId(generateId());
 		setHandoff({ status: "active", agentName: null });
 	}, [chat]);
 

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { generateId } from "@/lib/utils/id";
 
 type Attendant = {
 	id: string;
@@ -134,7 +135,7 @@ export function SimulatorChat() {
 		if (!text || !selectedId || sending) return;
 		setSending(true);
 		const optimistic: Message = {
-			id: `local-${crypto.randomUUID()}`,
+			id: `local-${generateId()}`,
 			direction: "outbound",
 			text,
 			createdAt: new Date().toISOString(),
@@ -156,7 +157,7 @@ export function SimulatorChat() {
 			setMessages((prev) => [
 				...prev,
 				{
-					id: `err-${crypto.randomUUID()}`,
+					id: `err-${generateId()}`,
 					direction: "inbound",
 					text: `[erro ao enviar: ${message}]`,
 					createdAt: new Date().toISOString(),

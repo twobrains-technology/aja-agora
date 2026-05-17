@@ -15,6 +15,7 @@ import type { SimulatorClientEvent } from "@/lib/whatsapp/simulator-bus";
 import { WhatsAppBubble } from "./whatsapp-bubble";
 import { type InteractivePayload, WhatsAppInteractive } from "./whatsapp-interactive";
 import { WhatsAppTyping } from "./whatsapp-typing";
+import { generateId } from "@/lib/utils/id";
 
 type Item =
 	| { kind: "bubble"; id: string; direction: "sent" | "received"; text: string; createdAt: string }
@@ -126,7 +127,7 @@ export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
 		// Optimistic — bolha verde aparece já.
 		const optimistic: Item = {
 			kind: "bubble",
-			id: `local-${crypto.randomUUID()}`,
+			id: `local-${generateId()}`,
 			direction: "sent",
 			text,
 			createdAt: new Date().toISOString(),
@@ -146,7 +147,7 @@ export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
 				...prev,
 				{
 					kind: "bubble",
-					id: `err-${crypto.randomUUID()}`,
+					id: `err-${generateId()}`,
 					direction: "received",
 					text: `[erro ao enviar: ${err instanceof Error ? err.message : String(err)}]`,
 					createdAt: new Date().toISOString(),
@@ -166,7 +167,7 @@ export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
 				...prev,
 				{
 					kind: "bubble",
-					id: `local-${crypto.randomUUID()}`,
+					id: `local-${generateId()}`,
 					direction: "sent",
 					text: replyTitle,
 					createdAt: new Date().toISOString(),
@@ -186,7 +187,7 @@ export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
 					...prev,
 					{
 						kind: "bubble",
-						id: `err-${crypto.randomUUID()}`,
+						id: `err-${generateId()}`,
 						direction: "received",
 						text: `[erro ao responder botão: ${err instanceof Error ? err.message : String(err)}]`,
 						createdAt: new Date().toISOString(),

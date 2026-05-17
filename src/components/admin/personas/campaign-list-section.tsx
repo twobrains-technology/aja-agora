@@ -23,11 +23,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { generateId } from "@/lib/utils/id";
 
 const PRIORITY_LABEL = { high: "Alta", medium: "Média", low: "Baixa" } as const;
 
 function makeId() {
-	return crypto.randomUUID();
+	return generateId();
 }
 
 export function CampaignListSection() {
