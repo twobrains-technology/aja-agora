@@ -4,6 +4,7 @@
 // Acessa via REST (sem provider do AI SDK). Ver ADR 2026-05-16.
 
 import type { MemoryAdapter } from "./adapter";
+import { markLettaFailure, markLettaSuccess } from "./circuit-state";
 import { lettaFetch } from "./letta-client";
 import { logMemoryOp, maskIdentity, recordMemoryEvent } from "./observability";
 import type {
@@ -130,6 +131,15 @@ function daysBetween(isoA: string | undefined, isoB: Date): number | null {
 // ─── Adapter ────────────────────────────────────────────────────────────────
 
 export class LettaMemoryAdapter implements MemoryAdapter {
+	/**
+	 * Lock in-memory pra serializar createAgent do mesmo `name`. Mitiga R6
+	 * (race condition: 2 turnos simultâneos do mesmo cookie podem criar 2
+	 * agents porque a busca prévia retorna 0 e ambos POST). Cobre 1 processo
+	 * Node — pra múltiplas instâncias ECS, Letta API deveria garantir name
+	 * unicidade server-side (mas v0.16 não documenta — verificar).
+	 */
+	private readonly _creatingAgent = new Map<string, Promise<LettaAgent>>();
+
 	isPersistent(): boolean {
 		return true;
 	}
@@ -142,6 +152,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		const start = Date.now();
 		try {
 			const agent = await this.findAgent(identity, timeoutMs);
+			markLettaSuccess(); // Letta respondeu — fecha circuit se estava aberto
 			if (!agent) {
 				logMemoryOp({
 					letta_op: "load_context",
@@ -184,6 +195,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			};
 		} catch (err) {
 			// Circuit breaker: read-side NUNCA throw — log e devolve null.
+			markLettaFailure(err instanceof Error ? err.message : "loadContext error");
 			const isTimeout = err instanceof MemoryTimeoutError;
 			logMemoryOp(
 				{
@@ -210,6 +222,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		const start = Date.now();
 		try {
 			const agent = await this.findOrCreateAgent(identity, metadata.conversationId);
+			markLettaSuccess();
 
 			// 1. Inserir cada memory entry no archival
 			for (const entry of memories) {
@@ -278,6 +291,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			});
 		} catch (err) {
 			// Fire-and-forget — log e drop.
+			markLettaFailure(err instanceof Error ? err.message : "storeMemories error");
 			logMemoryOp(
 				{
 					letta_op: "store_memories",
@@ -403,12 +417,37 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		identity: UserIdentity,
 		conversationId?: string,
 	): Promise<LettaAgent> {
+		const name = agentNameFor(identity);
 		const existing = await this.findAgent(identity, 2000);
 		if (existing) return existing;
 
+		// R6 mitigação: se outro turno deste processo já está criando este agent,
+		// espera o resultado dele em vez de criar duplicado.
+		const inFlight = this._creatingAgent.get(name);
+		if (inFlight) return inFlight;
+
+		const promise = this.doCreateAgent(identity, conversationId).finally(() => {
+			this._creatingAgent.delete(name);
+		});
+		this._creatingAgent.set(name, promise);
+		return promise;
+	}
+
+	private async doCreateAgent(
+		identity: UserIdentity,
+		conversationId?: string,
+	): Promise<LettaAgent> {
 		const name = agentNameFor(identity);
 		const initialBlock = emptyHumanBlock(identity);
 		const start = Date.now();
+
+		// Defensive recheck — outro turno pode ter criado entre findAgent e o
+		// momento em que esse lock pegou. Reduz janela de race mesmo sem lock
+		// server-side garantido.
+		const refound = await this.findAgent(identity, 1500).catch(() => null);
+		if (refound) {
+			return refound;
+		}
 
 		const created = await lettaFetch<LettaAgent>("/v1/agents/", {
 			method: "POST",
@@ -431,6 +470,15 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 					"app:aja-agora",
 				],
 			}),
+		}).catch(async (err) => {
+			// Se POST falhou por conflito (name já existe — outro processo Node
+			// criou), tenta re-buscar uma última vez.
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("409") || msg.toLowerCase().includes("conflict") || msg.toLowerCase().includes("already exists")) {
+				const recovered = await this.findAgent(identity, 2000).catch(() => null);
+				if (recovered) return recovered;
+			}
+			throw err;
 		});
 
 		const latency = Date.now() - start;

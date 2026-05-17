@@ -6,6 +6,7 @@
 //    backend cai. Re-checa a cada CIRCUIT_RECHECK_MS pra recuperar.
 
 import type { MemoryAdapter } from "./adapter";
+import { isLettaCircuitOpen, markLettaFailure, markLettaSuccess } from "./circuit-state";
 import { LettaMemoryAdapter } from "./letta-adapter";
 import { lettaHealthCheck } from "./letta-client";
 import { NoopMemoryAdapter } from "./noop-adapter";
@@ -14,7 +15,6 @@ import { logMemoryOp, recordMemoryEvent } from "./observability";
 const CIRCUIT_RECHECK_MS = 60_000;
 
 let _adapter: MemoryAdapter | null = null;
-let _circuitOpen = false;
 let _lastHealthCheckAt = 0;
 let _lettaInstance: LettaMemoryAdapter | null = null;
 const _noopInstance = new NoopMemoryAdapter();
@@ -46,34 +46,37 @@ export function getMemoryAdapter(): MemoryAdapter {
 	// Se forçado pra Noop via env, não há circuit breaker.
 	if (!_adapter.isPersistent()) return _adapter;
 
-	// Health check periódico em background. Não bloqueia.
+	// Health check periódico em background. Não bloqueia. Apenas pra
+	// **recuperar** o circuito após erros — o adapter já abre o circuito
+	// SÍNCRONAMENTE em qualquer falha (via markLettaFailure no catch).
 	const now = Date.now();
 	if (now - _lastHealthCheckAt > CIRCUIT_RECHECK_MS) {
 		_lastHealthCheckAt = now;
 		lettaHealthCheck(1000)
 			.then((ok) => {
-				if (_circuitOpen && ok) {
-					logMemoryOp({ letta_op: "health_check", circuit: "closed", recovered: true });
-					_circuitOpen = false;
-				} else if (!_circuitOpen && !ok) {
-					logMemoryOp({ letta_op: "fallback_triggered", circuit: "open" }, "warn");
+				if (ok) {
+					markLettaSuccess();
+				} else {
+					markLettaFailure("health_check_failed");
 					void recordMemoryEvent({
 						eventType: "fallback_triggered",
 						payload: { reason: "letta_health_check_failed" },
 					});
-					_circuitOpen = true;
 				}
 			})
 			.catch(() => {});
 	}
 
-	return _circuitOpen ? _noopInstance : _adapter;
+	if (isLettaCircuitOpen()) {
+		logMemoryOp({ letta_op: "fallback_triggered" }, "warn");
+		return _noopInstance;
+	}
+	return _adapter;
 }
 
 /** Reset singleton — para testes. */
 export function resetMemoryAdapter(): void {
 	_adapter = null;
-	_circuitOpen = false;
 	_lastHealthCheckAt = 0;
 	_lettaInstance = null;
 }

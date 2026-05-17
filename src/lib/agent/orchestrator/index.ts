@@ -67,7 +67,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	}
 
 	if (isUserTurn && !skipLeadCollection && meta.leadCollection) {
-		yield* runLeadCollectionTurn({ conversationId, channel, text: userText, meta });
+		yield* runLeadCollectionTurn({ conversationId, channel, text: userText, meta, userKey });
 		yield { type: "finish", reason: "lead-collection" };
 		return;
 	}
@@ -152,6 +152,16 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const memorySystemMessage = memorySystemMessageFromContext(memoryContext);
 
 	const memoryPrefix: ChatMessage[] = memorySystemMessage ? [memorySystemMessage] : [];
+
+	// Debug hook (R9 do QA plan): quando AJA_DEBUG_MEMORY=1, persiste o hint
+	// injetado no meta pra E2E inspecionar via SQL. Nunca em produção.
+	if (process.env.AJA_DEBUG_MEMORY === "1") {
+		const debugMeta = await reloadMeta(conversationId);
+		await persistMeta(conversationId, {
+			...debugMeta,
+			lettaDebugHint: memorySystemMessage?.content ?? null,
+		});
+	}
 	const messagesForAgent: ChatMessage[] = isUserTurn
 		? [...memoryPrefix, ...systemContext, ...history]
 		: [
