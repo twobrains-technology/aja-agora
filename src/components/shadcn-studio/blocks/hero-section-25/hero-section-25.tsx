@@ -109,7 +109,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
 
             <MotionPreset fade blur='4px' slide={{ direction: 'up', offset: 12 }} delay={0.3}>
               <p className='text-muted-foreground text-base sm:text-lg max-w-lg'>
-                Sem formulario, sem corretor. Converse com nosso agente inteligente e encontre o consorcio perfeito para voce em minutos.
+                Sem formulario, sem corretor. Converse com nosso consultor e encontre o consorcio sem juros, com a parcela que cabe no seu mes.
               </p>
             </MotionPreset>
 
@@ -349,7 +349,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
 
               {/* Sub text */}
               <p className='mt-4 text-center text-sm text-muted-foreground'>
-                Sem formulario, sem corretor -- 100% IA
+                Sem formulario, sem corretor -- consorcio sem juros, parcela menor que financiamento
               </p>
             </MotionPreset>
           </div>

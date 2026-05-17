@@ -43,6 +43,65 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 		expect(result.recommendations[0]).toHaveProperty("alternativa");
 	});
 
+	// Bv2-08 — Bruna v2: parcela do comparativo divergia do detalhamento.
+	// Causa raiz: LLM usa creditValue do pedido inicial (ex: 800k) em vez do
+	// nominal do grupo (ex: 900k). Guardrail: simulate_quota detecta
+	// divergência e retorna creditAdjustmentNotice obrigando o agente a
+	// declarar o ajuste pro user. CDC art. 30/35/37.
+	describe("simulate_quota guardrail Bv2-08 — creditAdjustmentNotice", () => {
+		it("retorna creditAdjustmentNotice quando creditValue diverge >1% do nominal", async () => {
+			const exec = consorcioTools.simulate_quota.execute;
+			if (!exec) throw new Error("simulate_quota.execute undefined");
+			// Pega um grupo Rodobens imovel real do mock
+			const search = consorcioTools.search_groups.execute;
+			if (!search) throw new Error("search_groups.execute undefined");
+			const groups = (await search(
+				{ category: "imovel" },
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				{ toolCallId: "t", messages: [] } as any,
+			)) as { groups: Array<{ id: string; administradora: string; creditValue: number }> };
+			const rodobens = groups.groups.find((g) => g.administradora === "Rodobens");
+			if (!rodobens) throw new Error("grupo Rodobens não achado no mock");
+
+			const adjustedCredit = Math.round(rodobens.creditValue * 0.85);
+			const result = (await exec(
+				{ groupId: rodobens.id, creditValue: adjustedCredit },
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				{ toolCallId: "t", messages: [] } as any,
+			)) as {
+				monthlyPayment: number;
+				creditValue: number;
+				creditAdjustmentNotice?: {
+					requestedCreditValue: number;
+					groupNominalCreditValue: number;
+					message: string;
+				};
+			};
+			expect(result.creditAdjustmentNotice).toBeDefined();
+			expect(result.creditAdjustmentNotice?.requestedCreditValue).toBe(adjustedCredit);
+			expect(result.creditAdjustmentNotice?.groupNominalCreditValue).toBe(rodobens.creditValue);
+			expect(result.creditAdjustmentNotice?.message).toMatch(/ajust/i);
+		});
+
+		it("NÃO retorna notice quando creditValue == nominal do grupo (±1%)", async () => {
+			const exec = consorcioTools.simulate_quota.execute;
+			const search = consorcioTools.search_groups.execute;
+			if (!exec || !search) throw new Error("tools undefined");
+			const groups = (await search(
+				{ category: "imovel" },
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				{ toolCallId: "t", messages: [] } as any,
+			)) as { groups: Array<{ id: string; creditValue: number }> };
+			const g = groups.groups[0];
+			const result = (await exec(
+				{ groupId: g.id, creditValue: g.creditValue },
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				{ toolCallId: "t", messages: [] } as any,
+			)) as { creditAdjustmentNotice?: unknown };
+			expect(result.creditAdjustmentNotice).toBeUndefined();
+		});
+	});
+
 	it("preserva tools existentes (anti-regressão)", () => {
 		for (const t of [
 			"search_groups",

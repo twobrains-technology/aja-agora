@@ -217,11 +217,29 @@ export const consorcioTools = {
 
 	simulate_quota: tool({
 		description:
-			"Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo.",
+			"Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: \"e se fosse 200k?\"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.",
 		inputSchema: simulateQuotaInput,
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = getAdapter();
-			return await adapter.simulateQuota(args);
+			const [details, simulation] = await Promise.all([
+				adapter.getGroupDetails({ groupId: args.groupId }),
+				adapter.simulateQuota(args),
+			]);
+			const delta = Math.abs(args.creditValue - details.creditValue);
+			const relativeDelta = delta / details.creditValue;
+			if (delta > 1 && relativeDelta > 0.01) {
+				const fmt = (n: number) =>
+					n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+				return {
+					...simulation,
+					creditAdjustmentNotice: {
+						requestedCreditValue: args.creditValue,
+						groupNominalCreditValue: details.creditValue,
+						message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+					},
+				};
+			}
+			return simulation;
 		},
 	}),
 
