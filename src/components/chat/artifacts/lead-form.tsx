@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
 import type { LeadFormPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
-import { LEAD_FIELDS, type LeadFields, leadSchema } from "@/lib/lead/schema";
+import { LEAD_FIELDS, type LeadFields, type LeadFieldsInput, leadSchema } from "@/lib/lead/schema";
 import { cn } from "@/lib/utils";
 
 const motionEntry = {
@@ -41,7 +41,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		setError,
 		reset,
 		formState: { errors, isSubmitting },
-	} = useForm<LeadFields>({
+	} = useForm<LeadFieldsInput, unknown, LeadFields>({
 		resolver: zodResolver(leadSchema),
 		defaultValues: { name: "", phone: "", email: "" },
 	});

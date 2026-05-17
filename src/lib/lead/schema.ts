@@ -35,6 +35,11 @@ export const leadSchema = z.object({
 
 export type LeadFields = z.infer<typeof leadSchema>;
 
+// Input shape do form (antes do transform/parse): email é sempre string.
+// Necessário pro useForm/defaultValues do react-hook-form que requer
+// shape consistente com o registro do input.
+export type LeadFieldsInput = z.input<typeof leadSchema>;
+
 export type LeadFieldConfig = {
 	key: keyof LeadFields;
 	label: string;
