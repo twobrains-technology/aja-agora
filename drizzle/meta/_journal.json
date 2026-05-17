@@ -64,6 +64,13 @@
       "when": 1778505259558,
       "tag": "0008_solid_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778979563910,
+      "tag": "0009_thankful_ego",
+      "breakpoints": true
     }
   ]
 }

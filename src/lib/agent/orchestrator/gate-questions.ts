@@ -4,6 +4,7 @@ import type { Gate } from "@/lib/agent/qualify-state";
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
 	auto: "Em quanto tempo você quer estar com o carro novo?",
+	moto: "Em quanto tempo você quer estar com a moto nova?",
 	servicos: "Em quanto tempo você quer realizar isso?",
 };
 

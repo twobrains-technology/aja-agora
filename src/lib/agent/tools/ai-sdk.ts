@@ -13,7 +13,9 @@ import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
-import { rankGroups } from "@/lib/agent/recommendation";
+import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
+import { computeScenarios } from "@/lib/agent/scenarios";
+import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import {
 	getGroupDetailsInput,
 	getRatesInput,
@@ -26,7 +28,7 @@ import {
 const groupCardSchema = z.object({
 	id: z.string().describe("ID do grupo (UUID)"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal estimada em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -50,6 +52,9 @@ const comparisonTableSchema = z.object({
 const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem (define indice de correcao prevista: imovel=INCC, auto=IPCA)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFee: z.number().describe("Taxa de administracao total em reais"),
@@ -58,12 +63,40 @@ const simulationResultSchema = z.object({
 	totalCost: z.number().describe("Custo total em reais"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	effectiveRate: z.number().describe("Taxa efetiva total em percentual"),
+	lanceScenario: z
+		.object({
+			lancePercent: z.number().describe("Percentual do credito ofertado como lance"),
+			expectedTermMonths: z
+				.number()
+				.int()
+				.describe("Prazo esperado ate contemplacao com esse lance"),
+		})
+		.optional()
+		.describe("Cenario projetado com lance (bug #10)"),
+	expectedAdjustment: z
+		.object({
+			index: z.enum(["INCC", "IPCA"]).describe("Indice de correcao previsto"),
+			annualPercent: z.number().describe("Percentual anual estimado"),
+		})
+		.optional()
+		.describe("Correcao prevista da carta — INCC pra imovel, IPCA pra auto (bug #10)"),
+	actions: z
+		.array(
+			z.object({
+				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
+				intent: z
+					.string()
+					.describe("Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')"),
+			}),
+		)
+		.optional()
+		.describe("CTAs explicitas pro fechamento (bug #12)"),
 });
 
 const recommendationSchema = z.object({
 	id: z.string().describe("ID do grupo recomendado"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -90,7 +123,7 @@ const leadFormSchema = z.object({
 
 const valuePickerSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem para personalizar o visual"),
 	fields: z
 		.array(
@@ -114,9 +147,48 @@ const captureLeadSchema = z.object({
 	email: z.string().email().describe("Email do lead"),
 });
 
+const scenariosSchema = z.object({
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo nominal do consorcio em meses"),
+});
+
+const topicPickerSchema = z.object({
+	prompt: z
+		.string()
+		.optional()
+		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
+	topics: z
+		.array(z.string().min(1))
+		.min(2)
+		.max(5)
+		.describe("Lista de topicos clicaveis (2-5)"),
+	includeBackButton: z
+		.boolean()
+		.default(true)
+		.describe("Se true, mostra botao 'Voltar' que retorna ao estado anterior (#06)"),
+});
+
+const compareWithFinancingSchema = z.object({
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem (define taxa CET padrao)"),
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo do consorcio em meses"),
+	consorcioMonthlyPayment: z
+		.number()
+		.describe("Parcela mensal do consorcio (vem de simulate_quota)"),
+	consorcioTotalCost: z.number().describe("Custo total do consorcio (vem de simulate_quota)"),
+	annualRateOverride: z
+		.number()
+		.optional()
+		.describe(
+			"Override da taxa CET anual do financiamento. Default: imovel 10%, auto 22%, moto 28%, servicos 25%.",
+		),
+});
+
 const recommendGroupsSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
@@ -174,25 +246,48 @@ export const consorcioTools = {
 		},
 	}),
 
+	compare_with_financing: tool({
+		description:
+			"Compara parcela e custo total de um consorcio com um financiamento bancario equivalente (Tabela Price, CET estimado por categoria). Use quando o usuario perguntar comparativo, hesitar entre consorcio e financiamento, ou quiser entender a diferenca em numeros. Sempre retornar com disclaimer de estimativa.",
+		inputSchema: compareWithFinancingSchema,
+		execute: async (args: z.infer<typeof compareWithFinancingSchema>) => {
+			return compareWithFinancing(args);
+		},
+	}),
+
+	compute_scenarios: tool({
+		description:
+			"Calcula 3 cenarios de contemplacao (Conservador sem lance, Provavel com 20% de lance, Acelerado com 30% lance + recursos proprios) para um grupo. Use SEMPRE antes de chamar present_scenarios. Estimativa, nao garantia.",
+		inputSchema: scenariosSchema,
+		execute: async (args: z.infer<typeof scenariosSchema>) => {
+			return computeScenarios(args);
+		},
+	}),
+
 	recommend_groups: tool({
 		description:
-			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao.",
+			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao. Garante sempre >=3 opcoes (expande faixa de credito ate +-50% se necessario, marcando alternativas com flag).",
 		inputSchema: recommendGroupsSchema,
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = getAdapter();
 			const { budget, desiredTermMonths, ...searchParams } = args;
-			const groups = await adapter.searchGroups(searchParams);
-			const ranked = rankGroups(groups, {
+			const fallbackResult = await recommendWithFallback(adapter, searchParams);
+			const ranked = rankGroups(fallbackResult.groups, {
 				budget,
 				desiredTermMonths: desiredTermMonths ?? 0,
 			});
+			// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
+			const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
 			return {
 				recommendations: ranked.map((r) => ({
 					...r.group,
 					score: r.score,
 					scoreBreakdown: r.factors,
+					alternativa: altById.get(r.group.id) ?? false,
 				})),
 				total: ranked.length,
+				expansionUsed: fallbackResult.expansionUsed,
+				insufficientOptions: fallbackResult.insufficientOptions,
 			};
 		},
 	}),
@@ -252,6 +347,78 @@ export const consorcioTools = {
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
+		},
+	}),
+
+	present_scenarios: tool({
+		description:
+			"Apresenta 3 cenarios de contemplacao lado a lado (Conservador sem lance, Provavel com 20% lance, Acelerado 30% lance + recursos proprios). Use apos calcular com compute_scenarios. Bug #16 Bruna v1 review.",
+		inputSchema: z.object({
+			groupId: z.string().describe("ID do grupo simulado"),
+			administradora: z.string().describe("Nome da administradora"),
+			creditValue: z.number().describe("Valor do credito em reais"),
+			termMonths: z.number().int().describe("Prazo nominal do consorcio em meses"),
+			scenarios: z
+				.object({
+					conservador: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					provavel: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					acelerado: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+				})
+				.describe("Output de compute_scenarios"),
+		}),
+		execute: async (args) => {
+			return `[3 cenarios apresentados: ${args.administradora} R$ ${args.creditValue.toLocaleString("pt-BR")} — Conservador ${args.scenarios.conservador.expectedTermMonths}m / Provavel ${args.scenarios.provavel.expectedTermMonths}m / Acelerado ${args.scenarios.acelerado.expectedTermMonths}m]`;
+		},
+	}),
+
+	present_topic_picker: tool({
+		description:
+			"Apresenta lista de topicos clicaveis (chips) + botao 'Voltar' opcional. Use quando o usuario clicar 'Entender mais antes' ou pedir pra esclarecer duvidas — em vez de campo aberto, oferece atalhos pra topicos comuns. Bug #05 Bruna v1 review.",
+		inputSchema: topicPickerSchema,
+		execute: async (args: z.infer<typeof topicPickerSchema>) => {
+			return `[Topic picker apresentado: ${args.topics.length} topicos${args.includeBackButton ? " + botao Voltar" : ""}]`;
+		},
+	}),
+
+	present_financing_comparison: tool({
+		description:
+			"Apresenta como artifact visual a comparacao consorcio × financiamento (output de compare_with_financing). Use SEMPRE depois de chamar compare_with_financing — o output da tool de dados vai pro input desta. Bug #17.",
+		inputSchema: z.object({
+			category: z.enum(["imovel", "auto", "moto", "servicos"]),
+			creditValue: z.number().positive(),
+			termMonths: z.number().int().positive(),
+			consorcio: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+			}),
+			financing: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+				annualRate: z.number(),
+			}),
+			diff: z.object({
+				monthlyDelta: z.number(),
+				totalDelta: z.number(),
+			}),
+			disclaimer: z.string(),
+		}),
+		execute: async (args) => {
+			return `[Comparativo apresentado: consorcio ${args.consorcio.monthlyPayment}/mes vs financ. ${args.financing.monthlyPayment}/mes]`;
 		},
 	}),
 
@@ -330,4 +497,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_recommendation_card",
 	"present_lead_form",
 	"present_value_picker",
+	"present_scenarios",
+	"present_topic_picker",
+	"present_financing_comparison",
 ]);

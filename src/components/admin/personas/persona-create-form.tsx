@@ -53,7 +53,7 @@ const DEFAULT_TOOLS = [
 
 type FormValues = {
 	displayName: string;
-	category: "imovel" | "auto" | "servicos" | undefined;
+	category: "imovel" | "auto" | "moto" | "servicos" | undefined;
 	expertise: string | null;
 	voiceTone: string;
 	examples: PersonaExample[];
@@ -159,7 +159,7 @@ export function PersonaCreateForm() {
 										<Select
 											value={category ?? ""}
 											onValueChange={(v) =>
-												setValue("category", v as "imovel" | "auto" | "servicos", {
+												setValue("category", v as "imovel" | "auto" | "moto" | "servicos", {
 													shouldValidate: true,
 												})
 											}

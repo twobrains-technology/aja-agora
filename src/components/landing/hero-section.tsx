@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Bot, Home, Car, Briefcase, Sparkles, MessageCircle } from "lucide-react";
+import { Bot, Home, Car, Bike, Sparkles, MessageCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
-const goals = [
+export const GOALS = [
   {
     id: "imovel",
     icon: Home,
@@ -27,11 +27,11 @@ const goals = [
     bgHover: "hover:border-violet-400/50 hover:bg-violet-50/50 dark:hover:bg-violet-950/20",
   },
   {
-    id: "servicos",
-    icon: Briefcase,
-    label: "Serviços",
-    sub: "Reforma, viagem ou investimento",
-    message: "Quero fazer um consórcio de serviços, o que vocês têm disponível?",
+    id: "moto",
+    icon: Bike,
+    label: "Moto",
+    sub: "Moto nova ou seminova",
+    message: "Quero comprar uma moto, qual o melhor consórcio para mim?",
     color: "from-emerald-500 to-teal-400",
     bgHover: "hover:border-emerald-400/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20",
   },
@@ -64,7 +64,7 @@ export function HeroSection({ onGoalSelected }: HeroSectionProps) {
   }, [phase]);
 
   const handleSelect = useCallback(
-    (goal: (typeof goals)[number]) => {
+    (goal: (typeof GOALS)[number]) => {
       setSelectedGoal(goal.id);
       setPhase("selected");
       setTimeout(() => onGoalSelected(goal.message), 800);
@@ -194,7 +194,7 @@ export function HeroSection({ onGoalSelected }: HeroSectionProps) {
                       exit: { transition: { staggerChildren: 0.05 } },
                     }}
                   >
-                    {goals.map((goal) => {
+                    {GOALS.map((goal) => {
                       const isSelected = selectedGoal === goal.id;
                       const isOther = selectedGoal !== null && !isSelected;
 
@@ -255,7 +255,7 @@ export function HeroSection({ onGoalSelected }: HeroSectionProps) {
                   >
                     <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3">
                       <p className="text-sm text-primary-foreground">
-                        {goals.find((g) => g.id === selectedGoal)?.message}
+                        {GOALS.find((g) => g.id === selectedGoal)?.message}
                       </p>
                     </div>
                   </motion.div>

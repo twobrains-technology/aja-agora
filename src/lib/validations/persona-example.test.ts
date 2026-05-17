@@ -57,7 +57,7 @@ describe("personaExampleSchema — condições when*", () => {
 	it("rejeita valor fora do enum em whenCategory", () => {
 		const parsed = personaExampleSchema.safeParse({
 			...base,
-			whenCategory: ["imovel", "moto" as never],
+			whenCategory: ["imovel", "categoria_invalida" as never],
 		});
 		expect(parsed.success).toBe(false);
 	});

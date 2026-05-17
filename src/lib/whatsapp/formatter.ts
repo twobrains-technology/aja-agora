@@ -411,7 +411,7 @@ import { CREDIT_BUCKETS, TIMEFRAME_OPTIONS as TIMEFRAMES } from "@/lib/agent/qua
 const CREDIT_RANGES = CREDIT_BUCKETS;
 
 export function creditRangeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "servicos",
+	category: "imovel" | "auto" | "moto" | "servicos",
 	prefix?: string,
 ): WhatsAppResponse {
 	const ranges = CREDIT_RANGES[category];
@@ -440,7 +440,7 @@ export function creditRangeQuestionToWhatsApp(
 }
 
 export function timeframeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "servicos",
+	category: "imovel" | "auto" | "moto" | "servicos",
 	prefix?: string,
 ): WhatsAppResponse {
 	const question = gateQuestion("timeframe", category) ?? "";
@@ -468,7 +468,7 @@ export function timeframeQuestionToWhatsApp(
 }
 
 export function resolveCreditReply(replyId: string): {
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	min: number;
 	max: number;
 	title: string;
@@ -476,7 +476,7 @@ export function resolveCreditReply(replyId: string): {
 	if (!replyId.startsWith("credit_")) return null;
 	const parts = replyId.split("_");
 	if (parts.length < 3) return null;
-	const category = parts[1] as "imovel" | "auto" | "servicos";
+	const category = parts[1] as "imovel" | "auto" | "moto" | "servicos";
 	const token = parts[2];
 	const ranges = CREDIT_RANGES[category];
 	if (!ranges) return null;

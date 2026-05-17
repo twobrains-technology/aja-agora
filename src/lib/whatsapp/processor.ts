@@ -1,6 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
+import type { ConversationMetadata } from "@/lib/agent/personas";
+import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
@@ -11,6 +14,24 @@ import {
 	isAttendantPhone,
 	relayUserToAgent,
 } from "./proxy";
+
+async function handleBackIntent(from: string): Promise<void> {
+	const conv = await db.query.conversations.findFirst({ where: eq(conversations.waId, from) });
+	const meta: ConversationMetadata = conv ? metaOf(conv) : ({} as ConversationMetadata);
+	const { stack: nextStack, popped } = popNavState(meta.navigationStack ?? []);
+	if (conv && popped) {
+		await persistMeta(conv.id, {
+			...meta,
+			navigationStack: nextStack,
+			currentPersona: popped.persona,
+			currentCategory: popped.category ?? undefined,
+			expertiseLevel: popped.expertiseLevel,
+			experiencePrev: popped.experiencePrev ?? undefined,
+			qualifyAnswers: popped.qualifyAnswers,
+		});
+	}
+	await sendTextMessage(from, popped ? "Voltando ao passo anterior." : "Você já está no início.");
+}
 
 export async function processTextMessage(
 	from: string,
@@ -50,6 +71,12 @@ export async function processTextMessage(
 		}
 
 		if (await handlePendingHandoffText(from, text, contactName)) return;
+
+		// Intent textual "voltar" — early-return sem chamar o agent (#06 Bruna v1 review).
+		if (detectBackIntent(text)) {
+			await handleBackIntent(from);
+			return;
+		}
 
 		if (messageId) sendTypingIndicator(messageId).catch(() => {});
 		await processWithOrchestrator(from, text, contactName);
