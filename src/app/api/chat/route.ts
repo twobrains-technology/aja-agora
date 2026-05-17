@@ -219,6 +219,51 @@ export async function POST(req: NextRequest) {
 					return;
 				}
 
+				if (body.action?.kind === "whatsapp_optin") {
+					const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+					const result = await saveContactWhatsapp(conversationId, body.action.phone);
+					const textId = crypto.randomUUID();
+					writer.write({ type: "text-start", id: textId });
+					if (result.ok) {
+						const greetName = contactName ? `, ${contactName}` : "";
+						writer.write({
+							type: "text-delta",
+							id: textId,
+							delta: `Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
+						});
+						await persistMeta(conversationId, {
+							...meta,
+							whatsappOptinShown: true,
+						});
+					} else {
+						writer.write({
+							type: "text-delta",
+							id: textId,
+							delta:
+								"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+						});
+					}
+					writer.write({ type: "text-end", id: textId });
+					return;
+				}
+
+				if (body.action?.kind === "whatsapp_optin_decline") {
+					await persistMeta(conversationId, {
+						...meta,
+						whatsappOptinShown: true,
+						whatsappOptinDeclined: true,
+					});
+					const textId = crypto.randomUUID();
+					writer.write({ type: "text-start", id: textId });
+					writer.write({
+						type: "text-delta",
+						id: textId,
+						delta: "Sem problema, seguimos por aqui mesmo.",
+					});
+					writer.write({ type: "text-end", id: textId });
+					return;
+				}
+
 				if (body.action?.kind === "interest") {
 					const { label } = body.action;
 					await saveMessage(conversationId, "user", label, "web");

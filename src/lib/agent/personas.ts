@@ -62,6 +62,12 @@ export type ConversationMetadata = {
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */
 	maxStageReached?: "engajado" | "qualificado";
+	/** Marca que o card WhatsApp opt-in foi mostrado nesta conversa.
+	 * Impede o agent de chamar present_whatsapp_optin de novo. */
+	whatsappOptinShown?: boolean;
+	/** Marca que o user clicou "Agora não" no card WhatsApp opt-in.
+	 * Usado pra métrica de funil (decline rate). */
+	whatsappOptinDeclined?: boolean;
 	/** State da camada de memória (Letta sidecar — ADR 2026-05-16).
 	 * `reconciled` é setado true após cópia bem-sucedida do agent anônimo (cookie)
 	 * pro agent permanente (phone) — guarda idempotência pra não re-disparar. */
