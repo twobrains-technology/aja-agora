@@ -232,8 +232,9 @@ export async function pipeUserTurn(args: {
 	userText: string;
 	contactName: string | null;
 	writer: Writer;
+	userKey?: string | null;
 }): Promise<void> {
-	const { conversationId, userText, contactName, writer } = args;
+	const { conversationId, userText, contactName, writer, userKey } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -241,6 +242,7 @@ export async function pipeUserTurn(args: {
 		isUserTurn: true,
 		contactName,
 		skipLeadCollection: true,
+		userKey,
 	});
 	await pipeOrchestratorToWriter(events, writer, conversationId);
 }
@@ -250,8 +252,9 @@ export async function pipeDirectiveTurn(args: {
 	directive: string;
 	contactName: string | null;
 	writer: Writer;
+	userKey?: string | null;
 }): Promise<void> {
-	const { conversationId, directive, contactName, writer } = args;
+	const { conversationId, directive, contactName, writer, userKey } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -260,6 +263,7 @@ export async function pipeDirectiveTurn(args: {
 		contactName,
 		skipAnalyzer: true,
 		skipLeadCollection: true,
+		userKey,
 	});
 	await pipeOrchestratorToWriter(events, writer, conversationId);
 }
@@ -271,8 +275,10 @@ export async function pipeTransitionTurn(args: {
 	expertiseHint?: string | null;
 	contactName: string | null;
 	writer: Writer;
+	userKey?: string | null;
 }): Promise<void> {
-	const { conversationId, fromPersona, toCategory, expertiseHint, contactName, writer } = args;
+	const { conversationId, fromPersona, toCategory, expertiseHint, contactName, writer, userKey } =
+		args;
 	const plan = await planTransition({
 		conversationId,
 		fromPersona,
@@ -301,6 +307,7 @@ export async function pipeTransitionTurn(args: {
 		directive: plan.directive,
 		contactName,
 		writer,
+		userKey,
 	});
 }
 
@@ -308,13 +315,14 @@ export async function pipeSearchSummaryTurn(args: {
 	conversationId: string;
 	contactName: string | null;
 	writer: Writer;
+	userKey?: string | null;
 }): Promise<void> {
-	const { conversationId, contactName, writer } = args;
+	const { conversationId, contactName, writer, userKey } = args;
 	const refreshed = await reloadMeta(conversationId);
 	if (refreshed.searchDispatched) return;
 	const category = refreshed.currentCategory;
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-	await pipeDirectiveTurn({ conversationId, directive, contactName, writer });
+	await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
 }
