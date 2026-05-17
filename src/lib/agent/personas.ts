@@ -19,6 +19,8 @@ export type QualifyAnswers = {
 	hasLance?: "yes" | "maybe" | "no";
 };
 
+import type { NavState } from "./orchestrator/navigation";
+
 export type ConversationMetadata = {
 	currentPersona?: Persona;
 	currentCategory?: Category;
@@ -27,6 +29,10 @@ export type ConversationMetadata = {
 	personasSeen?: Category[];
 	awaitingName?: boolean;
 	experiencePrev?: ExperiencePrev;
+	/** Stack de estados anteriores pra suportar comando "voltar" (#06).
+	 * Push em transições major (gate avançado, persona trocada, artefato chave).
+	 * Pop em detectBackIntent. Cap em NAV_STACK_CAP estados (descarta o mais antigo). */
+	navigationStack?: NavState[];
 	qualifyConsented?: boolean;
 	/** Set when consent gate fires the first time. Once set, the gate never re-fires —
 	 * user must click "Bora!" / "Entender mais" buttons or volunteer info that triggers
