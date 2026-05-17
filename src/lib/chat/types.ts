@@ -5,7 +5,7 @@
 export interface GroupCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -22,7 +22,7 @@ export interface ComparisonTablePayload {
 export interface SimulationResultPayload {
 	groupId: string;
 	administradora: string;
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -51,7 +51,7 @@ export interface SimulationResultPayload {
 export interface RecommendationCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -100,7 +100,7 @@ export interface ValuePickerField {
 }
 
 export interface ValuePickerPayload {
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	fields: ValuePickerField[];
 }
 

@@ -28,14 +28,14 @@ export type GatePartData =
 	| {
 			kind: "slider";
 			gate: "credit";
-			category?: "imovel" | "auto" | "servicos";
+			category?: "imovel" | "auto" | "moto" | "servicos";
 			fields: SliderField[];
 	  };
 
 export type TransitionPartData = {
 	toPersona: string;
 	toPersonaName: string;
-	toCategory: "imovel" | "auto" | "servicos";
+	toCategory: "imovel" | "auto" | "moto" | "servicos";
 	bridgeText: string;
 };
 

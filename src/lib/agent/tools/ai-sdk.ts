@@ -26,7 +26,7 @@ import {
 const groupCardSchema = z.object({
 	id: z.string().describe("ID do grupo (UUID)"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal estimada em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -51,7 +51,7 @@ const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem (define indice de correcao prevista: imovel=INCC, auto=IPCA)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
@@ -94,7 +94,7 @@ const simulationResultSchema = z.object({
 const recommendationSchema = z.object({
 	id: z.string().describe("ID do grupo recomendado"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -121,7 +121,7 @@ const leadFormSchema = z.object({
 
 const valuePickerSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem para personalizar o visual"),
 	fields: z
 		.array(
@@ -147,7 +147,7 @@ const captureLeadSchema = z.object({
 
 const recommendGroupsSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),

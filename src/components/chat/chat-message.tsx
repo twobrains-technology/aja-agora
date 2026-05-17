@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertCircle, Bot, Briefcase, Car, Home, type LucideIcon, RotateCcw } from "lucide-react";
+import {
+	AlertCircle,
+	Bike,
+	Bot,
+	Briefcase,
+	Car,
+	Home,
+	type LucideIcon,
+	RotateCcw,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -22,7 +31,7 @@ import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { StreamingDots } from "./streaming-dots";
 
-type Category = "imovel" | "auto" | "servicos";
+type Category = "imovel" | "auto" | "moto" | "servicos";
 
 interface ChatMessageProps {
 	message: AjaUIMessage;
@@ -362,11 +371,12 @@ export function AssistantAvatar({ category }: { category?: Category | null } = {
 }
 
 const CATEGORY_TRANSITION: Record<
-	"imovel" | "auto" | "servicos",
+	"imovel" | "auto" | "moto" | "servicos",
 	{ icon: LucideIcon; short: string; role: string }
 > = {
 	imovel: { icon: Home, short: "imóveis", role: "Especialista em imóveis" },
 	auto: { icon: Car, short: "automóveis", role: "Especialista em automóveis" },
+	moto: { icon: Bike, short: "motos", role: "Especialista em motos" },
 	servicos: { icon: Briefcase, short: "serviços", role: "Especialista em serviços" },
 };
 

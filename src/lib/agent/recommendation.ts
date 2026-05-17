@@ -49,6 +49,7 @@ export function adminFeeScore(feePercent: number, category: ConsorcioCategory): 
 	const ranges: Record<ConsorcioCategory, { min: number; max: number }> = {
 		imovel: { min: 15, max: 22 },
 		auto: { min: 12, max: 18 },
+		moto: { min: 14, max: 20 },
 		servicos: { min: 15, max: 20 },
 	};
 	const { min, max } = ranges[category];

@@ -19,10 +19,10 @@ export const turnAnalysisSchema = z.object({
 			"Frase curta (max 1 linha) explicando os sinais detectados no texto. Use pra ancorar a decisao e facilitar debug.",
 		),
 	detectedCategory: z
-		.enum(["imovel", "auto", "servicos"])
+		.enum(["imovel", "auto", "moto", "servicos"])
 		.nullable()
 		.describe(
-			"Categoria de consorcio detectada. imovel = apto/casa/terreno/comercial. auto = carro/moto/veiculo. servicos = reforma/viagem/formatura/saude/qualquer outro. null se nao houver indicacao clara nesta mensagem.",
+			"Categoria de consorcio detectada. imovel = apto/casa/terreno/comercial. auto = carro/automovel/caminhonete/veiculo. moto = moto/motocicleta/motoneta. servicos = reforma/viagem/formatura/saude/qualquer outro. null se nao houver indicacao clara nesta mensagem.",
 		),
 	detectedSubTopic: z
 		.string()
@@ -190,6 +190,7 @@ export async function analyzeTurn(
 	const subTopics = await listExpertisesByCategory().catch(() => ({
 		imovel: [],
 		auto: [],
+		moto: [],
 		servicos: [],
 	}));
 
