@@ -8,7 +8,7 @@ import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { detectLeadFormArtifact } from "./lead-collection";
+import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -182,9 +182,12 @@ export async function* runAgentTurn(args: {
 
 	if (detectLeadFormArtifact(artifacts) && !meta.leadCollection) {
 		const refreshed = await reloadMeta(conversationId);
+		// Pula stages cujos dados já foram capturados conversacionalmente
+		// via save_contact_name / save_contact_whatsapp (Fase 6).
+		const initial = await initializeLeadCollection(conversationId);
 		await persistMeta(conversationId, {
 			...refreshed,
-			leadCollection: { stage: "name" },
+			leadCollection: initial,
 		});
 	}
 

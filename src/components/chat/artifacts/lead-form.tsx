@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,10 +39,34 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		register,
 		handleSubmit,
 		setError,
+		reset,
 		formState: { errors, isSubmitting },
 	} = useForm<LeadFields>({
 		resolver: zodResolver(leadSchema),
+		defaultValues: { name: "", phone: "", email: "" },
 	});
+
+	// Pré-preencher com dados já capturados conversacionalmente (Fase 6).
+	// GET /api/leads/[id] retorna { name, phone, email } com strings vazias.
+	useEffect(() => {
+		const id = conversationId ?? payload.conversationId;
+		if (!id) return;
+		let cancelled = false;
+		void fetch(`/api/leads/${id}`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((data) => {
+				if (cancelled || !data) return;
+				reset({
+					name: data.name ?? "",
+					phone: data.phone ?? "",
+					email: data.email ?? "",
+				});
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [conversationId, payload.conversationId, reset]);
 
 	const onSubmit = async (data: LeadFields) => {
 		try {
@@ -93,20 +117,23 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 						</CardHeader>
 						<CardContent>
 							<form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-								{LEAD_FIELDS.map((field) => (
+								{LEAD_FIELDS.map((field, idx) => (
 									<div key={field.key} className="space-y-1.5">
 										<label
 											htmlFor={`lead-${field.key}`}
 											className="text-sm font-medium leading-none"
 										>
 											{field.label}
+											{!field.required && (
+												<span className="text-muted-foreground"> (opcional)</span>
+											)}
 										</label>
 										<Input
 											id={`lead-${field.key}`}
 											type={field.type}
 											inputMode={field.inputMode}
 											placeholder={field.placeholder}
-											autoFocus={field.autoFocus}
+											autoFocus={idx === 0 && field.autoFocus}
 											className={cn(
 												"w-full min-h-[44px]",
 												errors[field.key] && "border-destructive",
