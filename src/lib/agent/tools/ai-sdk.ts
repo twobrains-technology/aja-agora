@@ -14,6 +14,7 @@ import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups } from "@/lib/agent/recommendation";
+import { computeScenarios } from "@/lib/agent/scenarios";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import {
 	getGroupDetailsInput,
@@ -146,6 +147,27 @@ const captureLeadSchema = z.object({
 	email: z.string().email().describe("Email do lead"),
 });
 
+const scenariosSchema = z.object({
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo nominal do consorcio em meses"),
+});
+
+const topicPickerSchema = z.object({
+	prompt: z
+		.string()
+		.optional()
+		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
+	topics: z
+		.array(z.string().min(1))
+		.min(2)
+		.max(5)
+		.describe("Lista de topicos clicaveis (2-5)"),
+	includeBackButton: z
+		.boolean()
+		.default(true)
+		.describe("Se true, mostra botao 'Voltar' que retorna ao estado anterior (#06)"),
+});
+
 const compareWithFinancingSchema = z.object({
 	category: z
 		.enum(["imovel", "auto", "moto", "servicos"])
@@ -233,6 +255,15 @@ export const consorcioTools = {
 		},
 	}),
 
+	compute_scenarios: tool({
+		description:
+			"Calcula 3 cenarios de contemplacao (Conservador sem lance, Provavel com 20% de lance, Acelerado com 30% lance + recursos proprios) para um grupo. Use SEMPRE antes de chamar present_scenarios. Estimativa, nao garantia.",
+		inputSchema: scenariosSchema,
+		execute: async (args: z.infer<typeof scenariosSchema>) => {
+			return computeScenarios(args);
+		},
+	}),
+
 	recommend_groups: tool({
 		description:
 			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao.",
@@ -314,6 +345,51 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_scenarios: tool({
+		description:
+			"Apresenta 3 cenarios de contemplacao lado a lado (Conservador sem lance, Provavel com 20% lance, Acelerado 30% lance + recursos proprios). Use apos calcular com compute_scenarios. Bug #16 Bruna v1 review.",
+		inputSchema: z.object({
+			groupId: z.string().describe("ID do grupo simulado"),
+			administradora: z.string().describe("Nome da administradora"),
+			creditValue: z.number().describe("Valor do credito em reais"),
+			termMonths: z.number().int().describe("Prazo nominal do consorcio em meses"),
+			scenarios: z
+				.object({
+					conservador: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					provavel: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					acelerado: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+				})
+				.describe("Output de compute_scenarios"),
+		}),
+		execute: async (args) => {
+			return `[3 cenarios apresentados: ${args.administradora} R$ ${args.creditValue.toLocaleString("pt-BR")} — Conservador ${args.scenarios.conservador.expectedTermMonths}m / Provavel ${args.scenarios.provavel.expectedTermMonths}m / Acelerado ${args.scenarios.acelerado.expectedTermMonths}m]`;
+		},
+	}),
+
+	present_topic_picker: tool({
+		description:
+			"Apresenta lista de topicos clicaveis (chips) + botao 'Voltar' opcional. Use quando o usuario clicar 'Entender mais antes' ou pedir pra esclarecer duvidas — em vez de campo aberto, oferece atalhos pra topicos comuns. Bug #05 Bruna v1 review.",
+		inputSchema: topicPickerSchema,
+		execute: async (args: z.infer<typeof topicPickerSchema>) => {
+			return `[Topic picker apresentado: ${args.topics.length} topicos${args.includeBackButton ? " + botao Voltar" : ""}]`;
+		},
+	}),
+
 	// ---- Control signals (intercepted by orchestrator) ----
 
 	suggest_handoff: tool({
@@ -389,4 +465,6 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_recommendation_card",
 	"present_lead_form",
 	"present_value_picker",
+	"present_scenarios",
+	"present_topic_picker",
 ]);
