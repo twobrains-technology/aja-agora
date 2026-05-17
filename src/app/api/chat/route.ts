@@ -13,6 +13,11 @@ import {
 	buildQualifyStartYesDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
+import {
+	detectBackIntent,
+	popNavState,
+	pushNavState,
+} from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
@@ -148,6 +153,15 @@ export async function POST(req: NextRequest) {
 				if (body.action?.kind === "category") {
 					if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category)) return;
 					const fromPersona: Persona = meta.currentPersona ?? "concierge";
+					// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
+					const nextStack = pushNavState(meta.navigationStack ?? [], {
+						persona: fromPersona,
+						category: meta.currentCategory ?? null,
+						expertiseLevel: meta.expertiseLevel,
+						experiencePrev: meta.experiencePrev ?? null,
+						qualifyAnswers: meta.qualifyAnswers,
+					});
+					await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
 					await pipeTransitionTurn({
 						conversationId,
 						fromPersona,
@@ -305,6 +319,39 @@ export async function POST(req: NextRequest) {
 	const userText = lastUserText(body.messages);
 	if (!userText) {
 		return new Response("No user message in payload", { status: 400 });
+	}
+
+	// Intent textual "voltar" — early-return sem chamar o agent (#06 Bruna v1 review).
+	if (detectBackIntent(userText)) {
+		await saveMessage(conversationId, "user", userText, "web");
+		const { stack: nextStack, popped } = popNavState(meta.navigationStack ?? []);
+		const ackText = popped
+			? "Voltando ao passo anterior."
+			: "Você já está no início.";
+		if (popped) {
+			await persistMeta(conversationId, {
+				...meta,
+				navigationStack: nextStack,
+				currentPersona: popped.persona,
+				currentCategory: popped.category ?? undefined,
+				expertiseLevel: popped.expertiseLevel,
+				experiencePrev: popped.experiencePrev ?? undefined,
+				qualifyAnswers: popped.qualifyAnswers,
+			});
+		}
+		await saveMessage(conversationId, "assistant", ackText, "web", meta.currentPersona);
+		const stream = createUIMessageStream<AjaUIMessage>({
+			execute: ({ writer }) => {
+				const id = crypto.randomUUID();
+				writer.write({ type: "text-start", id });
+				writer.write({ type: "text-delta", id, delta: ackText });
+				writer.write({ type: "text-end", id });
+			},
+		});
+		return createUIMessageStreamResponse({
+			stream,
+			headers: { "X-Conversation-Id": conversationId, "X-Navigation": popped ? "back" : "noop" },
+		});
 	}
 
 	const stream = createUIMessageStream<AjaUIMessage>({

@@ -5,7 +5,7 @@
 export interface GroupCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -22,6 +22,7 @@ export interface ComparisonTablePayload {
 export interface SimulationResultPayload {
 	groupId: string;
 	administradora: string;
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -30,12 +31,27 @@ export interface SimulationResultPayload {
 	totalCost: number;
 	termMonths: number;
 	effectiveRate: number;
+	/** Cenário projetado com lance (bug #10). */
+	lanceScenario?: {
+		lancePercent: number;
+		expectedTermMonths: number;
+	};
+	/** Correção prevista — INCC pra imóvel, IPCA pra auto (bug #10). */
+	expectedAdjustment?: {
+		index: "INCC" | "IPCA";
+		annualPercent: number;
+	};
+	/** CTAs explícitas pro fechamento (bug #12). */
+	actions?: Array<{
+		label: string;
+		intent: string;
+	}>;
 }
 
 export interface RecommendationCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -84,11 +100,54 @@ export interface ValuePickerField {
 }
 
 export interface ValuePickerPayload {
-	category: "imovel" | "auto" | "servicos";
+	category: "imovel" | "auto" | "moto" | "servicos";
 	fields: ValuePickerField[];
 }
 
 // ---- Artifact discriminated union ----
+
+// ---- Topic picker (#05) ----
+
+export interface TopicPickerPayload {
+	prompt?: string;
+	topics: string[];
+	includeBackButton: boolean;
+}
+
+// ---- 3 cenários (#16) ----
+
+export interface ScenarioPayload {
+	lancePercent: number;
+	lanceValue: number;
+	ownResourcesValue: number;
+	expectedTermMonths: number;
+	strategy: string;
+	disclaimer: string;
+}
+
+export interface ScenariosPayload {
+	groupId: string;
+	administradora: string;
+	creditValue: number;
+	termMonths: number;
+	scenarios: {
+		conservador: ScenarioPayload;
+		provavel: ScenarioPayload;
+		acelerado: ScenarioPayload;
+	};
+}
+
+// ---- Comparador consórcio × financiamento (#17) ----
+
+export interface FinancingComparisonPayload {
+	category: "imovel" | "auto" | "moto" | "servicos";
+	creditValue: number;
+	termMonths: number;
+	consorcio: { monthlyPayment: number; totalCost: number };
+	financing: { monthlyPayment: number; totalCost: number; annualRate: number };
+	diff: { monthlyDelta: number; totalDelta: number };
+	disclaimer: string;
+}
 
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
@@ -97,7 +156,10 @@ export type ArtifactByType =
 	| { type: "recommendation_card"; payload: RecommendationCardPayload }
 	| { type: "lead_form"; payload: LeadFormPayload }
 	| { type: "quick_reply"; payload: QuickReplyPayload }
-	| { type: "value_picker"; payload: ValuePickerPayload };
+	| { type: "value_picker"; payload: ValuePickerPayload }
+	| { type: "topic_picker"; payload: TopicPickerPayload }
+	| { type: "scenarios"; payload: ScenariosPayload }
+	| { type: "financing_comparison"; payload: FinancingComparisonPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

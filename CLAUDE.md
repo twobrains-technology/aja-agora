@@ -1,4 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Aja Agora**
@@ -15,9 +14,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - **Adapter Pattern:** Toda integração com administradoras passa por camada de abstração — facilita trocar mock por real
 - **Mobile-first:** Consórcio é produto de massa, maioria acessa por celular
 - **Performance:** Chat precisa responder em < 3s para manter engajamento
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
 ## Recommended Stack
@@ -168,44 +165,38 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - [Zustand vs Jotai 2026 Comparison](https://dev.to/jsgurujobs/state-management-in-2026-zustand-vs-jotai-vs-redux-toolkit-vs-signals-2gge)
 - [React Hook Form + Zod Guide](https://ui.shadcn.com/docs/forms/react-hook-form)
 - [Docker Next.js Guide](https://docs.docker.com/guides/nextjs/containerize/)
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
+## Feature Development Workflow (OBRIGATÓRIO)
 
-Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
+**Toda feature, refactor não-trivial ou correção de bug "complexo" segue este fluxo. Sempre sugira esse caminho antes de implementar — não pule etapas. Vale para features novas, lotes de bugfix e qualquer trabalho onde "feito" não é trivial.**
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-## Architecture
+Sequência (não inverter ordem):
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
+1. **Modo plano** — usar `ExitPlanMode` (ou equivalente do harness) antes de tocar em código. Aprovação do plano pelo Kairo é gate de entrada.
+2. **PO Lead (planejamento de QA)** — lançar agente com persona de **Product Owner Lead com skill de QA sênior**, modelo `claude-opus-4-7`. Produz um **plano de teste por feature/bug** contendo:
+   - Cenários (happy path + edge cases + regressões prováveis)
+   - **Critérios de aceite explícitos** (binários, verificáveis — "passa/não passa", nunca "deveria")
+   - Dados de teste necessários (fixtures, seeds, contas/personas)
+   - Pontos de falha conhecidos do domínio (race conditions, estados intermediários, multi-canal web↔WhatsApp)
+   - Output esperado por cenário (estado de DB, payload de API, screenshot de UI)
+   - Salvar em `docs/test-plans/<feature-slug>.md` para auditoria e diff em revisão de código.
+   Esse plano é a **fonte de verdade do que "feito" significa**. Critério não escrito = critério não validado.
+3. **Implementação TDD** — segue a regra global (`~/.claude/CLAUDE.md` → "Regra de TDD para bugs"). Testes primeiro, ver falhar, implementar, ver passar. Commits `test+fix:` ou `test+feat:` por unidade.
+4. **QA crítico (validação E2E)** — lançar agente com persona de **QA crítico e chato, primeiro QA do produto**, modelo `claude-opus-4-7`. Recebe o plano do PO Lead como input. Responsabilidade:
+   - Executar todos os cenários do plano (E2E via Playwright/Chrome DevTools quando aplicável; unit/integration quando E2E não cabe)
+   - **Rigor adversarial:** procurar buracos, não validar superficialmente. Tentar quebrar.
+   - Reportar falha por critério de aceite com **evidência** (screenshot, log, snippet, query do DB)
+   - Não deixar passar nada — ser explicitamente **chato**. Pedir refazer quando em dúvida.
+5. **Loop até verde** — qualquer critério reprovado → corrigir → re-rodar QA crítico → repetir. **Só declarar feature concluída quando todos os critérios de aceite do plano do PO Lead estiverem satisfeitos.** Não negociar critérios pra "fechar".
 
-<!-- GSD:skills-start source:skills/ -->
-## Project Skills
+**Modelos obrigatórios (não substituir por Sonnet/Haiku):**
+- PO Lead: `claude-opus-4-7` — planejamento qualitativo profundo, levantar edge cases que escapam de modelos menores
+- QA crítico: `claude-opus-4-7` — rigor adversarial > velocidade. Vale gastar token aqui.
 
-No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
+**Quando pular:** apenas tarefas triviais que não tocam código de produção (atualizar README, ajustar config local, renomear variável local, hotfix óbvio de 1 linha). Em dúvida, **não pule**.
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+**Lançamento dos agentes:** via `Agent` tool com `subagent_type: general-purpose`, `model: opus`, e prompt que inclui:
+- Persona literal: "Você é o PO Lead com skill de QA sênior..." ou "Você é o QA crítico e chato, primeiro QA do produto..."
+- Contexto da feature/bug (referências de arquivo, PRs relacionados)
+- Para QA crítico: **caminho do plano** do PO Lead no prompt (`docs/test-plans/<slug>.md`) para ele ler e validar contra
+- Saída esperada: PO Lead → markdown do plano; QA crítico → relatório de pass/fail por critério com evidência

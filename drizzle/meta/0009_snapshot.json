@@ -1,5 +1,5 @@
 {
-  "id": "b1203719-e16f-4857-8cfd-978c09e4e4dc",
+  "id": "9b451c8e-f3c4-440b-90da-d0bec6bb9ebe",
   "prevId": "4f7b233b-f681-452b-b25b-0e3c251d763d",
   "version": "7",
   "dialect": "postgresql",
@@ -773,124 +773,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.memory_events": {
-      "name": "memory_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "letta_agent_id": {
-          "name": "letta_agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "event_type": {
-          "name": "event_type",
-          "type": "memory_event_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "latency_ms": {
-          "name": "latency_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "memory_events_conversation_id_idx": {
-          "name": "memory_events_conversation_id_idx",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "memory_events_letta_agent_id_idx": {
-          "name": "memory_events_letta_agent_id_idx",
-          "columns": [
-            {
-              "expression": "letta_agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "memory_events_created_at_idx": {
-          "name": "memory_events_created_at_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_events_conversation_id_conversations_id_fk": {
-          "name": "memory_events_conversation_id_conversations_id_fk",
-          "tableFrom": "memory_events",
-          "tableTo": "conversations",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.messages": {
       "name": "messages",
       "schema": "",
@@ -1111,7 +993,7 @@
         },
         "personas_category_check": {
           "name": "personas_category_check",
-          "value": "\"personas\".\"category\" IS NULL OR \"personas\".\"category\" IN ('imovel', 'auto', 'servicos')"
+          "value": "\"personas\".\"category\" IS NULL OR \"personas\".\"category\" IN ('imovel', 'auto', 'moto', 'servicos')"
         },
         "personas_specialist_has_category": {
           "name": "personas_specialist_has_category",
@@ -1482,18 +1364,6 @@
         "proposta_enviada",
         "fechado_ganho",
         "perdido"
-      ]
-    },
-    "public.memory_event_type": {
-      "name": "memory_event_type",
-      "schema": "public",
-      "values": [
-        "agent_created",
-        "context_loaded",
-        "memory_stored",
-        "reconciled",
-        "fallback_triggered",
-        "purged"
       ]
     },
     "public.message_role": {
