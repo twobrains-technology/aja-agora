@@ -48,16 +48,30 @@ type ChatRequestBody = {
 	action?: ChatAction;
 };
 
-function lastUserText(messages: UIMessage[] | undefined): string | null {
+// Exported pra teste (Bv2-08-novo: payload legacy sem parts crashava).
+export function lastUserText(
+	messages: (UIMessage | { role?: string; parts?: unknown; content?: unknown })[] | undefined,
+): string | null {
 	if (!messages) return null;
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
+		const msg = messages[i] as {
+			role?: string;
+			parts?: Array<{ type?: string; text?: string }>;
+			content?: unknown;
+		};
 		if (msg.role !== "user") continue;
-		const text = msg.parts
-			.filter((p): p is { type: "text"; text: string } => p.type === "text")
-			.map((p) => p.text)
-			.join("");
-		if (text.length > 0) return text;
+		// Format moderno: parts[]
+		if (Array.isArray(msg.parts)) {
+			const text = msg.parts
+				.filter((p): p is { type: "text"; text: string } => p?.type === "text" && typeof p.text === "string")
+				.map((p) => p.text)
+				.join("");
+			if (text.length > 0) return text;
+		}
+		// Fallback legacy: content como string
+		if (typeof msg.content === "string" && msg.content.length > 0) {
+			return msg.content;
+		}
 	}
 	return null;
 }

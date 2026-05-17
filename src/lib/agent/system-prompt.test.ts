@@ -187,6 +187,17 @@ describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () =>
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_recommendation_card/);
 	});
 
+	it("Bv2-07 round 4: SPECIALIST_BASE_PROMPT cobre tambem present_group_card (QA DEV achou agente usando group_card)", () => {
+		// O prompt deve mencionar present_group_card no contexto do encadeamento
+		// — não apenas present_recommendation_card.
+		const ruleSection = SPECIALIST_BASE_PROMPT.match(
+			/Bv2-07[\s\S]{0,1500}/i,
+		)?.[0] ?? "";
+		expect(ruleSection).toMatch(/present_group_card/);
+		expect(ruleSection).toMatch(/simulate_quota/);
+		expect(ruleSection).toMatch(/present_simulation_result/);
+	});
+
 	it("Bv2-08: SPECIALIST_BASE_PROMPT obriga creditValue NOMINAL do grupo", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/creditValue\s+NOMINAL\s+DO\s+GRUPO/i);
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/creditAdjustmentNotice/);
