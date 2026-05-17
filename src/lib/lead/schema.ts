@@ -10,6 +10,9 @@ import { z } from "zod";
  *
  * The `LeadForm` component renders inputs from `LEAD_FIELDS`, the API route
  * validates with `leadSchema`, and the DB persists. Same schema everywhere.
+ *
+ * Modelo WhatsApp-first: phone obrigatório, email opcional. Email vazio é
+ * transformado em undefined pra não vazar string vazia pro DB.
  */
 
 const brPhoneRegex = /^\d{10,11}$/;
@@ -21,9 +24,13 @@ export const leadSchema = z.object({
 		.max(100, "Nome deve ter no máximo 100 caracteres"),
 	phone: z
 		.string()
+		.min(1, "WhatsApp é obrigatório")
 		.transform((v) => v.replace(/\D/g, ""))
 		.pipe(z.string().regex(brPhoneRegex, "Telefone inválido. Use DDD + número (ex: 11999998888)")),
-	email: z.string().email("Email inválido"),
+	email: z
+		.union([z.string().email("Email inválido"), z.literal("")])
+		.optional()
+		.transform((v) => (v && v.length > 0 ? v : undefined)),
 });
 
 export type LeadFields = z.infer<typeof leadSchema>;
@@ -35,6 +42,7 @@ export type LeadFieldConfig = {
 	inputMode?: "text" | "numeric" | "email";
 	placeholder: string;
 	autoFocus?: boolean;
+	required: boolean;
 };
 
 export const LEAD_FIELDS: LeadFieldConfig[] = [
@@ -42,15 +50,17 @@ export const LEAD_FIELDS: LeadFieldConfig[] = [
 		key: "name",
 		label: "Nome",
 		type: "text",
-		placeholder: "Seu nome completo",
+		placeholder: "Seu nome",
 		autoFocus: true,
+		required: true,
 	},
 	{
 		key: "phone",
-		label: "Telefone",
+		label: "WhatsApp",
 		type: "tel",
 		inputMode: "numeric",
-		placeholder: "11999998888",
+		placeholder: "(11) 98765-4321",
+		required: true,
 	},
 	{
 		key: "email",
@@ -58,5 +68,6 @@ export const LEAD_FIELDS: LeadFieldConfig[] = [
 		type: "email",
 		inputMode: "email",
 		placeholder: "seu@email.com",
+		required: false,
 	},
 ];
