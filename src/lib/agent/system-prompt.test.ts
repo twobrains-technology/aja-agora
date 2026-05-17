@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SYSTEM_PROMPT } from "./system-prompt";
+import { SHARED_SPECIALIST_EXAMPLES, SYSTEM_PROMPT } from "./system-prompt";
 
 describe("system-prompt — overclaim de adequação financeira (bug #08)", () => {
 	it("não contém frases subjetivas tipo 'cabe bem no seu orçamento'", () => {
@@ -39,5 +39,75 @@ describe("system-prompt — overclaim de adequação financeira (bug #08)", () =
 				`linha com 'parcel' contém adjetivo subjetivo vetado: "${line.trim()}"`,
 			).not.toMatch(adjetivosVetados);
 		}
+	});
+});
+
+describe("Helena 1ª fala calorosa (bug #04)", () => {
+	const helenaFirstTurn = SHARED_SPECIALIST_EXAMPLES.find(
+		(ex) => ex.context?.includes("Primeiro turno apos transicao"),
+	);
+
+	it("existe example shared pro primeiro turno do specialist", () => {
+		expect(helenaFirstTurn, "SHARED_SPECIALIST_EXAMPLES deve ter entry 'Primeiro turno apos transicao'").toBeDefined();
+	});
+
+	it("primeira fala contém palavra-chave de calor/entusiasmo", () => {
+		expect(helenaFirstTurn).toBeDefined();
+		if (!helenaFirstTurn) return;
+		const calor = /legal|show|[óo]tim[ao]|animad[oa]|bora|que (bom|legal|[óo]tim[ao])|adoro|amei|que (massa|bacana)/i;
+		expect(
+			helenaFirstTurn.assistantResponse,
+			`fala da Helena não tem palavra-chave de calor: "${helenaFirstTurn.assistantResponse}"`,
+		).toMatch(calor);
+	});
+
+	it("primeira fala NÃO usa abertura robótica formal", () => {
+		expect(helenaFirstTurn).toBeDefined();
+		if (!helenaFirstTurn) return;
+		const robotico = /sou (a|o) [a-z]+, su[ao] (assistente|consultor)/i;
+		expect(helenaFirstTurn.assistantResponse).not.toMatch(robotico);
+	});
+
+	it("primeira fala menciona o domínio (imóvel/casa/apartamento) dentro das primeiras 2 frases", () => {
+		expect(helenaFirstTurn).toBeDefined();
+		if (!helenaFirstTurn) return;
+		const primeirasDuas = helenaFirstTurn.assistantResponse
+			.split(/[.!?]/)
+			.slice(0, 2)
+			.join(". ");
+		const dominio = /im[óo]vel|casa|apartamento/i;
+		expect(primeirasDuas).toMatch(dominio);
+	});
+});
+
+describe("Primeira vez = explicação básica inline (bug #15)", () => {
+	const firstTimeExample = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
+		ex.context?.includes("Primeira vez") || ex.userMessage?.toLowerCase().includes("primeira vez"),
+	);
+
+	it("existe example shared pra usuário 'primeira vez'", () => {
+		expect(
+			firstTimeExample,
+			"SHARED_SPECIALIST_EXAMPLES deve ter entry pra experiencePrev='first'",
+		).toBeDefined();
+	});
+
+	it("explicação contém pelo menos 3 termos didáticos básicos de consórcio", () => {
+		expect(firstTimeExample).toBeDefined();
+		if (!firstTimeExample) return;
+		const termos = [
+			/sem juros/i,
+			/grupo de pessoas/i,
+			/sorteio/i,
+			/lance/i,
+			/assembleia/i,
+			/contemplad/i,
+			/taxa de admin/i,
+		];
+		const matches = termos.filter((t) => t.test(firstTimeExample.assistantResponse));
+		expect(
+			matches.length,
+			`explicação tem só ${matches.length} termos didáticos (mínimo 3): "${firstTimeExample.assistantResponse}"`,
+		).toBeGreaterThanOrEqual(3);
 	});
 });
