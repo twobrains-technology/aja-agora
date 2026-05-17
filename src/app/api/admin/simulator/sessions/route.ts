@@ -14,6 +14,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { conversations, user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 const createSchema = z.object({
 	channel: z.enum(["web", "whatsapp"]),
@@ -22,7 +23,7 @@ const createSchema = z.object({
 const ALLOWED_CHANNEL_FILTER = ["web", "whatsapp"] as const;
 
 export async function POST(req: NextRequest) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error, session } = await requireRole("admin");
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error, session } = await requireRole("admin");

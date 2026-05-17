@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { SimulatorWhatsapp } from "@/components/admin/simulator/whatsapp/simulator-whatsapp";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export default function SimulatorWhatsappPage() {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		notFound();
 	}
 

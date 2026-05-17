@@ -14,13 +14,14 @@ import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { handleAgentMessage } from "@/lib/whatsapp/proxy";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 const replySchema = z.object({
 	text: z.string().min(1).max(4096),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ attendantId: string }> }) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 

@@ -2,6 +2,7 @@ import { BotIcon, MessageSquareIcon, SmartphoneIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 const MODES = [
 	{
@@ -28,7 +29,7 @@ const MODES = [
 ];
 
 export default function SimulatorIndexPage() {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		notFound();
 	}
 

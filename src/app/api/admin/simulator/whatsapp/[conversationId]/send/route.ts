@@ -11,6 +11,7 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 const sendSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("text"), text: z.string().min(1).max(4096) }),
@@ -25,7 +26,7 @@ export async function POST(
 	req: Request,
 	{ params }: { params: Promise<{ conversationId: string }> },
 ) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error } = await requireRole("admin");

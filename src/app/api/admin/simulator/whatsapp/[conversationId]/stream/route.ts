@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { type SimulatorClientEvent, subscribeToClient } from "@/lib/whatsapp/simulator-bus";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET(
 	req: NextRequest,
 	{ params }: { params: Promise<{ conversationId: string }> },
 ) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error } = await requireRole("admin");

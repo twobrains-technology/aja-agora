@@ -9,9 +9,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { conversations, messages, user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error } = await requireRole("admin");
@@ -75,7 +76,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 	const { error } = await requireRole("admin");

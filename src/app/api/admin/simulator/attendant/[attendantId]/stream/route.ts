@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { type SimulatorMessage, subscribeToAttendant } from "@/lib/whatsapp/simulator-bus";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET(
 	req: NextRequest,
 	{ params }: { params: Promise<{ attendantId: string }> },
 ) {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}
 

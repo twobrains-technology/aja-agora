@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { SimulatorChat } from "@/components/admin/simulator/attendant/simulator-chat";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export default function SimulatorPage() {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		notFound();
 	}
 

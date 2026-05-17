@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { SimulatorWeb } from "@/components/admin/simulator/web/simulator-web";
+import { isSimulatorEnabled } from "@/lib/utils/env";
 
 export default function SimulatorWebPage() {
-	if (process.env.NODE_ENV === "production") {
+	if (!isSimulatorEnabled()) {
 		notFound();
 	}
 
