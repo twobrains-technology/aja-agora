@@ -32,11 +32,28 @@ err()  { printf "${RED}✗${RESET} %s\n" "$*" >&2; exit 1; }
 
 # === Helpers ===
 workspace_name() {
-  # Workspace = nome do diretório do worktree (subindo até achar package.json)
+  # Override explícito ganha sempre
+  if [ -n "${WORKSPACE_NAME:-}" ]; then
+    echo "$WORKSPACE_NAME"
+    return 0
+  fi
+  # Workspace = nome do diretório do worktree (subindo até achar package.json).
+  # Fallback: se o basename é o nome canônico do projeto (estamos no clone
+  # principal, não em worktree), usa o nome da branch git atual sanitizado.
   local dir="${PWD}"
   while [ "$dir" != "/" ]; do
     if [ -f "$dir/package.json" ]; then
-      basename "$dir"
+      local base
+      base="$(basename "$dir")"
+      if [ "$base" = "$PROJECT_NAME" ]; then
+        local branch
+        if branch="$(git -C "$dir" branch --show-current 2>/dev/null)" && [ -n "$branch" ]; then
+          # sanitize: '/' vira '-' (Docker name-safe)
+          echo "$branch" | tr '/' '-'
+          return 0
+        fi
+      fi
+      echo "$base"
       return 0
     fi
     dir="$(dirname "$dir")"

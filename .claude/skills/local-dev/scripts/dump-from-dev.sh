@@ -14,6 +14,10 @@ ROOT="$(repo_root)"
 WORKSPACE="$(workspace_name)"
 PG_CONTAINER="aja-pg-${WORKSPACE}"
 LOCAL_PORT="${LOCAL_TUNNEL_PORT:-15432}"   # porta local pro tunnel (não colide com 5432/5433)
+# DB_HOST_PORT: env wins; fallback lê do .env.local; fallback final 5433.
+if [ -z "${DB_HOST_PORT:-}" ] && [ -f "${ROOT}/.env.local" ]; then
+  DB_HOST_PORT="$(grep '^DB_HOST_PORT=' "${ROOT}/.env.local" | cut -d= -f2- | tr -d '"' || true)"
+fi
 DB_HOST_PORT="${DB_HOST_PORT:-5433}"
 
 log "Dump aja-agora-dev → $PG_CONTAINER (workspace: $WORKSPACE)"

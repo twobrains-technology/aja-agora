@@ -1,26 +1,41 @@
 ---
 name: aja-agora-local-dev
-description: Operar o ambiente local do aja-agora (Postgres por workspace + Letta compartilhado via ~/.tb-local/_shared/). Bootstrap de novo worktree, dump do aja-agora-dev AWS, teardown isolado. Segue a convenção TwoBrains `local-dev-workspaces` documentada em ~/.tb-local/CONVENTIONS.md.
+description: Operar o ambiente local do aja-agora segregado por branch (Postgres + app em containers do workspace, Letta compartilhado via ~/.tb-local/_shared/). Bootstrap, dump do aja-agora-dev AWS, teardown isolado. Convenção TwoBrains local-dev-workspaces.
 ---
 
 # Skill — Local dev do aja-agora
 
-Operações de dev local do aja-agora seguindo a convenção
-[local-dev-workspaces][pattern] do TwoBrains. **Workspace** = nome do
-diretório do worktree atual (ex: `nebula-submarine`). Cada workspace tem
-Postgres isolado; Letta é compartilhado entre todos os projetos
+Operações de dev local seguindo a convenção
+[local-dev-workspaces][pattern] do TwoBrains.
+
+**Princípio:** a **stack inteira do projeto** roda em containers
+segregados por **workspace** (= nome da branch git atual, ou do diretório
+do worktree). **Apenas o Letta** é compartilhado entre todos os projetos
 TwoBrains via `~/.tb-local/_shared/`.
+
+Sem `npm run dev` no host. Sem Postgres no host. Sem nada do projeto
+no host. **Tudo em container.**
+
+## Workspace = branch
+
+| Situação | Workspace |
+|---|---|
+| Clone principal (`/Users/kairo/code/aja-agora`) | nome da branch atual (`develop`, `feature/x`, etc.) |
+| Worktree (`~/.superset/worktrees/tb-aja-agora/<nome>`) | nome do diretório do worktree |
+| Override explícito | `WORKSPACE_NAME=foo` no env |
+
+`/` em nome de branch vira `-` (Docker name-safe).
 
 ## Quando usar
 
 | Cenário | Ação |
 |---|---|
-| Worktree novo / primeira vez no Mac | `scripts/bootstrap-workspace.sh` |
-| Subir só os shared services (Letta) | `scripts/shared-up.sh` |
-| Derrubar shared services | `scripts/shared-down.sh` |
-| Resetar memória Letta global (CUIDADO) | `scripts/shared-down.sh --nuke` |
+| Primeira vez no Mac (subir Letta shared) | `scripts/shared-up.sh` |
+| Subir/recriar stack do workspace atual | `scripts/bootstrap-workspace.sh` |
 | Trazer dados do aja-agora-dev AWS | `scripts/dump-from-dev.sh` |
-| Reset do banco do workspace atual | `scripts/teardown-workspace.sh --nuke` |
+| Reset destrutivo do workspace atual | `scripts/teardown-workspace.sh --nuke` |
+| Derrubar Letta shared (não dia a dia) | `scripts/shared-down.sh` |
+| Resetar memória Letta global (CUIDADO) | `scripts/shared-down.sh --nuke` |
 
 Todos os scripts são **idempotentes** — rodar 2x não quebra.
 
@@ -28,63 +43,82 @@ Todos os scripts são **idempotentes** — rodar 2x não quebra.
 
 ```bash
 # 1. (one-time global) Criar network + subir Letta compartilhado
-~/.superset/worktrees/tb-aja-agora/nebula-submarine/.claude/skills/local-dev/scripts/shared-up.sh
+./.claude/skills/local-dev/scripts/shared-up.sh
 
-# 2. (one-time global) Configurar ~/.tb-local/_shared/.env.shared se ainda não existe
+# 2. (one-time global) Configurar ~/.tb-local/_shared/.env.shared se faltar
 #    (o script avisa e abre $EDITOR se faltar)
 
-# 3. (por worktree) Bootstrap deste workspace
+# 3. (por workspace) Bootstrap deste workspace — sobe DB + builda + sobe app
 ./.claude/skills/local-dev/scripts/bootstrap-workspace.sh
-#    - Gera .env.local com WORKSPACE_NAME=<dir>
-#    - Sobe Postgres do workspace
-#    - Roda npm run db:migrate
-#    - (opcional) pergunta se quer dumpar do dev AWS
 
-# 4. Trabalhar
-npm run dev
+# 4. Acessar
+open http://localhost:$APP_HOST_PORT
 ```
 
-## Fluxo: worktree novo
+## Fluxo: nova branch / novo worktree
 
 ```bash
-cd ~/.superset/worktrees/tb-aja-agora/<novo-workspace>
+# Em qualquer branch da pasta principal OU em qualquer worktree
 ./.claude/skills/local-dev/scripts/bootstrap-workspace.sh
 ```
 
-A skill detecta o nome do diretório atual, gera `.env.local` derivado,
-sobe `aja-pg-<workspace>` (Postgres isolado deste worktree), roda
-migrations. Letta global é reutilizado automaticamente — o
-`LETTA_NAMESPACE` no `.env.local` garante que agents deste worktree não
-veem os de outros.
+A skill detecta o workspace (branch ou nome do worktree), gera
+`.env.local` derivado, sobe `aja-pg-<workspace>` e `aja-app-<workspace>`,
+conecta ambos na `tb-local-net` (onde já está o Letta shared).
+`LETTA_NAMESPACE=aja-agora-local-<workspace>` garante que agents de
+branches diferentes nunca se cruzam.
 
 ## Convenções aplicadas
 
 | Recurso | Nome neste workspace |
 |---|---|
 | Container Postgres | `aja-pg-<workspace>` |
+| Container App | `aja-app-<workspace>` |
 | Volume Postgres | `aja-pg-<workspace>-data` |
-| Container Letta (compartilhado) | `tb-letta-shared` |
-| Network Docker | `tb-local-net` (external) |
+| Container Letta (compartilhado) | `tb-letta-shared` (alias DNS: `letta`) |
+| Network Docker | `tb-local-net` (external, criada one-time) |
 | Letta namespace | `aja-agora-local-<workspace>` |
 | DB name | `aja_agora` (canônico, isolado pelo container) |
-| Porta DB no host | `5433` (override via `DB_HOST_PORT`) |
+| Porta DB no host | definida no `.env.local` por workspace (ex: 5434) |
+| Porta App no host | definida no `.env.local` por workspace (ex: 3010) |
 | Porta Letta no host | `8283` (do compose shared) |
+
+**Cada workspace usa portas distintas no host** — escolha porta livre por
+workspace pra rodar várias branches simultâneas sem colisão. Convenção:
+DB começa em 5433 e App em 3000, incrementando por workspace.
+
+## Dump do dev AWS
+
+```bash
+./.claude/skills/local-dev/scripts/dump-from-dev.sh        # interativo
+./.claude/skills/local-dev/scripts/dump-from-dev.sh --yes  # sem prompt
+```
+
+Estratégia: SSM port-forward (sem VPN no host) → `pg_dump` streaming →
+`psql` no Postgres do workspace. **DESTRUTIVO** no DB local: faz DROP +
+CREATE + restore. Lê `DB_HOST_PORT` do `.env.local` automaticamente.
 
 ## Para outros projetos TwoBrains
 
 Esta skill é **template**. Pra adotar em outro projeto:
 
 1. Copie `.claude/skills/local-dev/` pro repo do projeto.
-2. Em `scripts/_lib.sh`, mude `PROJECT_NAME=aja-agora`, `PROJECT_DB_NAME=aja_agora` pra os valores do projeto.
-3. Em `scripts/dump-from-dev.sh`, mude `AWS_DB_NAME`, `AWS_PG_ROLE`, `AWS_SECRET_NAME` pros valores do projeto.
-4. Atualize `docker-compose.yml` no padrão do pattern.
+2. Em `scripts/_lib.sh`: `PROJECT_NAME`, `PROJECT_DB_NAME`, `AWS_*`.
+3. Garanta `docker-compose.yml` com:
+   - service `db` (Postgres, container `<prefix>-pg-${WORKSPACE_NAME}`)
+   - service `app` (profile `containerized`, build local, container `<prefix>-app-${WORKSPACE_NAME}`)
+   - network `tb-local-net` external
+4. `.env.example` com `WORKSPACE_NAME`, `DB_HOST_PORT`, `APP_HOST_PORT`, `LETTA_BASE_URL=http://letta:8283`.
 
 ## Anti-padrões
 
+- ❌ **NUNCA** rodar `npm run dev`, `npm run build`, `next start` no host. Stack inteira em container, sempre.
+- ❌ **NUNCA** rodar Postgres do projeto no host (Postgres.app, brew). Sempre em container do workspace.
 - ❌ **NUNCA** criar um Letta dentro do `docker-compose.yml` do projeto.
 - ❌ **NUNCA** rodar `docker compose -f ~/.tb-local/_shared/... down -v` no dia a dia (apaga memória de todos os projetos).
 - ❌ **NUNCA** commitar `.env.local`, `.env.shared`, ou paths com `LETTA_API_KEY` exposto.
-- ❌ Migrations rodam dentro do container/app (entrypoint), não direto contra o RDS via tunnel. Dump+restore é uma operação só pra trazer DADOS — schema vem com o dump, não rodar migrations depois.
+- ❌ Migrations rodam dentro do container do app (entrypoint via `db:migrate:runtime`), não direto contra o RDS via tunnel. Dump+restore é uma operação só pra trazer DADOS — schema vem com o dump.
+- ❌ Duas branches usando a mesma `DB_HOST_PORT`/`APP_HOST_PORT` no host (colisão de bind). Convenção: incremente por workspace.
 
 ## Ver também
 

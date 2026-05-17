@@ -1,17 +1,20 @@
 # aja-agora — local dev por workspace
 #
-# Convenção TwoBrains: cada worktree tem seu próprio Postgres (container +
-# volume nomeados por WORKSPACE_NAME). Letta é compartilhado via
-# ~/.tb-local/_shared/ e está na rede tb-local-net.
+# Convenção TwoBrains: cada branch/worktree é um workspace isolado com
+# seu Postgres + App em containers nomeados por WORKSPACE_NAME. Só o
+# Letta é compartilhado (~/.tb-local/_shared/, network tb-local-net).
+#
+# DNS local via OrbStack (label dev.orbstack.domains):
+#   - aja-${WORKSPACE_NAME}.orb.local       → app
+#   - db.aja-${WORKSPACE_NAME}.orb.local    → postgres
+#   - aja-${WORKSPACE_NAME}.orb.local   → (default automático do OrbStack)
 #
 # Setup:
-#   cp .env.example .env.local
-#   # WORKSPACE_NAME=<nome do diretório atual>
-#   docker compose --env-file .env.local up -d
+#   ./.claude/skills/local-dev/scripts/bootstrap-workspace.sh
 #
-# Ver: ~/.tb-local/CONVENTIONS.md e ~/obsidian-vault/00 - System/Patterns/local-dev-workspaces.md
+# Ver: ~/.tb-local/CONVENTIONS.md, .claude/skills/local-dev/SKILL.md
 
-name: aja-agora-${WORKSPACE_NAME:?WORKSPACE_NAME required (use the worktree directory name)}
+name: aja-agora-${WORKSPACE_NAME:?WORKSPACE_NAME required (use the branch or worktree dir name)}
 
 services:
   db:
@@ -28,32 +31,51 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - tb-local-net
+    labels:
+      dev.orbstack.domains: db.aja-${WORKSPACE_NAME}.orb.local
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # App em container — opcional. Pra dev rápido use `npm run dev` no host.
-  # Habilita com: docker compose --profile containerized up -d
   app:
     profiles: ["containerized"]
     build: .
     container_name: aja-app-${WORKSPACE_NAME}
+    restart: unless-stopped
     ports:
       - "${APP_HOST_PORT:-3000}:3000"
     environment:
+      # Override do NODE_ENV=production do Dockerfile pro migrate-guard
+      # liberar destrutivas em local.
+      TB_ENV: local
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@aja-pg-${WORKSPACE_NAME}:5432/${POSTGRES_DB:-aja_agora}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
       LETTA_BASE_URL: http://letta:8283
       LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
       LETTA_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
       LETTA_EMBEDDING: ${LETTA_EMBEDDING:-openai/text-embedding-3-small}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
+      BETTER_AUTH_URL: http://aja-${WORKSPACE_NAME}.orb.local
+      APP_URL: http://aja-${WORKSPACE_NAME}.orb.local
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_AGENT_PHONES: ${WHATSAPP_AGENT_PHONES:-}
+      WHATSAPP_AGENT_NAMES: ${WHATSAPP_AGENT_NAMES:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ajaagora.com.br}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
+      ADMINISTRADORA_ADAPTER: ${ADMINISTRADORA_ADAPTER:-mock}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - tb-local-net
+    labels:
+      dev.orbstack.domains: aja-${WORKSPACE_NAME}.orb.local
 
 volumes:
   pgdata:
