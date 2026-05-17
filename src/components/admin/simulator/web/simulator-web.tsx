@@ -6,6 +6,7 @@ import { MessageList } from "@/components/chat/message-list";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
 import { HandoffBanner } from "../handoff-banner";
 import { SimulatorInbox } from "../inbox";
+import { MemoryDevPanel } from "../memory-dev-panel";
 import { SimulatedBadge } from "../simulated-badge";
 
 interface SessionMeta {
@@ -70,6 +71,8 @@ export function SimulatorWeb() {
 					</ChatProvider>
 				)}
 			</main>
+
+			{selectedId && <MemoryDevPanel conversationId={selectedId} />}
 		</div>
 	);
 }

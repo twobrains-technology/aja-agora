@@ -15,6 +15,7 @@ import {
 import { getMemoryAdapter } from "@/lib/memory/index";
 import { logMemoryOp } from "@/lib/memory/observability";
 import { reconcileIdentity as runReconcile } from "@/lib/memory/reconciler";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import type { Channel, TurnEvent } from "./types";
 
 const emailSchema = z.string().trim().email();
@@ -76,7 +77,7 @@ export async function* runLeadCollectionTurn(args: {
 		await persistMeta(conversationId, updated);
 		await db
 			.update(conversations)
-			.set({ contactName: name, updatedAt: new Date() })
+			.set({ contactName: name, updatedAt: simulatorNow() })
 			.where(eq(conversations.id, conversationId));
 		yield { type: "meta-update", meta: updated };
 		yield {
@@ -132,7 +133,7 @@ export async function* runLeadCollectionTurn(args: {
 		if (existing) {
 			await db
 				.update(leads)
-				.set({ name, phone, email, updatedAt: new Date() })
+				.set({ name, phone, email, updatedAt: simulatorNow() })
 				.where(eq(leads.id, existing.id));
 		} else {
 			await createLeadFromConversation({ conversationId, name, phone, email });
@@ -218,7 +219,7 @@ async function triggerReconciliationOnLeadCapture(input: {
 				...meta,
 				letta: {
 					reconciled: true,
-					reconciledAt: new Date().toISOString(),
+					reconciledAt: simulatorNow().toISOString(),
 				},
 			};
 			await persistMeta(conversationId, refreshed);

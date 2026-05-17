@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { HandoffBanner } from "../handoff-banner";
 import { SimulatorInbox } from "../inbox";
+import { MemoryDevPanel } from "../memory-dev-panel";
 import { SimulatedBadge } from "../simulated-badge";
 import { useConversationStatus } from "./use-conversation-status";
 import { WhatsAppStage } from "./whatsapp-stage";
@@ -58,6 +59,8 @@ export function SimulatorWhatsapp() {
 					</>
 				)}
 			</main>
+
+			{selectedId && <MemoryDevPanel conversationId={selectedId} />}
 		</div>
 	);
 }

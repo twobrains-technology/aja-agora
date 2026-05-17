@@ -4,6 +4,7 @@ import { conversations } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
@@ -86,7 +87,14 @@ export async function processTextMessage(
 		} else if (messageId) {
 			sendTypingIndicator(messageId).catch(() => {});
 		}
-		await processWithOrchestrator(from, text, contactName);
+		// Simulator: se conv é simulada (waId começa com SIM-), wrap em
+		// runWithSimulatorClock pra que `simulatorNow()` aplique o offset.
+		const conv = isSimulatedWaId(from)
+			? await db.query.conversations.findFirst({ where: eq(conversations.waId, from) })
+			: null;
+		await withSimulatorClockIfNeeded(conv ?? null, () =>
+			processWithOrchestrator(from, text, contactName),
+		);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
 		try {
@@ -115,13 +123,18 @@ export async function processInteractiveReply(
 	} else if (messageId) {
 		sendTypingIndicator(messageId).catch(() => {});
 	}
-	const handled = await dispatchInteractiveReply({
-		from,
-		replyId,
-		replyTitle,
-		contactName,
-		processTextMessage,
-	});
+	const conv = isSimulatedWaId(from)
+		? await db.query.conversations.findFirst({ where: eq(conversations.waId, from) })
+		: null;
+	const handled = await withSimulatorClockIfNeeded(conv ?? null, () =>
+		dispatchInteractiveReply({
+			from,
+			replyId,
+			replyTitle,
+			contactName,
+			processTextMessage,
+		}),
+	);
 	if (!handled) {
 		await processTextMessage(from, replyTitle, contactName, messageId);
 	}

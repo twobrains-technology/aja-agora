@@ -17,6 +17,7 @@ import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
@@ -150,7 +151,7 @@ export async function handlePendingHandoffText(
 				.set({
 					metadata: { ...meta, awaitingName: false },
 					contactName: text,
-					updatedAt: new Date(),
+					updatedAt: simulatorNow(),
 				})
 				.where(eq(conversations.id, handoff.conversationId));
 
@@ -260,7 +261,7 @@ export async function handoffToAgents(
 			status: "handed_off",
 			handedOffUserId: null,
 			contactName: userName,
-			updatedAt: new Date(),
+			updatedAt: simulatorNow(),
 		})
 		.where(eq(conversations.id, conversationId));
 
@@ -450,7 +451,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 					role: "assistant",
 					content: `Atendimento encerrado por ${agentName}. Obrigado!`,
 					agentName,
-					createdAt: new Date().toISOString(),
+					createdAt: simulatorNow().toISOString(),
 				});
 			}
 
@@ -473,7 +474,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 				role: "assistant",
 				content: text,
 				agentName,
-				createdAt: new Date().toISOString(),
+				createdAt: simulatorNow().toISOString(),
 			});
 		}
 
@@ -490,7 +491,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 			.update(conversations)
 			.set({
 				handedOffUserId: attendant.id,
-				updatedAt: new Date(),
+				updatedAt: simulatorNow(),
 			})
 			.where(eq(conversations.id, unclaimed.conversationId));
 
@@ -522,7 +523,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 				role: "assistant",
 				content: text,
 				agentName,
-				createdAt: new Date().toISOString(),
+				createdAt: simulatorNow().toISOString(),
 			});
 		}
 
@@ -628,7 +629,7 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 export async function closeHandoff(conversationId: string): Promise<void> {
 	await db
 		.update(conversations)
-		.set({ status: "closed", updatedAt: new Date() })
+		.set({ status: "closed", updatedAt: simulatorNow() })
 		.where(eq(conversations.id, conversationId));
 	console.log(`[whatsapp-proxy] Closed handoff for conversation ${conversationId}`);
 }

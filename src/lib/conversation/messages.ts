@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { messages as messagesTable } from "@/db/schema";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 export type Channel = "web" | "whatsapp";
 
@@ -35,6 +36,7 @@ export async function saveMessage(
 			content,
 			channel,
 			personaId: personaId ?? null,
+			createdAt: simulatorNow(),
 		})
 		.returning({ id: messagesTable.id });
 
