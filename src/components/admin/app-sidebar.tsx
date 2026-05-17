@@ -3,6 +3,7 @@
 import {
 	BotIcon,
 	ChartPieIcon,
+	FlaskConicalIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
 	SettingsIcon,
@@ -38,6 +39,7 @@ export function AppSidebar() {
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
+		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
 	];
 
 	function isActive(href: string) {

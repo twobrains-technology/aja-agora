@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
 	const q = sp.get("q")?.trim() ?? "";
 	const from = parseDate(sp.get("from"));
 	const to = parseDate(sp.get("to"));
+	// Default: oculta conversas simuladas (criadas via /admin/simulator). Debug pode opt-in
+	// passando ?include_simulated=true. Aceita só literal "true" — qualquer outra string é false.
+	const includeSimulated = sp.get("include_simulated") === "true";
 
 	const channel =
 		channelParam && (CHANNELS as readonly string[]).includes(channelParam)
@@ -50,6 +53,7 @@ export async function GET(req: NextRequest) {
 			: null;
 
 	const conditions = [];
+	if (!includeSimulated) conditions.push(eq(conversations.isSimulated, false));
 	if (channel) conditions.push(eq(conversations.channel, channel));
 	if (status) conditions.push(eq(conversations.status, status));
 	if (q) {

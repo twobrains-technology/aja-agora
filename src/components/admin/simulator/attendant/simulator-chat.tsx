@@ -28,6 +28,8 @@ type Message = {
 	direction: "inbound" | "outbound";
 	text: string;
 	createdAt: string;
+	/** True quando a mensagem original veio de uma conversa simulada (cliente do simulador). */
+	simulated?: boolean;
 };
 
 type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
@@ -73,7 +75,7 @@ export function SimulatorChat() {
 		setMessages([]);
 		setConnectionStatus("connecting");
 
-		const es = new EventSource(`/api/admin/simulator/${selectedId}/stream`);
+		const es = new EventSource(`/api/admin/simulator/attendant/${selectedId}/stream`);
 		eventSourceRef.current = es;
 
 		es.onmessage = (event) => {
@@ -81,7 +83,15 @@ export function SimulatorChat() {
 				const data = JSON.parse(event.data) as
 					| { type: "connected" }
 					| { type: "ping" }
-					| { type: "message"; message: { id: string; text: string; createdAt: string } };
+					| {
+							type: "message";
+							message: {
+								id: string;
+								text: string;
+								createdAt: string;
+								simulated?: boolean;
+							};
+					  };
 
 				if (data.type === "connected") {
 					setConnectionStatus("connected");
@@ -96,6 +106,7 @@ export function SimulatorChat() {
 							direction: "inbound",
 							text: data.message.text,
 							createdAt: data.message.createdAt,
+							simulated: data.message.simulated,
 						},
 					]);
 				}
@@ -131,7 +142,7 @@ export function SimulatorChat() {
 		setMessages((prev) => [...prev, optimistic]);
 		setInput("");
 		try {
-			const res = await fetch(`/api/admin/simulator/${selectedId}/reply`, {
+			const res = await fetch(`/api/admin/simulator/attendant/${selectedId}/reply`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ text }),
@@ -249,7 +260,12 @@ export function SimulatorChat() {
 function MessageBubble({ message }: { message: Message }) {
 	const isOutbound = message.direction === "outbound";
 	return (
-		<div className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
+		<div className={cn("flex flex-col", isOutbound ? "items-end" : "items-start")}>
+			{message.simulated && !isOutbound && (
+				<div className="mb-1 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+					🧪 SIMULAÇÃO
+				</div>
+			)}
 			<div
 				className={cn(
 					"max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap",

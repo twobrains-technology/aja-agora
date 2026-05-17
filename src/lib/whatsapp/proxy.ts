@@ -26,11 +26,24 @@ import { publishToAttendant } from "./simulator-bus";
  * Sends a WhatsApp message to an attendant AND mirrors it to the dev simulator
  * bus so /admin/simulator can display it. The Meta call is best-effort — even
  * if the attendant phone is fake/unreachable, the simulator still receives it.
+ *
+ * Quando `options.simulated=true` a chamada real à Meta API é SUPRIMIDA: a
+ * conversa veio do /admin/simulator (cliente simulado) e não pode disparar
+ * notificação de WhatsApp pro atendente real às 3h da manhã. O painel
+ * /admin/simulator/attendant ainda recebe via bus, com badge 🧪 SIMULAÇÃO.
  */
-async function sendToAttendant(phone: string, text: string): Promise<void> {
-	console.log(`[proxy] sendToAttendant phone=${phone} text="${text.slice(0, 60)}"`);
-	await sendTextMessage(phone, text);
-	publishToAttendant(phone, text);
+async function sendToAttendant(
+	phone: string,
+	text: string,
+	options: { simulated?: boolean } = {},
+): Promise<void> {
+	console.log(
+		`[proxy] sendToAttendant phone=${phone} simulated=${options.simulated ?? false} text="${text.slice(0, 60)}"`,
+	);
+	if (!options.simulated) {
+		await sendTextMessage(phone, text);
+	}
+	publishToAttendant(phone, text, { simulated: options.simulated });
 }
 
 const INTEREST_RE =
@@ -232,6 +245,14 @@ export async function handoffToAgents(
 		`[whatsapp-proxy] handoffToAgents: found ${attendants.length} active attendants — ${attendants.map((a) => `${a.name}(${a.phone})`).join(", ") || "(none)"}`,
 	);
 
+	// Lemos isSimulated ANTES do UPDATE pra evitar round-trip duplicado e pra
+	// propagar a flag pro lead, side-effects e bus.
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { isSimulated: true },
+	});
+	const isSimulated = conv?.isSimulated ?? false;
+
 	// Mark conversation as handed_off with no claim yet (pending)
 	await db
 		.update(conversations)
@@ -261,11 +282,15 @@ export async function handoffToAgents(
 					name: userName,
 					phone,
 					email: null,
+					isSimulated,
 				})
 				.returning();
-			await applyTrackedStageToLead(conversationId, created.id);
+			// Pula kanban quando origem é simulada (mantém pipeline comercial limpo).
+			if (!isSimulated) {
+				await applyTrackedStageToLead(conversationId, created.id);
+			}
 			console.log(
-				`[whatsapp-proxy] Lead created for handoff: conversation=${conversationId} name=${userName} phone=${phone ?? "(none)"}`,
+				`[whatsapp-proxy] Lead created for handoff: conversation=${conversationId} name=${userName} phone=${phone ?? "(none)"} simulated=${isSimulated}`,
 			);
 		}
 	} catch (err) {
@@ -289,7 +314,7 @@ export async function handoffToAgents(
 		"🔔 *Nova negociação — Aja Agora*",
 		"",
 		`👤 *Cliente:* ${userName}`,
-		`📱 *WhatsApp:* +${userWaId}`,
+		`📱 *WhatsApp:* ${userWaId ? `+${userWaId}` : "(canal web)"}`,
 		"",
 		"*Resumo da conversa:*",
 		summary,
@@ -298,8 +323,10 @@ export async function handoffToAgents(
 	].join("\n");
 
 	for (const attendant of attendants) {
-		await sendToAttendant(attendant.phone, agentMessage);
-		console.log(`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone})`);
+		await sendToAttendant(attendant.phone, agentMessage, { simulated: isSimulated });
+		console.log(
+			`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone}) simulated=${isSimulated}`,
+		);
 	}
 
 	const firstName = userName.trim().split(/\s+/)[0];
@@ -309,12 +336,15 @@ export async function handoffToAgents(
 	);
 
 	console.log(
-		`[whatsapp-proxy] Handoff: conversation ${conversationId} | user ${userWaId} → ${attendants.length} attendants notified`,
+		`[whatsapp-proxy] Handoff: conversation ${conversationId} | user ${userWaId} → ${attendants.length} attendants notified simulated=${isSimulated}`,
 	);
 
 	// Fire-and-forget: dispara eval no momento do handoff (atendente sendo chamado).
-	// É o único trigger automático — closeHandoff e capture_lead não disparam mais.
-	void triggerEvalScoring(conversationId, "handoff");
+	// Pulamos pra conversa simulada (eval custa tokens Claude e seria ruído de teste).
+	// Admin pode forçar eval manualmente se quiser avaliar uma simulação específica.
+	if (!isSimulated) {
+		void triggerEvalScoring(conversationId, "handoff");
+	}
 }
 
 /** Check if a conversation is in handed_off state. */
@@ -323,6 +353,7 @@ export async function getHandoffState(waId: string): Promise<{
 	conversationId?: string;
 	handedOffUserId?: string | null;
 	contactName?: string;
+	isSimulated?: boolean;
 } | null> {
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
@@ -333,6 +364,7 @@ export async function getHandoffState(waId: string): Promise<{
 		conversationId: conv.id,
 		handedOffUserId: conv.handedOffUserId ?? null,
 		contactName: conv.contactName ?? undefined,
+		isSimulated: conv.isSimulated,
 	};
 }
 
@@ -341,6 +373,7 @@ interface OwnedConversation {
 	userWaId: string | null;
 	contactName: string;
 	channel: "web" | "whatsapp";
+	isSimulated: boolean;
 }
 
 /** Find a conversation already claimed by the given attendant (by phone). */
@@ -359,6 +392,7 @@ async function findConversationByAttendant(
 		userWaId: conv.waId ?? null,
 		contactName: conv.contactName ?? "Cliente",
 		channel: (conv.channel as "web" | "whatsapp") ?? "web",
+		isSimulated: conv.isSimulated,
 	};
 }
 
@@ -380,6 +414,7 @@ async function findUnclaimedConversation(): Promise<OwnedConversation | null> {
 		userWaId: unclaimed.waId ?? null,
 		contactName: unclaimed.contactName ?? "Cliente",
 		channel: (unclaimed.channel as "web" | "whatsapp") ?? "web",
+		isSimulated: unclaimed.isSimulated,
 	};
 }
 
@@ -419,7 +454,9 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 				});
 			}
 
-			await sendToAttendant(agentWaId, `✅ Atendimento de *${ownedConv.contactName}* encerrado.`);
+			await sendToAttendant(agentWaId, `✅ Atendimento de *${ownedConv.contactName}* encerrado.`, {
+				simulated: ownedConv.isSimulated,
+			});
 			console.log(
 				`[whatsapp-proxy] Attendant ${agentName} closed conversation ${ownedConv.conversationId}`,
 			);
@@ -460,6 +497,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 		await sendToAttendant(
 			agentWaId,
 			`✅ Você assumiu o atendimento de *${unclaimed.contactName}*. Suas mensagens agora vão direto pro cliente.`,
+			{ simulated: unclaimed.isSimulated },
 		);
 
 		// Notify other attendants
@@ -469,6 +507,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 				await sendToAttendant(
 					other.phone,
 					`ℹ️ *${agentName}* já assumiu o atendimento de *${unclaimed.contactName}*.`,
+					{ simulated: unclaimed.isSimulated },
 				);
 			}
 		}
@@ -506,6 +545,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 		await sendToAttendant(
 			agentWaId,
 			`⏳ *${ownerName}* já está atendendo *${claimedByOther.contactName ?? "o cliente"}*.`,
+			{ simulated: claimedByOther.isSimulated },
 		);
 		return true;
 	}
@@ -526,13 +566,14 @@ export async function relayWebUserToAgent(
 		where: eq(conversations.id, conversationId),
 	});
 	if (!conv || conv.status !== "handed_off") return;
+	const isSimulated = conv.isSimulated;
 
 	if (conv.handedOffUserId) {
 		const attendant = await getAttendantById(conv.handedOffUserId);
 		if (attendant) {
-			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`);
+			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 			console.log(
-				`[whatsapp-proxy] WebUser→Attendant: ${conversationId} → ${attendant.phone} | "${text.slice(0, 50)}"`,
+				`[whatsapp-proxy] WebUser→Attendant: ${conversationId} → ${attendant.phone} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
 			);
 			return;
 		}
@@ -543,9 +584,9 @@ export async function relayWebUserToAgent(
 
 	const attendants = await getAttendantList();
 	for (const a of attendants) {
-		await sendToAttendant(a.phone, `*${userName}:*\n${text}`);
+		await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 	}
-	console.log(`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}"`);
+	console.log(`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated}`);
 }
 
 /** Relay a message from user to the claimed attendant (or all, if unclaimed). */
@@ -556,15 +597,16 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 	}
 
 	const userName = state.contactName ?? "Cliente";
+	const isSimulated = state.isSimulated ?? false;
 
 	await saveMessage(state.conversationId, "user", text);
 
 	if (state.handedOffUserId) {
 		const attendant = await getAttendantById(state.handedOffUserId);
 		if (attendant) {
-			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`);
+			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 			console.log(
-				`[whatsapp-proxy] User→Attendant: ${userWaId} → ${attendant.phone} | "${text.slice(0, 50)}"`,
+				`[whatsapp-proxy] User→Attendant: ${userWaId} → ${attendant.phone} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
 			);
 		} else {
 			console.warn(
@@ -574,9 +616,9 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 	} else {
 		const attendants = await getAttendantList();
 		for (const a of attendants) {
-			await sendToAttendant(a.phone, `*${userName}:*\n${text}`);
+			await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 		}
-		console.log(`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}"`);
+		console.log(`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated}`);
 	}
 
 	return true;

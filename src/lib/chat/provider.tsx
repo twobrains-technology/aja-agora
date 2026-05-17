@@ -52,9 +52,23 @@ type SseEvent =
 	  }
 	| { type: "ping" };
 
-export function ChatProvider({ children }: { children: ReactNode }) {
-	const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID());
+export function ChatProvider({
+	children,
+	initialConversationId,
+}: {
+	children: ReactNode;
+	/**
+	 * Se passado, usa esse ID como conversa inicial (caso do simulador, que
+	 * cria a conversa antes via /api/admin/simulator/sessions). Sem isso, mantém
+	 * comportamento padrão de gerar UUID local.
+	 */
+	initialConversationId?: string;
+}) {
+	const [conversationId, setConversationId] = useState<string>(
+		() => initialConversationId ?? crypto.randomUUID(),
+	);
 	const [handoff, setHandoff] = useState<HandoffState>({ status: "active", agentName: null });
+
 
 	const transport = useMemo(
 		() =>
@@ -74,6 +88,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
 	const setMessagesRef = useRef(chat.setMessages);
 	setMessagesRef.current = chat.setMessages;
+
+	// Quando o pai (ex: simulador) troca conversationId via prop, limpa o estado
+	// herdado da sessão anterior (mensagens + handoff). Sem isso, as mensagens
+	// da sessão antiga vazam pra UI da nova até o useChat reconciliar.
+	useEffect(() => {
+		if (!initialConversationId) return;
+		if (initialConversationId === conversationId) return;
+		setMessagesRef.current([]);
+		setConversationId(initialConversationId);
+		setHandoff({ status: "active", agentName: null });
+		// biome-ignore lint/correctness/useExhaustiveDependencies: dispara só ao trocar pai
+	}, [initialConversationId]);
 
 	const refreshHandoff = useCallback(async () => {
 		try {

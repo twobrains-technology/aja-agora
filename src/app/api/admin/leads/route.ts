@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-transitions";
@@ -9,6 +9,7 @@ export async function GET() {
 	if (error) return error;
 
 	const allLeads = await db.query.leads.findMany({
+		where: eq(leads.isSimulated, false),
 		orderBy: [desc(leads.updatedAt)],
 		with: {
 			conversation: {
