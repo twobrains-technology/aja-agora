@@ -1,29 +1,65 @@
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/aja_agora
-    depends_on:
-      db:
-        condition: service_healthy
+# aja-agora — local dev por workspace
+#
+# Convenção TwoBrains: cada worktree tem seu próprio Postgres (container +
+# volume nomeados por WORKSPACE_NAME). Letta é compartilhado via
+# ~/.tb-local/_shared/ e está na rede tb-local-net.
+#
+# Setup:
+#   cp .env.example .env.local
+#   # WORKSPACE_NAME=<nome do diretório atual>
+#   docker compose --env-file .env.local up -d
+#
+# Ver: ~/.tb-local/CONVENTIONS.md e ~/obsidian-vault/00 - System/Patterns/local-dev-workspaces.md
 
+name: aja-agora-${WORKSPACE_NAME:?WORKSPACE_NAME required (use the worktree directory name)}
+
+services:
   db:
     image: postgres:16-alpine
+    container_name: aja-pg-${WORKSPACE_NAME}
+    restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "${DB_HOST_PORT:-5433}:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aja_agora
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aja_agora}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - tb-local-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # App em container — opcional. Pra dev rápido use `npm run dev` no host.
+  # Habilita com: docker compose --profile containerized up -d
+  app:
+    profiles: ["containerized"]
+    build: .
+    container_name: aja-app-${WORKSPACE_NAME}
+    ports:
+      - "${APP_HOST_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@aja-pg-${WORKSPACE_NAME}:5432/${POSTGRES_DB:-aja_agora}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      LETTA_BASE_URL: http://letta:8283
+      LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
+      LETTA_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
+      LETTA_EMBEDDING: ${LETTA_EMBEDDING:-openai/text-embedding-3-small}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - tb-local-net
+
 volumes:
   pgdata:
+    name: aja-pg-${WORKSPACE_NAME}-data
+
+networks:
+  tb-local-net:
+    external: true
+    name: tb-local-net

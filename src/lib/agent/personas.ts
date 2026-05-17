@@ -62,6 +62,19 @@ export type ConversationMetadata = {
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */
 	maxStageReached?: "engajado" | "qualificado";
+	/** State da camada de memória (Letta sidecar — ADR 2026-05-16).
+	 * `reconciled` é setado true após cópia bem-sucedida do agent anônimo (cookie)
+	 * pro agent permanente (phone) — guarda idempotência pra não re-disparar. */
+	letta?: {
+		reconciled?: boolean;
+		reconciledAt?: string; // ISO 8601
+		reconciledFromAgentId?: string;
+	};
+	/** Debug-only: último texto do system message de memória injetado no turno.
+	 * **Somente populado quando `AJA_DEBUG_MEMORY=1`** no env do servidor.
+	 * Permite E2E inspecionar o hint via SQL sem hacks de stream. Não use em
+	 * produção. */
+	lettaDebugHint?: string | null;
 };
 
 export const ROUTABLE_CATEGORIES = [
