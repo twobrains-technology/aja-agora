@@ -165,3 +165,38 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - [Zustand vs Jotai 2026 Comparison](https://dev.to/jsgurujobs/state-management-in-2026-zustand-vs-jotai-vs-redux-toolkit-vs-signals-2gge)
 - [React Hook Form + Zod Guide](https://ui.shadcn.com/docs/forms/react-hook-form)
 - [Docker Next.js Guide](https://docs.docker.com/guides/nextjs/containerize/)
+
+## Feature Development Workflow (OBRIGATÓRIO)
+
+**Toda feature, refactor não-trivial ou correção de bug "complexo" segue este fluxo. Sempre sugira esse caminho antes de implementar — não pule etapas. Vale para features novas, lotes de bugfix e qualquer trabalho onde "feito" não é trivial.**
+
+Sequência (não inverter ordem):
+
+1. **Modo plano** — usar `ExitPlanMode` (ou equivalente do harness) antes de tocar em código. Aprovação do plano pelo Kairo é gate de entrada.
+2. **PO Lead (planejamento de QA)** — lançar agente com persona de **Product Owner Lead com skill de QA sênior**, modelo `claude-opus-4-7`. Produz um **plano de teste por feature/bug** contendo:
+   - Cenários (happy path + edge cases + regressões prováveis)
+   - **Critérios de aceite explícitos** (binários, verificáveis — "passa/não passa", nunca "deveria")
+   - Dados de teste necessários (fixtures, seeds, contas/personas)
+   - Pontos de falha conhecidos do domínio (race conditions, estados intermediários, multi-canal web↔WhatsApp)
+   - Output esperado por cenário (estado de DB, payload de API, screenshot de UI)
+   - Salvar em `docs/test-plans/<feature-slug>.md` para auditoria e diff em revisão de código.
+   Esse plano é a **fonte de verdade do que "feito" significa**. Critério não escrito = critério não validado.
+3. **Implementação TDD** — segue a regra global (`~/.claude/CLAUDE.md` → "Regra de TDD para bugs"). Testes primeiro, ver falhar, implementar, ver passar. Commits `test+fix:` ou `test+feat:` por unidade.
+4. **QA crítico (validação E2E)** — lançar agente com persona de **QA crítico e chato, primeiro QA do produto**, modelo `claude-opus-4-7`. Recebe o plano do PO Lead como input. Responsabilidade:
+   - Executar todos os cenários do plano (E2E via Playwright/Chrome DevTools quando aplicável; unit/integration quando E2E não cabe)
+   - **Rigor adversarial:** procurar buracos, não validar superficialmente. Tentar quebrar.
+   - Reportar falha por critério de aceite com **evidência** (screenshot, log, snippet, query do DB)
+   - Não deixar passar nada — ser explicitamente **chato**. Pedir refazer quando em dúvida.
+5. **Loop até verde** — qualquer critério reprovado → corrigir → re-rodar QA crítico → repetir. **Só declarar feature concluída quando todos os critérios de aceite do plano do PO Lead estiverem satisfeitos.** Não negociar critérios pra "fechar".
+
+**Modelos obrigatórios (não substituir por Sonnet/Haiku):**
+- PO Lead: `claude-opus-4-7` — planejamento qualitativo profundo, levantar edge cases que escapam de modelos menores
+- QA crítico: `claude-opus-4-7` — rigor adversarial > velocidade. Vale gastar token aqui.
+
+**Quando pular:** apenas tarefas triviais que não tocam código de produção (atualizar README, ajustar config local, renomear variável local, hotfix óbvio de 1 linha). Em dúvida, **não pule**.
+
+**Lançamento dos agentes:** via `Agent` tool com `subagent_type: general-purpose`, `model: opus`, e prompt que inclui:
+- Persona literal: "Você é o PO Lead com skill de QA sênior..." ou "Você é o QA crítico e chato, primeiro QA do produto..."
+- Contexto da feature/bug (referências de arquivo, PRs relacionados)
+- Para QA crítico: **caminho do plano** do PO Lead no prompt (`docs/test-plans/<slug>.md`) para ele ler e validar contra
+- Saída esperada: PO Lead → markdown do plano; QA crítico → relatório de pass/fail por critério com evidência
