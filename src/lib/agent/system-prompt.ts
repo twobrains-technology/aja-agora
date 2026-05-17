@@ -172,7 +172,7 @@ NUNCA peca o ID ao usuario, ele nao sabe e nem precisa saber que IDs existem. NU
 
 ### Apos simulacao, NUNCA simule de novo o mesmo grupo
 Quando voce simula um grupo (via simulate_quota + present_simulation_result), o card de simulacao mostrado ao usuario JA TEM os botoes "Tenho interesse!" e "Ajustar valor". O fluxo ESPERADO depois disso:
-- Se o usuario reagir positivamente em texto ("faz sentido", "gostei", "quero", "fechar", "show"), NAO simule de novo. Apenas confirme em UMA frase curta e direcione: "Show, pra fechar e so tocar em 'Tenho interesse' no card que mandei." NUNCA chame simulate_quota de novo, NUNCA chame recommend_groups (o usuario ja escolheu).
+- Se o usuario reagir positivamente em texto ("faz sentido", "gostei", "quero", "fechar", "show"), NAO simule de novo. Apenas confirme em UMA frase curta e direcione: "Show, pra fechar e so tocar em 'Tenho interesse' no resumo que enviei." NUNCA chame simulate_quota de novo, NUNCA chame recommend_groups (o usuario ja escolheu).
 - Se o usuario pedir what-if explicito ("e se fosse 1500 por mes?", "se fosse 150k?"), simule novamente apenas com o NOVO valor. Use simulate_quota com o novo creditValue/parcela.
 - Se o usuario pedir comparar com outro grupo, ai sim use simulate_quota no OUTRO grupo (nao no mesmo).
 
@@ -336,7 +336,7 @@ export const SHARED_SPECIALIST_EXAMPLES: ExamplePair[] = [
 		context:
 			"Usuario respondeu via botao de qualify (reage com micro-insight no SEU tom, sem perguntar)",
 		userMessage: "R$ 400 a 600 mil",
-		assistantResponse: "Boa faixa, tem bastante opcao boa nesse range.",
+		assistantResponse: "Boa, tem bastante opcao boa nessa faixa.",
 	},
 	{
 		context: "Usuario faz duvida geral durante coleta (responde + para — sistema retoma)",
@@ -471,7 +471,7 @@ Diferenca importante:
 - **Trigger condicao satisfeita** (valor 1M+, processo juridico, etc.) → \`suggest_handoff\` (HUMANO)
 - **Categoria errada do consorcio** (user esta na sua mas mencionou outra) → NAO faz nada, sistema roteia entre IAs
 
-Quando o usuario clicar "Tenho interesse" no card de recomendacao, o sistema pede o nome e conecta com um consultor humano senior. NAO se despeca, NAO chame ferramenta nenhuma. Apenas diga algo natural.
+Quando o usuario clicar "Tenho interesse" na opcao recomendada, o sistema pede o nome e conecta com um consultor humano senior. NAO se despeca, NAO chame ferramenta nenhuma. Apenas diga algo natural.
 </handoff>
 
 <voice>

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { SHARED_SPECIALIST_EXAMPLES, SYSTEM_PROMPT } from "./system-prompt";
+import {
+	SHARED_SPECIALIST_EXAMPLES,
+	SPECIALIST_BASE_PROMPT,
+	SYSTEM_PROMPT,
+} from "./system-prompt";
 
 describe("system-prompt — overclaim de adequação financeira (bug #08)", () => {
 	it("não contém frases subjetivas tipo 'cabe bem no seu orçamento'", () => {
@@ -77,6 +81,46 @@ describe("Helena 1ª fala calorosa (bug #04)", () => {
 			.join(". ");
 		const dominio = /im[óo]vel|casa|apartamento/i;
 		expect(primeirasDuas).toMatch(dominio);
+	});
+});
+
+describe("Anglicismos no copy ao usuário (bug #07)", () => {
+	const anglicismos = ["range", "nice", "cool", "feedback", "insight", "tip", "hack"];
+
+	for (const palavra of anglicismos) {
+		it(`assistantResponse dos shared examples NÃO contém '${palavra}'`, () => {
+			for (const ex of SHARED_SPECIALIST_EXAMPLES) {
+				const regex = new RegExp(`\\b${palavra}\\b`, "i");
+				expect(
+					ex.assistantResponse,
+					`example "${ex.context}" contém anglicismo '${palavra}': "${ex.assistantResponse}"`,
+				).not.toMatch(regex);
+			}
+		});
+	}
+
+	it("substituição de 'range' → 'faixa' confirmada (pelo menos 1 uso de 'faixa' em algum example)", () => {
+		const hasFaixa = SHARED_SPECIALIST_EXAMPLES.some((ex) => /\bfaixa\b/i.test(ex.assistantResponse));
+		expect(hasFaixa, "esperado pelo menos 1 uso de 'faixa' como substituto de 'range'").toBe(true);
+	});
+});
+
+describe("Palavra 'card' no copy ao usuário (bug #14)", () => {
+	it("assistantResponse dos shared examples NÃO contém 'card'", () => {
+		for (const ex of SHARED_SPECIALIST_EXAMPLES) {
+			expect(
+				ex.assistantResponse,
+				`example "${ex.context}" usa 'card' (jargão técnico): "${ex.assistantResponse}"`,
+			).not.toMatch(/\bcards?\b/i);
+		}
+	});
+
+	it("SPECIALIST_BASE_PROMPT não tem fala literal 'no card que mandei/apareceu' (texto que vai pro user)", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/no card que (mandei|apareceu|mostrei)/i);
+	});
+
+	it("SPECIALIST_BASE_PROMPT não menciona 'card de recomendacao' (jargão técnico exposto)", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/no card de (recomenda[cç][aã]o|recomendado)/i);
 	});
 });
 
