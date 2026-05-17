@@ -72,8 +72,22 @@ export class MockBeviAdapter implements AdministradoraAdapter {
 			insurancePercent,
 		});
 
+		// Cenário com lance: regra simples — lance de 20% reduz prazo esperado de
+		// contemplação pra ~40% do prazo nominal (premissa Aja v1). Pode ser
+		// refinado com dados de histórico de contemplação por grupo.
+		const lancePercent = 20;
+		const expectedTermMonths = Math.max(1, Math.round(group.termMonths * 0.4));
+
+		// Correção prevista: imóvel usa INCC, auto/moto usam IPCA. Valores anuais
+		// são premissas conservadoras (média histórica). Não é garantia.
+		const adjustment: QuotaSimulation["expectedAdjustment"] =
+			group.category === "imovel"
+				? { index: "INCC", annualPercent: 6 }
+				: { index: "IPCA", annualPercent: 4.5 };
+
 		return {
 			groupId: params.groupId,
+			category: group.category,
 			creditValue: params.creditValue,
 			monthlyPayment: Math.round(quota.monthlyPayment * 100) / 100,
 			adminFee: Math.round(quota.adminFeeTotal * 100) / 100,
@@ -82,6 +96,8 @@ export class MockBeviAdapter implements AdministradoraAdapter {
 			totalCost: Math.round(quota.totalCost * 100) / 100,
 			termMonths: group.termMonths,
 			effectiveRate: Math.round(quota.effectiveRate * 100) / 100,
+			lanceScenario: { lancePercent, expectedTermMonths },
+			expectedAdjustment: adjustment,
 		};
 	}
 

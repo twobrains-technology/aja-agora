@@ -19,6 +19,7 @@ export interface GroupSummary {
 
 export interface QuotaSimulation {
 	groupId: string;
+	category: ConsorcioCategory;
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -27,6 +28,16 @@ export interface QuotaSimulation {
 	totalCost: number;
 	termMonths: number;
 	effectiveRate: number; // taxa efetiva total over term
+	/** Projeção de cenário com lance (bug #10 Bruna v1 review). */
+	lanceScenario: {
+		lancePercent: number; // % do crédito ofertado como lance
+		expectedTermMonths: number; // prazo esperado até contemplação com esse lance
+	};
+	/** Correção prevista da carta — INCC pra imóvel, IPCA pra auto (bug #10). */
+	expectedAdjustment: {
+		index: "INCC" | "IPCA";
+		annualPercent: number;
+	};
 }
 
 export interface RateInfo {

@@ -50,6 +50,9 @@ const comparisonTableSchema = z.object({
 const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
+	category: z
+		.enum(["imovel", "auto", "servicos"])
+		.describe("Categoria do bem (define indice de correcao prevista: imovel=INCC, auto=IPCA)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFee: z.number().describe("Taxa de administracao total em reais"),
@@ -58,6 +61,34 @@ const simulationResultSchema = z.object({
 	totalCost: z.number().describe("Custo total em reais"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	effectiveRate: z.number().describe("Taxa efetiva total em percentual"),
+	lanceScenario: z
+		.object({
+			lancePercent: z.number().describe("Percentual do credito ofertado como lance"),
+			expectedTermMonths: z
+				.number()
+				.int()
+				.describe("Prazo esperado ate contemplacao com esse lance"),
+		})
+		.optional()
+		.describe("Cenario projetado com lance (bug #10)"),
+	expectedAdjustment: z
+		.object({
+			index: z.enum(["INCC", "IPCA"]).describe("Indice de correcao previsto"),
+			annualPercent: z.number().describe("Percentual anual estimado"),
+		})
+		.optional()
+		.describe("Correcao prevista da carta — INCC pra imovel, IPCA pra auto (bug #10)"),
+	actions: z
+		.array(
+			z.object({
+				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
+				intent: z
+					.string()
+					.describe("Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')"),
+			}),
+		)
+		.optional()
+		.describe("CTAs explicitas pro fechamento (bug #12)"),
 });
 
 const recommendationSchema = z.object({

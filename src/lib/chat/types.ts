@@ -22,6 +22,7 @@ export interface ComparisonTablePayload {
 export interface SimulationResultPayload {
 	groupId: string;
 	administradora: string;
+	category: "imovel" | "auto" | "servicos";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -30,6 +31,21 @@ export interface SimulationResultPayload {
 	totalCost: number;
 	termMonths: number;
 	effectiveRate: number;
+	/** Cenário projetado com lance (bug #10). */
+	lanceScenario?: {
+		lancePercent: number;
+		expectedTermMonths: number;
+	};
+	/** Correção prevista — INCC pra imóvel, IPCA pra auto (bug #10). */
+	expectedAdjustment?: {
+		index: "INCC" | "IPCA";
+		annualPercent: number;
+	};
+	/** CTAs explícitas pro fechamento (bug #12). */
+	actions?: Array<{
+		label: string;
+		intent: string;
+	}>;
 }
 
 export interface RecommendationCardPayload {
