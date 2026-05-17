@@ -56,8 +56,23 @@ export function identityFromPhone(phoneE164: string, namespace = getNamespace())
 	return { kind: "phone", value: phoneE164, namespace };
 }
 
-/** Identidade de waId (formato WhatsApp Cloud: dígitos sem `+`). */
+/**
+ * waIds começando com `SIM-` são sintéticos (criados pelo simulator admin tool).
+ * Eles NÃO passam por normalizePhoneBR (que rejeita não-dígitos) — são tratados
+ * como identidade phone direta, mantendo o waId como `value`. Garante que conv
+ * whatsapp simulada tenha identity Letta funcional desde o 1º turno.
+ *
+ * Single source of truth pra detectar waId simulado (espelha `isSimulatedWaId`
+ * de `src/lib/whatsapp/simulator-bus.ts`, mantido aqui pra não criar import
+ * cross-domínio).
+ */
+const SIM_WA_ID_PREFIX = "SIM-";
+
+/** Identidade de waId (formato WhatsApp Cloud: dígitos sem `+`, ou SIM-<uuid>). */
 export function identityFromWaId(waId: string, namespace = getNamespace()): UserIdentity {
+	if (waId.startsWith(SIM_WA_ID_PREFIX)) {
+		return { kind: "phone", value: waId, namespace };
+	}
 	const e164 = normalizePhoneBR(waId);
 	if (!e164) throw new Error(`Invalid waId: "${waId}"`);
 	return identityFromPhone(e164, namespace);

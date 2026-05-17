@@ -36,17 +36,14 @@ export async function POST(
 	const [updated] = await db
 		.update(conversations)
 		.set({
-			metadata: sql`jsonb_set(
-				jsonb_set(
-					COALESCE(${conversations.metadata}, '{}'::jsonb),
-					'{simulator,clockOffsetMs}',
-					to_jsonb(0::bigint),
-					true
-				),
-				'{simulator,clockAdvancedAt}',
-				to_jsonb(${nowIso}::text),
-				true
-			)`,
+			metadata: sql`COALESCE(${conversations.metadata}, '{}'::jsonb) ||
+				jsonb_build_object('simulator',
+					COALESCE(${conversations.metadata} -> 'simulator', '{}'::jsonb) ||
+					jsonb_build_object(
+						'clockOffsetMs', 0,
+						'clockAdvancedAt', ${nowIso}::text
+					)
+				)`,
 			updatedAt: new Date(),
 		})
 		.where(and(eq(conversations.id, id), eq(conversations.isSimulated, true)))

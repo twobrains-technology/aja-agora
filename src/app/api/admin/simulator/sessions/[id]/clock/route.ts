@@ -72,25 +72,25 @@ export async function POST(
 		);
 	}
 
-	// Atomic update via jsonb_set encadeado. Faz SOMA do offset corrente +
-	// advanceMs direto no DB pra prevenir race entre dois admins (EC-01).
+	// Atomic update: merge `simulator` sub-object via `||`. jsonb_set NÃO cria
+	// chave intermediária mesmo com create_if_missing=true — só cria a folha.
+	// O merge `||` substitui/preenche chaves no objeto resultante, e como a
+	// SOMA do offset é computada em SQL (CAST + + ::bigint) também é atômica
+	// pra race entre admins (EC-01).
 	const nowIso = new Date().toISOString();
 	const [updated] = await db
 		.update(conversations)
 		.set({
-			metadata: sql`jsonb_set(
-				jsonb_set(
-					COALESCE(${conversations.metadata}, '{}'::jsonb),
-					'{simulator,clockOffsetMs}',
-					to_jsonb(
-						COALESCE((${conversations.metadata} #>> '{simulator,clockOffsetMs}')::bigint, 0) + ${advanceMs}::bigint
-					),
-					true
-				),
-				'{simulator,clockAdvancedAt}',
-				to_jsonb(${nowIso}::text),
-				true
-			)`,
+			metadata: sql`COALESCE(${conversations.metadata}, '{}'::jsonb) ||
+				jsonb_build_object('simulator',
+					COALESCE(${conversations.metadata} -> 'simulator', '{}'::jsonb) ||
+					jsonb_build_object(
+						'clockOffsetMs',
+						COALESCE((${conversations.metadata} #>> '{simulator,clockOffsetMs}')::bigint, 0) + ${advanceMs}::bigint,
+						'clockAdvancedAt',
+						${nowIso}::text
+					)
+				)`,
 			updatedAt: new Date(),
 		})
 		.where(and(eq(conversations.id, id), eq(conversations.isSimulated, true)))

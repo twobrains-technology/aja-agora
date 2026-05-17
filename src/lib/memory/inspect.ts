@@ -71,6 +71,10 @@ export async function inspectSimulatorMemory({
 	}
 
 	if (!identity) {
+		// Sem identity ainda não conseguimos consultar Letta agent, mas o painel
+		// ainda precisa saber se Letta está reachable pra mostrar banner offline
+		// quando aplicável (ex: conv web pré-cookie ou conv whatsapp + Letta down).
+		const available = await quickHealthCheck();
 		return {
 			identity: null,
 			agentExists: false,
@@ -80,7 +84,7 @@ export async function inspectSimulatorMemory({
 			archivalSample: [],
 			clockOffsetMs,
 			simulatedNow,
-			lettaAvailable: true,
+			lettaAvailable: available,
 			webEngagementProgress,
 		};
 	}
