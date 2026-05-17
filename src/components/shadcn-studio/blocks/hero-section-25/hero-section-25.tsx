@@ -7,7 +7,7 @@ import {
   Bot,
   Home,
   Car,
-  Briefcase,
+  Bike,
   Sparkles,
   MessageCircle,
   ArrowRight
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { MotionPreset } from '@/components/ui/motion-preset'
 
-const goals = [
+export const GOALS = [
   {
     id: 'imovel',
     icon: Home,
@@ -34,11 +34,11 @@ const goals = [
     message: 'Quero comprar um carro, qual o melhor consorcio para mim?',
   },
   {
-    id: 'servicos',
-    icon: Briefcase,
-    label: 'Servicos',
-    sub: 'Reforma ou viagem',
-    message: 'Quero fazer um consorcio de servicos, o que voces tem disponivel?',
+    id: 'moto',
+    icon: Bike,
+    label: 'Moto',
+    sub: 'Nova ou usada',
+    message: 'Quero comprar uma moto, qual o melhor consorcio para mim?',
   }
 ]
 
@@ -69,7 +69,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
   }, [phase])
 
   const handleSelect = useCallback(
-    (goal: (typeof goals)[number]) => {
+    (goal: (typeof GOALS)[number]) => {
       setSelectedGoal(goal.id)
       setPhase('selected')
       setTimeout(() => onGoalSelected(goal.message), 800)
@@ -229,7 +229,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                           exit: { transition: { staggerChildren: 0.05 } }
                         }}
                       >
-                        {goals.map((goal, idx) => {
+                        {GOALS.map((goal, idx) => {
                           const isSelected = selectedGoal === goal.id
                           const isOther = selectedGoal !== null && !isSelected
 
@@ -338,7 +338,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                       >
                         <div className='max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3'>
                           <p className='text-sm text-primary-foreground'>
-                            {goals.find(g => g.id === selectedGoal)?.message}
+                            {GOALS.find(g => g.id === selectedGoal)?.message}
                           </p>
                         </div>
                       </motion.div>
