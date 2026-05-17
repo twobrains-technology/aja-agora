@@ -98,6 +98,49 @@ describe("saveContactName", () => {
 		});
 		expect(conv?.contactName).toBe("Jean-Luc");
 	});
+
+	// PF-01 (descoberto pelo PO Lead): se agent passar "sou o Kairo",
+	// split(/\s+/)[0] salvaria "sou". Stopwords precisam ser puladas.
+	it("PF-01: pula stopword 'sou' e pega o nome real", async () => {
+		const r = await saveContactName(convId, "sou o Kairo");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Kairo");
+	});
+
+	it("PF-01: pula 'me chamo' e pega o nome", async () => {
+		const r = await saveContactName(convId, "me chamo Alan Carlos");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Alan");
+	});
+
+	it("PF-01: pula 'eu sou a' e pega o nome", async () => {
+		const r = await saveContactName(convId, "eu sou a Helena");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Helena");
+	});
+
+	it("PF-01: pula 'meu nome é' e pega o nome", async () => {
+		const r = await saveContactName(convId, "meu nome é Pedro");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Pedro");
+	});
+
+	it("PF-01: rejeita se só houver stopwords", async () => {
+		const r = await saveContactName(convId, "sou o");
+		expect(r.ok).toBe(false);
+	});
 });
 
 describe("saveContactWhatsapp", () => {

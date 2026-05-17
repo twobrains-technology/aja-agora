@@ -9,6 +9,57 @@ export type ContactCaptureResult =
 	| { ok: true; leadId: string; created: boolean }
 	| { ok: false; error: string };
 
+// Stopwords PT-BR que aparecem antes do nome em respostas coloquiais
+// ("sou o Kairo", "me chamo Alan", "eu sou a Helena", "meu nome é Pedro").
+// Defensivo contra agent extrair tokens errados ao chamar save_contact_name
+// (PF-01 detectado pelo PO Lead). Inclui pronomes, copulas, e palavras
+// estruturais comuns. Compare em lowercase + sem acentos.
+const NAME_STOPWORDS = new Set([
+	"sou",
+	"e",
+	"eh",
+	"o",
+	"a",
+	"os",
+	"as",
+	"eu",
+	"me",
+	"meu",
+	"minha",
+	"nome",
+	"chamo",
+	"chama",
+	"chamam",
+	"to",
+	"ta",
+	"sim",
+	"oi",
+	"ola",
+	"ola,",
+	"se",
+	"de",
+	"da",
+	"do",
+	"das",
+	"dos",
+]);
+
+function stripAccents(s: string): string {
+	return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function extractFirstName(raw: string): string | null {
+	const tokens = raw.trim().split(/\s+/);
+	for (const t of tokens) {
+		const cleaned = t.replace(/[.,;:!?]+$/, "");
+		if (!cleaned) continue;
+		const normalized = stripAccents(cleaned).toLowerCase();
+		if (NAME_STOPWORDS.has(normalized)) continue;
+		return cleaned;
+	}
+	return null;
+}
+
 /**
  * Persiste o nome capturado conversacionalmente. Idempotente:
  *  - Cria lead novo se não existir (stage='novo')
@@ -25,7 +76,7 @@ export async function saveContactName(
 	const trimmed = rawName.trim();
 	if (!trimmed) return { ok: false, error: "name_invalid" };
 
-	const firstToken = trimmed.split(/\s+/)[0];
+	const firstToken = extractFirstName(trimmed);
 	if (!firstToken || firstToken.length < 2 || firstToken.length > 30) {
 		return { ok: false, error: "name_invalid" };
 	}

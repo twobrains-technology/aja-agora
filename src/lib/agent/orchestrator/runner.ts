@@ -9,6 +9,7 @@ import type { ArtifactType } from "@/lib/chat/types";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
+import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -96,12 +97,22 @@ export async function* runAgentTurn(args: {
 				}
 
 				if (PRESENTATION_TOOLS.has(toolName)) {
-					const artifactType = artifactTypeFor(toolName);
-					artifacts.push({
-						type: artifactType,
-						payload: input,
-					});
-					yield { type: "artifact", artifactType, payload: input, toolCallId };
+					// PF-07: guard de duplicação do whatsapp_optin — modelo pode
+					// chamar 2x em conversation longa apesar do prompt. Suprimir
+					// silenciosamente se já foi mostrado.
+					const isWhatsappOptin = toolName === "present_whatsapp_optin";
+					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
+						console.log(
+							`[whatsapp-optin] guard: tool chamada 2x na mesma conversa, suprimindo artifact (conv=${conversationId})`,
+						);
+					} else {
+						const artifactType = artifactTypeFor(toolName);
+						artifacts.push({
+							type: artifactType,
+							payload: input,
+						});
+						yield { type: "artifact", artifactType, payload: input, toolCallId };
+					}
 				}
 
 				const stage = LEAD_STAGE_BY_TOOL[toolName];
@@ -188,6 +199,16 @@ export async function* runAgentTurn(args: {
 		await persistMeta(conversationId, {
 			...refreshed,
 			leadCollection: initial,
+		});
+	}
+
+	// PF-07: marca whatsappOptinShown=true após emitir o artifact pela 1a vez.
+	// Próxima chamada da tool no mesmo conversation cai no guard acima.
+	if (artifacts.some((a) => a.type === "whatsapp_optin") && !meta.whatsappOptinShown) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, {
+			...refreshed,
+			whatsappOptinShown: true,
 		});
 	}
 
