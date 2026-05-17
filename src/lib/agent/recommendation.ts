@@ -1,4 +1,9 @@
-import type { ConsorcioCategory, GroupSummary } from "@/lib/adapters/types";
+import type {
+	AdministradoraAdapter,
+	ConsorcioCategory,
+	GroupSummary,
+	SearchGroupsParams,
+} from "@/lib/adapters/types";
 
 // ---- Scoring weights ----
 
@@ -113,4 +118,74 @@ export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3
 	});
 
 	return scored.sort((a, b) => b.score - a.score).slice(0, topN);
+}
+
+// ---- Fallback: garantia de ≥3 opções (bug #09) ----
+
+const MIN_OPTIONS = 3;
+const EXPANSION_STEPS = [0.2, 0.5] as const;
+
+export interface RecommendationResult {
+	groups: Array<GroupSummary & { alternativa: boolean }>;
+	/** Quanto a faixa de crédito foi expandida (0.2, 0.5) ou null se filtro estrito bastou. */
+	expansionUsed: number | null;
+	/** True se mesmo após expansão máxima não atingiu MIN_OPTIONS — agente deve comunicar. */
+	insufficientOptions: boolean;
+}
+
+function expandRange(
+	params: SearchGroupsParams,
+	factor: number,
+): SearchGroupsParams {
+	const center = ((params.creditMin ?? 0) + (params.creditMax ?? 0)) / 2 || params.creditMin || 0;
+	const expand = center * factor;
+	return {
+		...params,
+		creditMin: Math.max(0, (params.creditMin ?? 0) - expand),
+		creditMax: (params.creditMax ?? Number.MAX_SAFE_INTEGER) + expand,
+	};
+}
+
+/**
+ * Busca grupos garantindo ≥3 opções: filtro estrito → ±20% → ±50%. Marca
+ * alternativos. Se mesmo ±50% não basta, retorna o que tem com flag
+ * insufficientOptions=true. Bug #09 (Bruna v1 review).
+ */
+export async function recommendWithFallback(
+	adapter: AdministradoraAdapter,
+	params: SearchGroupsParams,
+): Promise<RecommendationResult> {
+	const strict = await adapter.searchGroups(params);
+	if (strict.length >= MIN_OPTIONS) {
+		return {
+			groups: strict.map((g) => ({ ...g, alternativa: false })),
+			expansionUsed: null,
+			insufficientOptions: false,
+		};
+	}
+
+	const seenIds = new Set(strict.map((g) => g.id));
+	const result: Array<GroupSummary & { alternativa: boolean }> = strict.map((g) => ({
+		...g,
+		alternativa: false,
+	}));
+
+	for (const factor of EXPANSION_STEPS) {
+		const expanded = await adapter.searchGroups(expandRange(params, factor));
+		for (const g of expanded) {
+			if (!seenIds.has(g.id)) {
+				seenIds.add(g.id);
+				result.push({ ...g, alternativa: true });
+			}
+		}
+		if (result.length >= MIN_OPTIONS) {
+			return { groups: result, expansionUsed: factor, insufficientOptions: false };
+		}
+	}
+
+	return {
+		groups: result,
+		expansionUsed: EXPANSION_STEPS[EXPANSION_STEPS.length - 1],
+		insufficientOptions: true,
+	};
 }
