@@ -17,7 +17,14 @@ export type UserIntent =
 	| "off_topic"
 	| "neutral";
 
-export function nextGate(meta: ConversationMetadata): Gate {
+export function nextGate(
+	meta: ConversationMetadata,
+	opts?: { hasContactName?: boolean },
+): Gate {
+	// PF-08: pausa todos os gates até captura conversacional de nome.
+	// Sem isso, o gate de experience dispara junto com a pergunta de nome
+	// e usuário recebe 2 perguntas simultâneas. doubts-wait = no-op visual.
+	if (opts && opts.hasContactName === false) return "doubts-wait";
 	if (!meta.experiencePrev) return "experience";
 	if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
 	if (meta.pendingFollowUp) return "doubts-wait";

@@ -6,7 +6,14 @@ export function buildTransitionFirstContactDirective(
 	categoryLabel: string,
 	nameHint: string,
 ): string {
-	return `[sistema acabou de te conectar com o usuario que pediu pra falar sobre ${categoryLabel}]${nameHint ? ` ${nameHint}` : ""}`;
+	// PF-08 (descoberto pelo QA E2E P0-01): sem este reforço explicito, o agent
+	// antecipa o gate de experience e nunca pergunta o nome. Quando nameHint
+	// vazio, o directive agora obriga o agent a pedir nome via save_contact_name
+	// ANTES de qualquer outra coisa.
+	const nameInstruction = nameHint
+		? ` ${nameHint}`
+		: " IMPORTANTE: voce ainda NAO sabe o nome do usuario. Sua primeira mensagem deve reagir em 1 frase curta ao objetivo dele E em SEGUIDA perguntar como pode chama-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'). NAO pergunte sobre experiencia previa nem mencione outros assuntos — apenas reaja + peca o nome. Quando o usuario responder, chame save_contact_name imediatamente.";
+	return `[sistema acabou de te conectar com o usuario que pediu pra falar sobre ${categoryLabel}]${nameInstruction}`;
 }
 
 export function buildTransitionReturningDirective(): string {

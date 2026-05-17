@@ -229,7 +229,15 @@ export async function* runAgentTurn(args: {
 		}
 
 		const refreshed = await reloadMeta(conversationId);
-		const gate = nextGate(refreshed);
+		// PF-08: lê contactName atual pra pausar gates enquanto nome não capturado.
+		const { db } = await import("@/db");
+		const { conversations } = await import("@/db/schema");
+		const { eq } = await import("drizzle-orm");
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId),
+			columns: { contactName: true },
+		});
+		const gate = nextGate(refreshed, { hasContactName: Boolean(conv?.contactName) });
 		const shouldShow = decideShowGate({
 			gate,
 			intent: userIntent,

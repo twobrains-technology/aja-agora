@@ -36,6 +36,11 @@ export function checkRateLimit(
   ip: string,
   config: RateLimitConfig = DEFAULT_CONFIG,
 ): RateLimitResult {
+  // Disable rate limiting in local development (TB_ENV=local per TwoBrains convention)
+  if (process.env.TB_ENV === 'local') {
+    return { allowed: true, remaining: Infinity };
+  }
+
   const now = Date.now();
   let bucket = buckets.get(ip);
 
