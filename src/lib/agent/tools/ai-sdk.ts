@@ -14,6 +14,7 @@ import { leads } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups } from "@/lib/agent/recommendation";
+import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import {
 	getGroupDetailsInput,
 	getRatesInput,
@@ -145,6 +146,24 @@ const captureLeadSchema = z.object({
 	email: z.string().email().describe("Email do lead"),
 });
 
+const compareWithFinancingSchema = z.object({
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem (define taxa CET padrao)"),
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo do consorcio em meses"),
+	consorcioMonthlyPayment: z
+		.number()
+		.describe("Parcela mensal do consorcio (vem de simulate_quota)"),
+	consorcioTotalCost: z.number().describe("Custo total do consorcio (vem de simulate_quota)"),
+	annualRateOverride: z
+		.number()
+		.optional()
+		.describe(
+			"Override da taxa CET anual do financiamento. Default: imovel 10%, auto 22%, moto 28%, servicos 25%.",
+		),
+});
+
 const recommendGroupsSchema = z.object({
 	category: z
 		.enum(["imovel", "auto", "moto", "servicos"])
@@ -202,6 +221,15 @@ export const consorcioTools = {
 		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
 			const adapter = getAdapter();
 			return await adapter.getGroupDetails(args);
+		},
+	}),
+
+	compare_with_financing: tool({
+		description:
+			"Compara parcela e custo total de um consorcio com um financiamento bancario equivalente (Tabela Price, CET estimado por categoria). Use quando o usuario perguntar comparativo, hesitar entre consorcio e financiamento, ou quiser entender a diferenca em numeros. Sempre retornar com disclaimer de estimativa.",
+		inputSchema: compareWithFinancingSchema,
+		execute: async (args: z.infer<typeof compareWithFinancingSchema>) => {
+			return compareWithFinancing(args);
 		},
 	}),
 

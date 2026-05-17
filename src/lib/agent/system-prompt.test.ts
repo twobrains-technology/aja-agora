@@ -124,6 +124,26 @@ describe("Palavra 'card' no copy ao usuário (bug #14)", () => {
 	});
 });
 
+describe("Comparador consórcio × financiamento (bug #17)", () => {
+	it("SYSTEM_PROMPT não tem diretiva 'NAO compare com financiamento'", () => {
+		expect(SYSTEM_PROMPT).not.toMatch(/n[ãa]o compar[ae] com financiamento/i);
+	});
+
+	it("SPECIALIST_BASE_PROMPT não tem diretiva 'Nao compara consorcio com financiamento'", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(
+			/n[ãa]o compar[ae] cons[óo]rcio com financiamento/i,
+		);
+	});
+
+	it("SYSTEM_PROMPT instrui a usar tool compare_with_financing", () => {
+		expect(SYSTEM_PROMPT).toMatch(/compare_with_financing/);
+	});
+
+	it("SPECIALIST_BASE_PROMPT instrui a usar tool compare_with_financing", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/compare_with_financing/);
+	});
+});
+
 describe("Primeira vez = explicação básica inline (bug #15)", () => {
 	const firstTimeExample = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
 		ex.context?.includes("Primeira vez") || ex.userMessage?.toLowerCase().includes("primeira vez"),
