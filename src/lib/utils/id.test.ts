@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateId } from "./id";
+import { generateId, isUuid } from "./id";
 
 describe("generateId (bug #01: crypto.randomUUID em non-secure context)", () => {
 	afterEach(() => {
@@ -34,5 +34,36 @@ describe("generateId (bug #01: crypto.randomUUID em non-secure context)", () => 
 		const ids = new Set<string>();
 		for (let i = 0; i < 1000; i++) ids.add(generateId());
 		expect(ids.size).toBe(1000);
+	});
+});
+
+describe("isUuid (validator pra prevenir 22P02 em handlers de API)", () => {
+	it("aceita UUID v4 gerado pelo generateId", () => {
+		for (let i = 0; i < 100; i++) {
+			expect(isUuid(generateId())).toBe(true);
+		}
+	});
+
+	it("aceita UUIDs v1-v5 conhecidos", () => {
+		// v1, v4, v5 samples
+		expect(isUuid("c5a9c6e8-9b62-11ee-b9d1-0242ac120002")).toBe(true);
+		expect(isUuid("550e8400-e29b-41d4-a716-446655440000")).toBe(true);
+		expect(isUuid("a82c2b1f-7e9d-5b3a-9c4e-1234567890ab")).toBe(true);
+	});
+
+	it("rejeita strings inválidas (bug QA DEV /api/chat)", () => {
+		expect(isUuid("test-qa-001")).toBe(false);
+		expect(isUuid("")).toBe(false);
+		expect(isUuid("xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx")).toBe(false);
+		expect(isUuid("123")).toBe(false);
+		// versão 6 (não suportada)
+		expect(isUuid("550e8400-e29b-61d4-a716-446655440000")).toBe(false);
+	});
+
+	it("rejeita não-string", () => {
+		expect(isUuid(null)).toBe(false);
+		expect(isUuid(undefined)).toBe(false);
+		expect(isUuid(123)).toBe(false);
+		expect(isUuid({})).toBe(false);
 	});
 });

@@ -30,6 +30,7 @@ import {
 	generateCookieValue,
 } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { isUuid } from "@/lib/utils/id";
 import {
 	pipeDirectiveTurn,
 	pipeSearchSummaryTurn,
@@ -89,6 +90,19 @@ export async function POST(req: NextRequest) {
 
 	const body = (await req.json()) as ChatRequestBody;
 	const providedId = body.conversationId ?? body.id ?? null;
+
+	// Guardrail: conversationId precisa ser UUID válido — coluna é UUID
+	// no Postgres e query com string inválida quebra com 22P02. Visto pelo
+	// QA DEV (integração externa com conversationId="test-qa-001" deu 500).
+	if (providedId && !isUuid(providedId)) {
+		return new Response(
+			JSON.stringify({
+				error: "Invalid conversationId",
+				message: "conversationId must be a valid UUID v1-v5",
+			}),
+			{ status: 400, headers: { "Content-Type": "application/json" } },
+		);
+	}
 
 	let conversationId: string;
 	let contactName: string | null = null;

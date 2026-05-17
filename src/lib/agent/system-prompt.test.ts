@@ -175,3 +175,35 @@ describe("Primeira vez = explicação básica inline (bug #15)", () => {
 		).toBeGreaterThanOrEqual(3);
 	});
 });
+
+describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () => {
+	// Bv2 patches estão em SPECIALIST_BASE_PROMPT (concierge não simula, só roteia)
+	const COMBINED = `${SYSTEM_PROMPT}\n\n${SPECIALIST_BASE_PROMPT}`;
+
+	it("Bv2-07: instrui pipeline simulate_quota → present_simulation_result", () => {
+		expect(COMBINED).toMatch(/simulate_quota/);
+		expect(COMBINED).toMatch(/present_simulation_result/);
+	});
+
+	it("Bv2-08: prompt obriga usar creditValue NOMINAL do grupo", () => {
+		expect(COMBINED).toMatch(/creditValue\s+NOMINAL\s+DO\s+GRUPO/i);
+		expect(COMBINED).toMatch(/creditAdjustmentNotice/);
+	});
+
+	it("Bv2-08: prompt menciona CDC 30/35/37 ao falar de divergência de preço", () => {
+		expect(COMBINED).toMatch(/CDC.*30.*35.*37/);
+	});
+
+	it("Bv2-06: prompt PROÍBE arredondar valores monetários na fala (FAIL QA DEV — agente disse R$ 2.800 quando real era R$ 2.778)", () => {
+		expect(COMBINED).toMatch(/NUNCA\s+arredonde/i);
+		expect(COMBINED).toMatch(/literal/i);
+	});
+
+	it("Bv2-06: prompt VETA 'taxa dentro da média do mercado' (frase sem fonte — QA DEV achou em fala real)", () => {
+		// Esse claim sem fonte é vetado pelo plano (CDC 37 publicidade enganosa).
+		// O prompt deve INSTRUIR explicitamente o agente a não usar essa frase.
+		expect(COMBINED).toMatch(/taxa\s+dentro\s+da\s+m[ée]dia/i);
+		// (deve aparecer como VETADO/PROIBIDO no texto da instrução)
+		expect(COMBINED).toMatch(/(VETADO|PROIBIDO|NUNCA).*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia.*(VETADO|PROIBIDO|NUNCA|sem fonte)/is);
+	});
+});

@@ -20,6 +20,8 @@ const HERO25_FILE = join(
 	"hero-section-25.tsx",
 );
 
+const LAYOUT_FILE = join(__dirname, "..", "..", "app", "layout.tsx");
+
 const FILES = [
 	join(LANDING_DIR, "how-it-works.tsx"),
 	join(LANDING_DIR, "benefits-section.tsx"),
@@ -28,6 +30,7 @@ const FILES = [
 	join(LANDING_DIR, "social-proof.tsx"),
 	join(LANDING_DIR, "footer.tsx"),
 	HERO25_FILE,
+	LAYOUT_FILE,
 ];
 
 const FORBIDDEN_PATTERNS = [

@@ -32,9 +32,9 @@ export const metadata: Metadata = {
 		"simulacao consorcio",
 	],
 	openGraph: {
-		title: "Aja Agora | Consorcio inteligente com IA",
+		title: "Aja Agora | Consorcio sem juros, parcela que cabe no seu mes",
 		description:
-			"Seu consultor de consorcio com inteligencia artificial. Recomendacoes personalizadas em segundos.",
+			"Diga o que voce quer realizar e receba recomendacoes de consorcio com a parcela ideal pro seu mes. Sem juros, sem corretor, sem formulario.",
 		type: "website",
 		locale: "pt_BR",
 	},
