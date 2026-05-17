@@ -96,9 +96,10 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 	}
 }
 
-const WELCOME_OPTIONS: GatePartOption[] = [
+export const WELCOME_OPTIONS: GatePartOption[] = [
 	{ value: "imovel", label: "Imóvel" },
 	{ value: "auto", label: "Automóvel" },
+	{ value: "moto", label: "Moto" },
 	{ value: "servicos", label: "Outros" },
 ];
 

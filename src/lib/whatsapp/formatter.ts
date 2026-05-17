@@ -88,7 +88,7 @@ export interface WhatsAppResponse {
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
 	const body = [
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("servicos", "Serviços")}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
 		`💰 Crédito: ${formatBRL(p.creditValue as number)}`,
 		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
 		`📊 Taxa admin: ${(p.adminFeePercent as number).toFixed(1)}%`,
@@ -182,7 +182,7 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	const body = [
 		`*⭐ Recomendação — ${score}% compatível*`,
 		"",
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("servicos", "Serviços")}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
 		`💰 ${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
 		`📊 ${(p.adminFeePercent as number).toFixed(1)}% admin • ${p.termMonths} meses`,
 		`🎯 ${(p.contemplationRate as number).toFixed(1)}% contemplação`,
@@ -305,6 +305,48 @@ const RANGES: Record<
 			budget: 15000,
 		},
 	],
+	moto: [
+		{
+			id: "range_moto_15",
+			title: "Até R$ 15 mil",
+			desc: "Parcela ~R$ 250/mês • Populares",
+			creditMin: 0,
+			creditMax: 15000,
+			budget: 250,
+		},
+		{
+			id: "range_moto_25",
+			title: "R$ 15 mil - R$ 25 mil",
+			desc: "Parcela ~R$ 400/mês • Trabalho",
+			creditMin: 15000,
+			creditMax: 25000,
+			budget: 400,
+		},
+		{
+			id: "range_moto_40",
+			title: "R$ 25 mil - R$ 40 mil",
+			desc: "Parcela ~R$ 650/mês • Médias",
+			creditMin: 25000,
+			creditMax: 40000,
+			budget: 650,
+		},
+		{
+			id: "range_moto_70",
+			title: "R$ 40 mil - R$ 70 mil",
+			desc: "Parcela ~R$ 1.100/mês • Esportivas",
+			creditMin: 40000,
+			creditMax: 70000,
+			budget: 1100,
+		},
+		{
+			id: "range_moto_120",
+			title: "Acima de R$ 70 mil",
+			desc: "Parcela ~R$ 1.800/mês • Premium",
+			creditMin: 70000,
+			creditMax: 120000,
+			budget: 1800,
+		},
+	],
 	servicos: [
 		{
 			id: "range_serv_30",
@@ -372,6 +414,7 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	const categoryLabel: Record<string, string> = {
 		imovel: "Imóvel",
 		auto: "Carro",
+		moto: "Moto",
 		servicos: "Serviço",
 	};
 

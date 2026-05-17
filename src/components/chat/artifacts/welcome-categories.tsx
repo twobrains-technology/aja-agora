@@ -1,6 +1,6 @@
 "use client";
 
-import { Briefcase, Car, Home } from "lucide-react";
+import { Bike, Briefcase, Car, Home } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useState } from "react";
 import { useChatContext } from "@/lib/chat/provider";
@@ -11,6 +11,7 @@ type CategoryConfig = { icon: typeof Home; sub: string };
 const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
 	imovel: { icon: Home, sub: "Casa ou apartamento" },
 	auto: { icon: Car, sub: "Novo ou seminovo" },
+	moto: { icon: Bike, sub: "Nova ou usada" },
 	servicos: { icon: Briefcase, sub: "Reforma ou viagem" },
 };
 
@@ -42,7 +43,7 @@ export function WelcomeCategories({
 	return (
 		<AnimatePresence>
 			<motion.div
-				className="grid gap-3 sm:grid-cols-3"
+				className="grid grid-cols-2 gap-3 sm:grid-cols-4"
 				initial="hidden"
 				animate="visible"
 				variants={{

@@ -115,6 +115,7 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 const WELCOME_OPTIONS: GatePartOption[] = [
 	{ value: "imovel", label: "Imóvel" },
 	{ value: "auto", label: "Automóvel" },
+	{ value: "moto", label: "Moto" },
 	{ value: "servicos", label: "Outros" },
 ];
 

@@ -9,6 +9,30 @@
 	},
 	{
 		"administradora": "Consorcio Estrela",
+		"category": "moto",
+		"adminFeePercent": 17,
+		"reserveFundPercent": 2.5,
+		"insurancePercent": 0.035,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Bradesco Consorcios",
+		"category": "moto",
+		"adminFeePercent": 16,
+		"reserveFundPercent": 2,
+		"insurancePercent": 0.04,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Grupo Alianca",
+		"category": "moto",
+		"adminFeePercent": 15,
+		"reserveFundPercent": 2,
+		"insurancePercent": 0.035,
+		"updatedAt": "2026-04-01"
+	},
+	{
+		"administradora": "Consorcio Estrela",
 		"category": "imovel",
 		"adminFeePercent": 19,
 		"reserveFundPercent": 4,
