@@ -28,7 +28,7 @@ export const leadSchema = z.object({
 		.transform((v) => v.replace(/\D/g, ""))
 		.pipe(z.string().regex(brPhoneRegex, "Telefone inválido. Use DDD + número (ex: 11999998888)")),
 	email: z
-		.union([z.string().email("Email inválido"), z.literal("")])
+		.union([z.literal(""), z.string().email("Email inválido")])
 		.optional()
 		.transform((v) => (v && v.length > 0 ? v : undefined)),
 });
