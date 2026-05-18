@@ -4,7 +4,7 @@ import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
 /**
  * Camada 1 — Anti-regressão estrutural de behavior guards do prompt.
  *
- * 3 bugs reais combinados (evidências em screenshots tb-dev + eval flow-bruna):
+ * 3 bugs reais combinados (evidências em screenshots tb-dev + eval agent-flow):
  *
  * (1) BUG-META-NARRATIVE — Bruno/moto, agent vazou "O sistema vai te guiar
  *     com botões nas próximas perguntas — é bem rápido" e ainda perguntou
@@ -16,7 +16,7 @@ import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
  *     Deveria emitir o gate de experience IMEDIATAMENTE no mesmo turn após
  *     save_contact_name.
  *
- * (3) BUG-TOOL-DUPLICATION — eval flow-bruna cenário 1 mostrou
+ * (3) BUG-TOOL-DUPLICATION — eval agent-flow cenário imovel/Helena mostrou
  *     save_contact_name chamado 3x e present_value_picker 3x na MESMA
  *     conversa. Só present_whatsapp_optin tinha regra dura de não repetir.
  *

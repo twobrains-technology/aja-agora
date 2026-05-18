@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
 
 /**
- * Anti-regressão estrutural do funil de fechamento — eval flow-bruna cenário 1.
+ * Anti-regressão estrutural do funil de fechamento — eval agent-flow cenário imovel/Helena.
  *
  * Bugs cobertos:
  *  - Bug A: agent dispara `present_whatsapp_optin` mas NUNCA dispara

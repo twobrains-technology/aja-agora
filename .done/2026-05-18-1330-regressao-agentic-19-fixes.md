@@ -73,7 +73,7 @@ Cada cassette assegura **um comportamento canônico do agente**, então quando a
 
 - `CLAUDE.md` (seção nova "Regressão de agent — 3 camadas OBRIGATÓRIAS") — convenção pra todo bug agentic virar cassette automaticamente
 - `tests/regression/agent-trajectory.test.ts` — arquivo único e canônico da Camada 2; cada `describe` documenta o bug real que originou
-- `tests/eval/flow-bruna.eval.test.ts` — esqueleto do framework agent-vs-agent pra Camada 3 (LLM-as-judge), pronto pra expandir pra outros personas/canais
+- `tests/eval/agent-flow.eval.test.ts` — esqueleto do framework agent-vs-agent pra Camada 3 (LLM-as-judge), pronto pra expandir pra outros personas/canais
 - `.husky/pre-commit` — convenção que vai persistir mesmo se o time mudar
 - Migrations 0014-0019 com guard `NOT @>` jsonb — padrão idempotente registrado pra novos devs replicarem
 - Documentação inline no header de cada cassette explicando o bug original

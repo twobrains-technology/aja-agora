@@ -227,7 +227,7 @@ Todo bug de comportamento do agent (tools que não disparam, frases proibidas/ca
 - Pega: regressão em comportamento exato observado em prod/staging. Quebrou = alguém remexeu prompt/builder/tool e quebrou cassette → bloqueia merge.
 
 ### Camada 3 — LLM-as-judge eval (nightly, lento mas profundo)
-- Onde: `tests/eval/flow-bruna.eval.test.ts` (Vercel AI SDK 6, `claude-haiku-4-5` como user-bot + `claude-sonnet-4-6` real como agent).
+- Onde: `tests/eval/agent-flow.eval.test.ts` (Vercel AI SDK 6, `claude-haiku-4-5` como user-bot + `claude-sonnet-4-6` real como agent).
 - Cenários canônicos por persona + canal (Helena/Rafael/Bruno/Camila × web/WhatsApp).
 - Asserts comportamentais via critérios estruturais (frases proibidas, tools chamadas, valores no DB) — não LLM-judge ainda, mas estrutura está pronta pra adicionar.
 - Roda apenas em **cron nightly** (não em PR), via `npx vitest run --config vitest.eval.config.ts`.

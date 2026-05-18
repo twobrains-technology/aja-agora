@@ -13,7 +13,7 @@
  *     src/lib/agent/agents/builder.*.test.ts
  *     src/lib/whatsapp/artifact-coverage.test.ts
  *     src/app/api/chat/route.admin-message-persistence.test.ts
- *   - Camada 3 (eval LLM-as-judge nightly): tests/eval/flow-bruna.eval.test.ts
+ *   - Camada 3 (eval LLM-as-judge nightly): tests/eval/agent-flow.eval.test.ts
  *
  * Caracteristicas:
  *   - 100% deterministico. ZERO chamada Anthropic real.
@@ -655,7 +655,7 @@ describe("BUG-PERGUNTAS-RAPIDAS-CASSETTE — promessa textual sem gate emitido",
 // ============================================================================
 // CENARIO 10 — Tool duplication (BUG-TOOL-DUPLICATION)
 // ----------------------------------------------------------------------------
-// Real (eval flow-bruna cenario 1): save_contact_name chamado 3x e
+// Real (eval agent-flow cenario imovel/Helena): save_contact_name chamado 3x e
 // present_value_picker 3x na MESMA conversa. Só whatsapp_optin tinha guard.
 // Cassette reproduz 3 chamadas seguidas no MESMO turn como evidencia do bug.
 // ============================================================================
@@ -685,6 +685,164 @@ describe("BUG-TOOL-DUPLICATION-CASSETTE — agent chamou save_contact_name 3x no
 			regraAntiDuplicacao.test(SPECIALIST_BASE_PROMPT),
 			"SPECIALIST_BASE_PROMPT precisa ter regra dura anti-duplicação cobrindo " +
 				"save_contact_name, present_value_picker, present_topic_picker, etc.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// CENARIO 11 — Histórico do lead incompleto pós-handoff (BUG-LEAD-HISTORY-INCOMPLETE)
+// ----------------------------------------------------------------------------
+// Real (dev 2026-05-18, conversa Kairo/WhatsApp): admin abriu painel do lead em
+// stage `em_negociacao` e a aba Conversa veio truncada. Comparado ao WhatsApp
+// real, faltavam três coisas no fim do funil:
+//   - Cards (Comparativo, Simulação de Cota) emitidos pelo agent sumiam
+//   - "Tenho interesse!" do botão clicado não virava user message
+//   - "Perfeito, Kairo! Já estou passando seu perfil pro consultor — ele te
+//     chama aqui em instantes. 🤝" não ficava persistido
+//
+// Causas raiz (3 omissões de persistência ao redor do handoff):
+//   - runner.ts:198-201 salvava só fullResponse; descartava `artifacts[]`
+//   - handleInterest (interactive-handlers.ts) era o único handler que
+//     esquecia `saveMessage(user, replyTitle)`
+//   - handoffToAgents (proxy.ts) mandava a frase final via sendTextMessage
+//     direto na Meta API sem persistir antes
+//
+// Defesa estrutural neste cassette:
+//   - Cassette V3 = mesmo turn só-tool que produz o artifact órfão
+//     (tool-call present_simulation_result, zero text-delta).
+//   - Asserts no SOURCE que provam que cada gap recebeu fix:
+//       runner.ts chama `db.insert(artifactsTable)` após saveMessage do
+//       turn-asst, handleInterest chama recordUserClick, handoffToAgents
+//       chama saveMessage antes do sendTextMessage da frase canônica,
+//       schema.ts deixou artifacts.type como text (não enum).
+//
+// Cross-refs Camada 1 / integration:
+//   - src/lib/whatsapp/lead-history-completeness.test.ts (DB real, fluxo
+//     completo: directive → interest_* → handoff)
+//   - src/lib/web/lead-history-completeness.test.ts (DB real, canal web)
+// ============================================================================
+
+describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia artifacts, clique 'Tenho interesse!' e frase canonica de fechamento", () => {
+	it("cassette: stream so-tool com present_simulation_result reproduz o turn que perdia o artifact orfao", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-sim-1", "present_simulation_result", {
+				groupId: "g1",
+				creditValue: 30000,
+				monthlyPayment: 500,
+				adminFee: 1000,
+				reserveFund: 100,
+				insurance: 100,
+				totalCost: 32000,
+				termMonths: 60,
+				effectiveRate: 2.1,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(text).toBe("");
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_simulation_result");
+	});
+
+	it("GAP #1 — runner.ts persiste artifacts apos saveMessage do turn assistant", () => {
+		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
+		// db.insert(artifactsTable) tem que existir no runner — sem isso,
+		// artifacts emitidos voltam a ser dropados silenciosamente.
+		expect(
+			/db\s*\.\s*insert\s*\(\s*artifactsTable\s*\)/.test(runner),
+			"runner.ts precisa chamar db.insert(artifactsTable) — caso contrário " +
+				"o array `artifacts` produzido pelo agent volta a ser jogado fora.",
+		).toBe(true);
+		// E o insert tem que estar referenciando o messageId retornado pelo
+		// saveMessage do mesmo turn (defesa contra alguém inserir sem FK).
+		expect(
+			/messageId\s*=\s*await\s+saveMessage/.test(runner),
+			"runner.ts precisa capturar `messageId` do retorno de saveMessage. " +
+				"Sem o messageId não dá pra ligar os artifacts à message — eles " +
+				"ficariam orfãos.",
+		).toBe(true);
+		expect(
+			/messageId,\s*\n\s*type:/m.test(runner) || /messageId\s*,/.test(runner),
+			"runner.ts precisa usar `messageId` como FK no payload do insert " +
+				"de artifacts (insert(artifactsTable).values({ messageId, ... })).",
+		).toBe(true);
+	});
+
+	it("GAP #1 (schema) — artifacts.type ficou text (não enum) pra suportar todos os ArtifactType", () => {
+		const schema = readSource("src/db/schema.ts");
+		// Garantir que a coluna é text (e que o enum foi removido — manter o
+		// enum congelava o tipo em 5 valores enquanto a união TS tem 11+).
+		expect(
+			/type:\s*text\(\)\.notNull\(\)/.test(schema),
+			"src/db/schema.ts deveria declarar `type: text().notNull()` na tabela artifacts. " +
+				"Voltar pra enum força migration a cada novo artifact e quebra inserts " +
+				"de tipos não-mapeados (whatsapp_optin, scenarios, financing_comparison, etc.).",
+		).toBe(true);
+		expect(
+			schema.includes("artifactTypeEnum"),
+			"src/db/schema.ts não deveria mais exportar `artifactTypeEnum` — ficou " +
+				"sub-utilizado (5 valores vs 11 da união TS) e era a única fonte de " +
+				"erro caso alguém tentasse persistir um artifact 'novo'.",
+		).toBe(false);
+	});
+
+	it("GAP #2 — interactive-handlers centraliza saveMessage do clique via recordUserClick (handleInterest deixou de ser excecao)", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		// O helper compartilhado tem que existir.
+		expect(
+			/function\s+recordUserClick/.test(handlers),
+			"interactive-handlers.ts precisa exportar/usar o helper `recordUserClick` " +
+				"centralizado. Antes do refactor cada handler chamava saveMessage e " +
+				"handleInterest esquecia — gap #2 do BUG-LEAD-HISTORY-INCOMPLETE.",
+		).toBe(true);
+		// handleInterest agora chama recordUserClick antes do startInterestHandoff.
+		// Isolamos a função (entre `async function handleInterest` e a próxima
+		// declaração top-level ou fim do arquivo) e validamos ordem dentro dela.
+		const interestMatch = handlers.match(
+			/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+		);
+		expect(interestMatch, "handleInterest não foi encontrado em interactive-handlers.ts").not.toBe(
+			null,
+		);
+		const interestBody = interestMatch?.[0] ?? "";
+		expect(
+			interestBody.includes("recordUserClick"),
+			"handleInterest precisa chamar recordUserClick — sem isso o clique " +
+				"'Tenho interesse!' volta a sumir do histórico (gap #2).",
+		).toBe(true);
+		// recordUserClick tem que vir ANTES do startInterestHandoff dentro da fn.
+		const idxRecord = interestBody.indexOf("recordUserClick");
+		const idxHandoff = interestBody.indexOf("startInterestHandoff");
+		expect(
+			idxRecord > -1 && idxHandoff > -1 && idxRecord < idxHandoff,
+			"handleInterest precisa chamar recordUserClick ANTES de startInterestHandoff " +
+				"(ordem cronológica: user msg → frase final do bot).",
+		).toBe(true);
+	});
+
+	it("GAP #3 — proxy.handoffToAgents persiste a frase canonica antes do sendTextMessage", () => {
+		const proxy = readSource("src/lib/whatsapp/proxy.ts");
+		// Bloco que monta a frase 'Já estou passando...' precisa estar
+		// imediatamente precedido por saveMessage(conversationId, 'assistant', ...).
+		expect(
+			/saveMessage\([\s\S]{0,300}"assistant"[\s\S]{0,200}closingMessage[\s\S]{0,200}sendTextMessage\(\s*userWaId\s*,\s*closingMessage/.test(
+				proxy,
+			) ||
+				/saveMessage\([\s\S]{0,400}closingMessage[\s\S]{0,200}sendTextMessage\(\s*userWaId\s*,\s*closingMessage/.test(
+					proxy,
+				),
+			"proxy.ts (handoffToAgents) precisa chamar saveMessage(...) com a " +
+				"frase canônica de fechamento antes do sendTextMessage. Sem isso a " +
+				"frase fica só no WhatsApp do cliente e some do histórico admin " +
+				"(gap #3 do BUG-LEAD-HISTORY-INCOMPLETE).",
+		).toBe(true);
+		// A frase tem que continuar exatamente o que o cliente vê (qualquer
+		// drift na cópia rompe a leitura no admin).
+		expect(
+			proxy.includes("Já estou passando seu perfil pro consultor"),
+			"a frase canônica de fechamento deveria continuar idêntica no proxy. " +
+				"Se mudou a copy, atualize o assert e os testes integration.",
 		).toBe(true);
 	});
 });
