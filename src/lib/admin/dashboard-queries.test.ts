@@ -34,9 +34,12 @@ describe("filtros isSimulated nos painéis comerciais", () => {
 		}
 	});
 
-	it("/api/admin/leads: findMany filtra isSimulated=false", () => {
+	it("/api/admin/leads: pipeline NÃO filtra isSimulated (demo path inclui simulados)", () => {
+		// Decisão de produto: pipeline admin mostra todos os leads (incl. simulados)
+		// porque o simulador é "demo path" pro stakeholder. Métricas comerciais
+		// continuam isoladas em dashboard-queries (filtro mantido lá).
 		const src = source("src/app/api/admin/leads/route.ts");
-		expect(src).toMatch(/where:\s*eq\(leads\.isSimulated,\s*false\)/);
+		expect(src).not.toMatch(/where:\s*eq\(leads\.isSimulated,\s*false\)/);
 	});
 
 	it("/api/admin/conversations: oculta simuladas por default, opt-in via ?include_simulated=true", () => {

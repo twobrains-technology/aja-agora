@@ -113,10 +113,13 @@ export async function saveContactName(
 
 /**
  * Persiste o WhatsApp capturado via card UI. Idempotente:
- *  - Cria lead se não existir (com phone) — apenas atualizado o stage se não-simulado
+ *  - Cria lead se não existir (com phone), promovendo stage 'novo'→'engajado'
  *  - Atualiza phone + promove stage 'novo'→'engajado' (onlyAdvance)
  *  - Se já em 'qualificado+', só atualiza phone (não regride)
  *  - Atualiza conversations.waId pra suportar cross-channel
+ *
+ * Vale também pra lead simulado: o simulador é "demo path" e deve
+ * refletir o mesmo comportamento de stage que prod.
  */
 export async function saveContactWhatsapp(
 	conversationId: string,
@@ -142,30 +145,26 @@ export async function saveContactWhatsapp(
 			.set({ phone, updatedAt: new Date() })
 			.where(eq(leads.id, existing.id));
 
-		if (!existing.isSimulated) {
-			await transitionLeadStage(
-				existing.id,
-				"engajado",
-				{ type: "system" },
-				{ onlyAdvance: true },
-			);
-		}
+		await transitionLeadStage(
+			existing.id,
+			"engajado",
+			{ type: "system" },
+			{ onlyAdvance: true },
+		);
 		return { ok: true, leadId: existing.id, created: false };
 	}
 
-	const { leadId, isSimulated } = await createLeadFromConversation({
+	const { leadId } = await createLeadFromConversation({
 		conversationId,
 		name: null,
 		phone,
 		email: null,
 	});
-	if (!isSimulated) {
-		await transitionLeadStage(
-			leadId,
-			"engajado",
-			{ type: "system" },
-			{ onlyAdvance: true },
-		);
-	}
+	await transitionLeadStage(
+		leadId,
+		"engajado",
+		{ type: "system" },
+		{ onlyAdvance: true },
+	);
 	return { ok: true, leadId, created: true };
 }

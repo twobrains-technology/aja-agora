@@ -36,9 +36,10 @@ export async function recordStageReached(
 		const lead = await db.query.leads.findFirst({
 			where: eq(leads.conversationId, conversationId),
 		});
-		// Conversa simulada não pode mover lead no kanban (kanban filtra is_simulated=false,
-		// mas lead_events tabela acumularia auditoria fake e mascararia bugs reais).
-		if (lead && !lead.isSimulated) {
+		// Lead simulado também movimenta stage: a pipeline agora mostra leads
+		// simulados (demo path pro stakeholder). Dashboard de métricas continua
+		// filtrando is_simulated=false separadamente.
+		if (lead) {
 			await transitionLeadStage(lead.id, stage, { type: "system" }, { onlyAdvance: true });
 		}
 	} catch (err) {
@@ -48,14 +49,14 @@ export async function recordStageReached(
 
 /**
  * Helper único pra criar lead a partir de uma conversation. Garante:
- * - Lead herda `is_simulated` da conversation (zero leak pra kanban/funnel).
- * - `applyTrackedStageToLead` (que move o lead pro stage máximo) é chamado SÓ quando
- *   a conversa é real. Conversa simulada NÃO movimenta kanban.
+ * - Lead herda `is_simulated` da conversation (rastreabilidade preservada
+ *   pra dashboard de métricas, que ainda filtra is_simulated=false).
+ * - `applyTrackedStageToLead` (que move o lead pro stage máximo) é chamado
+ *   sempre — incluindo conversas simuladas, já que pipeline mostra ambos.
  *
  * Use em TODOS os call sites que criam lead novo: /api/leads (web form),
  * proxy.handoffToAgents (WhatsApp interest/playbook), lead-collection (discovery),
- * tool `capture_lead`. Centralizar aqui evita o vazamento que aconteceu no
- * primeiro draft (lead criado sem flag → contamina pipeline comercial).
+ * tool `capture_lead`. Centralizar aqui mantém comportamento consistente.
  */
 export async function createLeadFromConversation(opts: {
 	conversationId: string;
@@ -80,9 +81,7 @@ export async function createLeadFromConversation(opts: {
 		})
 		.returning();
 
-	if (!isSimulated) {
-		await applyTrackedStageToLead(opts.conversationId, created.id);
-	}
+	await applyTrackedStageToLead(opts.conversationId, created.id);
 
 	return { leadId: created.id, isSimulated };
 }

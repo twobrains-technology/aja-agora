@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-transitions";
@@ -8,8 +8,11 @@ export async function GET() {
 	const { error } = await requireRole("admin", "viewer", "attendant");
 	if (error) return error;
 
+	// Pipeline mostra TODOS os leads (incl. simulados) — o simulador é
+	// considerado "demo path" pro stakeholder e deve refletir o fluxo real.
+	// Dashboard de métricas comerciais (dashboard-queries.ts) continua
+	// filtrando is_simulated=false — esse é caso separado.
 	const allLeads = await db.query.leads.findMany({
-		where: eq(leads.isSimulated, false),
 		orderBy: [desc(leads.updatedAt)],
 		with: {
 			conversation: {

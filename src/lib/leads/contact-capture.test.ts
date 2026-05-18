@@ -191,7 +191,10 @@ describe("saveContactWhatsapp", () => {
 		expect(all.length).toBe(1);
 	});
 
-	it("conversation simulada não promove stage (kanban guard)", async () => {
+	it("conversation simulada PROMOVE stage (demo path espelha prod)", async () => {
+		// Pipeline admin agora mostra leads simulados (demo path pro stakeholder).
+		// Lead simulado deve refletir o mesmo comportamento de stage que real:
+		// receber WhatsApp promove novo→engajado.
 		const simConvId = await createConv({ isSimulated: true });
 		try {
 			await saveContactName(simConvId, "Kairo");
@@ -200,7 +203,8 @@ describe("saveContactWhatsapp", () => {
 				where: eq(leads.conversationId, simConvId),
 			});
 			expect(lead?.phone).toBe("11987654321");
-			expect(lead?.stage).toBe("novo");
+			expect(lead?.stage).toBe("engajado");
+			expect(lead?.isSimulated).toBe(true);
 		} finally {
 			await cleanupConv(simConvId);
 		}
