@@ -6,19 +6,44 @@ import { SimulatorInbox } from "../inbox";
 import { MemoryDevPanel } from "../memory-dev-panel";
 import { SimulatedBadge } from "../simulated-badge";
 import { useConversationStatus } from "./use-conversation-status";
-import { WhatsAppStage } from "./whatsapp-stage";
+import { type WhatsAppStageItem, WhatsAppStage } from "./whatsapp-stage";
+
+type PersistedMessage = {
+	id: string;
+	role: "user" | "assistant" | "system";
+	content: string;
+	channel: string;
+	createdAt: string;
+};
+
+function toStageItems(messages: PersistedMessage[]): WhatsAppStageItem[] {
+	return messages
+		.filter((m) => m.role === "user" || m.role === "assistant")
+		.map<WhatsAppStageItem>((m) => ({
+			kind: "bubble",
+			id: m.id,
+			// role user = mensagem ENVIADA pelo cliente simulado (verde, à direita)
+			// role assistant = RECEBIDA do agente (cinza, à esquerda)
+			direction: m.role === "user" ? "sent" : "received",
+			text: m.content,
+			createdAt: m.createdAt,
+		}));
+}
 
 export function SimulatorWhatsapp() {
 	const [selectedId, setSelectedId] = useState<string>("");
 	const [authorName, setAuthorName] = useState<string | null>(null);
+	const [initialItems, setInitialItems] = useState<WhatsAppStageItem[] | null>(null);
 	const status = useConversationStatus(selectedId);
 
 	useEffect(() => {
 		if (!selectedId) {
 			setAuthorName(null);
+			setInitialItems(null);
 			return;
 		}
 		let cancelled = false;
+		setInitialItems(null);
 		(async () => {
 			try {
 				const res = await fetch(`/api/admin/simulator/sessions/${selectedId}`, {
@@ -27,8 +52,12 @@ export function SimulatorWhatsapp() {
 				if (!res.ok) return;
 				const data = (await res.json()) as {
 					conversation: { createdBy: { id: string; name: string | null } | null };
+					messages: PersistedMessage[];
 				};
-				if (!cancelled) setAuthorName(data.conversation.createdBy?.name ?? null);
+				if (!cancelled) {
+					setAuthorName(data.conversation.createdBy?.name ?? null);
+					setInitialItems(toStageItems(data.messages ?? []));
+				}
 			} catch {
 				// silencioso
 			}
@@ -49,12 +78,22 @@ export function SimulatorWhatsapp() {
 					<div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
 						Selecione uma simulação na lateral ou crie uma nova.
 					</div>
+				) : initialItems === null ? (
+					<div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+						Carregando conversa...
+					</div>
 				) : (
 					<>
 						<SimulatedBadge authorName={authorName} />
 						{status === "handed_off" && <HandoffBanner showAssumeInline />}
 						<div className="flex-1 overflow-hidden p-3">
-							<WhatsAppStage conversationId={selectedId} />
+							{/* key força remount ao trocar sessão pra que o stage seed
+							    com initialItems da nova conversa, sem vazar SSE/state da anterior */}
+							<WhatsAppStage
+								key={selectedId}
+								conversationId={selectedId}
+								initialItems={initialItems}
+							/>
 						</div>
 					</>
 				)}

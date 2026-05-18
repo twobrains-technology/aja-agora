@@ -56,6 +56,7 @@ type SseEvent =
 export function ChatProvider({
 	children,
 	initialConversationId,
+	initialMessages,
 }: {
 	children: ReactNode;
 	/**
@@ -64,12 +65,25 @@ export function ChatProvider({
 	 * comportamento padrão de gerar UUID local.
 	 */
 	initialConversationId?: string;
+	/**
+	 * Hidrata o `useChat` com mensagens já persistidas (ex: re-abrir conversa
+	 * simulada no admin). Sem isso, o chat re-monta vazio e o histórico do DB
+	 * só reaparece após o próximo turno. Se `undefined`, mantém o comportamento
+	 * legado de iniciar com `[]`.
+	 */
+	initialMessages?: AjaUIMessage[];
 }) {
 	const [conversationId, setConversationId] = useState<string>(
 		() => initialConversationId ?? generateId(),
 	);
 	const [handoff, setHandoff] = useState<HandoffState>({ status: "active", agentName: null });
 
+	// Captura o snapshot do array no primeiro render — evita que toda nova
+	// reference de `initialMessages` (caso pai re-renderize sem memoizar)
+	// re-dispare o effect de hidratação. Hidratação só acontece quando o
+	// conversationId muda de fato (ou no mount inicial).
+	const seedMessagesRef = useRef<AjaUIMessage[] | undefined>(initialMessages);
+	seedMessagesRef.current = initialMessages;
 
 	const transport = useMemo(
 		() =>
@@ -85,6 +99,11 @@ export function ChatProvider({
 	const chat = useChat<AjaUIMessage>({
 		id: conversationId,
 		transport,
+		// Semeia o estado inicial do hook com o histórico vindo do servidor
+		// quando o pai já tem as mensagens em mãos (simulador admin reabrindo
+		// conversa). Em fluxos sem hidratação (chat público), permanece undefined
+		// e o hook começa com [].
+		messages: initialMessages,
 	});
 
 	const setMessagesRef = useRef(chat.setMessages);
@@ -92,11 +111,12 @@ export function ChatProvider({
 
 	// Quando o pai (ex: simulador) troca conversationId via prop, limpa o estado
 	// herdado da sessão anterior (mensagens + handoff). Sem isso, as mensagens
-	// da sessão antiga vazam pra UI da nova até o useChat reconciliar.
+	// da sessão antiga vazam pra UI da nova até o useChat reconciliar. Se o pai
+	// já entregou `initialMessages` pra nova conversa, hidrata em vez de zerar.
 	useEffect(() => {
 		if (!initialConversationId) return;
 		if (initialConversationId === conversationId) return;
-		setMessagesRef.current([]);
+		setMessagesRef.current(seedMessagesRef.current ?? []);
 		setConversationId(initialConversationId);
 		setHandoff({ status: "active", agentName: null });
 		// biome-ignore lint/correctness/useExhaustiveDependencies: dispara só ao trocar pai

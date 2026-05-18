@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChatInput } from "@/components/chat/chat-input";
 import { MessageList } from "@/components/chat/message-list";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
+import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { HandoffBanner } from "../handoff-banner";
 import { SimulatorInbox } from "../inbox";
 import { MemoryDevPanel } from "../memory-dev-panel";
@@ -14,17 +15,45 @@ interface SessionMeta {
 	authorName: string | null;
 }
 
+type PersistedMessage = {
+	id: string;
+	role: "user" | "assistant" | "system";
+	content: string;
+	channel: string;
+	createdAt: string;
+};
+
+function toUIMessages(messages: PersistedMessage[]): AjaUIMessage[] {
+	return messages
+		.filter((m) => m.role === "user" || m.role === "assistant")
+		.map(
+			(m) =>
+				({
+					id: m.id,
+					role: m.role as "user" | "assistant",
+					parts: [{ type: "text" as const, text: m.content }],
+				}) as AjaUIMessage,
+		);
+}
+
 export function SimulatorWeb() {
 	const [selectedId, setSelectedId] = useState<string>("");
 	const [meta, setMeta] = useState<SessionMeta>({ contactName: null, authorName: null });
+	const [initialMessages, setInitialMessages] = useState<AjaUIMessage[] | null>(null);
 
-	// Quando troca a conversa selecionada, busca metadata pra header (autor, nome contato).
+	// Quando troca a conversa selecionada, busca metadata + histórico pra
+	// hidratar o ChatProvider. Sem hidratar, o chat re-abre vazio mesmo com
+	// mensagens persistidas no DB.
 	useEffect(() => {
 		if (!selectedId) {
 			setMeta({ contactName: null, authorName: null });
+			setInitialMessages(null);
 			return;
 		}
 		let cancelled = false;
+		// Reseta o estado enquanto o fetch carrega — evita pintar a tela com
+		// histórico antigo de outra sessão.
+		setInitialMessages(null);
 		(async () => {
 			try {
 				const res = await fetch(`/api/admin/simulator/sessions/${selectedId}`, {
@@ -36,12 +65,14 @@ export function SimulatorWeb() {
 						contactName: string | null;
 						createdBy: { id: string; name: string | null } | null;
 					};
+					messages: PersistedMessage[];
 				};
 				if (!cancelled) {
 					setMeta({
 						contactName: data.conversation.contactName,
 						authorName: data.conversation.createdBy?.name ?? null,
 					});
+					setInitialMessages(toUIMessages(data.messages ?? []));
 				}
 			} catch {
 				// silencioso
@@ -63,8 +94,19 @@ export function SimulatorWeb() {
 					<div className="flex h-full flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
 						Selecione uma simulação na lateral ou crie uma nova.
 					</div>
+				) : initialMessages === null ? (
+					<div className="flex h-full flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+						Carregando conversa...
+					</div>
 				) : (
-					<ChatProvider initialConversationId={selectedId}>
+					// `key={selectedId}` força remount do provider quando a sessão muda,
+					// garantindo que o `useChat` seja reconstruído com o seed correto
+					// de `initialMessages` (Chat instance é criada uma vez por id).
+					<ChatProvider
+						key={selectedId}
+						initialConversationId={selectedId}
+						initialMessages={initialMessages}
+					>
 						<SimulatedBadge authorName={meta.authorName} />
 						<HandoffWatcher />
 						<EmbeddedChatBody />

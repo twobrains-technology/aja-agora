@@ -21,8 +21,15 @@ type Item =
 	| { kind: "bubble"; id: string; direction: "sent" | "received"; text: string; createdAt: string }
 	| { kind: "interactive"; id: string; payload: InteractivePayload; createdAt: string };
 
+export type WhatsAppStageItem = Item;
+
 interface WhatsAppStageProps {
 	conversationId: string;
+	/**
+	 * Mensagens já persistidas pra hidratar o stage ao re-abrir a conversa.
+	 * Sem isso, o stage zera ao conectar no SSE e perde o histórico do DB.
+	 */
+	initialItems?: WhatsAppStageItem[];
 }
 
 /**
@@ -34,8 +41,8 @@ interface WhatsAppStageProps {
  *
  * Conecta no SSE /stream e envia via /send. Tudo gateado por dev-only no backend.
  */
-export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
-	const [items, setItems] = useState<Item[]>([]);
+export function WhatsAppStage({ conversationId, initialItems }: WhatsAppStageProps) {
+	const [items, setItems] = useState<Item[]>(() => initialItems ?? []);
 	const [isTyping, setIsTyping] = useState(false);
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
@@ -44,10 +51,19 @@ export function WhatsAppStage({ conversationId }: WhatsAppStageProps) {
 	const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const interactiveLockRef = useRef(false);
 
+	// Snapshot do seed pra usar dentro do effect SSE sem virar dep dinâmica.
+	// Pai usa `key={conversationId}` pra remontar quando a conversa muda, então
+	// esse ref nunca é "stale" no contexto desse mount.
+	const initialItemsRef = useRef<Item[] | undefined>(initialItems);
+	initialItemsRef.current = initialItems;
+
 	// SSE: assina eventos do agente
 	useEffect(() => {
 		if (!conversationId) return;
-		setItems([]);
+		// Em vez de zerar, hidrata com o histórico vindo do pai (re-abrir
+		// conversa simulada). Conexão SSE só carrega eventos NOVOS — sem isso
+		// o histórico persistido desaparece da UI.
+		setItems(initialItemsRef.current ?? []);
 		setIsTyping(false);
 		setConnection("connecting");
 		const es = new EventSource(`/api/admin/simulator/whatsapp/${conversationId}/stream`);
