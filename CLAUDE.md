@@ -206,3 +206,46 @@ Sequência (não inverter ordem):
 Kairo odeia perguntas confirmatórias bobas dentro desse fluxo (e em geral). Quando uma fase termina e a próxima já está prevista no plano aprovado ou no workflow PO Lead → TDD → QA crítico, **execute a próxima diretamente** — não confirme.
 
 Proibido: "quer que eu lance o QA crítico?", "devo seguir pra Fase X?", "posso continuar?". Permitido: pause SÓ se aparecer ambiguidade arquitetural real (use `/grill-with-docs`) ou ação destrutiva (push/deploy/drop). Para tudo no meio, **execute e reporte** ("feito X, lançando Y agora").
+
+## Regressão de agent — 3 camadas OBRIGATÓRIAS
+
+Todo bug de comportamento do agent (tools que não disparam, frases proibidas/canônicas, gates pulados, artifacts dropados, meta-narrativa do mecanismo, alucinação de UI) **DEVE** virar regressão nas 3 camadas abaixo. Sem isso o bug volta — teste estrutural sozinho não pega comportamento da LLM, e LLM-as-judge sozinho é caro/lento e não roda em PR.
+
+### Camada 1 — Structural (todo PR, <1s/arquivo)
+- Asserts contra source de produção: prompt contém substring X, tool Y em `active_tools`, builder injeta Z invariante, schema/seed corretos.
+- Onde: `src/**/*.test.ts` ao lado do código. Padrão: `system-prompt.<bug-slug>.test.ts`, `builder.<bug-slug>.test.ts`.
+- Pega: config errada, tools órfãs, regras faltando no prompt, seed quebrado.
+- **Não pega**: comportamento não-determinístico do modelo (alucinação, meta-narrativa em texto novo).
+
+### Camada 2 — Trajectory snapshots (todo PR, <30s suite inteira)
+- **Arquivo único e obrigatório**: `tests/regression/agent-trajectory.test.ts`.
+- Usa `MockLanguageModelV2` da Vercel AI SDK (`import from "ai/test"`) + `simulateReadableStream`.
+- Cada bug real reportado = 1 `describe` novo ("cassette"). Cassette = stream determinístico de tokens/tool-calls do que o agent falou no bug.
+- Asserts em camadas: cassette dispara o detector (regex, contagem de tools, ordem) E asserts estruturais complementares no prompt/builder.
+- 100% determinístico — zero chamada Anthropic, zero DB necessário pros cassettes.
+- Cross-ref pra integration tests detalhados (admin-message-persistence, artifact-coverage, simulator-resume etc).
+- Pega: regressão em comportamento exato observado em prod/staging. Quebrou = alguém remexeu prompt/builder/tool e quebrou cassette → bloqueia merge.
+
+### Camada 3 — LLM-as-judge eval (nightly, lento mas profundo)
+- Onde: `tests/eval/flow-bruna.eval.test.ts` (Vercel AI SDK 6, `claude-haiku-4-5` como user-bot + `claude-sonnet-4-6` real como agent).
+- Cenários canônicos por persona + canal (Helena/Rafael/Bruno/Camila × web/WhatsApp).
+- Asserts comportamentais via critérios estruturais (frases proibidas, tools chamadas, valores no DB) — não LLM-judge ainda, mas estrutura está pronta pra adicionar.
+- Roda apenas em **cron nightly** (não em PR), via `npx vitest run --config vitest.eval.config.ts`.
+- Pega: drift de modelo, comportamento sutil que cassette determinístico não cobre, casos edge novos.
+
+### Workflow obrigatório para todo bug de agent
+
+1. Bug reportado em dev/staging/prod → primeira ação = bug-tester escreve **Camada 1** (structural) + **Camada 2** (cassette em `tests/regression/agent-trajectory.test.ts`).
+2. Ver os 2 falharem (FAIL).
+3. Aplicar fix em produção (prompt/builder/tool/seed).
+4. Re-rodar — ambos verdes.
+5. Commit `test+fix:` único com Camada 1 + Camada 2 + fix.
+6. Push → GHA dispara CI que roda Camadas 1+2 em todo PR.
+7. **Camada 3 só roda nightly** — não bloqueia merge. Resultado é relatório, não gate.
+
+**NUNCA** aceitar fix sem cassette na Camada 2 — bug que voltou porque "não tinha teste cobrindo" é proibido. Cassette dura <100 linhas, roda em ms.
+
+### Quando NÃO precisa adicionar cassette
+- Bug em código não-agêntico puro (route HTTP que não chama streamText, query SQL pura, render React sem AI). Só Camada 1 já cobre.
+- Typo de copy em landing/footer. Só Camada 1.
+- Em dúvida, **adicione cassette mesmo assim** — overhead é desprezível.
