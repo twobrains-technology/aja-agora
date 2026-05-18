@@ -6,6 +6,7 @@ import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { saveMessage } from "@/lib/conversation/messages";
 import {
 	fireGate,
 	runDirectiveWithOrchestrator,
@@ -34,12 +35,12 @@ import {
 	resolveTimeframeReply,
 } from "./formatter";
 import { getHandoffState, startInterestHandoff } from "./proxy";
-import { getOrCreateConversation, saveMessage } from "./session";
+import { getOrCreateConversation } from "./session";
 
 const runAgentDirective = (from: string, conversationId: string, directive: string) =>
 	runDirectiveWithOrchestrator({ from, conversationId, directive });
 
-type Ctx = {
+type DispatchInput = {
 	from: string;
 	replyId: string;
 	replyTitle: string;
@@ -47,11 +48,44 @@ type Ctx = {
 	processTextMessage: (from: string, text: string, contactName?: string) => Promise<void>;
 };
 
+// Ctx interno enriquecido: conversationId já resolvido + flag mutável p/
+// garantir que recordUserClick é idempotente dentro de um único dispatch.
+type Ctx = DispatchInput & {
+	conversationId: string;
+	userMessageGuard: { recorded: boolean };
+};
+
+/**
+ * Persiste a mensagem do usuário equivalente ao clique do botão. Idempotente
+ * por dispatch — se chamado duas vezes (handler + helper, p.ex.), só persiste
+ * uma. `override` permite enriquecer o texto salvo (ex: handlePicker que vira
+ * "Meu orçamento é X").
+ *
+ * Centraliza o que antes vivia espalhado em ~12 handlers, cada um chamando
+ * `saveMessage(conversationId, "user", replyTitle)`. A descentralização era
+ * a causa de gaps no histórico — bastava um handler novo esquecer (foi o
+ * caso de handleInterest no BUG-LEAD-HISTORY-INCOMPLETE).
+ */
+async function recordUserClick(ctx: Ctx, override?: string): Promise<void> {
+	if (ctx.userMessageGuard.recorded) return;
+	await saveMessage(ctx.conversationId, "user", override ?? ctx.replyTitle, "whatsapp");
+	ctx.userMessageGuard.recorded = true;
+}
+
 /**
  * Dispatches a WhatsApp interactive reply. Returns true if a handler claimed
  * the reply; false if no handler matched (caller falls back to text processing).
+ *
+ * Conversa é resolvida UMA vez aqui — handlers consomem `ctx.conversationId`
+ * sem chamar `getOrCreateConversation` cada um.
  */
-export async function dispatchInteractiveReply(ctx: Ctx): Promise<boolean> {
+export async function dispatchInteractiveReply(input: DispatchInput): Promise<boolean> {
+	const { id: conversationId } = await getOrCreateConversation(input.from);
+	const ctx: Ctx = {
+		...input,
+		conversationId,
+		userMessageGuard: { recorded: false },
+	};
 	const { replyId } = ctx;
 
 	if (replyId === "handoff_confirm") return handleHandoffConfirm(ctx);
@@ -76,13 +110,20 @@ export async function dispatchInteractiveReply(ctx: Ctx): Promise<boolean> {
 
 // ---- Handlers ----
 
-async function handleHandoffConfirm({ from, replyTitle, contactName }: Ctx): Promise<boolean> {
-	const { id: conversationId } = await getOrCreateConversation(from);
+async function loadMeta(conversationId: string): Promise<ConversationMetadata> {
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+	});
+	return metaOf(conv);
+}
+
+async function handleHandoffConfirm(ctx: Ctx): Promise<boolean> {
+	const { from, contactName, conversationId } = ctx;
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
 	const meta = metaOf(conv);
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 	// Clear the lock either way — handoff queue takes over.
 	await persistMeta(conversationId, {
 		...meta,
@@ -94,13 +135,10 @@ async function handleHandoffConfirm({ from, replyTitle, contactName }: Ctx): Pro
 	return true;
 }
 
-async function handleHandoffDecline({ from, replyTitle }: Ctx): Promise<boolean> {
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
-	await saveMessage(conversationId, "user", replyTitle);
+async function handleHandoffDecline(ctx: Ctx): Promise<boolean> {
+	const { from, conversationId } = ctx;
+	const meta = await loadMeta(conversationId);
+	await recordUserClick(ctx);
 	const cleared: ConversationMetadata = {
 		...meta,
 		handoffSuggested: false,
@@ -119,53 +157,45 @@ async function handleHandoffDecline({ from, replyTitle }: Ctx): Promise<boolean>
 	return true;
 }
 
-async function handleCategory({ from, replyId }: Ctx): Promise<boolean> {
+async function handleCategory(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const category = replyId.replace("category_", "") as Category;
 	if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(category)) return false;
 
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
+	const meta = await loadMeta(conversationId);
 	const fromPersona: Persona = meta.currentPersona ?? "concierge";
+	await recordUserClick(ctx);
 	await runTransitionWithOrchestrator({ from, conversationId, fromPersona, toCategory: category });
 	return true;
 }
 
-async function handleExperience({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleExperience(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const choice = replyId.replace("experience_", "") as ExperiencePrev;
 	if (choice !== "first" && choice !== "returning" && choice !== "doubts") return true;
 
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
+	const meta = await loadMeta(conversationId);
 	// Reset doubtsAddressed if user loops back through experience.
 	await persistMeta(conversationId, {
 		...meta,
 		experiencePrev: choice,
 		doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
 	});
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 
 	let directive: string;
-	if (choice === "first") directive = buildExperienceFirstDirective(replyTitle);
-	else if (choice === "returning") directive = buildExperienceReturningDirective(replyTitle);
-	else directive = buildExperienceDoubtsDirective(replyTitle);
+	if (choice === "first") directive = buildExperienceFirstDirective(ctx.replyTitle);
+	else if (choice === "returning") directive = buildExperienceReturningDirective(ctx.replyTitle);
+	else directive = buildExperienceDoubtsDirective(ctx.replyTitle);
 
 	await runDirectiveWithOrchestrator({ from, conversationId, directive });
 	return true;
 }
 
-async function handleQualifyStart({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
-	await saveMessage(conversationId, "user", replyTitle);
+async function handleQualifyStart(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
+	const meta = await loadMeta(conversationId);
+	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
@@ -182,42 +212,36 @@ async function handleQualifyStart({ from, replyId, replyTitle }: Ctx): Promise<b
 	return true;
 }
 
-async function handleCredit({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleCredit(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const resolved = resolveCreditReply(replyId);
 	if (!resolved) return true;
 
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
+	const meta = await loadMeta(conversationId);
 	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 		...(meta.qualifyAnswers ?? {}),
 		creditMin: resolved.min,
 		creditMax: resolved.max,
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 
 	await runAgentDirective(from, conversationId, buildCreditReactionDirective(resolved.title));
 	return true;
 }
 
-async function handleTimeframe({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleTimeframe(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const resolved = resolveTimeframeReply(replyId);
 	if (!resolved) return true;
 
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
+	const meta = await loadMeta(conversationId);
 	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 		...(meta.qualifyAnswers ?? {}),
 		prazoMeses: resolved.prazoMeses,
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
@@ -225,21 +249,18 @@ async function handleTimeframe({ from, replyId, replyTitle }: Ctx): Promise<bool
 	return true;
 }
 
-async function handleLance({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleLance(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const resolved = resolveLanceReply(replyId);
 	if (!resolved) return true;
 
-	const { id: conversationId } = await getOrCreateConversation(from);
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, conversationId),
-	});
-	const meta = metaOf(conv);
+	const meta = await loadMeta(conversationId);
 	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 		...(meta.qualifyAnswers ?? {}),
 		hasLance: resolved.value,
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
@@ -247,7 +268,8 @@ async function handleLance({ from, replyId, replyTitle }: Ctx): Promise<boolean>
 	return true;
 }
 
-async function handleRange({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleRange(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const range = resolveRange(replyId);
 	if (!range) return false;
 
@@ -263,8 +285,7 @@ async function handleRange({ from, replyId, replyTitle }: Ctx): Promise<boolean>
 		range.creditMin > 0
 			? `creditMin=${range.creditMin}, creditMax=${range.creditMax}`
 			: `creditMax=${range.creditMax}`;
-	const { id: conversationId } = await getOrCreateConversation(from);
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 	await runAgentDirective(
 		from,
 		conversationId,
@@ -273,22 +294,26 @@ async function handleRange({ from, replyId, replyTitle }: Ctx): Promise<boolean>
 	return true;
 }
 
-async function handlePicker({
-	from,
-	replyTitle,
-	contactName,
-	processTextMessage,
-}: Ctx): Promise<boolean> {
-	await processTextMessage(from, `Meu orçamento é ${replyTitle}`, contactName);
+async function handlePicker(ctx: Ctx): Promise<boolean> {
+	const { from, replyTitle, conversationId } = ctx;
+	// Pass enriquecido vai pro agent; persistimos a mesma string no histórico
+	// pra manter coerência entre o que o agent recebe e o que o admin vê.
+	const enriched = `Meu orçamento é ${replyTitle}`;
+	await recordUserClick(ctx, enriched);
+	await runAgentDirective(from, conversationId, enriched);
+	// Não delega mais pra processTextMessage — antes delegava e processTextMessage
+	// salvava a user msg pelo orchestrator. Refactor centraliza no dispatcher,
+	// então persistimos aqui e disparamos o agent direto. Comportamento
+	// equivalente do ponto de vista do agente (mesmo userText).
 	return true;
 }
 
-async function handleGroupSelected({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("group_", "");
 	try {
 		const details = await getAdapter().getGroupDetails({ groupId });
-		const { id: conversationId } = await getOrCreateConversation(from);
-		await saveMessage(conversationId, "user", replyTitle);
+		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
 			conversationId,
@@ -309,12 +334,12 @@ async function handleGroupSelected({ from, replyId, replyTitle }: Ctx): Promise<
 	return true;
 }
 
-async function handleSimulate({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleSimulate(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("simulate_", "");
 	try {
 		const details = await getAdapter().getGroupDetails({ groupId });
-		const { id: conversationId } = await getOrCreateConversation(from);
-		await saveMessage(conversationId, "user", replyTitle);
+		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
 			conversationId,
@@ -327,12 +352,12 @@ async function handleSimulate({ from, replyId, replyTitle }: Ctx): Promise<boole
 	return true;
 }
 
-async function handleWhatIf({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleWhatIf(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("whatif_", "");
 	try {
 		const details = await getAdapter().getGroupDetails({ groupId });
-		const { id: conversationId } = await getOrCreateConversation(from);
-		await saveMessage(conversationId, "user", replyTitle);
+		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
 			conversationId,
@@ -345,24 +370,34 @@ async function handleWhatIf({ from, replyId, replyTitle }: Ctx): Promise<boolean
 	return true;
 }
 
-async function handleDetail({ from, replyId, replyTitle }: Ctx): Promise<boolean> {
+async function handleDetail(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("detail_", "");
-	const { id: conversationId } = await getOrCreateConversation(from);
-	await saveMessage(conversationId, "user", replyTitle);
+	await recordUserClick(ctx);
 	await runAgentDirective(from, conversationId, buildDetailDirective(groupId));
 	return true;
 }
 
-async function handleInterest({ from, contactName }: Ctx): Promise<boolean> {
+async function handleInterest(ctx: Ctx): Promise<boolean> {
+	const { from, contactName } = ctx;
 	const handoff = await getHandoffState(from);
-	if (handoff?.conversationId && !handoff.isHandedOff) {
-		const conv = await db.query.conversations.findFirst({
-			where: eq(conversations.id, handoff.conversationId),
-		});
-		const storedName = contactName ?? conv?.contactName ?? null;
-		const handled = await startInterestHandoff(from, handoff.conversationId, storedName);
-		if (handled) return true;
+	if (!handoff?.conversationId || handoff.isHandedOff) {
+		// Sem state de handoff: fall-through pra processTextMessage. O
+		// orchestrator salva user msg lá dentro — não chamamos recordUserClick
+		// aqui pra evitar dupla persistência.
+		return false;
 	}
-	// Fall through — caller will do processTextMessage(replyTitle).
-	return false;
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, handoff.conversationId),
+	});
+	const storedName = contactName ?? conv?.contactName ?? null;
+	// Salva o "Tenho interesse!" ANTES do handoff — fica em ordem cronológica,
+	// antes da frase de fechamento do bot (que proxy.ts persiste no fix do
+	// gap #3). Antes do refactor, handleInterest era o único handler do
+	// arquivo que esquecia esse saveMessage — gap #2 do
+	// BUG-LEAD-HISTORY-INCOMPLETE. recordUserClick centraliza isso e evita
+	// que esse bug reapareça em handlers futuros.
+	await recordUserClick(ctx);
+	await startInterestHandoff(from, handoff.conversationId, storedName);
+	return true;
 }

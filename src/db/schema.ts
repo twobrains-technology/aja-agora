@@ -22,17 +22,6 @@ import type { UserIntent } from "@/lib/agent/qualify-state";
 
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
 
-export const artifactTypeEnum = pgEnum("artifact_type", [
-	"group_card",
-	"comparison_table",
-	"simulation_result",
-	"recommendation_card",
-	"lead_form",
-	// Nota: novos artifact types adicionados em src/lib/chat/types.ts não
-	// precisam entrar aqui — esta tabela `artifacts` é dead-code (nenhum
-	// `db.insert(artifacts)` no codebase). Tipos vivem só na união TS.
-]);
-
 export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);
 
 export const conversationStatusEnum = pgEnum("conversation_status", [
@@ -196,12 +185,16 @@ export const messages = pgTable(
 );
 
 // Artifacts
+// `type` é `text` (não enum) porque a fonte de verdade da union é a TS
+// `ArtifactType` em `src/lib/chat/types.ts` — ela evolui frequentemente e
+// trocar enum DB a cada novo artifact é fricção sem ganho (não há consumer
+// SQL fora do código TS que precise validar via enum).
 export const artifacts = pgTable("artifacts", {
 	id: uuid().defaultRandom().primaryKey(),
 	messageId: uuid("message_id")
 		.notNull()
 		.references(() => messages.id, { onDelete: "cascade" }),
-	type: artifactTypeEnum().notNull(),
+	type: text().notNull(),
 	payload: jsonb().notNull().$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

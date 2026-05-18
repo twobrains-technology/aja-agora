@@ -1,146 +1,153 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1775888372348,
-      "tag": "0000_acoustic_tenebrous",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1776944724022,
-      "tag": "0001_mighty_scrambler",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1776970347611,
-      "tag": "0002_cynical_guardian",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1776972048778,
-      "tag": "0003_huge_wonder_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1777650000000,
-      "tag": "0004_agents_crud",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1778085714776,
-      "tag": "0005_conversation_insights",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1778251141400,
-      "tag": "0006_sour_marauders",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1778267414262,
-      "tag": "0007_demonic_mesmero",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1778505259558,
-      "tag": "0008_solid_shadowcat",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1778979563910,
-      "tag": "0009_thankful_ego",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1778983991989,
-      "tag": "0010_broken_wolverine",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1778989592032,
-      "tag": "0011_clever_alex_wilder",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1779100000000,
-      "tag": "0012_persona_bruno_moto",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1779110000000,
-      "tag": "0013_wa_id_varchar50",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1779120000000,
-      "tag": "0014_unblock_financing_comparison",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1779130000000,
-      "tag": "0015_specialists_capture_tools",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1779140000000,
-      "tag": "0016_personas_examples",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1779150000000,
-      "tag": "0017_specialists_value_picker",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1779160000000,
-      "tag": "0018_whatsapp_optin_narrative_examples",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1779170000000,
-      "tag": "0019_specialists_topic_picker",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1775888372348,
+			"tag": "0000_acoustic_tenebrous",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1776944724022,
+			"tag": "0001_mighty_scrambler",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1776970347611,
+			"tag": "0002_cynical_guardian",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1776972048778,
+			"tag": "0003_huge_wonder_man",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1777650000000,
+			"tag": "0004_agents_crud",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1778085714776,
+			"tag": "0005_conversation_insights",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1778251141400,
+			"tag": "0006_sour_marauders",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1778267414262,
+			"tag": "0007_demonic_mesmero",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1778505259558,
+			"tag": "0008_solid_shadowcat",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1778979563910,
+			"tag": "0009_thankful_ego",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1778983991989,
+			"tag": "0010_broken_wolverine",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1778989592032,
+			"tag": "0011_clever_alex_wilder",
+			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1779100000000,
+			"tag": "0012_persona_bruno_moto",
+			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "7",
+			"when": 1779110000000,
+			"tag": "0013_wa_id_varchar50",
+			"breakpoints": true
+		},
+		{
+			"idx": 14,
+			"version": "7",
+			"when": 1779120000000,
+			"tag": "0014_unblock_financing_comparison",
+			"breakpoints": true
+		},
+		{
+			"idx": 15,
+			"version": "7",
+			"when": 1779130000000,
+			"tag": "0015_specialists_capture_tools",
+			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1779140000000,
+			"tag": "0016_personas_examples",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1779150000000,
+			"tag": "0017_specialists_value_picker",
+			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1779160000000,
+			"tag": "0018_whatsapp_optin_narrative_examples",
+			"breakpoints": true
+		},
+		{
+			"idx": 19,
+			"version": "7",
+			"when": 1779170000000,
+			"tag": "0019_specialists_topic_picker",
+			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "7",
+			"when": 1779180000000,
+			"tag": "0020_artifact_type_text",
+			"breakpoints": true
+		}
+	]
 }

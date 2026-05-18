@@ -188,6 +188,19 @@ export async function POST(req: NextRequest) {
 	);
 
 	if (body.action) {
+		// Persiste a mensagem do user (texto do botão clicado) UMA vez aqui no
+		// topo, antes do switch. Antes do refactor cada branch chamava
+		// `saveMessage` separado e o branch `category` esquecia — replica do
+		// gap #2 do BUG-LEAD-HISTORY-INCOMPLETE. Centralização elimina o
+		// risco de novos branches futuros esquecerem. Para actions sem
+		// representação textual visível (whatsapp_optin com phone, decline
+		// silencioso), o frontend ainda envia o label do botão via
+		// `chat.sendMessage({ text: label })`, então `lastUserText` captura.
+		const actionLabel = lastUserText(body.messages);
+		if (actionLabel) {
+			await saveMessage(conversationId, "user", actionLabel, "web");
+		}
+
 		const stream = createUIMessageStream<AjaUIMessage>({
 			execute: async ({ writer }) => {
 				await withSimulatorClockIfNeeded(conv ?? null, async () => {
@@ -215,8 +228,7 @@ export async function POST(req: NextRequest) {
 				}
 
 				if (body.action?.kind === "select-group") {
-					const { groupId, administradora, creditValue, termMonths, label } = body.action;
-					await saveMessage(conversationId, "user", label, "web");
+					const { groupId, administradora, creditValue, termMonths } = body.action;
 					await pipeDirectiveTurn({
 						conversationId,
 						directive: buildGroupSelectedDirective(
@@ -278,8 +290,6 @@ export async function POST(req: NextRequest) {
 				}
 
 				if (body.action?.kind === "interest") {
-					const { label } = body.action;
-					await saveMessage(conversationId, "user", label, "web");
 					const textId = crypto.randomUUID();
 					writer.write({ type: "text-start", id: textId });
 					writer.write({
@@ -310,7 +320,6 @@ export async function POST(req: NextRequest) {
 						experiencePrev: choice,
 						doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
 					});
-					await saveMessage(conversationId, "user", action.label, "web");
 					const directive =
 						choice === "first"
 							? buildExperienceFirstDirective(action.label)
@@ -322,7 +331,6 @@ export async function POST(req: NextRequest) {
 				}
 
 				if (action.gate === "consent") {
-					await saveMessage(conversationId, "user", action.label, "web");
 					if (!meta.currentCategory) return;
 					if (action.value === "yes") {
 						await persistMeta(conversationId, { ...meta, qualifyConsented: true });
@@ -356,7 +364,6 @@ export async function POST(req: NextRequest) {
 						monthlyBudget: action.value.monthlyBudget,
 					};
 					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-					await saveMessage(conversationId, "user", action.label, "web");
 					await pipeDirectiveTurn({
 						conversationId,
 						directive: buildCreditReactionDirective(action.label),
@@ -373,7 +380,6 @@ export async function POST(req: NextRequest) {
 						prazoMeses: action.value.prazoMeses,
 					};
 					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-					await saveMessage(conversationId, "user", action.label, "web");
 					if (!meta.currentCategory) return;
 					await pipeDirectiveTurn({
 						conversationId,
@@ -391,7 +397,6 @@ export async function POST(req: NextRequest) {
 						hasLance: action.value,
 					};
 					await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-					await saveMessage(conversationId, "user", action.label, "web");
 					if (!meta.currentCategory) return;
 					await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
 				}

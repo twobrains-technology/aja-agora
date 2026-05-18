@@ -356,10 +356,13 @@ export async function handoffToAgents(
 	}
 
 	const firstName = userName.trim().split(/\s+/)[0];
-	await sendTextMessage(
-		userWaId,
-		`Perfeito, ${firstName}! Já estou passando seu perfil pro consultor — ele te chama aqui em instantes. 🤝`,
-	);
+	const closingMessage = `Perfeito, ${firstName}! Já estou passando seu perfil pro consultor — ele te chama aqui em instantes. 🤝`;
+	// Persistir ANTES de enviar pra Meta — sem isso a frase final fica
+	// só no WhatsApp do cliente e some do histórico que o admin vê
+	// (gap #3 do BUG-LEAD-HISTORY-INCOMPLETE). Demais saveMessage no
+	// proxy seguem o mesmo padrão (linhas 462, 492, 541, 628).
+	await saveMessage(conversationId, "assistant", closingMessage);
+	await sendTextMessage(userWaId, closingMessage);
 
 	console.log(
 		`[whatsapp-proxy] Handoff: conversation ${conversationId} | user ${userWaId} → ${attendants.length} attendants notified simulated=${isSimulated}`,

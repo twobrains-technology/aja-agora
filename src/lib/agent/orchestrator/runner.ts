@@ -1,3 +1,5 @@
+import { db } from "@/db";
+import { artifacts as artifactsTable } from "@/db/schema";
 import { resolveAgent } from "@/lib/agent/agents";
 import { selectExamplesForTurn } from "@/lib/agent/example-selector";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
@@ -9,6 +11,7 @@ import type { ArtifactType } from "@/lib/chat/types";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -197,7 +200,29 @@ export async function* runAgentTurn(args: {
 	// (bug BUG-ADMIN-MESSAGE-MISSING).
 	if (fullResponse || executedToolNames.length > 0) {
 		const content = fullResponse || `[tool: ${executedToolNames.join(", ")}]`;
-		await saveMessage(conversationId, "assistant", content, channel, currentPersona);
+		const messageId = await saveMessage(
+			conversationId,
+			"assistant",
+			content,
+			channel,
+			currentPersona,
+		);
+
+		// BUG-LEAD-HISTORY-INCOMPLETE: artifacts emitidos pelo agente
+		// (group_card, simulation_result, lead_form, etc.) precisam ficar
+		// vinculados à message do turno. Sem isso o histórico do lead no
+		// admin perde todos os cards/comparativos. Vale pros 3 canais
+		// (web, whatsapp, simulador) porque todos passam por aqui.
+		if (artifacts.length > 0) {
+			await db.insert(artifactsTable).values(
+				artifacts.map((a) => ({
+					messageId,
+					type: a.type,
+					payload: a.payload as Record<string, unknown>,
+					createdAt: simulatorNow(),
+				})),
+			);
+		}
 	}
 
 	if (detectLeadFormArtifact(artifacts) && !meta.leadCollection) {

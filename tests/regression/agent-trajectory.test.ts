@@ -35,6 +35,8 @@
  *   - LanguageModelV3StreamPart em @ai-sdk/provider
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
@@ -45,6 +47,10 @@ import {
 	SPECIALIST_BASE_PROMPT,
 	SYSTEM_PROMPT,
 } from "@/lib/agent/system-prompt";
+
+function readSource(rel: string): string {
+	return readFileSync(resolve(process.cwd(), rel), "utf-8");
+}
 
 // ============================================================================
 // Helpers — mock chunk builders pra MockLanguageModelV3
