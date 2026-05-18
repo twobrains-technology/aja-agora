@@ -501,6 +501,55 @@ export const consorcioTools = {
 			return `Lead capturado com sucesso. Nome: ${args.name} (ID: ${leadId})`;
 		},
 	}),
+
+	// ---- Conversational contact capture (texto livre + card UI) ----
+
+	save_contact_name: tool({
+		description:
+			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+		inputSchema: z.object({
+			conversationId: z.string().describe("ID da conversa atual"),
+			name: z
+				.string()
+				.min(2)
+				.max(30)
+				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+		}),
+		execute: async (args) => {
+			const { saveContactName } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactName(args.conversationId, args.name);
+			if (!result.ok) {
+				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+			}
+			return `[Nome '${args.name}' salvo. Use-o nas proximas respostas.]`;
+		},
+	}),
+
+	save_contact_whatsapp: tool({
+		description:
+			"Salva o WhatsApp do usuario no banco. Use APENAS quando o usuario enviar o phone via card present_whatsapp_optin (sistema chama esta tool internamente). NAO chame ao receber telefone por texto livre — peca pelo card.",
+		inputSchema: z.object({
+			conversationId: z.string().describe("ID da conversa atual"),
+			phone: z.string().describe("Telefone com ou sem formatacao (a funcao normaliza)"),
+		}),
+		execute: async (args) => {
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactWhatsapp(args.conversationId, args.phone);
+			if (!result.ok) {
+				return `[Telefone invalido: ${result.error}]`;
+			}
+			return `[WhatsApp salvo. Lead promovido a 'engajado'.]`;
+		},
+	}),
+
+	present_whatsapp_optin: tool({
+		description:
+			"Apresenta um card pedindo o WhatsApp do usuario com input mascarado + botoes 'Quero receber' / 'Agora nao'. Use UMA UNICA VEZ por conversa, APOS apresentar present_simulation_result ou present_recommendation_card pela primeira vez. NAO peca WhatsApp por texto — sempre via este card. Sistema impede chamadas duplicadas; se ja mostrado, esta tool retorna no-op visual.",
+		inputSchema: z.object({}).optional(),
+		execute: async () => {
+			return "[Card WhatsApp opt-in apresentado ao usuario]";
+		},
+	}),
 };
 
 /** Tool names that produce visual artifacts (intercepted by route) */
@@ -514,4 +563,5 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_scenarios",
 	"present_topic_picker",
 	"present_financing_comparison",
+	"present_whatsapp_optin",
 ]);

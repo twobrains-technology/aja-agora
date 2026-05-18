@@ -56,6 +56,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.2.0",
+		"@playwright/test": "^1.60.0",
 		"@tailwindcss/postcss": "^4",
 		"@testing-library/dom": "^10.4.1",
 		"@testing-library/jest-dom": "^6.9.1",
@@ -70,6 +71,7 @@
 		"happy-dom": "^20.9.0",
 		"tailwindcss": "^4",
 		"typescript": "^5",
+		"uuid": "^14.0.0",
 		"vitest": "^4.1.5"
 	}
 }

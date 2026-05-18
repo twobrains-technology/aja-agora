@@ -149,6 +149,14 @@ export interface FinancingComparisonPayload {
 	disclaimer: string;
 }
 
+// ---- WhatsApp opt-in (conversational capture pós-simulação) ----
+
+// Sem payload obrigatório — agent só sinaliza "mostre o card aqui".
+// O frontend resolve conversationId via context.
+export interface WhatsappOptinPayload {
+	conversationId?: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -159,7 +167,8 @@ export type ArtifactByType =
 	| { type: "value_picker"; payload: ValuePickerPayload }
 	| { type: "topic_picker"; payload: TopicPickerPayload }
 	| { type: "scenarios"; payload: ScenariosPayload }
-	| { type: "financing_comparison"; payload: FinancingComparisonPayload };
+	| { type: "financing_comparison"; payload: FinancingComparisonPayload }
+	| { type: "whatsapp_optin"; payload: WhatsappOptinPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

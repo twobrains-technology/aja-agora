@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
-import { conversations, messages as messagesTable } from "@/db/schema";
+import { conversations, leads, messages as messagesTable } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
@@ -58,16 +58,35 @@ export async function POST(req: NextRequest) {
 		return Response.json({ ok: false, error: "Conversation not found" }, { status: 404 });
 	}
 
-	// ---- Insert lead (PII stored only here, never in messages/artifacts) ----
+	// ---- Insert or update lead (idempotente — PII só aqui, nunca em messages/artifacts) ----
 	try {
-		// Helper único garante: lead herda is_simulated da conversation, e
-		// applyTrackedStageToLead (kanban) só roda em conversa real.
-		const { leadId } = await createLeadFromConversation({
-			conversationId: conversationId as string,
-			name: parsed.data.name,
-			phone: parsed.data.phone,
-			email: parsed.data.email,
+		const existing = await db.query.leads.findFirst({
+			where: eq(leads.conversationId, conversationId as string),
 		});
+
+		let leadId: string;
+		if (existing) {
+			await db
+				.update(leads)
+				.set({
+					name: parsed.data.name,
+					phone: parsed.data.phone,
+					email: parsed.data.email ?? null,
+					updatedAt: new Date(),
+				})
+				.where(eq(leads.id, existing.id));
+			leadId = existing.id;
+		} else {
+			// Helper único garante: lead herda is_simulated da conversation, e
+			// applyTrackedStageToLead (kanban) só roda em conversa real.
+			const created = await createLeadFromConversation({
+				conversationId: conversationId as string,
+				name: parsed.data.name,
+				phone: parsed.data.phone,
+				email: parsed.data.email ?? null,
+			});
+			leadId = created.leadId;
+		}
 
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
 		if (conv.channel === "web" && conv.status === "active") {
@@ -82,11 +101,12 @@ export async function POST(req: NextRequest) {
 				.join("\n");
 
 			try {
+				const emailLine = parsed.data.email ? `\n📧 ${parsed.data.email}` : "";
 				await handoffToAgents(
 					conversationId as string,
 					"", // no waId for web users
 					parsed.data.name,
-					`📱 *Lead via Web*\n📧 ${parsed.data.email}\n📞 ${parsed.data.phone}\n\n${summary}`,
+					`📱 *Lead via Web*${emailLine}\n📞 ${parsed.data.phone}\n\n${summary}`,
 				);
 			} catch (err) {
 				console.error("[leads] Handoff error:", err);

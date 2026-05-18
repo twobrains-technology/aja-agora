@@ -26,4 +26,6 @@ export type ChatAction =
 			termMonths: number;
 			label: string;
 	  }
-	| { kind: "interest"; administradora: string; label: string };
+	| { kind: "interest"; administradora: string; label: string }
+	| { kind: "whatsapp_optin"; phone: string }
+	| { kind: "whatsapp_optin_decline" };

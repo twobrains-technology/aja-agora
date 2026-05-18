@@ -28,6 +28,9 @@ export const artifactTypeEnum = pgEnum("artifact_type", [
 	"simulation_result",
 	"recommendation_card",
 	"lead_form",
+	// Nota: novos artifact types adicionados em src/lib/chat/types.ts não
+	// precisam entrar aqui — esta tabela `artifacts` é dead-code (nenhum
+	// `db.insert(artifacts)` no codebase). Tipos vivem só na união TS.
 ]);
 
 export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);

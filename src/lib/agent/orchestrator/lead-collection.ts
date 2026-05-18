@@ -43,6 +43,29 @@ export function isCollectingLead(meta: ConversationMetadata): boolean {
 	return Boolean(meta.leadCollection);
 }
 
+/**
+ * Resolve o stage inicial do lead-collection considerando dados já capturados
+ * conversacionalmente (via save_contact_name + save_contact_whatsapp).
+ *
+ * Use quando o agent dispara present_lead_form e queremos pular stages que
+ * já temos resposta. Evita pedir nome/whatsapp de novo se user já forneceu.
+ */
+export async function initializeLeadCollection(
+	conversationId: string,
+): Promise<NonNullable<ConversationMetadata["leadCollection"]>> {
+	const lead = await db.query.leads.findFirst({
+		where: eq(leads.conversationId, conversationId),
+	});
+	const name = lead?.name ?? undefined;
+	const phone = lead?.phone ?? undefined;
+	const stage: "name" | "phone" | "email" = !name
+		? "name"
+		: !phone
+			? "phone"
+			: "email";
+	return { stage, name, phone };
+}
+
 export function detectLeadFormArtifact(artifacts: ReadonlyArray<{ type: string }>): boolean {
 	return artifacts.some((a) => a.type === "lead_form");
 }

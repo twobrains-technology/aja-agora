@@ -8,6 +8,7 @@ import { Scenarios } from "./artifacts/scenarios";
 import { SimulationResult } from "./artifacts/simulation-result";
 import { TopicPicker } from "./artifacts/topic-picker";
 import { ValuePicker } from "./artifacts/value-picker";
+import { WhatsappOptin } from "./artifacts/whatsapp-optin";
 
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 	switch (artifact.type) {
@@ -29,6 +30,8 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 			return <Scenarios payload={artifact.payload} />;
 		case "financing_comparison":
 			return <FinancingComparison payload={artifact.payload} />;
+		case "whatsapp_optin":
+			return <WhatsappOptin />;
 		case "quick_reply":
 			return null;
 	}
