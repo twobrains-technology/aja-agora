@@ -12,7 +12,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { conversations, user as userTable } from "@/db/schema";
+import { conversations, leads, user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isSimulatorEnabled } from "@/lib/utils/env";
 
@@ -57,6 +57,32 @@ export async function POST(req: NextRequest) {
 			waId: conversations.waId,
 			createdAt: conversations.createdAt,
 		});
+
+	// Paridade com getOrCreateConversation (src/lib/whatsapp/session.ts:42-63):
+	// conversation WhatsApp simulada precisa do lead inicial seedado AQUI,
+	// senão o webhook real (que vai dar early-return em getOrCreateConversation
+	// porque a conversation já existe) nunca cria o lead. Resultado sem isso:
+	// conversa simulada whatsapp invisível no kanban. Web não tem esse bug
+	// porque a captura de contato roda no flow do chat depois.
+	if (channel === "whatsapp") {
+		try {
+			await db
+				.insert(leads)
+				.values({
+					conversationId: created.id,
+					name: null,
+					phone: null,
+					email: null,
+					isSimulated: true,
+				})
+				.onConflictDoNothing();
+		} catch (err) {
+			console.error(
+				`[simulator-sessions] failed to seed lead for conversation ${created.id}:`,
+				err,
+			);
+		}
+	}
 
 	return NextResponse.json(
 		{
