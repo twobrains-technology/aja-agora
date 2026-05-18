@@ -94,7 +94,16 @@ async function consumeEvents(
 		pendingArtifacts = [];
 		for (const artifact of artifacts) {
 			const wa = artifactToWhatsApp(artifact.type, artifact.payload);
-			if (!wa) continue;
+			if (!wa) {
+				// Visibilidade: artifact sem mapper cai em silêncio. Se um tipo
+				// novo for adicionado a PRESENTATION_TOOLS sem mapping WA, o
+				// warning aparece no log do canal. (artifact-coverage.test.ts
+				// é o gate principal, mas o warning ajuda em produção.)
+				console.warn(
+					`[whatsapp/adapter] artifact dropado sem mapping: type=${artifact.type}`,
+				);
+				continue;
+			}
 			if (hasSent) await pauseBeforeNext();
 			if (wa.type === "text" && wa.text) {
 				await sendTextMessage(from, wa.text);

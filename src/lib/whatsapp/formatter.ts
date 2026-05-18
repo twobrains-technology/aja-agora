@@ -689,6 +689,210 @@ export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
 	};
 }
 
+/**
+ * topic_picker — converte lista de chips clicáveis (2-5 tópicos do
+ * schema topicPickerSchema) em interactive WhatsApp:
+ *   - ≤3 tópicos → interactive type=button (limite Meta: 3 botões)
+ *   - 4-5 tópicos → interactive type=list (sections)
+ * IDs gerados por índice (topic_0..topic_4) já que tópicos são strings.
+ */
+export function topicPickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const topics = payload.topics as string[] | undefined;
+	if (!Array.isArray(topics) || topics.length === 0) return null;
+
+	const prompt = (payload.prompt as string | undefined) ?? "Escolha uma opção:";
+	const includeBackButton = (payload.includeBackButton as boolean | undefined) ?? false;
+
+	// Total de slots: tópicos + (eventual "Voltar") devem caber em button (3) ou
+	// list (10). Como schema limita topics a 2-5, sempre cabe em list.
+	const wantsBackButton = includeBackButton;
+	const totalButtons = topics.length + (wantsBackButton ? 1 : 0);
+
+	if (totalButtons <= 3) {
+		const buttons = topics.map((title, i) => ({
+			type: "reply" as const,
+			reply: { id: `topic_${i}`, title: String(title).slice(0, 20) },
+		}));
+		if (wantsBackButton) {
+			buttons.push({ type: "reply", reply: { id: "topic_back", title: "Voltar" } });
+		}
+		return {
+			type: "interactive",
+			interactive: {
+				type: "button",
+				body: { text: prompt },
+				action: { buttons },
+			},
+		};
+	}
+
+	const rows = topics.map((title, i) => ({
+		id: `topic_${i}`,
+		title: String(title).slice(0, 24),
+	}));
+	if (wantsBackButton) {
+		rows.push({ id: "topic_back", title: "Voltar" });
+	}
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text: prompt },
+			action: {
+				button: "Ver tópicos",
+				sections: [{ title: "Tópicos", rows }],
+			},
+		},
+	};
+}
+
+/**
+ * scenarios — 3 cenários de contemplação (Conservador / Provável / Acelerado)
+ * Shape vem de ScenariosPayload (src/lib/chat/types.ts): groupId, administradora,
+ * creditValue, termMonths, scenarios.{conservador|provavel|acelerado}.
+ * Cada ScenarioPayload tem: lancePercent, expectedTermMonths, strategy, disclaimer.
+ * Vira texto formatado com hierarquia visual via emojis.
+ */
+export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const scenarios = payload.scenarios as
+		| {
+				conservador?: Record<string, unknown>;
+				provavel?: Record<string, unknown>;
+				acelerado?: Record<string, unknown>;
+			}
+		| undefined;
+	if (!scenarios) return null;
+
+	const administradora = (payload.administradora as string | undefined) ?? "";
+	const creditValue = payload.creditValue as number | undefined;
+	const header =
+		administradora && creditValue !== undefined
+			? `*3 cenários — ${administradora} • ${formatBRL(creditValue)}*`
+			: "*3 cenários de contemplação*";
+
+	const renderBlock = (
+		emoji: string,
+		label: string,
+		s: Record<string, unknown> | undefined,
+	): string | null => {
+		if (!s) return null;
+		const lancePercent = s.lancePercent as number | undefined;
+		const months = s.expectedTermMonths as number | undefined;
+		const strategy = (s.strategy as string | undefined) ?? "";
+		const lanceLabel =
+			typeof lancePercent === "number" && lancePercent > 0
+				? `${lancePercent}% lance`
+				: "sem lance";
+		const monthsLabel = typeof months === "number" ? `${months}m` : "—";
+		const head = `${emoji} *${label}* — ${lanceLabel}, contempla em ~${monthsLabel}`;
+		return strategy ? `${head}\nEstratégia: ${strategy}` : head;
+	};
+
+	const blocks = [
+		renderBlock("🟢", "Conservador", scenarios.conservador),
+		renderBlock("🟡", "Provável", scenarios.provavel),
+		renderBlock("🔴", "Acelerado", scenarios.acelerado),
+	].filter((b): b is string => b !== null);
+
+	// Mesmo com cenários parciais/vazios, retorna o header — drop silencioso
+	// seria pior que texto mínimo (cliente cobrou exatamente esse bug).
+	const disclaimer =
+		(scenarios.conservador as Record<string, unknown> | undefined)?.disclaimer ??
+		(scenarios.provavel as Record<string, unknown> | undefined)?.disclaimer ??
+		(scenarios.acelerado as Record<string, unknown> | undefined)?.disclaimer ??
+		"";
+
+	const parts = [header, "", ...blocks];
+	if (disclaimer) {
+		parts.push("", `_${disclaimer}_`);
+	}
+
+	return { type: "text", text: parts.join("\n") };
+}
+
+/**
+ * financing_comparison — comparativo consórcio × financiamento.
+ * Shape vem de FinancingComparisonPayload (src/lib/chat/types.ts):
+ *   category, creditValue, termMonths,
+ *   consorcio: { monthlyPayment, totalCost },
+ *   financing: { monthlyPayment, totalCost, annualRate },
+ *   diff: { monthlyDelta, totalDelta },
+ *   disclaimer.
+ */
+export function financingComparisonToWhatsApp(
+	payload: Record<string, unknown>,
+): WhatsAppResponse | null {
+	const consorcio = payload.consorcio as
+		| { monthlyPayment?: number; totalCost?: number }
+		| undefined;
+	const financing = payload.financing as
+		| { monthlyPayment?: number; totalCost?: number; annualRate?: number }
+		| undefined;
+	if (!consorcio || !financing) return null;
+
+	const creditValue = payload.creditValue as number | undefined;
+	const termMonths = payload.termMonths as number | undefined;
+	const diff = payload.diff as
+		| { monthlyDelta?: number; totalDelta?: number }
+		| undefined;
+	const disclaimer = (payload.disclaimer as string | undefined) ?? "";
+
+	const lines: string[] = ["*Consórcio vs Financiamento*"];
+	if (creditValue !== undefined) {
+		lines.push("", `Carta de crédito: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`);
+	}
+
+	lines.push("", "*Consórcio*");
+	if (consorcio.monthlyPayment !== undefined) {
+		lines.push(`• Parcela: ${formatBRL(consorcio.monthlyPayment)}/mês`);
+	}
+	if (consorcio.totalCost !== undefined) {
+		lines.push(`• Total pago: ${formatBRL(consorcio.totalCost)}`);
+	}
+	lines.push("• Juros: zero");
+
+	lines.push("", "*Financiamento*");
+	if (financing.monthlyPayment !== undefined) {
+		lines.push(`• Parcela: ${formatBRL(financing.monthlyPayment)}/mês`);
+	}
+	if (financing.annualRate !== undefined) {
+		lines.push(`• Taxa: ${financing.annualRate.toFixed(1)}% a.a.`);
+	}
+	if (financing.totalCost !== undefined) {
+		lines.push(`• Total pago: ${formatBRL(financing.totalCost)}`);
+	}
+
+	if (diff?.monthlyDelta !== undefined || diff?.totalDelta !== undefined) {
+		lines.push("", "*Economia no consórcio*");
+		if (diff.monthlyDelta !== undefined) {
+			lines.push(`• Por mês: ${formatBRL(Math.abs(diff.monthlyDelta))}`);
+		}
+		if (diff.totalDelta !== undefined) {
+			lines.push(`• Total: ${formatBRL(Math.abs(diff.totalDelta))}`);
+		}
+	}
+
+	if (disclaimer) {
+		lines.push("", `_${disclaimer}_`);
+	}
+
+	return { type: "text", text: lines.join("\n") };
+}
+
+/**
+ * whatsapp_optin — usuário já está no canal WhatsApp, então pedir opt-in
+ * via card seria redundante. Em vez de dropar silencioso (que mascararia
+ * bugs), emite um texto curto reconhecendo o estado: o usuário tá no WA,
+ * vamos continuar daqui. Esse mapper EXISTE de propósito — semântica do
+ * canal: opt-in é implícito.
+ */
+export function whatsappOptinToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Show — como você já está no WhatsApp, vou seguir conversando por aqui mesmo. 👍",
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -706,6 +910,14 @@ export function artifactToWhatsApp(
 			return leadFormToWhatsApp();
 		case "value_picker":
 			return valuePickerToWhatsApp(payload);
+		case "topic_picker":
+			return topicPickerToWhatsApp(payload);
+		case "scenarios":
+			return scenariosToWhatsApp(payload);
+		case "financing_comparison":
+			return financingComparisonToWhatsApp(payload);
+		case "whatsapp_optin":
+			return whatsappOptinToWhatsApp();
 		default:
 			return null;
 	}
