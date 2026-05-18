@@ -134,10 +134,7 @@ export interface RecommendationResult {
 	insufficientOptions: boolean;
 }
 
-function expandRange(
-	params: SearchGroupsParams,
-	factor: number,
-): SearchGroupsParams {
+function expandRange(params: SearchGroupsParams, factor: number): SearchGroupsParams {
 	const center = ((params.creditMin ?? 0) + (params.creditMax ?? 0)) / 2 || params.creditMin || 0;
 	const expand = center * factor;
 	return {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { PRESENTATION_TOOLS, consorcioTools } from "./ai-sdk";
+import { describe, expect, it } from "vitest";
+import { consorcioTools, PRESENTATION_TOOLS } from "./ai-sdk";
 
 describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	it("tem compute_scenarios (#16)", () => {

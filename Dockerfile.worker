@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.4
+# Worker BullMQ — processa automações de funil.
+# Mesma base do Dockerfile principal, mas o bundle aqui é o worker
+# (esbuild compila src/worker/index.ts num único CJS standalone).
+FROM node:22-alpine AS base
+
+# === deps ===
+FROM base AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# === builder ===
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Bundle do worker + migrate runner (worker container também roda migrations
+# em modo no-op pra garantir schema antes de subir).
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+RUN npm run worker:bundle && npm run db:migrate:bundle
+
+# === runner ===
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker.bundle.cjs ./scripts/worker.bundle.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-guard.bundle.cjs ./scripts/migrate-guard.bundle.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+USER nextjs
+
+CMD ["node", "scripts/worker.bundle.cjs"]

@@ -1,5 +1,5 @@
-import type { PersonaExample } from "@/db/schema";
 import { describe, expect, it } from "vitest";
+import type { PersonaExample } from "@/db/schema";
 import { selectExamplesForTurn } from "./example-selector";
 
 // Helper pra criar exemplo com defaults sensatos.
@@ -55,15 +55,11 @@ describe("selectExamplesForTurn — matching por condição", () => {
 
 	it("combina múltiplas condições (todas precisam casar)", () => {
 		const e1 = ex("e1", { whenExpertise: ["leigo"], whenCategory: ["imovel"] });
-		expect(
-			selectExamplesForTurn([e1], { expertise: "leigo", category: "imovel" }),
-		).toHaveLength(1);
-		expect(
-			selectExamplesForTurn([e1], { expertise: "leigo", category: "auto" }),
-		).toHaveLength(0);
-		expect(
-			selectExamplesForTurn([e1], { expertise: "expert", category: "imovel" }),
-		).toHaveLength(0);
+		expect(selectExamplesForTurn([e1], { expertise: "leigo", category: "imovel" })).toHaveLength(1);
+		expect(selectExamplesForTurn([e1], { expertise: "leigo", category: "auto" })).toHaveLength(0);
+		expect(selectExamplesForTurn([e1], { expertise: "expert", category: "imovel" })).toHaveLength(
+			0,
+		);
 	});
 });
 

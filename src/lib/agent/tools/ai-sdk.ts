@@ -86,7 +86,9 @@ const simulationResultSchema = z.object({
 				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
 				intent: z
 					.string()
-					.describe("Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')"),
+					.describe(
+						"Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')",
+					),
 			}),
 		)
 		.optional()
@@ -157,11 +159,7 @@ const topicPickerSchema = z.object({
 		.string()
 		.optional()
 		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
-	topics: z
-		.array(z.string().min(1))
-		.min(2)
-		.max(5)
-		.describe("Lista de topicos clicaveis (2-5)"),
+	topics: z.array(z.string().min(1)).min(2).max(5).describe("Lista de topicos clicaveis (2-5)"),
 	includeBackButton: z
 		.boolean()
 		.default(true)
@@ -217,7 +215,7 @@ export const consorcioTools = {
 
 	simulate_quota: tool({
 		description:
-			"Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: \"e se fosse 200k?\"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.",
+			'Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: "e se fosse 200k?"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.',
 		inputSchema: simulateQuotaInput,
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = getAdapter();

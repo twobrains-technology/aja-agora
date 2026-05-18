@@ -76,9 +76,7 @@ describe("reconcileIdentity", () => {
 
 	it("durationMs calculado (adapter sleep 30ms)", async () => {
 		const adapter = makeAdapter({
-			reconcileIdentity: vi.fn(
-				() => new Promise<void>((resolve) => setTimeout(resolve, 30)),
-			),
+			reconcileIdentity: vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 30))),
 		});
 		const r = await reconcileIdentity({
 			adapter,

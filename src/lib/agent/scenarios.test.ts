@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { computeScenarios } from "./scenarios";
 
 describe("computeScenarios — 3 cenários de contemplação (bug #16)", () => {
@@ -41,10 +41,9 @@ describe("computeScenarios — 3 cenários de contemplação (bug #16)", () => {
 	it("todos os cenários têm disclaimer obrigatório de estimativa", () => {
 		const result = computeScenarios(baseInput);
 		for (const key of ["conservador", "provavel", "acelerado"] as const) {
-			expect(
-				result[key].disclaimer,
-				`cenário ${key} sem disclaimer`,
-			).toMatch(/estimativa|n[ãa]o garante|sem garantia/i);
+			expect(result[key].disclaimer, `cenário ${key} sem disclaimer`).toMatch(
+				/estimativa|n[ãa]o garante|sem garantia/i,
+			);
 		}
 	});
 

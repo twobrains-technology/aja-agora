@@ -3,18 +3,19 @@
 // Unit tests pra heurística determinística de extração. Plano §3.2.
 
 import { describe, expect, it } from "vitest";
-
-import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { ProducedArtifact } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 
 import { extractMemoriesFromTurn } from "./extractor";
 
-function baseArgs(overrides: {
-	artifacts?: ProducedArtifact[];
-	meta?: ConversationMetadata;
-	channel?: "web" | "whatsapp";
-	userText?: string;
-} = {}) {
+function baseArgs(
+	overrides: {
+		artifacts?: ProducedArtifact[];
+		meta?: ConversationMetadata;
+		channel?: "web" | "whatsapp";
+		userText?: string;
+	} = {},
+) {
 	return {
 		artifacts: overrides.artifacts ?? [],
 		meta: overrides.meta ?? ({} as ConversationMetadata),
@@ -132,9 +133,7 @@ describe("recommendation_card", () => {
 	it("sem groupId → silencioso, sem entry/blockPatch", () => {
 		const r = extractMemoriesFromTurn(
 			baseArgs({
-				artifacts: [
-					{ type: "recommendation_card", payload: { label: "Honda Civic" } },
-				],
+				artifacts: [{ type: "recommendation_card", payload: { label: "Honda Civic" } }],
 			}),
 		);
 		expect(r.entries).toEqual([]);
@@ -158,9 +157,7 @@ describe("group_card", () => {
 	it("com label + category gera entry preference com metadata.category", () => {
 		const r = extractMemoriesFromTurn(
 			baseArgs({
-				artifacts: [
-					{ type: "group_card", payload: { label: "Grupo X", category: "auto" } },
-				],
+				artifacts: [{ type: "group_card", payload: { label: "Grupo X", category: "auto" } }],
 			}),
 		);
 		expect(r.entries.length).toBe(1);
@@ -198,9 +195,7 @@ describe("comparison_table", () => {
 	it("groups não-array → silencioso", () => {
 		const r = extractMemoriesFromTurn(
 			baseArgs({
-				artifacts: [
-					{ type: "comparison_table", payload: { groups: null } },
-				],
+				artifacts: [{ type: "comparison_table", payload: { groups: null } }],
 			}),
 		);
 		expect(r.entries).toEqual([]);

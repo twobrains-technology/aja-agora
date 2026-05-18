@@ -67,6 +67,45 @@ export const memoryEventTypeEnum = pgEnum("memory_event_type", [
 	"purged",
 ]);
 
+// ─── Funnel Automations Enums ────────────────────────────────────────────────
+
+export const whatsappTemplateStatusEnum = pgEnum("whatsapp_template_status", [
+	"DRAFT", // criado local, ainda não submetido
+	"PENDING", // submetido, aguardando review da Meta
+	"APPROVED",
+	"REJECTED",
+	"PAUSED",
+	"DISABLED",
+]);
+
+export const whatsappTemplateCategoryEnum = pgEnum("whatsapp_template_category", [
+	"UTILITY",
+	"MARKETING",
+	"AUTHENTICATION",
+]);
+
+export const automationTriggerTypeEnum = pgEnum("automation_trigger_type", [
+	"stage_changed",
+	"idle_in_stage",
+	"chat_event",
+]);
+
+export const automationRunStatusEnum = pgEnum("automation_run_status", [
+	"pending",
+	"running",
+	"completed",
+	"failed",
+	"cancelled",
+]);
+
+export const automationNodeStatusEnum = pgEnum("automation_node_status", [
+	"pending",
+	"running",
+	"completed",
+	"failed",
+	"skipped",
+]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -187,9 +226,7 @@ export const messages = pgTable(
 		personaId: text("persona_id"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [
-		index("messages_conversation_persona_idx").on(table.conversationId, table.personaId),
-	],
+	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
 );
 
 // Artifacts
@@ -236,6 +273,23 @@ export const leadEvents = pgTable("lead_events", {
 	notes: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Lead Notes — anotações livres no lead (manual ou via action.add_note).
+export const leadNotes = pgTable(
+	"lead_notes",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		leadId: uuid("lead_id")
+			.notNull()
+			.references(() => leads.id, { onDelete: "cascade" }),
+		body: text().notNull(),
+		// "admin" (manual) | "automation" (via action.add_note) | "system"
+		source: text().default("admin").notNull(),
+		automationRunId: uuid("automation_run_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("lead_notes_lead_id_idx").on(table.leadId, table.createdAt.desc())],
+);
 
 export type CampaignMentionPriority = "low" | "medium" | "high";
 
@@ -440,6 +494,153 @@ export const memoryEvents = pgTable(
 	],
 );
 
+// ─── Funnel Automations ─────────────────────────────────────────────────────
+
+export type WhatsAppTemplateButton =
+	| { type: "QUICK_REPLY"; text: string }
+	| { type: "URL"; text: string; url: string; example?: string[] }
+	| { type: "PHONE_NUMBER"; text: string; phone_number: string };
+
+// Catálogo local de message templates da Meta. Espelha o estado real via
+// webhook `message_template_status_update` + sync sob demanda.
+export const whatsappTemplates = pgTable(
+	"whatsapp_templates",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Nome enviado à Meta (snake_case, único por WABA). PKey lógica.
+		name: varchar({ length: 512 }).notNull().unique(),
+		category: whatsappTemplateCategoryEnum().default("UTILITY").notNull(),
+		language: varchar({ length: 16 }).default("pt_BR").notNull(),
+		bodyText: text("body_text").notNull(),
+		headerType: varchar("header_type", { length: 16 }), // TEXT | IMAGE | VIDEO | DOCUMENT | NULL
+		headerValue: text("header_value"),
+		footerText: text("footer_text"),
+		buttons: jsonb().$type<WhatsAppTemplateButton[]>().default([]).notNull(),
+		// Quantos placeholders {{n}} o body tem. Validado no save vs bodyText.
+		placeholdersCount: integer("placeholders_count").default(0).notNull(),
+		metaTemplateId: text("meta_template_id"),
+		metaStatus: whatsappTemplateStatusEnum("meta_status").default("DRAFT").notNull(),
+		metaRejectionReason: text("meta_rejection_reason"),
+		submittedAt: timestamp("submitted_at", { withTimezone: true }),
+		approvedAt: timestamp("approved_at", { withTimezone: true }),
+		createdBy: text("created_by").references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("whatsapp_templates_meta_status_idx").on(table.metaStatus),
+		index("whatsapp_templates_name_idx").on(table.name),
+	],
+);
+
+// Estruturas do grafo da automação. JSON livre validado por Zod na app layer
+// (src/lib/automation/schema.ts). Mantemos jsonb simples no DB pra evolução
+// sem migration. Veja AutomationGraph em src/lib/automation/schema.ts.
+export type AutomationGraphNode = {
+	id: string;
+	type: string; // ex: "trigger.stage_changed", "action.send_whatsapp"
+	config: Record<string, unknown>;
+	// Coordenadas pro React Flow renderizar — opcionais; AI Builder pode omitir.
+	position?: { x: number; y: number };
+};
+
+export type AutomationGraphEdge = {
+	id: string;
+	source: string; // nodeId
+	target: string; // nodeId
+	// Pra branches condicionais ("true" / "false") ou rótulos custom.
+	label?: string;
+};
+
+export type AutomationGraph = {
+	nodes: AutomationGraphNode[];
+	edges: AutomationGraphEdge[];
+};
+
+export const automations = pgTable(
+	"automations",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		name: varchar({ length: 200 }).notNull(),
+		description: text(),
+		triggerType: automationTriggerTypeEnum("trigger_type").notNull(),
+		// Config específica do trigger. Ex: { fromStages: [...], toStages: [...] }
+		triggerConfig: jsonb("trigger_config").$type<Record<string, unknown>>().notNull(),
+		graph: jsonb().$type<AutomationGraph>().notNull(),
+		enabled: boolean().default(false).notNull(),
+		// Incrementa a cada save — usado pra optimistic locking no editor e
+		// pra invalidar runs em andamento de versões antigas se necessário.
+		version: integer().default(1).notNull(),
+		createdBy: text("created_by").references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [index("automations_enabled_trigger_type_idx").on(table.enabled, table.triggerType)],
+);
+
+// Cada disparo de uma automação pra um lead específico. O dedup_key garante
+// que (automation, lead, lead_event) não dispare duas vezes — idempotência.
+export const automationRuns = pgTable(
+	"automation_runs",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		automationId: uuid("automation_id")
+			.notNull()
+			.references(() => automations.id, { onDelete: "cascade" }),
+		automationVersion: integer("automation_version").notNull(),
+		leadId: uuid("lead_id")
+			.notNull()
+			.references(() => leads.id, { onDelete: "cascade" }),
+		// Trigger event que originou o run. NULL pra idle_in_stage (gerado por cron).
+		leadEventId: uuid("lead_event_id").references(() => leadEvents.id, {
+			onDelete: "set null",
+		}),
+		// Chave única que combina automation + lead + trigger pra idempotência.
+		// Ex: "stage:<auto-id>:<lead-id>:<lead-event-id>" ou
+		//     "idle:<auto-id>:<lead-id>:<stage>:<window-start-iso>"
+		dedupKey: text("dedup_key").notNull().unique(),
+		status: automationRunStatusEnum().default("pending").notNull(),
+		currentNodeId: text("current_node_id"),
+		stepCount: integer("step_count").default(0).notNull(),
+		startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+		errorMessage: text("error_message"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("automation_runs_automation_status_idx").on(table.automationId, table.status),
+		index("automation_runs_lead_id_idx").on(table.leadId),
+		index("automation_runs_status_idx").on(table.status),
+	],
+);
+
+// Audit por nó. Permite timeline na UI de Runs e debug de falhas.
+export const automationNodeExecutions = pgTable(
+	"automation_node_executions",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		runId: uuid("run_id")
+			.notNull()
+			.references(() => automationRuns.id, { onDelete: "cascade" }),
+		nodeId: text("node_id").notNull(),
+		nodeType: text("node_type").notNull(),
+		status: automationNodeStatusEnum().notNull(),
+		startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+		// Resultado do nó — ex: { messageId: "...", channel: "whatsapp" } pra
+		// send_whatsapp; { branch: "true" } pra condition; etc.
+		output: jsonb().$type<Record<string, unknown>>(),
+		errorMessage: text("error_message"),
+	},
+	(table) => [index("automation_node_executions_run_id_idx").on(table.runId)],
+);
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations
@@ -503,11 +704,19 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
 	}),
 	events: many(leadEvents),
 	insights: many(leadInsights),
+	notes: many(leadNotes),
 }));
 
 export const leadEventsRelations = relations(leadEvents, ({ one }) => ({
 	lead: one(leads, {
 		fields: [leadEvents.leadId],
+		references: [leads.id],
+	}),
+}));
+
+export const leadNotesRelations = relations(leadNotes, ({ one }) => ({
+	lead: one(leads, {
+		fields: [leadNotes.leadId],
 		references: [leads.id],
 	}),
 }));
@@ -538,5 +747,43 @@ export const memoryEventsRelations = relations(memoryEvents, ({ one }) => ({
 	conversation: one(conversations, {
 		fields: [memoryEvents.conversationId],
 		references: [conversations.id],
+	}),
+}));
+
+export const whatsappTemplatesRelations = relations(whatsappTemplates, ({ one }) => ({
+	creator: one(user, {
+		fields: [whatsappTemplates.createdBy],
+		references: [user.id],
+	}),
+}));
+
+export const automationsRelations = relations(automations, ({ many, one }) => ({
+	runs: many(automationRuns),
+	creator: one(user, {
+		fields: [automations.createdBy],
+		references: [user.id],
+	}),
+}));
+
+export const automationRunsRelations = relations(automationRuns, ({ one, many }) => ({
+	automation: one(automations, {
+		fields: [automationRuns.automationId],
+		references: [automations.id],
+	}),
+	lead: one(leads, {
+		fields: [automationRuns.leadId],
+		references: [leads.id],
+	}),
+	triggerEvent: one(leadEvents, {
+		fields: [automationRuns.leadEventId],
+		references: [leadEvents.id],
+	}),
+	nodeExecutions: many(automationNodeExecutions),
+}));
+
+export const automationNodeExecutionsRelations = relations(automationNodeExecutions, ({ one }) => ({
+	run: one(automationRuns, {
+		fields: [automationNodeExecutions.runId],
+		references: [automationRuns.id],
 	}),
 }));

@@ -70,7 +70,6 @@ export function ChatProvider({
 	);
 	const [handoff, setHandoff] = useState<HandoffState>({ status: "active", agentName: null });
 
-
 	const transport = useMemo(
 		() =>
 			new DefaultChatTransport<AjaUIMessage>({

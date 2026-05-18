@@ -21,9 +21,9 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Pool } from "pg";
 
 const MIGRATIONS_FOLDER = process.env.MIGRATIONS_FOLDER ?? "./drizzle";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -44,12 +44,22 @@ const DESTRUCTIVE_PATTERNS = [
 	{ pattern: /\bDROP\s+TABLE\b/i, label: "DROP TABLE" },
 	{ pattern: /\bDROP\s+SCHEMA\b/i, label: "DROP SCHEMA" },
 	{ pattern: /\bDROP\s+DATABASE\b/i, label: "DROP DATABASE" },
-	{ pattern: /\bALTER\s+TABLE\s+\S+\s+DROP\s+(COLUMN\b|CONSTRAINT\b)/i, label: "DROP COLUMN/CONSTRAINT" },
+	{
+		pattern: /\bALTER\s+TABLE\s+\S+\s+DROP\s+(COLUMN\b|CONSTRAINT\b)/i,
+		label: "DROP COLUMN/CONSTRAINT",
+	},
 	{ pattern: /\bTRUNCATE\b/i, label: "TRUNCATE" },
 	// DELETE sem WHERE — pega o statement inteiro até o ; ou fim do arquivo,
 	// procura WHERE; se não tem, sinaliza.
-	{ pattern: /\bDELETE\s+FROM\s+[^;]+;/i, label: "DELETE FROM (revisar WHERE)", validate: (m) => !/\bWHERE\b/i.test(m[0]) },
-	{ pattern: /\bALTER\s+TABLE\s+\S+\s+ALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b/i, label: "ALTER COLUMN TYPE (pode perder dados)" },
+	{
+		pattern: /\bDELETE\s+FROM\s+[^;]+;/i,
+		label: "DELETE FROM (revisar WHERE)",
+		validate: (m) => !/\bWHERE\b/i.test(m[0]),
+	},
+	{
+		pattern: /\bALTER\s+TABLE\s+\S+\s+ALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b/i,
+		label: "ALTER COLUMN TYPE (pode perder dados)",
+	},
 ];
 
 function stripSqlComments(sql) {
@@ -128,7 +138,9 @@ if (findings.length > 0) {
 	}
 
 	if (IS_PROD && ALLOW_DESTRUCTIVE) {
-		console.warn("✓ ALLOW_DESTRUCTIVE_MIGRATION=true — prosseguindo sob responsabilidade do operador");
+		console.warn(
+			"✓ ALLOW_DESTRUCTIVE_MIGRATION=true — prosseguindo sob responsabilidade do operador",
+		);
 	} else {
 		console.warn(`(env=${TB_ENV || "<unset>"} — não-prod, prosseguindo)`);
 	}

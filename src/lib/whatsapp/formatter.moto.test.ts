@@ -48,9 +48,9 @@ describe("WhatsApp formatter — categoria moto (bug #02)", () => {
 	it("welcomeButtonsToWhatsApp título do botão moto inclui 'Moto'", () => {
 		const w = welcomeButtonsToWhatsApp();
 		const buttons = w.interactive?.action?.buttons ?? [];
-		const moto = buttons.find(
-			(b: { reply: { id: string } }) => b.reply.id === "category_moto",
-		) as { reply: { title: string } } | undefined;
+		const moto = buttons.find((b: { reply: { id: string } }) => b.reply.id === "category_moto") as
+			| { reply: { title: string } }
+			| undefined;
 		expect(moto?.reply.title).toMatch(/Moto/i);
 	});
 });

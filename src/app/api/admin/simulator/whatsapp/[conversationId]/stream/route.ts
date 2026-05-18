@@ -8,8 +8,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { type SimulatorClientEvent, subscribeToClient } from "@/lib/whatsapp/simulator-bus";
 import { isSimulatorEnabled } from "@/lib/utils/env";
+import { type SimulatorClientEvent, subscribeToClient } from "@/lib/whatsapp/simulator-bus";
 
 export const dynamic = "force-dynamic";
 

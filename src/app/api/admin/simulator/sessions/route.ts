@@ -117,8 +117,7 @@ export async function GET(req: NextRequest) {
 		new Set(
 			filtered
 				.map(
-					(r) =>
-						(r.metadata as { createdBySimUserId?: string } | null)?.createdBySimUserId ?? null,
+					(r) => (r.metadata as { createdBySimUserId?: string } | null)?.createdBySimUserId ?? null,
 				)
 				.filter((id): id is string => Boolean(id)),
 		),

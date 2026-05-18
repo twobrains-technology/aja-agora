@@ -7,13 +7,7 @@
 //    (circuit breaker em src/lib/memory/index.ts decide quando usar)
 
 import type { MemoryAdapter } from "./adapter";
-import type {
-	ArchivalHit,
-	MemoryContext,
-	MemoryEntry,
-	StoreMetadata,
-	UserIdentity,
-} from "./types";
+import type { ArchivalHit, MemoryContext, MemoryEntry, StoreMetadata, UserIdentity } from "./types";
 
 export class NoopMemoryAdapter implements MemoryAdapter {
 	async loadContext(_identity: UserIdentity): Promise<MemoryContext | null> {

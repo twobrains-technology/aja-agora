@@ -1,9 +1,5 @@
-import { describe, it, expect } from "vitest";
-import type {
-	AdministradoraAdapter,
-	GroupSummary,
-	SearchGroupsParams,
-} from "@/lib/adapters/types";
+import { describe, expect, it } from "vitest";
+import type { AdministradoraAdapter, GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { recommendWithFallback } from "./recommendation";
 
 const baseGroup: GroupSummary = {
@@ -115,11 +111,7 @@ describe("recommendWithFallback — ≥3 opções (bug #09)", () => {
 	});
 
 	it("não duplica grupos quando expansão pega os mesmos", async () => {
-		const catalog = [
-			mk("g1", 500000),
-			mk("g2", 510000),
-			mk("g3", 550000),
-		];
+		const catalog = [mk("g1", 500000), mk("g2", 510000), mk("g3", 550000)];
 		const adapter = new FakeAdapter(catalog) as unknown as AdministradoraAdapter;
 		const result = await recommendWithFallback(adapter, {
 			category: "imovel",
@@ -131,11 +123,7 @@ describe("recommendWithFallback — ≥3 opções (bug #09)", () => {
 	});
 
 	it("originais sempre vêm antes dos alternativos na ordem", async () => {
-		const catalog = [
-			mk("g1", 490000),
-			mk("g2", 510000),
-			mk("g3", 600000),
-		];
+		const catalog = [mk("g1", 490000), mk("g2", 510000), mk("g3", 600000)];
 		const adapter = new FakeAdapter(catalog) as unknown as AdministradoraAdapter;
 		const result = await recommendWithFallback(adapter, {
 			category: "imovel",

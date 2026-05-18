@@ -1,5 +1,5 @@
-import type { AdministradoraAdapter } from "./types";
 import { MockBeviAdapter } from "./mock/mock-bevi-adapter";
+import type { AdministradoraAdapter } from "./types";
 
 let _adapter: AdministradoraAdapter | null = null;
 
@@ -29,15 +29,15 @@ export function resetAdapter(): void {
 	_adapter = null;
 }
 
-export type { AdministradoraAdapter } from "./types";
 export type {
+	AdministradoraAdapter,
+	ConsorcioCategory,
+	GetGroupDetailsParams,
+	GetRatesParams,
+	GroupDetails,
 	GroupSummary,
 	QuotaSimulation,
 	RateInfo,
-	GroupDetails,
 	SearchGroupsParams,
 	SimulateQuotaParams,
-	GetRatesParams,
-	GetGroupDetailsParams,
-	ConsorcioCategory,
 } from "./types";

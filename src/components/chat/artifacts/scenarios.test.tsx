@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from "vitest";
+
 import { render, screen } from "@testing-library/react";
-import { Scenarios } from "./scenarios";
+import { beforeEach, describe, expect, it } from "vitest";
 import { computeScenarios } from "@/lib/agent/scenarios";
+import { Scenarios } from "./scenarios";
 
 describe("Scenarios — 3 cards lado a lado (bug #16)", () => {
 	beforeEach(() => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { STEPS, HOW_IT_WORKS_COPY } from "./how-it-works";
+import { describe, expect, it } from "vitest";
+import { HOW_IT_WORKS_COPY, STEPS } from "./how-it-works";
 
 describe("HowItWorks — landing foco em benefícios (bugs #03 #19)", () => {
 	it("tem 5 steps na ordem certa", () => {

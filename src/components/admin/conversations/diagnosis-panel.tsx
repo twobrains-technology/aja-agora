@@ -42,7 +42,11 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 			});
 			if (!res.ok) {
 				const body = (await res.json().catch(() => ({}))) as { error?: string; reason?: string };
-				throw new Error(body.reason ? `${body.error ?? "Erro"}: ${body.reason}` : (body.error ?? `HTTP ${res.status}`));
+				throw new Error(
+					body.reason
+						? `${body.error ?? "Erro"}: ${body.reason}`
+						: (body.error ?? `HTTP ${res.status}`),
+				);
 			}
 			const json = (await res.json()) as DiagnosisResponse;
 			setData(json);

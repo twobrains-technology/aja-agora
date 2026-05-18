@@ -11,8 +11,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { type SimulatorMessage, subscribeToAttendant } from "@/lib/whatsapp/simulator-bus";
 import { isSimulatorEnabled } from "@/lib/utils/env";
+import { type SimulatorMessage, subscribeToAttendant } from "@/lib/whatsapp/simulator-bus";
 
 export const dynamic = "force-dynamic";
 

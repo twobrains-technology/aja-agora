@@ -1,9 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-	SHARED_SPECIALIST_EXAMPLES,
-	SPECIALIST_BASE_PROMPT,
-	SYSTEM_PROMPT,
-} from "./system-prompt";
+import { describe, expect, it } from "vitest";
+import { SHARED_SPECIALIST_EXAMPLES, SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
 
 describe("system-prompt — overclaim de adequação financeira (bug #08)", () => {
 	it("não contém frases subjetivas tipo 'cabe bem no seu orçamento'", () => {
@@ -47,18 +43,22 @@ describe("system-prompt — overclaim de adequação financeira (bug #08)", () =
 });
 
 describe("Helena 1ª fala calorosa (bug #04)", () => {
-	const helenaFirstTurn = SHARED_SPECIALIST_EXAMPLES.find(
-		(ex) => ex.context?.includes("Primeiro turno apos transicao"),
+	const helenaFirstTurn = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
+		ex.context?.includes("Primeiro turno apos transicao"),
 	);
 
 	it("existe example shared pro primeiro turno do specialist", () => {
-		expect(helenaFirstTurn, "SHARED_SPECIALIST_EXAMPLES deve ter entry 'Primeiro turno apos transicao'").toBeDefined();
+		expect(
+			helenaFirstTurn,
+			"SHARED_SPECIALIST_EXAMPLES deve ter entry 'Primeiro turno apos transicao'",
+		).toBeDefined();
 	});
 
 	it("primeira fala contém palavra-chave de calor/entusiasmo", () => {
 		expect(helenaFirstTurn).toBeDefined();
 		if (!helenaFirstTurn) return;
-		const calor = /legal|show|[óo]tim[ao]|animad[oa]|bora|que (bom|legal|[óo]tim[ao])|adoro|amei|que (massa|bacana)/i;
+		const calor =
+			/legal|show|[óo]tim[ao]|animad[oa]|bora|que (bom|legal|[óo]tim[ao])|adoro|amei|que (massa|bacana)/i;
 		expect(
 			helenaFirstTurn.assistantResponse,
 			`fala da Helena não tem palavra-chave de calor: "${helenaFirstTurn.assistantResponse}"`,
@@ -75,10 +75,7 @@ describe("Helena 1ª fala calorosa (bug #04)", () => {
 	it("primeira fala menciona o domínio (imóvel/casa/apartamento) dentro das primeiras 2 frases", () => {
 		expect(helenaFirstTurn).toBeDefined();
 		if (!helenaFirstTurn) return;
-		const primeirasDuas = helenaFirstTurn.assistantResponse
-			.split(/[.!?]/)
-			.slice(0, 2)
-			.join(". ");
+		const primeirasDuas = helenaFirstTurn.assistantResponse.split(/[.!?]/).slice(0, 2).join(". ");
 		const dominio = /im[óo]vel|casa|apartamento/i;
 		expect(primeirasDuas).toMatch(dominio);
 	});
@@ -100,7 +97,9 @@ describe("Anglicismos no copy ao usuário (bug #07)", () => {
 	}
 
 	it("substituição de 'range' → 'faixa' confirmada (pelo menos 1 uso de 'faixa' em algum example)", () => {
-		const hasFaixa = SHARED_SPECIALIST_EXAMPLES.some((ex) => /\bfaixa\b/i.test(ex.assistantResponse));
+		const hasFaixa = SHARED_SPECIALIST_EXAMPLES.some((ex) =>
+			/\bfaixa\b/i.test(ex.assistantResponse),
+		);
 		expect(hasFaixa, "esperado pelo menos 1 uso de 'faixa' como substituto de 'range'").toBe(true);
 	});
 });
@@ -130,9 +129,7 @@ describe("Comparador consórcio × financiamento (bug #17)", () => {
 	});
 
 	it("SPECIALIST_BASE_PROMPT não tem diretiva 'Nao compara consorcio com financiamento'", () => {
-		expect(SPECIALIST_BASE_PROMPT).not.toMatch(
-			/n[ãa]o compar[ae] cons[óo]rcio com financiamento/i,
-		);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/n[ãa]o compar[ae] cons[óo]rcio com financiamento/i);
 	});
 
 	it("SYSTEM_PROMPT instrui a usar tool compare_with_financing", () => {
@@ -145,8 +142,10 @@ describe("Comparador consórcio × financiamento (bug #17)", () => {
 });
 
 describe("Primeira vez = explicação básica inline (bug #15)", () => {
-	const firstTimeExample = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
-		ex.context?.includes("Primeira vez") || ex.userMessage?.toLowerCase().includes("primeira vez"),
+	const firstTimeExample = SHARED_SPECIALIST_EXAMPLES.find(
+		(ex) =>
+			ex.context?.includes("Primeira vez") ||
+			ex.userMessage?.toLowerCase().includes("primeira vez"),
 	);
 
 	it("existe example shared pra usuário 'primeira vez'", () => {
@@ -190,9 +189,7 @@ describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () =>
 	it("Bv2-07 round 4: SPECIALIST_BASE_PROMPT cobre tambem present_group_card (QA DEV achou agente usando group_card)", () => {
 		// O prompt deve mencionar present_group_card no contexto do encadeamento
 		// — não apenas present_recommendation_card.
-		const ruleSection = SPECIALIST_BASE_PROMPT.match(
-			/Bv2-07[\s\S]{0,1500}/i,
-		)?.[0] ?? "";
+		const ruleSection = SPECIALIST_BASE_PROMPT.match(/Bv2-07[\s\S]{0,1500}/i)?.[0] ?? "";
 		expect(ruleSection).toMatch(/present_group_card/);
 		expect(ruleSection).toMatch(/simulate_quota/);
 		expect(ruleSection).toMatch(/present_simulation_result/);

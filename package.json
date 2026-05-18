@@ -14,6 +14,9 @@
 		"db:migrate:runtime": "node scripts/migrate-guard.bundle.cjs",
 		"db:push": "drizzle-kit push",
 		"db:studio": "drizzle-kit studio",
+		"worker:bundle": "esbuild src/worker/index.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/worker.bundle.cjs",
+		"worker:dev": "tsx --env-file-if-exists=.env src/worker/index.ts",
+		"worker:start": "node --env-file-if-exists=.env scripts/worker.bundle.cjs",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -27,7 +30,10 @@
 		"@hello-pangea/dnd": "^18.0.1",
 		"@hookform/resolvers": "^5.2.2",
 		"@sendgrid/mail": "^8.1.6",
+		"@xyflow/react": "^12.10.2",
 		"ai": "^6.0.158",
+		"bullmq": "^5.76.10",
+		"ioredis": "^5.10.1",
 		"better-auth": "^1.6.2",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
@@ -69,6 +75,7 @@
 		"esbuild": "^0.28.0",
 		"happy-dom": "^20.9.0",
 		"tailwindcss": "^4",
+		"tsx": "^4.22.1",
 		"typescript": "^5",
 		"vitest": "^4.1.5"
 	}

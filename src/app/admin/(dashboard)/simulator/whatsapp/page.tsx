@@ -14,8 +14,7 @@ export default function SimulatorWhatsappPage() {
 				<p className="text-muted-foreground text-sm mt-1">
 					Encarna um lead recebendo o agente pelo WhatsApp. Mensagens passam pelo MESMO{" "}
 					<code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs">processTextMessage</code>{" "}
-					que o webhook real chama — só a saída pra Meta API é interceptada e roteada pra essa
-					UI.
+					que o webhook real chama — só a saída pra Meta API é interceptada e roteada pra essa UI.
 				</p>
 			</div>
 			<SimulatorWhatsapp />

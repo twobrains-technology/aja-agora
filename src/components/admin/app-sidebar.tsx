@@ -6,9 +6,11 @@ import {
 	FlaskConicalIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
+	MessagesSquareIcon,
 	SettingsIcon,
 	UserIcon,
 	UsersIcon,
+	WorkflowIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -36,6 +38,8 @@ export function AppSidebar() {
 	const menuItems = [{ title: "Dashboard", href: "/admin", icon: ChartPieIcon }];
 	const applicationItems = [
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
+		{ title: "Automações", href: "/admin/automations", icon: WorkflowIcon },
+		{ title: "Templates WA", href: "/admin/whatsapp-templates", icon: MessagesSquareIcon },
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },

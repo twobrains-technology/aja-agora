@@ -1,19 +1,18 @@
 import type {
 	AdministradoraAdapter,
-	SearchGroupsParams,
-	SimulateQuotaParams,
-	GetRatesParams,
 	GetGroupDetailsParams,
+	GetRatesParams,
+	GroupDetails,
 	GroupSummary,
 	QuotaSimulation,
 	RateInfo,
-	GroupDetails,
+	SearchGroupsParams,
+	SimulateQuotaParams,
 } from "../types";
 import { computeQuota, resolveInsurancePercent } from "./compute-quota";
-
+import contemplationData from "./data/contemplation.json";
 import groupsData from "./data/groups.json";
 import ratesData from "./data/rates.json";
-import contemplationData from "./data/contemplation.json";
 
 const groups = groupsData as unknown as Omit<GroupDetails, "contemplationHistory">[];
 const rates = ratesData as RateInfo[];

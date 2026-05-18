@@ -1,8 +1,9 @@
 // Run with: npx tsx src/scripts/seed-admin.ts
-import { auth } from "../lib/auth";
+
+import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { user } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { auth } from "../lib/auth";
 
 async function seedAdmin() {
 	const email = process.env.ADMIN_EMAIL;
@@ -29,10 +30,7 @@ async function seedAdmin() {
 		});
 
 		// Update role to admin (input: false prevents setting during signup)
-		await db
-			.update(user)
-			.set({ role: "admin" })
-			.where(eq(user.id, result.user.id));
+		await db.update(user).set({ role: "admin" }).where(eq(user.id, result.user.id));
 
 		console.log(`Admin user created successfully: ${email} (role: admin)`);
 	} catch (error) {

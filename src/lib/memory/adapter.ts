@@ -4,13 +4,7 @@
 // cross-channel. Implementações: LettaMemoryAdapter (real), NoopMemoryAdapter
 // (testes + circuit breaker em runtime). Ver ADR 2026-05-16.
 
-import type {
-	ArchivalHit,
-	MemoryContext,
-	MemoryEntry,
-	StoreMetadata,
-	UserIdentity,
-} from "./types";
+import type { ArchivalHit, MemoryContext, MemoryEntry, StoreMetadata, UserIdentity } from "./types";
 
 /**
  * Contrato de qualquer backend de memória usado pelo orchestrator.
@@ -60,11 +54,7 @@ export interface MemoryAdapter {
 	/**
 	 * Busca semântica no archival. Read-side — retorna `[]` em timeout/erro.
 	 */
-	searchArchival(
-		identity: UserIdentity,
-		query: string,
-		limit?: number,
-	): Promise<ArchivalHit[]>;
+	searchArchival(identity: UserIdentity, query: string, limit?: number): Promise<ArchivalHit[]>;
 
 	/**
 	 * Reconcilia identidade temporária (ex: anon-cookie) numa permanente

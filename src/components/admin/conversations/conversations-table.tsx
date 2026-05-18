@@ -223,7 +223,9 @@ export function ConversationsTable() {
 											<Badge variant={STATUS_VARIANTS[c.status]}>{STATUS_LABELS[c.status]}</Badge>
 										</TableCell>
 										<TableCell className="text-sm capitalize">
-											{c.currentCategory ? CATEGORY_LABELS[c.currentCategory] ?? c.currentCategory : "—"}
+											{c.currentCategory
+												? (CATEGORY_LABELS[c.currentCategory] ?? c.currentCategory)
+												: "—"}
 										</TableCell>
 										<TableCell className="text-sm">{c.handedOffUser?.name ?? "—"}</TableCell>
 										<TableCell className="text-right text-sm tabular-nums">

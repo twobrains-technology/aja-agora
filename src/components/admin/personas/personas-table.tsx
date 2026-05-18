@@ -64,8 +64,8 @@ function PersonaRow({ p }: { p: PersonaListItem }) {
 				</Badge>
 			</TableCell>
 			<TableCell className="text-muted-foreground text-sm">
-				{p.handoffTriggers.length} regras de transferência · {p.forbiddenTopics.length} tópicos sensíveis ·{" "}
-				{p.examples.length} exemplos
+				{p.handoffTriggers.length} regras de transferência · {p.forbiddenTopics.length} tópicos
+				sensíveis · {p.examples.length} exemplos
 			</TableCell>
 			<TableCell className="text-muted-foreground text-sm">
 				{new Date(p.updatedAt).toLocaleDateString("pt-BR")}

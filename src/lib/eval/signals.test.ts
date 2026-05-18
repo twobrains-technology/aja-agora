@@ -28,7 +28,13 @@ describe("computeSignals — replyRate", () => {
 			userMsg("u1", "oi"),
 			...Array.from({ length: 5 }, (_, i) => assistantMsg(`a${i}`, "x")),
 		];
-		const r = computeSignals({ metadata: null, channel: "web", messages, artifacts: [], lead: null });
+		const r = computeSignals({
+			metadata: null,
+			channel: "web",
+			messages,
+			artifacts: [],
+			lead: null,
+		});
 		expect(r.replyRate).toBeCloseTo(0.2);
 	});
 
@@ -39,12 +45,24 @@ describe("computeSignals — replyRate", () => {
 			userMsg("u3", "x"),
 			assistantMsg("a1", "x"),
 		];
-		const r = computeSignals({ metadata: null, channel: "web", messages, artifacts: [], lead: null });
+		const r = computeSignals({
+			metadata: null,
+			channel: "web",
+			messages,
+			artifacts: [],
+			lead: null,
+		});
 		expect(r.replyRate).toBe(1);
 	});
 
 	it("retorna 1 quando não tem assistant turns (evita divisão por zero)", () => {
-		const r = computeSignals({ metadata: null, channel: "web", messages: [], artifacts: [], lead: null });
+		const r = computeSignals({
+			metadata: null,
+			channel: "web",
+			messages: [],
+			artifacts: [],
+			lead: null,
+		});
 		expect(r.replyRate).toBe(1);
 	});
 });
@@ -93,7 +111,13 @@ describe("computeSignals — qualifyCoverage por categoria", () => {
 	});
 
 	it("retorna 0 sem categoria — não dá pra exigir nada sem saber o que precisa", () => {
-		const r = computeSignals({ metadata: {}, channel: "web", messages: [], artifacts: [], lead: null });
+		const r = computeSignals({
+			metadata: {},
+			channel: "web",
+			messages: [],
+			artifacts: [],
+			lead: null,
+		});
 		expect(r.qualifyCoverage).toBe(0);
 		expect(r.qualifyMissing).toEqual([]);
 	});
@@ -254,7 +278,13 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 	});
 
 	it("retorna null sem categoria (sem fluxo de gates)", () => {
-		const r = computeSignals({ metadata: {}, channel: "web", messages: [], artifacts: [], lead: null });
+		const r = computeSignals({
+			metadata: {},
+			channel: "web",
+			messages: [],
+			artifacts: [],
+			lead: null,
+		});
 		expect(r.dropOffGate).toBeNull();
 	});
 });

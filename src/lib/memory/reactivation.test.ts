@@ -223,9 +223,7 @@ describe("buildMemorySystemMessage", () => {
 	});
 
 	it("category 'servicos' é renderizada com acento", () => {
-		const out = buildMemorySystemMessage(
-			ctx({ block: { ...emptyBlock, category: "servicos" } }),
-		);
+		const out = buildMemorySystemMessage(ctx({ block: { ...emptyBlock, category: "servicos" } }));
 		expect(out).toContain("Categoria de interesse: serviços");
 	});
 

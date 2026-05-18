@@ -86,8 +86,20 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 	moto: [
 		{ token: "15", title: "Até R$ 15 mil", desc: "Entrada, custo benefício", min: 0, max: 15_000 },
 		{ token: "30", title: "R$ 15 a 30 mil", desc: "Naked, scooter", min: 15_000, max: 30_000 },
-		{ token: "50", title: "R$ 30 a 50 mil", desc: "Trail, esportivas médias", min: 30_000, max: 50_000 },
-		{ token: "80", title: "Acima de R$ 50 mil", desc: "Big trail, esportiva", min: 50_000, max: 80_000 },
+		{
+			token: "50",
+			title: "R$ 30 a 50 mil",
+			desc: "Trail, esportivas médias",
+			min: 30_000,
+			max: 50_000,
+		},
+		{
+			token: "80",
+			title: "Acima de R$ 50 mil",
+			desc: "Big trail, esportiva",
+			min: 50_000,
+			max: 80_000,
+		},
 	],
 	servicos: [
 		{

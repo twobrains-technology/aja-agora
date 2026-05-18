@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	BACK_INTENT_REGEX,
-	NAV_STACK_CAP,
 	detectBackIntent,
+	NAV_STACK_CAP,
+	type NavState,
 	popNavState,
 	pushNavState,
-	type NavState,
 } from "./navigation";
 
 const mk = (id: string): NavState => ({

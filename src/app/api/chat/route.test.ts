@@ -8,9 +8,7 @@ import { lastUserText } from "./route";
 describe("lastUserText — guardrail defensivo (Bv2-08-novo)", () => {
 	it("retorna texto do parts moderno", () => {
 		// biome-ignore lint/suspicious/noExplicitAny: relaxar pra fixture
-		const messages: any = [
-			{ role: "user", parts: [{ type: "text", text: "olá" }] },
-		];
+		const messages: any = [{ role: "user", parts: [{ type: "text", text: "olá" }] }];
 		expect(lastUserText(messages)).toBe("olá");
 	});
 

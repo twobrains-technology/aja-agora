@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { computePMT, compareWithFinancing, DEFAULT_FINANCING_RATES } from "./pmt";
+import { describe, expect, it } from "vitest";
+import { compareWithFinancing, computePMT, DEFAULT_FINANCING_RATES } from "./pmt";
 
 describe("computePMT — fórmula Price (bug #17)", () => {
 	it("PMT(100k, 24m, 12%/ano) ≈ R$ 4.707,35 (caso canônico Price)", () => {

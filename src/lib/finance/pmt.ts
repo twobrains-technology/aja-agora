@@ -13,7 +13,11 @@ import type { ConsorcioCategory } from "@/lib/adapters/types";
  *
  * Caso degenerado: taxa anual zero → PMT = principal / prazo.
  */
-export function computePMT(principal: number, termMonths: number, annualRatePercent: number): number {
+export function computePMT(
+	principal: number,
+	termMonths: number,
+	annualRatePercent: number,
+): number {
 	if (termMonths <= 0) throw new Error("termMonths must be > 0");
 	if (annualRatePercent === 0) return principal / termMonths;
 	const monthlyRate = annualRatePercent / 100 / 12;
@@ -86,7 +90,6 @@ export function compareWithFinancing(input: FinancingComparisonInput): Financing
 			monthlyDelta: Math.round((input.consorcioMonthlyPayment - financingMonthly) * 100) / 100,
 			totalDelta: Math.round((input.consorcioTotalCost - financingTotal) * 100) / 100,
 		},
-		disclaimer:
-			`Comparação estimativa baseada em taxa CET de ${annualRate}% ao ano (média do mercado para ${input.category}). Não é garantia: taxa real de financiamento depende de análise de crédito.`,
+		disclaimer: `Comparação estimativa baseada em taxa CET de ${annualRate}% ao ano (média do mercado para ${input.category}). Não é garantia: taxa real de financiamento depende de análise de crédito.`,
 	};
 }

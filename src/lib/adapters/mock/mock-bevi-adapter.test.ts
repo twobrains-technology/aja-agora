@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MockBeviAdapter } from "./mock-bevi-adapter";
 
 const adapter = new MockBeviAdapter();
@@ -42,7 +42,10 @@ describe("MockBeviAdapter — parcela consistente entre searchGroups e simulateQ
 			}
 		}
 
-		expect(divergences, `grupos com divergência >R$1: ${JSON.stringify(divergences, null, 2)}`).toEqual([]);
+		expect(
+			divergences,
+			`grupos com divergência >R$1: ${JSON.stringify(divergences, null, 2)}`,
+		).toEqual([]);
 	});
 
 	it("edge case 2: categoria auto — também consistente", async () => {

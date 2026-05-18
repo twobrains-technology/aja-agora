@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
+import { handleTemplateStatusUpdate } from "@/lib/whatsapp/template-webhook";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
@@ -49,6 +50,17 @@ export async function POST(req: NextRequest) {
 	const entry = body?.entry?.[0];
 	const changes = entry?.changes?.[0];
 	const value = changes?.value;
+
+	// ---- Template status updates (PENDING/APPROVED/REJECTED/PAUSED/DISABLED) ----
+	// A Meta envia esse payload no mesmo webhook, mas com field específico.
+	if (changes?.field === "message_template_status_update") {
+		try {
+			await handleTemplateStatusUpdate(value);
+		} catch (err) {
+			console.error("[whatsapp] template-status-update handler failed:", err);
+		}
+		return NextResponse.json({ status: "ok" });
+	}
 
 	// ---- Status updates (sent, delivered, read) ----
 	if (value?.statuses) {
@@ -107,8 +119,8 @@ export async function POST(req: NextRequest) {
 					} else if (interactive?.type === "list_reply") {
 						const reply = interactive.list_reply;
 						console.log(`[whatsapp] List reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch((err) =>
-							console.error("[whatsapp] Interactive processor error:", err),
+						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch(
+							(err) => console.error("[whatsapp] Interactive processor error:", err),
 						);
 					}
 					break;

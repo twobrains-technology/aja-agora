@@ -13,22 +13,14 @@ import {
 	buildQualifyStartYesDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
-import {
-	detectBackIntent,
-	popNavState,
-	pushNavState,
-} from "@/lib/agent/orchestrator/navigation";
+import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
-import {
-	COOKIE_MAX_AGE_SECONDS,
-	COOKIE_NAME,
-	generateCookieValue,
-} from "@/lib/memory/identity";
+import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { isUuid } from "@/lib/utils/id";
 import {
@@ -63,7 +55,10 @@ export function lastUserText(
 		// Format moderno: parts[]
 		if (Array.isArray(msg.parts)) {
 			const text = msg.parts
-				.filter((p): p is { type: "text"; text: string } => p?.type === "text" && typeof p.text === "string")
+				.filter(
+					(p): p is { type: "text"; text: string } =>
+						p?.type === "text" && typeof p.text === "string",
+				)
 				.map((p) => p.text)
 				.join("");
 			if (text.length > 0) return text;
@@ -353,9 +348,7 @@ export async function POST(req: NextRequest) {
 	if (detectBackIntent(userText)) {
 		await saveMessage(conversationId, "user", userText, "web");
 		const { stack: nextStack, popped } = popNavState(meta.navigationStack ?? []);
-		const ackText = popped
-			? "Voltando ao passo anterior."
-			: "Você já está no início.";
+		const ackText = popped ? "Voltando ao passo anterior." : "Você já está no início.";
 		if (popped) {
 			await persistMeta(conversationId, {
 				...meta,

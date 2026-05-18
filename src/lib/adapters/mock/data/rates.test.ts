@@ -8,7 +8,9 @@ describe("rates.json (bug #02: moto ausente nas rates)", () => {
 	});
 
 	it("tem rate de moto pras 3 administradoras que ofertam grupos moto (Bradesco, Estrela, Alianca)", () => {
-		const motoAdmins = new Set(rates.filter((r) => r.category === "moto").map((r) => r.administradora));
+		const motoAdmins = new Set(
+			rates.filter((r) => r.category === "moto").map((r) => r.administradora),
+		);
 		expect(motoAdmins).toContain("Bradesco Consorcios");
 		expect(motoAdmins).toContain("Consorcio Estrela");
 		expect(motoAdmins).toContain("Grupo Alianca");

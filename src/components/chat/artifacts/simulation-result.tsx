@@ -113,8 +113,9 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 				{/* Correção prevista (bug #10) */}
 				{payload.expectedAdjustment && (
 					<p className="text-xs text-muted-foreground">
-						Correção prevista: <span className="font-medium">{payload.expectedAdjustment.index}</span>{" "}
-						~{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
+						Correção prevista:{" "}
+						<span className="font-medium">{payload.expectedAdjustment.index}</span> ~
+						{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
 					</p>
 				)}
 

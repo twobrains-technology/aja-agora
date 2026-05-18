@@ -15,7 +15,7 @@ import {
 	sendTextMessage,
 	sendTypingIndicator,
 } from "./api";
-import { subscribeToClient, type SimulatorClientEvent } from "./simulator-bus";
+import { type SimulatorClientEvent, subscribeToClient } from "./simulator-bus";
 
 const originalFetch = global.fetch;
 

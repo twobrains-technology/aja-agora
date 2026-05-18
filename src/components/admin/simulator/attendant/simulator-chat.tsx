@@ -188,9 +188,7 @@ export function SimulatorChat() {
 									<SelectValue>
 										{(value) => {
 											const a = attendants.find((x) => x.id === value);
-											return a
-												? `${a.name} — ${a.phone}`
-												: "Selecione um atendente";
+											return a ? `${a.name} — ${a.phone}` : "Selecione um atendente";
 										}}
 									</SelectValue>
 								</SelectTrigger>
@@ -242,7 +240,9 @@ export function SimulatorChat() {
 						value={input}
 						onChange={(e) => setInput(e.target.value)}
 						onKeyDown={onKeyDown}
-						placeholder={selectedId ? "Digite como o atendente..." : "Selecione um atendente primeiro"}
+						placeholder={
+							selectedId ? "Digite como o atendente..." : "Selecione um atendente primeiro"
+						}
 						disabled={!selectedId || sending}
 					/>
 					<Button
