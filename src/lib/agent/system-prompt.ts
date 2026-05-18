@@ -290,6 +290,7 @@ Exemplos:
 
 import type { InferSelectModel } from "drizzle-orm";
 import type { personas } from "@/db/schema";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { CATEGORY_META } from "./categories";
 
 export type PersonaRow = InferSelectModel<typeof personas>;
@@ -462,7 +463,7 @@ Nao demonstrou nem leigo nem expert. Use tom intermediario, explique termos tecn
 }
 
 export function buildSpecialistPrompt(row: PersonaRow, expertise: ExpertiseLevel): PromptBlocks {
-	const campaigns = activeCampaignsFor(new Date(), row.activeCampaigns);
+	const campaigns = activeCampaignsFor(simulatorNow(), row.activeCampaigns);
 	const categoryLabel = row.category
 		? CATEGORY_META[row.category as keyof typeof CATEGORY_META]?.label
 		: "consórcio";

@@ -17,6 +17,7 @@
  * subscribers (already-open SSE connections), and `listeners=0`.
  */
 import { EventEmitter } from "node:events";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 export interface SimulatorMessage {
 	id: string;
@@ -62,7 +63,7 @@ export function publishToAttendant(
 	const message: SimulatorMessage = {
 		id: crypto.randomUUID(),
 		text,
-		createdAt: new Date().toISOString(),
+		createdAt: simulatorNow().toISOString(),
 		simulated: options.simulated,
 	};
 	console.log(
@@ -95,7 +96,7 @@ export function publishToClient(waId: string, event: SimulatorClientEventInput):
 	const listenerCount = bus.listenerCount(channel);
 	const payload: SimulatorClientEvent = {
 		id: crypto.randomUUID(),
-		createdAt: new Date().toISOString(),
+		createdAt: simulatorNow().toISOString(),
 		...event,
 	};
 	const preview =

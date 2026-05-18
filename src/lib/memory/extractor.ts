@@ -7,8 +7,9 @@
 // SEM LLM — só lê estado estruturado (artifacts produzidos por tool calls +
 // `conversations.metadata` campos). Determinístico, gratuito, auditável.
 
-import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { ProducedArtifact } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 import type { HumanMemoryBlock, MemoryEntry, MemoryEntryKind } from "./types";
 
@@ -31,7 +32,7 @@ export function extractMemoriesFromTurn(args: {
 	const { artifacts, meta, channel } = args;
 	const entries: MemoryEntry[] = [];
 	const blockPatch: Partial<HumanMemoryBlock> = {};
-	const today = new Date().toISOString();
+	const today = simulatorNow().toISOString();
 
 	// ─── 1. Artifacts produzidos pelo agent ─────────────────────────────────
 

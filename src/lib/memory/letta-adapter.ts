@@ -3,6 +3,7 @@
 // LettaMemoryAdapter — implementação real do MemoryAdapter contra Letta OSS.
 // Acessa via REST (sem provider do AI SDK). Ver ADR 2026-05-16.
 
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import type { MemoryAdapter } from "./adapter";
 import { markLettaFailure, markLettaSuccess } from "./circuit-state";
 import { lettaFetch } from "./letta-client";
@@ -125,6 +126,10 @@ function daysBetween(isoA: string | undefined, isoB: Date): number | null {
 	const a = new Date(isoA).getTime();
 	if (Number.isNaN(a)) return null;
 	const diffMs = isoB.getTime() - a;
+	// Clampa negativo a 0 (cenário pós-reset onde lastInteractionAt está no
+	// futuro vs. tempo real corrente). Evita reactivation hint absurdo com
+	// "-10 dias" e crash de cálculo.
+	if (diffMs < 0) return 0;
 	return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
@@ -184,14 +189,14 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 				namespace: identity.namespace,
 				agent_found: true,
 				archival_hits: archivalHits.length,
-				days_since_last_interaction: daysBetween(block.lastInteractionAt, new Date()),
+				days_since_last_interaction: daysBetween(block.lastInteractionAt, simulatorNow()),
 			});
 
 			return {
 				agentId: agent.id,
 				block,
 				archivalHits,
-				daysSinceLastInteraction: daysBetween(block.lastInteractionAt, new Date()),
+				daysSinceLastInteraction: daysBetween(block.lastInteractionAt, simulatorNow()),
 			};
 		} catch (err) {
 			// Circuit breaker: read-side NUNCA throw — log e devolve null.
@@ -245,7 +250,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 			const updatedBlock: HumanMemoryBlock = {
 				...currentBlock,
 				...(metadata.blockPatch ?? {}),
-				lastInteractionAt: new Date().toISOString(),
+				lastInteractionAt: simulatorNow().toISOString(),
 				channels: Array.from(
 					new Set([...(currentBlock.channels ?? []), metadata.channel]),
 				) as ("web" | "whatsapp")[],

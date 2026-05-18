@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -47,7 +48,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		if (existing && contactName !== existing.contactName) {
 			await db
 				.update(conversations)
-				.set({ contactName, updatedAt: new Date() })
+				.set({ contactName, updatedAt: simulatorNow() })
 				.where(eq(conversations.id, conversationId));
 		}
 	}

@@ -1,5 +1,5 @@
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
@@ -31,6 +31,11 @@ import {
 } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { isUuid } from "@/lib/utils/id";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
+import {
+	persistSimulatorCookieKey,
+	withSimulatorClockIfNeeded,
+} from "@/lib/utils/simulator-clock-wrap";
 import {
 	pipeDirectiveTurn,
 	pipeSearchSummaryTurn,
@@ -152,7 +157,7 @@ export async function POST(req: NextRequest) {
 			id: crypto.randomUUID(),
 			role: "user",
 			content: userText,
-			createdAt: new Date().toISOString(),
+			createdAt: simulatorNow().toISOString(),
 		});
 		const agentName = conv.handedOffUser?.name ?? "Consultor";
 		const stream = createUIMessageStream<AjaUIMessage>({
@@ -175,9 +180,17 @@ export async function POST(req: NextRequest) {
 
 	const meta = conv ? metaOf(conv) : ({} as ConversationMetadata);
 
+	// Simulator: persiste o cookie key na 1ª passagem pra que GET /memory
+	// reconstrua identity em qualquer admin. No-op em conv real.
+	await persistSimulatorCookieKey(
+		{ id: conversationId, isSimulated: conv?.isSimulated ?? false, channel: conv?.channel ?? null, metadata: conv?.metadata },
+		userKey,
+	);
+
 	if (body.action) {
 		const stream = createUIMessageStream<AjaUIMessage>({
 			execute: async ({ writer }) => {
+				await withSimulatorClockIfNeeded(conv ?? null, async () => {
 				if (body.action?.kind === "category") {
 					if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category)) return;
 					const fromPersona: Persona = meta.currentPersona ?? "concierge";
@@ -334,6 +347,7 @@ export async function POST(req: NextRequest) {
 					if (!meta.currentCategory) return;
 					await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
 				}
+				});
 			},
 			onError: (error: unknown) =>
 				error instanceof Error ? error.message : "Erro interno no servidor",
@@ -384,7 +398,9 @@ export async function POST(req: NextRequest) {
 
 	const stream = createUIMessageStream<AjaUIMessage>({
 		execute: async ({ writer }) => {
-			await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
+			await withSimulatorClockIfNeeded(conv ?? null, async () => {
+				await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
+			});
 		},
 		onError: (error: unknown) =>
 			error instanceof Error ? error.message : "Erro interno no servidor",

@@ -16,6 +16,7 @@ import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
 	getGroupDetailsInput,
 	getRatesInput,
@@ -484,7 +485,7 @@ export const consorcioTools = {
 						name: args.name,
 						phone: args.phone,
 						email: args.email,
-						updatedAt: new Date(),
+						updatedAt: simulatorNow(),
 					})
 					.where(eq(leads.id, existing.id));
 				return `Lead atualizado com sucesso. Nome: ${args.name}`;
