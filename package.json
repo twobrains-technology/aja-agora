@@ -17,8 +17,10 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"test:pre-commit": "vitest run --reporter=dot --silent --bail=5 src/ tests/regression",
 		"eval:calibrate:bundle": "esbuild scripts/eval-calibrate.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/eval-calibrate.bundle.cjs",
-		"eval:calibrate": "npm run eval:calibrate:bundle && node --env-file-if-exists=.env scripts/eval-calibrate.bundle.cjs"
+		"eval:calibrate": "npm run eval:calibrate:bundle && node --env-file-if-exists=.env scripts/eval-calibrate.bundle.cjs",
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.69",
@@ -69,6 +71,7 @@
 		"drizzle-kit": "^0.31.10",
 		"esbuild": "^0.28.0",
 		"happy-dom": "^20.9.0",
+		"husky": "^9.1.7",
 		"tailwindcss": "^4",
 		"typescript": "^5",
 		"uuid": "^14.0.0",

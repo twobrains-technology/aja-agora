@@ -249,3 +249,6 @@ Todo bug de comportamento do agent (tools que não disparam, frases proibidas/ca
 - Bug em código não-agêntico puro (route HTTP que não chama streamText, query SQL pura, render React sem AI). Só Camada 1 já cobre.
 - Typo de copy em landing/footer. Só Camada 1.
 - Em dúvida, **adicione cassette mesmo assim** — overhead é desprezível.
+
+### Pre-commit hook automático (Camadas 1 + 2)
+Existe um pre-commit hook (`husky` em `.husky/pre-commit`) que **bloqueia o commit** se Camada 1 (`src/**/*.test.ts`) ou Camada 2 (`tests/regression/**`) falharem — roda via `npm run test:pre-commit` (vitest com `--reporter=dot --silent --bail=5`). Skip automático quando o commit não toca `.ts/.tsx/.sql` (commits só de docs). Camada 3 (eval LLM real em `tests/eval/`) **NÃO** roda no hook — é nightly via cron. Quebrou e está com pressa? `--no-verify` é permitido apenas em casos excepcionais (instalação do próprio hook, hotfix com fix de teste no próximo commit) — o padrão é manter verde.

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Pre-commit hook: bloqueia commit se Camada 1 (structural) ou Camada 2 (trajectory snapshots) falharem.
+# Camada 3 (LLM eval real) NÃO é executada aqui — é nightly via cron.
+# Skip se nenhum arquivo .ts/.tsx/.sql tocado (commits só de docs).
+
+CHANGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|sql)$' | head -1)
+
+if [ -z "$CHANGED" ]; then
+  echo "[pre-commit] sem arquivos .ts/.tsx/.sql staged — pulando suite"
+  exit 0
+fi
+
+echo "[pre-commit] rodando Camada 1 + Camada 2 (vitest)..."
+npm run test:pre-commit
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+  echo ""
+  echo "❌ COMMIT BLOQUEADO — testes Camada 1 ou 2 falharam."
+  echo "Fix os testes acima OU adicione cassette/regra. Detalhes:"
+  echo "  Camada 1: src/**/*.test.ts (structural)"
+  echo "  Camada 2: tests/regression/agent-trajectory.test.ts (trajectory snapshots)"
+  echo "Convenção: CLAUDE.md → 'Regressão de agent — 3 camadas OBRIGATÓRIAS'"
+  exit 1
+fi
+
+echo "[pre-commit] ✅ Camada 1 + 2 verdes."
