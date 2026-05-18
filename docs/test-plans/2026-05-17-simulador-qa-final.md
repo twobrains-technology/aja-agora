@@ -74,7 +74,7 @@ O simulador admin é uma **ferramenta interna de dev/QA** que permite ao time "*
 
 ### Auth
 - Better Auth, login em `/admin/login`
-- Credenciais em `.env.local`: `ADMIN_EMAIL=admin@ajaagora.com.br` / `ADMIN_PASSWORD=admin123`
+- Credenciais em `.env.local`: `ADMIN_EMAIL` / `ADMIN_PASSWORD` (definidos pelo dev localmente — ver `.env.example`)
 - Guard em todas as rotas: `requireRole("admin")` + `NODE_ENV==="production" → 404`
 
 ---
@@ -95,13 +95,13 @@ O simulador admin é uma **ferramenta interna de dev/QA** que permite ao time "*
 **Dependências:** `.env.local` com `ADMIN_EMAIL`/`ADMIN_PASSWORD` carregados; tabela `user` populada com o admin (criada via seed/Better Auth no boot).
 
 - **GIVEN** servidor em `http://localhost:<APP_HOST_PORT>` rodando e `/admin/login` acessível
-- **WHEN** Playwright navega pra `/admin/login`, preenche email `admin@ajaagora.com.br` e senha `admin123`, clica em "Entrar"
+- **WHEN** Playwright navega pra `/admin/login`, preenche email `${ADMIN_EMAIL}` e senha `${ADMIN_PASSWORD}` (do `.env.local`), clica em "Entrar"
 - **THEN** URL final é `/admin` (ou `/admin/*`); cookie de sessão Better Auth está setado; **não** vê tela "Acesso negado" nem 401
 
 **Como validar:**
 - `await page.goto("/admin/login")`
-- `await page.fill('[name="email"], input[type="email"]', "admin@ajaagora.com.br")`
-- `await page.fill('input[type="password"]', "admin123")`
+- `await page.fill('[name="email"], input[type="email"]', process.env.ADMIN_EMAIL!)`
+- `await page.fill('input[type="password"]', process.env.ADMIN_PASSWORD!)`
 - `await page.click('button[type="submit"]')`
 - `await page.waitForURL(/\/admin/, { timeout: 5000 })`
 - Verificar que `page.url()` começa com `/admin` e NÃO contém `/login`
@@ -498,7 +498,7 @@ Pra liberar como "VERDE" (merge-ready / claim-de-feature-completa), TODOS os gat
 
 ### Gates P0 — TODOS obrigatórios (9 + 1 regressão crítica = 10 gates)
 
-- [ ] **G-01:** SIM-01 PASS — login admin funciona com `admin@ajaagora.com.br`/`admin123` e leva a `/admin`
+- [ ] **G-01:** SIM-01 PASS — login admin funciona com `${ADMIN_EMAIL}`/`${ADMIN_PASSWORD}` do `.env.local` e leva a `/admin`
 - [ ] **G-02:** SIM-02 PASS — hub `/admin/simulator` renderiza 3 cards com hrefs corretos
 - [ ] **G-03:** SIM-03 PASS — `POST /sessions` `{channel:"web"}` retorna 201 com `waId=null`; UI atualiza
 - [ ] **G-04:** SIM-04 PASS — chat web responde "oi" em ≤10s com mensagem assistant; zero fetch a graph.facebook.com
