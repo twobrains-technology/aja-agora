@@ -1,5 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { stepCountIs, ToolLoopAgent } from "ai";
+import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
+import type { MemoryContext } from "@/lib/memory/types";
 import {
 	buildConciergePrompt,
 	buildSpecialistPrompt,
@@ -25,9 +27,30 @@ function selectTools(
 	return out;
 }
 
-export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"): ToolLoopAgent {
+/**
+ * Constrói um specialist/concierge `ToolLoopAgent`. `opts` é opcional pra
+ * preservar callers existentes (preview routes, testes legados).
+ *
+ * - `currentDate`: data corrente do turno (em time-travel, `simulatorNow()`
+ *   capturada no scope ALS pelo runner). Injetada como `<current_date>` no
+ *   system prompt — garante que o LLM raciocine com a data simulada e não
+ *   com o cutoff de treinamento.
+ * - `memoryContext`: contexto Letta carregado pelo orchestrator-bridge.
+ *   Quando passado, é renderizado como bloco extra de instructions dentro
+ *   do próprio agent (ao invés de só prepend no orchestrator) — garante que
+ *   specialist nasça memory-aware mesmo em paths alternativos (preview,
+ *   processor WhatsApp), e que memória vise consistente mesmo se prepend
+ *   no orchestrator falhar.
+ */
+export function buildAgent(
+	row: PersonaRow,
+	expertise: ExpertiseLevel = "neutro",
+	opts: { currentDate?: Date; memoryContext?: MemoryContext | null } = {},
+): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
-	const blocks = isConcierge ? buildConciergePrompt(row) : buildSpecialistPrompt(row, expertise);
+	const blocks = isConcierge
+		? buildConciergePrompt(row)
+		: buildSpecialistPrompt(row, expertise, opts.currentDate);
 	// Specialists always have suggest_handoff + as ferramentas de captura
 	// conversacional de lead (save_contact_name, save_contact_whatsapp,
 	// present_whatsapp_optin) + o seletor interativo de valores
@@ -55,7 +78,14 @@ export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"
 				present_topic_picker: consorcioTools.present_topic_picker,
 			};
 
-	const instructions = blocks.dynamic
+	// Memory inline — renderizado como system message extra dentro das
+	// instructions do agent, pra specialist nascer memory-aware mesmo sem
+	// depender do prepend do orchestrator.
+	const memoryText = opts.memoryContext
+		? buildMemorySystemMessage(opts.memoryContext)
+		: null;
+
+	const baseInstructions = blocks.dynamic
 		? [
 				{
 					role: "system" as const,
@@ -75,6 +105,10 @@ export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"
 					},
 				},
 			];
+
+	const instructions = memoryText
+		? [...baseInstructions, { role: "system" as const, content: memoryText }]
+		: baseInstructions;
 
 	return new ToolLoopAgent({
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),

@@ -182,6 +182,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		messages: messagesForAgent,
 		isUserTurn,
 		userIntent: analyzedIntent,
+		memoryContext,
 	});
 
 	// Fire-and-forget — extrai fatos do turno e persiste no Letta.

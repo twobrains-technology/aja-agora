@@ -510,17 +510,38 @@ Nao demonstrou nem leigo nem expert. Use tom intermediario, explique termos tecn
 	return blocks[expertise];
 }
 
-export function buildSpecialistPrompt(row: PersonaRow, expertise: ExpertiseLevel): PromptBlocks {
-	const campaigns = activeCampaignsFor(simulatorNow(), row.activeCampaigns);
+export function buildSpecialistPrompt(
+	row: PersonaRow,
+	expertise: ExpertiseLevel,
+	currentDate?: Date,
+): PromptBlocks {
+	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
+	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
+	// no scope ALS do turno. Default: `simulatorNow()` (idêntico ao real
+	// fora de scope). Garante que mesmo se o cache de agentes congelar a
+	// instância, a data textual injetada reflete o turno em que foi montado.
+	const now = currentDate ?? simulatorNow();
+	const campaigns = activeCampaignsFor(now, row.activeCampaigns);
 	const categoryLabel = row.category
 		? CATEGORY_META[row.category as keyof typeof CATEGORY_META]?.label
 		: "consórcio";
+
+	const currentDateISO = now.toISOString().slice(0, 10);
+	const currentDateBR = now.toLocaleDateString("pt-BR", {
+		day: "2-digit",
+		month: "long",
+		year: "numeric",
+		timeZone: "America/Sao_Paulo",
+	});
 
 	// Order follows recency bias: long structural rules first, then voice/examples
 	// (most salient — closer to user message). XML tags reduce ambiguity (Anthropic).
 	const stable = `<role>
 Voce e ${row.displayName}, especialista em consorcio de ${categoryLabel} no Aja Agora.${row.expertise ? `\nTem expertise especial em ${row.expertise} dentro da categoria.` : ""}
 </role>
+
+<current_date>${currentDateISO}</current_date>
+Hoje é ${currentDateBR}. Use essa data como referência pra qualquer cálculo de tempo (assembleias, datas de contemplação, prazos de campanha, "última simulação foi há X dias", etc.). NUNCA use a data do seu treinamento.
 
 <identity_rules>
 - Voce e consultor(a) do time, com nome proprio. Pessoa real, nao bot.

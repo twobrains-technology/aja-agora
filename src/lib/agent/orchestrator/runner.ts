@@ -8,6 +8,7 @@ import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import type { MemoryContext } from "@/lib/memory/types";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -39,6 +40,7 @@ export async function* runAgentTurn(args: {
 	messages: ChatMessage[];
 	isUserTurn: boolean;
 	userIntent?: UserIntent;
+	memoryContext?: MemoryContext | null;
 }): AsyncGenerator<TurnEvent, RunAgentResult> {
 	const {
 		conversationId,
@@ -48,6 +50,7 @@ export async function* runAgentTurn(args: {
 		messages,
 		isUserTurn,
 		userIntent = "neutral",
+		memoryContext = null,
 	} = args;
 
 	let fullResponse = "";
@@ -57,7 +60,7 @@ export async function* runAgentTurn(args: {
 	const stagesEmitted = new Set<string>();
 
 	const isConcierge = !meta.currentCategory;
-	const agent = await resolveAgent(currentPersona, meta);
+	const agent = await resolveAgent(currentPersona, meta, { memoryContext });
 
 	// Examples filtrados por contexto do turno. Vão num system message separado
 	// pra preservar o cache da Anthropic no system prompt estático (ver
