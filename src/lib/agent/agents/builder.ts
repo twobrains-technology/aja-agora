@@ -31,13 +31,15 @@ export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"
 	// Specialists always have suggest_handoff + as ferramentas de captura
 	// conversacional de lead (save_contact_name, save_contact_whatsapp,
 	// present_whatsapp_optin) + o seletor interativo de valores
-	// (present_value_picker) disponíveis — são primitivos do sistema, não
+	// (present_value_picker) + o seletor de tópicos clicáveis
+	// (present_topic_picker) disponíveis — são primitivos do sistema, não
 	// comportamento toggleable pelo admin. Sem essas tools no contexto, o
 	// agent não consegue persistir o nome/WhatsApp capturados na conversa
 	// (BUG-LEAD-CAPTURE-WEB) nem renderizar o card de seleção de faixa de
-	// crédito (BUG-CREDIT-PICKER-WEB) — cai em texto puro violando o
-	// system-prompt.
-	// CINTO+SUSPENSÓRIO: migrations 0015/0017 também adicionam no DB; o
+	// crédito (BUG-CREDIT-PICKER-WEB) nem oferecer atalhos clicáveis em vez
+	// de prometer "opções abaixo" sem produzir UI (BUG-TOPIC-PICKER-WEB) —
+	// cai em texto puro violando o system-prompt.
+	// CINTO+SUSPENSÓRIO: migrations 0015/0017/0019 também adicionam no DB; o
 	// invariante aqui garante que mesmo se admin remover via UI futuramente,
 	// o builder ainda expõe (mesmo padrão do suggest_handoff).
 	// Concierge não qualifica usuários → não precisa nenhuma dessas tools.
@@ -50,6 +52,7 @@ export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"
 				save_contact_whatsapp: consorcioTools.save_contact_whatsapp,
 				present_whatsapp_optin: consorcioTools.present_whatsapp_optin,
 				present_value_picker: consorcioTools.present_value_picker,
+				present_topic_picker: consorcioTools.present_topic_picker,
 			};
 
 	const instructions = blocks.dynamic

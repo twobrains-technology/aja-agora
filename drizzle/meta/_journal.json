@@ -134,6 +134,13 @@
       "when": 1779160000000,
       "tag": "0018_whatsapp_optin_narrative_examples",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1779170000000,
+      "tag": "0019_specialists_topic_picker",
+      "breakpoints": true
     }
   ]
 }
