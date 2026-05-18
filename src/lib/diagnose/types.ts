@@ -21,37 +21,44 @@ const userIntentEnum = z.enum([
 ]);
 
 export const suggestedExampleSchema = z.object({
-	whenExpertise: z.array(expertiseLevelEnum).min(1).optional(),
-	whenCategory: z.array(categoryEnum).min(1).optional(),
+	// .min(1) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	whenExpertise: z.array(expertiseLevelEnum).optional(),
+	// .min(1) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	whenCategory: z.array(categoryEnum).optional(),
 	whenChannel: channelEnum.optional(),
-	whenIntent: z.array(userIntentEnum).min(1).optional(),
-	userMessage: z.string().min(3).describe("Mensagem realista do usuário (1-2 frases)."),
+	// .min(1) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	whenIntent: z.array(userIntentEnum).optional(),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	userMessage: z.string().describe("Mensagem realista do usuário (1-2 frases)."),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
 	assistantResponse: z
 		.string()
-		.min(3)
 		.describe("Resposta corrigida que a persona deveria ter dado (1-2 frases)."),
-	rationale: z.string().min(3).describe("Por que esse exemplo corrige o padrão (1 frase)."),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	rationale: z.string().describe("Por que esse exemplo corrige o padrão (1 frase)."),
 });
 
 export const suggestedForbiddenTopicSchema = z.object({
-	topic: z.string().min(3).describe("Tópico que a persona não deve abordar."),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	topic: z.string().describe("Tópico que a persona não deve abordar."),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
 	responseWhenAsked: z
 		.string()
-		.min(3)
 		.describe("Orientação curta de como redirecionar quando o tópico aparecer."),
-	rationale: z.string().min(3),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	rationale: z.string(),
 });
 
 export const suggestedHandoffTriggerSchema = z.object({
-	condition: z.string().min(3).describe("Condição em linguagem natural pra escalar pra humano."),
-	rationale: z.string().min(3),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	condition: z.string().describe("Condição em linguagem natural pra escalar pra humano."),
+	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	rationale: z.string(),
 });
 
 export const diagnosisResultSchema = z.object({
-	rootCause: z
-		.string()
-		.min(10)
-		.describe("Causa raiz em 1-2 frases, citando evidência do transcript."),
+	// .min(10) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
+	rootCause: z.string().describe("Causa raiz em 1-2 frases, citando evidência do transcript."),
 	suggestedExamples: z
 		.array(suggestedExampleSchema)
 		.describe("Até 3 exemplos few-shot pra adicionar à persona."),

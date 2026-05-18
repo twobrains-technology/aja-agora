@@ -84,8 +84,30 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 				  }
 				| undefined;
 
+			// Defesa pós-LLM: os `.min(N)` do schema Zod são silenciosamente
+			// perdidos quando o AI SDK 6 traduz Zod → JSON Schema (viram só
+			// `description`). O modelo pode emitir arrays vazios ou strings
+			// curtas que passariam a validação estrutural mas violariam o
+			// contrato semântico. Sanitiza aqui pra manter o output utilizável.
+			const sanitized: DiagnosisResult = {
+				...result.object,
+				rootCause:
+					result.object.rootCause.length < 10
+						? `Análise inconclusiva: ${result.object.rootCause}`
+						: result.object.rootCause,
+				suggestedExamples: result.object.suggestedExamples
+					.filter((ex) => ex.userMessage.length >= 3)
+					.map((ex) => ({
+						...ex,
+						whenExpertise:
+							ex.whenExpertise && ex.whenExpertise.length === 0
+								? (["neutro"] as typeof ex.whenExpertise)
+								: ex.whenExpertise,
+					})),
+			};
+
 			return {
-				result: result.object,
+				result: sanitized,
 				tokensInput: usage?.inputTokens ?? usage?.promptTokens ?? 0,
 				tokensOutput: usage?.outputTokens ?? usage?.completionTokens ?? 0,
 				durationMs: Date.now() - start,
