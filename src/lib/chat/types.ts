@@ -71,6 +71,13 @@ export interface RecommendationCardPayload {
 export interface LeadFormPayload {
 	conversationId: string;
 	recommendationId?: string;
+	/**
+	 * Nome já capturado conversacionalmente (save_contact_name) durante a
+	 * conversa. Pré-preenche o campo "name" do form sem depender de fetch
+	 * tardio em `/api/leads/[id]` — quando esse fetch falhava o form
+	 * aparecia vazio mesmo com `conversations.contactName` populado.
+	 */
+	prefilledName?: string | null;
 }
 
 // ---- Quick reply payload ----

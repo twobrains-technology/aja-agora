@@ -292,7 +292,10 @@ export async function POST(req: NextRequest) {
 					writer.write({
 						type: "data-artifact",
 						id: crypto.randomUUID(),
-						data: { type: "lead_form", payload: { conversationId } },
+						data: {
+							type: "lead_form",
+							payload: { conversationId, prefilledName: contactName ?? null },
+						},
 					});
 					return;
 				}

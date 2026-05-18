@@ -43,11 +43,15 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		formState: { errors, isSubmitting },
 	} = useForm<LeadFieldsInput, unknown, LeadFields>({
 		resolver: zodResolver(leadSchema),
-		defaultValues: { name: "", phone: "", email: "" },
+		// Bug A: prioriza nome já capturado pelo backend no payload —
+		// elimina race com fetch tardio em /api/leads/[id] (que deixava
+		// o form vazio mesmo com conversations.contactName populado).
+		defaultValues: { name: payload.prefilledName ?? "", phone: "", email: "" },
 	});
 
 	// Pré-preencher com dados já capturados conversacionalmente (Fase 6).
 	// GET /api/leads/[id] retorna { name, phone, email } com strings vazias.
+	// Mantido como fallback pra phone/email — nome já vem do payload.
 	useEffect(() => {
 		const id = conversationId ?? payload.conversationId;
 		if (!id) return;
@@ -57,7 +61,9 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 			.then((data) => {
 				if (cancelled || !data) return;
 				reset({
-					name: data.name ?? "",
+					// payload.prefilledName tem prioridade sobre o fetch — só
+					// cai pro data.name se o backend não tiver enviado nada.
+					name: payload.prefilledName ?? data.name ?? "",
 					phone: data.phone ?? "",
 					email: data.email ?? "",
 				});
@@ -66,7 +72,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [conversationId, payload.conversationId, reset]);
+	}, [conversationId, payload.conversationId, payload.prefilledName, reset]);
 
 	const onSubmit = async (data: LeadFields) => {
 		try {

@@ -127,6 +127,13 @@
       "when": 1779150000000,
       "tag": "0017_specialists_value_picker",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779160000000,
+      "tag": "0018_whatsapp_optin_narrative_examples",
+      "breakpoints": true
     }
   ]
 }
