@@ -1,17 +1,23 @@
 import { loadEnvFile } from "node:process";
 
-// Carrega .env quando presente, sem falhar quando ausente (CI usa env nativo).
-// Convenção Next.js: .env.local sobrepõe .env (carregado depois).
-// Integration tests dependem de DATABASE_URL e LETTA_BASE_URL do .env.local.
-try {
-	loadEnvFile(".env");
-} catch {
-	// .env opcional
-}
+// Ordem importa: loadEnvFile NÃO sobrescreve vars já setadas.
+// Carrega prioridade mais alta PRIMEIRO (local-dev/test) e .env como baseline.
+// Integration tests dependem de DATABASE_URL e LETTA_BASE_URL do .env.local
+// (workspace OrbStack aponta Postgres em 5434; .env legacy aponta 5433).
 try {
 	loadEnvFile(".env.local");
 } catch {
 	// .env.local opcional (CI/produção usam env nativo)
+}
+try {
+	loadEnvFile(".env.test");
+} catch {
+	// .env.test opcional (override explícito de teste)
+}
+try {
+	loadEnvFile(".env");
+} catch {
+	// .env opcional (baseline; só preenche o que ainda não foi setado)
 }
 
 // Sentinel DATABASE_URL pra módulos que importam @/db em testes que não tocam DB.
