@@ -28,11 +28,25 @@ function selectTools(
 export function buildAgent(row: PersonaRow, expertise: ExpertiseLevel = "neutro"): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
 	const blocks = isConcierge ? buildConciergePrompt(row) : buildSpecialistPrompt(row, expertise);
-	// Specialists always have suggest_handoff available — it's a system primitive,
-	// not an admin-toggleable behavior. Concierge doesn't qualify users so it skips.
+	// Specialists always have suggest_handoff + as ferramentas de captura
+	// conversacional de lead (save_contact_name, save_contact_whatsapp,
+	// present_whatsapp_optin) disponíveis — são primitivos do sistema, não
+	// comportamento toggleable pelo admin. Sem essas tools no contexto, o
+	// agent não consegue persistir o nome/WhatsApp capturados na conversa →
+	// lead nunca nasce (BUG-LEAD-CAPTURE-WEB).
+	// CINTO+SUSPENSÓRIO: migration 0015 também adiciona no DB; o invariante
+	// aqui garante que mesmo se admin remover via UI futuramente, o builder
+	// ainda expõe (mesmo padrão do suggest_handoff).
+	// Concierge não qualifica usuários → não precisa nenhuma dessas tools.
 	const tools = isConcierge
 		? {}
-		: { ...selectTools(row.activeTools), suggest_handoff: consorcioTools.suggest_handoff };
+		: {
+				...selectTools(row.activeTools),
+				suggest_handoff: consorcioTools.suggest_handoff,
+				save_contact_name: consorcioTools.save_contact_name,
+				save_contact_whatsapp: consorcioTools.save_contact_whatsapp,
+				present_whatsapp_optin: consorcioTools.present_whatsapp_optin,
+			};
 
 	const instructions = blocks.dynamic
 		? [
