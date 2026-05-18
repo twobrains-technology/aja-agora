@@ -120,6 +120,13 @@
       "when": 1779140000000,
       "tag": "0016_personas_examples",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779150000000,
+      "tag": "0017_specialists_value_picker",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,6 @@ INSERT INTO "personas" ("id", "display_name", "role", "category", "voice_tone", 
   '[]'::jsonb,
   '[{"id":"ho-1-high-ticket","condition":"Cliente menciona valor da carta acima de R$ 1.000.000","enabled":true},{"id":"ho-2-juridico","condition":"Cliente menciona \"advogado\", \"ação judicial\", \"processo\" ou similar","enabled":true}]'::jsonb,
   '[{"id":"compl-1-contemplacao","topic":"garantia de contemplação em prazo específico","responseWhenAsked":"explique que contemplação acontece por sorteio ou lance vencedor — ninguém garante prazo. Foque em mostrar grupos com histórico recente de contemplações fortes.","enabled":true}]'::jsonb,
-  '["search_groups","simulate_quota","get_rates","get_group_details","recommend_groups","present_group_card","present_comparison_table","present_simulation_result","present_recommendation_card","compare_with_financing","present_financing_comparison","save_contact_name","save_contact_whatsapp","present_whatsapp_optin"]'::jsonb,
+  '["search_groups","simulate_quota","get_rates","get_group_details","recommend_groups","present_group_card","present_comparison_table","present_simulation_result","present_recommendation_card","compare_with_financing","present_financing_comparison","present_value_picker","save_contact_name","save_contact_whatsapp","present_whatsapp_optin"]'::jsonb,
   true, 1)
 ON CONFLICT ("id") DO NOTHING;
