@@ -52,6 +52,7 @@ export async function* runAgentTurn(args: {
 
 	let fullResponse = "";
 	const artifacts: ProducedArtifact[] = [];
+	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
 
@@ -85,6 +86,7 @@ export async function* runAgentTurn(args: {
 				const toolName = part.toolName;
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
+				executedToolNames.push(toolName);
 				yield { type: "tool-call", toolName, input, toolCallId };
 
 				if (toolName === "suggest_handoff") {
@@ -187,8 +189,12 @@ export async function* runAgentTurn(args: {
 		);
 	}
 
-	if (fullResponse) {
-		await saveMessage(conversationId, "assistant", fullResponse, channel, currentPersona);
+	// Persistir mesmo se turn for só-tools — admin precisa ver que o agent respondeu.
+	// Sem isso, turns como save_contact_name / present_value_picker viram ghost no histórico
+	// (bug BUG-ADMIN-MESSAGE-MISSING).
+	if (fullResponse || executedToolNames.length > 0) {
+		const content = fullResponse || `[tool: ${executedToolNames.join(", ")}]`;
+		await saveMessage(conversationId, "assistant", content, channel, currentPersona);
 	}
 
 	if (detectLeadFormArtifact(artifacts) && !meta.leadCollection) {
