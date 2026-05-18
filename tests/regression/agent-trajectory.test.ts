@@ -545,3 +545,140 @@ describe("BUG-GHOST-TURN — turn so-tool nao pode virar mensagem fantasma no hi
 		// src/app/api/chat/route.admin-message-persistence.test.ts).
 	});
 });
+
+// ============================================================================
+// CENARIO 8 — Meta-narrativa do mecanismo apos nome (BUG-META-NARRATIVE)
+// ----------------------------------------------------------------------------
+// Real (tb-dev, Bruno/moto): apos save_contact_name, agent disse
+//   "O sistema vai te guiar com botões nas próximas perguntas — é bem rápido.
+//    Primeira: você já fez algum consórcio antes?"
+// Vazou mecanica + perguntou inline em texto puro em vez de emitir gate.
+//
+// Cassette reproduz a frase original e amarra ao prompt: a regra dura
+// anti-vazamento PRECISA estar em SPECIALIST_BASE_PROMPT.
+// ============================================================================
+
+describe("BUG-META-NARRATIVE-CASSETTE — agent vazou mecanica da UI apos save_contact_name", () => {
+	it("cassette: stream com a frase original vazada — detector pega + prompt tem regra dura anti-vazamento", async () => {
+		const cassette =
+			"O sistema vai te guiar com botões nas próximas perguntas — é bem rápido. " +
+			"Primeira: você já fez algum consórcio antes?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel do bug: texto vazado, ZERO tool-call.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// Detector da frase tóxica (qualquer um dos padrões observados em prod).
+		const detectores = [
+			/o sistema (vai|ir[áa]) (te )?(guiar|conduzir|mostrar)/i,
+			/sistema vai .{0,40}(bot[oõ]es|menu|cards?)/i,
+			/(pr[óo]xim[ao]s? )?perguntas? (com|via|usando|por) bot[oõ]es/i,
+		];
+		const hits = detectores.filter((rx) => rx.test(cassette));
+		expect(hits.length, "Cassette do bug tem que casar com >=1 detector.").toBeGreaterThanOrEqual(
+			1,
+		);
+
+		// CROSS-REF: cassette é provado e o prompt PRECISA ter regra dura
+		// anti-vazamento (acopla detector ao prompt source — sem essa regra,
+		// o LLM regride e nada pega a tempo).
+		const regraDura =
+			/N(Ã|A)O.{0,200}(vaze|mencione|verbalize|diga|exponha).{0,200}(sistema|bot[õo]es|menu|próximas? perguntas?|mec[âa]nica)/i;
+		expect(
+			regraDura.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter regra dura anti-vazamento de mecanica. " +
+				"Sem isso, o LLM volta a parafrasear 'o sistema vai te guiar com botoes'.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// CENARIO 9 — "Perguntas rapidas" sem gate (BUG-PERGUNTAS-RAPIDAS)
+// ----------------------------------------------------------------------------
+// Real (mesma sessao Bruno): agent disse "Vou te fazer algumas perguntas
+// rapidas pra achar a opcao certa pra voce." e terminou turn SEM tool-call.
+// Ficou esperando user mandar "ok" pra prosseguir. Deveria emitir o gate
+// de experience IMEDIATAMENTE no mesmo turn apos save_contact_name.
+// ============================================================================
+
+describe("BUG-PERGUNTAS-RAPIDAS-CASSETTE — promessa textual sem gate emitido", () => {
+	it("cassette: stream com 'vou te fazer perguntas rapidas' + finish SEM tool-call (bug)", async () => {
+		const cassette =
+			"Vou te fazer algumas perguntas rápidas pra achar a opção certa pra você.";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel: texto promete perguntas, NENHUMA tool emitida.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// Detector da frase clássica do bug.
+		const detector = /(vou|irei) (te )?fazer (algumas )?(perguntas?\s+)?r[áa]pidas?/i;
+		expect(detector.test(cassette), "Detector tem que pegar 'vou te fazer perguntas rapidas'.").toBe(
+			true,
+		);
+
+		// CROSS-REF: prompt PRECISA proibir essa promessa textual + obrigar
+		// gate IMEDIATO após save_contact_name no mesmo turn.
+		const proibePromessa =
+			/N(Ã|A)O.{0,200}(prometa|fale|diga|escreva).{0,200}(perguntas? r[áa]pidas?|próximas? perguntas?)/i;
+		const obrigaGate =
+			/ap[óo]s\s+save_contact_name.{0,150}(emit|chame|dispare|inicie).{0,80}gate|experience/i;
+
+		expect(
+			proibePromessa.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa proibir explicitamente prometer 'perguntas rapidas' como texto.",
+		).toBe(true);
+		expect(
+			obrigaGate.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa obrigar emit gate experience IMEDIATAMENTE apos save_contact_name (web).",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// CENARIO 10 — Tool duplication (BUG-TOOL-DUPLICATION)
+// ----------------------------------------------------------------------------
+// Real (eval flow-bruna cenario 1): save_contact_name chamado 3x e
+// present_value_picker 3x na MESMA conversa. Só whatsapp_optin tinha guard.
+// Cassette reproduz 3 chamadas seguidas no MESMO turn como evidencia do bug.
+// ============================================================================
+
+describe("BUG-TOOL-DUPLICATION-CASSETTE — agent chamou save_contact_name 3x no mesmo turn", () => {
+	it("cassette: stream emite 3x save_contact_name no MESMO turn (bug)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-1", "save_contact_name", { name: "Kairo" }),
+			toolCallChunk("tc-2", "save_contact_name", { name: "Kairo" }),
+			toolCallChunk("tc-3", "save_contact_name", { name: "Kairo" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		// Reproducao fiel do bug: 3 chamadas idempotentes no mesmo turn.
+		expect(text).toBe("");
+		expect(toolCalls).toHaveLength(3);
+		expect(toolCalls.every((t) => t.toolName === "save_contact_name")).toBe(true);
+
+		// CROSS-REF: prompt PRECISA ter regra dura anti-duplicação cobrindo
+		// as tools idempotentes. Sem essa regra, o LLM repete chamadas e
+		// turn fica com payload duplicado pro frontend.
+		const regraAntiDuplicacao =
+			/(N(Ã|A)O|nunca).{0,150}(repita|chame.{0,30}mais.{0,30}uma|chame.{0,30}duas|reaproveite).{0,150}(save_contact|present_value_picker|present_topic_picker)/i;
+
+		expect(
+			regraAntiDuplicacao.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter regra dura anti-duplicação cobrindo " +
+				"save_contact_name, present_value_picker, present_topic_picker, etc.",
+		).toBe(true);
+	});
+});
