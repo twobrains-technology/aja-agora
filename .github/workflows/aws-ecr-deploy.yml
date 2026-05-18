@@ -205,3 +205,47 @@ jobs:
       - name: Inspect manifest
         run: |
           docker buildx imagetools inspect "${{ steps.repo.outputs.image_repo }}:latest"
+
+      - name: Force ECS service to pull new image
+        run: |
+          CLUSTER="tb-cluster"
+          SERVICE="${{ env.APP }}-${{ steps.vars.outputs.env }}"
+          echo "Forcing new deployment on cluster=$CLUSTER service=$SERVICE"
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'service.deployments[0].{status:status,rolloutState:rolloutState,taskDefinition:taskDefinition}' \
+            --output table
+
+      - name: Wait ECS rollout completion
+        run: |
+          CLUSTER="tb-cluster"
+          SERVICE="${{ env.APP }}-${{ steps.vars.outputs.env }}"
+          echo "Waiting rollout to complete (timeout ~10min)..."
+          # Polling em vez de wait services-stable (que pode demorar demais e nao reporta progresso)
+          for i in $(seq 1 30); do
+            state=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'services[0].deployments[?status==`PRIMARY`].rolloutState' \
+              --output text)
+            count=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'services[0].deployments | length(@)' \
+              --output text)
+            echo "[$i/30] PRIMARY rolloutState=$state deployments=$count"
+            if [ "$state" = "COMPLETED" ] && [ "$count" = "1" ]; then
+              echo "Rollout completed."
+              exit 0
+            fi
+            if [ "$state" = "FAILED" ]; then
+              echo "::error::ECS rollout FAILED"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::Rollout did not complete within ~10min"
+          exit 1
