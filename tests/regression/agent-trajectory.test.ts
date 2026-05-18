@@ -323,6 +323,112 @@ describe("BUG-TOPIC-PICKER — prometer opcoes sem chamar present_topic_picker",
 });
 
 // ============================================================================
+// CENARIO 3.1 — Topic picker variantes (BUG-TOPIC-PICKER-AUTO-VARIANT)
+// ----------------------------------------------------------------------------
+// Real (tb-dev pos-deploy 2026-05-18): Rafael (specialist auto) capturou
+// "Marcelo" e respondeu:
+//
+//   "Beleza, Marcelo! Boa, Marcelo, da uma olhada nas opcoes abaixo
+//    pra eu entender melhor o seu perfil!"
+//
+// SEM chamar present_topic_picker. Mesma familia do BUG-TOPIC-PICKER acima
+// (mig 0019 cobriu "olha as opcoes abaixo"), porem variante "da uma olhada"
+// escapou da regra original.
+//
+// E o bug nao e da persona Rafael especificamente — todas as 4 specialists
+// compartilham o SPECIALIST_BASE_PROMPT. A regra dura precisa cobrir as
+// variantes pra qualquer specialist.
+// ============================================================================
+
+describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do regex de deteccao", () => {
+	const CASSETTE_RAFAEL =
+		"Beleza, Marcelo! Boa, Marcelo, da uma olhada nas opcoes abaixo " +
+		"pra eu entender melhor o seu perfil!";
+
+	it("cassette: stream Rafael/auto com 'da uma olhada nas opcoes abaixo' SEM tool-call (bug exato tb-dev)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", CASSETTE_RAFAEL),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel: agent emitiu promessa de UI, nenhuma tool foi chamada.
+		expect(text).toBe(CASSETTE_RAFAEL);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector reforcado pega a frase do bug + variantes correlatas", () => {
+		// O detector atual em BUG-TOPIC-PICKER (linha ~305) tem buracos:
+		// '/(olha|d[áa] uma olhada|veja) (s[óo] )?(nas? )?(op[çc][õo]es?|alternativas)( abaixo)?/i'
+		// nao casa com "olha as opcoes abaixo" (sem espaco entre "as" e "opcoes"
+		// quando reduzido).
+		//
+		// Aqui usamos um detector mais robusto que TEM que pegar todas as
+		// variantes proibidas — sem buracos.
+		const detectorReforcado =
+			/(olha|olhe|d[áa] uma olhada|uma olhada|veja|confira)\b[\s\S]{0,40}(op[çc][õo]es?|alternativas|abaixo|a[íi])/i;
+
+		const variantes = [
+			CASSETTE_RAFAEL,
+			"Da uma olhada nas opcoes abaixo, qual te encaixa melhor?",
+			"olha as opcoes abaixo",
+			"veja as opções abaixo",
+			"confira abaixo as alternativas",
+			"olhe abaixo as opcoes",
+			"uma olhada nas opcoes",
+			"olha ai abaixo",
+		];
+
+		const misses = variantes.filter((v) => !detectorReforcado.test(v));
+		expect(
+			misses,
+			"Detector reforcado nao pegou variantes: " +
+				`${JSON.stringify(misses)}. ` +
+				"Se uma variante escapa, agent pode emitir promessa de UI sem tool sem trigger de regressao.",
+		).toEqual([]);
+	});
+
+	it("prompt contem regra DURA listando 'da uma olhada' + variantes acoplada a present_topic_picker", () => {
+		// Mesmo regex do cassette BUG-TOPIC-PICKER acima (linha ~316), porem
+		// EXIGINDO especificamente 'da uma olhada' como variante listada.
+		const regraComVariante =
+			/(REGRA DURA|NUNCA)[\s\S]{0,400}da uma olhada[\s\S]{0,400}present_topic_picker/i;
+
+		expect(
+			regraComVariante.test(SPECIALIST_BASE_PROMPT),
+			"REGRA DURA precisa listar 'da uma olhada' EXPLICITAMENTE proxima a " +
+				"present_topic_picker. LLM nao generaliza 'olha as opcoes' pra 'da uma " +
+				"olhada' sozinho — bug Rafael/auto em tb-dev 2026-05-18 prova isso.",
+		).toBe(true);
+	});
+
+	it("prompt cobre variantes adicionais ('confira abaixo', 'olhe abaixo', 'olha ai')", () => {
+		// Mig 0019 listou so 'olha as opcoes / veja abaixo / da uma olhada'.
+		// LLM ainda pode parafrasear pra 'confira abaixo', 'olhe abaixo', 'olha
+		// ai'. Regra dura tem que cobrir explicito.
+		const normalizar = (s: string) =>
+			s
+				.toLowerCase()
+				.replace(/ç/g, "c")
+				.replace(/õ/g, "o")
+				.replace(/á/g, "a");
+		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
+
+		const variantesExtras = ["confira abaixo", "olhe abaixo", "olha ai"];
+		const faltando = variantesExtras.filter(
+			(v) => !promptNorm.includes(normalizar(v)),
+		);
+
+		expect(
+			faltando,
+			"Variantes extras ausentes do SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"Sem elas listadas, LLM pode emitir promessa de UI parafraseada sem cair na regra.",
+		).toEqual([]);
+	});
+});
+
+// ============================================================================
 // CENARIO 4 — Value picker em texto puro (BUG-CREDIT-PICKER)
 // ----------------------------------------------------------------------------
 // Real (Helena/imovel): agent disse "Qual faixa de credito voce esta pensando?"

@@ -136,6 +136,124 @@ describe("BUG-PERGUNTAS-RAPIDAS — prompt proíbe prometer perguntas sem ação
 // BUG 3 — Tool duplication (save_contact_name 3x, present_value_picker 3x...)
 // ============================================================================
 
+// ============================================================================
+// BUG 4 — Topic picker promete UI sem chamar tool (variantes pos-mig-0019)
+// ----------------------------------------------------------------------------
+// Real (tb-dev pos-deploy): Rafael (specialist auto) capturou nome "Marcelo"
+// e respondeu:
+//
+//   "Beleza, Marcelo! Boa, Marcelo, da uma olhada nas opcoes abaixo pra eu
+//    entender melhor o seu perfil!"
+//
+// SEM chamar present_topic_picker. Mesma familia do BUG-TOPIC-PICKER
+// (mig 0019), porem com VARIANTE "da uma olhada" que escapou da regra
+// original que so listava "olha as opcoes abaixo".
+//
+// O bug nao e da persona Rafael/auto especificamente — todas as 4 specialists
+// (auto/imovel/moto/servicos) compartilham o SPECIALIST_BASE_PROMPT, entao a
+// regra dura tem que cobrir as variantes pra qualquer um deles.
+// ============================================================================
+
+describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da promessa de UI", () => {
+	// Variantes observadas + variantes plausiveis do dialeto do agent.
+	// Cada string aqui e um "gatilho semantico" — se o agent emitir essa frase
+	// SEM chamar present_topic_picker, e bug. A regra dura no prompt precisa
+	// listar cada uma EXPLICITAMENTE pra que o LLM identifique-se proibido de
+	// emitir a frase isoladamente.
+	const VARIANTES_PROIBIDAS_SEM_TOOL = [
+		"olha as opcoes",
+		"olha as opc[oõ]es", // tolerancia c/cedilha
+		"da uma olhada nas opcoes",
+		"uma olhada nas opcoes",
+		"veja abaixo",
+		"confira abaixo",
+		"olhe abaixo",
+		"olha ai",
+	];
+
+	it("REGRA DURA aparece no SPECIALIST_BASE_PROMPT acoplada a present_topic_picker", () => {
+		// Bloco da regra: marker REGRA DURA + frase + present_topic_picker
+		// dentro de ate 800 chars (mesmo paragrafo).
+		const blocoRegraDura = SPECIALIST_BASE_PROMPT.match(
+			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker/i,
+		);
+		expect(
+			blocoRegraDura,
+			"SPECIALIST_BASE_PROMPT precisa ter UM bloco 'REGRA DURA ... present_topic_picker' " +
+				"em ate 800 chars. Esse e o ancoramento estrutural do BUG-TOPIC-PICKER.",
+		).not.toBeNull();
+	});
+
+	it("o bloco da REGRA DURA lista TODAS as variantes da promessa de UI", () => {
+		// Pega o bloco da REGRA DURA acoplada a present_topic_picker.
+		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
+			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker[\s\S]{0,400}/i,
+		);
+		expect(blocoMatch).not.toBeNull();
+		if (!blocoMatch) return;
+
+		const bloco = blocoMatch[0].toLowerCase();
+		// Normaliza tolerando ç/c e õ/o pra match case-insensitive.
+		const normalizar = (s: string) =>
+			s
+				.toLowerCase()
+				.replace(/ç/g, "c")
+				.replace(/õ/g, "o")
+				.replace(/á/g, "a");
+		const blocoNorm = normalizar(bloco);
+
+		const variantes = [
+			"olha as opcoes",
+			"da uma olhada nas opcoes",
+			"uma olhada nas opcoes",
+			"veja abaixo",
+			"confira abaixo",
+			"olhe abaixo",
+			"olha ai",
+		];
+
+		const faltando = variantes.filter((v) => !blocoNorm.includes(normalizar(v)));
+
+		expect(
+			faltando,
+			"Variantes da promessa de UI ausentes da REGRA DURA no SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"Cada variante precisa estar explicita no bloco — o LLM nao generaliza " +
+				"sozinho '\\\"olha as opcoes\\\"' pra '\\\"da uma olhada\\\"' (bug observado em " +
+				"tb-dev: Rafael/auto disse 'da uma olhada nas opcoes abaixo' SEM chamar a tool).",
+		).toEqual([]);
+	});
+
+	it("regra explicita que vale pras 4 specialists (auto/imovel/moto/servicos), nao so uma", () => {
+		// SPECIALIST_BASE_PROMPT e compartilhado pelas 4 personas
+		// (auto/imovel/moto/servicos). A regra dura tem que estar nesse bloco
+		// compartilhado — nao em prompt-customization por persona.
+		// Assert: a sentencao que ancora a regra do present_topic_picker NAO pode
+		// citar uma persona/categoria especifica (sem viés).
+		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
+			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker/i,
+		);
+		expect(blocoMatch).not.toBeNull();
+		if (!blocoMatch) return;
+
+		const bloco = blocoMatch[0].toLowerCase();
+
+		// Especialistas atuais — NENHUM deve aparecer no bloco da regra dura
+		// (caso contrario, regra fica enviesada pra uma so).
+		const nomesEspecialistas = ["rafael", "helena", "bruno", "felipe", "marina"];
+		const referenciasEnviesadas = nomesEspecialistas.filter((n) => bloco.includes(n));
+		expect(
+			referenciasEnviesadas,
+			`Bloco da REGRA DURA cita nome de specialist (${JSON.stringify(referenciasEnviesadas)}). ` +
+				"A regra precisa valer pras 4 specialists igualmente. Tire o nome.",
+		).toEqual([]);
+
+		// E SPECIALIST_BASE_PROMPT precisa ser o prompt compartilhado — confirma
+		// pela presenca do placeholder/marker tipico do prompt-base.
+		expect(SPECIALIST_BASE_PROMPT.length).toBeGreaterThan(2000);
+	});
+});
+
 describe("BUG-TOOL-DUPLICATION — prompt tem guard contra repetir tools idempotentes", () => {
 	it("tem regra dura: tools de captura/picker chamadas NO MÁXIMO 1x por conversa", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
