@@ -13,6 +13,7 @@ import {
 } from "@/lib/memory/orchestrator-bridge";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
+import { isLikelyNameResponse } from "./detect-name-turn";
 import { buildSearchSummaryDirective } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
@@ -174,6 +175,34 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				{ role: "user", content: userText },
 			];
 
+	// NÍVEL 1 do fix BUG-SHORT-GREETING-AFTER-NAME: quando o turn atual é
+	// "user respondeu nome" (turno anterior do agent perguntou nome E user
+	// mandou ≤4 palavras só de letras E contactName ainda NULL), forçar
+	// `save_contact_name` via toolChoice. Detecção isolada em
+	// `detect-name-turn.ts` (unit test puro).
+	//
+	// Background: Anthropic Claude Sonnet 4-6 escapava da regra dura no
+	// prompt em variantes curtas ("Prazer, Paulo!" sem tool). Forçar via
+	// toolChoice é defesa em código — não depende de obediência do modelo.
+	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | undefined;
+	if (isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
+		// Pega o último turn do assistant no histórico salvo (já inclui o
+		// turn anterior ao user-text atual).
+		const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
+		const previousAssistantText = lastAssistant?.content;
+		const shouldForce = isLikelyNameResponse({
+			previousAssistantText,
+			currentUserText: userText,
+			conversationContactName: knownName,
+		});
+		if (shouldForce) {
+			forceToolChoice = { type: "tool", toolName: "save_contact_name" };
+			console.log(
+				`[orchestrator] force save_contact_name via toolChoice (conv=${conversationId}, user="${userText.slice(0, 40)}")`,
+			);
+		}
+	}
+
 	const result = yield* runAgentTurn({
 		conversationId,
 		channel,
@@ -183,6 +212,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		isUserTurn,
 		userIntent: analyzedIntent,
 		memoryContext,
+		forceToolChoice,
 	});
 
 	// Fire-and-forget — extrai fatos do turno e persiste no Letta.

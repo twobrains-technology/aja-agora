@@ -595,3 +595,178 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 		).toContain("moniq");
 	});
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENÁRIO CIRÚRGICO — BUG-SAVE-CONTACT-NAME-FIRE (1 turn, sem user-bot)
+//
+// Reproduz screenshot tb-dev (2026-05-18/19):
+//   1. User: "Automóvel" (transition pra Rafael)
+//   2. Agent (Rafael): "Show... como posso te chamar?"
+//   3. User: "Paulo" (resposta curta com nome puro)
+//   → Agent DEVE chamar save_contact_name(name="Paulo") ANTES de qualquer
+//     texto E DEVE prosseguir com próxima ação (tool de gate/topic/value picker).
+//
+// Falha esperada SEM toolChoice wiring no orchestrator (estado HOJE):
+//   agent responde só "Prazer, Paulo!" sem tool → conversation.contact_name
+//   permanece NULL → turn morre.
+//
+// Verde esperado APÓS wiring no runner.ts (resolveAgent com toolChoice forçado):
+//   tool_call save_contact_name capturado no turn 2 + DB persiste.
+//
+// Custo: ~15-30s (1 conversa, 2 turns Anthropic real).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-SAVE-CONTACT-NAME-CIRURGICO — Rafael capta nome em 1 turn", () => {
+	let conversationId: string | null = null;
+
+	afterAll(async () => {
+		if (conversationId) await cleanup(conversationId);
+	});
+
+	it("agent chama save_contact_name quando user responde com nome puro", async () => {
+		// Setup: cria conversation web simulada, contact_name=NULL.
+		const [conv] = await db
+			.insert(conversations)
+			.values({
+				channel: "web",
+				isSimulated: true,
+				metadata: { evalScenario: "save-contact-name-cirurgico" },
+			})
+			.returning();
+		conversationId = conv.id;
+
+		const allTurns: Turn[] = [];
+
+		// ── Turn 1: user diz "Automóvel" → orchestrator detecta categoria
+		//    auto, faz transition pra Rafael, que reage + pergunta o nome. ──
+		const t1: Turn = {
+			role: "user-bot",
+			content: "Automóvel",
+			toolCalls: [],
+			artifacts: [],
+			events: [],
+		};
+		allTurns.push(t1);
+
+		const agentT1 = await consumeAgentTurn({
+			conversationId: conv.id,
+			userText: "Automóvel",
+			isUserTurn: true,
+		});
+		allTurns.push(agentT1);
+
+		// Sanity: o transition aconteceu (Rafael entrou).
+		const transitionEv = agentT1.events.find((e) => e.type === "transition");
+		expect(
+			transitionEv,
+			`Esperado event 'transition' no turn 1 (Rafael deveria entrar). Eventos: ${agentT1.events.map((e) => e.type).join(", ")}`,
+		).toBeDefined();
+
+		// O texto do agent T1 deve perguntar o nome (âncora pra detect-name-turn).
+		expect(
+			/chamar|nome/i.test(agentT1.content),
+			`Turn 1 do agent deveria perguntar nome. Texto: "${agentT1.content}"`,
+		).toBe(true);
+
+		// ── Turn 2: user responde "Paulo" → AQUI o agent DEVE chamar
+		//    save_contact_name. Esse é o cenário crítico. ──
+		const t2: Turn = {
+			role: "user-bot",
+			content: "Paulo",
+			toolCalls: [],
+			artifacts: [],
+			events: [],
+		};
+		allTurns.push(t2);
+
+		const agentT2 = await consumeAgentTurn({
+			conversationId: conv.id,
+			userText: "Paulo",
+			isUserTurn: true,
+		});
+		allTurns.push(agentT2);
+
+		// Log diagnóstico
+		console.log(
+			`\n[CIRURGICO] Turn 1 agent text: "${agentT1.content.slice(0, 200)}"`,
+		);
+		console.log(`[CIRURGICO] Turn 1 tools: [${agentT1.toolCalls.join(", ")}]`);
+		console.log(
+			`[CIRURGICO] Turn 2 agent text: "${agentT2.content.slice(0, 200)}"`,
+		);
+		console.log(`[CIRURGICO] Turn 2 tools: [${agentT2.toolCalls.join(", ")}]`);
+		// Dump dos tool-call events com inputs (debug do bug do contact_name NULL)
+		const t2ToolEvents = agentT2.events.filter((e) => e.type === "tool-call");
+		for (const ev of t2ToolEvents) {
+			if (ev.type === "tool-call") {
+				console.log(
+					`[CIRURGICO] Turn 2 tool-call: ${ev.toolName} input=${JSON.stringify(ev.input)}`,
+				);
+			}
+		}
+		console.log(`[CIRURGICO] conversationId esperado: ${conv.id}`);
+
+		// ── ASSERTION CORE: save_contact_name foi chamado no turn 2. ──
+		const t2Tools = agentT2.toolCalls;
+		expect(
+			t2Tools,
+			`BUG-SAVE-CONTACT-NAME-FIRE: agent deveria chamar save_contact_name após user responder "Paulo". ` +
+				`Texto literal emitido: "${agentT2.content}". Tools chamadas: [${t2Tools.join(", ")}]. ` +
+				`Se vazio ou só "Prazer, Paulo!" → fix toolChoice no orchestrator é NECESSÁRIO.`,
+		).toContain("save_contact_name");
+
+		// ── ASSERTION: input da tool tem name="Paulo" (ou normalização). ──
+		const saveCallEvent = agentT2.events.find(
+			(e) => e.type === "tool-call" && e.toolName === "save_contact_name",
+		);
+		expect(saveCallEvent, "tool-call event save_contact_name deveria existir").toBeDefined();
+		if (saveCallEvent && saveCallEvent.type === "tool-call") {
+			const input = saveCallEvent.input as { name?: string };
+			expect(
+				input.name?.toLowerCase(),
+				`save_contact_name.input.name esperado conter 'paulo'. Input: ${JSON.stringify(input)}`,
+			).toContain("paulo");
+		}
+
+		// ── ASSERTION: conversationId no input bate com o real. ──
+		// BUG-CONVERSATION-ID-HALLUCINATION descoberto pelo cirúrgico:
+		// o modelo inventa "conv_001" em vez de usar o UUID real, fazendo
+		// o UPDATE no Postgres não acertar linha alguma. Fix futuro:
+		// (a) injetar conversationId no system prompt do specialist OU
+		// (b) interceptar tool-call no orchestrator e sobrescrever
+		//     conversationId com o valor canônico antes de executar.
+		if (saveCallEvent && saveCallEvent.type === "tool-call") {
+			const input = saveCallEvent.input as { conversationId?: string };
+			expect(
+				input.conversationId,
+				`save_contact_name.input.conversationId DEVE ser o UUID real "${conv.id}", ` +
+					`não um valor inventado. Visto: "${input.conversationId}". ` +
+					`Se vier "conv_001" ou similar → BUG-CONVERSATION-ID-HALLUCINATION ` +
+					`(modelo inventa ID). Fix arquitetural separado do toolChoice.`,
+			).toBe(conv.id);
+		}
+
+		// ── ASSERTION: DB persistiu contact_name após turn 2. ──
+		const refreshed = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conv.id),
+		});
+		expect(
+			refreshed?.contactName?.toLowerCase(),
+			`conversation.contact_name no DB deveria conter 'paulo' após turn 2. Visto: "${refreshed?.contactName}". ` +
+				`Se permanecer NULL apesar do tool-call ter sido feito → confirma ` +
+				`BUG-CONVERSATION-ID-HALLUCINATION (modelo passou ID inválido pra tool).`,
+		).toContain("paulo");
+
+		// ── ASSERTION: agent NÃO terminou só com greeting — fez próxima ação.
+		// Aceita: (a) chamou outra tool no mesmo turn (topic_picker, value_picker,
+		// experience picker etc.), OU (b) emitiu gate event pra próxima etapa.
+		const otherTools = t2Tools.filter((t) => t !== "save_contact_name");
+		const hasGateEvent = agentT2.events.some((e) => e.type === "gate");
+		expect(
+			otherTools.length > 0 || hasGateEvent,
+			`Turn 2 deveria ter próxima ação além de save_contact_name (tool ou gate). ` +
+				`Tools além do save: [${otherTools.join(", ")}]. Gate event: ${hasGateEvent}. ` +
+				`Texto literal: "${agentT2.content}"`,
+		).toBe(true);
+	}, 60_000);
+});

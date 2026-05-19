@@ -532,3 +532,106 @@ describe("BUG-INTERNAL-REASONING-LEAK — prompt proibe vazar chain-of-thought i
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// BUG-SHORT-GREETING-AFTER-NAME — variantes curtas "Prazer, Paulo!" escapavam
+// ----------------------------------------------------------------------------
+// Real (tb-dev pós-deploy 6b10312, 2026-05-18/19): regras duras no prompt
+// existiam mas Claude Sonnet 4-6 escapava com variantes CURTAS (2 palavras)
+// que não estavam listadas. Screenshot:
+//
+//   User: "Paulo"
+//   Rafael: "Prazer, Paulo!"  ← turn morre, sem tool save_contact_name
+//   User: "Prazer"
+//   Rafael: "Beleza, Paulo."  ← turn morre de novo
+//
+// Fix de prompt (Nível 2 do combo): mover o bloco BUG-SAVE-CONTACT-NAME-MUST-
+// FIRE para o TOPO do SPECIALIST_BASE_PROMPT + adicionar exemplos BAD/GOOD
+// literais com "Prazer, Paulo!" + lista expandida de variantes curtas.
+//
+// Nível 1 do combo: forçar tool via `toolChoice` em
+// src/lib/agent/orchestrator/detect-name-turn.ts — cobertura em
+// detect-name-turn.test.ts e tests/regression/agent-trajectory.test.ts.
+// ============================================================================
+
+describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal + lista expandida de variantes curtas", () => {
+	it("contém o exemplo BAD literal 'Prazer, Paulo!' (transcrição real do bug)", () => {
+		// O bug exato precisa estar no prompt como exemplo — LLM presta atenção
+		// em exemplos LITERAIS muito mais que em descrições abstratas.
+		const exemploBadPaulo =
+			/❌\s*BAD[\s\S]{0,200}user[\s\S]{0,40}["“]paulo["”][\s\S]{0,200}["“]prazer,?\s*paulo!?["”]/i;
+		expect(
+			exemploBadPaulo.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa conter exemplo BAD literal com User:\"Paulo\" " +
+				"+ resposta:\"Prazer, Paulo!\" — transcrição real do bug tb-dev. " +
+				"Sem exemplo literal, o LLM regride pra variante curta de novo.",
+		).toBe(true);
+	});
+
+	it("contém exemplo GOOD literal mostrando save_contact_name ANTES da saudação", () => {
+		// O GOOD precisa ser ESPELHO do BAD: mesmo input ("Paulo"), mesma
+		// saudação ("Prazer, Paulo!"), porém com [chame save_contact_name(...)]
+		// ANTES do texto. Esse contraste explícito é o que o modelo aprende.
+		const exemploGoodPaulo =
+			/✅\s*GOOD[\s\S]{0,200}user[\s\S]{0,40}["“]paulo["”][\s\S]{0,400}save_contact_name[\s\S]{0,200}["“]prazer,?\s*paulo!?["”]/i;
+		expect(
+			exemploGoodPaulo.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa conter exemplo GOOD com [chame save_contact_name(name=\"Paulo\")] " +
+				"ANTES da saudação \"Prazer, Paulo!\". É o espelho do BAD pra reforçar contraste.",
+		).toBe(true);
+	});
+
+	it("lista expandida de variantes CURTAS proibidas inclui 'Prazer', 'Beleza', 'Oi', 'Bom te conhecer'", () => {
+		// Variantes curtas (2 palavras: saudação + nome) que escaparam da lista
+		// de 9 variantes longas (Vamos achar a opcao certa etc.). Precisa estar
+		// listadas explicitas porque LLM não generaliza.
+		const variantesEsperadas = [
+			'"prazer, x!"',
+			'"beleza, x!"',
+			'"bom te conhecer, x!"',
+			'"oi, x!"',
+		];
+		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
+		const faltando = variantesEsperadas.filter((v) => !promptLower.includes(v));
+		expect(
+			faltando,
+			"Variantes curtas ausentes do SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"Listar como \"Prazer, X!\" (com 'X' como placeholder) explicita pro LLM " +
+				"que QUALQUER saudação curta + nome SEM tool é proibida.",
+		).toEqual([]);
+	});
+
+	it("bloco de captura de nome aparece no TOPO do SPECIALIST_BASE_PROMPT (alta prioridade de atenção)", () => {
+		// Mover pro topo é parte do fix do prompt. LLMs prestam mais atenção
+		// nas instruções iniciais (recency reverso quando o prompt é longo).
+		// Asserta que a primeira ocorrência de "save_contact_name" no prompt
+		// está dentro dos primeiros 200 chars — ou seja, é a primeira regra,
+		// não enterrada lá no meio.
+		const firstSaveContactIdx = SPECIALIST_BASE_PROMPT.indexOf("save_contact_name");
+		expect(
+			firstSaveContactIdx,
+			"save_contact_name precisa aparecer no SPECIALIST_BASE_PROMPT.",
+		).toBeGreaterThanOrEqual(0);
+		expect(
+			firstSaveContactIdx,
+			"Primeira menção de save_contact_name precisa estar nos primeiros 200 chars " +
+				"do SPECIALIST_BASE_PROMPT (= regra no TOPO). Atualmente em pos=" +
+				firstSaveContactIdx +
+				". Mover o bloco BUG-SAVE-CONTACT-NAME-MUST-FIRE pro topo é parte do fix.",
+		).toBeLessThan(200);
+	});
+
+	it("bloco de captura de nome tem marker explícito de topo (e.g. 'LE PRIMEIRO')", () => {
+		// Defesa contra alguém reordenar: o bloco do topo tem um marker
+		// visível ("LE PRIMEIRO", "TOPO", "ATENCAO MAXIMA") pra resistir a
+		// refactors.
+		const markerDeTopo = /(LE PRIMEIRO|LEIA PRIMEIRO|TOPO DO PROMPT|ATEN[ÇC][ÃA]O M[ÁA]XIMA)/i;
+		expect(
+			markerDeTopo.test(SPECIALIST_BASE_PROMPT.slice(0, 500)),
+			"Primeiros 500 chars do prompt precisam ter marker visível " +
+				"(LE PRIMEIRO / LEIA PRIMEIRO / TOPO DO PROMPT). Marker = resistência " +
+				"a refactor (alguém move sem perceber, marker grita).",
+		).toBe(true);
+	});
+});

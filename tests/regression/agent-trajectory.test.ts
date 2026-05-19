@@ -1193,6 +1193,217 @@ describe("BUG-NO-CTA-AFTER-NAME-CASSETTE — frase afirmativa generica encerrou 
 // engine interna (gatilhos, tetos, regras compliance). Reportado por user.
 // ============================================================================
 
+// ============================================================================
+// CENARIO 16 — Variante curta "Prazer, Paulo!" sem tool (BUG-SHORT-GREETING-NO-TOOL)
+// ----------------------------------------------------------------------------
+// Real (tb-dev pos-deploy 6b10312, 2026-05-18/19): regras duras no prompt
+// existiam mas Claude Sonnet 4-6 escapava com variantes CURTAS (2 palavras):
+//
+//   User: "Paulo"
+//   Rafael: "Prazer, Paulo!"  ← turn morre, sem tool save_contact_name
+//   User: "Prazer"
+//   Rafael: "Beleza, Paulo."  ← turn morre de novo
+//
+// Cassette reproduz: stream emite "Prazer, Paulo!" + finish SEM tool-call.
+// Asserts:
+//   - detector regex pega variantes curtas (Prazer/Beleza/Oi/Bom te conhecer)
+//   - prompt fonte tem exemplo BAD/GOOD literal + lista expandida
+// ============================================================================
+
+describe("BUG-SHORT-GREETING-NO-TOOL — agent emite 'Prazer, Paulo!' sem chamar save_contact_name", () => {
+	const SHORT_GREETING_REGEX =
+		/^(Prazer|Beleza|Oi|Bom te conhecer|Show|Ótimo|Otimo|Legal)[,!]?\s*\w+[!.]?$/i;
+
+	it("cassette: stream com 'Prazer, Paulo!' + finish SEM tool-call (bug exato tb-dev pós-6b10312)", async () => {
+		const cassette = "Prazer, Paulo!";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel do bug: texto curto saudando nome, ZERO tool.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// Detector tem que casar com a variante curta — provando que o
+		// regex pega o bug, não só as variantes longas (vamos achar etc.).
+		expect(
+			SHORT_GREETING_REGEX.test(cassette),
+			"Detector de variante curta tem que pegar 'Prazer, Paulo!'. " +
+				"Se nao pega, regex tem buraco e variante escapa.",
+		).toBe(true);
+	});
+
+	it("detector pega todas as 4 variantes curtas observadas (Prazer/Beleza/Oi/Bom te conhecer)", () => {
+		const variantesObservadas = [
+			"Prazer, Paulo!",
+			"Beleza, Paulo.",
+			"Oi, Marina!",
+			"Bom te conhecer, Kairo!",
+			"Show, Carlos!",
+		];
+		const misses = variantesObservadas.filter((v) => !SHORT_GREETING_REGEX.test(v));
+		expect(
+			misses,
+			"Detector falhou nas variantes: " +
+				`${JSON.stringify(misses)}. ` +
+				"Se uma variante escapa, o bug volta a passar sem trigger de regressao.",
+		).toEqual([]);
+	});
+
+	it("cassette: stream com 'Beleza, Paulo.' SEM tool — variante alternativa do mesmo bug", async () => {
+		const cassette = "Beleza, Paulo.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(SHORT_GREETING_REGEX.test(cassette)).toBe(true);
+	});
+
+	it("prompt source: exemplo BAD literal com User:'Paulo' + 'Prazer, Paulo!' (transcrição real)", () => {
+		// CROSS-REF: o prompt PRECISA ter o exemplo literal — LLM aprende
+		// com exemplo > com descrição abstrata.
+		const exemploBadPaulo =
+			/❌\s*BAD[\s\S]{0,200}user[\s\S]{0,40}["“]paulo["”][\s\S]{0,200}["“]prazer,?\s*paulo!?["”]/i;
+		expect(
+			exemploBadPaulo.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa conter exemplo BAD literal " +
+				"User:\"Paulo\" + agent:\"Prazer, Paulo!\". É a transcrição real do bug.",
+		).toBe(true);
+	});
+
+	it("prompt source: lista expandida tem 'Prazer, X!', 'Beleza, X!', 'Oi, X!', 'Bom te conhecer, X!'", () => {
+		const variantes = [
+			'"prazer, x!"',
+			'"beleza, x!"',
+			'"oi, x!"',
+			'"bom te conhecer, x!"',
+		];
+		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
+		const faltando = variantes.filter((v) => !promptLower.includes(v));
+		expect(
+			faltando,
+			"Variantes curtas ausentes do SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"Sem cada uma listada, LLM nao generaliza 'Prazer' pra 'Beleza'.",
+		).toEqual([]);
+	});
+});
+
+// ============================================================================
+// CENARIO 17 — Force save_contact_name via toolChoice (BUG-FORCE-SAVE-CONTACT-NAME)
+// ----------------------------------------------------------------------------
+// Nivel 1 do fix BUG-SHORT-GREETING-AFTER-NAME: quando o orchestrator detecta
+// "user respondeu nome" via isLikelyNameResponse, força toolChoice no
+// streamText. Esse cassette ancora:
+//   - isLikelyNameResponse() retorna true pro padrão exato do bug
+//   - resolveAgent bypassa cache e constrói agent ad-hoc com toolChoice
+//   - builder.ts repassa toolChoice pro new ToolLoopAgent()
+//
+// Não dá pra mockar a chamada ao Anthropic e validar que toolChoice chegou
+// no provider (isso é coberto pelos contract tests da AI SDK). Aqui validamos
+// o WIRING: source do orchestrator/index.ts importa isLikelyNameResponse,
+// passa toolChoice pro runner, runner passa pro resolveAgent, resolveAgent
+// passa pro buildAgent.
+// ============================================================================
+
+describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name via toolChoice quando detect-name-turn match", () => {
+	it("isLikelyNameResponse retorna true pro padrão exato do bug (previousAsk + 'Paulo' + contactName=null)", async () => {
+		const { isLikelyNameResponse } = await import(
+			"@/lib/agent/orchestrator/detect-name-turn"
+		);
+		expect(
+			isLikelyNameResponse({
+				previousAssistantText:
+					"Boa, carro novo abre muitas portas! Aqui é a Helena, antes de eu te ajudar, como posso te chamar?",
+				currentUserText: "Paulo",
+				conversationContactName: null,
+			}),
+		).toBe(true);
+	});
+
+	it("orchestrator/index.ts importa isLikelyNameResponse e calcula forceToolChoice", () => {
+		const indexSrc = readSource("src/lib/agent/orchestrator/index.ts");
+		expect(
+			/from\s+["']\.\/detect-name-turn["']/.test(indexSrc),
+			"index.ts precisa importar de ./detect-name-turn — caso contrário a " +
+				"detecção não acontece e toolChoice nunca é forçado.",
+		).toBe(true);
+		expect(
+			/isLikelyNameResponse\s*\(/.test(indexSrc),
+			"index.ts precisa CHAMAR isLikelyNameResponse — sem chamada, helper " +
+				"existe mas não é usado e o bug volta.",
+		).toBe(true);
+		expect(
+			/forceToolChoice/.test(indexSrc),
+			"index.ts precisa declarar `forceToolChoice` — variável de gate que " +
+				"vira o param do runAgentTurn.",
+		).toBe(true);
+		expect(
+			/toolName:\s*["']save_contact_name["']/.test(indexSrc),
+			"index.ts precisa setar toolName='save_contact_name' no toolChoice " +
+				"forçado. Sem isso, força tool errada (ou nenhuma).",
+		).toBe(true);
+	});
+
+	it("runner.ts aceita forceToolChoice e passa pro resolveAgent", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(
+			/forceToolChoice/.test(runnerSrc),
+			"runner.ts precisa receber forceToolChoice no args — sem isso o " +
+				"orchestrator não consegue passar.",
+		).toBe(true);
+		expect(
+			/resolveAgent\([\s\S]{0,300}toolChoice/.test(runnerSrc),
+			"runner.ts precisa passar `toolChoice` (vindo de forceToolChoice) pro " +
+				"resolveAgent. Sem isso, o resolveAgent ignora e cache padrão é usado.",
+		).toBe(true);
+	});
+
+	it("agents/index.ts (resolveAgent) bypassa cache quando toolChoice é passado", () => {
+		const agentIdxSrc = readSource("src/lib/agent/agents/index.ts");
+		// Comentário do bypass + ramo de código que constrói buildAgent sem
+		// agentCache.set quando opts.toolChoice é truthy.
+		expect(
+			/if\s*\(\s*opts\.toolChoice\s*\)\s*{[\s\S]{0,400}return\s+buildAgent/.test(agentIdxSrc),
+			"resolveAgent precisa ter ramo `if (opts.toolChoice) { return buildAgent(...) }` " +
+				"BYPASSANDO o cache. Caso contrário, agent cached (sem toolChoice) " +
+				"seria devolvido e a tool não seria forçada.",
+		).toBe(true);
+	});
+
+	it("builder.ts repassa opts.toolChoice pro construtor do ToolLoopAgent", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(
+			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*}/.test(builderSrc),
+			"builder.ts precisa fazer spread condicional `...(opts.toolChoice ? " +
+				"{ toolChoice: opts.toolChoice } : {})` no settings do new ToolLoopAgent. " +
+				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic.",
+		).toBe(true);
+	});
+
+	it("cassette: stream onde modelo (forçado por toolChoice) chama save_contact_name corretamente", async () => {
+		// Quando toolChoice forçar a tool, o modelo emite tool-call sem texto.
+		// Esse cassette reproduz o cenário "modelo obedeceu a força": single
+		// tool-call de save_contact_name + finish 'tool-calls'.
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-force-1", "save_contact_name", { name: "Paulo" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(text).toBe("");
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("save_contact_name");
+		expect(toolCalls[0]?.input).toMatchObject({ name: "Paulo" });
+	});
+});
+
 describe("BUG-INTERNAL-REASONING-LEAK-CASSETTE — agent vazou chain-of-thought pro usuario", () => {
 	it("cassette: stream com 'Motivo:' + 'Reavaliando...' + 'acima do teto' (bug exato tb-dev)", async () => {
 		const cassette =

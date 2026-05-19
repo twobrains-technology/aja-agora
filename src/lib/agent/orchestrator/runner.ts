@@ -1,3 +1,4 @@
+import type { ToolChoice } from "ai";
 import { db } from "@/db";
 import { artifacts as artifactsTable } from "@/db/schema";
 import { resolveAgent } from "@/lib/agent/agents";
@@ -44,6 +45,14 @@ export async function* runAgentTurn(args: {
 	isUserTurn: boolean;
 	userIntent?: UserIntent;
 	memoryContext?: MemoryContext | null;
+	/**
+	 * Quando passado, força o modelo a chamar essa tool neste turn (via
+	 * AI SDK 6 `toolChoice`). Calculado pelo orchestrator em `index.ts`
+	 * via `isLikelyNameResponse()` — fix BUG-SHORT-GREETING-AFTER-NAME
+	 * Nível 1. Bypassa o cache de agents.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: ToolChoice<T> é genérico sobre o ToolSet do agent — repassamos como-está pro resolveAgent.
+	forceToolChoice?: ToolChoice<any>;
 }): AsyncGenerator<TurnEvent, RunAgentResult> {
 	const {
 		conversationId,
@@ -54,6 +63,7 @@ export async function* runAgentTurn(args: {
 		isUserTurn,
 		userIntent = "neutral",
 		memoryContext = null,
+		forceToolChoice,
 	} = args;
 
 	let fullResponse = "";
@@ -63,7 +73,10 @@ export async function* runAgentTurn(args: {
 	const stagesEmitted = new Set<string>();
 
 	const isConcierge = !meta.currentCategory;
-	const agent = await resolveAgent(currentPersona, meta, { memoryContext });
+	const agent = await resolveAgent(currentPersona, meta, {
+		memoryContext,
+		toolChoice: forceToolChoice,
+	});
 
 	// Examples filtrados por contexto do turno. Vão num system message separado
 	// pra preservar o cache da Anthropic no system prompt estático (ver

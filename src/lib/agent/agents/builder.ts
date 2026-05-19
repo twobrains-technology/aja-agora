@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { stepCountIs, ToolLoopAgent } from "ai";
+import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
 import {
@@ -13,11 +13,12 @@ import { consorcioTools } from "../tools/ai-sdk";
 const anthropic = createAnthropic();
 
 type ConsorcioToolName = keyof typeof consorcioTools;
+type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;
 
 function selectTools(
 	activeTools: string[],
-): Record<string, (typeof consorcioTools)[ConsorcioToolName]> {
-	const out: Record<string, (typeof consorcioTools)[ConsorcioToolName]> = {};
+): ConsorcioToolSet {
+	const out: ConsorcioToolSet = {};
 	for (const name of activeTools) {
 		if (name in consorcioTools) {
 			const key = name as ConsorcioToolName;
@@ -45,7 +46,24 @@ function selectTools(
 export function buildAgent(
 	row: PersonaRow,
 	expertise: ExpertiseLevel = "neutro",
-	opts: { currentDate?: Date; memoryContext?: MemoryContext | null } = {},
+	opts: {
+		currentDate?: Date;
+		memoryContext?: MemoryContext | null;
+		/**
+		 * Força o modelo a chamar uma tool específica neste turno.
+		 *
+		 * Quando passado, é repassado pro `ToolLoopAgent` como `toolChoice`
+		 * — Anthropic obriga o modelo a usar essa tool antes de qualquer
+		 * texto. Usado no fix BUG-SHORT-GREETING-AFTER-NAME (Nível 1) pra
+		 * forçar `save_contact_name` quando o turn é "user respondeu com
+		 * nome" (detectado em `orchestrator/detect-name-turn.ts`).
+		 *
+		 * Agent cache em `agents/index.ts` é bypassed quando esse opt é
+		 * passado — agent ad-hoc construído a cada turn forçado (raro,
+		 * só 1 vez por conversa, ok).
+		 */
+		toolChoice?: ToolChoice<ConsorcioToolSet>;
+	} = {},
 ): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
 	const blocks = isConcierge
@@ -110,7 +128,7 @@ export function buildAgent(
 		? [...baseInstructions, { role: "system" as const, content: memoryText }]
 		: baseInstructions;
 
-	return new ToolLoopAgent({
+	const settings = {
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
 		instructions,
 		tools,
@@ -118,5 +136,14 @@ export function buildAgent(
 		// ones at sampling level (Claude only exposes temperature, no topP/penalty).
 		temperature: row.temperature,
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
-	});
+		// Quando o orchestrator detectar "user respondeu nome" (cf.
+		// detect-name-turn.ts), passa toolChoice: { type: 'tool',
+		// toolName: 'save_contact_name' } pra obrigar o modelo a chamar.
+		// Default 'auto' quando undefined. Cast no settings inteiro porque
+		// o ToolLoopAgent generic infere `TOOLS={}` empty no construtor —
+		// não dá pra fixar o type do ToolChoice via inference normal.
+		...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+	};
+	// biome-ignore lint/suspicious/noExplicitAny: ver comentário acima — generic inference do construtor não fixa o ToolSet.
+	return new ToolLoopAgent(settings as any);
 }
