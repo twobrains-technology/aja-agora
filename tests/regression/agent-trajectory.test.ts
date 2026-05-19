@@ -1712,3 +1712,247 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// CENARIO 20 — BUG-ASSISTANT-* (AI Assistant no backoffice de personas)
+// ----------------------------------------------------------------------------
+// AI Assistant é um agente novo no backoffice que ajuda admins leigos a
+// configurar personas via linguagem natural. Tem regras hard:
+//   1. Antes de propor patch, deve desambiguar input vago (ask_clarification)
+//   2. Antes de propose_patch com texto livre, deve validate_against_rules
+//   3. propose_patch.execute rejeita server-side quando viola HARD_RULES
+//   4. patch.before precisa bater com row atual (anti-LLM-invention)
+//   5. personaVersionSeen precisa estar atualizado (anti-race-condition)
+//
+// Defesa estrutural completa em:
+//   - src/lib/agent/assistant-prompt.ts (prompt)
+//   - src/lib/agent/tools/assistant-tools.ts (factory + validações server)
+//   - src/lib/agent/assistant-prompt.test.ts (prompt source)
+//   - src/lib/agent/tools/assistant-tools.test.ts (tool execute)
+// ============================================================================
+
+describe("BUG-ASSISTANT-AMBIGUOUS-MUST-ASK — input vago deve disparar ask_clarification antes de propose_patch", () => {
+	it("cassette: LLM emite ask_clarification em resposta a 'menos formal'", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-ask-1", "ask_clarification", {
+				question:
+					"Menos formal igual amigo no zap, ou só menos técnico mas ainda profissional?",
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("ask_clarification");
+		expect(toolCalls[0]?.toolName).not.toBe("propose_patch");
+	});
+
+	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui desambiguar antes de propor", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const regraDesambigua =
+			/(desambigu|vag[oa]|amb[íi]gu[oa])[\s\S]{0,400}ask_clarification/i;
+		expect(
+			regraDesambigua.test(ASSISTANT_BASE_PROMPT),
+			"ASSISTANT_BASE_PROMPT precisa instruir ask_clarification antes de propor quando input é vago",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-PROPOSAL-MUST-VALIDATE — validate_against_rules antes de propose_patch", () => {
+	it("cassette: LLM chama validate_against_rules antes de propose_patch quando há texto livre", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-v-1", "validate_against_rules", {
+				text: "casual, próximo, fala como amigo no zap",
+				field: "voiceTone",
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls[0]?.toolName).toBe("validate_against_rules");
+	});
+
+	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui validar com validate_against_rules antes de propose_patch", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const regraValidaAntes =
+			/valid[\s\S]{0,400}(antes|ANTES)[\s\S]{0,400}propose_patch|validate_against_rules[\s\S]{0,400}propose_patch/i;
+		expect(
+			regraValidaAntes.test(ASSISTANT_BASE_PROMPT),
+			"ASSISTANT_BASE_PROMPT precisa instruir validate_against_rules ANTES de propose_patch",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas pos-nome é rejeitado server-side", () => {
+	it("propose_patch.execute rejeita voiceTone contendo 9 variantes proibidas", async () => {
+		const { buildAssistantTools } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const tools = buildAssistantTools({
+			personaId: "p1",
+			personaVersion: 1,
+			currentRow: {
+				voiceTone: "formal e técnico",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		});
+
+		const variantes = [
+			"casual e Vamos achar a opção certa juntos",
+			"próximo, Vou te ajudar sempre",
+			"amigável, Estou aqui pra ajudar",
+		];
+
+		for (const after of variantes) {
+			const result = await tools.propose_patch.execute(
+				{
+					kind: "voiceTone",
+					before: "formal e técnico",
+					after,
+					rationale: "test",
+					personaVersionSeen: 1,
+				},
+				{} as never,
+			);
+			expect(result.ok, `voiceTone "${after}" deveria ter sido rejeitado`).toBe(
+				false,
+			);
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md lista variantes proibidas pos-nome", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const variantes = [
+			"Vamos achar a opção certa",
+			"Vou te ajudar",
+			"Estou aqui pra ajudar",
+		];
+		for (const variante of variantes) {
+			expect(
+				hardRules.toLowerCase().includes(variante.toLowerCase()),
+				`HARD_RULES.md precisa listar "${variante}" como proibida`,
+			).toBe(true);
+		}
+	});
+});
+
+describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com before inventado e version stale", () => {
+	it("propose_patch.execute rejeita voiceTone com before que não bate com row atual", async () => {
+		const { buildAssistantTools } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const tools = buildAssistantTools({
+			personaId: "p1",
+			personaVersion: 1,
+			currentRow: {
+				voiceTone: "TOM ATUAL REAL",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		});
+
+		const result = await tools.propose_patch.execute(
+			{
+				kind: "voiceTone",
+				before: "tom inventado pelo LLM",
+				after: "tom novo válido",
+				rationale: "x",
+				personaVersionSeen: 1,
+			},
+			{} as never,
+		);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/before.*não bate/i);
+		}
+	});
+
+	it("propose_patch.execute rejeita patch com personaVersionSeen stale (race condition)", async () => {
+		const { buildAssistantTools } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const tools = buildAssistantTools({
+			personaId: "p1",
+			personaVersion: 5,
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		});
+
+		const result = await tools.propose_patch.execute(
+			{
+				kind: "voiceTone",
+				before: "x",
+				after: "y",
+				rationale: "r",
+				personaVersionSeen: 3,
+			},
+			{} as never,
+		);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/vers[ãa]o|version=3/i);
+		}
+	});
+});
+
+describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantResponse vaza chain-of-thought é rejeitado", () => {
+	it("propose_patch rejeita example.add com 'Motivo:' / 'Reavaliando' no assistantResponse", async () => {
+		const { buildAssistantTools } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const tools = buildAssistantTools({
+			personaId: "p1",
+			personaVersion: 1,
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		});
+
+		const samples = [
+			"Vou te conectar com humano. Motivo: valor acima do teto de R$ 3M.",
+			"Espera aí — Reavaliando se faz sentido seguir com consórcio.",
+		];
+
+		for (const assistantResponse of samples) {
+			const result = await tools.propose_patch.execute(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-leak",
+						userMessage: "tudo bem?",
+						assistantResponse,
+					},
+					rationale: "test",
+					personaVersionSeen: 1,
+				},
+				{} as never,
+			);
+			expect(
+				result.ok,
+				`assistantResponse "${assistantResponse}" deveria ter sido rejeitado`,
+			).toBe(false);
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md lista 'Motivo:' e 'Reavaliando' como prefixos proibidos", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/Motivo:/);
+		expect(hardRules).toMatch(/Reavaliando/i);
+	});
+});
