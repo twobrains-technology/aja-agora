@@ -1056,3 +1056,198 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// CENARIO 13 — save_contact_name nao dispara apos user dizer o nome
+//              (BUG-SAVE-CONTACT-NAME-MUST-FIRE)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, conversa Monique 6c0ca4cf): user disse "Monique.",
+// agent respondeu "Prazer, Monique! Vamos achar a opção certa pra você." SEM
+// chamar save_contact_name no turn. contact_name ficou NULL no DB. 7 mencoes
+// do nome no historico do agent, ZERO persistencia. Causa raiz reportada do
+// BUG-LEAD-FORM-PREFILL-REGRESSION (fix b7fc39e mexeu no payload mas nome
+// nunca chegava ali).
+// ============================================================================
+
+describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE-CASSETTE — agent saudou com nome SEM chamar save_contact_name", () => {
+	it("cassette: stream com 'Prazer, Monique!' + finish SEM tool-call save_contact_name (bug exato)", async () => {
+		// Reproducao fiel do bug Monique tb-dev.
+		const cassette =
+			"Prazer, Monique!Vamos achar a opção certa pra você.Qual faixa de crédito você tem em mente?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Bug evidence: nome mencionado, ZERO save_contact_name.
+		expect(text).toBe(cassette);
+		expect(toolCalls.filter((t) => t.toolName === "save_contact_name")).toEqual([]);
+
+		// Detector: agent mencionou nome próprio (capitalized after greeting)
+		// sem chamar a tool de captura.
+		const mencionaNome =
+			/(prazer|beleza|show|oi|ol[áa]),?\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+!?/i;
+		expect(
+			mencionaNome.test(cassette),
+			"Cassette tem que conter saudacao com nome para detectar — se o regex falhar, atualize.",
+		).toBe(true);
+	});
+
+	it("prompt source: REGRA DURA acopla save_contact_name a obrigatoriedade ANTES de saudar", () => {
+		// CROSS-REF: amarra cassette ao prompt — sem REGRA DURA marker, agent
+		// regride pra "guideline ignoravel".
+		const regraDuraSaveContact =
+			/REGRA DURA[\s\S]{0,400}save_contact_name|save_contact_name[\s\S]{0,400}REGRA DURA/i;
+		expect(
+			regraDuraSaveContact.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter marker 'REGRA DURA' acoplado a save_contact_name. " +
+				"Sem isso o agent saudA com nome ('Prazer, Monique!') sem persistir → contact_name NULL.",
+		).toBe(true);
+
+		// Ordem temporal: ANTES de saudar/usar nome no texto, chame a tool.
+		const ordemTemporal =
+			/ANTES[\s\S]{0,200}(saudar|usar o nome|mencionar|responder|texto)[\s\S]{0,300}(OBRIGAT|chame|deve chamar)[\s\S]{0,200}save_contact_name/i;
+		const ordemReversa =
+			/save_contact_name[\s\S]{0,200}ANTES[\s\S]{0,200}(saudar|texto|resposta|saudacao)/i;
+		expect(
+			ordemTemporal.test(SPECIALIST_BASE_PROMPT) ||
+				ordemReversa.test(SPECIALIST_BASE_PROMPT),
+			"Regra precisa estabelecer ordem temporal explicita: ANTES de saudar com nome → " +
+				"OBRIGATORIO save_contact_name. Sem isso o flow regride.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// CENARIO 14 — Turn termina sem CTA apos nome (BUG-NO-CTA-AFTER-NAME)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, Rafael/Marina): agent disse "Beleza, Marina! Prazer,
+// Marina! Vamos achar a opção certa pra você." e PAROU. Sem tool. Sem gate.
+// Turn morreu. User precisou digitar "oi" pra reativar.
+//
+// Vale pras 4 specialists. Regra anterior bc40a85 ("gate IMEDIATAMENTE apos
+// save_contact_name") era vaga — agent tratou frase afirmativa como acao.
+// ============================================================================
+
+describe("BUG-NO-CTA-AFTER-NAME-CASSETTE — frase afirmativa generica encerrou turn sem tool", () => {
+	it("cassette: stream Rafael/Marina com 'Vamos achar a opcao certa' + finish SEM tool (bug)", async () => {
+		const cassette =
+			"Beleza, Marina! Prazer, Marina! Vamos achar a opção certa pra você.";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel: texto afirmativo, ZERO tool.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// Detector: lista das 9 variantes proibidas que encerram turn no vazio.
+		const variantesCTAVazia = [
+			/vamos achar a op[çc][ãa]o certa/i,
+			/vamos come[çc]ar/i,
+			/vou te ajudar/i,
+			/estou aqui pra ajudar/i,
+			/vamos juntos/i,
+			/vamos l[áa]/i,
+			/bora come[çc]ar/i,
+			/vamos descobrir/i,
+			/vou achar o melhor/i,
+		];
+		const hits = variantesCTAVazia.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			"Detector tem que casar com >=1 variante. Cassette: " + cassette,
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("prompt source: REGRA DURA lista as 9 variantes proibidas explicitamente", () => {
+		// CROSS-REF: regra precisa listar cada variante — LLM nao generaliza.
+		const blocoCTA = SPECIALIST_BASE_PROMPT.match(
+			/REGRA DURA[\s\S]{0,1200}(vamos achar a op[çc][ãa]o certa|vamos come[çc]ar)[\s\S]{0,800}/i,
+		);
+		expect(
+			blocoCTA,
+			"SPECIALIST_BASE_PROMPT precisa ter REGRA DURA listando variantes CTA-vazia " +
+				"proximas a 'vamos achar a opcao certa'/'vamos comecar'. Sem isso o turn morre.",
+		).not.toBeNull();
+	});
+});
+
+// ============================================================================
+// CENARIO 15 — Vazamento de raciocinio interno (BUG-INTERNAL-REASONING-LEAK)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18): card mostrado ao usuario continha:
+//   "Pra esse caso especificamente, recomendo conversar direto com nosso
+//    consultor humano.
+//    Motivo: Cliente informou valor de credito de R$ 2.130.000, acima do teto
+//    de R$ 3.000.000 — não atingiu o gatilho, mas valor é de alto porte.
+//    Reavaliando... valor está abaixo de R$ 3.000.000, handoff não é
+//    obrigatório."
+//
+// Agent vazou chain-of-thought literal ("Motivo:", "Reavaliando...") + expos
+// engine interna (gatilhos, tetos, regras compliance). Reportado por user.
+// ============================================================================
+
+describe("BUG-INTERNAL-REASONING-LEAK-CASSETTE — agent vazou chain-of-thought pro usuario", () => {
+	it("cassette: stream com 'Motivo:' + 'Reavaliando...' + 'acima do teto' (bug exato tb-dev)", async () => {
+		const cassette =
+			"Pra esse caso especificamente, recomendo conversar direto com nosso consultor humano.\n\n" +
+			"Motivo: Cliente informou valor de credito de R$ 2.130.000, acima do teto de R$ 3.000.000 — " +
+			"não atingiu o gatilho, mas valor é de alto porte. Reavaliando... valor está abaixo de R$ 3.000.000, " +
+			"handoff não é obrigatório.";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel do bug.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// Detector: pega chain-of-thought leakage (prefixos + verbos de raciocinio).
+		const detectores = [
+			/\bMotivo\s*:/i,
+			/\bRaz[ãa]o\s*:/i,
+			/\bJustificativa\s*:/i,
+			/\bReavaliando\b/i,
+			/\bAvaliando\b/i,
+			/\bConsiderando\s+se/i,
+			/\bVerificando\b/i,
+			/acima do teto/i,
+			/atingiu o gatilho/i,
+		];
+		const hits = detectores.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			"Detector de chain-of-thought tem que casar com >=2 sinais no cassette real. " +
+				"Hits: " + hits.length,
+		).toBeGreaterThanOrEqual(2);
+	});
+
+	it("prompt source: REGRA DURA proibe 'Motivo:', 'Reavaliando', 'Considerando' explicitamente", () => {
+		// CROSS-REF: amarra cassette ao prompt — cada variante de leakage listada.
+		const proibePrefixos =
+			/(PROIBIDO|N(Ã|A)O|NUNCA)[\s\S]{0,400}["“]?(Motivo|Raz[ãa]o|Justificativa)["”]?\s*:/i;
+		expect(
+			proibePrefixos.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa proibir prefixos 'Motivo:', 'Razão:', 'Justificativa:'. " +
+				"Bug tb-dev: card 'Motivo: Cliente informou valor X acima do teto Y...'",
+		).toBe(true);
+
+		const proibeChainOfThought =
+			/(PROIBIDO|N(Ã|A)O|NUNCA)[\s\S]{0,600}(Reavaliando|Avaliando|Considerando|Verificando|Pensando bem|Refletindo)/i;
+		expect(
+			proibeChainOfThought.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa proibir verbos de raciocinio em texto pro user: " +
+				"'Reavaliando', 'Avaliando', 'Considerando', 'Verificando'. Bug tb-dev: " +
+				"'Reavaliando... valor está abaixo de R$ 3.000.000'.",
+		).toBe(true);
+	});
+});

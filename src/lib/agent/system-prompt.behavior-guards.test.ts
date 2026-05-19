@@ -294,3 +294,241 @@ describe("BUG-TOOL-DUPLICATION — prompt tem guard contra repetir tools idempot
 		).toEqual([]);
 	});
 });
+
+// ============================================================================
+// BUG-SAVE-CONTACT-NAME-MUST-FIRE — captura de nome OBRIGATORIA antes de saudar
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, conversa Monique 6c0ca4cf): user disse "Monique.",
+// agent respondeu "Prazer, Monique! Vamos achar a opção certa pra você." SEM
+// chamar save_contact_name. DB ficou com contact_name NULL, lead form abriu
+// com nome vazio. Causa raiz do BUG-LEAD-FORM-PREFILL-REGRESSION confirmada
+// — fix b7fc39e cuidava do path do payload, mas o nome nunca era persistido.
+//
+// O prompt linha 111 ("chame IMEDIATAMENTE save_contact_name") era UMA frase
+// solta sem marker REGRA DURA. Agent leu, processou, pulou. Precisa regra
+// dura explicita: ANTES de mencionar o nome, OBRIGATORIO chamar a tool.
+// ============================================================================
+
+describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE — prompt obriga save_contact_name ANTES de saudar com nome", () => {
+	it("contém marker REGRA DURA acoplado a save_contact_name (não só menção solta)", () => {
+		// Sem o marker REGRA DURA explicito, o agent trata a instrucao como
+		// guideline e pula. A regra precisa ser dura e estar EXPLICITA proxima
+		// a save_contact_name.
+		const regraDuraSaveContact =
+			/REGRA DURA[\s\S]{0,400}save_contact_name|save_contact_name[\s\S]{0,400}REGRA DURA/i;
+		expect(
+			regraDuraSaveContact.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter marker 'REGRA DURA' a <=400 chars de " +
+				"save_contact_name. Sem marker hardpoint, agent trata como guideline e pula a tool " +
+				"(bug Monique tb-dev 2026-05-18: contact_name=NULL apesar de 7 mencoes do nome).",
+		).toBe(true);
+	});
+
+	it("regra dura proíbe saudar com nome ANTES de chamar save_contact_name", () => {
+		// Pattern: ANTES + (saudar/usar nome/mencionar/responder) + save_contact_name + OBRIGATORI*.
+		// Versão tolerante: a regra precisa relacionar "ordem temporal" (ANTES de saudar
+		// → chamar tool) e usar palavra de obrigatoriedade.
+		const ordemTemporal =
+			/ANTES[\s\S]{0,200}(saudar|usar o nome|mencionar|responder|texto)[\s\S]{0,300}(OBRIGAT|chame|deve chamar)[\s\S]{0,200}save_contact_name/i;
+		const ordemReversa =
+			/save_contact_name[\s\S]{0,200}ANTES[\s\S]{0,200}(saudar|texto|resposta|saudacao)/i;
+		expect(
+			ordemTemporal.test(SPECIALIST_BASE_PROMPT) ||
+				ordemReversa.test(SPECIALIST_BASE_PROMPT),
+			"Regra precisa acoplar ordem temporal explicita: ANTES de saudar com nome, " +
+				"OBRIGATORIAMENTE chamar save_contact_name. Sem isso, agent emite saudacao " +
+				"(BAD: 'Prazer, Monique!') sem persistir o nome no DB.",
+		).toBe(true);
+	});
+
+	it("regra menciona consequência concreta (DB / form vazio) para forçar respeito", () => {
+		// LLMs respeitam regras melhor quando a consequencia e explicita.
+		// "Sem essa tool, o nome nao persiste no DB e o form final aparece vazio".
+		const consequenciaExplicita =
+			/sem.{0,80}save_contact_name|nome.{0,80}(n[ãa]o persiste|n[ãa]o salva|fica vazio|n[ãa]o vai pro DB|n[ãa]o vai pro banco|form.{0,60}vazio)/i;
+		expect(
+			consequenciaExplicita.test(SPECIALIST_BASE_PROMPT),
+			"Regra precisa mencionar consequencia concreta (nome nao persiste no DB / " +
+				"form fica vazio) — sem isso, LLM trata como detalhe ignoravel. " +
+				"Consequencia explicita = adesao maior.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// BUG-NO-CTA-AFTER-NAME — turn morre apos saudacao com nome (sem tool/gate)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18): Rafael/auto respondeu "Beleza, Marina! Prazer,
+// Marina! Vamos achar a opção certa pra você." e PAROU. Sem tool. Sem gate.
+// Turn morreu. User teve que digitar "oi" pra reativar.
+//
+// Vale pras 4 specialists. Regra anterior do bc40a85 ("gate IMEDIATAMENTE
+// apos save_contact_name") era vaga — agent interpretou frase afirmativa
+// generica como acao suficiente. Precisa listar variantes proibidas
+// explicitamente.
+// ============================================================================
+
+describe("BUG-NO-CTA-AFTER-NAME — prompt proibe frase afirmativa generica encerrando turn pos-nome", () => {
+	// Lista canonica das variantes observadas em tb-dev + variantes plausiveis
+	// que o LLM gera quando trava nessa familia.
+	const VARIANTES_GENERICAS_PROIBIDAS = [
+		"vamos achar a opcao certa",
+		"vamos comecar",
+		"vou te ajudar",
+		"estou aqui pra ajudar",
+		"vamos juntos achar",
+		"vamos la",
+		"bora comecar",
+		"vamos descobrir",
+		"vou achar o melhor",
+	];
+
+	it("contém marker REGRA DURA proibindo frases CTA-vazias que encerram turn", () => {
+		// Pattern: REGRA DURA + (proibido|nunca|nao escreva) + uma das variantes.
+		const regraDuraCTAVazia =
+			/REGRA DURA[\s\S]{0,1200}(vamos achar a op[çc][ãa]o certa|vamos come[çc]ar|vou te ajudar|estou aqui pra ajudar|vamos juntos|vamos l[áa]|bora come[çc]ar|vamos descobrir|vou achar o melhor)/i;
+		expect(
+			regraDuraCTAVazia.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter REGRA DURA listando frases CTA-vazias " +
+				"que encerram turn sem tool. Bug Rafael/Marina tb-dev: 'Vamos achar a opcao " +
+				"certa pra voce.' [finish sem tool] → turn morto, user teve que mandar 'oi'.",
+		).toBe(true);
+	});
+
+	it("lista TODAS as 9 variantes observadas (não generaliza '1 frase exemplo' como suficiente)", () => {
+		// Normaliza acentos/cedilha pra comparar literal.
+		const normalizar = (s: string) =>
+			s
+				.toLowerCase()
+				.replace(/ç/g, "c")
+				.replace(/õ/g, "o")
+				.replace(/á/g, "a")
+				.replace(/ã/g, "a")
+				.replace(/é/g, "e");
+		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
+
+		const faltando = VARIANTES_GENERICAS_PROIBIDAS.filter(
+			(v) => !promptNorm.includes(normalizar(v)),
+		);
+
+		expect(
+			faltando,
+			"Variantes genericas de CTA-vazia ausentes do SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"LLM nao generaliza 'vamos achar a opcao certa' pra 'vamos descobrir' sozinho. " +
+				"Cada variante precisa estar listada explicita.",
+		).toEqual([]);
+	});
+
+	it("regra explicita que vale pras 4 specialists (auto/imovel/moto/servicos)", () => {
+		// SPECIALIST_BASE_PROMPT compartilhado — nenhuma menção a persona especifica
+		// no bloco da regra CTA-vazia.
+		const blocoCTA =
+			SPECIALIST_BASE_PROMPT.match(
+				/REGRA DURA[\s\S]{0,1200}(vamos achar a op[çc][ãa]o certa|vamos come[çc]ar)[\s\S]{0,800}/i,
+			);
+		expect(blocoCTA, "Bloco REGRA DURA com variantes CTA-vazias nao encontrado").not.toBeNull();
+		if (!blocoCTA) return;
+		const bloco = blocoCTA[0].toLowerCase();
+		const nomesEspecialistas = ["rafael", "helena", "bruno", "felipe", "marina"];
+		const referenciasEnviesadas = nomesEspecialistas.filter((n) => bloco.includes(n));
+		expect(
+			referenciasEnviesadas,
+			`Bloco CTA-vazia cita persona especifica (${JSON.stringify(referenciasEnviesadas)}). ` +
+				"Regra vale pras 4 specialists. Remova o nome.",
+		).toEqual([]);
+	});
+});
+
+// ============================================================================
+// BUG-INTERNAL-REASONING-LEAK — agent vaza chain-of-thought pro usuario
+// ----------------------------------------------------------------------------
+// Real (tb-dev): card mostrado ao usuario continha:
+//   "Pra esse caso especificamente, recomendo conversar direto com nosso
+//    consultor humano.
+//    Motivo: Cliente informou valor de credito de R$ 2.130.000, acima do teto
+//    de R$ 3.000.000 — não atingiu o gatilho, mas valor é de alto porte.
+//    Reavaliando... valor está abaixo de R$ 3.000.000, handoff não é
+//    obrigatório."
+//
+// "Motivo:" + "Reavaliando..." = chain-of-thought literal vazada como msg
+// pro usuario. Expoe a engine interna (gatilhos, tetos, regras compliance).
+//
+// Precisa regra DURA proibindo:
+//   - "Motivo:", "Razao:", "Justificativa:", "Por isso:"
+//   - "Reavaliando", "Avaliando", "Considerando", "Verificando"
+//   - Metacomentario sobre regras ("acima do teto", "atingiu o gatilho")
+//   - Chain-of-thought em texto pro usuario
+// ============================================================================
+
+describe("BUG-INTERNAL-REASONING-LEAK — prompt proibe vazar chain-of-thought interno", () => {
+	it("contém regra dura proibindo 'Motivo:', 'Razão:', 'Justificativa:' como prefixos de frase pro usuario", () => {
+		// Pattern: regra dura proibindo OS prefixos de raciocinio explicativo.
+		const regraDuraRaciocinio =
+			/(PROIBIDO|N(Ã|A)O|NUNCA)[\s\S]{0,400}["“]?(Motivo|Raz[ãa]o|Justificativa|Por isso)["”]?\s*:/i;
+		expect(
+			regraDuraRaciocinio.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa proibir EXPLICITAMENTE prefixos 'Motivo:', " +
+				"'Razão:', 'Justificativa:', 'Por isso:' como vazamento de raciocinio interno. " +
+				"Bug tb-dev: card mostrou 'Motivo: Cliente informou valor X acima do teto Y...'",
+		).toBe(true);
+	});
+
+	it("contém regra dura proibindo 'Reavaliando', 'Avaliando', 'Considerando', 'Verificando'", () => {
+		// Variantes de chain-of-thought em primeira pessoa de raciocinio.
+		const regraDuraChainOfThought =
+			/(PROIBIDO|N(Ã|A)O|NUNCA)[\s\S]{0,600}(Reavaliando|Avaliando|Considerando|Verificando|Pensando bem|Refletindo)/i;
+		expect(
+			regraDuraChainOfThought.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa proibir verbos de raciocinio em texto pro user: " +
+				"'Reavaliando', 'Avaliando', 'Considerando', 'Verificando'. Bug tb-dev: " +
+				"'Reavaliando... valor está abaixo de R$ 3.000.000, handoff não é obrigatório.'",
+		).toBe(true);
+	});
+
+	it("lista TODAS as 7 variantes canonicas de chain-of-thought leakage", () => {
+		const normalizar = (s: string) =>
+			s
+				.toLowerCase()
+				.replace(/ç/g, "c")
+				.replace(/õ/g, "o")
+				.replace(/á/g, "a")
+				.replace(/ã/g, "a")
+				.replace(/é/g, "e")
+				.replace(/í/g, "i")
+				.replace(/ó/g, "o");
+		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
+
+		const variantesCanonicas = [
+			"motivo:",
+			"razao:",
+			"justificativa:",
+			"reavaliando",
+			"avaliando",
+			"considerando",
+			"verificando",
+		];
+
+		const faltando = variantesCanonicas.filter((v) => !promptNorm.includes(normalizar(v)));
+
+		expect(
+			faltando,
+			"Variantes de chain-of-thought leakage ausentes do prompt: " +
+				`${JSON.stringify(faltando)}. ` +
+				"LLM gera variantes em parafrase facil — cada uma precisa estar listada.",
+		).toEqual([]);
+	});
+
+	it("regra obriga handoff via tool (suggest_handoff), nunca explicando motivo tecnico ao usuario", () => {
+		// Anti-pattern observado: agent explicava POR QUE faria handoff em vez
+		// de simplesmente chamar a tool.
+		const regraHandoffDireto =
+			/(suggest_handoff|handoff)[\s\S]{0,300}(chame|tool|n[ãa]o explique|sem.{0,20}motivo|sem.{0,30}t[ée]cnico)/i;
+		expect(
+			regraHandoffDireto.test(SPECIALIST_BASE_PROMPT),
+			"Regra precisa instruir: se precisa de handoff → chame suggest_handoff direto, " +
+				"NUNCA explique o motivo tecnico interno ('acima do teto', 'atingiu gatilho'). " +
+				"Bug tb-dev: card mostrou 'valor de credito R$ 2.130.000 acima do teto R$ 3.000.000'.",
+		).toBe(true);
+	});
+});
