@@ -1,12 +1,20 @@
 #!/bin/sh
 # Pre-commit hook: bloqueia commit se Camadas 1/2/3 falharem.
 #
-# Camada 1 (structural): src/**/*.test.ts sem DB/LLM
-# Camada 2 (trajectory snapshots): tests/regression com MockLanguageModelV2
-# Camada 3 (LLM real cirúrgico): tests/eval EVAL-SAVE-CONTACT-NAME-CIRURGICO (~11s, Anthropic real)
+# Camada 1 (structural): src/**/*.test.ts sem DB/LLM — ~3s
+# Camada 2 (trajectory snapshots): tests/regression com MockLanguageModelV2 — incluso no test:unit
+# Camada 3 (LLM real cirúrgico): tests/eval/agent-flow EVAL-SAVE-CONTACT-NAME-CIRURGICO ~11s
 #
-# Skip se nenhum arquivo .ts/.tsx/.sql tocado (commits só de docs).
-# Skip Camada 3 se ANTHROPIC_API_KEY não setada (eval pula via describeIfKey).
+# Regras:
+# - Sem .ts/.tsx/.sql staged → skip total (commit docs-only)
+# - Apenas .ts/.tsx/.sql staged → roda Camadas 1+2 (test:unit, ~3-5s)
+# - Mudou prompt/agent/tool/migration/eval → OBRIGA Camada 3 (~11s)
+# - Sem ANTHROPIC_API_KEY E mudou prompt/agent → BLOQUEIA commit
+#
+# Heurística "mexeu em prompt/comportamento do agent":
+#   src/lib/agent/**     (system-prompt, tools, builder, orchestrator)
+#   drizzle/*.sql         (migrations podem mudar personas instructions/examples)
+#   tests/eval/**         (mudanças nos próprios cenários eval)
 
 CHANGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|sql)$' | head -1)
 
@@ -15,13 +23,44 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-echo "[pre-commit] rodando Camada 1 + 2 + 3 cirúrgico (vitest + eval real)..."
-npm run test:pre-commit
-STATUS=$?
+# Detecta se mudança toca prompt/agent/tool/migration/eval
+AGENT_CHANGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(src/lib/agent/|drizzle/.*\.sql$|tests/eval/)' | head -1)
+
+if [ -n "$AGENT_CHANGED" ]; then
+  # Tenta carregar ANTHROPIC_API_KEY do env files se não tiver no shell
+  if [ -z "$ANTHROPIC_API_KEY" ] && [ -f .env.local ]; then
+    KEY_LINE=$(grep -E '^ANTHROPIC_API_KEY=' .env.local | head -1 | sed 's/^[^=]*=//' | tr -d '"' | tr -d "'")
+    [ -n "$KEY_LINE" ] && export ANTHROPIC_API_KEY="$KEY_LINE"
+  fi
+  if [ -z "$ANTHROPIC_API_KEY" ] && [ -f .env.test ]; then
+    KEY_LINE=$(grep -E '^ANTHROPIC_API_KEY=' .env.test | head -1 | sed 's/^[^=]*=//' | tr -d '"' | tr -d "'")
+    [ -n "$KEY_LINE" ] && export ANTHROPIC_API_KEY="$KEY_LINE"
+  fi
+
+  if [ -z "$ANTHROPIC_API_KEY" ]; then
+    echo ""
+    echo "❌ COMMIT BLOQUEADO — mudança em agent/prompt/tool/migration exige Camada 3 (LLM real)"
+    echo "ANTHROPIC_API_KEY não setada no env nem encontrada em .env.local / .env.test"
+    echo ""
+    echo "Configure a chave em .env.local (use secrets.sh decrypt aja-agora se tiver vault TwoBrains)"
+    echo "e tente o commit de novo. Camada 3 é obrigatória pra todo mexida em comportamento de agent."
+    exit 1
+  fi
+
+  echo "[pre-commit] mudança em prompt/agent/tool/migration detectada — rodando Camadas 1+2+3 (vitest + eval real)..."
+  npm run test:pre-commit
+  STATUS=$?
+  LAYER_HINT="Camada 3 (LLM real cirúrgico)"
+else
+  echo "[pre-commit] rodando Camadas 1+2 (vitest)..."
+  npm run test:unit
+  STATUS=$?
+  LAYER_HINT="Camadas 1 e 2"
+fi
 
 if [ $STATUS -ne 0 ]; then
   echo ""
-  echo "❌ COMMIT BLOQUEADO — testes Camada 1, 2 ou 3 falharam."
+  echo "❌ COMMIT BLOQUEADO — testes falharam ($LAYER_HINT)."
   echo "Fix os testes acima OU adicione cassette/regra. Detalhes:"
   echo "  Camada 1: src/**/*.test.ts (structural)"
   echo "  Camada 2: tests/regression/agent-trajectory.test.ts (trajectory snapshots)"
@@ -30,4 +69,4 @@ if [ $STATUS -ne 0 ]; then
   exit 1
 fi
 
-echo "[pre-commit] ✅ Camadas 1 + 2 + 3 verdes."
+echo "[pre-commit] ✅ $LAYER_HINT verde."
