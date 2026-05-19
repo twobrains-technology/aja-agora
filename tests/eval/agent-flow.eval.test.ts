@@ -728,22 +728,29 @@ describeIfKey("EVAL-SAVE-CONTACT-NAME-CIRURGICO — Rafael capta nome em 1 turn"
 			).toContain("paulo");
 		}
 
-		// ── ASSERTION: conversationId no input bate com o real. ──
-		// BUG-CONVERSATION-ID-HALLUCINATION descoberto pelo cirúrgico:
-		// o modelo inventa "conv_001" em vez de usar o UUID real, fazendo
-		// o UPDATE no Postgres não acertar linha alguma. Fix futuro:
-		// (a) injetar conversationId no system prompt do specialist OU
-		// (b) interceptar tool-call no orchestrator e sobrescrever
-		//     conversationId com o valor canônico antes de executar.
+		// ── ASSERTION: conversationId NÃO aparece no input da tool. ──
+		// BUG-CONVERSATION-ID-HALLUCINATION (fix commit XXXX): o
+		// `conversationId` foi REMOVIDO do `inputSchema` de save_contact_name
+		// — agora ele é injetado via closure pela factory
+		// `buildConsorcioTools({ conversationId })` no builder de agent.
+		//
+		// Pré-fix: modelo alucinava "conv_001" → UPDATE não acertava linha →
+		// contact_name NULL → form final vazio (BUG-LEAD-FORM-PREFILL).
+		// Pós-fix: input só tem { name } — closure carrega o UUID real.
+		//
+		// Esta assertion documenta o invariante pós-fix: SE conversationId
+		// voltar a aparecer no input, alguém regrediu o schema (sched
+		// hallucination de novo). Camada 1 estrutural pega antes.
 		if (saveCallEvent && saveCallEvent.type === "tool-call") {
 			const input = saveCallEvent.input as { conversationId?: string };
 			expect(
 				input.conversationId,
-				`save_contact_name.input.conversationId DEVE ser o UUID real "${conv.id}", ` +
-					`não um valor inventado. Visto: "${input.conversationId}". ` +
-					`Se vier "conv_001" ou similar → BUG-CONVERSATION-ID-HALLUCINATION ` +
-					`(modelo inventa ID). Fix arquitetural separado do toolChoice.`,
-			).toBe(conv.id);
+				`save_contact_name.input NÃO deve conter conversationId (fix " +
+					"BUG-CONVERSATION-ID-HALLUCINATION). conversationId é injetado via " +
+					"closure pela factory buildConsorcioTools(). Visto: "${input.conversationId}". ` +
+					`Se voltou, alguém adicionou conversationId no inputSchema — ` +
+					`regressão arquitetural (modelo vai alucinar de novo).`,
+			).toBeUndefined();
 		}
 
 		// ── ASSERTION: DB persistiu contact_name após turn 2. ──

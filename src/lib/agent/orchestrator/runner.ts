@@ -73,8 +73,14 @@ export async function* runAgentTurn(args: {
 	const stagesEmitted = new Set<string>();
 
 	const isConcierge = !meta.currentCategory;
+	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
+	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
+	// via closure nas tools sensíveis (save_contact_name etc.). Sem isso, modelo
+	// alucinava "conv_001" e UPDATE no Postgres falhava silenciosamente.
 	const agent = await resolveAgent(currentPersona, meta, {
 		memoryContext,
+		conversationId,
+		channel,
 		toolChoice: forceToolChoice,
 	});
 

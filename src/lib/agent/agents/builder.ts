@@ -8,7 +8,7 @@ import {
 	type ExpertiseLevel,
 	type PersonaRow,
 } from "../system-prompt";
-import { consorcioTools } from "../tools/ai-sdk";
+import { buildConsorcioTools, consorcioTools } from "../tools/ai-sdk";
 
 const anthropic = createAnthropic();
 
@@ -17,12 +17,16 @@ type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName
 
 function selectTools(
 	activeTools: string[],
+	// Registry usado pra resolver `activeTools` — pode ser o estático
+	// (compat com paths legados) ou o produto da factory `buildConsorcioTools`
+	// (com closures de conversationId). O builder default usa a factory.
+	// biome-ignore lint/suspicious/noExplicitAny: tools shape opaco
+	registry: Record<string, any> = consorcioTools,
 ): ConsorcioToolSet {
 	const out: ConsorcioToolSet = {};
 	for (const name of activeTools) {
-		if (name in consorcioTools) {
-			const key = name as ConsorcioToolName;
-			out[name] = consorcioTools[key];
+		if (name in registry) {
+			out[name] = registry[name];
 		}
 	}
 	return out;
@@ -50,6 +54,24 @@ export function buildAgent(
 		currentDate?: Date;
 		memoryContext?: MemoryContext | null;
 		/**
+		 * UUID da conversation atual. Propagado pelo orchestrator/runner pro
+		 * builder, e daqui pra `buildConsorcioTools({ conversationId })` que
+		 * injeta como closure nas tools sensíveis (`save_contact_name`,
+		 * `save_contact_whatsapp`, `present_lead_form`).
+		 *
+		 * Por que: BUG-CONVERSATION-ID-HALLUCINATION — quando `conversationId`
+		 * aparecia no `inputSchema` da tool, o modelo inventava valores
+		 * ("conv_001") e o UPDATE no Postgres não acertava linha. Removido
+		 * do schema, injetado via closure aqui.
+		 *
+		 * Quando undefined (paths admin/preview), as tools sensíveis ainda
+		 * existem mas o execute retorna erro informativo — paths admin não
+		 * persistem mesmo, então é OK.
+		 */
+		conversationId?: string;
+		/** Canal da conversa atual — propagado pra factory de tools por simetria. */
+		channel?: "web" | "whatsapp";
+		/**
 		 * Força o modelo a chamar uma tool específica neste turno.
 		 *
 		 * Quando passado, é repassado pro `ToolLoopAgent` como `toolChoice`
@@ -69,6 +91,17 @@ export function buildAgent(
 	const blocks = isConcierge
 		? buildConciergePrompt(row)
 		: buildSpecialistPrompt(row, expertise, opts.currentDate);
+
+	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,
+	// present_lead_form) ganham conversationId via closure — schema fica reduzido,
+	// modelo não alucina ID. Tools não-sensíveis vêm direto do registry estático.
+	// Ver `tools/ai-sdk.ts` (buildConsorcioTools) pro racional do BUG-
+	// CONVERSATION-ID-HALLUCINATION.
+	const registry = buildConsorcioTools({
+		conversationId: opts.conversationId,
+		channel: opts.channel,
+	});
+
 	// Specialists always have suggest_handoff + as ferramentas de captura
 	// conversacional de lead (save_contact_name, save_contact_whatsapp,
 	// present_whatsapp_optin) + o seletor interativo de valores
@@ -87,13 +120,13 @@ export function buildAgent(
 	const tools = isConcierge
 		? {}
 		: {
-				...selectTools(row.activeTools),
-				suggest_handoff: consorcioTools.suggest_handoff,
-				save_contact_name: consorcioTools.save_contact_name,
-				save_contact_whatsapp: consorcioTools.save_contact_whatsapp,
-				present_whatsapp_optin: consorcioTools.present_whatsapp_optin,
-				present_value_picker: consorcioTools.present_value_picker,
-				present_topic_picker: consorcioTools.present_topic_picker,
+				...selectTools(row.activeTools, registry),
+				suggest_handoff: registry.suggest_handoff,
+				save_contact_name: registry.save_contact_name,
+				save_contact_whatsapp: registry.save_contact_whatsapp,
+				present_whatsapp_optin: registry.present_whatsapp_optin,
+				present_value_picker: registry.present_value_picker,
+				present_topic_picker: registry.present_topic_picker,
 			};
 
 	// Memory inline — renderizado como system message extra dentro das

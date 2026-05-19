@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { PRESENTATION_TOOLS, consorcioTools } from "./ai-sdk";
+import { z } from "zod";
+import { PRESENTATION_TOOLS, buildConsorcioTools, consorcioTools } from "./ai-sdk";
 
 describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	it("tem compute_scenarios (#16)", () => {
@@ -99,6 +100,95 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 				{ toolCallId: "t", messages: [] } as any,
 			)) as { creditAdjustmentNotice?: unknown };
 			expect(result.creditAdjustmentNotice).toBeUndefined();
+		});
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// BUG-CONVERSATION-ID-NOT-IN-SCHEMA — Camada 1 (estrutural)
+	// ----------------------------------------------------------------------------
+	// Eval Camada 3 (commit 9080db4) provou: o modelo Claude inventa
+	// `conversationId: "conv_001"` em vez do UUID real ao chamar
+	// `save_contact_name` (e tools correlatas). UPDATE no DB falha
+	// silenciosamente (0 rows), `contact_name` continua NULL, form final
+	// aparece vazio (BUG-LEAD-FORM-PREFILL).
+	//
+	// Fix arquitetural: `conversationId` é CONTEXTO da request, não input do
+	// usuário. Removido do `inputSchema` das tools sensíveis e injetado via
+	// closure pela factory `buildConsorcioTools(ctx)`. Builder de agent passa
+	// o ctx com o conversationId real.
+	// ─────────────────────────────────────────────────────────────────────────
+	describe("BUG-CONVERSATION-ID-NOT-IN-SCHEMA — conversationId fora do inputSchema das tools sensíveis", () => {
+		const TOOLS_SENSIVEIS = [
+			"save_contact_name",
+			"save_contact_whatsapp",
+			"present_lead_form",
+		] as const;
+
+		it("factory buildConsorcioTools existe e aceita conversationId no ctx", () => {
+			expect(typeof buildConsorcioTools).toBe("function");
+			const built = buildConsorcioTools({ conversationId: "uuid-fake-1" });
+			expect(built).toBeDefined();
+			for (const name of TOOLS_SENSIVEIS) {
+				expect(built, `factory deve expor ${name}`).toHaveProperty(name);
+			}
+		});
+
+		for (const toolName of TOOLS_SENSIVEIS) {
+			it(`${toolName} NÃO declara conversationId no inputSchema (factory)`, () => {
+				const built = buildConsorcioTools({ conversationId: "uuid-fake-2" });
+				// biome-ignore lint/suspicious/noExplicitAny: introspecção do tool typing
+				const tool = (built as any)[toolName];
+				expect(tool, `${toolName} ausente no factory`).toBeDefined();
+				const schema = tool.inputSchema;
+				expect(schema, `${toolName}.inputSchema undefined`).toBeDefined();
+
+				// Tools podem ter schema vazio (z.object({}).optional()) — só
+				// asserta que SE houver shape, conversationId não aparece.
+				const shape =
+					schema instanceof z.ZodObject
+						? schema.shape
+						: schema?._def?.innerType instanceof z.ZodObject
+							? schema._def.innerType.shape
+							: null;
+				if (shape) {
+					expect(
+						Object.keys(shape),
+						`${toolName}.inputSchema NÃO pode declarar 'conversationId' — ` +
+							`isso causa hallucination do modelo (BUG-CONVERSATION-ID-HALLUCINATION). ` +
+							`conversationId é injetado via closure pela factory.`,
+					).not.toContain("conversationId");
+				}
+			});
+		}
+
+		it("save_contact_name execute persiste usando conversationId do ctx (closure), ignora input.conversationId se vier", async () => {
+			// Pega um conversationId real (via DB) — isolado nesse teste.
+			const { db } = await import("@/db");
+			const { conversations, leads } = await import("@/db/schema");
+			const { eq } = await import("drizzle-orm");
+
+			const [c] = await db.insert(conversations).values({}).returning();
+			const realConvId = c.id;
+			try {
+				const tools = buildConsorcioTools({ conversationId: realConvId });
+				// biome-ignore lint/suspicious/noExplicitAny: execute opaco
+				const exec = (tools.save_contact_name as any).execute;
+				// Modelo alucinaria 'conv_001' — schema fora, mas mesmo se vier
+				// no objeto runtime, factory deve IGNORAR e usar ctx.
+				const result = await exec({ name: "Paulo" });
+				expect(typeof result).toBe("string");
+
+				const conv = await db.query.conversations.findFirst({
+					where: eq(conversations.id, realConvId),
+				});
+				expect(
+					conv?.contactName,
+					"contact_name deveria persistir no UUID real (closure), não no alucinado",
+				).toBe("Paulo");
+			} finally {
+				await db.delete(leads).where(eq(leads.conversationId, realConvId));
+				await db.delete(conversations).where(eq(conversations.id, realConvId));
+			}
 		});
 	});
 

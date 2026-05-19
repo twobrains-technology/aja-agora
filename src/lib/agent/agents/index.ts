@@ -33,6 +33,24 @@ export async function resolveAgent(
 	opts: {
 		memoryContext?: MemoryContext | null;
 		/**
+		 * UUID da conversation atual — propagado pro `buildAgent`, que passa
+		 * pra factory `buildConsorcioTools({ conversationId })` (closure das
+		 * tools sensíveis: save_contact_name, save_contact_whatsapp,
+		 * present_lead_form).
+		 *
+		 * Quando passado, BYPASSA o cache de agents — o closure carrega o
+		 * conversationId atual, então NÃO podemos reutilizar agent cached
+		 * que carrega closure de OUTRA conversation. Cada turno de
+		 * specialist constrói novo agent ad-hoc — ToolLoopAgent é leve
+		 * (sem chamada I/O na construção), trade-off aceitável vs
+		 * correctness (BUG-CONVERSATION-ID-HALLUCINATION).
+		 *
+		 * Concierge (no-tools) ainda usa cache normal — sem closure de
+		 * conversationId, agent é fungível entre conversations.
+		 */
+		conversationId?: string;
+		channel?: "web" | "whatsapp";
+		/**
 		 * Quando passado, BYPASSA o cache de agents e constrói uma instância
 		 * ad-hoc com esse `toolChoice`. Usado no fix BUG-SHORT-GREETING-
 		 * AFTER-NAME pra forçar `save_contact_name` quando o orchestrator
@@ -57,7 +75,23 @@ export async function resolveAgent(
 		return buildAgent(row, expertise, {
 			currentDate: simulatorNow(),
 			memoryContext: opts.memoryContext ?? null,
+			conversationId: opts.conversationId,
+			channel: opts.channel,
 			toolChoice: opts.toolChoice,
+		});
+	}
+
+	// Specialists (role !== "concierge") carregam closure de conversationId
+	// nas tools sensíveis — não dá pra reutilizar instância cached entre
+	// conversations diferentes. Bypass de cache pra specialists quando
+	// conversationId é passado.
+	const isSpecialist = row.role !== "concierge";
+	if (isSpecialist && opts.conversationId) {
+		return buildAgent(row, expertise, {
+			currentDate: simulatorNow(),
+			memoryContext: opts.memoryContext ?? null,
+			conversationId: opts.conversationId,
+			channel: opts.channel,
 		});
 	}
 
@@ -68,6 +102,8 @@ export async function resolveAgent(
 		agent = buildAgent(row, expertise, {
 			currentDate: simulatorNow(),
 			memoryContext: opts.memoryContext ?? null,
+			conversationId: opts.conversationId,
+			channel: opts.channel,
 		});
 		agentCache.set(key, agent);
 	}

@@ -114,11 +114,25 @@ const recommendationSchema = z.object({
 		.describe("Detalhamento do score por fator"),
 });
 
+/**
+ * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
+ * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
+ * `buildConsorcioTools(ctx)` e NÃO declara `conversationId` no schema —
+ * conversationId é contexto da request, injetado via closure.
+ *
+ * Background (BUG-CONVERSATION-ID-HALLUCINATION): quando o conversationId
+ * aparecia no schema, o modelo alucinava valores ("conv_001") em vez do
+ * UUID real, fazendo o UPDATE no DB falhar silenciosamente.
+ */
 const leadFormSchema = z.object({
 	conversationId: z
 		.string()
 		.optional()
 		.describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
+	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
+});
+
+const leadFormSchemaNoCtx = z.object({
 	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
 });
 
@@ -565,3 +579,100 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_financing_comparison",
 	"present_whatsapp_optin",
 ]);
+
+// ============================================================================
+// Factory per-request — tools com conversationId injetado via closure
+// ----------------------------------------------------------------------------
+// BUG-CONVERSATION-ID-HALLUCINATION (eval Camada 3 cirúrgico, commit 9080db4):
+// modelo Claude inventava `conversationId: "conv_001"` ao chamar
+// `save_contact_name`. UPDATE no DB falhava silenciosamente (0 rows),
+// contact_name continuava NULL, form final aparecia vazio.
+//
+// Causa raiz: conversationId aparecia no `inputSchema` da tool, então o modelo
+// tentava "preencher" como se fosse input do usuário — e alucinava.
+//
+// Fix arquitetural: conversationId é CONTEXTO da request, NÃO input do usuário.
+// Tools sensíveis (`save_contact_name`, `save_contact_whatsapp`,
+// `present_lead_form`) ganham versão refactorada via factory abaixo, com
+// schema reduzido e conversationId injetado via closure.
+//
+// Builder de agent (`src/lib/agent/agents/builder.ts`) recebe `conversationId`
+// em `opts` e usa esta factory pra montar as tools sensíveis. Tools que NÃO
+// precisam de conversationId (search_groups, simulate_quota, etc.) seguem
+// expostas via registry estático `consorcioTools`.
+// ============================================================================
+
+export type ConsorcioToolsContext = {
+	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
+	conversationId?: string;
+	channel?: "web" | "whatsapp";
+};
+
+/**
+ * Constrói o registry completo de tools com `conversationId` injetado via
+ * closure nas tools sensíveis. Use ESTE no builder de agent — NÃO use
+ * `consorcioTools` direto pras tools sensíveis (vaza conversationId no
+ * schema e induz hallucination).
+ */
+export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
+	const { conversationId } = ctx;
+
+	const save_contact_name = tool({
+		description:
+			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+		inputSchema: z.object({
+			name: z
+				.string()
+				.min(2)
+				.max(30)
+				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+		}),
+		execute: async ({ name }: { name: string }) => {
+			if (!conversationId) {
+				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+			}
+			const { saveContactName } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactName(conversationId, name);
+			if (!result.ok) {
+				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+			}
+			return `[Nome '${name}' salvo. Use-o nas proximas respostas.]`;
+		},
+	});
+
+	const save_contact_whatsapp = tool({
+		description:
+			"Salva o WhatsApp do usuario no banco. Use APENAS quando o usuario enviar o phone via card present_whatsapp_optin (sistema chama esta tool internamente). NAO chame ao receber telefone por texto livre — peca pelo card.",
+		inputSchema: z.object({
+			phone: z.string().describe("Telefone com ou sem formatacao (a funcao normaliza)"),
+		}),
+		execute: async ({ phone }: { phone: string }) => {
+			if (!conversationId) {
+				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+			}
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactWhatsapp(conversationId, phone);
+			if (!result.ok) {
+				return `[Telefone invalido: ${result.error}]`;
+			}
+			return `[WhatsApp salvo. Lead promovido a 'engajado'.]`;
+		},
+	});
+
+	const present_lead_form = tool({
+		description:
+			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
+		inputSchema: leadFormSchemaNoCtx,
+		execute: async () => {
+			return "[Formulario de captura de dados do lead apresentado ao usuario]";
+		},
+	});
+
+	return {
+		...consorcioTools,
+		// Overrides — schema reduzido (sem conversationId) + closure.
+		save_contact_name,
+		save_contact_whatsapp,
+		present_lead_form,
+	};
+}
