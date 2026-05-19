@@ -40,12 +40,13 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 
 	function applyPatch(patch: PersonaPatch, key: string) {
 		if (patch.kind === "voiceTone") {
-			formMethods.setValue("voiceTone", patch.after, { shouldDirty: true });
+			formMethods.setValue("voiceTone", patch.after, { shouldDirty: true, shouldValidate: true });
 		}
 		if (patch.kind === "example.add") {
 			const cur = (formMethods.getValues("examples") as unknown[]) ?? [];
 			formMethods.setValue("examples", [...cur, patch.after], {
 				shouldDirty: true,
+				shouldValidate: true,
 			});
 		}
 		if (patch.kind === "example.remove") {
@@ -54,7 +55,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			formMethods.setValue(
 				"examples",
 				cur.filter((e) => e.id !== patch.targetId),
-				{ shouldDirty: true },
+				{ shouldDirty: true, shouldValidate: true },
 			);
 		}
 		if (patch.kind === "forbiddenTopic.add") {
@@ -62,6 +63,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 				(formMethods.getValues("forbiddenTopics") as unknown[]) ?? [];
 			formMethods.setValue("forbiddenTopics", [...cur, patch.after], {
 				shouldDirty: true,
+				shouldValidate: true,
 			});
 		}
 		if (patch.kind === "forbiddenTopic.remove") {
@@ -71,7 +73,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			formMethods.setValue(
 				"forbiddenTopics",
 				cur.filter((e) => e.id !== patch.targetId),
-				{ shouldDirty: true },
+				{ shouldDirty: true, shouldValidate: true },
 			);
 		}
 		if (patch.kind === "handoffTrigger.add") {
@@ -79,6 +81,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 				(formMethods.getValues("handoffTriggers") as unknown[]) ?? [];
 			formMethods.setValue("handoffTriggers", [...cur, patch.after], {
 				shouldDirty: true,
+				shouldValidate: true,
 			});
 		}
 		if (patch.kind === "handoffTrigger.remove") {
@@ -88,7 +91,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			formMethods.setValue(
 				"handoffTriggers",
 				cur.filter((e) => e.id !== patch.targetId),
-				{ shouldDirty: true },
+				{ shouldDirty: true, shouldValidate: true },
 			);
 		}
 		setDiffStates((s) => ({ ...s, [key]: "applied" }));

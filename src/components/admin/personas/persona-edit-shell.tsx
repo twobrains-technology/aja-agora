@@ -89,88 +89,115 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 
   return (
     <FormProvider {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Button
-              variant="ghost"
-              size="sm"
-              render={<Link href="/admin/personas" />}
-            >
-              <ArrowLeft className="size-3.5" />
-              Voltar
-            </Button>
-            <h1 className="text-2xl font-bold tracking-tight mt-2">
-              {persona.displayName}
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Categoria:{" "}
-              {persona.role === "concierge"
-                ? "Atendente"
-                : getCategoryMeta(persona).label}
-              {persona.expertise
-                ? ` · Especialidade: ${persona.expertise.charAt(0).toUpperCase() + persona.expertise.slice(1)}`
-                : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {submitSuccess && !isDirty && (
-              <span className="text-sm text-muted-foreground">Salvo ✓</span>
-            )}
-            <Sheet>
-              <SheetTrigger
-                render={
-                  <Button type="button" variant="outline" size="sm">
-                    <Sparkles className="size-3.5 text-violet-600" />
-                    AI Assistant
-                  </Button>
-                }
-              />
-              <SheetContent
-                side="right"
-                className="w-[420px] sm:max-w-[420px] p-0"
+      {/* Grid raiz: em xl+, form ocupa 9/12 e sidebar persistente 3/12. Em
+          telas menores, sidebar vira Sheet toggleável via botão "AI Assistant". */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 xl:gap-6">
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="space-y-6 xl:col-span-9"
+          data-testid="persona-edit-form"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Button
+                variant="ghost"
+                size="sm"
+                render={<Link href="/admin/personas" />}
               >
-                <AIAssistantSidebar
-                  personaId={persona.id}
-                  formMethods={form}
+                <ArrowLeft className="size-3.5" />
+                Voltar
+              </Button>
+              <h1 className="text-2xl font-bold tracking-tight mt-2">
+                {persona.displayName}
+              </h1>
+              <p className="text-muted-foreground text-sm mt-1">
+                Categoria:{" "}
+                {persona.role === "concierge"
+                  ? "Atendente"
+                  : getCategoryMeta(persona).label}
+                {persona.expertise
+                  ? ` · Especialidade: ${persona.expertise.charAt(0).toUpperCase() + persona.expertise.slice(1)}`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {submitSuccess && !isDirty && (
+                <span className="text-sm text-muted-foreground">Salvo ✓</span>
+              )}
+              {/* Sheet toggleable apenas em <xl. Em xl+, sidebar persistente
+                  do lado direito é a fonte primária. */}
+              <Sheet>
+                <SheetTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="xl:hidden"
+                    >
+                      <Sparkles className="size-3.5 text-violet-600" />
+                      AI Assistant
+                    </Button>
+                  }
                 />
-              </SheetContent>
-            </Sheet>
-            <Button
-              type="submit"
-              disabled={!isDirty || !isValid || isSubmitting}
-            >
-              {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
-              Salvar alterações
-            </Button>
+                <SheetContent
+                  side="right"
+                  className="w-[420px] sm:max-w-[420px] p-0"
+                >
+                  <AIAssistantSidebar
+                    personaId={persona.id}
+                    formMethods={form}
+                  />
+                </SheetContent>
+              </Sheet>
+              <Button
+                type="submit"
+                disabled={!isDirty || !isValid || isSubmitting}
+              >
+                {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
+                Salvar alterações
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {!persona.isActive && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            Persona inativa — não responde em conversas reais. Você ainda pode
-            editar e testar.
-          </div>
-        )}
+          {!persona.isActive && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              Persona inativa — não responde em conversas reais. Você ainda pode
+              editar e testar.
+            </div>
+          )}
 
-        {submitError && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            {submitError}
-          </div>
-        )}
+          {submitError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {submitError}
+            </div>
+          )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-6 lg:col-span-2">
-            <PersonaIdentitySection persona={persona} />
-            <PersonaExamplesSection />
-            <HandoffTriggerListSection />
-            <ForbiddenTopicListSection />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6 lg:col-span-2">
+              <PersonaIdentitySection persona={persona} />
+              <PersonaExamplesSection />
+              <HandoffTriggerListSection />
+              <ForbiddenTopicListSection />
+            </div>
+            <div className="lg:sticky lg:top-4 lg:self-start lg:col-span-1">
+              <PersonaPreviewPanel personaId={persona.id} />
+            </div>
           </div>
-          <div className="lg:sticky lg:top-4 lg:self-start lg:col-span-1">
-            <PersonaPreviewPanel personaId={persona.id} />
+        </form>
+
+        {/* Sidebar persistente lado-a-lado em xl+ (D2 do spec). Em telas
+            menores, fica escondida — o Sheet toggleable acima cobre. */}
+        <aside
+          className="hidden xl:block xl:col-span-3 xl:sticky xl:top-4 xl:self-start xl:h-[calc(100vh-2rem)]"
+          aria-label="AI Assistant"
+          data-testid="ai-assistant-persistent"
+        >
+          <div className="h-full rounded-lg border bg-white overflow-hidden">
+            <AIAssistantSidebar personaId={persona.id} formMethods={form} />
           </div>
-        </div>
-      </form>
+        </aside>
+      </div>
     </FormProvider>
   );
 }
