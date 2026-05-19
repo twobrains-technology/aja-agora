@@ -6,12 +6,64 @@ import type { PersonaPatch } from "@/lib/validations/persona-patch";
 type AssistantToolsContext = {
 	personaId: string;
 	personaVersion: number;
+	role: "concierge" | "specialist";
+	category: string | null;
 	currentRow: {
 		voiceTone: string;
-		examples: unknown[];
-		forbiddenTopics: unknown[];
-		handoffTriggers: unknown[];
+		examples: ReadonlyArray<{ id: string; [k: string]: unknown }>;
+		forbiddenTopics: ReadonlyArray<{ id: string; [k: string]: unknown }>;
+		handoffTriggers: ReadonlyArray<{ id: string; [k: string]: unknown }>;
 	};
+};
+
+/**
+ * Tópicos canônicos do funil que NÃO podem virar forbiddenTopic.
+ * HARD_RULES.md sec 4.3 — bloquear esses quebra o produto.
+ */
+const CANONICAL_FUNNEL_TOPICS = [
+	"consórcio",
+	"consorcio",
+	"simulação",
+	"simulacao",
+	"carta de crédito",
+	"carta de credito",
+	"parcela",
+	"lance",
+	"contemplação",
+	"contemplacao",
+] as const;
+
+/**
+ * Palavras-chave fracas/ambíguas que não podem disparar handoff sozinhas.
+ * HARD_RULES.md sec 4.4 — só pedido EXPLÍCITO de humano vira handoff.
+ */
+const WEAK_HANDOFF_KEYWORDS = ["ajuda", "dúvida", "duvida"] as const;
+
+/**
+ * Sinais de pedido EXPLÍCITO de humano que validam um handoff trigger.
+ */
+const STRONG_HANDOFF_SIGNALS = [
+	/\b(humano|pessoa|consultor|atendente|gerente|representante|operador|funcion[áa]rio)\b/i,
+	/\bn[ãa]o quero (falar com|robô|bot)\b/i,
+	/\bquero falar com algu[ée]m\b/i,
+] as const;
+
+/**
+ * Palavras que indicam citação de valor monetário absoluto em texto de example.
+ * Concierge não pode citar valor (CA-33).
+ */
+const MONETARY_PATTERN =
+	/\b(R\$\s*\d|parcela[^a-z]{0,10}\d|cr[ée]dito[^a-z]{0,10}\d|\d{2,3}\s*mil|\d{1,3}\.\d{3})/i;
+
+/**
+ * Mapeamento categoria → palavras-chave de OUTRAS categorias que não devem
+ * aparecer no assistantResponse de um specialist daquela categoria (CA-34).
+ */
+const CATEGORY_FORBIDDEN_TERMS: Record<string, RegExp> = {
+	auto: /\b(im[óo]vel|im[óo]veis|apartamento|casa|terreno|moto|motoc[ií]clo|servi[çc]o|reforma)\b/i,
+	imovel: /\b(carro|autom[óo]vel|moto|motoc[ií]clo|ve[íi]culo|servi[çc]o|reforma)\b/i,
+	moto: /\b(carro|autom[óo]vel|im[óo]vel|apartamento|casa|servi[çc]o|reforma)\b/i,
+	servicos: /\b(carro|autom[óo]vel|im[óo]vel|apartamento|casa|moto|motoc[ií]clo)\b/i,
 };
 
 /**
@@ -134,6 +186,42 @@ export async function executeProposePatch(
 		if (violations.length > 0) {
 			return { ok: false, error: violations.join(" | ") };
 		}
+		// CA-33: concierge não pode dar valor de parcela/crédito.
+		if (
+			ctx.role === "concierge" &&
+			MONETARY_PATTERN.test(patch.after.assistantResponse)
+		) {
+			return {
+				ok: false,
+				error:
+					"persona concierge não pode citar valor de parcela ou crédito — só specialist. Reformule sem números absolutos (encaminhe pro especialista da categoria).",
+			};
+		}
+		// CA-34: specialist de uma categoria não pode falar de outra.
+		if (ctx.role === "specialist" && ctx.category) {
+			const forbidden = CATEGORY_FORBIDDEN_TERMS[ctx.category];
+			if (forbidden && forbidden.test(patch.after.assistantResponse)) {
+				return {
+					ok: false,
+					error: `persona specialist de "${ctx.category}" não fala de outra categoria. Mantenha o exemplo no escopo da especialidade.`,
+				};
+			}
+		}
+	}
+
+	if (patch.kind === "example.remove") {
+		// A-03: targetId precisa existir no row atual.
+		const exists = ctx.currentRow.examples.some(
+			(e) => e.id === patch.targetId,
+		);
+		if (!exists) {
+			return {
+				ok: false,
+				error: `example.remove: targetId "${patch.targetId}" não existe na persona. IDs disponíveis: ${
+					ctx.currentRow.examples.map((e) => e.id).join(", ") || "(nenhum)"
+				}`,
+			};
+		}
 	}
 
 	if (patch.kind === "forbiddenTopic.add") {
@@ -144,6 +232,30 @@ export async function executeProposePatch(
 		if (violations.length > 0) {
 			return { ok: false, error: violations.join(" | ") };
 		}
+		// A-01: bloquear tópicos canônicos do funil.
+		const topicNorm = normalize(patch.after.topic);
+		const canonHit = CANONICAL_FUNNEL_TOPICS.find((c) =>
+			topicNorm.includes(normalize(c)),
+		);
+		if (canonHit) {
+			return {
+				ok: false,
+				error: `forbiddenTopic.topic "${patch.after.topic}" é tópico canônico do funil (${canonHit}) — bloquear quebra o produto. Use tópicos fora do escopo (ex: "comissão de corretor", "concorrência").`,
+			};
+		}
+	}
+
+	if (patch.kind === "forbiddenTopic.remove") {
+		// A-03 extension: idem example.remove.
+		const exists = ctx.currentRow.forbiddenTopics.some(
+			(t) => t.id === patch.targetId,
+		);
+		if (!exists) {
+			return {
+				ok: false,
+				error: `forbiddenTopic.remove: targetId "${patch.targetId}" não existe na persona.`,
+			};
+		}
 	}
 
 	if (patch.kind === "handoffTrigger.add") {
@@ -153,6 +265,40 @@ export async function executeProposePatch(
 		);
 		if (violations.length > 0) {
 			return { ok: false, error: violations.join(" | ") };
+		}
+		// A-02: rejeitar condition fraca (palavra-chave única ambígua).
+		const condNorm = normalize(patch.after.condition);
+		const hasWeak = WEAK_HANDOFF_KEYWORDS.some((w) =>
+			condNorm.includes(normalize(w)),
+		);
+		const hasStrong = STRONG_HANDOFF_SIGNALS.some((rx) =>
+			rx.test(patch.after.condition),
+		);
+		if (hasWeak && !hasStrong) {
+			return {
+				ok: false,
+				error:
+					'handoffTrigger.condition fraco — palavras como "ajuda" ou "dúvida" são ambíguas. Use sinais explícitos de pedido humano: "usuário pede explicitamente falar com pessoa/consultor/atendente".',
+			};
+		}
+		if (!hasStrong) {
+			return {
+				ok: false,
+				error:
+					'handoffTrigger.condition precisa descrever pedido EXPLÍCITO de humano (palavras: humano, pessoa, consultor, atendente, gerente, operador).',
+			};
+		}
+	}
+
+	if (patch.kind === "handoffTrigger.remove") {
+		const exists = ctx.currentRow.handoffTriggers.some(
+			(t) => t.id === patch.targetId,
+		);
+		if (!exists) {
+			return {
+				ok: false,
+				error: `handoffTrigger.remove: targetId "${patch.targetId}" não existe na persona.`,
+			};
 		}
 	}
 

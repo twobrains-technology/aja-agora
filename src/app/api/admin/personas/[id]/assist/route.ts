@@ -11,7 +11,10 @@ import { buildAssistantTools } from "@/lib/agent/tools/assistant-tools";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_HISTORY = 24;
+// Spec sec 9 + plano D9: histórico limitado pra controlar custo de token.
+// 12 turns = ~6 trocas de pergunta/resposta — suficiente pra desambiguar +
+// aplicar 2-3 patches em 1 sessão. HARD_RULES.md custa ~3k tokens base.
+const MAX_HISTORY = 12;
 
 export async function POST(
 	req: Request | NextRequest,
@@ -54,6 +57,8 @@ export async function POST(
 	const tools = buildAssistantTools({
 		personaId: persona.id,
 		personaVersion: persona.version,
+		role: persona.role as "concierge" | "specialist",
+		category: persona.category,
 		currentRow: {
 			voiceTone: persona.voiceTone,
 			examples: persona.examples,

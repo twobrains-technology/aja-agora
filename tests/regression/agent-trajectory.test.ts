@@ -1795,6 +1795,8 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
 			currentRow: {
 				voiceTone: "formal e técnico",
 				examples: [],
@@ -1858,6 +1860,8 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 			{
 				personaId: "p1",
 				personaVersion: 1,
+				role: "specialist",
+				category: "auto",
 				currentRow: {
 					voiceTone: "TOM ATUAL REAL",
 					examples: [],
@@ -1888,6 +1892,8 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 			{
 				personaId: "p1",
 				personaVersion: 5,
+				role: "specialist",
+				category: "auto",
 				currentRow: {
 					voiceTone: "x",
 					examples: [],
@@ -1912,6 +1918,8 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
 			currentRow: {
 				voiceTone: "x",
 				examples: [],

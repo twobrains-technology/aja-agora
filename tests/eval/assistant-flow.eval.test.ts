@@ -60,6 +60,8 @@ async function runAssistantTurn(args: {
 	const tools = buildAssistantTools({
 		personaId: args.persona.id,
 		personaVersion: args.persona.version,
+		role: args.persona.role,
+		category: args.persona.category,
 		currentRow: {
 			voiceTone: args.persona.voiceTone,
 			examples: args.persona.examples,
@@ -276,6 +278,8 @@ describe("EVAL-ASSISTANT — sanity (sempre roda)", () => {
 		const tools = buildAssistantTools({
 			personaId: "x",
 			personaVersion: 1,
+			role: "specialist",
+			category: "auto",
 			currentRow: {
 				voiceTone: "x",
 				examples: [],
