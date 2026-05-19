@@ -1,7 +1,12 @@
 #!/bin/sh
-# Pre-commit hook: bloqueia commit se Camada 1 (structural) ou Camada 2 (trajectory snapshots) falharem.
-# Camada 3 (LLM eval real) NÃO é executada aqui — é nightly via cron.
+# Pre-commit hook: bloqueia commit se Camadas 1/2/3 falharem.
+#
+# Camada 1 (structural): src/**/*.test.ts sem DB/LLM
+# Camada 2 (trajectory snapshots): tests/regression com MockLanguageModelV2
+# Camada 3 (LLM real cirúrgico): tests/eval EVAL-SAVE-CONTACT-NAME-CIRURGICO (~11s, Anthropic real)
+#
 # Skip se nenhum arquivo .ts/.tsx/.sql tocado (commits só de docs).
+# Skip Camada 3 se ANTHROPIC_API_KEY não setada (eval pula via describeIfKey).
 
 CHANGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|sql)$' | head -1)
 
@@ -10,18 +15,19 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-echo "[pre-commit] rodando Camada 1 + Camada 2 (vitest)..."
+echo "[pre-commit] rodando Camada 1 + 2 + 3 cirúrgico (vitest + eval real)..."
 npm run test:pre-commit
 STATUS=$?
 
 if [ $STATUS -ne 0 ]; then
   echo ""
-  echo "❌ COMMIT BLOQUEADO — testes Camada 1 ou 2 falharam."
+  echo "❌ COMMIT BLOQUEADO — testes Camada 1, 2 ou 3 falharam."
   echo "Fix os testes acima OU adicione cassette/regra. Detalhes:"
   echo "  Camada 1: src/**/*.test.ts (structural)"
   echo "  Camada 2: tests/regression/agent-trajectory.test.ts (trajectory snapshots)"
+  echo "  Camada 3: tests/eval/agent-flow.eval.test.ts (LLM real cirúrgico)"
   echo "Convenção: CLAUDE.md → 'Regressão de agent — 3 camadas OBRIGATÓRIAS'"
   exit 1
 fi
 
-echo "[pre-commit] ✅ Camada 1 + 2 verdes."
+echo "[pre-commit] ✅ Camadas 1 + 2 + 3 verdes."
