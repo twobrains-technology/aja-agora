@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildAssistantTools,
+	executeProposePatch,
 	type ProposePatchResult,
 } from "./assistant-tools";
 
@@ -28,6 +29,22 @@ function makeCtx(
 		},
 		...over,
 	});
+}
+
+function makeBaseCtx(
+	over: Partial<Parameters<typeof buildAssistantTools>[0]> = {},
+): Parameters<typeof executeProposePatch>[1] {
+	return {
+		personaId: "p1",
+		personaVersion: 1,
+		currentRow: {
+			voiceTone: "formal e técnico",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		},
+		...over,
+	};
 }
 
 describe("buildAssistantTools — registry", () => {
@@ -112,11 +129,9 @@ describe("validate_against_rules", () => {
 	});
 });
 
-describe("propose_patch — validações server-side", () => {
+describe("executeProposePatch — validações server-side", () => {
 	it("rejeita personaVersionSeen stale", async () => {
-		const tools = makeCtx({ personaVersion: 5 });
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -124,6 +139,7 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 3,
 			},
+			makeBaseCtx({ personaVersion: 5 }),
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -132,9 +148,7 @@ describe("propose_patch — validações server-side", () => {
 	});
 
 	it("rejeita voiceTone com before que não bate com row atual", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "tom errado que não está no row",
@@ -142,6 +156,7 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -150,9 +165,7 @@ describe("propose_patch — validações server-side", () => {
 	});
 
 	it("rejeita voiceTone com frase proibida no after", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -160,6 +173,7 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -168,9 +182,7 @@ describe("propose_patch — validações server-side", () => {
 	});
 
 	it("rejeita example.add cujo assistantResponse contém frase proibida", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "example.add",
 				after: {
@@ -181,6 +193,7 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "exemplo de preço",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -189,9 +202,7 @@ describe("propose_patch — validações server-side", () => {
 	});
 
 	it("aceita patch voiceTone válido", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -199,6 +210,7 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "admin pediu menos formal",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(true);
 		if (result.ok) {
@@ -207,9 +219,7 @@ describe("propose_patch — validações server-side", () => {
 	});
 
 	it("aceita patch example.add limpo", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "example.add",
 				after: {
@@ -221,20 +231,20 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "exemplo educativo",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(true);
 	});
 
 	it("aceita example.remove sem validar conteúdo (não há after pra validar)", async () => {
-		const tools = makeCtx();
-		const result = await execTool<ProposePatchResult>(
-			tools.propose_patch.execute,
+		const result = await executeProposePatch(
 			{
 				kind: "example.remove",
 				targetId: "550e8400-e29b-41d4-a716-446655440000",
 				rationale: "removendo exemplo redundante",
 				personaVersionSeen: 1,
 			},
+			makeBaseCtx(),
 		);
 		expect(result.ok).toBe(true);
 	});

@@ -96,6 +96,69 @@ export type ProposePatchResult =
 	| { ok: true; patch: PersonaPatch }
 	| { ok: false; error: string };
 
+/**
+ * Lógica de validação server-side do patch — extraída pra ser testável sem
+ * passar pelo wrapper z.object({ patch: ... }) que o tool inputSchema obriga
+ * por exigência da Anthropic (input_schema deve ter type:"object" no root).
+ */
+export async function executeProposePatch(
+	patch: PersonaPatch,
+	ctx: AssistantToolsContext,
+): Promise<ProposePatchResult> {
+	if (patch.personaVersionSeen !== ctx.personaVersion) {
+		return {
+			ok: false,
+			error: `versão stale: você usou personaVersionSeen=${patch.personaVersionSeen} mas a versão atual é ${ctx.personaVersion}. Releia a ficha da persona e tente de novo.`,
+		};
+	}
+
+	if (patch.kind === "voiceTone") {
+		if (patch.before !== ctx.currentRow.voiceTone) {
+			return {
+				ok: false,
+				error:
+					"patch.before não bate com o voiceTone atual da persona. Copie o texto EXATO da ficha — não invente nem parafraseie.",
+			};
+		}
+		const violations = detectViolations(patch.after, "voiceTone");
+		if (violations.length > 0) {
+			return { ok: false, error: violations.join(" | ") };
+		}
+	}
+
+	if (patch.kind === "example.add") {
+		const violations = detectViolations(
+			patch.after.assistantResponse,
+			"example.assistantResponse",
+		);
+		if (violations.length > 0) {
+			return { ok: false, error: violations.join(" | ") };
+		}
+	}
+
+	if (patch.kind === "forbiddenTopic.add") {
+		const violations = detectViolations(
+			patch.after.responseWhenAsked,
+			"forbiddenTopic.responseWhenAsked",
+		);
+		if (violations.length > 0) {
+			return { ok: false, error: violations.join(" | ") };
+		}
+	}
+
+	if (patch.kind === "handoffTrigger.add") {
+		const violations = detectViolations(
+			patch.after.condition,
+			"handoffTrigger.condition",
+		);
+		if (violations.length > 0) {
+			return { ok: false, error: violations.join(" | ") };
+		}
+	}
+
+	return { ok: true, patch };
+}
+
 export function buildAssistantTools(ctx: AssistantToolsContext) {
 	return {
 		ask_clarification: tool({
@@ -127,62 +190,11 @@ export function buildAssistantTools(ctx: AssistantToolsContext) {
 
 		propose_patch: tool({
 			description:
-				"Propõe uma mudança estruturada na persona. SEMPRE valide o conteúdo com validate_against_rules antes de chamar. Inclua personaVersionSeen igual à versão atual da persona (veja a ficha no system prompt).",
-			inputSchema: personaPatchSchema,
-			execute: async (patch): Promise<ProposePatchResult> => {
-				if (patch.personaVersionSeen !== ctx.personaVersion) {
-					return {
-						ok: false,
-						error: `versão stale: você usou personaVersionSeen=${patch.personaVersionSeen} mas a versão atual é ${ctx.personaVersion}. Releia a ficha da persona e tente de novo.`,
-					};
-				}
-
-				if (patch.kind === "voiceTone") {
-					if (patch.before !== ctx.currentRow.voiceTone) {
-						return {
-							ok: false,
-							error:
-								"patch.before não bate com o voiceTone atual da persona. Copie o texto EXATO da ficha — não invente nem parafraseie.",
-						};
-					}
-					const violations = detectViolations(patch.after, "voiceTone");
-					if (violations.length > 0) {
-						return { ok: false, error: violations.join(" | ") };
-					}
-				}
-
-				if (patch.kind === "example.add") {
-					const violations = detectViolations(
-						patch.after.assistantResponse,
-						"example.assistantResponse",
-					);
-					if (violations.length > 0) {
-						return { ok: false, error: violations.join(" | ") };
-					}
-				}
-
-				if (patch.kind === "forbiddenTopic.add") {
-					const violations = detectViolations(
-						patch.after.responseWhenAsked,
-						"forbiddenTopic.responseWhenAsked",
-					);
-					if (violations.length > 0) {
-						return { ok: false, error: violations.join(" | ") };
-					}
-				}
-
-				if (patch.kind === "handoffTrigger.add") {
-					const violations = detectViolations(
-						patch.after.condition,
-						"handoffTrigger.condition",
-					);
-					if (violations.length > 0) {
-						return { ok: false, error: violations.join(" | ") };
-					}
-				}
-
-				return { ok: true, patch };
-			},
+				"Propõe uma mudança estruturada na persona. SEMPRE valide o conteúdo com validate_against_rules antes de chamar. Inclua personaVersionSeen igual à versão atual da persona (veja a ficha no system prompt). O patch deve ter formato { kind, rationale, personaVersionSeen, ...(campos específicos por kind) }: voiceTone usa { before, after }; example.add/forbiddenTopic.add/handoffTrigger.add usam { after: <objeto> }; *.remove usam { targetId: <uuid> }.",
+			inputSchema: z.object({
+				patch: personaPatchSchema,
+			}),
+			execute: async ({ patch }) => executeProposePatch(patch, ctx),
 		}),
 	};
 }

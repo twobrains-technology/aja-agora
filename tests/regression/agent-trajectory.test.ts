@@ -1788,11 +1788,11 @@ describe("BUG-ASSISTANT-PROPOSAL-MUST-VALIDATE — validate_against_rules antes 
 });
 
 describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas pos-nome é rejeitado server-side", () => {
-	it("propose_patch.execute rejeita voiceTone contendo 9 variantes proibidas", async () => {
-		const { buildAssistantTools } = await import(
+	it("executeProposePatch rejeita voiceTone contendo variantes proibidas", async () => {
+		const { executeProposePatch } = await import(
 			"@/lib/agent/tools/assistant-tools"
 		);
-		const tools = buildAssistantTools({
+		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
 			currentRow: {
@@ -1801,7 +1801,7 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 				forbiddenTopics: [],
 				handoffTriggers: [],
 			},
-		});
+		};
 
 		const variantes = [
 			"casual e Vamos achar a opção certa juntos",
@@ -1810,7 +1810,7 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 		];
 
 		for (const after of variantes) {
-			const result = await tools.propose_patch.execute(
+			const result = await executeProposePatch(
 				{
 					kind: "voiceTone",
 					before: "formal e técnico",
@@ -1818,7 +1818,7 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 					rationale: "test",
 					personaVersionSeen: 1,
 				},
-				{} as never,
+				ctx,
 			);
 			expect(result.ok, `voiceTone "${after}" deveria ter sido rejeitado`).toBe(
 				false,
@@ -1843,22 +1843,11 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 });
 
 describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com before inventado e version stale", () => {
-	it("propose_patch.execute rejeita voiceTone com before que não bate com row atual", async () => {
-		const { buildAssistantTools } = await import(
+	it("executeProposePatch rejeita voiceTone com before que não bate com row atual", async () => {
+		const { executeProposePatch } = await import(
 			"@/lib/agent/tools/assistant-tools"
 		);
-		const tools = buildAssistantTools({
-			personaId: "p1",
-			personaVersion: 1,
-			currentRow: {
-				voiceTone: "TOM ATUAL REAL",
-				examples: [],
-				forbiddenTopics: [],
-				handoffTriggers: [],
-			},
-		});
-
-		const result = await tools.propose_patch.execute(
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "tom inventado pelo LLM",
@@ -1866,7 +1855,16 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 				rationale: "x",
 				personaVersionSeen: 1,
 			},
-			{} as never,
+			{
+				personaId: "p1",
+				personaVersion: 1,
+				currentRow: {
+					voiceTone: "TOM ATUAL REAL",
+					examples: [],
+					forbiddenTopics: [],
+					handoffTriggers: [],
+				},
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -1875,22 +1873,11 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 		}
 	});
 
-	it("propose_patch.execute rejeita patch com personaVersionSeen stale (race condition)", async () => {
-		const { buildAssistantTools } = await import(
+	it("executeProposePatch rejeita patch com personaVersionSeen stale (race condition)", async () => {
+		const { executeProposePatch } = await import(
 			"@/lib/agent/tools/assistant-tools"
 		);
-		const tools = buildAssistantTools({
-			personaId: "p1",
-			personaVersion: 5,
-			currentRow: {
-				voiceTone: "x",
-				examples: [],
-				forbiddenTopics: [],
-				handoffTriggers: [],
-			},
-		});
-
-		const result = await tools.propose_patch.execute(
+		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
 				before: "x",
@@ -1898,7 +1885,16 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 				rationale: "r",
 				personaVersionSeen: 3,
 			},
-			{} as never,
+			{
+				personaId: "p1",
+				personaVersion: 5,
+				currentRow: {
+					voiceTone: "x",
+					examples: [],
+					forbiddenTopics: [],
+					handoffTriggers: [],
+				},
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -1909,11 +1905,11 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 });
 
 describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantResponse vaza chain-of-thought é rejeitado", () => {
-	it("propose_patch rejeita example.add com 'Motivo:' / 'Reavaliando' no assistantResponse", async () => {
-		const { buildAssistantTools } = await import(
+	it("executeProposePatch rejeita example.add com 'Motivo:' / 'Reavaliando' no assistantResponse", async () => {
+		const { executeProposePatch } = await import(
 			"@/lib/agent/tools/assistant-tools"
 		);
-		const tools = buildAssistantTools({
+		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
 			currentRow: {
@@ -1922,7 +1918,7 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 				forbiddenTopics: [],
 				handoffTriggers: [],
 			},
-		});
+		};
 
 		const samples = [
 			"Vou te conectar com humano. Motivo: valor acima do teto de R$ 3M.",
@@ -1930,7 +1926,7 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 		];
 
 		for (const assistantResponse of samples) {
-			const result = await tools.propose_patch.execute(
+			const result = await executeProposePatch(
 				{
 					kind: "example.add",
 					after: {
@@ -1941,7 +1937,7 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 					rationale: "test",
 					personaVersionSeen: 1,
 				},
-				{} as never,
+				ctx,
 			);
 			expect(
 				result.ok,

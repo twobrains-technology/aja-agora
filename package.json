@@ -21,7 +21,7 @@
 		"test:integration": "vitest run --reporter=verbose src/**/route*.test.ts src/**/*.integration.test.ts src/lib/agent/agents/builder*.test.ts",
 		"test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
 		"test:eval": "vitest run --config vitest.eval.config.ts",
-		"test:eval:quick": "vitest run --config vitest.eval.config.ts -t 'EVAL-SAVE-CONTACT-NAME-CIRURGICO'",
+		"test:eval:quick": "vitest run --config vitest.eval.config.ts -t 'EVAL-SAVE-CONTACT-NAME-CIRURGICO|EVAL-ASSISTANT-LESS-FORMAL'",
 		"test:pre-commit": "npm run test:unit && npm run test:eval:quick",
 		"eval:calibrate:bundle": "esbuild scripts/eval-calibrate.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/eval-calibrate.bundle.cjs",
 		"eval:calibrate": "npm run eval:calibrate:bundle && node --env-file-if-exists=.env scripts/eval-calibrate.bundle.cjs",
