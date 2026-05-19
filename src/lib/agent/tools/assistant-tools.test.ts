@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { buildAssistantTools } from "./assistant-tools";
+import {
+	buildAssistantTools,
+	type ProposePatchResult,
+} from "./assistant-tools";
 
-function makeCtx(over: Partial<Parameters<typeof buildAssistantTools>[0]> = {}) {
+// Helper p/ narrow type — tool.execute do AI SDK 6 retorna Result|AsyncIterable<Result>;
+// aqui é sempre Result (Promise<R>), então cast direto.
+async function execTool<T>(
+	// biome-ignore lint/suspicious/noExplicitAny: tool.execute schema do SDK
+	execute: any,
+	input: unknown,
+): Promise<T> {
+	return (await execute(input, {} as never)) as T;
+}
+
+function makeCtx(
+	over: Partial<Parameters<typeof buildAssistantTools>[0]> = {},
+) {
 	return buildAssistantTools({
 		personaId: "p1",
 		personaVersion: 1,
@@ -14,9 +29,6 @@ function makeCtx(over: Partial<Parameters<typeof buildAssistantTools>[0]> = {}) 
 		...over,
 	});
 }
-
-// AI SDK tool.execute esperam um segundo argumento (options); usamos cast pra teste.
-const TOOL_OPTS = {} as never;
 
 describe("buildAssistantTools — registry", () => {
 	it("retorna 3 tools no registry", () => {
@@ -32,25 +44,27 @@ describe("buildAssistantTools — registry", () => {
 describe("ask_clarification", () => {
 	it("retorna a pergunta sem persistir nada", async () => {
 		const tools = makeCtx();
-		const result = await tools.ask_clarification.execute(
+		const result = await execTool<{ question: string }>(
+			tools.ask_clarification.execute,
 			{
 				question: "Menos formal igual amigo no zap, ou só menos técnico?",
 			},
-			TOOL_OPTS,
 		);
 		expect(result.question).toMatch(/menos formal/i);
 	});
 });
 
+type ValidateResult = { valid: boolean; violations: string[] };
+
 describe("validate_against_rules", () => {
 	it("aceita texto limpo", async () => {
 		const tools = makeCtx();
-		const result = await tools.validate_against_rules.execute(
+		const result = await execTool<ValidateResult>(
+			tools.validate_against_rules.execute,
 			{
 				text: "casual, próximo, fala como amigo no zap",
 				field: "voiceTone",
 			},
-			TOOL_OPTS,
 		);
 		expect(result.valid).toBe(true);
 		expect(result.violations).toEqual([]);
@@ -58,12 +72,12 @@ describe("validate_against_rules", () => {
 
 	it("detecta frase proibida 'Vamos achar a opção certa'", async () => {
 		const tools = makeCtx();
-		const result = await tools.validate_against_rules.execute(
+		const result = await execTool<ValidateResult>(
+			tools.validate_against_rules.execute,
 			{
 				text: "Vamos achar a opção certa pra você",
 				field: "voiceTone",
 			},
-			TOOL_OPTS,
 		);
 		expect(result.valid).toBe(false);
 		expect(result.violations.some((v) => /vamos achar/i.test(v))).toBe(true);
@@ -71,12 +85,12 @@ describe("validate_against_rules", () => {
 
 	it("detecta vazamento de raciocínio 'Motivo:'", async () => {
 		const tools = makeCtx();
-		const result = await tools.validate_against_rules.execute(
+		const result = await execTool<ValidateResult>(
+			tools.validate_against_rules.execute,
 			{
 				text: "Vou te conectar com humano. Motivo: valor acima do teto.",
 				field: "example.assistantResponse",
 			},
-			TOOL_OPTS,
 		);
 		expect(result.valid).toBe(false);
 		expect(result.violations.some((v) => /Motivo/i.test(v))).toBe(true);
@@ -84,12 +98,12 @@ describe("validate_against_rules", () => {
 
 	it("detecta voiceTone que instrui cumprimentar antes da tool", async () => {
 		const tools = makeCtx();
-		const result = await tools.validate_against_rules.execute(
+		const result = await execTool<ValidateResult>(
+			tools.validate_against_rules.execute,
 			{
 				text: "Sempre cumprimente pelo nome assim que entrar na conversa",
 				field: "voiceTone",
 			},
-			TOOL_OPTS,
 		);
 		expect(result.valid).toBe(false);
 		expect(
@@ -101,7 +115,8 @@ describe("validate_against_rules", () => {
 describe("propose_patch — validações server-side", () => {
 	it("rejeita personaVersionSeen stale", async () => {
 		const tools = makeCtx({ personaVersion: 5 });
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -109,7 +124,6 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 3,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -119,7 +133,8 @@ describe("propose_patch — validações server-side", () => {
 
 	it("rejeita voiceTone com before que não bate com row atual", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "voiceTone",
 				before: "tom errado que não está no row",
@@ -127,7 +142,6 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -137,7 +151,8 @@ describe("propose_patch — validações server-side", () => {
 
 	it("rejeita voiceTone com frase proibida no after", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -145,7 +160,6 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "x",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -155,7 +169,8 @@ describe("propose_patch — validações server-side", () => {
 
 	it("rejeita example.add cujo assistantResponse contém frase proibida", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "example.add",
 				after: {
@@ -166,7 +181,6 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "exemplo de preço",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -176,7 +190,8 @@ describe("propose_patch — validações server-side", () => {
 
 	it("aceita patch voiceTone válido", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "voiceTone",
 				before: "formal e técnico",
@@ -184,7 +199,6 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "admin pediu menos formal",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(true);
 		if (result.ok) {
@@ -194,7 +208,8 @@ describe("propose_patch — validações server-side", () => {
 
 	it("aceita patch example.add limpo", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "example.add",
 				after: {
@@ -206,21 +221,20 @@ describe("propose_patch — validações server-side", () => {
 				rationale: "exemplo educativo",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(true);
 	});
 
 	it("aceita example.remove sem validar conteúdo (não há after pra validar)", async () => {
 		const tools = makeCtx();
-		const result = await tools.propose_patch.execute(
+		const result = await execTool<ProposePatchResult>(
+			tools.propose_patch.execute,
 			{
 				kind: "example.remove",
 				targetId: "550e8400-e29b-41d4-a716-446655440000",
 				rationale: "removendo exemplo redundante",
 				personaVersionSeen: 1,
 			},
-			TOOL_OPTS,
 		);
 		expect(result.ok).toBe(true);
 	});

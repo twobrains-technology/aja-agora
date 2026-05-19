@@ -62,6 +62,9 @@ export async function POST(
 		},
 	});
 
+	// biome-ignore lint/suspicious/noExplicitAny: messages from useChat
+	const modelMessages = await convertToModelMessages(messages as any);
+
 	const result = streamText({
 		model: anthropic("claude-sonnet-4-6"),
 		system: buildAssistantPrompt({
@@ -76,8 +79,7 @@ export async function POST(
 			handoffTriggers: persona.handoffTriggers,
 			version: persona.version,
 		}),
-		// biome-ignore lint/suspicious/noExplicitAny: messages from useChat
-		messages: convertToModelMessages(messages as any),
+		messages: modelMessages,
 		tools,
 		stopWhen: stepCountIs(6),
 		temperature: 0.4,

@@ -1,12 +1,17 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import type {
   PersonaCampaign,
   PersonaExample,
@@ -19,6 +24,7 @@ import {
   type UpdatePersonaInput,
   updatePersonaSchema,
 } from "@/lib/validations/persona";
+import { AIAssistantSidebar } from "./ai-assistant-sidebar";
 import { ForbiddenTopicListSection } from "./forbidden-topic-list-section";
 import { HandoffTriggerListSection } from "./handoff-trigger-list-section";
 import { PersonaExamplesSection } from "./persona-examples-section";
@@ -111,6 +117,25 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
             {submitSuccess && !isDirty && (
               <span className="text-sm text-muted-foreground">Salvo ✓</span>
             )}
+            <Sheet>
+              <SheetTrigger
+                render={
+                  <Button type="button" variant="outline" size="sm">
+                    <Sparkles className="size-3.5 text-violet-600" />
+                    AI Assistant
+                  </Button>
+                }
+              />
+              <SheetContent
+                side="right"
+                className="w-[420px] sm:max-w-[420px] p-0"
+              >
+                <AIAssistantSidebar
+                  personaId={persona.id}
+                  formMethods={form}
+                />
+              </SheetContent>
+            </Sheet>
             <Button
               type="submit"
               disabled={!isDirty || !isValid || isSubmitting}
