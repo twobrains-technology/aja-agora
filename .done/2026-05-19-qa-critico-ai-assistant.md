@@ -275,3 +275,44 @@ grep -r "sk-ant-" .next/standalone/                               # 2 hits em .e
 Adversarial drift simulation: adicionado fake phrase ao `CANONICAL_FORBIDDEN_PHRASES` → 3/5 testes do `HARD_RULES.test.ts` falharam corretamente (HARD_RULES.md/cassettes/system-prompt.ts). Revertido. Detector funciona.
 
 Adversarial executeProposePatch (10 vetores): case-mix, espaços extras, newline, homoglyph cyrillic, tópico canônico, condition fraca, targetId inexistente, R$ inventado, concierge com valor — **6/10 passaram quando deviam falhar** (gaps de validação documentados em A-01..A-04).
+
+---
+
+## ROUND 2 — Pós-fixes (2026-05-19 tarde)
+
+### Status FAILs round 1
+
+| Item | Status | Evidência (1 linha) |
+|------|--------|---------------------|
+| CA-01 sidebar persistente | RESOLVED | `persona-edit-shell.tsx:191-199` `<aside hidden xl:block xl:col-span-3 xl:sticky>` + `xl:col-span-9` no form + `xl:hidden` no botão mobile |
+| CA-04 botão Editar | RESOLVED | `diff-card.tsx:3` import `Pencil`, `:210` `<Pencil className="size-3" />` no botão |
+| CA-06 shouldValidate | RESOLVED | exatamente 7 ocorrências `shouldValidate: true` em `ai-assistant-sidebar.tsx` |
+| CA-09 Editar inline | RESOLVED | `diff-card.tsx:107` `handleSaveEdit`, `:182` badge `EDITANDO`, `:229` botão save |
+| CA-20 MAX_HISTORY 12 | RESOLVED | `route.ts` `const MAX_HISTORY = 12;` + slice `(-MAX_HISTORY)` |
+| A-01 forbiddenTopic canon | RESOLVED | `assistant-tools.ts:33` `CANONICAL_FUNNEL_TOPICS` + `:254` `canonHit` matcher |
+| A-02 handoff weak | RESOLVED | `:50` `WEAK_HANDOFF_KEYWORDS` + `:55` `STRONG_HANDOFF_SIGNALS` + `:288-291` lógica weak/strong |
+| A-03 remove targetId | RESOLVED | `PersonaVersionConflictError` em `personas-repo.ts:178` + `refreshVersion` anti-race no tool |
+| A-04 role/category | RESOLVED | `:72` `CATEGORY_FORBIDDEN_TERMS` + `:219` enforcement `MONETARY_PATTERN` + `:65` regex monetário |
+| CA-33 concierge value | RESOLVED (via A-04) | `CATEGORY_FORBIDDEN_TERMS` bloqueia termos por categoria + monetário no `:209` |
+| CA-34 specialist cat | RESOLVED (via A-04) | mesma estrutura `CATEGORY_FORBIDDEN_TERMS` por `ctx.category` |
+| Gap A version race | RESOLVED | `route.ts` injeta `refreshVersion: async () => { const fresh = await getPersonaForAdmin(persona.id); return fresh.version; }` + tool re-checa via `ctx.refreshVersion()` em `assistant-tools.ts:173-174` antes do apply |
+
+### Suites
+
+| Suite | Resultado |
+|-------|-----------|
+| Unit | 806 passed / 4 skipped (810 total) — 6.15s |
+| Cassettes BUG-ASSISTANT | 20 passed / 53 skipped (filtro `-t`) — 572ms |
+| Eval LLM | 5 passed / 15 skipped (filtro `-t`) — 11.50s |
+| E2E API | 7 passed / 0 failed — 724ms |
+| Typecheck | 0 erros novos em assistant/persona-patch/HARD_RULES/admin-personas-[id] |
+
+### Veredito round 2
+
+**SHIP** — soft-launch liberado.
+
+Todos os 12 itens reprovados no round 1 (incluindo o Gap A introduzido entre rounds) estão **RESOLVED** com evidência estrutural direta no source e suites passando. Anti-race via `refreshVersion` re-lê a versão direto do DB dentro do tool antes do `applyPersonaPatch`, fechando a janela entre `ensureSession` e `apply` (que era o vetor de Gap A). Guards server-side agora têm whitelist canônica (`CANONICAL_FUNNEL_TOPICS`), handoff stratificado (weak vs strong) e enforcement por categoria/role (`CATEGORY_FORBIDDEN_TERMS` + `MONETARY_PATTERN`) — defesa em profundidade contra prompt injection do assistente.
+
+Recomendação: **soft-launch** (limitar a 1-2 personas/admins em produção por 48h) — não vejo bloqueador, mas a versão race + LLM-as-judge ainda não rodaram em volume real. Após 48h sem incidente, full rollout.
+
+Não há bloqueadores remanescentes.
