@@ -635,3 +635,110 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// BUG-AUTO-SKIPS-PRE-VALUE-GATES — Rafael (auto) e demais specialists pulam
+// gates de experience/timeframe/lance ANTES de pedir valor/parcela
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, conversa Monique 6c0ca4cf-cae6 — Helena/imovel,
+// e tb-dev 2026-05-17 b6c222fe — Rafael/auto): após capturar nome via
+// save_contact_name, agent pulava direto para perguntar valor de carta
+// ("Qual faixa de crédito você tem em mente?") SEM antes ter respondido/
+// disparado os 3 gates de qualificação que o sistema espera:
+//
+//   1. experience  (já fez consórcio? — first/returning/doubts)
+//   2. timeframe   (qual prazo?)
+//   3. lance       (tem reserva pra lance?)
+//
+// Sintoma:
+//   - Métricas: qualifyAnswers preenchidas SEM experiencePrev → eval inválida.
+//   - UX: agent ignora orchestrator que tenta disparar `gate: experience` —
+//     gera turn de texto com pergunta, frontend não renderiza chips.
+//   - Funil: search_groups roda com perfil incompleto, recommend pifa.
+//
+// PO Kairo (2026-05-19): "quando categoria é auto (Rafael), o agent precisa
+// fazer as MESMAS perguntas dos outros specialists ANTES de pedir valor/
+// parcela". Aplicou via "cadastro do agent" → persona row no DB
+// (drizzle/0021_auto_persona_gate_flow.sql) + reforço genérico no
+// SPECIALIST_BASE_PROMPT cobrindo as 4 specialists.
+//
+// Esta camada (1) valida que o reforço STRUCTURAL existe no prompt
+// compartilhado — regra dura citando os 3 gates pré-valor por nome.
+// Sem isso, persona row do DB (Camada DB) fica isolada e modelo regride.
+// ============================================================================
+
+describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — prompt obriga gates experience/timeframe/lance ANTES de pedir valor", () => {
+	it("SPECIALIST_BASE_PROMPT cita os 3 gates pré-valor por nome (experience, timeframe, lance)", () => {
+		// Os 3 gates precisam aparecer próximos no prompt acoplados à proibição
+		// de pedir valor antes. Lista NÃO opcional — modelo precisa enxergar os
+		// 3 explícitos.
+		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
+		const gates = ["experience", "timeframe", "lance"];
+		const faltando = gates.filter((g) => !promptLower.includes(g));
+		expect(
+			faltando,
+			"Gates ausentes no SPECIALIST_BASE_PROMPT: " +
+				`${JSON.stringify(faltando)}. ` +
+				"Os 3 gates (experience/timeframe/lance) precisam ser citados " +
+				"explícitos para que o modelo respeite a ordem.",
+		).toEqual([]);
+	});
+
+	it("contém regra dura proibindo pedir valor/parcela ANTES dos 3 gates de qualificação", () => {
+		// Pattern: regra dura citando "valor" / "carta" / "parcela" PRECEDIDA
+		// por menção aos 3 gates (experience + timeframe + lance) num mesmo
+		// bloco. A regra precisa ser ATEMPORAL — não pedir valor SEM ter
+		// experience+timeframe+lance.
+		//
+		// Aceita 2 ordens equivalentes:
+		//   A) "ANTES de [valor/parcela/picker] ... experience ... timeframe ... lance"
+		//   B) "experience ... timeframe ... lance ... ANTES de [valor/parcela/picker]"
+		const ordemA =
+			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
+		const ordemB =
+			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+		expect(
+			ordemA.test(SPECIALIST_BASE_PROMPT) || ordemB.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa ter regra dura acoplando os 3 gates " +
+				"(experience/timeframe/lance) à proibição de pedir valor/parcela ANTES. " +
+				"Bug Monique/Helena tb-dev: agent pulou direto pra valor após save_contact_name.",
+		).toBe(true);
+	});
+
+	it("regra vale para as 4 specialists (auto/imovel/moto/servicos) — não cita persona específica", () => {
+		// O SPECIALIST_BASE_PROMPT é compartilhado. O bloco da regra NÃO pode
+		// citar Rafael/Helena/Bruno/Camila — vale igualmente pras 4.
+		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
+			/(experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance|ANTES[\s\S]{0,400}(valor|parcela|carta)[\s\S]{0,600}experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance)/i,
+		);
+		expect(
+			blocoMatch,
+			"Bloco com os 3 gates não encontrado — sem ele, asserção de bias " +
+				"fica sem alvo. Fix do prompt deve adicionar bloco unificado.",
+		).not.toBeNull();
+		if (!blocoMatch) return;
+		const bloco = blocoMatch[0].toLowerCase();
+		const personas = ["rafael", "helena", "bruno", "camila"];
+		const enviesadas = personas.filter((p) => bloco.includes(p));
+		expect(
+			enviesadas,
+			"Bloco da regra cita persona específica: " +
+				`${JSON.stringify(enviesadas)}. ` +
+				"Regra vale pras 4 specialists igualmente — remova o nome.",
+		).toEqual([]);
+	});
+
+	it("regra menciona o ponto de entrada (save_contact_name) — ordem temporal explícita", () => {
+		// O fluxo correto é: save_contact_name → 3 gates → valor. Sem amarrar
+		// ao save_contact_name, o agent pode pular gates noutros momentos.
+		// Aceitamos qualquer das duas formulações: regra cita save_contact_name
+		// próximo aos gates OU "apos nome" próximo aos gates.
+		const ancoragem =
+			/(save_contact_name|ap[óo]s.{0,20}nome|p[óo]s-nome)[\s\S]{0,800}(experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance|3\s*gates|tr[êe]s gates)/i;
+		expect(
+			ancoragem.test(SPECIALIST_BASE_PROMPT),
+			"Regra precisa amarrar ordem 'após save_contact_name → 3 gates → valor'. " +
+				"Sem ancoragem ao save_contact_name, o agent pula gates em outros momentos do funil.",
+		).toBe(true);
+	});
+});

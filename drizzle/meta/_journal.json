@@ -148,6 +148,13 @@
 			"when": 1779180000000,
 			"tag": "0020_artifact_type_text",
 			"breakpoints": true
+		},
+		{
+			"idx": 21,
+			"version": "7",
+			"when": 1779190000000,
+			"tag": "0021_auto_persona_gate_flow",
+			"breakpoints": true
 		}
 	]
 }

@@ -1462,3 +1462,253 @@ describe("BUG-INTERNAL-REASONING-LEAK-CASSETTE — agent vazou chain-of-thought 
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// CENARIO 18 — Hallucination do conversationId (BUG-CONVERSATION-ID-HALLUCINATION)
+// ----------------------------------------------------------------------------
+// Real (eval Camada 3 cirúrgico, commit 9080db4): o modelo Claude inventava
+// `conversationId: "conv_001"` ao chamar `save_contact_name` em vez de
+// receber/usar o UUID real. UPDATE no Postgres não acertava linha alguma
+// (0 rows), `contact_name` ficava NULL apesar do tool-call ter sido
+// emitido. Form final BUG-LEAD-FORM-PREFILL aparecia vazio como sintoma.
+//
+// Fix arquitetural: `conversationId` é CONTEXTO da request, não input do
+// usuário. Removido do `inputSchema` das tools sensíveis (save_contact_name,
+// save_contact_whatsapp, present_lead_form). Injetado via closure pela
+// factory `buildConsorcioTools(ctx)`. Builder de agent recebe
+// `opts.conversationId` e propaga pro factory.
+//
+// Cassette:
+//   - Modelo emite tool-call save_contact_name COM input = { name: "Paulo" }
+//     APENAS (sem conversationId — porque após o fix o schema não pede).
+//   - Asserta que execute do tool persiste no DB usando o conversationId
+//     injetado via factory (closure), não do input.
+//
+// Camada complementar:
+//   - Camada 1 (estrutural): src/lib/agent/tools/ai-sdk.test.ts
+//     describe BUG-CONVERSATION-ID-NOT-IN-SCHEMA cobre inputSchema das tools.
+//   - Camada 3 (eval LLM real): tests/eval/agent-flow.eval.test.ts
+//     EVAL-SAVE-CONTACT-NAME-CIRURGICO valida persistência no DB.
+// ============================================================================
+
+describe("BUG-CONVERSATION-ID-HALLUCINATION — tool emite save_contact_name sem conversationId no input, factory injeta via closure", () => {
+	it("cassette: stream emite save_contact_name input={ name: 'Paulo' } SEM conversationId — schema pós-fix", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-conv-id-fix", "save_contact_name", { name: "Paulo" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		// Reproducao do cenário pós-fix: input só tem `name`, schema removeu
+		// conversationId — modelo não tem como inventar.
+		expect(text).toBe("");
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("save_contact_name");
+		expect(toolCalls[0]?.input).toEqual({ name: "Paulo" });
+		expect(toolCalls[0]?.input).not.toHaveProperty("conversationId");
+	});
+
+	it("execute via buildConsorcioTools(ctx) persiste no UUID real (closure) com input só { name }", async () => {
+		// Esse teste prova end-to-end: factory injeta conversationId via
+		// closure → execute persiste no UUID REAL → contact_name preenchido.
+		const { buildConsorcioTools } = await import("@/lib/agent/tools/ai-sdk");
+		const { db } = await import("@/db");
+		const { conversations, leads } = await import("@/db/schema");
+		const { eq } = await import("drizzle-orm");
+
+		const [c] = await db.insert(conversations).values({}).returning();
+		const realConvId = c.id;
+		try {
+			const tools = buildConsorcioTools({ conversationId: realConvId });
+			// biome-ignore lint/suspicious/noExplicitAny: execute opaco
+			const exec = (tools.save_contact_name as any).execute;
+			// Modelo passa SÓ { name } — exatamente como ficou o schema pós-fix.
+			const result = await exec({ name: "Paulo" });
+			expect(typeof result).toBe("string");
+
+			const conv = await db.query.conversations.findFirst({
+				where: eq(conversations.id, realConvId),
+			});
+			expect(
+				conv?.contactName,
+				"contact_name deveria persistir no UUID real injetado via closure. " +
+					"Se permanecer NULL, factory não está usando ctx.conversationId.",
+			).toBe("Paulo");
+		} finally {
+			await db.delete(leads).where(eq(leads.conversationId, realConvId));
+			await db.delete(conversations).where(eq(conversations.id, realConvId));
+		}
+	});
+
+	it("source: builder.ts aceita opts.conversationId e passa pro buildConsorcioTools", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(
+			/conversationId\s*\??\s*:/.test(builderSrc),
+			"builder.ts precisa declarar `conversationId?: string` no opts — " +
+				"caso contrário a factory roda sem contexto e tools sensíveis falham.",
+		).toBe(true);
+		expect(
+			/buildConsorcioTools\s*\(/.test(builderSrc),
+			"builder.ts precisa chamar buildConsorcioTools(ctx) — sem isso o " +
+				"closure não é montado e schema antigo (com conversationId) ainda vaza ao modelo.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// CENARIO 19 — Pula gates pré-valor (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, conversa Monique 6c0ca4cf — Helena/imovel, e
+// 2026-05-17 b6c222fe — Rafael/auto): após save_contact_name, agent pulou
+// direto para perguntar valor de carta SEM ter respondido/disparado os 3
+// gates pré-valor (experience/timeframe/lance).
+//
+// Transcrição Monique:
+//   User: "Monique."
+//   Agent: "Prazer, Monique!Vamos achar a opção certa pra você.
+//          Qual faixa de crédito você tem em mente?"
+//   ^^^ pulou os 3 gates, foi direto pra valor (em texto puro, ainda).
+//
+// PO Kairo: o fluxo correto é nome → experience → timeframe → lance → valor
+// (via present_value_picker / search_groups). Fix via "cadastro do agent"
+// (migration 0021 atualizando persona row) + reforço estrutural no
+// SPECIALIST_BASE_PROMPT cobrindo as 4 specialists.
+//
+// Esta camada (cassette) reproduz o stream do bug e detector de incoerência:
+//   - texto inclui "Qual faixa/valor/parcela" mencionando crédito
+//   - SEM tool present_value_picker emitido
+//   - SEM nenhum dos 3 gates ter sido respondido na conversa simulada
+// ============================================================================
+
+describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timeframe/lance antes de pedir valor", () => {
+	const CASSETTE_RAFAEL_PULA_GATES =
+		"Show, Paulo! Vamos achar o carro certo pra você. Qual valor de carta de crédito você tem em mente?";
+
+	const CASSETTE_HELENA_MONIQUE =
+		"Prazer, Monique! Vamos achar a opção certa pra você. Qual faixa de crédito você tem em mente?";
+
+	it("cassette: stream Rafael/auto pula gates e pergunta valor em texto SEM emitir present_value_picker", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", CASSETTE_RAFAEL_PULA_GATES),
+			FINISH_STOP,
+		]);
+
+		// Reproducao fiel: agente perguntou valor em texto, sem tool, sem
+		// nenhum gate ter sido respondido antes.
+		expect(text).toBe(CASSETTE_RAFAEL_PULA_GATES);
+		expect(toolCalls).toEqual([]);
+
+		// Detector: pergunta de valor (faixa/valor/carta/credito) presente.
+		const perguntaValor =
+			/(qual|quanto)[\s\S]{0,40}(faixa|valor|cr[ée]dito|or[çc]amento|carta|parcela)/i;
+		expect(
+			perguntaValor.test(CASSETTE_RAFAEL_PULA_GATES),
+			"Detector tem que pegar pergunta de valor em texto puro.",
+		).toBe(true);
+
+		// E NENHUM dos 3 gates de qualificação aparece no fluxo anterior
+		// (cassette simula início da conversa pós-nome). Sem isso, é violacao.
+		const mencionaGate = /\b(experience|timeframe|lance)\b/i.test(
+			CASSETTE_RAFAEL_PULA_GATES,
+		);
+		expect(
+			mencionaGate,
+			"O cassette do bug é exatamente o cenário onde o agent pula gates — " +
+				"não deve mencionar nenhum dos 3 nomes no texto pro user (esse é o sintoma).",
+		).toBe(false);
+	});
+
+	it("cassette: stream Helena/imovel (Monique tb-dev) tem o mesmo padrão — pula gates", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t2", CASSETTE_HELENA_MONIQUE),
+			FINISH_STOP,
+		]);
+
+		// Mesmo padrão da Monique real em prod: saudação + pergunta de valor
+		// SEM ter passado pelos 3 gates.
+		expect(text).toBe(CASSETTE_HELENA_MONIQUE);
+		expect(toolCalls).toEqual([]);
+
+		// Detector de violação: pergunta valor + nenhuma menção a gate.
+		const detectorPulaGate =
+			/(qual|quanto)[\s\S]{0,30}(faixa|valor|cr[ée]dito|carta|parcela)/i;
+		expect(detectorPulaGate.test(CASSETTE_HELENA_MONIQUE)).toBe(true);
+	});
+
+	it("detector reforçado pega variantes plausíveis do mesmo bug (4 specialists)", () => {
+		// LLM parafraseia. Detector tem que cobrir todas as formas de pedir
+		// valor SEM ter disparado gate antes.
+		const detectorPulaGate =
+			/(qual|quanto|me passa|me diz)[\s\S]{0,60}(faixa|valor|cr[ée]dito|or[çc]amento|carta|parcela|investir|gastar|pagar)/i;
+
+		const variantes = [
+			CASSETTE_RAFAEL_PULA_GATES,
+			CASSETTE_HELENA_MONIQUE,
+			"Boa, sou o Bruno. Qual valor de carta você quer pra moto?",
+			"Beleza, Camila aqui. Me passa o orçamento mensal que cabe.",
+			"Show, vamos achar a moto! Quanto você quer investir?",
+			"Me diz qual faixa de crédito faz sentido pro seu caso?",
+		];
+
+		const misses = variantes.filter((v) => !detectorPulaGate.test(v));
+		expect(
+			misses,
+			"Detector reforçado não pegou variantes: " +
+				`${JSON.stringify(misses)}. ` +
+				"Cada variante representa um specialist (Rafael/Helena/Bruno/Camila) pulando gates.",
+		).toEqual([]);
+	});
+
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os 3 gates à proibição de pedir valor antes", () => {
+		// Acoplamento ao prompt source: o reforço estrutural compartilhado
+		// precisa estar lá. Se essa regra sumir, o cassette deste describe
+		// continuaria reproduzível em prod.
+		const regraComOs3Gates =
+			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
+		const regraInvertida =
+			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+		expect(
+			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) ||
+				regraInvertida.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa amarrar (experience+timeframe+lance) " +
+				"à proibição de pedir valor/parcela ANTES. Sem isso, persona row no DB " +
+				"(migration 0021) fica solta — modelo cai no padrão antigo.",
+		).toBe(true);
+	});
+
+	it("CROSS-REF migration 0021: arquivo da migration de persona row existe e seta fluxo de 3 gates pré-valor", () => {
+		// Acoplamento à camada de DB: a migration que aplica a regra no
+		// "cadastro do agent" (jsonb examples / metadados da persona) precisa
+		// existir e mencionar os 3 gates + ordem.
+		const migrationSrc = readSource("drizzle/0021_auto_persona_gate_flow.sql");
+
+		const mencionaGates =
+			/experience[\s\S]{0,300}timeframe[\s\S]{0,300}lance/i.test(migrationSrc);
+		expect(
+			mencionaGates,
+			"Migration 0021 precisa mencionar os 3 gates (experience/timeframe/lance) " +
+				"explicitamente — modelo precisa enxergar a ordem no example/instruction da persona.",
+		).toBe(true);
+
+		const mencionaOrdem =
+			/(ANTES|antes)[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i.test(
+				migrationSrc,
+			);
+		expect(
+			mencionaOrdem,
+			"Migration 0021 precisa explicitar 'ANTES de [pedir valor/chamar value_picker/buscar grupos]' — " +
+				"sem ordem temporal o agent pode disparar os 3 gates DEPOIS do valor (bug volta).",
+		).toBe(true);
+
+		const idempotente = /NOT LIKE|NOT @>|IS NULL|jsonb_array_length/i.test(
+			migrationSrc,
+		);
+		expect(
+			idempotente,
+			"Migration 0021 precisa ter guard de idempotência (NOT LIKE, NOT @>, IS NULL ou jsonb_array_length) " +
+				"— rodar 2x não pode duplicar/corromper dados.",
+		).toBe(true);
+	});
+});
