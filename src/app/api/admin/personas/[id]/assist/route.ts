@@ -1,0 +1,87 @@
+import { anthropic } from "@ai-sdk/anthropic";
+import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { requireRole } from "@/lib/admin/require-role";
+import { buildAssistantPrompt } from "@/lib/agent/assistant-prompt";
+import { rateLimit } from "@/lib/agent/assistant-rate-limit";
+import { getPersonaForAdmin } from "@/lib/agent/personas-repo";
+import { buildAssistantTools } from "@/lib/agent/tools/assistant-tools";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const MAX_HISTORY = 24;
+
+export async function POST(
+	req: Request | NextRequest,
+	{ params }: { params: Promise<{ id: string }> },
+) {
+	const auth = await requireRole("admin");
+	if (auth.error) return auth.error;
+
+	const { id } = await params;
+
+	let body: unknown;
+	try {
+		body = await req.json();
+	} catch {
+		return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+	}
+
+	const messages =
+		(body as { messages?: unknown[] }).messages?.slice(-MAX_HISTORY) ?? [];
+
+	const adminId = (auth.session?.user as { id?: string } | undefined)?.id;
+	const limit = rateLimit(`assist:${adminId ?? "unknown"}`);
+	if (!limit.allowed) {
+		return NextResponse.json(
+			{ error: "rate_limited", retryAfterMs: limit.retryAfterMs },
+			{ status: 429 },
+		);
+	}
+
+	let persona;
+	try {
+		persona = await getPersonaForAdmin(id);
+	} catch {
+		return NextResponse.json(
+			{ error: "Persona não encontrada" },
+			{ status: 404 },
+		);
+	}
+
+	const tools = buildAssistantTools({
+		personaId: persona.id,
+		personaVersion: persona.version,
+		currentRow: {
+			voiceTone: persona.voiceTone,
+			examples: persona.examples,
+			forbiddenTopics: persona.forbiddenTopics,
+			handoffTriggers: persona.handoffTriggers,
+		},
+	});
+
+	const result = streamText({
+		model: anthropic("claude-sonnet-4-6"),
+		system: buildAssistantPrompt({
+			id: persona.id,
+			displayName: persona.displayName,
+			role: persona.role as "concierge" | "specialist",
+			category: persona.category,
+			expertise: persona.expertise,
+			voiceTone: persona.voiceTone,
+			examples: persona.examples,
+			forbiddenTopics: persona.forbiddenTopics,
+			handoffTriggers: persona.handoffTriggers,
+			version: persona.version,
+		}),
+		// biome-ignore lint/suspicious/noExplicitAny: messages from useChat
+		messages: convertToModelMessages(messages as any),
+		tools,
+		stopWhen: stepCountIs(6),
+		temperature: 0.4,
+	});
+
+	return result.toUIMessageStreamResponse();
+}
