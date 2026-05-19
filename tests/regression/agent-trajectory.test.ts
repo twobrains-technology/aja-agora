@@ -1960,3 +1960,284 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 		expect(hardRules).toMatch(/Reavaliando/i);
 	});
 });
+
+// ── Cassettes adicionais cobrindo regressões R-02/R-04/R-05 do test plan ──
+
+describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse vaza mecanismo da UI é rejeitado (R-02)", () => {
+	const ctx = {
+		personaId: "p1",
+		personaVersion: 1,
+		role: "specialist" as const,
+		category: "auto",
+		currentRow: {
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		},
+	};
+
+	it("executeProposePatch rejeita example.add com 'próximas perguntas' / 'perguntas rápidas' / 'sistema vai te guiar'", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const meta = [
+			"Vou te fazer umas perguntas rápidas pra te conhecer",
+			"O sistema vai te guiar com botões nas próximas perguntas",
+			"Primeira: você já fez consórcio antes?",
+		];
+
+		for (const assistantResponse of meta) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-meta",
+						userMessage: "oi",
+						assistantResponse,
+					},
+					rationale: "test meta-narrativa",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			if (
+				/perguntas r[áa]pidas|pr[óo]ximas perguntas|sistema vai te guiar/i.test(
+					assistantResponse,
+				)
+			) {
+				expect(
+					result.ok,
+					`assistantResponse "${assistantResponse}" deveria ter sido rejeitado (meta-narrativa)`,
+				).toBe(false);
+			}
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md sec 1.4 lista termos de meta-narrativa proibidos", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/perguntas r[áa]pidas/i);
+		expect(hardRules).toMatch(/sistema vai te guiar/i);
+		expect(hardRules).toMatch(/Meta-narrativa/i);
+	});
+});
+
+describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
+
+		// Combined precisa mencionar os 3 gates por nome — assistant injeta
+		// HARD_RULES no system prompt em runtime, então a regra chega no LLM.
+		expect(promptCombined).toMatch(/experience/i);
+		expect(promptCombined).toMatch(/timeframe/i);
+		expect(promptCombined).toMatch(/lance/i);
+	});
+
+	it("CROSS-REF: HARD_RULES.md sec 2.2 explicita ordem dos 3 gates antes do valor", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const ordemCorreta =
+			/experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+		expect(
+			ordemCorreta.test(hardRules),
+			"HARD_RULES.md sec 2.2 precisa listar os 3 gates na ordem experience → timeframe → lance",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-NO-PROMISE-NO-RENDER — example.add que promete UI sem renderizar é proibido pelo prompt (R-05)", () => {
+	it("CROSS-REF: HARD_RULES.md sec 1.5 lista frases proibidas de promessa-sem-tool (com ou sem acento)", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const stripAccents = (s: string) =>
+			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		const normRules = stripAccents(hardRules);
+
+		const frasesProibidas = [
+			"olha as opcoes abaixo",
+			"da uma olhada nas opcoes",
+			"veja as opcoes abaixo",
+		];
+		for (const frase of frasesProibidas) {
+			expect(
+				normRules.includes(stripAccents(frase)),
+				`HARD_RULES.md sec 1.5 precisa listar "${frase}" (com ou sem acento) como proibida`,
+			).toBe(true);
+		}
+	});
+
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT puxa HARD_RULES inteiro — LLM vê regra de promessa-sem-tool", async () => {
+		const { buildAssistantPrompt } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const built = buildAssistantPrompt({
+			id: "x",
+			displayName: "Rafael",
+			role: "specialist",
+			category: "auto",
+			expertise: null,
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+			version: 1,
+		});
+		const stripAccents = (s: string) =>
+			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		expect(stripAccents(built)).toContain("olha as opcoes abaixo");
+	});
+});
+
+describe("BUG-ASSISTANT-CONCIERGE-NO-VALUE — concierge não pode propor example com valor de parcela/crédito (CA-33)", () => {
+	const baseCtx = {
+		personaId: "concierge-1",
+		personaVersion: 1,
+		role: "concierge" as const,
+		category: null,
+		currentRow: {
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		},
+	};
+
+	it("executeProposePatch rejeita example.add em concierge mencionando R$ ou parcela", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const samples = [
+			"Esse grupo tem parcela de R$ 850 e crédito de R$ 80.000",
+			"Você pode pegar R$ 50 mil em 60 meses",
+			"A parcela 245 é o melhor pra você",
+		];
+
+		for (const assistantResponse of samples) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-conc",
+						userMessage: "Quanto custa?",
+						assistantResponse,
+					},
+					rationale: "test concierge no value",
+					personaVersionSeen: 1,
+				},
+				baseCtx,
+			);
+			expect(
+				result.ok,
+				`concierge example com "${assistantResponse}" deveria ser rejeitado`,
+			).toBe(false);
+		}
+	});
+
+	it("aceita example.add em concierge que apenas encaminha pro specialist (sem valor)", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const result = await executeProposePatch(
+			{
+				kind: "example.add",
+				after: {
+					id: "ex-conc-ok",
+					userMessage: "Quero carro",
+					assistantResponse:
+						"Boa! Vou te encaminhar pro especialista de auto pra te mostrar as opções.",
+				},
+				rationale: "concierge encaminhando",
+				personaVersionSeen: 1,
+			},
+			baseCtx,
+		);
+		expect(result.ok).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma categoria não fala de outra (CA-34)", () => {
+	it("executeProposePatch rejeita specialist auto mencionando imóvel/moto/serviços", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const ctx = {
+			personaId: "rafael-auto",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const cruzados = [
+			"Pra imóvel você pega 180 meses",
+			"Pra moto temos opções de 36 meses",
+			"Reforma sai bem mais barato no consórcio",
+		];
+
+		for (const assistantResponse of cruzados) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-cross",
+						userMessage: "tudo bem",
+						assistantResponse,
+					},
+					rationale: "test cross category",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			expect(
+				result.ok,
+				`specialist auto não pode mencionar "${assistantResponse}"`,
+			).toBe(false);
+		}
+	});
+
+	it("executeProposePatch rejeita specialist imovel mencionando carro/auto", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const ctx = {
+			personaId: "helena-imovel",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "imovel",
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const result = await executeProposePatch(
+			{
+				kind: "example.add",
+				after: {
+					id: "ex-img-cross",
+					userMessage: "queria um SUV",
+					assistantResponse:
+						"Um carro novo é um sonho, posso te mostrar opções de auto.",
+				},
+				rationale: "test cross",
+				personaVersionSeen: 1,
+			},
+			ctx,
+		);
+		expect(result.ok).toBe(false);
+	});
+});
