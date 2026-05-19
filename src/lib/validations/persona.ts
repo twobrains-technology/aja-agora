@@ -76,10 +76,19 @@ export const updatePersonaSchema = z
 		activeCampaigns: z.array(personaCampaignSchema).max(20).optional(),
 		handoffTriggers: z.array(personaHandoffTriggerSchema).max(20).optional(),
 		forbiddenTopics: z.array(personaForbiddenTopicSchema).max(20).optional(),
+		/**
+		 * Optimistic concurrency control. Quando presente, o updatePersona
+		 * rejeita com ConflictError se a versão atual no DB não bate.
+		 * Frontend deve passar a versão lida quando abriu o form pra
+		 * detectar lost update entre admins concorrentes.
+		 */
+		expectedVersion: z.number().int().nonnegative().optional(),
 	})
-	.refine((data) => Object.keys(data).length > 0, {
-		message: "Pelo menos um campo precisa ser informado",
-	});
+	.refine(
+		(data) =>
+			Object.keys(data).filter((k) => k !== "expectedVersion").length > 0,
+		{ message: "Pelo menos um campo precisa ser informado" },
+	);
 
 export const createPersonaSchema = z.object({
 	displayName: z.string().min(1, "Nome obrigatório").max(50),

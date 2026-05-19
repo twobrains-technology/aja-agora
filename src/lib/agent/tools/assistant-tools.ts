@@ -14,6 +14,16 @@ type AssistantToolsContext = {
 		forbiddenTopics: ReadonlyArray<{ id: string; [k: string]: unknown }>;
 		handoffTriggers: ReadonlyArray<{ id: string; [k: string]: unknown }>;
 	};
+	/**
+	 * Optional. Quando presente, executeProposePatch re-checka a version
+	 * direto no DB no momento da emissão do patch (fecha a janela de race
+	 * onde outro admin pode ter bumpado a versão durante o stream do LLM).
+	 *
+	 * Sem essa função, a comparação cai pra ctx.personaVersion (snapshot do
+	 * início do POST). Para tests pode-se omitir; em prod, route /assist
+	 * injeta um fetcher que lê do DB.
+	 */
+	refreshVersion?: () => Promise<number>;
 };
 
 /**
@@ -157,10 +167,17 @@ export async function executeProposePatch(
 	patch: PersonaPatch,
 	ctx: AssistantToolsContext,
 ): Promise<ProposePatchResult> {
-	if (patch.personaVersionSeen !== ctx.personaVersion) {
+	// Anti-race: se ctx fornece refreshVersion, re-checka direto no DB no
+	// momento da emissão do patch. Fecha a janela onde outro admin bumpou
+	// a versão durante o stream do LLM (gap reportado em QA round 2).
+	const currentVersion = ctx.refreshVersion
+		? await ctx.refreshVersion()
+		: ctx.personaVersion;
+
+	if (patch.personaVersionSeen !== currentVersion) {
 		return {
 			ok: false,
-			error: `versão stale: você usou personaVersionSeen=${patch.personaVersionSeen} mas a versão atual é ${ctx.personaVersion}. Releia a ficha da persona e tente de novo.`,
+			error: `versão stale: você usou personaVersionSeen=${patch.personaVersionSeen} mas a versão atual é ${currentVersion}. Outro admin pode ter editado a persona — releia a ficha e tente de novo.`,
 		};
 	}
 

@@ -38,7 +38,7 @@ function makeBaseCtx(
 ): Parameters<typeof executeProposePatch>[1] {
 	return {
 		personaId: "p1",
-		personaVersion: 1,
+		personaVersion: over.personaVersion ?? 1,
 		role: "specialist",
 		category: "auto",
 		currentRow: {
@@ -134,7 +134,7 @@ describe("validate_against_rules", () => {
 });
 
 describe("executeProposePatch — validações server-side", () => {
-	it("rejeita personaVersionSeen stale", async () => {
+	it("rejeita personaVersionSeen stale (snapshot)", async () => {
 		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
@@ -149,6 +149,46 @@ describe("executeProposePatch — validações server-side", () => {
 		if (!result.ok) {
 			expect(result.error).toMatch(/vers[ãa]o.*stale|version=3/i);
 		}
+	});
+
+	it("anti-race: refreshVersion sobrescreve ctx.personaVersion no momento do propose_patch (Gap A round 2)", async () => {
+		// Simula: POST inicia com persona.version=5 (snapshot ctx). LLM
+		// stream demora 30s. Durante esse tempo, outro admin PATCH bumpou
+		// pra version=6 no DB. refreshVersion DEVE detectar e rejeitar.
+		const result = await executeProposePatch(
+			{
+				kind: "voiceTone",
+				before: "formal e técnico",
+				after: "casual",
+				rationale: "x",
+				personaVersionSeen: 5,
+			},
+			makeBaseCtx({
+				personaVersion: 5,
+				refreshVersion: async () => 6, // outro admin bumpou
+			}),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/outro admin|releia/i);
+		}
+	});
+
+	it("anti-race: refreshVersion confirma version igual à do ctx → aceita", async () => {
+		const result = await executeProposePatch(
+			{
+				kind: "voiceTone",
+				before: "formal e técnico",
+				after: "casual mas profissional",
+				rationale: "x",
+				personaVersionSeen: 5,
+			},
+			makeBaseCtx({
+				personaVersion: 5,
+				refreshVersion: async () => 5, // nada mudou no DB
+			}),
+		);
+		expect(result.ok).toBe(true);
 	});
 
 	it("rejeita voiceTone com before que não bate com row atual", async () => {

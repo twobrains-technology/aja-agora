@@ -65,6 +65,13 @@ export async function POST(
 			forbiddenTopics: persona.forbiddenTopics,
 			handoffTriggers: persona.handoffTriggers,
 		},
+		// Fecha race window do stream — quando IA emite propose_patch
+		// depois de 5-30s de geração, server re-lê version do DB. Se
+		// outro admin bumpou no meio, patch é rejeitado.
+		refreshVersion: async () => {
+			const fresh = await getPersonaForAdmin(persona.id);
+			return fresh.version;
+		},
 	});
 
 	// biome-ignore lint/suspicious/noExplicitAny: messages from useChat
