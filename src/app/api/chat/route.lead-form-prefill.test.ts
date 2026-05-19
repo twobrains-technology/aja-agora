@@ -24,6 +24,8 @@
  *    teste do contrato é o que captura a regressão de forma estável.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +33,10 @@ import { db } from "@/db";
 import { conversations, leads, personas } from "@/db/schema";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { POST } from "./route";
+
+function readSource(rel: string): string {
+	return readFileSync(resolve(process.cwd(), rel), "utf-8");
+}
 
 vi.mock("@/lib/middleware/rate-limit", () => ({
 	checkRateLimit: () => ({ allowed: true }),
@@ -126,6 +132,81 @@ describe("Bug A — POST /api/chat action=interest deve pré-preencher nome no l
 		// `prefilledName` (ou shape similar) no payload — eliminando a
 		// dependência de fetch ad-hoc no client.
 		expect(payload).toMatchObject({ prefilledName: "Monique" });
+	});
+});
+
+/**
+ * Camada 1 (structural source-grep) — BUG-LEAD-FORM-PREFILL-REGRESSION
+ *
+ * Tracker do fix b7fc39e em 3 sites. Cada um pode regredir silenciosamente
+ * via merge / refactor / "limpeza" sem o cenário integration acima pegar a
+ * regressão a tempo (caso o handler de `action.kind === "interest"` mude
+ * de arquivo ou alguém remova o campo do tipo / do bind do form).
+ *
+ * Esses asserts servem de sentinela de SOURCE — falham na hora se uma das
+ * 3 peças for removida do código. Mais barato e mais estável do que
+ * snapshot de UI ou eval LLM.
+ */
+describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças do fix b7fc39e", () => {
+	it("src/lib/chat/types.ts declara `prefilledName?: string | null` em LeadFormPayload", () => {
+		const types = readSource("src/lib/chat/types.ts");
+		// O contrato de tipo é o primeiro elo: sem o campo, route.ts não
+		// compila ao passar e lead-form.tsx perde acesso typed ao valor.
+		// Match tolerante a aspas/posição do `?`.
+		const declara =
+			/interface\s+LeadFormPayload[\s\S]{0,400}prefilledName\??\s*:\s*string\s*\|\s*null/;
+		expect(
+			declara.test(types),
+			"src/lib/chat/types.ts precisa declarar `prefilledName?: string | null` " +
+				"dentro de LeadFormPayload. Sem o campo no tipo, qualquer um dos outros " +
+				"dois sites perde tipagem e o fix b7fc39e regride silenciosamente.",
+		).toBe(true);
+	});
+
+	it("src/app/api/chat/route.ts injeta `prefilledName: contactName ?? null` no payload do data-artifact lead_form", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		// Match exato do call-site emitindo o artifact com prefilledName.
+		// Tolera variações de espaços/quebras mas exige:
+		//   - type: "lead_form" próximo (mesmo bloco do data-artifact)
+		//   - payload contém prefilledName lendo de contactName
+		const injecaoLiteral =
+			/type:\s*["']lead_form["'][\s\S]{0,200}payload:\s*\{[^}]*prefilledName:\s*contactName\s*\?\?\s*null/;
+		expect(
+			injecaoLiteral.test(route),
+			"src/app/api/chat/route.ts (action handler `interest`) precisa emitir " +
+				"`payload: { conversationId, prefilledName: contactName ?? null }` no " +
+				"data-artifact type=lead_form. Sem essa linha o nome já capturado pela " +
+				"conversation NUNCA chega ao frontend e o form aparece vazio (bug b7fc39e).",
+		).toBe(true);
+	});
+
+	it("src/components/chat/artifacts/lead-form.tsx prioriza payload.prefilledName em defaultValues", () => {
+		const form = readSource("src/components/chat/artifacts/lead-form.tsx");
+		// defaultValues do react-hook-form precisa LER de payload.prefilledName
+		// como prioridade — sem ?? "" antes do prefilledName.
+		const usaNoDefault =
+			/defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
+		expect(
+			usaNoDefault.test(form),
+			"src/components/chat/artifacts/lead-form.tsx precisa setar " +
+				"`defaultValues: { name: payload.prefilledName ?? \"\", ... }` no useForm. " +
+				"Sem prioridade do payload, o form depende do fetch tardio /api/leads/[id] " +
+				"e quando esse fetch sofre race (cliente offline / network slow) o campo " +
+				"aparece vazio mesmo com contactName populado.",
+		).toBe(true);
+
+		// E o useEffect que faz o fetch tardio também precisa manter prioridade
+		// do payload.prefilledName sobre data.name no reset — protege contra
+		// alguém "limpar" o useEffect e jogar fora o prefill no reset.
+		const usaNoReset =
+			/reset\(\s*\{\s*[\s\S]{0,400}name:\s*payload\.prefilledName\s*\?\?\s*data\.name/;
+		expect(
+			usaNoReset.test(form),
+			"o useEffect de fetch tardio em lead-form.tsx precisa fazer " +
+				"`reset({ name: payload.prefilledName ?? data.name ?? \"\", ... })`. " +
+				"Sem essa prioridade, o fetch sobrescreve o prefill por data.name vazio " +
+				"e o bug volta — mesmo cenário do screenshot Marina/Monique.",
+		).toBe(true);
 	});
 });
 

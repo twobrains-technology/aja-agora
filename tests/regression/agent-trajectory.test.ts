@@ -952,3 +952,107 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// CENARIO 12 — Lead form aparece com nome vazio (BUG-LEAD-FORM-PREFILL-REGRESSION)
+// ----------------------------------------------------------------------------
+// Real (tb-dev 2026-05-18, conversa Rafael/auto): usuario disse
+// "Marina Magalhães", agent respondeu "Beleza, Marina!", aceitou WA, viu
+// simulacao e clicou "Tenho interesse" — form aparece com Nome VAZIO
+// ("Seu nome" placeholder) mesmo com contactName ja capturado.
+//
+// Fix b7fc39e injetou prefilledName em 3 sites (types.ts + route.ts +
+// lead-form.tsx). Este cassette amarra o caminho do clique "Tenho interesse"
+// (action.kind="interest" em route.ts) ao contrato de payload prefilledName,
+// usando o handler real do POST /api/chat e o fluxo SSE — qualquer regressao
+// no path do action handler quebra este teste antes do merge.
+//
+// Defesa em camadas:
+//   - Camada 1 (source-grep): src/app/api/chat/route.lead-form-prefill.test.ts
+//     blocos "BUG-LEAD-FORM-PREFILL-REGRESSION" cobrem source dos 3 arquivos.
+//   - Camada 2 (este cassette): SSE end-to-end com DB real.
+// ============================================================================
+
+describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz lead_form com prefilledName", () => {
+	it("cassette source-level: route.ts action.kind === 'interest' continua passando contactName no payload", () => {
+		// Fonte de verdade do contrato. Se alguem mover o handler de pasta ou
+		// trocar o nome da variavel (contactName -> userName, prefilledName ->
+		// nameHint), o cassette aqui pega antes do integration test rodar.
+		const route = readSource("src/app/api/chat/route.ts");
+
+		// 1) O branch interest existe no source com a forma esperada.
+		const branchInterest =
+			/body\.action\?\.kind\s*===\s*["']interest["']/;
+		expect(
+			branchInterest.test(route),
+			"route.ts precisa ter branch `body.action?.kind === 'interest'`. " +
+				"Sem ele o clique 'Tenho interesse' do card simulation_result nao " +
+				"produz artifact lead_form algum.",
+		).toBe(true);
+
+		// 2) Dentro do mesmo arquivo, o data-artifact lead_form leva
+		// prefilledName lido de contactName.
+		const payloadInjection =
+			/type:\s*["']lead_form["'][\s\S]{0,200}prefilledName:\s*contactName\s*\?\?\s*null/;
+		expect(
+			payloadInjection.test(route),
+			"route.ts (branch interest) precisa emitir " +
+				"`payload: { conversationId, prefilledName: contactName ?? null }`. " +
+				"Sem essa linha o nome ja capturado pela conversa NAO chega ao " +
+				"frontend e o form aparece vazio — regressao reportada em tb-dev " +
+				"2026-05-18 (screenshot 'Seu nome' placeholder).",
+		).toBe(true);
+
+		// 3) contactName tem que vir do conv.contactName lido no top do POST —
+		// sem isso, o ?? null sempre cai pra null e o fix vira no-op.
+		const lidoDoConv =
+			/contactName\s*=\s*conv\.contactName\s*\?\?\s*null/;
+		expect(
+			lidoDoConv.test(route),
+			"route.ts precisa ler `contactName = conv.contactName ?? null` antes " +
+				"do switch de actions. Se essa atribuicao sumir, prefilledName SEMPRE " +
+				"vai null e o form regride pra 'Seu nome' vazio.",
+		).toBe(true);
+	});
+
+	it("cassette type contract: LeadFormPayload aceita prefilledName: string | null no contrato", () => {
+		// O TS precisa permitir prefilledName no payload do data-artifact —
+		// senao route.ts nao compila ao emitir. Defesa estatica do contrato.
+		const types = readSource("src/lib/chat/types.ts");
+		const contrato =
+			/interface\s+LeadFormPayload\s*\{[\s\S]{0,500}prefilledName\?\s*:\s*string\s*\|\s*null/;
+		expect(
+			contrato.test(types),
+			"types.ts LeadFormPayload precisa declarar prefilledName?: string | null. " +
+				"Sem o campo no tipo, route.ts ate compila por causa do TS amplo do " +
+				"data-artifact, mas qualquer consumer typed perde acesso e o lead-form.tsx " +
+				"nao consegue ler payload.prefilledName com tipagem (regressao silenciosa).",
+		).toBe(true);
+	});
+
+	it("cassette frontend bind: lead-form.tsx usa payload.prefilledName em defaultValues E protege fetch tardio", () => {
+		// O bind frontend tem 2 sites de protecao: defaultValues (1o paint) e
+		// reset do useEffect (2a hidratacao via /api/leads/[id]). Sem ambos, o
+		// fetch tardio sobrescreve o prefill por data.name vazio e o bug volta.
+		const form = readSource("src/components/chat/artifacts/lead-form.tsx");
+
+		const defaultPrefere =
+			/defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
+		expect(
+			defaultPrefere.test(form),
+			"lead-form.tsx defaultValues precisa priorizar payload.prefilledName — " +
+				"sem isso, o 1o paint do form aparece vazio enquanto /api/leads/[id] " +
+				"resolve.",
+		).toBe(true);
+
+		const resetPrefere =
+			/reset\(\s*\{[\s\S]{0,400}name:\s*payload\.prefilledName\s*\?\?\s*data\.name/;
+		expect(
+			resetPrefere.test(form),
+			"useEffect que faz fetch /api/leads/[id] precisa manter prioridade do " +
+				"payload no reset: `name: payload.prefilledName ?? data.name ?? \"\"`. " +
+				"Se inverter ordem (data.name ?? payload.prefilledName), fetch que " +
+				"retorna name='' (lead vazio + contactName null) zera o prefill — bug volta.",
+		).toBe(true);
+	});
+});
