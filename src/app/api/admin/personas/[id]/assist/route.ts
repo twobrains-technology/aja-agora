@@ -93,7 +93,10 @@ export async function POST(
 		}),
 		messages: modelMessages,
 		tools,
-		stopWhen: stepCountIs(6),
+		// 16 steps permitem orquestração holística: até ~7 patches em sequência
+		// (cada um = validate + propose) + step final de texto. Sem isso o
+		// assistant ficava preguiçoso, propondo só 1 voiceTone e parando.
+		stopWhen: stepCountIs(16),
 		temperature: 0.4,
 	});
 

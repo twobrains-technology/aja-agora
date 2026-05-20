@@ -178,17 +178,26 @@ describeIfKey(
 				return;
 			}
 
-			// Pelo menos uma proposta válida no fim, OU a IA pediu clarificação após erro.
-			const lastPropose = proposeCalls[proposeCalls.length - 1];
-			const output = lastPropose?.output as { ok?: boolean; patch?: { kind?: string } } | undefined;
+			// Pelo menos UM patch válido com kind=voiceTone deve ter sido proposto.
+			// Comportamento holístico agora permite também example.add/remove em sequência.
+			const okPatches = proposeCalls.filter((c) => {
+				const out = c.output as { ok?: boolean };
+				return out?.ok === true;
+			});
 
-			if (output?.ok === false) {
-				// LLM aceitou erro do servidor — não tentou forçar. OK.
+			if (okPatches.length === 0) {
+				// Servidor bloqueou tudo. Bom sinal — defesa funcionou.
 				return;
 			}
 
-			expect(output?.ok, "última propose_patch deveria ter retornado ok:true").toBe(true);
-			expect(output?.patch?.kind).toBe("voiceTone");
+			const voiceTonePatch = okPatches.find((c) => {
+				const out = c.output as { patch?: { kind?: string } };
+				return out?.patch?.kind === "voiceTone";
+			});
+			expect(
+				voiceTonePatch,
+				"orquestração holística deve incluir pelo menos 1 patch voiceTone pra 'menos formal'",
+			).toBeDefined();
 		});
 
 		it("NENHUMA propose_patch passou com voiceTone contendo frase proibida", () => {
