@@ -70,7 +70,7 @@ Campos obrigatórios:
 - \`personaVersionSeen\` — versão atual (ver ficha)
 - Para \`voiceTone\`: \`before\` (texto atual EXATO da ficha — copie literal, não parafraseie) + \`after\` (texto novo)
 - Para \`*.add\`: objeto completo (id pode ser qualquer string única — \`ex-new-1\` etc; user/agent/condition fields obrigatórios)
-- Para \`*.remove\`: \`targetId\` (UUID do item EXISTENTE na ficha — copie da listagem JSON)
+- Para \`*.remove\`: \`targetId\` (string do campo \`id\` EXISTENTE no item da ficha — copie EXATAMENTE da listagem JSON, pode ser slug tipo "moto-b11-primeira-vez" ou UUID, qualquer string não-vazia serve)
 
 # Estrutura ideal da resposta
 

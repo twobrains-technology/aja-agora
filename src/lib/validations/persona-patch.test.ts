@@ -62,10 +62,22 @@ describe("personaPatchSchema", () => {
 		expect(result.success).toBe(true);
 	});
 
-	it("rejeita example.remove com targetId não-uuid", () => {
+	it("aceita example.remove com targetId slug (moto-b11-primeira-vez)", () => {
+		// IDs reais no DB são slugs kebab-case, não UUIDs. Aceitar qualquer
+		// string não-vazia.
 		const result = personaPatchSchema.safeParse({
 			kind: "example.remove",
-			targetId: "ex-001",
+			targetId: "moto-b11-primeira-vez",
+			rationale: "r",
+			personaVersionSeen: 1,
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it("rejeita example.remove com targetId vazio", () => {
+		const result = personaPatchSchema.safeParse({
+			kind: "example.remove",
+			targetId: "",
 			rationale: "r",
 			personaVersionSeen: 1,
 		});

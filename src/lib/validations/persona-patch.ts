@@ -24,7 +24,7 @@ export const personaPatchSchema = z.discriminatedUnion("kind", [
 	}),
 	z.object({
 		kind: z.literal("example.remove"),
-		targetId: z.string().uuid(),
+		targetId: z.string().min(1),
 		...baseFields,
 	}),
 	z.object({
@@ -34,7 +34,7 @@ export const personaPatchSchema = z.discriminatedUnion("kind", [
 	}),
 	z.object({
 		kind: z.literal("forbiddenTopic.remove"),
-		targetId: z.string().uuid(),
+		targetId: z.string().min(1),
 		...baseFields,
 	}),
 	z.object({
@@ -44,7 +44,7 @@ export const personaPatchSchema = z.discriminatedUnion("kind", [
 	}),
 	z.object({
 		kind: z.literal("handoffTrigger.remove"),
-		targetId: z.string().uuid(),
+		targetId: z.string().min(1),
 		...baseFields,
 	}),
 ]);
