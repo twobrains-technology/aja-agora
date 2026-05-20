@@ -62,7 +62,7 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
     mode: "onBlur",
   });
 
-  const { isDirty, isSubmitting, isValid } = form.formState;
+  const { isDirty, isSubmitting } = form.formState;
 
   async function onSubmit(values: FormValues) {
     setSubmitError(null);
@@ -153,7 +153,7 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
               </Sheet>
               <Button
                 type="submit"
-                disabled={!isDirty || !isValid || isSubmitting}
+                disabled={!isDirty || isSubmitting}
               >
                 {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
                 Salvar alterações
