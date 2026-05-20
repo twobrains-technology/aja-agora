@@ -5,6 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { Loader2, Send, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -170,17 +171,24 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 							</div>
 							{m.parts?.map((part, i) => {
 								if (part.type === "text") {
+									if (m.role === "user") {
+										return (
+											<div
+												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
+												key={`${m.id}-text-${i}`}
+												className="text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground rounded-md bg-muted px-3 py-2"
+											>
+												{part.text}
+											</div>
+										);
+									}
 									return (
 										<div
 											// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
 											key={`${m.id}-text-${i}`}
-											className={cn(
-												"text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground",
-												m.role === "user" &&
-													"rounded-md bg-muted px-3 py-2",
-											)}
+											className="prose prose-sm max-w-none dark:prose-invert text-foreground text-sm leading-relaxed break-words prose-p:my-1 prose-p:leading-relaxed prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-foreground prose-strong:font-semibold prose-headings:text-foreground prose-headings:text-sm prose-headings:font-semibold prose-headings:my-1.5 prose-code:text-xs prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 										>
-											{part.text}
+											<ReactMarkdown>{part.text}</ReactMarkdown>
 										</div>
 									);
 								}
