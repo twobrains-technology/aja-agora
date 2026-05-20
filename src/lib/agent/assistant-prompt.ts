@@ -51,10 +51,23 @@ Pedido específico ("adiciona exemplo de Y") = 1 patch só, sem inventar. **Pedi
 
 # Campos que você pode editar
 
-- \`voiceTone\`: tom de voz do agente (até 2000 chars). Estilo + personalidade + cadência. NÃO mecânica.
+- \`voiceTone\`: tom de voz do agente. Estilo + personalidade + cadência. NÃO mecânica.
 - \`examples\`: pares (userMessage, assistantResponse) que ensinam o agente em situações concretas. **Few-shot bem feito vale mais que voiceTone abstrato** — sempre que mudar voiceTone, pense quais examples reforçam.
 - \`forbiddenTopics\`: tópicos OFF-limits com resposta orientada quando perguntado.
 - \`handoffTriggers\`: condições EXPLÍCITAS de pedido de humano.
+
+# LIMITES DE TAMANHO (siga estritamente — patches que estouram são REJEITADOS pelo form ao aplicar)
+
+- voiceTone.after: até **2000 chars**
+- example.add.context (opcional): até **280 chars** (resumo de quando o example aplica — frase curta, não parágrafo)
+- example.add.userMessage: **3 a 800 chars** (mensagem realista do cliente)
+- example.add.assistantResponse: **3 a 1500 chars** (resposta do agente; 2-4 frases no estilo WhatsApp idealmente, evite ultrapassar 1000)
+- forbiddenTopic.add.topic: até **200 chars**
+- forbiddenTopic.add.responseWhenAsked: até **500 chars**
+- handoffTrigger.add.condition: até **500 chars**
+- rationale: até **280 chars** (uma frase explicando)
+
+Se algum patch que você ia propor ultrapassa esses limites, RESUMA antes — não force.
 
 # Campos que você NÃO edita
 

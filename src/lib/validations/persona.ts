@@ -49,9 +49,9 @@ const userIntentEnum = z.enum([
 
 export const personaExampleSchema = z.object({
 	id: z.string().min(1),
-	context: z.string().max(80).optional().nullable(),
-	userMessage: z.string().min(3, "Mensagem do cliente obrigatória").max(500),
-	assistantResponse: z.string().min(3, "Resposta da persona obrigatória").max(800),
+	context: z.string().max(280).optional().nullable(),
+	userMessage: z.string().min(3, "Mensagem do cliente obrigatória").max(800),
+	assistantResponse: z.string().min(3, "Resposta da persona obrigatória").max(1500),
 
 	// Condições opcionais — ausente/vazia = sempre aplica.
 	whenExpertise: z.array(expertiseLevelEnum).min(1).optional(),
