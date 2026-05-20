@@ -123,69 +123,69 @@ export function DiffCard({
 	return (
 		<Card
 			className={cn(
-				"border-l-4 transition-opacity",
+				"border-l-4 transition-opacity gap-2 py-3",
 				state === "applied" && "border-l-emerald-500 opacity-70",
-				state === "rejected" && "border-l-zinc-300 opacity-40",
-				state === "pending" && "border-l-violet-500",
+				state === "rejected" && "border-l-muted-foreground/30 opacity-40",
+				state === "pending" && "border-l-primary",
 			)}
 		>
-			<CardHeader className="pb-2">
+			<CardHeader className="px-3 pb-1">
 				<div className="flex items-start justify-between gap-2">
-					<div className="space-y-1">
-						<Badge variant="secondary" className="text-xs">
+					<div className="space-y-1 min-w-0">
+						<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
 							{KIND_LABEL[patch.kind]}
 						</Badge>
-						<CardTitle className="text-sm font-medium leading-snug">
+						<CardTitle className="text-xs font-medium leading-snug text-foreground">
 							{patch.rationale}
 						</CardTitle>
 					</div>
 					{state === "applied" && (
-						<Badge className="bg-emerald-600 hover:bg-emerald-600">
+						<Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] shrink-0">
 							✓ aplicado
 						</Badge>
 					)}
 					{state === "rejected" && (
-						<Badge variant="outline" className="text-zinc-500">
+						<Badge variant="outline" className="text-muted-foreground text-[10px] shrink-0">
 							✕ descartado
 						</Badge>
 					)}
 				</div>
 			</CardHeader>
-			<CardContent className="space-y-2 text-sm">
+			<CardContent className="space-y-2 text-xs px-3 pb-2">
 				{hasBefore && "before" in patch && (
-					<div className="rounded bg-red-50 p-2 text-red-900 whitespace-pre-wrap text-xs">
-						<span className="block text-[10px] font-semibold text-red-600 mb-1">
+					<div className="rounded-md border border-destructive/20 bg-destructive/5 p-2 whitespace-pre-wrap break-words">
+						<span className="block text-[10px] font-semibold text-destructive/80 mb-1 tracking-wide">
 							ANTES
 						</span>
-						<span className="line-through">{patch.before}</span>
+						<span className="line-through text-foreground/70">{patch.before}</span>
 					</div>
 				)}
 				{!isRemove && !editing && "after" in patch && (
-					<div className="rounded bg-emerald-50 p-2 text-emerald-900 whitespace-pre-wrap text-xs">
-						<span className="block text-[10px] font-semibold text-emerald-600 mb-1">
+					<div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2 whitespace-pre-wrap break-words text-foreground">
+						<span className="block text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 mb-1 tracking-wide">
 							DEPOIS
 						</span>
 						{describeAfter(patch)}
 					</div>
 				)}
 				{isRemove && "targetId" in patch && (
-					<div className="rounded bg-orange-50 p-2 text-orange-900 text-xs">
-						<span className="block text-[10px] font-semibold text-orange-600 mb-1">
+					<div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-2 text-foreground">
+						<span className="block text-[10px] font-semibold text-amber-600 dark:text-amber-400 mb-1 tracking-wide">
 							REMOVER
 						</span>
-						Item id <code className="text-[11px]">{patch.targetId}</code>
+						Item id <code className="text-[11px] text-muted-foreground">{patch.targetId}</code>
 					</div>
 				)}
 				{editing && (
 					<div className="space-y-1">
-						<span className="block text-[10px] font-semibold text-violet-700">
+						<span className="block text-[10px] font-semibold text-primary tracking-wide">
 							EDITANDO
 						</span>
 						<Textarea
 							value={editText}
 							onChange={(e) => setEditText(e.target.value)}
 							rows={4}
-							className="text-xs resize-none"
+							className="text-xs resize-none bg-background"
 							aria-label="Editar texto da proposta"
 						/>
 					</div>

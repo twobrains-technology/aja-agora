@@ -89,16 +89,17 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 
   return (
     <FormProvider {...form}>
-      {/* Grid raiz: em xl+, form ocupa 9/12 e sidebar persistente 3/12. Em
-          telas menores, sidebar vira Sheet toggleável via botão "AI Assistant". */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 xl:gap-6">
+      {/* Layout em flex: em ≥lg (≥1024px, notebook 13" cabe), sidebar
+          persistente do lado direito com largura fixa (~400px). Em <lg,
+          sidebar vira Sheet toggleable via botão "AI Assistant" no header. */}
+      <div className="flex flex-col lg:flex-row lg:gap-6 lg:items-start">
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="space-y-6 xl:col-span-9"
+          className="space-y-6 min-w-0 flex-1"
           data-testid="persona-edit-form"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
               <Button
                 variant="ghost"
                 size="sm"
@@ -120,11 +121,11 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
                   : ""}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {submitSuccess && !isDirty && (
                 <span className="text-sm text-muted-foreground">Salvo ✓</span>
               )}
-              {/* Sheet toggleable apenas em <xl. Em xl+, sidebar persistente
+              {/* Sheet toggleable apenas em <lg. Em ≥lg, sidebar persistente
                   do lado direito é a fonte primária. */}
               <Sheet>
                 <SheetTrigger
@@ -133,16 +134,16 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="xl:hidden"
+                      className="lg:hidden"
                     >
-                      <Sparkles className="size-3.5 text-violet-600" />
+                      <Sparkles className="size-3.5 text-primary" />
                       AI Assistant
                     </Button>
                   }
                 />
                 <SheetContent
                   side="right"
-                  className="w-[420px] sm:max-w-[420px] p-0"
+                  className="w-full sm:max-w-[420px] p-0"
                 >
                   <AIAssistantSidebar
                     personaId={persona.id}
@@ -173,27 +174,26 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="space-y-6 lg:col-span-2">
+          <div className="grid grid-cols-1 2xl:grid-cols-3 gap-6">
+            <div className="space-y-6 2xl:col-span-2 min-w-0">
               <PersonaIdentitySection persona={persona} />
               <PersonaExamplesSection />
               <HandoffTriggerListSection />
               <ForbiddenTopicListSection />
             </div>
-            <div className="lg:sticky lg:top-4 lg:self-start lg:col-span-1">
+            <div className="2xl:sticky 2xl:top-4 2xl:self-start 2xl:col-span-1">
               <PersonaPreviewPanel personaId={persona.id} />
             </div>
           </div>
         </form>
 
-        {/* Sidebar persistente lado-a-lado em xl+ (D2 do spec). Em telas
-            menores, fica escondida — o Sheet toggleable acima cobre. */}
+        {/* Sidebar persistente em ≥lg. Em <lg fica oculta; o Sheet cobre. */}
         <aside
-          className="hidden xl:block xl:col-span-3 xl:sticky xl:top-4 xl:self-start xl:h-[calc(100vh-2rem)]"
+          className="hidden lg:block lg:w-[380px] xl:w-[420px] lg:shrink-0 lg:sticky lg:top-4 lg:self-start lg:h-[calc(100vh-2rem)]"
           aria-label="AI Assistant"
           data-testid="ai-assistant-persistent"
         >
-          <div className="h-full rounded-lg border bg-white overflow-hidden">
+          <div className="h-full rounded-xl border bg-card overflow-hidden shadow-sm">
             <AIAssistantSidebar personaId={persona.id} formMethods={form} />
           </div>
         </aside>

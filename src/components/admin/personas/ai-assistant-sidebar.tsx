@@ -8,6 +8,7 @@ import type { UseFormReturn } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { PersonaPatch } from "@/lib/validations/persona-patch";
 import { DiffCard, type DiffCardState } from "./diff-card";
 
@@ -32,11 +33,30 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 		[personaId],
 	);
 
-	const { messages, sendMessage, status } = useChat({ transport });
+	const { messages, sendMessage, status, error, regenerate } = useChat({
+		transport,
+		onError: (err) => {
+			console.error("[AIAssistantSidebar] chat error", err);
+		},
+	});
 	const [input, setInput] = useState("");
 	const [diffStates, setDiffStates] = useState<Record<string, DiffCardState>>(
 		{},
 	);
+
+	function friendlyError(e: Error | undefined): string {
+		if (!e) return "";
+		const msg = e.message ?? "";
+		if (/credit/i.test(msg))
+			return "Sem crédito na API Anthropic. Avise o admin pra recarregar.";
+		if (/rate.?limit|429/i.test(msg))
+			return "Muitos pedidos seguidos. Espere uns segundos e tente de novo.";
+		if (/401|unauthor/i.test(msg))
+			return "Sessão expirou. Recarregue a página e faça login de novo.";
+		if (/timeout|network|fetch/i.test(msg))
+			return "Conexão caiu. Tente de novo.";
+		return `Falhou: ${msg.slice(0, 200)}`;
+	}
 
 	function applyPatch(patch: PersonaPatch, key: string) {
 		if (patch.kind === "voiceTone") {
@@ -111,114 +131,161 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 	const isStreaming = status === "streaming" || status === "submitted";
 
 	return (
-		<aside className="flex h-full flex-col bg-zinc-50 border-l">
-			<header className="border-b px-4 py-3 bg-white">
-				<h2 className="font-medium flex items-center gap-2">
-					<Sparkles className="size-4 text-violet-600" />
+		<aside className="flex h-full min-h-0 flex-col bg-card overflow-hidden">
+			<header className="border-b px-4 py-3 shrink-0">
+				<h2 className="font-medium text-sm flex items-center gap-2 text-foreground">
+					<Sparkles className="size-4 text-primary" />
 					AI Assistant
 				</h2>
-				<p className="text-xs text-zinc-500 mt-0.5">
-					Descreva o que quer ajustar. Eu proponho — você decide.
+				<p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+					Descreva o que quer ajustar — eu proponho, você decide.
 				</p>
 			</header>
 
-			<ScrollArea className="flex-1 px-4 py-3">
-				{messages.length === 0 && (
-					<div className="text-xs text-zinc-500 italic">
-						Exemplos:
-						<ul className="list-disc list-inside mt-1 space-y-0.5">
-							<li>"deixa menos formal"</li>
-							<li>"adiciona exemplo de quando perguntam preço"</li>
-							<li>"bloqueia perguntas sobre comissão de corretor"</li>
-						</ul>
-					</div>
-				)}
-
-				{messages.map((m) => (
-					<div key={m.id} className="mb-3 space-y-1">
-						<div className="text-[10px] font-semibold uppercase text-zinc-400">
-							{m.role === "user" ? "Você" : "Assistente"}
+			<ScrollArea className="flex-1 min-h-0">
+				<div className="px-4 py-3 space-y-3 break-words">
+					{messages.length === 0 && (
+						<div className="text-xs text-muted-foreground">
+							<p className="font-medium text-foreground/80 mb-2">
+								Exemplos do que pedir:
+							</p>
+							<ul className="space-y-1.5">
+								<li className="rounded-md bg-muted/50 px-2.5 py-1.5 border">
+									"deixa o tom menos formal"
+								</li>
+								<li className="rounded-md bg-muted/50 px-2.5 py-1.5 border">
+									"adiciona exemplo de quando perguntam preço"
+								</li>
+								<li className="rounded-md bg-muted/50 px-2.5 py-1.5 border">
+									"bloqueia perguntas sobre comissão"
+								</li>
+							</ul>
 						</div>
-						{m.parts?.map((part, i) => {
-							if (part.type === "text") {
-								return (
-									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
-										key={`${m.id}-text-${i}`}
-										className="text-sm whitespace-pre-wrap"
-									>
-										{part.text}
-									</div>
-								);
-							}
-							if (part.type === "tool-propose_patch") {
-								// biome-ignore lint/suspicious/noExplicitAny: tool part shape varia
-								const output = (part as any).output;
-								if (output?.ok) {
-									const cardKey = `${m.id}-${i}`;
-									return (
-										<DiffCard
-											key={cardKey}
-											patch={output.patch}
-											state={diffStates[cardKey] ?? "pending"}
-											onApply={(p) => applyPatch(p, cardKey)}
-											onReject={() => rejectPatch(cardKey)}
-										/>
-									);
-								}
-								if (output && !output.ok) {
-									return (
-										<div
-											// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
-											key={`${m.id}-err-${i}`}
-											className="text-xs text-amber-700 bg-amber-50 rounded p-2"
-										>
-											Proposta rejeitada pelo servidor:{" "}
-											<span className="font-medium">{output.error}</span>
-										</div>
-									);
-								}
-							}
-							if (part.type === "tool-ask_clarification") {
-								// biome-ignore lint/suspicious/noExplicitAny: tool part shape varia
-								const output = (part as any).output;
-								if (output?.question) {
-									return (
-										<div
-											// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
-											key={`${m.id}-q-${i}`}
-											className="text-sm rounded bg-blue-50 p-2 text-blue-900"
-										>
-											❓ {output.question}
-										</div>
-									);
-								}
-							}
-							return null;
-						})}
-					</div>
-				))}
+					)}
 
-				{isStreaming && (
-					<div className="flex items-center gap-2 text-xs text-zinc-500">
-						<Loader2 className="size-3 animate-spin" />
-						pensando…
-					</div>
-				)}
+					{messages.map((m) => (
+						<div key={m.id} className="space-y-1.5">
+							<div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+								{m.role === "user" ? "Você" : "Assistente"}
+							</div>
+							{m.parts?.map((part, i) => {
+								if (part.type === "text") {
+									return (
+										<div
+											// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
+											key={`${m.id}-text-${i}`}
+											className={cn(
+												"text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground",
+												m.role === "user" &&
+													"rounded-md bg-muted px-3 py-2",
+											)}
+										>
+											{part.text}
+										</div>
+									);
+								}
+								if (part.type === "tool-propose_patch") {
+									// biome-ignore lint/suspicious/noExplicitAny: tool part shape varia
+									const output = (part as any).output;
+									if (output?.ok) {
+										const cardKey = `${m.id}-${i}`;
+										return (
+											<DiffCard
+												key={cardKey}
+												patch={output.patch}
+												state={diffStates[cardKey] ?? "pending"}
+												onApply={(p) => applyPatch(p, cardKey)}
+												onReject={() => rejectPatch(cardKey)}
+											/>
+										);
+									}
+									if (output && !output.ok) {
+										return (
+											<div
+												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
+												key={`${m.id}-err-${i}`}
+												className="text-xs rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-foreground"
+											>
+												<span className="block text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">
+													Proposta rejeitada
+												</span>
+												{output.error}
+											</div>
+										);
+									}
+								}
+								if (part.type === "tool-ask_clarification") {
+									// biome-ignore lint/suspicious/noExplicitAny: tool part shape varia
+									const output = (part as any).output;
+									if (output?.question) {
+										return (
+											<div
+												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
+												key={`${m.id}-q-${i}`}
+												className="text-sm rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-foreground"
+											>
+												{output.question}
+											</div>
+										);
+									}
+								}
+								return null;
+							})}
+						</div>
+					))}
+
+					{isStreaming && (
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Loader2 className="size-3 animate-spin" />
+							pensando…
+						</div>
+					)}
+
+					{error && !isStreaming && (
+						<div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-2">
+							<div className="flex items-start gap-2 text-foreground">
+								<span className="text-[10px] font-semibold uppercase tracking-wider text-destructive shrink-0 mt-0.5">
+									Erro
+								</span>
+								<span className="break-words">{friendlyError(error)}</span>
+							</div>
+							<Button
+								type="button"
+								size="sm"
+								variant="outline"
+								className="h-7 text-xs w-full"
+								onClick={() => regenerate()}
+							>
+								Tentar de novo
+							</Button>
+						</div>
+					)}
+				</div>
 			</ScrollArea>
 
 			<form
 				onSubmit={handleSend}
-				className="border-t bg-white p-3 space-y-2"
+				className="border-t bg-card p-3 space-y-2 shrink-0"
 			>
 				<Textarea
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && !e.shiftKey) {
+							e.preventDefault();
+							handleSend(e);
+						}
+					}}
 					placeholder="Ex: deixa o tom menos formal..."
 					disabled={isStreaming}
 					rows={3}
-					className="text-sm resize-none"
+					maxLength={4000}
+					className="text-sm resize-none bg-background max-h-32 overflow-y-auto break-words"
 				/>
+				<div className="flex items-center justify-between text-[10px] text-muted-foreground">
+					<span>Enter envia · Shift+Enter quebra linha</span>
+					<span>{input.length}/4000</span>
+				</div>
 				<Button
 					type="submit"
 					disabled={isStreaming || !input.trim()}
