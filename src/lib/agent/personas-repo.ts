@@ -175,20 +175,40 @@ export async function createPersona(input: {
 	return created;
 }
 
+export class PersonaVersionConflictError extends Error {
+	constructor(
+		public readonly expectedVersion: number,
+		public readonly currentVersion: number,
+	) {
+		super(
+			`Persona version conflict: client viu version=${expectedVersion} mas servidor está em version=${currentVersion}. Outro admin editou a persona enquanto você estava trabalhando.`,
+		);
+		this.name = "PersonaVersionConflictError";
+	}
+}
+
 export async function updatePersona(
 	id: string,
-	patch: Partial<Omit<PersonaRow, "id" | "version" | "createdAt" | "updatedAt">>,
+	patch: Partial<
+		Omit<PersonaRow, "id" | "version" | "createdAt" | "updatedAt">
+	> & { expectedVersion?: number },
 ): Promise<PersonaRow> {
+	const { expectedVersion, ...fields } = patch;
 	const previous = await db.query.personas.findFirst({
 		where: eq(personas.id, id),
 	});
 	if (!previous) throw new Error(`persona "${id}" not found`);
 
+	// Optimistic concurrency: se cliente disse a versão que viu, exigir match.
+	if (typeof expectedVersion === "number" && previous.version !== expectedVersion) {
+		throw new PersonaVersionConflictError(expectedVersion, previous.version);
+	}
+
 	// Bump version pra invalidar o cache de agentes (cacheKey usa version).
 	const nextVersion = previous.version + 1;
 	const [updated] = await db
 		.update(personas)
-		.set({ ...patch, version: nextVersion })
+		.set({ ...fields, version: nextVersion })
 		.where(eq(personas.id, id))
 		.returning();
 

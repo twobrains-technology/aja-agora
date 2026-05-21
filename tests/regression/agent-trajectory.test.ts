@@ -1712,3 +1712,532 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// CENARIO 20 — BUG-ASSISTANT-* (AI Assistant no backoffice de personas)
+// ----------------------------------------------------------------------------
+// AI Assistant é um agente novo no backoffice que ajuda admins leigos a
+// configurar personas via linguagem natural. Tem regras hard:
+//   1. Antes de propor patch, deve desambiguar input vago (ask_clarification)
+//   2. Antes de propose_patch com texto livre, deve validate_against_rules
+//   3. propose_patch.execute rejeita server-side quando viola HARD_RULES
+//   4. patch.before precisa bater com row atual (anti-LLM-invention)
+//   5. personaVersionSeen precisa estar atualizado (anti-race-condition)
+//
+// Defesa estrutural completa em:
+//   - src/lib/agent/assistant-prompt.ts (prompt)
+//   - src/lib/agent/tools/assistant-tools.ts (factory + validações server)
+//   - src/lib/agent/assistant-prompt.test.ts (prompt source)
+//   - src/lib/agent/tools/assistant-tools.test.ts (tool execute)
+// ============================================================================
+
+describe("BUG-ASSISTANT-AMBIGUOUS-MUST-ASK — input vago deve disparar ask_clarification antes de propose_patch", () => {
+	it("cassette: LLM emite ask_clarification em resposta a 'menos formal'", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-ask-1", "ask_clarification", {
+				question:
+					"Menos formal igual amigo no zap, ou só menos técnico mas ainda profissional?",
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("ask_clarification");
+		expect(toolCalls[0]?.toolName).not.toBe("propose_patch");
+	});
+
+	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui desambiguar antes de propor", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const regraDesambigua =
+			/(desambigu|vag[oa]|amb[íi]gu[oa])[\s\S]{0,400}ask_clarification/i;
+		expect(
+			regraDesambigua.test(ASSISTANT_BASE_PROMPT),
+			"ASSISTANT_BASE_PROMPT precisa instruir ask_clarification antes de propor quando input é vago",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-PROPOSAL-MUST-VALIDATE — validate_against_rules antes de propose_patch", () => {
+	it("cassette: LLM chama validate_against_rules antes de propose_patch quando há texto livre", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("tc-v-1", "validate_against_rules", {
+				text: "casual, próximo, fala como amigo no zap",
+				field: "voiceTone",
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls[0]?.toolName).toBe("validate_against_rules");
+	});
+
+	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui validar com validate_against_rules antes de propose_patch", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const regraValidaAntes =
+			/valid[\s\S]{0,400}(antes|ANTES)[\s\S]{0,400}propose_patch|validate_against_rules[\s\S]{0,400}propose_patch/i;
+		expect(
+			regraValidaAntes.test(ASSISTANT_BASE_PROMPT),
+			"ASSISTANT_BASE_PROMPT precisa instruir validate_against_rules ANTES de propose_patch",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas pos-nome é rejeitado server-side", () => {
+	it("executeProposePatch rejeita voiceTone contendo variantes proibidas", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const ctx = {
+			personaId: "p1",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
+			currentRow: {
+				voiceTone: "formal e técnico",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const variantes = [
+			"casual e Vamos achar a opção certa juntos",
+			"próximo, Vou te ajudar sempre",
+			"amigável, Estou aqui pra ajudar",
+		];
+
+		for (const after of variantes) {
+			const result = await executeProposePatch(
+				{
+					kind: "voiceTone",
+					before: "formal e técnico",
+					after,
+					rationale: "test",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			expect(result.ok, `voiceTone "${after}" deveria ter sido rejeitado`).toBe(
+				false,
+			);
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md lista variantes proibidas pos-nome", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const variantes = [
+			"Vamos achar a opção certa",
+			"Vou te ajudar",
+			"Estou aqui pra ajudar",
+		];
+		for (const variante of variantes) {
+			expect(
+				hardRules.toLowerCase().includes(variante.toLowerCase()),
+				`HARD_RULES.md precisa listar "${variante}" como proibida`,
+			).toBe(true);
+		}
+	});
+});
+
+describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com before inventado e version stale", () => {
+	it("executeProposePatch rejeita voiceTone com before que não bate com row atual", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const result = await executeProposePatch(
+			{
+				kind: "voiceTone",
+				before: "tom inventado pelo LLM",
+				after: "tom novo válido",
+				rationale: "x",
+				personaVersionSeen: 1,
+			},
+			{
+				personaId: "p1",
+				personaVersion: 1,
+				role: "specialist",
+				category: "auto",
+				currentRow: {
+					voiceTone: "TOM ATUAL REAL",
+					examples: [],
+					forbiddenTopics: [],
+					handoffTriggers: [],
+				},
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/before.*não bate/i);
+		}
+	});
+
+	it("executeProposePatch rejeita patch com personaVersionSeen stale (race condition)", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const result = await executeProposePatch(
+			{
+				kind: "voiceTone",
+				before: "x",
+				after: "y",
+				rationale: "r",
+				personaVersionSeen: 3,
+			},
+			{
+				personaId: "p1",
+				personaVersion: 5,
+				role: "specialist",
+				category: "auto",
+				currentRow: {
+					voiceTone: "x",
+					examples: [],
+					forbiddenTopics: [],
+					handoffTriggers: [],
+				},
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/vers[ãa]o|version=3/i);
+		}
+	});
+});
+
+describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantResponse vaza chain-of-thought é rejeitado", () => {
+	it("executeProposePatch rejeita example.add com 'Motivo:' / 'Reavaliando' no assistantResponse", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+		const ctx = {
+			personaId: "p1",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const samples = [
+			"Vou te conectar com humano. Motivo: valor acima do teto de R$ 3M.",
+			"Espera aí — Reavaliando se faz sentido seguir com consórcio.",
+		];
+
+		for (const assistantResponse of samples) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-leak",
+						userMessage: "tudo bem?",
+						assistantResponse,
+					},
+					rationale: "test",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			expect(
+				result.ok,
+				`assistantResponse "${assistantResponse}" deveria ter sido rejeitado`,
+			).toBe(false);
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md lista 'Motivo:' e 'Reavaliando' como prefixos proibidos", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/Motivo:/);
+		expect(hardRules).toMatch(/Reavaliando/i);
+	});
+});
+
+// ── Cassettes adicionais cobrindo regressões R-02/R-04/R-05 do test plan ──
+
+describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse vaza mecanismo da UI é rejeitado (R-02)", () => {
+	const ctx = {
+		personaId: "p1",
+		personaVersion: 1,
+		role: "specialist" as const,
+		category: "auto",
+		currentRow: {
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		},
+	};
+
+	it("executeProposePatch rejeita example.add com 'próximas perguntas' / 'perguntas rápidas' / 'sistema vai te guiar'", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const meta = [
+			"Vou te fazer umas perguntas rápidas pra te conhecer",
+			"O sistema vai te guiar com botões nas próximas perguntas",
+			"Primeira: você já fez consórcio antes?",
+		];
+
+		for (const assistantResponse of meta) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-meta",
+						userMessage: "oi",
+						assistantResponse,
+					},
+					rationale: "test meta-narrativa",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			if (
+				/perguntas r[áa]pidas|pr[óo]ximas perguntas|sistema vai te guiar/i.test(
+					assistantResponse,
+				)
+			) {
+				expect(
+					result.ok,
+					`assistantResponse "${assistantResponse}" deveria ter sido rejeitado (meta-narrativa)`,
+				).toBe(false);
+			}
+		}
+	});
+
+	it("CROSS-REF: HARD_RULES.md sec 1.4 lista termos de meta-narrativa proibidos", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/perguntas r[áa]pidas/i);
+		expect(hardRules).toMatch(/sistema vai te guiar/i);
+		expect(hardRules).toMatch(/Meta-narrativa/i);
+	});
+});
+
+describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
+		const { ASSISTANT_BASE_PROMPT } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
+
+		// Combined precisa mencionar os 3 gates por nome — assistant injeta
+		// HARD_RULES no system prompt em runtime, então a regra chega no LLM.
+		expect(promptCombined).toMatch(/experience/i);
+		expect(promptCombined).toMatch(/timeframe/i);
+		expect(promptCombined).toMatch(/lance/i);
+	});
+
+	it("CROSS-REF: HARD_RULES.md sec 2.2 explicita ordem dos 3 gates antes do valor", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const ordemCorreta =
+			/experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+		expect(
+			ordemCorreta.test(hardRules),
+			"HARD_RULES.md sec 2.2 precisa listar os 3 gates na ordem experience → timeframe → lance",
+		).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-NO-PROMISE-NO-RENDER — example.add que promete UI sem renderizar é proibido pelo prompt (R-05)", () => {
+	it("CROSS-REF: HARD_RULES.md sec 1.5 lista frases proibidas de promessa-sem-tool (com ou sem acento)", () => {
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		const stripAccents = (s: string) =>
+			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		const normRules = stripAccents(hardRules);
+
+		const frasesProibidas = [
+			"olha as opcoes abaixo",
+			"da uma olhada nas opcoes",
+			"veja as opcoes abaixo",
+		];
+		for (const frase of frasesProibidas) {
+			expect(
+				normRules.includes(stripAccents(frase)),
+				`HARD_RULES.md sec 1.5 precisa listar "${frase}" (com ou sem acento) como proibida`,
+			).toBe(true);
+		}
+	});
+
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT puxa HARD_RULES inteiro — LLM vê regra de promessa-sem-tool", async () => {
+		const { buildAssistantPrompt } = await import(
+			"@/lib/agent/assistant-prompt"
+		);
+		const built = buildAssistantPrompt({
+			id: "x",
+			displayName: "Rafael",
+			role: "specialist",
+			category: "auto",
+			expertise: null,
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+			version: 1,
+		});
+		const stripAccents = (s: string) =>
+			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		expect(stripAccents(built)).toContain("olha as opcoes abaixo");
+	});
+});
+
+describe("BUG-ASSISTANT-CONCIERGE-NO-VALUE — concierge não pode propor example com valor de parcela/crédito (CA-33)", () => {
+	const baseCtx = {
+		personaId: "concierge-1",
+		personaVersion: 1,
+		role: "concierge" as const,
+		category: null,
+		currentRow: {
+			voiceTone: "x",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		},
+	};
+
+	it("executeProposePatch rejeita example.add em concierge mencionando R$ ou parcela", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const samples = [
+			"Esse grupo tem parcela de R$ 850 e crédito de R$ 80.000",
+			"Você pode pegar R$ 50 mil em 60 meses",
+			"A parcela 245 é o melhor pra você",
+		];
+
+		for (const assistantResponse of samples) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-conc",
+						userMessage: "Quanto custa?",
+						assistantResponse,
+					},
+					rationale: "test concierge no value",
+					personaVersionSeen: 1,
+				},
+				baseCtx,
+			);
+			expect(
+				result.ok,
+				`concierge example com "${assistantResponse}" deveria ser rejeitado`,
+			).toBe(false);
+		}
+	});
+
+	it("aceita example.add em concierge que apenas encaminha pro specialist (sem valor)", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const result = await executeProposePatch(
+			{
+				kind: "example.add",
+				after: {
+					id: "ex-conc-ok",
+					userMessage: "Quero carro",
+					assistantResponse:
+						"Boa! Vou te encaminhar pro especialista de auto pra te mostrar as opções.",
+				},
+				rationale: "concierge encaminhando",
+				personaVersionSeen: 1,
+			},
+			baseCtx,
+		);
+		expect(result.ok).toBe(true);
+	});
+});
+
+describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma categoria não fala de outra (CA-34)", () => {
+	it("executeProposePatch rejeita specialist auto mencionando imóvel/moto/serviços", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const ctx = {
+			personaId: "rafael-auto",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "auto",
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const cruzados = [
+			"Pra imóvel você pega 180 meses",
+			"Pra moto temos opções de 36 meses",
+			"Reforma sai bem mais barato no consórcio",
+		];
+
+		for (const assistantResponse of cruzados) {
+			const result = await executeProposePatch(
+				{
+					kind: "example.add",
+					after: {
+						id: "ex-cross",
+						userMessage: "tudo bem",
+						assistantResponse,
+					},
+					rationale: "test cross category",
+					personaVersionSeen: 1,
+				},
+				ctx,
+			);
+			expect(
+				result.ok,
+				`specialist auto não pode mencionar "${assistantResponse}"`,
+			).toBe(false);
+		}
+	});
+
+	it("executeProposePatch rejeita specialist imovel mencionando carro/auto", async () => {
+		const { executeProposePatch } = await import(
+			"@/lib/agent/tools/assistant-tools"
+		);
+
+		const ctx = {
+			personaId: "helena-imovel",
+			personaVersion: 1,
+			role: "specialist" as const,
+			category: "imovel",
+			currentRow: {
+				voiceTone: "x",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+		};
+
+		const result = await executeProposePatch(
+			{
+				kind: "example.add",
+				after: {
+					id: "ex-img-cross",
+					userMessage: "queria um SUV",
+					assistantResponse:
+						"Um carro novo é um sonho, posso te mostrar opções de auto.",
+				},
+				rationale: "test cross",
+				personaVersionSeen: 1,
+			},
+			ctx,
+		);
+		expect(result.ok).toBe(false);
+	});
+});

@@ -1,6 +1,10 @@
 import { requireRole } from "@/lib/admin/require-role";
 import { invalidateAgentCache } from "@/lib/agent/agents";
-import { getPersonaForAdmin, updatePersona } from "@/lib/agent/personas-repo";
+import {
+	getPersonaForAdmin,
+	PersonaVersionConflictError,
+	updatePersona,
+} from "@/lib/agent/personas-repo";
 import { updatePersonaSchema } from "@/lib/validations/persona";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,7 +45,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		const updated = await updatePersona(id, parsed.data);
 		invalidateAgentCache();
 		return Response.json({ id: updated.id, version: updated.version });
-	} catch {
+	} catch (err) {
+		if (err instanceof PersonaVersionConflictError) {
+			return Response.json(
+				{
+					error: err.message,
+					expectedVersion: err.expectedVersion,
+					currentVersion: err.currentVersion,
+				},
+				{ status: 409 },
+			);
+		}
 		return Response.json({ error: "Persona não encontrada" }, { status: 404 });
 	}
 }
