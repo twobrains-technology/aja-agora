@@ -11,24 +11,24 @@ import { MotionPreset } from "@/components/ui/motion-preset";
 
 const faqItems = [
   {
-    question: "O que e consorcio?",
+    question: "O que é consórcio?",
     answer:
-      "Consorcio e uma modalidade de compra programada onde um grupo de pessoas contribui mensalmente para formar uma poupanca coletiva.",
+      "Consórcio é uma modalidade de compra programada onde um grupo de pessoas contribui mensalmente para formar uma poupança coletiva.",
   },
   {
     question: "Como funciona a IA?",
     answer:
-      "Nosso consultor de IA analisa centenas de grupos disponiveis e encontra o melhor plano baseado no seu perfil, orcamento e prazo.",
+      "Nosso consultor de IA analisa centenas de grupos disponíveis e encontra o melhor plano baseado no seu perfil, orçamento e prazo.",
   },
   {
     question: "Preciso pagar algo para usar?",
     answer:
-      "Nao! A consulta com nosso consultor de IA e totalmente gratuita. Voce so paga quando decidir assinar um consorcio.",
+      "Não! A consulta com nosso consultor de IA é totalmente gratuita. Você só paga quando decidir assinar um consórcio.",
   },
   {
-    question: "E seguro?",
+    question: "É seguro?",
     answer:
-      "Sim. Seus dados sao protegidos e nunca compartilhados. O consorcio e regulado pelo Banco Central do Brasil.",
+      "Sim. Seus dados são protegidos e nunca compartilhados. O consórcio é regulado pelo Banco Central do Brasil.",
   },
 ];
 

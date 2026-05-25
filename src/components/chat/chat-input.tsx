@@ -68,7 +68,7 @@ export function ChatInput({ isStreaming }: ChatInputProps) {
 					}}
 					onKeyDown={handleKeyDown}
 					inputMode="text"
-					placeholder="Diga o que voce quer realizar..."
+					placeholder="Diga o que você quer realizar..."
 					disabled={isStreaming}
 					rows={1}
 					aria-label="Digite sua mensagem"

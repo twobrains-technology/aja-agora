@@ -42,7 +42,7 @@ const benefits = [
   {
     icon: ShieldCheck,
     title: "Dados protegidos",
-    description: "Suas informacoes estao seguras.",
+    description: "Suas informações estão seguras.",
   },
 ];
 

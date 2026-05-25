@@ -77,14 +77,14 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					<p className="text-xs text-muted-foreground">Parcela mensal</p>
 					<p className="text-2xl font-bold font-mono leading-tight text-primary">
 						{formatBRL(payload.monthlyPayment)}
-						<span className="text-base font-normal text-muted-foreground">/mes</span>
+						<span className="text-base font-normal text-muted-foreground">/mês</span>
 					</p>
 				</div>
 
 				{/* Key metrics grid */}
 				<div className="grid grid-cols-2 gap-3">
 					<div>
-						<p className="text-xs text-muted-foreground">Credito</p>
+						<p className="text-xs text-muted-foreground">Crédito</p>
 						<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
 					</div>
 					<div>
@@ -98,7 +98,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						</p>
 					</div>
 					<div>
-						<p className="text-xs text-muted-foreground">Contemplacao</p>
+						<p className="text-xs text-muted-foreground">Contemplação</p>
 						<p className="text-sm font-medium font-mono">
 							{formatPercent(payload.contemplationRate)}
 						</p>
@@ -114,7 +114,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						aria-expanded={expanded}
 						aria-controls={`score-breakdown-${payload.id}`}
 					>
-						<span>Por que esta recomendacao?</span>
+						<span>Por que esta recomendação?</span>
 						<ChevronDown
 							className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
 						/>

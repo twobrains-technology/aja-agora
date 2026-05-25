@@ -22,23 +22,23 @@ export const GOALS = [
   {
     id: 'imovel',
     icon: Home,
-    label: 'Imovel',
+    label: 'Imóvel',
     sub: 'Casa ou apartamento',
-    message: 'Quero comprar um imovel, me ajude a encontrar o melhor consorcio',
+    message: 'Quero comprar um imóvel, me ajude a encontrar o melhor consórcio',
   },
   {
     id: 'auto',
     icon: Car,
     label: 'Carro',
     sub: 'Novo ou seminovo',
-    message: 'Quero comprar um carro, qual o melhor consorcio para mim?',
+    message: 'Quero comprar um carro, qual o melhor consórcio para mim?',
   },
   {
     id: 'moto',
     icon: Bike,
     label: 'Moto',
     sub: 'Nova ou usada',
-    message: 'Quero comprar uma moto, qual o melhor consorcio para mim?',
+    message: 'Quero comprar uma moto, qual o melhor consórcio para mim?',
   }
 ]
 
@@ -51,7 +51,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
   const [typedText, setTypedText] = useState('')
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null)
 
-  const fullText = 'Ola! Eu sou seu consultor de consorcio.'
+  const fullText = 'Olá! Eu sou seu consultor de consórcio.'
 
   // Typing animation
   useEffect(() => {
@@ -94,13 +94,13 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                   <Sparkles className='size-3' />
                   IA
                 </Badge>
-                <span className='text-muted-foreground text-sm'>Consorcio inteligente</span>
+                <span className='text-muted-foreground text-sm'>Consórcio inteligente</span>
               </div>
             </MotionPreset>
 
             <MotionPreset fade blur='6px' slide={{ direction: 'up', offset: 16 }} delay={0.15}>
               <h1 className='text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl xl:text-6xl'>
-                Seu consorcio, do sonho{' '}
+                Seu consórcio, do sonho{' '}
                 <span className='bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent'>
                   a assinatura
                 </span>
@@ -109,7 +109,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
 
             <MotionPreset fade blur='4px' slide={{ direction: 'up', offset: 12 }} delay={0.3}>
               <p className='text-muted-foreground text-base sm:text-lg max-w-lg'>
-                Sem formulario, sem corretor. Converse com nosso consultor e encontre o consorcio sem juros, com a parcela que cabe no seu mes.
+                Sem formulário, sem corretor. Converse com nosso consultor e encontre o consórcio sem juros, com a parcela que cabe no seu mês.
               </p>
             </MotionPreset>
 
@@ -121,7 +121,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                   render={<Link href='/chat' />}
                   nativeButton={false}
                 >
-                  Comecar agora
+                  Começar agora
                   <ArrowRight className='size-4' />
                 </Button>
                 <Button
@@ -207,7 +207,7 @@ const HeroSection25 = ({ onGoalSelected }: HeroSection25Props) => {
                             }}
                           >
                             <p className='text-sm font-medium leading-relaxed'>
-                              O que voce quer conquistar?
+                              O que você quer conquistar?
                             </p>
                           </motion.div>
                         )}

@@ -20,21 +20,21 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Aja Agora | Consorcio inteligente com IA",
+	title: "Aja Agora | Consórcio inteligente com IA",
 	description:
-		"Diga o que voce quer e receba uma recomendacao personalizada de consorcio. Sem formulario, sem corretor, 100% digital.",
+		"Diga o que você quer e receba uma recomendação personalizada de consórcio. Sem formulário, sem corretor, 100% digital.",
 	keywords: [
-		"consorcio",
-		"consorcio digital",
-		"consorcio IA",
-		"consorcio online",
-		"consorcio sem corretor",
-		"simulacao consorcio",
+		"consórcio",
+		"consórcio digital",
+		"consórcio IA",
+		"consórcio online",
+		"consórcio sem corretor",
+		"simulação consórcio",
 	],
 	openGraph: {
-		title: "Aja Agora | Consorcio sem juros, parcela que cabe no seu mes",
+		title: "Aja Agora | Consórcio sem juros, parcela que cabe no seu mês",
 		description:
-			"Diga o que voce quer realizar e receba recomendacoes de consorcio com a parcela ideal pro seu mes. Sem juros, sem corretor, sem formulario.",
+			"Diga o que você quer realizar e receba recomendações de consórcio com a parcela ideal pro seu mês. Sem juros, sem corretor, sem formulário.",
 		type: "website",
 		locale: "pt_BR",
 	},

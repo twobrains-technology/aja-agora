@@ -68,7 +68,7 @@ export function LeadDetailPanel({
 					<>
 						<SheetHeader className="border-b px-4 py-3">
 							<SheetTitle>{getDisplayName(lead)}</SheetTitle>
-							<SheetDescription>Historico de conversa e analise do lead</SheetDescription>
+							<SheetDescription>Histórico de conversa e análise do lead</SheetDescription>
 							<div className="flex items-center gap-2 mt-1">
 								<Badge variant="secondary" className="text-xs">
 									{STAGE_LABELS[lead.stage] ?? lead.stage}

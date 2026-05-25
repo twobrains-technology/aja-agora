@@ -10,26 +10,26 @@ import { MotionPreset } from "@/components/ui/motion-preset";
 const testimonials = [
   {
     name: "Maria S.",
-    role: "Compradora de imovel",
+    role: "Compradora de imóvel",
     avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-1.png",
     content:
-      "Achei meu consorcio em 5 minutos. Nunca foi tao facil!",
+      "Achei meu consórcio em 5 minutos. Nunca foi tão fácil!",
     rating: 5,
   },
   {
     name: "Carlos R.",
-    role: "Comprador de automovel",
+    role: "Comprador de automóvel",
     avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-2.png",
     content:
-      "A IA me mostrou opcoes que nenhum corretor apresentou.",
+      "A IA me mostrou opções que nenhum corretor apresentou.",
     rating: 5,
   },
   {
     name: "Ana L.",
-    role: "Consorcio de servicos",
+    role: "Consórcio de serviços",
     avatar: "https://cdn.shadcnstudio.com/ss-assets/avatar/avatar-3.png",
     content:
-      "Simulei diferentes cenarios ate encontrar a parcela ideal.",
+      "Simulei diferentes cenários até encontrar a parcela ideal.",
     rating: 5,
   },
 ];

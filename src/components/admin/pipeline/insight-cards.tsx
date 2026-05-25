@@ -130,7 +130,7 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 						<DollarSign className="size-5 text-green-600" />
 					</div>
 					<div className="min-w-0 flex-1">
-						<p className="text-sm font-semibold">Orcamento</p>
+						<p className="text-sm font-semibold">Orçamento</p>
 						<div className="text-sm text-muted-foreground space-y-0.5">
 							{insights.budget.monthly != null && (
 								<p>{currencyFmt.format(insights.budget.monthly)}/mes</p>

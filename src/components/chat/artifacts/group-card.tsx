@@ -101,7 +101,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 				<CardContent className="space-y-3">
 					{/* Credit value - primary visual anchor */}
 					<div>
-						<p className="text-xs text-muted-foreground">Credito</p>
+						<p className="text-xs text-muted-foreground">Crédito</p>
 						<p className="text-xl font-bold font-mono leading-tight text-foreground">
 							{formatBRL(payload.creditValue)}
 						</p>
@@ -136,7 +136,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 							<p className="text-sm font-medium font-mono">{payload.availableSlots}</p>
 						</div>
 						<div>
-							<p className="text-xs text-muted-foreground">Contemplacao</p>
+							<p className="text-xs text-muted-foreground">Contemplação</p>
 							<p className="text-sm font-medium font-mono">
 								{formatPercent(payload.contemplationRate)}
 							</p>
