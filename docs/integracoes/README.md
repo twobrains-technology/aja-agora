@@ -13,6 +13,7 @@ Avaliação da integração do **Aja Agora** com o parceiro **Bevi Consórcio**,
 | [**bevi-consorcio-aderencia.md**](./bevi-consorcio-aderencia.md) | **Análise de aderência** da API ao modelo do Aja (gaps, riscos, arquitetura recomendada, 14 perguntas ao parceiro). Ponto de partida. |
 | [**bevi-api-discovery.md**](./bevi-api-discovery.md) | **Discovery técnico**: os dois trilhos de API (Parceiro vs Self-Contract), endpoints reais e o **shape completo da oferta** capturado ao vivo. |
 | [**bevi-simulador-fluxo.md**](./bevi-simulador-fluxo.md) | **Walkthrough** do simulador deles, passo a passo, com screenshots. |
+| [**bevi-segmentos-comparativo.md**](./bevi-segmentos-comparativo.md) | **Comparativo por tipo de bem** (6 segmentos): admin, índice, taxa, prazo. Responde "muda algo por segmento?". |
 | [collection/](./collection/) | Collection Postman oficial "API de Parceiro". |
 | [assets/](./assets/) | Screenshots do simulador (sem PII). |
 
