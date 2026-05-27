@@ -47,10 +47,19 @@ administradoras** (RODOBENS, ÂNCORA) e grupos, cada uma com carta, parcela, pra
 embutido/médio/necessário e resultado. Estrutura de dados completa → [API Discovery §3](./bevi-api-discovery.md#3-shape-real-da-oferta-o-achado-central).
 
 ### 6. Escolher oferta → KYC inline (sem redirect)
-Escolher a oferta grava a cota e avança direto para o KYC **dentro do app** (não redireciona):
-- **Documento pessoal**, **Dados de identidade** (RG, órgão, UF, nascimento, mãe, gênero, naturalidade),
-  **Endereço** (conta de luz), **Comprovante de endereço**.
-- **Todos opcionais** — dá pra pular tudo. Upload de arquivo abre portal `conexia.agxsoftware.com`.
+![Documento pessoal](./assets/bevi-05-documento.png)
+Escolher a oferta grava a cota e avança direto para o KYC **dentro do app** (não redireciona).
+A primeira tela é **"Documento pessoal"** com um banner fixo **"Todos os documentos são opcionais"** —
+dá pra pular tudo. Em seguida vêm **Dados de identidade** (RG, órgão, UF, nascimento, mãe, gênero,
+naturalidade), **Endereço** (conta de luz) e **Comprovante de endereço**.
+
+### 6b. Upload de documento → redirect pro portal CONEXIA
+![Portal de upload CONEXIA](./assets/bevi-06-redirect-upload.png)
+O **único redirect** do fluxo: clicar em anexar manda pra
+`conexia.agxsoftware.com/proposals?documentsToken=...` (portal AGX, fora do self-contract).
+Lá o usuário escolhe **RG ou CNH**, modo (documento de identidade × documento aberto) e faz upload
+de **frente/verso**. É o ponto onde o "sem redirect" do Aja **não** se sustenta nativamente — o
+upload de doc sempre sai pro portal da AGX. (KYC textual é inline; só o **arquivo** redireciona.)
 
 ### 7. Inserção da proposta (assíncrona)
 `waitingForUniqueCode`: insere na administradora em background e gera o nº da proposta
