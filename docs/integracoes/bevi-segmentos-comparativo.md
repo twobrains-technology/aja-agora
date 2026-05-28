@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|---|---|
 | **Imóvel** | R$ 50.000 | **3** | RODOBENS, ÂNCORA | **INCC** | 26%–29% | 0%–2% | 180–216m |
 | **Veículo (Autos)** | R$ 30.000 | **7** | **ITAÚ, ÂNCORA, BANCO DO BRASIL** | **IPCA + IGPM** | 14%–27% | 2%–3% | 29–118m |
-| **Motocicleta** | R$ 15.000 | **0** ⚠️ | — | — | — | — | — |
+| **Motocicleta** | R$ 25.000 | **1** | **CANOPUS** | **IPCA** | 21% | — | 96m |
 | **Pesados** | R$ 100.000 | **2** | ITAÚ | **IPCA + PRÉ-FIXADO 3%** | 20% | 2% | 53–55m |
 | **Serviços** | R$ 20.000 | **1** | ÂNCORA | **IGPM** | **35%** | **5%** | 98m |
 | **Outros Bens** | R$ 20.000 | **2** | ÂNCORA | **NÃO POSSUI CORREÇÃO** | 16%–22% | 0% | 34–90m |
@@ -23,11 +23,13 @@
    (pesados Itaú), e **sem correção** (outros bens). O agente **não pode** assumir um índice fixo:
    tem que ler o `adjustmentType` da oferta. (Reforça a regra CDC art. 37 — taxa/índice reais, nunca genéricos.)
 2. **O leque de administradoras muda por segmento.** Itaú só aparece em **Autos** e **Pesados**;
-   Rodobens só em **Imóvel**; Banco do Brasil só em **Autos**; Âncora é a única transversal.
-   A recomendação do agente precisa ser **por segmento**, não um catálogo único.
-3. **Motocicleta retornou ZERO ofertas** ⚠️ — gap de produto/catálogo da Bevi nesse parceiro/loja.
-   Se o Aja oferecer "moto" na vitrine, hoje cai num vazio. **Pergunta direta ao parceiro:** moto é
-   roadmap, ou some da UI? (Pode ser também piso de valor — R$ 15k pode estar abaixo do mínimo do grupo.)
+   Rodobens só em **Imóvel**; Banco do Brasil só em **Autos**; **Canopus só em Moto**; Âncora é a
+   única transversal. A recomendação do agente precisa ser **por segmento**, não um catálogo único.
+3. **Piso de valor por segmento é real e silencioso** ⚠️ — Moto a R$ 15k retorna *"Nenhuma oferta
+   gerada para a cota selecionada"* (0 ofertas); a partir de **R$ 20k** aparece **CANOPUS** (grupo 4400,
+   96m, adm 21%, IPCA). Ou seja: a ausência de oferta pode ser **piso de crédito**, não falta de produto.
+   O agente precisa tratar "0 ofertas" como *"aumente o valor"* — e não como *"não temos moto"*. Vale
+   mapear o piso de cada segmento com o parceiro pra não frustrar o usuário com valor baixo.
 4. **Taxa de administração varia 14%–35%.** Serviços é o mais caro (adm 35% + fundo 5%); Itaú
    Pesados/Autos os mais baratos (14%–20%). Comparabilidade real entre segmentos exige normalizar
    por custo efetivo, não só parcela.
@@ -56,8 +58,11 @@
 | ÂNCORA | 575 | R$ 45k | R$ 767,53 | 74m | 18% | IGPM | 5,0% |
 | ITAÚ | 50116 | R$ 52.585 | R$ 2.148,08 | 29m | 14% | IPCA | 3,5% |
 
-### Motocicleta (R$ 15k) — 0 ofertas ⚠️
-Sem grupos retornados. Ver achado #3.
+### Motocicleta — 1 oferta · IPCA (piso ~R$ 20k)
+A R$ 15k retorna 0 ofertas ("Nenhuma oferta gerada"); a partir de R$ 20k aparece a CANOPUS. Ver achado #3.
+| Admin | Grupo | Carta | Parcela | Prazo | Adm | Índice | Comissão |
+|---|---|---|---|---|---|---|---|
+| CANOPUS | 4400 | R$ 36k (pedido R$ 25k) | — | 96m | 21% | IPCA | 6,0% |
 
 ### Pesados (R$ 100k) — 2 ofertas · IPCA + PRÉ-FIXADO 3%
 | Admin | Grupo | Carta | Parcela | Prazo | Adm | Índice |

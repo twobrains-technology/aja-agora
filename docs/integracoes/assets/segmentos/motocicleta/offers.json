@@ -1,4 +1,97 @@
 {
-  "requestedValue": 15000,
-  "offers": []
+  "requestedValue": 25000,
+  "offers": [
+    {
+      "bank": "CANOPUS",
+      "bankLabel": "CANOPUS",
+      "group": "4400",
+      "bidType": "FREE",
+      "term": 96,
+      "finalValue": 36000,
+      "receivedCredit": 25200,
+      "bidAmount": 23346,
+      "installmentValue": 370.3404,
+      "importedInstallmentValue": 489.53,
+      "totalPaid": 47072.6784,
+      "totalDue": 47072.6784,
+      "adminFee": 0.21,
+      "reserveFundFee": 0,
+      "insuranceFee": 0.00084,
+      "reserveFundAmount": 0,
+      "insuranceTotalAmount": 3512.6784000000002,
+      "ownBidAmount": 0,
+      "totalBidAmount": 10800,
+      "paidInstallmentsBeforeContemplation": 6,
+      "remainingInstallmentsAfterContemplation": 90,
+      "paidInstallmentsAmountBeforeContemplation": 2942.0424,
+      "creditNetAfterContemplation": 25200,
+      "bidPercentBase": "CREDIT",
+      "lowestContemplationRate": 0.5969,
+      "averageBid": 23346,
+      "averageBidFromTotalPercentage": 0.6485,
+      "necessaryBidToContemplate": 12546,
+      "necessaryBidToContemplatePercentage": 0.3485,
+      "offeredBid": 0,
+      "offeredBidPercentage": 0,
+      "bidDifference": -12546,
+      "bidDifferencePercentage": -0.3485,
+      "individualQuotaValue": 36000,
+      "type": "SPECIAL_OFFER",
+      "quotaTipo": "MOTOS",
+      "productType": "MOTOS",
+      "productTypeLabel": "MOTOS",
+      "embeddedBidAcceptancePercentage": "30,00",
+      "quotaId": "6a0ca9c83e68cce9b61d3617",
+      "commissionInstallmentsQty": 5,
+      "temEstorno": false,
+      "prazoPagamentoBoleto": "SEMANAL",
+      "contemplacaoFaturamento": "1,50%",
+      "validityStart": "2026-01-01T00:00:00.000Z",
+      "validityEnd": "2099-12-31T00:00:00.000Z",
+      "probContemplacaoMeses": "6",
+      "isLanceFixo": true,
+      "qtdLanceFixo": 1,
+      "qtdLanceLivre": 8,
+      "qtdLanceLimitado": 0,
+      "proximoVencimento": "2026-05-14T00:00:00.000Z",
+      "proximaAssembleia": "2026-05-15T00:00:00.000Z",
+      "seguroPrestamista": 0.00084,
+      "quotaLookupValue": 35714.29,
+      "quantityOfQuotas": 1,
+      "commission": {
+        "totalRatePercent": "6,00",
+        "totalCommission": 2160,
+        "commissionInstallmentsQty": 5,
+        "deferred": {
+          "d30": {
+            "ratePercent": "1,00",
+            "installmentCommission": 360
+          },
+          "d60": {
+            "ratePercent": "1,00",
+            "installmentCommission": 360
+          },
+          "d90": {
+            "ratePercent": "1,00",
+            "installmentCommission": 360
+          },
+          "d120": {
+            "ratePercent": "1,50",
+            "installmentCommission": 540
+          }
+        }
+      },
+      "bidPercentage": 0.3,
+      "bidPaymentMode": "EMBEDDED",
+      "embeddedBid": 10800,
+      "highlight": true,
+      "minimumBidPercentage": 0.5969,
+      "averageBidPercentage": 0.6485,
+      "monthlyAwardedQuotas": 1,
+      "lookupCeiling": 35714.29,
+      "adjustmentType": "IPCA",
+      "minContemplationPaymentBrl": 21488.399999999998,
+      "minimumValueToBeContemplatedBrl": 21488.399999999998
+    }
+  ]
 }
