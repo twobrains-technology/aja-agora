@@ -8,6 +8,7 @@ import type { Category, Persona } from "@/lib/agent/personas";
 import {
 	type Bounds,
 	CREDIT_BOUNDS,
+	LANCE_EMBUTIDO_OPTIONS,
 	MONTHLY_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
@@ -89,6 +90,12 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 					{ value: "maybe", label: "Talvez, depende" },
 					{ value: "no", label: "Por enquanto não" },
 				],
+			};
+		case "lance-embutido":
+			return {
+				kind: "chips",
+				gate: "lance-embutido",
+				options: LANCE_EMBUTIDO_OPTIONS.map((o) => ({ value: o.token, label: o.title })),
 			};
 		case "doubts-wait":
 		case "search":

@@ -1,4 +1,4 @@
-import type { Category } from "@/lib/agent/personas";
+import type { Category, Objetivo } from "@/lib/agent/personas";
 
 /**
  * Single source of truth for qualification ranges/buckets across channels.
@@ -29,6 +29,8 @@ export type TimeframeOption = {
 	title: string;
 	desc: string;
 	prazoMeses: number;
+	/** Eixo Bevi derivado do prazo. Pressa => contemplacao_rapida; sem pressa => investimento. */
+	objetivo: Objetivo;
 };
 
 // ---- Credit (valor do bem) ----
@@ -86,8 +88,20 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 	moto: [
 		{ token: "15", title: "Até R$ 15 mil", desc: "Entrada, custo benefício", min: 0, max: 15_000 },
 		{ token: "30", title: "R$ 15 a 30 mil", desc: "Naked, scooter", min: 15_000, max: 30_000 },
-		{ token: "50", title: "R$ 30 a 50 mil", desc: "Trail, esportivas médias", min: 30_000, max: 50_000 },
-		{ token: "80", title: "Acima de R$ 50 mil", desc: "Big trail, esportiva", min: 50_000, max: 80_000 },
+		{
+			token: "50",
+			title: "R$ 30 a 50 mil",
+			desc: "Trail, esportivas médias",
+			min: 30_000,
+			max: 50_000,
+		},
+		{
+			token: "80",
+			title: "Acima de R$ 50 mil",
+			desc: "Big trail, esportiva",
+			min: 50_000,
+			max: 80_000,
+		},
 	],
 	servicos: [
 		{
@@ -114,6 +128,42 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 	],
 };
 
+// ---- Lance embutido (jornada do doc 2026-05-29) ----
+//
+// Quando o usuário tem reserva pra lance ("yes"), o doc manda educar sobre
+// lance embutido e oferecer a opção de considerá-lo nas simulações. Decisão de
+// design (D3): consolidamos a educação + opt-in num gate binário só, claro pra
+// leigo. O percentual (Bevi aceita 30 ou 50) fica interno, default 30 — o valor
+// mais comum na captura real do simulador Bevi.
+export const LANCE_EMBUTIDO_DEFAULT_PERCENT = 30 as const;
+
+export type LanceEmbutidoOption = {
+	token: "yes" | "no";
+	title: string;
+	desc: string;
+};
+
+export const LANCE_EMBUTIDO_OPTIONS: LanceEmbutidoOption[] = [
+	{
+		token: "yes",
+		title: "Sim, considerar lance embutido",
+		desc: "Uso parte da carta como lance",
+	},
+	{
+		token: "no",
+		title: "Não, lance com recursos próprios",
+		desc: "Dou o lance em dinheiro",
+	},
+];
+
+/** Deriva o eixo `objetivo` da Bevi a partir do prazo escolhido. Prazos longos
+ * (>= 120 meses, "sem pressa, quero menor parcela") => investimento; o resto,
+ * onde o usuário quer o bem logo => contemplacao_rapida. Fonte única pra web,
+ * WhatsApp e extração de texto livre. */
+export function objetivoForPrazo(prazoMeses: number): Objetivo {
+	return prazoMeses >= 120 ? "investimento" : "contemplacao_rapida";
+}
+
 // ---- Monthly budget (parcela mensal) ----
 
 export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
@@ -125,9 +175,42 @@ export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
 
 // ---- Timeframe ----
 
+// Jornada canônica do .docx (2026-05-29): 5 opções de prazo. Cada uma deriva o
+// `objetivo` da Bevi (contemplacao_rapida × investimento), input nativo da simulação.
 export const TIMEFRAME_OPTIONS: TimeframeOption[] = [
-	{ token: "0", title: "Já! (com lance)", desc: "Quero contemplação rápida", prazoMeses: 0 },
-	{ token: "24", title: "1 a 2 anos", desc: "Prazo curto", prazoMeses: 24 },
-	{ token: "60", title: "3 a 5 anos", desc: "Prazo médio", prazoMeses: 60 },
-	{ token: "120", title: "Sem pressa", desc: "Parcela mais leve", prazoMeses: 120 },
+	{
+		token: "0",
+		title: "O mais rápido possível",
+		desc: "Contemplação acelerada",
+		prazoMeses: 0,
+		objetivo: "contemplacao_rapida",
+	},
+	{
+		token: "6",
+		title: "Até 6 meses",
+		desc: "Bem logo",
+		prazoMeses: 6,
+		objetivo: "contemplacao_rapida",
+	},
+	{
+		token: "12",
+		title: "1 ano",
+		desc: "Curto prazo",
+		prazoMeses: 12,
+		objetivo: "contemplacao_rapida",
+	},
+	{
+		token: "24",
+		title: "2 anos ou mais",
+		desc: "Médio prazo",
+		prazoMeses: 24,
+		objetivo: "contemplacao_rapida",
+	},
+	{
+		token: "120",
+		title: "Sem pressa, quero menor parcela",
+		desc: "Parcela mais leve",
+		prazoMeses: 120,
+		objetivo: "investimento",
+	},
 ];

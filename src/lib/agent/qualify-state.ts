@@ -7,6 +7,7 @@ export type Gate =
 	| "credit"
 	| "timeframe"
 	| "lance"
+	| "lance-embutido"
 	| "search";
 
 export type UserIntent =
@@ -17,10 +18,7 @@ export type UserIntent =
 	| "off_topic"
 	| "neutral";
 
-export function nextGate(
-	meta: ConversationMetadata,
-	opts?: { hasContactName?: boolean },
-): Gate {
+export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
 	// PF-08: pausa todos os gates até captura conversacional de nome.
 	// Sem isso, o gate de experience dispara junto com a pergunta de nome
 	// e usuário recebe 2 perguntas simultâneas. doubts-wait = no-op visual.
@@ -40,6 +38,9 @@ export function nextGate(
 	if (q.creditMax === undefined) return "credit";
 	if (q.prazoMeses === undefined) return "timeframe";
 	if (!q.hasLance) return "lance";
+	// Jornada do doc: quem TEM reserva pra lance ("yes") passa pelo gate de
+	// lance embutido (educa + opt-in) antes da busca. "maybe"/"no" pulam.
+	if (q.hasLance === "yes" && q.lanceEmbutido === undefined) return "lance-embutido";
 
 	return "search";
 }

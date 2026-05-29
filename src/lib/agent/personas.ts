@@ -9,6 +9,11 @@ export type Category = "imovel" | "auto" | "moto" | "servicos";
 export type ExpertiseLevel = "leigo" | "expert" | "neutro";
 export type ExperiencePrev = "first" | "returning" | "doubts";
 
+/** Eixo de objetivo da Bevi (input nativo da simulação): quer o bem rápido
+ * (contemplação acelerada via lance) ou enxerga o consórcio como investimento
+ * de longo prazo (menor parcela). Derivado do gate de prazo. */
+export type Objetivo = "contemplacao_rapida" | "investimento";
+
 export type QualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
@@ -16,7 +21,17 @@ export type QualifyAnswers = {
 	monthlyBudget?: number;
 	/** 0 = imediato (lance forte). */
 	prazoMeses?: number;
+	/** Eixo Bevi derivado do prazo escolhido (jornada do doc 2026-05-29). */
+	objetivo?: Objetivo;
 	hasLance?: "yes" | "maybe" | "no";
+	/** Valor aproximado do lance que o usuário pretende ofertar (em reais).
+	 * Capturado no sub-fluxo de lance embutido quando hasLance="yes". Bevi: valorDoLance. */
+	lanceValue?: number;
+	/** Usuário optou por considerar lance embutido nas simulações (jornada do doc).
+	 * Bevi: lanceEmbutido = "30"|"50" (percentual). */
+	lanceEmbutido?: boolean;
+	/** Percentual do lance embutido aceito (Bevi aceita 30 ou 50). Default 30. */
+	lanceEmbutidoPercent?: 30 | 50;
 };
 
 import type { NavState } from "./orchestrator/navigation";

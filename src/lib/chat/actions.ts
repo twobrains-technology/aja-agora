@@ -17,6 +17,7 @@ export type ChatAction =
 	  }
 	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
 	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
+	| { kind: "gate"; gate: "lance-embutido"; value: "yes" | "no"; label: string }
 	| { kind: "category"; category: Category }
 	| {
 			kind: "select-group";

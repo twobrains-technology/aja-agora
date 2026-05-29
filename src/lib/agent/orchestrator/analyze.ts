@@ -1,4 +1,5 @@
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
+import { objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 const AFFIRMATIVE_REPLIES = new Set([
@@ -72,6 +73,7 @@ export async function analyzeAndMerge(
 	}
 	if (analysis.prazoMeses !== null && q.prazoMeses === undefined) {
 		q.prazoMeses = analysis.prazoMeses;
+		q.objetivo = objetivoForPrazo(analysis.prazoMeses);
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 		extractedQualifyField = true;

@@ -56,6 +56,10 @@ export function buildTimeframeReactionDirective(rangeTitle: string): string {
 	return `Usuario escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reacao adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, da pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NAO faca pergunta, NAO chame tools. O sistema vai mandar logo em seguida os botoes da proxima etapa.`;
 }
 
+export function buildLanceReactionDirective(rangeTitle: string): string {
+	return `Usuario respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reacao positiva (ex: "Boa, lance acelera bastante a contemplacao.", "Show, com lance da pra antecipar."). NAO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NAO faca pergunta, NAO chame tools.`;
+}
+
 // ---- Group actions ----
 
 export function buildGroupSelectedDirective(

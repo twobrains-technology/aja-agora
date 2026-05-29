@@ -4,9 +4,10 @@ import { conversations } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
+import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
-import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { saveMessage } from "@/lib/conversation/messages";
+import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import {
 	fireGate,
 	runDirectiveWithOrchestrator,
@@ -21,6 +22,7 @@ import {
 	buildExperienceFirstDirective,
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
+	buildLanceReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
 	buildRangePickerDirective,
@@ -30,6 +32,7 @@ import {
 } from "./directives";
 import {
 	resolveCreditReply,
+	resolveLanceEmbutidoReply,
 	resolveLanceReply,
 	resolveRange,
 	resolveTimeframeReply,
@@ -96,6 +99,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("experience_")) return handleExperience(ctx);
 	if (replyId.startsWith("credit_")) return handleCredit(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
+	if (replyId.startsWith("lanceembutido_")) return handleLanceEmbutido(ctx);
 	if (replyId.startsWith("lance_")) return handleLance(ctx);
 	if (replyId.startsWith("range_")) return handleRange(ctx);
 	if (replyId.startsWith("picker_")) return handlePicker(ctx);
@@ -239,6 +243,7 @@ async function handleTimeframe(ctx: Ctx): Promise<boolean> {
 	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 		...(meta.qualifyAnswers ?? {}),
 		prazoMeses: resolved.prazoMeses,
+		objetivo: objetivoForPrazo(resolved.prazoMeses),
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 	await recordUserClick(ctx);
@@ -258,6 +263,38 @@ async function handleLance(ctx: Ctx): Promise<boolean> {
 	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 		...(meta.qualifyAnswers ?? {}),
 		hasLance: resolved.value,
+	};
+	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+	await recordUserClick(ctx);
+
+	if (!meta.currentCategory) return true;
+
+	// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance embutido
+	// (educa + opt-in) antes da busca. O directive dispara o gate em seguida.
+	if (resolved.value === "yes") {
+		await runAgentDirective(from, conversationId, buildLanceReactionDirective(resolved.title));
+		return true;
+	}
+	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	return true;
+}
+
+async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
+	const resolved = resolveLanceEmbutidoReply(replyId);
+	if (!resolved) return true;
+
+	const considera = resolved.value === "yes";
+	const meta = await loadMeta(conversationId);
+	const q = meta.qualifyAnswers ?? {};
+	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+		...q,
+		lanceEmbutido: considera,
+		lanceEmbutidoPercent: considera ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
+		lanceValue:
+			considera && q.creditMax !== undefined
+				? Math.round((q.creditMax * LANCE_EMBUTIDO_DEFAULT_PERCENT) / 100)
+				: q.lanceValue,
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 	await recordUserClick(ctx);

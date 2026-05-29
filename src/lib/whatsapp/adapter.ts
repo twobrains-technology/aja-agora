@@ -12,6 +12,7 @@ import {
 	experienceQuestionToWhatsApp,
 	formatTextForWhatsApp,
 	handoffConfirmationToWhatsApp,
+	lanceEmbutidoQuestionToWhatsApp,
 	lanceQuestionToWhatsApp,
 	qualifyConsentToWhatsApp,
 	splitMessage,
@@ -51,6 +52,8 @@ async function gateInteractive(
 		}
 		case "lance":
 			return lanceQuestionToWhatsApp(prefix).interactive ?? null;
+		case "lance-embutido":
+			return lanceEmbutidoQuestionToWhatsApp(prefix).interactive ?? null;
 		case "doubts-wait":
 		case "search":
 			return null;
@@ -99,9 +102,7 @@ async function consumeEvents(
 				// novo for adicionado a PRESENTATION_TOOLS sem mapping WA, o
 				// warning aparece no log do canal. (artifact-coverage.test.ts
 				// é o gate principal, mas o warning ajuda em produção.)
-				console.warn(
-					`[whatsapp/adapter] artifact dropado sem mapping: type=${artifact.type}`,
-				);
+				console.warn(`[whatsapp/adapter] artifact dropado sem mapping: type=${artifact.type}`);
 				continue;
 			}
 			if (hasSent) await pauseBeforeNext();

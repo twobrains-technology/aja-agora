@@ -22,7 +22,7 @@ export type SliderField = {
 export type GatePartData =
 	| {
 			kind: "chips";
-			gate: "experience" | "consent" | "lance" | "timeframe";
+			gate: "experience" | "consent" | "lance" | "lance-embutido" | "timeframe";
 			options: GatePartOption[];
 	  }
 	| {

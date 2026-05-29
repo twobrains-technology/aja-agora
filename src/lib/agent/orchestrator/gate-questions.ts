@@ -20,6 +20,15 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
 			return "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+		case "lance-embutido":
+			// Educação do doc, em prosa — explica lance embutido sem jargão de engine.
+			return (
+				"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda!\n\n" +
+				"Ele permite usar parte da própria carta de crédito como lance — numa carta de R$ 100 mil, " +
+				"por exemplo, você usa uma fatia desse valor pra aumentar suas chances de contemplação, sem " +
+				"precisar ter todo o lance em dinheiro hoje.\n\n" +
+				"Quer considerar esse tipo de lance nas suas simulações?"
+			);
 		case "doubts-wait":
 		case "search":
 			return null;

@@ -40,13 +40,9 @@ import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
-
+import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
-import {
-	SPECIALIST_BASE_PROMPT,
-	SYSTEM_PROMPT,
-} from "@/lib/agent/system-prompt";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -199,8 +195,7 @@ describe("BUG-META-NARRATIVE — agent verbalizou mecanismo da UI ao usuario", (
 		// Usado por: testes estruturais ja existentes (meta-narrative.test.ts)
 		// como acoplamento ao prompt; aqui repetido pra documentar a deteccao
 		// no formato de detector (caso o produto adicione postprocessor).
-		const cassette =
-			"O sistema vai te guiar com botões nas próximas perguntas — é bem rápido.";
+		const cassette = "O sistema vai te guiar com botões nas próximas perguntas — é bem rápido.";
 
 		const detectors = [
 			/o sistema (vai|ir[áa]) (te )?(guiar|conduzir|mostrar|ajudar)/i,
@@ -407,17 +402,11 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 		// LLM ainda pode parafrasear pra 'confira abaixo', 'olhe abaixo', 'olha
 		// ai'. Regra dura tem que cobrir explicito.
 		const normalizar = (s: string) =>
-			s
-				.toLowerCase()
-				.replace(/ç/g, "c")
-				.replace(/õ/g, "o")
-				.replace(/á/g, "a");
+			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
 		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
 
 		const variantesExtras = ["confira abaixo", "olhe abaixo", "olha ai"];
-		const faltando = variantesExtras.filter(
-			(v) => !promptNorm.includes(normalizar(v)),
-		);
+		const faltando = variantesExtras.filter((v) => !promptNorm.includes(normalizar(v)));
 
 		expect(
 			faltando,
@@ -441,8 +430,7 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 
 describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value_picker", () => {
 	it("cassette: stream com pergunta de faixa em texto puro SEM tool-call", async () => {
-		const cassette =
-			"Qual faixa de credito voce esta pensando pra esse imovel?";
+		const cassette = "Qual faixa de credito voce esta pensando pra esse imovel?";
 
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
@@ -468,8 +456,7 @@ describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value
 			/NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
 
 		expect(
-			proibicaoValorTexto.test(SYSTEM_PROMPT) ||
-				proibicaoValorTexto.test(SPECIALIST_BASE_PROMPT),
+			proibicaoValorTexto.test(SYSTEM_PROMPT) || proibicaoValorTexto.test(SPECIALIST_BASE_PROMPT),
 			"Prompt precisa proibir EXPLICITAMENTE 'NUNCA pergunte valores por texto' acoplado a present_value_picker. " +
 				"Sem essa regra, o LLM cai em prosa nas perguntas de faixa/orcamento.",
 		).toBe(true);
@@ -525,8 +512,7 @@ describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt
 			/detalhamento completo[\s\S]{0,200}ajustar a carta[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
 
 		expect(
-			blocoForward.test(SPECIALIST_BASE_PROMPT) ||
-				blocoReverso.test(SPECIALIST_BASE_PROMPT),
+			blocoForward.test(SPECIALIST_BASE_PROMPT) || blocoReverso.test(SPECIALIST_BASE_PROMPT),
 			"Frase canonica B9 precisa estar a <800 chars de present_simulation_result OU present_recommendation_card. " +
 				"Sem proximidade, agent associa errado e improvisa.",
 		).toBe(true);
@@ -721,8 +707,7 @@ describe("BUG-META-NARRATIVE-CASSETTE — agent vazou mecanica da UI apos save_c
 
 describe("BUG-PERGUNTAS-RAPIDAS-CASSETTE — promessa textual sem gate emitido", () => {
 	it("cassette: stream com 'vou te fazer perguntas rapidas' + finish SEM tool-call (bug)", async () => {
-		const cassette =
-			"Vou te fazer algumas perguntas rápidas pra achar a opção certa pra você.";
+		const cassette = "Vou te fazer algumas perguntas rápidas pra achar a opção certa pra você.";
 
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
@@ -736,9 +721,10 @@ describe("BUG-PERGUNTAS-RAPIDAS-CASSETTE — promessa textual sem gate emitido",
 
 		// Detector da frase clássica do bug.
 		const detector = /(vou|irei) (te )?fazer (algumas )?(perguntas?\s+)?r[áa]pidas?/i;
-		expect(detector.test(cassette), "Detector tem que pegar 'vou te fazer perguntas rapidas'.").toBe(
-			true,
-		);
+		expect(
+			detector.test(cassette),
+			"Detector tem que pegar 'vou te fazer perguntas rapidas'.",
+		).toBe(true);
 
 		// CROSS-REF: prompt PRECISA proibir essa promessa textual + obrigar
 		// gate IMEDIATO após save_contact_name no mesmo turn.
@@ -981,8 +967,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 		const route = readSource("src/app/api/chat/route.ts");
 
 		// 1) O branch interest existe no source com a forma esperada.
-		const branchInterest =
-			/body\.action\?\.kind\s*===\s*["']interest["']/;
+		const branchInterest = /body\.action\?\.kind\s*===\s*["']interest["']/;
 		expect(
 			branchInterest.test(route),
 			"route.ts precisa ter branch `body.action?.kind === 'interest'`. " +
@@ -1005,8 +990,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 
 		// 3) contactName tem que vir do conv.contactName lido no top do POST —
 		// sem isso, o ?? null sempre cai pra null e o fix vira no-op.
-		const lidoDoConv =
-			/contactName\s*=\s*conv\.contactName\s*\?\?\s*null/;
+		const lidoDoConv = /contactName\s*=\s*conv\.contactName\s*\?\?\s*null/;
 		expect(
 			lidoDoConv.test(route),
 			"route.ts precisa ler `contactName = conv.contactName ?? null` antes " +
@@ -1036,8 +1020,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 		// fetch tardio sobrescreve o prefill por data.name vazio e o bug volta.
 		const form = readSource("src/components/chat/artifacts/lead-form.tsx");
 
-		const defaultPrefere =
-			/defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
+		const defaultPrefere = /defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
 		expect(
 			defaultPrefere.test(form),
 			"lead-form.tsx defaultValues precisa priorizar payload.prefilledName — " +
@@ -1050,7 +1033,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 		expect(
 			resetPrefere.test(form),
 			"useEffect que faz fetch /api/leads/[id] precisa manter prioridade do " +
-				"payload no reset: `name: payload.prefilledName ?? data.name ?? \"\"`. " +
+				'payload no reset: `name: payload.prefilledName ?? data.name ?? ""`. ' +
 				"Se inverter ordem (data.name ?? payload.prefilledName), fetch que " +
 				"retorna name='' (lead vazio + contactName null) zera o prefill — bug volta.",
 		).toBe(true);
@@ -1087,8 +1070,7 @@ describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE-CASSETTE — agent saudou com nome SEM
 
 		// Detector: agent mencionou nome próprio (capitalized after greeting)
 		// sem chamar a tool de captura.
-		const mencionaNome =
-			/(prazer|beleza|show|oi|ol[áa]),?\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+!?/i;
+		const mencionaNome = /(prazer|beleza|show|oi|ol[áa]),?\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+!?/i;
 		expect(
 			mencionaNome.test(cassette),
 			"Cassette tem que conter saudacao com nome para detectar — se o regex falhar, atualize.",
@@ -1112,8 +1094,7 @@ describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE-CASSETTE — agent saudou com nome SEM
 		const ordemReversa =
 			/save_contact_name[\s\S]{0,200}ANTES[\s\S]{0,200}(saudar|texto|resposta|saudacao)/i;
 		expect(
-			ordemTemporal.test(SPECIALIST_BASE_PROMPT) ||
-				ordemReversa.test(SPECIALIST_BASE_PROMPT),
+			ordemTemporal.test(SPECIALIST_BASE_PROMPT) || ordemReversa.test(SPECIALIST_BASE_PROMPT),
 			"Regra precisa estabelecer ordem temporal explicita: ANTES de saudar com nome → " +
 				"OBRIGATORIO save_contact_name. Sem isso o flow regride.",
 		).toBe(true);
@@ -1133,8 +1114,7 @@ describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE-CASSETTE — agent saudou com nome SEM
 
 describe("BUG-NO-CTA-AFTER-NAME-CASSETTE — frase afirmativa generica encerrou turn sem tool", () => {
 	it("cassette: stream Rafael/Marina com 'Vamos achar a opcao certa' + finish SEM tool (bug)", async () => {
-		const cassette =
-			"Beleza, Marina! Prazer, Marina! Vamos achar a opção certa pra você.";
+		const cassette = "Beleza, Marina! Prazer, Marina! Vamos achar a opção certa pra você.";
 
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
@@ -1273,17 +1253,12 @@ describe("BUG-SHORT-GREETING-NO-TOOL — agent emite 'Prazer, Paulo!' sem chamar
 		expect(
 			exemploBadPaulo.test(SPECIALIST_BASE_PROMPT),
 			"SPECIALIST_BASE_PROMPT precisa conter exemplo BAD literal " +
-				"User:\"Paulo\" + agent:\"Prazer, Paulo!\". É a transcrição real do bug.",
+				'User:"Paulo" + agent:"Prazer, Paulo!". É a transcrição real do bug.',
 		).toBe(true);
 	});
 
 	it("prompt source: lista expandida tem 'Prazer, X!', 'Beleza, X!', 'Oi, X!', 'Bom te conhecer, X!'", () => {
-		const variantes = [
-			'"prazer, x!"',
-			'"beleza, x!"',
-			'"oi, x!"',
-			'"bom te conhecer, x!"',
-		];
+		const variantes = ['"prazer, x!"', '"beleza, x!"', '"oi, x!"', '"bom te conhecer, x!"'];
 		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
 		const faltando = variantes.filter((v) => !promptLower.includes(v));
 		expect(
@@ -1314,9 +1289,7 @@ describe("BUG-SHORT-GREETING-NO-TOOL — agent emite 'Prazer, Paulo!' sem chamar
 
 describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name via toolChoice quando detect-name-turn match", () => {
 	it("isLikelyNameResponse retorna true pro padrão exato do bug (previousAsk + 'Paulo' + contactName=null)", async () => {
-		const { isLikelyNameResponse } = await import(
-			"@/lib/agent/orchestrator/detect-name-turn"
-		);
+		const { isLikelyNameResponse } = await import("@/lib/agent/orchestrator/detect-name-turn");
 		expect(
 			isLikelyNameResponse({
 				previousAssistantText:
@@ -1438,7 +1411,8 @@ describe("BUG-INTERNAL-REASONING-LEAK-CASSETTE — agent vazou chain-of-thought 
 		expect(
 			hits.length,
 			"Detector de chain-of-thought tem que casar com >=2 sinais no cassette real. " +
-				"Hits: " + hits.length,
+				"Hits: " +
+				hits.length,
 		).toBeGreaterThanOrEqual(2);
 	});
 
@@ -1609,9 +1583,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 
 		// E NENHUM dos 3 gates de qualificação aparece no fluxo anterior
 		// (cassette simula início da conversa pós-nome). Sem isso, é violacao.
-		const mencionaGate = /\b(experience|timeframe|lance)\b/i.test(
-			CASSETTE_RAFAEL_PULA_GATES,
-		);
+		const mencionaGate = /\b(experience|timeframe|lance)\b/i.test(CASSETTE_RAFAEL_PULA_GATES);
 		expect(
 			mencionaGate,
 			"O cassette do bug é exatamente o cenário onde o agent pula gates — " +
@@ -1632,8 +1604,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		expect(toolCalls).toEqual([]);
 
 		// Detector de violação: pergunta valor + nenhuma menção a gate.
-		const detectorPulaGate =
-			/(qual|quanto)[\s\S]{0,30}(faixa|valor|cr[ée]dito|carta|parcela)/i;
+		const detectorPulaGate = /(qual|quanto)[\s\S]{0,30}(faixa|valor|cr[ée]dito|carta|parcela)/i;
 		expect(detectorPulaGate.test(CASSETTE_HELENA_MONIQUE)).toBe(true);
 	});
 
@@ -1670,8 +1641,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		const regraInvertida =
 			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
 		expect(
-			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) ||
-				regraInvertida.test(SPECIALIST_BASE_PROMPT),
+			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) || regraInvertida.test(SPECIALIST_BASE_PROMPT),
 			"SPECIALIST_BASE_PROMPT precisa amarrar (experience+timeframe+lance) " +
 				"à proibição de pedir valor/parcela ANTES. Sem isso, persona row no DB " +
 				"(migration 0021) fica solta — modelo cai no padrão antigo.",
@@ -1684,8 +1654,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		// existir e mencionar os 3 gates + ordem.
 		const migrationSrc = readSource("drizzle/0021_auto_persona_gate_flow.sql");
 
-		const mencionaGates =
-			/experience[\s\S]{0,300}timeframe[\s\S]{0,300}lance/i.test(migrationSrc);
+		const mencionaGates = /experience[\s\S]{0,300}timeframe[\s\S]{0,300}lance/i.test(migrationSrc);
 		expect(
 			mencionaGates,
 			"Migration 0021 precisa mencionar os 3 gates (experience/timeframe/lance) " +
@@ -1702,9 +1671,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 				"sem ordem temporal o agent pode disparar os 3 gates DEPOIS do valor (bug volta).",
 		).toBe(true);
 
-		const idempotente = /NOT LIKE|NOT @>|IS NULL|jsonb_array_length/i.test(
-			migrationSrc,
-		);
+		const idempotente = /NOT LIKE|NOT @>|IS NULL|jsonb_array_length/i.test(migrationSrc);
 		expect(
 			idempotente,
 			"Migration 0021 precisa ter guard de idempotência (NOT LIKE, NOT @>, IS NULL ou jsonb_array_length) " +
@@ -1736,8 +1703,7 @@ describe("BUG-ASSISTANT-AMBIGUOUS-MUST-ASK — input vago deve disparar ask_clar
 		const { toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			toolCallChunk("tc-ask-1", "ask_clarification", {
-				question:
-					"Menos formal igual amigo no zap, ou só menos técnico mas ainda profissional?",
+				question: "Menos formal igual amigo no zap, ou só menos técnico mas ainda profissional?",
 			}),
 			FINISH_TOOL_CALLS,
 		]);
@@ -1748,11 +1714,8 @@ describe("BUG-ASSISTANT-AMBIGUOUS-MUST-ASK — input vago deve disparar ask_clar
 	});
 
 	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui desambiguar antes de propor", async () => {
-		const { ASSISTANT_BASE_PROMPT } = await import(
-			"@/lib/agent/assistant-prompt"
-		);
-		const regraDesambigua =
-			/(desambigu|vag[oa]|amb[íi]gu[oa])[\s\S]{0,400}ask_clarification/i;
+		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
+		const regraDesambigua = /(desambigu|vag[oa]|amb[íi]gu[oa])[\s\S]{0,400}ask_clarification/i;
 		expect(
 			regraDesambigua.test(ASSISTANT_BASE_PROMPT),
 			"ASSISTANT_BASE_PROMPT precisa instruir ask_clarification antes de propor quando input é vago",
@@ -1775,9 +1738,7 @@ describe("BUG-ASSISTANT-PROPOSAL-MUST-VALIDATE — validate_against_rules antes 
 	});
 
 	it("CROSS-REF prompt: ASSISTANT_BASE_PROMPT instrui validar com validate_against_rules antes de propose_patch", async () => {
-		const { ASSISTANT_BASE_PROMPT } = await import(
-			"@/lib/agent/assistant-prompt"
-		);
+		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
 		const regraValidaAntes =
 			/valid[\s\S]{0,400}(antes|ANTES)[\s\S]{0,400}propose_patch|validate_against_rules[\s\S]{0,400}propose_patch/i;
 		expect(
@@ -1789,9 +1750,7 @@ describe("BUG-ASSISTANT-PROPOSAL-MUST-VALIDATE — validate_against_rules antes 
 
 describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas pos-nome é rejeitado server-side", () => {
 	it("executeProposePatch rejeita voiceTone contendo variantes proibidas", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
@@ -1822,19 +1781,13 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 				},
 				ctx,
 			);
-			expect(result.ok, `voiceTone "${after}" deveria ter sido rejeitado`).toBe(
-				false,
-			);
+			expect(result.ok, `voiceTone "${after}" deveria ter sido rejeitado`).toBe(false);
 		}
 	});
 
 	it("CROSS-REF: HARD_RULES.md lista variantes proibidas pos-nome", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		const variantes = [
-			"Vamos achar a opção certa",
-			"Vou te ajudar",
-			"Estou aqui pra ajudar",
-		];
+		const variantes = ["Vamos achar a opção certa", "Vou te ajudar", "Estou aqui pra ajudar"];
 		for (const variante of variantes) {
 			expect(
 				hardRules.toLowerCase().includes(variante.toLowerCase()),
@@ -1846,9 +1799,7 @@ describe("BUG-ASSISTANT-NO-CTA-LEAK — propose_patch com variantes proibidas po
 
 describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com before inventado e version stale", () => {
 	it("executeProposePatch rejeita voiceTone com before que não bate com row atual", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
@@ -1878,9 +1829,7 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 	});
 
 	it("executeProposePatch rejeita patch com personaVersionSeen stale (race condition)", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 		const result = await executeProposePatch(
 			{
 				kind: "voiceTone",
@@ -1912,9 +1861,7 @@ describe("BUG-ASSISTANT-DIFF-BEFORE-MATCHES-CURRENT — server rejeita patch com
 
 describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantResponse vaza chain-of-thought é rejeitado", () => {
 	it("executeProposePatch rejeita example.add com 'Motivo:' / 'Reavaliando' no assistantResponse", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 		const ctx = {
 			personaId: "p1",
 			personaVersion: 1,
@@ -1947,10 +1894,9 @@ describe("BUG-ASSISTANT-INTERNAL-REASONING-LEAK — example.add cujo assistantRe
 				},
 				ctx,
 			);
-			expect(
-				result.ok,
-				`assistantResponse "${assistantResponse}" deveria ter sido rejeitado`,
-			).toBe(false);
+			expect(result.ok, `assistantResponse "${assistantResponse}" deveria ter sido rejeitado`).toBe(
+				false,
+			);
 		}
 	});
 
@@ -1978,9 +1924,7 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 	};
 
 	it("executeProposePatch rejeita example.add com 'próximas perguntas' / 'perguntas rápidas' / 'sistema vai te guiar'", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 
 		const meta = [
 			"Vou te fazer umas perguntas rápidas pra te conhecer",
@@ -2003,9 +1947,7 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 				ctx,
 			);
 			if (
-				/perguntas r[áa]pidas|pr[óo]ximas perguntas|sistema vai te guiar/i.test(
-					assistantResponse,
-				)
+				/perguntas r[áa]pidas|pr[óo]ximas perguntas|sistema vai te guiar/i.test(assistantResponse)
 			) {
 				expect(
 					result.ok,
@@ -2025,9 +1967,7 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 
 describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
 	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
-		const { ASSISTANT_BASE_PROMPT } = await import(
-			"@/lib/agent/assistant-prompt"
-		);
+		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
 		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
 
@@ -2040,8 +1980,7 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 
 	it("CROSS-REF: HARD_RULES.md sec 2.2 explicita ordem dos 3 gates antes do valor", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		const ordemCorreta =
-			/experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+		const ordemCorreta = /experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
 		expect(
 			ordemCorreta.test(hardRules),
 			"HARD_RULES.md sec 2.2 precisa listar os 3 gates na ordem experience → timeframe → lance",
@@ -2052,8 +1991,7 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 describe("BUG-ASSISTANT-NO-PROMISE-NO-RENDER — example.add que promete UI sem renderizar é proibido pelo prompt (R-05)", () => {
 	it("CROSS-REF: HARD_RULES.md sec 1.5 lista frases proibidas de promessa-sem-tool (com ou sem acento)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		const stripAccents = (s: string) =>
-			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		const stripAccents = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 		const normRules = stripAccents(hardRules);
 
 		const frasesProibidas = [
@@ -2070,9 +2008,7 @@ describe("BUG-ASSISTANT-NO-PROMISE-NO-RENDER — example.add que promete UI sem 
 	});
 
 	it("CROSS-REF: ASSISTANT_BASE_PROMPT puxa HARD_RULES inteiro — LLM vê regra de promessa-sem-tool", async () => {
-		const { buildAssistantPrompt } = await import(
-			"@/lib/agent/assistant-prompt"
-		);
+		const { buildAssistantPrompt } = await import("@/lib/agent/assistant-prompt");
 		const built = buildAssistantPrompt({
 			id: "x",
 			displayName: "Rafael",
@@ -2085,8 +2021,7 @@ describe("BUG-ASSISTANT-NO-PROMISE-NO-RENDER — example.add que promete UI sem 
 			handoffTriggers: [],
 			version: 1,
 		});
-		const stripAccents = (s: string) =>
-			s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		const stripAccents = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 		expect(stripAccents(built)).toContain("olha as opcoes abaixo");
 	});
 });
@@ -2106,9 +2041,7 @@ describe("BUG-ASSISTANT-CONCIERGE-NO-VALUE — concierge não pode propor exampl
 	};
 
 	it("executeProposePatch rejeita example.add em concierge mencionando R$ ou parcela", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 
 		const samples = [
 			"Esse grupo tem parcela de R$ 850 e crédito de R$ 80.000",
@@ -2130,17 +2063,14 @@ describe("BUG-ASSISTANT-CONCIERGE-NO-VALUE — concierge não pode propor exampl
 				},
 				baseCtx,
 			);
-			expect(
-				result.ok,
-				`concierge example com "${assistantResponse}" deveria ser rejeitado`,
-			).toBe(false);
+			expect(result.ok, `concierge example com "${assistantResponse}" deveria ser rejeitado`).toBe(
+				false,
+			);
 		}
 	});
 
 	it("aceita example.add em concierge que apenas encaminha pro specialist (sem valor)", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 
 		const result = await executeProposePatch(
 			{
@@ -2162,9 +2092,7 @@ describe("BUG-ASSISTANT-CONCIERGE-NO-VALUE — concierge não pode propor exampl
 
 describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma categoria não fala de outra (CA-34)", () => {
 	it("executeProposePatch rejeita specialist auto mencionando imóvel/moto/serviços", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 
 		const ctx = {
 			personaId: "rafael-auto",
@@ -2199,17 +2127,12 @@ describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma cat
 				},
 				ctx,
 			);
-			expect(
-				result.ok,
-				`specialist auto não pode mencionar "${assistantResponse}"`,
-			).toBe(false);
+			expect(result.ok, `specialist auto não pode mencionar "${assistantResponse}"`).toBe(false);
 		}
 	});
 
 	it("executeProposePatch rejeita specialist imovel mencionando carro/auto", async () => {
-		const { executeProposePatch } = await import(
-			"@/lib/agent/tools/assistant-tools"
-		);
+		const { executeProposePatch } = await import("@/lib/agent/tools/assistant-tools");
 
 		const ctx = {
 			personaId: "helena-imovel",
@@ -2230,8 +2153,7 @@ describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma cat
 				after: {
 					id: "ex-img-cross",
 					userMessage: "queria um SUV",
-					assistantResponse:
-						"Um carro novo é um sonho, posso te mostrar opções de auto.",
+					assistantResponse: "Um carro novo é um sonho, posso te mostrar opções de auto.",
 				},
 				rationale: "test cross",
 				personaVersionSeen: 1,
@@ -2239,5 +2161,54 @@ describe("BUG-ASSISTANT-SPECIALIST-CATEGORY-CONSTRAINT — specialist de uma cat
 			ctx,
 		);
 		expect(result.ok).toBe(false);
+	});
+});
+
+// ============================================================================
+// CENARIO 15 — Lance embutido: educacao e do SISTEMA, agent so reage curto
+//              (FEATURE-LANCE-EMBUTIDO, jornada do .docx 2026-05-29)
+// ----------------------------------------------------------------------------
+// Jornada do doc: quando o usuario diz que TEM reserva pra lance ("yes"), o
+// SISTEMA insere o gate `lance-embutido` que educa sobre lance embutido e
+// pergunta se quer considera-lo nas simulacoes. A reacao do agent ao "yes"
+// deve ser UMA frase curta positiva — SEM pre-explicar lance embutido (evita
+// duplicar o texto do sistema) e SEM vazar mecanica de engine.
+//
+// Defesa estrutural complementar:
+//   - src/lib/agent/qualify-state.lance-embutido.test.ts (funil insere o gate)
+//   - src/lib/agent/lance-embutido.structural.test.ts (educacao + roundtrip WA)
+// ============================================================================
+
+describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gate do sistema", () => {
+	it("cassette: reacao ao 'tenho reserva' e UMA frase curta sem tool e sem pre-explicar embutido", async () => {
+		const cassette = "Boa, lance acelera bastante a contemplação.";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// O agent NAO deve explicar lance embutido nessa reacao (o gate faz isso).
+		expect(text.toLowerCase()).not.toContain("embutido");
+		// NAO vaza engine.
+		expect(text.toLowerCase()).not.toMatch(/\bsistema\b|\bgate\b|\bbot[õo]es?\b/);
+	});
+
+	it("o directive de reacao ao lance NAO instrui pre-explicar lance embutido", () => {
+		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
+		const m = directives.match(/buildLanceReactionDirective[\s\S]{0,500}?\n}/);
+		expect(m, "buildLanceReactionDirective precisa existir em directives.ts").not.toBeNull();
+		const body = m?.[0] ?? "";
+		// Deve mandar reagir curto e explicitamente NAO explicar embutido aqui.
+		expect(body).toMatch(/NAO explique o que e lance embutido/i);
+	});
+
+	it("a educacao de lance embutido vive no gate-questions (fonte do sistema), nao no agent", () => {
+		const gq = readSource("src/lib/agent/orchestrator/gate-questions.ts");
+		expect(gq).toMatch(/lance-embutido/);
+		expect(gq).toMatch(/parte da própria carta de crédito/i);
 	});
 });

@@ -449,7 +449,11 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
 }
 
-import { CREDIT_BUCKETS, TIMEFRAME_OPTIONS as TIMEFRAMES } from "@/lib/agent/qualify-config";
+import {
+	CREDIT_BUCKETS,
+	LANCE_EMBUTIDO_OPTIONS,
+	TIMEFRAME_OPTIONS as TIMEFRAMES,
+} from "@/lib/agent/qualify-config";
 
 const CREDIT_RANGES = CREDIT_BUCKETS;
 
@@ -609,10 +613,43 @@ export function resolveLanceReply(replyId: string): { value: LanceValue; title: 
 	return { value: opt.token, title: opt.title };
 }
 
+export function lanceEmbutidoQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("lance-embutido") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: LANCE_EMBUTIDO_OPTIONS.map((o) => ({
+					type: "reply",
+					// Botões do WhatsApp limitam título a 20 chars — usa rótulo curto.
+					reply: {
+						id: `lanceembutido_${o.token}`,
+						title: o.token === "yes" ? "Sim, considerar" : "Lance próprio",
+					},
+				})),
+			},
+		},
+	};
+}
+
+export function resolveLanceEmbutidoReply(
+	replyId: string,
+): { value: "yes" | "no"; title: string } | null {
+	if (!replyId.startsWith("lanceembutido_")) return null;
+	const token = replyId.replace("lanceembutido_", "");
+	const opt = LANCE_EMBUTIDO_OPTIONS.find((o) => o.token === token);
+	if (!opt) return null;
+	return { value: opt.token, title: opt.title };
+}
+
 function prazoLabel(months: number): string {
-	if (months === 0) return "imediato (com lance)";
-	if (months <= 24) return "1 a 2 anos";
-	if (months <= 60) return "3 a 5 anos";
+	if (months === 0) return "o mais rápido possível";
+	if (months <= 6) return "até 6 meses";
+	if (months <= 12) return "1 ano";
+	if (months <= 24) return "2 anos ou mais";
 	return "sem pressa";
 }
 
@@ -759,7 +796,7 @@ export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 				conservador?: Record<string, unknown>;
 				provavel?: Record<string, unknown>;
 				acelerado?: Record<string, unknown>;
-			}
+		  }
 		| undefined;
 	if (!scenarios) return null;
 
@@ -780,9 +817,7 @@ export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		const months = s.expectedTermMonths as number | undefined;
 		const strategy = (s.strategy as string | undefined) ?? "";
 		const lanceLabel =
-			typeof lancePercent === "number" && lancePercent > 0
-				? `${lancePercent}% lance`
-				: "sem lance";
+			typeof lancePercent === "number" && lancePercent > 0 ? `${lancePercent}% lance` : "sem lance";
 		const monthsLabel = typeof months === "number" ? `${months}m` : "—";
 		const head = `${emoji} *${label}* — ${lanceLabel}, contempla em ~${monthsLabel}`;
 		return strategy ? `${head}\nEstratégia: ${strategy}` : head;
@@ -832,14 +867,15 @@ export function financingComparisonToWhatsApp(
 
 	const creditValue = payload.creditValue as number | undefined;
 	const termMonths = payload.termMonths as number | undefined;
-	const diff = payload.diff as
-		| { monthlyDelta?: number; totalDelta?: number }
-		| undefined;
+	const diff = payload.diff as { monthlyDelta?: number; totalDelta?: number } | undefined;
 	const disclaimer = (payload.disclaimer as string | undefined) ?? "";
 
 	const lines: string[] = ["*Consórcio vs Financiamento*"];
 	if (creditValue !== undefined) {
-		lines.push("", `Carta de crédito: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`);
+		lines.push(
+			"",
+			`Carta de crédito: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`,
+		);
 	}
 
 	lines.push("", "*Consórcio*");
