@@ -11,8 +11,8 @@
  * rodando + relatório do que ainda não tá ok.
  */
 
-import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
@@ -24,8 +24,9 @@ import {
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { saveMessage } from "@/lib/conversation/messages";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos do framework
@@ -53,10 +54,7 @@ type Scenario = {
 const anthropic = createAnthropic();
 const USER_BOT_MODEL = process.env.AI_MODEL_EVAL ?? "claude-haiku-4-5";
 
-async function userBotReply(args: {
-	systemPrompt: string;
-	transcript: Turn[];
-}): Promise<string> {
+async function userBotReply(args: { systemPrompt: string; transcript: Turn[] }): Promise<string> {
 	const conversation = args.transcript
 		.filter((t) => t.role !== "system")
 		.map((t) => ({
@@ -149,9 +147,7 @@ async function handleGateEvent(args: {
 			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
 			await saveMessage(conversationId, "user", label, "web");
 			// Importa só aqui pra evitar circular import na carga inicial.
-			const { buildQualifyStartYesDirective } = await import(
-				"@/lib/agent/orchestrator/directives"
-			);
+			const { buildQualifyStartYesDirective } = await import("@/lib/agent/orchestrator/directives");
 			return await consumeAgentTurn({
 				conversationId,
 				userText: buildQualifyStartYesDirective(),
@@ -181,10 +177,13 @@ async function handleGateEvent(args: {
 		}
 
 		case "timeframe": {
-			const label = "3 a 5 anos";
+			// Jornada do doc: "1 ano" → contemplação rápida (objetivo Bevi).
+			const label = "1 ano";
+			const prazoMeses = 12;
 			const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 				...(meta.qualifyAnswers ?? {}),
-				prazoMeses: 60,
+				prazoMeses,
+				objetivo: objetivoForPrazo(prazoMeses),
 			};
 			await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 			await saveMessage(conversationId, "user", label, "web");
@@ -196,22 +195,42 @@ async function handleGateEvent(args: {
 		}
 
 		case "lance": {
-			const label = "Talvez, depende";
+			// Jornada do doc: usuário TEM reserva → dispara o gate de lance embutido
+			// (NÃO vai direto pra busca). O directive de reação aciona o próximo gate.
+			const label = "Sim, tenho reserva";
 			const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 				...(meta.qualifyAnswers ?? {}),
-				hasLance: "maybe",
+				hasLance: "yes",
 			};
 			await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 			await saveMessage(conversationId, "user", label, "web");
-			// pipeSearchSummaryTurn = chama runTurn com searchSummaryDirective.
+			const { buildLanceReactionDirective } = await import("@/lib/agent/orchestrator/directives");
+			return await consumeAgentTurn({
+				conversationId,
+				userText: buildLanceReactionDirective(label),
+				isUserTurn: false,
+			});
+		}
+
+		case "lance-embutido": {
+			// Jornada do doc: opta por considerar lance embutido nas simulações.
+			const label = "Sim, considerar lance embutido";
+			const refreshed0 = await reloadMeta(conversationId);
+			const q = refreshed0.qualifyAnswers ?? {};
+			const lanceValue =
+				q.creditMax !== undefined ? Math.round((q.creditMax * 30) / 100) : undefined;
+			await persistMeta(conversationId, {
+				...refreshed0,
+				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },
+			});
+			await saveMessage(conversationId, "user", label, "web");
+			// Agora segue pra busca (search reveal).
 			const refreshed = await reloadMeta(conversationId);
 			if (refreshed.searchDispatched) return null;
 			const category = refreshed.currentCategory;
 			if (!category) return null;
 			await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
-			const { buildSearchSummaryDirective } = await import(
-				"@/lib/agent/orchestrator/directives"
-			);
+			const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
 			const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 			return await consumeAgentTurn({
 				conversationId,
@@ -301,8 +320,8 @@ async function runConversation(scenario: Scenario): Promise<{
 			(a) => a.type === "simulation_result" || a.type === "recommendation_card",
 		);
 		const hasLeadForm = allArtifacts.some((a) => a.type === "lead_form");
-		const hasInterestSignal = turns.some((t) =>
-			t.role === "user-bot" && /tenho interesse|quero esse|fechar|assinar/i.test(t.content),
+		const hasInterestSignal = turns.some(
+			(t) => t.role === "user-bot" && /tenho interesse|quero esse|fechar|assinar/i.test(t.content),
 		);
 
 		if (hasSimOrRecommendation && !hasLeadForm && !hasInterestSignal && turnIdx >= 3) {
@@ -429,6 +448,28 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 		).toContain("save_contact_name");
 	});
 
+	it("[jornada-doc] gate lance-embutido disparou e o opt-in foi gravado (lanceEmbutido=true)", async () => {
+		// Jornada canônica do .docx: usuário com reserva passa pelo gate de lance
+		// embutido (educa + opt-in) ANTES da busca.
+		const hasLanceEmbutidoGate = (result?.turns ?? []).some((t) =>
+			t.events.some((e) => e.type === "gate" && e.gate === "lance-embutido"),
+		);
+		expect(
+			hasLanceEmbutidoGate,
+			"Esperado gate 'lance-embutido' após user dizer que tem reserva (hasLance='yes').",
+		).toBe(true);
+
+		const finalMeta = result ? await reloadMeta(result.conversationId) : null;
+		expect(
+			finalMeta?.qualifyAnswers?.lanceEmbutido,
+			"Opt-in de lance embutido deveria estar gravado no metadata após a jornada.",
+		).toBe(true);
+		expect(
+			finalMeta?.qualifyAnswers?.objetivo,
+			"objetivo (eixo Bevi) deveria ter sido derivado do prazo escolhido.",
+		).toBeDefined();
+	});
+
 	it("[mig 0017] present_value_picker foi chamado (faixa de crédito)", () => {
 		const tools = allToolCalls(result?.turns ?? []);
 		// Aceita present_value_picker OU o gate `credit` (Web usa gate; alguns flows usam picker)
@@ -519,9 +560,7 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 
 	it("[B9] frase de detalhamento contém 'detalhamento'/'simulação'/'ajustar' próximo a simulação", () => {
 		const turns = result?.turns ?? [];
-		const simTurn = turns.find((t) =>
-			t.artifacts.some((a) => a.type === "simulation_result"),
-		);
+		const simTurn = turns.find((t) => t.artifacts.some((a) => a.type === "simulation_result"));
 		// Junta texto do agent até o turn da simulação inclusive.
 		const idx = simTurn ? turns.indexOf(simTurn) : -1;
 		if (idx < 0) {
@@ -687,13 +726,9 @@ describeIfKey("EVAL-SAVE-CONTACT-NAME-CIRURGICO — Rafael capta nome em 1 turn"
 		allTurns.push(agentT2);
 
 		// Log diagnóstico
-		console.log(
-			`\n[CIRURGICO] Turn 1 agent text: "${agentT1.content.slice(0, 200)}"`,
-		);
+		console.log(`\n[CIRURGICO] Turn 1 agent text: "${agentT1.content.slice(0, 200)}"`);
 		console.log(`[CIRURGICO] Turn 1 tools: [${agentT1.toolCalls.join(", ")}]`);
-		console.log(
-			`[CIRURGICO] Turn 2 agent text: "${agentT2.content.slice(0, 200)}"`,
-		);
+		console.log(`[CIRURGICO] Turn 2 agent text: "${agentT2.content.slice(0, 200)}"`);
 		console.log(`[CIRURGICO] Turn 2 tools: [${agentT2.toolCalls.join(", ")}]`);
 		// Dump dos tool-call events com inputs (debug do bug do contact_name NULL)
 		const t2ToolEvents = agentT2.events.filter((e) => e.type === "tool-call");
