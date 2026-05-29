@@ -1,5 +1,6 @@
-import type { AdministradoraAdapter } from "./types";
+import { BeviApiAdapter } from "./bevi/bevi-api-adapter";
 import { MockBeviAdapter } from "./mock/mock-bevi-adapter";
+import type { AdministradoraAdapter } from "./types";
 
 let _adapter: AdministradoraAdapter | null = null;
 
@@ -9,10 +10,13 @@ function createAdapter(): AdministradoraAdapter {
 	switch (adapterName) {
 		case "mock":
 			return new MockBeviAdapter();
-		// TODO: case 'bevi': return new BeviApiAdapter();
+		case "bevi":
+			// Integração real com a API de Parceiro Bevi/AGX. Falha alto se o
+			// BEVI_API_TOKEN não estiver setado (o parceiro ainda não liberou).
+			return new BeviApiAdapter();
 		default:
 			throw new Error(
-				`Unknown adapter: "${adapterName}". Valid values: mock. Set ADMINISTRADORA_ADAPTER env var.`,
+				`Unknown adapter: "${adapterName}". Valid values: mock, bevi. Set ADMINISTRADORA_ADAPTER env var.`,
 			);
 	}
 }
@@ -29,15 +33,15 @@ export function resetAdapter(): void {
 	_adapter = null;
 }
 
-export type { AdministradoraAdapter } from "./types";
 export type {
+	AdministradoraAdapter,
+	ConsorcioCategory,
+	GetGroupDetailsParams,
+	GetRatesParams,
+	GroupDetails,
 	GroupSummary,
 	QuotaSimulation,
 	RateInfo,
-	GroupDetails,
 	SearchGroupsParams,
 	SimulateQuotaParams,
-	GetRatesParams,
-	GetGroupDetailsParams,
-	ConsorcioCategory,
 } from "./types";
