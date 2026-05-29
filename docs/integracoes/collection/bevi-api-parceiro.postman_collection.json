@@ -1,0 +1,870 @@
+{
+  "info": {
+    "_postman_id": "087f3d67-e4e4-4caf-affe-44c1ab3cc487",
+    "name": "Bevi Consórcio — API de Parceiro",
+    "description": "# API de Parceiro — Bevi Consórcio\n\nIntegração de lojas parceiras com o fluxo de consórcio Bevi via **CreditHub**, espelhando a Auto-Contratação (AC) no workspace AGX.\n\n---\n\n## Contexto\n\n- **Produto:** Bevi Consórcio\n    \n- **Gateway:** `/api/v1/credithub/services` + header `service_id` por operação\n    \n- **Autenticação:** `Authorization: Bearer {{apiToken}}` (usuário loja com API liberada)\n    \n- **Envelope de resposta (serviços Bevi):** `{ status, code, success, message, data }`\n    \n- **TTL das ofertas:** `ofertaId` válido por **30 minutos** após a simulação\n    \n- **Inserir proposta:** use `CPF`, `CELULAR`, `TERMO_LGPD`, `CONSULTA_DE_DADOS` (mesmos nomes da AC)\n    \n- **Demais endpoints:** camelCase (`propostaId`, `segmento`, `tipoSimulacao`, …)\n    \n\n### Termos legais\n\nPasta **Termos legais** — textos completos para confirmação antes de `TERMO_LGPD` / `CONSULTA_DE_DADOS`.\n\n### Liberação de Loja para o fluxo API\n\n1. Acesse via master na plataforma web ([https://conexia.agxsoftware.com/](https://conexia.agxsoftware.com/));\n    \n2. Vá em configurações de um Sub;\n    \n3. Habilite a configuração do API, conforme anexo:\n    \n    <img src=\"https://content.pstmn.io/3f979e99-44a2-4bbc-b0b5-8f012f960c01/aW1hZ2UucG5n\" width=\"1246\" height=\"428\">\n    \n4. Use a string configurada como a propriedade `apiToken`.\n    \n\n### Fluxo recomendado (ordem)\n\n1. **1 — Inserir proposta** → `proposalId`\n    \n2. **2 — Listar segmentos** → escolher `segmento` na simulação\n    \n3. **3 — Simular** → `ofertaId` + `simulationSessionId`\n    \n4. **4 — Escolher oferta** → link Bevi + `cotaProposalId`\n    \n5. **6 — Dados complementares** (documento + endereço)\n    \n6. **5** e **7** opcionais (documentos = 501 TBD; status)\n    \n\nScripts de teste salvam `proposalId` e `ofertaId` automaticamente após os passos 1 e 3.\n\n---\n\n## Configuração — variáveis da collection\n\n| Variável | Obrigatório | Descrição |\n| --- | --- | --- |\n| `baseUrl` | Sim | `https://api.uxvision.tech/api/v1/credithub/services` |\n| `apiToken` | Sim | Bearer token (entrega segura pela AGX) |\n| `productId` | Sim | ID do produto Bevi Consórcio |\n| `proposalId` | Após passo 1 | Preenchido automaticamente ou manual |\n| `ofertaId` | Após passo 3 | Preenchido automaticamente ou manual |\n| `simulationSessionId` | Após passo 3 | Referência da sessão (30 min) |\n\n### Headers (POST nos passos 1, 3, 4, 5, 6, 7)\n\n```\nAuthorization: Bearer {{apiToken}}\nContent-Type: application/json\nservice_id: {ver request}\n\n ```\n\n### Headers (GET passo 2)\n\n```\nAuthorization: Bearer {{apiToken}}\nservice_id: list_segments_bevi_consorcio\n\n ```\n\n(`service_id` opcional em GET `/segments` — inferido pelo path.)\n\n---\n\n## Base URL\n\n`https://api.uxvision.tech/api/v1/credithub/services`\n\n`productId`: `6986245b3518ceb00e7844da`.\n\n**Suporte:** suporte@agxsoftware.com\n\n**Termos:** `TERMOS-LEGAIS.md` — exibir antes de `TERMO_LGPD` / `CONSULTA_DE_DADOS`.\n\n---\n\n## Erros comuns\n\n| HTTP | Situação |\n| --- | --- |\n| 400 | Validação — ver `data.errors[]` |\n| 401 | Token inválido ou API não liberada |\n| 409 | CPF com propostas em andamento — `data.ongoingProposalIds` |\n| 501 | Endpoint 5 (documentos) ainda não implementado |\n\n---",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "3218807"
+  },
+  "item": [
+    {
+      "name": "Termos legais",
+      "item": [],
+      "description": "Textos obrigatórios antes do passo **1 — Inserir proposta**.\n\n## Termo de Consulta de CPF\n\n**Campo API:** `CONSULTA_DE_DADOS` = `true` após aceite.\n\n---\n\n``` text\nConsulta de CPF — Termo de Consulta de CPF\nEu, doravante denominado Usuário, ao utilizar a integração via API para originar e conduzir o processo de contratação oferecido pelo parceiro integrador, concordo com os termos e condições descritos a seguir:\nAutorização de Uso do CPF\n1.1. Declaro estar ciente e concordar que o sistema integrador, por meio desta API, utilizará o número do meu CPF para consultar dados pessoais, estritamente para a execução do fluxo de contratação originado por essa integração.\nUso do OCR em Documento\n2.1. Autorizo o sistema integrador a utilizar o documento com tecnologia de leitura óptica de caracteres (OCR), quando aplicável na jornada, a fim de capturar dados relevantes.\n2.2. Entendo que os dados capturados serão utilizados exclusivamente para a execução do fluxo de contratação via API.\nConfidencialidade e Segurança\n3.1. Reconheço que serão adotadas medidas de segurança para proteger as informações fornecidas, incluindo o CPF e dados do documento OCR.\n3.2. Comprometo-me a não compartilhar informações sensíveis com terceiros não autorizados.\nFinalidade Estrita\n4.1. Aceito que os dados coletados serão utilizados única e exclusivamente para os fins mencionados, relacionados ao processo de contratação originado via API.\nRevogação do Consentimento\n5.1. Entendo que posso revogar meu consentimento a qualquer momento, solicitando a exclusão dos meus dados através dos canais de contato fornecidos pelo integrador ou pelo suporte indicado na documentação da API.\nResponsabilidade do Usuário\n6.1. Comprometo-me a fornecer informações precisas e atualizadas, isentando o integrador e os provedores da API de responsabilidade por dados incorretos informados pelo Usuário.\nAlterações nos Termos\n7.1. Reconheço que os termos de uso podem ser atualizados, sendo minha responsabilidade revisá-los periodicamente.\nAo aceitar este termo, declaro compreender e concordar com todas as condições estabelecidas para a utilização do CPF e do documento com tecnologia OCR na integração via API para o processo de contratação.\n\n ```\n\n## Termo de consentimento LGPD\n\n**Campo API:** `TERMO_LGPD` = `true` após aceite.\n\n---\n\n``` text\nTermo de consentimento de acordo com a Lei Geral de Proteção de Dados (LGPD)\nEstamos empenhados em salvaguardar a sua privacidade ao estabelecer esta relação conosco. Este termo tem a finalidade de deixar o mais claro possível a nossa política de coleta e compartilhamento de dados, informando sobre os dados coletados e como os utilizamos.\nAo utilizar nossos serviços e a API de integração, você declara o seu EXPRESSO CONSENTIMENTO para coletarmos, tratarmos e armazenarmos dados sobre você quando julgarmos necessário à prestação de nossos serviços, tais como:\nServiços\nInformações que você oferece. Coletamos os dados fornecidos por você no cadastro e nas chamadas à API.\nComunicação. Podemos registrar e gravar todos os dados fornecidos em toda comunicação realizada com nossa equipe, seja por correio eletrônico, mensagens, telefone ou qualquer outro meio.\nFinalidades: utilização destas informações\nAo utilizar a API e a plataforma, você AUTORIZA EXPRESSAMENTE o uso destas informações para as seguintes FINALIDADES:\nFornecer, melhorar e desenvolver os Serviços disponíveis. Usamos os seus dados para melhorar a qualidade dos nossos serviços, inclusive personalização do serviço prestado.\nCompartilhamento de dados\nCompartilhamos os seus dados, para fins de viabilizar pagamentos e o processamento de dados, bem como para tornar o produto mais relevante e eficiente à sua finalidade.\nCompartilhamos seus dados com terceiros para cumprir exigências legais, regulatórias ou fiscais, envolvendo a divulgação de seus dados pessoais a terceiros, a um tribunal, reguladores ou agências governamentais.\nOnde armazenamos e processamos seus dados\nOs dados coletados são armazenados e processados, para fins de melhorar o desempenho e proteger os dados no caso de uma falha ou outro problema.\nResponsabilidade do controlador e medidas de segurança\nTodos os dados que você nos fornece são tratados unicamente para atingir as finalidades acima listadas.\nEstes dados são armazenados em servidores seguros utilizados de acordo com nossas políticas e padrões de segurança. Todo o tráfego entre nossos servidores ou entre o seu sistema e nossos servidores é encriptado através de protocolo seguro SSL ou semelhante.\nTomamos medidas de boas práticas e certificações existentes no mercado para garantir que os dados que coletamos sejam processados de acordo com segurança onde quer que os dados estejam localizados.\nQuanto tempo vamos armazenar suas informações\nNós manteremos as informações que coletamos de você até que ocorra a solicitação de exclusão definitiva por sua parte. Neste caso, nós cessaremos imediatamente a utilização dos seus dados para fins comerciais, porém armazenaremos os seus dados enquanto tivermos obrigações legais, tributárias ou jurídicas a cumprir com tais dados.\nDados do encarregado pelos dados\nA gestão dos seus dados é feita por nossa equipe.\nVocê também tem o direito de contatar diretamente a autoridade de proteção de dados brasileira.\nCom base na lei n° 13.853/2019, que alterou o Art. 5° da LGPD.\nDireitos do titular dos dados\nO titular dos dados pessoais tem direito a obter do controlador, em relação aos dados do titular por ele tratados, a qualquer momento e mediante requisição:\nConfirmação da existência de tratamento; Acesso aos dados; Correção de dados incompletos, inexatos ou desatualizados; Anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade com o disposto nesta Lei; Eliminação dos dados pessoais tratados com o consentimento do titular, exceto nas hipóteses previstas no art. 16 da LGPD; Informação das entidades públicas e privadas com as quais o controlador realizou uso compartilhado de dados; Informação sobre a possibilidade de não fornecer consentimento e sobre as consequências da negativa; Revogação do consentimento, nos termos do § 5° do art. 8° da LGPD.\nVamos exercer imediatamente as solicitações, nos termos da lei de proteção de dados aplicável.\nTermo de consentimento de uso do CPF (complemento LGPD)\nAo utilizar nossos serviços e a API, você declara seu TOTAL CONSENTIMENTO para a utilização do seu CPF na busca de informações por meio de APIs de terceiros para fins de processamento da proposta e preenchimento dos dados no fluxo originado pela integração.\n\n ```"
+    },
+    {
+      "name": "Fluxo principal",
+      "item": [
+        {
+          "name": "1 — Inserir proposta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.proposalId) {",
+                  "  pm.collectionVariables.set('proposalId', json.data.proposalId);",
+                  "  console.log('proposalId salvo:', json.data.proposalId);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "insert_proposal_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"CPF\": \"12345678909\",\n  \"CELULAR\": \"11999998888\",\n  \"TERMO_LGPD\": true,\n  \"CONSULTA_DE_DADOS\": true,\n  \"ignoreOngoingProposals\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Inserir proposta\n\n**service_id:** `insert_proposal_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body (campos obrigatórios)\n\n| Campo | Descrição |\n| --- | --- |\n| `productId` | Produto Bevi |\n| `CPF` | CPF do cliente |\n| `CELULAR` | Celular com DDD |\n| `TERMO_LGPD` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `CONSULTA_DE_DADOS` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `ignoreOngoingProposals` | `true` ignora conflito 409 |\n\n### Respostas\n\n- **201** — `data.proposalId`, `data.productId`\n    \n- **409** — `data.ongoingProposalIds[]` (CPF com proposta em andamento)\n    \n- **400** — `data.errors[]`\n    \n\n### Pós-requisição\n\nScript salva `proposalId` na variável da collection."
+          },
+          "response": [
+            {
+              "name": "Sucesso — nova proposta",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "insert_proposal_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"CPF\": \"12345678909\",\n  \"CELULAR\": \"11999998888\",\n  \"TERMO_LGPD\": true,\n  \"CONSULTA_DE_DADOS\": true,\n  \"ignoreOngoingProposals\": false\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Inserir proposta\n\n**service_id:** `insert_proposal_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body (campos obrigatórios)\n\n| Campo | Descrição |\n| --- | --- |\n| `productId` | Produto Bevi |\n| `CPF` | CPF do cliente |\n| `CELULAR` | Celular com DDD |\n| `TERMO_LGPD` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `CONSULTA_DE_DADOS` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `ignoreOngoingProposals` | `true` ignora conflito 409 |\n\n### Respostas\n\n- **201** — `data.proposalId`, `data.productId`\n    \n- **409** — `data.ongoingProposalIds[]` (CPF com proposta em andamento)\n    \n- **400** — `data.errors[]`\n    \n\n### Pós-requisição\n\nScript salva `proposalId` na variável da collection."
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"CREATED\",\n  \"code\": 201,\n  \"success\": true,\n  \"message\": \"Proposta criada com sucesso!\",\n  \"data\": {\n    \"proposalId\": \"674a1b2c3d4e5f6789012345\",\n    \"productId\": \"6986245b3518ceb00e7844da\"\n  }\n}"
+            },
+            {
+              "name": "Erro — propostas em andamento",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "insert_proposal_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"CPF\": \"12345678909\",\n  \"CELULAR\": \"11999998888\",\n  \"TERMO_LGPD\": true,\n  \"CONSULTA_DE_DADOS\": true,\n  \"ignoreOngoingProposals\": false\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Inserir proposta\n\n**service_id:** `insert_proposal_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body (campos obrigatórios)\n\n| Campo | Descrição |\n| --- | --- |\n| `productId` | Produto Bevi |\n| `CPF` | CPF do cliente |\n| `CELULAR` | Celular com DDD |\n| `TERMO_LGPD` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `CONSULTA_DE_DADOS` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `ignoreOngoingProposals` | `true` ignora conflito 409 |\n\n### Respostas\n\n- **201** — `data.proposalId`, `data.productId`\n    \n- **409** — `data.ongoingProposalIds[]` (CPF com proposta em andamento)\n    \n- **400** — `data.errors[]`\n    \n\n### Pós-requisição\n\nScript salva `proposalId` na variável da collection."
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"CONFLICT\",\n  \"code\": 409,\n  \"success\": false,\n  \"message\": \"Existem propostas em andamento para este CPF.\",\n  \"data\": {\n    \"ongoingProposalIds\": [\"674a1b2c3d4e5f6789012345\"]\n  }\n}"
+            },
+            {
+              "name": "Erro — validação",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "insert_proposal_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"CPF\": \"12345678909\",\n  \"CELULAR\": \"11999998888\",\n  \"TERMO_LGPD\": true,\n  \"CONSULTA_DE_DADOS\": true,\n  \"ignoreOngoingProposals\": false\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Inserir proposta\n\n**service_id:** `insert_proposal_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body (campos obrigatórios)\n\n| Campo | Descrição |\n| --- | --- |\n| `productId` | Produto Bevi |\n| `CPF` | CPF do cliente |\n| `CELULAR` | Celular com DDD |\n| `TERMO_LGPD` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `CONSULTA_DE_DADOS` | `true` = aceite — copiar texto da pasta **Termos legais** ou README |\n| `ignoreOngoingProposals` | `true` ignora conflito 409 |\n\n### Respostas\n\n- **201** — `data.proposalId`, `data.productId`\n    \n- **409** — `data.ongoingProposalIds[]` (CPF com proposta em andamento)\n    \n- **400** — `data.errors[]`\n    \n\n### Pós-requisição\n\nScript salva `proposalId` na variável da collection."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"BAD_REQUEST\",\n  \"code\": 400,\n  \"success\": false,\n  \"message\": \"Dados inválidos.\",\n  \"data\": {\n    \"errors\": [{ \"field\": \"CPF\", \"message\": \"CPF inválido.\" }]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2 — Listar segmentos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "list_segments_bevi_consorcio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services/segments?proposalId={{proposalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services",
+                "segments"
+              ],
+              "query": [
+                {
+                  "key": "proposalId",
+                  "value": "{{proposalId}}",
+                  "description": "Obrigatório na query"
+                }
+              ]
+            },
+            "description": "## Listar segmentos\n\n**service_id:** `list_segments_bevi_consorcio`  \n**GET** `{{baseUrl}}/segments?productId=...&proposalId=...`\n\n### Query\n\n| Param | Obrigatório |\n| --- | --- |\n| `proposalId` | Sim |\n\n### Resposta 200\n\n`data.segmentos[]` com `segmento` e `segmentoLabel` (ex.: AUTOS, Automóveis).\n\nUse o valor de `segmento` no passo 3 (`segmento` no body)."
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "list_segments_bevi_consorcio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services/segments?proposalId={{proposalId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services",
+                    "segments"
+                  ],
+                  "query": [
+                    {
+                      "key": "proposalId",
+                      "value": "{{proposalId}}",
+                      "description": "Obrigatório na query"
+                    }
+                  ]
+                },
+                "description": "## Listar segmentos\n\n**service_id:** `list_segments_bevi_consorcio`  \n**GET** `{{baseUrl}}/segments?productId=...&proposalId=...`\n\n### Query\n\n| Param | Obrigatório |\n| --- | --- |\n| `proposalId` | Sim |\n\n### Resposta 200\n\n`data.segmentos[]` com `segmento` e `segmentoLabel` (ex.: AUTOS, Automóveis).\n\nUse o valor de `segmento` no passo 3 (`segmento` no body)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"OK\",\n  \"code\": 200,\n  \"success\": true,\n  \"message\": \"Segmentos disponíveis.\",\n  \"data\": {\n    \"segmentos\": [\n      { \"segmento\": \"AUTOS\", \"segmentoLabel\": \"Automóveis\" },\n      { \"segmento\": \"SERVICOS\", \"segmentoLabel\": \"Serviços\" }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "3 — Simular",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.simulationSessionId) {",
+                  "  pm.collectionVariables.set('simulationSessionId', json.data.simulationSessionId);",
+                  "}",
+                  "if (json?.data?.offers?.[0]?.ofertaId) {",
+                  "  pm.collectionVariables.set('ofertaId', json.data.offers[0].ofertaId);",
+                  "  console.log('ofertaId salvo:', json.data.offers[0].ofertaId);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "calculate_simulation_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"segmento\": \"AUTOS\",\n  \"tipoSimulacao\": \"valor_total\",\n  \"valor\": 50000,\n  \"objetivo\": \"contemplacao_rapida\",\n  \"lanceEmbutido\": \"nenhum\",\n  \"temLanceParaOfertar\": true,\n  \"valorDoLance\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Simular\n\n**service_id:** `calculate_simulation_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body obrigatório\n\n| Campo | Valores |\n| --- | --- |\n| `propostaId` | ID do passo 1 |\n| `segmento` | Ex.: AUTOS (do passo 2) |\n| `tipoSimulacao` | `valor_total` | `valor_parcela` |\n| `valor` | Número positivo |\n| `objetivo` | `investimento` | `contemplacao_rapida` |\n\n### Se `contemplacao_rapida`\n\n- `lanceEmbutido`: % ou `nenhum`\n    \n- `temLanceParaOfertar`: boolean\n    \n- `valorDoLance`: se `temLanceParaOfertar === true`\n    \n\n**Não enviar** `productId` — segmento vem da proposta.\n\n### Resposta 200\n\n- `data.simulationSessionId`, `data.expiresAt` (TTL **30 min**)\n    \n- `data.offers[]` — cada item tem `ofertaId` (usar no passo 4)\n    \n- `data.errors[]` — vazio se OK; se preenchido = validação (HTTP 400)\n    \n\nScript salva `simulationSessionId` e primeira `ofertaId`."
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "calculate_simulation_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"segmento\": \"AUTOS\",\n  \"tipoSimulacao\": \"valor_total\",\n  \"valor\": 50000,\n  \"objetivo\": \"contemplacao_rapida\",\n  \"lanceEmbutido\": \"nenhum\",\n  \"temLanceParaOfertar\": true,\n  \"valorDoLance\": 10000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Simular\n\n**service_id:** `calculate_simulation_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body obrigatório\n\n| Campo | Valores |\n| --- | --- |\n| `propostaId` | ID do passo 1 |\n| `segmento` | Ex.: AUTOS (do passo 2) |\n| `tipoSimulacao` | `valor_total` | `valor_parcela` |\n| `valor` | Número positivo |\n| `objetivo` | `investimento` | `contemplacao_rapida` |\n\n### Se `contemplacao_rapida`\n\n- `lanceEmbutido`: % ou `nenhum`\n    \n- `temLanceParaOfertar`: boolean\n    \n- `valorDoLance`: se `temLanceParaOfertar === true`\n    \n\n**Não enviar** `productId` — segmento vem da proposta.\n\n### Resposta 200\n\n- `data.simulationSessionId`, `data.expiresAt` (TTL **30 min**)\n    \n- `data.offers[]` — cada item tem `ofertaId` (usar no passo 4)\n    \n- `data.errors[]` — vazio se OK; se preenchido = validação (HTTP 400)\n    \n\nScript salva `simulationSessionId` e primeira `ofertaId`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"OK\",\n  \"code\": 200,\n  \"success\": true,\n  \"message\": \"Simulação realizada com sucesso.\",\n  \"data\": {\n    \"simulationSessionId\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n    \"expiresAt\": \"2026-05-25T15:30:00.000Z\",\n    \"errors\": [],\n    \"offers\": [\n      {\n        \"ofertaId\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n        \"administradora\": \"RODOBENS\",\n        \"tipoOferta\": \"FREE_BID\",\n        \"grupo\": \"90120\",\n        \"valorCarta\": 50000,\n        \"parcela\": 565.53,\n        \"taxaContemplacao\": 0.4375,\n        \"quotaId\": \"674c1d2e3f4a5b6789012345\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "Erro — validações",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "calculate_simulation_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"segmento\": \"AUTOS\",\n  \"tipoSimulacao\": \"valor_total\",\n  \"valor\": 50000,\n  \"objetivo\": \"contemplacao_rapida\",\n  \"lanceEmbutido\": \"nenhum\",\n  \"temLanceParaOfertar\": true,\n  \"valorDoLance\": 10000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Simular\n\n**service_id:** `calculate_simulation_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body obrigatório\n\n| Campo | Valores |\n| --- | --- |\n| `propostaId` | ID do passo 1 |\n| `segmento` | Ex.: AUTOS (do passo 2) |\n| `tipoSimulacao` | `valor_total` | `valor_parcela` |\n| `valor` | Número positivo |\n| `objetivo` | `investimento` | `contemplacao_rapida` |\n\n### Se `contemplacao_rapida`\n\n- `lanceEmbutido`: % ou `nenhum`\n    \n- `temLanceParaOfertar`: boolean\n    \n- `valorDoLance`: se `temLanceParaOfertar === true`\n    \n\n**Não enviar** `productId` — segmento vem da proposta.\n\n### Resposta 200\n\n- `data.simulationSessionId`, `data.expiresAt` (TTL **30 min**)\n    \n- `data.offers[]` — cada item tem `ofertaId` (usar no passo 4)\n    \n- `data.errors[]` — vazio se OK; se preenchido = validação (HTTP 400)\n    \n\nScript salva `simulationSessionId` e primeira `ofertaId`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"BAD_REQUEST\",\n  \"code\": 400,\n  \"success\": false,\n  \"message\": \"Simulação inválida.\",\n  \"data\": {\n    \"errors\": [{ \"field\": \"valor\", \"message\": \"Valor não informado para a simulação!\" }],\n    \"offers\": []\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "4 — Escolher oferta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "choose_offer_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"ofertaId\": \"{{ofertaId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Escolher oferta\n\n**service_id:** `choose_offer_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body\n| Campo | Obrigatório |\n|-------|-------------|\n| `propostaId` | Sim |\n| `ofertaId` | Sim (da simulação, dentro de 30 min) |\n\n**Não enviar** `productId` — obtido da proposta automaticamente.\n\n### Resposta 200\n- `data.proposalId`\n- `data.consortiumProposalLink` — link documento Bevi\n- `data.cotaProposalId`\n\n### Erros comuns\n- Oferta expirada ou inválida → 400 em `ofertaId`"
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "choose_offer_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"ofertaId\": \"{{ofertaId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Escolher oferta\n\n**service_id:** `choose_offer_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body\n| Campo | Obrigatório |\n|-------|-------------|\n| `propostaId` | Sim |\n| `ofertaId` | Sim (da simulação, dentro de 30 min) |\n\n**Não enviar** `productId` — obtido da proposta automaticamente.\n\n### Resposta 200\n- `data.proposalId`\n- `data.consortiumProposalLink` — link documento Bevi\n- `data.cotaProposalId`\n\n### Erros comuns\n- Oferta expirada ou inválida → 400 em `ofertaId`"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"OK\",\n  \"code\": 200,\n  \"success\": true,\n  \"message\": \"Oferta selecionada com sucesso.\",\n  \"data\": {\n    \"proposalId\": \"674a1b2c3d4e5f6789012345\",\n    \"consortiumProposalLink\": \"https://edigital.beviconsorcio.com.br/...\",\n    \"cotaProposalId\": \"674d1e2f3a4b5c6789012345\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "5 — Links de documentos (opcional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "get_document_upload_links_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propostaId\": \"{{proposalId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Links de documentos (opcional)\n\n**service_id:** `get_document_upload_links_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\nRetorna URLs para upload de **documentos pessoais** e **comprovante de endereço**. **Não bloqueia** o fluxo — uso opcional.\n\n### Disponibilidade\n\nSomente **após o passo 4 (escolher oferta)** (`cotaProposalId` na proposta). Antes disso → **400** (passo atual em `currentStep.name`).\n\n### Body\n\n| Campo | Obrigatório |\n|-------|-------------|\n| `propostaId` | Sim |\n\n### Resposta 200\n\n- `data.proposalId`\n- `data.linkDocumentosPessoais` — upload de documentos pessoais\n- `data.linkComprovanteEndereco` — upload de comprovante de endereço\n\n### Erros comuns\n\n- **400** — proposta antes da escolha da oferta: *\"Proposta se encontra em [PASSO X], o link para envio de documentos pessoais e comprovante de endereço ainda não está disponível. Estará disponível após realizada a escolha da simulação.\"*\n- **400** — `data.errors[]` em validação de `propostaId`\n"
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "get_document_upload_links_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\"\n}"
+                },
+                "url": {
+                  "raw": ""
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "X-Powered-By",
+                  "value": "Express"
+                },
+                {
+                  "key": "Content-Language",
+                  "value": "pt-BR"
+                },
+                {
+                  "key": "Set-Cookie",
+                  "value": "i18next=pt-BR; Path=/; Expires=Wed, 26 May 2027 20:35:42 GMT; SameSite=Strict"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "261"
+                },
+                {
+                  "key": "ETag",
+                  "value": "W/\"105-QLN8/hK5WCZ1Lr1DzdbqU9Y3Ar0\""
+                },
+                {
+                  "key": "Date",
+                  "value": "Tue, 26 May 2026 20:35:45 GMT"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Keep-Alive",
+                  "value": "timeout=5"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"status\": \"OK\",\n    \"code\": 200,\n    \"success\": true,\n    \"message\": \"Links de envio de documentos obtidos.\",\n    \"data\": {\n        \"proposalId\": \"6a15f09ab771046e2fe35071\",\n        \"linkDocumentosPessoais\": \"https://indiky.link/hGp675bUw\",\n        \"linkComprovanteEndereco\": \"http://indiky.link/hGp675bUw\"\n    }\n}"
+            }
+          ]
+        },
+        {
+          "name": "6 — Dados complementares",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "insert_additional_data_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"documentoIdentidade\": {\n    \"tipoDocumento\": \"RG\",\n    \"numeroDaIdentidade\": \"123456789\",\n    \"ufEmissor\": \"SP\",\n    \"dataEmissao\": \"2010-01-15\",\n    \"orgaoEmissor\": \"SSP\"\n  },\n  \"endereco\": {\n    \"cep\": \"01310100\",\n    \"estado\": \"SP\",\n    \"cidade\": \"São Paulo\",\n    \"bairro\": \"Bela Vista\",\n    \"logradouro\": \"Avenida Paulista\",\n    \"numero\": \"1000\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Dados complementares\n\n**service_id:** `insert_additional_data_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\nGrava documento de identidade e endereço nos passos da AC:\n- `documentoDeIdentidade`\n- `endereco`\n\n### Body\n| Bloco | Campos obrigatórios |\n|-------|---------------------|\n| `propostaId` | Sim |\n| `documentoIdentidade` | tipoDocumento, numeroDaIdentidade, ufEmissor, dataEmissao, orgaoEmissor |\n| `endereco` | cep, estado, cidade, bairro, logradouro, numero |\n\n`productId` **não** é necessário no body.\n\n### Resposta 200\n`data.proposalId`"
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "insert_additional_data_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\",\n  \"documentoIdentidade\": {\n    \"tipoDocumento\": \"RG\",\n    \"numeroDaIdentidade\": \"123456789\",\n    \"ufEmissor\": \"SP\",\n    \"dataEmissao\": \"2010-01-15\",\n    \"orgaoEmissor\": \"SSP\"\n  },\n  \"endereco\": {\n    \"cep\": \"01310100\",\n    \"estado\": \"SP\",\n    \"cidade\": \"São Paulo\",\n    \"bairro\": \"Bela Vista\",\n    \"logradouro\": \"Avenida Paulista\",\n    \"numero\": \"1000\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Dados complementares\n\n**service_id:** `insert_additional_data_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\nGrava documento de identidade e endereço nos passos da AC:\n- `documentoDeIdentidade`\n- `endereco`\n\n### Body\n| Bloco | Campos obrigatórios |\n|-------|---------------------|\n| `propostaId` | Sim |\n| `documentoIdentidade` | tipoDocumento, numeroDaIdentidade, ufEmissor, dataEmissao, orgaoEmissor |\n| `endereco` | cep, estado, cidade, bairro, logradouro, numero |\n\n`productId` **não** é necessário no body.\n\n### Resposta 200\n`data.proposalId`"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"OK\",\n  \"code\": 200,\n  \"success\": true,\n  \"message\": \"Dados complementares salvos com sucesso.\",\n  \"data\": { \"proposalId\": \"674a1b2c3d4e5f6789012345\" }\n}"
+            }
+          ]
+        },
+        {
+          "name": "7 — Consultar status (opcional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiToken}}"
+              },
+              {
+                "key": "service_id",
+                "value": "consult_proposal_status_bevi_consorcio"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propostaId\": \"{{proposalId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credithub/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credithub",
+                "services"
+              ]
+            },
+            "description": "## Consultar status (opcional)\n\n**service_id:** `consult_proposal_status_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body\n- `propostaId` ou `proposalId`\n\n### Resposta 200\n`data`: proposalId, statusName, situation, statusDescription, integrationCode, createdAt, updatedAt, approvedAt, reprovedAt, changesHistory"
+          },
+          "response": [
+            {
+              "name": "Sucesso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{apiToken}}"
+                  },
+                  {
+                    "key": "service_id",
+                    "value": "consult_proposal_status_bevi_consorcio"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"propostaId\": \"{{proposalId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/credithub/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "credithub",
+                    "services"
+                  ]
+                },
+                "description": "## Consultar status (opcional)\n\n**service_id:** `consult_proposal_status_bevi_consorcio`  \n**POST** `{{baseUrl}}/`\n\n### Body\n- `propostaId` ou `proposalId`\n\n### Resposta 200\n`data`: proposalId, statusName, situation, statusDescription, integrationCode, createdAt, updatedAt, approvedAt, reprovedAt, changesHistory"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "Text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"OK\",\n  \"code\": 200,\n  \"success\": true,\n  \"message\": \"Status da proposta consultado com sucesso.\",\n  \"data\": {\n    \"proposalId\": \"674a1b2c3d4e5f6789012345\",\n    \"statusName\": \"Em análise\",\n    \"situation\": \"pending\",\n    \"statusDescription\": \"Aguardando documentação\",\n    \"integrationCode\": null,\n    \"createdAt\": \"2026-05-25T12:00:00.000Z\",\n    \"updatedAt\": \"2026-05-25T12:30:00.000Z\",\n    \"approvedAt\": null,\n    \"reprovedAt\": null,\n    \"changesHistory\": []\n  }\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Executar na ordem 1 → 2 → 3 → 4 → 6. Passos 5 e 7 opcionais."
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.uxvision.tech/api/v1/credithub/services",
+      "description": "Base dos serviços Bevi Consórcio (POST + GET /segments)."
+    },
+    {
+      "key": "apiToken",
+      "value": "",
+      "description": "Bearer token do usuário loja (produção). Entrega segura pela AGX. Não commitar no repositório."
+    },
+    {
+      "key": "productId",
+      "value": "6986245b3518ceb00e7844da",
+      "description": "Bevi Consórcio — produção (`6986245b3518ceb00e7844da`). Fornecido pela AGX."
+    },
+    {
+      "key": "proposalId",
+      "value": "",
+      "description": "ID da proposta. Preenchido automaticamente após '1 — Inserir proposta' (201)."
+    },
+    {
+      "key": "simulationSessionId",
+      "value": "",
+      "description": "UUID da sessão de simulação. Preenchido após '3 — Simular'. TTL 30 min."
+    },
+    {
+      "key": "ofertaId",
+      "value": "",
+      "description": "ID da oferta escolhida. Preenchido após '3 — Simular'. Obrigatório no passo 4."
+    }
+  ]
+}
