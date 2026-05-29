@@ -110,11 +110,35 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					</div>
 				)}
 
+				{/* Cenário de lance embutido (jornada do .docx) — variação com/sem */}
+				{payload.embeddedBid && (
+					<div className="rounded-md bg-muted/40 px-3 py-2">
+						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							Com lance embutido ({payload.embeddedBid.percent}%)
+						</p>
+						<div className="mt-1 space-y-1">
+							<CostLine
+								label="Crédito líquido recebido"
+								value={formatBRL(payload.embeddedBid.receivedCredit)}
+							/>
+							<CostLine
+								label="Lance estimado p/ contemplar"
+								value={formatBRL(payload.embeddedBid.necessaryBidToContemplate)}
+							/>
+						</div>
+						<p className="text-xs text-muted-foreground mt-1">
+							Usa parte da própria carta como lance — sem precisar do valor todo em dinheiro
+							(estimativa, não garantia).
+						</p>
+					</div>
+				)}
+
 				{/* Correção prevista (bug #10) */}
 				{payload.expectedAdjustment && (
 					<p className="text-xs text-muted-foreground">
-						Correção prevista: <span className="font-medium">{payload.expectedAdjustment.index}</span>{" "}
-						~{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
+						Correção prevista:{" "}
+						<span className="font-medium">{payload.expectedAdjustment.index}</span> ~
+						{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
 					</p>
 				)}
 

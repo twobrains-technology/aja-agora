@@ -78,21 +78,22 @@ como exemplo; a Bevi tem 6 segmentos. Remover quebra personas/seed/testes sem ga
 **D4 — Simulador de contemplação.** Decisão de especialista: **não** invento um simulador
 probabilístico de 3/6/12 meses sem lastro (seria publicidade enganosa — CDC art. 30/37, e a própria
 Bevi não garante mês de contemplação; ela só dá `probContemplacaoMeses` e `lowestContemplationRate`).
-Em vez disso, mantenho o cenário **com/sem lance e com lance embutido** sobre a simulação real (o que o
-doc também pede em "mostrar variação com/sem lance e com lance embutido"), exibindo: crédito bruto da
-carta, **crédito líquido recebido** (carta − lance embutido), lance necessário pra contemplar e prazo
-esperado. Isso é factual e vem do shape Bevi (`receivedCredit`, `embeddedBid`, `necessaryBidToContemplate`).
-O "3/6/12 meses" do doc é re-enquadrado como **faixa histórica de contemplação** rotulada como
-estimativa, não promessa. (Documentado como decisão revisável — o cliente "ainda não sabe".)
+Em vez disso, **implementado** o cenário **com/sem lance e com lance embutido** sobre a simulação real
+(o que o doc também pede em "mostrar variação com/sem lance e com lance embutido"): a `QuotaSimulation`
+ganhou um bloco `embeddedBid` (percent, embeddedBidValue, **receivedCredit** = crédito líquido,
+necessaryBidToContemplate), sempre computado pelo mock e renderizado no card de simulação (web +
+WhatsApp). Vem do shape real Bevi. O "3/6/12 meses" do doc é rotulado como estimativa, não promessa.
 
-**D5 — Bevi mock com shape real.** A `QuotaSimulation` ganha um bloco opcional `embeddedBid`
-espelhando os campos reais capturados. O `MockBeviAdapter` calcula esses valores deterministicamente
-a partir do crédito + objetivo + lance, batendo com a ordem de grandeza dos `offers.json`. `GroupSummary`
-ganha `monthlyAwardedQuotas` (contemplados/mês — benefício do doc). Nenhuma categoria nova.
+**D5 — Bevi mock com shape real (IMPLEMENTADO).** A `QuotaSimulation` ganhou o bloco `embeddedBid`
+espelhando os campos reais capturados; o `MockBeviAdapter` calcula deterministicamente (crédito líquido
+< carta, lance necessário > 0) e o `offer-mapper` lê os campos reais (`embeddedBid`/`receivedCredit`/
+`necessaryBidToContemplate`) das fixtures. Nenhuma categoria nova.
 
-**D6 — Card de decisão.** Novo artifact `decision_prompt` + tool `present_decision_prompt`, com as 3
-ações do doc: "Sim, quero contratar agora" / "Quero ver outras opções" / "Quero falar com um
-especialista". Fecha a transição etapa 4 → 5.
+**D6 — Card de decisão (IMPLEMENTADO).** Tool `present_decision_prompt` + artifact `decision_prompt` +
+componente web (`decision-prompt.tsx`) + mapper WhatsApp, com as 3 ações canônicas do doc. Os botões
+enviam o label como mensagem do usuário; o roteamento é mediado pelo agente (contratar →
+present_lead_form; outras → recomendação; especialista → suggest_handoff) — consistente com a filosofia
+da plataforma. Exposto como primitivo sempre-on no builder dos specialists. Fecha a etapa 4 → 5.
 
 **D7 — Adapter real Bevi.** `BeviApiAdapter` (Trilho A — API de Parceiro) é criado como esqueleto
 atrás de `ADMINISTRADORA_ADAPTER=bevi`, lendo `BEVI_BASE_URL`/`BEVI_API_TOKEN`/`BEVI_PRODUCT_ID` do

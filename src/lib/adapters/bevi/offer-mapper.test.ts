@@ -71,6 +71,16 @@ describe("beviOfferToQuotaSimulation — fixture real imóvel", () => {
 		expect(s.lanceScenario.lancePercent).toBe(30); // bidPercentage 0.3
 		expect(s.lanceScenario.expectedTermMonths).toBe(6); // probContemplacaoMeses "6"
 	});
+
+	it("lance embutido vem dos campos reais da oferta (embeddedBid/receivedCredit)", () => {
+		const s = beviOfferToQuotaSimulation(offer);
+		expect(s.embeddedBid.percent).toBe(30); // bidPercentage 0.3
+		expect(s.embeddedBid.embeddedBidValue).toBe(24000); // offer.embeddedBid
+		expect(s.embeddedBid.receivedCredit).toBe(56000); // offer.receivedCredit
+		expect(s.embeddedBid.necessaryBidToContemplate).toBe(34520); // offer.necessaryBidToContemplate
+		// Coerência: crédito líquido < carta.
+		expect(s.embeddedBid.receivedCredit).toBeLessThan(s.creditValue);
+	});
 });
 
 describe("auto (IPCA) — fixture real", () => {

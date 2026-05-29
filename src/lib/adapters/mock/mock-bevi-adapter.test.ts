@@ -135,3 +135,22 @@ describe("MockBeviAdapter — parcela consistente entre searchGroups e simulateQ
 		expect(ratio).toBeLessThan(0.95);
 	});
 });
+
+describe("MockBeviAdapter — cenário de lance embutido (jornada do .docx)", () => {
+	it("simulateQuota retorna embeddedBid coerente: crédito líquido < carta E lance necessário > 0", async () => {
+		const adapter = new MockBeviAdapter();
+		const groups = await adapter.searchGroups({ category: "imovel" });
+		const g = groups[0];
+		const sim = await adapter.simulateQuota({ groupId: g.id, creditValue: g.creditValue });
+
+		expect(sim.embeddedBid, "embeddedBid deve sempre vir na simulação").toBeDefined();
+		expect(sim.embeddedBid.percent).toBe(30);
+		// Crédito líquido = carta − lance embutido → estritamente menor que a carta.
+		expect(sim.embeddedBid.receivedCredit).toBeLessThan(sim.creditValue);
+		expect(sim.embeddedBid.receivedCredit).toBeGreaterThan(0);
+		// Lance necessário pra contemplar > 0 (estimativa).
+		expect(sim.embeddedBid.necessaryBidToContemplate).toBeGreaterThan(0);
+		// embeddedBidValue = carta − crédito líquido.
+		expect(sim.embeddedBid.embeddedBidValue).toBe(sim.creditValue - sim.embeddedBid.receivedCredit);
+	});
+});

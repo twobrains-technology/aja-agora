@@ -36,6 +36,14 @@ export interface SimulationResultPayload {
 		lancePercent: number;
 		expectedTermMonths: number;
 	};
+	/** Cenário de lance embutido (jornada do .docx) — crédito líquido + lance
+	 * necessário. Permite exibir a variação "com/sem lance embutido". */
+	embeddedBid?: {
+		percent: number;
+		embeddedBidValue: number;
+		receivedCredit: number;
+		necessaryBidToContemplate: number;
+	};
 	/** Correção prevista — INCC pra imóvel, IPCA pra auto (bug #10). */
 	expectedAdjustment?: {
 		index: "INCC" | "IPCA";
@@ -164,6 +172,32 @@ export interface WhatsappOptinPayload {
 	conversationId?: string;
 }
 
+// ---- Decision prompt ("Esse plano faz sentido?" — jornada do .docx etapa 4) ----
+// As 3 opções são canônicas (definidas pelo doc). Os botões enviam o texto do
+// label, interpretado pelos fluxos existentes (contratar → lead form; outras →
+// recomendação; especialista → handoff). Payload só carrega contexto opcional.
+export interface DecisionPromptPayload {
+	administradora?: string;
+}
+
+/** Opções canônicas do card de decisão (doc etapa 4). `label` = texto enviado
+ * (web) / título do botão (WhatsApp, ≤20 chars via `waTitle`). `intent` rotula
+ * a intenção pro roteamento conversacional. */
+export const DECISION_PROMPT_QUESTION = "Esse plano faz sentido pra você?";
+export const DECISION_PROMPT_OPTIONS: Array<{
+	intent: "contratar" | "outras" | "especialista";
+	label: string;
+	waTitle: string;
+}> = [
+	{ intent: "contratar", label: "Sim, quero contratar agora", waTitle: "Contratar agora" },
+	{ intent: "outras", label: "Quero ver outras opções", waTitle: "Ver outras opções" },
+	{
+		intent: "especialista",
+		label: "Quero falar com um especialista",
+		waTitle: "Falar c/ consultor",
+	},
+];
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -175,7 +209,8 @@ export type ArtifactByType =
 	| { type: "topic_picker"; payload: TopicPickerPayload }
 	| { type: "scenarios"; payload: ScenariosPayload }
 	| { type: "financing_comparison"; payload: FinancingComparisonPayload }
-	| { type: "whatsapp_optin"; payload: WhatsappOptinPayload };
+	| { type: "whatsapp_optin"; payload: WhatsappOptinPayload }
+	| { type: "decision_prompt"; payload: DecisionPromptPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

@@ -1,4 +1,5 @@
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
 
 export function formatTextForWhatsApp(text: string): string {
 	return (
@@ -148,7 +149,7 @@ export function comparisonTableToWhatsApp(payload: Record<string, unknown>): Wha
 export function simulationResultToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
 	const groupId = p.groupId as string;
-	const body = [
+	const lines = [
 		"*📋 Simulação de Cota*",
 		"",
 		`💰 *Crédito:* ${formatBRL(p.creditValue as number)}`,
@@ -159,7 +160,19 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 		`💵 *Custo total:* ${formatBRL(p.totalCost as number)}`,
 		`⏱ *Prazo:* ${p.termMonths} meses`,
 		`📈 *Taxa efetiva:* ${(p.effectiveRate as number).toFixed(2)}%`,
-	].join("\n");
+	];
+	const eb = p.embeddedBid as
+		| { percent: number; receivedCredit: number; necessaryBidToContemplate: number }
+		| undefined;
+	if (eb) {
+		lines.push(
+			"",
+			`*Com lance embutido (${eb.percent}%):*`,
+			`🎯 Crédito líquido: ${formatBRL(eb.receivedCredit)}`,
+			`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate)}`,
+		);
+	}
+	const body = lines.join("\n");
 
 	return {
 		type: "interactive",
@@ -954,7 +967,30 @@ export function artifactToWhatsApp(
 			return financingComparisonToWhatsApp(payload);
 		case "whatsapp_optin":
 			return whatsappOptinToWhatsApp();
+		case "decision_prompt":
+			return decisionPromptToWhatsApp(payload);
 		default:
 			return null;
 	}
+}
+
+/** Card de decisão (jornada do .docx etapa 4). 3 botões; os títulos (≤20 chars)
+ * caem no processamento de texto (sem handler dedicado) e os fluxos existentes
+ * interpretam (contratar → lead form, especialista → handoff). */
+export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = payload.administradora as string | undefined;
+	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: DECISION_PROMPT_OPTIONS.map((o) => ({
+					type: "reply",
+					reply: { id: `decision_${o.intent}`, title: o.waTitle },
+				})),
+			},
+		},
+	};
 }

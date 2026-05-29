@@ -74,6 +74,19 @@ const simulationResultSchema = z.object({
 		})
 		.optional()
 		.describe("Cenario projetado com lance (bug #10)"),
+	embeddedBid: z
+		.object({
+			percent: z.number().describe("Percentual da carta usado como lance embutido (30 ou 50)"),
+			embeddedBidValue: z.number().describe("Valor da carta destinado ao lance embutido (R$)"),
+			receivedCredit: z.number().describe("Credito liquido recebido (carta - lance embutido)"),
+			necessaryBidToContemplate: z
+				.number()
+				.describe("Estimativa de lance pra contemplar (R$) — NAO garantia"),
+		})
+		.optional()
+		.describe(
+			"Cenario de lance embutido (jornada do doc). Passe SEMPRE o que veio de simulate_quota pra mostrar a variacao com/sem lance embutido.",
+		),
 	expectedAdjustment: z
 		.object({
 			index: z.enum(["INCC", "IPCA"]).describe("Indice de correcao previsto"),
@@ -87,7 +100,9 @@ const simulationResultSchema = z.object({
 				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
 				intent: z
 					.string()
-					.describe("Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')"),
+					.describe(
+						"Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')",
+					),
 			}),
 		)
 		.optional()
@@ -172,11 +187,7 @@ const topicPickerSchema = z.object({
 		.string()
 		.optional()
 		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
-	topics: z
-		.array(z.string().min(1))
-		.min(2)
-		.max(5)
-		.describe("Lista de topicos clicaveis (2-5)"),
+	topics: z.array(z.string().min(1)).min(2).max(5).describe("Lista de topicos clicaveis (2-5)"),
 	includeBackButton: z
 		.boolean()
 		.default(true)
@@ -232,7 +243,7 @@ export const consorcioTools = {
 
 	simulate_quota: tool({
 		description:
-			"Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: \"e se fosse 200k?\"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.",
+			'Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: "e se fosse 200k?"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.',
 		inputSchema: simulateQuotaInput,
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = getAdapter();
@@ -455,6 +466,20 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_decision_prompt: tool({
+		description:
+			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (contratar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
+		inputSchema: z.object({
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano recomendado (contexto do card)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
+		},
+	}),
+
 	// ---- Control signals (intercepted by orchestrator) ----
 
 	suggest_handoff: tool({
@@ -578,6 +603,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_topic_picker",
 	"present_financing_comparison",
 	"present_whatsapp_optin",
+	"present_decision_prompt",
 ]);
 
 // ============================================================================

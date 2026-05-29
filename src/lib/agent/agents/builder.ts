@@ -127,14 +127,15 @@ export function buildAgent(
 				present_whatsapp_optin: registry.present_whatsapp_optin,
 				present_value_picker: registry.present_value_picker,
 				present_topic_picker: registry.present_topic_picker,
+				// Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
+				// — primitivo do sistema, sempre exposto (não toggleable pelo admin).
+				present_decision_prompt: registry.present_decision_prompt,
 			};
 
 	// Memory inline — renderizado como system message extra dentro das
 	// instructions do agent, pra specialist nascer memory-aware mesmo sem
 	// depender do prepend do orchestrator.
-	const memoryText = opts.memoryContext
-		? buildMemorySystemMessage(opts.memoryContext)
-		: null;
+	const memoryText = opts.memoryContext ? buildMemorySystemMessage(opts.memoryContext) : null;
 
 	const baseInstructions = blocks.dynamic
 		? [

@@ -1,5 +1,6 @@
 import type { Artifact } from "@/lib/chat/types";
 import { ComparisonTable } from "./artifacts/comparison-table";
+import { DecisionPrompt } from "./artifacts/decision-prompt";
 import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
@@ -32,6 +33,8 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 			return <FinancingComparison payload={artifact.payload} />;
 		case "whatsapp_optin":
 			return <WhatsappOptin />;
+		case "decision_prompt":
+			return <DecisionPrompt payload={artifact.payload} />;
 		case "quick_reply":
 			return null;
 	}

@@ -33,6 +33,17 @@ export interface QuotaSimulation {
 		lancePercent: number; // % do crédito ofertado como lance
 		expectedTermMonths: number; // prazo esperado até contemplação com esse lance
 	};
+	/** Cenário de lance embutido (jornada do .docx 2026-05-29 / Bevi).
+	 * Usa parte da própria carta como lance — o usuário recebe o crédito
+	 * líquido (carta − lance embutido). Sempre computado pra permitir a
+	 * comparação "com/sem lance embutido" que o doc pede. NÃO é garantia de
+	 * contemplação (CDC art. 30/37). */
+	embeddedBid: {
+		percent: number; // % da carta usado como lance embutido (30 default, Bevi aceita 30/50)
+		embeddedBidValue: number; // R$ da carta destinado ao lance embutido
+		receivedCredit: number; // crédito líquido recebido (carta − lance embutido)
+		necessaryBidToContemplate: number; // estimativa de lance pra contemplar (R$) — não garantia
+	};
 	/** Correção prevista da carta — INCC pra imóvel, IPCA pra auto (bug #10). */
 	expectedAdjustment: {
 		index: "INCC" | "IPCA";

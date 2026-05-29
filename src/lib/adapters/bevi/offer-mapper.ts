@@ -104,6 +104,16 @@ export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
 		Number(offer.probContemplacaoMeses ?? "0") || Math.round(offer.term * 0.4);
 	const lancePercent = offer.bidPercentage ? round2(offer.bidPercentage * 100) : 0;
 
+	// Lance embutido: a oferta real traz embeddedBid (R$) + bidPercentage (fração)
+	// + receivedCredit + necessaryBidToContemplate. Usa-os direto; cai pra cálculo
+	// a partir do percentual quando algum campo não vier.
+	const embeddedPercent = lancePercent || 30;
+	const embeddedBidValue = round2(offer.embeddedBid ?? (offer.finalValue * embeddedPercent) / 100);
+	const receivedCredit = round2(offer.receivedCredit ?? offer.finalValue - embeddedBidValue);
+	const necessaryBidToContemplate = round2(
+		offer.necessaryBidToContemplate ?? offer.finalValue * 0.43,
+	);
+
 	return {
 		groupId: offer.quotaId,
 		category,
@@ -116,6 +126,12 @@ export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
 		termMonths: offer.term,
 		effectiveRate,
 		lanceScenario: { lancePercent, expectedTermMonths },
+		embeddedBid: {
+			percent: embeddedPercent,
+			embeddedBidValue,
+			receivedCredit,
+			necessaryBidToContemplate,
+		},
 		expectedAdjustment: {
 			index: mapAdjustmentIndex(offer.adjustmentType),
 			// A oferta não traz o % anual do índice; usamos premissa conservadora

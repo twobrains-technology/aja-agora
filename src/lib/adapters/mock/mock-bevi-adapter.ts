@@ -77,6 +77,19 @@ export class MockBeviAdapter implements AdministradoraAdapter {
 		const lancePercent = 20;
 		const expectedTermMonths = Math.max(1, Math.round(group.termMonths * 0.4));
 
+		// Cenário de lance embutido (jornada do doc): usa 30% da carta como lance
+		// (default Bevi). Crédito líquido = carta − lance embutido. Lance necessário
+		// pra contemplar ~43% da carta (ordem de grandeza da captura real Bevi:
+		// 34520/80000 ≈ 0.4315). Estimativa, NÃO garantia.
+		const embeddedPercent = 30;
+		const embeddedBidValue = Math.round((params.creditValue * embeddedPercent) / 100);
+		const embeddedBid: QuotaSimulation["embeddedBid"] = {
+			percent: embeddedPercent,
+			embeddedBidValue,
+			receivedCredit: params.creditValue - embeddedBidValue,
+			necessaryBidToContemplate: Math.round(params.creditValue * 0.43),
+		};
+
 		// Correção prevista: imóvel usa INCC, auto/moto usam IPCA. Valores anuais
 		// são premissas conservadoras (média histórica). Não é garantia.
 		const adjustment: QuotaSimulation["expectedAdjustment"] =
@@ -96,6 +109,7 @@ export class MockBeviAdapter implements AdministradoraAdapter {
 			termMonths: group.termMonths,
 			effectiveRate: Math.round(quota.effectiveRate * 100) / 100,
 			lanceScenario: { lancePercent, expectedTermMonths },
+			embeddedBid,
 			expectedAdjustment: adjustment,
 		};
 	}
