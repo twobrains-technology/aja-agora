@@ -15,6 +15,7 @@ Avaliação da integração do **Aja Agora** com o parceiro **Bevi Consórcio**,
 | [**bevi-simulador-fluxo.md**](./bevi-simulador-fluxo.md) | **Walkthrough** do simulador deles, passo a passo, com screenshots. |
 | [**bevi-segmentos-comparativo.md**](./bevi-segmentos-comparativo.md) | **Comparativo por tipo de bem** (6 segmentos): admin, índice, taxa, prazo. Responde "muda algo por segmento?". |
 | [**bevi-api-requests.md**](./bevi-api-requests.md) | **Cookbook de requests** reproduzível: endpoints, payloads e respostas reais (CPF mascarado). |
+| [**mockups/**](./mockups/) | **Propostas de jornada** (2 protótipos HTML): chat web + WhatsApp nativo com as ofertas reais Bevi. Tese: *exploração anônima → oferta real on-demand*. |
 | [collection/](./collection/) | Collection Postman oficial "API de Parceiro". |
 | [assets/](./assets/) | Screenshots do simulador (sem PII). |
 
