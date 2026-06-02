@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.4
+# aja-agora — Dockerfile DE DESENVOLVIMENTO (HMR via volume mount + next dev)
+#
+# Diferenças vs Dockerfile (prod):
+# - Single-stage: instala deps no /app e roda `npm run dev` direto. O source
+#   vem por volume mount (./:/app) declarado no docker-compose.yml — ele
+#   sobrescreve o /app desta imagem, exceto os volumes anônimos pra
+#   /app/node_modules e /app/.next.
+# - Não roda `next build`. Não cria standalone. Não tem entrypoint de
+#   migration (em dev rodamos `npm run db:push` / `db:migrate` no host quando
+#   precisa, via DNS do Postgres do workspace).
+# - Roda como root pra evitar dor de permission no bind mount.
+# - NODE_ENV=development → Next ativa HMR + Turbopack + source maps.
+
+FROM node:22-alpine
+
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Instala deps. Quando o compose monta ./:/app por cima, esses node_modules
+# ficam ocultos — por isso o compose também monta um volume anônimo em
+# /app/node_modules apontando pro que está instalado AQUI dentro da imagem.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+ENV NODE_ENV=development
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "--port", "3000", "--hostname", "0.0.0.0"]
