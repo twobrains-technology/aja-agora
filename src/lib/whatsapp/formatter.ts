@@ -1,5 +1,6 @@
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 
 export function formatTextForWhatsApp(text: string): string {
 	return (
@@ -942,6 +943,88 @@ export function whatsappOptinToWhatsApp(): WhatsAppResponse {
 	};
 }
 
+const brlWa = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/** Passo 5: form de contratação. WhatsApp não tem form — pedimos o CPF por texto
+ * (o WhatsApp já é o contato/celular) e o aceite LGPD vem implícito na resposta. */
+export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = payload.administradora as string | undefined;
+	return {
+		type: "text",
+		text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD). 🔒`,
+	};
+}
+
+/** Oferta REAL pra confirmar (botão). */
+export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = (payload.administradora as string) ?? "administradora";
+	const credit = Number(payload.creditValue ?? 0);
+	const parcela = Number(payload.monthlyPayment ?? 0);
+	const grupo = payload.grupo as string | undefined;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: `✅ Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}\n\nConfirma essa carta pra eu seguir?`,
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "offer_confirm", title: "Confirmar carta" } },
+					{ type: "reply", reply: { id: "offer_reject", title: "Ver outras" } },
+				],
+			},
+		},
+	};
+}
+
+/** Encaminhamento pra assinatura (link). */
+export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = (payload.administradora as string) ?? "administradora";
+	const link = payload.consortiumProposalLink as string;
+	return {
+		type: "text",
+		text: `Perfeito! Você está contratando um consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil — e a gente segue com você até a contemplação.\n\nÉ só finalizar a assinatura aqui:\n${link}`,
+	};
+}
+
+/** Envio de documento (WhatsApp aceita foto). */
+export function documentUploadToWhatsApp(_payload: Record<string, unknown>): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*. 📄",
+	};
+}
+
+/** Simulador-agulha estático (WhatsApp não tem slider) — marcos 3/6/12/24 meses. */
+export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const creditValue = Number(payload.creditValue ?? 0);
+	const termMonths = Number(payload.termMonths ?? 0);
+	if (!creditValue || !termMonths) {
+		return {
+			type: "text",
+			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o crédito que você recebe.",
+		};
+	}
+	const marks = contemplationDialMarks({
+		creditValue,
+		termMonths,
+		monthlyPayment: Number(payload.monthlyPayment ?? 0),
+		historicalWinningBidPct: payload.historicalWinningBidPct as number | undefined,
+		maxEmbutidoPct: payload.maxEmbutidoPct as number | undefined,
+	});
+	const lines = marks.map((m) => {
+		if (m.mode === "sorteio")
+			return `*${m.targetMonth}m:* mais pelo sorteio — lance opcional, parcela menor`;
+		return `*${m.targetMonth}m:* lance ~${m.requiredLancePct}% · recebe ${brlWa(m.receivedCredit)}`;
+	});
+	return {
+		type: "text",
+		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa pelo histórico do grupo — contemplação não é garantida._`,
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -969,6 +1052,16 @@ export function artifactToWhatsApp(
 			return whatsappOptinToWhatsApp();
 		case "decision_prompt":
 			return decisionPromptToWhatsApp(payload);
+		case "contract_form":
+			return contractFormToWhatsApp(payload);
+		case "real_offer":
+			return realOfferToWhatsApp(payload);
+		case "signature_handoff":
+			return signatureHandoffToWhatsApp(payload);
+		case "document_upload":
+			return documentUploadToWhatsApp(payload);
+		case "contemplation_dial":
+			return contemplationDialToWhatsApp(payload);
 		default:
 			return null;
 	}

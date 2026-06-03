@@ -233,6 +233,47 @@ export const leadEvents = pgTable("lead_events", {
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Bevi Proposals (estado do FECHAMENTO real — passo 5 "Contratar")
+// Guarda só o necessário pra retomar a proposta entre turnos (web↔WhatsApp) e
+// pro back office acompanhar. LGPD-mínimo: NÃO armazena CPF — só os IDs Bevi e o
+// snapshot da oferta escolhida. O ofertaId expira em 30min (offerExpiresAt) →
+// re-simular antes do choose_offer.
+export const beviProposals = pgTable(
+	"bevi_proposals",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+		// IDs da API de Parceiro
+		proposalId: text("proposal_id").notNull(),
+		simulationSessionId: text("simulation_session_id"),
+		ofertaId: text("oferta_id"),
+		offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
+		// Snapshot da oferta escolhida (pro card/back office, sem re-simular)
+		segmento: varchar("segmento", { length: 30 }),
+		administradora: varchar("administradora", { length: 60 }),
+		grupo: varchar("grupo", { length: 30 }),
+		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
+		monthlyPayment: numeric("monthly_payment", { precision: 12, scale: 2 }),
+		// Artefatos de fechamento
+		consortiumProposalLink: text("consortium_proposal_link"),
+		documentsLinkPersonal: text("documents_link_personal"),
+		documentsLinkAddress: text("documents_link_address"),
+		proposalStatus: varchar("proposal_status", { length: 60 }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("bevi_proposals_conversation_id_idx").on(table.conversationId),
+		index("bevi_proposals_proposal_id_idx").on(table.proposalId),
+	],
+);
+
 export type CampaignMentionPriority = "low" | "medium" | "high";
 
 export type PersonaCampaign = {
@@ -471,6 +512,7 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 	leads: many(leads),
 	insights: many(leadInsights),
 	evaluations: many(conversationEvaluations),
+	beviProposals: many(beviProposals),
 	handedOffUser: one(user, {
 		fields: [conversations.handedOffUserId],
 		references: [user.id],
@@ -504,6 +546,17 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
 export const leadEventsRelations = relations(leadEvents, ({ one }) => ({
 	lead: one(leads, {
 		fields: [leadEvents.leadId],
+		references: [leads.id],
+	}),
+}));
+
+export const beviProposalsRelations = relations(beviProposals, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [beviProposals.conversationId],
+		references: [conversations.id],
+	}),
+	lead: one(leads, {
+		fields: [beviProposals.leadId],
 		references: [leads.id],
 	}),
 }));

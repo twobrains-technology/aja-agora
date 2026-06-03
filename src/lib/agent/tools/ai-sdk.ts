@@ -480,6 +480,38 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_contract_form: tool({
+		description:
+			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
+		inputSchema: z.object({
+			administradora: z.string().optional().describe("Administradora do plano escolhido (contexto)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			return `[Formulário de contratação (CPF/celular/LGPD) apresentado${args.administradora ? ` — ${args.administradora}` : ""}]`;
+		},
+	}),
+
+	present_contemplation_dial: tool({
+		description:
+			"Apresenta o simulador-agulha de contemplação: o usuário arrasta a agulha pro mês em que quer ser contemplado e vê ao vivo a RECEITA pra chegar lá (lance embutido até 30% + lance próprio, crédito líquido, parcela). Use no passo 4, depois da recomendação/simulação, quando o usuário quer entender QUANDO e COMO antecipar a contemplação. Passe os dados do plano recomendado. Não mencione 'arraste o slider' — diga algo como 'escolhe quando você quer ser contemplado'.",
+		inputSchema: z.object({
+			administradora: z.string().optional().describe("Administradora do plano (contexto)"),
+			category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
+			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais"),
+			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses"),
+			monthlyPayment: z.number().positive().describe("Parcela base em reais"),
+			historicalWinningBidPct: z
+				.number()
+				.optional()
+				.describe("Lance vencedor típico do grupo (% da carta), se conhecido"),
+			maxEmbutidoPct: z.number().optional().describe("Teto do lance embutido (default 30)"),
+			initialTargetMonth: z.number().int().positive().describe("Mês-alvo inicial da agulha"),
+		}),
+		execute: async (args: { administradora?: string; creditValue: number; initialTargetMonth: number }) => {
+			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
+		},
+	}),
+
 	// ---- Control signals (intercepted by orchestrator) ----
 
 	suggest_handoff: tool({
@@ -604,6 +636,8 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_financing_comparison",
 	"present_whatsapp_optin",
 	"present_decision_prompt",
+	"present_contract_form",
+	"present_contemplation_dial",
 ]);
 
 // ============================================================================

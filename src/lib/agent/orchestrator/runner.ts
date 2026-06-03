@@ -73,6 +73,16 @@ export async function* runAgentTurn(args: {
 	const stagesEmitted = new Set<string>();
 
 	const isConcierge = !meta.currentCategory;
+	// BUG-REVEAL-LOOP (2026-06-02): depois que o reveal JÁ aconteceu (revealCompleted),
+	// num turno de usuario o agent re-emitia os cards de DESCOBERTA (comparison/
+	// recommendation/group) a cada afirmativo ("ta otimo", "bora") — loop nos cards
+	// mockados que nunca cruzava pro passo 5. O guard abaixo suprime essas re-emissoes.
+	// Chave em revealCompleted (não searchDispatched): a flag liga sempre que QUALQUER
+	// reveal aparece — inclusive quando o próprio agent chama search_groups por conta
+	// (free-run), caso em que searchDispatched ficava false e o guard não ativava
+	// (visto no run real: comparison_table 5×). O reveal original é o 1º (revealCompleted
+	// ainda false) → passa. simulation_result só é suprimido fora de what-if.
+	const revealLoopActive = meta.revealCompleted === true && isUserTurn;
 	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
 	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
 	// via closure nas tools sensíveis (save_contact_name etc.). Sem isso, modelo
@@ -124,16 +134,35 @@ export async function* runAgentTurn(args: {
 				}
 
 				if (PRESENTATION_TOOLS.has(toolName)) {
+					const artifactType = artifactTypeFor(toolName);
 					// PF-07: guard de duplicação do whatsapp_optin — modelo pode
 					// chamar 2x em conversation longa apesar do prompt. Suprimir
 					// silenciosamente se já foi mostrado.
 					const isWhatsappOptin = toolName === "present_whatsapp_optin";
+					// BUG-REVEAL-LOOP: suprime re-emissão dos cards de descoberta
+					// pós-reveal. simulation_result só é suprimido fora de what-if
+					// (providing_info = usuário pediu novo valor → re-simular é legítimo).
+					const isRereveal =
+						revealLoopActive &&
+						(artifactType === "comparison_table" ||
+							artifactType === "recommendation_card" ||
+							artifactType === "group_card" ||
+							(artifactType === "simulation_result" && userIntent !== "providing_info"));
+					// BUG-REVEAL-LOOP (hardening, QA crítico 2026-06-02): na web o
+					// modelo emite present_decision_prompt por conta (free-run), então
+					// decisionDispatched é o guard de idempotência também aqui — se o
+					// card de decisão já apareceu, suprime re-emissão num turno de usuário.
+					const isDecisionDup =
+						meta.decisionDispatched === true && isUserTurn && artifactType === "decision_prompt";
 					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
 						console.log(
 							`[whatsapp-optin] guard: tool chamada 2x na mesma conversa, suprimindo artifact (conv=${conversationId})`,
 						);
+					} else if (isRereveal || isDecisionDup) {
+						console.log(
+							`[reveal-loop] guard: suprimindo ${artifactType} re-emitido pós-reveal (conv=${conversationId}, intent=${userIntent})`,
+						);
 					} else {
-						const artifactType = artifactTypeFor(toolName);
 						artifacts.push({
 							type: artifactType,
 							payload: input,
@@ -263,6 +292,51 @@ export async function* runAgentTurn(args: {
 			...refreshed,
 			whatsappOptinShown: true,
 		});
+	}
+
+	// BUG-REVEAL-LOOP: marca revealCompleted quando o passo 3+4 (opções + plano)
+	// foi apresentado. Habilita o gate "decision" (nextGate) no próximo turno de
+	// avanço do usuário → present_decision_prompt → passo 5. QUALQUER card de
+	// reveal serve de âncora — o reveal pode sair como comparison_table (2+),
+	// group_card (1), recommendation_card (destacado) ou simulation_result. Limitar
+	// a recommendation/simulation deixava a flag desligada quando o agent abria o
+	// reveal com group_card/comparison (visto no run real 2026-06-02).
+	const REVEAL_ARTIFACTS = new Set([
+		"comparison_table",
+		"group_card",
+		"recommendation_card",
+		"simulation_result",
+	]);
+	if (artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) && !meta.revealCompleted) {
+		const refreshed = await reloadMeta(conversationId);
+		// Captura a administradora do plano destacado pro contexto do card de
+		// decisão / passo 5. Prioridade: recommendation > simulation > group_card.
+		const anchor =
+			artifacts.find((a) => a.type === "recommendation_card") ??
+			artifacts.find((a) => a.type === "simulation_result") ??
+			artifacts.find((a) => a.type === "group_card");
+		const administradora =
+			typeof anchor?.payload?.administradora === "string"
+				? anchor.payload.administradora
+				: refreshed.recommendedAdministradora;
+		await persistMeta(conversationId, {
+			...refreshed,
+			revealCompleted: true,
+			// Também marca searchDispatched: se o agent free-rodou search_groups (sem
+			// passar pelo dispatch do orquestrador), isso impede o index.ts de
+			// re-disparar OUTRO reveal — trata o que já apareceu como "a busca".
+			searchDispatched: true,
+			recommendedAdministradora: administradora,
+		});
+	}
+
+	// BUG-REVEAL-LOOP (hardening): marca decisionDispatched quando o card de decisão
+	// aparece — inclusive quando o MODELO o emite por conta (free-run web), não só
+	// quando o orquestrador o dirige (index.ts). Sem isso o guard de idempotência do
+	// decision_prompt nunca era exercitado na web (achado do QA crítico 2026-06-02).
+	if (artifacts.some((a) => a.type === "decision_prompt") && !meta.decisionDispatched) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
 	}
 
 	const producedArtifact = artifacts.length > 0;

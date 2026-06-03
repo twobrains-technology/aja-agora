@@ -56,6 +56,19 @@ export function beviSegmentToCategory(segment: string): ConsorcioCategory {
 	return c;
 }
 
+/** Categoria de domínio (4) → segmento Bevi primário (pro fechamento). As 6
+ * variações Bevi colapsam em 4; no fechamento usamos o segmento canônico. */
+const CATEGORY_TO_SEGMENT: Record<ConsorcioCategory, string> = {
+	imovel: "IMOVEL",
+	auto: "AUTOS",
+	moto: "MOTOS",
+	servicos: "SERVICOS",
+};
+
+export function categoryToBeviSegment(category: ConsorcioCategory | null | undefined): string {
+	return CATEGORY_TO_SEGMENT[category ?? "auto"] ?? "AUTOS";
+}
+
 /** Índice de correção: o domínio modela só INCC|IPCA. IGPM e afins caem em IPCA
  * (índice de preços ao consumidor genérico) — documentado, revisável. */
 function mapAdjustmentIndex(adjustmentType?: string): "INCC" | "IPCA" {

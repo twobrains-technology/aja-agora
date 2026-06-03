@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { getAdapter } from "@/lib/adapters";
+import { confirmOffer } from "@/lib/bevi/fulfillment";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
@@ -31,11 +32,13 @@ import {
 	buildWhatIfDirective,
 } from "./directives";
 import {
+	documentUploadToWhatsApp,
 	resolveCreditReply,
 	resolveLanceEmbutidoReply,
 	resolveLanceReply,
 	resolveRange,
 	resolveTimeframeReply,
+	signatureHandoffToWhatsApp,
 } from "./formatter";
 import { getHandoffState, startInterestHandoff } from "./proxy";
 import { getOrCreateConversation } from "./session";
@@ -108,8 +111,47 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("whatif_")) return handleWhatIf(ctx);
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
+	if (replyId === "offer_confirm") return handleOfferConfirm(ctx);
+	if (replyId === "offer_reject") return handleOfferReject(ctx);
 
 	return false;
+}
+
+// ── Passo 5 "Contratar" (fechamento Bevi) — botões do real_offer ──
+async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
+	await recordUserClick(ctx);
+	const { from, conversationId } = ctx;
+	try {
+		const res = await confirmOffer(conversationId);
+		const sig = signatureHandoffToWhatsApp({
+			administradora: res.administradora ?? "",
+			consortiumProposalLink: res.consortiumProposalLink,
+		});
+		const doc = documentUploadToWhatsApp({});
+		const sigText = sig.type === "text" ? sig.text : "";
+		const docText = doc.type === "text" ? doc.text : "";
+		if (sigText) await sendTextMessage(from, sigText);
+		if (docText) await sendTextMessage(from, docText);
+		await saveMessage(
+			conversationId,
+			"assistant",
+			[sigText, docText].filter(Boolean).join("\n\n"),
+			"whatsapp",
+		);
+	} catch {
+		await sendTextMessage(
+			from,
+			"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+		);
+	}
+	return true;
+}
+
+async function handleOfferReject(ctx: Ctx): Promise<boolean> {
+	await recordUserClick(ctx);
+	// "ver outras opções" — deixa o agente conduzir pelo fluxo de texto.
+	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
+	return true;
 }
 
 // ---- Handlers ----

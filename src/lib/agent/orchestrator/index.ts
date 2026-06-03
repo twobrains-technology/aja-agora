@@ -14,7 +14,7 @@ import {
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
-import { buildSearchSummaryDirective } from "./directives";
+import { buildDecisionPromptDirective, buildSearchSummaryDirective } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
@@ -249,6 +249,33 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		}
 		await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 		const directive = buildSearchSummaryDirective({ category, meta: refreshed });
+		yield* runTurn({
+			channel,
+			conversationId,
+			userText: directive,
+			isUserTurn: false,
+			contactName: knownName,
+			skipAnalyzer: true,
+			skipLeadCollection: true,
+		});
+		return;
+	}
+
+	// BUG-REVEAL-LOOP: pós-reveal, quando o usuário sinaliza avanço, o sistema
+	// dirige o card de decisão ("Esse plano faz sentido?") UMA vez — fim do passo
+	// 4 da jornada → abre o passo 5 (contratar). Espelha o search reveal acima:
+	// directive determinístico + guard de idempotência (decisionDispatched). Sem
+	// isso o agent re-disparava o reveal em loop e nunca cruzava pra plataforma nova.
+	if (result.nextGateToFire === "decision") {
+		const refreshed = await reloadMeta(conversationId);
+		if (refreshed.decisionDispatched) {
+			yield { type: "finish", reason: "decision-already-dispatched" };
+			return;
+		}
+		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+		const directive = buildDecisionPromptDirective({
+			administradora: refreshed.recommendedAdministradora,
+		});
 		yield* runTurn({
 			channel,
 			conversationId,

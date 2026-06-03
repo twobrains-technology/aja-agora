@@ -29,4 +29,19 @@ export type ChatAction =
 	  }
 	| { kind: "interest"; administradora: string; label: string }
 	| { kind: "whatsapp_optin"; phone: string }
-	| { kind: "whatsapp_optin_decline" };
+	| { kind: "whatsapp_optin_decline" }
+	// ── Passo 5 "Contratar" (fechamento Bevi) ──
+	// Form de contratação: CPF + celular + aceite LGPD → cria proposta real + simula.
+	| { kind: "contract-submit"; cpf: string; celular: string; lgpd: boolean; label?: string }
+	// Usuário confirmou a oferta real → escolhe + gera assinatura/documentos.
+	| { kind: "offer-confirm"; label?: string }
+	// Upload de documento direto no chat (arquivo em base64). slot = qual documento.
+	| {
+			kind: "document-upload";
+			slot: "identidade_frente" | "identidade_verso" | "comprovante_endereco";
+			fileBase64: string;
+			filename: string;
+			mimeType: string;
+	  }
+	// Documentos são opcionais — usuário opta por pular.
+	| { kind: "document-skip"; label?: string };

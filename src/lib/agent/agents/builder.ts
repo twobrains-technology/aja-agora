@@ -130,6 +130,10 @@ export function buildAgent(
 				// Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
 				// — primitivo do sistema, sempre exposto (não toggleable pelo admin).
 				present_decision_prompt: registry.present_decision_prompt,
+				// Passo 5 "Contratar" (fechamento Bevi) + simulador-agulha (passo 4) —
+				// primitivos do sistema, sempre expostos.
+				present_contract_form: registry.present_contract_form,
+				present_contemplation_dial: registry.present_contemplation_dial,
 			};
 
 	// Memory inline — renderizado como system message extra dentro das

@@ -31,6 +31,9 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			);
 		case "doubts-wait":
 		case "search":
+		case "decision":
+			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
+			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
 			return null;
 	}
 }

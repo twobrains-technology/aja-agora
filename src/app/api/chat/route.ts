@@ -3,6 +3,9 @@ import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
+import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
+import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import {
 	buildCreditReactionDirective,
 	buildExperienceDoubtsDirective,
@@ -76,6 +79,14 @@ export function lastUserText(
 		}
 	}
 	return null;
+}
+
+function brl(n: number): string {
+	return n.toLocaleString("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+		maximumFractionDigits: 0,
+	});
 }
 
 export async function POST(req: NextRequest) {
@@ -308,6 +319,157 @@ export async function POST(req: NextRequest) {
 								payload: { conversationId, prefilledName: contactName ?? null },
 							},
 						});
+						return;
+					}
+
+					// ── Passo 5 "Contratar" (fechamento Bevi) ──
+					if (body.action?.kind === "contract-submit") {
+						const q = meta.qualifyAnswers ?? {};
+						const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
+						const valor = q.creditMax ?? q.creditMin ?? 50000;
+						const objetivo = q.objetivo ?? "contemplacao_rapida";
+						const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						try {
+							const { proposalId, offer, noOffer } = await startContract(conversationId, {
+								cpf: body.action.cpf,
+								celular: body.action.celular,
+								lgpd: body.action.lgpd,
+								segmento,
+								valor,
+								objetivo,
+								lanceEmbutido,
+							});
+							if (noOffer || !offer) {
+								writer.write({
+									type: "text-delta",
+									id: textId,
+									delta:
+										"Não encontrei uma carta pra esse valor agora — o mínimo varia por tipo de bem. Quer ajustar o valor?",
+								});
+								writer.write({ type: "text-end", id: textId });
+								return;
+							}
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`,
+							});
+							writer.write({ type: "text-end", id: textId });
+							writer.write({
+								type: "data-artifact",
+								id: crypto.randomUUID(),
+								data: {
+									type: "real_offer",
+									payload: {
+										proposalId,
+										administradora: offer.administradora,
+										grupo: offer.grupo,
+										category: offer.category,
+										creditValue: offer.creditValue,
+										monthlyPayment: offer.monthlyPayment,
+									},
+								},
+							});
+						} catch (err) {
+							const delta =
+								err instanceof MinCreditError
+									? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
+									: err instanceof BeviConfigError
+										? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
+										: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
+							writer.write({ type: "text-delta", id: textId, delta });
+							writer.write({ type: "text-end", id: textId });
+						}
+						return;
+					}
+
+					if (body.action?.kind === "offer-confirm") {
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						try {
+							const res = await confirmOffer(conversationId);
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: `Perfeito! Você está contratando um consórcio da ${res.administradora ?? "administradora"}, escolhida pela Aja Agora pro seu perfil. A gente segue com você até a contemplação — e depois dela.`,
+							});
+							writer.write({ type: "text-end", id: textId });
+							writer.write({
+								type: "data-artifact",
+								id: crypto.randomUUID(),
+								data: {
+									type: "signature_handoff",
+									payload: {
+										administradora: res.administradora ?? "",
+										consortiumProposalLink: res.consortiumProposalLink,
+									},
+								},
+							});
+							writer.write({
+								type: "data-artifact",
+								id: crypto.randomUUID(),
+								data: {
+									type: "document_upload",
+									payload: {
+										proposalId: res.proposalId,
+										documentsLinkPersonal: res.documentsLinkPersonal,
+										optional: true,
+									},
+								},
+							});
+						} catch {
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: "Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+							});
+							writer.write({ type: "text-end", id: textId });
+						}
+						return;
+					}
+
+					if (body.action?.kind === "document-upload") {
+						const action = body.action;
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						try {
+							const file = Buffer.from(action.fileBase64, "base64");
+							const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
+								slot: action.slot,
+								file,
+								filename: action.filename,
+								mimeType: action.mimeType,
+							});
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: ok
+									? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`,
+							});
+						} catch {
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: "Tive um problema com o upload. Pode tentar enviar de novo?",
+							});
+						}
+						writer.write({ type: "text-end", id: textId });
+						return;
+					}
+
+					if (body.action?.kind === "document-skip") {
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						writer.write({
+							type: "text-delta",
+							id: textId,
+							delta:
+								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
+						});
+						writer.write({ type: "text-end", id: textId });
 						return;
 					}
 

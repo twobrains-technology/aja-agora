@@ -59,6 +59,19 @@ export type ConversationMetadata = {
 	pendingFollowUp?: boolean;
 	/** Idempotency guard — prevents re-firing the summary + search reveal. */
 	searchDispatched?: boolean;
+	/** Set once the reveal turn produced a simulation_result/recommendation_card
+	 * (passo 4 da jornada — o usuário já viu o plano + detalhamento). Habilita o
+	 * gate "decision" ("Esse plano faz sentido?"). */
+	revealCompleted?: boolean;
+	/** Idempotency guard do card de decisão (present_decision_prompt). Espelha
+	 * searchDispatched: o orquestrador dirige o card UMA vez, depois o passo 5
+	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
+	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
+	decisionDispatched?: boolean;
+	/** Administradora do plano recomendado no reveal — usada como contexto do
+	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
+	 * simulation_result quando revealCompleted é setado. */
+	recommendedAdministradora?: string;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;

@@ -86,6 +86,11 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required (set in .env.local)}
       FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
       ADMINISTRADORA_ADAPTER: ${ADMINISTRADORA_ADAPTER:-mock}
+      # Fulfillment (passo 5): mock = sem token (default); bevi = API real (exige token).
+      PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-mock}
+      BEVI_API_TOKEN: ${BEVI_API_TOKEN:-}
+      BEVI_BASE_URL: ${BEVI_BASE_URL:-}
+      BEVI_PRODUCT_ID: ${BEVI_PRODUCT_ID:-}
     depends_on:
       db:
         condition: service_healthy

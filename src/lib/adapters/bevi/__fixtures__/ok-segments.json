@@ -1,0 +1,34 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Segmentos disponíveis.",
+  "data": {
+    "segmentos": [
+      {
+        "segmento": "AUTOS",
+        "segmentoLabel": "AUTOS"
+      },
+      {
+        "segmento": "IMOVEL",
+        "segmentoLabel": "IMÓVEL"
+      },
+      {
+        "segmento": "MOTOS",
+        "segmentoLabel": "MOTOS"
+      },
+      {
+        "segmento": "OUTROS BENS",
+        "segmentoLabel": "OUTROS BENS"
+      },
+      {
+        "segmento": "PESADOS",
+        "segmentoLabel": "PESADOS"
+      },
+      {
+        "segmento": "SERVICOS",
+        "segmentoLabel": "SERVIÇOS"
+      }
+    ]
+  }
+}

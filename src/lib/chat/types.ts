@@ -198,6 +198,59 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 	},
 ];
 
+// ---- Passo 5 "Contratar" (fechamento Bevi) ----
+
+/** Form de contratação: CPF + celular + aceite LGPD. NO PII no payload — só
+ * contexto pra renderizar (o form coleta e envia via action contract-submit). */
+export interface ContractFormPayload {
+	conversationId: string;
+	administradora?: string;
+	prefilledPhone?: string | null;
+}
+
+/** Oferta REAL confirmada pela administradora (re-simulação Bevi). O usuário
+ * confirma antes do choose_offer — fecha o gap indicativo×real da Descoberta. */
+export interface RealOfferPayload {
+	proposalId: string;
+	administradora: string;
+	grupo: string;
+	category: "imovel" | "auto" | "moto" | "servicos";
+	creditValue: number;
+	monthlyPayment: number;
+}
+
+/** Encaminhamento pra assinatura digital da administradora (sem "trocar de
+ * empresa" — frase do doc). consortiumProposalLink = link Bevi. */
+export interface SignatureHandoffPayload {
+	administradora: string;
+	consortiumProposalLink: string;
+}
+
+/** Upload de documento no chat (RG/CNH frente+verso). Os links são o fallback se
+ * o upload automatizado falhar. */
+export interface DocumentUploadPayload {
+	proposalId: string;
+	documentsLinkPersonal?: string;
+	/** Documentos são opcionais — o card oferece "pular". */
+	optional: boolean;
+}
+
+// ---- Simulador-agulha (passo 4 — viés de contemplação do Bernardo) ----
+
+/** A agulha aponta o mês-alvo; o componente recalcula a "receita" (lance/crédito/
+ * parcela) client-side com computeContemplationDial. O payload carrega só os
+ * inputs-base + a posição inicial. */
+export interface ContemplationDialPayload {
+	administradora?: string;
+	category: "imovel" | "auto" | "moto" | "servicos";
+	creditValue: number;
+	termMonths: number;
+	monthlyPayment: number;
+	historicalWinningBidPct?: number;
+	maxEmbutidoPct?: number;
+	initialTargetMonth: number;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -210,7 +263,12 @@ export type ArtifactByType =
 	| { type: "scenarios"; payload: ScenariosPayload }
 	| { type: "financing_comparison"; payload: FinancingComparisonPayload }
 	| { type: "whatsapp_optin"; payload: WhatsappOptinPayload }
-	| { type: "decision_prompt"; payload: DecisionPromptPayload };
+	| { type: "decision_prompt"; payload: DecisionPromptPayload }
+	| { type: "contract_form"; payload: ContractFormPayload }
+	| { type: "real_offer"; payload: RealOfferPayload }
+	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
+	| { type: "document_upload"; payload: DocumentUploadPayload }
+	| { type: "contemplation_dial"; payload: ContemplationDialPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

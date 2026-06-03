@@ -1,0 +1,11 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Links de envio de documentos obtidos.",
+  "data": {
+    "proposalId": "6a1f7953cf5174e43aa4a10a",
+    "linkDocumentosPessoais": "https://www.uselink.me/ZWoibmELt",
+    "linkComprovanteEndereco": "https://www.uselink.me/jCmLg9V64b"
+  }
+}

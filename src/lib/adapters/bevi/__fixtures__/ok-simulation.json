@@ -1,0 +1,253 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Simulação realizada com sucesso.",
+  "data": {
+    "simulationSessionId": "97d18b97-a4d3-49b5-8ef5-461ac8098c7b",
+    "expiresAt": "2026-06-03T01:16:36.951Z",
+    "errors": [],
+    "offers": [
+      {
+        "ofertaId": "0becfc36-e567-4d93-b365-6d12336784fa",
+        "administradora": "ANCORA",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "540",
+        "valorCarta": 36000,
+        "parcela": 426.06732203389834,
+        "taxaContemplacao": 0.6776000000000001,
+        "quotaId": "6a1993f30e110071d518de03"
+      },
+      {
+        "ofertaId": "55719e49-69df-449a-8ee0-43ab314bdb96",
+        "administradora": "ANCORA",
+        "tipoOferta": "FREE_BID",
+        "grupo": "529",
+        "valorCarta": 35000,
+        "parcela": 414.2321186440678,
+        "taxaContemplacao": 0.74,
+        "quotaId": "6a1993f30e110071d518dde7"
+      },
+      {
+        "ofertaId": "3b5ef00d-5812-4700-8fee-27f6415e87a3",
+        "administradora": "ANCORA",
+        "tipoOferta": "FREE_BID",
+        "grupo": "462",
+        "valorCarta": 50000,
+        "parcela": 651.5188775510204,
+        "taxaContemplacao": 0.75,
+        "quotaId": "6a1993f30e110071d518dddd"
+      },
+      {
+        "ofertaId": "91b46b1a-a891-41e6-94bc-1bec4b9b0b7c",
+        "administradora": "ANCORA",
+        "tipoOferta": "FREE_BID",
+        "grupo": "533",
+        "valorCarta": 55000,
+        "parcela": 871.2,
+        "taxaContemplacao": 0.77,
+        "quotaId": "6a1993f30e110071d518ddef"
+      },
+      {
+        "ofertaId": "d08129e5-a571-4556-9781-d4418ad6a1e5",
+        "administradora": "BANCO DO BRASIL",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "1658",
+        "valorCarta": 38355.63,
+        "parcela": 2693.417573333333,
+        "taxaContemplacao": 0.1003,
+        "quotaId": "6a1993f30e110071d518de79"
+      },
+      {
+        "ofertaId": "4b59809b-d2d7-4b7e-b5ad-376f9d6e332a",
+        "administradora": "BANCO DO BRASIL",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1685",
+        "valorCarta": 43718.3,
+        "parcela": 1638.150417647059,
+        "taxaContemplacao": 0.3889,
+        "quotaId": "6a1993f30e110071d518de85"
+      },
+      {
+        "ofertaId": "445c60d3-212a-42d9-84bc-a56154e9c98a",
+        "administradora": "BANCO DO BRASIL",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1712",
+        "valorCarta": 35000,
+        "parcela": 1159.6052631578948,
+        "taxaContemplacao": 0.44,
+        "quotaId": "6a1993f30e110071d518de59"
+      },
+      {
+        "ofertaId": "3cf80392-fee2-4024-bd89-19b2ecf50567",
+        "administradora": "BANCO DO BRASIL",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1696",
+        "valorCarta": 36554,
+        "parcela": 1346.2316,
+        "taxaContemplacao": 0.44,
+        "quotaId": "6a1993f30e110071d518de61"
+      },
+      {
+        "ofertaId": "182ec860-7d9a-4749-8cd3-aa07e24e4128",
+        "administradora": "CANOPUS",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "8110",
+        "valorCarta": 35000,
+        "parcela": 635.7459393939395,
+        "taxaContemplacao": 0.743,
+        "quotaId": "6a1993f50e110071d518e340"
+      },
+      {
+        "ofertaId": "7ed3c0cf-7fc6-4e67-9329-21119fa9227f",
+        "administradora": "CANOPUS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "8110",
+        "valorCarta": 40000,
+        "parcela": 726.566787878788,
+        "taxaContemplacao": 0.743,
+        "quotaId": "6a1993f50e110071d518e346"
+      },
+      {
+        "ofertaId": "b3b3f364-f13a-4141-b46a-c0c2bb7ce47c",
+        "administradora": "CANOPUS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "8120",
+        "valorCarta": 35000,
+        "parcela": 635.7459393939395,
+        "taxaContemplacao": 0.7548999999999999,
+        "quotaId": "6a1993f50e110071d518e27e"
+      },
+      {
+        "ofertaId": "dfeacb78-62f7-48b5-b32c-a43bfda5a714",
+        "administradora": "CANOPUS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "8220",
+        "valorCarta": 51000,
+        "parcela": 821.4457263157896,
+        "taxaContemplacao": 0.7778,
+        "quotaId": "6a1993f30e110071d518def1"
+      },
+      {
+        "ofertaId": "a81d80ee-4007-4f24-b08b-5a36a406e659",
+        "administradora": "ITAU",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "50116",
+        "valorCarta": 52585,
+        "parcela": 2113.735672413793,
+        "taxaContemplacao": 0.5805,
+        "quotaId": "6a1993f60e110071d518e733"
+      },
+      {
+        "ofertaId": "400a4045-5cc4-4032-8eab-0c8f1549fe22",
+        "administradora": "ITAU",
+        "tipoOferta": "FREE_BID",
+        "grupo": "50116",
+        "valorCarta": 57844,
+        "parcela": 2325.1293379310346,
+        "taxaContemplacao": 0.5805,
+        "quotaId": "6a1993f60e110071d518e735"
+      },
+      {
+        "ofertaId": "b9471372-e8af-4b4b-a0bc-aa852e508783",
+        "administradora": "ITAU",
+        "tipoOferta": "FREE_BID",
+        "grupo": "50116",
+        "valorCarta": 63102,
+        "parcela": 2536.4828068965517,
+        "taxaContemplacao": 0.5805,
+        "quotaId": "6a1993f60e110071d518e737"
+      },
+      {
+        "ofertaId": "a4cc69c1-01c4-4be1-8216-496d1ae27262",
+        "administradora": "ITAU",
+        "tipoOferta": "FREE_BID",
+        "grupo": "50067",
+        "valorCarta": 54832,
+        "parcela": 971.3097142857144,
+        "taxaContemplacao": 0.6324000000000001,
+        "quotaId": "6a1993f50e110071d518e3ba"
+      },
+      {
+        "ofertaId": "a513527a-17ca-4731-aa82-fa0c1e0b9538",
+        "administradora": "RODOBENS",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "70035",
+        "valorCarta": 40000,
+        "parcela": 543.1999999999999,
+        "taxaContemplacao": 0.5313,
+        "quotaId": "6a1993f60e110071d518e74d"
+      },
+      {
+        "ofertaId": "057dfbd1-f9f6-413e-882c-b90bdd076098",
+        "administradora": "RODOBENS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "70035",
+        "valorCarta": 41000,
+        "parcela": 556.78,
+        "taxaContemplacao": 0.5313,
+        "quotaId": "6a1993f60e110071d518e751"
+      },
+      {
+        "ofertaId": "4cd2146b-634c-4dca-9333-362a53b1b739",
+        "administradora": "RODOBENS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "70035",
+        "valorCarta": 43000,
+        "parcela": 583.9399999999999,
+        "taxaContemplacao": 0.5313,
+        "quotaId": "6a1993f60e110071d518e755"
+      },
+      {
+        "ofertaId": "0ec1c627-5dec-47d8-959b-3b3e16e8a622",
+        "administradora": "RODOBENS",
+        "tipoOferta": "FREE_BID",
+        "grupo": "70033",
+        "valorCarta": 40000,
+        "parcela": 811.58,
+        "taxaContemplacao": 0.55,
+        "quotaId": "6a1993f60e110071d518e7a1"
+      },
+      {
+        "ofertaId": "80c99bc2-fac7-402c-b87d-f8255f162ef4",
+        "administradora": "TRADICAO",
+        "tipoOferta": "SPECIAL_OFFER",
+        "grupo": "1026",
+        "valorCarta": 45196.2,
+        "parcela": 1614.1370867999997,
+        "taxaContemplacao": 0.40009999999999996,
+        "quotaId": "6a1993f80e110071d518eccf"
+      },
+      {
+        "ofertaId": "9a7575c2-ef00-446f-b62e-95e424ccfd2a",
+        "administradora": "TRADICAO",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1040",
+        "valorCarta": 38561.63,
+        "parcela": 832.5915950480701,
+        "taxaContemplacao": 0.5,
+        "quotaId": "6a1993f80e110071d518ed07"
+      },
+      {
+        "ofertaId": "22cfb7b7-7cf7-4c34-a0a1-8deb9678fe20",
+        "administradora": "TRADICAO",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1047",
+        "valorCarta": 40000,
+        "parcela": 694.3848648648648,
+        "taxaContemplacao": 0.5,
+        "quotaId": "6a1993f80e110071d518f090"
+      },
+      {
+        "ofertaId": "66398697-0784-4d5e-b317-83e6811eb66d",
+        "administradora": "TRADICAO",
+        "tipoOferta": "FREE_BID",
+        "grupo": "1046",
+        "valorCarta": 41524,
+        "parcela": 750.0041486197184,
+        "taxaContemplacao": 0.5025999999999999,
+        "quotaId": "6a1993f80e110071d518f074"
+      }
+    ]
+  }
+}

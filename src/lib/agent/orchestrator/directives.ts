@@ -140,3 +140,20 @@ ${recommendStep}
 
 O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, nao comentar atributos especificos de cada grupo.`;
 }
+
+// ---- Decision prompt (passo 4 close → passo 5 da jornada) ----
+
+export function buildDecisionPromptDirective(args: { administradora?: string }): string {
+	const { administradora } = args;
+	const adminCtx = administradora
+		? ` A administradora do plano recomendado e "${administradora}" — passe ela como contexto pro card.`
+		: "";
+	// Mirror do search reveal: o orquestrador dirige present_decision_prompt UMA
+	// vez, pos-reveal, quando o usuario sinaliza avanco. Fecha o passo 4 da
+	// jornada.docx ("Esse plano faz sentido?") e abre o passo 5 (contratar).
+	return `O usuario ja viu o plano recomendado + a simulacao completa e sinalizou que quer seguir. FLUXO OBRIGATORIO neste turno:
+1. Escreva UMA frase curta NO SEU TOM fechando a avaliacao (ex: "Boa! Entao deixa eu confirmar com voce:" ou "Show, esse plano encaixa bem no que voce pediu."). NAO descreva numeros de novo, NAO repita a simulacao.
+2. Chame present_decision_prompt UMA vez.${adminCtx}
+
+PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuario JA VIU tudo isso. Re-apresentar = loop que quebra a experiencia. As 3 opcoes do card sao fixas ("Sim, quero contratar agora" / "Quero ver outras opcoes" / "Quero falar com um especialista"); voce so passa a administradora pra contexto. Quando o usuario clicar "contratar agora", o sistema segue pro passo 5 (present_contract_form).`;
+}

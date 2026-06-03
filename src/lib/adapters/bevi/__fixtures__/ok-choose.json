@@ -1,0 +1,10 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Oferta selecionada com sucesso.",
+  "data": {
+    "proposalId": "6a1f7953cf5174e43aa4a10a",
+    "consortiumProposalLink": "https://www.uselink.me/Y0B3wngu6"
+  }
+}

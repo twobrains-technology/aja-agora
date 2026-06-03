@@ -1,11 +1,16 @@
 import type { Artifact } from "@/lib/chat/types";
 import { ComparisonTable } from "./artifacts/comparison-table";
+import { ContemplationDial } from "./artifacts/contemplation-dial";
+import { ContractForm } from "./artifacts/contract-form";
 import { DecisionPrompt } from "./artifacts/decision-prompt";
+import { DocumentUpload } from "./artifacts/document-upload";
 import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
+import { RealOffer } from "./artifacts/real-offer";
 import { RecommendationCard } from "./artifacts/recommendation-card";
 import { Scenarios } from "./artifacts/scenarios";
+import { SignatureHandoff } from "./artifacts/signature-handoff";
 import { SimulationResult } from "./artifacts/simulation-result";
 import { TopicPicker } from "./artifacts/topic-picker";
 import { ValuePicker } from "./artifacts/value-picker";
@@ -35,6 +40,16 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 			return <WhatsappOptin />;
 		case "decision_prompt":
 			return <DecisionPrompt payload={artifact.payload} />;
+		case "contract_form":
+			return <ContractForm payload={artifact.payload} />;
+		case "real_offer":
+			return <RealOffer payload={artifact.payload} />;
+		case "signature_handoff":
+			return <SignatureHandoff payload={artifact.payload} />;
+		case "document_upload":
+			return <DocumentUpload payload={artifact.payload} />;
+		case "contemplation_dial":
+			return <ContemplationDial payload={artifact.payload} />;
 		case "quick_reply":
 			return null;
 	}

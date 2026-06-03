@@ -40,6 +40,9 @@ import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
+import { buildDecisionPromptDirective } from "@/lib/agent/orchestrator/directives";
+import type { ConversationMetadata } from "@/lib/agent/personas";
+import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
@@ -2210,5 +2213,192 @@ describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gat
 		const gq = readSource("src/lib/agent/orchestrator/gate-questions.ts");
 		expect(gq).toMatch(/lance-embutido/);
 		expect(gq).toMatch(/parte da própria carta de crédito/i);
+	});
+});
+
+// ============================================================================
+// CENARIO — passo 5 "Contratar" (fechamento Bevi) + simulador-agulha
+// ----------------------------------------------------------------------------
+// Garante que "contratar agora" dispara present_contract_form (não lead_form
+// puro) e que a agulha de contemplacao é uma tool de apresentacao real.
+// Detalhe da orquestracao (createProposal→simulate→chooseOffer→docs) coberto em
+// src/lib/bevi/fulfillment.test.ts; client/upload em src/lib/adapters/bevi/.
+// ============================================================================
+
+describe("FEAT-CONTRACT-FLOW — passo 5 'contratar agora' dispara present_contract_form", () => {
+	it("cassette: turn pos-decisao 'contratar agora' produz tool-call present_contract_form", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
+			toolCallChunk("tc-cf-1", "present_contract_form", { administradora: "ANCORA" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// nao vaza a mecanica da UI ("preencha o formulario", "digite no campo")
+		expect(text).not.toMatch(/preencha o formul[áa]rio|digite seu cpf no campo/i);
+	});
+
+	it("regra do prompt: 'contratar agora' acoplado a present_contract_form (<400 chars)", () => {
+		const re = /contratar agora[\s\S]{0,400}present_contract_form/i;
+		expect(
+			re.test(SPECIALIST_BASE_PROMPT),
+			"'contratar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
+		).toBe(true);
+	});
+});
+
+describe("FEAT-CONTEMPLATION-DIAL — simulador-agulha (passo 4)", () => {
+	it("cassette: agent chama present_contemplation_dial com os dados do plano", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Dá pra ver quando você consegue ser contemplado aqui:"),
+			toolCallChunk("tc-dial-1", "present_contemplation_dial", {
+				category: "auto",
+				creditValue: 50000,
+				termMonths: 80,
+				monthlyPayment: 600,
+				initialTargetMonth: 6,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("present_contemplation_dial");
+	});
+
+	it("estrutural: present_contemplation_dial e PRESENTATION_TOOL e renderiza no WhatsApp", () => {
+		expect(PRESENTATION_TOOLS.has("present_contemplation_dial")).toBe(true);
+		expect(
+			artifactToWhatsApp("contemplation_dial", {
+				creditValue: 50000,
+				termMonths: 80,
+				monthlyPayment: 600,
+			}),
+		).not.toBeNull();
+	});
+});
+
+// ============================================================================
+// CENARIO — BUG-REVEAL-LOOP — agent preso re-apresentando os cards do reveal
+// ----------------------------------------------------------------------------
+// Real (Kairo, print 2026-06-02, persona Rafael/auto): depois de ver
+// comparison_table + recommendation_card + simulation_result, a CADA afirmativo
+// do usuario ("bora", "ta otimo") o agent RE-DISPARAVA o reveal inteiro (loop
+// nos cards mockados) e NUNCA cruzava pro present_decision_prompt → passo 5.
+// "Nao ta puxando da plataforma nova."
+//
+// Fix (espelha searchDispatched):
+//   - gate "decision" no funil (qualify-state) dirigido pelo orquestrador;
+//   - guard anti-re-reveal no runner.ts (suprime cards de descoberta re-emitidos);
+//   - buildDecisionPromptDirective proibe re-apresentar.
+//
+// Defesa estrutural detalhada:
+//   - src/lib/agent/qualify-state.decision-gate.test.ts (gate puro)
+//   - src/lib/agent/orchestrator/decision-advancement.test.ts (wiring)
+// Aqui: cassette do loop observado + acoplamento ao detector/guard.
+// ============================================================================
+
+describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
+	// Meta de conversa que JA completou qualify + reveal (o usuario viu tudo).
+	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "rafael-auto",
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMax: 100_000,
+				monthlyBudget: 1_600,
+				prazoMeses: 0,
+				objetivo: "contemplacao_rapida",
+				hasLance: "yes",
+				lanceEmbutido: true,
+			},
+			searchDispatched: true,
+			revealCompleted: true,
+			...over,
+		};
+	}
+
+	const REVEAL_TOOLS = new Set([
+		"search_groups",
+		"recommend_groups",
+		"simulate_quota",
+		"present_comparison_table",
+		"present_recommendation_card",
+		"present_simulation_result",
+	]);
+
+	it("cassette: stream do bug — 'ta otimo' re-emite comparison + recommendation + simulation", async () => {
+		// Reproducao fiel do print: o usuario disse "ta otimo" (afirmativo, SEM
+		// pedir mudanca) e o agent re-rodou o reveal inteiro.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu buscar as melhores opções na sua faixa!"),
+			toolCallChunk("tc-1", "search_groups", { category: "auto", creditMax: 100000 }),
+			toolCallChunk("tc-2", "present_comparison_table", { groups: [{ administradora: "Porto Seguro" }] }),
+			toolCallChunk("tc-3", "recommend_groups", { category: "auto" }),
+			toolCallChunk("tc-4", "present_recommendation_card", { administradora: "Porto Seguro" }),
+			toolCallChunk("tc-5", "present_simulation_result", { administradora: "Porto Seguro" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const revealCount = toolCalls.filter((tc) => REVEAL_TOOLS.has(tc.toolName)).length;
+		// O cassette do BUG tem o reveal inteiro re-disparado num turno de afirmativo.
+		expect(revealCount).toBeGreaterThanOrEqual(3);
+		// E NENHUMA tool de avanco (decision/contract) — prova que nao cruzou.
+		expect(toolCalls.some((tc) => tc.toolName === "present_decision_prompt")).toBe(false);
+		expect(toolCalls.some((tc) => tc.toolName === "present_contract_form")).toBe(false);
+	});
+
+	it("trajetoria correta: 'ta otimo' pos-reveal NAO re-emite reveal (so reage curto)", async () => {
+		// O que o agent DEVE fazer: reagir curto e parar. O orquestrador dispara o
+		// card de decisao em seguida (gate "decision"), nao o modelo.
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Show, esse plano encaixa bem no que você pediu."),
+			FINISH_STOP,
+		]);
+		const revealCount = toolCalls.filter((tc) => REVEAL_TOOLS.has(tc.toolName)).length;
+		expect(revealCount).toBe(0);
+		expect(text).toMatch(/encaixa|plano|show/i);
+	});
+
+	it("fix funcional: pos-reveal o funil avanca pro gate 'decision' (nao re-busca)", () => {
+		// Sem o fix, nextGate retornava 'search' (terminal) e nada avancava.
+		expect(nextGate(postRevealMeta(), { hasContactName: true })).toBe("decision");
+		// E o gate dispara nos afirmativos do print (ready_to_proceed/neutral).
+		expect(
+			decideShowGate({
+				gate: "decision",
+				intent: "neutral", // "ta otimo"
+				meta: postRevealMeta(),
+				isUserTurn: true,
+			}),
+		).toBe(true);
+		// Idempotente: depois de disparado, nao volta a "decision".
+		expect(
+			nextGate(postRevealMeta({ decisionDispatched: true }), { hasContactName: true }),
+		).not.toBe("decision");
+	});
+
+	it("acoplamento: runner.ts tem guard anti-re-reveal (revealLoopActive)", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/revealLoopActive/);
+		expect(runnerSrc).toMatch(/comparison_table/);
+		expect(runnerSrc).toMatch(/REVEAL-LOOP/);
+	});
+
+	it("acoplamento: o directive de decisao proibe re-apresentar o reveal", () => {
+		const d = buildDecisionPromptDirective({ administradora: "Porto Seguro" });
+		expect(d).toContain("present_decision_prompt");
+		expect(d).toMatch(/PROIBIDO/);
+		expect(d).toMatch(/search_groups/);
+	});
+
+	it("acoplamento: o prompt tem a regra dura anti-loop pos-reveal", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/anti-loop|REVEAL-LOOP/i);
+		// e cita o gatilho textual do print ("ta otimo") perto da proibicao.
+		const reveal = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(reveal).toMatch(/ta otimo|ta ótimo|faz sentido/);
 	});
 });

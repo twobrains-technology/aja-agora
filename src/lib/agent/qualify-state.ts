@@ -8,7 +8,8 @@ export type Gate =
 	| "timeframe"
 	| "lance"
 	| "lance-embutido"
-	| "search";
+	| "search"
+	| "decision";
 
 export type UserIntent =
 	| "ready_to_proceed"
@@ -42,7 +43,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// lance embutido (educa + opt-in) antes da busca. "maybe"/"no" pulam.
 	if (q.hasLance === "yes" && q.lanceEmbutido === undefined) return "lance-embutido";
 
-	return "search";
+	// Funil pós-qualificação (jornada.docx): search (passo 3+4 reveal) →
+	// decision (fim do passo 4: "Esse plano faz sentido?"). searchDispatched e
+	// decisionDispatched são guards de idempotência — o orquestrador dirige cada
+	// etapa via directive (mirror do search reveal). Sem o passo "decision", o
+	// agent re-disparava o reveal em loop e nunca cruzava pro passo 5
+	// (BUG-REVEAL-LOOP, 2026-06-02).
+	if (!meta.searchDispatched) return "search";
+	if (meta.revealCompleted && !meta.decisionDispatched) return "decision";
+	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
 }
 
 /**
@@ -65,6 +74,15 @@ export function decideShowGate(args: {
 	// Server-authored turns (button click, transition) are always followed by a gate
 	// — that's the whole point of the directive flow.
 	if (!isUserTurn) return true;
+
+	// "decision" — fim do passo 4 (card "Esse plano faz sentido?"). Pós-reveal,
+	// dispara em sinal de avanço do usuário (ready_to_proceed: "bora", "vamos")
+	// OU afirmativo neutro de acolhimento (neutral: "ta otimo", "show", "legal").
+	// NÃO dispara em what-if (providing_info → re-simular), pergunta, dúvida nem
+	// off-topic. Idempotência garantida por decisionDispatched no orquestrador.
+	if (gate === "decision") {
+		return intent === "ready_to_proceed" || intent === "neutral";
+	}
 
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.
 	// Exige sinal EXPLICITO do usuario. Nunca dispara em neutral/asking/doubt/off-topic.

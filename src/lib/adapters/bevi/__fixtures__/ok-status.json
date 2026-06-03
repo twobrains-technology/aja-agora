@@ -1,0 +1,68 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Status da proposta consultado com sucesso.",
+  "data": {
+    "proposalId": "6a1f7953cf5174e43aa4a10a",
+    "statusName": "Documento pessoal",
+    "situation": "pending",
+    "statusDescription": null,
+    "integrationCode": null,
+    "createdAt": "2026-06-02T21:46:12.250Z",
+    "updatedAt": "2026-06-02T21:52:09.166Z",
+    "approvedAt": null,
+    "reprovedAt": null,
+    "changesHistory": [
+      {
+        "previousState": {
+          "title": "Dados Iniciais",
+          "situation": "pending",
+          "systemicValue": "dadosIniciais"
+        },
+        "newState": {
+          "title": "Espera Consulta Corsorcio",
+          "situation": "pending",
+          "systemicValue": "consultaConsorcioBevicred",
+          "updateType": "updateStep"
+        },
+        "changeDate": "2026-06-02T21:46:12.240Z",
+        "createdAt": "2026-06-02T21:46:12.240Z"
+      },
+      {
+        "previousState": {
+          "title": "Espera Consulta Corsorcio",
+          "situation": "pending",
+          "systemicValue": "consultaConsorcioBevicred",
+          "sort": 1
+        },
+        "newState": {
+          "title": "Simulação Consórcio",
+          "situation": "pending",
+          "systemicValue": "simulation",
+          "sort": 5,
+          "updateType": "updateStep"
+        },
+        "changeDate": "2026-06-02T21:46:36.647Z",
+        "createdAt": "2026-06-02T21:46:36.647Z"
+      },
+      {
+        "previousState": {
+          "title": "Simulação Consórcio",
+          "situation": "pending",
+          "systemicValue": "simulation",
+          "sort": 5
+        },
+        "newState": {
+          "title": "Documento pessoal",
+          "situation": "pending",
+          "systemicValue": "documentoPessoal",
+          "sort": 6,
+          "updateType": "updateStep"
+        },
+        "changeDate": "2026-06-02T21:46:53.757Z",
+        "createdAt": "2026-06-02T21:46:53.757Z"
+      }
+    ]
+  }
+}

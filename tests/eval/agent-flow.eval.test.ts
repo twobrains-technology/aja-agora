@@ -241,6 +241,10 @@ async function handleGateEvent(args: {
 
 		case "search":
 		case "doubts-wait":
+		case "decision":
+			// "decision" é dirigido pelo orquestrador (index.ts) dentro do próprio
+			// runTurn — não precisa de clique simulado aqui. O present_decision_prompt
+			// já materializa como artifact no turn do usuário.
 			return null;
 	}
 }
