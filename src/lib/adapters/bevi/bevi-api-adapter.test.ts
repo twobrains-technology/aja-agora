@@ -19,16 +19,46 @@ const CONFIG = {
 // ── Camada 1: proteção contra hit acidental em produção do parceiro ──
 describe("BeviApiAdapter — proteção de token", () => {
 	const prevToken = process.env.BEVI_API_TOKEN;
+	const prevBase = process.env.BEVI_BASE_URL;
+	const prevProduct = process.env.BEVI_PRODUCT_ID;
 	beforeEach(() => {
 		// biome-ignore lint/performance/noDelete: precisamos remover a chave
 		delete process.env.BEVI_API_TOKEN;
+		// biome-ignore lint/performance/noDelete: precisamos remover a chave
+		delete process.env.BEVI_BASE_URL;
+		// biome-ignore lint/performance/noDelete: precisamos remover a chave
+		delete process.env.BEVI_PRODUCT_ID;
 	});
 	afterEach(() => {
 		if (prevToken === undefined) delete process.env.BEVI_API_TOKEN;
 		else process.env.BEVI_API_TOKEN = prevToken;
+		if (prevBase === undefined) delete process.env.BEVI_BASE_URL;
+		else process.env.BEVI_BASE_URL = prevBase;
+		if (prevProduct === undefined) delete process.env.BEVI_PRODUCT_ID;
+		else process.env.BEVI_PRODUCT_ID = prevProduct;
 	});
 
 	it("loadBeviConfigFromEnv lança sem BEVI_API_TOKEN", () => {
+		expect(() => loadBeviConfigFromEnv()).toThrow(/token/i);
+	});
+
+	// BUG-BEVI-EMPTY-ENV (2026-06-04): docker-compose injeta `${BEVI_BASE_URL:-}` =
+	// string vazia, e `??` não cai no default com "" — baseUrl "" quebraria o
+	// fechamento (passo 5) no container com TypeError Invalid URL. Mesma classe
+	// do bug do Trilho B (self-contract-client).
+	it("BEVI_BASE_URL/BEVI_PRODUCT_ID vazios (compose ${VAR:-}) caem nos defaults", () => {
+		process.env.BEVI_API_TOKEN = "token-teste";
+		process.env.BEVI_BASE_URL = "";
+		process.env.BEVI_PRODUCT_ID = "";
+		const config = loadBeviConfigFromEnv();
+		expect(config.baseUrl).toBe("https://api.uxvision.tech/api/v1/credithub/services");
+		expect(config.productId).toBe("6986245b3518ceb00e7844da");
+	});
+
+	it("BEVI_API_TOKEN vazio ou whitespace lança (não vira token '')", () => {
+		process.env.BEVI_API_TOKEN = "";
+		expect(() => loadBeviConfigFromEnv()).toThrow(/token/i);
+		process.env.BEVI_API_TOKEN = "   ";
 		expect(() => loadBeviConfigFromEnv()).toThrow(/token/i);
 	});
 

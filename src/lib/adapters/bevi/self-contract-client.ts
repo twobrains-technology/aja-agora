@@ -28,13 +28,18 @@ const MISSING_HASH =
 	"Sem ele não há descoberta real — e dado mockado é PROIBIDO em runtime " +
 	"(docs/jornada/CONTEXT.md). Ver docs/integracoes/bevi-api-requests.md.";
 
-/** Lê a config do env. Lança sem o hash da loja — sem fallback silencioso. */
+/** Lê a config do env. Lança sem o hash da loja — sem fallback silencioso.
+ *
+ * BUG-BEVI-EMPTY-ENV (2026-06-04): docker-compose injeta `${VAR:-}` = string
+ * VAZIA quando o env não está setado, e `??` não cobre "". Com baseUrl "" o
+ * fetch vira relativo → TypeError Invalid URL em TODO turno de descoberta
+ * ("instabilidade" pro usuário). Vazio/whitespace = ausente, sempre. */
 export function loadSelfContractConfigFromEnv(): SelfContractConfig {
-	const storeHash = process.env.BEVI_SELFCONTRACT_HASH;
+	const storeHash = (process.env.BEVI_SELFCONTRACT_HASH ?? "").trim();
 	if (!storeHash) throw new BeviConfigError(MISSING_HASH, 0);
 	return {
 		baseUrl:
-			process.env.BEVI_SELFCONTRACT_BASE_URL ??
+			(process.env.BEVI_SELFCONTRACT_BASE_URL ?? "").trim() ||
 			"https://core-production-selfcontract-atsb7.ondigitalocean.app",
 		storeHash,
 	};

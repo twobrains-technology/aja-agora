@@ -776,13 +776,35 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		return getDiscoveryAdapter(conversationId);
 	};
 
+	// BUG-BEVI-EMPTY-ENV (2026-06-04): o AI SDK converte o throw da tool em
+	// tool-error pro MODELO ("instabilidade") sem deixar rastro no servidor — um
+	// Invalid URL de config levou horas pra diagnosticar. Todo erro de descoberta
+	// é logado estruturado ANTES de subir.
+	const runDiscovery = async <T>(toolName: string, fn: () => Promise<T>): Promise<T> => {
+		try {
+			return await fn();
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "discovery",
+					tool: toolName,
+					conversation_id: conversationId,
+					error_name: err instanceof Error ? err.name : "unknown",
+					error_message: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			throw err;
+		}
+	};
+
 	const search_groups = tool({
 		description: consorcioTools.search_groups.description,
 		inputSchema: searchGroupsInput,
 		execute: async (args: z.infer<typeof searchGroupsInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return executeSearchGroups(adapter, args);
+			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));
 		},
 	});
 
@@ -792,7 +814,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return executeSimulateQuota(adapter, args);
+			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
 		},
 	});
 
@@ -802,7 +824,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof getRatesInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return executeGetRates(adapter, args);
+			return runDiscovery("get_rates", () => executeGetRates(adapter, args));
 		},
 	});
 
@@ -812,7 +834,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return executeGetGroupDetails(adapter, args);
+			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
 		},
 	});
 
@@ -822,7 +844,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return executeRecommendGroups(adapter, args);
+			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
 		},
 	});
 

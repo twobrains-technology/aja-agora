@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
 import { fixtureDiscoveryAdapter } from "../../../../tests/helpers/fixture-discovery-adapter";
@@ -233,6 +233,44 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 			"present_value_picker",
 		]) {
 			expect(consorcioTools, `tool '${t}' ausente`).toHaveProperty(t);
+		}
+	});
+});
+
+// BUG-BEVI-EMPTY-ENV (2026-06-04, E2E real): a descoberta falhava TODO turno no
+// container ("Tô com uma instabilidade") e NENHUM log saía — o throw do adapter
+// era engolido pelo AI SDK (vira tool-error pro modelo) sem rastro no servidor.
+// Levou horas pra diagnosticar um Invalid URL trivial. Regra: erro de discovery
+// tool é LOGADO estruturado (tool, conversationId, erro) antes de subir.
+describe("observabilidade — erro de descoberta não morre em silêncio", () => {
+	it("search_groups loga erro estruturado (tool + conversationId + mensagem) e relança", async () => {
+		const boom = new TypeError(
+			"Failed to parse URL from /unauth/product-self-contract/create-proposal/x",
+		);
+		__setDiscoveryAdapterFactoryForTests(
+			() =>
+				({
+					searchGroups: async () => {
+						throw boom;
+					},
+				}) as never,
+		);
+		const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const tools = buildConsorcioTools({ conversationId: "conv-discovery-err" });
+			const exec = tools.search_groups.execute;
+			if (!exec) throw new Error("search_groups.execute undefined");
+			await expect(
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				exec({ category: "auto", creditMax: 60_000 }, { toolCallId: "t", messages: [] } as any),
+			).rejects.toThrow(/parse URL/);
+			const logged = spy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+			expect(logged, "deve logar a tool que falhou").toContain("search_groups");
+			expect(logged, "deve logar a conversa").toContain("conv-discovery-err");
+			expect(logged, "deve logar a mensagem real do erro").toContain("parse URL");
+		} finally {
+			spy.mockRestore();
+			__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
 		}
 	});
 });

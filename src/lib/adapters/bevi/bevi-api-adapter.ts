@@ -41,17 +41,23 @@ interface BeviEnvelope<T = unknown> {
 
 const NOT_AVAILABLE =
 	"BeviApiAdapter exige BEVI_API_TOKEN (loja parceira liberada na AGX). " +
-	"Use PROPOSAL_GATEWAY=mock sem token. Ver docs/integracoes/bevi-api-parceiro-spec.md.";
+	"Não existe fallback fictício em runtime — em teste injete um gateway via " +
+	"__setProposalGatewayForTests. Ver docs/integracoes/bevi-api-parceiro-spec.md.";
 
 /** Lê a config do env. Lança se faltar token — proteção contra hit acidental em
- * produção do parceiro (criar proposta = dado real). */
+ * produção do parceiro (criar proposta = dado real).
+ *
+ * BUG-BEVI-EMPTY-ENV (2026-06-04): compose injeta `${VAR:-}` = string vazia e
+ * `??` não cobre "" — vazio/whitespace = ausente (mesma classe do Trilho B). */
 export function loadBeviConfigFromEnv(): BeviApiConfig {
-	const apiToken = process.env.BEVI_API_TOKEN;
+	const apiToken = (process.env.BEVI_API_TOKEN ?? "").trim();
 	if (!apiToken) throw new BeviConfigError(NOT_AVAILABLE, 0);
 	return {
-		baseUrl: process.env.BEVI_BASE_URL ?? "https://api.uxvision.tech/api/v1/credithub/services",
+		baseUrl:
+			(process.env.BEVI_BASE_URL ?? "").trim() ||
+			"https://api.uxvision.tech/api/v1/credithub/services",
 		apiToken,
-		productId: process.env.BEVI_PRODUCT_ID ?? "6986245b3518ceb00e7844da",
+		productId: (process.env.BEVI_PRODUCT_ID ?? "").trim() || "6986245b3518ceb00e7844da",
 	};
 }
 

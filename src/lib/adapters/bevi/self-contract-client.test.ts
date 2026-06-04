@@ -15,18 +15,50 @@ const CONFIG = {
 
 // ── Proteção: sem hash da loja no env, falha alto (criar proposta = dado real) ──
 describe("BeviSelfContractClient — proteção de config", () => {
-	const prev = process.env.BEVI_SELFCONTRACT_HASH;
+	const prevHash = process.env.BEVI_SELFCONTRACT_HASH;
+	const prevBase = process.env.BEVI_SELFCONTRACT_BASE_URL;
 	beforeEach(() => {
 		// biome-ignore lint/performance/noDelete: precisamos remover a chave
 		delete process.env.BEVI_SELFCONTRACT_HASH;
+		// biome-ignore lint/performance/noDelete: precisamos remover a chave
+		delete process.env.BEVI_SELFCONTRACT_BASE_URL;
 	});
 	afterEach(() => {
-		if (prev === undefined) delete process.env.BEVI_SELFCONTRACT_HASH;
-		else process.env.BEVI_SELFCONTRACT_HASH = prev;
+		if (prevHash === undefined) delete process.env.BEVI_SELFCONTRACT_HASH;
+		else process.env.BEVI_SELFCONTRACT_HASH = prevHash;
+		if (prevBase === undefined) delete process.env.BEVI_SELFCONTRACT_BASE_URL;
+		else process.env.BEVI_SELFCONTRACT_BASE_URL = prevBase;
 	});
 
 	it("loadSelfContractConfigFromEnv lança sem BEVI_SELFCONTRACT_HASH", () => {
 		expect(() => loadSelfContractConfigFromEnv()).toThrow(/BEVI_SELFCONTRACT_HASH/);
+	});
+
+	// BUG-BEVI-EMPTY-ENV (2026-06-04, E2E real): docker-compose injeta
+	// `${BEVI_SELFCONTRACT_BASE_URL:-}` = STRING VAZIA quando o env não está
+	// setado — e `??` não cai no default com "". Resultado em produção do
+	// container: baseUrl "" → fetch("/unauth/...") → TypeError Invalid URL →
+	// search_groups falha TODO turno e o agente narra "instabilidade".
+	it("BEVI_SELFCONTRACT_BASE_URL vazio (compose ${VAR:-}) cai no default de produção", () => {
+		process.env.BEVI_SELFCONTRACT_HASH = "hash-loja";
+		process.env.BEVI_SELFCONTRACT_BASE_URL = "";
+		const config = loadSelfContractConfigFromEnv();
+		expect(config.baseUrl).toBe("https://core-production-selfcontract-atsb7.ondigitalocean.app");
+	});
+
+	it("BEVI_SELFCONTRACT_HASH vazio ou whitespace lança (não vira loja '')", () => {
+		process.env.BEVI_SELFCONTRACT_HASH = "";
+		expect(() => loadSelfContractConfigFromEnv()).toThrow(/BEVI_SELFCONTRACT_HASH/);
+		process.env.BEVI_SELFCONTRACT_HASH = "   ";
+		expect(() => loadSelfContractConfigFromEnv()).toThrow(/BEVI_SELFCONTRACT_HASH/);
+	});
+
+	it("valores com whitespace acidental são trimados", () => {
+		process.env.BEVI_SELFCONTRACT_HASH = " hash-loja ";
+		process.env.BEVI_SELFCONTRACT_BASE_URL = " https://selfcontract.test ";
+		const config = loadSelfContractConfigFromEnv();
+		expect(config.storeHash).toBe("hash-loja");
+		expect(config.baseUrl).toBe("https://selfcontract.test");
 	});
 
 	it("constrói com config explícita", () => {
