@@ -2313,6 +2313,9 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 				hasLance: "yes",
 				lanceEmbutido: true,
 			},
+			// D1 (gate identify): pós-reveal implica identidade coletada — a busca
+			// nem teria liberado sem ela (tripwire do pipeSearchSummaryTurn).
+			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
 			...over,
@@ -2400,5 +2403,70 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		// e cita o gatilho textual do print ("ta otimo") perto da proibicao.
 		const reveal = SPECIALIST_BASE_PROMPT.toLowerCase();
 		expect(reveal).toMatch(/ta otimo|ta ótimo|faz sentido/);
+	});
+});
+
+// ============================================================================
+// GATE-IDENTIFY (D1, docs/jornada/CONTEXT.md) — CPF antecipado antes da busca
+// ----------------------------------------------------------------------------
+// A Bevi exige CPF+celular+LGPD ANTES de simular (Trilho B é proposta-first).
+// Regressões cobertas: (a) busca liberando SEM identidade (voltaria a servir
+// dado fictício ou quebrar), (b) tripwire removido dos adapters web/whatsapp,
+// (c) CPF persistido em claro, (d) captura textual aceitando CPF com DV errado.
+// Testes detalhados: qualify-state.identify-gate.test.ts, identity.test.ts.
+// ============================================================================
+
+describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
+	function qualifiedSemIdentidade(): ConversationMetadata {
+		return {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMax: 100_000,
+				prazoMeses: 0,
+				objetivo: "contemplacao_rapida",
+				hasLance: "no",
+			},
+		};
+	}
+
+	it("funil: qualificacao completa SEM identidade vai pro gate identify — NUNCA search", () => {
+		expect(nextGate(qualifiedSemIdentidade(), { hasContactName: true })).toBe("identify");
+	});
+
+	it("funil: com identidade coletada a busca libera", () => {
+		expect(
+			nextGate({ ...qualifiedSemIdentidade(), identityCollected: true }, { hasContactName: true }),
+		).toBe("search");
+	});
+
+	it("acoplamento: pipeSearchSummaryTurn (web) tem o tripwire de identidade", () => {
+		const src = readSource("src/lib/web/adapter.ts");
+		expect(src).toMatch(/identityCollected/);
+		expect(src).toMatch(/pipeGatePrompt\(\{ conversationId, gate: "identify"/);
+	});
+
+	it("acoplamento: runSearchSummaryWithOrchestrator (whatsapp) tem o tripwire", () => {
+		const src = readSource("src/lib/whatsapp/adapter.ts");
+		expect(src).toMatch(/identityCollected/);
+		expect(src).toMatch(/IDENTIFY_WHATSAPP_PROMPT/);
+	});
+
+	it("acoplamento: identidade NUNCA persiste em claro (AES-256-GCM + chave de env)", () => {
+		const src = readSource("src/lib/conversation/identity.ts");
+		expect(src).toMatch(/aes-256-gcm/);
+		expect(src).toMatch(/IDENTITY_ENC_KEY/);
+		// storeIdentity passa pelo encryptIdentity — nada de cpf cru no meta.
+		expect(src).toMatch(/identityEnc: encryptIdentity\(identity\)/);
+	});
+
+	it("captura textual (whatsapp) so aceita CPF com digito verificador valido", async () => {
+		const { extractCpf, waIdToCelular } = await import("@/lib/whatsapp/identify-capture");
+		expect(extractCpf("meu cpf é 529.982.247-25")).toBe("52998224725");
+		expect(extractCpf("é 12345678900 pode ser?")).toBeNull(); // DV errado
+		expect(extractCpf("nao quero passar agora")).toBeNull();
+		// waId com DDI 55 vira DDD+numero (formato que a Bevi espera).
+		expect(waIdToCelular("5562999887766")).toBe("62999887766");
 	});
 });

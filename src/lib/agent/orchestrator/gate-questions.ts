@@ -29,6 +29,15 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 				"precisar ter todo o lance em dinheiro hoje.\n\n" +
 				"Quer considerar esse tipo de lance nas suas simulações?"
 			);
+		case "identify":
+			// Gancho literal do docx (fim do passo 2) + por quê do CPF (D1: a Bevi
+			// exige CPF+celular+LGPD antes de simular — sem isso não há oferta real).
+			return (
+				"Com essas informações, a Aja Agora vai analisar várias administradoras e " +
+				"selecionar as opções mais aderentes ao seu perfil e objetivo.\n\n" +
+				"Pra buscar as ofertas reais nas administradoras, preciso do seu CPF e celular — " +
+				"seus dados ficam protegidos (LGPD) e isso não é compromisso nenhum, tá?"
+			);
 		case "doubts-wait":
 		case "search":
 		case "decision":

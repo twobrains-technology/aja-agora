@@ -54,8 +54,12 @@ async function gateInteractive(
 			return lanceQuestionToWhatsApp(prefix).interactive ?? null;
 		case "lance-embutido":
 			return lanceEmbutidoQuestionToWhatsApp(prefix).interactive ?? null;
+		case "identify":
 		case "doubts-wait":
 		case "search":
+		case "decision":
+			// "identify" não tem interactive — é coleta textual de CPF (fireGate
+			// manda o prompt como texto; captura em identify-capture.ts).
 			return null;
 	}
 }
@@ -265,6 +269,13 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	const { from, conversationId } = args;
 	const refreshed = await reloadMeta(conversationId);
 	if (refreshed.searchDispatched) return;
+	// Tripwire D1: busca real exige identidade (a Bevi não simula sem CPF).
+	// Sem ela, pede o CPF por texto (celular = o próprio waId) — nunca buscar.
+	if (!refreshed.identityCollected) {
+		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
+		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		return;
+	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
@@ -281,6 +292,12 @@ export async function fireGate(
 ): Promise<void> {
 	if (gate === "consent" && !meta.consentOffered) {
 		await persistMeta(conversationId, { ...meta, consentOffered: true });
+	}
+	// "identify" é textual (form não existe no WhatsApp): prompt de CPF + LGPD.
+	if (gate === "identify") {
+		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
+		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		return;
 	}
 	const interactive = await gateInteractive(gate, conversationId, prefix);
 	if (interactive) await sendInteractiveMessage(from, interactive);

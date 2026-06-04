@@ -57,6 +57,13 @@ export type ConversationMetadata = {
 	doubtsAddressed?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
+	/** Identidade (CPF+celular+LGPD) coletada no gate "identify" — fim do passo 2
+	 * (D1, docs/jornada/CONTEXT.md). A Bevi exige antes de simular; a busca real
+	 * (passo 3) só libera com isto true. */
+	identityCollected?: boolean;
+	/** Identidade cifrada (AES-256-GCM via IDENTITY_ENC_KEY) — NUNCA em claro.
+	 * Ler/escrever apenas via src/lib/conversation/identity.ts. */
+	identityEnc?: string;
 	/** Idempotency guard — prevents re-firing the summary + search reveal. */
 	searchDispatched?: boolean;
 	/** Set once the reveal turn produced a simulation_result/recommendation_card

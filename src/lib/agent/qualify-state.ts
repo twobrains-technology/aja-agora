@@ -8,6 +8,7 @@ export type Gate =
 	| "timeframe"
 	| "lance"
 	| "lance-embutido"
+	| "identify"
 	| "search"
 	| "decision";
 
@@ -42,6 +43,12 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// Jornada do doc: quem TEM reserva pra lance ("yes") passa pelo gate de
 	// lance embutido (educa + opt-in) antes da busca. "maybe"/"no" pulam.
 	if (q.hasLance === "yes" && q.lanceEmbutido === undefined) return "lance-embutido";
+
+	// Gate "identify" (D1, docs/jornada/CONTEXT.md): a Bevi exige CPF+celular+LGPD
+	// ANTES de simular — não existe descoberta anônima com dado real. Coleta ao
+	// fim do passo 2, no gancho do docx ("Com essas informações, a Aja Agora vai
+	// analisar várias administradoras…"). Sem identidade, a busca NÃO libera.
+	if (!meta.identityCollected) return "identify";
 
 	// Funil pós-qualificação (jornada.docx): search (passo 3+4 reveal) →
 	// decision (fim do passo 4: "Esse plano faz sentido?"). searchDispatched e

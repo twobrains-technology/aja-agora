@@ -13,6 +13,10 @@ function baseMeta(): ConversationMetadata {
 		experiencePrev: "returning",
 		qualifyConsented: true,
 		qualifyAnswers: { creditMax: 400_000, monthlyBudget: 3_000, prazoMeses: 0 },
+		// D1 (gate identify): identidade já coletada — este arquivo testa SÓ o
+		// sub-fluxo de lance embutido; o gate identify tem suite própria
+		// (qualify-state.identify-gate.test.ts).
+		identityCollected: true,
 	};
 }
 

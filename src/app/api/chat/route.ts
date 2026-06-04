@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
-import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import {
 	buildCreditReactionDirective,
 	buildExperienceDoubtsDirective,
@@ -20,9 +19,11 @@ import {
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
+import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/utils/simulator-clock-wrap";
 import {
 	pipeDirectiveTurn,
+	pipeGatePrompt,
 	pipeSearchSummaryTurn,
 	pipeTransitionTurn,
 	pipeUserTurn,
@@ -575,6 +577,34 @@ export async function POST(req: NextRequest) {
 							});
 							return;
 						}
+						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+						return;
+					}
+
+					// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
+					// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
+					// pipeSearchSummaryTurn re-emite este gate (tripwire).
+					if (action.gate === "identify") {
+						const { cpf, celular, lgpd } = action.value;
+						const celularDigits = (celular ?? "").replace(/\D/g, "");
+						if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
+							const textId = crypto.randomUUID();
+							writer.write({ type: "text-start", id: textId });
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta: !isValidCpf(cpf)
+									? "Esse CPF não confere — dá uma olhadinha nos números?"
+									: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
+							});
+							writer.write({ type: "text-end", id: textId });
+							await pipeGatePrompt({ conversationId, gate: "identify", writer });
+							return;
+						}
+						await storeIdentity(conversationId, { cpf, celular: celularDigits });
+						// Celular vira contato do lead (mesma régua do whatsapp_optin).
+						const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+						await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
 						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
 						return;
 					}

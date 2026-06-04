@@ -80,6 +80,31 @@ export async function processTextMessage(
 			return;
 		}
 
+		// Gate "identify" (D1): funil aguardando CPF → captura textual determinística
+		// (valida DV, persiste cifrado, celular = waId) sem turno de agente.
+		{
+			const { captureIdentifyText, IDENTIFY_CONFIRMED_REPLY, IDENTIFY_INVALID_CPF_REPLY } =
+				await import("./identify-capture");
+			const capture = await captureIdentifyText(from, text);
+			if (capture.handled) {
+				if (capture.outcome === "invalid") {
+					await sendTextMessage(from, IDENTIFY_INVALID_CPF_REPLY);
+					return;
+				}
+				await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
+				const conv = await db.query.conversations.findFirst({
+					where: eq(conversations.waId, from),
+				});
+				if (conv) {
+					const { runSearchSummaryWithOrchestrator } = await import("./adapter");
+					await withSimulatorClockIfNeeded(conv, () =>
+						runSearchSummaryWithOrchestrator({ from, conversationId: conv.id }),
+					);
+				}
+				return;
+			}
+		}
+
 		// Typing indicator: Meta API real precisa de messageId; simulador precisa
 		// que o painel mostre as bolinhas, sem messageId Meta — publica no bus direto.
 		if (isSimulatedWaId(from)) {

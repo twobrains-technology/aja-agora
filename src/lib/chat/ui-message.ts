@@ -30,6 +30,13 @@ export type GatePartData =
 			gate: "credit";
 			category?: "imovel" | "auto" | "moto" | "servicos";
 			fields: SliderField[];
+	  }
+	| {
+			// Gate "identify" (D1, docs/jornada/CONTEXT.md) — form CPF + celular +
+			// aceite LGPD ao fim do passo 2. A Bevi exige identidade antes de simular.
+			kind: "identity";
+			gate: "identify";
+			prefilledPhone?: string | null;
 	  };
 
 export type TransitionPartData = {

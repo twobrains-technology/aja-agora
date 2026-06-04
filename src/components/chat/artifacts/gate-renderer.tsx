@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { type GateAction, useChatContext } from "@/lib/chat/provider";
 import type { GatePartData, SliderField } from "@/lib/chat/ui-message";
+import { GateIdentityForm } from "./gate-identity-form";
 import { GateQuickReply } from "./gate-quick-reply";
 import { ValuePicker, type ValuePickerField } from "./value-picker";
 
@@ -56,6 +57,10 @@ export function GateRenderer({
 
 	if (payload.kind === "chips") {
 		return <GateQuickReply payload={payload} active={active} />;
+	}
+
+	if (payload.kind === "identity") {
+		return <GateIdentityForm prefilledPhone={payload.prefilledPhone} active={active} />;
 	}
 
 	return (

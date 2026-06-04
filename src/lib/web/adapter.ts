@@ -97,10 +97,35 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 				gate: "lance-embutido",
 				options: LANCE_EMBUTIDO_OPTIONS.map((o) => ({ value: o.token, label: o.title })),
 			};
+		case "identify":
+			// D1: form CPF + celular + LGPD antes da busca (a Bevi exige pra simular).
+			return { kind: "identity", gate: "identify", prefilledPhone: null };
 		case "doubts-wait":
 		case "search":
+		case "decision":
 			return null;
 	}
+}
+
+/** Emite a pergunta + card de um gate DIRETO no stream (sem turno de LLM).
+ * Usado pelos handlers determinísticos do route (ex.: pós-lance → identify). */
+export async function pipeGatePrompt(args: {
+	conversationId: string;
+	gate: Gate;
+	writer: Writer;
+}): Promise<void> {
+	const { conversationId, gate, writer } = args;
+	const data = await gatePartData(gate, conversationId);
+	if (!data) return;
+	const meta = await reloadMeta(conversationId);
+	const question = gateQuestion(gate, meta.currentCategory);
+	if (question) {
+		const id = crypto.randomUUID();
+		writer.write({ type: "text-start", id });
+		writer.write({ type: "text-delta", id, delta: question });
+		writer.write({ type: "text-end", id });
+	}
+	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
 }
 
 export const WELCOME_OPTIONS: GatePartOption[] = [
@@ -328,6 +353,12 @@ export async function pipeSearchSummaryTurn(args: {
 	const { conversationId, contactName, writer, userKey } = args;
 	const refreshed = await reloadMeta(conversationId);
 	if (refreshed.searchDispatched) return;
+	// Tripwire D1: a busca real exige identidade (a Bevi não simula sem CPF).
+	// Sem identityCollected, o caminho certo é o gate "identify" — nunca buscar.
+	if (!refreshed.identityCollected) {
+		await pipeGatePrompt({ conversationId, gate: "identify", writer });
+		return;
+	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });

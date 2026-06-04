@@ -39,6 +39,9 @@ function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationM
 			lanceEmbutido: true,
 			lanceEmbutidoPercent: 30,
 		},
+		// D1 (gate identify): pós-busca implica identidade coletada — sem ela a
+		// busca nem teria liberado (tripwire). Suite do identify é separada.
+		identityCollected: true,
 		searchDispatched: true,
 		revealCompleted: true,
 		...over,
