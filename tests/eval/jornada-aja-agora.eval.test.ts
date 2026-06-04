@@ -177,7 +177,9 @@ function describeArtifact(a: { type: string; payload: Record<string, unknown> })
 		case "real_offer":
 			return `[carta REAL confirmada pela administradora: ${p.administradora ?? "?"} — carta R$ ${brl(p.creditValue)}, parcela R$ ${brl(p.monthlyPayment)}/mês — botão Confirmar]`;
 		case "signature_handoff":
-			return `[encaminhamento pra assinatura digital da ${p.administradora ?? "administradora"} — link seguro]`;
+			// DES-1: o link é o PDF da PROPOSTA (não assinatura). Assinatura/efetivação
+			// é etapa posterior da mesa.
+			return `[sua proposta de consórcio da ${p.administradora ?? "administradora"} está pronta — link/PDF da proposta, continuidade da Aja Agora]`;
 		case "document_upload":
 			return "[upload/captura de documentos (opcional agora)]";
 		default:
@@ -885,7 +887,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(t).toMatch(/segue com você até a contemplação/);
 	});
 
-	it("passo 5 — assinatura digital + documentos encaminhados (sem trocar de empresa)", () => {
+	it("passo 5 — proposta pronta + documentos encaminhados (sem trocar de empresa, DES-1)", () => {
+		// DES-1: signature_handoff entrega o PDF da PROPOSTA (não assinatura — essa
+		// é etapa posterior da mesa). document_upload é o portal de documentos.
 		const types = cap.fechamento?.artifacts.map((a) => a.type) ?? [];
 		expect(types).toContain("signature_handoff");
 		expect(types).toContain("document_upload");

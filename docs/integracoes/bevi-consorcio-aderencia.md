@@ -24,7 +24,15 @@
 
 A API do Bevi/AGX é um **motor de auto-contratação (AC) "proposta-first"**: o fluxo
 começa identificando o cliente (CPF + aceites LGPD), simula, gera uma oferta e termina
-**redirecionando para o portal do Bevi** (`edigital.beviconsorcio.com.br`) para assinatura.
+**entregando o PDF da PROPOSTA de consórcio** (o `consortiumProposalLink` do `choose_offer`
+faz `302` para um PDF no S3, `Content-Disposition: attachment`).
+
+> ⚠️ **Correção (2026-06-04, verificado seguindo redirects reais):** versões anteriores
+> deste doc afirmavam que o `consortiumProposalLink` redireciona para
+> `edigital.beviconsorcio.com.br` para **assinatura**. **Isso está incorreto** — o link é
+> o **PDF da proposta** (download), não um portal de assinatura. A
+> assinatura/efetivação é **etapa posterior da mesa** (back office), fora do que a API de
+> Parceiro automatiza hoje. Ver `docs/jornada/CONTEXT.md` → DES-1.
 
 | Veredito por etapa do funil Aja | Aderência | Resumo |
 |---|---|---|

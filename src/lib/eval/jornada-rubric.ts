@@ -66,7 +66,7 @@ export const jornadaJudgeResultSchema = z.object({
 		.min(0)
 		.max(1)
 		.describe(
-			"v2: encaminhou pra assinatura digital da administradora SEM o cliente sentir que 'mudou de empresa' (continuidade de voz da Aja Agora)",
+			"v2: entregou a proposta/próximos passos da administradora SEM o cliente sentir que 'mudou de empresa' (continuidade de voz da Aja Agora). NB: a assinatura em si é etapa posterior da mesa — DES-1; não exigir assinatura embutida.",
 		),
 	flags: z.object({
 		pulouPasso: z.boolean(),
@@ -161,15 +161,20 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 
 ### passo 5 — Contratar
 - Fechou rumo à CONTRATAÇÃO REAL: dados (CPF/celular/LGPD) → proposta na
-  administradora → carta real confirmada → assinatura digital → documentos.
+  administradora → carta real confirmada → PROPOSTA pronta (PDF) + documentos.
+- DESVIO DE ENTENDIMENTO DES-1 (não cobrar): o docx fala em "assinatura digital"
+  no fechamento, mas a API entrega o PDF da PROPOSTA; a assinatura/efetivação é
+  ETAPA POSTERIOR DA MESA (back office). NÃO penalize ausência de assinatura
+  embutida — ela não é deste passo. O que se avalia é a entrega da proposta +
+  a continuidade.
 - REFORÇOS LITERAIS (avalie em reforcosPasso5; ausência = flag faltaramReforcos):
   "você está contratando um consórcio da administradora X, escolhida pela Aja Agora
   para o seu perfil" E "a Aja Agora segue com você até a contemplação e depois dela".
-- Encaminhou pra assinatura digital sem o cliente sentir que "mudou de empresa"
+- Entregou a proposta sem o cliente sentir que "mudou de empresa"
   (avalie em assinaturaSemTrocarEmpresa) — a voz continua sendo da Aja Agora, o
-  link da administradora é apresentado como continuidade.
+  link/PDF da administradora é apresentado como continuidade.
 - Enviou o RESUMO DA CONTRATAÇÃO por WhatsApp (administradora, grupo, carta,
-  parcela, link de assinatura) — ausência total = flag faltouResumoContratacao.
+  parcela, link da proposta) — ausência total = flag faltouResumoContratacao.
 - Fechou com o literal "Parabéns! Agora você está oficialmente mais perto da sua conquista!"
   — ausência = flag faltouParabens.
 - IMPORTANTE: o fechamento canônico NÃO é captura de lead ("deixa seu contato que a

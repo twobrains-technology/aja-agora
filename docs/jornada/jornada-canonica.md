@@ -47,7 +47,7 @@
 
 - Coleta de dados pessoais básicos.
 - Upload ou captura de documentos.
-- Encaminhamento pro fluxo de **assinatura digital da administradora escolhida** (sem o cliente sentir que "mudou de empresa").
+- Encaminhamento pro fluxo de **assinatura digital da administradora escolhida** (sem o cliente sentir que "mudou de empresa"). ⚠️ **Desvio de entendimento (DES-1, ver CONTEXT.md):** a API de Parceiro não entrega assinatura digital self-service aqui — o `consortiumProposalLink` é o **PDF da proposta**; a **assinatura/efetivação é etapa posterior da mesa** (back office). Hoje o fechamento entrega a proposta pronta + coleta de documentos; assinatura embutida depende de negociação com a Bevi.
 - Sempre reforçar: "Você está contratando um consórcio da **administradora X, escolhida pela Aja Agora** para o seu perfil." · "A Aja Agora **segue com você até a contemplação** e depois dela."
 - **Mandar por WhatsApp/e-mail o resumo da contratação.**
 - "Parabéns! Agora você está oficialmente mais perto da sua conquista!"

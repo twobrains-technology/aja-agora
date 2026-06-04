@@ -16,6 +16,41 @@
 3. **O fluxo da Bevi tem que ser integrado DENTRO da jornada canônica.** Bevi é a fonte única de grupos, ofertas, simulações e fechamento.
 4. **Simulador (passo 4):** o Bernardo (stakeholder, dono do conceito do "simulador-agulha") ainda **não especificou** como ele deve ser. Nós propomos primeiro → [`proposta-simulador.md`](./proposta-simulador.md).
 
+## Desvios de entendimento do stakeholder (docx × realidade da API)
+
+> O `jornada-canonica.md` é REGRA, mas é a visão do stakeholder — e pode conter
+> **desvios de entendimento** sobre o que a API da Bevi realmente faz. Quando a
+> realidade técnica contradiz uma premissa do docx, registramos aqui o desvio (o
+> docx não vira "defeito do código"; vira premissa a recalibrar com o cliente).
+
+### DES-1 — "Assinatura digital no fechamento" (docx passo 5) é um desvio
+
+- **O docx diz** (passo 5, linha 50): *"Encaminhamento pro fluxo de assinatura digital
+  da administradora escolhida (sem o cliente sentir que 'mudou de empresa')"* — assume
+  que o fechamento termina numa **assinatura digital self-service**.
+- **A realidade verificada (2026-06-04, seguindo os redirects reais):** o
+  `consortiumProposalLink` devolvido pelo `choose_offer` da API de Parceiro **NÃO é
+  um portal de assinatura**. Ele é um link encurtado (`uselink.me`) que faz `302` para
+  um **PDF da PROPOSTA de consórcio** no S3 (`indiky-production-bucket…_consortium.pdf`,
+  `Content-Disposition: attachment` → o browser **baixa** o arquivo). O PDF contém a
+  simulação consolidada (cliente, segmento, crédito, prazo, parcela, taxa adm, fundo,
+  próxima assembleia) — é o **artefato de proposta**, não um documento assinável online.
+  (A doc `bevi-consorcio-aderencia.md` supunha redirect para `edigital.beviconsorcio.com.br`
+  — **isso estava incorreto**; corrigido.)
+- **Verdade de negócio (Kairo, 2026-06-04):** a **assinatura/efetivação é da MESA** —
+  etapa posterior, conduzida pela equipe (back office), fora do escopo do fechamento via
+  API por enquanto. *"A questão da assinatura não faz sentido agora porque é um passo
+  posterior."*
+- **Decisão de produto:** o card de fechamento (`signature_handoff`) **não promete mais
+  "assinatura"** — apresenta a **proposta pronta** ("Sua proposta está pronta" / "Ver
+  minha proposta") mantendo a continuidade da Aja Agora ("a gente segue com você até a
+  contemplação"). O artifact-type interno segue `signature_handoff` (compat); só a
+  semântica/copy mudou. O upload de documentos (`document_upload`, portal
+  `conexia.agxsoftware.com`) continua válido e é coisa diferente do PDF de proposta.
+- **Pendência com a Bevi:** existe fluxo de assinatura digital via API/embedded/white-label
+  + webhook de conclusão? (já estava na lista de perguntas ao parceiro, Q10 da aderência).
+  Enquanto não houver, "assinatura sem redirect" não é prometível.
+
 ## O que a auditoria de 2026-06-03/04 encontrou (resumo)
 
 | Achado | Evidência |
