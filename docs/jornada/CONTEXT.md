@@ -40,7 +40,23 @@
 - **D3 — Ambiente.** Sem mock, dev/E2E batem na Bevi de verdade. ⚠️ Risco operacional: `create-proposal` cria proposta REAL (1 ativa por device). Precisamos de hash/loja de homologação da Bevi ou política de CPF de teste antes de E2E automatizado contra o trilho real. **Pendência a resolver com a Bevi.**
 - **D4 — Eval Camada 3 com LLM-judge.** Rubric dedicada da jornada (fidelidade por passo + tom do docx + fechamento-em-contrato), via `judgeConversation` existente. Design completo produzido na auditoria.
 
+## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
+
+| Item | Commit | Estado |
+|---|---|---|
+| `BeviSelfContractAdapter` + client Trilho B (descoberta real, cache por conversa) | `9992678` | ✅ TDD, fixtures reais |
+| Gate `identify` — CPF antecipado, cifrado AES-256-GCM (web form + WhatsApp textual) | `8cd4ed9` | ✅ |
+| **Mock de runtime DELETADO** (`adapters/mock/` inteiro; gateway mock fora do runtime; evals com seam de fixtures) | `8495807` | ✅ |
+| Gate `lance-value` ("Qual valor aproximado?") — fim da derivação silenciosa de 30% | `82875d8` | ✅ |
+| Passo 4 fiel: recomendado PRIMEIRO, oferta determinística do simulador (dial do Bernardo), outras opções determinístico | `6aea8f5` | ✅ |
+| LLM-as-judge da jornada (rubric por passo do docx, nightly) | Fase 5 | ✅ |
+| Fluxo de caixa mês a mês (docx passo 4) | — | ⏳ aguarda desenho com Bernardo |
+| Pré-preencher/pular CPF no `contract_form` do passo 5 (identidade já coletada no passo 2) | — | ⏳ refinamento pendente |
+| E2E em tela contra Bevi real | — | 🔒 **BLOQUEADO por D3** |
+
+**Envs novos exigidos em runtime:** `BEVI_SELFCONTRACT_HASH` (descoberta — sem ele falha alto), `IDENTITY_ENC_KEY` (32 bytes base64 — `openssl rand -base64 32`), `BEVI_API_TOKEN` + `PROPOSAL_GATEWAY=bevi` (fechamento). **Não existe mais modo mock.**
+
 ## Pendências externas
 
-- **Bernardo:** validar/ajustar a [`proposta-simulador.md`](./proposta-simulador.md).
-- **Bevi:** ambiente de homologação (ou diretriz de teste) pro Trilho B — ver D3.
+- **Bernardo:** validar/ajustar a [`proposta-simulador.md`](./proposta-simulador.md) (o convite + dial já estão no caminho padrão; refinos e fluxo de caixa aguardam o aval).
+- **Bevi (D3 — bloqueia E2E real):** o `create-proposal` da descoberta cria proposta REAL com CPF + consulta de bureau (`consultarDados`). Precisamos de **hash/loja de homologação** ou **CPF de teste autorizado** pela Bevi antes de E2E automatizado/manual contra o trilho real. Também pendente: transporte do device fingerprint (mascarado nas capturas) — validar ao vivo se conversas concorrentes colidem no "1 proposta ativa por device".

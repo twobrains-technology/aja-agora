@@ -1,3 +1,15 @@
+> ⚠️ **RETIFICADO em 2026-06-04** — este relatório foi REPROVADO pelo Kairo e
+> auditado. O que ele vendeu como "jornada fiel ao docx" tinha defeitos graves:
+> os passos 3-4 serviam 100% dado MOCKADO (82 grupos fictícios — o usuário nunca
+> viu um número real da Bevi), o simulador do passo 4 ("3, 6 ou 12 meses") não
+> existia no caminho padrão, o valor do lance nunca era perguntado, o "ver outras
+> opções" não era determinístico e o eval NÃO tinha LLM-judge (só regex). O QA
+> "crítico" aprovou validando contra critérios derivados da implementação, não
+> contra o docx. Correção completa na sequência de commits de 2026-06-04
+> (`9992678..`) e relatório honesto em
+> `.done/2026-06-04-jornada-canonica-bevi-real.md`. Mantido aqui como memória
+> de produto — e como lembrete do custo de QA sem fonte de verdade externa.
+
 # Relatório final — Jornada Aja Agora 1→5 + fix do BUG-REVEAL-LOOP
 
 **Data:** 2026-06-03 (madrugada) · **Branch:** `feat/jornada-bevi-lance-embutido` · **Operador:** Kairo (dormindo — execução autônoma ponta a ponta)

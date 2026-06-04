@@ -85,9 +85,14 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required (set in .env.local)}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required (set in .env.local)}
       FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
-      ADMINISTRADORA_ADAPTER: ${ADMINISTRADORA_ADAPTER:-mock}
-      # Fulfillment (passo 5): mock = sem token (default); bevi = API real (exige token).
-      PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-mock}
+      # Bevi é a fonte ÚNICA (mock em runtime PROIBIDO — docs/jornada/CONTEXT.md).
+      # Descoberta (Trilho B): exige BEVI_SELFCONTRACT_HASH; falha alto sem.
+      BEVI_SELFCONTRACT_HASH: ${BEVI_SELFCONTRACT_HASH:-}
+      BEVI_SELFCONTRACT_BASE_URL: ${BEVI_SELFCONTRACT_BASE_URL:-}
+      # Identidade (gate identify): cifra do CPF — openssl rand -base64 32.
+      IDENTITY_ENC_KEY: ${IDENTITY_ENC_KEY:-}
+      # Fulfillment (passo 5): API de Parceiro real (exige BEVI_API_TOKEN).
+      PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-bevi}
       BEVI_API_TOKEN: ${BEVI_API_TOKEN:-}
       BEVI_BASE_URL: ${BEVI_BASE_URL:-}
       BEVI_PRODUCT_ID: ${BEVI_PRODUCT_ID:-}
