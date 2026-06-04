@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leadEvents, leads, messages } from "@/db/schema";
+import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import {
 	buildCreditReactionDirective,
@@ -25,8 +26,22 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { FIXTURE_IDENTITY, fixtureDiscoveryAdapter } from "../helpers/fixture-discovery-adapter";
+
+// ── MOCK-RUNTIME-MORTO: o eval NUNCA toca a Bevi real ──
+// Agente real + descoberta via adapter de FIXTURES (capturas reais da
+// loja-piloto). Sem o seam, search_groups criaria proposta REAL na Bevi
+// com CPF semeado (LGPD, regra de ouro da spec §13).
+beforeAll(() => {
+	__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
+	if (!process.env.IDENTITY_ENC_KEY) {
+		process.env.IDENTITY_ENC_KEY = Buffer.alloc(32, 9).toString("base64");
+	}
+});
+afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos do framework
@@ -224,6 +239,10 @@ async function handleGateEvent(args: {
 				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },
 			});
 			await saveMessage(conversationId, "user", label, "web");
+			// Gate identify (D1): identidade SINTÉTICA (DV válido) antes da busca —
+			// só alcança o adapter de fixtures (seam), nunca a Bevi real.
+			await storeIdentity(conversationId, FIXTURE_IDENTITY);
+			await saveMessage(conversationId, "user", "Enviei meus dados pra buscar as ofertas", "web");
 			// Agora segue pra busca (search reveal).
 			const refreshed = await reloadMeta(conversationId);
 			if (refreshed.searchDispatched) return null;
@@ -235,6 +254,24 @@ async function handleGateEvent(args: {
 			return await consumeAgentTurn({
 				conversationId,
 				userText: directive,
+				isUserTurn: false,
+			});
+		}
+
+		case "identify": {
+			// Caminhos sem lance-embutido (hasLance no/maybe) chegam aqui: o submit
+			// do form identify libera a busca (mirror do route identify-handler).
+			await storeIdentity(conversationId, FIXTURE_IDENTITY);
+			await saveMessage(conversationId, "user", "Enviei meus dados pra buscar as ofertas", "web");
+			const refreshed = await reloadMeta(conversationId);
+			if (refreshed.searchDispatched) return null;
+			const category = refreshed.currentCategory;
+			if (!category) return null;
+			await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
+			const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
+			return await consumeAgentTurn({
+				conversationId,
+				userText: buildSearchSummaryDirective({ category, meta: refreshed }),
 				isUserTurn: false,
 			});
 		}

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MockProposalGateway } from "../adapters/bevi/mock-proposal-gateway";
+import { MockProposalGateway } from "../../../tests/helpers/mock-proposal-gateway";
 
 // Mock do repo (DB) — guarda em memória, mantém isOfferFresh real.
 const { store } = vi.hoisted(() => ({ store: new Map<string, Record<string, unknown>>() }));
@@ -12,7 +12,9 @@ vi.mock("./proposal-repo", async (importOriginal) => {
 			store.set(conversationId, row);
 			return row;
 		}),
-		getLatestBeviProposal: vi.fn(async (conversationId: string) => store.get(conversationId) ?? null),
+		getLatestBeviProposal: vi.fn(
+			async (conversationId: string) => store.get(conversationId) ?? null,
+		),
 		updateBeviProposal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
 			for (const r of store.values()) if (r.id === id) Object.assign(r, patch);
 		}),
@@ -60,7 +62,12 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		await confirmOffer("conv-3", gw);
 		const up = await uploadContractDocument(
 			"conv-3",
-			{ slot: "identidade_frente", file: new Uint8Array([1]), filename: "rg.jpg", mimeType: "image/jpeg" },
+			{
+				slot: "identidade_frente",
+				file: new Uint8Array([1]),
+				filename: "rg.jpg",
+				mimeType: "image/jpeg",
+			},
 			gw,
 		);
 		expect(up.ok).toBe(true);
@@ -76,7 +83,12 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		};
 		const up = await uploadContractDocument(
 			"conv-4",
-			{ slot: "identidade_frente", file: new Uint8Array([1]), filename: "rg.jpg", mimeType: "image/jpeg" },
+			{
+				slot: "identidade_frente",
+				file: new Uint8Array([1]),
+				filename: "rg.jpg",
+				mimeType: "image/jpeg",
+			},
 			throwingGw,
 		);
 		expect(up.ok).toBe(false);

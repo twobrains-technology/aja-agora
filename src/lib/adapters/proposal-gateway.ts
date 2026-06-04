@@ -146,7 +146,7 @@ export interface ProposalStatus {
 /** Categoria de domínio (4) a partir do segmento Bevi (6). PESADOS→auto, OUTROS BENS→servicos. */
 export type { ConsorcioCategory };
 
-/** Contrato de fechamento. Implementado por BeviApiAdapter (real) e MockProposalGateway (dev/teste). */
+/** Contrato de fechamento. Implementado por BeviApiAdapter (real); testes injetam dublê (tests/helpers/mock-proposal-gateway). */
 export interface ProposalGateway {
 	createProposal(input: CreateProposalInput): Promise<CreateProposalResult>;
 	listSegments(proposalId: string): Promise<BeviSegment[]>;

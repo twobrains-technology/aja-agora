@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { getAdapter } from "@/lib/adapters";
-import { confirmOffer } from "@/lib/bevi/fulfillment";
+import { getDiscoveryAdapter } from "@/lib/adapters";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { confirmOffer } from "@/lib/bevi/fulfillment";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import {
@@ -391,7 +391,7 @@ async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("group_", "");
 	try {
-		const details = await getAdapter().getGroupDetails({ groupId });
+		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
@@ -417,7 +417,7 @@ async function handleSimulate(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("simulate_", "");
 	try {
-		const details = await getAdapter().getGroupDetails({ groupId });
+		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
@@ -435,7 +435,7 @@ async function handleWhatIf(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("whatif_", "");
 	try {
-		const details = await getAdapter().getGroupDetails({ groupId });
+		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,

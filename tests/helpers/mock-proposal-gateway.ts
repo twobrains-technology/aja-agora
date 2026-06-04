@@ -2,8 +2,10 @@
 // do passo 5 "Contratar". Shapes idênticos à API real (capturas em __fixtures__),
 // com ofertas geradas em torno do valor pedido pra ficar coerente em qualquer input.
 //
-// Default quando PROPOSAL_GATEWAY != "bevi". NÃO faz I/O — tudo em memória.
+// DUBLÊ DE TESTE — vive fora de src/ de propósito (mock em runtime é PROIBIDO,
+// docs/jornada/CONTEXT.md). Injete via parâmetro gateway/__setProposalGatewayForTests.
 
+import { OngoingProposalError } from "@/lib/adapters/bevi/bevi-errors";
 import type {
 	BeviSegment,
 	ChooseOfferInput,
@@ -18,8 +20,7 @@ import type {
 	SimulateInput,
 	SimulationResult,
 	UploadDocumentInput,
-} from "../proposal-gateway";
-import { OngoingProposalError } from "./bevi-errors";
+} from "@/lib/adapters/proposal-gateway";
 
 const SEGMENTS: BeviSegment[] = [
 	{ segmento: "AUTOS", segmentoLabel: "AUTOS" },
@@ -96,7 +97,8 @@ export class MockProposalGateway implements ProposalGateway {
 		// crédito-alvo: se valor_parcela, infere a carta a partir da parcela
 		const targetCredit =
 			input.tipoSimulacao === "valor_parcela" ? Math.round(input.valor * term) : input.valor;
-		const embutidoPct = input.lanceEmbutido && input.lanceEmbutido !== "nenhum" ? Number(input.lanceEmbutido) : 0;
+		const embutidoPct =
+			input.lanceEmbutido && input.lanceEmbutido !== "nenhum" ? Number(input.lanceEmbutido) : 0;
 
 		const offers: PartnerOffer[] = ADMINS.slice(0, 3).map((admin, i) => {
 			const valorCarta = Math.round(targetCredit * (0.9 + i * 0.12));

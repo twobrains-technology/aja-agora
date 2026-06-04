@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { beviProposals, conversations } from "@/db/schema";
-import { MockProposalGateway } from "@/lib/adapters/bevi/mock-proposal-gateway";
+import { MockProposalGateway } from "../../../tests/helpers/mock-proposal-gateway";
 import { confirmOffer, startContract } from "./fulfillment";
 
 // Integração REAL contra o Postgres (valida repo drizzle + schema 0022 + FKs +

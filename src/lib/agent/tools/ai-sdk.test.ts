@@ -1,6 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { PRESENTATION_TOOLS, buildConsorcioTools, consorcioTools } from "./ai-sdk";
+import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
+import { fixtureDiscoveryAdapter } from "../../../../tests/helpers/fixture-discovery-adapter";
+import { buildConsorcioTools, consorcioTools, PRESENTATION_TOOLS } from "./ai-sdk";
+
+// MOCK-RUNTIME-MORTO: descoberta vem do adapter por conversa (factory). Testes
+// instalam o adapter de FIXTURES REAIS (capturas da loja-piloto) via seam.
+beforeAll(() => __setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter()));
+afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
+
+// Tools de descoberta resolvidas via factory (com conversationId fake — o seam
+// devolve o adapter de fixtures independente do id).
+const discoveryTools = buildConsorcioTools({ conversationId: "test-discovery-conv" });
 
 describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	it("tem compute_scenarios (#16)", () => {
@@ -22,26 +33,41 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	});
 
 	it("recommend_groups tool retorna campos do fallback (expansionUsed, insufficientOptions) — plug #09", async () => {
-		const exec = consorcioTools.recommend_groups.execute;
+		const exec = discoveryTools.recommend_groups.execute;
 		if (!exec) throw new Error("recommend_groups.execute is undefined");
 		const result = (await exec(
 			{
-				category: "imovel",
-				creditMin: 100_000,
-				creditMax: 1_000_000,
-				budget: 5_000,
-				desiredTermMonths: 200,
+				category: "auto",
+				creditMin: 20_000,
+				creditMax: 60_000,
+				budget: 1_200,
+				desiredTermMonths: 70,
 			},
 			// biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool ctx not exported
 			{ toolCallId: "test", messages: [] } as any,
 		)) as {
-			recommendations: Array<{ alternativa: boolean }>;
+			recommendations: Array<{ alternativa: boolean; administradora: string }>;
 			expansionUsed: number | null;
 			insufficientOptions: boolean;
 		};
 		expect(result).toHaveProperty("expansionUsed");
 		expect(result).toHaveProperty("insufficientOptions");
 		expect(result.recommendations[0]).toHaveProperty("alternativa");
+		// Dados REAIS da captura — administradoras de verdade, nunca fictícias.
+		expect(["ITAÚ", "ÂNCORA", "BANCO DO BRASIL"]).toContain(
+			result.recommendations[0].administradora,
+		);
+	});
+
+	it("registry estático (sem conversationId) NÃO serve descoberta — erro informativo", async () => {
+		const exec = consorcioTools.search_groups.execute;
+		if (!exec) throw new Error("search_groups.execute undefined");
+		const result = (await exec(
+			{ category: "auto" },
+			// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+			{ toolCallId: "t", messages: [] } as any,
+		)) as { error?: string };
+		expect(result.error).toMatch(/conversationId/);
 	});
 
 	// Bv2-08 — Bruna v2: parcela do comparativo divergia do detalhamento.
@@ -51,22 +77,22 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	// declarar o ajuste pro user. CDC art. 30/35/37.
 	describe("simulate_quota guardrail Bv2-08 — creditAdjustmentNotice", () => {
 		it("retorna creditAdjustmentNotice quando creditValue diverge >1% do nominal", async () => {
-			const exec = consorcioTools.simulate_quota.execute;
+			const exec = discoveryTools.simulate_quota.execute;
 			if (!exec) throw new Error("simulate_quota.execute undefined");
-			// Pega um grupo Rodobens imovel real do mock
-			const search = consorcioTools.search_groups.execute;
+			// Pega o grupo ITAÚ da CAPTURA REAL (finalValue 54832, AUTOS)
+			const search = discoveryTools.search_groups.execute;
 			if (!search) throw new Error("search_groups.execute undefined");
 			const groups = (await search(
-				{ category: "imovel" },
+				{ category: "auto", creditMax: 60_000 },
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
 				{ toolCallId: "t", messages: [] } as any,
 			)) as { groups: Array<{ id: string; administradora: string; creditValue: number }> };
-			const rodobens = groups.groups.find((g) => g.administradora === "Rodobens");
-			if (!rodobens) throw new Error("grupo Rodobens não achado no mock");
+			const itau = groups.groups.find((g) => g.administradora === "ITAÚ");
+			if (!itau) throw new Error("grupo ITAÚ não achado na captura real");
 
-			const adjustedCredit = Math.round(rodobens.creditValue * 0.85);
+			const adjustedCredit = Math.round(itau.creditValue * 0.85);
 			const result = (await exec(
-				{ groupId: rodobens.id, creditValue: adjustedCredit },
+				{ groupId: itau.id, creditValue: adjustedCredit },
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
 				{ toolCallId: "t", messages: [] } as any,
 			)) as {
@@ -80,16 +106,16 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 			};
 			expect(result.creditAdjustmentNotice).toBeDefined();
 			expect(result.creditAdjustmentNotice?.requestedCreditValue).toBe(adjustedCredit);
-			expect(result.creditAdjustmentNotice?.groupNominalCreditValue).toBe(rodobens.creditValue);
+			expect(result.creditAdjustmentNotice?.groupNominalCreditValue).toBe(itau.creditValue);
 			expect(result.creditAdjustmentNotice?.message).toMatch(/ajust/i);
 		});
 
 		it("NÃO retorna notice quando creditValue == nominal do grupo (±1%)", async () => {
-			const exec = consorcioTools.simulate_quota.execute;
-			const search = consorcioTools.search_groups.execute;
+			const exec = discoveryTools.simulate_quota.execute;
+			const search = discoveryTools.search_groups.execute;
 			if (!exec || !search) throw new Error("tools undefined");
 			const groups = (await search(
-				{ category: "imovel" },
+				{ category: "auto", creditMax: 60_000 },
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
 				{ toolCallId: "t", messages: [] } as any,
 			)) as { groups: Array<{ id: string; creditValue: number }> };

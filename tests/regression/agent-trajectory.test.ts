@@ -2338,7 +2338,9 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", "Deixa eu buscar as melhores opções na sua faixa!"),
 			toolCallChunk("tc-1", "search_groups", { category: "auto", creditMax: 100000 }),
-			toolCallChunk("tc-2", "present_comparison_table", { groups: [{ administradora: "Porto Seguro" }] }),
+			toolCallChunk("tc-2", "present_comparison_table", {
+				groups: [{ administradora: "Porto Seguro" }],
+			}),
 			toolCallChunk("tc-3", "recommend_groups", { category: "auto" }),
 			toolCallChunk("tc-4", "present_recommendation_card", { administradora: "Porto Seguro" }),
 			toolCallChunk("tc-5", "present_simulation_result", { administradora: "Porto Seguro" }),
@@ -2468,5 +2470,47 @@ describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
 		expect(extractCpf("nao quero passar agora")).toBeNull();
 		// waId com DDI 55 vira DDD+numero (formato que a Bevi espera).
 		expect(waIdToCelular("5562999887766")).toBe("62999887766");
+	});
+});
+
+// ============================================================================
+// MOCK-RUNTIME-MORTO (diretiva Kairo 2026-06-04, docs/jornada/CONTEXT.md)
+// ----------------------------------------------------------------------------
+// "O que está mocado você tem que deletar mesmo. Não pode ter arquivo de mock
+// aí mais." — a descoberta (passos 3-4) serve APENAS dados reais da Bevi
+// (Trilho B). Este bloco trava a regressão de alguém reintroduzir JSON
+// fictício no caminho de runtime.
+// ============================================================================
+
+describe("MOCK-RUNTIME-MORTO — descoberta nunca mais serve dado fictício", () => {
+	it("src/lib/adapters/mock/ NÃO existe mais", () => {
+		expect(() => readSource("src/lib/adapters/mock/mock-bevi-adapter.ts")).toThrow();
+		expect(() => readSource("src/lib/adapters/mock/data/groups.json")).toThrow();
+		expect(() => readSource("src/lib/adapters/mock/data/rates.json")).toThrow();
+	});
+
+	it("adapters/index.ts não referencia mock — descoberta é BeviSelfContractAdapter por conversa", () => {
+		const src = readSource("src/lib/adapters/index.ts");
+		expect(src).not.toMatch(/MockBeviAdapter/);
+		expect(src).not.toMatch(/MockProposalGateway/);
+		expect(src).toMatch(/BeviSelfContractAdapter/);
+		expect(src).toMatch(/getDiscoveryAdapter/);
+	});
+
+	it("gateway de fechamento default é bevi (real) — sem fallback fictício", () => {
+		const src = readSource("src/lib/adapters/index.ts");
+		expect(src).toMatch(/PROPOSAL_GATEWAY \?\? "bevi"/);
+	});
+
+	it("tools de descoberta usam adapter por conversa (não singleton sem contexto)", () => {
+		const src = readSource("src/lib/agent/tools/ai-sdk.ts");
+		expect(src).not.toMatch(/getAdapter\(\)/);
+		expect(src).toMatch(/getDiscoveryAdapter/);
+	});
+
+	it("handlers WhatsApp usam adapter por conversa", () => {
+		const src = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(src).not.toMatch(/getAdapter\(\)/);
+		expect(src).toMatch(/getDiscoveryAdapter/);
 	});
 });

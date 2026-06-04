@@ -37,6 +37,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leadEvents, leads, messages } from "@/db/schema";
+import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import {
 	buildCreditReactionDirective,
@@ -47,8 +48,23 @@ import {
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { FIXTURE_IDENTITY, fixtureDiscoveryAdapter } from "../helpers/fixture-discovery-adapter";
+
+// ── MOCK-RUNTIME-MORTO: o eval NUNCA toca a Bevi real ──
+// O agente real roda com o adapter de FIXTURES (capturas reais da loja-piloto)
+// via seam. Sem isso, search_groups criaria proposta REAL na Bevi com CPF
+// semeado — proibido (LGPD + regra de ouro da spec §13).
+beforeAll(() => {
+	__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
+	// Chave de cifra exclusiva do eval (a identidade semeada é sintética).
+	if (!process.env.IDENTITY_ENC_KEY) {
+		process.env.IDENTITY_ENC_KEY = Buffer.alloc(32, 9).toString("base64");
+	}
+});
+afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Harness mínimo e auto-contido (auto-coerente — sem reaproveitar tuning de
@@ -99,7 +115,12 @@ async function respondToGate(conversationId: string, gate: string): Promise<Turn
 			// docx passo 2: "Você já participou de um consórcio antes?" → primeira vez.
 			await persistMeta(conversationId, { ...meta, experiencePrev: "first" });
 			await saveMessage(conversationId, "user", "É a primeira vez", "web");
-			return consumeTurn(conversationId, buildExperienceFirstDirective("É a primeira vez"), false, "passo2:explicação");
+			return consumeTurn(
+				conversationId,
+				buildExperienceFirstDirective("É a primeira vez"),
+				false,
+				"passo2:explicação",
+			);
 		}
 		case "consent": {
 			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
@@ -114,7 +135,12 @@ async function respondToGate(conversationId: string, gate: string): Promise<Turn
 				qualifyAnswers: { ...q, creditMin: 90_000, creditMax: 100_000, monthlyBudget: 1_700 },
 			});
 			await saveMessage(conversationId, "user", label, "web");
-			return consumeTurn(conversationId, buildCreditReactionDirective(label), false, "passo2:credit");
+			return consumeTurn(
+				conversationId,
+				buildCreditReactionDirective(label),
+				false,
+				"passo2:credit",
+			);
 		}
 		case "timeframe": {
 			// docx: "O mais rápido possível" → contemplação rápida (lance pesa).
@@ -124,7 +150,12 @@ async function respondToGate(conversationId: string, gate: string): Promise<Turn
 				qualifyAnswers: { ...q, prazoMeses: 0, objetivo: objetivoForPrazo(0) },
 			});
 			await saveMessage(conversationId, "user", label, "web");
-			return consumeTurn(conversationId, buildTimeframeReactionDirective(label), false, "passo2:timeframe");
+			return consumeTurn(
+				conversationId,
+				buildTimeframeReactionDirective(label),
+				false,
+				"passo2:timeframe",
+			);
 		}
 		case "lance": {
 			const label = "Sim, tenho reserva";
@@ -140,6 +171,10 @@ async function respondToGate(conversationId: string, gate: string): Promise<Turn
 				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },
 			});
 			await saveMessage(conversationId, "user", "Sim, quero considerar lance embutido", "web");
+			// Gate identify (D1): o usuário envia CPF+celular+LGPD pro reveal liberar.
+			// Identidade SINTÉTICA (DV válido) — só alcança o adapter de fixtures.
+			await storeIdentity(conversationId, FIXTURE_IDENTITY);
+			await saveMessage(conversationId, "user", "Enviei meus dados pra buscar as ofertas", "web");
 			const refreshed = await reloadMeta(conversationId);
 			if (refreshed.searchDispatched) return null;
 			const category = refreshed.currentCategory;
@@ -163,9 +198,14 @@ const HAS_API_KEY = !!process.env.ANTHROPIC_API_KEY;
 const describeIfKey = HAS_API_KEY ? describe : describe.skip;
 
 // Helpers de leitura do transcript.
-const textOf = (turns: Turn[]) => turns.map((t) => t.content).join("\n---\n").toLowerCase();
+const textOf = (turns: Turn[]) =>
+	turns
+		.map((t) => t.content)
+		.join("\n---\n")
+		.toLowerCase();
 const artifactTypes = (turns: Turn[]) => turns.flatMap((t) => t.artifacts).map((a) => a.type);
-const countType = (turns: Turn[], type: string) => artifactTypes(turns).filter((t) => t === type).length;
+const countType = (turns: Turn[], type: string) =>
+	artifactTypes(turns).filter((t) => t === type).length;
 const allTools = (turns: Turn[]) => turns.flatMap((t) => t.toolCalls);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,7 +217,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 
 	afterAll(async () => {
 		if (!conversationId) return;
-		const lead = await db.query.leads.findFirst({ where: eq(leads.conversationId, conversationId) });
+		const lead = await db.query.leads.findFirst({
+			where: eq(leads.conversationId, conversationId),
+		});
 		if (lead) {
 			await db.delete(leadEvents).where(eq(leadEvents.leadId, lead.id));
 			await db.delete(leads).where(eq(leads.id, lead.id));
@@ -189,7 +231,11 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	beforeAll(async () => {
 		const [conv] = await db
 			.insert(conversations)
-			.values({ channel: "web", isSimulated: true, metadata: { evalScenario: "jornada-aja-agora" } })
+			.values({
+				channel: "web",
+				isSimulated: true,
+				metadata: { evalScenario: "jornada-aja-agora" },
+			})
 			.returning();
 		conversationId = conv.id;
 
@@ -243,7 +289,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			await persistMeta(conv.id, { ...refreshed, searchDispatched: true });
 			cap.reveal = await consumeTurn(
 				conv.id,
-				buildSearchSummaryDirective({ category: "auto", meta: { ...refreshed, currentCategory: "auto" } }),
+				buildSearchSummaryDirective({
+					category: "auto",
+					meta: { ...refreshed, currentCategory: "auto" },
+				}),
 				false,
 				"passo3+4:reveal",
 			);
@@ -268,7 +317,12 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				: lastHadWhatsapp
 					? "agora não precisa de WhatsApp, pode seguir"
 					: forward[Math.min(fi++, forward.length - 1)];
-			const t = await consumeTurn(conv.id, msg, true, sawDecision ? "passo5:contratar" : "passo4:avança");
+			const t = await consumeTurn(
+				conv.id,
+				msg,
+				true,
+				sawDecision ? "passo5:contratar" : "passo4:avança",
+			);
 			turns.push(t);
 			const types = t.artifacts.map((a) => a.type);
 			lastHadWhatsapp = types.includes("whatsapp_optin");
@@ -298,7 +352,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			`Tom acolhedor esperado (docx). Texto: "${t.slice(0, 200)}"`,
 		).toBe(true);
 		// E pede o nome (captura progressiva — passo 1 do docx).
-		expect(/chamar|seu nome|como.*posso/.test(t), `Deveria perguntar o nome. Texto: "${t.slice(0, 200)}"`).toBe(true);
+		expect(
+			/chamar|seu nome|como.*posso/.test(t),
+			`Deveria perguntar o nome. Texto: "${t.slice(0, 200)}"`,
+		).toBe(true);
 	});
 
 	it("passo 1 — capturou o nome no DB (save_contact_name)", async () => {
@@ -331,7 +388,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				`Encontrados: ${hits}. Texto: "${t.slice(0, 400)}"`,
 		).toBeGreaterThanOrEqual(4);
 		// Sem jargão de engine pro leigo.
-		expect(/fundo de reserva|lance livre|lance fixo/.test(t), "não deve jogar jargão no leigo").toBe(false);
+		expect(
+			/fundo de reserva|lance livre|lance fixo/.test(t),
+			"não deve jogar jargão no leigo",
+		).toBe(false);
 	});
 
 	it("passo 2 — percorreu a qualificação completa incl. o sub-fluxo de lance embutido", async () => {
@@ -345,9 +405,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		const meta = await reloadMeta(conversationId!);
 		expect(meta.qualifyAnswers?.hasLance, "tem reserva pra lance (docx: Sim)").toBe("yes");
 		expect(meta.qualifyAnswers?.lanceEmbutido, "opt-in de lance embutido gravado").toBe(true);
-		expect(meta.qualifyAnswers?.objetivo, "objetivo derivado do prazo (rápido → contemplação)").toBe(
-			"contemplacao_rapida",
-		);
+		expect(
+			meta.qualifyAnswers?.objetivo,
+			"objetivo derivado do prazo (rápido → contemplação)",
+		).toBe("contemplacao_rapida");
 	});
 
 	// ── passo 3 — Buscar alternativas ─────────────────────────────────────────
@@ -355,7 +416,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	it("passo 3 — apresentou opções concretas (>=3) como card visual, não texto", () => {
 		const comp = turns.flatMap((t) => t.artifacts).find((a) => a.type === "comparison_table");
 		const groupCards = countType(turns, "group_card");
-		const optionCount = comp ? ((comp.payload as { groups?: unknown[] }).groups?.length ?? 0) : groupCards;
+		const optionCount = comp
+			? ((comp.payload as { groups?: unknown[] }).groups?.length ?? 0)
+			: groupCards;
 		expect(
 			optionCount,
 			`Esperado >=3 opções (docx: "Encontramos 3 boas opções"). comparison_table=${comp ? "sim" : "não"}, group_cards=${groupCards}`,
@@ -365,10 +428,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	// ── passo 4 — Avaliar, simular e definir ──────────────────────────────────
 
 	it("passo 4 — destacou o plano recomendado pela Aja Agora", () => {
-		expect(
-			artifactTypes(turns),
-			"docx: 'Plano recomendado pela Aja Agora' (destaque)",
-		).toContain("recommendation_card");
+		expect(artifactTypes(turns), "docx: 'Plano recomendado pela Aja Agora' (destaque)").toContain(
+			"recommendation_card",
+		);
 	});
 
 	it("passo 4 — apresentou o detalhamento (simulação) do plano", () => {
@@ -390,8 +452,14 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	it("ANTI-LOOP — não ficou re-mostrando os mesmos cards a cada afirmativo", () => {
 		// O print do bug tinha comparison_table + recommendation_card repetidos a
 		// cada "ta otimo". Com o fix, cada card de descoberta aparece no máximo 1x.
-		expect(countType(turns, "comparison_table"), "comparison_table repetido = loop").toBeLessThanOrEqual(1);
-		expect(countType(turns, "recommendation_card"), "recommendation_card repetido = loop").toBeLessThanOrEqual(1);
+		expect(
+			countType(turns, "comparison_table"),
+			"comparison_table repetido = loop",
+		).toBeLessThanOrEqual(1);
+		expect(
+			countType(turns, "recommendation_card"),
+			"recommendation_card repetido = loop",
+		).toBeLessThanOrEqual(1);
 	});
 
 	// ── passo 5 — Contratar ───────────────────────────────────────────────────
@@ -412,7 +480,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		const leadIdx = types.lastIndexOf("lead_form");
 		// Se houver lead_form (via opt-in WhatsApp), ele NÃO é o último passo.
 		if (leadIdx >= 0) {
-			expect(contractIdx, "contract_form deve ser o fechamento, depois de qualquer lead_form").toBeGreaterThan(leadIdx);
+			expect(
+				contractIdx,
+				"contract_form deve ser o fechamento, depois de qualquer lead_form",
+			).toBeGreaterThan(leadIdx);
 		}
 	});
 });

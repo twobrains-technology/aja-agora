@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { getAdapter } from "@/lib/adapters";
+import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
@@ -228,66 +228,118 @@ const recommendGroupsSchema = z.object({
 });
 
 // ---- Domain tools (data fetching) ----
+//
+// MOCK-RUNTIME-MORTO (diretiva 2026-06-04): a descoberta usa o adapter REAL
+// por conversa (getDiscoveryAdapter — Trilho B Bevi, exige identidade D1).
+// Os executes vivem em funções com adapter parametrizado; o registry estático
+// (sem conversationId) responde erro informativo — paths de produção montam as
+// tools via `buildConsorcioTools({ conversationId })`, que injeta o adapter.
+
+const DISCOVERY_NO_CONTEXT = {
+	error:
+		"[Descoberta indisponivel neste contexto: sem conversationId nao ha sessao Bevi. " +
+		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
+} as const;
+
+async function executeSearchGroups(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof searchGroupsInput>,
+) {
+	const groups = await adapter.searchGroups(args);
+	return { groups, total: groups.length };
+}
+
+async function executeSimulateQuota(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof simulateQuotaInput>,
+) {
+	const [details, simulation] = await Promise.all([
+		adapter.getGroupDetails({ groupId: args.groupId }),
+		adapter.simulateQuota(args),
+	]);
+	const delta = Math.abs(args.creditValue - details.creditValue);
+	const relativeDelta = delta / details.creditValue;
+	if (delta > 1 && relativeDelta > 0.01) {
+		const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+		return {
+			...simulation,
+			creditAdjustmentNotice: {
+				requestedCreditValue: args.creditValue,
+				groupNominalCreditValue: details.creditValue,
+				message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+			},
+		};
+	}
+	return simulation;
+}
+
+async function executeGetRates(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof getRatesInput>,
+) {
+	const rates = await adapter.getRates(args);
+	return { rates, total: rates.length };
+}
+
+async function executeGetGroupDetails(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof getGroupDetailsInput>,
+) {
+	return await adapter.getGroupDetails(args);
+}
+
+async function executeRecommendGroups(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof recommendGroupsSchema>,
+) {
+	const { budget, desiredTermMonths, ...searchParams } = args;
+	const fallbackResult = await recommendWithFallback(adapter, searchParams);
+	const ranked = rankGroups(fallbackResult.groups, {
+		budget,
+		desiredTermMonths: desiredTermMonths ?? 0,
+	});
+	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
+	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
+	return {
+		recommendations: ranked.map((r) => ({
+			...r.group,
+			score: r.score,
+			scoreBreakdown: r.factors,
+			alternativa: altById.get(r.group.id) ?? false,
+		})),
+		total: ranked.length,
+		expansionUsed: fallbackResult.expansionUsed,
+		insufficientOptions: fallbackResult.insufficientOptions,
+	};
+}
 
 export const consorcioTools = {
 	search_groups: tool({
 		description:
 			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar.",
 		inputSchema: searchGroupsInput,
-		execute: async (args: z.infer<typeof searchGroupsInput>) => {
-			const adapter = getAdapter();
-			const groups = await adapter.searchGroups(args);
-			return { groups, total: groups.length };
-		},
+		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	simulate_quota: tool({
 		description:
 			'Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: "e se fosse 200k?"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.',
 		inputSchema: simulateQuotaInput,
-		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
-			const adapter = getAdapter();
-			const [details, simulation] = await Promise.all([
-				adapter.getGroupDetails({ groupId: args.groupId }),
-				adapter.simulateQuota(args),
-			]);
-			const delta = Math.abs(args.creditValue - details.creditValue);
-			const relativeDelta = delta / details.creditValue;
-			if (delta > 1 && relativeDelta > 0.01) {
-				const fmt = (n: number) =>
-					n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-				return {
-					...simulation,
-					creditAdjustmentNotice: {
-						requestedCreditValue: args.creditValue,
-						groupNominalCreditValue: details.creditValue,
-						message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
-					},
-				};
-			}
-			return simulation;
-		},
+		execute: async (_args: z.infer<typeof simulateQuotaInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	get_rates: tool({
 		description:
 			"Retorna taxas de administracao vigentes por administradora e categoria. Use quando o usuario perguntar sobre taxas, custos ou quiser comparar administradoras.",
 		inputSchema: getRatesInput,
-		execute: async (args: z.infer<typeof getRatesInput>) => {
-			const adapter = getAdapter();
-			const rates = await adapter.getRates(args);
-			return { rates, total: rates.length };
-		},
+		execute: async (_args: z.infer<typeof getRatesInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	get_group_details: tool({
 		description:
 			"Retorna detalhes completos de um grupo incluindo historico de contemplacao e proximas assembleias. Use quando o usuario quiser saber mais sobre um grupo especifico.",
 		inputSchema: getGroupDetailsInput,
-		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
-			const adapter = getAdapter();
-			return await adapter.getGroupDetails(args);
-		},
+		execute: async (_args: z.infer<typeof getGroupDetailsInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	compare_with_financing: tool({
@@ -312,28 +364,7 @@ export const consorcioTools = {
 		description:
 			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao. Garante sempre >=3 opcoes (expande faixa de credito ate +-50% se necessario, marcando alternativas com flag).",
 		inputSchema: recommendGroupsSchema,
-		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
-			const adapter = getAdapter();
-			const { budget, desiredTermMonths, ...searchParams } = args;
-			const fallbackResult = await recommendWithFallback(adapter, searchParams);
-			const ranked = rankGroups(fallbackResult.groups, {
-				budget,
-				desiredTermMonths: desiredTermMonths ?? 0,
-			});
-			// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
-			const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
-			return {
-				recommendations: ranked.map((r) => ({
-					...r.group,
-					score: r.score,
-					scoreBreakdown: r.factors,
-					alternativa: altById.get(r.group.id) ?? false,
-				})),
-				total: ranked.length,
-				expansionUsed: fallbackResult.expansionUsed,
-				insufficientOptions: fallbackResult.insufficientOptions,
-			};
-		},
+		execute: async (_args: z.infer<typeof recommendGroupsSchema>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	// ---- Presentation tools ----
@@ -484,7 +515,10 @@ export const consorcioTools = {
 		description:
 			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
 		inputSchema: z.object({
-			administradora: z.string().optional().describe("Administradora do plano escolhido (contexto)"),
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano escolhido (contexto)"),
 		}),
 		execute: async (args: { administradora?: string }) => {
 			return `[Formulário de contratação (CPF/celular/LGPD) apresentado${args.administradora ? ` — ${args.administradora}` : ""}]`;
@@ -507,7 +541,11 @@ export const consorcioTools = {
 			maxEmbutidoPct: z.number().optional().describe("Teto do lance embutido (default 30)"),
 			initialTargetMonth: z.number().int().positive().describe("Mês-alvo inicial da agulha"),
 		}),
-		execute: async (args: { administradora?: string; creditValue: number; initialTargetMonth: number }) => {
+		execute: async (args: {
+			administradora?: string;
+			creditValue: number;
+			initialTargetMonth: number;
+		}) => {
 			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
 		},
 	}),
@@ -728,11 +766,77 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		},
 	});
 
+	// ── Descoberta REAL por conversa (MOCK-RUNTIME-MORTO, 2026-06-04) ──
+	// O adapter Bevi (Trilho B) é resolvido via closure do conversationId; o
+	// registry estático responde erro informativo. Sem identidade (gate identify,
+	// D1) o adapter lança IdentityNotCollectedError — o orquestrador garante a
+	// ordem do funil; o erro é tripwire, nunca fallback fictício.
+	const discovery = () => {
+		if (!conversationId) return null;
+		return getDiscoveryAdapter(conversationId);
+	};
+
+	const search_groups = tool({
+		description: consorcioTools.search_groups.description,
+		inputSchema: searchGroupsInput,
+		execute: async (args: z.infer<typeof searchGroupsInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return executeSearchGroups(adapter, args);
+		},
+	});
+
+	const simulate_quota = tool({
+		description: consorcioTools.simulate_quota.description,
+		inputSchema: simulateQuotaInput,
+		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return executeSimulateQuota(adapter, args);
+		},
+	});
+
+	const get_rates = tool({
+		description: consorcioTools.get_rates.description,
+		inputSchema: getRatesInput,
+		execute: async (args: z.infer<typeof getRatesInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return executeGetRates(adapter, args);
+		},
+	});
+
+	const get_group_details = tool({
+		description: consorcioTools.get_group_details.description,
+		inputSchema: getGroupDetailsInput,
+		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return executeGetGroupDetails(adapter, args);
+		},
+	});
+
+	const recommend_groups = tool({
+		description: consorcioTools.recommend_groups.description,
+		inputSchema: recommendGroupsSchema,
+		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return executeRecommendGroups(adapter, args);
+		},
+	});
+
 	return {
 		...consorcioTools,
 		// Overrides — schema reduzido (sem conversationId) + closure.
 		save_contact_name,
 		save_contact_whatsapp,
 		present_lead_form,
+		// Overrides — descoberta real por conversa (adapter Bevi Trilho B).
+		search_groups,
+		simulate_quota,
+		get_rates,
+		get_group_details,
+		recommend_groups,
 	};
 }
