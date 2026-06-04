@@ -40,6 +40,34 @@
 - **D3 — Ambiente.** Sem mock, dev/E2E batem na Bevi de verdade. ⚠️ Risco operacional: `create-proposal` cria proposta REAL (1 ativa por device). Precisamos de hash/loja de homologação da Bevi ou política de CPF de teste antes de E2E automatizado contra o trilho real. **Pendência a resolver com a Bevi.**
 - **D4 — Eval Camada 3 com LLM-judge.** Rubric dedicada da jornada (fidelidade por passo + tom do docx + fechamento-em-contrato), via `judgeConversation` existente. Design completo produzido na auditoria.
 
+## Decisões adicionais (2026-06-04, rodada "perfeição do eval")
+
+- **D5 — Resumo da contratação: WhatsApp only.** O docx (linha 52) pede "WhatsApp/e-mail";
+  a jornada coleta celular (gate identify, D1) mas NÃO coleta e-mail — o resumo vai por
+  WhatsApp (`src/lib/bevi/contract-summary.ts`). Sem canal configurado ou com falha:
+  `meta.contractSummaryPending=true` + log (nunca envio fingido). E-mail entra se/quando
+  a jornada coletar e-mail.
+- **D6 — Limitação de fonte (passo 4, resumo por opção).** A oferta self-contract da Bevi
+  NÃO fornece reputação da administradora nem histórico de contemplações por assembleia.
+  Exibimos só o que a fonte dá (carta, parcela, prazo, tipo de grupo, lance/embutido,
+  contemplados/mês via `monthlyAwardedQuotas`). A rubric do judge declara a limitação:
+  não pune ausência, pune invenção.
+- **D7 — Copy do fechamento centralizada.** `src/lib/bevi/closing-presentation.ts` e
+  `other-options.ts` são módulo único de copy/artifacts dos handlers determinísticos —
+  route (produção) e harness do eval consomem o MESMO código (DRY de copy; o eval valida
+  produção de verdade).
+- **Lição BUG-BEVI-EMPTY-ENV:** docker-compose `${VAR:-}` injeta string VAZIA — loaders de
+  env tratam vazio/whitespace como ausente (`(env ?? "").trim() || default`). Erros de
+  discovery tools são logados estruturados antes de virar tool-error pro modelo.
+- **D8 — Passos 6-7 do docx: fora do escopo desta fase (declarado).** Passo 6 ("Concluir")
+  está vazio no docx. Passo 7 (pós-venda: comunicados automáticos, lembretes de assembleia,
+  sugestões de lance, celebração pós-contemplação, indicação, dash) depende de
+  monitoramento contínuo de assembleias e canal transacional ativo — é fase própria de
+  produto, planejada DEPOIS do fechamento (passo 5) estar em produção. O eval da jornada
+  cobre passos 1-5; o passo 7 entra no backlog com plano de teste próprio quando for
+  construído. (Registrado a pedido da revisão adversarial — buraco reconhecido, não
+  silenciado.)
+
 ## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
 
 | Item | Commit | Estado |

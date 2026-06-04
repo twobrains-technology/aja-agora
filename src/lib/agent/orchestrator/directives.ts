@@ -137,7 +137,7 @@ export function buildSearchSummaryDirective(args: {
 - lance=${q.hasLance}
 
 FLUXO OBRIGATORIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaque):
-1. Em 1-2 frases curtas NO SEU TOM, espelhe o perfil e anuncie no espirito do docx: "Encontramos boas opcoes para o seu perfil — agora vou te recomendar a mais adequada:". NAO use bullets/checkboxes (✅), NAO use template, NAO descreva numeros especificos dos grupos.
+1. Em 1-2 frases curtas NO SEU TOM, espelhe o perfil e anuncie a copy do docx passo 3: "Encontramos 3 boas opcoes para o seu perfil. Agora vamos te recomendar a mais adequada:". NAO use bullets/checkboxes (✅), NAO use template, NAO descreva numeros especificos dos grupos.
 2. Chame search_groups com category="${category}"${filters}.
 3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opcao retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score e scoreBreakdown exatos. SE retornou apenas 1 grupo: chame present_group_card com ele.
 4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — e o detalhamento do docx (parcela, prazo, taxas, lance/lance embutido).

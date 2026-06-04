@@ -52,7 +52,7 @@ import {
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { lanceValueOptions, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
@@ -64,7 +64,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { judgeJornada } from "@/lib/eval/jornada-judge";
 import { fluxoScore, type JornadaJudgeResult } from "@/lib/eval/jornada-rubric";
-import { gatePartData } from "@/lib/web/adapter";
+import { gatePartData, WELCOME_OPTIONS } from "@/lib/web/adapter";
 import {
 	FIXTURE_IDENTITY,
 	FIXTURE_OFFERS,
@@ -128,23 +128,48 @@ async function renderGate(conversationId: string, gate: Gate): Promise<string> {
 function describeArtifact(a: { type: string; payload: Record<string, unknown> }): string {
 	const p = a.payload as Record<string, unknown> & {
 		administradora?: string;
+		category?: string;
 		creditValue?: number;
 		monthlyPayment?: number;
 		termMonths?: number;
+		adminFeePercent?: number;
 		contempladosMes?: number;
-		groups?: Array<{ administradora?: string }>;
+		lanceScenario?: { lancePercent?: number; expectedTermMonths?: number };
+		embeddedBid?: { percent?: number; receivedCredit?: number };
+		groups?: Array<{
+			administradora?: string;
+			category?: string;
+			creditValue?: number;
+			monthlyPayment?: number;
+			termMonths?: number;
+			availableSlots?: number;
+		}>;
 	};
 	const brl = (n?: number) =>
 		typeof n === "number" ? n.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "?";
+	const tipo = (c?: string) =>
+		({ imovel: "Imóvel", auto: "Automóvel", moto: "Moto", servicos: "Serviços" })[c ?? ""] ?? c;
 	switch (a.type) {
 		case "recommendation_card":
-			return `[card "Plano recomendado pela Aja Agora": ${p.administradora ?? "?"} — carta R$ ${brl(p.creditValue)}, parcela R$ ${brl(p.monthlyPayment)}/mês, ${p.termMonths ?? "?"} meses${p.contempladosMes !== undefined ? `, ${p.contempladosMes} contemplados/mês` : ""}]`;
-		case "simulation_result":
-			return `[card detalhamento da simulação: ${p.administradora ?? "?"} — carta R$ ${brl(p.creditValue)}, parcela R$ ${brl(p.monthlyPayment)}/mês]`;
+			return `[card "Plano recomendado pela Aja Agora": ${p.administradora ?? "?"} — carta R$ ${brl(p.creditValue)}, parcela R$ ${brl(p.monthlyPayment)}/mês, ${p.termMonths ?? "?"} meses, tipo de grupo ${tipo(p.category)}${p.contempladosMes !== undefined ? `, ${p.contempladosMes} contemplados/mês` : ""}]`;
+		case "simulation_result": {
+			const lance = p.lanceScenario
+				? ` | com lance de ${p.lanceScenario.lancePercent ?? "?"}%: contemplação estimada em ~${p.lanceScenario.expectedTermMonths ?? "?"} meses (sem lance: prazo cheio de ${p.termMonths ?? "?"} meses)`
+				: "";
+			const embutido = p.embeddedBid
+				? ` | com lance embutido de ${p.embeddedBid.percent ?? "?"}%: crédito líquido R$ ${brl(p.embeddedBid.receivedCredit)}`
+				: "";
+			return `[card detalhamento da simulação: ${p.administradora ?? "?"} — carta R$ ${brl(p.creditValue)}, parcela R$ ${brl(p.monthlyPayment)}/mês, ${p.termMonths ?? "?"} meses, taxa adm ${p.adminFeePercent ?? "?"}${lance}${embutido}]`;
+		}
 		case "comparison_table":
-			return `[tabela comparativa: ${(p.groups ?? []).map((g) => g.administradora).join(" · ")}]`;
+			return `[tabela comparativa — outras opções: ${(p.groups ?? [])
+				.map(
+					(g) =>
+						`${g.administradora ?? "?"} (carta R$ ${brl(g.creditValue)}, parcela R$ ${brl(g.monthlyPayment)}/mês, ${g.termMonths ?? "?"} meses, tipo ${tipo(g.category)}${g.availableSlots !== undefined ? `, ${g.availableSlots} contemplados/mês` : ""})`,
+				)
+				.join(" · ")}]`;
 		case "contemplation_dial":
-			return `[simulador de contemplação (agulha): carta R$ ${brl(p.creditValue)}, escolha o mês-alvo (3/6/12…) e veja lance embutido + lance próprio + parcela]`;
+			return `[simulador de contemplação (agulha): carta R$ ${brl(p.creditValue)}, parcela base R$ ${brl(p.monthlyPayment)}/mês — escolha o mês-alvo (3/6/12…) e veja a receita: lance embutido + lance próprio, crédito líquido e parcela, com e sem lance]`;
 		case "decision_prompt":
 			return `[card de decisão: "${DECISION_PROMPT_QUESTION}" — botões: ${DECISION_PROMPT_OPTIONS.map((o) => o.label).join(" · ")}]`;
 		case "contract_form":
@@ -273,11 +298,13 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 			return { turns: [t] };
 		}
 		case "credit": {
-			// Carta de carro coerente com os grupos de auto (~100k) → ≥3 opções reais.
-			const label = "R$ 100.000 · R$ 1.700/mês";
+			// Carta COERENTE com as capturas reais de auto (ITAÚ 54.832 / BB 50.000 /
+			// ÂNCORA 42.000) — pedir 100k com fixtures de ~50k faria a recomendação
+			// divergir do pedido sem explicação (apontado pelo judge na rodada 1).
+			const label = "R$ 55.000 · R$ 1.100/mês";
 			await persistMeta(conversationId, {
 				...meta,
-				qualifyAnswers: { ...q, creditMin: 90_000, creditMax: 100_000, monthlyBudget: 1_700 },
+				qualifyAnswers: { ...q, creditMin: 45_000, creditMax: 55_000, monthlyBudget: 1_100 },
 			});
 			await saveMessage(conversationId, "user", label, "web");
 			const t = await consumeTurn(
@@ -321,10 +348,12 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 		}
 		case "lance-value": {
 			// route: persiste lanceValue + pipeGatePrompt(lance-embutido), sem LLM.
-			const label = "Uns R$ 30 mil";
+			// O clique usa a OPÇÃO REAL do chip (~30% da carta) — mesma config da UI.
+			const opt = lanceValueOptions(q.creditMax ?? 55_000)[2];
+			const label = opt.title;
 			await persistMeta(conversationId, {
 				...meta,
-				qualifyAnswers: { ...q, lanceValue: 30_000 },
+				qualifyAnswers: { ...q, lanceValue: Number(opt.token) },
 			});
 			await saveMessage(conversationId, "user", label, "web");
 			const t = await gatePromptTurn(conversationId, "lance-embutido", "passo2:lance-embutido");
@@ -423,6 +452,7 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	} = {};
 	const sentSummaries: Array<{ to: string; text: string }> = [];
 	let summarySent = false;
+	let simulatorGateEmitted = false;
 
 	afterAll(async () => {
 		if (!conversationId) return;
@@ -449,7 +479,18 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			.returning();
 		conversationId = conv.id;
 
-		// ── passo 1 — Entender a necessidade: o sonho do carro + o nome ──
+		// ── passo 1 — Entender a necessidade: welcome + o sonho do carro + o nome ──
+		// O docx abre com "O que vc deseja conquistar?" + botões de categoria — é a
+		// landing de produção (WELCOME_OPTIONS). Entra no transcript como o usuário vê.
+		turns.push({
+			label: "passo1:welcome",
+			userLine: null,
+			content: `O que você deseja conquistar?\n[botões: ${WELCOME_OPTIONS.map((o) => o.label).join(" · ")}]`,
+			toolCalls: [],
+			artifacts: [],
+			gates: [],
+			events: [],
+		});
 		const sonho = "Quero comprar um carro novo, qual o melhor consórcio pra mim?";
 		cap.intro = await consumeTurn(conv.id, sonho, true, "passo1:sonho", sonho);
 		turns.push(cap.intro);
@@ -475,16 +516,26 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				result.nextGate ?? lastGateOf(result.turns[result.turns.length - 1]) ?? null;
 		}
 
-		// Fallback observável: se o reveal não emitiu o gate do simulador (regressão
-		// de produto, não do harness), registra e dirige mesmo assim pro cenário
-		// continuar — os asserts de gates/judge reprovam a ausência.
+		// ── passo 4 — oferta do simulador EMITIDA pela máquina de estado ──
+		// O reveal produz artifacts, então o runner segura o gate pro turno
+		// SEGUINTE do usuário (anti-atropelo) — produção real: o usuário reage e
+		// o gate simulator-offer dispara. NADA de fallback dirigido aqui: se a
+		// máquina de estado não emitir o gate, o cenário segue SEM simulador e os
+		// asserts/judge REPROVAM (P0 da revisão adversarial, rodada 2).
 		if (!cap.simulador) {
-			console.warn("[jornada] simulator-offer NÃO foi emitido na cadeia — fallback dirigido");
-			const r = await respondToGate(conv.id, "simulator-offer");
-			if (r?.turns.length) {
-				turns.push(...r.turns);
-				cap.simulador = r.turns[r.turns.length - 1];
+			const react = "que legal, gostei dessa recomendação!";
+			const reactTurn = await consumeTurn(conv.id, react, true, "passo4:reação", react);
+			turns.push(reactTurn);
+			if (lastGateOf(reactTurn) === "simulator-offer") {
+				simulatorGateEmitted = true;
+				const r = await respondToGate(conv.id, "simulator-offer");
+				if (r?.turns.length) {
+					turns.push(...r.turns);
+					cap.simulador = r.turns[r.turns.length - 1];
+				}
 			}
+		} else {
+			simulatorGateEmitted = true;
 		}
 
 		// ── passo 4 close — avança com afirmativos até o card de decisão ──
@@ -568,6 +619,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				whatsappConfigured: () => true,
 			});
 			summarySent = summary.sent;
+			// O envio acontece fora do chat — o judge precisa da evidência no
+			// transcript (como o usuário recebe no celular).
+			if (summary.sent && sentSummaries[0]) {
+				turns.push({
+					label: "passo5:resumo-whatsapp",
+					userLine: null,
+					content: `[mensagem recebida no WhatsApp do cliente]\n${sentSummaries[0].text}`,
+					toolCalls: [],
+					artifacts: [],
+					gates: [],
+					events: [],
+				});
+			}
 		}
 
 		console.log(`\n[jornada] ${turns.length} turnos`);
@@ -664,9 +728,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	it("passo 2 — respostas da qualificação persistidas (DB, não pré-seed)", async () => {
 		const meta = await reloadMeta(conversationId!);
 		expect(meta.qualifyAnswers?.hasLance, "tem reserva pra lance (docx: Sim)").toBe("yes");
-		expect(meta.qualifyAnswers?.lanceValue, "valor do lance veio do gate lance-value").toBe(
-			30_000,
-		);
+		expect(
+			meta.qualifyAnswers?.lanceValue,
+			"valor do lance veio do gate lance-value (opção ~30% da carta)",
+		).toBe(Number(lanceValueOptions(55_000)[2].token));
 		expect(meta.qualifyAnswers?.lanceEmbutido, "opt-in de lance embutido gravado").toBe(true);
 		expect(
 			meta.qualifyAnswers?.objetivo,
@@ -727,6 +792,18 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(p?.creditValue ?? 0, "carta real no dial").toBeGreaterThan(0);
 		expect(p?.termMonths ?? 0, "prazo real no dial").toBeGreaterThan(0);
 		expect(p?.monthlyPayment ?? 0, "parcela real no dial").toBeGreaterThan(0);
+	});
+
+	it("passo 4 — a oferta do simulador foi EMITIDA pela máquina de estado (sem fallback)", () => {
+		// P0 da revisão adversarial (rodada 2): o harness antigo forçava o dial
+		// via directive quando o gate não aparecia — mascarando regressão da
+		// máquina de estado (nextGate/decideShowGate). Agora: ou o produto emite
+		// o gate simulator-offer na sequência do reveal, ou este teste reprova.
+		expect(
+			simulatorGateEmitted,
+			`O gate simulator-offer NÃO foi emitido pela máquina de estado. Gates observados: ${allGates(turns).join(" → ")}`,
+		).toBe(true);
+		expect(allGates(turns)).toContain("simulator-offer");
 	});
 
 	it("passo 4 — a oferta do simulador usou a copy literal do docx (3, 6 ou 12 meses)", () => {

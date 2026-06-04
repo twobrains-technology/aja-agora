@@ -132,6 +132,11 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   crédito como lance", com o exemplo da carta de R$ 100 mil), tranquilizando
   ("fique tranquilo, a gente te ajuda").
 - Fechou com o gancho: "a Aja Agora vai analisar várias administradoras…".
+- DECISÃO DOCUMENTADA D1 (não punir ordem): a coleta de CPF + celular + aceite
+  LGPD acontece ao FIM do passo 2, no gancho acima — a administradora NÃO simula
+  oferta real sem CPF (exigência técnica registrada em docs/jornada/CONTEXT.md).
+  O docx posiciona "dados pessoais" no passo 5; a antecipação do CPF é decisão
+  aprovada — avalie a ordem dos passos considerando isso (não é quebra de fluxo).
 
 ### passo 3 — Buscar alternativas
 - Anunciou que encontrou boas opções PARA O PERFIL dele e que vai recomendar a mais

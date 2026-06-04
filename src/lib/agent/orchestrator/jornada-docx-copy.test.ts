@@ -4,6 +4,7 @@ import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 import { gatePartData } from "@/lib/web/adapter";
 import { qualifyConsentToWhatsApp } from "@/lib/whatsapp/formatter";
 import type { ConversationMetadata } from "../personas";
+import { TIMEFRAME_OPTIONS } from "../qualify-config";
 import {
 	buildExperienceFirstDirective,
 	buildSearchSummaryDirective,
@@ -142,6 +143,38 @@ describe("texto-ponte do passo 1 — docx linha 14", () => {
 		expect(d).toMatch(/perguntinhas/);
 		expect(d).toMatch(/melhor consórcio|melhor consorcio/);
 		expect(d).toMatch(/de cerca de/);
+	});
+});
+
+describe("prazo — as 5 opções LITERAIS do docx (passo 2, linha 23)", () => {
+	it("TIMEFRAME_OPTIONS tem exatamente as 5 labels do docx, na ordem", () => {
+		expect(TIMEFRAME_OPTIONS.map((o) => o.title)).toEqual([
+			"O mais rápido possível",
+			"Até 6 meses",
+			"1 ano",
+			"2 anos ou mais",
+			"Sem pressa, quero menor parcela",
+		]);
+	});
+});
+
+describe('passo 3 — "Encontramos 3 boas opções" (docx linha 32)', () => {
+	it("directive do reveal manda anunciar as 3 boas opções pro perfil", () => {
+		const d = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				experiencePrev: "first",
+				qualifyAnswers: {
+					creditMin: 45_000,
+					creditMax: 55_000,
+					monthlyBudget: 1_100,
+					prazoMeses: 0,
+					hasLance: "yes",
+				},
+			},
+		});
+		expect(d).toMatch(/3 boas opcoes|3 boas opções/i);
+		expect(d).toMatch(/para o seu perfil/i);
 	});
 });
 
