@@ -52,6 +52,8 @@ import { objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { judgeJornada } from "@/lib/eval/jornada-judge";
+import { fluxoScore, type JornadaJudgeResult } from "@/lib/eval/jornada-rubric";
 import { FIXTURE_IDENTITY, fixtureDiscoveryAdapter } from "../helpers/fixture-discovery-adapter";
 
 // ── MOCK-RUNTIME-MORTO: o eval NUNCA toca a Bevi real ──
@@ -533,5 +535,53 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				"contract_form deve ser o fechamento, depois de qualquer lead_form",
 			).toBeGreaterThan(leadIdx);
 		}
+	});
+
+	// ── LLM-AS-JUDGE — a EXPERIÊNCIA do docx, não só as tools certas ──────────
+	// Camada 3 de verdade (auditoria 2026-06-04): regex não julga tom nem
+	// fidelidade de experiência. O juiz (Sonnet, rubric por passo do docx)
+	// avalia o transcript completo. Thresholds são gates de qualidade nightly.
+
+	describe("LLM-as-judge — fidelidade à jornada canônica (rubric do docx)", () => {
+		let judged: JornadaJudgeResult | null = null;
+
+		beforeAll(async () => {
+			const transcript = turns
+				.map((t) => {
+					const artifactsTxt = t.artifacts.map((a) => `[artifact: ${a.type}]`).join("\n");
+					return `### ${t.label}\n${t.content || "(sem texto)"}${artifactsTxt ? `\n${artifactsTxt}` : ""}`;
+				})
+				.join("\n\n");
+			const { result } = await judgeJornada({ transcript });
+			judged = result;
+			console.log(`[jornada judge] fluxoScore=${fluxoScore(result).toFixed(2)}`);
+			console.log(`[jornada judge] issues: ${result.topIssues.join(" | ") || "(nenhum)"}`);
+		}, 120_000);
+
+		it("fluxo: os 5 passos do docx aconteceram com fidelidade (fluxoScore >= 0.75)", () => {
+			expect(judged).not.toBeNull();
+			expect(fluxoScore(judged as JornadaJudgeResult)).toBeGreaterThanOrEqual(0.75);
+			expect((judged as JornadaJudgeResult).flags.pulouPasso).toBe(false);
+		});
+
+		it("passo 2: educação pra leigo + lance embutido com a didática do docx", () => {
+			const j = judged as JornadaJudgeResult;
+			expect(j.steps.passo2.fidelidade).toBeGreaterThanOrEqual(0.7);
+			expect(j.educacaoLanceEmbutido).toBeGreaterThanOrEqual(0.7);
+			expect(j.flags.jargaoNoLeigo).toBe(false);
+		});
+
+		it("tom: caloroso e didático como a escritora do docx (não robótico)", () => {
+			const j = judged as JornadaJudgeResult;
+			expect(j.tom.score).toBeGreaterThanOrEqual(0.7);
+			expect(j.flags.tomRoboticoOuFrio).toBe(false);
+			expect(j.flags.metaNarrativaDoMecanismo).toBe(false);
+		});
+
+		it("fechamento: caminhou pra CONTRATO, não pra captura de lead", () => {
+			const j = judged as JornadaJudgeResult;
+			expect(j.fechamentoContratacao).toBeGreaterThanOrEqual(0.7);
+			expect(j.flags.fechouEmLeadEmVezDeContrato).toBe(false);
+		});
 	});
 });
