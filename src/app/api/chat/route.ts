@@ -357,38 +357,22 @@ export async function POST(req: NextRequest) {
 					}
 
 					// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
-					// das outras ofertas reais da descoberta (cache do adapter da
-					// conversa). Zero free-run do modelo, zero dado inventado.
+					// das outras ofertas reais da descoberta (other-options.ts — módulo
+					// único produção+eval). Zero free-run do modelo, zero dado inventado.
 					if (body.action?.kind === "show-other-options") {
-						const q = meta.qualifyAnswers ?? {};
-						const category = meta.currentCategory;
 						const textId = crypto.randomUUID();
 						writer.write({ type: "text-start", id: textId });
 						try {
-							if (!category) throw new Error("sem categoria na conversa");
-							const { getDiscoveryAdapter } = await import("@/lib/adapters");
-							const groups = await getDiscoveryAdapter(conversationId).searchGroups({
-								category,
-								creditMin: q.creditMin,
-								creditMax: q.creditMax,
-							});
-							const others = groups
-								.filter((g) => g.administradora !== meta.recommendedAdministradora)
-								.slice(0, 2); // docx: "as outras 2"
-							if (others.length === 0) throw new Error("sem outras ofertas no cache");
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta:
-									"Claro! Essas são as outras opções que encontrei pro seu perfil — compara com calma:",
-							});
+							const { buildOtherOptions } = await import("@/lib/bevi/other-options");
+							const others = await buildOtherOptions(conversationId, meta);
+							writer.write({ type: "text-delta", id: textId, delta: others.text });
 							writer.write({ type: "text-end", id: textId });
 							writer.write({
 								type: "data-artifact",
 								id: crypto.randomUUID(),
 								data: {
 									type: "comparison_table",
-									payload: { groups: others },
+									payload: { groups: others.groups },
 								},
 							});
 						} catch {

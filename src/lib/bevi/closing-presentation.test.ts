@@ -12,11 +12,13 @@ import { closingPresentation, realOfferPresentation } from "./closing-presentati
 const START_OK = {
 	proposalId: "prop-1",
 	offer: {
+		ofertaId: "oferta-1",
 		administradora: "ÂNCORA",
 		grupo: "1234",
 		category: "auto" as const,
 		creditValue: 60_000,
 		monthlyPayment: 980,
+		tipoOferta: "SPECIAL_OFFER" as const,
 	},
 	noOffer: false,
 };

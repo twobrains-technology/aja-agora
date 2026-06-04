@@ -25,12 +25,17 @@ const validResult = {
 	didaticaLeigo: 0.9,
 	educacaoLanceEmbutido: 0.8,
 	fechamentoContratacao: 1,
+	reforcosPasso5: 1,
+	assinaturaSemTrocarEmpresa: 0.9,
 	flags: {
 		pulouPasso: false,
 		fechouEmLeadEmVezDeContrato: false,
 		jargaoNoLeigo: false,
 		tomRoboticoOuFrio: false,
 		metaNarrativaDoMecanismo: false,
+		faltaramReforcos: false,
+		faltouParabens: false,
+		faltouResumoContratacao: false,
 	},
 	topIssues: [],
 	topStrengths: ["explicação didática"],
@@ -52,6 +57,27 @@ describe("JORNADA_RUBRIC_SYSTEM_PROMPT — ancorado no docx, não na implementa�
 		expect(p).toMatch(/3, 6 ou 12 meses/);
 		expect(p).toMatch(/lance embutido/i);
 		expect(p).toContain("Seu objetivo primeiro. O melhor consórcio depois.");
+	});
+
+	it("v2 — âncoras que faltavam (revisão adversarial 2026-06-04)", () => {
+		// Botão pós-explicação de primeira vez (docx linha 20).
+		expect(p).toContain("Entendi, pode continuar");
+		// Campos do resumo por opção (docx linha 38) — só o que a fonte fornece.
+		expect(p).toMatch(/contemplados\/m[êe]s|contemplados por m[êe]s/i);
+		expect(p).toMatch(/tipo de grupo/i);
+		// Outras opções sob demanda (docx linha 37).
+		expect(p).toMatch(/outras op[çc][õo]es/i);
+		// Fechamento completo (docx linhas 51-53).
+		expect(p).toContain("Parabéns! Agora você está oficialmente mais perto da sua conquista!");
+		expect(p).toMatch(/resumo da contrata[çc][ãa]o/i);
+		expect(p).toMatch(/sem.*sentir que.*mudou de empresa|sem o cliente sentir que "mudou de empresa"/i);
+	});
+
+	it("v2 — limitação de fonte declarada: não cobrar o que a oferta Bevi não fornece", () => {
+		// Reputação/histórico de contemplações NÃO existem na oferta self-contract —
+		// o juiz não pode punir ausência de dado que a fonte não dá (nem aceitar invenção).
+		expect(p).toMatch(/reputa[çc][ãa]o|hist[óo]rico de contempla/i);
+		expect(p).toMatch(/n[ãa]o fornece|n[ãa]o exist|indispon[íi]vel/i);
 	});
 
 	it("define o fechamento como CONTRATAÇÃO, não captura de lead", () => {
@@ -84,6 +110,22 @@ describe("jornadaJudgeResultSchema — saída estruturada do juiz", () => {
 		const noFlags = { ...validResult, flags: { pulouPasso: false } };
 		expect(() => jornadaJudgeResultSchema.parse(noFlags)).toThrow();
 	});
+
+	it("v2 — exige reforcosPasso5, assinaturaSemTrocarEmpresa e flags novas", () => {
+		const { reforcosPasso5: _r, ...semReforcos } = validResult;
+		expect(() => jornadaJudgeResultSchema.parse(semReforcos)).toThrow();
+		const semFlagsNovas = {
+			...validResult,
+			flags: {
+				pulouPasso: false,
+				fechouEmLeadEmVezDeContrato: false,
+				jargaoNoLeigo: false,
+				tomRoboticoOuFrio: false,
+				metaNarrativaDoMecanismo: false,
+			},
+		};
+		expect(() => jornadaJudgeResultSchema.parse(semFlagsNovas)).toThrow();
+	});
 });
 
 describe("fluxoScore — fidelidade de fluxo com gate de passo essencial", () => {
@@ -100,6 +142,17 @@ describe("fluxoScore — fidelidade de fluxo com gate de passo essencial", () =>
 			},
 		});
 		expect(fluxoScore(missing)).toBeLessThanOrEqual(0.4);
+	});
+
+	it("v2 — passo essencial FORA DE ORDEM também trava em <= 0.4 (ordem é o fluxo)", () => {
+		const outOfOrder = jornadaJudgeResultSchema.parse({
+			...validResult,
+			steps: {
+				...validResult.steps,
+				passo2: { presente: true, ordemCorreta: false, fidelidade: 0.9, reasoning: "veio depois" },
+			},
+		});
+		expect(fluxoScore(outOfOrder)).toBeLessThanOrEqual(0.4);
 	});
 });
 

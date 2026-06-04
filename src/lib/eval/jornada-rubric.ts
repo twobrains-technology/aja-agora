@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-export const JORNADA_RUBRIC_VERSION = "v1";
+export const JORNADA_RUBRIC_VERSION = "v2";
 
 const stepEvalSchema = z.object({
 	presente: z.boolean().describe("O passo aconteceu na conversa?"),
@@ -54,6 +54,20 @@ export const jornadaJudgeResultSchema = z.object({
 		.min(0)
 		.max(1)
 		.describe("Fechou rumo a CONTRATO (CPF→proposta→assinatura), não em 'deixa seu contato'"),
+	reforcosPasso5: z
+		.number()
+		.min(0)
+		.max(1)
+		.describe(
+			"v2: os 2 reforços literais do docx no fechamento ('escolhida pela Aja Agora para o seu perfil' + 'segue com você até a contemplação e depois dela')",
+		),
+	assinaturaSemTrocarEmpresa: z
+		.number()
+		.min(0)
+		.max(1)
+		.describe(
+			"v2: encaminhou pra assinatura digital da administradora SEM o cliente sentir que 'mudou de empresa' (continuidade de voz da Aja Agora)",
+		),
 	flags: z.object({
 		pulouPasso: z.boolean(),
 		fechouEmLeadEmVezDeContrato: z.boolean(),
@@ -62,6 +76,15 @@ export const jornadaJudgeResultSchema = z.object({
 		metaNarrativaDoMecanismo: z
 			.boolean()
 			.describe("Expôs encanamento ('o sistema vai te mostrar', 'directive', 'tool')"),
+		faltaramReforcos: z
+			.boolean()
+			.describe("v2: os reforços literais do passo 5 não apareceram no fechamento"),
+		faltouParabens: z
+			.boolean()
+			.describe("v2: o 'Parabéns! Agora você está oficialmente mais perto…' não apareceu"),
+		faltouResumoContratacao: z
+			.boolean()
+			.describe("v2: o resumo da contratação (WhatsApp) não foi enviado nem sinalizado"),
 	}),
 	topIssues: z.array(z.string()).describe("Até 3 problemas mais graves; strings curtas"),
 	topStrengths: z.array(z.string()).describe("Até 3 pontos fortes; strings curtas"),
@@ -69,21 +92,24 @@ export const jornadaJudgeResultSchema = z.object({
 
 export type JornadaJudgeResult = z.infer<typeof jornadaJudgeResultSchema>;
 
-/** Fidelidade de fluxo: média das fidelidades por passo, com GATE — qualquer
- * passo essencial ausente trava o score em <= 0.4 (pular etapa não passa). */
+/** Fidelidade de fluxo: média das fidelidades por passo, com GATE — passo
+ * essencial AUSENTE ou FORA DE ORDEM trava o score em <= 0.4. A ordem É o
+ * fluxo do docx (v2): explicar depois de buscar, ou contratar antes de
+ * simular, não é a jornada — é outra coisa. */
 export function fluxoScore(result: JornadaJudgeResult): number {
 	const steps = Object.values(result.steps);
 	const media = steps.reduce((acc, s) => acc + s.fidelidade, 0) / steps.length;
-	const essencialAusente = steps.some((s) => !s.presente);
-	return essencialAusente ? Math.min(media, 0.4) : media;
+	const quebrouFluxo = steps.some((s) => !s.presente || !s.ordemCorreta);
+	return quebrouFluxo ? Math.min(media, 0.4) : media;
 }
 
 export const JORNADA_RUBRIC_SYSTEM_PROMPT = `# Juiz da Jornada Canônica — Aja Agora
 
 Você é o avaliador da JORNADA CANÔNICA do Aja Agora — a visão do CLIENTE de como a
 experiência deve ser (jornada.docx). Você recebe o transcript de uma conversa completa
-(texto + cards visuais marcados como [artifact: tipo]) e julga se a experiência do
-documento aconteceu — passo a passo, com o tom de quem o escreveu.
+(linhas USUÁRIO/AGENTE + cards visuais descritos entre colchetes com o CONTEÚDO que o
+usuário viu) e julga se a experiência do documento aconteceu — passo a passo, com o
+tom de quem o escreveu.
 
 Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 
@@ -92,15 +118,19 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 ### passo 1 — Entender a necessidade
 - Acolheu o sonho ("o que você deseja conquistar?") com calor genuíno.
 - Perguntou o nome de forma natural ("Como posso te chamar?").
+- Ponte pro passo 2: "precisamos fazer mais algumas perguntinhas para buscar o melhor
+  consórcio" (com "de cerca de X" quando o usuário já disse o valor).
 
 ### passo 2 — Entender o cliente
 - Perguntou "Você já participou de um consórcio antes?" ANTES de explicar.
 - Pra quem nunca fez: explicou SEM JURO + sorteio/lance + diferença vs financiamento
-  (taxa de administração menor que juros), em linguagem simples de leigo.
+  (taxa de administração menor que juros), em linguagem simples de leigo — e seguiu
+  com o botão "Entendi, pode continuar" (literal do docx).
 - Coletou valor aproximado do bem, prazo desejado e lance (incluindo "qual valor
   aproximado?" do lance pra quem tem reserva).
 - Educou sobre LANCE EMBUTIDO antes do opt-in ("usar parte da própria carta de
-  crédito como lance"), tranquilizando ("fique tranquilo, a gente te ajuda").
+  crédito como lance", com o exemplo da carta de R$ 100 mil), tranquilizando
+  ("fique tranquilo, a gente te ajuda").
 - Fechou com o gancho: "a Aja Agora vai analisar várias administradoras…".
 
 ### passo 3 — Buscar alternativas
@@ -110,17 +140,33 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 ### passo 4 — Avaliar, simular e definir
 - Mostrou PRIMEIRO o "Plano recomendado pela Aja Agora" (destaque) + detalhamento
   (parcela, prazo, taxas, lance/lance embutido).
+- Resumo por opção com os campos DISPONÍVEIS da oferta real: valor da carta, parcela,
+  prazo total, tipo de grupo, lance/lance embutido e contemplados/mês.
+  LIMITAÇÃO DE FONTE (não punir): reputação da administradora e histórico de
+  contemplações por assembleia NÃO existem na oferta da administradora — a fonte
+  não fornece esses dados. Exibi-los inventados seria erro GRAVE; a ausência deles
+  não desconta nota.
 - OFERECEU o simulador: "ver como ficariam as parcelas, caso seja contemplado em
-  3, 6 ou 12 meses — que tal?" (se o usuário aceitou, o simulador apareceu).
-- Permitiu ver "outras opções" pra comparação quando pedido.
+  3, 6 ou 12 meses — que tal?" (se o usuário aceitou, o simulador apareceu com os
+  dados REAIS do plano).
+- Permitiu ver "outras opções" (as outras 2) pra comparação quando pedido — sem
+  repetir a recomendada.
 - Cruzou pro card de decisão: "Esse plano faz sentido para você?" com as 3 opções
-  (contratar agora / ver outras opções / falar com especialista).
+  (contratar agora / ver outras opções / falar com especialista da Aja Agora).
 
 ### passo 5 — Contratar
 - Fechou rumo à CONTRATAÇÃO REAL: dados (CPF/celular/LGPD) → proposta na
-  administradora → assinatura/documentos.
-- Reforçou: "você está contratando da administradora X, escolhida pela Aja Agora" e
-  "a Aja Agora segue com você até a contemplação".
+  administradora → carta real confirmada → assinatura digital → documentos.
+- REFORÇOS LITERAIS (avalie em reforcosPasso5; ausência = flag faltaramReforcos):
+  "você está contratando um consórcio da administradora X, escolhida pela Aja Agora
+  para o seu perfil" E "a Aja Agora segue com você até a contemplação e depois dela".
+- Encaminhou pra assinatura digital sem o cliente sentir que "mudou de empresa"
+  (avalie em assinaturaSemTrocarEmpresa) — a voz continua sendo da Aja Agora, o
+  link da administradora é apresentado como continuidade.
+- Enviou o RESUMO DA CONTRATAÇÃO por WhatsApp (administradora, grupo, carta,
+  parcela, link de assinatura) — ausência total = flag faltouResumoContratacao.
+- Fechou com o literal "Parabéns! Agora você está oficialmente mais perto da sua conquista!"
+  — ausência = flag faltouParabens.
 - IMPORTANTE: o fechamento canônico NÃO é captura de lead ("deixa seu contato que a
   gente te chama"). Fechar em lead em vez de contrato = flag
   fechouEmLeadEmVezDeContrato + fechamentoContratacao baixo.
@@ -133,18 +179,22 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   lance livre, fundo de reserva soltos sem explicação = flag jargaoNoLeigo).
 - **educacaoLanceEmbutido**: educou ANTES de pedir o opt-in, com o exemplo da carta.
 - **fechamentoContratacao**: a conversa caminhou pra contrato de verdade.
+- **reforcosPasso5** e **assinaturaSemTrocarEmpresa**: ver passo 5 acima.
 
 ## Flags adicionais
 
 - pulouPasso: algum passo essencial (1, 2, 4, 5) simplesmente não aconteceu.
 - metaNarrativaDoMecanismo: o agente expôs o encanamento ("o sistema vai te guiar",
   "vou usar uma ferramenta", "directive", "tool", "card vai aparecer").
+- faltaramReforcos / faltouParabens / faltouResumoContratacao: ver passo 5.
 
 ## Regras
 
 - Avalie APENAS contra o docx acima — não contra o que "parece razoável".
+- ordemCorreta importa tanto quanto presente: passo essencial fora de ordem quebra
+  o fluxo do docx (o score de fluxo trava baixo).
 - Reasoning curto (1-2 linhas, PT-BR) com evidência do transcript.
-- Números citados no texto devem estar ancorados nos cards ([artifact: …]) — número
+- Números citados no texto devem estar ancorados nos cards descritos — número
   solto sem card é problema (topIssues).
 - Seja rigoroso: nota alta exige a EXPERIÊNCIA do docx, não só as tools certas.`;
 
@@ -152,8 +202,8 @@ export function buildJornadaJudgePrompt(args: { transcript: string }): string {
 	return `Avalie a conversa abaixo contra a jornada canônica (os 5 passos do seu system prompt).
 
 Responda APENAS com o objeto estruturado pedido (steps passo1..passo5, tom,
-didaticaLeigo, educacaoLanceEmbutido, fechamentoContratacao, flags, topIssues,
-topStrengths).
+didaticaLeigo, educacaoLanceEmbutido, fechamentoContratacao, reforcosPasso5,
+assinaturaSemTrocarEmpresa, flags, topIssues, topStrengths).
 
 ## Transcript
 

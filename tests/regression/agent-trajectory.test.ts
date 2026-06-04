@@ -2617,10 +2617,15 @@ describe("REVEAL-ORDER — recomendado primeiro, outras opções sob demanda", (
 	});
 
 	it("acoplamento: route tem o handler determinístico show-other-options (as outras 2)", () => {
+		// O surfacing vive em other-options.ts (módulo único produção+eval) e o
+		// route consome — os dois lados do acoplamento são verificados.
 		const src = readSource("src/app/api/chat/route.ts");
 		expect(src).toMatch(/show-other-options/);
-		expect(src).toMatch(/slice\(0, 2\)/); // docx: "as outras 2"
+		expect(src).toMatch(/buildOtherOptions/);
 		expect(src).toMatch(/comparison_table/);
+		const lib = readSource("src/lib/bevi/other-options.ts");
+		expect(lib).toMatch(/slice\(0, 2\)/); // docx: "as outras 2"
+		expect(lib).toMatch(/recommendedAdministradora/); // exclui a recomendada
 	});
 
 	it("acoplamento: o botão 'outras' do decision card dispara a action (não texto livre)", () => {
