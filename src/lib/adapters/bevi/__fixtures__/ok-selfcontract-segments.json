@@ -1,0 +1,15 @@
+{
+ "status": "OK",
+ "code": 200,
+ "success": true,
+ "data": {
+  "segmentResource": [
+   "AUTOS",
+   "IMOVEL",
+   "MOTOS",
+   "OUTROS BENS",
+   "PESADOS",
+   "SERVICOS"
+  ]
+ }
+}

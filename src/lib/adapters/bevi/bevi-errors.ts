@@ -36,10 +36,25 @@ export class OngoingProposalError extends BeviApiError {
 /** 400 — valor abaixo do mínimo do segmento (R$ 15.000 no piloto). */
 export class MinCreditError extends BeviApiError {
 	readonly minCredit: number;
-	constructor(message: string, minCredit: number, errors: BeviFieldError[] = [], data: unknown = null) {
+	constructor(
+		message: string,
+		minCredit: number,
+		errors: BeviFieldError[] = [],
+		data: unknown = null,
+	) {
 		super(400, message, errors, data);
 		this.name = "MinCreditError";
 		this.minCredit = minCredit;
+	}
+}
+
+/** 400 "Duplicated Hash" do self-contract (Trilho B) — já existe proposta ativa
+ * pro device/loja. NÃO é fatal: a app retoma a proposta ativa server-side
+ * (cookbook bevi-api-requests.md §3). */
+export class DuplicatedProposalError extends BeviApiError {
+	constructor(message: string, data: unknown = null) {
+		super(400, message, [], data);
+		this.name = "DuplicatedProposalError";
 	}
 }
 
@@ -62,7 +77,11 @@ export class BeviConfigError extends Error {
 }
 
 /** Mapeia o envelope de erro pra erro tipado de domínio (spec §10). */
-export function toBeviError(code: number, message: string, data: unknown): BeviApiError | BeviConfigError {
+export function toBeviError(
+	code: number,
+	message: string,
+	data: unknown,
+): BeviApiError | BeviConfigError {
 	const d = (data ?? {}) as {
 		errors?: BeviFieldError[];
 		ongoingProposalIds?: string[];

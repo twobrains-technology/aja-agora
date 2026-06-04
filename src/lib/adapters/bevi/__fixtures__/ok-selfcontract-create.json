@@ -1,0 +1,11 @@
+{
+ "status": "OK",
+ "code": 200,
+ "success": true,
+ "message": "Proposta criada com sucesso!",
+ "data": {
+  "selfContract": {
+   "hashId": "6a1756d4bef180c41e909c07"
+  }
+ }
+}

@@ -37,6 +37,9 @@ export interface BeviOffer {
 	necessaryBidToContemplate?: number; // R$
 	quotaId: string;
 	productType?: string; // IMOVEL | AUTOS | MOTOS | SERVICOS | PESADOS | OUTROS BENS
+	proximaAssembleia?: string; // ISO date — próxima assembleia do grupo
+	validityStart?: string; // ISO date — início de vigência da oferta
+	quantityOfQuotas?: number; // cotas da oferta
 }
 
 /** Segmento Bevi → categoria de domínio. Bevi tem 6 segmentos; o domínio Aja
