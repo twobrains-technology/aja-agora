@@ -2597,6 +2597,49 @@ describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", ()
 });
 
 // ============================================================================
+// E2E-REAL-2026-06-04 — achados do QA em tela contra a Bevi de produção
+// ----------------------------------------------------------------------------
+// Run real (CPF autorizado) PASSou a jornada 1→5 completa mas expôs 3 defeitos:
+// (1) optin no meio da qualificação engolia gates (intermitente, run 1);
+// (2) administradora trocava no fechamento (decisão RODOBENS → carta ANCORA);
+// (3) pós-Parabéns um afirmativo re-apresentava contract_form.
+// ============================================================================
+
+describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", () => {
+	it("guard determinístico: optin NUNCA antes do reveal", async () => {
+		const { shouldEmitWhatsappOptin } = await import(
+			"@/lib/agent/orchestrator/whatsapp-optin-guard"
+		);
+		// Cenário exato do run 1: reserva respondida, qualificação incompleta.
+		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } })).toBe(false);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+	});
+});
+
+describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-TROCADA)", () => {
+	it("acoplamento: route passa a recomendada e o pick prefere a marca", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		expect(route).toMatch(/administradoraPreferida: meta.recommendedAdministradora/);
+		const pick = readSource("src/lib/adapters/bevi/partner-offer-mapper.ts");
+		expect(pick).toMatch(/preferAdministradora/);
+		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");
+		expect(fulfillment).toMatch(/input.administradoraPreferida/);
+		// Re-sim por TTL também mantém a marca confirmada.
+		expect(fulfillment).toMatch(/row.administradora\)/);
+	});
+});
+
+describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMINAL)", () => {
+	it("acoplamento: offer-confirm marca contractClosed e o runner suprime contract_form", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		expect(route).toMatch(/contractClosed: true/);
+		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runner).toMatch(/isContractDup/);
+		expect(runner).toMatch(/contractClosed === true && artifactType === "contract_form"/);
+	});
+});
+
+// ============================================================================
 // REVEAL-ORDER (docx passos 3-4 — auditoria 2026-06-04: "partial/ordem invertida")
 // ----------------------------------------------------------------------------
 // docx: "Mostrar primeiro 'Plano recomendado pela Aja Agora' (destaque). E

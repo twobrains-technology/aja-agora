@@ -50,11 +50,37 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 	};
 }
 
+/** Normaliza nome de administradora pra comparação entre trilhos — a Descoberta
+ * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). */
+const normalizeAdmin = (s: string) =>
+	s
+		.normalize("NFD")
+		.replace(/[̀-ͯ]/g, "")
+		.toUpperCase()
+		.trim();
+
 /** Escolhe, dentre as ofertas reais, a mais próxima do crédito que o usuário viu na
- * Descoberta (pra costurar o seam indicativo→real sem trocar o "plano" debaixo dele). */
-export function pickClosestOffer(offers: PartnerOffer[], targetCredit: number): PartnerOffer | undefined {
+ * Descoberta (pra costurar o seam indicativo→real sem trocar o "plano" debaixo dele).
+ *
+ * BUG-ADMIN-TROCADA-NO-FECHAMENTO (2026-06-04, E2E real): o usuário decidia sobre a
+ * administradora recomendada e o fechamento entregava OUTRA — closest por valor
+ * ignorava a marca. Com `preferAdministradora` presente nas ofertas do parceiro,
+ * escolhe a mais próxima DELA; ausente, cai no closest geral (não trava o
+ * fechamento por divergência de catálogo entre trilhos). */
+export function pickClosestOffer(
+	offers: PartnerOffer[],
+	targetCredit: number,
+	preferAdministradora?: string | null,
+): PartnerOffer | undefined {
 	if (offers.length === 0) return undefined;
-	return offers.reduce((best, o) =>
-		Math.abs(o.valorCarta - targetCredit) < Math.abs(best.valorCarta - targetCredit) ? o : best,
-	);
+	const closest = (list: PartnerOffer[]) =>
+		list.reduce((best, o) =>
+			Math.abs(o.valorCarta - targetCredit) < Math.abs(best.valorCarta - targetCredit) ? o : best,
+		);
+	if (preferAdministradora) {
+		const pref = normalizeAdmin(preferAdministradora);
+		const preferred = offers.filter((o) => normalizeAdmin(o.administradora) === pref);
+		if (preferred.length > 0) return closest(preferred);
+	}
+	return closest(offers);
 }

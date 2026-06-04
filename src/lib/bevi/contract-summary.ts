@@ -8,7 +8,7 @@
 
 import type { SelfContractIdentity } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { loadIdentity } from "@/lib/conversation/identity";
-import { persistMeta } from "@/lib/conversation/meta";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { sendTextMessage } from "@/lib/whatsapp/api";
 import { getLatestBeviProposal } from "./proposal-repo";
 
@@ -58,10 +58,15 @@ export async function sendContractSummary(
 	const getProposalImpl = deps.getProposalImpl ?? getLatestBeviProposal;
 	const sendTextImpl = deps.sendTextImpl ?? sendTextMessage;
 	const configured = deps.whatsappConfigured ?? defaultConfigured;
+	// BUG-CONTRACT-SUMMARY-META-WIPE (2026-06-04): persistMeta SOBRESCREVE o
+	// metadata inteiro — o default SEMPRE faz merge sobre o estado atual; um
+	// patch parcial aqui destruía identityEnc/qualifyAnswers da conversa.
 	const persistMetaImpl =
 		deps.persistMetaImpl ??
-		((id: string, patch: Record<string, unknown>) =>
-			persistMeta(id, patch as Parameters<typeof persistMeta>[1]));
+		(async (id: string, patch: Record<string, unknown>) => {
+			const current = await reloadMeta(id);
+			await persistMeta(id, { ...current, ...patch } as Parameters<typeof persistMeta>[1]);
+		});
 
 	const markPending = async () => {
 		try {

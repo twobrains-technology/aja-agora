@@ -48,4 +48,46 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 	it("lista vazia → undefined", () => {
 		expect(pickClosestOffer([], 50000)).toBeUndefined();
 	});
+
+	// BUG-ADMIN-TROCADA-NO-FECHAMENTO (2026-06-04, E2E real, achado 2): o usuário
+	// decidiu sobre RODOBENS e o fechamento entregou ANCORA — o pick ignorava a
+	// administradora recomendada na Descoberta. Com a preferida presente nas
+	// ofertas do parceiro, escolhe a mais próxima DELA; ausente → closest geral.
+	describe("preferência pela administradora recomendada (consistência fintech)", () => {
+		const mk = (administradora: string, valorCarta: number): PartnerOffer =>
+			({
+				ofertaId: `of-${administradora}-${valorCarta}`,
+				administradora,
+				tipoOferta: "FREE_BID",
+				grupo: "500",
+				valorCarta,
+				parcela: valorCarta / 80,
+				taxaContemplacao: 0.5,
+				quotaId: `q-${valorCarta}`,
+			}) as PartnerOffer;
+
+		it("prefere a administradora recomendada mesmo se outra está mais próxima do alvo", () => {
+			const list = [mk("ANCORA", 60_000), mk("RODOBENS", 64_000)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS");
+			expect(chosen?.administradora).toBe("RODOBENS");
+		});
+
+		it("entre ofertas da preferida, escolhe a mais próxima do alvo", () => {
+			const list = [mk("RODOBENS", 80_000), mk("RODOBENS", 62_000), mk("ANCORA", 60_000)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS");
+			expect(chosen?.valorCarta).toBe(62_000);
+		});
+
+		it("preferida ausente nas ofertas do parceiro → closest geral (sem travar o fechamento)", () => {
+			const list = [mk("ANCORA", 60_000), mk("TRADICAO", 70_000)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS");
+			expect(chosen?.administradora).toBe("ANCORA");
+		});
+
+		it("comparação tolera acento/caixa (Descoberta 'ÂNCORA' × Parceiro 'ANCORA')", () => {
+			const list = [mk("RODOBENS", 60_000), mk("ANCORA", 64_000)];
+			const chosen = pickClosestOffer(list, 60_000, "Âncora");
+			expect(chosen?.administradora).toBe("ANCORA");
+		});
+	});
 });

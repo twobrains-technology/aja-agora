@@ -38,7 +38,7 @@ import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
-import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { isUuid } from "@/lib/utils/id";
@@ -403,6 +403,9 @@ export async function POST(req: NextRequest) {
 								valor,
 								objetivo,
 								lanceEmbutido,
+								// Fechamento prefere a MESMA administradora que o usuário decidiu
+								// (BUG-ADMIN-TROCADA-NO-FECHAMENTO, E2E real 2026-06-04).
+								administradoraPreferida: meta.recommendedAdministradora ?? null,
 							});
 							// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 							// (módulo único — eval valida o MESMO copy de produção).
@@ -425,6 +428,10 @@ export async function POST(req: NextRequest) {
 					if (body.action?.kind === "offer-confirm") {
 						try {
 							const res = await confirmOffer(conversationId);
+							// Estado TERMINAL: pós-confirmação o fechamento está feito — o
+							// agente não re-apresenta contract_form (merge sobre meta atual).
+							const fresh = await reloadMeta(conversationId);
+							await persistMeta(conversationId, { ...fresh, contractClosed: true });
 							// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 							// (closing-presentation.ts — módulo único produção+eval).
 							pipeClosingItems(closingPresentation(res), writer);

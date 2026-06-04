@@ -39,6 +39,9 @@ export interface StartContractInput {
 	tipoSimulacao?: SimulationType;
 	lanceEmbutido?: LanceEmbutido;
 	leadId?: string | null;
+	/** Administradora recomendada na Descoberta — o fechamento prefere a MESMA
+	 * marca que o usuário decidiu (BUG-ADMIN-TROCADA-NO-FECHAMENTO). */
+	administradoraPreferida?: string | null;
 }
 
 export interface StartContractResult {
@@ -87,7 +90,7 @@ export async function startContract(
 		lanceEmbutido: input.lanceEmbutido ?? "nenhum",
 	});
 
-	const chosen = pickClosestOffer(sim.offers, input.valor);
+	const chosen = pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida);
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
 	const snapshot = {
@@ -139,7 +142,8 @@ export async function confirmOffer(
 			valor: Number(row.creditValue ?? 0) || 0,
 			objetivo: "contemplacao_rapida",
 		});
-		const fresh = pickClosestOffer(sim.offers, Number(row.creditValue ?? 0));
+		// Re-sim por TTL mantém a MESMA marca que o usuário confirmou.
+		const fresh = pickClosestOffer(sim.offers, Number(row.creditValue ?? 0), row.administradora);
 		ofertaId = fresh?.ofertaId ?? ofertaId;
 		await updateBeviProposal(row.id, {
 			simulationSessionId: sim.simulationSessionId,

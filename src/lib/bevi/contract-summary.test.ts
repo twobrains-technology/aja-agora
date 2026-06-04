@@ -96,3 +96,50 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 		expect(result.sent).toBe(false);
 	});
 });
+
+// BUG-CONTRACT-SUMMARY-META-WIPE (2026-06-04, E2E real): persistMeta SOBRESCREVE
+// o metadata inteiro — o markPending passava só { contractSummaryPending: true }
+// e DESTRUÍA identityEnc/qualifyAnswers/revealCompleted da conversa quando o
+// envio do resumo falhava (visto ao vivo: #131030 allowlist do sandbox Meta).
+// O dublê do teste unitário aceitava patch parcial e escondeu a semântica real.
+describe("markPending preserva o metadata (integração com persistMeta REAL)", () => {
+	it("falha de envio NÃO destrói identityEnc/qualifyAnswers — só liga a flag", async () => {
+		const { db } = await import("@/db");
+		const { conversations } = await import("@/db/schema");
+		const { eq } = await import("drizzle-orm");
+		const { reloadMeta } = await import("@/lib/conversation/meta");
+		const { storeIdentity } = await import("@/lib/conversation/identity");
+		if (!process.env.IDENTITY_ENC_KEY) {
+			process.env.IDENTITY_ENC_KEY = Buffer.alloc(32, 7).toString("base64");
+		}
+		const [conv] = await db
+			.insert(conversations)
+			.values({
+				channel: "web",
+				isSimulated: true,
+				metadata: {
+					currentCategory: "auto",
+					revealCompleted: true,
+					qualifyAnswers: { hasLance: "yes", lanceValue: 12_000 },
+				},
+			})
+			.returning();
+		try {
+			await storeIdentity(conv.id, { cpf: "52998224725", celular: "62999887766" });
+			const result = await sendContractSummary(conv.id, {
+				getProposalImpl: async () => ROW,
+				sendTextImpl: vi.fn().mockRejectedValue(new Error("(#131030) not in allowed list")),
+				whatsappConfigured: () => true,
+				// persistMetaImpl/loadIdentityImpl/reloadMeta REAIS — é o ponto do teste.
+			});
+			expect(result.sent).toBe(false);
+			const meta = await reloadMeta(conv.id);
+			expect(meta.contractSummaryPending, "flag de pendência ligada").toBe(true);
+			expect(meta.identityEnc, "identityEnc NÃO pode ser destruído").toBeTruthy();
+			expect(meta.qualifyAnswers?.lanceValue, "qualifyAnswers preservado").toBe(12_000);
+			expect(meta.revealCompleted, "revealCompleted preservado").toBe(true);
+		} finally {
+			await db.delete(conversations).where(eq(conversations.id, conv.id));
+		}
+	});
+});

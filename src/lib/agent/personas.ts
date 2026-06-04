@@ -87,6 +87,10 @@ export type ConversationMetadata = {
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
 	contractSummaryPending?: boolean;
+	/** Estado TERMINAL do fechamento (offer-confirm concluído — proposta em
+	 * 'documentos'). Pós-Parabéns o agente não re-apresenta contract_form
+	 * (BUG-POS-FECHAMENTO-NAO-TERMINAL, E2E real 2026-06-04). */
+	contractClosed?: boolean;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;

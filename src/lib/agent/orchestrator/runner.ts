@@ -172,11 +172,16 @@ export async function* runAgentTurn(args: {
 					// card de decisão já apareceu, suprime re-emissão num turno de usuário.
 					const isDecisionDup =
 						meta.decisionDispatched === true && isUserTurn && artifactType === "decision_prompt";
+					// BUG-POS-FECHAMENTO-NAO-TERMINAL (E2E real 2026-06-04): pós-Parabéns
+					// (contractClosed) um afirmativo fazia o agente re-apresentar o
+					// contract_form e "contratar" outra administradora. Estado terminal.
+					const isContractDup =
+						meta.contractClosed === true && artifactType === "contract_form";
 					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
 						console.log(
-							`[whatsapp-optin] guard: tool chamada 2x na mesma conversa, suprimindo artifact (conv=${conversationId})`,
+							`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
 						);
-					} else if (isRereveal || isDecisionDup) {
+					} else if (isRereveal || isDecisionDup || isContractDup) {
 						console.log(
 							`[reveal-loop] guard: suprimindo ${artifactType} re-emitido pós-reveal (conv=${conversationId}, intent=${userIntent})`,
 						);
