@@ -139,8 +139,8 @@ export function buildSearchSummaryDirective(args: {
 FLUXO OBRIGATORIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaque):
 1. Em 1-2 frases curtas NO SEU TOM, espelhe o perfil e anuncie a copy do docx passo 3: "Encontramos 3 boas opcoes para o seu perfil. Agora vamos te recomendar a mais adequada:". NAO use bullets/checkboxes (✅), NAO use template, NAO descreva numeros especificos dos grupos.
 2. Chame search_groups com category="${category}"${filters}.
-3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opcao retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score e scoreBreakdown exatos. SE retornou apenas 1 grupo: chame present_group_card com ele.
-4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — e o detalhamento do docx (parcela, prazo, taxas, lance/lance embutido).
+3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opcao retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score, scoreBreakdown E contempladosMes (copie de availableSlots do grupo — campo do resumo por opcao do docx) exatos. SE retornou apenas 1 grupo: chame present_group_card com ele.
+4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — o detalhamento do docx. OBRIGATORIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variacao com/sem lance e com lance embutido — exigencia literal do docx); omiti-los e defeito.
 
 NAO chame present_comparison_table neste turno: as "outras opcoes" do docx aparecem quando o usuario PEDIR (botao "Quero ver outras opcoes" do card de decisao) — destaque primeiro, comparacao sob demanda.
 

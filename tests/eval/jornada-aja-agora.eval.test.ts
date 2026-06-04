@@ -776,6 +776,34 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(artifactTypes(turns)).toContain("simulation_result");
 	});
 
+	it("passo 4 — detalhamento traz a variação com/sem lance e lance embutido (payload)", () => {
+		// docx (linhas 40-41): "Mostrar variação com/sem lance e com lance
+		// embutido." P2 da rodada 3 do revisor: os campos eram opcionais e
+		// dependiam da LLM copiá-los — agora a directive obriga e este assert
+		// trava o payload REAL (não a boa-vontade do modelo).
+		const sim = turns.flatMap((t) => t.artifacts).find((a) => a.type === "simulation_result");
+		expect(sim, "simulation_result ausente").toBeTruthy();
+		const p = sim?.payload as {
+			lanceScenario?: { lancePercent?: number; expectedTermMonths?: number };
+			embeddedBid?: { percent?: number; receivedCredit?: number };
+		};
+		expect(p?.lanceScenario, "lanceScenario (variação com/sem lance) ausente").toBeTruthy();
+		expect(p?.lanceScenario?.lancePercent ?? 0).toBeGreaterThan(0);
+		// O cenário opta por lance embutido (docx caminho rico) — o detalhamento
+		// TEM que mostrar a variação com embutido.
+		expect(p?.embeddedBid, "embeddedBid (variação com lance embutido) ausente").toBeTruthy();
+		expect(p?.embeddedBid?.receivedCredit ?? 0).toBeGreaterThan(0);
+	});
+
+	it("passo 4 — recomendado traz contemplados/mês REAL no payload (docx resumo por opção)", () => {
+		const rec = turns.flatMap((t) => t.artifacts).find((a) => a.type === "recommendation_card");
+		expect(rec, "recommendation_card ausente").toBeTruthy();
+		const p = rec?.payload as { contempladosMes?: number };
+		// Fixture da recomendada (ITAÚ) tem monthlyAwardedQuotas=3 — o modelo
+		// DEVE copiar availableSlots → contempladosMes (directive obriga).
+		expect(p?.contempladosMes, "contempladosMes ausente no card recomendado").toBeGreaterThan(0);
+	});
+
 	it("passo 4 — simulador do Bernardo com DADOS COERENTES do plano (contemplation_dial)", () => {
 		// docx (linha 39-41): simulador 3/6/12 — e o payload tem que ser o plano
 		// REAL (carta > 0, prazo > 0, parcela > 0), não números soltos.
