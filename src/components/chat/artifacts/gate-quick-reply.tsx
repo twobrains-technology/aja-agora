@@ -8,7 +8,7 @@ import type { GatePartData, GatePartOption } from "@/lib/chat/ui-message";
 
 type ChipsPayload = Extract<GatePartData, { kind: "chips" }>;
 
-function buildAction(gate: ChipsPayload["gate"], option: GatePartOption): GateAction {
+export function buildAction(gate: ChipsPayload["gate"], option: GatePartOption): GateAction {
 	if (gate === "experience") {
 		return {
 			kind: "gate",
@@ -30,6 +30,34 @@ function buildAction(gate: ChipsPayload["gate"], option: GatePartOption): GateAc
 			kind: "gate",
 			gate: "timeframe",
 			value: { prazoMeses: Number.parseInt(option.value, 10) },
+			label: option.label,
+		};
+	}
+	// docx passo 2: "Qual valor aproximado?" — o token do chip é o valor do lance
+	// em reais (String(pct), ex.: "12000"). DEVE virar { lanceValue: number }, não
+	// cair no default de `lance` (que gravaria o valor em hasLance e pularia o gate
+	// lance-embutido). Regressão: BUG-LANCE-VALUE-GATE 2026-06-04.
+	if (gate === "lance-value") {
+		return {
+			kind: "gate",
+			gate: "lance-value",
+			value: { lanceValue: Number.parseInt(option.value, 10) },
+			label: option.label,
+		};
+	}
+	if (gate === "lance-embutido") {
+		return {
+			kind: "gate",
+			gate: "lance-embutido",
+			value: option.value as "yes" | "no",
+			label: option.label,
+		};
+	}
+	if (gate === "simulator-offer") {
+		return {
+			kind: "gate",
+			gate: "simulator-offer",
+			value: option.value as "yes" | "no",
 			label: option.label,
 		};
 	}
