@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // vi.mock hoisting workaround — usar vi.hoisted pra compartilhar mocks entre factory e tests.
 const mocks = vi.hoisted(() => ({

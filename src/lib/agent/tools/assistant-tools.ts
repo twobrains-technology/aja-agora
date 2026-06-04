@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { personaPatchSchema } from "@/lib/validations/persona-patch";
 import type { PersonaPatch } from "@/lib/validations/persona-patch";
+import { personaPatchSchema } from "@/lib/validations/persona-patch";
 
 type AssistantToolsContext = {
 	personaId: string;
@@ -154,9 +154,7 @@ function detectViolations(text: string, field: string): string[] {
 	return violations;
 }
 
-export type ProposePatchResult =
-	| { ok: true; patch: PersonaPatch }
-	| { ok: false; error: string };
+export type ProposePatchResult = { ok: true; patch: PersonaPatch } | { ok: false; error: string };
 
 /**
  * Lógica de validação server-side do patch — extraída pra ser testável sem
@@ -170,9 +168,7 @@ export async function executeProposePatch(
 	// Anti-race: se ctx fornece refreshVersion, re-checka direto no DB no
 	// momento da emissão do patch. Fecha a janela onde outro admin bumpou
 	// a versão durante o stream do LLM (gap reportado em QA round 2).
-	const currentVersion = ctx.refreshVersion
-		? await ctx.refreshVersion()
-		: ctx.personaVersion;
+	const currentVersion = ctx.refreshVersion ? await ctx.refreshVersion() : ctx.personaVersion;
 
 	if (patch.personaVersionSeen !== currentVersion) {
 		return {
@@ -196,18 +192,12 @@ export async function executeProposePatch(
 	}
 
 	if (patch.kind === "example.add") {
-		const violations = detectViolations(
-			patch.after.assistantResponse,
-			"example.assistantResponse",
-		);
+		const violations = detectViolations(patch.after.assistantResponse, "example.assistantResponse");
 		if (violations.length > 0) {
 			return { ok: false, error: violations.join(" | ") };
 		}
 		// CA-33: concierge não pode dar valor de parcela/crédito.
-		if (
-			ctx.role === "concierge" &&
-			MONETARY_PATTERN.test(patch.after.assistantResponse)
-		) {
+		if (ctx.role === "concierge" && MONETARY_PATTERN.test(patch.after.assistantResponse)) {
 			return {
 				ok: false,
 				error:
@@ -228,9 +218,7 @@ export async function executeProposePatch(
 
 	if (patch.kind === "example.remove") {
 		// A-03: targetId precisa existir no row atual.
-		const exists = ctx.currentRow.examples.some(
-			(e) => e.id === patch.targetId,
-		);
+		const exists = ctx.currentRow.examples.some((e) => e.id === patch.targetId);
 		if (!exists) {
 			return {
 				ok: false,
@@ -251,9 +239,7 @@ export async function executeProposePatch(
 		}
 		// A-01: bloquear tópicos canônicos do funil.
 		const topicNorm = normalize(patch.after.topic);
-		const canonHit = CANONICAL_FUNNEL_TOPICS.find((c) =>
-			topicNorm.includes(normalize(c)),
-		);
+		const canonHit = CANONICAL_FUNNEL_TOPICS.find((c) => topicNorm.includes(normalize(c)));
 		if (canonHit) {
 			return {
 				ok: false,
@@ -264,9 +250,7 @@ export async function executeProposePatch(
 
 	if (patch.kind === "forbiddenTopic.remove") {
 		// A-03 extension: idem example.remove.
-		const exists = ctx.currentRow.forbiddenTopics.some(
-			(t) => t.id === patch.targetId,
-		);
+		const exists = ctx.currentRow.forbiddenTopics.some((t) => t.id === patch.targetId);
 		if (!exists) {
 			return {
 				ok: false,
@@ -276,21 +260,14 @@ export async function executeProposePatch(
 	}
 
 	if (patch.kind === "handoffTrigger.add") {
-		const violations = detectViolations(
-			patch.after.condition,
-			"handoffTrigger.condition",
-		);
+		const violations = detectViolations(patch.after.condition, "handoffTrigger.condition");
 		if (violations.length > 0) {
 			return { ok: false, error: violations.join(" | ") };
 		}
 		// A-02: rejeitar condition fraca (palavra-chave única ambígua).
 		const condNorm = normalize(patch.after.condition);
-		const hasWeak = WEAK_HANDOFF_KEYWORDS.some((w) =>
-			condNorm.includes(normalize(w)),
-		);
-		const hasStrong = STRONG_HANDOFF_SIGNALS.some((rx) =>
-			rx.test(patch.after.condition),
-		);
+		const hasWeak = WEAK_HANDOFF_KEYWORDS.some((w) => condNorm.includes(normalize(w)));
+		const hasStrong = STRONG_HANDOFF_SIGNALS.some((rx) => rx.test(patch.after.condition));
 		if (hasWeak && !hasStrong) {
 			return {
 				ok: false,
@@ -302,15 +279,13 @@ export async function executeProposePatch(
 			return {
 				ok: false,
 				error:
-					'handoffTrigger.condition precisa descrever pedido EXPLÍCITO de humano (palavras: humano, pessoa, consultor, atendente, gerente, operador).',
+					"handoffTrigger.condition precisa descrever pedido EXPLÍCITO de humano (palavras: humano, pessoa, consultor, atendente, gerente, operador).",
 			};
 		}
 	}
 
 	if (patch.kind === "handoffTrigger.remove") {
-		const exists = ctx.currentRow.handoffTriggers.some(
-			(t) => t.id === patch.targetId,
-		);
+		const exists = ctx.currentRow.handoffTriggers.some((t) => t.id === patch.targetId);
 		if (!exists) {
 			return {
 				ok: false,

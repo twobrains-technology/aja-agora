@@ -59,7 +59,7 @@ export function isLikelyNameResponse(args: {
 	// Heurística de "parece nome": apenas letras unicode (acentos OK),
 	// espaços, apóstrofo (D'Avila) ou hífen (Maria-Clara). Sem dígitos,
 	// URL, "@", "?", "!" etc.
-	if (!/^[\p{L}\s'\-]+$/u.test(txt)) return false;
+	if (!/^[\p{L}\s'-]+$/u.test(txt)) return false;
 
 	// Blacklist de PRIMEIRA palavra: verbos/pronomes/saudações comuns em PT
 	// que indicam que a mensagem NÃO é "só nome" — mesmo que ≤4 palavras e

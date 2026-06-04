@@ -14,8 +14,8 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
-import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
+import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 export type RunAgentResult = {
 	fullResponse: string;

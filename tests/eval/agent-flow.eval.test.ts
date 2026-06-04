@@ -290,6 +290,26 @@ async function handleGateEvent(args: {
 			});
 		}
 
+		case "simulator-offer": {
+			// docx passo 4: este harness foca o fluxo de decisão — recusa o
+			// simulador ("Agora não") e segue pro card de decisão (mirror do route).
+			const metaSim = await reloadMeta(conversationId);
+			await persistMeta(conversationId, {
+				...metaSim,
+				simulatorOfferDispatched: true,
+				decisionDispatched: true,
+			});
+			await saveMessage(conversationId, "user", "Agora não", "web");
+			const { buildDecisionPromptDirective } = await import("@/lib/agent/orchestrator/directives");
+			return await consumeAgentTurn({
+				conversationId,
+				userText: buildDecisionPromptDirective({
+					administradora: metaSim.recommendedAdministradora,
+				}),
+				isUserTurn: false,
+			});
+		}
+
 		case "search":
 		case "doubts-wait":
 		case "decision":

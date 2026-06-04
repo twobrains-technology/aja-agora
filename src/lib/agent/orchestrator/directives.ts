@@ -119,26 +119,46 @@ export function buildSearchSummaryDirective(args: {
 	const filters = filterParts.length > 0 ? `, ${filterParts.join(", ")}` : "";
 
 	const hasBudget = typeof q.monthlyBudget === "number" && q.monthlyBudget > 0;
+	const budgetArgs = hasBudget
+		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
+		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;
 
-	const recommendStep = hasBudget
-		? `4. SOMENTE SE search_groups retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}, e em seguida chame present_recommendation_card com a PRIMEIRA opcao retornada (a de maior score), incluindo administradora, category, creditValue, monthlyPayment, termMonths, score e scoreBreakdown exatos.
-
-Se search_groups retornou apenas 1 grupo, NAO chame recommend_groups nem present_recommendation_card — o card unico ja eh suficiente, recomendar o mesmo grupo de novo seria redundante.`
-		: "";
-
+	// docx passos 3-4 (auditoria 2026-06-04): mostrar PRIMEIRO o "Plano
+	// recomendado pela Aja Agora" em DESTAQUE + o detalhamento; as "Outras
+	// opcoes" (as outras 2) aparecem SOB DEMANDA (botao do card de decisao),
+	// nao no reveal inicial.
 	return `O usuario completou as 4 perguntas de qualificacao:
 - experiencia=${meta.experiencePrev}
 - faixa de credito=R$ ${q.creditMin ?? 0} a R$ ${q.creditMax ?? "?"}${hasBudget ? `\n- parcela mensal=R$ ${q.monthlyBudget}` : ""}
 - prazo=${q.prazoMeses ?? "?"} meses
 - lance=${q.hasLance}
 
-FLUXO OBRIGATORIO neste turno:
-1. Em 1-2 frases curtas NO SEU TOM, espelhe esse perfil de volta pro usuario E ja convide a olhar as opcoes que vao aparecer em seguida (ex: "Beleza, ${q.creditMax ?? 0} mil em [prazo], com lance — separei essas opcoes pra voce:"). NAO use bullets/checkboxes (✅), NAO use template, NAO descreva numeros especificos dos grupos.
+FLUXO OBRIGATORIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaque):
+1. Em 1-2 frases curtas NO SEU TOM, espelhe o perfil e anuncie no espirito do docx: "Encontramos boas opcoes para o seu perfil — agora vou te recomendar a mais adequada:". NAO use bullets/checkboxes (✅), NAO use template, NAO descreva numeros especificos dos grupos.
 2. Chame search_groups com category="${category}"${filters}.
-3. Chame present_comparison_table com os grupos retornados (ou present_group_card se vier so 1).
-${recommendStep}
+3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opcao retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score e scoreBreakdown exatos. SE retornou apenas 1 grupo: chame present_group_card com ele.
+4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — e o detalhamento do docx (parcela, prazo, taxas, lance/lance embutido).
+
+NAO chame present_comparison_table neste turno: as "outras opcoes" do docx aparecem quando o usuario PEDIR (botao "Quero ver outras opcoes" do card de decisao) — destaque primeiro, comparacao sob demanda.
 
 O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, nao comentar atributos especificos de cada grupo.`;
+}
+
+// ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
+
+export function buildSimulatorDialDirective(args: { administradora?: string }): string {
+	const { administradora } = args;
+	const adminCtx = administradora
+		? ` Use o grupo do plano recomendado (administradora "${administradora}") — os MESMOS dados reais que o usuario ja viu.`
+		: " Use o grupo do plano recomendado — os MESMOS dados reais que o usuario ja viu.";
+	// Conceito do Bernardo (simulador-agulha): o usuario aceitou a oferta do
+	// simulador ("contemplado em 3, 6 ou 12 meses?"). O orquestrador dirige o
+	// dial UMA vez — determinístico, não a critério do modelo.
+	return `O usuario ACEITOU ver o simulador de contemplacao. FLUXO OBRIGATORIO neste turno:
+1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha que legal — arrasta a agulha pro mes que voce quer e ve como fica:").
+2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenarios de 3, 6 e 12 meses (a pergunta do docx).
+
+PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuario JA VIU tudo isso (re-apresentar = loop). Depois que o usuario explorar o simulador e sinalizar que esta satisfeito, o sistema dirige o card de decisao ("Esse plano faz sentido?").`;
 }
 
 // ---- Decision prompt (passo 4 close → passo 5 da jornada) ----

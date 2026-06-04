@@ -87,9 +87,7 @@ describe("BUG-CREDIT-PICKER-WEB: present_value_picker exposto ao specialist", ()
 			missing,
 			"Specialists sem present_value_picker exposto:\n" +
 				missing
-					.map(
-						(m) => `  - ${m.id}: active_tools=${JSON.stringify(m.activeTools)}`,
-					)
+					.map((m) => `  - ${m.id}: active_tools=${JSON.stringify(m.activeTools)}`)
 					.join("\n") +
 				"\nFix esperado: nova migration adicionando 'present_value_picker' ao " +
 				"active_tools de todas as specialists (mesmo padrão da 0014/0015), OU " +

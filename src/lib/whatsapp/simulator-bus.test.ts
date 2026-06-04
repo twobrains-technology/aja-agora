@@ -8,10 +8,10 @@ import {
 	isSimulatedWaId,
 	publishToAttendant,
 	publishToClient,
-	subscribeToAttendant,
-	subscribeToClient,
 	type SimulatorClientEvent,
 	type SimulatorMessage,
+	subscribeToAttendant,
+	subscribeToClient,
 } from "./simulator-bus";
 
 describe("isSimulatedWaId", () => {

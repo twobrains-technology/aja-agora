@@ -694,6 +694,31 @@ export function resolveLanceEmbutidoReply(
 	return { value: opt.token, title: opt.title };
 }
 
+// docx passo 4 (linha 34): oferta do simulador na sequência do reveal.
+export function simulatorOfferToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("simulator-offer") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "simoffer_yes", title: "Quero ver!" } },
+					{ type: "reply", reply: { id: "simoffer_no", title: "Agora não" } },
+				],
+			},
+		},
+	};
+}
+
+export function resolveSimulatorOfferReply(replyId: string): { value: "yes" | "no" } | null {
+	if (!replyId.startsWith("simoffer_")) return null;
+	const token = replyId.replace("simoffer_", "");
+	return token === "yes" || token === "no" ? { value: token } : null;
+}
+
 function prazoLabel(months: number): string {
 	if (months === 0) return "o mais rápido possível";
 	if (months <= 6) return "até 6 meses";

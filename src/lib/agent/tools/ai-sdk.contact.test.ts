@@ -46,10 +46,7 @@ describe("save_contact_name tool", () => {
 describe("save_contact_whatsapp tool", () => {
 	let convId: string;
 	beforeEach(async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "Kairo" }).returning();
 		convId = c.id;
 		await db.insert(leads).values({ conversationId: convId, name: "Kairo" });
 	});

@@ -32,7 +32,9 @@ describe("buildDecisionPromptDirective — passo 4 close", () => {
 		// O directive nomeia as tools do reveal só pra PROIBIR re-chamá-las.
 		expect(d).toMatch(/PROIBIDO/);
 		expect(d).toMatch(/search_groups/);
-		expect(d).toMatch(/present_comparison_table|present_recommendation_card|present_simulation_result/);
+		expect(d).toMatch(
+			/present_comparison_table|present_recommendation_card|present_simulation_result/,
+		);
 		// E menciona o anti-loop explicitamente.
 		expect(d.toLowerCase()).toMatch(/loop|ja viu|já viu/);
 	});

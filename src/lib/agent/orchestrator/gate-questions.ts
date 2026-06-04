@@ -41,6 +41,12 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 				"Pra buscar as ofertas reais nas administradoras, preciso do seu CPF e celular — " +
 				"seus dados ficam protegidos (LGPD) e isso não é compromisso nenhum, tá?"
 			);
+		case "simulator-offer":
+			// docx passo 4 (linha 34): oferta literal do simulador.
+			return (
+				"Se quiser, temos o nosso simulador pra ver como ficariam as suas parcelas, " +
+				"caso você seja contemplado em 3, 6 ou 12 meses — que tal?"
+			);
 		case "doubts-wait":
 		case "search":
 		case "decision":

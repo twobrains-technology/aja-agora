@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
-import { PRESENTATION_TOOLS } from "./tools/ai-sdk";
 import { SPECIALIST_BASE_PROMPT } from "./system-prompt";
+import { PRESENTATION_TOOLS } from "./tools/ai-sdk";
 
 // Camada 1 — anti-regressão estrutural do passo 5 "Contratar" (fechamento Bevi)
 // + simulador-agulha. Asserts contra a fonte de produção (prompt/tools/formatter).

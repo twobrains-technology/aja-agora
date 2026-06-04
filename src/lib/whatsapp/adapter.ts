@@ -16,6 +16,7 @@ import {
 	lanceQuestionToWhatsApp,
 	lanceValueQuestionToWhatsApp,
 	qualifyConsentToWhatsApp,
+	simulatorOfferToWhatsApp,
 	splitMessage,
 	timeframeQuestionToWhatsApp,
 	welcomeButtonsToWhatsApp,
@@ -61,6 +62,9 @@ async function gateInteractive(
 		}
 		case "lance-embutido":
 			return lanceEmbutidoQuestionToWhatsApp(prefix).interactive ?? null;
+		case "simulator-offer":
+			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
+			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
 		case "identify":
 		case "doubts-wait":
 		case "search":

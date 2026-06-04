@@ -214,7 +214,13 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — canal WEB persiste artifact emitido pe
 
 		// Artifact persistido com tipo simulation_result vinculado a uma message.
 		const allArtifacts = messages.flatMap((m) =>
-			((m as unknown as { artifacts: Array<{ type: string; payload: Record<string, unknown>; messageId: string }> }).artifacts ?? []).map((a) => ({
+			(
+				(
+					m as unknown as {
+						artifacts: Array<{ type: string; payload: Record<string, unknown>; messageId: string }>;
+					}
+				).artifacts ?? []
+			).map((a) => ({
 				...a,
 				parentMessageId: m.id,
 				parentRole: m.role,

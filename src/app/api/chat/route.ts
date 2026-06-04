@@ -7,6 +7,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
 import {
 	buildCreditReactionDirective,
+	buildDecisionPromptDirective,
 	buildExperienceDoubtsDirective,
 	buildExperienceFirstDirective,
 	buildExperienceReturningDirective,
@@ -14,6 +15,7 @@ import {
 	buildLanceReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
+	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
@@ -324,6 +326,53 @@ export async function POST(req: NextRequest) {
 						return;
 					}
 
+					// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
+					// das outras ofertas reais da descoberta (cache do adapter da
+					// conversa). Zero free-run do modelo, zero dado inventado.
+					if (body.action?.kind === "show-other-options") {
+						const q = meta.qualifyAnswers ?? {};
+						const category = meta.currentCategory;
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						try {
+							if (!category) throw new Error("sem categoria na conversa");
+							const { getDiscoveryAdapter } = await import("@/lib/adapters");
+							const groups = await getDiscoveryAdapter(conversationId).searchGroups({
+								category,
+								creditMin: q.creditMin,
+								creditMax: q.creditMax,
+							});
+							const others = groups
+								.filter((g) => g.administradora !== meta.recommendedAdministradora)
+								.slice(0, 2); // docx: "as outras 2"
+							if (others.length === 0) throw new Error("sem outras ofertas no cache");
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta:
+									"Claro! Essas são as outras opções que encontrei pro seu perfil — compara com calma:",
+							});
+							writer.write({ type: "text-end", id: textId });
+							writer.write({
+								type: "data-artifact",
+								id: crypto.randomUUID(),
+								data: {
+									type: "comparison_table",
+									payload: { groups: others },
+								},
+							});
+						} catch {
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta:
+									"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+							});
+							writer.write({ type: "text-end", id: textId });
+						}
+						return;
+					}
+
 					// ── Passo 5 "Contratar" (fechamento Bevi) ──
 					if (body.action?.kind === "contract-submit") {
 						const q = meta.qualifyAnswers ?? {};
@@ -578,6 +627,39 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+						return;
+					}
+
+					// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
+					// "yes" → directive do dial (dados reais do plano recomendado);
+					// "no" → card de decisão direto ("Esse plano faz sentido?").
+					if (action.gate === "simulator-offer") {
+						const refreshed = { ...meta, simulatorOfferDispatched: true };
+						await persistMeta(conversationId, refreshed);
+						if (action.value === "yes") {
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildSimulatorDialDirective({
+									administradora: meta.recommendedAdministradora,
+								}),
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
+						if (!refreshed.decisionDispatched) {
+							await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildDecisionPromptDirective({
+									administradora: meta.recommendedAdministradora,
+								}),
+								contactName,
+								writer,
+								userKey,
+							});
+						}
 						return;
 					}
 

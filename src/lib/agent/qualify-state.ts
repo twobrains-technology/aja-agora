@@ -11,6 +11,7 @@ export type Gate =
 	| "lance-embutido"
 	| "identify"
 	| "search"
+	| "simulator-offer"
 	| "decision";
 
 export type UserIntent =
@@ -62,6 +63,10 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// agent re-disparava o reveal em loop e nunca cruzava pro passo 5
 	// (BUG-REVEAL-LOOP, 2026-06-02).
 	if (!meta.searchDispatched) return "search";
+	// docx passo 4 (linha 34-36): após apresentar o plano, OFERECER o simulador
+	// ("contemplado em 3, 6 ou 12 meses — que tal?") ANTES do card de decisão.
+	// Conceito do Bernardo (simulador-agulha) no caminho padrão da jornada.
+	if (meta.revealCompleted && !meta.simulatorOfferDispatched) return "simulator-offer";
 	if (meta.revealCompleted && !meta.decisionDispatched) return "decision";
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
 }
@@ -93,6 +98,13 @@ export function decideShowGate(args: {
 	// NÃO dispara em what-if (providing_info → re-simular), pergunta, dúvida nem
 	// off-topic. Idempotência garantida por decisionDispatched no orquestrador.
 	if (gate === "decision") {
+		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// "simulator-offer" — oferta do simulador na sequência do reveal (docx).
+	// Server-authored já retornou true acima; em turno do usuário, mesmo
+	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
+	if (gate === "simulator-offer") {
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 

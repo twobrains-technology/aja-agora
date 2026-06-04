@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { simulatorNow } from "@/lib/utils/simulator-clock";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -11,6 +10,7 @@ import {
 	resolveIdentityForTurn,
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
@@ -293,6 +293,14 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.consentOffered) {
 				await persistMeta(conversationId, { ...refreshed, consentOffered: true });
+			}
+		}
+		// docx passo 4: a oferta do simulador acontece UMA vez (padrão consent).
+		// Marcado na emissão — afirmativo digitado depois avança pro decision.
+		if (result.nextGateToFire === "simulator-offer") {
+			const refreshed = await reloadMeta(conversationId);
+			if (!refreshed.simulatorOfferDispatched) {
+				await persistMeta(conversationId, { ...refreshed, simulatorOfferDispatched: true });
 			}
 		}
 		yield {

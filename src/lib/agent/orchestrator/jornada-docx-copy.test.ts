@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	buildExperienceFirstDirective,
-	buildSearchSummaryDirective,
-} from "./directives";
+import { buildExperienceFirstDirective, buildSearchSummaryDirective } from "./directives";
 import { gateQuestion } from "./gate-questions";
 
 // ============================================================================
@@ -17,7 +14,9 @@ import { gateQuestion } from "./gate-questions";
 describe("perguntas de gate — fiéis ao docx", () => {
 	it("experiência: pergunta se já fez consórcio antes (passo 2)", () => {
 		const q = gateQuestion("experience") ?? "";
-		expect(q.toLowerCase()).toMatch(/já fez consórcio|ja fez consorcio|consórcio antes|consorcio antes/);
+		expect(q.toLowerCase()).toMatch(
+			/já fez consórcio|ja fez consorcio|consórcio antes|consorcio antes/,
+		);
 	});
 
 	it("prazo (auto): fala do carro novo, no jeito do docx", () => {
@@ -65,7 +64,13 @@ describe("directives — carregam a didática/voz do docx", () => {
 			category: "auto",
 			meta: {
 				experiencePrev: "first",
-				qualifyAnswers: { creditMin: 90_000, creditMax: 100_000, monthlyBudget: 1_700, prazoMeses: 0, hasLance: "yes" },
+				qualifyAnswers: {
+					creditMin: 90_000,
+					creditMax: 100_000,
+					monthlyBudget: 1_700,
+					prazoMeses: 0,
+					hasLance: "yes",
+				},
 			},
 		}).toLowerCase();
 		expect(d).toMatch(/recommend_groups|recomenda/);

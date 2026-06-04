@@ -17,15 +17,20 @@ const ICONS = {
 } as const;
 
 // Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4).
-// Os botões enviam o texto do label como mensagem do usuário — os fluxos
-// existentes interpretam (contratar → lead form, outras → recomendação,
-// especialista → handoff). Sem ChatAction nova: o label é o sinal.
+// "Quero ver outras opções" é DETERMINÍSTICO (action show-other-options →
+// comparativo das outras ofertas da descoberta, docx: "as outras 2"). Os
+// demais botões enviam o label como mensagem (contratar → contract flow,
+// especialista → handoff).
 export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) {
-	const { sendUserMessage, status } = useChatContext();
+	const { sendAction, sendUserMessage, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
-	const choose = (label: string) => {
+	const choose = (intent: string, label: string) => {
 		if (isStreaming) return;
+		if (intent === "outras") {
+			void sendAction({ kind: "show-other-options", label }, label);
+			return;
+		}
 		void sendUserMessage(label);
 	};
 
@@ -48,7 +53,7 @@ export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) 
 								variant={opt.intent === "contratar" ? "default" : "outline"}
 								size="sm"
 								className="justify-start gap-2 min-h-[44px]"
-								onClick={() => choose(opt.label)}
+								onClick={() => choose(opt.intent, opt.label)}
 								disabled={isStreaming}
 								data-testid={`decision-${opt.intent}`}
 							>

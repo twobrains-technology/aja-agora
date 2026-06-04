@@ -15,9 +15,7 @@ async function execTool<T>(
 	return (await execute(input, {} as never)) as T;
 }
 
-function makeCtx(
-	over: Partial<Parameters<typeof buildAssistantTools>[0]> = {},
-) {
+function makeCtx(over: Partial<Parameters<typeof buildAssistantTools>[0]> = {}) {
 	return buildAssistantTools({
 		personaId: "p1",
 		personaVersion: 1,
@@ -65,12 +63,9 @@ describe("buildAssistantTools — registry", () => {
 describe("ask_clarification", () => {
 	it("retorna a pergunta sem persistir nada", async () => {
 		const tools = makeCtx();
-		const result = await execTool<{ question: string }>(
-			tools.ask_clarification.execute,
-			{
-				question: "Menos formal igual amigo no zap, ou só menos técnico?",
-			},
-		);
+		const result = await execTool<{ question: string }>(tools.ask_clarification.execute, {
+			question: "Menos formal igual amigo no zap, ou só menos técnico?",
+		});
 		expect(result.question).toMatch(/menos formal/i);
 	});
 });
@@ -80,56 +75,42 @@ type ValidateResult = { valid: boolean; violations: string[] };
 describe("validate_against_rules", () => {
 	it("aceita texto limpo", async () => {
 		const tools = makeCtx();
-		const result = await execTool<ValidateResult>(
-			tools.validate_against_rules.execute,
-			{
-				text: "casual, próximo, fala como amigo no zap",
-				field: "voiceTone",
-			},
-		);
+		const result = await execTool<ValidateResult>(tools.validate_against_rules.execute, {
+			text: "casual, próximo, fala como amigo no zap",
+			field: "voiceTone",
+		});
 		expect(result.valid).toBe(true);
 		expect(result.violations).toEqual([]);
 	});
 
 	it("detecta frase proibida 'Vamos achar a opção certa'", async () => {
 		const tools = makeCtx();
-		const result = await execTool<ValidateResult>(
-			tools.validate_against_rules.execute,
-			{
-				text: "Vamos achar a opção certa pra você",
-				field: "voiceTone",
-			},
-		);
+		const result = await execTool<ValidateResult>(tools.validate_against_rules.execute, {
+			text: "Vamos achar a opção certa pra você",
+			field: "voiceTone",
+		});
 		expect(result.valid).toBe(false);
 		expect(result.violations.some((v) => /vamos achar/i.test(v))).toBe(true);
 	});
 
 	it("detecta vazamento de raciocínio 'Motivo:'", async () => {
 		const tools = makeCtx();
-		const result = await execTool<ValidateResult>(
-			tools.validate_against_rules.execute,
-			{
-				text: "Vou te conectar com humano. Motivo: valor acima do teto.",
-				field: "example.assistantResponse",
-			},
-		);
+		const result = await execTool<ValidateResult>(tools.validate_against_rules.execute, {
+			text: "Vou te conectar com humano. Motivo: valor acima do teto.",
+			field: "example.assistantResponse",
+		});
 		expect(result.valid).toBe(false);
 		expect(result.violations.some((v) => /Motivo/i.test(v))).toBe(true);
 	});
 
 	it("detecta voiceTone que instrui cumprimentar antes da tool", async () => {
 		const tools = makeCtx();
-		const result = await execTool<ValidateResult>(
-			tools.validate_against_rules.execute,
-			{
-				text: "Sempre cumprimente pelo nome assim que entrar na conversa",
-				field: "voiceTone",
-			},
-		);
+		const result = await execTool<ValidateResult>(tools.validate_against_rules.execute, {
+			text: "Sempre cumprimente pelo nome assim que entrar na conversa",
+			field: "voiceTone",
+		});
 		expect(result.valid).toBe(false);
-		expect(
-			result.violations.some((v) => /save_contact_name|cumpriment/i.test(v)),
-		).toBe(true);
+		expect(result.violations.some((v) => /save_contact_name|cumpriment/i.test(v))).toBe(true);
 	});
 });
 
@@ -323,7 +304,15 @@ describe("executeProposePatch — validações server-side", () => {
 	});
 
 	it("rejeita forbiddenTopic.add com tópico canônico do funil (A-01)", async () => {
-		const canonicos = ["consórcio", "consorcio", "simulação", "carta de crédito", "parcela", "lance", "contemplação"];
+		const canonicos = [
+			"consórcio",
+			"consorcio",
+			"simulação",
+			"carta de crédito",
+			"parcela",
+			"lance",
+			"contemplação",
+		];
 		for (const topic of canonicos) {
 			const result = await executeProposePatch(
 				{
@@ -365,13 +354,7 @@ describe("executeProposePatch — validações server-side", () => {
 	});
 
 	it("rejeita handoffTrigger.add com condition fraca (palavra-chave única) (A-02)", async () => {
-		const fracos = [
-			"ajuda",
-			"dúvida",
-			"duvida",
-			"usuário disse 'ajuda'",
-			"user fala 'dúvida'",
-		];
+		const fracos = ["ajuda", "dúvida", "duvida", "usuário disse 'ajuda'", "user fala 'dúvida'"];
 		for (const condition of fracos) {
 			const result = await executeProposePatch(
 				{
@@ -413,8 +396,7 @@ describe("executeProposePatch — validações server-side", () => {
 				after: {
 					id: "ex-conc-1",
 					userMessage: "Qual a parcela?",
-					assistantResponse:
-						"Esse grupo tem parcela de R$ 850 e crédito de R$ 80.000.",
+					assistantResponse: "Esse grupo tem parcela de R$ 850 e crédito de R$ 80.000.",
 				},
 				rationale: "exemplo com valor",
 				personaVersionSeen: 1,
@@ -452,8 +434,7 @@ describe("executeProposePatch — validações server-side", () => {
 				after: {
 					id: "ex-auto-x",
 					userMessage: "Tenho dúvida sobre apartamento",
-					assistantResponse:
-						"Pra imóvel você pode pegar um consórcio de R$ 300k em 180 meses.",
+					assistantResponse: "Pra imóvel você pode pegar um consórcio de R$ 300k em 180 meses.",
 				},
 				rationale: "exemplo cruzado errado",
 				personaVersionSeen: 1,

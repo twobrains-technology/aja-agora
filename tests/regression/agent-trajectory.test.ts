@@ -2319,6 +2319,8 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// docx passo 4: oferta do simulador já feita (gate simulator-offer).
+			simulatorOfferDispatched: true,
 			...over,
 		};
 	}
@@ -2513,5 +2515,116 @@ describe("MOCK-RUNTIME-MORTO — descoberta nunca mais serve dado fictício", ()
 		const src = readSource("src/lib/whatsapp/interactive-handlers.ts");
 		expect(src).not.toMatch(/getAdapter\(\)/);
 		expect(src).toMatch(/getDiscoveryAdapter/);
+	});
+});
+
+// ============================================================================
+// GATE-SIMULATOR-OFFER (docx passo 4, linha 34-36 — auditoria 2026-06-04)
+// ----------------------------------------------------------------------------
+// "Se quiser, temos o nosso simulador… contemplado em 3, 6 ou 12 meses, que
+// tal?" — o simulador-agulha (conceito do Bernardo) existia mas só disparava a
+// critério do modelo (fora do caminho padrão; o dono não via). A oferta agora
+// é DETERMINÍSTICA: gate entre o reveal e o decision. Regressões: oferta
+// removida do funil, directive sem o dial, copy sem os marcos 3/6/12.
+// ============================================================================
+
+describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", () => {
+	function postRevealSemOferta(): ConversationMetadata {
+		return {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: {
+				creditMax: 100_000,
+				prazoMeses: 0,
+				hasLance: "yes",
+				lanceValue: 30_000,
+				lanceEmbutido: true,
+			},
+			searchDispatched: true,
+			revealCompleted: true,
+			recommendedAdministradora: "ITAÚ",
+		};
+	}
+
+	it("funil: pós-reveal a oferta do simulador vem ANTES do card de decisão", () => {
+		expect(nextGate(postRevealSemOferta(), { hasContactName: true })).toBe("simulator-offer");
+		expect(
+			nextGate(
+				{ ...postRevealSemOferta(), simulatorOfferDispatched: true },
+				{ hasContactName: true },
+			),
+		).toBe("decision");
+	});
+
+	it("copy da oferta é a do docx (3, 6 ou 12 meses + 'que tal?')", async () => {
+		const { gateQuestion } = await import("@/lib/agent/orchestrator/gate-questions");
+		const q = gateQuestion("simulator-offer") ?? "";
+		expect(q).toMatch(/3, 6 ou 12 meses/);
+		expect(q).toMatch(/que tal\?/);
+		expect(q.toLowerCase()).toContain("simulador");
+	});
+
+	it("directive do aceite dirige present_contemplation_dial e proíbe re-reveal", async () => {
+		const { buildSimulatorDialDirective } = await import("@/lib/agent/orchestrator/directives");
+		const d = buildSimulatorDialDirective({ administradora: "ITAÚ" });
+		expect(d).toContain("present_contemplation_dial");
+		expect(d).toMatch(/PROIBIDO/);
+		expect(d).toMatch(/search_groups/);
+		expect(d).toMatch(/3, 6 e 12 meses/);
+		expect(d).toContain("ITAÚ");
+	});
+
+	it("acoplamento: orquestrador marca a oferta na emissão (padrão consentOffered)", () => {
+		const src = readSource("src/lib/agent/orchestrator/index.ts");
+		expect(src).toMatch(/simulator-offer/);
+		expect(src).toMatch(/simulatorOfferDispatched: true/);
+	});
+});
+
+// ============================================================================
+// REVEAL-ORDER (docx passos 3-4 — auditoria 2026-06-04: "partial/ordem invertida")
+// ----------------------------------------------------------------------------
+// docx: "Mostrar primeiro 'Plano recomendado pela Aja Agora' (destaque). E
+// permitir que o cliente veja 'Outras opções' (as outras 2) para comparação."
+// Antes: reveal jogava comparison_table + recommendation JUNTOS, e "ver outras
+// opções" era texto livre pro modelo (sem surfacing determinístico).
+// ============================================================================
+
+describe("REVEAL-ORDER — recomendado primeiro, outras opções sob demanda", () => {
+	it("directive do reveal: recomendado em destaque + detalhamento, SEM comparison no reveal", async () => {
+		const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
+		const d = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				experiencePrev: "first",
+				qualifyAnswers: {
+					creditMin: 90_000,
+					creditMax: 100_000,
+					monthlyBudget: 1_700,
+					prazoMeses: 0,
+					hasLance: "yes",
+				},
+			},
+		});
+		// Ordem do docx: recommendation primeiro + simulate como detalhamento.
+		expect(d).toContain("present_recommendation_card");
+		expect(d).toContain("present_simulation_result");
+		expect(d).toMatch(/recomendado PRIMEIRO|PRIMEIRO, em destaque/);
+		// Comparison NÃO entra no reveal — só sob demanda.
+		expect(d).toMatch(/NAO chame present_comparison_table neste turno/);
+	});
+
+	it("acoplamento: route tem o handler determinístico show-other-options (as outras 2)", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		expect(src).toMatch(/show-other-options/);
+		expect(src).toMatch(/slice\(0, 2\)/); // docx: "as outras 2"
+		expect(src).toMatch(/comparison_table/);
+	});
+
+	it("acoplamento: o botão 'outras' do decision card dispara a action (não texto livre)", () => {
+		const src = readSource("src/components/chat/artifacts/decision-prompt.tsx");
+		expect(src).toMatch(/show-other-options/);
 	});
 });

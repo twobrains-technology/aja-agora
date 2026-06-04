@@ -45,6 +45,9 @@ function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationM
 		identityCollected: true,
 		searchDispatched: true,
 		revealCompleted: true,
+		// docx passo 4: oferta do simulador já feita (suite própria em
+		// qualify-state.simulator-offer.test.ts) — aqui testamos SÓ o decision.
+		simulatorOfferDispatched: true,
 		...over,
 	};
 }
@@ -85,7 +88,12 @@ describe("decideShowGate — quando disparar o card de decisão", () => {
 
 	it("dispara em afirmativo forte ('bora' → ready_to_proceed)", () => {
 		expect(
-			decideShowGate({ gate: "decision", intent: "ready_to_proceed", meta: base, isUserTurn: true }),
+			decideShowGate({
+				gate: "decision",
+				intent: "ready_to_proceed",
+				meta: base,
+				isUserTurn: true,
+			}),
 		).toBe(true);
 	});
 
@@ -111,7 +119,12 @@ describe("decideShowGate — quando disparar o card de decisão", () => {
 
 	it("NÃO dispara em dúvida (expressing_doubt) nem off_topic", () => {
 		expect(
-			decideShowGate({ gate: "decision", intent: "expressing_doubt", meta: base, isUserTurn: true }),
+			decideShowGate({
+				gate: "decision",
+				intent: "expressing_doubt",
+				meta: base,
+				isUserTurn: true,
+			}),
 		).toBe(false);
 		expect(
 			decideShowGate({ gate: "decision", intent: "off_topic", meta: base, isUserTurn: true }),

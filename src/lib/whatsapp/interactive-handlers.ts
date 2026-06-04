@@ -38,6 +38,7 @@ import {
 	resolveLanceReply,
 	resolveLanceValueReply,
 	resolveRange,
+	resolveSimulatorOfferReply,
 	resolveTimeframeReply,
 	signatureHandoffToWhatsApp,
 } from "./formatter";
@@ -106,6 +107,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("lanceembutido_")) return handleLanceEmbutido(ctx);
 	if (replyId.startsWith("lancevalue_")) return handleLanceValue(ctx);
 	if (replyId.startsWith("lance_")) return handleLance(ctx);
+	if (replyId.startsWith("simoffer_")) return handleSimulatorOffer(ctx);
 	if (replyId.startsWith("range_")) return handleRange(ctx);
 	if (replyId.startsWith("picker_")) return handlePicker(ctx);
 	if (replyId.startsWith("group_")) return handleGroupSelected(ctx);
@@ -320,6 +322,40 @@ async function handleLance(ctx: Ctx): Promise<boolean> {
 		return true;
 	}
 	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	return true;
+}
+
+// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
+// "yes" → directive do dial; "no" → card de decisão direto.
+async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
+	const resolved = resolveSimulatorOfferReply(replyId);
+	if (!resolved) return true;
+
+	const meta = await loadMeta(conversationId);
+	const updated = { ...meta, simulatorOfferDispatched: true };
+	await persistMeta(conversationId, updated);
+	await recordUserClick(ctx);
+
+	const { buildDecisionPromptDirective, buildSimulatorDialDirective } = await import(
+		"@/lib/agent/orchestrator/directives"
+	);
+	if (resolved.value === "yes") {
+		await runAgentDirective(
+			from,
+			conversationId,
+			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora }),
+		);
+		return true;
+	}
+	if (!updated.decisionDispatched) {
+		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
+		await runAgentDirective(
+			from,
+			conversationId,
+			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
+		);
+	}
 	return true;
 }
 

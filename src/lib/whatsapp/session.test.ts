@@ -8,8 +8,8 @@
 // Este teste é env-gated (requer DATABASE_URL local). Roda só localmente
 // e na suite full; CI integration valida.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { getOrCreateConversation } from "./session";
@@ -85,9 +85,7 @@ describe.skipIf(!RUN)("getOrCreateConversation — lead criado no início (B-03)
 		const after = await db.query.leads.findFirst({
 			where: eq(leads.conversationId, convId),
 		});
-		expect(after?.stage, "lead deve avançar pra em_negociacao após handoff").toBe(
-			"em_negociacao",
-		);
+		expect(after?.stage, "lead deve avançar pra em_negociacao após handoff").toBe("em_negociacao");
 		expect(after?.name).toBe("Test User"); // name foi atualizado
 	});
 

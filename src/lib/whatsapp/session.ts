@@ -56,10 +56,7 @@ export async function getOrCreateConversation(
 	} catch (err) {
 		// Não bloqueia a criação da conversation se o insert do lead falhar
 		// (ex: race condition raro). Lead pode ser criado depois via handoff.
-		console.error(
-			`[whatsapp-session] failed to seed lead for conversation ${conv.id}:`,
-			err,
-		);
+		console.error(`[whatsapp-session] failed to seed lead for conversation ${conv.id}:`, err);
 	}
 
 	console.log(

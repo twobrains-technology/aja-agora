@@ -56,15 +56,14 @@ vi.mock("@/lib/conversation/meta", () => ({
 	persistMeta: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import { processWithOrchestrator } from "./adapter";
-import { artifactToWhatsApp } from "./formatter";
-
 // Acesso interno via reimport do modulo (nao re-export publico) — usamos
 // processWithOrchestrator com um runTurn injetado via mock pra exercitar
 // consumeEvents indiretamente.
 import * as orchestrator from "@/lib/agent/orchestrator";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { processWithOrchestrator } from "./adapter";
+import { artifactToWhatsApp } from "./formatter";
 
 import * as session from "./session";
 
@@ -259,29 +258,32 @@ describe("BUG WhatsApp: artifacts orfaos no canal WhatsApp (apresentacao 13h)", 
 			},
 		],
 		["whatsapp_optin", {}],
-	])("artifact %s nao eh dropado no WhatsApp (precisa virar texto ou interactive)", async (artifactType, payload) => {
-		mocks.sendText.mockClear();
-		mocks.sendInteractive.mockClear();
+	])(
+		"artifact %s nao eh dropado no WhatsApp (precisa virar texto ou interactive)",
+		async (artifactType, payload) => {
+			mocks.sendText.mockClear();
+			mocks.sendInteractive.mockClear();
 
-		const stream = makeStream([
-			{ type: "text-delta", text: "Olha so" },
-			artifactEvent(artifactType, payload),
-			{ type: "finish", reason: "ok" },
-		]);
-		vi.spyOn(orchestrator, "runTurn").mockImplementation(() => stream);
+			const stream = makeStream([
+				{ type: "text-delta", text: "Olha so" },
+				artifactEvent(artifactType, payload),
+				{ type: "finish", reason: "ok" },
+			]);
+			vi.spyOn(orchestrator, "runTurn").mockImplementation(() => stream);
 
-		await processWithOrchestrator(FAKE_FROM, "input", "Marcos");
+			await processWithOrchestrator(FAKE_FROM, "input", "Marcos");
 
-		// Esperado: ALEM do "Olha so" inicial, deve haver pelo menos uma
-		// mensagem extra (texto ou interactive) representando o artifact.
-		// Hoje so o "Olha so" eh enviado — artifact eh engolido.
-		const textsAfterIntro = mocks.sendText.mock.calls.length;
-		const interactives = mocks.sendInteractive.mock.calls.length;
-		const totalOutbound = textsAfterIntro + interactives;
+			// Esperado: ALEM do "Olha so" inicial, deve haver pelo menos uma
+			// mensagem extra (texto ou interactive) representando o artifact.
+			// Hoje so o "Olha so" eh enviado — artifact eh engolido.
+			const textsAfterIntro = mocks.sendText.mock.calls.length;
+			const interactives = mocks.sendInteractive.mock.calls.length;
+			const totalOutbound = textsAfterIntro + interactives;
 
-		expect(
-			totalOutbound,
-			`esperado >=2 mensagens (texto intro + artifact ${artifactType}); recebido ${totalOutbound} — artifact dropado`,
-		).toBeGreaterThanOrEqual(2);
-	});
+			expect(
+				totalOutbound,
+				`esperado >=2 mensagens (texto intro + artifact ${artifactType}); recebido ${totalOutbound} — artifact dropado`,
+			).toBeGreaterThanOrEqual(2);
+		},
+	);
 });

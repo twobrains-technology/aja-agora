@@ -61,6 +61,7 @@ describe("nextGate — identify entra entre a qualificação e a busca", () => {
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			simulatorOfferDispatched: true,
 		};
 		expect(nextGate(meta)).toBe("decision");
 	});

@@ -45,6 +45,7 @@ import {
 	buildLanceReactionDirective,
 	buildQualifyStartYesDirective,
 	buildSearchSummaryDirective,
+	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { objetivoForPrazo } from "@/lib/agent/qualify-config";
@@ -225,7 +226,14 @@ const allTools = (turns: Turn[]) => turns.flatMap((t) => t.toolCalls);
 describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira vez)", () => {
 	let conversationId: string | null = null;
 	const turns: Turn[] = [];
-	const cap: { intro?: Turn; explica?: Turn; reveal?: Turn; decisao?: Turn; contrato?: Turn } = {};
+	const cap: {
+		intro?: Turn;
+		explica?: Turn;
+		reveal?: Turn;
+		simulador?: Turn;
+		decisao?: Turn;
+		contrato?: Turn;
+	} = {};
 
 	afterAll(async () => {
 		if (!conversationId) return;
@@ -293,6 +301,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 					lanceValue: 30_000,
 				},
 			});
+			// Gate identify (D1): identidade SINTÉTICA cifrada — sem ela o funil
+			// trava no identify e a descoberta não libera (só alcança fixtures).
+			await storeIdentity(conv.id, FIXTURE_IDENTITY);
 		}
 
 		// passo 3+4 — reveal: "a Aja Agora vai analisar várias administradoras…"
@@ -309,6 +320,22 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				"passo3+4:reveal",
 			);
 			turns.push(cap.reveal);
+		}
+
+		// passo 4 — docx (linha 34-36): oferta do simulador na sequência do reveal;
+		// o cliente ACEITA ("Quero ver!") e o sistema dirige o simulador-agulha
+		// (conceito do Bernardo) com os dados reais do plano recomendado.
+		{
+			const refreshed = await reloadMeta(conv.id);
+			await persistMeta(conv.id, { ...refreshed, simulatorOfferDispatched: true });
+			await saveMessage(conv.id, "user", "Quero ver!", "web");
+			cap.simulador = await consumeTurn(
+				conv.id,
+				buildSimulatorDialDirective({ administradora: refreshed.recommendedAdministradora }),
+				false,
+				"passo4:simulador",
+			);
+			turns.push(cap.simulador);
 		}
 
 		// ── passo 4 close → passo 5 — decisão e contratação ──
@@ -449,6 +476,15 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		// docx: resumo com parcela, prazo, taxa, lance/lance embutido — vive no
 		// SimulationResult (composição completa, CMN 4.927).
 		expect(artifactTypes(turns)).toContain("simulation_result");
+	});
+
+	it("passo 4 — simulador do Bernardo renderizado após o aceite (contemplation_dial)", () => {
+		// docx (linha 34-36): "Se quiser, temos o nosso simulador… contemplado em
+		// 3, 6 ou 12 meses". O cliente aceitou — o dial TEM que aparecer.
+		expect(
+			artifactTypes(turns).includes("contemplation_dial"),
+			`Esperado contemplation_dial (simulador aceito). Artifacts: [${artifactTypes(turns).join(", ")}]`,
+		).toBe(true);
 	});
 
 	it("passo 4 close — cruzou pro 'Esse plano faz sentido?' (present_decision_prompt)", () => {

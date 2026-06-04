@@ -309,12 +309,7 @@ export async function handoffToAgents(
 			// B-03: handoff = atendente humano vai assumir = potencial fechamento.
 			// Promove lead pra "em_negociacao" (patamar superior), onlyAdvance
 			// pra não regredir leads que já estavam mais avançados.
-			await transitionLeadStage(
-				leadId,
-				"em_negociacao",
-				{ type: "system" },
-				{ onlyAdvance: true },
-			);
+			await transitionLeadStage(leadId, "em_negociacao", { type: "system" }, { onlyAdvance: true });
 		}
 		console.log(
 			`[whatsapp-proxy] Lead upserted for handoff: conversation=${conversationId} leadId=${leadId} name=${userName} phone=${phone ?? "(none)"} simulated=${isSimulated} existed=${!!existing}`,
@@ -615,7 +610,9 @@ export async function relayWebUserToAgent(
 	for (const a of attendants) {
 		await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 	}
-	console.log(`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated}`);
+	console.log(
+		`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
+	);
 }
 
 /** Relay a message from user to the claimed attendant (or all, if unclaimed). */
@@ -647,7 +644,9 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 		for (const a of attendants) {
 			await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 		}
-		console.log(`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated}`);
+		console.log(
+			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
+		);
 	}
 
 	return true;

@@ -3,14 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const HARD_RULES_PATH = path.join(process.cwd(), "src/lib/agent/HARD_RULES.md");
-const CASSETTE_PATH = path.join(
-	process.cwd(),
-	"tests/regression/agent-trajectory.test.ts",
-);
-const SYSTEM_PROMPT_PATH = path.join(
-	process.cwd(),
-	"src/lib/agent/system-prompt.ts",
-);
+const CASSETTE_PATH = path.join(process.cwd(), "tests/regression/agent-trajectory.test.ts");
+const SYSTEM_PROMPT_PATH = path.join(process.cwd(), "src/lib/agent/system-prompt.ts");
 
 /**
  * Frases canônicas proibidas observadas em prod/staging.
@@ -66,9 +60,7 @@ describe("HARD_RULES.md — sincronia com cassettes Camada 2", () => {
 		const missing = CANONICAL_FORBIDDEN_PHRASES.filter(
 			(phrase) => !rules.includes(normalize(phrase)),
 		);
-		expect(missing, "Frases canônicas que faltam no HARD_RULES.md").toEqual(
-			[],
-		);
+		expect(missing, "Frases canônicas que faltam no HARD_RULES.md").toEqual([]);
 	});
 
 	it("toda frase canônica proibida aparece em algum cassette", () => {
@@ -76,9 +68,7 @@ describe("HARD_RULES.md — sincronia com cassettes Camada 2", () => {
 		const missing = CANONICAL_FORBIDDEN_PHRASES.filter(
 			(phrase) => !cassettes.includes(normalize(phrase)),
 		);
-		expect(missing, "Frases canônicas sem cassette de regressão").toEqual(
-			[],
-		);
+		expect(missing, "Frases canônicas sem cassette de regressão").toEqual([]);
 	});
 
 	it("toda frase canônica proibida aparece em system-prompt.ts", () => {
@@ -86,10 +76,7 @@ describe("HARD_RULES.md — sincronia com cassettes Camada 2", () => {
 		const missing = CANONICAL_FORBIDDEN_PHRASES.filter(
 			(phrase) => !prompt.includes(normalize(phrase)),
 		);
-		expect(
-			missing,
-			"Frases canônicas que system-prompt.ts deveria proibir",
-		).toEqual([]);
+		expect(missing, "Frases canônicas que system-prompt.ts deveria proibir").toEqual([]);
 	});
 });
 

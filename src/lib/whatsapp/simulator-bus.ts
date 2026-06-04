@@ -105,9 +105,7 @@ export function publishToClient(waId: string, event: SimulatorClientEventInput):
 			: payload.type === "typing"
 				? `typing=${payload.on}`
 				: "interactive";
-	console.log(
-		`[simulator-bus] publish client waId=${waId} listeners=${listenerCount} ${preview}`,
-	);
+	console.log(`[simulator-bus] publish client waId=${waId} listeners=${listenerCount} ${preview}`);
 	bus.emit(channel, payload);
 }
 

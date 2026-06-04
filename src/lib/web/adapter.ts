@@ -115,6 +115,16 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 		case "identify":
 			// D1: form CPF + celular + LGPD antes da busca (a Bevi exige pra simular).
 			return { kind: "identity", gate: "identify", prefilledPhone: null };
+		case "simulator-offer":
+			// docx passo 4: oferta do simulador na sequência do reveal.
+			return {
+				kind: "chips",
+				gate: "simulator-offer",
+				options: [
+					{ value: "yes", label: "Quero ver!" },
+					{ value: "no", label: "Agora não" },
+				],
+			};
 		case "doubts-wait":
 		case "search":
 		case "decision":

@@ -281,7 +281,12 @@ async function fetchAdminHistory(leadId: string): Promise<
 		id: m.id,
 		role: m.role,
 		content: m.content,
-		artifacts: (m as unknown as { artifacts: Array<{ id: string; type: string; payload: Record<string, unknown> }> }).artifacts ?? [],
+		artifacts:
+			(
+				m as unknown as {
+					artifacts: Array<{ id: string; type: string; payload: Record<string, unknown> }>;
+				}
+			).artifacts ?? [],
 	}));
 }
 
@@ -322,20 +327,13 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa 
 		//    → handoffToAgents → sendTextMessage("Perfeito, ...").
 		//    Gap #2: handleInterest NÃO chama saveMessage(user, replyTitle).
 		//    Gap #3: handoffToAgents NÃO chama saveMessage(assistant, frase final).
-		await processInteractiveReply(
-			FAKE_WA_ID,
-			REPLY_ID,
-			REPLY_TITLE,
-			"Marcos Silva",
-		);
+		await processInteractiveReply(FAKE_WA_ID, REPLY_ID, REPLY_TITLE, "Marcos Silva");
 
 		// Sanity-check: a borda externa (Meta API mockada) recebeu a frase final
 		// do bot — confirma que o caminho foi exercido completo (não bateu em
 		// nenhum guard prematuro). Se isso falhar, o teste está medindo a coisa
 		// errada e os asserts abaixo viram inconclusivos.
-		const allOutboundTexts = mocks.sendText.mock.calls
-			.map((c) => String(c[1] ?? ""))
-			.join(" | ");
+		const allOutboundTexts = mocks.sendText.mock.calls.map((c) => String(c[1] ?? "")).join(" | ");
 		expect(
 			allOutboundTexts,
 			"sanity-check: o stub mockado de sendTextMessage tem que ter recebido a frase canônica de encerramento — se não, o handleInterest/startInterestHandoff bailou cedo e os asserts seguintes ficam falso-positivos",
@@ -374,13 +372,16 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa 
 		}
 
 		// GAP #2: existe message role=user com content == REPLY_TITLE
-		const userInterestMsgs = history.filter(
-			(m) => m.role === "user" && m.content === REPLY_TITLE,
-		);
+		const userInterestMsgs = history.filter((m) => m.role === "user" && m.content === REPLY_TITLE);
 		if (userInterestMsgs.length !== 1) {
 			failures.push(
 				`GAP #2 (clique do botão 'Tenho interesse!' não persistido) — esperava 1 mensagem role=user com content="${REPLY_TITLE}", achei ${userInterestMsgs.length}. ` +
-					`Conteúdos de mensagens user no histórico: ${history.filter((m) => m.role === "user").map((m) => JSON.stringify(m.content)).join(", ") || "(nenhuma)"}. ` +
+					`Conteúdos de mensagens user no histórico: ${
+						history
+							.filter((m) => m.role === "user")
+							.map((m) => JSON.stringify(m.content))
+							.join(", ") || "(nenhuma)"
+					}. ` +
 					`Causa raiz: handleInterest em interactive-handlers.ts:356-368 NÃO chama saveMessage(user, replyTitle) antes de startInterestHandoff. Outros handlers do mesmo arquivo (handleSimulate, handleDetail, handleHandoffConfirm) salvam.`,
 			);
 		}
@@ -388,13 +389,17 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa 
 		// GAP #3: existe message role=assistant cujo content contém a frase
 		const handoffClosureMsgs = history.filter(
 			(m) =>
-				m.role === "assistant" &&
-				m.content.includes("Já estou passando seu perfil pro consultor"),
+				m.role === "assistant" && m.content.includes("Já estou passando seu perfil pro consultor"),
 		);
 		if (handoffClosureMsgs.length !== 1) {
 			failures.push(
 				`GAP #3 (frase final do bot não persistida) — esperava 1 mensagem role=assistant com a frase de encerramento "Perfeito, <nome>! Já estou passando seu perfil pro consultor — ele te chama aqui em instantes. 🤝", achei ${handoffClosureMsgs.length}. ` +
-					`Conteúdos de mensagens assistant: ${history.filter((m) => m.role === "assistant").map((m) => JSON.stringify(m.content.slice(0, 80))).join(", ") || "(nenhuma)"}. ` +
+					`Conteúdos de mensagens assistant: ${
+						history
+							.filter((m) => m.role === "assistant")
+							.map((m) => JSON.stringify(m.content.slice(0, 80)))
+							.join(", ") || "(nenhuma)"
+					}. ` +
 					`Causa raiz: proxy.ts:359-362 (startInterestHandoff/handoffToAgents) envia a frase via sendTextMessage direto na Meta API — não chama saveMessage(assistant, frase).`,
 			);
 		}

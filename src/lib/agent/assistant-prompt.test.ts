@@ -1,10 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-	ASSISTANT_BASE_PROMPT,
-	buildAssistantPrompt,
-} from "./assistant-prompt";
+import { ASSISTANT_BASE_PROMPT, buildAssistantPrompt } from "./assistant-prompt";
 
 const examplePersona = {
 	id: "test-1",

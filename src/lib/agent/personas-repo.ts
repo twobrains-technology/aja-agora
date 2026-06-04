@@ -189,9 +189,9 @@ export class PersonaVersionConflictError extends Error {
 
 export async function updatePersona(
 	id: string,
-	patch: Partial<
-		Omit<PersonaRow, "id" | "version" | "createdAt" | "updatedAt">
-	> & { expectedVersion?: number },
+	patch: Partial<Omit<PersonaRow, "id" | "version" | "createdAt" | "updatedAt">> & {
+		expectedVersion?: number;
+	},
 ): Promise<PersonaRow> {
 	const { expectedVersion, ...fields } = patch;
 	const previous = await db.query.personas.findFirst({

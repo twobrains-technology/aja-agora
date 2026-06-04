@@ -58,11 +58,7 @@ export async function initializeLeadCollection(
 	});
 	const name = lead?.name ?? undefined;
 	const phone = lead?.phone ?? undefined;
-	const stage: "name" | "phone" | "email" = !name
-		? "name"
-		: !phone
-			? "phone"
-			: "email";
+	const stage: "name" | "phone" | "email" = !name ? "name" : !phone ? "phone" : "email";
 	return { stage, name, phone };
 }
 

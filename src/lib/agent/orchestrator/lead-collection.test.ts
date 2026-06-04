@@ -12,10 +12,7 @@ async function cleanup(convId: string): Promise<void> {
 describe("initializeLeadCollection — skip stages com dados capturados", () => {
 	let convId: string;
 	beforeEach(async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "Kairo" }).returning();
 		convId = c.id;
 	});
 	afterEach(async () => {
@@ -23,10 +20,7 @@ describe("initializeLeadCollection — skip stages com dados capturados", () => 
 	});
 
 	it("começa em 'name' se não há lead nem nome", async () => {
-		const emptyConv = await db
-			.insert(conversations)
-			.values({})
-			.returning();
+		const emptyConv = await db.insert(conversations).values({}).returning();
 		const id = emptyConv[0].id;
 		try {
 			const lc = await initializeLeadCollection(id);

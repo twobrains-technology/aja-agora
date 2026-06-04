@@ -20,6 +20,8 @@ export type ChatAction =
 	// docx passo 2: "Qual valor aproximado?" — valor do lance em reais (faixa).
 	| { kind: "gate"; gate: "lance-value"; value: { lanceValue: number }; label: string }
 	| { kind: "gate"; gate: "lance-embutido"; value: "yes" | "no"; label: string }
+	// docx passo 4: oferta do simulador ("contemplado em 3, 6 ou 12 meses?").
+	| { kind: "gate"; gate: "simulator-offer"; value: "yes" | "no"; label: string }
 	// Gate "identify" (D1) — CPF + celular + aceite LGPD ao fim do passo 2.
 	// A Bevi exige identidade ANTES de simular; sem isso a busca não libera.
 	| {
@@ -38,6 +40,9 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "interest"; administradora: string; label: string }
+	// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO das
+	// outras ofertas da descoberta (sem free-run do modelo).
+	| { kind: "show-other-options"; label?: string }
 	| { kind: "whatsapp_optin"; phone: string }
 	| { kind: "whatsapp_optin_decline" }
 	// ── Passo 5 "Contratar" (fechamento Bevi) ──

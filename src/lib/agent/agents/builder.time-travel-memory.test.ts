@@ -68,17 +68,14 @@
  *   - Cleanup explícito (afterEach delete da conversation criada).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { getPersona } from "@/lib/agent/personas-repo";
 import { invalidateAgentCache } from "@/lib/agent/agents";
+import { getPersona } from "@/lib/agent/personas-repo";
 import type { HumanMemoryBlock, MemoryContext } from "@/lib/memory/types";
-import {
-	runWithSimulatorClock,
-	simulatorNow,
-} from "@/lib/utils/simulator-clock";
+import { runWithSimulatorClock, simulatorNow } from "@/lib/utils/simulator-clock";
 import { buildAgent } from "./builder";
 
 // ─── Helpers de introspecção ────────────────────────────────────────────────
@@ -96,9 +93,7 @@ function getAgentInstructionsText(agent: unknown): string {
 	if (typeof inst === "string") return inst;
 	if (Array.isArray(inst)) {
 		return inst
-			.map((m: { content?: unknown }) =>
-				typeof m?.content === "string" ? m.content : "",
-			)
+			.map((m: { content?: unknown }) => (typeof m?.content === "string" ? m.content : ""))
 			.join("\n\n");
 	}
 	if (inst && typeof inst === "object" && "content" in inst) {
@@ -168,8 +163,7 @@ describe("BUG-SIMULATOR-SUBAGENTS — Teste 1: time-travel não propaga pros spe
 				"que reflita simulatorNow() a cada build (sem cache estático)",
 				"OU passar um parâmetro currentDate explícito a buildAgent.",
 				"",
-				"Prompt snippet (primeiros 400 chars): " +
-					instructionsText.slice(0, 400),
+				"Prompt snippet (primeiros 400 chars): " + instructionsText.slice(0, 400),
 			].join("\n"),
 		).toContain(simulatedTodayISO);
 	});
@@ -281,14 +275,10 @@ describe("BUG-SIMULATOR-SUBAGENTS — Teste 2: specialist não recebe memória L
 		expect(conv, "sanity: conversation criada no beforeEach").toBeDefined();
 		const meta = (conv?.metadata as Record<string, unknown>) ?? {};
 		const memoryBlock =
-			((meta.memory as Record<string, unknown>)?.humanBlock as Record<
-				string,
-				unknown
-			>) ?? null;
-		expect(
-			memoryBlock?.name,
-			"sanity: metadata.memory.humanBlock.name foi gravado",
-		).toBe("Maria Time-Travel");
+			((meta.memory as Record<string, unknown>)?.humanBlock as Record<string, unknown>) ?? null;
+		expect(memoryBlock?.name, "sanity: metadata.memory.humanBlock.name foi gravado").toBe(
+			"Maria Time-Travel",
+		);
 
 		// CONTRATO 1: a assinatura de buildAgent precisa aceitar opts
 		// adicionais (currentDate, memoryContext) pra propagar time-travel
@@ -297,7 +287,7 @@ describe("BUG-SIMULATOR-SUBAGENTS — Teste 2: specialist não recebe memória L
 		// não pode lançar TypeError nem produzir agent malformado.
 		const memoryContext: MemoryContext = {
 			agentId: "test-agent",
-			block: (memoryBlock as unknown) as HumanMemoryBlock,
+			block: memoryBlock as unknown as HumanMemoryBlock,
 			archivalHits: [],
 			daysSinceLastInteraction: null,
 		};
@@ -348,9 +338,7 @@ describe("BUG-SIMULATOR-SUBAGENTS — Teste 2: specialist não recebe memória L
 			"lastSimulation",
 			"Crédito alvo: até R$ 250",
 		];
-		const foundMarkers = memoryMarkers.filter((m) =>
-			instructions.includes(m),
-		);
+		const foundMarkers = memoryMarkers.filter((m) => instructions.includes(m));
 
 		expect(
 			foundMarkers,
@@ -377,8 +365,7 @@ describe("BUG-SIMULATOR-SUBAGENTS — Teste 2: specialist não recebe memória L
 				"  - cache key inclui hash do humanBlock (ou skip cache se há memory)",
 				"  - falha de prepend no orchestrator não esvazia o specialist",
 				"",
-				"Prompt snippet (primeiros 600 chars): " +
-					instructions.slice(0, 600),
+				"Prompt snippet (primeiros 600 chars): " + instructions.slice(0, 600),
 			].join("\n"),
 		).not.toEqual([]);
 	});

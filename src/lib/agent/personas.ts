@@ -70,6 +70,11 @@ export type ConversationMetadata = {
 	 * (passo 4 da jornada — o usuário já viu o plano + detalhamento). Habilita o
 	 * gate "decision" ("Esse plano faz sentido?"). */
 	revealCompleted?: boolean;
+	/** Oferta do simulador (docx passo 4: "contemplado em 3, 6 ou 12 meses — que
+	 * tal?") já feita nesta conversa. Setado quando o gate simulator-offer é
+	 * emitido (padrão consentOffered) — a oferta acontece UMA vez, na sequência
+	 * do reveal, antes do card de decisão. */
+	simulatorOfferDispatched?: boolean;
 	/** Idempotency guard do card de decisão (present_decision_prompt). Espelha
 	 * searchDispatched: o orquestrador dirige o card UMA vez, depois o passo 5
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em

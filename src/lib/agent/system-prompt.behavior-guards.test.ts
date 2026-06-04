@@ -70,8 +70,9 @@ describe("BUG-META-NARRATIVE — prompt proíbe vazar mecânica da UI", () => {
 			while (match) {
 				const start = Math.max(0, match.index - 120);
 				const prefix = SPECIALIST_BASE_PROMPT.slice(start, match.index);
-				const isInProhibitionContext =
-					/BAD:|N(Ã|A)O\s|NUNCA\s|PROIBIDO|termos|"[^"\n]*$/i.test(prefix);
+				const isInProhibitionContext = /BAD:|N(Ã|A)O\s|NUNCA\s|PROIBIDO|termos|"[^"\n]*$/i.test(
+					prefix,
+				);
 				if (!isInProhibitionContext) {
 					reaisOffenders.push(`${regex} → "${match[0]}" (ctx: "...${prefix.slice(-60)}")`);
 				}
@@ -195,11 +196,7 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 		const bloco = blocoMatch[0].toLowerCase();
 		// Normaliza tolerando ç/c e õ/o pra match case-insensitive.
 		const normalizar = (s: string) =>
-			s
-				.toLowerCase()
-				.replace(/ç/g, "c")
-				.replace(/õ/g, "o")
-				.replace(/á/g, "a");
+			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
 		const blocoNorm = normalizar(bloco);
 
 		const variantes = [
@@ -289,8 +286,7 @@ describe("BUG-TOOL-DUPLICATION — prompt tem guard contra repetir tools idempot
 
 		expect(
 			faltando,
-			"Tools idempotentes ausentes da regra dura de anti-duplicação: " +
-				JSON.stringify(faltando),
+			"Tools idempotentes ausentes da regra dura de anti-duplicação: " + JSON.stringify(faltando),
 		).toEqual([]);
 	});
 });
@@ -333,8 +329,7 @@ describe("BUG-SAVE-CONTACT-NAME-MUST-FIRE — prompt obriga save_contact_name AN
 		const ordemReversa =
 			/save_contact_name[\s\S]{0,200}ANTES[\s\S]{0,200}(saudar|texto|resposta|saudacao)/i;
 		expect(
-			ordemTemporal.test(SPECIALIST_BASE_PROMPT) ||
-				ordemReversa.test(SPECIALIST_BASE_PROMPT),
+			ordemTemporal.test(SPECIALIST_BASE_PROMPT) || ordemReversa.test(SPECIALIST_BASE_PROMPT),
 			"Regra precisa acoplar ordem temporal explicita: ANTES de saudar com nome, " +
 				"OBRIGATORIAMENTE chamar save_contact_name. Sem isso, agent emite saudacao " +
 				"(BAD: 'Prazer, Monique!') sem persistir o nome no DB.",
@@ -423,10 +418,9 @@ describe("BUG-NO-CTA-AFTER-NAME — prompt proibe frase afirmativa generica ence
 	it("regra explicita que vale pras 4 specialists (auto/imovel/moto/servicos)", () => {
 		// SPECIALIST_BASE_PROMPT compartilhado — nenhuma menção a persona especifica
 		// no bloco da regra CTA-vazia.
-		const blocoCTA =
-			SPECIALIST_BASE_PROMPT.match(
-				/REGRA DURA[\s\S]{0,1200}(vamos achar a op[çc][ãa]o certa|vamos come[çc]ar)[\s\S]{0,800}/i,
-			);
+		const blocoCTA = SPECIALIST_BASE_PROMPT.match(
+			/REGRA DURA[\s\S]{0,1200}(vamos achar a op[çc][ãa]o certa|vamos come[çc]ar)[\s\S]{0,800}/i,
+		);
 		expect(blocoCTA, "Bloco REGRA DURA com variantes CTA-vazias nao encontrado").not.toBeNull();
 		if (!blocoCTA) return;
 		const bloco = blocoCTA[0].toLowerCase();
@@ -562,8 +556,8 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 			/❌\s*BAD[\s\S]{0,200}user[\s\S]{0,40}["“]paulo["”][\s\S]{0,200}["“]prazer,?\s*paulo!?["”]/i;
 		expect(
 			exemploBadPaulo.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa conter exemplo BAD literal com User:\"Paulo\" " +
-				"+ resposta:\"Prazer, Paulo!\" — transcrição real do bug tb-dev. " +
+			'SPECIALIST_BASE_PROMPT precisa conter exemplo BAD literal com User:"Paulo" ' +
+				'+ resposta:"Prazer, Paulo!" — transcrição real do bug tb-dev. ' +
 				"Sem exemplo literal, o LLM regride pra variante curta de novo.",
 		).toBe(true);
 	});
@@ -576,8 +570,8 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 			/✅\s*GOOD[\s\S]{0,200}user[\s\S]{0,40}["“]paulo["”][\s\S]{0,400}save_contact_name[\s\S]{0,200}["“]prazer,?\s*paulo!?["”]/i;
 		expect(
 			exemploGoodPaulo.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa conter exemplo GOOD com [chame save_contact_name(name=\"Paulo\")] " +
-				"ANTES da saudação \"Prazer, Paulo!\". É o espelho do BAD pra reforçar contraste.",
+			'SPECIALIST_BASE_PROMPT precisa conter exemplo GOOD com [chame save_contact_name(name="Paulo")] ' +
+				'ANTES da saudação "Prazer, Paulo!". É o espelho do BAD pra reforçar contraste.',
 		).toBe(true);
 	});
 
