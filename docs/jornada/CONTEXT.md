@@ -38,18 +38,19 @@
   (A doc `bevi-consorcio-aderencia.md` supunha redirect para `edigital.beviconsorcio.com.br`
   — **isso estava incorreto**; corrigido.)
 - **Verdade de negócio (Kairo, 2026-06-04):** a **assinatura/efetivação é da MESA** —
-  etapa posterior, conduzida pela equipe (back office), fora do escopo do fechamento via
-  API por enquanto. *"A questão da assinatura não faz sentido agora porque é um passo
-  posterior."*
+  etapa posterior, **manual, conduzida pela equipe (back office), NÃO automatizada**.
+  *"A questão da assinatura não faz sentido agora porque é um passo posterior."*
 - **Decisão de produto:** o card de fechamento (`signature_handoff`) **não promete mais
   "assinatura"** — apresenta a **proposta pronta** ("Sua proposta está pronta" / "Ver
   minha proposta") mantendo a continuidade da Aja Agora ("a gente segue com você até a
   contemplação"). O artifact-type interno segue `signature_handoff` (compat); só a
   semântica/copy mudou. O upload de documentos (`document_upload`, portal
   `conexia.agxsoftware.com`) continua válido e é coisa diferente do PDF de proposta.
-- **Pendência com a Bevi:** existe fluxo de assinatura digital via API/embedded/white-label
-  + webhook de conclusão? (já estava na lista de perguntas ao parceiro, Q10 da aderência).
-  Enquanto não houver, "assinatura sem redirect" não é prometível.
+- **Status (2026-06-04):** **NÃO sabemos** se a Bevi tem fluxo de assinatura digital via
+  API/embedded/white-label. Até onde fomos, a assinatura é **só via mesa, manual, não
+  automatizada** — e a jornada **não chegou nesse ponto ainda**. **PASSO PARA O FUTURO:**
+  não construir, não prometer e não assumir assinatura embutida; quando/se a parceria
+  destravar um fluxo automatizado (+ webhook de conclusão — Q10 da aderência), reavaliar.
 
 ## O que a auditoria de 2026-06-03/04 encontrou (resumo)
 

@@ -2,11 +2,13 @@
 //
 // Costura: form CPF/celular/LGPD → cria proposta real → simula com os params do
 // usuário → escolhe a oferta mais próxima do que ele viu na Descoberta → apresenta
-// a OFERTA REAL pra confirmar → choose_offer (link de assinatura) → links de
-// documento (upload no chat). Persiste o estado em `bevi_proposals` pra retomar.
+// a OFERTA REAL pra confirmar → choose_offer (PDF da proposta, ver DES-1) → links
+// de documento (upload no chat). Persiste o estado em `bevi_proposals` pra retomar.
 //
-// Usa o ProposalGateway (mock sem token / Bevi real com token). NÃO tem UI aqui —
-// só a lógica; o route/whatsapp renderizam os artifacts.
+// Usa o ProposalGateway — em runtime SEMPRE o BeviApiAdapter real (exige
+// BEVI_API_TOKEN, falha alto sem). Mock em runtime é PROIBIDO; os testes injetam
+// um dublê via __setProposalGatewayForTests. NÃO tem UI aqui — só a lógica; o
+// route/whatsapp renderizam os artifacts.
 
 import {
 	type RealOffer,
