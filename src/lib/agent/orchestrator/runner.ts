@@ -31,6 +31,24 @@ const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
 	recommend_groups: "qualificado",
 };
 
+/** Cards que constituem o reveal do passo 3+4 (âncora de revealCompleted). */
+const REVEAL_ARTIFACTS = new Set([
+	"comparison_table",
+	"group_card",
+	"recommendation_card",
+	"simulation_result",
+]);
+
+/** BUG-SIMULATOR-OFFER-ENGOLIDO (2026-06-04): o guard anti-atropelo
+ * (`!producedArtifact`) bloqueava o gate simulator-offer pra SEMPRE — o turno
+ * do reveal produz cards e os turnos seguintes também (optin/decision), então
+ * a oferta do simulador (docx passo 4: "na sequência" do reveal) nunca saía.
+ * Exceção cirúrgica: o simulator-offer É elegível no MESMO turno que
+ * apresentou os cards do reveal. Os demais gates seguem bloqueados. */
+export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boolean {
+	return gate === "simulator-offer" && artifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+}
+
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
@@ -301,12 +319,6 @@ export async function* runAgentTurn(args: {
 	// group_card (1), recommendation_card (destacado) ou simulation_result. Limitar
 	// a recommendation/simulation deixava a flag desligada quando o agent abria o
 	// reveal com group_card/comparison (visto no run real 2026-06-02).
-	const REVEAL_ARTIFACTS = new Set([
-		"comparison_table",
-		"group_card",
-		"recommendation_card",
-		"simulation_result",
-	]);
 	if (artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) && !meta.revealCompleted) {
 		const refreshed = await reloadMeta(conversationId);
 		// Captura a administradora do plano destacado pro contexto do card de
@@ -340,10 +352,15 @@ export async function* runAgentTurn(args: {
 	}
 
 	const producedArtifact = artifacts.length > 0;
+	const turnArtifactTypes = artifacts.map((a) => a.type);
 	let nextGateToFire: Gate | null = null;
 	let prefixForNextGate: string | null = null;
-	if (!isConcierge && !producedArtifact) {
-		if (isUserTurn) {
+	// Guard anti-atropelo: turno com artifact não emite gate — EXCETO o
+	// simulator-offer no turno do reveal (allowGateWithArtifacts; docx passo 4).
+	const mayEvaluateGates =
+		!producedArtifact || turnArtifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+	if (!isConcierge && mayEvaluateGates) {
+		if (isUserTurn && !producedArtifact) {
 			const userReplied = fullResponse.length > 0;
 			if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed && userReplied) {
 				meta.doubtsAddressed = true;
@@ -371,12 +388,15 @@ export async function* runAgentTurn(args: {
 			meta: refreshed,
 			isUserTurn,
 		});
-		if (shouldShow) {
+		const passesArtifactGuard =
+			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);
+		if (shouldShow && passesArtifactGuard) {
 			nextGateToFire = gate;
-			if (fullResponse && gate !== "search") {
+			// Com artifacts no turno, o texto já foi escrito no stream — sem prefixo.
+			if (fullResponse && gate !== "search" && !producedArtifact) {
 				prefixForNextGate = fullResponse;
 			}
-		} else if (gate !== "doubts-wait" && isUserTurn) {
+		} else if (gate !== "doubts-wait" && isUserTurn && !producedArtifact) {
 			console.log(`[gate-skip] gate=${gate} intent=${userIntent} — staying conversational`);
 		}
 	}

@@ -2581,6 +2581,19 @@ describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", ()
 		expect(src).toMatch(/simulator-offer/);
 		expect(src).toMatch(/simulatorOfferDispatched: true/);
 	});
+
+	// BUG-SIMULATOR-OFFER-ENGOLIDO (2026-06-04, P0 do revisor + eval Camada 3):
+	// o guard anti-atropelo do runner bloqueava o gate em TODO turno com artifact
+	// — reveal produz cards, turnos seguintes produzem optin/decision, e a oferta
+	// do simulador nunca saía. A exceção allowGateWithArtifacts garante a emissão
+	// no MESMO turno do reveal (docx: "na sequência").
+	it("acoplamento: runner emite simulator-offer no MESMO turno do reveal (exceção do guard)", async () => {
+		const { allowGateWithArtifacts } = await import("@/lib/agent/orchestrator/runner");
+		expect(allowGateWithArtifacts("simulator-offer", ["recommendation_card"])).toBe(true);
+		expect(allowGateWithArtifacts("decision", ["recommendation_card"])).toBe(false);
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toMatch(/allowGateWithArtifacts\(gate, turnArtifactTypes\)/);
+	});
 });
 
 // ============================================================================
