@@ -15,7 +15,7 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, streamText, stepCountIs } from "ai";
+import { generateText, stepCountIs, streamText } from "ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildAssistantPrompt } from "@/lib/agent/assistant-prompt";
 import { buildAssistantTools } from "@/lib/agent/tools/assistant-tools";
@@ -73,10 +73,7 @@ async function runAssistantTurn(args: {
 	const result = streamText({
 		model: anthropic(ASSISTANT_MODEL),
 		system: buildAssistantPrompt(args.persona),
-		messages: [
-			...args.history,
-			{ role: "user", content: args.userMessage },
-		],
+		messages: [...args.history, { role: "user", content: args.userMessage }],
 		tools,
 		stopWhen: stepCountIs(6),
 		temperature: 0.3,
@@ -157,9 +154,7 @@ describeIfKey(
 		}, 60_000);
 
 		it("assistant chama tool válida (não responde só texto)", () => {
-			expect(turn?.toolCalls.length, "esperava ≥1 tool call").toBeGreaterThan(
-				0,
-			);
+			expect(turn?.toolCalls.length, "esperava ≥1 tool call").toBeGreaterThan(0);
 		});
 
 		it("primeira tool é ask_clarification OU propose_patch (nada de inventar tool)", () => {
@@ -170,9 +165,7 @@ describeIfKey(
 		});
 
 		it("se houve propose_patch, ele foi validado server-side com ok:true OR a IA replanejou após ok:false", () => {
-			const proposeCalls = turn?.toolCalls.filter(
-				(t) => t.toolName === "propose_patch",
-			);
+			const proposeCalls = turn?.toolCalls.filter((t) => t.toolName === "propose_patch");
 			if (!proposeCalls?.length) {
 				// IA escolheu desambiguar primeiro — válido.
 				return;
@@ -201,9 +194,7 @@ describeIfKey(
 		});
 
 		it("NENHUMA propose_patch passou com voiceTone contendo frase proibida", () => {
-			const proposeCalls = turn?.toolCalls.filter(
-				(t) => t.toolName === "propose_patch",
-			);
+			const proposeCalls = turn?.toolCalls.filter((t) => t.toolName === "propose_patch");
 			for (const call of proposeCalls ?? []) {
 				const output = call.output as {
 					ok?: boolean;
@@ -241,9 +232,7 @@ describeIfKey(
 		}, 60_000);
 
 		it("se propôs patch voiceTone, after NÃO contém instrução de cumprimentar antes", () => {
-			const proposeCalls = turn?.toolCalls.filter(
-				(t) => t.toolName === "propose_patch",
-			);
+			const proposeCalls = turn?.toolCalls.filter((t) => t.toolName === "propose_patch");
 			for (const call of proposeCalls ?? []) {
 				const output = call.output as {
 					ok?: boolean;
@@ -251,17 +240,13 @@ describeIfKey(
 				};
 				if (output?.ok && output.patch?.kind === "voiceTone") {
 					const after = (output.patch as { after?: string }).after ?? "";
-					expect(after).not.toMatch(
-						/cumpriment(e|ar).*(antes|assim que|entrar|nome)/i,
-					);
+					expect(after).not.toMatch(/cumpriment(e|ar).*(antes|assim que|entrar|nome)/i);
 				}
 			}
 		});
 
 		it("se propose_patch retornou ok:false, IA recebeu o erro (não pode ter passado)", () => {
-			const proposeCalls = turn?.toolCalls.filter(
-				(t) => t.toolName === "propose_patch",
-			);
+			const proposeCalls = turn?.toolCalls.filter((t) => t.toolName === "propose_patch");
 			const anyOk = proposeCalls?.some((c) => {
 				const out = c.output as { ok?: boolean };
 				return out?.ok === true;

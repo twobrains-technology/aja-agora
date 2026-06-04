@@ -163,12 +163,24 @@ async function respondToGate(conversationId: string, gate: string): Promise<Turn
 			await saveMessage(conversationId, "user", label, "web");
 			return consumeTurn(conversationId, buildLanceReactionDirective(label), false, "passo2:lance");
 		}
-		case "lance-embutido": {
-			// docx: usuário com reserva passa pela educação de lance embutido + opt-in.
-			const lanceValue = q.creditMax ? Math.round(q.creditMax * 0.3) : undefined;
+		case "lance-value": {
+			// docx passo 2: "Qual valor aproximado?" → "Uns R$ 30 mil" (~30% da carta).
 			await persistMeta(conversationId, {
 				...meta,
-				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },
+				qualifyAnswers: { ...q, lanceValue: 30_000 },
+			});
+			await saveMessage(conversationId, "user", "Uns R$ 30 mil", "web");
+			return respondToGate(conversationId, "lance-embutido");
+		}
+		case "lance-embutido": {
+			// docx: usuário com reserva passa pela educação de lance embutido + opt-in.
+			const metaLV = await reloadMeta(conversationId);
+			const qLV = metaLV.qualifyAnswers ?? {};
+			const lanceValue =
+				qLV.lanceValue ?? (qLV.creditMax ? Math.round(qLV.creditMax * 0.3) : undefined);
+			await persistMeta(conversationId, {
+				...metaLV,
+				qualifyAnswers: { ...qLV, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },
 			});
 			await saveMessage(conversationId, "user", "Sim, quero considerar lance embutido", "web");
 			// Gate identify (D1): o usuário envia CPF+celular+LGPD pro reveal liberar.

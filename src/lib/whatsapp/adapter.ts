@@ -14,6 +14,7 @@ import {
 	handoffConfirmationToWhatsApp,
 	lanceEmbutidoQuestionToWhatsApp,
 	lanceQuestionToWhatsApp,
+	lanceValueQuestionToWhatsApp,
 	qualifyConsentToWhatsApp,
 	splitMessage,
 	timeframeQuestionToWhatsApp,
@@ -52,6 +53,12 @@ async function gateInteractive(
 		}
 		case "lance":
 			return lanceQuestionToWhatsApp(prefix).interactive ?? null;
+		case "lance-value": {
+			// docx passo 2: "Qual valor aproximado?" — faixas relativas ao crédito.
+			const creditMax = meta.qualifyAnswers?.creditMax;
+			if (!creditMax) return null;
+			return lanceValueQuestionToWhatsApp(creditMax, prefix).interactive ?? null;
+		}
 		case "lance-embutido":
 			return lanceEmbutidoQuestionToWhatsApp(prefix).interactive ?? null;
 		case "identify":

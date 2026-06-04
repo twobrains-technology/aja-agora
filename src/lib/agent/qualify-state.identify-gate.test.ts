@@ -24,6 +24,7 @@ describe("nextGate — identify entra entre a qualificação e a busca", () => {
 			qualifyAnswers: {
 				...qualifiedBase.qualifyAnswers,
 				hasLance: "yes",
+				lanceValue: 30_000,
 				lanceEmbutido: true,
 				lanceEmbutidoPercent: 30,
 			},
@@ -34,7 +35,8 @@ describe("nextGate — identify entra entre a qualificação e a busca", () => {
 	it("lance=yes SEM lance-embutido respondido → lance-embutido vem ANTES de identify", () => {
 		const meta: ConversationMetadata = {
 			...qualifiedBase,
-			qualifyAnswers: { ...qualifiedBase.qualifyAnswers, hasLance: "yes" },
+			// lanceValue já respondido (gate lance-value tem suite própria)
+			qualifyAnswers: { ...qualifiedBase.qualifyAnswers, hasLance: "yes", lanceValue: 30_000 },
 		};
 		expect(nextGate(meta)).toBe("lance-embutido");
 	});

@@ -17,6 +17,8 @@ export type ChatAction =
 	  }
 	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
 	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
+	// docx passo 2: "Qual valor aproximado?" — valor do lance em reais (faixa).
+	| { kind: "gate"; gate: "lance-value"; value: { lanceValue: number }; label: string }
 	| { kind: "gate"; gate: "lance-embutido"; value: "yes" | "no"; label: string }
 	// Gate "identify" (D1) — CPF + celular + aceite LGPD ao fim do passo 2.
 	// A Bevi exige identidade ANTES de simular; sem isso a busca não libera.

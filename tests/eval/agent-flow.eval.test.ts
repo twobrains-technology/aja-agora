@@ -227,13 +227,27 @@ async function handleGateEvent(args: {
 			});
 		}
 
+		case "lance-value": {
+			// docx passo 2: "Qual valor aproximado?" → ~30% da carta (clique simulado).
+			const metaNow = await reloadMeta(conversationId);
+			const q0 = metaNow.qualifyAnswers ?? {};
+			const lv = q0.creditMax !== undefined ? Math.round(q0.creditMax * 0.3) : 30_000;
+			await persistMeta(conversationId, { ...metaNow, qualifyAnswers: { ...q0, lanceValue: lv } });
+			await saveMessage(conversationId, "user", "Uns 30% da carta", "web");
+			return await handleGateEvent({
+				conversationId,
+				gateEvent: { ...gateEvent, gate: "lance-embutido" },
+			});
+		}
+
 		case "lance-embutido": {
 			// Jornada do doc: opta por considerar lance embutido nas simulações.
 			const label = "Sim, considerar lance embutido";
 			const refreshed0 = await reloadMeta(conversationId);
 			const q = refreshed0.qualifyAnswers ?? {};
 			const lanceValue =
-				q.creditMax !== undefined ? Math.round((q.creditMax * 30) / 100) : undefined;
+				q.lanceValue ??
+				(q.creditMax !== undefined ? Math.round((q.creditMax * 30) / 100) : undefined);
 			await persistMeta(conversationId, {
 				...refreshed0,
 				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30, lanceValue },

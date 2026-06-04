@@ -609,6 +609,19 @@ export async function POST(req: NextRequest) {
 						return;
 					}
 
+					// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
+					// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
+					// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
+					if (action.gate === "lance-value") {
+						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+							...(meta.qualifyAnswers ?? {}),
+							lanceValue: action.value.lanceValue,
+						};
+						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+						await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
+						return;
+					}
+
 					if (action.gate === "lance-embutido") {
 						const considera = action.value === "yes";
 						const q = meta.qualifyAnswers ?? {};
@@ -616,11 +629,8 @@ export async function POST(req: NextRequest) {
 							...q,
 							lanceEmbutido: considera,
 							lanceEmbutidoPercent: considera ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
-							// Valor aproximado do lance embutido = fatia da carta (Bevi: embeddedBid).
-							lanceValue:
-								considera && q.creditMax !== undefined
-									? Math.round((q.creditMax * LANCE_EMBUTIDO_DEFAULT_PERCENT) / 100)
-									: q.lanceValue,
+							// lanceValue veio do gate lance-value (resposta do usuário).
+							lanceValue: q.lanceValue,
 						};
 						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 						if (!meta.currentCategory) return;

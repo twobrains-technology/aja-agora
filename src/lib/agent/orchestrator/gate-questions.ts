@@ -20,6 +20,9 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
 			return "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+		case "lance-value":
+			// docx passo 2 (linha 21-22): se "sim" → "Qual valor aproximado?"
+			return "Boa! E qual valor aproximado você pensa em dar de lance?";
 		case "lance-embutido":
 			// Educação do doc, em prosa — explica lance embutido sem jargão de engine.
 			return (

@@ -36,6 +36,7 @@ function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationM
 			prazoMeses: 0,
 			objetivo: "contemplacao_rapida",
 			hasLance: "yes",
+			lanceValue: 30_000,
 			lanceEmbutido: true,
 			lanceEmbutidoPercent: 30,
 		},

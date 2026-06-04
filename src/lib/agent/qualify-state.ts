@@ -7,6 +7,7 @@ export type Gate =
 	| "credit"
 	| "timeframe"
 	| "lance"
+	| "lance-value"
 	| "lance-embutido"
 	| "identify"
 	| "search"
@@ -40,6 +41,10 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (q.creditMax === undefined) return "credit";
 	if (q.prazoMeses === undefined) return "timeframe";
 	if (!q.hasLance) return "lance";
+	// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
+	// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
+	// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
+	if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
 	// Jornada do doc: quem TEM reserva pra lance ("yes") passa pelo gate de
 	// lance embutido (educa + opt-in) antes da busca. "maybe"/"no" pulam.
 	if (q.hasLance === "yes" && q.lanceEmbutido === undefined) return "lance-embutido";

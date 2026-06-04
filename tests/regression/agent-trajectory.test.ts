@@ -2311,6 +2311,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 				prazoMeses: 0,
 				objetivo: "contemplacao_rapida",
 				hasLance: "yes",
+				lanceValue: 30_000,
 				lanceEmbutido: true,
 			},
 			// D1 (gate identify): pós-reveal implica identidade coletada — a busca

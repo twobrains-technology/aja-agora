@@ -9,6 +9,7 @@ import {
 	type Bounds,
 	CREDIT_BOUNDS,
 	LANCE_EMBUTIDO_OPTIONS,
+	lanceValueOptions,
 	MONTHLY_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
@@ -91,6 +92,20 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 					{ value: "no", label: "Por enquanto não" },
 				],
 			};
+		case "lance-value": {
+			// docx passo 2: "Qual valor aproximado?" — faixas relativas ao crédito.
+			const creditMax = meta.qualifyAnswers?.creditMax;
+			if (!creditMax) return null;
+			return {
+				kind: "chips",
+				gate: "lance-value",
+				options: lanceValueOptions(creditMax).map((o) => ({
+					value: o.token,
+					label: o.title,
+					desc: o.desc,
+				})),
+			};
+		}
 		case "lance-embutido":
 			return {
 				kind: "chips",

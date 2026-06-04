@@ -36,6 +36,7 @@ import {
 	resolveCreditReply,
 	resolveLanceEmbutidoReply,
 	resolveLanceReply,
+	resolveLanceValueReply,
 	resolveRange,
 	resolveTimeframeReply,
 	signatureHandoffToWhatsApp,
@@ -103,6 +104,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("credit_")) return handleCredit(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
 	if (replyId.startsWith("lanceembutido_")) return handleLanceEmbutido(ctx);
+	if (replyId.startsWith("lancevalue_")) return handleLanceValue(ctx);
 	if (replyId.startsWith("lance_")) return handleLance(ctx);
 	if (replyId.startsWith("range_")) return handleRange(ctx);
 	if (replyId.startsWith("picker_")) return handlePicker(ctx);
@@ -321,6 +323,25 @@ async function handleLance(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
+// docx passo 2 (linha 21-22): "Qual valor aproximado?" — o valor do lance vem
+// do USUÁRIO, nunca derivado silencioso. Persiste e dispara o lance-embutido.
+async function handleLanceValue(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
+	const resolved = resolveLanceValueReply(replyId);
+	if (!resolved) return true;
+
+	const meta = await loadMeta(conversationId);
+	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+		...(meta.qualifyAnswers ?? {}),
+		lanceValue: resolved.value,
+	};
+	const updated = { ...meta, qualifyAnswers: merged };
+	await persistMeta(conversationId, updated);
+	await recordUserClick(ctx);
+	await fireGate(from, conversationId, "lance-embutido", updated);
+	return true;
+}
+
 async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const resolved = resolveLanceEmbutidoReply(replyId);
@@ -333,10 +354,8 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 		...q,
 		lanceEmbutido: considera,
 		lanceEmbutidoPercent: considera ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
-		lanceValue:
-			considera && q.creditMax !== undefined
-				? Math.round((q.creditMax * LANCE_EMBUTIDO_DEFAULT_PERCENT) / 100)
-				: q.lanceValue,
+		// lanceValue veio do gate lance-value (resposta do usuário, docx).
+		lanceValue: q.lanceValue,
 	};
 	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 	await recordUserClick(ctx);

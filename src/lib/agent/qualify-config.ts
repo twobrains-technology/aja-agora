@@ -164,6 +164,51 @@ export function objetivoForPrazo(prazoMeses: number): Objetivo {
 	return prazoMeses >= 120 ? "investimento" : "contemplacao_rapida";
 }
 
+// ---- Valor do lance (docx passo 2: "Qual valor aproximado?") ----
+//
+// Faixas RELATIVAS ao crédito escolhido (10/20/30/40%+), com o valor absoluto
+// no título — "aproximado" como o docx pede, e clicável nos dois canais
+// (chips na web, lista no WhatsApp). token = valor médio da faixa em reais.
+
+const fmtMil = (n: number) =>
+	n >= 1_000_000
+		? `R$ ${(n / 1_000_000).toFixed(1).replace(".", ",")} mi`
+		: `R$ ${Math.round(n / 1000)} mil`;
+
+export function lanceValueOptions(creditMax: number): Bucket[] {
+	const pct = (p: number) => Math.round((creditMax * p) / 1000) * 1000;
+	return [
+		{
+			token: String(pct(0.1)),
+			title: `Até ${fmtMil(pct(0.1))}`,
+			desc: "~10% da carta",
+			min: 0,
+			max: pct(0.1),
+		},
+		{
+			token: String(pct(0.2)),
+			title: `Uns ${fmtMil(pct(0.2))}`,
+			desc: "~20% da carta",
+			min: pct(0.1),
+			max: pct(0.2),
+		},
+		{
+			token: String(pct(0.3)),
+			title: `Uns ${fmtMil(pct(0.3))}`,
+			desc: "~30% da carta",
+			min: pct(0.2),
+			max: pct(0.3),
+		},
+		{
+			token: String(pct(0.4)),
+			title: `${fmtMil(pct(0.4))} ou mais`,
+			desc: "40%+ da carta",
+			min: pct(0.3),
+			max: pct(0.5),
+		},
+	];
+}
+
 // ---- Monthly budget (parcela mensal) ----
 
 export const MONTHLY_BOUNDS: Record<Category, Bounds> = {

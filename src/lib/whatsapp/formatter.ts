@@ -466,6 +466,7 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 import {
 	CREDIT_BUCKETS,
 	LANCE_EMBUTIDO_OPTIONS,
+	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAMES,
 } from "@/lib/agent/qualify-config";
 
@@ -625,6 +626,40 @@ export function resolveLanceReply(replyId: string): { value: LanceValue; title: 
 	const opt = LANCE_OPTIONS.find((o) => o.token === token);
 	if (!opt) return null;
 	return { value: opt.token, title: opt.title };
+}
+
+// docx passo 2 (linha 21-22): se "sim" pro lance → "Qual valor aproximado?"
+// Faixas relativas ao crédito (lista — 4 opções não cabem em buttons).
+export function lanceValueQuestionToWhatsApp(creditMax: number, prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("lance-value") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher valor",
+				sections: [
+					{
+						title: "Valor do lance",
+						rows: lanceValueOptions(creditMax).map((o) => ({
+							id: `lancevalue_${o.token}`,
+							title: o.title.slice(0, 24),
+							description: (o.desc ?? "").slice(0, 72),
+						})),
+					},
+				],
+			},
+		},
+	};
+}
+
+export function resolveLanceValueReply(replyId: string): { value: number } | null {
+	if (!replyId.startsWith("lancevalue_")) return null;
+	const value = Number(replyId.replace("lancevalue_", ""));
+	if (!Number.isFinite(value) || value <= 0) return null;
+	return { value };
 }
 
 export function lanceEmbutidoQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
