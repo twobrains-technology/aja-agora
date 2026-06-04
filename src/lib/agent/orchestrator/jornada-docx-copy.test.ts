@@ -127,10 +127,11 @@ describe('consent pós-explicação de primeira vez — botão "Entendi, pode co
 
 	it("whatsapp: botão de consent pra primeira vez ecoa o docx (≤20 chars)", () => {
 		const res = qualifyConsentToWhatsApp(undefined, { firstTime: true });
-		const titles =
-			res.interactive?.action?.buttons?.map((b: { reply: { title: string } }) => b.reply.title) ??
-			[];
-		expect(titles.some((t: string) => /entendi/i.test(t))).toBe(true);
+		const interactive = res.interactive as
+			| { action?: { buttons?: Array<{ reply: { title: string } }> } }
+			| undefined;
+		const titles = interactive?.action?.buttons?.map((b) => b.reply.title) ?? [];
+		expect(titles.some((t) => /entendi/i.test(t))).toBe(true);
 		for (const t of titles) expect(t.length).toBeLessThanOrEqual(20);
 	});
 });

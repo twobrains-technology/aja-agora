@@ -84,6 +84,9 @@ export type ConversationMetadata = {
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */
 	recommendedAdministradora?: string;
+	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
+	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
+	contractSummaryPending?: boolean;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;

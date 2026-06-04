@@ -20,6 +20,14 @@ const formatBRL = (value: number): string =>
 
 const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
+// docx passo 4: "tipo de grupo" no resumo por opção.
+const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
+	imovel: "Imóvel",
+	auto: "Automóvel",
+	moto: "Moto",
+	servicos: "Serviços",
+};
+
 const FACTOR_LABELS: Record<keyof RecommendationCardPayload["scoreBreakdown"], string> = {
 	monthlyFit: "Orcamento",
 	contemplation: "Contemplacao",
@@ -97,11 +105,25 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 							{formatPercent(payload.adminFeePercent)}
 						</p>
 					</div>
+					{/* docx passo 4: qtde de contemplados/mês (contagem REAL da oferta).
+					    contemplationRate da Bevi é contagem, não % — só mostra o rótulo
+					    de percentual quando contempladosMes não veio. */}
+					{payload.contempladosMes !== undefined ? (
+						<div>
+							<p className="text-xs text-muted-foreground">Contemplados/mês</p>
+							<p className="text-sm font-medium font-mono">{payload.contempladosMes} por mês</p>
+						</div>
+					) : (
+						<div>
+							<p className="text-xs text-muted-foreground">Contemplação</p>
+							<p className="text-sm font-medium font-mono">
+								{formatPercent(payload.contemplationRate)}
+							</p>
+						</div>
+					)}
 					<div>
-						<p className="text-xs text-muted-foreground">Contemplação</p>
-						<p className="text-sm font-medium font-mono">
-							{formatPercent(payload.contemplationRate)}
-						</p>
+						<p className="text-xs text-muted-foreground">Tipo de grupo</p>
+						<p className="text-sm font-medium font-mono">{CATEGORY_LABELS[payload.category]}</p>
 					</div>
 				</div>
 

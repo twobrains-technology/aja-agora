@@ -1,4 +1,9 @@
-import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
+import {
+	createUIMessageStream,
+	createUIMessageStreamResponse,
+	type UIMessage,
+	type UIMessageStreamWriter,
+} from "ai";
 import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
@@ -21,10 +26,16 @@ import {
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import {
+	type ClosingItem,
+	closingPresentation,
+	realOfferPresentation,
+} from "@/lib/bevi/closing-presentation";
+import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
-import type { AjaUIMessage } from "@/lib/chat/ui-message";
+import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
@@ -91,6 +102,25 @@ function brl(n: number): string {
 		currency: "BRL",
 		maximumFractionDigits: 0,
 	});
+}
+
+/** Escreve os itens do fechamento (closing-presentation.ts) no stream, na ordem
+ * do docx — textos e artifacts intercalados exatamente como o módulo dita. */
+function pipeClosingItems(items: ClosingItem[], writer: UIMessageStreamWriter<AjaUIMessage>): void {
+	for (const item of items) {
+		if (item.kind === "text") {
+			const id = crypto.randomUUID();
+			writer.write({ type: "text-start", id });
+			writer.write({ type: "text-delta", id, delta: item.text });
+			writer.write({ type: "text-end", id });
+		} else {
+			writer.write({
+				type: "data-artifact",
+				id: crypto.randomUUID(),
+				data: { type: item.type, payload: item.payload } as unknown as ArtifactPartData,
+			});
+		}
+	}
 }
 
 export async function POST(req: NextRequest) {
@@ -380,8 +410,6 @@ export async function POST(req: NextRequest) {
 						const valor = q.creditMax ?? q.creditMin ?? 50000;
 						const objetivo = q.objetivo ?? "contemplacao_rapida";
 						const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
 						try {
 							const { proposalId, offer, noOffer } = await startContract(conversationId, {
 								cpf: body.action.cpf,
@@ -392,37 +420,9 @@ export async function POST(req: NextRequest) {
 								objetivo,
 								lanceEmbutido,
 							});
-							if (noOffer || !offer) {
-								writer.write({
-									type: "text-delta",
-									id: textId,
-									delta:
-										"Não encontrei uma carta pra esse valor agora — o mínimo varia por tipo de bem. Quer ajustar o valor?",
-								});
-								writer.write({ type: "text-end", id: textId });
-								return;
-							}
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`,
-							});
-							writer.write({ type: "text-end", id: textId });
-							writer.write({
-								type: "data-artifact",
-								id: crypto.randomUUID(),
-								data: {
-									type: "real_offer",
-									payload: {
-										proposalId,
-										administradora: offer.administradora,
-										grupo: offer.grupo,
-										category: offer.category,
-										creditValue: offer.creditValue,
-										monthlyPayment: offer.monthlyPayment,
-									},
-								},
-							});
+							// Copy/artifacts do passo 5 vivem em closing-presentation.ts
+							// (módulo único — eval valida o MESMO copy de produção).
+							pipeClosingItems(realOfferPresentation({ proposalId, offer, noOffer }), writer);
 						} catch (err) {
 							const delta =
 								err instanceof MinCreditError
@@ -430,6 +430,8 @@ export async function POST(req: NextRequest) {
 									: err instanceof BeviConfigError
 										? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
 										: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
+							const textId = crypto.randomUUID();
+							writer.write({ type: "text-start", id: textId });
 							writer.write({ type: "text-delta", id: textId, delta });
 							writer.write({ type: "text-end", id: textId });
 						}
@@ -437,40 +439,17 @@ export async function POST(req: NextRequest) {
 					}
 
 					if (body.action?.kind === "offer-confirm") {
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
 						try {
 							const res = await confirmOffer(conversationId);
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: `Perfeito! Você está contratando um consórcio da ${res.administradora ?? "administradora"}, escolhida pela Aja Agora pro seu perfil. A gente segue com você até a contemplação — e depois dela.`,
-							});
-							writer.write({ type: "text-end", id: textId });
-							writer.write({
-								type: "data-artifact",
-								id: crypto.randomUUID(),
-								data: {
-									type: "signature_handoff",
-									payload: {
-										administradora: res.administradora ?? "",
-										consortiumProposalLink: res.consortiumProposalLink,
-									},
-								},
-							});
-							writer.write({
-								type: "data-artifact",
-								id: crypto.randomUUID(),
-								data: {
-									type: "document_upload",
-									payload: {
-										proposalId: res.proposalId,
-										documentsLinkPersonal: res.documentsLinkPersonal,
-										optional: true,
-									},
-								},
-							});
+							// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
+							// (closing-presentation.ts — módulo único produção+eval).
+							pipeClosingItems(closingPresentation(res), writer);
+							// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
+							// Nunca quebra o fechamento — falha vira contractSummaryPending.
+							await sendContractSummary(conversationId);
 						} catch {
+							const textId = crypto.randomUUID();
+							writer.write({ type: "text-start", id: textId });
 							writer.write({
 								type: "text-delta",
 								id: textId,

@@ -65,6 +65,9 @@ export interface RecommendationCardPayload {
 	adminFeePercent: number;
 	termMonths: number;
 	contemplationRate: number;
+	/** docx passo 4 (resumo por opção): qtde de contemplados por MÊS — dado REAL
+	 * da oferta Bevi (monthlyAwardedQuotas/availableSlots). Contagem, não %. */
+	contempladosMes?: number;
 	score: number; // 0-1 composite score from rankGroups()
 	scoreBreakdown: {
 		monthlyFit: number;

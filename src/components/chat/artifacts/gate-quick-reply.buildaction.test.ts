@@ -14,6 +14,12 @@ import { buildAction } from "./gate-quick-reply";
 // comportamento de LLM aqui, então cassette (Camada 2) não se aplica (regra
 // CLAUDE.md "Quando NÃO precisa adicionar cassette").
 
+/** buildAction retorna a union ChatAction inteira — narrowing pro membro gate. */
+function gateOf(action: ReturnType<typeof buildAction>) {
+	if (action.kind !== "gate") throw new Error(`esperava kind 'gate', veio '${action.kind}'`);
+	return action;
+}
+
 describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-VALUE-GATE)", () => {
 	it("lance-value: token de valor (String(pct)) vira { gate: 'lance-value', value: { lanceValue: number } }", () => {
 		const action = buildAction("lance-value", { value: "12000", label: "Uns R$ 12 mil" });
@@ -26,7 +32,7 @@ describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-
 	});
 
 	it("lance-value: NUNCA é enviado como gate 'lance' (que gravaria hasLance e pularia lance-embutido)", () => {
-		const action = buildAction("lance-value", { value: "6000", label: "Até R$ 6 mil" });
+		const action = gateOf(buildAction("lance-value", { value: "6000", label: "Até R$ 6 mil" }));
 		expect(action.gate).toBe("lance-value");
 		// o valor precisa estar embrulhado em { lanceValue }, não como string crua
 		expect(action.value).toEqual({ lanceValue: 6000 });
@@ -39,7 +45,7 @@ describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-
 			value: "yes",
 			label: "Sim, considerar lance embutido",
 		});
-		expect(buildAction("lance-embutido", { value: "no", label: "Não, lance com recursos próprios" }).gate).toBe(
+		expect(gateOf(buildAction("lance-embutido", { value: "no", label: "Não, lance com recursos próprios" })).gate).toBe(
 			"lance-embutido",
 		);
 	});
@@ -51,7 +57,7 @@ describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-
 			value: "yes",
 			label: "Quero ver!",
 		});
-		expect(buildAction("simulator-offer", { value: "no", label: "Agora não" }).gate).toBe("simulator-offer");
+		expect(gateOf(buildAction("simulator-offer", { value: "no", label: "Agora não" })).gate).toBe("simulator-offer");
 	});
 
 	// Gates já corretos antes do bug — guardas de não-regressão.
@@ -65,8 +71,8 @@ describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-
 	});
 
 	it("experience/consent/timeframe seguem corretos", () => {
-		expect(buildAction("experience", { value: "first", label: "É a primeira vez" }).gate).toBe("experience");
-		expect(buildAction("consent", { value: "yes", label: "Bora!" }).gate).toBe("consent");
+		expect(gateOf(buildAction("experience", { value: "first", label: "É a primeira vez" })).gate).toBe("experience");
+		expect(gateOf(buildAction("consent", { value: "yes", label: "Bora!" })).gate).toBe("consent");
 		expect(buildAction("timeframe", { value: "0", label: "O mais rápido possível" })).toEqual({
 			kind: "gate",
 			gate: "timeframe",

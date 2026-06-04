@@ -118,6 +118,13 @@ const recommendationSchema = z.object({
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
+	contempladosMes: z
+		.number()
+		.int()
+		.optional()
+		.describe(
+			"Quantidade de contemplados por MES do grupo (docx passo 4) — use o availableSlots retornado por recommend_groups/search_groups. Dado REAL da oferta; omita se nao veio da busca.",
+		),
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
 	scoreBreakdown: z
 		.object({
