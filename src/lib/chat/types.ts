@@ -183,7 +183,7 @@ export interface DecisionPromptPayload {
 /** Opções canônicas do card de decisão (doc etapa 4). `label` = texto enviado
  * (web) / título do botão (WhatsApp, ≤20 chars via `waTitle`). `intent` rotula
  * a intenção pro roteamento conversacional. */
-export const DECISION_PROMPT_QUESTION = "Esse plano faz sentido pra você?";
+export const DECISION_PROMPT_QUESTION = "Esse plano faz sentido para você?";
 export const DECISION_PROMPT_OPTIONS: Array<{
 	intent: "contratar" | "outras" | "especialista";
 	label: string;
@@ -193,7 +193,7 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 	{ intent: "outras", label: "Quero ver outras opções", waTitle: "Ver outras opções" },
 	{
 		intent: "especialista",
-		label: "Quero falar com um especialista",
+		label: "Quero falar com um especialista da Aja Agora",
 		waTitle: "Falar c/ consultor",
 	},
 ];

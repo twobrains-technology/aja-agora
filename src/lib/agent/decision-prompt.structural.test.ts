@@ -16,7 +16,7 @@ describe("decision_prompt — opções canônicas do doc", () => {
 		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
 			"Sim, quero contratar agora",
 			"Quero ver outras opções",
-			"Quero falar com um especialista",
+			"Quero falar com um especialista da Aja Agora",
 		]);
 	});
 

@@ -13,7 +13,10 @@ export function buildTransitionFirstContactDirective(
 	const nameInstruction = nameHint
 		? ` ${nameHint}`
 		: " IMPORTANTE: voce ainda NAO sabe o nome do usuario. Sua primeira mensagem deve reagir em 1 frase curta ao objetivo dele E em SEGUIDA perguntar como pode chama-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'). NAO pergunte sobre experiencia previa nem mencione outros assuntos — apenas reaja + peca o nome. Quando o usuario responder, chame save_contact_name imediatamente.";
-	return `[sistema acabou de te conectar com o usuario que pediu pra falar sobre ${categoryLabel}]${nameInstruction}`;
+	// docx passo 1 (linha 14): a ponte literal pro passo 2 — dita o texto que o
+	// agente usa logo apos saber o nome, antes da pergunta de experiencia.
+	const bridgeInstruction = ` PONTE DO PASSO 1 (docx): assim que souber o nome, sua resposta usa a ponte "Perfeito, [nome]! Precisamos fazer mais algumas perguntinhas pra buscar o melhor consórcio pra um(a) ${categoryLabel.toLowerCase()}" — e SE o usuario ja tiver mencionado um valor, inclua "de cerca de R$ X" com o valor dele. NAO invente valor se ele nao disse.`;
+	return `[sistema acabou de te conectar com o usuario que pediu pra falar sobre ${categoryLabel}]${nameInstruction}${bridgeInstruction}`;
 }
 
 export function buildTransitionReturningDirective(): string {

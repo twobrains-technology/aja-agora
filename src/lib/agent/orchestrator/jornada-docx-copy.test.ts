@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildExperienceFirstDirective, buildSearchSummaryDirective } from "./directives";
+import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
+import { gatePartData } from "@/lib/web/adapter";
+import { qualifyConsentToWhatsApp } from "@/lib/whatsapp/formatter";
+import type { ConversationMetadata } from "../personas";
+import {
+	buildExperienceFirstDirective,
+	buildSearchSummaryDirective,
+	buildTransitionFirstContactDirective,
+} from "./directives";
 import { gateQuestion } from "./gate-questions";
 
 // ============================================================================
@@ -42,6 +51,96 @@ describe("perguntas de gate — fiéis ao docx", () => {
 		expect(q).toMatch(/sem precisar.*hoje|todo o lance.*hoje|em dinheiro hoje/);
 		// Tom acolhedor do docx ("Fica tranquilo, a gente te ajuda!").
 		expect(q).toMatch(/tranquil|a gente te ajuda|te ajuda/);
+		// Âncoras literais do docx: exemplo da carta de R$ 100 mil + a pergunta
+		// "quer considerar esse tipo de lance nas suas simulações?".
+		expect(q).toMatch(/r\$ 100 mil/);
+		expect(q).toMatch(/quer considerar esse tipo de lance/);
+	});
+
+	it("lance-value: pergunta o VALOR aproximado do lance (docx passo 2)", () => {
+		const q = (gateQuestion("lance-value") ?? "").toLowerCase();
+		expect(q).toMatch(/valor aproximado/);
+		expect(q).toMatch(/lance/);
+	});
+
+	it("identify: gancho literal do docx (analisar várias administradoras) + LGPD", () => {
+		const q = (gateQuestion("identify") ?? "").toLowerCase();
+		expect(q).toMatch(/analisar várias administradoras|analisar varias administradoras/);
+		expect(q).toMatch(/aderentes ao seu perfil/);
+		expect(q).toMatch(/lgpd/);
+	});
+
+	it("simulator-offer: oferta literal do simulador (3, 6 ou 12 meses — que tal?)", () => {
+		const q = (gateQuestion("simulator-offer") ?? "").toLowerCase();
+		expect(q).toMatch(/simulador/);
+		expect(q).toMatch(/3, 6 ou 12 meses/);
+		expect(q).toMatch(/que tal/);
+		expect(q).toMatch(/parcelas/);
+	});
+});
+
+describe("card de decisão — pergunta e 3 opções LITERAIS do docx (passo 4)", () => {
+	it('pergunta canônica: "Esse plano faz sentido para você?"', () => {
+		expect(DECISION_PROMPT_QUESTION).toBe("Esse plano faz sentido para você?");
+	});
+
+	it("as 3 labels são as do docx, na ordem", () => {
+		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
+			"Sim, quero contratar agora",
+			"Quero ver outras opções",
+			"Quero falar com um especialista da Aja Agora",
+		]);
+	});
+
+	it("títulos de botão WhatsApp respeitam o limite de 20 chars", () => {
+		for (const o of DECISION_PROMPT_OPTIONS) {
+			expect(o.waTitle.length, `waTitle "${o.waTitle}"`).toBeLessThanOrEqual(20);
+		}
+	});
+});
+
+describe("simulador-agulha — marcos default cobrem 3/6/12 do docx", () => {
+	it("contemplationDialMarks sem months explícito inclui os meses 3, 6 e 12", () => {
+		const marks = contemplationDialMarks({ creditValue: 60_000, termMonths: 80 });
+		const months = marks.map((m) => m.targetMonth);
+		expect(months).toContain(3);
+		expect(months).toContain(6);
+		expect(months).toContain(12);
+	});
+});
+
+describe('consent pós-explicação de primeira vez — botão "Entendi, pode continuar" (docx passo 2)', () => {
+	const metaFirst = { experiencePrev: "first" } as ConversationMetadata;
+	const metaReturning = { experiencePrev: "returning" } as ConversationMetadata;
+
+	it("web: chips do consent pra primeira vez usam a label literal do docx", () => {
+		const data = gatePartData("consent", metaFirst);
+		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
+		expect(data.options.map((o) => o.label)).toContain("Entendi, pode continuar");
+	});
+
+	it("web: quem já conhece consórcio mantém o convite curto (Bora!)", () => {
+		const data = gatePartData("consent", metaReturning);
+		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
+		expect(data.options.map((o) => o.label)).toContain("Bora!");
+	});
+
+	it("whatsapp: botão de consent pra primeira vez ecoa o docx (≤20 chars)", () => {
+		const res = qualifyConsentToWhatsApp(undefined, { firstTime: true });
+		const titles =
+			res.interactive?.action?.buttons?.map((b: { reply: { title: string } }) => b.reply.title) ??
+			[];
+		expect(titles.some((t: string) => /entendi/i.test(t))).toBe(true);
+		for (const t of titles) expect(t.length).toBeLessThanOrEqual(20);
+	});
+});
+
+describe("texto-ponte do passo 1 — docx linha 14", () => {
+	it('directive de primeiro contato carrega a ponte "perguntinhas… de cerca de X"', () => {
+		const d = buildTransitionFirstContactDirective("Automóvel", "").toLowerCase();
+		expect(d).toMatch(/perguntinhas/);
+		expect(d).toMatch(/melhor consórcio|melhor consorcio/);
+		expect(d).toMatch(/de cerca de/);
 	});
 });
 

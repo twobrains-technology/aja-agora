@@ -558,9 +558,15 @@ export function resolveTimeframeReply(replyId: string): {
 	return { prazoMeses: t.prazoMeses, title: t.title };
 }
 
-export function qualifyConsentToWhatsApp(prefix?: string): WhatsAppResponse {
+export function qualifyConsentToWhatsApp(
+	prefix?: string,
+	opts: { firstTime?: boolean } = {},
+): WhatsAppResponse {
 	const question = gateQuestion("consent") ?? "";
 	const text = prefix ? `${prefix}\n\n${question}` : question;
+	// docx passo 2: pós-explicação de primeira vez o botão é "Entendi, pode
+	// continuar" — no WhatsApp o título encurta pro limite de 20 chars.
+	const yesTitle = opts.firstTime ? "Entendi, continuar" : "Bora!";
 	return {
 		type: "interactive",
 		interactive: {
@@ -568,7 +574,7 @@ export function qualifyConsentToWhatsApp(prefix?: string): WhatsAppResponse {
 			body: { text },
 			action: {
 				buttons: [
-					{ type: "reply", reply: { id: "qualify_start_yes", title: "Bora!" } },
+					{ type: "reply", reply: { id: "qualify_start_yes", title: yesTitle } },
 					{ type: "reply", reply: { id: "qualify_start_more", title: "Entender mais antes" } },
 				],
 			},

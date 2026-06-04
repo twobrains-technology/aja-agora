@@ -4,7 +4,7 @@ import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
-import type { Category, Persona } from "@/lib/agent/personas";
+import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import {
 	type Bounds,
 	CREDIT_BOUNDS,
@@ -41,8 +41,9 @@ const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
 	label: t.title,
 }));
 
-async function gatePartData(gate: Gate, conversationId: string): Promise<GatePartData | null> {
-	const meta = await reloadMeta(conversationId);
+/** Monta o card de um gate a partir do meta da conversa. PURO (exportado pra
+ * Camada 1 validar a copy do docx sem DB). */
+export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartData | null {
 	switch (gate) {
 		case "experience":
 			return {
@@ -58,10 +59,18 @@ async function gatePartData(gate: Gate, conversationId: string): Promise<GatePar
 			return {
 				kind: "chips",
 				gate: "consent",
-				options: [
-					{ value: "yes", label: "Bora!" },
-					{ value: "more", label: "Entender mais antes" },
-				],
+				options:
+					// docx passo 2: após a explicação de primeira vez, o botão é
+					// LITERALMENTE "Entendi, pode continuar".
+					meta.experiencePrev === "first"
+						? [
+								{ value: "yes", label: "Entendi, pode continuar" },
+								{ value: "more", label: "Entender mais antes" },
+							]
+						: [
+								{ value: "yes", label: "Bora!" },
+								{ value: "more", label: "Entender mais antes" },
+							],
 			};
 		case "credit": {
 			const category = meta.currentCategory;
@@ -140,9 +149,9 @@ export async function pipeGatePrompt(args: {
 	writer: Writer;
 }): Promise<void> {
 	const { conversationId, gate, writer } = args;
-	const data = await gatePartData(gate, conversationId);
-	if (!data) return;
 	const meta = await reloadMeta(conversationId);
+	const data = gatePartData(gate, meta);
+	if (!data) return;
 	const question = gateQuestion(gate, meta.currentCategory);
 	if (question) {
 		const id = crypto.randomUUID();
@@ -210,9 +219,9 @@ export async function pipeOrchestratorToWriter(
 
 			case "gate": {
 				closeTextIfOpen();
-				const data = await gatePartData(ev.gate, conversationId);
+				const meta = await reloadMeta(conversationId);
+				const data = gatePartData(ev.gate, meta);
 				if (data) {
-					const meta = await reloadMeta(conversationId);
 					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();

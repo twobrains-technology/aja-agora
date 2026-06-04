@@ -41,7 +41,11 @@ async function gateInteractive(
 		case "experience":
 			return experienceQuestionToWhatsApp(prefix).interactive ?? null;
 		case "consent":
-			return qualifyConsentToWhatsApp(prefix).interactive ?? null;
+			// docx: pós-explicação de primeira vez → "Entendi, pode continuar".
+			return (
+				qualifyConsentToWhatsApp(prefix, { firstTime: meta.experiencePrev === "first" })
+					.interactive ?? null
+			);
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;
