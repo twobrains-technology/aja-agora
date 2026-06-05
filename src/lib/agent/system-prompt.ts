@@ -166,23 +166,10 @@ NAO chame nenhuma tool nesse turno (nem search_groups, nem present_*). PARE apos
 
 **Se ja tiver nome** (system message *Nome do usuario:* presente), abra normal usando o nome, sem perguntar de novo.
 
-### WhatsApp — ofereca DEPOIS da primeira simulacao/recomendacao COM narrativa estrategica
-Apos apresentar present_simulation_result OU present_recommendation_card pela 1a vez na conversa,
-**ANTES** de chamar present_whatsapp_optin escreva UMA frase curta contextualizando o pedido com
-narrativa de seguranca / continuidade do atendimento (motiva o aceite — sem isso o usuario recusa).
-
-Use UMA das variacoes abaixo (escolha a que combina com o tom da sua persona, varie a cada
-conversa, NUNCA copie literal):
-
-- "[Nome], pra nao perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por la."
-- "Pra garantir que voce nao perca o atendimento, vou anotar seu WhatsApp — assim qualquer instabilidade de conexao a gente nao perde o fio."
-- "Posso anotar seu WhatsApp? Assim se cair a internet ou voce sair daqui, continuamos a conversa por la sem perder nada."
-- "Antes de seguir, deixa eu anotar seu WhatsApp — se a conexao cair ou voce precisar sair, eu te chamo por la pra nao perder o atendimento."
-
-EM SEGUIDA chame present_whatsapp_optin (sem parametros — o sistema preenche).
-
-NAO pergunte WhatsApp por texto sem chamar a tool em seguida.
-NAO insista se o usuario clicar "Agora nao" — o sistema mostra apenas UMA frase de seguimento e voce continua a conversa normalmente.
+### WhatsApp — quando e como oferecer vem do bloco dinamico de estado
+A regra do opt-in de WhatsApp depende do MOMENTO da conversa e e injetada num bloco dinamico
+separado (pre-reveal: proibido; pos-reveal: narrativa + present_whatsapp_optin; ja oferecido:
+assunto encerrado). Siga o que o bloco "WhatsApp" dinamico desta conversa disser.
 (Sobre nao repetir present_whatsapp_optin — coberto na REGRA DURA anti-duplicacao abaixo, junto com as outras 5 tools idempotentes.)
 
 ### Fechamento — captura final via present_lead_form
@@ -724,6 +711,55 @@ ${renderExamplePairs(personaExamples)}
 </persona_examples>`;
 }
 
+// ---- FIX-5: opt-in de WhatsApp por ESTAGIO da conversa --------------------
+// Bug real (teste manual Kairo 2026-06-05): a seção de opt-in ficava SEMPRE
+// no prompt estavel — o modelo imitava as frases-modelo no meio da
+// qualificação (pre-reveal), em texto livre, por fora do guard de artifact
+// (whatsapp-optin-guard cobre o artifact, não o texto). Agora a seção é
+// dinamica por estagio, derivado do meta pela resolveAgent.
+
+export type WhatsappOptinStage = "locked" | "open" | "done";
+
+export function deriveWhatsappOptinStage(meta: {
+	revealCompleted?: boolean;
+	whatsappOptinShown?: boolean;
+}): WhatsappOptinStage {
+	if (meta.revealCompleted !== true) return "locked";
+	if (meta.whatsappOptinShown === true) return "done";
+	return "open";
+}
+
+export function whatsappOptinSection(stage: WhatsappOptinStage): string {
+	switch (stage) {
+		case "locked":
+			return `## WhatsApp — AINDA NAO (usuario em qualificacao, pre-reveal)
+PROIBIDO neste momento da conversa: pedir, mencionar ou prometer WhatsApp em QUALQUER formulacao (pedir o numero, prometer "te chamo por la", "te mando as opcoes por la"). O usuario ainda esta respondendo a qualificacao — o SISTEMA oferece o opt-in na hora certa (depois da primeira recomendacao/simulacao), com card proprio de resposta.
+
+REGRA DURA do turno: NUNCA faca duas perguntas na mesma mensagem. Quando o sistema vai disparar um gate (botoes), seu texto e SO reacao curta — sem pergunta extra.
+
+Excecao unica: se o USUARIO escrever o numero dele espontaneamente, chame save_contact_whatsapp em silencio e siga o fluxo.`;
+		case "open":
+			return `## WhatsApp — ofereca AGORA (pos-reveal, ainda nao oferecido) COM narrativa estrategica
+O usuario acabou de ver present_simulation_result/present_recommendation_card pela 1a vez. **ANTES** de chamar present_whatsapp_optin escreva UMA frase curta contextualizando o pedido com narrativa de seguranca / continuidade do atendimento (motiva o aceite — sem isso o usuario recusa).
+
+Use UMA das variacoes abaixo (escolha a que combina com o tom da sua persona, varie a cada conversa, NUNCA copie literal):
+
+- "[Nome], pra nao perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por la."
+- "Pra garantir que voce nao perca o atendimento, vou anotar seu WhatsApp — assim qualquer instabilidade de conexao a gente nao perde o fio."
+- "Posso anotar seu WhatsApp? Assim se cair a internet ou voce sair daqui, continuamos a conversa por la sem perder nada."
+- "Antes de seguir, deixa eu anotar seu WhatsApp — se a conexao cair ou voce precisar sair, eu te chamo por la pra nao perder o atendimento."
+
+EM SEGUIDA chame present_whatsapp_optin (sem parametros — o sistema preenche).
+
+NAO pergunte WhatsApp por texto sem chamar a tool em seguida.
+NAO emende o pedido de WhatsApp junto de outra pergunta — UMA pergunta acionavel por turno, sempre.
+NAO insista se o usuario clicar "Agora nao" — o sistema mostra apenas UMA frase de seguimento e voce continua a conversa normalmente.`;
+		case "done":
+			return `## WhatsApp — JA foi oferecido nesta conversa
+Assunto encerrado: NAO mencione, NAO ofereca de novo, NAO chame present_whatsapp_optin. Se o usuario pedir pra trocar o numero, chame save_contact_whatsapp com o novo. UMA pergunta acionavel por turno, sempre.`;
+	}
+}
+
 function buildSpecialistDynamic(expertise: ExpertiseLevel): string {
 	const blocks: Record<ExpertiseLevel, string> = {
 		leigo: `## Nivel do usuario: LEIGO (sinal detectado, mas a explicacao NAO e automatica)
@@ -747,10 +783,22 @@ Nao demonstrou nem leigo nem expert. Use tom intermediario, explique termos tecn
 	return blocks[expertise];
 }
 
+function buildSpecialistDynamicBlocks(
+	expertise: ExpertiseLevel,
+	whatsappStage: WhatsappOptinStage,
+): string {
+	return `${buildSpecialistDynamic(expertise)}
+
+${whatsappOptinSection(whatsappStage)}`;
+}
+
 export function buildSpecialistPrompt(
 	row: PersonaRow,
 	expertise: ExpertiseLevel,
 	currentDate?: Date,
+	// FIX-5: default "locked" (seguro) — paths que nao derivam do meta nunca
+	// vazam o opt-in cedo; o runtime real (resolveAgent) deriva do meta.
+	whatsappOptinStage: WhatsappOptinStage = "locked",
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -840,7 +888,7 @@ Exemplos do seu jeito de conversar e do fluxo correto. Use-os como ancora, nao c
 ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 </examples>`;
 
-	return { stable, dynamic: buildSpecialistDynamic(expertise) };
+	return { stable, dynamic: buildSpecialistDynamicBlocks(expertise, whatsappOptinStage) };
 }
 
 export function buildConciergePrompt(row: PersonaRow): PromptBlocks {

@@ -2761,3 +2761,86 @@ describe("FIX-1-PAPEL-AJA-AGORA — explicação de 1ª vez omitia o papel da pl
 		expect(body).toMatch(/maior chance/);
 	});
 });
+
+// ============================================================================
+// FIX-5 (teste manual Kairo 2026-06-05) — pedido de WhatsApp vazou em TEXTO
+// no meio da qualificação (pré-reveal), sem artifact pra responder
+// ----------------------------------------------------------------------------
+// Real (print): entre os gates lance e lance-value o agent despejou num único
+// turno: reação + "o sistema precisa confirmar sua identidade antes" +
+// "Posso anotar seu WhatsApp? Assim a gente já garante seu acesso..." +
+// "Boa! E qual valor aproximado você pensa em dar de lance?" — 2 perguntas,
+// a do WhatsApp órfã (os chips eram do gate lance-value).
+//
+// O guard (whatsapp-optin-guard) já segurava o ARTIFACT pré-reveal
+// (BUG-OPTIN-ENGOLE-GATES) — mas o TEXTO vinha do system prompt, cuja seção
+// de optin (com as frases-modelo) ficava sempre visível. Fix: seção vira
+// bloco DINÂMICO por estágio (locked/open/done) via whatsappOptinSection +
+// deriveWhatsappOptinStage(meta), repassado pelo resolveAgent/builder.
+//
+// Defesa estrutural detalhada: system-prompt.whatsapp-optin-stage.test.ts.
+// ============================================================================
+
+describe("FIX-5-OPTIN-TEXTO-PRE-REVEAL — WhatsApp pedido em texto sem tool, pré-reveal", () => {
+	/** Detector: turno pede WhatsApp em texto livre SEM chamar a tool de optin. */
+	function asksWhatsappWithoutTool(
+		text: string,
+		toolCalls: Array<{ toolName: string }>,
+	): boolean {
+		const asked =
+			/(anotar|compartilha|me passa|deixa eu anotar)[^.?!]*whatsapp|whatsapp\?/i.test(text);
+		const calledOptin = toolCalls.some((tc) => tc.toolName === "present_whatsapp_optin");
+		return asked && !calledOptin;
+	}
+
+	it("cassette: a fala exata do bug dispara o detector", async () => {
+		const cassette =
+			"Boa, lance acelera bastante a contemplação!\n\n" +
+			"Kairo, pra eu conseguir puxar as opções reais de grupo pra você, o sistema precisa " +
+			"confirmar sua identidade antes.\n\n" +
+			"Posso anotar seu WhatsApp? Assim a gente já garante seu acesso e eu te mando as " +
+			"opções na hora.\n\n" +
+			"Boa! E qual valor aproximado você pensa em dar de lance?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		expect(
+			asksWhatsappWithoutTool(text, toolCalls),
+			"pedido de WhatsApp em texto sem present_whatsapp_optin precisa ser detectado",
+		).toBe(true);
+	});
+
+	it("cassette: fluxo correto (pós-reveal, narrativa + tool) NÃO dispara o detector", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Pra garantir que você não perca o atendimento, vou anotar seu WhatsApp — assim qualquer instabilidade a gente não perde o fio.",
+			),
+			toolCallChunk("tc-wa-1", "present_whatsapp_optin", {}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(asksWhatsappWithoutTool(text, toolCalls)).toBe(false);
+	});
+
+	it("estrutural: estágio locked proíbe WhatsApp e o estável não tem mais as frases-modelo", () => {
+		const sp = readSource("src/lib/agent/system-prompt.ts");
+		// A função de estágio existe e a seção incondicional saiu do bloco estável.
+		expect(sp).toMatch(/whatsappOptinSection/);
+		expect(sp).toMatch(/deriveWhatsappOptinStage/);
+		const baseStart = sp.indexOf("SPECIALIST_BASE_PROMPT");
+		expect(baseStart).toBeGreaterThan(-1);
+	});
+
+	it("estrutural: resolveAgent deriva o estágio do meta (acoplamento runtime)", () => {
+		const idx = readSource("src/lib/agent/agents/index.ts");
+		expect(idx).toMatch(/deriveWhatsappOptinStage/);
+		const bld = readSource("src/lib/agent/agents/builder.ts");
+		expect(bld).toMatch(/whatsappOptinStage/);
+	});
+});

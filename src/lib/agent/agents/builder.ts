@@ -7,6 +7,7 @@ import {
 	buildSpecialistPrompt,
 	type ExpertiseLevel,
 	type PersonaRow,
+	type WhatsappOptinStage,
 } from "../system-prompt";
 import { buildConsorcioTools, consorcioTools } from "../tools/ai-sdk";
 
@@ -72,6 +73,15 @@ export function buildAgent(
 		/** Canal da conversa atual — propagado pra factory de tools por simetria. */
 		channel?: "web" | "whatsapp";
 		/**
+		 * FIX-5: estagio do opt-in de WhatsApp (locked/open/done), derivado do
+		 * meta da conversa pela resolveAgent (deriveWhatsappOptinStage). Entra
+		 * no bloco DINAMICO do prompt — pre-reveal o modelo recebe proibicao
+		 * explicita em vez das frases-modelo de opt-in (que ele imitava cedo
+		 * demais, em texto livre, por fora do guard de artifact).
+		 * Default "locked" (seguro) quando omitido.
+		 */
+		whatsappOptinStage?: WhatsappOptinStage;
+		/**
 		 * Força o modelo a chamar uma tool específica neste turno.
 		 *
 		 * Quando passado, é repassado pro `ToolLoopAgent` como `toolChoice`
@@ -90,7 +100,7 @@ export function buildAgent(
 	const isConcierge = row.role === "concierge";
 	const blocks = isConcierge
 		? buildConciergePrompt(row)
-		: buildSpecialistPrompt(row, expertise, opts.currentDate);
+		: buildSpecialistPrompt(row, expertise, opts.currentDate, opts.whatsappOptinStage);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,
 	// present_lead_form) ganham conversationId via closure — schema fica reduzido,

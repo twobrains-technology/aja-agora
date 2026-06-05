@@ -4,6 +4,7 @@ import type { MemoryContext } from "@/lib/memory/types";
 import { getCurrentClockOffset, simulatorNow } from "@/lib/utils/simulator-clock";
 import type { ConversationMetadata, ExpertiseLevel, Persona } from "../personas";
 import { getPersona } from "../personas-repo";
+import { deriveWhatsappOptinStage } from "../system-prompt";
 import { buildAgent } from "./builder";
 
 const agentCache = new Map<string, ToolLoopAgent>();
@@ -71,6 +72,11 @@ export async function resolveAgent(
 	// Bypass de cache: toolChoice forçado é caso raro (1x/conversa) e cada
 	// turno pode ter toolName diferente — cachear seria over-engineering e
 	// reaproveitaria agent c/ toolChoice errado.
+	// FIX-5: estagio do opt-in derivado do meta — pre-reveal o prompt carrega
+	// proibicao explicita de WhatsApp em texto (o guard de artifact ja existia;
+	// o TEXTO vazava porque a secao de optin era incondicional no estavel).
+	const whatsappOptinStage = deriveWhatsappOptinStage(meta);
+
 	if (opts.toolChoice) {
 		return buildAgent(row, expertise, {
 			currentDate: simulatorNow(),
@@ -78,6 +84,7 @@ export async function resolveAgent(
 			conversationId: opts.conversationId,
 			channel: opts.channel,
 			toolChoice: opts.toolChoice,
+			whatsappOptinStage,
 		});
 	}
 
@@ -92,10 +99,13 @@ export async function resolveAgent(
 			memoryContext: opts.memoryContext ?? null,
 			conversationId: opts.conversationId,
 			channel: opts.channel,
+			whatsappOptinStage,
 		});
 	}
 
-	const key = cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash);
+	// FIX-5: o estagio entra na cache key — agents com estagios diferentes
+	// tem prompts dinamicos diferentes (nao podem compartilhar instancia).
+	const key = `${cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash)}:wa-${whatsappOptinStage}`;
 
 	let agent = agentCache.get(key);
 	if (!agent) {
@@ -104,6 +114,7 @@ export async function resolveAgent(
 			memoryContext: opts.memoryContext ?? null,
 			conversationId: opts.conversationId,
 			channel: opts.channel,
+			whatsappOptinStage,
 		});
 		agentCache.set(key, agent);
 	}
