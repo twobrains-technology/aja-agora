@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { useChatContext } from "@/lib/chat/provider";
 import type { PlanGatePartData } from "@/lib/chat/ui-message";
-import { computePlanEstimate } from "@/lib/consorcio/plan-estimate";
+import { clampLanceToAsset, computePlanEstimate } from "@/lib/consorcio/plan-estimate";
 
 // FIX-3 — "Planeje sua conquista" (passo 2, gate credit). Componente dinâmico
 // do Bernardo na visão do Kairo: 4 indicadores interligados (valor do bem ·
@@ -43,7 +43,13 @@ export function PlanEstimatePicker({
 	const [assetValue, setAssetValue] = useState(payload.credit.default);
 	const [targetMonth, setTargetMonth] = useState(payload.targetMonthDefault);
 	const [monthlyBudget, setMonthlyBudget] = useState(payload.monthly.default);
-	const [lanceValue, setLanceValue] = useState(0);
+	const [lanceValueRaw, setLanceValue] = useState(0);
+	// QA-crítico P2: o teto do lance acompanha o valor do bem — se o usuário
+	// reduz o bem, o lance EFETIVO rebaixa pro teto novo (clamp derivado, sem
+	// estado duplicado): clampLanceToAsset é a fonte única da regra (testada
+	// em plan-estimate.test.ts).
+	const lanceValue = clampLanceToAsset(lanceValueRaw, assetValue);
+	const lanceMax = Math.round(assetValue * 0.8);
 	// null = não decidiu (gate de lance embutido continua na conversa);
 	// true/false = decisão tomada aqui mesmo.
 	const [lanceEmbutido, setLanceEmbutido] = useState<boolean | null>(null);
@@ -136,7 +142,7 @@ export function PlanEstimatePicker({
 						value={lanceValue}
 						display={lanceValue > 0 ? brl(lanceValue) : "sem lance"}
 						min={0}
-						max={Math.round(assetValue * 0.8)}
+						max={lanceMax}
 						step={payload.credit.step / 10 >= 100 ? Math.round(payload.credit.step / 10) : 100}
 						onChange={setLanceValue}
 						testId="plan-lance"

@@ -121,4 +121,12 @@ export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 	};
 }
 
+/** Teto do lance declarável: 80% do valor do bem (mesmo teto realista do
+ * dial). QA-crítico P2: quando o usuário REDUZ o valor do bem, o lance
+ * declarado precisa rebaixar pro teto novo — nunca fica acima. */
+export function clampLanceToAsset(lanceValue: number, assetValue: number): number {
+	const max = Math.round(Math.max(0, assetValue) * 0.8);
+	return Math.min(Math.max(0, lanceValue), max);
+}
+
 export { TYPICAL_TERM_MONTHS, TYPICAL_ADMIN_FEE_PCT };

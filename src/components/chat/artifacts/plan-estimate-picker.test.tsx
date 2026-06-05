@@ -90,3 +90,20 @@ describe("FIX-3 — PlanEstimatePicker", () => {
 		expect(action.value.lanceEmbutido).toBe(true);
 	});
 });
+
+describe("QA-crítico P2 — lance clampa quando o valor do bem diminui", () => {
+	it("clampLanceToAsset rebaixa o lance pro teto de 80% do bem (fonte única da regra)", async () => {
+		const { clampLanceToAsset } = await import("@/lib/consorcio/plan-estimate");
+		// usuário tinha 20k de lance com bem de 25k; reduziu o bem pra 8k
+		expect(clampLanceToAsset(20_000, 8_000)).toBe(6_400);
+		// dentro do teto, passa intacto; nunca negativo
+		expect(clampLanceToAsset(4_000, 20_000)).toBe(4_000);
+		expect(clampLanceToAsset(-5, 20_000)).toBe(0);
+	});
+
+	it("componente deriva o lance efetivo via clampLanceToAsset (acoplamento)", async () => {
+		const { readFileSync } = await import("node:fs");
+		const src = readFileSync("src/components/chat/artifacts/plan-estimate-picker.tsx", "utf-8");
+		expect(src).toMatch(/clampLanceToAsset\(lanceValueRaw, assetValue\)/);
+	});
+});

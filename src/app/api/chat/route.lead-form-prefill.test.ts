@@ -31,7 +31,7 @@ import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, leads, personas } from "@/db/schema";
-import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT, whatsappOptinSection } from "@/lib/agent/system-prompt";
 import { POST } from "./route";
 
 function readSource(rel: string): string {
@@ -234,15 +234,20 @@ describe("Bug B — system prompt OU examples devem instruir captura proativa de
 		return /whats(app)?/i.test(text);
 	}
 
-	it("o system_prompt menciona narrativa estratégica ao oferecer o WhatsApp (anti-regressão)", () => {
-		// SYSTEM_PROMPT é o concierge/global; SPECIALIST_BASE_PROMPT é o usado
-		// pelas specialists (Helena, Rafael, Bruno, Camila). Ambos contam.
-		const combined = `${SYSTEM_PROMPT}\n\n${SPECIALIST_BASE_PROMPT}`;
+	it("o prompt menciona narrativa estratégica NO ESTÁGIO em que oferece o WhatsApp (anti-regressão)", () => {
+		// FIX-5 (2026-06-05): a seção de opt-in saiu do SPECIALIST_BASE_PROMPT
+		// (estável) e virou bloco DINÂMICO por estágio — pré-reveal o modelo nem
+		// vê as frases (era exatamente o que ele imitava cedo demais). A
+		// narrativa estratégica agora PRECISA estar no estágio "open" (pós-reveal,
+		// optin pendente) — onde o agente de fato oferece.
+		const combined = `${SYSTEM_PROMPT}\n\n${SPECIALIST_BASE_PROMPT}\n\n${whatsappOptinSection("open")}`;
 		expect(hasWhatsappMention(combined)).toBe(true);
 		expect(
 			containsStrategicNarrative(combined),
-			`Nenhum padrão de narrativa estratégica (instabilidade / não perder atendimento / continuar por lá) encontrado no system prompt das specialists. O agente vai pedir WhatsApp de forma seca, sem motivar — taxa de aceite baixa.`,
+			`Nenhum padrão de narrativa estratégica (instabilidade / não perder atendimento / continuar por lá) encontrado no prompt do estágio "open". O agente vai pedir WhatsApp de forma seca, sem motivar — taxa de aceite baixa.`,
 		).toBe(true);
+		// E o estágio "locked" (pré-reveal) NÃO carrega as frases-modelo.
+		expect(containsStrategicNarrative(whatsappOptinSection("locked"))).toBe(false);
 	});
 
 	it("pelo menos 1 example seedado (mig 0016) ou no DB cobre oferta proativa de WhatsApp com narrativa estratégica", async () => {
