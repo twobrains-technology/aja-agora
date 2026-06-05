@@ -1,7 +1,9 @@
 ---
 id: FIX-12
 titulo: "Fechamento SEQUESTROU a descoberta: modelo apresentou `contract_form` no momento do identify, criou proposta REAL antes de qualquer reveal"
-status: todo
+status: done
+commit: b97f37f
+executado_em: 2026-06-05
 bloco: bloco-a-agent-core
 arquivos:
   - src/lib/agent/orchestrator/runner.ts
@@ -9,6 +11,10 @@ arquivos:
   - src/app/api/chat/route.ts
   - src/lib/bevi/fulfillment.ts
   - tests/regression/agent-trajectory.test.ts
+desvios:
+  - "fulfillment.ts NÃO precisou mudar — a defesa C ficou no route (que tem o writer pra responder com o gate correto); validação de ordem da jornada pelo estado do servidor (reloadMeta) antes de startContract"
+  - "testes novos: src/lib/agent/orchestrator/runner.contract-guard.integration.test.ts (C1a), describes FIX-12 em route.closing-persistence.test.ts (C1b), EVAL-FIX-12 em tests/eval/agent-flow.eval.test.ts (C3)"
+  - "package.json (commit 38a7c80): test:integration tinha globs que não expandiam no sh — route*/integration tests não rodavam em suite nenhuma; corrigido pra filtros de substring do vitest (12 → 81 testes)"
 rodada: 2026-06-05 tarde (re-teste pós-lote-1)
 anotado_em: 2026-06-05
 ---
