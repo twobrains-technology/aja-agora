@@ -7,7 +7,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
 import {
@@ -121,6 +121,57 @@ function pipeClosingItems(items: ClosingItem[], writer: UIMessageStreamWriter<Aj
 				data: { type: item.type, payload: item.payload } as unknown as ArtifactPartData,
 			});
 		}
+	}
+}
+
+/**
+ * FIX-11 (defeito A): TODA mensagem assistant escrita pelos handlers de action
+ * DEVE ser persistida. Os handlers do fechamento (`contract-submit`,
+ * `offer-confirm`, `documents-done`, `document-upload`, `document-skip`)
+ * escreviam direto no stream SEM `saveMessage` — o histórico da conversa real
+ * do bug tinha 4 mensagens `user` consecutivas sem nenhuma `assistant` entre
+ * elas. No turno seguinte, `loadConversationHistory` entregava esse histórico
+ * mutilado ao modelo, que concluía (coerente com o que recebeu) que "nada
+ * chegou no nosso sistema" — e re-rodava a descoberta.
+ */
+async function writeAndSaveText(
+	writer: UIMessageStreamWriter<AjaUIMessage>,
+	conversationId: string,
+	persona: Persona | null,
+	text: string,
+): Promise<void> {
+	const id = crypto.randomUUID();
+	writer.write({ type: "text-start", id });
+	writer.write({ type: "text-delta", id, delta: text });
+	writer.write({ type: "text-end", id });
+	await saveMessage(conversationId, "assistant", text, "web", persona);
+}
+
+/** FIX-11: pipeClosingItems + persistência — 1 message com os textos do
+ * fechamento e os artifacts vinculados a ela (mesmo padrão do runner,
+ * runner.ts `saveMessage` + insert em `artifacts`). */
+async function pipeAndSaveClosingItems(
+	items: ClosingItem[],
+	writer: UIMessageStreamWriter<AjaUIMessage>,
+	conversationId: string,
+	persona: Persona | null,
+): Promise<void> {
+	pipeClosingItems(items, writer);
+	const texts = items.filter((i) => i.kind === "text").map((i) => i.text);
+	const artifactItems = items.filter(
+		(i): i is Extract<ClosingItem, { kind: "artifact" }> => i.kind === "artifact",
+	);
+	const content = texts.join("\n\n") || `[closing: ${artifactItems.map((a) => a.type).join(", ")}]`;
+	const messageId = await saveMessage(conversationId, "assistant", content, "web", persona);
+	if (artifactItems.length > 0) {
+		await db.insert(artifactsTable).values(
+			artifactItems.map((a) => ({
+				messageId,
+				type: a.type,
+				payload: a.payload,
+				createdAt: simulatorNow(),
+			})),
+		);
 	}
 }
 
@@ -295,27 +346,26 @@ export async function POST(req: NextRequest) {
 					if (body.action?.kind === "whatsapp_optin") {
 						const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 						const result = await saveContactWhatsapp(conversationId, body.action.phone);
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
 						if (result.ok) {
 							const greetName = contactName ? `, ${contactName}` : "";
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: `Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
-							});
 							await persistMeta(conversationId, {
 								...meta,
 								whatsappOptinShown: true,
 							});
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
+							);
 						} else {
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: "Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
-							});
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+							);
 						}
-						writer.write({ type: "text-end", id: textId });
 						return;
 					}
 
@@ -325,27 +375,22 @@ export async function POST(req: NextRequest) {
 							whatsappOptinShown: true,
 							whatsappOptinDeclined: true,
 						});
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
-						writer.write({
-							type: "text-delta",
-							id: textId,
-							delta: "Sem problema, seguimos por aqui mesmo.",
-						});
-						writer.write({ type: "text-end", id: textId });
+						await writeAndSaveText(
+							writer,
+							conversationId,
+							meta.currentPersona ?? null,
+							"Sem problema, seguimos por aqui mesmo.",
+						);
 						return;
 					}
 
 					if (body.action?.kind === "interest") {
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
-						writer.write({
-							type: "text-delta",
-							id: textId,
-							delta:
-								"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
-						});
-						writer.write({ type: "text-end", id: textId });
+						await writeAndSaveText(
+							writer,
+							conversationId,
+							meta.currentPersona ?? null,
+							"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
+						);
 						writer.write({
 							type: "data-artifact",
 							id: crypto.randomUUID(),
@@ -361,13 +406,15 @@ export async function POST(req: NextRequest) {
 					// das outras ofertas reais da descoberta (other-options.ts — módulo
 					// único produção+eval). Zero free-run do modelo, zero dado inventado.
 					if (body.action?.kind === "show-other-options") {
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
 						try {
 							const { buildOtherOptions } = await import("@/lib/bevi/other-options");
 							const others = await buildOtherOptions(conversationId, meta);
-							writer.write({ type: "text-delta", id: textId, delta: others.text });
-							writer.write({ type: "text-end", id: textId });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								others.text,
+							);
 							writer.write({
 								type: "data-artifact",
 								id: crypto.randomUUID(),
@@ -377,13 +424,12 @@ export async function POST(req: NextRequest) {
 								},
 							});
 						} catch {
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta:
-									"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
-							});
-							writer.write({ type: "text-end", id: textId });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+							);
 						}
 						return;
 					}
@@ -409,15 +455,12 @@ export async function POST(req: NextRequest) {
 							await storeIdentity(conversationId, { cpf, celular });
 						}
 						if (!cpf || !celular) {
-							const textId = crypto.randomUUID();
-							writer.write({ type: "text-start", id: textId });
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta:
-									"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
-							});
-							writer.write({ type: "text-end", id: textId });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
+							);
 							return;
 						}
 						try {
@@ -435,7 +478,12 @@ export async function POST(req: NextRequest) {
 							});
 							// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 							// (módulo único — eval valida o MESMO copy de produção).
-							pipeClosingItems(realOfferPresentation({ proposalId, offer, noOffer }), writer);
+							await pipeAndSaveClosingItems(
+								realOfferPresentation({ proposalId, offer, noOffer }),
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+							);
 						} catch (err) {
 							const delta =
 								err instanceof MinCreditError
@@ -443,10 +491,7 @@ export async function POST(req: NextRequest) {
 									: err instanceof BeviConfigError
 										? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
 										: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
-							const textId = crypto.randomUUID();
-							writer.write({ type: "text-start", id: textId });
-							writer.write({ type: "text-delta", id: textId, delta });
-							writer.write({ type: "text-end", id: textId });
+							await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
 						}
 						return;
 					}
@@ -460,19 +505,22 @@ export async function POST(req: NextRequest) {
 							await persistMeta(conversationId, { ...fresh, contractClosed: true });
 							// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 							// (closing-presentation.ts — módulo único produção+eval).
-							pipeClosingItems(closingPresentation(res), writer);
+							await pipeAndSaveClosingItems(
+								closingPresentation(res),
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+							);
 							// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 							// Nunca quebra o fechamento — falha vira contractSummaryPending.
 							await sendContractSummary(conversationId);
 						} catch {
-							const textId = crypto.randomUUID();
-							writer.write({ type: "text-start", id: textId });
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: "Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
-							});
-							writer.write({ type: "text-end", id: textId });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+							);
 						}
 						return;
 					}
@@ -483,19 +531,16 @@ export async function POST(req: NextRequest) {
 						const sent = new Set(body.action.sentSlots ?? []);
 						const hasFrente = sent.has("identidade_frente");
 						const hasVerso = sent.has("identidade_verso");
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
-						writer.write({
-							type: "text-delta",
-							id: textId,
-							delta:
-								hasFrente && hasVerso
-									? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
-									: hasFrente
-										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
-										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
-						});
-						writer.write({ type: "text-end", id: textId });
+						await writeAndSaveText(
+							writer,
+							conversationId,
+							meta.currentPersona ?? null,
+							hasFrente && hasVerso
+								? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+								: hasFrente
+									? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
+									: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
+						);
 						return;
 					}
 
@@ -503,8 +548,7 @@ export async function POST(req: NextRequest) {
 					// robustez/compat; o componente web usa /api/chat/document.
 					if (body.action?.kind === "document-upload") {
 						const action = body.action;
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
+						let delta: string;
 						try {
 							const file = Buffer.from(action.fileBase64, "base64");
 							const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
@@ -513,34 +557,23 @@ export async function POST(req: NextRequest) {
 								filename: action.filename,
 								mimeType: action.mimeType,
 							});
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: ok
-									? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
-									: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`,
-							});
+							delta = ok
+								? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+								: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
 						} catch {
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: "Tive um problema com o upload. Pode tentar enviar de novo?",
-							});
+							delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
 						}
-						writer.write({ type: "text-end", id: textId });
+						await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
 						return;
 					}
 
 					if (body.action?.kind === "document-skip") {
-						const textId = crypto.randomUUID();
-						writer.write({ type: "text-start", id: textId });
-						writer.write({
-							type: "text-delta",
-							id: textId,
-							delta:
-								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
-						});
-						writer.write({ type: "text-end", id: textId });
+						await writeAndSaveText(
+							writer,
+							conversationId,
+							meta.currentPersona ?? null,
+							"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
+						);
 						return;
 					}
 
@@ -714,16 +747,14 @@ export async function POST(req: NextRequest) {
 						const { cpf, celular, lgpd } = action.value;
 						const celularDigits = (celular ?? "").replace(/\D/g, "");
 						if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
-							const textId = crypto.randomUUID();
-							writer.write({ type: "text-start", id: textId });
-							writer.write({
-								type: "text-delta",
-								id: textId,
-								delta: !isValidCpf(cpf)
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								!isValidCpf(cpf)
 									? "Esse CPF não confere — dá uma olhadinha nos números?"
 									: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
-							});
-							writer.write({ type: "text-end", id: textId });
+							);
 							await pipeGatePrompt({ conversationId, gate: "identify", writer });
 							return;
 						}

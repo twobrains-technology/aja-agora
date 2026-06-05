@@ -895,3 +895,104 @@ describeIfKey("EVAL-SAVE-CONTACT-NAME-CIRURGICO — Rafael capta nome em 1 turn"
 		).toBe(true);
 	}, 60_000);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX-11 — Pós-fechamento amnésico (rodada 2026-06-05 tarde)
+// Bug real: pós-fechamento CANOPUS (grupo 4400, docs enviados), "qual status
+// da proposta?" → agent negou o fechamento, re-rodou a descoberta e ofereceu
+// OUTRA administradora. Aqui: seed do estado terminal direto no DB (barato —
+// 1 turno real) + pergunta de status. Rubric: punir negação de estado e
+// segunda administradora.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-11 — pós-fechamento responde status do estado, sem re-descoberta", () => {
+	let convId: string;
+	let statusTurn: Turn | null = null;
+
+	beforeAll(async () => {
+		const { beviProposals } = await import("@/db/schema");
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "moto",
+					currentCategory: "moto",
+					expertiseLevel: "neutro",
+					qualifyConsented: true,
+					experiencePrev: "first",
+					identityCollected: true,
+					qualifyAnswers: { creditMax: 40000, monthlyBudget: 800, prazoMeses: 8, hasLance: "no" },
+					searchDispatched: true,
+					revealCompleted: true,
+					decisionDispatched: true,
+					recommendedAdministradora: "CANOPUS",
+					recommendedOffer: {
+						administradora: "CANOPUS",
+						creditValue: 46000,
+						termMonths: 98,
+						monthlyPayment: 469.95,
+					},
+					contractClosed: true,
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		await db.insert(beviProposals).values({
+			conversationId: convId,
+			proposalId: "eval-fix11-proposal",
+			administradora: "CANOPUS",
+			grupo: "4400",
+			creditValue: "46000",
+			monthlyPayment: "469.95",
+			proposalStatus: "documentos",
+		});
+		// Histórico mínimo coerente com o fechamento (a versão SAUDÁVEL do
+		// histórico que no bug real estava mutilado).
+		await saveMessage(convId, "user", "Confirmo essa carta", "web");
+		await saveMessage(
+			convId,
+			"assistant",
+			"Perfeito! Você está contratando um consórcio da CANOPUS. Parabéns! Recebi seus documentos ✅ — sua ficha está completa.",
+			"web",
+			"moto",
+		);
+
+		statusTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: "qual o status da proposta?",
+			isUserTurn: true,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("não emite NENHUM artifact de descoberta/simulação (bug: recommendation_card de outra adm)", () => {
+		const types = (statusTurn?.artifacts ?? []).map((a) => a.type);
+		expect(types).not.toContain("recommendation_card");
+		expect(types).not.toContain("simulation_result");
+		expect(types).not.toContain("comparison_table");
+		expect(types).not.toContain("group_card");
+		expect(types).not.toContain("contract_form");
+	});
+
+	it("não chama tool de busca (bug: re-rodou a descoberta)", () => {
+		const tools = statusTurn?.toolCalls ?? [];
+		expect(tools).not.toContain("search_groups");
+		expect(tools).not.toContain("recommend_groups");
+	});
+
+	it("não NEGA o estado (bug: 'nada chegou no nosso sistema nesse chat')", () => {
+		const text = statusTurn?.content ?? "";
+		expect(text).not.toMatch(/nada chegou/i);
+		expect(text).not.toMatch(/n[ãa]o recebi nenhum (dado|documento)/i);
+	});
+
+	it("responde do estado salvo: menciona a administradora do contrato (nunca outra)", () => {
+		const text = statusTurn?.content ?? "";
+		expect(text).toMatch(/CANOPUS/i);
+		expect(text).not.toMatch(/BANCO DO BRASIL/i);
+	});
+});

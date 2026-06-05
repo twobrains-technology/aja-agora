@@ -191,6 +191,20 @@ export async function* runAgentTurn(args: {
 					// (contractClosed) um afirmativo fazia o agente re-apresentar o
 					// contract_form e "contratar" outra administradora. Estado terminal.
 					const isContractDup = meta.contractClosed === true && artifactType === "contract_form";
+					// FIX-11 (rodada 2026-06-05 tarde): o guard acima cobria SÓ o
+					// contract_form — pós-fechamento, "qual status da proposta?" fazia o
+					// agente re-rodar a descoberta e emitir recommendation_card +
+					// simulation_result de OUTRA administradora (BANCO DO BRASIL pra quem
+					// JÁ contratou CANOPUS). Estado terminal vale pra TODA a família de
+					// artifacts de descoberta/simulação/decisão, em qualquer intent.
+					const isPostClosure =
+						meta.contractClosed === true &&
+						(artifactType === "recommendation_card" ||
+							artifactType === "simulation_result" ||
+							artifactType === "comparison_table" ||
+							artifactType === "group_card" ||
+							artifactType === "contemplation_dial" ||
+							artifactType === "decision_prompt");
 					// FIX-7 (single-option guard): descoberta retornou opção ÚNICA →
 					// recommendation_card duplicaria o grupo do detalhamento. Suprime;
 					// o simulation_result vira o card único do reveal.
@@ -198,6 +212,10 @@ export async function* runAgentTurn(args: {
 					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
 						console.log(
 							`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
+						);
+					} else if (isPostClosure) {
+						console.log(
+							`[post-closure] guard: suprimindo ${artifactType} pós-fechamento — estado terminal (conv=${conversationId}, intent=${userIntent})`,
 						);
 					} else if (isRereveal || isDecisionDup || isContractDup) {
 						console.log(

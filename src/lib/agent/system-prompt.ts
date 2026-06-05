@@ -783,13 +783,68 @@ Nao demonstrou nem leigo nem expert. Use tom intermediario, explique termos tecn
 	return blocks[expertise];
 }
 
+// ---- FIX-11: estado TERMINAL do fechamento no prompt -----------------------
+// Bug real (rodada 2026-06-05 tarde): pós-fechamento REAL com a CANOPUS
+// (grupo 4400, docs enviados), "qual status da proposta?" fez o agent NEGAR o
+// fechamento, re-rodar a descoberta e oferecer OUTRA administradora.
+// `meta.contractClosed` era setado no offer-confirm mas NENHUMA seção do
+// prompt o consumia. Mesmo padrão dinâmico do whatsappOptinSection (FIX-5):
+// derivado do meta (+ bevi_proposals) pela resolveAgent, injetado pelo builder.
+
+export type ContractClosedInfo = {
+	administradora?: string | null;
+	grupo?: string | null;
+	creditValue?: number | null;
+	monthlyPayment?: number | null;
+	proposalStatus?: string | null;
+};
+
+function brlNoCents(n: number): string {
+	return n.toLocaleString("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+		maximumFractionDigits: 0,
+	});
+}
+
+export function contractClosedSection(info: ContractClosedInfo | null): string {
+	if (!info) return "";
+	const administradora = info.administradora ?? "a administradora escolhida";
+	const plano = [
+		info.grupo ? `grupo ${info.grupo}` : null,
+		typeof info.creditValue === "number" ? `credito de ${brlNoCents(info.creditValue)}` : null,
+		typeof info.monthlyPayment === "number"
+			? `parcela de ${info.monthlyPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+			: null,
+	]
+		.filter(Boolean)
+		.join(" · ");
+	const statusLabel =
+		info.proposalStatus === "documentos"
+			? "documentos recebidos — a proposta esta com a administradora"
+			: "proposta registrada na administradora";
+	return `## CONTRATO FECHADO — estado terminal (fonte: o SERVIDOR, nao o historico)
+O usuario JA CONTRATOU nesta conversa: consorcio da ${administradora}${plano ? ` (${plano})` : ""}. Status atual: ${statusLabel}.
+
+REGRAS DURAS deste estado:
+- NUNCA negue que a contratacao, o envio de dados ou o envio de documentos aconteceu. O fechamento esta registrado no servidor — se o historico parecer incompleto, confie NESTA secao, nao improvise "nada chegou no nosso sistema".
+- PROIBIDO re-rodar a descoberta: NAO chame search_groups/recommend_groups, NAO apresente recommendation_card, simulation_result, comparison_table nem contemplation_dial, e NUNCA ofereca OUTRA administradora ou "novas opcoes" — o plano ja foi contratado com a ${administradora}.
+- Pergunta de status ("qual o status da proposta?", "como ta minha proposta?") → responda DESTE estado: proposta com a ${administradora}${info.grupo ? `, grupo ${info.grupo}` : ""}, ${statusLabel}. Diga que a Aja Agora acompanha cada passo e avisa o usuario.
+- Se o usuario quiser OUTRO consorcio (nova cota/novo bem), diga que e possivel abrir uma nova jornada depois — nesta conversa o fechamento ja esta concluido. NAO reabra a qualificacao.`;
+}
+
 function buildSpecialistDynamicBlocks(
 	expertise: ExpertiseLevel,
 	whatsappStage: WhatsappOptinStage,
+	contractClosedInfo: ContractClosedInfo | null = null,
 ): string {
-	return `${buildSpecialistDynamic(expertise)}
-
-${whatsappOptinSection(whatsappStage)}`;
+	return [
+		buildSpecialistDynamic(expertise),
+		whatsappOptinSection(whatsappStage),
+		contractClosedSection(contractClosedInfo),
+	]
+		.filter(Boolean)
+		.join("\n\n");
 }
 
 export function buildSpecialistPrompt(
@@ -799,6 +854,9 @@ export function buildSpecialistPrompt(
 	// FIX-5: default "locked" (seguro) — paths que nao derivam do meta nunca
 	// vazam o opt-in cedo; o runtime real (resolveAgent) deriva do meta.
 	whatsappOptinStage: WhatsappOptinStage = "locked",
+	// FIX-11: default null (sem contrato fechado) — comportamento atual em
+	// paths que nao derivam do meta; o runtime real (resolveAgent) deriva.
+	contractClosedInfo: ContractClosedInfo | null = null,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -888,7 +946,10 @@ Exemplos do seu jeito de conversar e do fluxo correto. Use-os como ancora, nao c
 ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 </examples>`;
 
-	return { stable, dynamic: buildSpecialistDynamicBlocks(expertise, whatsappOptinStage) };
+	return {
+		stable,
+		dynamic: buildSpecialistDynamicBlocks(expertise, whatsappOptinStage, contractClosedInfo),
+	};
 }
 
 export function buildConciergePrompt(row: PersonaRow): PromptBlocks {

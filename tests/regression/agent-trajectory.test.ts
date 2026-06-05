@@ -3134,3 +3134,96 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		expect(src).toMatch(/valores reais v[eê]m das administradoras/);
 	});
 });
+
+// ============================================================================
+// FIX-11 — POS-FECHAMENTO AMNESICO (rodada 2026-06-05 tarde, prints 27-30)
+// ----------------------------------------------------------------------------
+// Real: jornada completa e CORRETA ate o fim (carta REAL confirmada com a
+// CANOPUS, grupo 4400, R$ 46.000, docs enviados, "sua ficha esta completa!").
+// Usuario pergunta "qual status da proposta?" e o agent, NO MESMO turno:
+//   1. NEGA o fechamento: "ainda nao recebi nenhum dado ou documento por
+//      aqui — nada chegou no nosso sistema nesse chat."
+//   2. RE-RODA a descoberta com os params da qualificacao.
+//   3. Apresenta recommendation_card + simulation_result de OUTRA
+//      administradora (BANCO DO BRASIL) — pro usuario que JA contratou.
+//
+// Root causes (3 defeitos, cada um com guard proprio abaixo):
+//   A. Handlers de action do route escreviam o fechamento no stream SEM
+//      saveMessage → historico mutilado induzia a negacao (a alucinacao e
+//      INDUZIDA pelo historico, nao inventada). → route persiste (Camada 1a:
+//      route.closing-persistence.test.ts; aqui: assert source-level).
+//   B. meta.contractClosed nao entrava no prompt. → contractClosedSection
+//      dinamica (Camada 1b: system-prompt.pos-fechamento.test.ts).
+//   C. Guard do runner so bloqueava contract_form pos-fechamento — cards de
+//      DESCOBERTA passavam livres. → guard isPostClosure no runner.
+// ============================================================================
+
+describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda descoberta", () => {
+	// Trajetoria condensada do turno real das 18:06 (negacao + re-descoberta +
+	// card de OUTRA administradora no mesmo turno).
+	const NEGACAO_REAL =
+		"Kairo, ainda não recebi nenhum dado ou documento por aqui — nada chegou no nosso sistema nesse chat.";
+
+	it("cassette: stream do bug — nega o estado E emite card de descoberta de OUTRA administradora", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", NEGACAO_REAL),
+			toolCallChunk("tc-1", "search_groups", {
+				categoria: "moto",
+				valorCredito: 40000,
+			}),
+			toolCallChunk("tc-2", "present_recommendation_card", {
+				administradora: "BANCO DO BRASIL",
+				creditValue: 35543,
+				monthlyPayment: 2872.71,
+				termMonths: 17,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(text).toBe(NEGACAO_REAL);
+		// O bug em uma linha: pos-fechamento, o turno re-busca E re-recomenda.
+		expect(toolCalls.map((t) => t.toolName)).toEqual([
+			"search_groups",
+			"present_recommendation_card",
+		]);
+	});
+
+	it("detector de negacao de estado pega a frase real do print", () => {
+		const detectors = [
+			/nada chegou no nosso sistema/i,
+			/n[ãa]o recebi nenhum (dado|documento)/i,
+			/ainda n[ãa]o recebi/i,
+		];
+		const hits = detectors.filter((rx) => rx.test(NEGACAO_REAL));
+		expect(hits.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("guard C no runner: pos-fechamento suprime artifacts de DESCOBERTA (nao so contract_form)", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		// O guard antigo (isContractDup) cobria apenas contract_form. O novo
+		// precisa cobrir os cards que vazaram no bug real.
+		const guard =
+			/contractClosed[\s\S]{0,400}(recommendation_card[\s\S]{0,200}simulation_result|simulation_result[\s\S]{0,200}recommendation_card)/;
+		expect(
+			guard.test(src),
+			"runner.ts precisa de guard pos-fechamento suprimindo recommendation_card/simulation_result (FIX-11 defeito C)",
+		).toBe(true);
+	});
+
+	it("fix A no route: fechamento persiste a mensagem assistant (pipeClosingItems com saveMessage)", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		// O pipe do fechamento nao pode mais ser fire-and-forget no stream:
+		// a versao persistida precisa existir e ser usada nos handlers.
+		const persisted = /pipeAndSaveClosingItems|saveClosingItems/;
+		expect(
+			persisted.test(src),
+			"route.ts precisa persistir os closing items (FIX-11 defeito A — historico mutilado)",
+		).toBe(true);
+	});
+
+	it("fix B no prompt: secao de contrato fechado existe e proibe segunda administradora", () => {
+		const src = readSource("src/lib/agent/system-prompt.ts");
+		expect(src).toMatch(/contractClosedSection/);
+		expect(src.toLowerCase()).toMatch(/outra administradora/);
+	});
+});

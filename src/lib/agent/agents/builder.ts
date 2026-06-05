@@ -5,6 +5,7 @@ import type { MemoryContext } from "@/lib/memory/types";
 import {
 	buildConciergePrompt,
 	buildSpecialistPrompt,
+	type ContractClosedInfo,
 	type ExpertiseLevel,
 	type PersonaRow,
 	type WhatsappOptinStage,
@@ -82,6 +83,15 @@ export function buildAgent(
 		 */
 		whatsappOptinStage?: WhatsappOptinStage;
 		/**
+		 * FIX-11: estado TERMINAL do fechamento (contrato fechado nesta
+		 * conversa), derivado do meta + bevi_proposals pela resolveAgent.
+		 * Quando presente, o bloco DINAMICO do prompt carrega a secao de
+		 * contrato fechado (NUNCA negar o fechamento, PROIBIDO re-descoberta/
+		 * outra administradora, status respondido do estado). Default null
+		 * (sem contrato) — comportamento atual.
+		 */
+		contractClosedInfo?: ContractClosedInfo | null;
+		/**
 		 * Força o modelo a chamar uma tool específica neste turno.
 		 *
 		 * Quando passado, é repassado pro `ToolLoopAgent` como `toolChoice`
@@ -100,7 +110,13 @@ export function buildAgent(
 	const isConcierge = row.role === "concierge";
 	const blocks = isConcierge
 		? buildConciergePrompt(row)
-		: buildSpecialistPrompt(row, expertise, opts.currentDate, opts.whatsappOptinStage);
+		: buildSpecialistPrompt(
+				row,
+				expertise,
+				opts.currentDate,
+				opts.whatsappOptinStage,
+				opts.contractClosedInfo ?? null,
+			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,
 	// present_lead_form) ganham conversationId via closure — schema fica reduzido,

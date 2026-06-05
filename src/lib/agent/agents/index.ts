@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import type { ToolChoice, ToolLoopAgent } from "ai";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { MemoryContext } from "@/lib/memory/types";
 import { getCurrentClockOffset, simulatorNow } from "@/lib/utils/simulator-clock";
 import type { ConversationMetadata, ExpertiseLevel, Persona } from "../personas";
 import { getPersona } from "../personas-repo";
-import { deriveWhatsappOptinStage } from "../system-prompt";
+import { type ContractClosedInfo, deriveWhatsappOptinStage } from "../system-prompt";
 import { buildAgent } from "./builder";
 
 const agentCache = new Map<string, ToolLoopAgent>();
@@ -26,6 +27,48 @@ function cacheKey(
 	memoryHash: string,
 ): string {
 	return `${id}:v${version}:${expertise}:${clockOffsetMs}:${memoryHash}`;
+}
+
+/**
+ * FIX-11: estado TERMINAL do fechamento pro prompt. Quando o contrato está
+ * fechado (`meta.contractClosed`), o specialist precisa saber COM QUEM e O QUÊ
+ * foi fechado — senão nega o fechamento e re-roda a descoberta (bug real
+ * 2026-06-05: "nada chegou no nosso sistema" + recommendation_card de OUTRA
+ * administradora pós-contratação).
+ *
+ * Fonte rica: snapshot da proposta real em `bevi_proposals` (administradora,
+ * grupo, status dos documentos). Fallback: o que o meta sabe
+ * (recommendedAdministradora/recommendedOffer). Falha de DB nunca derruba o
+ * turno — degrada pro fallback.
+ */
+async function deriveContractClosedInfo(
+	meta: ConversationMetadata,
+	conversationId?: string,
+): Promise<ContractClosedInfo | null> {
+	if (meta.contractClosed !== true) return null;
+	if (conversationId) {
+		const row = await getLatestBeviProposal(conversationId).catch(() => null);
+		if (row) {
+			return {
+				administradora: row.administradora ?? meta.recommendedAdministradora ?? null,
+				grupo: row.grupo ?? null,
+				creditValue:
+					row.creditValue != null
+						? Number(row.creditValue)
+						: (meta.recommendedOffer?.creditValue ?? null),
+				monthlyPayment:
+					row.monthlyPayment != null
+						? Number(row.monthlyPayment)
+						: (meta.recommendedOffer?.monthlyPayment ?? null),
+				proposalStatus: row.proposalStatus ?? null,
+			};
+		}
+	}
+	return {
+		administradora: meta.recommendedAdministradora ?? meta.recommendedOffer?.administradora ?? null,
+		creditValue: meta.recommendedOffer?.creditValue ?? null,
+		monthlyPayment: meta.recommendedOffer?.monthlyPayment ?? null,
+	};
 }
 
 export async function resolveAgent(
@@ -76,6 +119,8 @@ export async function resolveAgent(
 	// proibicao explicita de WhatsApp em texto (o guard de artifact ja existia;
 	// o TEXTO vazava porque a secao de optin era incondicional no estavel).
 	const whatsappOptinStage = deriveWhatsappOptinStage(meta);
+	// FIX-11: estado terminal do fechamento derivado do meta + bevi_proposals.
+	const contractClosedInfo = await deriveContractClosedInfo(meta, opts.conversationId);
 
 	if (opts.toolChoice) {
 		return buildAgent(row, expertise, {
@@ -85,6 +130,7 @@ export async function resolveAgent(
 			channel: opts.channel,
 			toolChoice: opts.toolChoice,
 			whatsappOptinStage,
+			contractClosedInfo,
 		});
 	}
 
@@ -100,12 +146,18 @@ export async function resolveAgent(
 			conversationId: opts.conversationId,
 			channel: opts.channel,
 			whatsappOptinStage,
+			contractClosedInfo,
 		});
 	}
 
 	// FIX-5: o estagio entra na cache key — agents com estagios diferentes
 	// tem prompts dinamicos diferentes (nao podem compartilhar instancia).
-	const key = `${cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash)}:wa-${whatsappOptinStage}`;
+	// FIX-11: idem pro estado de contrato fechado — hash da info (varia por
+	// administradora/grupo), nao bool, pra nunca reusar prompt de OUTRO contrato.
+	const ctHash = contractClosedInfo
+		? createHash("sha1").update(JSON.stringify(contractClosedInfo)).digest("hex").slice(0, 8)
+		: "0";
+	const key = `${cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash)}:wa-${whatsappOptinStage}:ct-${ctHash}`;
 
 	let agent = agentCache.get(key);
 	if (!agent) {
@@ -115,6 +167,7 @@ export async function resolveAgent(
 			conversationId: opts.conversationId,
 			channel: opts.channel,
 			whatsappOptinStage,
+			contractClosedInfo,
 		});
 		agentCache.set(key, agent);
 	}
