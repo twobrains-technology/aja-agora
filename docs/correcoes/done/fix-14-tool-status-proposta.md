@@ -1,15 +1,21 @@
 ---
 id: FIX-14
 titulo: "Tool de STATUS da proposta no agent (pedido explícito do Kairo)"
-status: todo
+status: done
 bloco: bloco-b-status-tool
 arquivos:
   - src/lib/agent/tools/ai-sdk.ts
   - src/lib/agent/system-prompt.ts
+  - src/lib/agent/agents/builder.ts
   - src/lib/bevi/proposal-status.ts (novo)
+  - src/lib/bevi/proposal-status.test.ts (novo)
+  - src/lib/agent/proposal-status-tool.structural.test.ts (novo)
   - tests/regression/agent-trajectory.test.ts
+  - tests/eval/agent-flow.eval.test.ts
 rodada: 2026-06-05 tarde (re-teste pós-lote-1)
 anotado_em: 2026-06-05
+commit: 2b3b7c7
+executado_em: 2026-06-05
 ---
 
 # FIX-14 — Tool de STATUS da proposta no agent (pedido explícito do Kairo)
