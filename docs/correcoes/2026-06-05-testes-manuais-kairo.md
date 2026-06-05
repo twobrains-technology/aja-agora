@@ -4,9 +4,15 @@
 > (ambiente local, branch `feat/jornada-bevi-lance-embutido`, app em
 > http://aja-feat-jornada-bevi-lance-embutido.orb.local).
 >
-> **Status: APROVADO PELO KAIRO (2026-06-05) — EM EXECUÇÃO.**
-> Design validado em rodada de perguntas; execução autônoma autorizada
-> ("pode aprovar tudo aí... você é totalmente autônomo").
+> **Status: EXECUTADO (2026-06-05).** Bloco A (FIX-1,2,4,5,6,7,8,9,10) +
+> Bloco B (FIX-3) implementados com TDD strict — 1 commit `test+fix:`/
+> `test+feat:` por correção, Camadas 1+2 verdes em todos.
+>
+> ⚠️ **Blocker externo registrado:** a cota mensal do workspace Anthropic
+> esgotou DURANTE a sessão (volta 2026-07-01) — Camada 3 (eval LLM real),
+> E2E conversacional em tela e o próprio chat local ficaram indisponíveis.
+> Evals pulam como INCONCLUSIVOS (probe em tests/eval/anthropic-availability.ts);
+> re-rodar Camada 3 + E2E quando a cota voltar (ou subir o limite no console).
 
 ## Decisões aprovadas (rodada de design 2026-06-05)
 

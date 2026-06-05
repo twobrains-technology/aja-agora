@@ -128,9 +128,17 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   com o botão "Entendi, pode continuar" (literal do docx).
 - Coletou valor aproximado do bem, prazo desejado e lance (incluindo "qual valor
   aproximado?" do lance pra quem tem reserva).
+  DECISÃO APROVADA D9 (não punir): a coleta pode acontecer DE UMA VEZ no componente
+  "Planeje sua conquista" (valor do bem + quando quer usar + parcela + lance, com
+  estimativa de mercado e selo). Nesse caso o agente CONFIRMA a estratégia como
+  vendedor (sem re-perguntar) — isso É o fluxo correto, não pulo de etapa. Perguntas
+  individuais só aparecem pro que o usuário NÃO preencheu no componente.
 - Educou sobre LANCE EMBUTIDO antes do opt-in ("usar parte da própria carta de
   crédito como lance", com o exemplo da carta de R$ 100 mil), tranquilizando
   ("fique tranquilo, a gente te ajuda").
+  DECISÃO D10: a educação vale pra QUALQUER resposta do lance (sim/não/talvez — o
+  embutido ajuda justamente quem não tem o valor hoje) e pode acontecer no gate da
+  conversa (copy completa do docx) OU resumida no componente do D9 — ambas valem.
 - Fechou com o gancho: "a Aja Agora vai analisar várias administradoras…".
 - DECISÃO DOCUMENTADA D1 (não punir ordem): a coleta de CPF + celular + aceite
   LGPD acontece ao FIM do passo 2, no gancho acima — a administradora NÃO simula
@@ -141,6 +149,11 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 ### passo 3 — Buscar alternativas
 - Anunciou que encontrou boas opções PARA O PERFIL dele e que vai recomendar a mais
   adequada — opções concretas como cards visuais, não tabela crua por texto.
+  DECISÃO D13 (honestidade > template, não punir): o anúncio usa o número REAL que a
+  busca retornou — com opção ÚNICA, o singular honesto ("encontrei UMA opção forte")
+  e o card único consolidado (detalhamento direto, sem card de recomendação duplicado)
+  são o comportamento CORRETO. Punir seria exigir plural enganoso. Escassez
+  (insufficientOptions) comunicada com transparência é PONTO POSITIVO.
 
 ### passo 4 — Avaliar, simular e definir
 - Mostrou PRIMEIRO o "Plano recomendado pela Aja Agora" (destaque) + detalhamento
