@@ -195,6 +195,18 @@ conversa da tarde. Em vez dele, logo após a qualificação veio o card compacto
 - O card compacto não mostra prazo porque **a oferta da API de Parceiro não tem o
   campo `term`** — ela devolve só 8 campos (`bevi-api-parceiro-spec.md` §7; o trilho
   B da descoberta tem 68, incluindo prazo). Limitação de FONTE conhecida e documentada.
+- **VERIFICADO AO VIVO em 2026-06-05 ~19h UTC** (questionamento do Kairo: "tem certeza
+  que a API não tá retornando a qtd de meses?"): simulação real re-executada
+  (MOTOS, R$ 40.000) → 11 ofertas, todas com EXATAMENTE 8 chaves
+  (`administradora, grupo, ofertaId, parcela, quotaId, taxaContemplacao, tipoOferta,
+  valorCarta`) — **nenhum campo de prazo/meses/term**. Inclusive a própria cota
+  CANOPUS grupo 4400 / carta R$ 46.000 veio sem prazo (e com parcela R$ 623,29 nesta
+  simulação vs R$ 469,95 no fechamento do teste — a MESMA cota muda de parcela
+  conforme os params da simulação, consistente com spec §8).
+- **Como garantir continuamente**: adicionar um teste de CONTRATO opt-in (roda só com
+  `BEVI_API_TOKEN`, fora do PR) que simula 1× e falha/avisa se o shape da oferta
+  ganhar ou perder campos — o dia que a AGX incluir `term`, a gente fica sabendo no
+  mesmo dia e promove o campo pro card.
 - Regra de produto (D11/correções rodada 1): **nenhum número sem fonte real** — não
   podemos derivar/estimar o prazo e exibir como dado da administradora.
 

@@ -106,7 +106,36 @@ contra as 2 propostas do teste manual de hoje (`bevi_proposals` do workspace):
 | `6a230bb1…bd089b` (CANOPUS 4400, R$ 46k) | 14:47 UTC | "Aguardando inserção da proposta" | `pending` | `null` | `null` |
 | `6a22d4fb…83c282` (CANOPUS 4400, R$ 35k) | 13:54 UTC | "Aguardando inserção da proposta" | `pending` | `null` | `null` |
 
-### Achados
+### Rodada 2 da POC (mesma data, ~19h UTC) — varredura ampliada
+
+Consultadas TODAS as propostas reais conhecidas (DB local + IDs capturados nas docs de
+2026-06-02) + caso de erro:
+
+| Proposta | Idade | `statusName` | Último estado | Observação |
+|---|---|---|---|---|
+| `6a230bb1…` (hoje 14:47) | ~4h | Aguardando inserção da proposta | `waitingForUniqueCode` | **sem transição em 4h+** |
+| `6a22d4fb…` (hoje 13:54) | ~5h | Aguardando inserção da proposta | `waitingForUniqueCode` | idem |
+| `6a1f3461…` (2026-06-02) | 3 dias | Endereço | `endereco` | **abandonada não expira** — pending eterno |
+| `6a1f7953…` (2026-06-02) | 3 dias | Documento pessoal | `documentoPessoal` | idem |
+| id inexistente | — | — | — | `404 {errors:[{field:"propostaId","Proposta não encontrada."}]}` |
+
+**Conclusões adicionais da varredura:**
+
+- **Shape é exatamente o documentado — sem campos ocultos.** Nada de boleto/pagamento
+  escondido no payload (verificado por diff de chaves).
+- **A inserção na administradora NÃO é imediata**: 4-5h após `waitingForUniqueCode` e
+  nada de `integrationCode`/`approvedAt`. Ou é batch lento, ou depende da MESA (back
+  office) processar — reforça G2 como pergunta pra Bevi. **Estados pós-inserção seguem
+  não-observados** (nenhuma proposta nossa chegou lá).
+- **Proposta abandonada fica `pending` indefinidamente** (3 dias sem expirar) — não há
+  estado "expirada". Implicação de design: o acompanhamento ativo precisa de timeout
+  próprio/nudge ao usuário; a API não vai sinalizar abandono.
+- **Polling de transições é viável por diff do `changesHistory`** (cada item tem
+  `changeDate` — detectar item novo = evento pro usuário). `approvedAt`/`reprovedAt`
+  sugerem que `situation` evolui pra `approved`/`reproved` no desfecho.
+- Erro 404 tem shape limpo e tipado — `getStatus` já mapeia via `toBeviError`.
+
+### Achados (rodada 1)
 
 1. **As telas CONEXIA e a API de Parceiro compartilham a MESMA máquina de estados.**
    O `changesHistory` da proposta de 14:47 registra exatamente os passos que o Kairo
