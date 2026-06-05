@@ -163,15 +163,20 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 		`📈 *Taxa efetiva:* ${(p.effectiveRate as number).toFixed(2)}%`,
 	];
 	const eb = p.embeddedBid as
-		| { percent: number; receivedCredit: number; necessaryBidToContemplate: number }
+		| { percent: number; receivedCredit: number; necessaryBidToContemplate?: number | null }
 		| undefined;
 	if (eb) {
 		lines.push(
 			"",
 			`*Com lance embutido (${eb.percent}%):*`,
 			`🎯 Valor que você recebe: ${formatBRL(eb.receivedCredit)}`,
-			`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate)}`,
 		);
+		// FIX-8: só com dado real (> 0) — "R$ 0,00" é enganoso.
+		if ((eb.necessaryBidToContemplate ?? 0) > 0) {
+			lines.push(
+				`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate as number)}`,
+			);
+		}
 	}
 	const body = lines.join("\n");
 

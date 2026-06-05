@@ -92,3 +92,29 @@ describe("auto (IPCA) — fixture real", () => {
 		expect(s.expectedAdjustment.index).toBe("IPCA");
 	});
 });
+
+// FIX-8 (teste manual Kairo 2026-06-05): "Lance estimado p/ contemplar"
+// aparecia como R$ 0,00 — o fallback `finalValue * 0.43` era heurística
+// INVENTADA (fere a regra anti-mock) e `??` deixava o 0 explícito da Bevi
+// vazar pra UI. Regra de produto: número exibido vem de dado REAL ou o campo
+// é OMITIDO — jamais informação errada/enganosa.
+describe("FIX-8 — necessaryBidToContemplate: dado real ou null (nunca 43% inventado, nunca 0)", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("oferta SEM o campo → null (sem heurística de 43%)", () => {
+		const offer = { ...base, necessaryBidToContemplate: undefined };
+		const s = beviOfferToQuotaSimulation(offer);
+		expect(s.embeddedBid.necessaryBidToContemplate).toBeNull();
+	});
+
+	it("oferta com 0 explícito → null (0 seco na UI é enganoso)", () => {
+		const offer = { ...base, necessaryBidToContemplate: 0 };
+		const s = beviOfferToQuotaSimulation(offer);
+		expect(s.embeddedBid.necessaryBidToContemplate).toBeNull();
+	});
+
+	it("oferta com dado real (> 0) → valor literal preservado", () => {
+		const s = beviOfferToQuotaSimulation(base);
+		expect(s.embeddedBid.necessaryBidToContemplate).toBe(34520);
+	});
+});

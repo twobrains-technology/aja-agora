@@ -130,3 +130,66 @@ describe("SimulationResult — CTAs explícitos no fechamento (bug #12)", () => 
 		expect(() => render(<SimulationResult payload={payloadWithoutActions} />)).not.toThrow();
 	});
 });
+
+// FIX-8 (teste manual Kairo 2026-06-05): nunca exibir "Lance estimado p/
+// contemplar R$ 0,00" — sem dado confiável a linha é OMITIDA.
+describe("FIX-8 — lance estimado p/ contemplar nunca rende R$ 0,00", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	it("com dado real (> 0): linha aparece com o valor literal", () => {
+		render(
+			<SimulationResult
+				payload={{
+					...basePayload,
+					embeddedBid: {
+						percent: 30,
+						embeddedBidValue: 24_000,
+						receivedCredit: 56_000,
+						necessaryBidToContemplate: 34_520,
+					},
+				}}
+			/>,
+		);
+		expect(document.body.textContent).toContain("Lance estimado p/ contemplar");
+		expect(document.body.textContent).toMatch(/34\.520/);
+	});
+
+	it("com null (Bevi sem dado): linha OMITIDA, sem R$ 0,00 em lugar nenhum", () => {
+		render(
+			<SimulationResult
+				payload={{
+					...basePayload,
+					embeddedBid: {
+						percent: 30,
+						embeddedBidValue: 24_000,
+						receivedCredit: 56_000,
+						necessaryBidToContemplate: null,
+					},
+				}}
+			/>,
+		);
+		expect(document.body.textContent).not.toContain("Lance estimado p/ contemplar");
+		expect(document.body.textContent).not.toMatch(/R\$\s*0,00/);
+		// O bloco do lance embutido continua (crédito líquido é dado real).
+		expect(document.body.textContent).toContain("Valor que você recebe");
+	});
+
+	it("com 0 (payload legado): trata como sem dado — linha omitida", () => {
+		render(
+			<SimulationResult
+				payload={{
+					...basePayload,
+					embeddedBid: {
+						percent: 30,
+						embeddedBidValue: 24_000,
+						receivedCredit: 56_000,
+						necessaryBidToContemplate: 0,
+					},
+				}}
+			/>,
+		);
+		expect(document.body.textContent).not.toMatch(/R\$\s*0,00/);
+	});
+});

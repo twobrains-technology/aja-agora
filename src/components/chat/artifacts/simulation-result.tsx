@@ -121,10 +121,13 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 								label="Valor que você recebe"
 								value={formatBRL(payload.embeddedBid.receivedCredit)}
 							/>
-							<CostLine
-								label="Lance estimado p/ contemplar"
-								value={formatBRL(payload.embeddedBid.necessaryBidToContemplate)}
-							/>
+							{/* FIX-8: só com dado real (> 0) — "R$ 0,00" aqui é enganoso. */}
+							{(payload.embeddedBid.necessaryBidToContemplate ?? 0) > 0 && (
+								<CostLine
+									label="Lance estimado p/ contemplar"
+									value={formatBRL(payload.embeddedBid.necessaryBidToContemplate as number)}
+								/>
+							)}
 						</div>
 						<p className="text-xs text-muted-foreground mt-1">
 							Usa parte da própria carta como lance — sem precisar do valor todo em dinheiro

@@ -126,9 +126,14 @@ export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
 	const embeddedPercent = lancePercent || 30;
 	const embeddedBidValue = round2(offer.embeddedBid ?? (offer.finalValue * embeddedPercent) / 100);
 	const receivedCredit = round2(offer.receivedCredit ?? offer.finalValue - embeddedBidValue);
-	const necessaryBidToContemplate = round2(
-		offer.necessaryBidToContemplate ?? offer.finalValue * 0.43,
-	);
+	// FIX-8: dado REAL ou null — sem fallback heurístico (43% era inventado,
+	// fere o PROIBIDO-mock) e sem deixar 0 explícito vazar ("Lance estimado
+	// p/ contemplar R$ 0,00" na tela = informação enganosa). A UI OMITE a
+	// linha quando null.
+	const necessaryBidToContemplate =
+		offer.necessaryBidToContemplate && offer.necessaryBidToContemplate > 0
+			? round2(offer.necessaryBidToContemplate)
+			: null;
 
 	return {
 		groupId: offer.quotaId,

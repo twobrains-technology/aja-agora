@@ -42,7 +42,8 @@ export interface SimulationResultPayload {
 		percent: number;
 		embeddedBidValue: number;
 		receivedCredit: number;
-		necessaryBidToContemplate: number;
+		/** FIX-8: dado real ou null/0 — a UI só exibe quando > 0. */
+		necessaryBidToContemplate?: number | null;
 	};
 	/** Correção prevista — INCC pra imóvel, IPCA pra auto (bug #10). */
 	expectedAdjustment?: {

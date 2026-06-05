@@ -81,7 +81,11 @@ const simulationResultSchema = z.object({
 			receivedCredit: z.number().describe("Credito liquido recebido (carta - lance embutido)"),
 			necessaryBidToContemplate: z
 				.number()
-				.describe("Estimativa de lance pra contemplar (R$) — NAO garantia"),
+				.nullable()
+				.optional()
+				.describe(
+					"Estimativa de lance pra contemplar (R$) — NAO garantia. Copie LITERAL de simulate_quota (pode ser null — NUNCA invente valor).",
+				),
 		})
 		.optional()
 		.describe(

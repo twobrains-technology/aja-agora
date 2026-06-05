@@ -42,7 +42,9 @@ export interface QuotaSimulation {
 		percent: number; // % da carta usado como lance embutido (30 default, Bevi aceita 30/50)
 		embeddedBidValue: number; // R$ da carta destinado ao lance embutido
 		receivedCredit: number; // crédito líquido recebido (carta − lance embutido)
-		necessaryBidToContemplate: number; // estimativa de lance pra contemplar (R$) — não garantia
+		/** Estimativa de lance pra contemplar (R$) — dado REAL da oferta ou null
+		 * (FIX-8: sem heurística; null = UI omite a linha). Não é garantia. */
+		necessaryBidToContemplate: number | null;
 	};
 	/** Correção prevista da carta — INCC pra imóvel, IPCA pra auto (bug #10). */
 	expectedAdjustment: {
