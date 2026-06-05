@@ -1,14 +1,18 @@
 ---
 id: FIX-13
 titulo: "Card 'Confirmado com a CANOPUS' sem prazo: parcela parece 'errada' e o componente não se explica"
-status: todo
+status: done
 bloco: bloco-c-ui-fechamento
 arquivos:
-  - src/lib/bevi/closing-presentation.ts
-  - src/components/chat/artifacts/ (card de confirmação)
-  - tests/ (teste de contrato opt-in do shape da oferta)
+  - src/components/chat/artifacts/real-offer.tsx (copy honesta)
+  - src/components/chat/artifacts/real-offer.test.tsx (Camada 1)
+  - src/lib/bevi/closing-presentation.test.ts (Camada 1, guard no lib)
+  - tests/regression/agent-trajectory.test.ts (Camada 2, FIX-13-PRAZO-SEM-FONTE)
+  - tests/eval/bevi-partner-offer-shape.eval.test.ts (contrato opt-in)
 rodada: 2026-06-05 tarde (re-teste pós-lote-1)
 anotado_em: 2026-06-05
+commit: 0914ab8
+executado_em: 2026-06-05
 ---
 
 # FIX-13 — Card "Confirmado com a CANOPUS" sem prazo: parcela parece "errada" e o componente não se explica
@@ -63,3 +67,17 @@ CONFIRMAÇÃO de algo já visto, o que reduz (mas não elimina) o problema.
   copy escolhida presente.
 - Camada 2: cassette garantindo que o agente não inventa prazo em texto ao apresentar
   a oferta real (detector de "\d+ meses" sem fonte).
+
+### Execução (2026-06-05, commit 0914ab8)
+
+- **Opção (a) aplicada** (recomendada no encaminhamento): copy honesta no card —
+  "Prazo e demais condições: na sua proposta (PDF), logo após a confirmação."
+  Sem link no card 5.1 porque `consortiumProposalLink` só existe APÓS o
+  `confirmOffer()` (5.2), onde o signature-handoff já abre o PDF.
+- TDD strict: teste da copy escrito primeiro e visto FALHAR; guard-rails
+  (componente + lib + cassette) travam que ninguém derive `valorCarta ÷ parcela`.
+- Contrato opt-in executado 1× contra a API real na implementação: **11 ofertas,
+  todas com exatamente os 8 campos** — verde em 2026-06-05. Entra no nightly eval
+  (`tests/eval/`, roda só com `BEVI_API_TOKEN`); quando a AGX incluir `term`, o
+  teste falha com instrução de promover o campo pro card.
+- **Opção (c) segue em aberto** (pedir `term` à AGX/Bevi) — ação humana, fora do código.

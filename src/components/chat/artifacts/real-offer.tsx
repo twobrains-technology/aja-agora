@@ -31,6 +31,12 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 					<Row label="Administradora" value={payload.administradora} />
 				</div>
 
+				{/* FIX-13: a oferta de Parceiro não traz prazo (8 campos, sem `term` — spec §7).
+				    Regra D11: nenhum número sem fonte — explicar em vez de derivar/estimar. */}
+				<p className="text-xs text-muted-foreground">
+					Prazo e demais condições: na sua proposta (PDF), logo após a confirmação.
+				</p>
+
 				<div className="flex flex-col gap-2">
 					<Button
 						type="button"

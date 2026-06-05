@@ -54,6 +54,27 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 		expect(texts.join("\n")).toMatch(/não encontrei uma carta/i);
 		expect(items.some((i) => i.kind === "artifact")).toBe(false);
 	});
+
+	// FIX-13 — a oferta de Parceiro tem 8 campos e `term` NÃO é um deles (spec §7).
+	// Regra D11: nenhum número sem fonte — nem o texto nem o payload podem inventar prazo.
+	it("FIX-13: NUNCA emite prazo — texto sem 'N meses', payload sem term/termMonths/prazo", () => {
+		const items = realOfferPresentation(START_OK);
+		const allText = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(allText).not.toMatch(/\d+\s*(meses|mês)\b/i);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(Object.keys(artifact.payload).sort()).toEqual([
+			"administradora",
+			"category",
+			"creditValue",
+			"grupo",
+			"monthlyPayment",
+			"proposalId",
+		]);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {

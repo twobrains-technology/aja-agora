@@ -43,6 +43,7 @@ import { describe, expect, it } from "vitest";
 import { buildDecisionPromptDirective } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
+import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
@@ -3299,5 +3300,84 @@ describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do i
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
 			/NUNCA[\s\S]{0,200}present_contract_form[\s\S]{0,200}(identidade|identify|coletar)/i,
 		);
+	});
+});
+
+// ============================================================================
+// CENARIO FIX-13 — Prazo inventado na oferta real de parceiro
+// ----------------------------------------------------------------------------
+// Real (rodada 2026-06-05 tarde): card "Confirmado com a CANOPUS" mostrou
+// parcela R$ 469,95 pra carta de R$ 46.000 — parecia "errada" perto do BB
+// (R$ 2.872,71 em 17 meses). A diferença era 100% prazo (~98 meses), mas a
+// oferta da API de Parceiro tem EXATAMENTE 8 campos e `term` NÃO é um deles
+// (bevi-api-parceiro-spec.md §7, verificado ao vivo). Regra D11: nenhum
+// número sem fonte — nem o agent em texto, nem o card, podem inventar/derivar
+// prazo. O card se explica com copy honesta apontando pro PDF da proposta.
+// ============================================================================
+
+describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ninguém inventa", () => {
+	// Detector: "98 meses", "em 110 meses", "prazo de 84 meses"… no contexto
+	// do fechamento (oferta de parceiro), QUALQUER "N meses" é número sem fonte.
+	const PRAZO_DETECTOR = /\b\d{1,3}\s*(meses|mês)\b/i;
+
+	const START_OK = {
+		proposalId: "prop-1",
+		offer: {
+			ofertaId: "oferta-1",
+			administradora: "CANOPUS",
+			grupo: "4400",
+			category: "auto" as const,
+			creditValue: 46_000,
+			monthlyPayment: 469.95,
+			tipoOferta: "SPECIAL_OFFER" as const,
+		},
+		noOffer: false,
+	};
+
+	it("cassette: agent derivando prazo em texto ao apresentar a oferta real — detector pega", async () => {
+		// O que o agent NÃO pode falar (derivação de valorCarta ÷ parcela):
+		const cassette =
+			"Confirmei com a CANOPUS: carta de R$ 46.000 com parcela de R$ 469,95 — " +
+			"isso dá aproximadamente 98 meses de prazo.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(PRAZO_DETECTOR.test(text)).toBe(true);
+	});
+
+	it("texto canônico de produção (realOfferPresentation) NÃO dispara o detector", () => {
+		const items = realOfferPresentation(START_OK);
+		const allText = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(allText.length).toBeGreaterThan(0);
+		expect(PRAZO_DETECTOR.test(allText)).toBe(false);
+	});
+
+	it("payload do artifact real_offer: exatamente as chaves com fonte — sem term/prazo", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(Object.keys(artifact.payload).sort()).toEqual([
+			"administradora",
+			"category",
+			"creditValue",
+			"grupo",
+			"monthlyPayment",
+			"proposalId",
+		]);
+	});
+
+	it("card se explica: copy honesta do prazo vive no componente (regra de produto)", () => {
+		const src = readSource("src/components/chat/artifacts/real-offer.tsx");
+		expect(src).toMatch(/[Pp]razo e demais condições/);
+		expect(src).toMatch(/proposta \(PDF\)/);
+		// E o componente não renderiza nenhum campo de prazo (não existe fonte):
+		expect(src).not.toMatch(/termMonths|prazoMeses/);
 	});
 });
