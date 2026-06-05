@@ -151,8 +151,10 @@ export const LANCE_EMBUTIDO_OPTIONS: LanceEmbutidoOption[] = [
 	},
 	{
 		token: "no",
-		title: "Não, lance com recursos próprios",
-		desc: "Dou o lance em dinheiro",
+		// FIX-4: rótulo neutro — o gate agora aparece TAMBÉM pra quem não tem
+		// reserva ("recursos próprios" pressupunha dinheiro em mãos).
+		title: "Não, prefiro sem lance embutido",
+		desc: "Sigo sem usar a carta como lance",
 	},
 ];
 

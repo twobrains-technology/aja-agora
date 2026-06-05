@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { ConversationMetadata } from "./personas";
 import { nextGate } from "./qualify-state";
 
-// Camada 1 (estrutural) — jornada do .docx (2026-05-29).
-// Quando o usuário diz que TEM reserva pra dar lance ("sim"), o doc manda
-// educar sobre lance embutido e perguntar se quer considerá-lo nas simulações
-// ANTES de buscar. Logo o funil precisa inserir o gate `lance-embutido` entre
-// o gate `lance` e o `search` — só pra quem respondeu "yes".
+// Camada 1 (estrutural) — jornada do .docx (2026-05-29, corrigida 2026-06-05).
+// O doc manda educar sobre lance embutido e perguntar se quer considerá-lo
+// nas simulações ANTES de buscar — pra QUALQUER resposta do gate lance.
+// FIX-4 (teste manual Kairo 2026-06-05): a versão anterior só educava quem
+// respondeu "yes" — mas o PRÓPRIO texto do docx diz que o lance embutido
+// "ajuda quem não possui todo o valor do lance hoje", ou seja, exatamente
+// quem respondeu "Não"/"Talvez". No docx a educação é sub-bullet PARALELO ao
+// "Se sim" (não aninhado nele). A exclusão fazia o ramo educativo "sumir"
+// pra metade dos usuários — percebido como intermitência.
 function baseMeta(): ConversationMetadata {
 	return {
 		currentCategory: "imovel",
@@ -48,15 +52,29 @@ describe("nextGate — sub-fluxo de lance embutido", () => {
 		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
-	it("hasLance='no' => search direto, sem gate de lance embutido", () => {
+	it("hasLance='no' => TAMBÉM passa pelo gate lance-embutido (FIX-4: docx educa todo mundo)", () => {
 		const meta = baseMeta();
 		meta.qualifyAnswers!.hasLance = "no";
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance-embutido");
+	});
+
+	it("hasLance='maybe' => TAMBÉM passa pelo gate lance-embutido (FIX-4)", () => {
+		const meta = baseMeta();
+		meta.qualifyAnswers!.hasLance = "maybe";
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance-embutido");
+	});
+
+	it("hasLance='no' com lanceEmbutido decidido => segue pra search (sem loop)", () => {
+		const meta = baseMeta();
+		meta.qualifyAnswers!.hasLance = "no";
+		meta.qualifyAnswers!.lanceEmbutido = true;
 		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
-	it("hasLance='maybe' => search direto (lance embutido só pra quem tem reserva)", () => {
+	it("hasLance='no' NÃO passa pelo lance-value (valor do lance é só pra quem tem reserva)", () => {
 		const meta = baseMeta();
-		meta.qualifyAnswers!.hasLance = "maybe";
-		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		meta.qualifyAnswers!.hasLance = "no";
+		meta.qualifyAnswers!.lanceValue = undefined;
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance-embutido");
 	});
 });

@@ -10,7 +10,9 @@ import { decideShowGate, nextGate } from "./qualify-state";
 const qualifiedBase: ConversationMetadata = {
 	experiencePrev: "first",
 	qualifyConsented: true,
-	qualifyAnswers: { creditMax: 80_000, prazoMeses: 12, hasLance: "no" },
+	// FIX-4: lanceEmbutido respondido — o gate de lance embutido agora vale
+	// pra TODO hasLance (docx educa todo mundo); qualificação completa o inclui.
+	qualifyAnswers: { creditMax: 80_000, prazoMeses: 12, hasLance: "no", lanceEmbutido: false },
 };
 
 describe("nextGate — identify entra entre a qualificação e a busca", () => {
@@ -36,7 +38,13 @@ describe("nextGate — identify entra entre a qualificação e a busca", () => {
 		const meta: ConversationMetadata = {
 			...qualifiedBase,
 			// lanceValue já respondido (gate lance-value tem suite própria)
-			qualifyAnswers: { ...qualifiedBase.qualifyAnswers, hasLance: "yes", lanceValue: 30_000 },
+			qualifyAnswers: {
+				...qualifiedBase.qualifyAnswers,
+				hasLance: "yes",
+				lanceValue: 30_000,
+				// sobrepõe o lanceEmbutido:false da base — aqui queremos SEM resposta
+				lanceEmbutido: undefined,
+			},
 		};
 		expect(nextGate(meta)).toBe("lance-embutido");
 	});

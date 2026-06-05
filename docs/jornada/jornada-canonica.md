@@ -23,7 +23,7 @@
   - Opções: **O mais rápido possível · Até 6 meses · 1 ano · 2 anos+ · Sem pressa, quero menor parcela** (adaptar pelo tipo de consórcio)
 - "Você pretende dar um lance para antecipar sua contemplação?" — **Sim / Não / Talvez**
   - **Se "sim"** → "Qual valor aproximado?" *(coleta do VALOR do lance — hoje ausente no código)*
-  - Educação de **lance embutido**: "Você sabe o que é lance embutido? Fique tranquilo, a gente te ajuda! O lance embutido permite usar parte da própria carta de crédito como lance — ex.: numa carta de R$ 100 mil, você pode usar parte desse valor pra aumentar suas chances. Ajuda quem não possui todo o valor do lance hoje."
+  - Educação de **lance embutido**: "Você sabe o que é lance embutido? Fique tranquilo, a gente te ajuda! O lance embutido permite usar parte da própria carta de crédito como lance — ex.: numa carta de R$ 100 mil, você pode usar parte desse valor pra aumentar suas chances. Ajuda quem não possui todo o valor do lance hoje." ⚠️ *Interpretação fixada (FIX-4, 2026-06-05): a educação vale pra QUALQUER resposta do lance (Sim/Não/Talvez) — é sub-bullet paralelo ao "Se sim", e o próprio texto mira quem NÃO tem o valor do lance.*
   - "Agora que você já sabe o que é, quer considerar esse tipo de lance nas suas simulações?"
 - "Com essas informações, a Aja Agora vai analisar várias administradoras e selecionar as opções mais aderentes ao seu perfil e objetivo."
 

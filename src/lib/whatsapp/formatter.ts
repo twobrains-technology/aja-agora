@@ -682,7 +682,7 @@ export function lanceEmbutidoQuestionToWhatsApp(prefix?: string): WhatsAppRespon
 					// Botões do WhatsApp limitam título a 20 chars — usa rótulo curto.
 					reply: {
 						id: `lanceembutido_${o.token}`,
-						title: o.token === "yes" ? "Sim, considerar" : "Lance próprio",
+						title: o.token === "yes" ? "Sim, considerar" : "Sem lance embutido",
 					},
 				})),
 			},

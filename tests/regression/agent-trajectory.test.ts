@@ -2432,6 +2432,8 @@ describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
 				prazoMeses: 0,
 				objetivo: "contemplacao_rapida",
 				hasLance: "no",
+				// FIX-4: gate de lance embutido agora vale pra todo hasLance.
+				lanceEmbutido: false,
 			},
 		};
 	}
@@ -2842,5 +2844,53 @@ describe("FIX-5-OPTIN-TEXTO-PRE-REVEAL — WhatsApp pedido em texto sem tool, pr
 		expect(idx).toMatch(/deriveWhatsappOptinStage/);
 		const bld = readSource("src/lib/agent/agents/builder.ts");
 		expect(bld).toMatch(/whatsappOptinStage/);
+	});
+});
+
+// ============================================================================
+// FIX-4 (teste manual Kairo 2026-06-05) — ramo educativo do lance embutido
+// "sumia" pra quem respondia "Não"/"Talvez" no gate lance
+// ----------------------------------------------------------------------------
+// Real: na 1ª jornada do Kairo a pergunta "Você sabe o que é lance embutido?"
+// + explicação NUNCA apareceram; na 2ª jornada (respondendo "Sim, tenho
+// reserva") apareceram. Percebido como intermitência — era condição de gate:
+// qualify-state só disparava lance-embutido pra hasLance==="yes". O docx põe
+// a educação como sub-bullet PARALELO ao "Se sim" e o próprio texto diz que o
+// lance embutido "ajuda quem não possui todo o valor do lance hoje" — ou
+// seja, ele existe EXATAMENTE pra quem respondeu Não/Talvez.
+//
+// Defesa estrutural detalhada: qualify-state.lance-embutido.test.ts.
+// ============================================================================
+
+describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de hasLance='yes'", () => {
+	function metaQualificado(hasLance: "yes" | "no" | "maybe"): ConversationMetadata {
+		return {
+			currentCategory: "moto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMax: 20_000,
+				monthlyBudget: 500,
+				prazoMeses: 6,
+				hasLance,
+				...(hasLance === "yes" ? { lanceValue: 4_000 } : {}),
+			},
+			identityCollected: true,
+		};
+	}
+
+	it("cassette estrutural: a jornada da 1ª rodada (hasLance='no') agora passa pelo gate", () => {
+		expect(nextGate(metaQualificado("no"), { hasContactName: true })).toBe("lance-embutido");
+		expect(nextGate(metaQualificado("maybe"), { hasContactName: true })).toBe("lance-embutido");
+		expect(nextGate(metaQualificado("yes"), { hasContactName: true })).toBe("lance-embutido");
+	});
+
+	it("a copy educativa segue a do docx e os chips funcionam pra quem NÃO tem reserva", () => {
+		const gq = readSource("src/lib/agent/orchestrator/gate-questions.ts");
+		expect(gq).toMatch(/Você sabe o que é lance embutido\?/);
+		// O chip negativo não pode pressupor que o usuário TEM dinheiro pro lance
+		// ("recursos próprios") — precisa ser neutro pros dois fluxos.
+		const cfg = readSource("src/lib/agent/qualify-config.ts");
+		expect(cfg).not.toMatch(/Não, lance com recursos próprios/);
 	});
 });

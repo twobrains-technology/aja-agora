@@ -46,9 +46,13 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
 	// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
 	if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
-	// Jornada do doc: quem TEM reserva pra lance ("yes") passa pelo gate de
-	// lance embutido (educa + opt-in) antes da busca. "maybe"/"no" pulam.
-	if (q.hasLance === "yes" && q.lanceEmbutido === undefined) return "lance-embutido";
+	// Jornada do doc: TODO MUNDO passa pelo gate de lance embutido (educa +
+	// opt-in) antes da busca — no docx a educação é sub-bullet PARALELO ao
+	// "Se sim", e o próprio texto diz que o lance embutido "ajuda quem não
+	// possui todo o valor do lance hoje" (= quem respondeu Não/Talvez).
+	// FIX-4 (teste manual Kairo 2026-06-05): a versão anterior pulava
+	// "maybe"/"no" — o ramo educativo "sumia" e parecia intermitência.
+	if (q.lanceEmbutido === undefined) return "lance-embutido";
 
 	// Gate "identify" (D1, docs/jornada/CONTEXT.md): a Bevi exige CPF+celular+LGPD
 	// ANTES de simular — não existe descoberta anônima com dado real. Coleta ao
