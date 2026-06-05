@@ -5,6 +5,7 @@ import { type GateAction, useChatContext } from "@/lib/chat/provider";
 import type { GatePartData, SliderField } from "@/lib/chat/ui-message";
 import { GateIdentityForm } from "./gate-identity-form";
 import { GateQuickReply } from "./gate-quick-reply";
+import { PlanEstimatePicker } from "./plan-estimate-picker";
 import { ValuePicker, type ValuePickerField } from "./value-picker";
 
 function formatCurrency(value: number): string {
@@ -57,6 +58,11 @@ export function GateRenderer({
 
 	if (payload.kind === "chips") {
 		return <GateQuickReply payload={payload} active={active} />;
+	}
+
+	// FIX-3: gate credit virou o componente "Planeje sua conquista".
+	if (payload.kind === "plan") {
+		return <PlanEstimatePicker payload={payload} active={active} />;
 	}
 
 	if (payload.kind === "identity") {

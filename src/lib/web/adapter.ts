@@ -76,11 +76,15 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;
+			// FIX-3: "Planeje sua conquista" — 4 indicadores interligados em
+			// estimativa de mercado (substitui os 2 sliders simples).
 			return {
-				kind: "slider",
+				kind: "plan",
 				gate: "credit",
 				category,
-				fields: [creditSlider(category), monthlySlider(category)],
+				credit: creditSlider(category),
+				monthly: monthlySlider(category),
+				targetMonthDefault: 6,
 			};
 		}
 		case "timeframe": {

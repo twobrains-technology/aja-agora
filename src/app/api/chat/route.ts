@@ -18,6 +18,7 @@ import {
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
+	buildPlanReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
 	buildSimulatorDialDirective,
@@ -590,16 +591,40 @@ export async function POST(req: NextRequest) {
 					if (action.gate === "credit") {
 						const credit = action.value.credit;
 						const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
+						// FIX-3 ("Planeje sua conquista"): o componente do passo 2 entrega
+						// também mês-alvo, lance e (opcional) lance embutido — preenche os
+						// gates seguintes e o funil pula o que já veio. O que não veio
+						// (ex.: lanceEmbutido não decidido) segue pelos gates da conversa.
+						const v = action.value;
 						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 							...(meta.qualifyAnswers ?? {}),
 							creditMin,
 							creditMax: credit,
-							monthlyBudget: action.value.monthlyBudget,
+							monthlyBudget: v.monthlyBudget,
+							...(typeof v.targetMonth === "number"
+								? { prazoMeses: v.targetMonth, objetivo: objetivoForPrazo(v.targetMonth) }
+								: {}),
+							...(typeof v.lanceValue === "number"
+								? v.lanceValue > 0
+									? { hasLance: "yes" as const, lanceValue: v.lanceValue }
+									: { hasLance: "no" as const }
+								: {}),
+							...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
 						};
 						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+						const isPlanSubmit = typeof v.targetMonth === "number";
 						await pipeDirectiveTurn({
 							conversationId,
-							directive: buildCreditReactionDirective(action.label),
+							directive: isPlanSubmit
+								? buildPlanReactionDirective({
+										assetLabel: action.label,
+										targetMonth: v.targetMonth,
+										lanceLabel:
+											typeof v.lanceValue === "number" && v.lanceValue > 0
+												? `R$ ${v.lanceValue.toLocaleString("pt-BR")}`
+												: undefined,
+									})
+								: buildCreditReactionDirective(action.label),
 							contactName,
 							writer,
 							userKey,

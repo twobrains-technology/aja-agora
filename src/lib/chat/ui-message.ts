@@ -19,7 +19,20 @@ export type SliderField = {
 	format: "currency" | "months";
 };
 
+/** FIX-3 — gate credit como componente "Planeje sua conquista" (4 indicadores
+ * interligados em estimativa de mercado; ver plan-estimate-picker.tsx). */
+export type PlanGatePartData = {
+	kind: "plan";
+	gate: "credit";
+	category: "imovel" | "auto" | "moto" | "servicos";
+	credit: SliderField;
+	monthly: SliderField;
+	/** Mês-alvo inicial da contemplação (default 6 — espelho do dial). */
+	targetMonthDefault: number;
+};
+
 export type GatePartData =
+	| PlanGatePartData
 	| {
 			kind: "chips";
 			gate:

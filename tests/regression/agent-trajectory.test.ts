@@ -3052,3 +3052,85 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 		expect(src).not.toMatch(/% compativel|% compatível/);
 	});
 });
+
+// ============================================================================
+// FIX-3 (visão do Kairo, design aprovado 2026-06-05) — "Planeje sua conquista"
+// no gate credit: 4 indicadores interligados + híbrido vendedor
+// ----------------------------------------------------------------------------
+// O gate credit deixou de ser 2 sliders simples: virou o componente dinâmico
+// (valor do bem · quando quer usar · parcela · lance · lance embutido) em modo
+// ESTIMATIVA DE MERCADO (selo obrigatório — a Bevi não simula sem CPF, D1).
+// Os campos extras preenchem qualifyAnswers e o funil PULA os gates já
+// respondidos; o agente confirma como VENDEDOR (sem re-perguntar). O simulador
+// do passo 4 PERMANECE (números reais da oferta ativa — FIX-6).
+//
+// Defesas detalhadas: plan-estimate.test.ts (engine),
+// plan-estimate-picker.test.tsx (componente), route (gate credit estendido).
+// ============================================================================
+
+describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-pergunta", () => {
+	it("estrutural: gate credit serve o componente plan (não os 2 sliders simples)", () => {
+		const src = readSource("src/lib/web/adapter.ts");
+		expect(src).toMatch(/kind: "plan"/);
+		expect(src).toMatch(/targetMonthDefault/);
+	});
+
+	it("estrutural: route consome targetMonth/lanceValue/lanceEmbutido do componente", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		expect(src).toMatch(/targetMonth/);
+		expect(src).toMatch(/buildPlanReactionDirective/);
+	});
+
+	it("híbrido vendedor: directive confirma SEM re-perguntar e proíbe tools", () => {
+		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
+		const start = directives.indexOf("function buildPlanReactionDirective");
+		expect(start, "buildPlanReactionDirective precisa existir").toBeGreaterThan(-1);
+		const body = directives.slice(start, start + 1800);
+		expect(body).toMatch(/VENDEDOR/i);
+		expect(body).toMatch(/SEM re-perguntar/i);
+		expect(body).toMatch(/NAO chame tools/i);
+	});
+
+	it("funil: plano completo via componente pula direto pro identify (nada re-perguntado)", () => {
+		// O que o componente entrega → qualifyAnswers; nextGate deve ir pro
+		// identify sem passar por timeframe/lance/lance-value/lance-embutido.
+		const meta: ConversationMetadata = {
+			currentCategory: "moto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMin: 17_000,
+				creditMax: 20_000,
+				monthlyBudget: 500,
+				prazoMeses: 6,
+				objetivo: "contemplacao_rapida",
+				hasLance: "yes",
+				lanceValue: 4_000,
+				lanceEmbutido: true,
+			},
+		};
+		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+	});
+
+	it("funil: plano PARCIAL (sem decidir lance embutido) → gate educativo continua", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "moto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMin: 17_000,
+				creditMax: 20_000,
+				monthlyBudget: 500,
+				prazoMeses: 6,
+				hasLance: "no",
+			},
+		};
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance-embutido");
+	});
+
+	it("selo de estimativa vive no componente (regra de produto — nunca dado real)", () => {
+		const src = readSource("src/components/chat/artifacts/plan-estimate-picker.tsx");
+		expect(src).toMatch(/Estimativa de mercado/);
+		expect(src).toMatch(/valores reais v[eê]m das administradoras/);
+	});
+});

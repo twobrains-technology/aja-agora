@@ -104,6 +104,31 @@
   construído. (Registrado a pedido da revisão adversarial — buraco reconhecido, não
   silenciado.)
 
+## Decisões da rodada de correções (2026-06-05, testes manuais do Kairo)
+
+- **D9 — "Planeje sua conquista" no passo 2 (FIX-3).** O gate `credit` deixou de ser 2
+  sliders e virou o componente dinâmico de 4 indicadores interligados (valor do bem ·
+  quando quer usar · parcela · lance) + opt-in de lance embutido, em **modo estimativa de
+  mercado** (selo obrigatório — a Bevi não simula sem CPF, D1). Os campos preenchem
+  `qualifyAnswers` e o funil PULA os gates já respondidos; o agente confirma como
+  **vendedor** (híbrido aprovado pelo Kairo), sem re-perguntar. **Estende o conceito do
+  Bernardo** (proposta-simulador) — o aval dele segue pendente. O simulador do passo 4
+  PERMANECE, com números 100% da oferta ativa (payload coagido server-side — FIX-6).
+- **D10 — Lance embutido educa TODO MUNDO (FIX-4).** O gate `lance-embutido` dispara pra
+  qualquer resposta do lance (Sim/Não/Talvez) — o próprio docx diz que ele "ajuda quem
+  não possui todo o valor do lance hoje". Interpretação fixada na jornada-canonica.md.
+- **D11 — Nenhum número sem fonte real (FIX-8).** `necessaryBidToContemplate` vem da
+  oferta ou a linha é OMITIDA (fallback heurístico de 43% removido; 0 explícito não vaza).
+- **D12 — Identidade não se pede duas vezes (FIX-9).** `contract_form` vira confirmação
+  (CPF mascarado server-side via `loadIdentity`; submit `useStoredIdentity` — o CPF
+  completo nunca volta pro browser).
+- **D13 — Reveal honesto (FIX-7).** Anúncio com o número REAL de opções; opção única =
+  card único (recommendation_card suprimido pelo runner); `insufficientOptions` é
+  comunicado com transparência; badge de score vira rótulo qualitativo.
+- **Camada 3 (eval LLM real): cota do workspace Anthropic esgotada em 2026-06-05**, volta
+  2026-07-01 — evals com LLM real pulam como INCONCLUSIVOS (probe em
+  tests/eval/anthropic-availability.ts). Re-rodar a Camada 3 quando a cota voltar.
+
 ## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
 
 | Item | Commit | Estado |

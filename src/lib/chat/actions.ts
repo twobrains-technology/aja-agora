@@ -12,7 +12,17 @@ export type ChatAction =
 	| {
 			kind: "gate";
 			gate: "credit";
-			value: { credit: number; monthlyBudget: number };
+			// FIX-3 ("Planeje sua conquista"): o gate credit virou o componente
+			// dinâmico de 4 indicadores — os campos extras preenchem os gates
+			// seguintes (timeframe/lance/lance-embutido) e o funil pula o que já
+			// veio (híbrido vendedor: o agente CONFIRMA em vez de re-perguntar).
+			value: {
+				credit: number;
+				monthlyBudget: number;
+				targetMonth?: number;
+				lanceValue?: number;
+				lanceEmbutido?: boolean;
+			};
 			label: string;
 	  }
 	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }

@@ -55,6 +55,20 @@ export function buildQualifyStartMoreDirective(): string {
 	return `[usuario clicou "Entender mais antes" — pergunte em uma frase curta sobre o que especificamente ele quer entender, sem despejar info ainda]`;
 }
 
+/** FIX-3 — reação ao "Planeje sua conquista" (híbrido VENDEDOR, decisão do
+ * Kairo 2026-06-05): o usuário acabou de entregar valor do bem + mês-alvo +
+ * parcela (+ lance) num componente só. O agente NÃO re-pergunta nada disso —
+ * CONFIRMA proativamente como um vendedor que persuade o fechamento e avança. */
+export function buildPlanReactionDirective(args: {
+	assetLabel: string;
+	targetMonth?: number;
+	lanceLabel?: string;
+}): string {
+	const alvo = args.targetMonth ? ` em ~${args.targetMonth} meses` : "";
+	const lance = args.lanceLabel ? ` com lance de ${args.lanceLabel}` : "";
+	return `Usuario preencheu o plano da conquista via componente: ${args.assetLabel}${alvo}${lance}. FLUXO: escreva UMA mensagem curta (2-3 frases) DE VENDEDOR confirmando a estrategia dele com entusiasmo e autoridade — espelhe o que ele escolheu (valor, prazo-alvo${args.lanceLabel ? ", lance" : ""}) SEM re-perguntar nada disso, reforce em meia frase o beneficio da estrategia (ex: lance acelera a contemplacao / prazo confortavel deixa a parcela leve) e sinalize que o proximo passo e buscar as opcoes reais. NAO faca pergunta, NAO chame tools — o sistema conduz a proxima etapa.`;
+}
+
 export function buildCreditReactionDirective(rangeTitle: string): string {
 	return `Usuario escolheu faixa de credito "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reacao tipo "Boa, anotado." ou "Show, faixa que gira bem." NAO faca pergunta, NAO chame tools. O sistema vai mandar logo em seguida os botoes da proxima etapa.`;
 }
