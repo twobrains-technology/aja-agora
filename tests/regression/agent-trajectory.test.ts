@@ -2942,3 +2942,44 @@ describe("FIX-6-DIAL-NUMEROS-DA-OFERTA — payload do dial não pode divergir da
 		expect(src).toMatch(/coerceDialPayload/);
 	});
 });
+
+// ============================================================================
+// FIX-9 (teste manual Kairo 2026-06-05) — passo 5 re-pedia CPF/celular já
+// coletados no identify
+// ----------------------------------------------------------------------------
+// Real (print): usuário clicou "Sim, quero contratar agora" e o contract_form
+// veio com CPF e Celular VAZIOS — sendo que ambos foram coletados (e cifrados
+// via AES-256-GCM) no gate identify, obrigatório pré-reveal. "Totalmente
+// incorreto, uma vez que já foi informado."
+//
+// Fix: payload do contract_form enriquecido server-side (runner →
+// enrichContractFormPayload): identityOnFile + CPF MASCARADO (nunca em claro
+// no payload) + celular formatado. Componente mostra confirmação (LGPD + 1
+// clique); submit manda useStoredIdentity e o route resolve via loadIdentity.
+//
+// Defesa estrutural detalhada: contract-form-prefill.test.ts.
+// ============================================================================
+
+describe("FIX-9-CONTRACT-FORM-PREFILL — identidade coletada não se pede duas vezes", () => {
+	it("payload enriquecido NUNCA carrega o CPF em claro", async () => {
+		const { enrichContractFormPayload } = await import(
+			"@/lib/agent/orchestrator/contract-form-prefill"
+		);
+		const out = enrichContractFormPayload(
+			{ conversationId: "c1", administradora: "CANOPUS" },
+			{ cpf: "52998224725", celular: "62999887766" },
+		);
+		expect(out.identityOnFile).toBe(true);
+		expect(JSON.stringify(out)).not.toContain("52998224725");
+	});
+
+	it("estrutural: runner enriquece, route resolve stored identity, componente confirma", () => {
+		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(
+			/enrichContractFormPayload/,
+		);
+		const route = readSource("src/app/api/chat/route.ts");
+		expect(route).toMatch(/useStoredIdentity/);
+		const comp = readSource("src/components/chat/artifacts/contract-form.tsx");
+		expect(comp).toMatch(/identityOnFile/);
+	});
+});

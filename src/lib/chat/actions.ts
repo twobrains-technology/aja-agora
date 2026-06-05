@@ -47,7 +47,17 @@ export type ChatAction =
 	| { kind: "whatsapp_optin_decline" }
 	// ── Passo 5 "Contratar" (fechamento Bevi) ──
 	// Form de contratação: CPF + celular + aceite LGPD → cria proposta real + simula.
-	| { kind: "contract-submit"; cpf: string; celular: string; lgpd: boolean; label?: string }
+	// FIX-9: com identidade já coletada (identify), o form confirma e manda
+	// useStoredIdentity — cpf/celular ficam ausentes e o route resolve via
+	// loadIdentity (o CPF completo nunca volta pro browser).
+	| {
+			kind: "contract-submit";
+			cpf?: string;
+			celular?: string;
+			useStoredIdentity?: boolean;
+			lgpd: boolean;
+			label?: string;
+	  }
 	// Usuário confirmou a oferta real → escolhe + gera assinatura/documentos.
 	| { kind: "offer-confirm"; label?: string }
 	// Upload de documento direto no chat (arquivo em base64). slot = qual documento.

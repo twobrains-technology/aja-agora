@@ -29,8 +29,13 @@ const maskPhone = (s: string) =>
 export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
+	// FIX-9 (teste manual Kairo 2026-06-05): identidade já coletada no identify
+	// → modo CONFIRMAÇÃO (CPF mascarado + celular exibidos; só LGPD + 1 clique).
+	// "Usar outros dados" volta pro modo de digitação. O CPF completo NUNCA
+	// chega ao browser — o submit manda useStoredIdentity e o servidor resolve.
+	const [useStored, setUseStored] = useState(payload.identityOnFile === true);
 	const [cpf, setCpf] = useState("");
-	const [phone, setPhone] = useState(payload.prefilledPhone ?? "");
+	const [phone, setPhone] = useState(payload.identityOnFile ? "" : (payload.prefilledPhone ?? ""));
 	const [lgpd, setLgpd] = useState(false);
 	// EC-7 (QA crítico 2026-06-02): guard SÍNCRONO contra duplo/triplo-clique.
 	// Um `useState` não basta: o `submitted`/`isStreaming` só atualizam no próximo
@@ -43,17 +48,19 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 
 	const cpfDigits = onlyDigits(cpf);
 	const phoneDigits = onlyDigits(phone);
-	const valid =
-		cpfDigits.length === 11 && phoneDigits.length >= 10 && lgpd && !isStreaming && !submitted;
+	const fieldsValid = useStored || (cpfDigits.length === 11 && phoneDigits.length >= 10);
+	const valid = fieldsValid && lgpd && !isStreaming && !submitted;
 
 	const submit = () => {
 		// Guard de corrida (ref, síncrono) — precede qualquer checagem de state.
 		if (submittingRef.current) return;
-		if (cpfDigits.length !== 11 || phoneDigits.length < 10 || !lgpd || isStreaming) return;
+		if (!fieldsValid || !lgpd || isStreaming) return;
 		submittingRef.current = true;
 		setSubmitted(true);
 		void sendAction(
-			{ kind: "contract-submit", cpf: cpfDigits, celular: phoneDigits, lgpd: true },
+			useStored
+				? { kind: "contract-submit", useStoredIdentity: true, lgpd: true }
+				: { kind: "contract-submit", cpf: cpfDigits, celular: phoneDigits, lgpd: true },
 			"Enviei meus dados pra contratar",
 		);
 	};
@@ -70,35 +77,60 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 					) : null}
 				</div>
 
-				<div className="space-y-2">
-					<Label htmlFor="contract-cpf" className="text-xs">
-						CPF
-					</Label>
-					<Input
-						id="contract-cpf"
-						inputMode="numeric"
-						placeholder="000.000.000-00"
-						value={cpf}
-						onChange={(e) => setCpf(maskCpf(e.target.value))}
-						disabled={isStreaming}
-						data-testid="contract-cpf"
-					/>
-				</div>
+				{useStored ? (
+					/* FIX-9: confirmação dos dados já coletados — sem re-digitação. */
+					<div className="rounded-md bg-muted/40 px-3 py-2 space-y-1" data-testid="contract-stored">
+						<div className="flex justify-between text-sm">
+							<span className="text-muted-foreground">CPF</span>
+							<span className="font-mono">{payload.prefilledCpfMasked}</span>
+						</div>
+						<div className="flex justify-between text-sm">
+							<span className="text-muted-foreground">Celular</span>
+							<span className="font-mono">{payload.prefilledPhone}</span>
+						</div>
+						<button
+							type="button"
+							className="text-xs text-muted-foreground underline underline-offset-2"
+							onClick={() => setUseStored(false)}
+							disabled={isStreaming}
+							data-testid="contract-edit-identity"
+						>
+							Usar outros dados
+						</button>
+					</div>
+				) : (
+					<>
+						<div className="space-y-2">
+							<Label htmlFor="contract-cpf" className="text-xs">
+								CPF
+							</Label>
+							<Input
+								id="contract-cpf"
+								inputMode="numeric"
+								placeholder="000.000.000-00"
+								value={cpf}
+								onChange={(e) => setCpf(maskCpf(e.target.value))}
+								disabled={isStreaming}
+								data-testid="contract-cpf"
+							/>
+						</div>
 
-				<div className="space-y-2">
-					<Label htmlFor="contract-phone" className="text-xs">
-						Celular
-					</Label>
-					<Input
-						id="contract-phone"
-						inputMode="numeric"
-						placeholder="(11) 99999-9999"
-						value={phone}
-						onChange={(e) => setPhone(maskPhone(e.target.value))}
-						disabled={isStreaming}
-						data-testid="contract-phone"
-					/>
-				</div>
+						<div className="space-y-2">
+							<Label htmlFor="contract-phone" className="text-xs">
+								Celular
+							</Label>
+							<Input
+								id="contract-phone"
+								inputMode="numeric"
+								placeholder="(11) 99999-9999"
+								value={phone}
+								onChange={(e) => setPhone(maskPhone(e.target.value))}
+								disabled={isStreaming}
+								data-testid="contract-phone"
+							/>
+						</div>
+					</>
+				)}
 
 				<label className="flex items-start gap-2 text-xs text-muted-foreground">
 					<Checkbox

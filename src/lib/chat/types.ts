@@ -204,12 +204,19 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 
 // ---- Passo 5 "Contratar" (fechamento Bevi) ----
 
-/** Form de contratação: CPF + celular + aceite LGPD. NO PII no payload — só
- * contexto pra renderizar (o form coleta e envia via action contract-submit). */
+/** Form de contratação: CPF + celular + aceite LGPD. NO PII em claro no
+ * payload — só contexto pra renderizar (o form coleta e envia via action
+ * contract-submit). FIX-9: quando a identidade já foi coletada no identify,
+ * o runner enriquece com identityOnFile + CPF MASCARADO (nunca completo) e o
+ * submit usa useStoredIdentity (route resolve via loadIdentity). */
 export interface ContractFormPayload {
 	conversationId: string;
 	administradora?: string;
 	prefilledPhone?: string | null;
+	/** Identidade (CPF+celular) já armazenada cifrada — form vira confirmação. */
+	identityOnFile?: boolean;
+	/** Ex.: "529.•••.•••-25" — só os 3 primeiros e 2 últimos dígitos. */
+	prefilledCpfMasked?: string | null;
 }
 
 /** Oferta REAL confirmada pela administradora (re-simulação Bevi). O usuário

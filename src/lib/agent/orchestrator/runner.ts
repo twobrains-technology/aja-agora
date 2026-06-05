@@ -13,6 +13,8 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { loadIdentity } from "@/lib/conversation/identity";
+import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -191,6 +193,16 @@ export async function* runAgentTurn(args: {
 						// ativa — coage payload com o snapshot do reveal (ou com o
 						// âncora emitido neste mesmo turno, se houver).
 						let payload = input;
+						// FIX-9: identidade já coletada no identify → form de contratação
+						// vira confirmação (CPF mascarado, nunca em claro no payload).
+						if (artifactType === "contract_form") {
+							try {
+								const identity = await loadIdentity(conversationId);
+								payload = enrichContractFormPayload(input, identity);
+							} catch {
+								// falha de decrypt/DB não pode derrubar o turno — form vazio.
+							}
+						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
 								artifacts.find((a) => a.type === "simulation_result") ??

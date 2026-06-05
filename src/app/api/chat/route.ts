@@ -36,7 +36,7 @@ import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
-import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
+import { isValidCpf, loadIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -394,10 +394,35 @@ export async function POST(req: NextRequest) {
 						const valor = q.creditMax ?? q.creditMin ?? 50000;
 						const objetivo = q.objetivo ?? "contemplacao_rapida";
 						const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
+						// FIX-9: identidade já coletada no identify — o form confirma e o
+						// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
+						// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
+						// atualizam o storage (cifrado) pra manter a fonte única.
+						let cpf = body.action.cpf;
+						let celular = body.action.celular;
+						if (body.action.useStoredIdentity === true || !cpf || !celular) {
+							const stored = await loadIdentity(conversationId).catch(() => null);
+							cpf = cpf || stored?.cpf;
+							celular = celular || stored?.celular;
+						} else if (cpf && celular) {
+							await storeIdentity(conversationId, { cpf, celular });
+						}
+						if (!cpf || !celular) {
+							const textId = crypto.randomUUID();
+							writer.write({ type: "text-start", id: textId });
+							writer.write({
+								type: "text-delta",
+								id: textId,
+								delta:
+									"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
+							});
+							writer.write({ type: "text-end", id: textId });
+							return;
+						}
 						try {
 							const { proposalId, offer, noOffer } = await startContract(conversationId, {
-								cpf: body.action.cpf,
-								celular: body.action.celular,
+								cpf,
+								celular,
 								lgpd: body.action.lgpd,
 								segmento,
 								valor,
