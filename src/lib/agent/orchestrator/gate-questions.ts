@@ -15,7 +15,8 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 		case "consent":
 			return "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
 		case "credit":
-			return "Qual faixa de crédito faz mais sentido pra você?";
+			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
+			return "Qual valor do bem faz mais sentido pra você?";
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":

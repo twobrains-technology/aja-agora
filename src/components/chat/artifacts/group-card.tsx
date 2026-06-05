@@ -101,7 +101,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 				<CardContent className="space-y-3">
 					{/* Credit value - primary visual anchor */}
 					<div>
-						<p className="text-xs text-muted-foreground">Crédito</p>
+						<p className="text-xs text-muted-foreground">Valor do bem</p>
 						<p className="text-xl font-bold font-mono leading-tight text-foreground">
 							{formatBRL(payload.creditValue)}
 						</p>

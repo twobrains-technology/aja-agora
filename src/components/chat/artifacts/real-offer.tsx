@@ -26,7 +26,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 				</div>
 
 				<div className="rounded-lg bg-muted/40 p-3 space-y-1.5 text-sm">
-					<Row label="Carta de crédito" value={brl(payload.creditValue)} strong />
+					<Row label="Valor do bem" value={brl(payload.creditValue)} strong />
 					<Row label="Parcela" value={brl2(payload.monthlyPayment)} />
 					<Row label="Grupo" value={payload.grupo} />
 					<Row label="Administradora" value={payload.administradora} />

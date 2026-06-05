@@ -39,9 +39,9 @@ describe("SimulationResult — 7 campos obrigatórios (bug #10)", () => {
 		document.body.innerHTML = "";
 	});
 
-	it("renderiza valor da carta (crédito)", () => {
+	it("renderiza o valor do bem (FIX-2: linguagem leiga, sem 'crédito' seco)", () => {
 		render(<SimulationResult payload={basePayload} />);
-		expect(screen.getByText(/valor do (cr[ée]dito|carta)/i)).toBeDefined();
+		expect(screen.getAllByText(/valor do bem/i).length).toBeGreaterThan(0);
 	});
 
 	it("renderiza prazo em meses", () => {

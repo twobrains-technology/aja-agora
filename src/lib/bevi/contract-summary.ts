@@ -29,7 +29,7 @@ export function buildContractSummaryText(args: {
 		"",
 		`Administradora: ${args.administradora}`,
 		...(args.grupo ? [`Grupo: ${args.grupo}`] : []),
-		`Carta de crédito: ${brl(args.creditValue)}`,
+		`Carta de crédito (valor do bem): ${brl(args.creditValue)}`,
 		`Parcela mensal: ${brl2(args.monthlyPayment)}`,
 		...(args.signatureLink ? ["", `Assinatura digital: ${args.signatureLink}`] : []),
 		"",

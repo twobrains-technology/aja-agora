@@ -72,7 +72,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 
 				{/* Cost breakdown */}
 				<div className="space-y-2">
-					<CostLine label="Valor do crédito" value={formatBRL(payload.creditValue)} />
+					<CostLine label="Valor do bem" value={formatBRL(payload.creditValue)} />
 					<CostLine
 						label="Taxa de administração"
 						value={`${formatBRL(payload.adminFee)} (${formatPercent(
@@ -103,7 +103,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 							Cenário com lance
 						</p>
 						<p className="text-sm mt-1">
-							Com lance de {payload.lanceScenario.lancePercent}% do crédito, expectativa de
+							Com lance de {payload.lanceScenario.lancePercent}% do valor do bem, expectativa de
 							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses (estimativa, não
 							garantia).
 						</p>
@@ -118,7 +118,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 						</p>
 						<div className="mt-1 space-y-1">
 							<CostLine
-								label="Crédito líquido recebido"
+								label="Valor que você recebe"
 								value={formatBRL(payload.embeddedBid.receivedCredit)}
 							/>
 							<CostLine

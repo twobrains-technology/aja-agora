@@ -471,7 +471,7 @@ describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value
 // ----------------------------------------------------------------------------
 // Real: apos present_simulation_result + present_recommendation_card, agent
 // improvisou frases de fechamento de turno. Bruna pediu frase canonica
-// EXATA: "Aqui esta o detalhamento completo da {admin}. Quer ajustar a carta
+// EXATA: "Aqui esta o detalhamento completo da {admin}. Quer ajustar o valor
 // de credito?"
 //
 // Defesa estrutural ja em system-prompt.lead-funnel.test.ts (Bug B, 4 its).
@@ -484,12 +484,12 @@ describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt
 		// o que esta no source. Regex tolerante a "esta"/"está" pra evitar quebra
 		// quando alguem acentuar futuramente.
 		const moldeCanonico =
-			/Aqui est[áa] o detalhamento completo da \{admin\}\. Quer ajustar a carta de cr[ée]dito\?/;
+			/Aqui est[áa] o detalhamento completo da \{admin\}\. Quer ajustar o valor do bem\?/;
 
 		expect(
 			moldeCanonico.test(SPECIALIST_BASE_PROMPT),
 			"SPECIALIST_BASE_PROMPT precisa conter o MOLDE EXATO da frase canonica B9: " +
-				"'Aqui esta o detalhamento completo da {admin}. Quer ajustar a carta de credito?'. " +
+				"'Aqui esta o detalhamento completo da {admin}. Quer ajustar o valor do bem?'. " +
 				"Sem o molde literal, o LLM improvisa formulacoes — Bruna detecta e reprova.",
 		).toBe(true);
 	});
@@ -510,9 +510,9 @@ describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt
 		// Proximidade textual no prompt (<800 chars) — sem isso o LLM perde a
 		// associacao "apos detalhamento, use esta frase".
 		const blocoForward =
-			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar a carta/i;
+			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
 		const blocoReverso =
-			/detalhamento completo[\s\S]{0,200}ajustar a carta[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
+			/detalhamento completo[\s\S]{0,200}ajustar o valor[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
 
 		expect(
 			blocoForward.test(SPECIALIST_BASE_PROMPT) || blocoReverso.test(SPECIALIST_BASE_PROMPT),
@@ -522,7 +522,7 @@ describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt
 	});
 
 	// Cross-ref: src/lib/agent/system-prompt.lead-funnel.test.ts (Bug B) cobre
-	// as 4 dimensoes (substring 'detalhamento completo', 'ajustar a carta',
+	// as 4 dimensoes (substring 'detalhamento completo', 'ajustar o valor',
 	// proximidade e placeholder de admin). Aqui mantivemos os asserts mais
 	// criticos pra detectar regressao rapida.
 });

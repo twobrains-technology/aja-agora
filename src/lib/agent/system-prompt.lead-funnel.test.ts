@@ -11,7 +11,7 @@ import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
  *  - Bug B: após `present_simulation_result` + `present_recommendation_card`
  *    o agent improvisa a frase de transição em vez de usar a canônica
  *    pedida pela Bruna: "Aqui está o detalhamento completo da {admin}.
- *    Quer ajustar a carta de crédito?"
+ *    Quer ajustar o valor do bem?" (FIX-2: era 'a carta de crédito')
  *
  * Testes estruturais (não chamam LLM): leem o source do prompt e validam
  * que as instruções obrigatórias estão presentes na variante que de fato
@@ -78,19 +78,19 @@ describe("Bug A — present_lead_form gatilho explícito no SPECIALIST_BASE_PROM
 	});
 });
 
-describe("Bug B — frase canônica B9 'detalhamento completo / ajustar a carta de crédito'", () => {
+describe("Bug B — frase canônica B9 'detalhamento completo / ajustar o valor do bem'", () => {
 	it("SPECIALIST_BASE_PROMPT contém a substring 'detalhamento completo' como frase canônica", () => {
 		expect(
 			SPECIALIST_BASE_PROMPT,
-			"Bruna pediu frase canônica B9: 'Aqui está o detalhamento completo da {admin}. Quer ajustar a carta de crédito?' — substring 'detalhamento completo' precisa aparecer literal no prompt pro modelo ancorar.",
+			"Bruna pediu frase canônica B9: 'Aqui está o detalhamento completo da {admin}. Quer ajustar o valor do bem?' — substring 'detalhamento completo' precisa aparecer literal no prompt pro modelo ancorar.",
 		).toMatch(/detalhamento completo/i);
 	});
 
-	it("SPECIALIST_BASE_PROMPT contém a substring 'ajustar a carta' como frase canônica", () => {
+	it("SPECIALIST_BASE_PROMPT contém a substring 'ajustar o valor' como frase canônica", () => {
 		expect(
 			SPECIALIST_BASE_PROMPT,
-			"Frase canônica B9 termina em pergunta de ajuste: 'Quer ajustar a carta de crédito?'. Substring 'ajustar a carta' precisa estar literal no prompt.",
-		).toMatch(/ajustar a carta/i);
+			"Frase canônica B9 termina em pergunta de ajuste: 'Quer ajustar o valor do bem?'. Substring 'ajustar o valor' precisa estar literal no prompt.",
+		).toMatch(/ajustar o valor/i);
 	});
 
 	it("frase canônica B9 está colocada no MESMO bloco que present_simulation_result OU present_recommendation_card", () => {
@@ -98,14 +98,14 @@ describe("Bug B — frase canônica B9 'detalhamento completo / ajustar a carta 
 		// present_simulation_result (ou present_recommendation_card no caso
 		// de destaque). Sem essa proximidade, o LLM não associa.
 		const blocoEsperado =
-			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar a carta/i;
+			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
 		const blocoEsperadoReverso =
-			/detalhamento completo[\s\S]{0,200}ajustar a carta[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
+			/detalhamento completo[\s\S]{0,200}ajustar o valor[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
 
 		expect(
 			blocoEsperado.test(SPECIALIST_BASE_PROMPT) ||
 				blocoEsperadoReverso.test(SPECIALIST_BASE_PROMPT),
-			"Frase canônica B9 ('detalhamento completo' + 'ajustar a carta') precisa estar a < 800 chars de present_simulation_result OU present_recommendation_card. Sem proximidade no prompt, o agent improvisa.",
+			"Frase canônica B9 ('detalhamento completo' + 'ajustar o valor') precisa estar a < 800 chars de present_simulation_result OU present_recommendation_card. Sem proximidade no prompt, o agent improvisa.",
 		).toBe(true);
 	});
 

@@ -90,7 +90,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 							{/* Details */}
 							<div className="space-y-1 text-xs">
 								<div className="flex justify-between">
-									<span className="text-muted-foreground">Crédito</span>
+									<span className="text-muted-foreground">Valor do bem</span>
 									<span className="font-mono font-medium">{formatBRL(group.creditValue)}</span>
 								</div>
 								<div className="flex justify-between">

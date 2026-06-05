@@ -92,7 +92,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				{/* Key metrics grid */}
 				<div className="grid grid-cols-2 gap-3">
 					<div>
-						<p className="text-xs text-muted-foreground">Crédito</p>
+						<p className="text-xs text-muted-foreground">Valor do bem</p>
 						<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
 					</div>
 					<div>

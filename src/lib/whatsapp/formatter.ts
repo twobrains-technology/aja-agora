@@ -91,7 +91,7 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const p = payload;
 	const body = [
 		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
-		`💰 Crédito: ${formatBRL(p.creditValue as number)}`,
+		`💰 Valor do bem: ${formatBRL(p.creditValue as number)}`,
 		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
 		`📊 Taxa admin: ${(p.adminFeePercent as number).toFixed(1)}%`,
 		`⏱ Prazo: ${p.termMonths} meses`,
@@ -153,7 +153,7 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 	const lines = [
 		"*📋 Simulação de Cota*",
 		"",
-		`💰 *Crédito:* ${formatBRL(p.creditValue as number)}`,
+		`💰 *Valor do bem:* ${formatBRL(p.creditValue as number)}`,
 		`📅 *Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
 		`📊 *Taxa admin:* ${formatBRL(p.adminFee as number)}`,
 		`🛡 *Fundo reserva:* ${formatBRL(p.reserveFund as number)}`,
@@ -169,7 +169,7 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 		lines.push(
 			"",
 			`*Com lance embutido (${eb.percent}%):*`,
-			`🎯 Crédito líquido: ${formatBRL(eb.receivedCredit)}`,
+			`🎯 Valor que você recebe: ${formatBRL(eb.receivedCredit)}`,
 			`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate)}`,
 		);
 	}
@@ -488,7 +488,7 @@ export function creditRangeQuestionToWhatsApp(
 				button: "Escolher faixa",
 				sections: [
 					{
-						title: "Faixas de crédito",
+						title: "Faixas de valor do bem",
 						rows: ranges.map((r) => ({
 							id: `credit_${category}_${r.token}`,
 							title: r.title.slice(0, 24),
@@ -752,7 +752,7 @@ export function profileSummaryText(answers: {
 			answers.creditMin && answers.creditMin > 0
 				? `${formatBRLCompact(answers.creditMin)} a ${formatBRLCompact(answers.creditMax)}`
 				: `até ${formatBRLCompact(answers.creditMax)}`;
-		lines.push(`✅ Crédito: ${credit}`);
+		lines.push(`✅ Valor do bem: ${credit}`);
 	}
 	if (answers.prazoMeses !== undefined) {
 		lines.push(`✅ Prazo: ${prazoLabel(answers.prazoMeses)}`);
@@ -954,7 +954,7 @@ export function financingComparisonToWhatsApp(
 	if (creditValue !== undefined) {
 		lines.push(
 			"",
-			`Carta de crédito: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`,
+			`Valor do bem: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`,
 		);
 	}
 
@@ -1070,7 +1070,7 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	if (!creditValue || !termMonths) {
 		return {
 			type: "text",
-			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o crédito que você recebe.",
+			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o valor que você recebe.",
 		};
 	}
 	const marks = contemplationDialMarks({

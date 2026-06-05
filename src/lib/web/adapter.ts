@@ -28,7 +28,8 @@ type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
 const creditSlider = (category: Category): SliderField => {
 	const b: Bounds = CREDIT_BOUNDS[category];
-	return { id: "credit", label: "Crédito", format: "currency", ...b };
+	// FIX-2: label amigável — o id interno continua "credit" (contrato da API).
+	return { id: "credit", label: "Valor do bem", format: "currency", ...b };
 };
 
 const monthlySlider = (category: Category): SliderField => {

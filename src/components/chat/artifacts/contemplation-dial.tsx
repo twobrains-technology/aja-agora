@@ -111,7 +111,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 							{r.ownCashValue > 0 ? (
 								<Row label="↳ lance próprio (dinheiro)" value={brl(r.ownCashValue)} />
 							) : null}
-							<Row label="Crédito que você recebe" value={brl(r.receivedCredit)} />
+							<Row label="Valor que você recebe" value={brl(r.receivedCredit)} />
 							{r.estimatedMonthlyPayment != null ? (
 								<Row label="Parcela estimada" value={brl(r.estimatedMonthlyPayment)} />
 							) : null}
