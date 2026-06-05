@@ -145,6 +145,17 @@
 
 **Envs novos exigidos em runtime:** `BEVI_SELFCONTRACT_HASH` (descoberta — sem ele falha alto), `IDENTITY_ENC_KEY` (32 bytes base64 — `openssl rand -base64 32`), `BEVI_API_TOKEN` + `PROPOSAL_GATEWAY=bevi` (fechamento). **Não existe mais modo mock.**
 
+## Próxima feature — jornada até o pagamento do boleto (2026-06-05)
+
+Contexto de negócio completo em [`jornada-ate-boleto.md`](./jornada-ate-boleto.md). Resumo:
+a jornada hoje termina no "ficha completa" pós-upload, mas entre isso e a administradora
+existe a sequência de telas CONEXIA (dados do RG, endereço, comprovante, finalização) que o
+usuário preencheria manualmente via `uselink.me` — e o funil de negócio só fecha no **1º
+boleto pago** (hipótese: é o evento que destrava a comissão — A CONFIRMAR com a Bevi).
+`insert_additional_data` e `consult_proposal_status` já existem no adapter sem call site em
+runtime; o que falta mapear é a finalização e tudo após ela (boleto, pagamento) — gaps
+G1-G5 listados no doc.
+
 ## Pendências externas
 
 - **Bernardo:** validar/ajustar a [`proposta-simulador.md`](./proposta-simulador.md) (o convite + dial já estão no caminho padrão; refinos e fluxo de caixa aguardam o aval).
