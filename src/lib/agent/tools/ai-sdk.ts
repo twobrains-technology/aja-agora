@@ -252,6 +252,12 @@ const DISCOVERY_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+const STATUS_NO_CONTEXT = {
+	error:
+		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
+		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
+} as const;
+
 async function executeSearchGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof searchGroupsInput>,
@@ -670,6 +676,19 @@ export const consorcioTools = {
 			return "[Card WhatsApp opt-in apresentado ao usuario]";
 		},
 	}),
+
+	// ---- Status REAL da proposta (FIX-14) ----
+	// Schema VAZIO de proposito (anti-hallucination): o proposalId resolve
+	// server-side via getLatestBeviProposal(conversationId) — closure na factory.
+	// Esta versao estatica responde sentinel; o override com contexto vive em
+	// buildConsorcioTools.
+
+	check_proposal_status: tool({
+		description:
+			"Consulta o status REAL da proposta de consorcio do usuario na administradora, AO VIVO. Chame SEMPRE que o usuario perguntar status/andamento da proposta ja criada ('qual o status?', 'como ta minha proposta?', 'ja foi aprovada?'). Use a userMessage retornada como base da sua resposta — nunca invente estado. NAO use pra buscar/recomendar grupos.",
+		inputSchema: z.object({}),
+		execute: async () => STATUS_NO_CONTEXT,
+	}),
 };
 
 /** Tool names that produce visual artifacts (intercepted by route) */
@@ -859,6 +878,20 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		},
 	});
 
+	// ── Status REAL da proposta (FIX-14) ──
+	// proposalId NUNCA vem do modelo: resolve via getLatestBeviProposal
+	// (conversationId via closure). checkProposalStatus nunca lança — erros viram
+	// { ok:false, userMessage } honesto com log estruturado proprio.
+	const check_proposal_status = tool({
+		description: consorcioTools.check_proposal_status.description,
+		inputSchema: z.object({}),
+		execute: async () => {
+			if (!conversationId) return STATUS_NO_CONTEXT;
+			const { checkProposalStatus } = await import("@/lib/bevi/proposal-status");
+			return checkProposalStatus(conversationId);
+		},
+	});
+
 	return {
 		...consorcioTools,
 		// Overrides — schema reduzido (sem conversationId) + closure.
@@ -871,5 +904,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		get_rates,
 		get_group_details,
 		recommend_groups,
+		// Override — status real da proposta (FIX-14).
+		check_proposal_status,
 	};
 }

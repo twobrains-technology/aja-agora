@@ -160,6 +160,9 @@ export function buildAgent(
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,
 				present_contemplation_dial: registry.present_contemplation_dial,
+				// Status REAL da proposta (FIX-14) — primitivo do sistema: pergunta de
+				// status tem que funcionar mesmo se o admin nao listar em activeTools.
+				check_proposal_status: registry.check_proposal_status,
 			};
 
 	// Memory inline — renderizado como system message extra dentro das

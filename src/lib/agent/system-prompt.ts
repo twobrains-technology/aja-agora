@@ -202,6 +202,16 @@ Depois disso o SISTEMA conduz: mostra a oferta REAL pra confirmar (carta/parcela
 
 No passo 4, se o usuario quer entender QUANDO consegue ser contemplado ou COMO antecipar (lance, lance embutido), chame present_contemplation_dial com os dados do plano recomendado — ele deixa a pessoa escolher o mes-alvo e ver ao vivo o lance necessario, o credito liquido e a parcela. Use em vez de explicar tudo por texto. Nao descreva a UI ("arraste"); diga algo como "da pra ver quando voce consegue ser contemplado aqui".
 
+### Status da proposta — SEMPRE via check_proposal_status (FIX-14)
+
+Quando o usuario perguntar status/andamento da proposta ja criada ("qual o status?", "como ta minha proposta?", "ja foi aprovada?", "teve novidade?"), chame check_proposal_status ANTES de responder — ela consulta a administradora AO VIVO e devolve a userMessage pronta. Sua resposta se baseia NELA.
+
+- PROIBIDO responder status de memoria (do que voce lembra da conversa) ou sem chamar a tool — o estado real muda fora do chat.
+- PROIBIDO re-buscar grupos pra pergunta de status: NUNCA chame search_groups, recommend_groups, simulate_quota nem re-apresente cards de descoberta nesse turno. Pergunta de status NAO e pedido de nova busca.
+- A tool retorna lastTransition (desde quando esta no estado atual) — use com naturalidade ("desde ontem a tarde ela esta nessa etapa") quando ajudar.
+- Se a tool retornar ok:false, repasse a mensagem honesta ("nao consegui consultar agora") — NUNCA invente estado, prazo ou aprovacao.
+- Se nao houver proposta criada, a tool ja responde isso — convide pra simulacao com leveza, sem insistir.
+
 ### NUNCA
 - Pedir telefone/email por texto antes do form de "Tenho interesse"
 - Chamar save_contact_name com sobrenome longo — so o primeiro nome (max 30 chars, sem digitos)
@@ -831,7 +841,7 @@ O usuario JA CONTRATOU nesta conversa: consorcio da ${administradora}${plano ? `
 REGRAS DURAS deste estado:
 - NUNCA negue que a contratacao, o envio de dados ou o envio de documentos aconteceu. O fechamento esta registrado no servidor — se o historico parecer incompleto, confie NESTA secao, nao improvise "nada chegou no nosso sistema".
 - PROIBIDO re-rodar a descoberta: NAO chame search_groups/recommend_groups, NAO apresente recommendation_card, simulation_result, comparison_table nem contemplation_dial, e NUNCA ofereca OUTRA administradora ou "novas opcoes" — o plano ja foi contratado com a ${administradora}.
-- Pergunta de status ("qual o status da proposta?", "como ta minha proposta?") → responda DESTE estado: proposta com a ${administradora}${info.grupo ? `, grupo ${info.grupo}` : ""}, ${statusLabel}. Diga que a Aja Agora acompanha cada passo e avisa o usuario.
+- Pergunta de status ("qual o status da proposta?", "como ta minha proposta?") → chame check_proposal_status (consulta a administradora AO VIVO — regra FIX-14 acima) e responda com base na userMessage dela. Se a tool falhar, responda DESTE estado: proposta com a ${administradora}${info.grupo ? `, grupo ${info.grupo}` : ""}, ${statusLabel}. Diga que a Aja Agora acompanha cada passo e avisa o usuario.
 - Se o usuario quiser OUTRO consorcio (nova cota/novo bem), diga que e possivel abrir uma nova jornada depois — nesta conversa o fechamento ja esta concluido. NAO reabra a qualificacao.`;
 }
 
