@@ -16,8 +16,9 @@ import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { conversations, leadEvents, leads, messages } from "@/db/schema";
-import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
+import { beviProposals, conversations, leadEvents, leads, messages } from "@/db/schema";
+import { __setDiscoveryAdapterFactoryForTests, __setProposalGatewayForTests } from "@/lib/adapters";
+import type { ProposalGateway, ProposalStatus } from "@/lib/adapters/proposal-gateway";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import {
 	buildCreditReactionDirective,
@@ -894,4 +895,134 @@ describeIfKey("EVAL-SAVE-CONTACT-NAME-CIRURGICO — Rafael capta nome em 1 turn"
 				`Texto literal: "${agentT2.content}"`,
 		).toBe(true);
 	}, 60_000);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVAL-FIX-14 — pergunta de status consulta a Bevi AO VIVO via tool (cirúrgico)
+// Plano de teste: docs/test-plans/fix-14-tool-status-proposta.md (CA-27/CA-28).
+// Conversa pós-fechamento (bevi_proposals seedada) + gateway dublê — usuário
+// pergunta "qual o status?" e o agent REAL deve chamar check_proposal_status,
+// zero re-descoberta (o bug do print do Kairo) e narrar a tradução leiga.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-14-STATUS-VIA-TOOL — status real via tool, zero re-descoberta", () => {
+	let conversationId: string | null = null;
+	const getStatusCalls: string[] = [];
+
+	// Captura REAL da POC 2026-06-05 (proposta 6a230bb1…, waitingForUniqueCode).
+	const statusFixture: ProposalStatus = {
+		proposalId: "6a230bb1cf5174e43abd089b",
+		statusName: "Aguardando inserção da proposta",
+		situation: "pending",
+		statusDescription: null,
+		integrationCode: null,
+		createdAt: "2026-06-05T14:47:00.000Z",
+		updatedAt: "2026-06-05T14:52:00.000Z",
+		approvedAt: null,
+		reprovedAt: null,
+		changesHistory: [
+			{
+				previousState: {
+					title: "Comprovante de endereço",
+					situation: "pending",
+					systemicValue: "comprovanteDeEndereco",
+					sort: 9,
+				},
+				newState: {
+					title: "Aguardando inserção da proposta",
+					situation: "pending",
+					systemicValue: "waitingForUniqueCode",
+					sort: 10,
+				},
+				changeDate: "2026-06-05T14:52:00.000Z",
+			},
+		],
+	};
+
+	afterAll(async () => {
+		// CA-28 — restaura seams e limpa seed (bevi_proposals cai por cascade).
+		__setProposalGatewayForTests(null);
+		if (conversationId) await cleanup(conversationId);
+	});
+
+	it("agent chama check_proposal_status (proposalId da conversa) e narra o estado traduzido", async () => {
+		__setProposalGatewayForTests({
+			getStatus: async (proposalId: string) => {
+				getStatusCalls.push(proposalId);
+				return statusFixture;
+			},
+		} as unknown as ProposalGateway);
+
+		// Setup: conversa web simulada + transition pro specialist (turn 1).
+		const [conv] = await db
+			.insert(conversations)
+			.values({
+				channel: "web",
+				isSimulated: true,
+				metadata: { evalScenario: "fix-14-status-via-tool" },
+			})
+			.returning();
+		conversationId = conv.id;
+
+		const agentT1 = await consumeAgentTurn({
+			conversationId: conv.id,
+			userText: "Automóvel",
+			isUserTurn: true,
+		});
+		expect(
+			agentT1.events.find((e) => e.type === "transition"),
+			`Esperado transition no turn 1. Eventos: ${agentT1.events.map((e) => e.type).join(", ")}`,
+		).toBeDefined();
+
+		// Proposta REAL da POC seedada pra ESTA conversa (estado pós-fechamento).
+		await db.insert(beviProposals).values({
+			conversationId: conv.id,
+			proposalId: "6a230bb1cf5174e43abd089b",
+			administradora: "CANOPUS",
+			grupo: "4400",
+			proposalStatus: "Aguardando inserção da proposta",
+		});
+
+		// ── Turn 2: pergunta de status — o cenário crítico. ──
+		const agentT2 = await consumeAgentTurn({
+			conversationId: conv.id,
+			userText: "Qual o status da minha proposta?",
+			isUserTurn: true,
+		});
+
+		console.log(`\n[FIX-14] Turn 2 agent text: "${agentT2.content.slice(0, 300)}"`);
+		console.log(`[FIX-14] Turn 2 tools: [${agentT2.toolCalls.join(", ")}]`);
+		console.log(`[FIX-14] getStatus calls: [${getStatusCalls.join(", ")}]`);
+		console.log(
+			`[FIX-14] Turn 2 events: ${agentT2.events.map((e) => (e.type === "finish" ? `finish:${e.reason}` : e.type)).join(", ")}`,
+		);
+
+		// ── ASSERTION CORE: a tool de status foi chamada. ──
+		expect(
+			agentT2.toolCalls,
+			`Agent deveria chamar check_proposal_status pra pergunta de status. ` +
+				`Tools: [${agentT2.toolCalls.join(", ")}]. Texto: "${agentT2.content}"`,
+		).toContain("check_proposal_status");
+
+		// ── ASSERTION: ZERO re-descoberta no turn de status (bug do print). ──
+		for (const banned of ["search_groups", "recommend_groups", "simulate_quota"]) {
+			expect(
+				agentT2.toolCalls,
+				`Turn de status NÃO pode chamar ${banned} (re-descoberta = regressão FIX-14)`,
+			).not.toContain(banned);
+		}
+
+		// ── ASSERTION: consulta foi REAL via gateway, com o proposalId da
+		//    CONVERSA (nunca do modelo — schema da tool é vazio). ──
+		expect(getStatusCalls).toEqual(["6a230bb1cf5174e43abd089b"]);
+
+		// ── ASSERTION: narração reflete o estado traduzido, sem jargão. ──
+		expect(
+			/fila|administradora|aguard/i.test(agentT2.content),
+			`Narração deveria refletir a userMessage do estado waitingForUniqueCode. Texto: "${agentT2.content}"`,
+		).toBe(true);
+		expect(agentT2.content).not.toMatch(
+			/waitingForUniqueCode|systemicValue|\bpending\b|integrationCode/i,
+		);
+	}, 240_000);
 });

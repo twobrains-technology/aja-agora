@@ -3134,3 +3134,91 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		expect(src).toMatch(/valores reais v[eê]m das administradoras/);
 	});
 });
+
+// ============================================================================
+// FIX-14-STATUS-VIA-TOOL — pergunta de status consulta a Bevi AO VIVO via tool
+// ----------------------------------------------------------------------------
+// Pedido explícito do Kairo (rodada 2 de testes manuais, 2026-06-05): "o usuário
+// tem que, quando perguntar sobre o status no chat, conseguir obter a informação
+// que ele precisa". Antes do FIX-14 o agent respondia status de memória ou
+// RE-BUSCAVA GRUPOS (re-descoberta) — exatamente o bug do print.
+//
+// Comportamento correto cassetteado: pergunta de status com proposta ativa →
+// modelo chama check_proposal_status (SEM argumentos — proposalId resolve
+// server-side via getLatestBeviProposal(conversationId), closure) e narra a
+// userMessage traduzida (servidor decide, modelo narra — regra D11).
+//
+// Plano de teste: docs/test-plans/fix-14-tool-status-proposta.md (CA-21..CA-24).
+// ============================================================================
+
+describe("FIX-14-STATUS-VIA-TOOL — status real via check_proposal_status, zero re-descoberta", () => {
+	const DISCOVERY_TOOLS = [
+		"search_groups",
+		"recommend_groups",
+		"simulate_quota",
+		"present_comparison_table",
+		"present_recommendation_card",
+	];
+
+	it("CA-21/CA-22: cassette — turn de status chama check_proposal_status sem args e nada de descoberta", async () => {
+		const narration =
+			"Consultei aqui pra você: sua proposta está na fila da administradora — te aviso assim que ela entrar. Desde as 14h52 de hoje ela está nessa etapa.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("call-fix14-1", "check_proposal_status", {}),
+			...textChunks("t-fix14", narration),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const statusCalls = toolCalls.filter((t) => t.toolName === "check_proposal_status");
+		expect(statusCalls).toHaveLength(1);
+		// CA-22 — input vazio: o modelo NÃO passa proposalId (anti-hallucination)
+		expect(Object.keys((statusCalls[0]?.input ?? {}) as Record<string, unknown>)).toEqual([]);
+		// CA-21 — zero re-descoberta no turn de status (o bug do print do Kairo)
+		for (const banned of DISCOVERY_TOOLS) {
+			expect(
+				toolCalls.filter((t) => t.toolName === banned),
+				`turn de status NÃO pode chamar ${banned}`,
+			).toEqual([]);
+		}
+		expect(text).toBe(narration);
+	});
+
+	it("CA-23: narração não vaza jargão técnico da máquina de estados Bevi", async () => {
+		const narration =
+			"Sua proposta está na fila da administradora — te aviso assim que ela entrar.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			toolCallChunk("call-fix14-2", "check_proposal_status", {}),
+			...textChunks("t-fix14b", narration),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(text).not.toMatch(
+			/systemicValue|waitingForUniqueCode|\bpending\b|\bsituation\b|integrationCode/i,
+		);
+	});
+
+	it("estrutural: registry estático expõe check_proposal_status com inputSchema vazio", async () => {
+		const { consorcioTools } = await import("@/lib/agent/tools/ai-sdk");
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção da tool em teste
+		const t = (consorcioTools as any).check_proposal_status;
+		expect(t, "check_proposal_status precisa existir em consorcioTools").toBeTruthy();
+		expect(Object.keys(t.inputSchema?.shape ?? {})).toEqual([]);
+	});
+
+	it("estrutural: prompt manda SEMPRE consultar via tool e proíbe status de memória/re-busca", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/status[\s\S]{0,300}check_proposal_status/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/check_proposal_status[\s\S]{0,600}(de mem[oó]ria|sem chamar a tool)/i,
+		);
+	});
+
+	it("estrutural: tradução leiga vive no servidor (proposal-status.ts), não no prompt", () => {
+		const src = readSource("src/lib/bevi/proposal-status.ts");
+		expect(src).toMatch(/STATUS_TRANSLATIONS/);
+		expect(src).toMatch(/waitingForUniqueCode/);
+		expect(src).toMatch(/getLatestBeviProposal/);
+		// erro honesto: nunca estado inventado no caminho de falha
+		expect(src).toMatch(/ok:\s*false/);
+	});
+});
