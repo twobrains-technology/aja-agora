@@ -26,9 +26,9 @@ describe("shouldEmitWhatsappOptin — pré-reveal NUNCA (BUG-OPTIN-ENGOLE-GATES)
 
 	it("emite pós-reveal quando ainda não mostrado", () => {
 		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
-		expect(
-			shouldEmitWhatsappOptin({ revealCompleted: true, whatsappOptinShown: false }),
-		).toBe(true);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true, whatsappOptinShown: false })).toBe(
+			true,
+		);
 	});
 });
 

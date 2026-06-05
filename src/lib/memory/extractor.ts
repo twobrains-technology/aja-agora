@@ -99,7 +99,8 @@ export function extractMemoriesFromTurn(args: {
 	// ─── 2. Metadados estruturados da sessão ────────────────────────────────
 
 	if (meta.currentCategory) blockPatch.category = meta.currentCategory;
-	if (meta.expertiseLevel) blockPatch.expertiseLevel = meta.expertiseLevel as HumanMemoryBlock["expertiseLevel"];
+	if (meta.expertiseLevel)
+		blockPatch.expertiseLevel = meta.expertiseLevel as HumanMemoryBlock["expertiseLevel"];
 
 	if (meta.qualifyAnswers) {
 		const q = meta.qualifyAnswers as Record<string, unknown>;

@@ -175,9 +175,12 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 
 			let archivalHits: ArchivalHit[] = [];
 			if (options?.archivalQuery) {
-				archivalHits = await this.searchArchivalByAgentId(agent.id, options.archivalQuery, 5, timeoutMs).catch(
-					() => [],
-				);
+				archivalHits = await this.searchArchivalByAgentId(
+					agent.id,
+					options.archivalQuery,
+					5,
+					timeoutMs,
+				).catch(() => []);
 			}
 
 			logMemoryOp({
@@ -251,11 +254,14 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 				...currentBlock,
 				...(metadata.blockPatch ?? {}),
 				lastInteractionAt: simulatorNow().toISOString(),
-				channels: Array.from(
-					new Set([...(currentBlock.channels ?? []), metadata.channel]),
-				) as ("web" | "whatsapp")[],
+				channels: Array.from(new Set([...(currentBlock.channels ?? []), metadata.channel])) as (
+					| "web"
+					| "whatsapp"
+				)[],
 				objections: metadata.blockPatch?.objections
-					? Array.from(new Set([...(currentBlock.objections ?? []), ...metadata.blockPatch.objections]))
+					? Array.from(
+							new Set([...(currentBlock.objections ?? []), ...metadata.blockPatch.objections]),
+						)
 					: currentBlock.objections,
 			};
 
@@ -311,11 +317,7 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		}
 	}
 
-	async searchArchival(
-		identity: UserIdentity,
-		query: string,
-		limit = 5,
-	): Promise<ArchivalHit[]> {
+	async searchArchival(identity: UserIdentity, query: string, limit = 5): Promise<ArchivalHit[]> {
 		try {
 			const agent = await this.findAgent(identity, 2000);
 			if (!agent) return [];
@@ -411,10 +413,9 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 
 	private async findAgent(identity: UserIdentity, timeoutMs: number): Promise<LettaAgent | null> {
 		const name = agentNameFor(identity);
-		const list = await lettaFetch<LettaAgent[]>(
-			`/v1/agents/?name=${encodeURIComponent(name)}`,
-			{ timeoutMs },
-		);
+		const list = await lettaFetch<LettaAgent[]>(`/v1/agents/?name=${encodeURIComponent(name)}`, {
+			timeoutMs,
+		});
 		return list.find((a) => a.name === name) ?? null;
 	}
 
@@ -469,17 +470,17 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 						limit: 4000,
 					},
 				],
-				tags: [
-					`namespace:${identity.namespace}`,
-					`kind:${identity.kind}`,
-					"app:aja-agora",
-				],
+				tags: [`namespace:${identity.namespace}`, `kind:${identity.kind}`, "app:aja-agora"],
 			}),
 		}).catch(async (err) => {
 			// Se POST falhou por conflito (name já existe — outro processo Node
 			// criou), tenta re-buscar uma última vez.
 			const msg = err instanceof Error ? err.message : String(err);
-			if (msg.includes("409") || msg.toLowerCase().includes("conflict") || msg.toLowerCase().includes("already exists")) {
+			if (
+				msg.includes("409") ||
+				msg.toLowerCase().includes("conflict") ||
+				msg.toLowerCase().includes("already exists")
+			) {
 				const recovered = await this.findAgent(identity, 2000).catch(() => null);
 				if (recovered) return recovered;
 			}
@@ -513,13 +514,10 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 	private async updateHumanBlock(agentId: string, block: HumanMemoryBlock): Promise<void> {
 		// Letta API: PATCH /v1/agents/{id}/core-memory/blocks/{label}
 		// Body: { value: string }
-		await lettaFetch<unknown>(
-			`/v1/agents/${agentId}/core-memory/blocks/${HUMAN_BLOCK_LABEL}`,
-			{
-				method: "PATCH",
-				body: JSON.stringify({ value: serializeHumanBlock(block) }),
-			},
-		);
+		await lettaFetch<unknown>(`/v1/agents/${agentId}/core-memory/blocks/${HUMAN_BLOCK_LABEL}`, {
+			method: "PATCH",
+			body: JSON.stringify({ value: serializeHumanBlock(block) }),
+		});
 	}
 
 	private async insertArchival(agentId: string, entry: MemoryEntry): Promise<void> {
@@ -559,8 +557,6 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 	}
 
 	private async listArchival(agentId: string): Promise<LettaPassage[]> {
-		return lettaFetch<LettaPassage[]>(
-			`/v1/agents/${agentId}/archival-memory?limit=999`,
-		);
+		return lettaFetch<LettaPassage[]>(`/v1/agents/${agentId}/archival-memory?limit=999`);
 	}
 }

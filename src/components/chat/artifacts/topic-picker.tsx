@@ -12,10 +12,7 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 
 	const handleTopic = (topic: string) => {
 		if (isStreaming) return;
-		void sendAction(
-			{ kind: "interest", administradora: "topic-picker", label: topic },
-			topic,
-		);
+		void sendAction({ kind: "interest", administradora: "topic-picker", label: topic }, topic);
 	};
 
 	const handleBack = () => {
@@ -29,9 +26,7 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 	return (
 		<Card className="w-full max-w-sm">
 			<CardContent className="space-y-3 pt-4">
-				{payload.prompt && (
-					<p className="text-sm text-muted-foreground">{payload.prompt}</p>
-				)}
+				{payload.prompt && <p className="text-sm text-muted-foreground">{payload.prompt}</p>}
 				<div className="flex flex-wrap gap-2">
 					{payload.topics.map((topic) => (
 						<Button

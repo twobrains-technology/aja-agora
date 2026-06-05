@@ -55,9 +55,7 @@ export function WhatsappOptin() {
 		setState("declined");
 	};
 
-	const anim = prefersReduced
-		? { initial: false as const, animate: { opacity: 1 } }
-		: motionEntry;
+	const anim = prefersReduced ? { initial: false as const, animate: { opacity: 1 } } : motionEntry;
 
 	return (
 		<motion.div {...anim}>

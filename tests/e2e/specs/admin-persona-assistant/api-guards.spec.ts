@@ -45,9 +45,7 @@ test.describe("AI Assistant API — guards (endpoint real)", () => {
 		expect(res.status()).toBe(401);
 	});
 
-	test("S-01 corollary: GET (método errado) retorna 405 ou 401 (não 200)", async ({
-		request,
-	}) => {
+	test("S-01 corollary: GET (método errado) retorna 405 ou 401 (não 200)", async ({ request }) => {
 		const res = await request.get(ENDPOINT("any-persona-id"));
 		expect([401, 404, 405]).toContain(res.status());
 	});

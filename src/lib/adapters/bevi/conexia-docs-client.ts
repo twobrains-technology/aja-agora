@@ -79,7 +79,9 @@ export class ConexiaDocsClient {
 		const location = res.headers.get("location") ?? "";
 		const token = extractToken(location);
 		if (!token) {
-			throw new Error(`ConexiaDocsClient: não consegui extrair documentsToken de "${documentsLink}".`);
+			throw new Error(
+				`ConexiaDocsClient: não consegui extrair documentsToken de "${documentsLink}".`,
+			);
 		}
 		return token;
 	}
@@ -147,14 +149,11 @@ function extractToken(s: string): string | null {
 function pickSlot(documents: DocSlotApi[], slot: DocumentSlot): DocSlotApi | undefined {
 	if (slot === "comprovante_endereco") {
 		// no link de comprovante há só um documento relevante
-		return (
-			documents.find((d) => /comprovante|endere/i.test(d.name)) ?? documents[0]
-		);
+		return documents.find((d) => /comprovante|endere/i.test(d.name)) ?? documents[0];
 	}
 	const wantsVerso = slot === "identidade_verso";
 	return (
-		documents.find((d) =>
-			wantsVerso ? /verso/i.test(d.name) : /frente|aberto/i.test(d.name),
-		) ?? documents.find((d) => d.sort === (wantsVerso ? 2 : 1))
+		documents.find((d) => (wantsVerso ? /verso/i.test(d.name) : /frente|aberto/i.test(d.name))) ??
+		documents.find((d) => d.sort === (wantsVerso ? 2 : 1))
 	);
 }

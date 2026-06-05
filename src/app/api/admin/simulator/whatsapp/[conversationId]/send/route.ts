@@ -10,8 +10,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 import { isSimulatorEnabled } from "@/lib/utils/env";
+import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 
 const sendSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("text"), text: z.string().min(1).max(4096) }),

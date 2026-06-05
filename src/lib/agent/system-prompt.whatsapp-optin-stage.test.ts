@@ -76,9 +76,9 @@ describe("FIX-5 — deriveWhatsappOptinStage(meta)", () => {
 	});
 
 	it("reveal completo + optin já mostrado → done", () => {
-		expect(
-			deriveWhatsappOptinStage({ revealCompleted: true, whatsappOptinShown: true }),
-		).toBe("done");
+		expect(deriveWhatsappOptinStage({ revealCompleted: true, whatsappOptinShown: true })).toBe(
+			"done",
+		);
 	});
 });
 

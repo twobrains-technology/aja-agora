@@ -58,10 +58,9 @@ async function deleteAgentSafe(agentId: string): Promise<void> {
 async function listAgentsByNamespace(namespace: string): Promise<LettaAgentList[]> {
 	// Letta `?tags=...` filtra por tag exata
 	const tag = `namespace:${namespace}`;
-	return lettaFetch<LettaAgentList[]>(
-		`/v1/agents/?tags=${encodeURIComponent(tag)}&limit=200`,
-		{ timeoutMs: 5000 },
-	);
+	return lettaFetch<LettaAgentList[]>(`/v1/agents/?tags=${encodeURIComponent(tag)}&limit=200`, {
+		timeoutMs: 5000,
+	});
 }
 
 describeIfLetta("LettaMemoryAdapter (integration, real Letta)", () => {

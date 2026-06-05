@@ -107,8 +107,8 @@ export async function POST(req: NextRequest) {
 					} else if (interactive?.type === "list_reply") {
 						const reply = interactive.list_reply;
 						console.log(`[whatsapp] List reply: ${reply.id} — "${reply.title}"`);
-						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch((err) =>
-							console.error("[whatsapp] Interactive processor error:", err),
+						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch(
+							(err) => console.error("[whatsapp] Interactive processor error:", err),
 						);
 					}
 					break;

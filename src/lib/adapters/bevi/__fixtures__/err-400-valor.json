@@ -1,15 +1,15 @@
 {
-  "status": "BAD_REQUEST",
-  "code": 400,
-  "success": false,
-  "message": "Simulação inválida.",
-  "data": {
-    "errors": [
-      {
-        "field": "valor",
-        "message": "Valor abaixo do mínimo permitido (R$ 21.000,00)."
-      }
-    ],
-    "offers": []
-  }
+	"status": "BAD_REQUEST",
+	"code": 400,
+	"success": false,
+	"message": "Simulação inválida.",
+	"data": {
+		"errors": [
+			{
+				"field": "valor",
+				"message": "Valor abaixo do mínimo permitido (R$ 21.000,00)."
+			}
+		],
+		"offers": []
+	}
 }

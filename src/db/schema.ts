@@ -179,9 +179,7 @@ export const messages = pgTable(
 		personaId: text("persona_id"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [
-		index("messages_conversation_persona_idx").on(table.conversationId, table.personaId),
-	],
+	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
 );
 
 // Artifacts

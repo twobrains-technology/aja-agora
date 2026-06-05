@@ -10,12 +10,12 @@
 // um dublê via __setProposalGatewayForTests. NÃO tem UI aqui — só a lógica; o
 // route/whatsapp renderizam os artifacts.
 
+import { getProposalGateway } from "../adapters";
 import {
-	type RealOffer,
 	partnerOfferToRealOffer,
 	pickClosestOffer,
+	type RealOffer,
 } from "../adapters/bevi/partner-offer-mapper";
-import { getProposalGateway } from "../adapters";
 import type {
 	DocumentSlot,
 	LanceEmbutido,
@@ -191,7 +191,8 @@ export async function uploadContractDocument(
 	const row = await getLatestBeviProposal(conversationId);
 	const link =
 		input.slot === "comprovante_endereco" ? row?.documentsLinkAddress : row?.documentsLinkPersonal;
-	if (!row || !link) throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
+	if (!row || !link)
+		throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
 
 	try {
 		await gateway.uploadDocument({

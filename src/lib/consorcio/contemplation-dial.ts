@@ -59,7 +59,11 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	const term = Math.max(1, Math.round(input.termMonths));
 	const targetMonth = clamp(Math.round(input.targetMonth), 1, term);
 	const maxEmbutido = clamp(input.maxEmbutidoPct ?? DEFAULT_MAX_EMBUTIDO_PCT, 0, MAX_BID_PCT);
-	const winningBid = clamp(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, 5, MAX_BID_PCT);
+	const winningBid = clamp(
+		input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT,
+		5,
+		MAX_BID_PCT,
+	);
 
 	// Mês de referência ("fast lane") onde o lance vencedor típico contempla. Antes
 	// dele exige mais lance; depois, menos. Hipérbole simples e monotônica.

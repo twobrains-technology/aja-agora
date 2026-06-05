@@ -7,8 +7,6 @@
 // feito pelo ConexiaDocsClient (POC em docs/integracoes/bevi-upload-poc.md), pra
 // onde uploadDocument() delega.
 
-import { ConexiaDocsClient } from "./conexia-docs-client";
-import { BeviConfigError, type BeviFieldError, toBeviError } from "./bevi-errors";
 import type {
 	BeviSegment,
 	ChooseOfferInput,
@@ -23,6 +21,8 @@ import type {
 	SimulationResult,
 	UploadDocumentInput,
 } from "../proposal-gateway";
+import { BeviConfigError, type BeviFieldError, toBeviError } from "./bevi-errors";
+import { ConexiaDocsClient } from "./conexia-docs-client";
 
 export interface BeviApiConfig {
 	baseUrl: string;
@@ -115,19 +115,16 @@ export class BeviApiAdapter implements ProposalGateway {
 
 	async createProposal(input: CreateProposalInput): Promise<CreateProposalResult> {
 		// ⚠️ os 5 campos de negócio são UPPERCASE (herança da Auto-Contratação, spec §4.1)
-		const data = await this.callService<{ proposalId: string }>(
-			"insert_proposal_bevi_consorcio",
-			{
-				body: {
-					productId: this.config.productId,
-					CPF: onlyDigits(input.cpf),
-					CELULAR: onlyDigits(input.celular),
-					TERMO_LGPD: input.termoLgpd,
-					CONSULTA_DE_DADOS: input.consultaDados,
-					ignoreOngoingProposals: input.ignoreOngoingProposals ?? false,
-				},
+		const data = await this.callService<{ proposalId: string }>("insert_proposal_bevi_consorcio", {
+			body: {
+				productId: this.config.productId,
+				CPF: onlyDigits(input.cpf),
+				CELULAR: onlyDigits(input.celular),
+				TERMO_LGPD: input.termoLgpd,
+				CONSULTA_DE_DADOS: input.consultaDados,
+				ignoreOngoingProposals: input.ignoreOngoingProposals ?? false,
 			},
-		);
+		});
 		return { proposalId: data.proposalId };
 	}
 
@@ -174,10 +171,9 @@ export class BeviApiAdapter implements ProposalGateway {
 	}
 
 	async getDocumentLinks(proposalId: string): Promise<DocumentLinks> {
-		const data = await this.callService<DocumentLinks>(
-			"get_document_upload_links_bevi_consorcio",
-			{ body: { propostaId: proposalId } },
-		);
+		const data = await this.callService<DocumentLinks>("get_document_upload_links_bevi_consorcio", {
+			body: { propostaId: proposalId },
+		});
 		return {
 			proposalId: data.proposalId ?? proposalId,
 			linkDocumentosPessoais: data.linkDocumentosPessoais,

@@ -8,8 +8,7 @@
 export function normalizePhoneBR(raw: string): string | null {
 	const digits = raw.replace(/\D/g, "");
 	if (digits.length === 0) return null;
-	const stripped =
-		digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+	const stripped = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 	if (stripped.length !== 10 && stripped.length !== 11) return null;
 	// DDD válido: primeiro dígito 1-9 (BR não tem DDD começando com 0).
 	if (!/^[1-9]/.test(stripped)) return null;

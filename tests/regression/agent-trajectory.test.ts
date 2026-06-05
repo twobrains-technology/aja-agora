@@ -2785,12 +2785,10 @@ describe("FIX-1-PAPEL-AJA-AGORA — explicação de 1ª vez omitia o papel da pl
 
 describe("FIX-5-OPTIN-TEXTO-PRE-REVEAL — WhatsApp pedido em texto sem tool, pré-reveal", () => {
 	/** Detector: turno pede WhatsApp em texto livre SEM chamar a tool de optin. */
-	function asksWhatsappWithoutTool(
-		text: string,
-		toolCalls: Array<{ toolName: string }>,
-	): boolean {
-		const asked =
-			/(anotar|compartilha|me passa|deixa eu anotar)[^.?!]*whatsapp|whatsapp\?/i.test(text);
+	function asksWhatsappWithoutTool(text: string, toolCalls: Array<{ toolName: string }>): boolean {
+		const asked = /(anotar|compartilha|me passa|deixa eu anotar)[^.?!]*whatsapp|whatsapp\?/i.test(
+			text,
+		);
 		const calledOptin = toolCalls.some((tc) => tc.toolName === "present_whatsapp_optin");
 		return asked && !calledOptin;
 	}
@@ -2974,9 +2972,7 @@ describe("FIX-9-CONTRACT-FORM-PREFILL — identidade coletada não se pede duas 
 	});
 
 	it("estrutural: runner enriquece, route resolve stored identity, componente confirma", () => {
-		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(
-			/enrichContractFormPayload/,
-		);
+		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(/enrichContractFormPayload/);
 		const route = readSource("src/app/api/chat/route.ts");
 		expect(route).toMatch(/useStoredIdentity/);
 		const comp = readSource("src/components/chat/artifacts/contract-form.tsx");
@@ -3015,5 +3011,44 @@ describe("FIX-10-UPLOAD-SEM-AUTO-SEND — estrutura do fluxo de documentos", () 
 	it("endpoint dedicado de upload existe e usa uploadContractDocument", () => {
 		const src = readSource("src/app/api/chat/document/route.ts");
 		expect(src).toMatch(/uploadContractDocument/);
+	});
+});
+
+// ============================================================================
+// FIX-7 (teste manual Kairo 2026-06-05) — reveal com 1 opção: "carrossel" de
+// card único + o MESMO grupo repetido no detalhamento logo abaixo
+// ----------------------------------------------------------------------------
+// Real (print): busca de moto R$ 20k retornou SÓ a CANOPUS → a tela mostrou
+// "Encontrei boas opçõeS... a mais adequada" (plural enganoso) + card de
+// Recomendação (43% compatível) + card Simulação · CANOPUS — o mesmo grupo
+// 2×. Fix em camadas: (a) runner suprime recommendation_card quando a
+// descoberta retornou opção ÚNICA (tool-result conta — simulation_result é o
+// card único); (b) directive anuncia o número REAL e proíbe o card duplicado;
+// (c) badge do card vira rótulo qualitativo (sem "43%"); (d) CTA duplicado
+// "Tenho interesse" filtrado no simulation card; (e) insufficientOptions é
+// comunicado com transparência.
+//
+// Defesas detalhadas: discovery-count.test.ts, score-label.test.ts,
+// simulation-result.test.tsx, jornada-docx-copy.test.ts (FIX-7).
+// ============================================================================
+
+describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () => {
+	it("unit: descoberta de 1 opção é detectável pelos tool-results", async () => {
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		expect(
+			extractDiscoveryCount("recommend_groups", { recommendations: [{ id: "canopus" }] }),
+		).toBe(1);
+	});
+
+	it("estrutural: runner captura tool-result e suprime recommendation_card de opção única", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toMatch(/tool-result/);
+		expect(src).toMatch(/extractDiscoveryCount/);
+	});
+
+	it("estrutural: badge do recommendation-card é qualitativo (sem % numérico)", () => {
+		const src = readSource("src/components/chat/artifacts/recommendation-card.tsx");
+		expect(src).toMatch(/scoreLabel/);
+		expect(src).not.toMatch(/% compativel|% compatível/);
 	});
 });

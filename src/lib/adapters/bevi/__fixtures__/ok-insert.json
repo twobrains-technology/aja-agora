@@ -1,10 +1,10 @@
 {
-  "status": "CREATED",
-  "code": 201,
-  "success": true,
-  "message": "Proposta criada com sucesso!",
-  "data": {
-    "proposalId": "6a1f7953cf5174e43aa4a10a",
-    "productId": "6986245b3518ceb00e7844da"
-  }
+	"status": "CREATED",
+	"code": 201,
+	"success": true,
+	"message": "Proposta criada com sucesso!",
+	"data": {
+		"proposalId": "6a1f7953cf5174e43aa4a10a",
+		"productId": "6986245b3518ceb00e7844da"
+	}
 }

@@ -37,7 +37,6 @@
  */
 
 import { eq } from "drizzle-orm";
-import { anthropicAvailable, warnEvalSkipped } from "./anthropic-availability";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { beviProposals, conversations, leadEvents, leads, messages } from "@/db/schema";
@@ -72,6 +71,7 @@ import {
 	fixtureDiscoveryAdapter,
 } from "../helpers/fixture-discovery-adapter";
 import { MockProposalGateway } from "../helpers/mock-proposal-gateway";
+import { anthropicAvailable, warnEvalSkipped } from "./anthropic-availability";
 
 // ── MOCK-RUNTIME-MORTO: o eval NUNCA toca a Bevi real ──
 // Descoberta: adapter de FIXTURES (capturas reais da loja-piloto) via seam.
@@ -253,7 +253,8 @@ function itemsTurn(
 	label: string,
 	userLine: string | null,
 	items: Array<
-		{ kind: "text"; text: string } | { kind: "artifact"; type: string; payload: Record<string, unknown> }
+		| { kind: "text"; text: string }
+		| { kind: "artifact"; type: string; payload: Record<string, unknown> }
 	>,
 ): Turn {
 	return {
@@ -425,8 +426,11 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 const HAS_API_KEY = !!process.env.ANTHROPIC_API_KEY;
 // Camada 3 exige API REAL disponível — cota esgotada/5xx/rede não é regressão
 // (ver tests/eval/anthropic-availability.ts). Top-level await: vitest ESM ok.
-const AVAILABILITY = HAS_API_KEY ? await anthropicAvailable() : { ok: false, reason: "ANTHROPIC_API_KEY ausente" };
-if (HAS_API_KEY && !AVAILABILITY.ok) warnEvalSkipped(import.meta.url.split("/").pop() ?? "eval", AVAILABILITY.reason ?? "");
+const AVAILABILITY = HAS_API_KEY
+	? await anthropicAvailable()
+	: { ok: false, reason: "ANTHROPIC_API_KEY ausente" };
+if (HAS_API_KEY && !AVAILABILITY.ok)
+	warnEvalSkipped(import.meta.url.split("/").pop() ?? "eval", AVAILABILITY.reason ?? "");
 const describeIfKey = AVAILABILITY.ok ? describe : describe.skip;
 
 // Helpers de leitura do transcript.

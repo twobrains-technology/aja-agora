@@ -140,17 +140,9 @@ export async function saveContactWhatsapp(
 	});
 
 	if (existing) {
-		await db
-			.update(leads)
-			.set({ phone, updatedAt: new Date() })
-			.where(eq(leads.id, existing.id));
+		await db.update(leads).set({ phone, updatedAt: new Date() }).where(eq(leads.id, existing.id));
 
-		await transitionLeadStage(
-			existing.id,
-			"engajado",
-			{ type: "system" },
-			{ onlyAdvance: true },
-		);
+		await transitionLeadStage(existing.id, "engajado", { type: "system" }, { onlyAdvance: true });
 		return { ok: true, leadId: existing.id, created: false };
 	}
 
@@ -160,11 +152,6 @@ export async function saveContactWhatsapp(
 		phone,
 		email: null,
 	});
-	await transitionLeadStage(
-		leadId,
-		"engajado",
-		{ type: "system" },
-		{ onlyAdvance: true },
-	);
+	await transitionLeadStage(leadId, "engajado", { type: "system" }, { onlyAdvance: true });
 	return { ok: true, leadId, created: true };
 }

@@ -35,9 +35,7 @@ describe("getMemoryAdapter — modo via env", () => {
 		vi.stubEnv("MEMORY_ADAPTER", "letta");
 		// Mock health check pra evitar fetch real
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter, LettaMemoryAdapter } = await import("./index");
@@ -52,9 +50,7 @@ describe("getMemoryAdapter — modo via env", () => {
 		// eslint-disable-next-line no-process-env
 		delete process.env.MEMORY_ADAPTER;
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter, LettaMemoryAdapter } = await import("./index");
@@ -67,9 +63,7 @@ describe("getMemoryAdapter — modo via env", () => {
 	it("MEMORY_ADAPTER=valor-invalido → warn + fallback letta", async () => {
 		vi.stubEnv("MEMORY_ADAPTER", "blabla");
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -84,9 +78,7 @@ describe("getMemoryAdapter — modo via env", () => {
 	it("singleton: 2 chamadas seguidas retornam mesma instance", async () => {
 		vi.stubEnv("MEMORY_ADAPTER", "letta");
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter } = await import("./index");
@@ -101,9 +93,7 @@ describe("getMemoryAdapter — modo via env", () => {
 		vi.stubEnv("MEMORY_ADAPTER", "noop");
 		const healthSpy = vi.fn().mockResolvedValue(true);
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: healthSpy };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter } = await import("./index");
@@ -120,9 +110,7 @@ describe("circuit breaker integration via getMemoryAdapter", () => {
 	it("circuito aberto → retorna Noop mesmo com MEMORY_ADAPTER=letta", async () => {
 		vi.stubEnv("MEMORY_ADAPTER", "letta");
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter, NoopMemoryAdapter } = await import("./index");
@@ -150,9 +138,7 @@ describe("circuit breaker integration via getMemoryAdapter", () => {
 	it("recover: circuito fecha após markLettaSuccess explícito", async () => {
 		vi.stubEnv("MEMORY_ADAPTER", "letta");
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			return { ...actual, lettaHealthCheck: vi.fn().mockResolvedValue(true) };
 		});
 		const { getMemoryAdapter, resetMemoryAdapter, LettaMemoryAdapter } = await import("./index");
@@ -176,9 +162,7 @@ describe("circuit breaker integration via getMemoryAdapter", () => {
 	it("getMemoryAdapter é síncrono (retorna imediatamente, sem await)", async () => {
 		vi.stubEnv("MEMORY_ADAPTER", "letta");
 		vi.doMock("./letta-client", async () => {
-			const actual = await vi.importActual<typeof import("./letta-client")>(
-				"./letta-client",
-			);
+			const actual = await vi.importActual<typeof import("./letta-client")>("./letta-client");
 			// Health check propositalmente "lento" pra garantir que getMemoryAdapter não bloqueia
 			return {
 				...actual,

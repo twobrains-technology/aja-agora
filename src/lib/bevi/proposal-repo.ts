@@ -67,17 +67,29 @@ export async function updateBeviProposal(
 	await db
 		.update(beviProposals)
 		.set({
-			...(patch.simulationSessionId !== undefined ? { simulationSessionId: patch.simulationSessionId } : {}),
+			...(patch.simulationSessionId !== undefined
+				? { simulationSessionId: patch.simulationSessionId }
+				: {}),
 			...(patch.ofertaId !== undefined ? { ofertaId: patch.ofertaId } : {}),
 			...(patch.offerExpiresAt !== undefined ? { offerExpiresAt: patch.offerExpiresAt } : {}),
 			...(patch.segmento !== undefined ? { segmento: patch.segmento } : {}),
 			...(patch.administradora !== undefined ? { administradora: patch.administradora } : {}),
 			...(patch.grupo !== undefined ? { grupo: patch.grupo } : {}),
-			...(patch.creditValue !== undefined ? { creditValue: toNumericString(patch.creditValue) } : {}),
-			...(patch.monthlyPayment !== undefined ? { monthlyPayment: toNumericString(patch.monthlyPayment) } : {}),
-			...(patch.consortiumProposalLink !== undefined ? { consortiumProposalLink: patch.consortiumProposalLink } : {}),
-			...(patch.documentsLinkPersonal !== undefined ? { documentsLinkPersonal: patch.documentsLinkPersonal } : {}),
-			...(patch.documentsLinkAddress !== undefined ? { documentsLinkAddress: patch.documentsLinkAddress } : {}),
+			...(patch.creditValue !== undefined
+				? { creditValue: toNumericString(patch.creditValue) }
+				: {}),
+			...(patch.monthlyPayment !== undefined
+				? { monthlyPayment: toNumericString(patch.monthlyPayment) }
+				: {}),
+			...(patch.consortiumProposalLink !== undefined
+				? { consortiumProposalLink: patch.consortiumProposalLink }
+				: {}),
+			...(patch.documentsLinkPersonal !== undefined
+				? { documentsLinkPersonal: patch.documentsLinkPersonal }
+				: {}),
+			...(patch.documentsLinkAddress !== undefined
+				? { documentsLinkAddress: patch.documentsLinkAddress }
+				: {}),
 			...(patch.proposalStatus !== undefined ? { proposalStatus: patch.proposalStatus } : {}),
 			updatedAt: new Date(),
 		})

@@ -28,9 +28,7 @@ test.beforeAll(async ({ request }, testInfo) => {
 });
 
 test.describe("AI Assistant API — shape estrutural (endpoint real)", () => {
-	test("JSON malformado retorna 400 ou 401 (nunca 500)", async ({
-		request,
-	}) => {
+	test("JSON malformado retorna 400 ou 401 (nunca 500)", async ({ request }) => {
 		const res = await request.post(ENDPOINT("p1"), {
 			data: "not json at all",
 			headers: { "Content-Type": "application/json" },
@@ -51,9 +49,7 @@ test.describe("AI Assistant API — shape estrutural (endpoint real)", () => {
 		expect(res.status()).toBe(401);
 	});
 
-	test("response NÃO inclui ANTHROPIC_API_KEY no payload (CA-19/S-03)", async ({
-		request,
-	}) => {
+	test("response NÃO inclui ANTHROPIC_API_KEY no payload (CA-19/S-03)", async ({ request }) => {
 		const res = await request.post(ENDPOINT("p1"), {
 			data: { messages: [] },
 			headers: { "Content-Type": "application/json" },

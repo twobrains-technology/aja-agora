@@ -146,11 +146,7 @@ function EmbeddedChatBody() {
 	return (
 		<>
 			<div className="flex-1 overflow-hidden">
-				<MessageList
-					messages={messages}
-					isStreaming={isStreaming}
-					hasError={Boolean(error)}
-				/>
+				<MessageList messages={messages} isStreaming={isStreaming} hasError={Boolean(error)} />
 			</div>
 			<div className="border-t bg-background">
 				<EmbeddedChatInputBridge isStreaming={isStreaming} onSend={handleSend} />

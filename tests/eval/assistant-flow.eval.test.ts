@@ -15,17 +15,20 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { anthropicAvailable, warnEvalSkipped } from "./anthropic-availability";
 import { generateText, stepCountIs, streamText } from "ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildAssistantPrompt } from "@/lib/agent/assistant-prompt";
 import { buildAssistantTools } from "@/lib/agent/tools/assistant-tools";
+import { anthropicAvailable, warnEvalSkipped } from "./anthropic-availability";
 
 const HAS_API_KEY = !!process.env.ANTHROPIC_API_KEY;
 // Camada 3 exige API REAL disponível — cota esgotada/5xx/rede não é regressão
 // (ver tests/eval/anthropic-availability.ts). Top-level await: vitest ESM ok.
-const AVAILABILITY = HAS_API_KEY ? await anthropicAvailable() : { ok: false, reason: "ANTHROPIC_API_KEY ausente" };
-if (HAS_API_KEY && !AVAILABILITY.ok) warnEvalSkipped(import.meta.url.split("/").pop() ?? "eval", AVAILABILITY.reason ?? "");
+const AVAILABILITY = HAS_API_KEY
+	? await anthropicAvailable()
+	: { ok: false, reason: "ANTHROPIC_API_KEY ausente" };
+if (HAS_API_KEY && !AVAILABILITY.ok)
+	warnEvalSkipped(import.meta.url.split("/").pop() ?? "eval", AVAILABILITY.reason ?? "");
 const describeIfKey = AVAILABILITY.ok ? describe : describe.skip;
 
 const anthropic = createAnthropic();

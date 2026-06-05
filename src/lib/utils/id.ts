@@ -18,8 +18,7 @@ export function generateId(): string {
 // se passar string fora desse formato. Bug descoberto pelo QA DEV em
 // Bv2-08 round 1: POST /api/chat com conversationId="test-qa-001"
 // crashava 500. Fix: validar antes, retornar 400.
-const UUID_REGEX =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function isUuid(value: unknown): value is string {
 	return typeof value === "string" && UUID_REGEX.test(value);

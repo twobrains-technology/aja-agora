@@ -62,7 +62,13 @@ describe("FIX-6 — coerceDialPayload força os números da oferta ativa", () =>
 
 	it("clampa initialTargetMonth ao prazo real do grupo (96m) quando o modelo exagera", () => {
 		const out = coerceDialPayload(
-			{ category: "moto", creditValue: 1, termMonths: 200, monthlyPayment: 1, initialTargetMonth: 150 },
+			{
+				category: "moto",
+				creditValue: 1,
+				termMonths: 200,
+				monthlyPayment: 1,
+				initialTargetMonth: 150,
+			},
 			CANOPUS,
 		);
 		expect(out.initialTargetMonth).toBeLessThanOrEqual(96);

@@ -90,8 +90,7 @@ describe("personaPatchSchema", () => {
 			after: {
 				id: "ft-001",
 				topic: "comissão de corretor",
-				responseWhenAsked:
-					"Não trabalho com corretagem. Sou seu agente digital direto.",
+				responseWhenAsked: "Não trabalho com corretagem. Sou seu agente digital direto.",
 				enabled: true,
 			},
 			rationale: "evitar pergunta de comissão",

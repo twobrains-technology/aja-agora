@@ -192,31 +192,17 @@ export function DiffCard({
 				)}
 				{state === "pending" && !editing && (
 					<div className="flex gap-2 pt-1">
-						<Button
-							size="sm"
-							onClick={() => onApply(patch)}
-							className="h-7 text-xs"
-						>
+						<Button size="sm" onClick={() => onApply(patch)} className="h-7 text-xs">
 							<Check className="size-3" />
 							Aplicar
 						</Button>
 						{editable && (
-							<Button
-								size="sm"
-								variant="outline"
-								onClick={handleStartEdit}
-								className="h-7 text-xs"
-							>
+							<Button size="sm" variant="outline" onClick={handleStartEdit} className="h-7 text-xs">
 								<Pencil className="size-3" />
 								Editar
 							</Button>
 						)}
-						<Button
-							size="sm"
-							variant="ghost"
-							onClick={onReject}
-							className="h-7 text-xs"
-						>
+						<Button size="sm" variant="ghost" onClick={onReject} className="h-7 text-xs">
 							<X className="size-3" />
 							Descartar
 						</Button>
@@ -233,12 +219,7 @@ export function DiffCard({
 							<Check className="size-3" />
 							Salvar
 						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							onClick={handleCancelEdit}
-							className="h-7 text-xs"
-						>
+						<Button size="sm" variant="ghost" onClick={handleCancelEdit} className="h-7 text-xs">
 							<X className="size-3" />
 							Cancelar
 						</Button>

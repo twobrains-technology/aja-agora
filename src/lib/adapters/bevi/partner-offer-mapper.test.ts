@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PartnerOffer } from "../proposal-gateway";
-import { partnerOfferToRealOffer, pickClosestOffer } from "./partner-offer-mapper";
 import okSimulation from "./__fixtures__/ok-simulation.json";
+import { partnerOfferToRealOffer, pickClosestOffer } from "./partner-offer-mapper";
 
 const offers = (okSimulation as { data: { offers: PartnerOffer[] } }).data.offers;
 

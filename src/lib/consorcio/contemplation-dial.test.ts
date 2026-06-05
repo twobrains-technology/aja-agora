@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { computeContemplationDial, contemplationDialMarks } from "./contemplation-dial";
 
-const base = { creditValue: 100_000, termMonths: 80, historicalWinningBidPct: 40, monthlyPayment: 1500 };
+const base = {
+	creditValue: 100_000,
+	termMonths: 80,
+	historicalWinningBidPct: 40,
+	monthlyPayment: 1500,
+};
 
 describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () => {
 	it("mais cedo exige MAIS lance que mais tarde (monotônico)", () => {

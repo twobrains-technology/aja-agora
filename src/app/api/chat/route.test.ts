@@ -16,9 +16,7 @@ vi.mock("@/lib/middleware/rate-limit", () => ({
 describe("lastUserText — guardrail defensivo (Bv2-08-novo)", () => {
 	it("retorna texto do parts moderno", () => {
 		// biome-ignore lint/suspicious/noExplicitAny: relaxar pra fixture
-		const messages: any = [
-			{ role: "user", parts: [{ type: "text", text: "olá" }] },
-		];
+		const messages: any = [{ role: "user", parts: [{ type: "text", text: "olá" }] }];
 		expect(lastUserText(messages)).toBe("olá");
 	});
 
@@ -89,10 +87,7 @@ describe("POST /api/chat — action whatsapp_optin", () => {
 
 	let convId: string;
 	beforeEach(async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "Kairo" }).returning();
 		convId = c.id;
 	});
 	afterEach(async () => {
@@ -100,9 +95,7 @@ describe("POST /api/chat — action whatsapp_optin", () => {
 	});
 
 	it("whatsapp_optin salva phone + promove lead pra engajado", async () => {
-		await db
-			.insert(leads)
-			.values({ conversationId: convId, name: "Kairo" });
+		await db.insert(leads).values({ conversationId: convId, name: "Kairo" });
 
 		const res = await POST(
 			makeReq({

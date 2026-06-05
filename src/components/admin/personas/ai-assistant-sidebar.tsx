@@ -41,21 +41,17 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 		},
 	});
 	const [input, setInput] = useState("");
-	const [diffStates, setDiffStates] = useState<Record<string, DiffCardState>>(
-		{},
-	);
+	const [diffStates, setDiffStates] = useState<Record<string, DiffCardState>>({});
 
 	function friendlyError(e: Error | undefined): string {
 		if (!e) return "";
 		const msg = e.message ?? "";
-		if (/credit/i.test(msg))
-			return "Sem crédito na API Anthropic. Avise o admin pra recarregar.";
+		if (/credit/i.test(msg)) return "Sem crédito na API Anthropic. Avise o admin pra recarregar.";
 		if (/rate.?limit|429/i.test(msg))
 			return "Muitos pedidos seguidos. Espere uns segundos e tente de novo.";
 		if (/401|unauthor/i.test(msg))
 			return "Sessão expirou. Recarregue a página e faça login de novo.";
-		if (/timeout|network|fetch/i.test(msg))
-			return "Conexão caiu. Tente de novo.";
+		if (/timeout|network|fetch/i.test(msg)) return "Conexão caiu. Tente de novo.";
 		return `Falhou: ${msg.slice(0, 200)}`;
 	}
 
@@ -71,8 +67,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			});
 		}
 		if (patch.kind === "example.remove") {
-			const cur =
-				(formMethods.getValues("examples") as Array<{ id: string }>) ?? [];
+			const cur = (formMethods.getValues("examples") as Array<{ id: string }>) ?? [];
 			formMethods.setValue(
 				"examples",
 				cur.filter((e) => e.id !== patch.targetId),
@@ -80,17 +75,14 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			);
 		}
 		if (patch.kind === "forbiddenTopic.add") {
-			const cur =
-				(formMethods.getValues("forbiddenTopics") as unknown[]) ?? [];
+			const cur = (formMethods.getValues("forbiddenTopics") as unknown[]) ?? [];
 			formMethods.setValue("forbiddenTopics", [...cur, patch.after], {
 				shouldDirty: true,
 				shouldValidate: true,
 			});
 		}
 		if (patch.kind === "forbiddenTopic.remove") {
-			const cur =
-				(formMethods.getValues("forbiddenTopics") as Array<{ id: string }>) ??
-				[];
+			const cur = (formMethods.getValues("forbiddenTopics") as Array<{ id: string }>) ?? [];
 			formMethods.setValue(
 				"forbiddenTopics",
 				cur.filter((e) => e.id !== patch.targetId),
@@ -98,17 +90,14 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 			);
 		}
 		if (patch.kind === "handoffTrigger.add") {
-			const cur =
-				(formMethods.getValues("handoffTriggers") as unknown[]) ?? [];
+			const cur = (formMethods.getValues("handoffTriggers") as unknown[]) ?? [];
 			formMethods.setValue("handoffTriggers", [...cur, patch.after], {
 				shouldDirty: true,
 				shouldValidate: true,
 			});
 		}
 		if (patch.kind === "handoffTrigger.remove") {
-			const cur =
-				(formMethods.getValues("handoffTriggers") as Array<{ id: string }>) ??
-				[];
+			const cur = (formMethods.getValues("handoffTriggers") as Array<{ id: string }>) ?? [];
 			formMethods.setValue(
 				"handoffTriggers",
 				cur.filter((e) => e.id !== patch.targetId),
@@ -147,9 +136,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 				<div className="px-4 py-3 space-y-3 break-words">
 					{messages.length === 0 && (
 						<div className="text-xs text-muted-foreground">
-							<p className="font-medium text-foreground/80 mb-2">
-								Exemplos do que pedir:
-							</p>
+							<p className="font-medium text-foreground/80 mb-2">Exemplos do que pedir:</p>
 							<ul className="space-y-1.5">
 								<li className="rounded-md bg-muted/50 px-2.5 py-1.5 border">
 									"deixa o tom menos formal"
@@ -271,10 +258,7 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 				</div>
 			</ScrollArea>
 
-			<form
-				onSubmit={handleSend}
-				className="border-t bg-card p-3 space-y-2 shrink-0"
-			>
+			<form onSubmit={handleSend} className="border-t bg-card p-3 space-y-2 shrink-0">
 				<Textarea
 					value={input}
 					onChange={(e) => setInput(e.target.value)}

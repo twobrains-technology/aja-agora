@@ -9,8 +9,8 @@
 // Uso: no passo 5, depois de re-simular na API real, mostramos a oferta REAL pro
 // usuário confirmar antes do choose_offer (fecha o gap indicativo×real da Descoberta).
 
-import type { ConsorcioCategory } from "../types";
 import type { PartnerOffer } from "../proposal-gateway";
+import type { ConsorcioCategory } from "../types";
 import { beviSegmentToCategory } from "./offer-mapper";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -52,12 +52,7 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 
 /** Normaliza nome de administradora pra comparação entre trilhos — a Descoberta
  * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). */
-const normalizeAdmin = (s: string) =>
-	s
-		.normalize("NFD")
-		.replace(/[̀-ͯ]/g, "")
-		.toUpperCase()
-		.trim();
+const normalizeAdmin = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
 
 /** Escolhe, dentre as ofertas reais, a mais próxima do crédito que o usuário viu na
  * Descoberta (pra costurar o seam indicativo→real sem trocar o "plano" debaixo dele).

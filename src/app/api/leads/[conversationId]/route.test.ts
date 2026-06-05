@@ -12,10 +12,7 @@ async function cleanup(convId: string): Promise<void> {
 describe("GET /api/leads/[conversationId]", () => {
 	let convId: string;
 	beforeEach(async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "Kairo" }).returning();
 		convId = c.id;
 	});
 	afterEach(async () => {

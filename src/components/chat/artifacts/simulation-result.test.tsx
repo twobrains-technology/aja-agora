@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+
 import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SimulationResultPayload } from "@/lib/chat/types";
 import { SimulationResult } from "./simulation-result";
 
@@ -191,5 +192,32 @@ describe("FIX-8 — lance estimado p/ contemplar nunca rende R$ 0,00", () => {
 			/>,
 		);
 		expect(document.body.textContent).not.toMatch(/R\$\s*0,00/);
+	});
+});
+
+// FIX-7 (teste manual Kairo 2026-06-05): CTA "Tenho interesse" duplicado —
+// botão interno do card + action igual vinda do payload (modelo).
+describe("FIX-7 — CTA duplicado filtrado", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	it("action do payload que repete 'Tenho interesse' não renderiza 2º botão", () => {
+		render(
+			<SimulationResult
+				payload={{
+					...basePayload,
+					actions: [
+						{ intent: "interest", label: "Tenho interesse!" },
+						{ intent: "adjust", label: "Ajustar valor" },
+					],
+				}}
+			/>,
+		);
+		const buttons = Array.from(document.querySelectorAll("button"));
+		const interesse = buttons.filter((b) => /tenho interesse/i.test(b.textContent ?? ""));
+		expect(interesse).toHaveLength(1);
+		// as demais actions continuam
+		expect(buttons.some((b) => /ajustar valor/i.test(b.textContent ?? ""))).toBe(true);
 	});
 });

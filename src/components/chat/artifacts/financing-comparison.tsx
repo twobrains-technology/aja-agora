@@ -7,8 +7,7 @@ const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 export function FinancingComparison({ payload }: { payload: FinancingComparisonPayload }) {
-	const consorcioBest =
-		payload.diff.monthlyDelta < 0 || payload.diff.totalDelta < 0;
+	const consorcioBest = payload.diff.monthlyDelta < 0 || payload.diff.totalDelta < 0;
 	return (
 		<Card className="w-full max-w-md">
 			<CardHeader>
@@ -22,7 +21,9 @@ export function FinancingComparison({ payload }: { payload: FinancingComparisonP
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 							Consórcio
 						</p>
-						<p className="text-lg font-mono mt-1">{formatBRL(payload.consorcio.monthlyPayment)}/mês</p>
+						<p className="text-lg font-mono mt-1">
+							{formatBRL(payload.consorcio.monthlyPayment)}/mês
+						</p>
 						<p className="text-xs text-muted-foreground mt-1">
 							Total: <span className="font-mono">{formatBRL(payload.consorcio.totalCost)}</span>
 						</p>
@@ -31,7 +32,9 @@ export function FinancingComparison({ payload }: { payload: FinancingComparisonP
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 							Financiamento
 						</p>
-						<p className="text-lg font-mono mt-1">{formatBRL(payload.financing.monthlyPayment)}/mês</p>
+						<p className="text-lg font-mono mt-1">
+							{formatBRL(payload.financing.monthlyPayment)}/mês
+						</p>
 						<p className="text-xs text-muted-foreground mt-1">
 							Total: <span className="font-mono">{formatBRL(payload.financing.totalCost)}</span>
 						</p>

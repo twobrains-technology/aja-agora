@@ -134,9 +134,7 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 	const realNow = new Date();
 	const simNow = snapshot ? new Date(snapshot.simulatedNow) : realNow;
 	const offsetDays = snapshot ? Math.floor(snapshot.clockOffsetMs / 86_400_000) : 0;
-	const offsetHours = snapshot
-		? Math.floor((snapshot.clockOffsetMs % 86_400_000) / 3_600_000)
-		: 0;
+	const offsetHours = snapshot ? Math.floor((snapshot.clockOffsetMs % 86_400_000) / 3_600_000) : 0;
 
 	return (
 		<aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-card text-card-foreground">
@@ -253,9 +251,7 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 
 						{/* Letta state */}
 						<section className="space-y-2">
-							<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-								Letta
-							</div>
+							<div className="text-[10px] uppercase tracking-wide text-muted-foreground">Letta</div>
 							{snapshot?.identity ? (
 								<div>
 									<div className="font-mono text-[11px]">
@@ -266,15 +262,12 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 									</div>
 								</div>
 							) : (
-								<div className="text-[11px] italic text-muted-foreground">
-									Sem identidade ainda
-								</div>
+								<div className="text-[11px] italic text-muted-foreground">Sem identidade ainda</div>
 							)}
 							{snapshot?.webEngagementProgress && (
 								<div className="rounded border bg-muted/30 p-2 text-[11px]">
-									{snapshot.webEngagementProgress.current}/
-									{snapshot.webEngagementProgress.required} turnos para criação automática do
-									agent Letta.
+									{snapshot.webEngagementProgress.current}/{snapshot.webEngagementProgress.required}{" "}
+									turnos para criação automática do agent Letta.
 								</div>
 							)}
 							{snapshot && (
@@ -311,10 +304,7 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 									className="flex w-full items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
 								>
 									<ChevronRightIcon
-										className={cn(
-											"size-3 transition-transform",
-											blockOpen && "rotate-90",
-										)}
+										className={cn("size-3 transition-transform", blockOpen && "rotate-90")}
 									/>
 									Bloco humano (JSON)
 								</button>
@@ -335,10 +325,7 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 									className="flex w-full items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
 								>
 									<ChevronRightIcon
-										className={cn(
-											"size-3 transition-transform",
-											archivalOpen && "rotate-90",
-										)}
+										className={cn("size-3 transition-transform", archivalOpen && "rotate-90")}
 									/>
 									Archival ({snapshot.archivalSample.length})
 								</button>
@@ -358,8 +345,8 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 						)}
 
 						<div className="border-t pt-2 text-[10px] italic text-muted-foreground">
-							Avançar o tempo afeta apenas esta conversa simulada
-							(<code>is_simulated=true</code>). Conversa real não é impactada.
+							Avançar o tempo afeta apenas esta conversa simulada (<code>is_simulated=true</code>).
+							Conversa real não é impactada.
 						</div>
 					</>
 				)}

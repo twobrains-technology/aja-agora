@@ -28,8 +28,7 @@ export function offerSnapshotFromArtifact(
 	const monthlyPayment = Number(payload.monthlyPayment);
 	if (!(creditValue > 0) || !(termMonths > 0) || !(monthlyPayment > 0)) return null;
 	return {
-		administradora:
-			typeof payload.administradora === "string" ? payload.administradora : undefined,
+		administradora: typeof payload.administradora === "string" ? payload.administradora : undefined,
 		category: typeof payload.category === "string" ? (payload.category as Category) : undefined,
 		creditValue,
 		termMonths,

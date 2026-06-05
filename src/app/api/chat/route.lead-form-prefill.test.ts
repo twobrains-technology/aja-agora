@@ -68,9 +68,7 @@ async function cleanup(convId: string): Promise<void> {
  *
  * Drena o stream e extrai todos os data-artifact com type=lead_form.
  */
-async function extractLeadFormPayload(
-	res: Response,
-): Promise<Record<string, unknown> | null> {
+async function extractLeadFormPayload(res: Response): Promise<Record<string, unknown> | null> {
 	const text = await res.text();
 	for (const rawLine of text.split("\n")) {
 		const line = rawLine.trim();
@@ -83,10 +81,7 @@ async function extractLeadFormPayload(
 		} catch {
 			continue;
 		}
-		if (
-			parsed?.type === "data-artifact" &&
-			parsed?.data?.type === "lead_form"
-		) {
+		if (parsed?.type === "data-artifact" && parsed?.data?.type === "lead_form") {
 			return (parsed.data.payload ?? {}) as Record<string, unknown>;
 		}
 	}
@@ -100,10 +95,7 @@ describe("Bug A — POST /api/chat action=interest deve pré-preencher nome no l
 		// Setup: usuário disse "Monique" durante a conversa e o agente já
 		// chamou save_contact_name, populando conversations.contactName.
 		// Esse é o cenário visto na screenshot.
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Monique" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "Monique" }).returning();
 		convId = c.id;
 	});
 
@@ -184,12 +176,11 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 		const form = readSource("src/components/chat/artifacts/lead-form.tsx");
 		// defaultValues do react-hook-form precisa LER de payload.prefilledName
 		// como prioridade — sem ?? "" antes do prefilledName.
-		const usaNoDefault =
-			/defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
+		const usaNoDefault = /defaultValues:\s*\{\s*name:\s*payload\.prefilledName\s*\?\?\s*["']{2}/;
 		expect(
 			usaNoDefault.test(form),
 			"src/components/chat/artifacts/lead-form.tsx precisa setar " +
-				"`defaultValues: { name: payload.prefilledName ?? \"\", ... }` no useForm. " +
+				'`defaultValues: { name: payload.prefilledName ?? "", ... }` no useForm. ' +
 				"Sem prioridade do payload, o form depende do fetch tardio /api/leads/[id] " +
 				"e quando esse fetch sofre race (cliente offline / network slow) o campo " +
 				"aparece vazio mesmo com contactName populado.",
@@ -203,7 +194,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 		expect(
 			usaNoReset.test(form),
 			"o useEffect de fetch tardio em lead-form.tsx precisa fazer " +
-				"`reset({ name: payload.prefilledName ?? data.name ?? \"\", ... })`. " +
+				'`reset({ name: payload.prefilledName ?? data.name ?? "", ... })`. ' +
 				"Sem essa prioridade, o fetch sobrescreve o prefill por data.name vazio " +
 				"e o bug volta — mesmo cenário do screenshot Marina/Monique.",
 		).toBe(true);

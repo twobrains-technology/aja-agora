@@ -35,7 +35,10 @@ export interface MemoryLogPayload {
  * stdout vai pro CloudWatch via awslogs driver do ECS. Em dev, fica visível
  * no terminal do npm run dev.
  */
-export function logMemoryOp(payload: MemoryLogPayload, level: "info" | "warn" | "error" = "info"): void {
+export function logMemoryOp(
+	payload: MemoryLogPayload,
+	level: "info" | "warn" | "error" = "info",
+): void {
 	const line = JSON.stringify({
 		level,
 		ts: new Date().toISOString(),

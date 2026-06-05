@@ -222,3 +222,34 @@ describe("directives — carregam a didática/voz do docx", () => {
 		expect(d).toMatch(/present_comparison_table|opções|opcoes/);
 	});
 });
+
+describe("FIX-7 — reveal honesto com menos de 3 opções (teste manual Kairo 2026-06-05)", () => {
+	const meta = {
+		experiencePrev: "first",
+		qualifyAnswers: {
+			creditMin: 15_000,
+			creditMax: 20_000,
+			monthlyBudget: 500,
+			prazoMeses: 6,
+			hasLance: "yes",
+		},
+	} as Parameters<typeof buildSearchSummaryDirective>[0]["meta"];
+
+	it("directive manda anunciar o número REAL (sem plural enganoso com 1 opção)", () => {
+		const d = buildSearchSummaryDirective({ category: "moto", meta });
+		// O anúncio é condicionado ao resultado da busca, não fixo em "3".
+		expect(d).toMatch(/apenas 1|UMA op[cç][aã]o|uma op[cç][aã]o/i);
+		expect(d).toMatch(/n[aã]o anuncie "3/i);
+	});
+
+	it("directive: com 1 opção NÃO chama present_recommendation_card (evita card duplicado)", () => {
+		const d = buildSearchSummaryDirective({ category: "moto", meta });
+		expect(d).toMatch(/1 grupo[\s\S]{0,400}N[AÃ]O chame present_recommendation_card/i);
+	});
+
+	it("directive: insufficientOptions=true → comunicar a escassez com transparência", () => {
+		const d = buildSearchSummaryDirective({ category: "moto", meta });
+		expect(d).toMatch(/insufficientOptions/);
+		expect(d).toMatch(/transpar|escass|limitad/i);
+	});
+});

@@ -158,22 +158,25 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					Tenho interesse
 				</Button>
 
-				{/* CTAs secundárias (bug #12) */}
+				{/* CTAs secundárias (bug #12). FIX-7: o modelo às vezes repete
+				    "Tenho interesse" nas actions — o botão interno já cobre, filtra. */}
 				{payload.actions && payload.actions.length > 0 && (
 					<div className="flex flex-col gap-2">
-						{payload.actions.map((action) => (
-							<Button
-								key={action.intent}
-								type="button"
-								variant="outline"
-								size="sm"
-								className="w-full min-h-[40px]"
-								onClick={() => handleAction(action)}
-								disabled={isStreaming}
-							>
-								{action.label}
-							</Button>
-						))}
+						{payload.actions
+							.filter((action) => !/tenho interesse/i.test(action.label))
+							.map((action) => (
+								<Button
+									key={action.intent}
+									type="button"
+									variant="outline"
+									size="sm"
+									className="w-full min-h-[40px]"
+									onClick={() => handleAction(action)}
+									disabled={isStreaming}
+								>
+									{action.label}
+								</Button>
+							))}
 					</div>
 				)}
 			</CardContent>

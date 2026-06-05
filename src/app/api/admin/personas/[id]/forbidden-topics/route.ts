@@ -4,7 +4,10 @@ import { invalidateAgentCache } from "@/lib/agent/agents";
 import { getPersonaForAdmin, updatePersona } from "@/lib/agent/personas-repo";
 import { personaForbiddenTopicSchema } from "@/lib/validations/persona";
 
-const createForbiddenTopicBodySchema = personaForbiddenTopicSchema.omit({ id: true, enabled: true });
+const createForbiddenTopicBodySchema = personaForbiddenTopicSchema.omit({
+	id: true,
+	enabled: true,
+});
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { error } = await requireRole("admin");

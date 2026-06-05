@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
+import { scoreLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -72,9 +73,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					<Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
 						Recomendacao
 					</Badge>
-					<span className="text-sm font-mono font-medium text-primary">
-						{(payload.score * 100).toFixed(0)}% compativel
-					</span>
+					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
+					    (comparison-table); breakdown segue no expansível. */}
+					<span className="text-sm font-medium text-primary">{scoreLabel(payload.score)}</span>
 				</div>
 				<p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
 			</CardHeader>

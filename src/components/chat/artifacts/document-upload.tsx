@@ -54,10 +54,7 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 		if (sentSlots.length === 0) return;
 		finishedRef.current = true;
 		setFinished(true);
-		void sendAction(
-			{ kind: "documents-done", sentSlots },
-			"Enviei meus documentos",
-		);
+		void sendAction({ kind: "documents-done", sentSlots }, "Enviei meus documentos");
 	};
 
 	const onPick = async (slot: Slot, file: File | undefined) => {
@@ -178,7 +175,8 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 						size="sm"
 						className="w-full"
 						onClick={() =>
-							!isStreaming && void sendAction({ kind: "document-skip" }, "Pular documentos por agora")
+							!isStreaming &&
+							void sendAction({ kind: "document-skip" }, "Pular documentos por agora")
 						}
 						disabled={isStreaming}
 						data-testid="doc-skip"

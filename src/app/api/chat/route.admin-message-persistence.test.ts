@@ -59,12 +59,10 @@ vi.mock("@/lib/middleware/rate-limit", () => ({
 }));
 
 vi.mock("@/lib/admin/require-role", () => ({
-	requireRole: vi
-		.fn()
-		.mockResolvedValue({
-			error: null,
-			session: { user: { id: "test-admin", role: "admin" } },
-		}),
+	requireRole: vi.fn().mockResolvedValue({
+		error: null,
+		session: { user: { id: "test-admin", role: "admin" } },
+	}),
 }));
 
 // `analyzeTurn` faz `generateObject` contra Anthropic. Em testes,
@@ -111,9 +109,7 @@ vi.mock("@/lib/agent/agents", () => {
 	function makeAgent() {
 		return {
 			stream: async ({ messages }: { messages: Array<{ role: string; content: string }> }) => {
-				const lastUser = [...messages]
-					.reverse()
-					.find((m) => m.role === "user");
+				const lastUser = [...messages].reverse().find((m) => m.role === "user");
 				const echo = lastUser?.content ?? "ack";
 				const replyText = `ACK_ASSISTANT(${echo.slice(0, 40)})`;
 				const mode = agentModeRef.value;
@@ -245,10 +241,7 @@ describe("BUG-ADMIN-MESSAGE-MISSING — admin GET retorna TODAS as messages apó
 	}
 
 	beforeEach(async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "TestUser" })
-			.returning();
+		const [c] = await db.insert(conversations).values({ contactName: "TestUser" }).returning();
 		convId = c.id;
 		agentModeRef.value = "text";
 		agentModeRef.turnCounter = 0;

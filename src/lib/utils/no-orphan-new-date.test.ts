@@ -59,9 +59,7 @@ describe("anti-regressão: new Date() órfão em paths do turno simulado", () =>
 				}
 			}
 			if (orphans.length > 0) {
-				const msg = orphans
-					.map((o) => `  ${rel}:${o.line}  ${o.text}`)
-					.join("\n");
+				const msg = orphans.map((o) => `  ${rel}:${o.line}  ${o.text}`).join("\n");
 				throw new Error(
 					`Encontrei \`new Date()\` órfão (sem args) em arquivos do path do turno.\nUse \`simulatorNow()\` (de @/lib/utils/simulator-clock) ou marque a linha com \`// real-time-intentional\` se for caso legítimo (log, audit, health-check).\n\n${msg}`,
 				);

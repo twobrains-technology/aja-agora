@@ -11,11 +11,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { generateId } from "@/lib/utils/id";
 import type { SimulatorClientEvent } from "@/lib/whatsapp/simulator-bus";
 import { WhatsAppBubble } from "./whatsapp-bubble";
 import { type InteractivePayload, WhatsAppInteractive } from "./whatsapp-interactive";
 import { WhatsAppTyping } from "./whatsapp-typing";
-import { generateId } from "@/lib/utils/id";
 
 type Item =
 	| { kind: "bubble"; id: string; direction: "sent" | "received"; text: string; createdAt: string }

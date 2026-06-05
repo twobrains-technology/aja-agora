@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+
 import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TopicPicker } from "./topic-picker";
 
 vi.mock("@/lib/chat/provider", () => ({
@@ -40,20 +41,12 @@ describe("TopicPicker — chips + voltar (bug #05)", () => {
 	});
 
 	it("renderiza botão 'Voltar' quando includeBackButton=true", () => {
-		render(
-			<TopicPicker
-				payload={{ topics: ["a", "b"], includeBackButton: true }}
-			/>,
-		);
+		render(<TopicPicker payload={{ topics: ["a", "b"], includeBackButton: true }} />);
 		expect(screen.getByTestId("topic-picker-back")).toBeDefined();
 	});
 
 	it("NÃO renderiza 'Voltar' quando includeBackButton=false", () => {
-		render(
-			<TopicPicker
-				payload={{ topics: ["a", "b"], includeBackButton: false }}
-			/>,
-		);
+		render(<TopicPicker payload={{ topics: ["a", "b"], includeBackButton: false }} />);
 		expect(screen.queryByTestId("topic-picker-back")).toBeNull();
 	});
 });

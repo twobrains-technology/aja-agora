@@ -79,9 +79,7 @@ describe("resolveLettaBaseUrl", () => {
 		delete process.env.LETTA_SRV_NAME;
 
 		await expect(resolveLettaBaseUrl()).rejects.toThrow(MemoryError);
-		await expect(resolveLettaBaseUrl()).rejects.toThrow(
-			/Letta endpoint not configured/,
-		);
+		await expect(resolveLettaBaseUrl()).rejects.toThrow(/Letta endpoint not configured/);
 	});
 
 	it("throw quando SRV retorna 0 registros", async () => {
@@ -128,11 +126,12 @@ describe("lettaFetch", () => {
 	it("GET 200 OK retorna JSON parseado", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response(JSON.stringify({ foo: "bar" }), {
-					status: 200,
-					headers: { "content-type": "application/json" },
-				}),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ foo: "bar" }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
 			),
 		);
 		const data = await lettaFetch<{ foo: string }>("/v1/anything");
@@ -140,8 +139,9 @@ describe("lettaFetch", () => {
 	});
 
 	it("adiciona Authorization: Bearer <key>", async () => {
-		const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-			new Response(JSON.stringify({}), { status: 200 }),
+		const fetchMock = vi.fn(
+			async (_url: string, _init?: RequestInit) =>
+				new Response(JSON.stringify({}), { status: 200 }),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 		await lettaFetch("/v1/anything");
@@ -151,8 +151,9 @@ describe("lettaFetch", () => {
 	});
 
 	it("adiciona Content-Type: application/json", async () => {
-		const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-			new Response(JSON.stringify({}), { status: 200 }),
+		const fetchMock = vi.fn(
+			async (_url: string, _init?: RequestInit) =>
+				new Response(JSON.stringify({}), { status: 200 }),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 		await lettaFetch("/v1/anything");
@@ -162,8 +163,9 @@ describe("lettaFetch", () => {
 	});
 
 	it("preserva headers customizados", async () => {
-		const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-			new Response(JSON.stringify({}), { status: 200 }),
+		const fetchMock = vi.fn(
+			async (_url: string, _init?: RequestInit) =>
+				new Response(JSON.stringify({}), { status: 200 }),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 		await lettaFetch("/v1/anything", { headers: { "X-Trace": "abc" } });

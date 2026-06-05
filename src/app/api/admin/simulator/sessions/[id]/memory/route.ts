@@ -20,10 +20,7 @@ import { requireRole } from "@/lib/admin/require-role";
 import { inspectSimulatorMemory } from "@/lib/memory/inspect";
 import { isSimulatorEnabled } from "@/lib/utils/env";
 
-export async function GET(
-	_req: Request,
-	{ params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
 	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}

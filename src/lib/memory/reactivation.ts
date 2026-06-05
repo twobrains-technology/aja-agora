@@ -53,11 +53,15 @@ function summarizeBlock(block: HumanMemoryBlock): string | null {
 		};
 		parts.push(`Categoria de interesse: ${categoryLabel[block.category]}`);
 	}
-	if (block.creditMax) parts.push(`Crédito alvo: até R$ ${block.creditMax.toLocaleString("pt-BR")}`);
+	if (block.creditMax)
+		parts.push(`Crédito alvo: até R$ ${block.creditMax.toLocaleString("pt-BR")}`);
 	if (block.termMonthsPreferred) parts.push(`Prazo preferido: ${block.termMonthsPreferred} meses`);
-	if (block.monthlyBudget) parts.push(`Orçamento mensal: R$ ${block.monthlyBudget.toLocaleString("pt-BR")}`);
+	if (block.monthlyBudget)
+		parts.push(`Orçamento mensal: R$ ${block.monthlyBudget.toLocaleString("pt-BR")}`);
 	if (block.expertiseLevel) {
-		parts.push(`Experiência com consórcio: ${block.expertiseLevel === "first" ? "primeiro consórcio" : "já participou antes"}`);
+		parts.push(
+			`Experiência com consórcio: ${block.expertiseLevel === "first" ? "primeiro consórcio" : "já participou antes"}`,
+		);
 	}
 	if (block.lastSimulation) {
 		const date = formatDate(block.lastSimulation.date);

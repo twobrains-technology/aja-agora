@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => cleanup());
+
 import type { PersonaPatch } from "@/lib/validations/persona-patch";
 import { DiffCard } from "./diff-card";
 
@@ -35,62 +36,33 @@ const exampleRemovePatch: PersonaPatch = {
 
 describe("DiffCard — voiceTone patch", () => {
 	it("renderiza before e after", () => {
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.getByText(/formal e técnico/)).toBeInTheDocument();
 		expect(screen.getByText(/casual, próximo/)).toBeInTheDocument();
 	});
 
 	it("renderiza rationale", () => {
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.getByText(/admin pediu menos formal/)).toBeInTheDocument();
 	});
 
 	it("clica Aplicar dispara onApply com o patch", () => {
 		const onApply = vi.fn();
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={onApply}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={onApply} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /aplicar/i }));
 		expect(onApply).toHaveBeenCalledWith(voiceTonePatch);
 	});
 
 	it("clica Descartar dispara onReject", () => {
 		const onReject = vi.fn();
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={onReject}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={onReject} />);
 		fireEvent.click(screen.getByRole("button", { name: /descartar/i }));
 		expect(onReject).toHaveBeenCalled();
 	});
 
 	it("estado 'applied' esconde botões e mostra badge", () => {
 		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				state="applied"
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
+			<DiffCard patch={voiceTonePatch} state="applied" onApply={vi.fn()} onReject={vi.fn()} />,
 		);
 		expect(screen.getByText(/aplicado/i)).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /aplicar/i })).toBeNull();
@@ -98,12 +70,7 @@ describe("DiffCard — voiceTone patch", () => {
 
 	it("estado 'rejected' esconde botões e mostra badge", () => {
 		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				state="rejected"
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
+			<DiffCard patch={voiceTonePatch} state="rejected" onApply={vi.fn()} onReject={vi.fn()} />,
 		);
 		expect(screen.getByText(/descartado/i)).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /aplicar/i })).toBeNull();
@@ -112,66 +79,34 @@ describe("DiffCard — voiceTone patch", () => {
 
 describe("DiffCard — example.add patch", () => {
 	it("renderiza userMessage e assistantResponse no DEPOIS", () => {
-		render(
-			<DiffCard
-				patch={exampleAddPatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={exampleAddPatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.getByText(/Quanto custa\?/)).toBeInTheDocument();
 		expect(screen.getByText(/Depende da faixa/)).toBeInTheDocument();
 	});
 
 	it("não renderiza box ANTES pra kind add", () => {
-		render(
-			<DiffCard
-				patch={exampleAddPatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={exampleAddPatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.queryByText("ANTES")).toBeNull();
 	});
 });
 
 describe("DiffCard — botão Editar (CA-04 / CA-09)", () => {
 	it("renderiza botão Editar para voiceTone patch", () => {
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.getByRole("button", { name: /editar/i })).toBeInTheDocument();
 	});
 
 	it("clica Editar troca pra textarea inline + Salvar/Cancelar", () => {
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /editar/i }));
-		expect(
-			screen.getByRole("textbox", { name: /editar texto/i }),
-		).toBeInTheDocument();
+		expect(screen.getByRole("textbox", { name: /editar texto/i })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: /salvar/i })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: /cancelar/i })).toBeInTheDocument();
 	});
 
 	it("Salvar edição dispara onApply com novo patch.after", () => {
 		const onApply = vi.fn();
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={onApply}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={onApply} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /editar/i }));
 		const textarea = screen.getByRole("textbox", { name: /editar texto/i });
 		fireEvent.change(textarea, { target: { value: "tom editado pelo admin" } });
@@ -187,13 +122,7 @@ describe("DiffCard — botão Editar (CA-04 / CA-09)", () => {
 
 	it("Cancelar volta pra visão diff sem chamar onApply", () => {
 		const onApply = vi.fn();
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={onApply}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={onApply} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /editar/i }));
 		fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
 		expect(onApply).not.toHaveBeenCalled();
@@ -201,13 +130,7 @@ describe("DiffCard — botão Editar (CA-04 / CA-09)", () => {
 	});
 
 	it("Salvar desabilitado quando texto vazio", () => {
-		render(
-			<DiffCard
-				patch={voiceTonePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={voiceTonePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /editar/i }));
 		const textarea = screen.getByRole("textbox", { name: /editar texto/i });
 		fireEvent.change(textarea, { target: { value: "   " } });
@@ -216,13 +139,7 @@ describe("DiffCard — botão Editar (CA-04 / CA-09)", () => {
 
 	it("Editar dispara onApply com example.add quando admin edita assistantResponse", () => {
 		const onApply = vi.fn();
-		render(
-			<DiffCard
-				patch={exampleAddPatch}
-				onApply={onApply}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={exampleAddPatch} onApply={onApply} onReject={vi.fn()} />);
 		fireEvent.click(screen.getByRole("button", { name: /editar/i }));
 		const textarea = screen.getByRole("textbox", { name: /editar texto/i });
 		fireEvent.change(textarea, {
@@ -240,29 +157,15 @@ describe("DiffCard — botão Editar (CA-04 / CA-09)", () => {
 	});
 
 	it("example.remove NÃO mostra botão Editar (sem texto pra editar)", () => {
-		render(
-			<DiffCard
-				patch={exampleRemovePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={exampleRemovePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.queryByRole("button", { name: /editar/i })).toBeNull();
 	});
 });
 
 describe("DiffCard — example.remove patch", () => {
 	it("renderiza box REMOVER com targetId", () => {
-		render(
-			<DiffCard
-				patch={exampleRemovePatch}
-				onApply={vi.fn()}
-				onReject={vi.fn()}
-			/>,
-		);
+		render(<DiffCard patch={exampleRemovePatch} onApply={vi.fn()} onReject={vi.fn()} />);
 		expect(screen.getByText(/REMOVER/i)).toBeInTheDocument();
-		expect(
-			screen.getByText(/550e8400-e29b-41d4-a716-446655440000/),
-		).toBeInTheDocument();
+		expect(screen.getByText(/550e8400-e29b-41d4-a716-446655440000/)).toBeInTheDocument();
 	});
 });

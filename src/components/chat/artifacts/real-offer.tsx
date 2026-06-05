@@ -8,8 +8,7 @@ import type { RealOfferPayload } from "@/lib/chat/types";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-const brl2 = (n: number) =>
-	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brl2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // Oferta REAL confirmada pela administradora (re-simulação Bevi). O usuário confirma
 // antes do choose_offer — fecha o gap indicativo×real da Descoberta.

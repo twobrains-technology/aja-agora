@@ -1,11 +1,4 @@
-import {
-	type LucideIcon,
-	ClipboardList,
-	Calculator,
-	Users,
-	Trophy,
-	Sparkles,
-} from "lucide-react";
+import { Calculator, ClipboardList, type LucideIcon, Sparkles, Trophy, Users } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";

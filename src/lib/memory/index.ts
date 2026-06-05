@@ -83,17 +83,17 @@ export function resetMemoryAdapter(): void {
 
 // Re-exports pra ergonomia
 export type { MemoryAdapter } from "./adapter";
+export { LettaMemoryAdapter } from "./letta-adapter";
+export { NoopMemoryAdapter } from "./noop-adapter";
 export type {
 	ArchivalHit,
 	HumanMemoryBlock,
+	IdentityKind,
+	LeadStage,
 	MemoryContext,
 	MemoryEntry,
 	MemoryEntryKind,
 	StoreMetadata,
 	UserIdentity,
-	IdentityKind,
-	LeadStage,
 } from "./types";
 export { MemoryError, MemoryTimeoutError } from "./types";
-export { LettaMemoryAdapter } from "./letta-adapter";
-export { NoopMemoryAdapter } from "./noop-adapter";

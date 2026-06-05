@@ -26,9 +26,7 @@ export async function resolveLettaBaseUrl(): Promise<string> {
 
 	const srvName = process.env.LETTA_SRV_NAME;
 	if (!srvName) {
-		throw new MemoryError(
-			"Letta endpoint not configured (set LETTA_BASE_URL or LETTA_SRV_NAME)",
-		);
+		throw new MemoryError("Letta endpoint not configured (set LETTA_BASE_URL or LETTA_SRV_NAME)");
 	}
 
 	if (_baseUrlCache && Date.now() < _baseUrlCache.expiresAt) {

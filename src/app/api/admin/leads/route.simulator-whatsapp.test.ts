@@ -32,8 +32,8 @@
  * Integration test: bate no DB real (aja-pg-develop, 5434).
  */
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, leadEvents, leads, messages } from "@/db/schema";
 
@@ -69,9 +69,7 @@ vi.mock("@/lib/whatsapp/api", () => ({
 	sendInteractiveMessage: vi.fn().mockResolvedValue(undefined),
 }));
 
-const { POST: createSession } = await import(
-	"@/app/api/admin/simulator/sessions/route"
-);
+const { POST: createSession } = await import("@/app/api/admin/simulator/sessions/route");
 const { POST: sendSimMessage } = await import(
 	"@/app/api/admin/simulator/whatsapp/[conversationId]/send/route"
 );
@@ -199,9 +197,6 @@ describe("BUG: simulador WhatsApp não cria lead na pipeline", () => {
 		const lead = await db.query.leads.findFirst({
 			where: eq(leads.conversationId, session.conversationId),
 		});
-		expect(
-			lead,
-			"BUG: send pelo painel admin WhatsApp não disparou criação de lead",
-		).toBeDefined();
+		expect(lead, "BUG: send pelo painel admin WhatsApp não disparou criação de lead").toBeDefined();
 	});
 });

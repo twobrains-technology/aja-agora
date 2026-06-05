@@ -6,7 +6,7 @@ import { SimulatorInbox } from "../inbox";
 import { MemoryDevPanel } from "../memory-dev-panel";
 import { SimulatedBadge } from "../simulated-badge";
 import { useConversationStatus } from "./use-conversation-status";
-import { type WhatsAppStageItem, WhatsAppStage } from "./whatsapp-stage";
+import { WhatsAppStage, type WhatsAppStageItem } from "./whatsapp-stage";
 
 type PersistedMessage = {
 	id: string;

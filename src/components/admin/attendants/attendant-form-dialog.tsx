@@ -15,10 +15,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-	createAttendantSchema,
 	type CreateAttendantInput,
-	updateAttendantSchema,
+	createAttendantSchema,
 	type UpdateAttendantInput,
+	updateAttendantSchema,
 } from "@/lib/validations/attendant";
 import type { Attendant } from "./attendants-table";
 

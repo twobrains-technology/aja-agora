@@ -1,11 +1,11 @@
 {
- "status": "OK",
- "code": 200,
- "success": true,
- "message": "Nenhuma oferta gerada para a cota selecionada!",
- "data": {
-  "data": {
-   "offers": []
-  }
- }
+	"status": "OK",
+	"code": 200,
+	"success": true,
+	"message": "Nenhuma oferta gerada para a cota selecionada!",
+	"data": {
+		"data": {
+			"offers": []
+		}
+	}
 }

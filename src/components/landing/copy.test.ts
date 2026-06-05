@@ -68,9 +68,10 @@ describe("Landing copy (Bv2-02) — sem overclaim de IA, foco em benefícios", (
 	it("HowItWorks contém ≥4 keywords de benefício do consórcio (Bv2-02 Happy)", () => {
 		const content = readFileSync(join(LANDING_DIR, "how-it-works.tsx"), "utf8");
 		const hits = BENEFIT_KEYWORDS.filter((kw) => kw.test(content));
-		expect(hits.length, `keywords encontradas: ${hits.map((k) => k.toString())}`).toBeGreaterThanOrEqual(
-			4,
-		);
+		expect(
+			hits.length,
+			`keywords encontradas: ${hits.map((k) => k.toString())}`,
+		).toBeGreaterThanOrEqual(4);
 	});
 
 	it("HowItWorks mantém stepper de 5 passos (anti-regressão #19 v1)", () => {

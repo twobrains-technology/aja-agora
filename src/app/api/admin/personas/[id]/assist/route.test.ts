@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/admin/require-role", () => ({
 	requireRole: vi.fn(),
@@ -30,9 +30,7 @@ vi.mock("@ai-sdk/anthropic", () => ({
 
 const { POST } = await import("./route");
 const { _resetForTests } = await import("@/lib/agent/assistant-rate-limit");
-const requireRoleMock = vi.mocked(
-	(await import("@/lib/admin/require-role")).requireRole,
-);
+const requireRoleMock = vi.mocked((await import("@/lib/admin/require-role")).requireRole);
 const getPersonaForAdminMock = vi.mocked(
 	(await import("@/lib/agent/personas-repo")).getPersonaForAdmin,
 );
@@ -145,13 +143,13 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		for (let i = 0; i < 10; i++) {
 			const res = await POST(
 				mkRequest({
-				messages: [
-					{
-						role: "user",
-						parts: [{ type: "text", text: "oi" }],
-					},
-				],
-			}),
+					messages: [
+						{
+							role: "user",
+							parts: [{ type: "text", text: "oi" }],
+						},
+					],
+				}),
 				{ params: Promise.resolve({ id: "p1" }) },
 			);
 			expect(res.status).toBe(200);
@@ -181,13 +179,13 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		for (let i = 0; i < 10; i++) {
 			await POST(
 				mkRequest({
-				messages: [
-					{
-						role: "user",
-						parts: [{ type: "text", text: "oi" }],
-					},
-				],
-			}),
+					messages: [
+						{
+							role: "user",
+							parts: [{ type: "text", text: "oi" }],
+						},
+					],
+				}),
 				{ params: Promise.resolve({ id: "p1" }) },
 			);
 		}

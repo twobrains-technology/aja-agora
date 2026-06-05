@@ -70,7 +70,9 @@ describe("JORNADA_RUBRIC_SYSTEM_PROMPT — ancorado no docx, não na implementa�
 		// Fechamento completo (docx linhas 51-53).
 		expect(p).toContain("Parabéns! Agora você está oficialmente mais perto da sua conquista!");
 		expect(p).toMatch(/resumo da contrata[çc][ãa]o/i);
-		expect(p).toMatch(/sem.*sentir que.*mudou de empresa|sem o cliente sentir que "mudou de empresa"/i);
+		expect(p).toMatch(
+			/sem.*sentir que.*mudou de empresa|sem o cliente sentir que "mudou de empresa"/i,
+		);
 	});
 
 	it("v2 — limitação de fonte declarada: não cobrar o que a oferta Bevi não fornece", () => {

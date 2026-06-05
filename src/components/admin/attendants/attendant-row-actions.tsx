@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { MoreHorizontal, Pencil, Send, UserCheck, UserX } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -103,7 +103,7 @@ export function AttendantRowActions({ attendant, onEdit, onRefresh }: Props) {
 					<MoreHorizontal className="size-4" />
 					<span className="sr-only">Ações</span>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className={'max-w-60 w-full'}>
+				<DropdownMenuContent align="end" className={"max-w-60 w-full"}>
 					<DropdownMenuItem onClick={onEdit}>
 						<Pencil className="size-4" />
 						Editar

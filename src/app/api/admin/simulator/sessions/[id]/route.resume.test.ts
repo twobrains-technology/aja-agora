@@ -169,10 +169,7 @@ describe("Simulador admin — retomar histórico ao re-abrir conversa", () => {
 		// propagação NÃO está implementada — esse é exatamente o defeito que
 		// deixa o histórico desaparecer na UI ao re-abrir.
 		const simulatorWebSource = readFileSync(
-			resolvePath(
-				process.cwd(),
-				"src/components/admin/simulator/web/simulator-web.tsx",
-			),
+			resolvePath(process.cwd(), "src/components/admin/simulator/web/simulator-web.tsx"),
 			"utf8",
 		);
 

@@ -13,8 +13,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { handleAgentMessage } from "@/lib/whatsapp/proxy";
 import { isSimulatorEnabled } from "@/lib/utils/env";
+import { handleAgentMessage } from "@/lib/whatsapp/proxy";
 
 const replySchema = z.object({
 	text: z.string().min(1).max(4096),

@@ -15,10 +15,7 @@ import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isSimulatorEnabled } from "@/lib/utils/env";
 
-export async function POST(
-	_req: Request,
-	{ params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
 	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}

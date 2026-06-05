@@ -48,11 +48,8 @@ skipIfNoDb("diagnoseConversation — bug regressão prod (BUG-2026-05-18)", () =
 	beforeAll(async () => {
 		({ db } = await import("@/db"));
 		schema = await import("@/db/schema");
-		({
-			diagnoseConversation,
-			__setGenerateObjectImplForTests,
-			__resetGenerateObjectImplForTests,
-		} = await import("./diagnose"));
+		({ diagnoseConversation, __setGenerateObjectImplForTests, __resetGenerateObjectImplForTests } =
+			await import("./diagnose"));
 		({ buildTranscript } = await import("@/lib/eval/transcript"));
 	});
 
@@ -204,133 +201,120 @@ skipIfNoDb("diagnoseConversation — bug regressão prod (BUG-2026-05-18)", () =
 		};
 	}
 
-	it(
-		"contrato anti-regressão: quando LLM emite whenExpertise:[] (realista, pois JSON Schema enviado NÃO tem minItems), diagnose deve sobreviver e retornar result válido (BUG-2026-05-18)",
-		async () => {
-			const { args } = await setupRealConversation();
+	it("contrato anti-regressão: quando LLM emite whenExpertise:[] (realista, pois JSON Schema enviado NÃO tem minItems), diagnose deve sobreviver e retornar result válido (BUG-2026-05-18)", async () => {
+		const { args } = await setupRealConversation();
 
-			// Output realista que o claude-sonnet-4-6 EMITE em prod — o JSON
-			// Schema enviado NÃO tinha `minItems`/`minLength` como constraints
-			// reais (estão só em `.description`), então o modelo respeita só a
-			// tipagem estrutural mas pode violar os `.min(...)` que existem
-			// APENAS no Zod local. Ver:
-			//   src/lib/diagnose/types.ts  — schema com .min(1), .min(3), .min(10)
-			//   payload real enviado à Anthropic (no AI_APICallError) mostra:
-			//     "whenExpertise": { "type":"array", ..., "description":"min items: 1." }
-			//   minItems NÃO está no schema JSON — só na string description.
-			const realisticLLMOutput = {
-				rootCause:
-					"Turn 5 despejou explicação genérica de consórcio sem perguntar o que o cliente quer comprar — discovery falhou.",
-				suggestedExamples: [
-					{
-						// LLM emitiu lista vazia porque não havia constraint minItems real
-						// no schema JSON. Zod local rejeita por .min(1).
-						whenExpertise: [],
-						whenChannel: "whatsapp",
-						userMessage: "Tenho dúvidas",
-						assistantResponse:
-							"Claro! Pra te ajudar melhor, me conta: você está pensando em comprar um imóvel pra morar ou investir?",
-						rationale: "Discovery primeiro — corrige flag incompleteDiscovery.",
-					},
-				],
-				suggestedForbiddenTopics: [],
-				suggestedHandoffTriggers: [],
-			};
+		// Output realista que o claude-sonnet-4-6 EMITE em prod — o JSON
+		// Schema enviado NÃO tinha `minItems`/`minLength` como constraints
+		// reais (estão só em `.description`), então o modelo respeita só a
+		// tipagem estrutural mas pode violar os `.min(...)` que existem
+		// APENAS no Zod local. Ver:
+		//   src/lib/diagnose/types.ts  — schema com .min(1), .min(3), .min(10)
+		//   payload real enviado à Anthropic (no AI_APICallError) mostra:
+		//     "whenExpertise": { "type":"array", ..., "description":"min items: 1." }
+		//   minItems NÃO está no schema JSON — só na string description.
+		const realisticLLMOutput = {
+			rootCause:
+				"Turn 5 despejou explicação genérica de consórcio sem perguntar o que o cliente quer comprar — discovery falhou.",
+			suggestedExamples: [
+				{
+					// LLM emitiu lista vazia porque não havia constraint minItems real
+					// no schema JSON. Zod local rejeita por .min(1).
+					whenExpertise: [],
+					whenChannel: "whatsapp",
+					userMessage: "Tenho dúvidas",
+					assistantResponse:
+						"Claro! Pra te ajudar melhor, me conta: você está pensando em comprar um imóvel pra morar ou investir?",
+					rationale: "Discovery primeiro — corrige flag incompleteDiscovery.",
+				},
+			],
+			suggestedForbiddenTopics: [],
+			suggestedHandoffTriggers: [],
+		};
 
-			__setGenerateObjectImplForTests(
-				makeGenerateObjectMockFromRawLLMOutput(realisticLLMOutput) as never,
-			);
+		__setGenerateObjectImplForTests(
+			makeGenerateObjectMockFromRawLLMOutput(realisticLLMOutput) as never,
+		);
 
-			// Action: chama diagnose. Espera retornar result válido — em prod
-			// hoje isso LANÇA DiagnosisError "response did not match schema".
-			const out = await diagnoseConversation(args);
+		// Action: chama diagnose. Espera retornar result válido — em prod
+		// hoje isso LANÇA DiagnosisError "response did not match schema".
+		const out = await diagnoseConversation(args);
 
-			// Assertions VALORADAS sobre o contrato.
-			expect(out.result).toBeDefined();
-			expect(typeof out.result.rootCause).toBe("string");
-			expect(out.result.rootCause.length).toBeGreaterThanOrEqual(10);
-			expect(Array.isArray(out.result.suggestedExamples)).toBe(true);
-			expect(out.result.suggestedExamples.length).toBeGreaterThanOrEqual(1);
+		// Assertions VALORADAS sobre o contrato.
+		expect(out.result).toBeDefined();
+		expect(typeof out.result.rootCause).toBe("string");
+		expect(out.result.rootCause.length).toBeGreaterThanOrEqual(10);
+		expect(Array.isArray(out.result.suggestedExamples)).toBe(true);
+		expect(out.result.suggestedExamples.length).toBeGreaterThanOrEqual(1);
 
-			// O exemplo deve sobreviver — mesmo com whenExpertise vazio, o
-			// userMessage/assistantResponse/rationale são válidos.
-			const ex = out.result.suggestedExamples[0];
-			expect(ex.userMessage).toBe("Tenho dúvidas");
-			expect(ex.assistantResponse).toMatch(/imóvel/i);
-			expect(ex.rationale).toMatch(/discovery/i);
+		// O exemplo deve sobreviver — mesmo com whenExpertise vazio, o
+		// userMessage/assistantResponse/rationale são válidos.
+		const ex = out.result.suggestedExamples[0];
+		expect(ex.userMessage).toBe("Tenho dúvidas");
+		expect(ex.assistantResponse).toMatch(/imóvel/i);
+		expect(ex.rationale).toMatch(/discovery/i);
 
-			expect(out.tokensInput).toBeGreaterThan(0);
-			expect(out.tokensOutput).toBeGreaterThan(0);
-		},
-		30_000,
-	);
+		expect(out.tokensInput).toBeGreaterThan(0);
+		expect(out.tokensOutput).toBeGreaterThan(0);
+	}, 30_000);
 
-	it(
-		"contrato anti-regressão: quando LLM emite rootCause curto (<10 chars), diagnose deve sobreviver — não lançar DiagnosisError",
-		async () => {
-			const { args } = await setupRealConversation();
+	it("contrato anti-regressão: quando LLM emite rootCause curto (<10 chars), diagnose deve sobreviver — não lançar DiagnosisError", async () => {
+		const { args } = await setupRealConversation();
 
-			// Variação do mesmo bug: outro min* que o LLM viola na prática.
-			const shortRootCauseOutput = {
-				rootCause: "Discovery falhou.", // 17 chars — passa min(10) mas testa boundary
-				suggestedExamples: [
-					{
-						userMessage: "Quero comprar um carro",
-						assistantResponse: "Beleza! Pra te ajudar a achar o grupo certo: qual seu orçamento mensal?",
-						rationale: "Discovery primeiro — pergunta o que define a recomendação.",
-					},
-				],
-				suggestedForbiddenTopics: [],
-				suggestedHandoffTriggers: [],
-			};
+		// Variação do mesmo bug: outro min* que o LLM viola na prática.
+		const shortRootCauseOutput = {
+			rootCause: "Discovery falhou.", // 17 chars — passa min(10) mas testa boundary
+			suggestedExamples: [
+				{
+					userMessage: "Quero comprar um carro",
+					assistantResponse:
+						"Beleza! Pra te ajudar a achar o grupo certo: qual seu orçamento mensal?",
+					rationale: "Discovery primeiro — pergunta o que define a recomendação.",
+				},
+			],
+			suggestedForbiddenTopics: [],
+			suggestedHandoffTriggers: [],
+		};
 
-			__setGenerateObjectImplForTests(
-				makeGenerateObjectMockFromRawLLMOutput(shortRootCauseOutput) as never,
-			);
+		__setGenerateObjectImplForTests(
+			makeGenerateObjectMockFromRawLLMOutput(shortRootCauseOutput) as never,
+		);
 
-			const out = await diagnoseConversation(args);
-			expect(out.result.rootCause).toBe("Discovery falhou.");
-			expect(out.result.suggestedExamples).toHaveLength(1);
-		},
-		30_000,
-	);
+		const out = await diagnoseConversation(args);
+		expect(out.result.rootCause).toBe("Discovery falhou.");
+		expect(out.result.suggestedExamples).toHaveLength(1);
+	}, 30_000);
 
-	it(
-		"happy path com output válido → diagnose retorna result e tokens",
-		async () => {
-			const { args } = await setupRealConversation();
+	it("happy path com output válido → diagnose retorna result e tokens", async () => {
+		const { args } = await setupRealConversation();
 
-			const validOutput = {
-				rootCause:
-					"Turn 5 despejou explicação genérica de consórcio sem perguntar o que o cliente quer comprar — discovery falhou.",
-				suggestedExamples: [
-					{
-						whenExpertise: ["leigo"],
-						whenCategory: ["imovel"],
-						whenChannel: "whatsapp",
-						userMessage: "Tenho dúvidas",
-						assistantResponse:
-							"Claro! Pra te ajudar melhor, me conta: você está pensando em comprar um imóvel pra morar ou investir?",
-						rationale: "Discovery primeiro, explicação depois — corrige flag incompleteDiscovery.",
-					},
-				],
-				suggestedForbiddenTopics: [],
-				suggestedHandoffTriggers: [],
-			};
+		const validOutput = {
+			rootCause:
+				"Turn 5 despejou explicação genérica de consórcio sem perguntar o que o cliente quer comprar — discovery falhou.",
+			suggestedExamples: [
+				{
+					whenExpertise: ["leigo"],
+					whenCategory: ["imovel"],
+					whenChannel: "whatsapp",
+					userMessage: "Tenho dúvidas",
+					assistantResponse:
+						"Claro! Pra te ajudar melhor, me conta: você está pensando em comprar um imóvel pra morar ou investir?",
+					rationale: "Discovery primeiro, explicação depois — corrige flag incompleteDiscovery.",
+				},
+			],
+			suggestedForbiddenTopics: [],
+			suggestedHandoffTriggers: [],
+		};
 
-			__setGenerateObjectImplForTests(
-				makeGenerateObjectMockFromRawLLMOutput(validOutput) as never,
-			);
+		__setGenerateObjectImplForTests(makeGenerateObjectMockFromRawLLMOutput(validOutput) as never);
 
-			const out = await diagnoseConversation(args);
+		const out = await diagnoseConversation(args);
 
-			expect(out.result.rootCause).toMatch(/discovery/i);
-			expect(out.result.suggestedExamples).toHaveLength(1);
-			expect(out.result.suggestedExamples[0].whenExpertise).toEqual(["leigo"]);
-			expect(out.tokensInput).toBe(3000);
-			expect(out.tokensOutput).toBe(200);
-			expect(out.durationMs).toBeGreaterThanOrEqual(0);
-		},
-		30_000,
-	);
+		expect(out.result.rootCause).toMatch(/discovery/i);
+		expect(out.result.suggestedExamples).toHaveLength(1);
+		expect(out.result.suggestedExamples[0].whenExpertise).toEqual(["leigo"]);
+		expect(out.tokensInput).toBe(3000);
+		expect(out.tokensOutput).toBe(200);
+		expect(out.durationMs).toBeGreaterThanOrEqual(0);
+	}, 30_000);
 });

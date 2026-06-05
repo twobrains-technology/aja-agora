@@ -32,8 +32,7 @@ export async function POST(
 		return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
 	}
 
-	const messages =
-		(body as { messages?: unknown[] }).messages?.slice(-MAX_HISTORY) ?? [];
+	const messages = (body as { messages?: unknown[] }).messages?.slice(-MAX_HISTORY) ?? [];
 
 	const adminId = (auth.session?.user as { id?: string } | undefined)?.id;
 	const limit = rateLimit(`assist:${adminId ?? "unknown"}`);
@@ -48,10 +47,7 @@ export async function POST(
 	try {
 		persona = await getPersonaForAdmin(id);
 	} catch {
-		return NextResponse.json(
-			{ error: "Persona não encontrada" },
-			{ status: 404 },
-		);
+		return NextResponse.json({ error: "Persona não encontrada" }, { status: 404 });
 	}
 
 	const tools = buildAssistantTools({

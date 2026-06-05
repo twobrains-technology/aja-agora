@@ -27,10 +27,7 @@ const bodySchema = z.object({
 	advanceDays: z.number().int().positive().max(MAX_OFFSET_DAYS),
 });
 
-export async function POST(
-	req: NextRequest,
-	{ params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
 	if (!isSimulatorEnabled()) {
 		return new NextResponse("Not Found", { status: 404 });
 	}

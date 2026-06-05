@@ -4,11 +4,8 @@ import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import {
-	type DialLikelihood,
-	computeContemplationDial,
-} from "@/lib/consorcio/contemplation-dial";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
+import { computeContemplationDial, type DialLikelihood } from "@/lib/consorcio/contemplation-dial";
 
 // Simulador-agulha (viés de contemplação do Bernardo). A agulha aponta o mês-alvo;
 // arrastar pra mais cedo sobe o lance necessário. Recalcula client-side com a
@@ -67,7 +64,16 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 							animate={{ rotate: rotation }}
 							transition={{ type: "spring", stiffness: 120, damping: 14 }}
 						>
-							<line x1={100} y1={100} x2={100} y2={26} stroke="currentColor" strokeWidth={3} strokeLinecap="round" className="text-primary" />
+							<line
+								x1={100}
+								y1={100}
+								x2={100}
+								y2={26}
+								stroke="currentColor"
+								strokeWidth={3}
+								strokeLinecap="round"
+								className="text-primary"
+							/>
 						</motion.g>
 						<circle cx={100} cy={100} r={6} className="fill-primary" />
 					</svg>
@@ -99,8 +105,8 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				<div className="rounded-lg bg-muted/40 p-3 space-y-1.5 text-sm">
 					{r.mode === "sorteio" ? (
 						<p className="text-xs text-muted-foreground">
-							Nesse prazo, a contemplação vem mais pelo <strong>sorteio</strong> — lance é
-							opcional e a parcela fica menor.
+							Nesse prazo, a contemplação vem mais pelo <strong>sorteio</strong> — lance é opcional
+							e a parcela fica menor.
 						</p>
 					) : (
 						<>

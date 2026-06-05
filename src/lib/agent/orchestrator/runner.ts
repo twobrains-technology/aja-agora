@@ -9,13 +9,14 @@ import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agen
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
+import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
-import { loadIdentity } from "@/lib/conversation/identity";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
+import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
@@ -89,6 +90,10 @@ export async function* runAgentTurn(args: {
 
 	let fullResponse = "";
 	const artifacts: ProducedArtifact[] = [];
+	// FIX-7: tamanho da descoberta DESTE turno (tool-results de search/recommend).
+	// Com opção única, o recommendation_card é suprimido — o detalhamento
+	// (simulation_result) é o card único, sem duplicar o mesmo grupo na tela.
+	let discoveryCount: number | null = null;
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -138,6 +143,13 @@ export async function* runAgentTurn(args: {
 				fullResponse += part.text;
 				yield { type: "text-delta", text: part.text };
 				break;
+			case "tool-result": {
+				// FIX-7: conta as opções retornadas pela descoberta (single-option
+				// guard). Tools fora da descoberta retornam null e não interferem.
+				const count = extractDiscoveryCount(part.toolName, (part as { output?: unknown }).output);
+				if (count !== null) discoveryCount = count;
+				break;
+			}
 			case "tool-call": {
 				const toolName = part.toolName;
 				const input = part.input as Record<string, unknown>;
@@ -178,8 +190,11 @@ export async function* runAgentTurn(args: {
 					// BUG-POS-FECHAMENTO-NAO-TERMINAL (E2E real 2026-06-04): pós-Parabéns
 					// (contractClosed) um afirmativo fazia o agente re-apresentar o
 					// contract_form e "contratar" outra administradora. Estado terminal.
-					const isContractDup =
-						meta.contractClosed === true && artifactType === "contract_form";
+					const isContractDup = meta.contractClosed === true && artifactType === "contract_form";
+					// FIX-7 (single-option guard): descoberta retornou opção ÚNICA →
+					// recommendation_card duplicaria o grupo do detalhamento. Suprime;
+					// o simulation_result vira o card único do reveal.
+					const isSingleOptionDup = artifactType === "recommendation_card" && discoveryCount === 1;
 					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
 						console.log(
 							`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
@@ -187,6 +202,10 @@ export async function* runAgentTurn(args: {
 					} else if (isRereveal || isDecisionDup || isContractDup) {
 						console.log(
 							`[reveal-loop] guard: suprimindo ${artifactType} re-emitido pós-reveal (conv=${conversationId}, intent=${userIntent})`,
+						);
+					} else if (isSingleOptionDup) {
+						console.log(
+							`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
 						);
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta

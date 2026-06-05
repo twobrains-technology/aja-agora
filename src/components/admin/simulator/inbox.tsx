@@ -112,11 +112,7 @@ export function SimulatorInbox({ channel, selectedId, onSelect }: SimulatorInbox
 					disabled={creating}
 					size="sm"
 				>
-					{creating ? (
-						<Loader2 className="size-4 animate-spin" />
-					) : (
-						<PlusIcon className="size-4" />
-					)}
+					{creating ? <Loader2 className="size-4 animate-spin" /> : <PlusIcon className="size-4" />}
 					Nova conversa
 				</Button>
 				<div className="flex gap-1 rounded-md border bg-muted/40 p-0.5 text-xs">
@@ -127,7 +123,9 @@ export function SimulatorInbox({ channel, selectedId, onSelect }: SimulatorInbox
 							onClick={() => setScope(s)}
 							className={cn(
 								"flex-1 rounded px-2 py-1 transition-colors",
-								scope === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+								scope === s
+									? "bg-background shadow-sm"
+									: "text-muted-foreground hover:text-foreground",
 							)}
 						>
 							{s === "all" ? "Todas" : "Minhas"}

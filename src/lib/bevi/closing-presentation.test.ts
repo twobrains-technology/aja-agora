@@ -75,7 +75,9 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 	});
 
 	it('fechamento literal do docx: "Parabéns! Agora você está oficialmente mais perto da sua conquista!"', () => {
-		expect(allText).toContain("Parabéns! Agora você está oficialmente mais perto da sua conquista!");
+		expect(allText).toContain(
+			"Parabéns! Agora você está oficialmente mais perto da sua conquista!",
+		);
 	});
 
 	it("emite signature_handoff com o link de assinatura e document_upload opcional", () => {

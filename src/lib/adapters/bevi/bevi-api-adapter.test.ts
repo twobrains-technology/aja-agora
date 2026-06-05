@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BeviApiAdapter, loadBeviConfigFromEnv } from "./bevi-api-adapter";
-import { MinCreditError, OngoingProposalError } from "./bevi-errors";
 import err400 from "./__fixtures__/err-400-valor.json";
 import err409 from "./__fixtures__/err-409-ongoing.json";
 import okChoose from "./__fixtures__/ok-choose.json";
@@ -9,6 +7,8 @@ import okInsert from "./__fixtures__/ok-insert.json";
 import okSegments from "./__fixtures__/ok-segments.json";
 import okSimulation from "./__fixtures__/ok-simulation.json";
 import okStatus from "./__fixtures__/ok-status.json";
+import { BeviApiAdapter, loadBeviConfigFromEnv } from "./bevi-api-adapter";
+import { MinCreditError, OngoingProposalError } from "./bevi-errors";
 
 const CONFIG = {
 	baseUrl: "https://api.test/services",
@@ -84,8 +84,7 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 		globalThis.fetch = fetchMock as typeof fetch;
 		return fetchMock;
 	}
-	const lastBody = (): Record<string, unknown> =>
-		JSON.parse(calls.at(-1)?.init.body as string);
+	const lastBody = (): Record<string, unknown> => JSON.parse(calls.at(-1)?.init.body as string);
 	const header = (name: string): string | undefined =>
 		(calls.at(-1)?.init.headers as Record<string, string>)[name];
 
@@ -142,7 +141,13 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 	});
 
 	it("simulate: 404 transitório → retry → sucesso (spec §4.3)", async () => {
-		const transient404 = { status: "NOT_FOUND", code: 404, success: false, message: "transit", data: {} };
+		const transient404 = {
+			status: "NOT_FOUND",
+			code: 404,
+			success: false,
+			message: "transit",
+			data: {},
+		};
 		const fetchMock = mockFetchSequence(transient404, okSimulation);
 		const r = await new BeviApiAdapter(CONFIG).simulate({
 			proposalId: "P1",
@@ -179,7 +184,12 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 	it("409 real → OngoingProposalError com ongoingProposalIds", async () => {
 		mockFetchSequence(err409);
 		const err = await new BeviApiAdapter(CONFIG)
-			.createProposal({ cpf: "12345678909", celular: "11999998888", termoLgpd: true, consultaDados: true })
+			.createProposal({
+				cpf: "12345678909",
+				celular: "11999998888",
+				termoLgpd: true,
+				consultaDados: true,
+			})
 			.catch((e) => e);
 		expect(err).toBeInstanceOf(OngoingProposalError);
 		expect((err as OngoingProposalError).ongoingProposalIds.length).toBeGreaterThan(0);

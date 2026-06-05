@@ -31,9 +31,7 @@ export function Scenarios({ payload }: { payload: ScenariosPayload }) {
 						>
 							<div className="flex items-baseline justify-between">
 								<p className="text-sm font-semibold">{label}</p>
-								<p className="text-xs text-muted-foreground">
-									~{s.expectedTermMonths} meses
-								</p>
+								<p className="text-xs text-muted-foreground">~{s.expectedTermMonths} meses</p>
 							</div>
 							<p className="text-sm mt-1">{s.strategy}</p>
 							{s.lanceValue > 0 && (

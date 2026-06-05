@@ -84,11 +84,9 @@ export const updatePersonaSchema = z
 		 */
 		expectedVersion: z.number().int().nonnegative().optional(),
 	})
-	.refine(
-		(data) =>
-			Object.keys(data).filter((k) => k !== "expectedVersion").length > 0,
-		{ message: "Pelo menos um campo precisa ser informado" },
-	);
+	.refine((data) => Object.keys(data).filter((k) => k !== "expectedVersion").length > 0, {
+		message: "Pelo menos um campo precisa ser informado",
+	});
 
 export const createPersonaSchema = z.object({
 	displayName: z.string().min(1, "Nome obrigatório").max(50),

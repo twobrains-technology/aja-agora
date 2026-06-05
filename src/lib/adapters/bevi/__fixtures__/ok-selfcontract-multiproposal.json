@@ -1,14 +1,14 @@
 [
- {
-  "proposalId": "6a1756f6aaaa",
-  "hashId": "6a1756d4bef180c41e909c07",
-  "status": {
-   "name": "Aguardando inserção da proposta",
-   "systemicValue": "waitingForUniqueCode",
-   "situation": "pending"
-  },
-  "proposalNumber": 24165747,
-  "createdAt": "2026-05-27T17:41:26Z",
-  "redirect": true
- }
+	{
+		"proposalId": "6a1756f6aaaa",
+		"hashId": "6a1756d4bef180c41e909c07",
+		"status": {
+			"name": "Aguardando inserção da proposta",
+			"systemicValue": "waitingForUniqueCode",
+			"situation": "pending"
+		},
+		"proposalNumber": 24165747,
+		"createdAt": "2026-05-27T17:41:26Z",
+		"redirect": true
+	}
 ]

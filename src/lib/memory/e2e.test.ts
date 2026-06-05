@@ -14,10 +14,9 @@ import { randomBytes } from "node:crypto";
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
+import { LettaMemoryAdapter } from "./letta-adapter";
 import { lettaFetch, resetLettaBaseUrlCache } from "./letta-client";
 import type { UserIdentity } from "./types";
-import { LettaMemoryAdapter } from "./letta-adapter";
 
 const HAS_E2E = Boolean(process.env.E2E_BASE_URL);
 const HAS_DB = Boolean(process.env.DATABASE_URL);
@@ -51,9 +50,7 @@ async function chatFetch(opts: {
 	}
 	const body = {
 		conversationId: opts.conversationId ?? undefined,
-		messages: [
-			{ id: randomBytes(4).toString("hex"), role: "user", content: opts.userText },
-		],
+		messages: [{ id: randomBytes(4).toString("hex"), role: "user", content: opts.userText }],
 	};
 	const res = await fetch(`${E2E_BASE_URL}/api/chat`, {
 		method: "POST",
