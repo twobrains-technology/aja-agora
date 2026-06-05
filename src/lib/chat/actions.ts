@@ -68,5 +68,12 @@ export type ChatAction =
 			filename: string;
 			mimeType: string;
 	  }
+	// FIX-10: conclusão EXPLÍCITA do envio de documentos (os uploads em si
+	// sobem silenciosos via /api/chat/document — sem turno de chat por slot).
+	| {
+			kind: "documents-done";
+			sentSlots: Array<"identidade_frente" | "identidade_verso" | "comprovante_endereco">;
+			label?: string;
+	  }
 	// Documentos são opcionais — usuário opta por pular.
 	| { kind: "document-skip"; label?: string };

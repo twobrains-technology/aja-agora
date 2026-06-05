@@ -476,6 +476,30 @@ export async function POST(req: NextRequest) {
 						return;
 					}
 
+					// FIX-10: conclusão explícita do envio de documentos — copy reflete
+					// o que de fato subiu (uploads são silenciosos via /api/chat/document).
+					if (body.action?.kind === "documents-done") {
+						const sent = new Set(body.action.sentSlots ?? []);
+						const hasFrente = sent.has("identidade_frente");
+						const hasVerso = sent.has("identidade_verso");
+						const textId = crypto.randomUUID();
+						writer.write({ type: "text-start", id: textId });
+						writer.write({
+							type: "text-delta",
+							id: textId,
+							delta:
+								hasFrente && hasVerso
+									? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									: hasFrente
+										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
+										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
+						});
+						writer.write({ type: "text-end", id: textId });
+						return;
+					}
+
+					// Caminho LEGADO (upload via turno de chat) — mantido por
+					// robustez/compat; o componente web usa /api/chat/document.
 					if (body.action?.kind === "document-upload") {
 						const action = body.action;
 						const textId = crypto.randomUUID();

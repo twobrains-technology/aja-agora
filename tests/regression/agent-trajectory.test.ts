@@ -2983,3 +2983,37 @@ describe("FIX-9-CONTRACT-FORM-PREFILL — identidade coletada não se pede duas 
 		expect(comp).toMatch(/identityOnFile/);
 	});
 });
+
+// ============================================================================
+// FIX-10 (teste manual Kairo 2026-06-05) — upload de 1 slot já postava
+// "Enviei meu documento" e o bot respondia antes do verso
+// ----------------------------------------------------------------------------
+// Real (print): Kairo subiu SÓ a frente da CNH → o componente auto-enviou a
+// mensagem e o agente respondeu "ficha completa" — sem chance do verso.
+// Fix: slot sobe silencioso via endpoint dedicado (/api/chat/document);
+// conclusão explícita via action documents-done (botão "Pronto, enviei tudo"
+// ou automática com frente+verso). Copy do route reflete o que foi enviado.
+//
+// Defesa detalhada: src/components/chat/artifacts/document-upload.test.tsx.
+// ============================================================================
+
+describe("FIX-10-UPLOAD-SEM-AUTO-SEND — estrutura do fluxo de documentos", () => {
+	it("componente NÃO manda 'Enviei meu documento' por slot (sendAction só em documents-done/skip)", () => {
+		const src = readSource("src/components/chat/artifacts/document-upload.tsx");
+		expect(src).not.toMatch(/sendAction\([\s\S]{0,200}"Enviei meu documento"/);
+		expect(src).toMatch(/documents-done/);
+		expect(src).toMatch(/\/api\/chat\/document/);
+	});
+
+	it("route trata documents-done com copy sensível ao que foi enviado", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		expect(src).toMatch(/documents-done/);
+		// faltou o verso → pede gentilmente, sem bloquear (docs são opcionais)
+		expect(src).toMatch(/verso/i);
+	});
+
+	it("endpoint dedicado de upload existe e usa uploadContractDocument", () => {
+		const src = readSource("src/app/api/chat/document/route.ts");
+		expect(src).toMatch(/uploadContractDocument/);
+	});
+});

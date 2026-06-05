@@ -8,8 +8,13 @@ import { useChatContext } from "@/lib/chat/provider";
 import type { DocumentUploadPayload } from "@/lib/chat/types";
 
 // Upload de documento direto no chat (sem redirect) — é AQUI que a ficha termina.
-// O arquivo vai em base64 via action document-upload; o servidor manda pro portal
-// CONEXIA (POC). Documentos são opcionais → oferece "pular".
+//
+// FIX-10 (teste manual Kairo 2026-06-05): cada slot sobe SILENCIOSO via
+// endpoint dedicado (/api/chat/document) — nada de "Enviei meu documento" a
+// cada arquivo. A conclusão é EXPLÍCITA: botão "Pronto, enviei tudo" (action
+// documents-done) ou automática quando frente E verso completam. Antes, subir
+// só a frente já disparava a mensagem e o bot respondia "ficha completa" sem
+// dar tempo do verso. Documentos são opcionais → oferece "pular".
 
 type Slot = "identidade_frente" | "identidade_verso";
 
@@ -30,27 +35,70 @@ function fileToBase64(file: File): Promise<string> {
 	});
 }
 
+type SlotState = { ok: boolean; fallbackLink?: string | null };
+
 export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) {
-	const { sendAction, status } = useChatContext();
+	const { conversationId, sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
-	const [sent, setSent] = useState<Record<string, boolean>>({});
+	const [sent, setSent] = useState<Record<string, SlotState>>({});
 	const [busy, setBusy] = useState<string | null>(null);
+	const [finished, setFinished] = useState(false);
 	const inputs = useRef<Record<string, HTMLInputElement | null>>({});
+	// Guard síncrono anti-duplo-disparo da conclusão (mesmo racional do EC-7
+	// no contract-form: state só atualiza no próximo render).
+	const finishedRef = useRef(false);
+
+	const finish = (slots: Record<string, SlotState>) => {
+		if (finishedRef.current) return;
+		const sentSlots = SLOTS.filter(({ slot }) => slots[slot]?.ok).map(({ slot }) => slot);
+		if (sentSlots.length === 0) return;
+		finishedRef.current = true;
+		setFinished(true);
+		void sendAction(
+			{ kind: "documents-done", sentSlots },
+			"Enviei meus documentos",
+		);
+	};
 
 	const onPick = async (slot: Slot, file: File | undefined) => {
 		if (!file) return;
 		setBusy(slot);
 		try {
 			const fileBase64 = await fileToBase64(file);
-			await sendAction(
-				{ kind: "document-upload", slot, fileBase64, filename: file.name, mimeType: file.type || "image/jpeg" },
-				"Enviei meu documento",
-			);
-			setSent((s) => ({ ...s, [slot]: true }));
+			// Upload SILENCIOSO — sem turno de chat, sem mensagem fantasma.
+			const res = await fetch("/api/chat/document", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					conversationId,
+					slot,
+					fileBase64,
+					filename: file.name,
+					mimeType: file.type || "image/jpeg",
+				}),
+			});
+			const data = (await res.json().catch(() => ({ ok: false }))) as {
+				ok?: boolean;
+				fallbackLink?: string | null;
+			};
+			setSent((s) => {
+				const next: Record<string, SlotState> = {
+					...s,
+					[slot]: { ok: data.ok === true, fallbackLink: data.fallbackLink ?? null },
+				};
+				// Frente E verso completos → conclusão automática (uma mensagem só).
+				if (SLOTS.every(({ slot: sl }) => next[sl]?.ok)) finish(next);
+				return next;
+			});
 		} finally {
 			setBusy(null);
 		}
 	};
+
+	const anySent = SLOTS.some(({ slot }) => sent[slot]?.ok);
+	const fallbackLinks = SLOTS.map(({ slot }) => sent[slot]?.fallbackLink).filter(
+		(l): l is string => typeof l === "string" && l.length > 0,
+	);
 
 	return (
 		<Card className="w-full max-w-sm">
@@ -76,27 +124,54 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 							/>
 							<Button
 								type="button"
-								variant={sent[slot] ? "secondary" : "outline"}
+								variant={sent[slot]?.ok ? "secondary" : "outline"}
 								size="sm"
 								className="w-full justify-start gap-2 min-h-[44px]"
 								onClick={() => inputs.current[slot]?.click()}
-								disabled={isStreaming || busy === slot}
+								disabled={isStreaming || busy === slot || finished}
 								data-testid={`doc-upload-${slot}`}
 							>
 								{busy === slot ? (
 									<Loader2 className="size-4 animate-spin" />
-								) : sent[slot] ? (
+								) : sent[slot]?.ok ? (
 									<Check className="size-4 text-primary" />
 								) : (
 									<Upload className="size-4" />
 								)}
-								{sent[slot] ? `${label} — enviado` : label}
+								{sent[slot]?.ok ? `${label} — enviado` : label}
 							</Button>
 						</div>
 					))}
 				</div>
 
-				{payload.optional ? (
+				{fallbackLinks.length > 0 ? (
+					<p className="text-xs text-muted-foreground">
+						Não consegui anexar por aqui — finalize neste link:{" "}
+						<a
+							href={fallbackLinks[0]}
+							target="_blank"
+							rel="noreferrer"
+							className="underline underline-offset-2"
+						>
+							{fallbackLinks[0]}
+						</a>
+					</p>
+				) : null}
+
+				{anySent && !finished ? (
+					<Button
+						type="button"
+						size="sm"
+						className="w-full min-h-[44px]"
+						onClick={() => finish(sent)}
+						disabled={isStreaming}
+						data-testid="doc-done"
+					>
+						Pronto, enviei tudo
+					</Button>
+				) : null}
+
+				{payload.optional && !finished ? (
 					<Button
 						type="button"
 						variant="ghost"
