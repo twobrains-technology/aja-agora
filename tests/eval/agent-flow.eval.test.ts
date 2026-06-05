@@ -996,3 +996,66 @@ describeIfKey("EVAL-FIX-11 — pós-fechamento responde status do estado, sem re
 		expect(text).not.toMatch(/BANCO DO BRASIL/i);
 	});
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX-12 — contract_form sequestrou o identify (rodada 2026-06-05 tarde)
+// Bug real: fim da qualificação → modelo chamou present_contract_form (passo
+// 5) no lugar do gate identify do servidor → proposta REAL na Bevi sem o
+// usuário ver UMA opção. Rubric: a jornada NUNCA cria proposta antes do
+// reveal; o card de contratação NUNCA aparece pré-reveal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-12 — fim da qualificação NUNCA vira fechamento", () => {
+	let convId: string;
+	let endTurn: Turn | null = null;
+
+	beforeAll(async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "moto",
+					currentCategory: "moto",
+					expertiseLevel: "neutro",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					qualifyAnswers: {
+						creditMin: 35000,
+						creditMax: 40000,
+						monthlyBudget: 800,
+						prazoMeses: 8,
+						hasLance: "no",
+						lanceEmbutido: false,
+					},
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+
+		// Fim do passo 2 — o turno exato em que o bug disparou.
+		endTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: "Fechado, pode buscar as opções pra mim!",
+			isUserTurn: true,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("NENHUM contract_form pré-reveal (o card do bug era o de contratação)", () => {
+		const types = (endTurn?.artifacts ?? []).map((a) => a.type);
+		expect(types).not.toContain("contract_form");
+	});
+
+	it("NENHUMA proposta criada na conversa antes do reveal (invariante da jornada canônica)", async () => {
+		const { beviProposals } = await import("@/db/schema");
+		const rows = await db
+			.select({ id: beviProposals.id })
+			.from(beviProposals)
+			.where(eq(beviProposals.conversationId, convId));
+		expect(rows).toHaveLength(0);
+	});
+});

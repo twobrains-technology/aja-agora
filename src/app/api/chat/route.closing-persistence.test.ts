@@ -263,3 +263,82 @@ describe("FIX-11 — handlers do fechamento persistem a mensagem assistant", () 
 		);
 	});
 });
+
+describe("FIX-12 — defesa em profundidade: contract-submit pré-reveal NÃO cria proposta", () => {
+	let convId: string;
+
+	beforeEach(async () => {
+		// Fim do passo 2: qualify completo, NENHUM reveal — o estado exato em
+		// que o bug real criou proposta na Bevi sem o usuário ver UMA opção.
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "moto",
+					currentCategory: "moto",
+					expertiseLevel: "neutro",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					qualifyAnswers: { creditMax: 40000, monthlyBudget: 800, prazoMeses: 8, hasLance: "no" },
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		fulfillmentRef.startContract.mockReset();
+	});
+
+	afterEach(async () => {
+		await cleanup(convId);
+	});
+
+	it("sem revealCompleted: startContract NUNCA é chamado (proposta real + bureau a um clique de distância)", async () => {
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"Continuar com segurança",
+		);
+
+		expect(
+			fulfillmentRef.startContract,
+			"contract-submit pré-reveal criou proposta REAL na Bevi — a defesa do route (FIX-12) tem " +
+				"que bloquear: decisão crítica não pode ficar a um tool-call/POST de distância sem o " +
+				"servidor validar a ordem da jornada (identify → busca → reveal → decisão → passo 5)",
+		).not.toHaveBeenCalled();
+	});
+
+	it("recusa é comunicada e PERSISTIDA (não vira ghost no histórico — regra do FIX-11)", async () => {
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"Continuar com segurança",
+		);
+
+		const assistants = await assistantMessages(convId);
+		expect(assistants.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("com revealCompleted: startContract roda normal (fechamento legítimo não regrediu)", async () => {
+		await db
+			.update(conversations)
+			.set({
+				metadata: {
+					...CLOSED_META,
+				},
+			})
+			.where(eq(conversations.id, convId));
+		fulfillmentRef.startContract.mockResolvedValue({
+			proposalId: "prop-ok",
+			offer: REAL_OFFER,
+			noOffer: false,
+		});
+
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"Continuar com segurança",
+		);
+
+		expect(fulfillmentRef.startContract).toHaveBeenCalledTimes(1);
+	});
+});

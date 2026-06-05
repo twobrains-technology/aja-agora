@@ -27,6 +27,7 @@ import {
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { nextGate } from "@/lib/agent/qualify-state";
 import {
 	type ClosingItem,
 	closingPresentation,
@@ -436,6 +437,27 @@ export async function POST(req: NextRequest) {
 
 					// ── Passo 5 "Contratar" (fechamento Bevi) ──
 					if (body.action?.kind === "contract-submit") {
+						// FIX-12 (defesa em profundidade): sem reveal, NUNCA criar proposta
+						// real — o guard do runner já suprime o contract_form pré-reveal,
+						// mas o POST continua acessível (form antigo na tela, API direta).
+						// Criar proposta na Bevi = CPF + consulta de bureau; a ordem da
+						// jornada (identify → busca → reveal → decisão → passo 5) é
+						// validada AQUI pelo estado do servidor, não pelo modelo.
+						const freshMeta = await reloadMeta(conversationId);
+						if (freshMeta.revealCompleted !== true) {
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								"Calma, a gente tá quase lá! Antes de fechar qualquer coisa eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
+							);
+							await pipeGatePrompt({
+								conversationId,
+								gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
+								writer,
+							});
+							return;
+						}
 						const q = meta.qualifyAnswers ?? {};
 						const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
 						const valor = q.creditMax ?? q.creditMin ?? 50000;

@@ -3227,3 +3227,77 @@ describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda des
 		expect(src.toLowerCase()).toMatch(/outra administradora/);
 	});
 });
+
+// ============================================================================
+// FIX-12 — CONTRACT-FORM SEQUESTRA IDENTIFY (rodada 2026-06-05, prints 27-32)
+// ----------------------------------------------------------------------------
+// Real: no fim da qualificacao (gate identify, D1), a narrativa estava CERTA
+// ("o sistema precisa da sua identidade pra liberar as simulacoes reais") mas
+// o card apresentado foi "Vamos fechar sua proposta" = present_contract_form,
+// o formulario de CONTRATACAO do passo 5. Submit → proposta REAL na Bevi (CPF
+// + bureau) sem o usuario ter visto UMA opcao. Reveal/decisao nunca rolaram.
+//
+// Root cause: ambos os cards coletam CPF+celular+LGPD e a narrativa e quase
+// identica → o modelo confundiu. A descricao da tool ("use SO depois que o
+// usuario escolheu contratar") era instrucao, nao defesa — zero guard
+// server-side validando a ordem da jornada.
+//
+// Defesas (cada uma com teste proprio):
+//  - guard isPrematureContract no runner (revealCompleted !== true → suprime;
+//    integracao: runner.contract-guard.integration.test.ts)
+//  - prompt: coleta de identidade pre-busca e gate do SERVIDOR, nunca tool
+//  - defesa no route: contract-submit pre-reveal nao chama startContract
+//    (integracao: route.closing-persistence.test.ts)
+// ============================================================================
+
+describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do identify", () => {
+	const NARRATIVA_IDENTIFY_REAL =
+		"Deixa eu puxar as melhores opções pra você. Pra eu conseguir buscar as opções reais de grupo, o sistema precisa da sua identidade pra liberar as simulações reais. É só CPF e celular, bem rápido:";
+
+	it("cassette: narrativa do identify seguida da tool ERRADA (present_contract_form)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", NARRATIVA_IDENTIFY_REAL),
+			toolCallChunk("tc-1", "present_contract_form", { administradora: "CANOPUS" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(text).toBe(NARRATIVA_IDENTIFY_REAL);
+		// O bug em uma linha: pediu identidade (gate do servidor) mas chamou a
+		// tool de CONTRATACAO — que cria proposta real com consulta de bureau.
+		expect(toolCalls.map((t) => t.toolName)).toEqual(["present_contract_form"]);
+	});
+
+	it("guard A no runner: contract_form e suprimido enquanto nao houver reveal", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		const guard =
+			/revealCompleted\s*!==?\s*true[\s\S]{0,200}contract_form|contract_form[\s\S]{0,200}revealCompleted\s*!==?\s*true/;
+		expect(
+			guard.test(src),
+			"runner.ts precisa do guard isPrematureContract: contract_form so passa com revealCompleted (FIX-12)",
+		).toBe(true);
+	});
+
+	it("defesa C no route: contract-submit pre-reveal nao chama startContract", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		const defense = /contract-submit[\s\S]{0,1500}revealCompleted/;
+		expect(
+			defense.test(src),
+			"route.ts precisa validar revealCompleted ANTES de startContract (FIX-12 defesa em profundidade)",
+		).toBe(true);
+	});
+
+	it("prompt B: distingue coleta de identidade (gate do SERVIDOR) de fechamento (tool pos-decisao)", () => {
+		// A regra tem que existir no prompt estavel: identidade pre-busca NUNCA
+		// e present_contract_form — o sistema apresenta o card de identidade.
+		const rule =
+			/identidade[\s\S]{0,400}(servidor|sistema)[\s\S]{0,400}present_contract_form|present_contract_form[\s\S]{0,600}identidade/i;
+		expect(
+			rule.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa distinguir gate identify (servidor apresenta) de present_contract_form (so pos-decisao)",
+		).toBe(true);
+		// E a proibicao explicita do cenario do bug:
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/NUNCA[\s\S]{0,200}present_contract_form[\s\S]{0,200}(identidade|identify|coletar)/i,
+		);
+	});
+});

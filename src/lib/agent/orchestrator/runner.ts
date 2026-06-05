@@ -209,6 +209,17 @@ export async function* runAgentTurn(args: {
 					// recommendation_card duplicaria o grupo do detalhamento. Suprime;
 					// o simulation_result vira o card único do reveal.
 					const isSingleOptionDup = artifactType === "recommendation_card" && discoveryCount === 1;
+					// FIX-12 (rodada 2026-06-05 tarde): no momento do gate identify o
+					// modelo chamou present_contract_form (passo 5) — narrativa de
+					// identidade quase idêntica, ambos os cards coletam CPF+celular+LGPD.
+					// Submit criou proposta REAL na Bevi (CPF + bureau) sem o usuário ter
+					// visto UMA opção. A descrição da tool era instrução, não defesa:
+					// contract_form SÓ passa com reveal feito (revealCompleted) — antes
+					// disso, identidade é assunto do gate identify do SERVIDOR. Com o
+					// artifact suprimido o turno fica sem artifact e a avaliação de gates
+					// abaixo reconduz ao identify naturalmente.
+					const isPrematureContract =
+						artifactType === "contract_form" && meta.revealCompleted !== true;
 					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
 						console.log(
 							`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
@@ -216,6 +227,10 @@ export async function* runAgentTurn(args: {
 					} else if (isPostClosure) {
 						console.log(
 							`[post-closure] guard: suprimindo ${artifactType} pós-fechamento — estado terminal (conv=${conversationId}, intent=${userIntent})`,
+						);
+					} else if (isPrematureContract) {
+						console.log(
+							`[contract-gate] guard: suprimindo contract_form PRÉ-reveal — identidade é assunto do gate identify (conv=${conversationId}, intent=${userIntent})`,
 						);
 					} else if (isRereveal || isDecisionDup || isContractDup) {
 						console.log(
