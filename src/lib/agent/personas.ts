@@ -84,6 +84,17 @@ export type ConversationMetadata = {
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */
 	recommendedAdministradora?: string;
+	/** FIX-6: snapshot dos NÚMEROS da oferta ativa (capturado no reveal e
+	 * atualizado em what-if). O payload do contemplation_dial é coagido
+	 * server-side a partir daqui (coerceDialPayload) — o modelo passava o
+	 * crédito do slider e o dial contradizia a oferta na tela. */
+	recommendedOffer?: {
+		administradora?: string;
+		category?: Category;
+		creditValue: number;
+		termMonths: number;
+		monthlyPayment: number;
+	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
 	contractSummaryPending?: boolean;

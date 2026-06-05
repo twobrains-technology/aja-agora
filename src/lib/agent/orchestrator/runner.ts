@@ -13,6 +13,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
@@ -186,11 +187,24 @@ export async function* runAgentTurn(args: {
 							`[reveal-loop] guard: suprimindo ${artifactType} re-emitido pós-reveal (conv=${conversationId}, intent=${userIntent})`,
 						);
 					} else {
+						// FIX-6: o dial NUNCA mostra números divergentes da oferta
+						// ativa — coage payload com o snapshot do reveal (ou com o
+						// âncora emitido neste mesmo turno, se houver).
+						let payload = input;
+						if (artifactType === "contemplation_dial") {
+							const turnAnchor =
+								artifacts.find((a) => a.type === "simulation_result") ??
+								artifacts.find((a) => a.type === "recommendation_card") ??
+								artifacts.find((a) => a.type === "group_card");
+							const snapshot =
+								offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer;
+							payload = coerceDialPayload(input, snapshot);
+						}
 						artifacts.push({
 							type: artifactType,
-							payload: input,
+							payload,
 						});
-						yield { type: "artifact", artifactType, payload: input, toolCallId };
+						yield { type: "artifact", artifactType, payload, toolCallId };
 					}
 				}
 
@@ -336,6 +350,8 @@ export async function* runAgentTurn(args: {
 			typeof anchor?.payload?.administradora === "string"
 				? anchor.payload.administradora
 				: refreshed.recommendedAdministradora;
+		// FIX-6: snapshot dos números da oferta âncora — fonte única do dial.
+		const offerSnapshot = offerSnapshotFromArtifact(anchor?.payload);
 		await persistMeta(conversationId, {
 			...refreshed,
 			revealCompleted: true,
@@ -344,7 +360,19 @@ export async function* runAgentTurn(args: {
 			// re-disparar OUTRO reveal — trata o que já apareceu como "a busca".
 			searchDispatched: true,
 			recommendedAdministradora: administradora,
+			...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
 		});
+	}
+
+	// FIX-6 (what-if): re-simulação legítima atualiza o snapshot da oferta —
+	// o dial sempre acompanha o ÚLTIMO detalhamento que o usuário viu.
+	if (meta.revealCompleted) {
+		const newSim = artifacts.find((a) => a.type === "simulation_result");
+		const snap = offerSnapshotFromArtifact(newSim?.payload);
+		if (snap) {
+			const refreshed = await reloadMeta(conversationId);
+			await persistMeta(conversationId, { ...refreshed, recommendedOffer: snap });
+		}
 	}
 
 	// BUG-REVEAL-LOOP (hardening): marca decisionDispatched quando o card de decisão

@@ -2894,3 +2894,51 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 		expect(cfg).not.toMatch(/Não, lance com recursos próprios/);
 	});
 });
+
+// ============================================================================
+// FIX-6 (teste manual Kairo 2026-06-05) — dial do Bernardo com números do
+// SLIDER em vez da oferta real confirmada
+// ----------------------------------------------------------------------------
+// Real (print): logo abaixo da simulação CANOPUS R$ 35.000 / R$ 475,93 / 96m,
+// o dial mostrava "crédito que você recebe R$ 17.600 / parcela R$ 419 / 51
+// meses" — o MODELO montou o payload com o crédito do slider da qualificação
+// (R$ 20k − 12% embutido = 17.600). Números contraditórios lado a lado.
+//
+// Fix: payload do contemplation_dial é COAGIDO server-side
+// (coerceDialPayload) com o snapshot da oferta ativa (meta.recommendedOffer,
+// capturado no reveal). O modelo só controla a interação (mês-alvo etc.).
+//
+// Defesa estrutural detalhada: src/lib/agent/orchestrator/dial-payload.test.ts.
+// ============================================================================
+
+describe("FIX-6-DIAL-NUMEROS-DA-OFERTA — payload do dial não pode divergir da oferta ativa", () => {
+	it("cassette: input do modelo com números do slider é corrigido pro snapshot CANOPUS", async () => {
+		const { coerceDialPayload } = await import("@/lib/agent/orchestrator/dial-payload");
+		// Exatamente o que o modelo fez no bug: carta do slider (20k), prazo heurístico.
+		const modelInput = {
+			administradora: "CANOPUS",
+			category: "moto",
+			creditValue: 20_000,
+			termMonths: 51,
+			monthlyPayment: 500,
+			initialTargetMonth: 6,
+		};
+		const snapshot = {
+			administradora: "CANOPUS",
+			category: "moto" as const,
+			creditValue: 35_000,
+			termMonths: 96,
+			monthlyPayment: 475.93,
+		};
+		const out = coerceDialPayload(modelInput, snapshot);
+		expect(out.creditValue).toBe(35_000);
+		expect(out.monthlyPayment).toBe(475.93);
+		expect(out.termMonths).toBe(96);
+	});
+
+	it("estrutural: runner captura recommendedOffer no reveal e coage o dial", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toMatch(/recommendedOffer/);
+		expect(src).toMatch(/coerceDialPayload/);
+	});
+});
