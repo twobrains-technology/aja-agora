@@ -1,4 +1,8 @@
-# Correções — rodada de testes manuais do Kairo (2026-06-05)
+# ATA — rodada de testes manuais do Kairo (2026-06-05, manhã)
+
+> **Controle vivo migrou pro fluxo TODO → DONE** ([`README.md`](./README.md)):
+> cada fix desta rodada tem arquivo próprio em [`done/`](./done/) com o commit da
+> execução. Este arquivo permanece como ata da sessão (citações, decisões, status-log).
 
 > Fila de correções apontadas pelo Kairo testando a jornada em tela
 > (ambiente local, branch `feat/jornada-bevi-lance-embutido`, app em

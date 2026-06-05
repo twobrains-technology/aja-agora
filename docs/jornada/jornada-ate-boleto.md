@@ -169,8 +169,8 @@ Consultadas TODAS as propostas reais conhecidas (DB local + IDs capturados nas d
    (web/WhatsApp): "sua proposta entrou na administradora", "boleto disponível", etc.
    **A metade "sob demanda" foi PROMOVIDA pra correção imediata** (2026-06-05, pedido
    do Kairo): tool `check_proposal_status` do agent — usuário pergunta o status no
-   chat e recebe o estado REAL traduzido. Spec no FIX-14 de
-   [`../correcoes/2026-06-05-testes-manuais-kairo-rodada2.md`](../correcoes/2026-06-05-testes-manuais-kairo-rodada2.md).
+   chat e recebe o estado REAL traduzido. Spec:
+   [`../correcoes/todo/bloco-b-status-tool/fix-14-tool-status-proposta.md`](../correcoes/todo/bloco-b-status-tool/fix-14-tool-status-proposta.md).
 4. **Boleto e pagamento** — depende de G1/G2: exibir/encaminhar o boleto e detectar o
    pagamento. **Evento "1º boleto pago" = sucesso do funil** (dispara comissão, G3).
 
