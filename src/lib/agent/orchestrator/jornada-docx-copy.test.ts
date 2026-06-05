@@ -190,6 +190,18 @@ describe("directives — carregam a didática/voz do docx", () => {
 		expect(d).toMatch(/sem jargao|sem jargão|jargao tecnico|jargão técnico/);
 	});
 
+	it("explicação de primeira vez: inclui o papel da Aja Agora (docx passo 1 — FIX-1)", () => {
+		// docx: "Nosso papel na Aja Agora é encontrar o grupo com maior chance de
+		// atender seu objetivo no prazo que você deseja." — bullet que FALTAVA na
+		// explicação (teste manual Kairo 2026-06-05, FIX-1).
+		const d = buildExperienceFirstDirective("É a primeira vez").toLowerCase();
+		expect(d).toMatch(/papel/);
+		expect(d).toMatch(/aja agora/);
+		expect(d).toMatch(/encontrar o grupo/);
+		expect(d).toMatch(/maior chance/);
+		expect(d).toMatch(/prazo que (voce|você) deseja/);
+	});
+
 	it("reveal: a Aja Agora analisa administradoras e recomenda a mais aderente", () => {
 		// docx passo 2→3: "a Aja Agora vai analisar várias administradoras e
 		// selecionar as opções mais aderentes ao seu perfil e objetivo."

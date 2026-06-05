@@ -2689,3 +2689,75 @@ describe("REVEAL-ORDER — recomendado primeiro, outras opções sob demanda", (
 		expect(src).toMatch(/show-other-options/);
 	});
 });
+
+// ============================================================================
+// FIX-1 (teste manual Kairo 2026-06-05) — explicação de primeira vez SEM o
+// papel da Aja Agora
+// ----------------------------------------------------------------------------
+// Real (Kairo, print 2026-06-05, persona moto): ao clicar "É a primeira vez",
+// o agent explicou consórcio (grupo/sorteio/lance/≠financiamento) mas OMITIU o
+// bullet do docx: "Nosso papel na Aja Agora é encontrar o grupo com maior
+// chance de atender seu objetivo no prazo que você deseja." A directive
+// (buildExperienceFirstDirective) não pedia esse ponto — o modelo nunca falava.
+//
+// Defesa estrutural detalhada: jornada-docx-copy.test.ts ("inclui o papel da
+// Aja Agora"). Aqui: cassette da fala observada + detector + acoplamento.
+// ============================================================================
+
+describe("FIX-1-PAPEL-AJA-AGORA — explicação de 1ª vez omitia o papel da plataforma", () => {
+	/** Detector: explicação de primeira vez precisa mencionar o papel da Aja
+	 * Agora (encontrar o grupo certo pro objetivo/prazo do usuário). */
+	function missesAjaAgoraRole(reply: string): boolean {
+		const t = reply.toLowerCase();
+		const isFirstTimeExplanation = /cons[óo]rcio/.test(t) && /sorteio|lance/.test(t);
+		if (!isFirstTimeExplanation) return false;
+		return !/papel|encontrar o grupo|maior chance/.test(t);
+	}
+
+	it("cassette: a explicação exata observada no bug dispara o detector", async () => {
+		const cassette =
+			"Show, primeira vez é com a gente!\n\n" +
+			"Consórcio é basicamente um grupo de pessoas que pagam parcelas mensais juntas — sem juros. " +
+			"Todo mês tem uma assembleia e alguém do grupo é contemplado por sorteio ou lance pra receber " +
+			"a carta de crédito e comprar a moto.\n\n" +
+			"É diferente do financiamento justamente porque não tem juros — você paga só uma taxa de " +
+			"administração, que é bem menor.";
+
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		expect(missesAjaAgoraRole(text), "a fala do bug precisa ser detectada como incompleta").toBe(
+			true,
+		);
+	});
+
+	it("cassette: explicação completa (com o papel da Aja Agora) NÃO dispara o detector", async () => {
+		const fixed =
+			"Show, primeira vez é com a gente!\n\n" +
+			"Consórcio é um grupo de pessoas que pagam parcelas mensais juntas, sem juros — todo mês " +
+			"alguém é contemplado por sorteio ou lance.\n\n" +
+			"Nosso papel na Aja Agora é encontrar o grupo com maior chance de atender seu objetivo no " +
+			"prazo que você deseja.";
+
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", fixed),
+			FINISH_STOP,
+		]);
+
+		expect(missesAjaAgoraRole(text)).toBe(false);
+	});
+
+	it("acoplamento: buildExperienceFirstDirective instrui o papel da Aja Agora", () => {
+		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
+		const m = directives.match(/buildExperienceFirstDirective[\s\S]{0,2000}?\n}/);
+		expect(m, "buildExperienceFirstDirective precisa existir em directives.ts").not.toBeNull();
+		const body = (m?.[0] ?? "").toLowerCase();
+		expect(body).toMatch(/papel/);
+		expect(body).toMatch(/encontrar o grupo/);
+		expect(body).toMatch(/maior chance/);
+	});
+});

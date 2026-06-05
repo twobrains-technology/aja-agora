@@ -30,7 +30,11 @@ export function buildTransitionCrossSpecialistDirective(): string {
 // ---- Experience choices ----
 
 export function buildExperienceFirstDirective(replyTitle: string): string {
-	return `Usuario escolheu "${replyTitle}" — e a PRIMEIRA vez dele com consorcio. IMPORTANTE: o sistema JA te apresentou no turno anterior com saudacao + seu nome — NAO se apresente de novo, NAO diga "Aqui e Helena/Rafael/Camila", NAO mencione "anos de experiencia/mercado/especialidade". Va DIRETO ao conteudo. FLUXO: escreva UMA mensagem curta (3-4 frases) explicando o essencial sobre consorcio com SUAS palavras: e um grupo de pessoas que pagam parcelas mensais sem juros, e a cada mes alguem do grupo e contemplado por sorteio ou lance pra receber a carta de credito. Mencione brevemente que e diferente de financiamento (sem juros). NAO faca pergunta no final, NAO chame tools. Tom acolhedor e didatico, sem jargao tecnico (cota, lance livre, fundo reserva).`;
+	// FIX-1 (teste manual Kairo 2026-06-05): o bullet do papel da Aja Agora e
+	// EXIGENCIA do docx passo 1 e estava faltando — sem ele o usuario nao
+	// entende o que a plataforma faz por ele. Tom: proximidade/afinidade
+	// (pedido do cliente), nao explicacao seca.
+	return `Usuario escolheu "${replyTitle}" — e a PRIMEIRA vez dele com consorcio. IMPORTANTE: o sistema JA te apresentou no turno anterior com saudacao + seu nome — NAO se apresente de novo, NAO diga "Aqui e Helena/Rafael/Camila", NAO mencione "anos de experiencia/mercado/especialidade". Va DIRETO ao conteudo. FLUXO: escreva UMA mensagem curta (4-5 frases) explicando o essencial sobre consorcio com SUAS palavras: e um grupo de pessoas que pagam parcelas mensais sem juros, e a cada mes alguem do grupo e contemplado por sorteio ou lance pra receber a carta de credito (na 1a mencao, explique que carta de credito e o valor que ele recebe pra comprar o bem). Mencione brevemente que e diferente de financiamento (sem juros). OBRIGATORIO fechar com o papel da plataforma, fiel ao docx: "Nosso papel na Aja Agora e encontrar o grupo com maior chance de atender seu objetivo no prazo que voce deseja." (pode adaptar levemente ao seu tom, mantendo papel + objetivo + prazo). NAO faca pergunta no final, NAO chame tools. Tom acolhedor, proximo e didatico — celebre a primeira conquista dele como um consultor que esta junto, sem jargao tecnico (cota, lance livre, fundo reserva).`;
 }
 
 export function buildExperienceReturningDirective(replyTitle: string): string {
