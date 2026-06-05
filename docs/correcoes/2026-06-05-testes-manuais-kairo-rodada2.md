@@ -3,7 +3,22 @@
 > Continuação de [`2026-06-05-testes-manuais-kairo.md`](./2026-06-05-testes-manuais-kairo.md)
 > (FIX-1..FIX-10, executados de manhã). Esta rodada nasceu do re-teste em tela APÓS o
 > deploy do lote 1, na mesma branch `feat/jornada-bevi-lance-embutido`.
-> Status: **ANOTADO — aguardando estruturação/execução**
+
+## Placar de controle (atualizar a cada mudança de estado)
+
+| FIX | Título curto | Status | Commit do fix |
+|---|---|---|---|
+| FIX-11 | Pós-fechamento amnésico (persistência + estado no prompt + guard descoberta) | 🟡 anotado | — |
+| FIX-12 | `contract_form` sequestra o identify (proposta real prematura) | 🟡 anotado | — |
+| FIX-13 | Card de confirmação sem prazo (API parceiro sem `term` — verificado ao vivo) | 🟡 anotado | — |
+| FIX-14 | Tool `check_proposal_status` (status real no chat) | 🟡 anotado | — |
+
+Legenda: 🟡 anotado (spec pronta, aguardando execução) · 🔵 em execução (TDD) ·
+🟢 executado (teste falhou→fix→verde, commit `test+fix:`/`test+feat:`) · ⏸️ aguardando
+decisão externa.
+
+Rodada 1 (manhã): FIX-1..FIX-10 — **todos 🟢** — placar e evidências no
+[doc da rodada 1](./2026-06-05-testes-manuais-kairo.md), commits `af44b35..490e3f9`.
 
 ---
 
