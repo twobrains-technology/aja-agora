@@ -1,7 +1,9 @@
 ---
 id: FIX-11
 titulo: "Pós-fechamento amnésico: agent nega o que acabou de fazer, re-roda a descoberta e oferece OUTRA administradora"
-status: todo
+status: done
+commit: d862c40
+executado_em: 2026-06-05
 bloco: bloco-a-agent-core
 arquivos:
   - src/app/api/chat/route.ts
@@ -9,6 +11,10 @@ arquivos:
   - src/lib/agent/agents/index.ts
   - src/lib/agent/orchestrator/runner.ts
   - tests/regression/agent-trajectory.test.ts
+desvios:
+  - "src/lib/agent/agents/builder.ts tocado (fora do escopo_arquivos do item, mas no espírito do B — repasse do contractClosedInfo pro prompt)"
+  - "testes novos: src/app/api/chat/route.closing-persistence.test.ts (C1a), src/lib/agent/system-prompt.pos-fechamento.test.ts (C1b), cenário EVAL-FIX-11 em tests/eval/agent-flow.eval.test.ts (C3)"
+  - ".env.local do workspace tinha IDENTITY_ENC_KEY/ANTHROPIC_API_KEY vazias (lição env-vazio-do-compose) — corrigidas localmente, sem commit"
 rodada: 2026-06-05 tarde (re-teste pós-lote-1)
 anotado_em: 2026-06-05
 ---
