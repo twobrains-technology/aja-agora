@@ -23,11 +23,12 @@ proposta?" depois do fechamento — o comportamento descarrilhou.
 | 1 | A — agent core | FIX-11 — Pós-fechamento amnésico | [`todo/bloco-a-agent-core/fix-11-pos-fechamento-amnesico.md`](./todo/bloco-a-agent-core/fix-11-pos-fechamento-amnesico.md) |
 | 1 | A — agent core | FIX-12 — `contract_form` sequestrou o identify | [`todo/bloco-a-agent-core/fix-12-contract-form-sequestra-identify.md`](./todo/bloco-a-agent-core/fix-12-contract-form-sequestra-identify.md) |
 | 1 | C — UI fechamento | FIX-13 — Card de confirmação sem prazo | [`todo/bloco-c-ui-fechamento/fix-13-card-confirmacao-sem-prazo.md`](./todo/bloco-c-ui-fechamento/fix-13-card-confirmacao-sem-prazo.md) |
-| 2 (pós-A) | B — status tool | FIX-14 — Tool `check_proposal_status` | [`todo/bloco-b-status-tool/fix-14-tool-status-proposta.md`](./todo/bloco-b-status-tool/fix-14-tool-status-proposta.md) |
+| 1 | B — status tool | FIX-14 — Tool `check_proposal_status` | [`todo/bloco-b-status-tool/fix-14-tool-status-proposta.md`](./todo/bloco-b-status-tool/fix-14-tool-status-proposta.md) |
 
-Onda 1: blocos A e C em paralelo (worktrees separados, arquivos disjuntos).
-Onda 2: bloco B após merge do A. Manifestos com prompt de lançamento: `_bloco.md`
-em cada pasta.
+**Onda única: A ∥ B ∥ C — 3 worktrees simultâneos no Superset.** A×B têm overlap
+textual esperado (prompt + cassettes, seções diferentes) — ordem de merge
+recomendada A → B (B resolve, mecânico). C é disjunto. Manifestos com prompt de
+lançamento: `_bloco.md` em cada pasta.
 
 ## Decisões/descobertas transversais da sessão
 

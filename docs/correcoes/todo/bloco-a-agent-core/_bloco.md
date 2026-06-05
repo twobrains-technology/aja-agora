@@ -2,7 +2,9 @@
 bloco: bloco-a-agent-core
 onda: 1
 depends_on: []
-paralelo_com: [bloco-c-ui-fechamento]
+paralelo_com: [bloco-b-status-tool, bloco-c-ui-fechamento]
+conflitos_esperados:
+  - "system-prompt.ts e agent-trajectory.test.ts com o bloco B (seções/describes diferentes — trivial). Ordem de merge recomendada: A entra primeiro; B resolve."
 itens: [FIX-11, FIX-12]
 escopo_arquivos:
   - src/app/api/chat/route.ts

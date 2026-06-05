@@ -19,18 +19,24 @@ docs/correcoes/
 
 ## Regras de DESENHO dos blocos (o que torna a paralelização segura)
 
-1. **Bloco = unidade de paralelização.** Itens que tocam os MESMOS arquivos vão pro
-   mesmo bloco e executam sequencial DENTRO dele (ordem no `_bloco.md`).
-2. **Blocos da mesma onda são DISJUNTOS em arquivos** — interseção vazia entre os
-   `escopo_arquivos` dos manifestos. É isso que garante merge sem conflito entre
-   worktrees do Superset. Na dúvida (arquivo compartilhado, ex. cassettes), o item
-   vai pro bloco que já toca o arquivo OU vira dependência de onda.
-3. **Dependência explícita** (`depends_on` no manifesto) → bloco entra na onda
-   seguinte, lançado só após o merge do que ele depende.
-4. Cada item declara `arquivos:` no frontmatter — é o dado que permite calcular a
-   disjunção ao montar os blocos.
-5. Cada `_bloco.md` traz o **prompt de lançamento pronto** — colar na sessão do
-   Superset, sem precisar redigitar contexto.
+**Princípio-mãe: "10 devs prontos pra trabalhar — não podar paralelismo por medo de
+merge."** Paralelo é o default; serializar é exceção justificada. Conflito pequeno e
+mecânico se resolve em minutos — bloco esperando custa horas.
+
+Níveis de relação entre blocos (detalhe na skill global `todo-blocks`):
+
+1. **Independente** (arquivos disjuntos) → paralelo, merge limpo.
+2. **Overlap textual** (mesmos arquivos, regiões diferentes — cassettes append-only,
+   seções de prompt) → **paralelo mesmo assim**; manifesto declara
+   `conflitos_esperados:` + ordem de merge recomendada.
+3. **Dependência de contrato** (B usa código que A cria) → paralelo com STUB: o
+   manifesto de B fixa o contrato e manda implementar com `TODO(bloco-a):` de troca
+   pós-merge.
+4. **Dependência estrutural dura** (paralelo = retrabalho grande) → só aqui vira
+   `onda: 2`, com justificativa no manifesto.
+
+Cada item declara `arquivos:` no frontmatter (base da classificação); cada
+`_bloco.md` traz o **prompt de lançamento pronto** pro Superset.
 
 ## Regras de FLUXO
 
