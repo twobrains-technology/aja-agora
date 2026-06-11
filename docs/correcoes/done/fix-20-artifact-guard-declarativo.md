@@ -1,7 +1,9 @@
 ---
 id: FIX-20
 titulo: "Extrair pilha de guards do runner pra tabela declarativa artifactGuard()"
-status: todo
+status: done
+commit: f069ca3
+executado_em: 2026-06-11
 bloco: bloco-g-tool-flow-stability
 arquivos:
   - src/lib/agent/orchestrator/artifact-guard.ts (novo — guard table pura)

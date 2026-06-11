@@ -1,5 +1,5 @@
 // Camada 1 — FIX-19: tool-policy por fase da jornada.
-// Plano: docs/correcoes/todo/bloco-g-tool-flow-stability/fix-19-tool-policy-por-fase.md
+// Plano: docs/correcoes/done/fix-19-tool-policy-por-fase.md
 //
 // Família de bugs com a mesma anatomia (FIX-11, FIX-12, BUG-REVEAL-LOOP, PF-07):
 // o modelo enxergava TODAS as ~15 tools em qualquer fase da jornada e a defesa

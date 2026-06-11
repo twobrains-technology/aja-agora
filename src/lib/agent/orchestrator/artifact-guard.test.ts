@@ -1,5 +1,5 @@
 // Camada 1 — FIX-20: pilha de guards do runner extraída pra tabela declarativa.
-// Plano: docs/correcoes/todo/bloco-g-tool-flow-stability/fix-20-artifact-guard-declarativo.md
+// Plano: docs/correcoes/done/fix-20-artifact-guard-declarativo.md
 //
 // Refactor PURO: cada regra abaixo espelha 1:1 um guard que vivia inline no
 // case tool-call do runner (runner.ts). Os cassettes de comportamento em
