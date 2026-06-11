@@ -86,3 +86,17 @@ mas a fonte de verdade da proposta é `bevi_proposals` (pode existir sem
 `meta.contractClosed`) — o agent negou proposta REAL de memória. Fix:
 `check_proposal_status` movida pra BASE (leitura pura, primitivo do FIX-14 —
 "status nunca de memória", em qualquer fase).
+
+## Follow-up 2 pós-eval (2026-06-11, commit ed8acf2)
+
+Segunda regressão pega pela mesma rodada nightly (jornada 1→5, passo 4 close):
+o orquestrador persiste `decisionDispatched=true` ANTES do turno da directive,
+então o turno que emite o card já roda na fase closing — onde a tabela tinha
+removido `present_decision_prompt`. O card do passo 4 sumia da jornada. Fix:
+a tool permanece em closing; dup em turno de usuário segue com o guard
+`isDecisionDup` (2ª linha). Baseline pré-bloco G rodado em worktree isolado
+confirmou que as demais falhas do eval (Cenário Monique) são pré-existentes.
+
+Lição de desenho: flags `*Dispatched` são setadas NO DISPATCH (antes do turno
+que produz o artifact) — fases derivadas delas não podem cortar a tool que a
+própria directive manda chamar.
