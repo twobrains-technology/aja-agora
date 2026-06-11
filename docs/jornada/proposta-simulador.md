@@ -1,11 +1,60 @@
 # Proposta — Simulador de Contemplação (passo 4 da jornada)
 
-> **Status:** PROPOSTA aguardando validação do **Bernardo** · 2026-06-04
+> **Status:** PROPOSTA aguardando validação do **Bernardo** · 2026-06-04 ·
+> **revisada 2026-06-11** (questionamento do Kairo: "uma vez que o consórcio já
+> foi escolhido, com base em que você muda o valor da parcela ou a data de
+> contemplação?")
 > O docx do cliente pede um simulador no passo 4, e o Bernardo é o dono do conceito
 > (o "simulador-agulha" / viés de contemplação), mas ainda não detalhou como deve ser.
 > Este documento é a nossa proposta concreta pra ele reagir — aprovar, ajustar ou redesenhar.
 
 ---
+
+## O conceito por trás (a mecânica real que o simulador representa)
+
+Depois que o grupo foi escolhido, **nada do contrato muda**: carta, parcela e
+prazo são fixos. Então o que o simulador "simula"?
+
+1. **Contemplação acontece por sorteio ou por lance.** Todo mês, na assembleia,
+   um consorciado é sorteado e quem oferta o **maior lance** (leilão de
+   antecipação) também é contemplado.
+2. **A única alavanca do usuário é o tamanho do lance.** A data de contemplação
+   NÃO se escolhe — se "compra" com lance, e mesmo assim é **chance**, não
+   garantia. Querer contemplar cedo = precisar de lance competitivo alto.
+3. **O elo lance ↔ parcela**: o lance pago **abate o saldo devedor** — a
+   administradora tipicamente deixa escolher entre reduzir o PRAZO (menos
+   parcelas) ou reduzir a PARCELA (mesmo prazo, valor menor). Lance embutido =
+   parte do lance sai da própria carta (crédito líquido menor).
+
+A cadeia causal que o componente deve CONTAR (não esconder):
+
+```
+mês desejado → lance competitivo estimado → embutido (da carta) + bolso
+            → abatimento do saldo → parcela/prazo PÓS-contemplação menores
+```
+
+### Por que o dial atual ("Quando você quer ser contemplado?") confunde
+
+- **Inverte a causalidade na UI**: apresenta a data como escolha direta, sem
+  mostrar que o que está sendo dimensionado é o LANCE.
+- **Ignora o perfil já coletado**: abre com default genérico (~1/3 do prazo,
+  ex.: 18 meses) mesmo quando o usuário declarou "até 6 meses" no passo 1 e um
+  valor de lance no passo 2.
+- **Disclaimer enganoso**: diz "estimativa baseada no histórico do grupo", mas a
+  conta é heurística genérica (lance vencedor típico de 40%, âncora em 25% do
+  prazo) — a Bevi **não fornece** o histórico de lances vencedores do grupo.
+- **Redundante** com o cenário de lance que o card de simulação já mostra.
+
+### O dado que falta (pedir à AGX/Bevi)
+
+**Histórico de lances vencedores por grupo** (% médio/mediano das últimas
+assembleias). É O dado que transforma "lance necessário pro mês X" de heurística
+em estimativa real. Enquanto não existir: heurística com premissa explícita em 1
+linha ("assumimos lance vencedor típico de ~40%; o real varia por grupo").
+
+O que JÁ temos real por oferta (trilho B): prazo, taxas, correção, lance
+embutido máximo e **contemplados/mês** (`monthlyAwardedQuotas`) — a "chance" do
+modo sorteio pode (e deve) usar esse número real.
 
 ## O que o cliente pediu (jornada canônica, passo 4)
 
@@ -24,7 +73,7 @@
 
 Logo após o plano recomendado, o agente **oferece** o simulador com a fala do docx ("que tal?"). Sempre — não fica a critério da IA. Quem não quiser, segue direto pro card de decisão.
 
-### 2. Cenários 3 · 6 · 12 + agulha fina
+### 2. Cenários 3 · 6 · 12 + agulha fina — reposicionados como "o preço de cada pressa"
 
 Abre com **três cartões prontos: "3 meses", "6 meses", "12 meses"** (a pergunta exata do cliente), cada um mostrando:
 
@@ -33,6 +82,20 @@ Abre com **três cartões prontos: "3 meses", "6 meses", "12 meses"** (a pergunt
 - Crédito líquido que recebe na mão
 
 Abaixo dos cartões, a **agulha** do Bernardo permite refinar pra qualquer mês (ex.: "e em 9 meses?"), recalculando ao vivo. Os cartões são o atalho; a agulha é a exploração.
+
+**Revisão 2026-06-11 — coerência conceitual:**
+
+- O título/headline do componente NÃO pergunta "quando você quer ser
+  contemplado?" — apresenta **cenários**: "Veja o que muda se você der lance"
+  ou "O preço de cada pressa". A data é resultado, o lance é a alavanca.
+- **Defaults vêm do perfil**: o mês-alvo central é o `timeframe` declarado no
+  passo 1 (ex.: 6 meses) e o lance de partida é o valor declarado no passo 2 —
+  nunca um default genérico que ignora o que o usuário já contou.
+- Cada cartão explicita a causa: "pra ter chance real no mês X, o lance
+  competitivo estimado é Y% — desse lance, A vem da sua carta e B do bolso; com
+  o abatimento, sua parcela depois fica ~Z".
+- Coluna "sem lance (sorteio)": usa o dado REAL `monthlyAwardedQuotas`
+  ("esse grupo contempla ~7 por mês") — honesto, sem promessa.
 
 ### 3. Alternância com/sem lance · com lance embutido
 
@@ -69,6 +132,14 @@ Tudo ancorado na **oferta real da Bevi** selecionada (grupo, prazo, taxas, corre
 2. **Chance de contemplação**: a Bevi manda `taxaContemplacao` por oferta — quer mostrar isso como "chance" pro usuário, ou é arriscado (promessa implícita)? Como tu preferes comunicar?
 3. **Fluxo de caixa**: dentro do simulador (expansão) ou como artefato separado que o agente oferece depois?
 4. **WhatsApp**: a versão sem interação (texto com os 3 cenários prontos) basta, ou tu queres link pra abrir o simulador na web?
+5. **(2026-06-11) Narrativa "o preço de cada pressa"**: concorda em reposicionar
+   o componente de "escolha quando quer ser contemplado" pra cenários comparados
+   de lance (a data como resultado, o lance como alavanca)? É a mecânica real do
+   produto — evita parecer que a plataforma promete data.
+6. **(2026-06-11) Histórico de lances vencedores**: a AGX/Bevi consegue expor o
+   % vencedor das últimas assembleias por grupo? Sem isso, todo "lance
+   necessário pro mês X" é heurística rotulada — com isso, vira número real e
+   defensável.
 
 ---
 
