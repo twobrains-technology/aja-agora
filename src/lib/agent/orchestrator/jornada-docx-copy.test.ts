@@ -221,6 +221,34 @@ describe("directives — carregam a didática/voz do docx", () => {
 		expect(d).toMatch(/recommend_groups|recomenda/);
 		expect(d).toMatch(/present_comparison_table|opções|opcoes/);
 	});
+
+	// Teste manual Kairo (2026-06-11): "ele disse que tinha 3 opções mas mostrou
+	// só uma nos cards". O reveal anunciava 3 mas só destacava a recomendada — as
+	// outras 2 só apareciam sob demanda. Fix: com 2+ grupos, o reveal mostra o
+	// CARROSSEL das opções (present_comparison_table, a recomendada destacada) no
+	// próprio reveal. Mais fiel ao docx (linha 32 "Encontramos 3 boas opções" +
+	// linha 37 "ver outras opções pra comparação").
+	it("reveal com 2+ grupos mostra o carrossel das opções (present_comparison_table)", () => {
+		const d = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				experiencePrev: "first",
+				qualifyAnswers: {
+					creditMin: 90_000,
+					creditMax: 100_000,
+					monthlyBudget: 1_700,
+					prazoMeses: 0,
+					hasLance: "yes",
+				},
+			},
+		});
+		expect(d).toMatch(/present_comparison_table/);
+		// todas as opções no carrossel, com a recomendada destacada
+		expect(d).toMatch(/TODOS|TODAS|todas as op|todos os grupos/i);
+		expect(d).toMatch(/destac|highlightBestIndex|recomendada/i);
+		// e NÃO deve mais dizer pra evitar comparison no reveal
+		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
+	});
 });
 
 describe("FIX-7 — reveal honesto com menos de 3 opções (teste manual Kairo 2026-06-05)", () => {

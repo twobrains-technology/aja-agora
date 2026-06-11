@@ -883,8 +883,9 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	// ── ANTI-LOOP (o bug que originou este cenário) ───────────────────────────
 
 	it("ANTI-LOOP — não ficou re-mostrando os mesmos cards a cada afirmativo", () => {
-		// comparison_table aparece no máx 2x: 0-1 na descoberta + 1 no clique
-		// determinístico de "outras opções". recommendation_card no máx 1x.
+		// comparison_table aparece no máx 2x: 1 no reveal (carrossel das opções,
+		// Kairo 2026-06-11) + 1 no clique determinístico de "outras opções".
+		// recommendation_card no máx 1x.
 		expect(
 			countType(turns, "comparison_table"),
 			"comparison_table além da descoberta + outras opções = loop",

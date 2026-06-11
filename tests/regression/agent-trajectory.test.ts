@@ -40,7 +40,10 @@ import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
-import { buildDecisionPromptDirective } from "@/lib/agent/orchestrator/directives";
+import {
+	buildDecisionPromptDirective,
+	buildSearchSummaryDirective,
+} from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
@@ -2643,16 +2646,19 @@ describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMI
 });
 
 // ============================================================================
-// REVEAL-ORDER (docx passos 3-4 — auditoria 2026-06-04: "partial/ordem invertida")
+// REVEAL-ORDER (docx passos 3-4)
 // ----------------------------------------------------------------------------
 // docx: "Mostrar primeiro 'Plano recomendado pela Aja Agora' (destaque). E
 // permitir que o cliente veja 'Outras opções' (as outras 2) para comparação."
-// Antes: reveal jogava comparison_table + recommendation JUNTOS, e "ver outras
-// opções" era texto livre pro modelo (sem surfacing determinístico).
+// Teste manual Kairo (2026-06-11): "disse que tinha 3 opções mas mostrou só uma".
+// Agora o reveal mostra o recomendado em DESTAQUE + o CARROSSEL das opções
+// (present_comparison_table, recomendada destacada) — mais fiel ao docx (linha 32
+// "Encontramos 3 boas opções" + linha 37 "ver outras opções pra comparação"). O
+// botão "Ver outras opções" do card de decisão segue acessível depois.
 // ============================================================================
 
-describe("REVEAL-ORDER — recomendado primeiro, outras opções sob demanda", () => {
-	it("directive do reveal: recomendado em destaque + detalhamento, SEM comparison no reveal", async () => {
+describe("REVEAL-ORDER — recomendado em destaque + carrossel das opções no reveal", () => {
+	it("directive do reveal: destaque + carrossel das opções + detalhamento (Kairo 2026-06-11)", async () => {
 		const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
 		const d = buildSearchSummaryDirective({
 			category: "auto",
@@ -2667,12 +2673,14 @@ describe("REVEAL-ORDER — recomendado primeiro, outras opções sob demanda", (
 				},
 			},
 		});
-		// Ordem do docx: recommendation primeiro + simulate como detalhamento.
+		// Ordem do docx: recommendation em destaque + simulate como detalhamento.
 		expect(d).toContain("present_recommendation_card");
 		expect(d).toContain("present_simulation_result");
 		expect(d).toMatch(/recomendado PRIMEIRO|PRIMEIRO, em destaque/);
-		// Comparison NÃO entra no reveal — só sob demanda.
-		expect(d).toMatch(/NAO chame present_comparison_table neste turno/);
+		// E agora o CARROSSEL das opções anunciadas aparece NO reveal (2+ grupos).
+		expect(d).toContain("present_comparison_table");
+		expect(d).toMatch(/TODOS os grupos/);
+		expect(d).not.toMatch(/NAO chame present_comparison_table neste turno/);
 	});
 
 	it("acoplamento: route tem o handler determinístico show-other-options (as outras 2)", () => {
@@ -3467,5 +3475,64 @@ describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ning
 		expect(src).toMatch(/proposta \(PDF\)/);
 		// E o componente não renderiza nenhum campo de prazo (não existe fonte):
 		expect(src).not.toMatch(/termMonths|prazoMeses/);
+	});
+});
+
+// ============================================================================
+// CENARIO — BUG-REVEAL-3-OPCOES-1-CARD (teste manual Kairo 2026-06-11)
+// ----------------------------------------------------------------------------
+// Real (web, auto): o agente anunciou "Encontrei 3 opcoes pro seu perfil" mas o
+// reveal so mostrou 1 card (recommendation_card do Itau) + a simulacao. As outras
+// 2 ficavam escondidas atras do botao "Ver outras opcoes". Kairo: "disse que
+// tinha 3 opcoes mas mostrou so uma nos cards. e o card do carrossel ta muito
+// grande".
+//
+// Fix: com 2+ grupos o reveal emite present_comparison_table (carrossel de TODAS
+// as opcoes, recomendada destacada) no proprio reveal. Camada 1 estrutural vive
+// em jornada-docx-copy.test.ts (directive instrui present_comparison_table) +
+// recommendation-card.docx-resumo.test.tsx (sizing max-w-sm) +
+// comparison-table.fees-removal.test.tsx (sem Taxa no carrossel).
+// ============================================================================
+
+describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card", () => {
+	it("cassette: reveal com 2+ grupos emite present_comparison_table (o carrossel das 3)", async () => {
+		// Trajetoria correta do reveal: destaque + carrossel + detalhamento.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontrei 3 boas opcoes pro seu perfil! A mais aderente e a do Itau:"),
+			toolCallChunk("tc-rec", "present_recommendation_card", { administradora: "ITAÚ" }),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: [{ id: "g1" }, { id: "g2" }, { id: "g3" }],
+				highlightBestIndex: 0,
+			}),
+			toolCallChunk("tc-sim", "present_simulation_result", { groupId: "g1" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((t) => t.toolName);
+		// O carrossel das opcoes anunciadas DEVE estar no reveal (nao escondido).
+		expect(names).toContain("present_comparison_table");
+		// E o destaque (recomendada) tambem.
+		expect(names).toContain("present_recommendation_card");
+	});
+
+	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel com a recomendada destacada", () => {
+		const d = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				experiencePrev: "first",
+				qualifyAnswers: {
+					creditMin: 90_000,
+					creditMax: 100_000,
+					monthlyBudget: 1_700,
+					prazoMeses: 0,
+					hasLance: "yes",
+				},
+			},
+		});
+		expect(d).toMatch(/present_comparison_table/);
+		expect(d).toMatch(/TODOS os grupos/);
+		expect(d).toMatch(/highlightBestIndex=0/);
+		// Garante que a proibicao antiga ("comparacao sob demanda") saiu.
+		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
 	});
 });

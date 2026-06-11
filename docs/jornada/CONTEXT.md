@@ -152,6 +152,26 @@
   `simulation-result.test.tsx`, `recommendation-card.docx-resumo.test.tsx`,
   `whatsapp/formatter.fees-removal.test.ts`.
 
+## Decisão de produto (2026-06-11, Kairo) — reveal mostra as 3 opções no carrossel
+
+- **D15 — Reveal mostra o recomendado em destaque + o CARROSSEL das opções.** Teste
+  manual do Kairo: "ele disse que tinha 3 opções mas mostrou só uma nos cards". O
+  reveal anunciava "3 boas opções" mas só destacava a recomendada; as outras 2
+  ficavam atrás do botão "Ver outras opções". Agora, com 2+ grupos, o reveal emite
+  `present_comparison_table` (carrossel de TODAS as opções, `highlightBestIndex=0`
+  destacando a recomendada) junto do `recommendation_card` + `simulation_result`.
+  **Mais fiel ao docx** (linha 32 "Encontramos 3 boas opções" + linha 37 "ver
+  outras opções pra comparação") — o "sob demanda" era interpretação do comentário
+  do código, não do docx. O botão "Ver outras opções" do card de decisão segue
+  acessível depois. Mudança no `buildSearchSummaryDirective`
+  (`orchestrator/directives.ts`); o runner já libera comparison_table no 1º reveal
+  (revealLoopActive=false) e o guard pós-reveal/pós-fechamento segue valendo.
+  Camadas 1+2: `jornada-docx-copy.test.ts`, `agent-trajectory.test.ts`
+  (REVEAL-ORDER + BUG-REVEAL-3-OPCOES-1-CARD).
+- **D15b — `recommendation_card` com `max-w-sm`** (era `w-full` sem cap, "card muito
+  grande"). Padroniza com `simulation_result`/`real_offer`. **D15c — `comparison_table`
+  perdeu a "Taxa"** (escapou da poda D14; mesma regra Bernardo).
+
 ## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
 
 | Item | Commit | Estado |

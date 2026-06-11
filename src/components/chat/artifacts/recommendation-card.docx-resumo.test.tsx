@@ -59,4 +59,14 @@ describe("RecommendationCard — resumo por opção do docx (passo 4)", () => {
 		render(<RecommendationCard payload={payload} />);
 		expect(screen.queryByText(/taxa adm/i)).toBeNull();
 	});
+
+	// Teste manual Kairo (2026-06-11): "o card do carrossel tá muito grande".
+	// O recommendation_card era w-full sem cap, enquanto simulation_result e
+	// real_offer são w-full max-w-sm. Padroniza no max-w-sm (não estoura a largura
+	// do chat).
+	it("tem largura limitada (max-w-sm) — consistente com simulation_result/real_offer", () => {
+		const { container } = render(<RecommendationCard payload={payload} />);
+		const card = container.firstElementChild as HTMLElement;
+		expect(card.className).toMatch(/max-w-sm/);
+	});
 });

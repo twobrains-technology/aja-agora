@@ -70,7 +70,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	};
 
 	return (
-		<Card className={cn("w-full", "border-primary/30 ring-1 ring-primary/20")}>
+		<Card className={cn("w-full max-w-sm", "border-primary/30 ring-1 ring-primary/20")}>
 			<CardHeader>
 				<div className="flex items-center justify-between gap-2">
 					<Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">

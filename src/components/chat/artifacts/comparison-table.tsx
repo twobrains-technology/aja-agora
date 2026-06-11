@@ -93,10 +93,8 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 									<span className="text-muted-foreground">Valor do bem</span>
 									<span className="font-mono font-medium">{formatBRL(group.creditValue)}</span>
 								</div>
-								<div className="flex justify-between">
-									<span className="text-muted-foreground">Taxa</span>
-									<span className="font-mono font-medium">{group.adminFeePercent.toFixed(1)}%</span>
-								</div>
+								{/* Bernardo 2026-06-11: sem "Taxa" no carrossel (assusta o leigo) —
+								    composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
 								<div className="flex justify-between">
 									<span className="text-muted-foreground">Prazo</span>
 									<span className="font-mono font-medium">{group.termMonths}m</span>
