@@ -70,31 +70,15 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 
 				<Separator />
 
-				{/* Cost breakdown */}
-				<div className="space-y-2">
-					<CostLine label="Valor do bem" value={formatBRL(payload.creditValue)} />
-					<CostLine
-						label="Taxa de administração"
-						value={`${formatBRL(payload.adminFee)} (${formatPercent(
-							payload.adminFee > 0 && payload.creditValue > 0
-								? (payload.adminFee / payload.creditValue) * 100
-								: 0,
-						)})`}
-					/>
-					<CostLine label="Fundo de reserva" value={formatBRL(payload.reserveFund)} />
-					<CostLine label="Seguro" value={formatBRL(payload.insurance)} />
-
-					{/* Total cost - visually distinct */}
-					<div className="border-t border-border pt-2 mt-2">
-						<CostLine label="Custo total" value={formatBRL(payload.totalCost)} bold />
-					</div>
+				{/* Decisão de produto (Bernardo, 2026-06-11): card DIRETO — sem taxa de
+				    administração, fundo de reserva, seguro, custo total nem taxa efetiva
+				    (assustam o leigo). A composição completa (CMN 4.927/2021 + CDC art. 37)
+				    é disclosed no PDF da proposta (signature_handoff "Ver minha proposta")
+				    ANTES da assinatura — ver docs/jornada/CONTEXT.md. */}
+				<div>
+					<p className="text-xs text-muted-foreground">Valor do bem</p>
+					<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
 				</div>
-
-				{/* Effective rate */}
-				<p className="text-xs text-muted-foreground">
-					Taxa efetiva:{" "}
-					<span className="font-mono font-medium">{formatPercent(payload.effectiveRate, 2)}</span>
-				</p>
 
 				{/* Cenário com lance (bug #10) */}
 				{payload.lanceScenario && (

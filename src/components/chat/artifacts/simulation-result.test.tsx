@@ -35,7 +35,7 @@ const basePayload: SimulationResultPayload = {
 	},
 };
 
-describe("SimulationResult — 7 campos obrigatórios (bug #10)", () => {
+describe("SimulationResult — campos essenciais (docx passo 4)", () => {
 	beforeEach(() => {
 		document.body.innerHTML = "";
 	});
@@ -53,16 +53,6 @@ describe("SimulationResult — 7 campos obrigatórios (bug #10)", () => {
 	it("renderiza parcela mensal", () => {
 		render(<SimulationResult payload={basePayload} />);
 		expect(screen.getByText(/\/mês/i)).toBeDefined();
-	});
-
-	it("renderiza taxa de administração", () => {
-		render(<SimulationResult payload={basePayload} />);
-		expect(screen.getByText(/taxa de administra[çc][ãa]o/i)).toBeDefined();
-	});
-
-	it("renderiza fundo de reserva", () => {
-		render(<SimulationResult payload={basePayload} />);
-		expect(screen.getByText(/fundo de reserva/i)).toBeDefined();
 	});
 
 	it("renderiza cenário com lance (#10 novo campo)", () => {
@@ -87,6 +77,42 @@ describe("SimulationResult — 7 campos obrigatórios (bug #10)", () => {
 		render(<SimulationResult payload={autoPayload} />);
 		expect(screen.getByText(/IPCA/i)).toBeDefined();
 		expect(screen.queryByText(/INCC/i)).toBeNull();
+	});
+});
+
+// Decisão de produto (Bernardo, 2026-06-11): o card precisa ser DIRETO — taxa de
+// administração, fundo de reserva, seguro, custo total e taxa efetiva assustam o
+// leigo e SAEM do card. A composição completa (exigência CMN 4.927/2021 + CDC art.
+// 37) é disclosed no PDF da proposta (consortiumProposalLink), aberto pelo
+// signature_handoff "Ver minha proposta" ANTES da assinatura — ver CONTEXT.md.
+describe("SimulationResult — sem composição de custos no card (Bernardo 2026-06-11)", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	it("NÃO renderiza taxa de administração", () => {
+		render(<SimulationResult payload={basePayload} />);
+		expect(screen.queryByText(/taxa de administra[çc][ãa]o/i)).toBeNull();
+	});
+
+	it("NÃO renderiza fundo de reserva", () => {
+		render(<SimulationResult payload={basePayload} />);
+		expect(screen.queryByText(/fundo de reserva/i)).toBeNull();
+	});
+
+	it("NÃO renderiza seguro", () => {
+		render(<SimulationResult payload={basePayload} />);
+		expect(screen.queryByText(/\bseguro\b/i)).toBeNull();
+	});
+
+	it("NÃO renderiza custo total", () => {
+		render(<SimulationResult payload={basePayload} />);
+		expect(screen.queryByText(/custo total/i)).toBeNull();
+	});
+
+	it("NÃO renderiza taxa efetiva", () => {
+		render(<SimulationResult payload={basePayload} />);
+		expect(screen.queryByText(/taxa efetiva/i)).toBeNull();
 	});
 });
 

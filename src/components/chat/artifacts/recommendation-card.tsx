@@ -29,10 +29,13 @@ const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
 	servicos: "Serviços",
 };
 
-const FACTOR_LABELS: Record<keyof RecommendationCardPayload["scoreBreakdown"], string> = {
+// Decisão de produto (Bernardo, 2026-06-11): card mais direto — "Taxa adm" some
+// do tile E do breakdown de score (assusta o leigo). adminFee segue no
+// scoreBreakdown do payload (entra no cálculo do score), só não é exibido. A
+// composição completa de custos é disclosed na proposta (PDF) pré-assinatura.
+const FACTOR_LABELS: Partial<Record<keyof RecommendationCardPayload["scoreBreakdown"], string>> = {
 	monthlyFit: "Orcamento",
 	contemplation: "Contemplacao",
-	adminFee: "Taxa adm",
 	termMatch: "Prazo",
 };
 
@@ -99,12 +102,6 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					<div>
 						<p className="text-xs text-muted-foreground">Prazo</p>
 						<p className="text-sm font-medium font-mono">{payload.termMonths} meses</p>
-					</div>
-					<div>
-						<p className="text-xs text-muted-foreground">Taxa adm</p>
-						<p className="text-sm font-medium font-mono">
-							{formatPercent(payload.adminFeePercent)}
-						</p>
 					</div>
 					{/* docx passo 4: qtde de contemplados/mês (contagem REAL da oferta).
 					    contemplationRate da Bevi é contagem, não % — só mostra o rótulo

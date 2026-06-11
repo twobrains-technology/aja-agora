@@ -129,6 +129,29 @@
   2026-07-01 — evals com LLM real pulam como INCONCLUSIVOS (probe em
   tests/eval/anthropic-availability.ts). Re-rodar a Camada 3 quando a cota voltar.
 
+## Decisão de produto (2026-06-11, Bernardo) — cards DIRETOS, sem composição de custos
+
+- **D14 — Cards não exibem taxa de administração, seguro, fundo de reserva, custo total
+  nem taxa efetiva.** Decisão do Bernardo (stakeholder): esses números assustam o leigo, a
+  apresentação tem que ser direta. Removidos de `recommendation_card` (tile "Taxa adm" +
+  fator de score) e de `simulation_result` (bloco de composição inteiro + taxa efetiva),
+  nos dois canais (web em `components/chat/artifacts/`, WhatsApp em `whatsapp/formatter.ts`).
+  Os campos seguem no **payload** (o `adminFee` ainda entra no cálculo do score; a oferta
+  Bevi ainda traz a composição) — só não são **exibidos**.
+- **Disclosure legal preservada (CMN 4.927/2021 + CDC art. 37).** A composição completa de
+  custos é exigência regulatória pré-assinatura — mas o binding legal é a **assinatura na
+  mesa** (DES-1), não o "Tenho interesse". A composição vive no **PDF da PROPOSTA**
+  (`consortiumProposalLink`), aberto pelo `signature_handoff` → "Ver minha proposta", que o
+  cliente vê ANTES da assinatura. Logo a disclosure precede o binding → CDC art. 37
+  satisfeito sem poluir o card. A regra **Bv2-07** do system-prompt foi reescrita pra
+  refletir isso (mantém o encadeamento recommendation→simulation; muda a justificativa de
+  "composição vive só no card" para "parcela real + cenário com lance + correção").
+- **Não recitar fees proativamente no chat.** O agente não traz taxa adm / seguro / fundo
+  de reserva de moto próprio; só responde com valor literal se o usuário perguntar (regra
+  de "frases proibidas sobre taxa" segue valendo). Camada 1 cobre: testes de ausência em
+  `simulation-result.test.tsx`, `recommendation-card.docx-resumo.test.tsx`,
+  `whatsapp/formatter.fees-removal.test.ts`.
+
 ## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
 
 | Item | Commit | Estado |

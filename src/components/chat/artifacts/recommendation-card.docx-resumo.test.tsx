@@ -50,4 +50,13 @@ describe("RecommendationCard — resumo por opção do docx (passo 4)", () => {
 		render(<RecommendationCard payload={rest as RecommendationCardPayload} />);
 		expect(screen.queryByText(/contemplados\/m[êe]s/i)).toBeNull();
 	});
+
+	// Decisão de produto (Bernardo, 2026-06-11): card mais direto, sem taxa de
+	// administração — assusta o leigo. O resumo por opção (docx linha 38) não
+	// lista fees; eles vivem só na proposta (PDF) pré-assinatura. Some o tile
+	// "Taxa adm" e o fator "Taxa adm" do breakdown de score.
+	it("NÃO exibe taxa de administração (tile nem fator de score)", () => {
+		render(<RecommendationCard payload={payload} />);
+		expect(screen.queryByText(/taxa adm/i)).toBeNull();
+	});
 });

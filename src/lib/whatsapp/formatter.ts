@@ -93,7 +93,8 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
 		`💰 Valor do bem: ${formatBRL(p.creditValue as number)}`,
 		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📊 Taxa admin: ${(p.adminFeePercent as number).toFixed(1)}%`,
+		// Bernardo 2026-06-11: sem taxa admin no card (assusta o leigo) — composição
+		// completa na proposta (PDF) pré-assinatura. Ver docs/jornada/CONTEXT.md.
 		`⏱ Prazo: ${p.termMonths} meses`,
 		`🎯 Contemplação: ${(p.contemplationRate as number).toFixed(1)}%/assembleia`,
 	].join("\n");
@@ -155,12 +156,11 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 		"",
 		`💰 *Valor do bem:* ${formatBRL(p.creditValue as number)}`,
 		`📅 *Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📊 *Taxa admin:* ${formatBRL(p.adminFee as number)}`,
-		`🛡 *Fundo reserva:* ${formatBRL(p.reserveFund as number)}`,
-		`🔒 *Seguro:* ${formatBRL(p.insurance as number)}`,
-		`💵 *Custo total:* ${formatBRL(p.totalCost as number)}`,
+		// Bernardo 2026-06-11: card DIRETO — taxa admin / fundo reserva / seguro /
+		// custo total / taxa efetiva saem (assustam o leigo). A composição completa
+		// (CMN 4.927/2021 + CDC art. 37) é disclosed no PDF da proposta pré-assinatura.
+		// Ver docs/jornada/CONTEXT.md.
 		`⏱ *Prazo:* ${p.termMonths} meses`,
-		`📈 *Taxa efetiva:* ${(p.effectiveRate as number).toFixed(2)}%`,
 	];
 	const eb = p.embeddedBid as
 		| { percent: number; receivedCredit: number; necessaryBidToContemplate?: number | null }
@@ -203,7 +203,8 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 		"",
 		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
 		`💰 ${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📊 ${(p.adminFeePercent as number).toFixed(1)}% admin • ${p.termMonths} meses`,
+		// Bernardo 2026-06-11: sem % admin no card (assusta o leigo).
+		`⏱ ${p.termMonths} meses`,
 		`🎯 ${(p.contemplationRate as number).toFixed(1)}% contemplação`,
 	].join("\n");
 
