@@ -5,6 +5,7 @@ import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
 	artifactToWhatsApp,
@@ -84,6 +85,19 @@ async function consumeEvents(
 	conversationId: string,
 	events: AsyncIterable<TurnEvent>,
 ): Promise<void> {
+	// FIX-21: este é o funil único de consumo de TurnEvents do canal WhatsApp
+	// (todos os run*WithOrchestrator passam por aqui). Tap passthrough fecha 1
+	// trace/turno SEM tocar runner.ts (bloco G). Persona no início do turno é
+	// best-effort — telemetria nunca derruba o turno.
+	const personaAtStart = await reloadMeta(conversationId)
+		.then((m) => m.currentPersona ?? null)
+		.catch(() => null);
+	const tracedEvents = traceTurnEvents(events, {
+		conversationId,
+		channel: "whatsapp",
+		persona: personaAtStart,
+	});
+
 	let textBuffer = "";
 	let pendingArtifacts: PendingArtifact[] = [];
 	let dropped = false;
@@ -136,7 +150,7 @@ async function consumeEvents(
 		}
 	};
 
-	for await (const ev of events) {
+	for await (const ev of tracedEvents) {
 		if (dropped) continue;
 
 		switch (ev.type) {

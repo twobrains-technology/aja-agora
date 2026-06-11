@@ -45,7 +45,9 @@ import {
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
+import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -3687,5 +3689,87 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 		});
 		expect(snap?.lanceRefPct).toBeUndefined();
 		expect(snap?.lanceRefMonth).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// FIX-21 — Telemetria de trajetória: o tap NÃO engole eventos (passthrough)
+// ============================================================================
+//
+// O bloco H instrumenta o funil de consumo de TurnEvents do WhatsApp
+// (consumeEvents do adapter) com `traceTurnEvents` — um tap passthrough que
+// fecha 1 trace/turno. A regressão crítica: a instrumentação não pode alterar
+// o stream que o consumidor vê. Se um dia alguém trocar o `yield ev` por algo
+// que filtra/reordena/engole eventos, este cassette quebra ANTES de chegar em
+// produção (onde o sintoma seria artifact dropado / texto faltando no canal).
+//
+// Cassette = a trajetória determinística de um turno de reveal (texto + tools
+// de descoberta + simulation_result + gate simulator-offer + finish), igual ao
+// que o orquestrador emitiria. 100% determinístico, zero DB, zero Anthropic.
+describe("FIX-21 — telemetria de trajetória (tap passthrough)", () => {
+	const revealTurn: TurnEvent[] = [
+		{ type: "text-delta", text: "Achei 3 grupos que " },
+		{ type: "text-delta", text: "encaixam no seu perfil:" },
+		{ type: "tool-call", toolName: "search_groups", input: {}, toolCallId: "c1" },
+		{ type: "tool-call", toolName: "simulate_quota", input: {}, toolCallId: "c2" },
+		{ type: "artifact", artifactType: "simulation_result", payload: { administradora: "CANOPUS" }, toolCallId: "c2" },
+		{ type: "lead-stage", stage: "qualificado" },
+		{ type: "gate", gate: "simulator-offer" },
+		{ type: "finish", reason: "ok" },
+	];
+
+	async function drain(
+		events: TurnEvent[],
+	): Promise<{ seen: TurnEvent[]; trace: TurnTraceRecord | null }> {
+		const seen: TurnEvent[] = [];
+		let trace: TurnTraceRecord | null = null;
+		const tapped = traceTurnEvents(
+			(async function* () {
+				for (const ev of events) yield ev;
+			})(),
+			{ conversationId: "conv-fix21", channel: "whatsapp", persona: "consultor-auto" },
+			{
+				now: () => 0,
+				newId: () => "fix21-trace",
+				sink: (r) => {
+					trace = r;
+				},
+			},
+		);
+		for await (const ev of tapped) seen.push(ev);
+		return { seen, trace };
+	}
+
+	it("re-emite TODOS os eventos do turno na ordem original (passthrough intacto)", async () => {
+		const { seen } = await drain(revealTurn);
+		// Nada engolido, nada reordenado, nada injetado.
+		expect(seen).toEqual(revealTurn);
+		expect(seen).toHaveLength(revealTurn.length);
+	});
+
+	it("fecha exatamente 1 trace/turno agregando gate, tools e artifacts", async () => {
+		const { trace } = await drain(revealTurn);
+		expect(trace).not.toBeNull();
+		const r = trace as unknown as TurnTraceRecord;
+		expect(r.channel).toBe("whatsapp");
+		expect(r.persona).toBe("consultor-auto");
+		expect(r.toolsCalled).toEqual(["search_groups", "simulate_quota"]);
+		expect(r.artifactsEmitted).toEqual(["simulation_result"]);
+		expect(r.gate).toBe("simulator-offer");
+		expect(r.leadStage).toBe("qualificado");
+		expect(r.finishReason).toBe("ok");
+	});
+
+	it("turno de handoff: passthrough do handoff intacto + trace marca handoff", async () => {
+		const handoffTurn: TurnEvent[] = [
+			{ type: "text-delta", text: "Vou te passar pro nosso consultor." },
+			{ type: "handoff", reason: "trigger satisfied" },
+			{ type: "finish", reason: "handoff" },
+		];
+		const { seen, trace } = await drain(handoffTurn);
+		expect(seen).toEqual(handoffTurn);
+		const r = trace as unknown as TurnTraceRecord;
+		expect(r.handoff).toBe(true);
+		expect(r.finishReason).toBe("handoff");
 	});
 });

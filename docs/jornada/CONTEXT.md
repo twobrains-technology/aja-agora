@@ -248,3 +248,7 @@ G1-G5 listados no doc.
 
 - **Bernardo:** validar/ajustar a [`proposta-simulador.md`](./proposta-simulador.md) (o convite + dial já estão no caminho padrão; refinos e fluxo de caixa aguardam o aval).
 - **Bevi (D3 — bloqueia E2E real):** o `create-proposal` da descoberta cria proposta REAL com CPF + consulta de bureau (`consultarDados`). Precisamos de **hash/loja de homologação** ou **CPF de teste autorizado** pela Bevi antes de E2E automatizado/manual contra o trilho real. Também pendente: transporte do device fingerprint (mascarado nas capturas) — validar ao vivo se conversas concorrentes colidem no "1 proposta ativa por device".
+
+## Decisões de arquitetura
+
+- **Teto arquitetural — durable workflow (FIX-22, 2026-06-11):** o resume manual via `meta` no Postgres é a ferramenta certa pra conversa síncrona (`< 3s`); durable execution (Vercel WDK + `@platformatic/world` em Docker) entra SÓ na borda assíncrona, quando ela existir (KYC real da Bevi, monitoramento de assembleia). Coexistência, não substituição. Detalhes e gatilhos de adoção: [`../decisions/2026-06-11-durable-workflow-borda-assincrona.md`](../decisions/2026-06-11-durable-workflow-borda-assincrona.md).
