@@ -1,7 +1,9 @@
 ---
 id: FIX-19
 titulo: "Tool-policy por fase da jornada — tool fora de fase nem entra no request"
-status: todo
+status: done
+commit: 867bda8
+executado_em: 2026-06-11
 bloco: bloco-g-tool-flow-stability
 arquivos:
   - src/lib/agent/orchestrator/tool-policy.ts (novo — função pura allowedTools(meta))
