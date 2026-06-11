@@ -15,13 +15,13 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { evaluateArtifactGuards } from "./artifact-guard";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import { coerceSimulationPayload } from "./simulation-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
-import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 export type RunAgentResult = {
 	fullResponse: string;
@@ -105,16 +105,6 @@ export async function* runAgentTurn(args: {
 	const stagesEmitted = new Set<string>();
 
 	const isConcierge = !meta.currentCategory;
-	// BUG-REVEAL-LOOP (2026-06-02): depois que o reveal JÁ aconteceu (revealCompleted),
-	// num turno de usuario o agent re-emitia os cards de DESCOBERTA (comparison/
-	// recommendation/group) a cada afirmativo ("ta otimo", "bora") — loop nos cards
-	// mockados que nunca cruzava pro passo 5. O guard abaixo suprime essas re-emissoes.
-	// Chave em revealCompleted (não searchDispatched): a flag liga sempre que QUALQUER
-	// reveal aparece — inclusive quando o próprio agent chama search_groups por conta
-	// (free-run), caso em que searchDispatched ficava false e o guard não ativava
-	// (visto no run real: comparison_table 5×). O reveal original é o 1º (revealCompleted
-	// ainda false) → passa. simulation_result só é suprimido fora de what-if.
-	const revealLoopActive = meta.revealCompleted === true && isUserTurn;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
 	// builder (resolveAgent repassa o meta). Usada SÓ pro tripwire
 	// [tool-policy-violation]; a 1ª linha de defesa é o toolset filtrado.
@@ -193,78 +183,21 @@ export async function* runAgentTurn(args: {
 
 				if (PRESENTATION_TOOLS.has(toolName)) {
 					const artifactType = artifactTypeFor(toolName);
-					// PF-07: guard de duplicação do whatsapp_optin — modelo pode
-					// chamar 2x em conversation longa apesar do prompt. Suprimir
-					// silenciosamente se já foi mostrado.
-					const isWhatsappOptin = toolName === "present_whatsapp_optin";
-					// BUG-REVEAL-LOOP: suprime re-emissão dos cards de descoberta
-					// pós-reveal. simulation_result só é suprimido fora de what-if
-					// (providing_info = usuário pediu novo valor → re-simular é legítimo).
-					const isRereveal =
-						revealLoopActive &&
-						(artifactType === "comparison_table" ||
-							artifactType === "recommendation_card" ||
-							artifactType === "group_card" ||
-							(artifactType === "simulation_result" && userIntent !== "providing_info"));
-					// BUG-REVEAL-LOOP (hardening, QA crítico 2026-06-02): na web o
-					// modelo emite present_decision_prompt por conta (free-run), então
-					// decisionDispatched é o guard de idempotência também aqui — se o
-					// card de decisão já apareceu, suprime re-emissão num turno de usuário.
-					const isDecisionDup =
-						meta.decisionDispatched === true && isUserTurn && artifactType === "decision_prompt";
-					// BUG-POS-FECHAMENTO-NAO-TERMINAL (E2E real 2026-06-04): pós-Parabéns
-					// (contractClosed) um afirmativo fazia o agente re-apresentar o
-					// contract_form e "contratar" outra administradora. Estado terminal.
-					const isContractDup = meta.contractClosed === true && artifactType === "contract_form";
-					// FIX-11 (rodada 2026-06-05 tarde): o guard acima cobria SÓ o
-					// contract_form — pós-fechamento, "qual status da proposta?" fazia o
-					// agente re-rodar a descoberta e emitir recommendation_card +
-					// simulation_result de OUTRA administradora (BANCO DO BRASIL pra quem
-					// JÁ contratou CANOPUS). Estado terminal vale pra TODA a família de
-					// artifacts de descoberta/simulação/decisão, em qualquer intent.
-					const isPostClosure =
-						meta.contractClosed === true &&
-						(artifactType === "recommendation_card" ||
-							artifactType === "simulation_result" ||
-							artifactType === "comparison_table" ||
-							artifactType === "group_card" ||
-							artifactType === "contemplation_dial" ||
-							artifactType === "decision_prompt");
-					// FIX-7 (single-option guard): descoberta retornou opção ÚNICA →
-					// recommendation_card duplicaria o grupo do detalhamento. Suprime;
-					// o simulation_result vira o card único do reveal.
-					const isSingleOptionDup = artifactType === "recommendation_card" && discoveryCount === 1;
-					// FIX-12 (rodada 2026-06-05 tarde): no momento do gate identify o
-					// modelo chamou present_contract_form (passo 5) — narrativa de
-					// identidade quase idêntica, ambos os cards coletam CPF+celular+LGPD.
-					// Submit criou proposta REAL na Bevi (CPF + bureau) sem o usuário ter
-					// visto UMA opção. A descrição da tool era instrução, não defesa:
-					// contract_form SÓ passa com reveal feito (revealCompleted) — antes
-					// disso, identidade é assunto do gate identify do SERVIDOR. Com o
-					// artifact suprimido o turno fica sem artifact e a avaliação de gates
-					// abaixo reconduz ao identify naturalmente.
-					const isPrematureContract =
-						artifactType === "contract_form" && meta.revealCompleted !== true;
-					if (isWhatsappOptin && !shouldEmitWhatsappOptin(meta)) {
-						console.log(
-							`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
-						);
-					} else if (isPostClosure) {
-						console.log(
-							`[post-closure] guard: suprimindo ${artifactType} pós-fechamento — estado terminal (conv=${conversationId}, intent=${userIntent})`,
-						);
-					} else if (isPrematureContract) {
-						console.log(
-							`[contract-gate] guard: suprimindo contract_form PRÉ-reveal — identidade é assunto do gate identify (conv=${conversationId}, intent=${userIntent})`,
-						);
-					} else if (isRereveal || isDecisionDup || isContractDup) {
-						console.log(
-							`[reveal-loop] guard: suprimindo ${artifactType} re-emitido pós-reveal (conv=${conversationId}, intent=${userIntent})`,
-						);
-					} else if (isSingleOptionDup) {
-						console.log(
-							`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
-						);
+					// FIX-20: segunda linha de defesa em tabela declarativa — as regras
+					// (whatsapp-optin/post-closure/premature-contract/reveal-loop/
+					// single-option), a ordem e os formatos de log vivem em
+					// artifact-guard.ts, com 1 teste por regra + teste de ordem.
+					const guardVerdict = evaluateArtifactGuards({
+						meta,
+						artifactType,
+						userIntent,
+						isUserTurn,
+						discoveryCount,
+						conversationId,
+						turnArtifactTypes: artifacts.map((a) => a.type),
+					});
+					if (!guardVerdict.allow) {
+						console.log(guardVerdict.logLine);
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
 						// ativa — coage payload com o snapshot do reveal (ou com o

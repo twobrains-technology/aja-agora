@@ -2393,11 +2393,24 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		).not.toBe("decision");
 	});
 
-	it("acoplamento: runner.ts tem guard anti-re-reveal (revealLoopActive)", () => {
-		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
-		expect(runnerSrc).toMatch(/revealLoopActive/);
-		expect(runnerSrc).toMatch(/comparison_table/);
-		expect(runnerSrc).toMatch(/REVEAL-LOOP/);
+	it("acoplamento: guard anti-re-reveal vive na tabela artifact-guard (FIX-20) e o runner a consome", async () => {
+		// FIX-20 moveu os guards inline do runner pra tabela declarativa.
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/revealLoopActive/);
+		expect(guardSrc).toMatch(/comparison_table/);
+		expect(guardSrc).toMatch(/REVEAL-LOOP/);
+		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(/evaluateArtifactGuards/);
+		// E comportamental (mais forte que grep): o cenário exato do bug suprime.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: postRevealMeta(),
+			artifactType: "comparison_table",
+			userIntent: "neutral", // "ta otimo"
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-reveal-loop",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 
 	it("acoplamento: o directive de decisao proibe re-apresentar o reveal", () => {
@@ -2636,12 +2649,24 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 });
 
 describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMINAL)", () => {
-	it("acoplamento: offer-confirm marca contractClosed e o runner suprime contract_form", () => {
+	it("acoplamento: offer-confirm marca contractClosed e o guard suprime contract_form", async () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		expect(route).toMatch(/contractClosed: true/);
-		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
-		expect(runner).toMatch(/isContractDup/);
-		expect(runner).toMatch(/contractClosed === true && artifactType === "contract_form"/);
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts.
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/isContractDup/);
+		expect(guardSrc).toMatch(/contractClosed === true && artifactType === "contract_form"/);
+		// Comportamental: pós-Parabéns, contract_form re-apresentado é suprimido.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: { revealCompleted: true, decisionDispatched: true, contractClosed: true },
+			artifactType: "contract_form",
+			userIntent: "ready_to_proceed",
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-terminal",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 });
 
@@ -3207,16 +3232,26 @@ describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda des
 		expect(hits.length).toBeGreaterThanOrEqual(2);
 	});
 
-	it("guard C no runner: pos-fechamento suprime artifacts de DESCOBERTA (nao so contract_form)", () => {
-		const src = readSource("src/lib/agent/orchestrator/runner.ts");
-		// O guard antigo (isContractDup) cobria apenas contract_form. O novo
-		// precisa cobrir os cards que vazaram no bug real.
-		const guard =
-			/contractClosed[\s\S]{0,400}(recommendation_card[\s\S]{0,200}simulation_result|simulation_result[\s\S]{0,200}recommendation_card)/;
-		expect(
-			guard.test(src),
-			"runner.ts precisa de guard pos-fechamento suprimindo recommendation_card/simulation_result (FIX-11 defeito C)",
-		).toBe(true);
+	it("guard C na tabela: pos-fechamento suprime artifacts de DESCOBERTA (nao so contract_form)", async () => {
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts. O assert
+		// virou comportamental (mais forte que grep): os cards que vazaram no
+		// bug real sao suprimidos pos-fechamento, em qualquer intent.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const meta = { revealCompleted: true, decisionDispatched: true, contractClosed: true };
+		for (const artifactType of ["recommendation_card", "simulation_result"] as const) {
+			const verdict = evaluateArtifactGuards({
+				meta,
+				artifactType,
+				userIntent: "asking_question", // "qual status da proposta?"
+				isUserTurn: true,
+				discoveryCount: null,
+				conversationId: "conv-fix11",
+			});
+			expect(
+				verdict.allow,
+				`${artifactType} pos-fechamento tem que ser suprimido (FIX-11 defeito C)`,
+			).toBe(false);
+		}
 	});
 
 	it("fix A no route: fechamento persiste a mensagem assistant (pipeClosingItems com saveMessage)", () => {
@@ -3276,14 +3311,26 @@ describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do i
 		expect(toolCalls.map((t) => t.toolName)).toEqual(["present_contract_form"]);
 	});
 
-	it("guard A no runner: contract_form e suprimido enquanto nao houver reveal", () => {
-		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+	it("guard A na tabela: contract_form e suprimido enquanto nao houver reveal", async () => {
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts.
+		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
 		const guard =
 			/revealCompleted\s*!==?\s*true[\s\S]{0,200}contract_form|contract_form[\s\S]{0,200}revealCompleted\s*!==?\s*true/;
 		expect(
 			guard.test(src),
-			"runner.ts precisa do guard isPrematureContract: contract_form so passa com revealCompleted (FIX-12)",
+			"artifact-guard.ts precisa da regra premature-contract: contract_form so passa com revealCompleted (FIX-12)",
 		).toBe(true);
+		// Comportamental: o estado exato do bug (fim do qualify, sem reveal).
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: { qualifyConsented: true },
+			artifactType: "contract_form",
+			userIntent: "ready_to_proceed",
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-fix12",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 
 	it("defesa C no route: contract-submit pre-reveal nao chama startContract", () => {

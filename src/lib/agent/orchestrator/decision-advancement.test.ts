@@ -71,12 +71,26 @@ describe("runner.ts — guard anti-re-reveal + flag revealCompleted", () => {
 		expect(src).toMatch(/REVEAL-LOOP|re-?reveal|re-?apresent/i);
 	});
 
-	it("hardening (QA): marca decisionDispatched no free-run do modelo + suprime decision_prompt duplicado", () => {
+	it("hardening (QA): marca decisionDispatched no free-run do modelo + suprime decision_prompt duplicado", async () => {
 		// Achado do QA crítico: na web o modelo emite present_decision_prompt por conta
 		// (free-run), então decisionDispatched precisa ser setado AQUI também, e o card
 		// de decisão duplicado num turno de usuário tem que ser suprimido.
-		expect(src).toMatch(/isDecisionDup/);
+		// FIX-20: a supressão (isDecisionDup) saiu do runner pra tabela
+		// artifact-guard.ts; o persist do decisionDispatched continua no runner.
 		expect(src).toMatch(/decision_prompt/);
 		expect(src).toMatch(/decisionDispatched/);
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/isDecisionDup/);
+		// Comportamental: decision_prompt duplicado num turno de usuário é suprimido.
+		const { evaluateArtifactGuards } = await import("./artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: { revealCompleted: true, decisionDispatched: true },
+			artifactType: "decision_prompt",
+			userIntent: "neutral",
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-decision-dup",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 });
