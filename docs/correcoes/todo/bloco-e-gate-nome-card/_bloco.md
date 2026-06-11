@@ -2,7 +2,7 @@
 bloco: bloco-e-gate-nome-card
 onda: 1
 depends_on: []
-paralelo_com: [bloco-d-eval-harness]
+paralelo_com: [bloco-d-eval-harness, bloco-f-viabilidade-orcamento, bloco-j-telemetria-runner-residuo, bloco-k-fechamento-whatsapp]
 itens: [FIX-17]
 escopo_arquivos:
   - src/lib/chat/ui-message.ts
@@ -16,6 +16,7 @@ escopo_arquivos:
 conflitos_esperados:
   - "tests/regression/agent-trajectory.test.ts: nível 2 (append-only) com qualquer bloco que adicione cassette — merge mecânico"
   - "system-prompt.ts: nível 2 — seções distintas"
+  - "src/lib/whatsapp/formatter.ts: nível 2 com bloco-k (E mexe na degradação do name-prompt; K em contractFormToWhatsApp ~linha 1023 — regiões distantes)"
 ---
 
 # Bloco E — Gate do nome em card (UX de coleta)

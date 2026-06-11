@@ -2,7 +2,7 @@
 bloco: bloco-f-viabilidade-orcamento
 onda: 1
 depends_on: []
-paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card]
+paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card, bloco-j-telemetria-runner-residuo, bloco-k-fechamento-whatsapp]
 itens: [FIX-18]
 escopo_arquivos:
   - src/lib/agent/orchestrator/directives.ts
