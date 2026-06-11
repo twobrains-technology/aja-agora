@@ -140,6 +140,14 @@ Tudo ancorado na **oferta real da Bevi** selecionada (grupo, prazo, taxas, corre
    % vencedor das últimas assembleias por grupo? Sem isso, todo "lance
    necessário pro mês X" é heurística rotulada — com isso, vira número real e
    defensável.
+7. **(2026-06-11) Semântica do `receivedCredit` da oferta**: nas capturas de
+   fevereiro a Bevi devolvia `receivedCredit = carta − embutido`; nas ofertas
+   ao vivo de junho (BB carta 262k, RODOBENS carta 320k) veio
+   `receivedCredit = finalValue` (carta CHEIA) mesmo com `bidPercentage > 0`.
+   O embutido desconta ou não o crédito final nesses produtos? O card de
+   simulação mostra o dado literal da fonte e o simulador calcula
+   carta − embutido — enquanto a semântica não for esclarecida com a AGX, os
+   dois podem divergir nessa linha.
 
 ---
 
