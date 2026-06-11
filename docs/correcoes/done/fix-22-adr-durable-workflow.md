@@ -1,12 +1,14 @@
 ---
 id: FIX-22
 titulo: "ADR — teto arquitetural: durable workflow (WDK) só na borda assíncrona, com gatilhos de adoção"
-status: todo
+status: done
 bloco: bloco-h-observabilidade-trajetoria
 arquivos:
   - docs/decisions/2026-06-11-durable-workflow-borda-assincrona.md (novo)
+  - docs/jornada/CONTEXT.md (pointer na seção "Decisões de arquitetura")
 rodada: 2026-06-11 (sessão de arquitetura — pesquisa boas práticas abril/maio 2026)
 anotado_em: 2026-06-11
+executado_em: 2026-06-11
 ---
 
 # FIX-22 — ADR do teto arquitetural conhecido (durable execution)

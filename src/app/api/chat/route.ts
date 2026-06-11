@@ -43,6 +43,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
 import { isUuid } from "@/lib/utils/id";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -302,521 +303,538 @@ export async function POST(req: NextRequest) {
 		}
 
 		const stream = createUIMessageStream<AjaUIMessage>({
-			execute: async ({ writer }) => {
-				await withSimulatorClockIfNeeded(conv ?? null, async () => {
-					if (body.action?.kind === "category") {
-						if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category)) return;
-						const fromPersona: Persona = meta.currentPersona ?? "concierge";
-						// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
-						const nextStack = pushNavState(meta.navigationStack ?? [], {
-							persona: fromPersona,
-							category: meta.currentCategory ?? null,
-							expertiseLevel: meta.expertiseLevel,
-							experiencePrev: meta.experiencePrev ?? null,
-							qualifyAnswers: meta.qualifyAnswers,
-						});
-						await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
-						await pipeTransitionTurn({
-							conversationId,
-							fromPersona,
-							toCategory: body.action.category,
-							contactName,
-							writer,
-							userKey,
-						});
-						return;
-					}
+			// FIX-21: trajetória observável do turno. O writer é o funil de consumo
+			// do canal web — o proxy espelha as UI parts no trace sem tocar o
+			// adapter (bloco E) nem o runner (bloco G). Fecha 1 registro/turno.
+			execute: async ({ writer: rawWriter }) => {
+				const trace = new TurnTrace({
+					conversationId,
+					channel: "web",
+					persona: meta.currentPersona ?? null,
+				});
+				const writer = instrumentWriter(rawWriter, trace);
+				try {
+					await withSimulatorClockIfNeeded(conv ?? null, async () => {
+						if (body.action?.kind === "category") {
+							if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category))
+								return;
+							const fromPersona: Persona = meta.currentPersona ?? "concierge";
+							// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
+							const nextStack = pushNavState(meta.navigationStack ?? [], {
+								persona: fromPersona,
+								category: meta.currentCategory ?? null,
+								expertiseLevel: meta.expertiseLevel,
+								experiencePrev: meta.experiencePrev ?? null,
+								qualifyAnswers: meta.qualifyAnswers,
+							});
+							await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
+							await pipeTransitionTurn({
+								conversationId,
+								fromPersona,
+								toCategory: body.action.category,
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
 
-					if (body.action?.kind === "select-group") {
-						const { groupId, administradora, creditValue, termMonths } = body.action;
-						await pipeDirectiveTurn({
-							conversationId,
-							directive: buildGroupSelectedDirective(
-								administradora,
-								groupId,
-								creditValue,
-								termMonths,
-							),
-							contactName,
-							writer,
-							userKey,
-						});
-						return;
-					}
+						if (body.action?.kind === "select-group") {
+							const { groupId, administradora, creditValue, termMonths } = body.action;
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildGroupSelectedDirective(
+									administradora,
+									groupId,
+									creditValue,
+									termMonths,
+								),
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
 
-					if (body.action?.kind === "whatsapp_optin") {
-						const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-						const result = await saveContactWhatsapp(conversationId, body.action.phone);
-						if (result.ok) {
-							const greetName = contactName ? `, ${contactName}` : "";
+						if (body.action?.kind === "whatsapp_optin") {
+							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+							const result = await saveContactWhatsapp(conversationId, body.action.phone);
+							if (result.ok) {
+								const greetName = contactName ? `, ${contactName}` : "";
+								await persistMeta(conversationId, {
+									...meta,
+									whatsappOptinShown: true,
+								});
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
+								);
+							} else {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+								);
+							}
+							return;
+						}
+
+						if (body.action?.kind === "whatsapp_optin_decline") {
 							await persistMeta(conversationId, {
 								...meta,
 								whatsappOptinShown: true,
+								whatsappOptinDeclined: true,
 							});
 							await writeAndSaveText(
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
-								`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
+								"Sem problema, seguimos por aqui mesmo.",
 							);
-						} else {
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
-							);
+							return;
 						}
-						return;
-					}
 
-					if (body.action?.kind === "whatsapp_optin_decline") {
-						await persistMeta(conversationId, {
-							...meta,
-							whatsappOptinShown: true,
-							whatsappOptinDeclined: true,
-						});
-						await writeAndSaveText(
-							writer,
-							conversationId,
-							meta.currentPersona ?? null,
-							"Sem problema, seguimos por aqui mesmo.",
-						);
-						return;
-					}
-
-					if (body.action?.kind === "interest") {
-						await writeAndSaveText(
-							writer,
-							conversationId,
-							meta.currentPersona ?? null,
-							"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
-						);
-						writer.write({
-							type: "data-artifact",
-							id: crypto.randomUUID(),
-							data: {
-								type: "lead_form",
-								payload: { conversationId, prefilledName: contactName ?? null },
-							},
-						});
-						return;
-					}
-
-					// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
-					// das outras ofertas reais da descoberta (other-options.ts — módulo
-					// único produção+eval). Zero free-run do modelo, zero dado inventado.
-					if (body.action?.kind === "show-other-options") {
-						try {
-							const { buildOtherOptions } = await import("@/lib/bevi/other-options");
-							const others = await buildOtherOptions(conversationId, meta);
+						if (body.action?.kind === "interest") {
 							await writeAndSaveText(
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
-								others.text,
+								"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
 							);
 							writer.write({
 								type: "data-artifact",
 								id: crypto.randomUUID(),
 								data: {
-									type: "comparison_table",
-									payload: { groups: others.groups },
+									type: "lead_form",
+									payload: { conversationId, prefilledName: contactName ?? null },
 								},
 							});
-						} catch {
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
-							);
+							return;
 						}
-						return;
-					}
 
-					// ── Passo 5 "Contratar" (fechamento Bevi) ──
-					if (body.action?.kind === "contract-submit") {
-						// FIX-12 (defesa em profundidade): sem reveal, NUNCA criar proposta
-						// real — o guard do runner já suprime o contract_form pré-reveal,
-						// mas o POST continua acessível (form antigo na tela, API direta).
-						// Criar proposta na Bevi = CPF + consulta de bureau; a ordem da
-						// jornada (identify → busca → reveal → decisão → passo 5) é
-						// validada AQUI pelo estado do servidor, não pelo modelo.
-						const freshMeta = await reloadMeta(conversationId);
-						if (freshMeta.revealCompleted !== true) {
+						// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
+						// das outras ofertas reais da descoberta (other-options.ts — módulo
+						// único produção+eval). Zero free-run do modelo, zero dado inventado.
+						if (body.action?.kind === "show-other-options") {
+							try {
+								const { buildOtherOptions } = await import("@/lib/bevi/other-options");
+								const others = await buildOtherOptions(conversationId, meta);
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									others.text,
+								);
+								writer.write({
+									type: "data-artifact",
+									id: crypto.randomUUID(),
+									data: {
+										type: "comparison_table",
+										payload: { groups: others.groups },
+									},
+								});
+							} catch {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+								);
+							}
+							return;
+						}
+
+						// ── Passo 5 "Contratar" (fechamento Bevi) ──
+						if (body.action?.kind === "contract-submit") {
+							// FIX-12 (defesa em profundidade): sem reveal, NUNCA criar proposta
+							// real — o guard do runner já suprime o contract_form pré-reveal,
+							// mas o POST continua acessível (form antigo na tela, API direta).
+							// Criar proposta na Bevi = CPF + consulta de bureau; a ordem da
+							// jornada (identify → busca → reveal → decisão → passo 5) é
+							// validada AQUI pelo estado do servidor, não pelo modelo.
+							const freshMeta = await reloadMeta(conversationId);
+							if (freshMeta.revealCompleted !== true) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Calma, a gente tá quase lá! Antes de fechar qualquer coisa eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
+								);
+								await pipeGatePrompt({
+									conversationId,
+									gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
+									writer,
+								});
+								return;
+							}
+							const q = meta.qualifyAnswers ?? {};
+							const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
+							const valor = q.creditMax ?? q.creditMin ?? 50000;
+							const objetivo = q.objetivo ?? "contemplacao_rapida";
+							const lanceEmbutido = q.lanceEmbutido
+								? String(q.lanceEmbutidoPercent ?? 30)
+								: "nenhum";
+							// FIX-9: identidade já coletada no identify — o form confirma e o
+							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
+							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
+							// atualizam o storage (cifrado) pra manter a fonte única.
+							let cpf = body.action.cpf;
+							let celular = body.action.celular;
+							if (body.action.useStoredIdentity === true || !cpf || !celular) {
+								const stored = await loadIdentity(conversationId).catch(() => null);
+								cpf = cpf || stored?.cpf;
+								celular = celular || stored?.celular;
+							} else if (cpf && celular) {
+								await storeIdentity(conversationId, { cpf, celular });
+							}
+							if (!cpf || !celular) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
+								);
+								return;
+							}
+							try {
+								const { proposalId, offer, noOffer } = await startContract(conversationId, {
+									cpf,
+									celular,
+									lgpd: body.action.lgpd,
+									segmento,
+									valor,
+									objetivo,
+									lanceEmbutido,
+									// Fechamento prefere a MESMA administradora que o usuário decidiu
+									// (BUG-ADMIN-TROCADA-NO-FECHAMENTO, E2E real 2026-06-04).
+									administradoraPreferida: meta.recommendedAdministradora ?? null,
+								});
+								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
+								// (módulo único — eval valida o MESMO copy de produção).
+								await pipeAndSaveClosingItems(
+									realOfferPresentation({ proposalId, offer, noOffer }),
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+								);
+							} catch (err) {
+								const delta =
+									err instanceof MinCreditError
+										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
+										: err instanceof BeviConfigError
+											? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
+											: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
+								await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
+							}
+							return;
+						}
+
+						if (body.action?.kind === "offer-confirm") {
+							try {
+								const res = await confirmOffer(conversationId);
+								// Estado TERMINAL: pós-confirmação o fechamento está feito — o
+								// agente não re-apresenta contract_form (merge sobre meta atual).
+								const fresh = await reloadMeta(conversationId);
+								await persistMeta(conversationId, { ...fresh, contractClosed: true });
+								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
+								// (closing-presentation.ts — módulo único produção+eval).
+								await pipeAndSaveClosingItems(
+									closingPresentation(res),
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+								);
+								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
+								// Nunca quebra o fechamento — falha vira contractSummaryPending.
+								await sendContractSummary(conversationId);
+							} catch {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+								);
+							}
+							return;
+						}
+
+						// FIX-10: conclusão explícita do envio de documentos — copy reflete
+						// o que de fato subiu (uploads são silenciosos via /api/chat/document).
+						if (body.action?.kind === "documents-done") {
+							const sent = new Set(body.action.sentSlots ?? []);
+							const hasFrente = sent.has("identidade_frente");
+							const hasVerso = sent.has("identidade_verso");
 							await writeAndSaveText(
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
-								"Calma, a gente tá quase lá! Antes de fechar qualquer coisa eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
-							);
-							await pipeGatePrompt({
-								conversationId,
-								gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
-								writer,
-							});
-							return;
-						}
-						const q = meta.qualifyAnswers ?? {};
-						const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
-						const valor = q.creditMax ?? q.creditMin ?? 50000;
-						const objetivo = q.objetivo ?? "contemplacao_rapida";
-						const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
-						// FIX-9: identidade já coletada no identify — o form confirma e o
-						// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
-						// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
-						// atualizam o storage (cifrado) pra manter a fonte única.
-						let cpf = body.action.cpf;
-						let celular = body.action.celular;
-						if (body.action.useStoredIdentity === true || !cpf || !celular) {
-							const stored = await loadIdentity(conversationId).catch(() => null);
-							cpf = cpf || stored?.cpf;
-							celular = celular || stored?.celular;
-						} else if (cpf && celular) {
-							await storeIdentity(conversationId, { cpf, celular });
-						}
-						if (!cpf || !celular) {
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
+								hasFrente && hasVerso
+									? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									: hasFrente
+										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
+										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
 							);
 							return;
 						}
-						try {
-							const { proposalId, offer, noOffer } = await startContract(conversationId, {
-								cpf,
-								celular,
-								lgpd: body.action.lgpd,
-								segmento,
-								valor,
-								objetivo,
-								lanceEmbutido,
-								// Fechamento prefere a MESMA administradora que o usuário decidiu
-								// (BUG-ADMIN-TROCADA-NO-FECHAMENTO, E2E real 2026-06-04).
-								administradoraPreferida: meta.recommendedAdministradora ?? null,
-							});
-							// Copy/artifacts do passo 5 vivem em closing-presentation.ts
-							// (módulo único — eval valida o MESMO copy de produção).
-							await pipeAndSaveClosingItems(
-								realOfferPresentation({ proposalId, offer, noOffer }),
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-							);
-						} catch (err) {
-							const delta =
-								err instanceof MinCreditError
-									? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
-									: err instanceof BeviConfigError
-										? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
-										: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
+
+						// Caminho LEGADO (upload via turno de chat) — mantido por
+						// robustez/compat; o componente web usa /api/chat/document.
+						if (body.action?.kind === "document-upload") {
+							const action = body.action;
+							let delta: string;
+							try {
+								const file = Buffer.from(action.fileBase64, "base64");
+								const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
+									slot: action.slot,
+									file,
+									filename: action.filename,
+									mimeType: action.mimeType,
+								});
+								delta = ok
+									? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
+							} catch {
+								delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
+							}
 							await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
+							return;
 						}
-						return;
-					}
 
-					if (body.action?.kind === "offer-confirm") {
-						try {
-							const res = await confirmOffer(conversationId);
-							// Estado TERMINAL: pós-confirmação o fechamento está feito — o
-							// agente não re-apresenta contract_form (merge sobre meta atual).
-							const fresh = await reloadMeta(conversationId);
-							await persistMeta(conversationId, { ...fresh, contractClosed: true });
-							// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
-							// (closing-presentation.ts — módulo único produção+eval).
-							await pipeAndSaveClosingItems(
-								closingPresentation(res),
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-							);
-							// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
-							// Nunca quebra o fechamento — falha vira contractSummaryPending.
-							await sendContractSummary(conversationId);
-						} catch {
+						if (body.action?.kind === "document-skip") {
 							await writeAndSaveText(
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
-								"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
 							);
+							return;
 						}
-						return;
-					}
 
-					// FIX-10: conclusão explícita do envio de documentos — copy reflete
-					// o que de fato subiu (uploads são silenciosos via /api/chat/document).
-					if (body.action?.kind === "documents-done") {
-						const sent = new Set(body.action.sentSlots ?? []);
-						const hasFrente = sent.has("identidade_frente");
-						const hasVerso = sent.has("identidade_verso");
-						await writeAndSaveText(
-							writer,
-							conversationId,
-							meta.currentPersona ?? null,
-							hasFrente && hasVerso
-								? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
-								: hasFrente
-									? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
-									: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
-						);
-						return;
-					}
-
-					// Caminho LEGADO (upload via turno de chat) — mantido por
-					// robustez/compat; o componente web usa /api/chat/document.
-					if (body.action?.kind === "document-upload") {
+						if (body.action?.kind !== "gate") return;
 						const action = body.action;
-						let delta: string;
-						try {
-							const file = Buffer.from(action.fileBase64, "base64");
-							const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
-								slot: action.slot,
-								file,
-								filename: action.filename,
-								mimeType: action.mimeType,
+
+						if (action.gate === "experience") {
+							const choice = action.value;
+							await persistMeta(conversationId, {
+								...meta,
+								experiencePrev: choice,
+								doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
 							});
-							delta = ok
-								? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
-								: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
-						} catch {
-							delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
+							const directive =
+								choice === "first"
+									? buildExperienceFirstDirective(action.label)
+									: choice === "returning"
+										? buildExperienceReturningDirective(action.label)
+										: buildExperienceDoubtsDirective(action.label);
+							await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
+							return;
 						}
-						await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
-						return;
-					}
 
-					if (body.action?.kind === "document-skip") {
-						await writeAndSaveText(
-							writer,
-							conversationId,
-							meta.currentPersona ?? null,
-							"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
-						);
-						return;
-					}
-
-					if (body.action?.kind !== "gate") return;
-					const action = body.action;
-
-					if (action.gate === "experience") {
-						const choice = action.value;
-						await persistMeta(conversationId, {
-							...meta,
-							experiencePrev: choice,
-							doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
-						});
-						const directive =
-							choice === "first"
-								? buildExperienceFirstDirective(action.label)
-								: choice === "returning"
-									? buildExperienceReturningDirective(action.label)
-									: buildExperienceDoubtsDirective(action.label);
-						await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
-						return;
-					}
-
-					if (action.gate === "consent") {
-						if (!meta.currentCategory) return;
-						if (action.value === "yes") {
-							await persistMeta(conversationId, { ...meta, qualifyConsented: true });
+						if (action.gate === "consent") {
+							if (!meta.currentCategory) return;
+							if (action.value === "yes") {
+								await persistMeta(conversationId, { ...meta, qualifyConsented: true });
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildQualifyStartYesDirective(),
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
+							await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
 							await pipeDirectiveTurn({
 								conversationId,
-								directive: buildQualifyStartYesDirective(),
+								directive: buildQualifyStartMoreDirective(),
 								contactName,
 								writer,
 								userKey,
 							});
 							return;
 						}
-						await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
-						await pipeDirectiveTurn({
-							conversationId,
-							directive: buildQualifyStartMoreDirective(),
-							contactName,
-							writer,
-							userKey,
-						});
-						return;
-					}
 
-					if (action.gate === "credit") {
-						const credit = action.value.credit;
-						const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
-						// FIX-3 ("Planeje sua conquista"): o componente do passo 2 entrega
-						// também mês-alvo, lance e (opcional) lance embutido — preenche os
-						// gates seguintes e o funil pula o que já veio. O que não veio
-						// (ex.: lanceEmbutido não decidido) segue pelos gates da conversa.
-						const v = action.value;
-						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-							...(meta.qualifyAnswers ?? {}),
-							creditMin,
-							creditMax: credit,
-							monthlyBudget: v.monthlyBudget,
-							...(typeof v.targetMonth === "number"
-								? { prazoMeses: v.targetMonth, objetivo: objetivoForPrazo(v.targetMonth) }
-								: {}),
-							...(typeof v.lanceValue === "number"
-								? v.lanceValue > 0
-									? { hasLance: "yes" as const, lanceValue: v.lanceValue }
-									: { hasLance: "no" as const }
-								: {}),
-							...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
-						};
-						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-						const isPlanSubmit = typeof v.targetMonth === "number";
-						await pipeDirectiveTurn({
-							conversationId,
-							directive: isPlanSubmit
-								? buildPlanReactionDirective({
-										assetLabel: action.label,
-										targetMonth: v.targetMonth,
-										lanceLabel:
-											typeof v.lanceValue === "number" && v.lanceValue > 0
-												? `R$ ${v.lanceValue.toLocaleString("pt-BR")}`
-												: undefined,
-									})
-								: buildCreditReactionDirective(action.label),
-							contactName,
-							writer,
-							userKey,
-						});
-						return;
-					}
-
-					if (action.gate === "timeframe") {
-						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-							...(meta.qualifyAnswers ?? {}),
-							prazoMeses: action.value.prazoMeses,
-							objetivo: objetivoForPrazo(action.value.prazoMeses),
-						};
-						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-						if (!meta.currentCategory) return;
-						await pipeDirectiveTurn({
-							conversationId,
-							directive: buildTimeframeReactionDirective(action.label),
-							contactName,
-							writer,
-							userKey,
-						});
-						return;
-					}
-
-					if (action.gate === "lance") {
-						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-							...(meta.qualifyAnswers ?? {}),
-							hasLance: action.value,
-						};
-						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-						if (!meta.currentCategory) return;
-						// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance
-						// embutido (educa + opt-in) antes da busca. O directive dispara o
-						// gate `lance-embutido` em seguida. "maybe"/"no" vão direto pra busca.
-						if (action.value === "yes") {
+						if (action.gate === "credit") {
+							const credit = action.value.credit;
+							const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
+							// FIX-3 ("Planeje sua conquista"): o componente do passo 2 entrega
+							// também mês-alvo, lance e (opcional) lance embutido — preenche os
+							// gates seguintes e o funil pula o que já veio. O que não veio
+							// (ex.: lanceEmbutido não decidido) segue pelos gates da conversa.
+							const v = action.value;
+							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+								...(meta.qualifyAnswers ?? {}),
+								creditMin,
+								creditMax: credit,
+								monthlyBudget: v.monthlyBudget,
+								...(typeof v.targetMonth === "number"
+									? { prazoMeses: v.targetMonth, objetivo: objetivoForPrazo(v.targetMonth) }
+									: {}),
+								...(typeof v.lanceValue === "number"
+									? v.lanceValue > 0
+										? { hasLance: "yes" as const, lanceValue: v.lanceValue }
+										: { hasLance: "no" as const }
+									: {}),
+								...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
+							};
+							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							const isPlanSubmit = typeof v.targetMonth === "number";
 							await pipeDirectiveTurn({
 								conversationId,
-								directive: buildLanceReactionDirective(action.label),
+								directive: isPlanSubmit
+									? buildPlanReactionDirective({
+											assetLabel: action.label,
+											targetMonth: v.targetMonth,
+											lanceLabel:
+												typeof v.lanceValue === "number" && v.lanceValue > 0
+													? `R$ ${v.lanceValue.toLocaleString("pt-BR")}`
+													: undefined,
+										})
+									: buildCreditReactionDirective(action.label),
 								contactName,
 								writer,
 								userKey,
 							});
 							return;
 						}
-						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
-						return;
-					}
 
-					// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
-					// "yes" → directive do dial (dados reais do plano recomendado);
-					// "no" → card de decisão direto ("Esse plano faz sentido?").
-					if (action.gate === "simulator-offer") {
-						const refreshed = { ...meta, simulatorOfferDispatched: true };
-						await persistMeta(conversationId, refreshed);
-						if (action.value === "yes") {
+						if (action.gate === "timeframe") {
+							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+								...(meta.qualifyAnswers ?? {}),
+								prazoMeses: action.value.prazoMeses,
+								objetivo: objetivoForPrazo(action.value.prazoMeses),
+							};
+							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							if (!meta.currentCategory) return;
 							await pipeDirectiveTurn({
 								conversationId,
-								directive: buildSimulatorDialDirective({
-									administradora: meta.recommendedAdministradora,
-								}),
+								directive: buildTimeframeReactionDirective(action.label),
 								contactName,
 								writer,
 								userKey,
 							});
 							return;
 						}
-						if (!refreshed.decisionDispatched) {
-							await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildDecisionPromptDirective({
-									administradora: meta.recommendedAdministradora,
-								}),
-								contactName,
-								writer,
-								userKey,
-							});
-						}
-						return;
-					}
 
-					// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
-					// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
-					// pipeSearchSummaryTurn re-emite este gate (tripwire).
-					if (action.gate === "identify") {
-						const { cpf, celular, lgpd } = action.value;
-						const celularDigits = (celular ?? "").replace(/\D/g, "");
-						if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								!isValidCpf(cpf)
-									? "Esse CPF não confere — dá uma olhadinha nos números?"
-									: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
-							);
-							await pipeGatePrompt({ conversationId, gate: "identify", writer });
+						if (action.gate === "lance") {
+							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+								...(meta.qualifyAnswers ?? {}),
+								hasLance: action.value,
+							};
+							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							if (!meta.currentCategory) return;
+							// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance
+							// embutido (educa + opt-in) antes da busca. O directive dispara o
+							// gate `lance-embutido` em seguida. "maybe"/"no" vão direto pra busca.
+							if (action.value === "yes") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildLanceReactionDirective(action.label),
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
+							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
 							return;
 						}
-						await storeIdentity(conversationId, { cpf, celular: celularDigits });
-						// Celular vira contato do lead (mesma régua do whatsapp_optin).
-						const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-						await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
-						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
-						return;
-					}
 
-					// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
-					// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
-					// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
-					if (action.gate === "lance-value") {
-						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-							...(meta.qualifyAnswers ?? {}),
-							lanceValue: action.value.lanceValue,
-						};
-						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-						await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
-						return;
-					}
+						// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
+						// "yes" → directive do dial (dados reais do plano recomendado);
+						// "no" → card de decisão direto ("Esse plano faz sentido?").
+						if (action.gate === "simulator-offer") {
+							const refreshed = { ...meta, simulatorOfferDispatched: true };
+							await persistMeta(conversationId, refreshed);
+							if (action.value === "yes") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildSimulatorDialDirective({
+										administradora: meta.recommendedAdministradora,
+									}),
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
+							if (!refreshed.decisionDispatched) {
+								await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildDecisionPromptDirective({
+										administradora: meta.recommendedAdministradora,
+									}),
+									contactName,
+									writer,
+									userKey,
+								});
+							}
+							return;
+						}
 
-					if (action.gate === "lance-embutido") {
-						const considera = action.value === "yes";
-						const q = meta.qualifyAnswers ?? {};
-						const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-							...q,
-							lanceEmbutido: considera,
-							lanceEmbutidoPercent: considera ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
-							// lanceValue veio do gate lance-value (resposta do usuário).
-							lanceValue: q.lanceValue,
-						};
-						await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-						if (!meta.currentCategory) return;
-						await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
-						return;
-					}
-				});
+						// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
+						// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
+						// pipeSearchSummaryTurn re-emite este gate (tripwire).
+						if (action.gate === "identify") {
+							const { cpf, celular, lgpd } = action.value;
+							const celularDigits = (celular ?? "").replace(/\D/g, "");
+							if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									!isValidCpf(cpf)
+										? "Esse CPF não confere — dá uma olhadinha nos números?"
+										: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
+								);
+								await pipeGatePrompt({ conversationId, gate: "identify", writer });
+								return;
+							}
+							await storeIdentity(conversationId, { cpf, celular: celularDigits });
+							// Celular vira contato do lead (mesma régua do whatsapp_optin).
+							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+							await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
+							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							return;
+						}
+
+						// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
+						// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
+						// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
+						if (action.gate === "lance-value") {
+							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+								...(meta.qualifyAnswers ?? {}),
+								lanceValue: action.value.lanceValue,
+							};
+							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
+							return;
+						}
+
+						if (action.gate === "lance-embutido") {
+							const considera = action.value === "yes";
+							const q = meta.qualifyAnswers ?? {};
+							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+								...q,
+								lanceEmbutido: considera,
+								lanceEmbutidoPercent: considera ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
+								// lanceValue veio do gate lance-value (resposta do usuário).
+								lanceValue: q.lanceValue,
+							};
+							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							if (!meta.currentCategory) return;
+							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							return;
+						}
+					});
+					trace.setFinish("ok");
+				} finally {
+					trace.finalize();
+				}
 			},
 			onError: (error: unknown) =>
 				error instanceof Error ? error.message : "Erro interno no servidor",
@@ -864,10 +882,22 @@ export async function POST(req: NextRequest) {
 	}
 
 	const stream = createUIMessageStream<AjaUIMessage>({
-		execute: async ({ writer }) => {
-			await withSimulatorClockIfNeeded(conv ?? null, async () => {
-				await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
+		// FIX-21: trajetória observável do turno de usuário (web SSE).
+		execute: async ({ writer: rawWriter }) => {
+			const trace = new TurnTrace({
+				conversationId,
+				channel: "web",
+				persona: meta.currentPersona ?? null,
 			});
+			const writer = instrumentWriter(rawWriter, trace);
+			try {
+				await withSimulatorClockIfNeeded(conv ?? null, async () => {
+					await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
+				});
+				trace.setFinish("ok");
+			} finally {
+				trace.finalize();
+			}
 		},
 		onError: (error: unknown) =>
 			error instanceof Error ? error.message : "Erro interno no servidor",

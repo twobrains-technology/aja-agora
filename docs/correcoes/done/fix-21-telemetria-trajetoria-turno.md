@@ -1,16 +1,30 @@
 ---
 id: FIX-21
 titulo: "Telemetria de trajetória por turno — gate, tools, supressões, latência, custo"
-status: todo
+status: done
 bloco: bloco-h-observabilidade-trajetoria
 arquivos:
   - src/lib/telemetry/turn-trace.ts (novo)
   - src/lib/telemetry/turn-trace.test.ts (novo)
-  - src/app/api/chat/route.ts (instrumenta consumo de TurnEvents)
-  - src/lib/whatsapp/processor.ts (idem)
+  - src/app/api/chat/route.ts (instrumenta consumo de TurnEvents — proxy do writer)
+  - src/lib/whatsapp/adapter.ts (instrumenta consumo de TurnEvents — tap em consumeEvents)
 rodada: 2026-06-11 (sessão de arquitetura — pesquisa boas práticas abril/maio 2026)
 anotado_em: 2026-06-11
+commit: 087db2e
+executado_em: 2026-06-11
 ---
+
+> **Executado (2026-06-11, commit `087db2e`):** desvio do escopo planejado —
+> a instrumentação WhatsApp ficou em `src/lib/whatsapp/adapter.ts`
+> (`consumeEvents`, o funil ÚNICO de consumo de TurnEvents do canal), NÃO em
+> `processor.ts` (que delega ao adapter e não vê TurnEvents). Web ficou em
+> `route.ts` via proxy do `UIMessageStreamWriter` (entry point é dono do
+> writer) — assim evita tocar `web/adapter.ts` (bloco E). Nenhum dos arquivos
+> tocados está em `src/lib/agent/` (runner/builder = bloco G). `suppressed[]` e
+> `cacheRead/cacheWrite` ficaram como `TODO(bloco-g)`: vivem só em `console.log`
+> dentro do runner; o schema já reserva os campos. Persistência = log
+> estruturado JSON (`[turn-trace] {…}`, 1 linha/turno), sink trocável por tabela
+> Drizzle depois. Gate `test:unit` (Camadas 1+2) verde: 1329 passed.
 
 # FIX-21 — Trajetória do agente observável em produção
 
