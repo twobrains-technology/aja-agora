@@ -3,6 +3,7 @@ import type { ToolChoice, ToolLoopAgent } from "ai";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { MemoryContext } from "@/lib/memory/types";
 import { getCurrentClockOffset, simulatorNow } from "@/lib/utils/simulator-clock";
+import { allowedTools } from "../orchestrator/tool-policy";
 import type { ConversationMetadata, ExpertiseLevel, Persona } from "../personas";
 import { getPersona } from "../personas-repo";
 import { type ContractClosedInfo, deriveWhatsappOptinStage } from "../system-prompt";
@@ -131,6 +132,7 @@ export async function resolveAgent(
 			toolChoice: opts.toolChoice,
 			whatsappOptinStage,
 			contractClosedInfo,
+			meta,
 		});
 	}
 
@@ -147,6 +149,7 @@ export async function resolveAgent(
 			channel: opts.channel,
 			whatsappOptinStage,
 			contractClosedInfo,
+			meta,
 		});
 	}
 
@@ -157,7 +160,14 @@ export async function resolveAgent(
 	const ctHash = contractClosedInfo
 		? createHash("sha1").update(JSON.stringify(contractClosedInfo)).digest("hex").slice(0, 8)
 		: "0";
-	const key = `${cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash)}:wa-${whatsappOptinStage}:ct-${ctHash}`;
+	// FIX-19: a policy de tools varia com a fase da jornada (meta) — agents de
+	// fases diferentes tem TOOLSETS diferentes e nao podem compartilhar
+	// instancia. Hash da propria lista permitida (cobre fase + optin shown).
+	const tpHash = createHash("sha1")
+		.update(JSON.stringify(allowedTools(meta, opts.channel)))
+		.digest("hex")
+		.slice(0, 8);
+	const key = `${cacheKey(row.id, row.version, expertise, clockOffsetMs, memoryHash)}:wa-${whatsappOptinStage}:ct-${ctHash}:tp-${tpHash}`;
 
 	let agent = agentCache.get(key);
 	if (!agent) {
@@ -168,6 +178,7 @@ export async function resolveAgent(
 			channel: opts.channel,
 			whatsappOptinStage,
 			contractClosedInfo,
+			meta,
 		});
 		agentCache.set(key, agent);
 	}

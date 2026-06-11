@@ -1,7 +1,9 @@
 ---
 id: FIX-19
 titulo: "Tool-policy por fase da jornada — tool fora de fase nem entra no request"
-status: todo
+status: done
+commit: 867bda8
+executado_em: 2026-06-11
 bloco: bloco-g-tool-flow-stability
 arquivos:
   - src/lib/agent/orchestrator/tool-policy.ts (novo — função pura allowedTools(meta))
@@ -75,3 +77,26 @@ A fonte de verdade da fase JÁ existe: `meta` (`revealCompleted`,
   (não apenas suprimida).
 - **Camada 3**: cenários nightly existentes já cobrem a jornada 1→5 — verificar
   que continuam verdes (a policy não pode quebrar o happy path).
+
+## Follow-up pós-eval (2026-06-11, commit 5be65b7)
+
+A rodada nightly da Camada 3 (EVAL-FIX-14-STATUS-VIA-TOOL) pegou uma regressão
+da 1ª versão da tabela: `check_proposal_status` só existia em closing/terminal,
+mas a fonte de verdade da proposta é `bevi_proposals` (pode existir sem
+`meta.contractClosed`) — o agent negou proposta REAL de memória. Fix:
+`check_proposal_status` movida pra BASE (leitura pura, primitivo do FIX-14 —
+"status nunca de memória", em qualquer fase).
+
+## Follow-up 2 pós-eval (2026-06-11, commit ed8acf2)
+
+Segunda regressão pega pela mesma rodada nightly (jornada 1→5, passo 4 close):
+o orquestrador persiste `decisionDispatched=true` ANTES do turno da directive,
+então o turno que emite o card já roda na fase closing — onde a tabela tinha
+removido `present_decision_prompt`. O card do passo 4 sumia da jornada. Fix:
+a tool permanece em closing; dup em turno de usuário segue com o guard
+`isDecisionDup` (2ª linha). Baseline pré-bloco G rodado em worktree isolado
+confirmou que as demais falhas do eval (Cenário Monique) são pré-existentes.
+
+Lição de desenho: flags `*Dispatched` são setadas NO DISPATCH (antes do turno
+que produz o artifact) — fases derivadas delas não podem cortar a tool que a
+própria directive manda chamar.

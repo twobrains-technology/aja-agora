@@ -48,9 +48,9 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
@@ -2395,11 +2395,24 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		).not.toBe("decision");
 	});
 
-	it("acoplamento: runner.ts tem guard anti-re-reveal (revealLoopActive)", () => {
-		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
-		expect(runnerSrc).toMatch(/revealLoopActive/);
-		expect(runnerSrc).toMatch(/comparison_table/);
-		expect(runnerSrc).toMatch(/REVEAL-LOOP/);
+	it("acoplamento: guard anti-re-reveal vive na tabela artifact-guard (FIX-20) e o runner a consome", async () => {
+		// FIX-20 moveu os guards inline do runner pra tabela declarativa.
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/revealLoopActive/);
+		expect(guardSrc).toMatch(/comparison_table/);
+		expect(guardSrc).toMatch(/REVEAL-LOOP/);
+		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(/evaluateArtifactGuards/);
+		// E comportamental (mais forte que grep): o cenário exato do bug suprime.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: postRevealMeta(),
+			artifactType: "comparison_table",
+			userIntent: "neutral", // "ta otimo"
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-reveal-loop",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 
 	it("acoplamento: o directive de decisao proibe re-apresentar o reveal", () => {
@@ -2638,12 +2651,24 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 });
 
 describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMINAL)", () => {
-	it("acoplamento: offer-confirm marca contractClosed e o runner suprime contract_form", () => {
+	it("acoplamento: offer-confirm marca contractClosed e o guard suprime contract_form", async () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		expect(route).toMatch(/contractClosed: true/);
-		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
-		expect(runner).toMatch(/isContractDup/);
-		expect(runner).toMatch(/contractClosed === true && artifactType === "contract_form"/);
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts.
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/isContractDup/);
+		expect(guardSrc).toMatch(/contractClosed === true && artifactType === "contract_form"/);
+		// Comportamental: pós-Parabéns, contract_form re-apresentado é suprimido.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: { revealCompleted: true, decisionDispatched: true, contractClosed: true },
+			artifactType: "contract_form",
+			userIntent: "ready_to_proceed",
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-terminal",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 });
 
@@ -3209,16 +3234,26 @@ describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda des
 		expect(hits.length).toBeGreaterThanOrEqual(2);
 	});
 
-	it("guard C no runner: pos-fechamento suprime artifacts de DESCOBERTA (nao so contract_form)", () => {
-		const src = readSource("src/lib/agent/orchestrator/runner.ts");
-		// O guard antigo (isContractDup) cobria apenas contract_form. O novo
-		// precisa cobrir os cards que vazaram no bug real.
-		const guard =
-			/contractClosed[\s\S]{0,400}(recommendation_card[\s\S]{0,200}simulation_result|simulation_result[\s\S]{0,200}recommendation_card)/;
-		expect(
-			guard.test(src),
-			"runner.ts precisa de guard pos-fechamento suprimindo recommendation_card/simulation_result (FIX-11 defeito C)",
-		).toBe(true);
+	it("guard C na tabela: pos-fechamento suprime artifacts de DESCOBERTA (nao so contract_form)", async () => {
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts. O assert
+		// virou comportamental (mais forte que grep): os cards que vazaram no
+		// bug real sao suprimidos pos-fechamento, em qualquer intent.
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const meta = { revealCompleted: true, decisionDispatched: true, contractClosed: true };
+		for (const artifactType of ["recommendation_card", "simulation_result"] as const) {
+			const verdict = evaluateArtifactGuards({
+				meta,
+				artifactType,
+				userIntent: "asking_question", // "qual status da proposta?"
+				isUserTurn: true,
+				discoveryCount: null,
+				conversationId: "conv-fix11",
+			});
+			expect(
+				verdict.allow,
+				`${artifactType} pos-fechamento tem que ser suprimido (FIX-11 defeito C)`,
+			).toBe(false);
+		}
 	});
 
 	it("fix A no route: fechamento persiste a mensagem assistant (pipeClosingItems com saveMessage)", () => {
@@ -3278,14 +3313,26 @@ describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do i
 		expect(toolCalls.map((t) => t.toolName)).toEqual(["present_contract_form"]);
 	});
 
-	it("guard A no runner: contract_form e suprimido enquanto nao houver reveal", () => {
-		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+	it("guard A na tabela: contract_form e suprimido enquanto nao houver reveal", async () => {
+		// FIX-20: o guard saiu do runner pra tabela artifact-guard.ts.
+		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
 		const guard =
 			/revealCompleted\s*!==?\s*true[\s\S]{0,200}contract_form|contract_form[\s\S]{0,200}revealCompleted\s*!==?\s*true/;
 		expect(
 			guard.test(src),
-			"runner.ts precisa do guard isPrematureContract: contract_form so passa com revealCompleted (FIX-12)",
+			"artifact-guard.ts precisa da regra premature-contract: contract_form so passa com revealCompleted (FIX-12)",
 		).toBe(true);
+		// Comportamental: o estado exato do bug (fim do qualify, sem reveal).
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const verdict = evaluateArtifactGuards({
+			meta: { qualifyConsented: true },
+			artifactType: "contract_form",
+			userIntent: "ready_to_proceed",
+			isUserTurn: true,
+			discoveryCount: null,
+			conversationId: "conv-fix12",
+		});
+		expect(verdict.allow).toBe(false);
 	});
 
 	it("defesa C no route: contract-submit pre-reveal nao chama startContract", () => {
@@ -3579,9 +3626,7 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 	};
 
 	it("C3: payload alucinado pelo modelo (recebe = carta CHEIA) e coagido pro dado real", async () => {
-		const { coerceSimulationPayload } = await import(
-			"@/lib/agent/orchestrator/simulation-payload"
-		);
+		const { coerceSimulationPayload } = await import("@/lib/agent/orchestrator/simulation-payload");
 		const hallucinated = {
 			administradora: "BANCO DO BRASIL",
 			creditValue: 262_309.8,
@@ -3602,9 +3647,7 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 	});
 
 	it("C1+C2: trajetoria completa do dado — snapshot do card calibra o dial e 74% vira 49%", async () => {
-		const { coerceSimulationPayload } = await import(
-			"@/lib/agent/orchestrator/simulation-payload"
-		);
+		const { coerceSimulationPayload } = await import("@/lib/agent/orchestrator/simulation-payload");
 		const { coerceDialPayload, offerSnapshotFromArtifact } = await import(
 			"@/lib/agent/orchestrator/dial-payload"
 		);
@@ -3673,7 +3716,8 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
 		// O bloco do persist do reveal declara um snapshotAnchor com
 		// simulation_result em primeiro lugar (artifact rico em lance fields).
-		const m = /const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
+		const m =
+			/const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
 		expect(src).toMatch(m);
 		// e o offerSnapshot é extraído DELE, não do anchor de administradora
 		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchor\?\.payload\)/);
@@ -3689,6 +3733,185 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 		});
 		expect(snap?.lanceRefPct).toBeUndefined();
 		expect(snap?.lanceRefMonth).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-19-TOOL-POLICY (bloco G, sessão de arquitetura 2026-06-11)
+// ----------------------------------------------------------------------------
+// Causa raiz comum de FIX-11/FIX-12/BUG-REVEAL-LOOP/PF-07: o modelo enxergava
+// TODAS as ~15 tools em QUALQUER fase da jornada — cada tool visível fora de
+// fase é um convite à chamada indevida — e a defesa era 100% a jusante (guard
+// do runner suprime o card DEPOIS da chamada). O FIX-19 inverte: tool fora de
+// fase NEM ENTRA no request (allowedTools(meta) filtra o toolset no builder).
+// Os guards do runner viram segunda linha de defesa (defense-in-depth) e
+// disparo de guard pós-policy ganha log forte [tool-policy-violation].
+//
+// Camada 1 detalhada: src/lib/agent/orchestrator/tool-policy.test.ts (matriz
+// fase × tool + wiring do builder). Aqui: replay dos streams dos 2 bugs com
+// assert de que a tool indevida NEM ESTÁ no toolset — não apenas suprimida.
+// ============================================================================
+
+describe("FIX-19-TOOL-POLICY — tool fora de fase nem entra no request", () => {
+	function policyPersonaRow() {
+		return {
+			id: "moto",
+			displayName: "Bruno",
+			role: "specialist",
+			category: "moto",
+			expertise: null,
+			voiceTone: "consultivo",
+			examples: [],
+			temperature: 0.7,
+			activeCampaigns: [],
+			handoffTriggers: [],
+			forbiddenTopics: [],
+			activeTools: [
+				"search_groups",
+				"simulate_quota",
+				"get_rates",
+				"get_group_details",
+				"recommend_groups",
+				"present_group_card",
+				"present_comparison_table",
+				"present_simulation_result",
+				"present_recommendation_card",
+			],
+			isActive: true,
+			version: 1,
+			createdAt: new Date("2026-06-11T00:00:00Z"),
+			updatedAt: new Date("2026-06-11T00:00:00Z"),
+		};
+	}
+
+	/** Fim do passo 2 (gate identify) — estado exato da conversa do FIX-12. */
+	const FIX12_META: ConversationMetadata = {
+		currentPersona: "moto",
+		currentCategory: "moto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		qualifyAnswers: {
+			creditMin: 35_000,
+			creditMax: 40_000,
+			monthlyBudget: 800,
+			prazoMeses: 8,
+			hasLance: "no",
+			lanceEmbutido: false,
+		},
+	};
+
+	/** Pós-fechamento (CANOPUS contratada) — estado exato da conversa do FIX-11. */
+	const FIX11_META: ConversationMetadata = {
+		...FIX12_META,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		simulatorOfferDispatched: true,
+		decisionDispatched: true,
+		recommendedAdministradora: "CANOPUS",
+		contractClosed: true,
+	};
+
+	it("cassette FIX-12: modelo chamou present_contract_form no gate identify (PRÉ-reveal)", async () => {
+		// Reprodução fiel da trajetória (prints 27/28/31/32 da rodada 2026-06-05):
+		// narrativa de identidade + form de CONTRATAÇÃO no lugar do gate identify.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa! Pra eu buscar as opções reais, o sistema precisa da sua identidade:",
+			),
+			toolCallChunk("tc-1", "present_contract_form", { administradora: "CANOPUS" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls.some((tc) => tc.toolName === "present_contract_form")).toBe(true);
+
+		// FIX-19 (gating a montante): nessa fase a tool NEM PODE estar no request.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		expect(allowedTools(FIX12_META)).not.toContain("present_contract_form");
+
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX12_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"present_contract_form exposto PRÉ-reveal — o FIX-19 exige que a tool nem entre " +
+				"no toolset do agent nessa fase (a supressão do runner é só segunda linha)",
+		).not.toContain("present_contract_form");
+	});
+
+	it("cassette FIX-11: pós-fechamento, 'qual status?' re-rodou descoberta e ofereceu OUTRA administradora", async () => {
+		// Reprodução fiel (2026-06-05 tarde): usuário JÁ contratou CANOPUS,
+		// perguntou status e o agent re-buscou + recomendou BANCO DO BRASIL.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu verificar as melhores opções pra você!"),
+			toolCallChunk("tc-1", "search_groups", { category: "moto", creditMax: 40_000 }),
+			toolCallChunk("tc-2", "present_recommendation_card", { administradora: "BANCO DO BRASIL" }),
+			toolCallChunk("tc-3", "present_simulation_result", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("search_groups");
+		expect(names).toContain("present_recommendation_card");
+
+		// FIX-19: estado TERMINAL — descoberta/cards fora do toolset; status entra.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		const allowed = allowedTools(FIX11_META);
+		expect(allowed).not.toContain("search_groups");
+		expect(allowed).not.toContain("recommend_groups");
+		expect(allowed).not.toContain("present_recommendation_card");
+		expect(allowed).not.toContain("present_simulation_result");
+		expect(allowed).toContain("check_proposal_status");
+
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX11_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"toolset pós-fechamento ainda carrega descoberta — FIX-11 voltaria: a re-busca tem " +
+				"que morrer NA ORIGEM (tool fora do request), não só no guard do runner",
+		).not.toContain("search_groups");
+		expect(tools).toContain("check_proposal_status");
+	});
+
+	it("cassette EVAL-FIX-14 (nightly 2026-06-11): pergunta de status com proposta REAL em bevi_proposals mas meta sem contractClosed — check_proposal_status NUNCA sai do toolset", async () => {
+		// Bug pego pelo eval Camada 3 na primeira rodada da policy: a tabela
+		// tirou check_proposal_status de qualify/reveal e o agent NEGOU uma
+		// proposta real de memória ("nem simulamos nenhuma opção ainda") — a
+		// fonte de verdade da proposta é bevi_proposals, que pode existir sem
+		// meta.contractClosed. A tool é LEITURA pura (FIX-14: primitivo sempre
+		// presente, status nunca respondido de memória) → vive na BASE.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		for (const meta of [FIX12_META, { ...FIX12_META, revealCompleted: true }, FIX11_META]) {
+			expect(allowedTools(meta as ConversationMetadata)).toContain("check_proposal_status");
+		}
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX12_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"check_proposal_status fora do toolset em fase pré-fechamento — o agent volta a negar " +
+				"proposta real de memória (regressão do eval EVAL-FIX-14-STATUS-VIA-TOOL)",
+		).toContain("check_proposal_status");
+	});
+
+	it("acoplamento: builder consome allowedTools e resolveAgent propaga o meta", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(builderSrc).toMatch(/allowedTools/);
+		const indexSrc = readSource("src/lib/agent/agents/index.ts");
+		expect(indexSrc).toMatch(/meta/);
+	});
+
+	it("acoplamento: runner loga [tool-policy-violation] quando tool fora da policy é chamada", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/tool-policy-violation/);
 	});
 });
 

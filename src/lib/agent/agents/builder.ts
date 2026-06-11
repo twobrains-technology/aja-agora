@@ -2,6 +2,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
+import { allowedTools } from "../orchestrator/tool-policy";
+import type { ConversationMetadata } from "../personas";
 import {
 	buildConciergePrompt,
 	buildSpecialistPrompt,
@@ -92,6 +94,15 @@ export function buildAgent(
 		 */
 		contractClosedInfo?: ContractClosedInfo | null;
 		/**
+		 * FIX-19: meta corrente da conversa — fonte da fase da jornada pra
+		 * tool-policy (`allowedTools`). Quando presente, o toolset montado
+		 * abaixo é FILTRADO pela fase: tool fora de fase NEM ENTRA no request
+		 * (contract_form pré-reveal, descoberta pós-fechamento etc. — família
+		 * FIX-11/FIX-12/BUG-REVEAL-LOOP). Quando omitido (preview/admin/testes
+		 * legados), superfície completa — comportamento anterior preservado.
+		 */
+		meta?: ConversationMetadata | null;
+		/**
 		 * Força o modelo a chamar uma tool específica neste turno.
 		 *
 		 * Quando passado, é repassado pro `ToolLoopAgent` como `toolChoice`
@@ -143,7 +154,7 @@ export function buildAgent(
 	// invariante aqui garante que mesmo se admin remover via UI futuramente,
 	// o builder ainda expõe (mesmo padrão do suggest_handoff).
 	// Concierge não qualifica usuários → não precisa nenhuma dessas tools.
-	const tools = isConcierge
+	const unfilteredTools = isConcierge
 		? {}
 		: {
 				...selectTools(row.activeTools, registry),
@@ -164,6 +175,18 @@ export function buildAgent(
 				// status tem que funcionar mesmo se o admin nao listar em activeTools.
 				check_proposal_status: registry.check_proposal_status,
 			};
+
+	// FIX-19: gating a montante — com `meta` presente, só as tools da FASE atual
+	// da jornada entram no request ("primitivos sempre presentes" viram
+	// "presentes nas fases certas"). Interseção, nunca união: a policy não
+	// adiciona tool que o admin/builder não exporia.
+	let tools = unfilteredTools;
+	if (!isConcierge && opts.meta) {
+		const allowed = new Set(allowedTools(opts.meta, opts.channel));
+		tools = Object.fromEntries(
+			Object.entries(unfilteredTools).filter(([name]) => allowed.has(name)),
+		);
+	}
 
 	// Memory inline — renderizado como system message extra dentro das
 	// instructions do agent, pra specialist nascer memory-aware mesmo sem
