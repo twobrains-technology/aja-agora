@@ -3877,6 +3877,29 @@ describe("FIX-19-TOOL-POLICY — tool fora de fase nem entra no request", () => 
 		expect(tools).toContain("check_proposal_status");
 	});
 
+	it("cassette EVAL-FIX-14 (nightly 2026-06-11): pergunta de status com proposta REAL em bevi_proposals mas meta sem contractClosed — check_proposal_status NUNCA sai do toolset", async () => {
+		// Bug pego pelo eval Camada 3 na primeira rodada da policy: a tabela
+		// tirou check_proposal_status de qualify/reveal e o agent NEGOU uma
+		// proposta real de memória ("nem simulamos nenhuma opção ainda") — a
+		// fonte de verdade da proposta é bevi_proposals, que pode existir sem
+		// meta.contractClosed. A tool é LEITURA pura (FIX-14: primitivo sempre
+		// presente, status nunca respondido de memória) → vive na BASE.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		for (const meta of [FIX12_META, { ...FIX12_META, revealCompleted: true }, FIX11_META]) {
+			expect(allowedTools(meta as ConversationMetadata)).toContain("check_proposal_status");
+		}
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX12_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"check_proposal_status fora do toolset em fase pré-fechamento — o agent volta a negar " +
+				"proposta real de memória (regressão do eval EVAL-FIX-14-STATUS-VIA-TOOL)",
+		).toContain("check_proposal_status");
+	});
+
 	it("acoplamento: builder consome allowedTools e resolveAgent propaga o meta", () => {
 		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
 		expect(builderSrc).toMatch(/allowedTools/);

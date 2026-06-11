@@ -35,12 +35,20 @@ export function phaseFromMeta(meta: ConversationMetadata): ToolPhase {
 	return "qualify";
 }
 
-/** Primitivos de conversa — válidos em TODA fase. */
+/** Primitivos de conversa — válidos em TODA fase.
+ *
+ * check_proposal_status entrou aqui pelo eval EVAL-FIX-14-STATUS-VIA-TOOL
+ * (nightly 2026-06-11): a 1ª versão da tabela só a expunha em closing/
+ * terminal, mas a fonte de verdade da proposta é `bevi_proposals` — que pode
+ * existir SEM meta.contractClosed — e o agent negou uma proposta real DE
+ * MEMÓRIA (violação direta do FIX-14: status sempre via tool). É leitura
+ * pura sem efeito colateral; não há fase em que escondê-la seja seguro. */
 const BASE = [
 	"suggest_handoff",
 	"save_contact_name",
 	"save_contact_whatsapp",
 	"present_topic_picker",
+	"check_proposal_status",
 ];
 
 /** Descoberta completa + cards do reveal — o passo 3+4 acontece na fase
@@ -99,20 +107,19 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "closing":
-			// Decisão tomada: passo 5 libera (contract_form + status da proposta
-			// criada no submit). decision_prompt SAI — re-emissão é dup.
+			// Decisão tomada: passo 5 libera (contract_form). decision_prompt
+			// SAI — re-emissão é dup.
 			return [
 				...BASE,
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_contract_form",
-				"check_proposal_status",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.
-			// Status respondido pela tool real (FIX-14), resto é conversa.
-			return [...BASE, "check_proposal_status"];
+			// Status respondido pela tool real (FIX-14, via BASE), resto é conversa.
+			return [...BASE];
 	}
 }

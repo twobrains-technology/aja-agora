@@ -62,6 +62,11 @@ const TERMINAL_META: ConversationMetadata = {
 // ============================================================================
 
 const BASE = [
+	// check_proposal_status é LEITURA pura e primitivo do FIX-14 ("pergunta de
+	// status tem que funcionar sempre") — a proposta vive em bevi_proposals,
+	// que pode existir sem meta.contractClosed (eval FIX-14 pegou a regressão:
+	// policy sem a tool em qualify fez o agent negar proposta REAL de memória).
+	"check_proposal_status",
 	"present_topic_picker",
 	"save_contact_name",
 	"save_contact_whatsapp",
@@ -110,11 +115,10 @@ const REVEAL_EXPECTED = [
 
 const CLOSING_EXPECTED = [
 	...REVEAL_EXPECTED.filter((t) => t !== "present_decision_prompt"),
-	"check_proposal_status",
 	"present_contract_form",
 ].sort();
 
-const TERMINAL_EXPECTED = [...BASE, "check_proposal_status"].sort();
+const TERMINAL_EXPECTED = [...BASE].sort();
 
 // ============================================================================
 // Fase derivada do meta
@@ -151,6 +155,12 @@ describe("FIX-19 — phaseFromMeta: fonte de verdade da fase é o meta", () => {
 describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 	it("qualify: lista exata — SEM contract_form (FIX-12), SEM dial, SEM optin (BUG-OPTIN-ENGOLE-GATES), SEM decision_prompt", () => {
 		expect([...allowedTools(QUALIFY_META)].sort()).toEqual(QUALIFY_EXPECTED);
+	});
+
+	it("check_proposal_status presente em TODAS as fases (FIX-14: status nunca de memória)", () => {
+		for (const meta of [QUALIFY_META, REVEAL_META, CLOSING_META, TERMINAL_META]) {
+			expect(allowedTools(meta)).toContain("check_proposal_status");
+		}
 	});
 
 	it("reveal: lista exata — SEM re-descoberta (search/recommend/cards do reveal), SEM contract_form", () => {
@@ -239,11 +249,11 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).not.toContain("present_contemplation_dial");
 		expect(tools).not.toContain("present_whatsapp_optin");
 		expect(tools).not.toContain("present_decision_prompt");
-		expect(tools).not.toContain("check_proposal_status");
-		// e a descoberta do passo 3 continua disponível
+		// e a descoberta do passo 3 continua disponível + primitivos de leitura
 		expect(tools).toContain("search_groups");
 		expect(tools).toContain("present_value_picker");
 		expect(tools).toContain("save_contact_name");
+		expect(tools).toContain("check_proposal_status"); // FIX-14: status sempre
 	});
 
 	it("toolset do agent == interseção exata (activeTools ∪ primitivos) ∩ policy da fase", () => {
