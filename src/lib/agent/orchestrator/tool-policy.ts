@@ -107,13 +107,19 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "closing":
-			// Decisão tomada: passo 5 libera (contract_form). decision_prompt
-			// SAI — re-emissão é dup.
+			// Decisão tomada: passo 5 libera (contract_form). present_decision_prompt
+			// PERMANECE: o orquestrador persiste decisionDispatched=true ANTES de
+			// rodar o turno da directive (index.ts) — o turno que EMITE o card já
+			// roda nesta fase. Tirar a tool daqui fez o card do passo 4 sumir da
+			// jornada (eval nightly 2026-06-11). Dup em turno de USUÁRIO é papel
+			// do guard isDecisionDup (2ª linha), que distingue user-turn de
+			// directive — granularidade que a fase não tem.
 			return [
 				...BASE,
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
+				"present_decision_prompt",
 				"present_contract_form",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];

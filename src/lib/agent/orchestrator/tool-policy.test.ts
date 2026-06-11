@@ -113,10 +113,14 @@ const REVEAL_EXPECTED = [
 	"simulate_quota",
 ].sort();
 
-const CLOSING_EXPECTED = [
-	...REVEAL_EXPECTED.filter((t) => t !== "present_decision_prompt"),
-	"present_contract_form",
-].sort();
+// present_decision_prompt PERMANECE em closing: o orquestrador persiste
+// decisionDispatched=true ANTES de rodar o turno da directive (index.ts),
+// então o turno que EMITE o card já roda na fase closing — tirar a tool daqui
+// fez a directive mandar chamar uma tool fora do request e o decision_prompt
+// sumiu da jornada (eval nightly 2026-06-11, passo 4 close). O dup em turno
+// de USUÁRIO é responsabilidade do guard isDecisionDup (segunda linha), que
+// distingue user-turn de directive — granularidade que a fase não tem.
+const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
 
@@ -167,8 +171,15 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		expect([...allowedTools(REVEAL_META)].sort()).toEqual(REVEAL_EXPECTED);
 	});
 
-	it("closing: lista exata — contract_form e check_proposal_status ENTRAM, decision_prompt SAI (dup)", () => {
+	it("closing: lista exata — contract_form ENTRA; decision_prompt PERMANECE (directive roda pós-persist)", () => {
 		expect([...allowedTools(CLOSING_META)].sort()).toEqual(CLOSING_EXPECTED);
+	});
+
+	it("REGRESSÃO eval jornada (2026-06-11): turno da directive do decision roda com decisionDispatched=true — a tool TEM que estar no toolset", () => {
+		// orchestrator/index.ts persiste decisionDispatched=true ANTES do runTurn
+		// da directive. Sem a tool em closing, o card do passo 4 nunca aparece.
+		const metaDoTurnoDaDirective = { ...REVEAL_META, decisionDispatched: true };
+		expect(allowedTools(metaDoTurnoDaDirective)).toContain("present_decision_prompt");
 	});
 
 	it("terminal: lista exata — BASE + check_proposal_status, NADA de descoberta (FIX-11)", () => {
@@ -279,12 +290,14 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).not.toContain("present_contract_form");
 	});
 
-	it("closing: contract_form + check_proposal_status entram, decision_prompt sai", () => {
+	it("closing: contract_form + check_proposal_status entram; decision_prompt permanece (directive pós-persist)", () => {
 		const agent = buildAgent(makePersonaRow(), "neutro", { meta: CLOSING_META });
 		const tools = exposedTools(agent);
 		expect(tools).toContain("present_contract_form");
 		expect(tools).toContain("check_proposal_status");
-		expect(tools).not.toContain("present_decision_prompt");
+		// dup em turno de usuário é papel do guard isDecisionDup (2ª linha) —
+		// o turno da directive (server) roda já com decisionDispatched=true.
+		expect(tools).toContain("present_decision_prompt");
 	});
 
 	it("terminal (FIX-11): toolset mínimo — status sim, re-descoberta NUNCA", () => {
