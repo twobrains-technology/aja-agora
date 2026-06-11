@@ -1,0 +1,84 @@
+// @vitest-environment happy-dom
+/**
+ * Camada 1 — FIX-C1/C4/C5 no componente do dial (auditoria Kairo 2026-06-11).
+ * Com os dados REAIS da oferta BB: dial calibrado no par (49,28% · 6 meses),
+ * parcela real até contemplar + estimada depois (sem fantasia), e confronto
+ * do lance declarado do usuário.
+ */
+
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ContemplationDialPayload } from "@/lib/chat/types";
+import { ContemplationDial } from "./contemplation-dial";
+
+const payload: ContemplationDialPayload = {
+	administradora: "BANCO DO BRASIL",
+	category: "auto",
+	creditValue: 262_309.8,
+	termMonths: 34,
+	monthlyPayment: 9_828.92,
+	historicalWinningBidPct: 49.28,
+	referenceMonth: 6,
+	maxEmbutidoPct: 49.28,
+	initialTargetMonth: 6,
+	declaredLanceValue: 117_000,
+};
+
+beforeEach(() => {
+	document.body.innerHTML = "";
+});
+
+afterEach(() => {
+	cleanup();
+});
+
+describe("FIX-C1 — dial calibrado no dado real (card e dial dizem o MESMO)", () => {
+	it("no mês 6 mostra ~49% (o lance real da oferta), nunca os 74% extrapolados", () => {
+		render(<ContemplationDial payload={payload} />);
+		const text = document.body.textContent ?? "";
+		expect(text).toContain("49%");
+		expect(text).not.toContain("74%");
+	});
+});
+
+describe("FIX-C4 — parcela honesta", () => {
+	it("mostra a parcela REAL até a contemplação (não a fantasia reduzida)", () => {
+		render(<ContemplationDial payload={payload} />);
+		const text = document.body.textContent ?? "";
+		expect(text).toMatch(/até contemplar/i);
+		expect(text).toContain("9.829"); // brl arredonda pra inteiro
+		// a fantasia do bug real (9.829 × (1−0,74) = 2.556) não existe mais
+		expect(text).not.toContain("2.556");
+	});
+
+	it("lance 100% embutido → parcela estimada DEPOIS não cai (embutido não abate dívida)", () => {
+		render(<ContemplationDial payload={payload} />);
+		const text = document.body.textContent ?? "";
+		// depois = igual à parcela real quando bolso é zero
+		expect(text).toMatch(/depois/i);
+	});
+});
+
+describe("FIX-C5 — confronto do lance declarado", () => {
+	it("lance declarado cobre a parte em dinheiro → afirma que cobre", () => {
+		// embutido real (49.28%) cobre tudo → bolso 0 → declarado cobre
+		render(<ContemplationDial payload={payload} />);
+		expect(document.body.textContent).toMatch(/cobre/i);
+	});
+
+	it("lance declarado insuficiente → mostra o gap sem esconder", () => {
+		render(
+			<ContemplationDial
+				payload={{ ...payload, maxEmbutidoPct: 30, declaredLanceValue: 10_000 }}
+			/>,
+		);
+		// bolso = (49−30)% de 262k ≈ 50k > 10k declarado
+		expect(document.body.textContent).toMatch(/não cobre|nao cobre/i);
+	});
+
+	it("sem lance declarado no payload → linha de confronto não aparece", () => {
+		const { declaredLanceValue: _omit, ...rest } = payload;
+		render(<ContemplationDial payload={rest as ContemplationDialPayload} />);
+		expect(document.body.textContent).not.toMatch(/cobre/i);
+	});
+});

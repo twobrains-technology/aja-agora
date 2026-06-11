@@ -32,11 +32,21 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				termMonths: payload.termMonths,
 				targetMonth: month,
 				historicalWinningBidPct: payload.historicalWinningBidPct,
+				// FIX-C1: calibra a curva no par real da oferta (lance% · mês) —
+				// no mês de referência o dial mostra o MESMO lance do card.
+				referenceMonth: payload.referenceMonth,
 				monthlyPayment: payload.monthlyPayment,
 				maxEmbutidoPct: payload.maxEmbutidoPct,
 			}),
 		[month, payload],
 	);
+
+	// FIX-C5: confronto do lance declarado na qualificação com a parte em
+	// DINHEIRO exigida neste mês-alvo (o embutido sai da carta).
+	const declaredCovers =
+		payload.declaredLanceValue != null && r.mode === "lance"
+			? payload.declaredLanceValue >= r.ownCashValue
+			: null;
 
 	// agulha: mês 1 (esquerda, -90°) → fim do grupo (direita, +90°)
 	const fraction = (month - 1) / Math.max(1, maxMonth - 1);
@@ -118,15 +128,33 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 								<Row label="↳ lance próprio (dinheiro)" value={brl(r.ownCashValue)} />
 							) : null}
 							<Row label="Valor que você recebe" value={brl(r.receivedCredit)} />
-							{r.estimatedMonthlyPayment != null ? (
-								<Row label="Parcela estimada" value={brl(r.estimatedMonthlyPayment)} />
+							{/* FIX-C4: parcela real até contemplar; depois, só o lance em
+							    DINHEIRO dilui (embutido reduz o crédito, não a dívida). */}
+							{payload.monthlyPayment > 0 ? (
+								<Row label="Parcela até contemplar" value={brl(payload.monthlyPayment)} />
+							) : null}
+							{r.paymentAfterContemplation != null ? (
+								<Row label="Parcela depois (estimada)" value={brl(r.paymentAfterContemplation)} />
+							) : null}
+							{/* FIX-C5: confronto com o lance declarado na qualificação */}
+							{declaredCovers != null && payload.declaredLanceValue != null ? (
+								<p
+									className={`text-xs ${declaredCovers ? "text-emerald-600" : "text-amber-600"}`}
+									data-testid="dial-declared-lance"
+								>
+									{declaredCovers
+										? `✓ Seu lance declarado (${brl(payload.declaredLanceValue)}) cobre a parte em dinheiro.`
+										: `Seu lance declarado (${brl(payload.declaredLanceValue)}) não cobre a parte em dinheiro deste prazo.`}
+								</p>
 							) : null}
 						</>
 					)}
 				</div>
 
 				<p className="text-[10px] text-muted-foreground leading-snug" data-testid="dial-disclaimer">
-					Estimativa baseada no histórico do grupo. Contemplação por lance ou sorteio não é
+					{/* FIX-C1: copy honesta — "histórico do grupo" era enganoso (a conta
+					    usa o lance da oferta + premissas, não histórico de assembleias). */}
+					Estimativa a partir dos dados da oferta. Contemplação por lance ou sorteio não é
 					garantida.
 				</p>
 			</CardContent>

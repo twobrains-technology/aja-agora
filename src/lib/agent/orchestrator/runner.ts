@@ -16,6 +16,7 @@ import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
+import { coerceSimulationPayload } from "./simulation-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -94,6 +95,10 @@ export async function* runAgentTurn(args: {
 	// Com opção única, o recommendation_card é suprimido — o detalhamento
 	// (simulation_result) é o card único, sem duplicar o mesmo grupo na tela.
 	let discoveryCount: number | null = null;
+	// FIX-C3: retorno REAL do simulate_quota deste turno — fonte única dos
+	// números do simulation_result (o modelo digitava o payload na mão e
+	// alucinou receivedCredit = carta cheia na jornada BB de 2026-06-11).
+	let lastQuotaSimulation: unknown = null;
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -148,6 +153,11 @@ export async function* runAgentTurn(args: {
 				// guard). Tools fora da descoberta retornam null e não interferem.
 				const count = extractDiscoveryCount(part.toolName, (part as { output?: unknown }).output);
 				if (count !== null) discoveryCount = count;
+				// FIX-C3: guarda o retorno real do simulate_quota pra coagir o
+				// payload do simulation_result emitido neste mesmo turno.
+				if (part.toolName === "simulate_quota") {
+					lastQuotaSimulation = (part as { output?: unknown }).output ?? null;
+				}
 				break;
 			}
 			case "tool-call": {
@@ -255,6 +265,12 @@ export async function* runAgentTurn(args: {
 								// falha de decrypt/DB não pode derrubar o turno — form vazio.
 							}
 						}
+						// FIX-C3: números do card de simulação SEMPRE do retorno real do
+						// simulate_quota — o modelo alucinava campos (receivedCredit =
+						// carta cheia com embutido de 49%).
+						if (artifactType === "simulation_result") {
+							payload = coerceSimulationPayload(input, lastQuotaSimulation);
+						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
 								artifacts.find((a) => a.type === "simulation_result") ??
@@ -262,7 +278,11 @@ export async function* runAgentTurn(args: {
 								artifacts.find((a) => a.type === "group_card");
 							const snapshot =
 								offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer;
-							payload = coerceDialPayload(input, snapshot);
+							// FIX-C5: defaults do perfil declarado na qualificação.
+							payload = coerceDialPayload(input, snapshot, {
+								prazoMeses: meta.qualifyAnswers?.prazoMeses,
+								lanceValue: meta.qualifyAnswers?.lanceValue,
+							});
 						}
 						artifacts.push({
 							type: artifactType,

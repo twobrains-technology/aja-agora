@@ -258,8 +258,14 @@ export interface ContemplationDialPayload {
 	termMonths: number;
 	monthlyPayment: number;
 	historicalWinningBidPct?: number;
+	/** FIX-C1: mês em que o lance de referência vence (probContemplacaoMeses
+	 * real da oferta) — calibra a curva do dial pra bater com o card. */
+	referenceMonth?: number;
 	maxEmbutidoPct?: number;
 	initialTargetMonth: number;
+	/** FIX-C5: lance que o usuário declarou ter na qualificação — o componente
+	 * confronta com o lance em dinheiro necessário ("cobre / não cobre"). */
+	declaredLanceValue?: number;
 }
 
 export type ArtifactByType =

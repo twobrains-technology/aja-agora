@@ -171,6 +171,26 @@
 - **D15b — `recommendation_card` com `max-w-sm`** (era `w-full` sem cap, "card muito
   grande"). Padroniza com `simulation_result`/`real_offer`. **D15c — `comparison_table`
   perdeu a "Taxa"** (escapou da poda D14; mesma regra Bernardo).
+- **D18 — Dial calibrado na OFERTA REAL + card de simulação coagido** (auditoria
+  Kairo, 2026-06-11; jornada BB real): o card dizia "lance 49,28% → ~6 meses"
+  (dado Bevi) e o dial mostrava "74%" pro MESMO mês — o motor extrapolava por
+  cima do dado real (âncora heurística de 25% do prazo em vez do
+  `probContemplacaoMeses` da oferta). 5 fixes: **C1** `referenceMonth` calibra
+  a curva no par real (lance%, mês) → dial == card; **C2** `coerceDialPayload`
+  coage também os números de lance (winningBid/refMonth/maxEmbutido) da oferta
+  — extensão do FIX-6; **C3** `coerceSimulationPayload` (novo) coage o payload
+  do `simulation_result` contra o retorno REAL do `simulate_quota` (o modelo
+  digitava na mão e alucinou receivedCredit = carta cheia); **C4** parcela
+  honesta — `paymentAfterContemplation` abate só o lance em DINHEIRO do saldo
+  pós-contemplação (embutido reduz crédito, não dívida; morreu a fantasia
+  `parcela × (1−lance%)` que mostrava R$ 2.556 onde era R$ 9.829); **C5**
+  defaults do PERFIL — dial abre no prazo declarado (27, não 6 hardcoded) e
+  confronta o lance declarado ("cobre / não cobre"). Disclaimer corrigido
+  ("dados da oferta", não "histórico do grupo" — não temos histórico de
+  assembleias; pedido à AGX segue na proposta-simulador.md). Cassette:
+  BUG-DIAL-DESCALIBRADO em `tests/regression/agent-trajectory.test.ts`.
+  **C6 (confronto de viabilidade quando o orçamento declarado não fecha) →
+  FIX-18 no todo-blocks, aguardando conversa.**
 - **D17 — Comando oculto `/reset` no chat web** (Kairo, 2026-06-11): reset do
   AGENTE — digitado no input (match exato, espelha o WhatsApp
   `processor.ts`), nunca vira mensagem. Apaga tudo como no WhatsApp ("se o

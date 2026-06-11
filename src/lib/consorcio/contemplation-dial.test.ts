@@ -32,9 +32,17 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.receivedCredit).toBeLessThanOrEqual(100_000);
 	});
 
-	it("lance abate o saldo → parcela estimada menor que a base", () => {
+	it("lance em DINHEIRO abate o saldo → parcela pós-contemplação menor que a base (FIX-C4)", () => {
+		// Modelo antigo (parcela × (1 − lance%)) era fantasia: contava o EMBUTIDO
+		// como abatimento e aplicava o desconto desde o mês 1. Auditoria 2026-06-11.
 		const r = computeContemplationDial({ ...base, targetMonth: 6 });
-		expect(r.estimatedMonthlyPayment).toBeLessThan(1500);
+		// targetMonth 6 num grupo de 80 meses exige lance > teto de embutido →
+		// tem parte em dinheiro, que abate o saldo restante.
+		expect(r.ownCashValue).toBeGreaterThan(0);
+		expect(r.paymentAfterContemplation).toBeLessThan(1500);
+		// e a diluição é exatamente o bolso espalhado nos meses restantes
+		const expected = (1500 * (80 - 6) - r.ownCashValue) / (80 - 6);
+		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
 	});
 
 	it("teto de 80% no lance pra metas muito agressivas", () => {

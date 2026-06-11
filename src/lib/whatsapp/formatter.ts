@@ -1084,6 +1084,9 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 		termMonths,
 		monthlyPayment: Number(payload.monthlyPayment ?? 0),
 		historicalWinningBidPct: payload.historicalWinningBidPct as number | undefined,
+		// FIX-C1: calibra no par real da oferta — WhatsApp mostra os mesmos
+		// números do card, igual ao dial web.
+		referenceMonth: payload.referenceMonth as number | undefined,
 		maxEmbutidoPct: payload.maxEmbutidoPct as number | undefined,
 	});
 	const lines = marks.map((m) => {
@@ -1093,7 +1096,7 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	});
 	return {
 		type: "text",
-		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa pelo histórico do grupo — contemplação não é garantida._`,
+		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa a partir dos dados da oferta — contemplação não é garantida._`,
 	};
 }
 

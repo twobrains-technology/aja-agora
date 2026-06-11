@@ -3536,3 +3536,118 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
 	});
 });
+
+// ============================================================================
+// CENARIO — BUG-DIAL-DESCALIBRADO-CASSETTE (auditoria Kairo 2026-06-11)
+// ----------------------------------------------------------------------------
+// Jornada REAL (web, oferta BANCO DO BRASIL via Bevi): o card de simulacao
+// disse "lance de 49,28% -> contemplacao ~6 meses" (dado real da oferta) e o
+// dial, aberto em seguida no MESMO mes 6, mostrou "lance necessario 74%" +
+// "lance proprio R$ 115.416" + "parcela estimada R$ 2.556" (fantasia). E o
+// card mostrou "Valor que voce recebe R$ 262.309,80" (a carta CHEIA) com
+// embutido de 49,28% — payload digitado pelo modelo com campo trocado.
+// 3 fixes server-side: C1 (referenceMonth calibra o motor no par real),
+// C2 (coerceDialPayload forca os numeros de lance da oferta), C3
+// (coerceSimulationPayload coage o card contra o retorno real do
+// simulate_quota). Este cassette reproduz a TRAJETORIA do dado com os numeros
+// exatos do bug.
+// ============================================================================
+
+describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma oferta", () => {
+	// Retorno REAL do simulate_quota na jornada (shape beviOfferToQuotaSimulation)
+	const QUOTA_SIM_BB = {
+		groupId: "quota-bb",
+		category: "auto",
+		creditValue: 262_309.8,
+		monthlyPayment: 9_828.92,
+		adminFee: 44_592.67,
+		reserveFund: 5_246.2,
+		insurance: 0,
+		totalCost: 334_183.28,
+		termMonths: 34,
+		effectiveRate: 27.4,
+		lanceScenario: { lancePercent: 49.28, expectedTermMonths: 6 },
+		embeddedBid: {
+			percent: 49.28,
+			embeddedBidValue: 129_266.27,
+			receivedCredit: 133_043.53,
+			necessaryBidToContemplate: 129_266.27,
+		},
+		expectedAdjustment: { index: "IPCA", annualPercent: 4.5 },
+	};
+
+	it("C3: payload alucinado pelo modelo (recebe = carta CHEIA) e coagido pro dado real", async () => {
+		const { coerceSimulationPayload } = await import(
+			"@/lib/agent/orchestrator/simulation-payload"
+		);
+		const hallucinated = {
+			administradora: "BANCO DO BRASIL",
+			creditValue: 262_309.8,
+			monthlyPayment: 9_828.92,
+			termMonths: 34,
+			embeddedBid: {
+				percent: 49.28,
+				embeddedBidValue: 129_266.27,
+				receivedCredit: 262_309.8, // <- o bug exato observado
+				necessaryBidToContemplate: 129_266.27,
+			},
+		};
+		const out = coerceSimulationPayload(hallucinated, QUOTA_SIM_BB);
+		expect((out.embeddedBid as { receivedCredit: number }).receivedCredit).toBeCloseTo(
+			133_043.53,
+			2,
+		);
+	});
+
+	it("C1+C2: trajetoria completa do dado — snapshot do card calibra o dial e 74% vira 49%", async () => {
+		const { coerceSimulationPayload } = await import(
+			"@/lib/agent/orchestrator/simulation-payload"
+		);
+		const { coerceDialPayload, offerSnapshotFromArtifact } = await import(
+			"@/lib/agent/orchestrator/dial-payload"
+		);
+		const { computeContemplationDial } = await import("@/lib/consorcio/contemplation-dial");
+
+		// 1. card de simulacao coagido (como o runner emite)
+		const simPayload = coerceSimulationPayload(
+			{ administradora: "BANCO DO BRASIL", category: "auto" },
+			QUOTA_SIM_BB,
+		);
+		// 2. dial coagido a partir do snapshot do card + perfil declarado da jornada
+		const dialPayload = coerceDialPayload({}, offerSnapshotFromArtifact(simPayload), {
+			prazoMeses: 27,
+			lanceValue: 117_000,
+		});
+		// numeros de lance vieram da oferta, nao do modelo
+		expect(dialPayload.historicalWinningBidPct).toBeCloseTo(49.28, 1);
+		expect(dialPayload.referenceMonth).toBe(6);
+		expect(dialPayload.maxEmbutidoPct).toBeCloseTo(49.28, 1);
+		// abre no prazo DECLARADO (27), nao em 6 hardcoded
+		expect(dialPayload.initialTargetMonth).toBe(27);
+		expect(dialPayload.declaredLanceValue).toBe(117_000);
+
+		// 3. motor no mes 6 (o cenario do card): dial == card, nunca mais 74%
+		const r = computeContemplationDial({
+			creditValue: dialPayload.creditValue as number,
+			termMonths: dialPayload.termMonths as number,
+			targetMonth: 6,
+			historicalWinningBidPct: dialPayload.historicalWinningBidPct as number,
+			referenceMonth: dialPayload.referenceMonth as number,
+			monthlyPayment: dialPayload.monthlyPayment as number,
+			maxEmbutidoPct: dialPayload.maxEmbutidoPct as number,
+		});
+		expect(r.requiredLancePct).toBe(49);
+		expect(r.ownCashValue).toBe(0); // embutido real cobre — sem "R$ 115 mil do bolso"
+		// C4: parcela honesta — embutido nao derruba a parcela (nada de R$ 2.556)
+		expect(r.paymentAfterContemplation).toBeCloseTo(9_828.92, 2);
+	});
+
+	it("wiring estrutural: runner captura simulate_quota e coage simulation_result + dial com perfil", async () => {
+		const { readFileSync } = await import("node:fs");
+		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
+		expect(src).toMatch(/simulate_quota/);
+		expect(src).toMatch(/coerceSimulationPayload/);
+		expect(src).toMatch(/prazoMeses: meta\.qualifyAnswers\?\.prazoMeses/);
+		expect(src).toMatch(/lanceValue: meta\.qualifyAnswers\?\.lanceValue/);
+	});
+});

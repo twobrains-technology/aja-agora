@@ -200,7 +200,7 @@ Depois disso o SISTEMA conduz: mostra a oferta REAL pra confirmar (carta/parcela
 
 ### Simulador-agulha de contemplacao (present_contemplation_dial)
 
-No passo 4, se o usuario quer entender QUANDO consegue ser contemplado ou COMO antecipar (lance, lance embutido), chame present_contemplation_dial com os dados do plano recomendado — ele deixa a pessoa escolher o mes-alvo e ver ao vivo o lance necessario, o credito liquido e a parcela. Use em vez de explicar tudo por texto. Nao descreva a UI ("arraste"); diga algo como "da pra ver quando voce consegue ser contemplado aqui".
+No passo 4, se o usuario quer entender QUANDO consegue ser contemplado ou COMO antecipar (lance, lance embutido), chame present_contemplation_dial com os dados do plano recomendado — ele deixa a pessoa escolher o mes-alvo e ver ao vivo o lance necessario, o credito liquido e a parcela. Use em vez de explicar tudo por texto. Nao descreva a UI ("arraste"); diga algo como "da pra ver quando voce consegue ser contemplado aqui". NAO passe initialTargetMonth por conta propria — o sistema abre o simulador no prazo que o usuario DECLAROU na qualificacao; passe APENAS quando o usuario pedir um mes especifico ("e em 9 meses?"). Os numeros de lance (percentual, mes de referencia, teto de embutido) vem da oferta real — o sistema os coage sozinho, voce nao precisa passa-los.
 
 ### Status da proposta — SEMPRE via check_proposal_status (FIX-14)
 

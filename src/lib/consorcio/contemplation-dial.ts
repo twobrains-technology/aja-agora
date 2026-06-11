@@ -30,6 +30,12 @@ export interface ContemplationDialInput {
 	targetMonth: number; // a agulha (quando quer contemplar)
 	/** Lance vencedor típico do grupo (% da carta), da oferta rica da Descoberta. */
 	historicalWinningBidPct?: number;
+	/** FIX-C1 (auditoria 2026-06-11): mês em que o lance de referência VENCE,
+	 * vindo da oferta REAL (probContemplacaoMeses da Bevi). Quando presente, a
+	 * curva é calibrada nesse par (lance%, mês) — no mês de referência o dial
+	 * mostra EXATAMENTE o lance da oferta, igual ao card de simulação. Ausente
+	 * → âncora heurística de 25% do prazo (comportamento anterior). */
+	referenceMonth?: number;
 	/** Parcela base (pra mostrar o impacto da diluição). */
 	monthlyPayment?: number;
 	/** Teto do lance embutido aceito pelo grupo (default 30%). */
@@ -46,8 +52,11 @@ export interface ContemplationDialResult {
 	ownCashPct: number; // parte em dinheiro
 	ownCashValue: number; // R$
 	receivedCredit: number; // carta − embutido
-	/** Parcela estimada após o lance abater o saldo (diluição). Só se monthlyPayment dado. */
-	estimatedMonthlyPayment?: number;
+	/** FIX-C4: parcela estimada APÓS a contemplação — só o lance em DINHEIRO
+	 * abate o saldo (o embutido reduz o crédito recebido, não a dívida).
+	 * Até a contemplação vale a parcela real do grupo. Undefined quando não há
+	 * monthlyPayment ou a contemplação cai no último mês. */
+	paymentAfterContemplation?: number;
 	likelihood: DialLikelihood;
 }
 
@@ -65,9 +74,13 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 		MAX_BID_PCT,
 	);
 
-	// Mês de referência ("fast lane") onde o lance vencedor típico contempla. Antes
-	// dele exige mais lance; depois, menos. Hipérbole simples e monotônica.
-	const anchorMonth = clamp(Math.round(term * 0.25), 4, term);
+	// Mês de referência onde o lance de referência contempla. FIX-C1: quando a
+	// oferta REAL informa o par (lance%, mês) — probContemplacaoMeses da Bevi —
+	// a curva é calibrada nele e dial == card. Sem dado real, âncora heurística
+	// de 25% do prazo. Antes do mês de referência exige mais lance; depois, menos.
+	const refRaw = Math.round(input.referenceMonth ?? 0);
+	const anchorMonth =
+		refRaw >= 1 ? clamp(refRaw, 1, term) : clamp(Math.round(term * 0.25), 4, term);
 	const raw = winningBid * (anchorMonth / targetMonth);
 	// Taper tardio: quanto mais perto do fim do grupo, mais o sorteio basta sozinho
 	// e o lance necessário tende a zero (taper=1 até o mês de referência, 0 no fim).
@@ -84,10 +97,17 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	const requiredLanceValue = round2((carta * requiredLancePct) / 100);
 	const receivedCredit = round2(carta - embeddedBidValue);
 
-	const estimatedMonthlyPayment =
-		input.monthlyPayment != null
-			? round2(input.monthlyPayment * (1 - requiredLancePct / 100))
-			: undefined;
+	// FIX-C4: até a contemplação a parcela é a REAL do grupo. Depois dela, só o
+	// lance em DINHEIRO abate o saldo restante (o embutido sai da carta — reduz
+	// o crédito recebido, não a dívida). Modelo antigo (parcela × (1 − lance%))
+	// era fantasia dupla: contava o embutido como abatimento e aplicava o
+	// desconto desde o mês 1.
+	let paymentAfterContemplation: number | undefined;
+	if (input.monthlyPayment != null && input.monthlyPayment > 0 && targetMonth < term) {
+		const remainingMonths = term - targetMonth;
+		const remainingBalance = input.monthlyPayment * remainingMonths - ownCashValue;
+		paymentAfterContemplation = round2(Math.max(0, remainingBalance) / remainingMonths);
+	}
 
 	// Probabilidade qualitativa: dá pra fazer só com a carta? (sem dinheiro novo)
 	const likelihood: DialLikelihood =
@@ -103,7 +123,7 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 		ownCashPct,
 		ownCashValue,
 		receivedCredit,
-		estimatedMonthlyPayment,
+		paymentAfterContemplation,
 		likelihood,
 	};
 }
