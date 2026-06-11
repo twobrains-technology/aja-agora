@@ -169,7 +169,14 @@ const valuePickerSchema = z.object({
 	fields: z
 		.array(
 			z.object({
-				id: z.string().describe("Identificador do campo (ex: creditValue, monthlyBudget, term)"),
+				// FIX-16: ids canonicos ativam a interligacao inteligente dos sliders
+				// (parcela/prazo arrastados -> valor do bem recalcula ao vivo pela
+				// matematica de consorcio). Prefira sempre os 3 campos juntos.
+				id: z
+					.string()
+					.describe(
+						"Identificador do campo. Use EXATAMENTE: creditValue (valor do bem), monthlyBudget (parcela mensal), term (prazo em meses) — esses ids interligam os sliders ao vivo",
+					),
 				label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
 				min: z.number().describe("Valor minimo do slider"),
 				max: z.number().describe("Valor maximo do slider"),

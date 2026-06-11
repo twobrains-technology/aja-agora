@@ -2,12 +2,13 @@
 
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
+import { identifyLinkRoles, recalcLinkedValues } from "@/lib/consorcio/value-picker-link";
 
 export type { ValuePickerField, ValuePickerPayload };
 
@@ -17,7 +18,12 @@ function formatValue(value: number, format?: "currency" | "months"): string {
 			const m = value / 1_000_000;
 			return m % 1 === 0 ? `R$ ${m.toFixed(0)} mi` : `R$ ${m.toFixed(1)} mi`;
 		}
-		if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)} mil`;
+		// FIX-16: abaixo de 10 mil o valor exato importa (parcela derivada) —
+		// "R$ 1.600" arredondado pra "R$ 2 mil" vira mentira visual.
+		if (value >= 10_000) {
+			const k = value / 1_000;
+			return k % 1 === 0 ? `R$ ${k.toFixed(0)} mil` : `R$ ${k.toFixed(1).replace(".", ",")} mil`;
+		}
 		return `R$ ${value.toLocaleString("pt-BR")}`;
 	}
 	if (format === "months") return `${value} meses`;
@@ -41,6 +47,29 @@ export function ValuePicker({
 		return initial;
 	});
 	const [submitted, setSubmitted] = useState(false);
+
+	// FIX-16: sliders interligados pela relação de consórcio (plan-estimate).
+	// Arrastou parcela/prazo → o bem se ajusta; arrastou o bem → a parcela.
+	// Papéis não identificáveis no payload → null = comportamento solto.
+	const linkRoles = useMemo(() => identifyLinkRoles(payload.fields), [payload.fields]);
+
+	const handleChange = useCallback(
+		(field: ValuePickerField, raw: number | readonly number[]) => {
+			const v = Array.isArray(raw) ? raw[0] : raw;
+			setValues((prev) => {
+				const next = { ...prev, [field.id]: v };
+				if (!linkRoles) return next;
+				return recalcLinkedValues({
+					fields: payload.fields,
+					roles: linkRoles,
+					category: payload.category,
+					values: next,
+					changedId: field.id,
+				});
+			});
+		},
+		[linkRoles, payload.fields, payload.category],
+	);
 
 	const handleSubmit = useCallback(() => {
 		setSubmitted(true);
@@ -89,15 +118,20 @@ export function ValuePicker({
 								max={field.max}
 								step={field.step}
 								onValueChange={(val) => {
-									if (!submitted) {
-										const v = Array.isArray(val) ? val[0] : val;
-										setValues((prev) => ({ ...prev, [field.id]: v }));
-									}
+									if (!submitted) handleChange(field, val);
 								}}
 								disabled={submitted}
 							/>
 						</div>
 					))}
+
+					{/* FIX-16: valores derivados de premissas típicas de mercado — nunca
+					    apresentar como dado de administradora (mesma regra do FIX-3) */}
+					{linkRoles && (
+						<p className="text-center text-[10px] leading-tight text-muted-foreground">
+							Estimativa de mercado — os valores reais vêm das administradoras
+						</p>
+					)}
 
 					{/* Submit */}
 					<Button

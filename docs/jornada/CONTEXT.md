@@ -171,6 +171,19 @@
 - **D15b — `recommendation_card` com `max-w-sm`** (era `w-full` sem cap, "card muito
   grande"). Padroniza com `simulation_result`/`real_offer`. **D15c — `comparison_table`
   perdeu a "Taxa"** (escapou da poda D14; mesma regra Bernardo).
+- **D16 — ValuePicker (present_value_picker) INTELIGENTE** (Kairo, 2026-06-11):
+  os sliders deixam de ser independentes — arrastou **parcela** ou **prazo** → o
+  **valor do bem** recalcula ao vivo; arrastou o **bem** → a **parcela** recalcula
+  (prazo fixo). Mesma relação do plan-estimate (FIX-3):
+  `parcela ≈ bem × (1+taxa_adm_típica[categoria]) / prazo`, premissas
+  `TYPICAL_ADMIN_FEE_PCT`/`TYPICAL_TERM_MONTHS`. Engine pura em
+  `src/lib/consorcio/value-picker-link.ts` (identifyLinkRoles + recalcLinkedValues);
+  papéis identificados por id canônico + heurística (payload é genérico, decidido
+  pela LLM) — não identificou com segurança → degrada pro comportamento solto,
+  nunca interliga errado. Selo "Estimativa de mercado" quando o link está ativo
+  (mesma regra do FIX-3 — nunca apresentar como dado de administradora). Display
+  corrigido: abaixo de R$ 10 mil mostra o valor exato ("R$ 1.600", não "R$ 2 mil").
+  Camada 1: `value-picker-link.test.ts` + `value-picker.linked.test.tsx`.
 
 ## Estado da implementação (2026-06-04, branch `feat/jornada-bevi-lance-embutido`)
 
