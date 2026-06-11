@@ -3651,3 +3651,41 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 		expect(src).toMatch(/lanceValue: meta\.qualifyAnswers\?\.lanceValue/);
 	});
 });
+
+// ============================================================================
+// CENARIO — BUG-SNAPSHOT-ANCHOR-POBRE (E2E real pos-D18, 2026-06-11)
+// ----------------------------------------------------------------------------
+// Mesmo com C1/C2 implementados, o smoke E2E real mostrou o dial com 31% no
+// mes 6 (defaults heuristicos: 40% x ancora 5) em vez dos ~24% do card.
+// Causa: o persist do reveal escolhia o RECOMMENDATION_CARD como ancora do
+// snapshot (prioridade do "plano destacado") — mas so o SIMULATION_RESULT
+// carrega lanceScenario/embeddedBid. O meta.recommendedOffer ficava sem os
+// lance fields e o dial do turno seguinte caia nos defaults. O snapshot da
+// oferta deve preferir o artifact RICO; a administradora pode continuar vindo
+// do recommendation_card.
+// ============================================================================
+
+describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RICO", () => {
+	it("runner: snapshot do reveal usa simulation_result ANTES de recommendation_card", async () => {
+		const { readFileSync } = await import("node:fs");
+		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
+		// O bloco do persist do reveal declara um snapshotAnchor com
+		// simulation_result em primeiro lugar (artifact rico em lance fields).
+		const m = /const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
+		expect(src).toMatch(m);
+		// e o offerSnapshot é extraído DELE, não do anchor de administradora
+		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchor\?\.payload\)/);
+	});
+
+	it("offerSnapshotFromArtifact: payload de recommendation_card (sem lance) produz snapshot SEM lance fields — nunca inventa", async () => {
+		const { offerSnapshotFromArtifact } = await import("@/lib/agent/orchestrator/dial-payload");
+		const snap = offerSnapshotFromArtifact({
+			administradora: "BANCO DO BRASIL",
+			creditValue: 263_010.04,
+			termMonths: 18,
+			monthlyPayment: 18_469.16,
+		});
+		expect(snap?.lanceRefPct).toBeUndefined();
+		expect(snap?.lanceRefMonth).toBeUndefined();
+	});
+});

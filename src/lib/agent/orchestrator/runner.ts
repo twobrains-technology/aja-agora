@@ -435,7 +435,15 @@ export async function* runAgentTurn(args: {
 				? anchor.payload.administradora
 				: refreshed.recommendedAdministradora;
 		// FIX-6: snapshot dos números da oferta âncora — fonte única do dial.
-		const offerSnapshot = offerSnapshotFromArtifact(anchor?.payload);
+		// BUG-SNAPSHOT-ANCHOR-POBRE (E2E real 2026-06-11): o snapshot precisa do
+		// artifact RICO — só o simulation_result carrega lanceScenario/embeddedBid
+		// (lance real + mês de referência + teto de embutido, FIX-C2). Usar o
+		// recommendation_card aqui deixava o dial sem calibração (31% vs 24%).
+		const snapshotAnchor =
+			artifacts.find((a) => a.type === "simulation_result") ??
+			artifacts.find((a) => a.type === "recommendation_card") ??
+			artifacts.find((a) => a.type === "group_card");
+		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchor?.payload);
 		await persistMeta(conversationId, {
 			...refreshed,
 			revealCompleted: true,
