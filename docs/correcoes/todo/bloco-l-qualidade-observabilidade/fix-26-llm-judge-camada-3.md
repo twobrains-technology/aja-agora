@@ -2,7 +2,7 @@
 id: FIX-26
 titulo: "LLM-as-judge na Camada 3 — critérios qualitativos da jornada validados por judge, não só asserts estruturais"
 status: todo
-bloco: bloco-d-eval-harness
+bloco: bloco-l-qualidade-observabilidade
 arquivos:
   - tests/eval/agent-flow.eval.test.ts
   - tests/eval/judge.ts (novo — helper de julgamento com rubrica)

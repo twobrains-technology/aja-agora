@@ -2,7 +2,7 @@
 id: FIX-17
 titulo: "Gate do nome ('como posso te chamar?') deve pedir o nome em CARD com input focado, não texto livre"
 status: todo
-bloco: bloco-e-gate-nome-card
+bloco: bloco-m-ux-funil
 decisao_pendente: "Kairo pediu pra CONVERSAR antes de implementar (2026-06-11) — não lançar sem alinhar o desenho"
 arquivos:
   - src/lib/chat/ui-message.ts (part data novo, ex: NameGatePartData)

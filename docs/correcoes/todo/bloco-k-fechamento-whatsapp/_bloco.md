@@ -4,7 +4,7 @@ branch: feat/fechamento-bevi-whatsapp
 workspace: feat-fechamento-bevi-whatsapp
 onda: 1
 depends_on: []
-paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card, bloco-f-viabilidade-orcamento, bloco-j-telemetria-runner-residuo]
+paralelo_com: [bloco-l-qualidade-observabilidade, bloco-m-ux-funil]
 itens: [FIX-25]
 escopo_arquivos:
   - src/lib/whatsapp/processor.ts
@@ -13,8 +13,8 @@ escopo_arquivos:
   - src/lib/whatsapp/formatter.ts (região do contract_form)
   - tests/regression/agent-trajectory.test.ts
 conflitos_esperados:
-  - "NÍVEL 2 com bloco E em src/lib/whatsapp/formatter.ts: E mexe na degradação do name-prompt (região do gate nome), K mexe em contractFormToWhatsApp (linha ~1023). Regiões distantes, resolução mecânica. Ordem de merge: tanto faz."
-  - "NÍVEL 2 com bloco E em tests/regression/agent-trajectory.test.ts (append-only de describes)."
+  - "NÍVEL 2 com bloco M em src/lib/whatsapp/formatter.ts: E mexe na degradação do name-prompt (região do gate nome), K mexe em contractFormToWhatsApp (linha ~1023). Regiões distantes, resolução mecânica. Ordem de merge: tanto faz."
+  - "NÍVEL 2 com bloco M em tests/regression/agent-trajectory.test.ts (append-only de describes com bloco M)."
 ---
 
 # Bloco K — MC-5: fechamento Bevi no canal WhatsApp

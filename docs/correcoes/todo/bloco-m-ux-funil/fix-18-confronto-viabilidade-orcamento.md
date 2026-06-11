@@ -2,7 +2,7 @@
 id: FIX-18
 titulo: "Orçamento declarado não fecha com o bem → agente recomenda parcela 9,8× maior rotulada 'Compatível com seu perfil' sem confrontar"
 status: todo
-bloco: bloco-f-viabilidade-orcamento
+bloco: bloco-m-ux-funil
 decisao_pendente: "Conversar com o Kairo antes (mexe na narrativa da jornada; C6 da auditoria 2026-06-11)"
 arquivos:
   - src/lib/agent/orchestrator/directives.ts (confronto pré/pós-busca)
