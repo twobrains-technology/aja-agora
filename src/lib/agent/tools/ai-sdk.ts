@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
@@ -270,7 +271,8 @@ async function executeSearchGroups(
 	args: z.infer<typeof searchGroupsInput>,
 ) {
 	const groups = await adapter.searchGroups(args);
-	return { groups, total: groups.length };
+	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
+	return { groups: groups.map(toModelGroupSummary), total: groups.length };
 }
 
 async function executeSimulateQuota(
@@ -326,7 +328,8 @@ async function executeRecommendGroups(
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
 	return {
 		recommendations: ranked.map((r) => ({
-			...r.group,
+			// FIX-23: dieta — `totalParticipants` morto fora do tool-result.
+			...toModelGroupSummary(r.group),
 			score: r.score,
 			scoreBreakdown: r.factors,
 			alternativa: altById.get(r.group.id) ?? false,

@@ -99,6 +99,20 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 	};
 }
 
+/** GroupSummary enxuto pro CONTEXTO do modelo (FIX-23 — token diet). O tool-result
+ * de search/recommend é re-enviado a cada turno (multi-turn); `totalParticipants`
+ * é constante 0 no Trilho B (a oferta self-contract não traz total de cotas) —
+ * peso morto que o modelo nunca usa e nenhum schema de card referencia. Os números
+ * ricos do card vêm da coerção server-side (runner), não deste resumo. */
+export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants">;
+
+export function toModelGroupSummary({
+	totalParticipants: _drop,
+	...rest
+}: GroupSummary): ModelGroupSummary {
+	return rest;
+}
+
 /** Oferta Bevi → QuotaSimulation (breakdown de custos + cenário de lance).
  * Inclui o cenário de lance embutido quando a oferta traz `embeddedBid`. */
 export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
