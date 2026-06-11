@@ -77,3 +77,12 @@ A fonte de verdade da fase JÁ existe: `meta` (`revealCompleted`,
   (não apenas suprimida).
 - **Camada 3**: cenários nightly existentes já cobrem a jornada 1→5 — verificar
   que continuam verdes (a policy não pode quebrar o happy path).
+
+## Follow-up pós-eval (2026-06-11, commit 5be65b7)
+
+A rodada nightly da Camada 3 (EVAL-FIX-14-STATUS-VIA-TOOL) pegou uma regressão
+da 1ª versão da tabela: `check_proposal_status` só existia em closing/terminal,
+mas a fonte de verdade da proposta é `bevi_proposals` (pode existir sem
+`meta.contractClosed`) — o agent negou proposta REAL de memória. Fix:
+`check_proposal_status` movida pra BASE (leitura pura, primitivo do FIX-14 —
+"status nunca de memória", em qualquer fase).
