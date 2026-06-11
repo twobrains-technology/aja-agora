@@ -46,9 +46,9 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
@@ -3577,9 +3577,7 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 	};
 
 	it("C3: payload alucinado pelo modelo (recebe = carta CHEIA) e coagido pro dado real", async () => {
-		const { coerceSimulationPayload } = await import(
-			"@/lib/agent/orchestrator/simulation-payload"
-		);
+		const { coerceSimulationPayload } = await import("@/lib/agent/orchestrator/simulation-payload");
 		const hallucinated = {
 			administradora: "BANCO DO BRASIL",
 			creditValue: 262_309.8,
@@ -3600,9 +3598,7 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 	});
 
 	it("C1+C2: trajetoria completa do dado — snapshot do card calibra o dial e 74% vira 49%", async () => {
-		const { coerceSimulationPayload } = await import(
-			"@/lib/agent/orchestrator/simulation-payload"
-		);
+		const { coerceSimulationPayload } = await import("@/lib/agent/orchestrator/simulation-payload");
 		const { coerceDialPayload, offerSnapshotFromArtifact } = await import(
 			"@/lib/agent/orchestrator/dial-payload"
 		);
@@ -3671,7 +3667,8 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
 		// O bloco do persist do reveal declara um snapshotAnchor com
 		// simulation_result em primeiro lugar (artifact rico em lance fields).
-		const m = /const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
+		const m =
+			/const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
 		expect(src).toMatch(m);
 		// e o offerSnapshot é extraído DELE, não do anchor de administradora
 		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchor\?\.payload\)/);
@@ -3687,5 +3684,161 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 		});
 		expect(snap?.lanceRefPct).toBeUndefined();
 		expect(snap?.lanceRefMonth).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-19-TOOL-POLICY (bloco G, sessão de arquitetura 2026-06-11)
+// ----------------------------------------------------------------------------
+// Causa raiz comum de FIX-11/FIX-12/BUG-REVEAL-LOOP/PF-07: o modelo enxergava
+// TODAS as ~15 tools em QUALQUER fase da jornada — cada tool visível fora de
+// fase é um convite à chamada indevida — e a defesa era 100% a jusante (guard
+// do runner suprime o card DEPOIS da chamada). O FIX-19 inverte: tool fora de
+// fase NEM ENTRA no request (allowedTools(meta) filtra o toolset no builder).
+// Os guards do runner viram segunda linha de defesa (defense-in-depth) e
+// disparo de guard pós-policy ganha log forte [tool-policy-violation].
+//
+// Camada 1 detalhada: src/lib/agent/orchestrator/tool-policy.test.ts (matriz
+// fase × tool + wiring do builder). Aqui: replay dos streams dos 2 bugs com
+// assert de que a tool indevida NEM ESTÁ no toolset — não apenas suprimida.
+// ============================================================================
+
+describe("FIX-19-TOOL-POLICY — tool fora de fase nem entra no request", () => {
+	function policyPersonaRow() {
+		return {
+			id: "moto",
+			displayName: "Bruno",
+			role: "specialist",
+			category: "moto",
+			expertise: null,
+			voiceTone: "consultivo",
+			examples: [],
+			temperature: 0.7,
+			activeCampaigns: [],
+			handoffTriggers: [],
+			forbiddenTopics: [],
+			activeTools: [
+				"search_groups",
+				"simulate_quota",
+				"get_rates",
+				"get_group_details",
+				"recommend_groups",
+				"present_group_card",
+				"present_comparison_table",
+				"present_simulation_result",
+				"present_recommendation_card",
+			],
+			isActive: true,
+			version: 1,
+			createdAt: new Date("2026-06-11T00:00:00Z"),
+			updatedAt: new Date("2026-06-11T00:00:00Z"),
+		};
+	}
+
+	/** Fim do passo 2 (gate identify) — estado exato da conversa do FIX-12. */
+	const FIX12_META: ConversationMetadata = {
+		currentPersona: "moto",
+		currentCategory: "moto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		qualifyAnswers: {
+			creditMin: 35_000,
+			creditMax: 40_000,
+			monthlyBudget: 800,
+			prazoMeses: 8,
+			hasLance: "no",
+			lanceEmbutido: false,
+		},
+	};
+
+	/** Pós-fechamento (CANOPUS contratada) — estado exato da conversa do FIX-11. */
+	const FIX11_META: ConversationMetadata = {
+		...FIX12_META,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		simulatorOfferDispatched: true,
+		decisionDispatched: true,
+		recommendedAdministradora: "CANOPUS",
+		contractClosed: true,
+	};
+
+	it("cassette FIX-12: modelo chamou present_contract_form no gate identify (PRÉ-reveal)", async () => {
+		// Reprodução fiel da trajetória (prints 27/28/31/32 da rodada 2026-06-05):
+		// narrativa de identidade + form de CONTRATAÇÃO no lugar do gate identify.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa! Pra eu buscar as opções reais, o sistema precisa da sua identidade:",
+			),
+			toolCallChunk("tc-1", "present_contract_form", { administradora: "CANOPUS" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls.some((tc) => tc.toolName === "present_contract_form")).toBe(true);
+
+		// FIX-19 (gating a montante): nessa fase a tool NEM PODE estar no request.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		expect(allowedTools(FIX12_META)).not.toContain("present_contract_form");
+
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX12_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"present_contract_form exposto PRÉ-reveal — o FIX-19 exige que a tool nem entre " +
+				"no toolset do agent nessa fase (a supressão do runner é só segunda linha)",
+		).not.toContain("present_contract_form");
+	});
+
+	it("cassette FIX-11: pós-fechamento, 'qual status?' re-rodou descoberta e ofereceu OUTRA administradora", async () => {
+		// Reprodução fiel (2026-06-05 tarde): usuário JÁ contratou CANOPUS,
+		// perguntou status e o agent re-buscou + recomendou BANCO DO BRASIL.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu verificar as melhores opções pra você!"),
+			toolCallChunk("tc-1", "search_groups", { category: "moto", creditMax: 40_000 }),
+			toolCallChunk("tc-2", "present_recommendation_card", { administradora: "BANCO DO BRASIL" }),
+			toolCallChunk("tc-3", "present_simulation_result", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("search_groups");
+		expect(names).toContain("present_recommendation_card");
+
+		// FIX-19: estado TERMINAL — descoberta/cards fora do toolset; status entra.
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		const allowed = allowedTools(FIX11_META);
+		expect(allowed).not.toContain("search_groups");
+		expect(allowed).not.toContain("recommend_groups");
+		expect(allowed).not.toContain("present_recommendation_card");
+		expect(allowed).not.toContain("present_simulation_result");
+		expect(allowed).toContain("check_proposal_status");
+
+		const { buildAgent } = await import("@/lib/agent/agents/builder");
+		// biome-ignore lint/suspicious/noExplicitAny: PersonaRow literal de teste
+		const agent = buildAgent(policyPersonaRow() as any, "neutro", { meta: FIX11_META });
+		// biome-ignore lint/suspicious/noExplicitAny: introspecção das tools do agent
+		const tools = Object.keys(((agent as any).tools ?? {}) as Record<string, unknown>);
+		expect(
+			tools,
+			"toolset pós-fechamento ainda carrega descoberta — FIX-11 voltaria: a re-busca tem " +
+				"que morrer NA ORIGEM (tool fora do request), não só no guard do runner",
+		).not.toContain("search_groups");
+		expect(tools).toContain("check_proposal_status");
+	});
+
+	it("acoplamento: builder consome allowedTools e resolveAgent propaga o meta", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(builderSrc).toMatch(/allowedTools/);
+		const indexSrc = readSource("src/lib/agent/agents/index.ts");
+		expect(indexSrc).toMatch(/meta/);
+	});
+
+	it("acoplamento: runner loga [tool-policy-violation] quando tool fora da policy é chamada", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/tool-policy-violation/);
 	});
 });

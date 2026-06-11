@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { artifacts as artifactsTable } from "@/db/schema";
 import { resolveAgent } from "@/lib/agent/agents";
 import { selectExamplesForTurn } from "@/lib/agent/example-selector";
+import { allowedTools, phaseFromMeta } from "@/lib/agent/orchestrator/tool-policy";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { getPersona } from "@/lib/agent/personas-repo";
 import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
@@ -16,9 +17,9 @@ import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
-import { coerceSimulationPayload } from "./simulation-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
+import { coerceSimulationPayload } from "./simulation-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
@@ -114,6 +115,10 @@ export async function* runAgentTurn(args: {
 	// (visto no run real: comparison_table 5×). O reveal original é o 1º (revealCompleted
 	// ainda false) → passa. simulation_result só é suprimido fora de what-if.
 	const revealLoopActive = meta.revealCompleted === true && isUserTurn;
+	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
+	// builder (resolveAgent repassa o meta). Usada SÓ pro tripwire
+	// [tool-policy-violation]; a 1ª linha de defesa é o toolset filtrado.
+	const toolPolicyAllowed = new Set(allowedTools(meta, channel));
 	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
 	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
 	// via closure nas tools sensíveis (save_contact_name etc.). Sem isso, modelo
@@ -165,6 +170,16 @@ export async function* runAgentTurn(args: {
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
 				executedToolNames.push(toolName);
+				// FIX-19: com o gating a montante (builder filtra o toolset pela
+				// tool-policy da fase), uma chamada de tool FORA da policy significa
+				// que a tool entrou no request indevidamente — bug da policy/builder,
+				// não do modelo. Os guards abaixo seguram o estrago (segunda linha),
+				// mas o log forte é o tripwire pra corrigir a tabela.
+				if (!isConcierge && !toolPolicyAllowed.has(toolName)) {
+					console.error(
+						`[tool-policy-violation] tool=${toolName} fase=${phaseFromMeta(meta)} chamada fora da policy — toolset não foi filtrado a montante (conv=${conversationId})`,
+					);
+				}
 				yield { type: "tool-call", toolName, input, toolCallId };
 
 				if (toolName === "suggest_handoff") {
