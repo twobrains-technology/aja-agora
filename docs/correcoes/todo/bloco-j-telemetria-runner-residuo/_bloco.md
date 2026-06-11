@@ -1,5 +1,7 @@
 ---
 bloco: bloco-j-telemetria-runner-residuo
+branch: feat/telemetria-supressao-cache
+workspace: feat-telemetria-supressao-cache
 onda: 1
 depends_on: []
 paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card, bloco-f-viabilidade-orcamento, bloco-k-fechamento-whatsapp]

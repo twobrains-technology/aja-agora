@@ -1,5 +1,7 @@
 ---
 bloco: bloco-k-fechamento-whatsapp
+branch: feat/fechamento-bevi-whatsapp
+workspace: feat-fechamento-bevi-whatsapp
 onda: 1
 depends_on: []
 paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card, bloco-f-viabilidade-orcamento, bloco-j-telemetria-runner-residuo]

@@ -1,5 +1,7 @@
 ---
 bloco: bloco-d-eval-harness
+branch: test/eval-harness-llm-judge
+workspace: test-eval-harness-llm-judge
 onda: 1
 depends_on: []
 paralelo_com: [bloco-e-gate-nome-card, bloco-f-viabilidade-orcamento, bloco-j-telemetria-runner-residuo, bloco-k-fechamento-whatsapp]

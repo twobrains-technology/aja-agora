@@ -1,5 +1,7 @@
 ---
 bloco: bloco-f-viabilidade-orcamento
+branch: feat/confronto-viabilidade-orcamento
+workspace: feat-confronto-viabilidade-orcamento
 onda: 1
 depends_on: []
 paralelo_com: [bloco-d-eval-harness, bloco-e-gate-nome-card, bloco-j-telemetria-runner-residuo, bloco-k-fechamento-whatsapp]

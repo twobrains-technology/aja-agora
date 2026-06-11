@@ -1,5 +1,7 @@
 ---
 bloco: bloco-e-gate-nome-card
+branch: feat/gate-nome-card
+workspace: feat-gate-nome-card
 onda: 1
 depends_on: []
 paralelo_com: [bloco-d-eval-harness, bloco-f-viabilidade-orcamento, bloco-j-telemetria-runner-residuo, bloco-k-fechamento-whatsapp]
