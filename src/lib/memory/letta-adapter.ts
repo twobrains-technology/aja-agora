@@ -409,6 +409,51 @@ export class LettaMemoryAdapter implements MemoryAdapter {
 		});
 	}
 
+	async purgeIdentity(identity: UserIdentity): Promise<void> {
+		const start = Date.now();
+		try {
+			const agent = await this.findAgent(identity, 2000);
+			if (!agent) return; // nada a purgar — idempotente
+
+			await lettaFetch<unknown>(`/v1/agents/${agent.id}`, {
+				method: "DELETE",
+				timeoutMs: 2000,
+			});
+			markLettaSuccess();
+
+			const latency = Date.now() - start;
+			logMemoryOp({
+				letta_op: "agent_purged",
+				letta_latency_ms: latency,
+				letta_agent_id: agent.id,
+				identity_kind: identity.kind,
+				identity_value_prefix: maskIdentity(identity.value),
+				namespace: identity.namespace,
+			});
+
+			void recordMemoryEvent({
+				lettaAgentId: agent.id,
+				eventType: "purged",
+				payload: { identity_kind: identity.kind, namespace: identity.namespace, reason: "reset" },
+				latencyMs: latency,
+			});
+		} catch (err) {
+			// Write-side best-effort (D17): engole erro transiente, só loga.
+			markLettaFailure(err instanceof Error ? err.message : "purgeIdentity error");
+			logMemoryOp(
+				{
+					letta_op: "agent_purged",
+					letta_latency_ms: Date.now() - start,
+					identity_kind: identity.kind,
+					identity_value_prefix: maskIdentity(identity.value),
+					namespace: identity.namespace,
+					error: err instanceof Error ? err.message : String(err),
+				},
+				"warn",
+			);
+		}
+	}
+
 	// ─── Privates ────────────────────────────────────────────────────────────
 
 	private async findAgent(identity: UserIdentity, timeoutMs: number): Promise<LettaAgent | null> {

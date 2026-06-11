@@ -34,6 +34,10 @@ export class NoopMemoryAdapter implements MemoryAdapter {
 		// no-op
 	}
 
+	async purgeIdentity(_identity: UserIdentity): Promise<void> {
+		// no-op
+	}
+
 	isPersistent(): boolean {
 		return false;
 	}

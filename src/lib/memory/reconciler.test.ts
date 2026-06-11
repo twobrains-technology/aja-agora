@@ -14,6 +14,7 @@ function makeAdapter(over: Partial<MemoryAdapter> = {}): MemoryAdapter {
 		storeMemories: vi.fn().mockResolvedValue(undefined),
 		searchArchival: vi.fn().mockResolvedValue([]),
 		reconcileIdentity: vi.fn().mockResolvedValue(undefined),
+		purgeIdentity: vi.fn().mockResolvedValue(undefined),
 		isPersistent: () => true,
 		...over,
 	};

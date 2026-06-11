@@ -34,6 +34,9 @@ type ChatContextValue = {
 	sendAction: (action: ChatAction, label: string) => Promise<void>;
 	regenerate: () => Promise<void>;
 	reset: () => void;
+	/** D17 — comando oculto /reset: apaga a conversa no servidor (cascade) +
+	 * purga a memória do agente + regenera o cookie, então zera o estado local. */
+	resetAll: () => Promise<void>;
 	refreshHandoff: () => Promise<void>;
 };
 
@@ -197,6 +200,21 @@ export function ChatProvider({
 		setHandoff({ status: "active", agentName: null });
 	}, [chat]);
 
+	// D17 — /reset oculto: servidor primeiro (delete + purge + cookie novo),
+	// depois o reset local. Falha de rede não trava a UI — zera local mesmo assim.
+	const resetAll = useCallback(async () => {
+		try {
+			await fetch("/api/chat/reset", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ conversationId }),
+			});
+		} catch {
+			// best-effort — o reset local acontece de qualquer jeito
+		}
+		reset();
+	}, [conversationId, reset]);
+
 	const value = useMemo<ChatContextValue>(
 		() => ({
 			conversationId,
@@ -208,6 +226,7 @@ export function ChatProvider({
 			sendAction,
 			regenerate,
 			reset,
+			resetAll,
 			refreshHandoff,
 		}),
 		[
@@ -220,6 +239,7 @@ export function ChatProvider({
 			sendAction,
 			regenerate,
 			reset,
+			resetAll,
 			refreshHandoff,
 		],
 	);

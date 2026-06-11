@@ -11,7 +11,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ isStreaming }: ChatInputProps) {
-	const { sendUserMessage } = useChatContext();
+	const { sendUserMessage, resetAll } = useChatContext();
 	const [value, setValue] = useState("");
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -29,7 +29,14 @@ export function ChatInput({ isStreaming }: ChatInputProps) {
 	const handleSend = useCallback(() => {
 		const trimmed = value.trim();
 		if (!trimmed || isStreaming) return;
-		void sendUserMessage(trimmed);
+		// D17 — comando oculto: match EXATO (espelha o /reset do WhatsApp,
+		// processor.ts). Reseta o agente (conversa + memória + cookie) sem
+		// virar mensagem — nunca chega ao LLM nem ao histórico.
+		if (trimmed.toLowerCase() === "/reset") {
+			void resetAll();
+		} else {
+			void sendUserMessage(trimmed);
+		}
 		setValue("");
 		if (textareaRef.current) {
 			textareaRef.current.style.height = "auto";
@@ -37,7 +44,7 @@ export function ChatInput({ isStreaming }: ChatInputProps) {
 		requestAnimationFrame(() => {
 			textareaRef.current?.focus();
 		});
-	}, [value, isStreaming, sendUserMessage]);
+	}, [value, isStreaming, sendUserMessage, resetAll]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLTextAreaElement>) => {

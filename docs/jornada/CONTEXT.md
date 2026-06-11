@@ -171,6 +171,18 @@
 - **D15b — `recommendation_card` com `max-w-sm`** (era `w-full` sem cap, "card muito
   grande"). Padroniza com `simulation_result`/`real_offer`. **D15c — `comparison_table`
   perdeu a "Taxa"** (escapou da poda D14; mesma regra Bernardo).
+- **D17 — Comando oculto `/reset` no chat web** (Kairo, 2026-06-11): reset do
+  AGENTE — digitado no input (match exato, espelha o WhatsApp
+  `processor.ts`), nunca vira mensagem. Apaga tudo como no WhatsApp ("se o
+  dado foi para o funil, pode deletar tbm"): conversa com cascade
+  (messages/artifacts/leads/propostas), purga a memória Letta (anon-cookie do
+  device + phone da conversa — senão re-identificar com o mesmo celular
+  ressuscita o contexto) e regenera o cookie `aja_uid`. Funciona em prod
+  (oculto, sem UI); sem auth — dano limitado ao próprio estado (UUID v4).
+  Rota `POST /api/chat/reset` + `MemoryAdapter.purgeIdentity` + interceptação
+  no `chat-input`. Test plan: `docs/test-plans/reset-web.md`. Limitação
+  conhecida (pré-existente): reload da página gera conversationId novo, então
+  /reset pós-reload só reseta device/memória — a conversa anterior fica órfã.
 - **D16 — ValuePicker (present_value_picker) INTELIGENTE** (Kairo, 2026-06-11):
   os sliders deixam de ser independentes — arrastou **parcela** ou **prazo** → o
   **valor do bem** recalcula ao vivo; arrastou o **bem** → a **parcela** recalcula

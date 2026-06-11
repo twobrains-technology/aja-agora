@@ -65,6 +65,13 @@ export interface MemoryAdapter {
 	reconcileIdentity(from: UserIdentity, to: UserIdentity): Promise<void>;
 
 	/**
+	 * Apaga o agent de memória da identidade (D17 — /reset web). Write-side:
+	 * engole erros transientes (rede, 5xx) e apenas loga — best-effort, nunca
+	 * bloqueia o reset. Agent inexistente = no-op silencioso. Idempotente.
+	 */
+	purgeIdentity(identity: UserIdentity): Promise<void>;
+
+	/**
 	 * Indica se este adapter realmente persiste. NoopAdapter retorna false.
 	 * Usado pelo orchestrator pra decidir se vale a pena coletar dados.
 	 */
