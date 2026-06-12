@@ -103,6 +103,12 @@ describe("JORNADA_RUBRIC_SYSTEM_PROMPT — ancorado no docx, não na implementa�
 		expect(() => jornadaJudgeResultSchema.parse(semFlag)).toThrow();
 	});
 
+	it("FIX-29 — rubrica reconhece que 'Ajustar valor' reabre o ajuste, não inicia fechamento", () => {
+		expect(p).toMatch(/ajustar valor/i);
+		expect(p).toMatch(/reabre|novo valor|what-if/i);
+		expect(p).toMatch(/n[ãa]o inicia|nunca inicia/i);
+	});
+
 	it("avalia o TOM da escritora (caloroso, didático pra leigo, sem jargão)", () => {
 		expect(p).toMatch(/calor|acolhedor/i);
 		expect(p).toMatch(/leigo/i);

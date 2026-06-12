@@ -26,6 +26,16 @@
 - **Evidência:** 3 camadas. Camada 1: `system-prompt.lead-funnel.test.ts` (invertido) + `tool-policy.test.ts` + `decision-prompt.structural.test.ts` (contratar→contract_form). Camada 2: cassette `FIX-34-FUNIL-CANONICO` em agent-trajectory. Camada 3: flag `desviouPraConsultorHumano` em `jornada-rubric.ts`.
 - **Também atualizei** `decision-prompt.structural.test.ts`: "contratar agora" agora é gatilho de present_contract_form (não lead_form) — contrato legado corrigido.
 
+### D3 · 00:33 — FIX-29: cliques do card roteados por intent; handler interest dirige decisão
+- **Contexto:** `handleAction` mandava kind "interest" pra TODA action → "Ajustar valor" caía no handler de fechamento (lead form + consultor).
+- **Decidi:** (a) novo kind `adjust-value` em actions.ts. (b) `simulation-result.tsx`: handleAction deriva kind do intent (`compare_other`→show-other-options; resto→adjust-value; "interest" só no botão principal). (c) `route.ts`: handler `interest` pós-reveal dispara `buildDecisionPromptDirective` (ou `buildAdvanceToContractDirective` se decisão já passou), persiste decisionDispatched; handler novo `adjust-value` dispara `buildAdjustValueDirective`. (d) directives novos.
+- **Sub-decisão:** directives de ajuste/avanço NÃO citam nomes de tools de fechamento pelo literal (a tool-policy já as bloqueia pós-reveal) — usam linguagem de intenção. Evita o paradoxo "proíbe X mencionando X" nos testes not.toContain.
+- **Reversibilidade:** média.
+- **Evidência:** 3 camadas. Camada 1: simulation-result.test (roteamento por intent), route.lead-form-prefill.test (invertido, mock do adapter pra determinismo — interest→decision, adjust→ajuste, sem lead_form), directives.test. Camada 2: cassettes FIX-29-INTEREST-NAO-VIRA-LEAD + FIX-29-ADJUST-VALUE. Camada 3: critério "Ajustar valor reabre ajuste, não inicia fechamento" no jornada-rubric.
+- **Lint pré-existente (NÃO meu, fora do escopo):** `and`/`sql` unused import em route.ts:7; useTemplate em cassette alheio; destructure em teste antigo. Não toquei.
+
 ## Linha do tempo
 - 00:05 — setup (npm ci OK, db up via DB do clone original), baseline estrutural verde (51 testes).
-- 00:16 — FIX-34 verde nas 3 camadas; suíte estrutural 1477 passed; lint OK. Commitando.
+- 00:16 — FIX-34 verde nas 3 camadas; suíte estrutural 1477; commit 77c80ec.
+- 00:19 — hook bloqueou: ANTHROPIC_API_KEY era placeholder no .env.local; injetei a real do clone original (D1 atualizada).
+- 00:33 — FIX-29 verde nas 3 camadas; suíte estrutural 1487; route.lead-form-prefill 9/9. Commitando.

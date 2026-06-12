@@ -990,43 +990,34 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 //   - Camada 2 (este cassette): SSE end-to-end com DB real.
 // ============================================================================
 
-describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz lead_form com prefilledName", () => {
-	it("cassette source-level: route.ts action.kind === 'interest' continua passando contactName no payload", () => {
-		// Fonte de verdade do contrato. Se alguem mover o handler de pasta ou
-		// trocar o nome da variavel (contactName -> userName, prefilledName ->
-		// nameHint), o cassette aqui pega antes do integration test rodar.
+describe("FIX-29-INTEREST-NAO-VIRA-LEAD — clique 'Tenho interesse' dirige a DECISAO, nao lead_form", () => {
+	// INVERSAO do ex-BUG-LEAD-FORM-PREFILL-REGRESSION: o handler determinístico
+	// do clique "Tenho interesse" emitia lead_form + "te conectar com nosso
+	// consultor". FIX-29/FIX-34: o avanço pós-reveal vai pra present_decision_prompt
+	// → present_contract_form (self-service). O prefilledName segue valendo SÓ pro
+	// componente lead-form (usado na fase qualify) — o contrato de tipo permanece.
+	it("cassette source-level: branch 'interest' do route NAO emite lead_form; dirige a decisao", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 
-		// 1) O branch interest existe no source com a forma esperada.
 		const branchInterest = /body\.action\?\.kind\s*===\s*["']interest["']/;
-		expect(
-			branchInterest.test(route),
-			"route.ts precisa ter branch `body.action?.kind === 'interest'`. " +
-				"Sem ele o clique 'Tenho interesse' do card simulation_result nao " +
-				"produz artifact lead_form algum.",
-		).toBe(true);
+		expect(branchInterest.test(route), "route.ts precisa ter branch interest").toBe(true);
 
-		// 2) Dentro do mesmo arquivo, o data-artifact lead_form leva
-		// prefilledName lido de contactName.
-		const payloadInjection =
-			/type:\s*["']lead_form["'][\s\S]{0,200}prefilledName:\s*contactName\s*\?\?\s*null/;
-		expect(
-			payloadInjection.test(route),
-			"route.ts (branch interest) precisa emitir " +
-				"`payload: { conversationId, prefilledName: contactName ?? null }`. " +
-				"Sem essa linha o nome ja capturado pela conversa NAO chega ao " +
-				"frontend e o form aparece vazio — regressao reportada em tb-dev " +
-				"2026-05-18 (screenshot 'Seu nome' placeholder).",
-		).toBe(true);
+		// Isola o corpo do branch interest.
+		const interestBlock =
+			route.match(
+				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
+		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 
-		// 3) contactName tem que vir do conv.contactName lido no top do POST —
-		// sem isso, o ?? null sempre cai pra null e o fix vira no-op.
-		const lidoDoConv = /contactName\s*=\s*conv\.contactName\s*\?\?\s*null/;
+		// NUNCA mais lead_form no clique de avanço.
 		expect(
-			lidoDoConv.test(route),
-			"route.ts precisa ler `contactName = conv.contactName ?? null` antes " +
-				"do switch de actions. Se essa atribuicao sumir, prefilledName SEMPRE " +
-				"vai null e o form regride pra 'Seu nome' vazio.",
+			interestBlock.includes("lead_form"),
+			"FIX-29: o branch interest NÃO pode emitir lead_form — avanço pós-reveal é decision → contract_form.",
+		).toBe(false);
+		// Dirige a decisão (ou avanço pro contrato se a decisão já passou).
+		expect(
+			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(interestBlock),
+			"FIX-29: o branch interest precisa dirigir present_decision_prompt / passo 5.",
 		).toBe(true);
 	});
 
@@ -1068,6 +1059,52 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 				"Se inverter ordem (data.name ?? payload.prefilledName), fetch que " +
 				"retorna name='' (lead vazio + contactName null) zera o prefill — bug volta.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-29 — "Ajustar valor" reabre o what-if, NUNCA inicia fechamento
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-11): clicar "Ajustar valor" no card de simulação
+// respondia "vou reservar essa opção... te conectar com nosso consultor" +
+// lead form — o OPOSTO da intenção (ele queria MUDAR o valor). handleAction
+// mandava kind "interest" pra TODA action. O fix re-roteia o intent e o handler
+// novo `adjust-value` dirige o ajuste sem tocar no funil de fechamento.
+// ============================================================================
+
+describe("FIX-29-ADJUST-VALUE — clique 'Ajustar valor' reabre ajuste, nao inicia fechamento", () => {
+	it("cassette: turno pós-adjust-value pergunta o novo valor (texto), SEM tool de fechamento", async () => {
+		// Trajetória correta dirigida por buildAdjustValueDirective: o agente
+		// pergunta o novo valor e PARA (espera a resposta) — zero lead_form/contract.
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Claro! Qual valor do bem você quer simular agora?"),
+			FINISH_STOP,
+		]);
+
+		expect(text).toMatch(/qual.*valor|novo valor|ajustar/i);
+		expect(toolCalls).toHaveLength(0);
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(toolCalls.some((t) => t.toolName === "present_contract_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
+	});
+
+	it("directive de ajuste proíbe fechamento e o de avanço dirige o passo 5 (estrutural)", async () => {
+		const { buildAdjustValueDirective, buildAdvanceToContractDirective } = await import(
+			"@/lib/agent/orchestrator/directives"
+		);
+		const adjust = buildAdjustValueDirective({
+			administradora: "Itaú",
+			currentCreditValue: 200_000,
+		});
+		expect(adjust).toMatch(/ajustar|novo valor/i);
+		expect(adjust).not.toContain("present_lead_form");
+		expect(adjust).not.toContain("present_contract_form");
+
+		const advance = buildAdvanceToContractDirective({ administradora: "Itaú" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_lead_form");
 	});
 });
 

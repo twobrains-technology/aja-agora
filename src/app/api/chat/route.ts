@@ -10,6 +10,8 @@ import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import {
+	buildAdjustValueDirective,
+	buildAdvanceToContractDirective,
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
 	buildExperienceDoubtsDirective,
@@ -398,20 +400,47 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
+						// FIX-29/FIX-34: "Tenho interesse" pós-reveal é AVANÇO no funil
+						// canônico (decisão → contratação self-service), NUNCA captura de
+						// lead pra consultor humano. Espelha o branch simulator-offer "no":
+						// dispara o card de decisão; se a decisão JÁ passou, avança pro passo 5.
 						if (body.action?.kind === "interest") {
-							await writeAndSaveText(
-								writer,
+							const fresh = await reloadMeta(conversationId);
+							const administradora = fresh.recommendedAdministradora ?? body.action.administradora;
+							if (!fresh.decisionDispatched) {
+								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildDecisionPromptDirective({ administradora }),
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
+							await pipeDirectiveTurn({
 								conversationId,
-								meta.currentPersona ?? null,
-								"Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos pra te conectar com nosso consultor:",
-							);
-							writer.write({
-								type: "data-artifact",
-								id: crypto.randomUUID(),
-								data: {
-									type: "lead_form",
-									payload: { conversationId, prefilledName: contactName ?? null },
-								},
+								directive: buildAdvanceToContractDirective({ administradora }),
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
+
+						// FIX-29: "Ajustar valor"/"Nova simulação" reabre o what-if (perguntar
+						// o novo valor) — NUNCA inicia fechamento. O directive proíbe lead_form/
+						// contract_form/decision neste turno.
+						if (body.action?.kind === "adjust-value") {
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildAdjustValueDirective({
+									administradora: body.action.administradora,
+									currentCreditValue: body.action.creditValue,
+								}),
+								contactName,
+								writer,
+								userKey,
 							});
 							return;
 						}
@@ -514,7 +543,10 @@ export async function POST(req: NextRequest) {
 								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
 								// diagnóstico impossível. Logar SEMPRE o erro original (lição
 								// empty-env-compose: tool errors logados). CPF nunca no log.
-								console.error(`[contract-submit] startContract falhou (conv=${conversationId})`, err);
+								console.error(
+									`[contract-submit] startContract falhou (conv=${conversationId})`,
+									err,
+								);
 								const delta =
 									err instanceof MinCreditError
 										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`

@@ -186,6 +186,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   dados REAIS do plano).
 - Permitiu ver "outras opções" (as outras 2) pra comparação quando pedido — sem
   repetir a recomendada.
+- FIX-29: o clique "Ajustar valor"/"Nova simulação" no card de simulação REABRE o
+  ajuste (pergunta o novo valor / what-if), NUNCA inicia reserva, captura de lead ou
+  contratação. Tratar o clique de ajuste como avanço de fechamento é erro (o usuário
+  quer MUDAR o valor, não fechar).
 - Cruzou pro card de decisão: "Esse plano faz sentido para você?" com as 3 opções
   (contratar agora / ver outras opções / falar com especialista da Aja Agora).
 

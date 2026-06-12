@@ -114,6 +114,29 @@ export function buildWhatIfDirective(administradora: string, currentCreditValue:
 	return `O usuario quer ajustar o valor de credito do grupo "${administradora}" (creditValue atual=${currentCreditValue}). Pergunte em UMA frase qual valor de credito ou parcela mensal ele quer simular agora. NAO simule ainda, espere a resposta dele com o novo valor.`;
 }
 
+/** FIX-29 — clique "Ajustar valor"/"Nova simulacao" no card de simulacao. O
+ * usuario quer MUDAR o valor do bem, NAO avancar pro fechamento. Reabre o
+ * what-if e PROIBE qualquer tool de fechamento neste turno. */
+export function buildAdjustValueDirective(args: {
+	administradora: string;
+	currentCreditValue?: number;
+}): string {
+	const { administradora, currentCreditValue } = args;
+	const valorCtx =
+		typeof currentCreditValue === "number" && currentCreditValue > 0
+			? ` (valor atual R$ ${currentCreditValue.toLocaleString("pt-BR")})`
+			: "";
+	return `Usuario clicou "Ajustar valor" no card de simulacao de "${administradora}"${valorCtx}. Ele quer MUDAR o valor do bem, e o OPOSTO de avancar pro fechamento. FLUXO: pergunte em UMA frase, no SEU TOM, qual o novo valor do bem (ou a parcela mensal) que ele quer simular. NAO simule ainda — espere a resposta com o novo valor. PROIBIDO neste turno: iniciar qualquer fechamento, reserva, contratacao ou card de decisao. NUNCA diga "vou reservar essa opcao" nem prometa atendente/consultor — "ajustar valor" e o contrario de fechar.`;
+}
+
+/** FIX-29 — usuario JA viu o card de decisao e reafirmou avanco ("Tenho
+ * interesse" de novo). Avanca pro passo 5 (contratacao real), nunca lead. */
+export function buildAdvanceToContractDirective(args: { administradora?: string }): string {
+	const { administradora } = args;
+	const adminCtx = administradora ? ` da "${administradora}"` : "";
+	return `O usuario ja viu o card de decisao e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra fechar, so preciso de uns dados rapidos:") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — a contratacao e self-service na plataforma. NAO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+}
+
 export function buildSimulationInterestDirective(administradora: string): string {
 	return `Usuario clicou "Tenho interesse" no card de simulacao do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmacao no SEU TOM tipo "Show, vou reservar essa opcao pra voce. So preciso de uns dados rapidos." — proibido fazer pergunta nesta frase. (2) chame present_lead_form (sem parametros). NAO chame outras tools.`;
 }

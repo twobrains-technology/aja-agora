@@ -54,6 +54,10 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "interest"; administradora: string; label: string }
+	// FIX-29: "Ajustar valor"/"Nova simulação" do card de simulação — reabre o
+	// what-if (perguntar novo valor), NUNCA inicia fechamento. Kind próprio pra
+	// não cair no handler de avanço (interest). creditValue = valor atual do card.
+	| { kind: "adjust-value"; administradora: string; creditValue?: number; label: string }
 	// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO das
 	// outras ofertas da descoberta (sem free-run do modelo).
 	| { kind: "show-other-options"; label?: string }
