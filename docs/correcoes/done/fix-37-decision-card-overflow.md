@@ -1,12 +1,15 @@
 ---
 id: FIX-37
 titulo: "Card de decisão quebra o layout — label 'Quero falar com um especialista da Aja Agora' transborda pra fora do card sem quebrar linha"
-status: todo
+status: done
 bloco: bloco-t-ux-chat
 arquivos:
-  - src/components/chat/artifacts/decision-prompt.tsx
+  - src/components/chat/artifacts/decision-prompt.tsx (whitespace-normal + h-auto)
+  - src/components/chat/artifacts/decision-prompt.fix-37-overflow.test.tsx (component test)
 rodada: 2026-06-12 (testes manuais do Kairo no dev, pós-merge PRs #28/#30)
 anotado_em: 2026-06-12
+executado_em: 2026-06-12
+varredura: "Outros artifacts com Button (whatsapp-optin, real-offer, signature-handoff, group-card etc.) usam labels curtos — sem overflow. O card de decisão era o caso agudo (label canônico de 44 chars em card de 340px). Fix mantido escopado nele."
 ---
 
 # FIX-37 — Overflow do label no card de decisão
