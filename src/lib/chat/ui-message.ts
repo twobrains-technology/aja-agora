@@ -31,8 +31,19 @@ export type PlanGatePartData = {
 	targetMonthDefault: number;
 };
 
+/** FIX-17 — gate do nome ("Como posso te chamar?", passo 1 da jornada) em CARD
+ * com input focado. Substitui a coleta texto-livre (única do funil); o autofocus
+ * abre o teclado no lugar certo no mobile. Coexiste com o texto livre do chat —
+ * os dois caminhos convergem na persistência do nome. WhatsApp degrada pra texto
+ * (sem card). */
+export type NameGatePartData = {
+	kind: "name";
+	gate: "name";
+};
+
 export type GatePartData =
 	| PlanGatePartData
+	| NameGatePartData
 	| {
 			kind: "chips";
 			gate:

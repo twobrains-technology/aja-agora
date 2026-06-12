@@ -1,6 +1,7 @@
 import type { ConversationMetadata } from "./personas";
 
 export type Gate =
+	| "name"
 	| "experience"
 	| "doubts-wait"
 	| "consent"
@@ -23,10 +24,12 @@ export type UserIntent =
 	| "neutral";
 
 export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
-	// PF-08: pausa todos os gates até captura conversacional de nome.
-	// Sem isso, o gate de experience dispara junto com a pergunta de nome
-	// e usuário recebe 2 perguntas simultâneas. doubts-wait = no-op visual.
-	if (opts && opts.hasContactName === false) return "doubts-wait";
+	// PF-08 + FIX-17: enquanto o nome não foi capturado, o ÚNICO gate é o do
+	// nome. A pergunta sai no texto do agente (directive de 1o contato) e o card
+	// "name" complementa com input focado (gateQuestion('name')=null não duplica).
+	// Antes era "doubts-wait" (no-op) e o nome era pedido só por texto livre —
+	// inconsistente com o resto do funil e ruim no mobile (teclado não abria).
+	if (opts && opts.hasContactName === false) return "name";
 	if (!meta.experiencePrev) return "experience";
 	if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
 	if (meta.pendingFollowUp) return "doubts-wait";

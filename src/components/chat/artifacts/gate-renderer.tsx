@@ -5,6 +5,7 @@ import { type GateAction, useChatContext } from "@/lib/chat/provider";
 import type { GatePartData, SliderField } from "@/lib/chat/ui-message";
 import { GateIdentityForm } from "./gate-identity-form";
 import { GateQuickReply } from "./gate-quick-reply";
+import { NamePrompt } from "./name-prompt";
 import { PlanEstimatePicker } from "./plan-estimate-picker";
 import { ValuePicker, type ValuePickerField } from "./value-picker";
 
@@ -55,6 +56,11 @@ export function GateRenderer({
 		},
 		[payload, sendAction],
 	);
+
+	// FIX-17: gate do nome em card focado (passo 1).
+	if (payload.kind === "name") {
+		return <NamePrompt active={active} />;
+	}
 
 	if (payload.kind === "chips") {
 		return <GateQuickReply payload={payload} active={active} />;

@@ -44,13 +44,14 @@ import {
 	buildDecisionPromptDirective,
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
-import type { ConversationMetadata } from "@/lib/agent/personas";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
-import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
@@ -3935,7 +3936,12 @@ describe("FIX-21 — telemetria de trajetória (tap passthrough)", () => {
 		{ type: "text-delta", text: "encaixam no seu perfil:" },
 		{ type: "tool-call", toolName: "search_groups", input: {}, toolCallId: "c1" },
 		{ type: "tool-call", toolName: "simulate_quota", input: {}, toolCallId: "c2" },
-		{ type: "artifact", artifactType: "simulation_result", payload: { administradora: "CANOPUS" }, toolCallId: "c2" },
+		{
+			type: "artifact",
+			artifactType: "simulation_result",
+			payload: { administradora: "CANOPUS" },
+			toolCallId: "c2",
+		},
 		{ type: "lead-stage", stage: "qualificado" },
 		{ type: "gate", gate: "simulator-offer" },
 		{ type: "finish", reason: "ok" },
@@ -3994,5 +4000,54 @@ describe("FIX-21 — telemetria de trajetória (tap passthrough)", () => {
 		const r = trace as unknown as TurnTraceRecord;
 		expect(r.handoff).toBe(true);
 		expect(r.finishReason).toBe("handoff");
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-17: gate do nome em card focado (primeiro contato)
+// ----------------------------------------------------------------------------
+// Teste manual do Kairo (2026-06-11): "como posso te chamar" pedia o nome em
+// texto livre — a UNICA coleta texto-livre do funil (todos os outros passos
+// tem UI dedicada). No mobile (publico majoritario) o teclado nem abria. Fix:
+// card com input FOCADO, deterministico no turno do primeiro contato.
+//
+// Decisao do Kairo: coexistencia card/texto — os dois caminhos convergem na
+// persistencia do nome. O caminho texto-livre (save_contact_name forcado via
+// toolChoice, detect-name-turn.ts) segue intacto; o card e o caminho novo
+// (route persiste direto, sem tool). Aqui o cassette guarda o caminho
+// texto-livre + os invariantes estruturais do card deterministico.
+// ============================================================================
+
+describe("FIX-17 — gate do nome em card focado (primeiro contato)", () => {
+	it("cassette: turno do nome (texto livre) chama save_contact_name UMA vez e saúda sem re-perguntar", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Prazer, Kairo!"),
+			toolCallChunk("tc-name-1", "save_contact_name", { name: "Kairo" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const nameCalls = toolCalls.filter((t) => t.toolName === "save_contact_name");
+		expect(nameCalls).toHaveLength(1);
+		expect((nameCalls[0]?.input as { name?: string }).name).toBe("Kairo");
+		// Saúda usando o nome e NÃO re-pergunta (o card/texto já capturou).
+		expect(text).toMatch(/Kairo/);
+		expect(text).not.toMatch(/como (posso )?te chamar|qual.*seu nome|seu nome\?/i);
+	});
+
+	it("estrutural: gate 'name' dispara deterministico no primeiro contato, sem duplicar a pergunta", () => {
+		const meta = { currentCategory: "auto" } as ConversationMetadata;
+		// Antes do fix: 'doubts-wait' (no-op). Agora: o card aparece.
+		expect(nextGate(meta, { hasContactName: false })).toBe("name");
+		// O texto do agente (directive de 1o contato) já carrega a pergunta —
+		// gateQuestion null impede o card de escrever a pergunta de novo.
+		expect(gateQuestion("name")).toBeNull();
+	});
+
+	it("estrutural: runner NÃO seta prefix pro gate 'name' (preserva o texto do agente no WhatsApp)", () => {
+		// gateInteractive('name') = null no WhatsApp; se o runner setasse prefix, o
+		// adapter limparia o textBuffer e a pergunta do nome se perderia no canal.
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/gate !== "name"/);
 	});
 });

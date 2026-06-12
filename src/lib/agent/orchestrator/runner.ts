@@ -466,7 +466,10 @@ export async function* runAgentTurn(args: {
 		if (shouldShow && passesArtifactGuard) {
 			nextGateToFire = gate;
 			// Com artifacts no turno, o texto já foi escrito no stream — sem prefixo.
-			if (fullResponse && gate !== "search" && !producedArtifact) {
+			// FIX-17: o gate "name" também NÃO leva prefix — gateInteractive('name') é
+			// null no WhatsApp; com prefix, o adapter limparia o textBuffer e a
+			// pergunta do nome (texto do agente) se perderia no canal.
+			if (fullResponse && gate !== "search" && gate !== "name" && !producedArtifact) {
 				prefixForNextGate = fullResponse;
 			}
 		} else if (gate !== "doubts-wait" && isUserTurn && !producedArtifact) {

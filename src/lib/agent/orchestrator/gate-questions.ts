@@ -10,6 +10,11 @@ const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 
 export function gateQuestion(gate: Gate, category?: Category | null): string | null {
 	switch (gate) {
+		case "name":
+			// FIX-17: a pergunta do nome ("Como posso te chamar?") já sai no TEXTO
+			// do agente (directive de primeiro contato). O card só complementa com
+			// input focado — null aqui evita a pergunta aparecer duas vezes.
+			return null;
 		case "experience":
 			return "Você já fez consórcio antes?";
 		case "consent":

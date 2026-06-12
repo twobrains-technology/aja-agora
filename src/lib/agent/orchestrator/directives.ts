@@ -27,6 +27,16 @@ export function buildTransitionCrossSpecialistDirective(): string {
 	return `PRIMEIRA aparicao sua, mas o usuario ja conversou com outro especialista antes (sobre outra categoria). Comece DIRETO com a resposta a ultima mensagem do usuario NO SEU TOM. Nao se apresente nem mencione o especialista anterior. Em 1-2 frases.`;
 }
 
+// ---- Name captured (FIX-17: via card de nome) ----
+
+/** FIX-17 — o usuário enviou o nome pelo CARD focado (passo 1). O nome JÁ foi
+ * persistido no servidor (saveContactName) — o agente só saúda, sem re-chamar
+ * tool nem re-perguntar. Espelha a saudação do caminho texto-livre; o
+ * orchestrator dispara o gate de experience em seguida. */
+export function buildNameCapturedDirective(name: string): string {
+	return `O usuario informou que se chama "${name}" (pelo card de nome). O nome JA esta salvo — NAO chame save_contact_name, NAO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudacao usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NAO faca pergunta, NAO chame tools, NAO prometa "perguntas rapidas". PARE apos a saudacao — o sistema dispara o proximo passo (gate de experience) em seguida.`;
+}
+
 // ---- Experience choices ----
 
 export function buildExperienceFirstDirective(replyTitle: string): string {
