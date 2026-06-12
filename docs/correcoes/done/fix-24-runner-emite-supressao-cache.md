@@ -1,7 +1,9 @@
 ---
 id: FIX-24
 titulo: "Runner emite supressões de guard e cache read/write como TurnEvent — telemetria completa"
-status: todo
+status: done
+commit: ffdb45f
+executado_em: 2026-06-11
 bloco: bloco-l-qualidade-observabilidade
 arquivos:
   - src/lib/agent/orchestrator/runner.ts (emitir TurnEvent de supressão + cache)
