@@ -1,7 +1,9 @@
 ---
 id: FIX-15
 titulo: "Cenário de eval 'Bruna/Monique (imóvel)' é da era mock — falha em cascata sem fixture de IMOVEL e espera artifacts mortos"
-status: todo
+status: done
+commit: 7b6c29f
+executado_em: 2026-06-11
 bloco: bloco-l-qualidade-observabilidade
 arquivos:
   - tests/eval/agent-flow.eval.test.ts
