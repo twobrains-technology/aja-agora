@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 interface ChatLayoutProps {
 	children: React.ReactNode;
@@ -65,7 +64,6 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 					</Link>
 				</div>
 				<div className="flex items-center gap-1">
-					<ThemeToggle />
 					{onReset && (
 						<Button
 							variant="ghost"

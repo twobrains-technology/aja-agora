@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -33,7 +32,7 @@ export function BrandNav() {
 		>
 			<div className="mx-auto flex h-20 max-w-[1280px] items-center justify-between gap-8 px-5 sm:px-8">
 				<Link href="/" aria-label="Aja Agora" className="shrink-0">
-					<Wordmark className="h-[34px] w-auto" />
+					<Wordmark className="h-[58px] w-auto" />
 				</Link>
 
 				<nav className="hidden items-center gap-8 text-sm font-medium md:flex">
@@ -49,7 +48,6 @@ export function BrandNav() {
 				</nav>
 
 				<div className="flex items-center gap-3">
-					<ThemeToggle />
 					<Link
 						href="/admin/login"
 						className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline"

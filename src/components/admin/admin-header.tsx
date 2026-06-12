@@ -5,7 +5,6 @@ import NotificationDropdown from "@/components/shadcn-studio/blocks/dropdown-not
 import ProfileDropdown from "@/components/shadcn-studio/blocks/dropdown-profile";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { signOut, useSession } from "@/lib/auth-client";
 
 export function AdminHeader() {
@@ -44,7 +43,6 @@ export function AdminHeader() {
 					<SearchDialog />
 				</div>
 				<div className="flex items-center gap-1.5">
-					<ThemeToggle />
 					<NotificationDropdown />
 					<ProfileDropdown
 						userName={userName}
