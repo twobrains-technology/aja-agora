@@ -1,14 +1,16 @@
 ---
 bloco: bloco-q-handoff-msg-duplicada
+branch: fix/handoff-msg-duplicada
+workspace: fix-handoff-msg-duplicada
 onda: 1
 depends_on: []
-paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe, bloco-p-acoes-e-lance-do-card, bloco-r-scroll-inteligente]
+paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe, bloco-p-lance-do-card, bloco-r-scroll-inteligente, bloco-s-funil-canonico]
 itens: [FIX-31]
 escopo_arquivos:
   - src/app/api/chat/route.ts
   - src/lib/chat/provider.tsx
 conflitos_esperados:
-  - "src/app/api/chat/route.ts: nível 2 com bloco-n e bloco-p (regiões distintas — aqui o branch handed_off ~245; lá interest ~401 / contract-submit ~452). Merge mecânico; ordem recomendada: P → N → Q."
+  - "src/app/api/chat/route.ts: nível 2 com bloco-s (interest ~401) e bloco-n (contract-submit ~452) — aqui o branch handed_off ~245. Merge mecânico; ordem recomendada: S → N → Q."
 ---
 
 # Bloco Q — Eco do handoff duplica a mensagem do usuário

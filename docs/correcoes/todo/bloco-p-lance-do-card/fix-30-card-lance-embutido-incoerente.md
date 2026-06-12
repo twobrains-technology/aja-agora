@@ -2,7 +2,7 @@
 id: FIX-30
 titulo: "Card de simulação rotula o lance TOTAL necessário (74,43%) como 'lance embutido' e mostra 'recebe R$ 80.000' (carta cheia) ao mesmo tempo — contradição na tela"
 status: todo
-bloco: bloco-p-acoes-e-lance-do-card
+bloco: bloco-p-lance-do-card
 decisao_pendente: "Semântica bidPercentage/receivedCredit com a AGX (perguntas 7 e 8 da proposta-simulador.md) — a ROTULAGEM honesta não depende disso e pode ir já"
 arquivos:
   - src/lib/adapters/bevi/offer-mapper.ts (embeddedPercent reusa bidPercentage)

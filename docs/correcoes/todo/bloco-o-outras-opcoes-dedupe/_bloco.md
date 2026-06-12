@@ -1,8 +1,10 @@
 ---
 bloco: bloco-o-outras-opcoes-dedupe
+branch: fix/outras-opcoes-dedupe
+workspace: fix-outras-opcoes-dedupe
 onda: 1
 depends_on: []
-paralelo_com: [bloco-n-optin-redundante, bloco-p-acoes-e-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente]
+paralelo_com: [bloco-n-optin-redundante, bloco-p-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente, bloco-s-funil-canonico]
 itens: [FIX-28]
 escopo_arquivos:
   - src/lib/bevi/other-options.ts

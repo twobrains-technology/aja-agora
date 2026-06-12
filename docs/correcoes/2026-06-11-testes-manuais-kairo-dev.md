@@ -27,6 +27,18 @@ código/prompt com regressão nas 3 camadas.
 Derivada pra AGX: pergunta 8 adicionada em `docs/jornada/proposta-simulador.md`
 (semântica do `bidPercentage` — embutido máximo × lance necessário).
 
+## Consolidação 2026-06-12 (colisão com sessão paralela)
+
+Uma sessão paralela (Superset) anotou na mesma noite um "bloco-n" com FIX-27/28
+próprios (funil canônico pós-reveal + guardrail de carta). Resolução, pela
+ordem de commit: os itens dela foram renumerados pra **FIX-33/34** e o bloco
+virou **bloco-s-funil-canonico**. O FIX-29 (Ajustar valor) migrou do bloco-p
+pro bloco-s — mesma região (`route.ts:401`, handler interest) e mesma decisão
+de produto que o FIX-34 ("Tenho interesse" → passo 5 self-service, não lead
+legado). O bloco-p ficou só com o FIX-30 e virou bloco-p-lance-do-card. Todos
+os manifestos ganharam `branch:`/`workspace:` pra lançamento no Superset;
+ordem de merge consolidada: **S → P → N → Q** (O e R disjuntos).
+
 ## Pesquisa de estado da arte (pedido do Kairo na mesma sessão)
 
 Pesquisa web sobre o stack (AI SDK 6 / Next 16, mai-jun 2026) e estratégias

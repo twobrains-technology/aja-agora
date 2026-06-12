@@ -1,8 +1,8 @@
 ---
-id: FIX-28
+id: FIX-34
 titulo: "'Tenho interesse' pós-reveal cai no funil de lead LEGADO (consultor humano) em vez do passo 5 (contract_form Bevi)"
 status: todo
-bloco: bloco-n-funil-canonico
+bloco: bloco-s-funil-canonico
 arquivos:
   - src/lib/agent/system-prompt.ts (regras 'Feche' e 'Fechamento — captura final via present_lead_form')
   - src/lib/agent/orchestrator/tool-policy.ts (LEAD_CAPTURE nas fases reveal/closing)
@@ -12,7 +12,7 @@ rodada: 2026-06-12 (teste manual do Kairo no dev — jornada Itaú real)
 anotado_em: 2026-06-12
 ---
 
-# FIX-28 — "Tenho interesse" deve abrir o passo 5, não capturar lead pra consultor
+# FIX-34 — "Tenho interesse" deve abrir o passo 5, não capturar lead pra consultor
 
 ## Palavras do operador
 

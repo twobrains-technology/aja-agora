@@ -1,8 +1,10 @@
 ---
 bloco: bloco-n-optin-redundante
+branch: fix/optin-redundante
+workspace: fix-optin-redundante
 onda: 1
 depends_on: []
-paralelo_com: [bloco-o-outras-opcoes-dedupe, bloco-p-acoes-e-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente]
+paralelo_com: [bloco-o-outras-opcoes-dedupe, bloco-p-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente, bloco-s-funil-canonico]
 itens: [FIX-27]
 escopo_arquivos:
   - src/lib/agent/system-prompt.ts
@@ -13,8 +15,8 @@ escopo_arquivos:
   - src/components/chat/artifacts/whatsapp-optin.tsx
   - src/lib/chat/types.ts
 conflitos_esperados:
-  - "src/app/api/chat/route.ts: nível 2 com bloco-p (regiões distintas — aqui o handler contract-submit ~452; lá o handler interest ~401). Merge mecânico; ordem recomendada: bloco-p primeiro, bloco-n resolve."
-  - "src/lib/chat/types.ts: nível 2 com bloco-p (payloads distintos, append). Merge mecânico."
+  - "src/app/api/chat/route.ts: nível 2 com bloco-s (regiões distintas — aqui o handler contract-submit ~452; lá o handler interest ~401). Merge mecânico; ordem recomendada: S → N → Q."
+  - "src/lib/chat/types.ts: nível 2 com bloco-s (payloads distintos, append). Merge mecânico."
 ---
 
 # Bloco N — Opt-in de WhatsApp redundante (pede número já informado)

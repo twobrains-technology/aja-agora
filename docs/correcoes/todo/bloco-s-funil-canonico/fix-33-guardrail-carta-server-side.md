@@ -1,8 +1,8 @@
 ---
-id: FIX-27
+id: FIX-33
 titulo: "Valor de carta extraído por texto livre não tem guardrail server-side — fora da faixa da categoria passa direto"
 status: todo
-bloco: bloco-n-funil-canonico
+bloco: bloco-s-funil-canonico
 arquivos:
   - src/lib/agent/orchestrator/analyze.ts (clamp no merge do creditMax/creditMin)
   - src/lib/agent/qualify-config.ts (CREDIT_CONFIG é a fonte das faixas)
@@ -11,7 +11,7 @@ rodada: 2026-06-12 (teste manual do Kairo no dev — pergunta sobre guardrails d
 anotado_em: 2026-06-12
 ---
 
-# FIX-27 — Clamp server-side do valor de carta na faixa da categoria
+# FIX-33 — Clamp server-side do valor de carta na faixa da categoria
 
 ## Palavras do operador
 

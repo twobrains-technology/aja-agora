@@ -1,8 +1,10 @@
 ---
 bloco: bloco-r-scroll-inteligente
+branch: fix/scroll-inteligente
+workspace: fix-scroll-inteligente
 onda: 1
 depends_on: []
-paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe, bloco-p-acoes-e-lance-do-card, bloco-q-handoff-msg-duplicada]
+paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe, bloco-p-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-s-funil-canonico]
 itens: [FIX-32]
 escopo_arquivos:
   - src/components/chat/message-list.tsx
