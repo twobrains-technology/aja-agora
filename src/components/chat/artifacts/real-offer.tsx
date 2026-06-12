@@ -36,14 +36,21 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 					{Number.isFinite(payload.monthlyPayment) && (
 						<Row label="Parcela" value={brl2(payload.monthlyPayment as number)} />
 					)}
+					{/* FIX-39: prazo REAL da API nova (defensivo — nunca NaN/derivado). */}
+					{Number.isFinite(payload.termMonths) && (
+						<Row label="Prazo" value={`${payload.termMonths} meses`} />
+					)}
 					<Row label="Grupo" value={payload.grupo} />
 					<Row label="Administradora" value={payload.administradora} />
 				</div>
 
-				{/* FIX-13: a oferta de Parceiro não traz prazo (8 campos, sem `term` — spec §7).
-				    Regra D11: nenhum número sem fonte — explicar em vez de derivar/estimar. */}
+				{/* FIX-13/FIX-39: com prazo da API, a copy fala só das DEMAIS condições;
+				    sem prazo (shape antigo / API volta atrás), mantém o fallback honesto
+				    do FIX-13 (D11: nenhum número sem fonte — explicar, nunca derivar). */}
 				<p className="text-[11px] text-muted-foreground leading-snug">
-					Prazo e demais condições: na sua proposta (PDF), logo após a confirmação.
+					{Number.isFinite(payload.termMonths)
+						? "Demais condições: na sua proposta (PDF), logo após a confirmação."
+						: "Prazo e demais condições: na sua proposta (PDF), logo após a confirmação."}
 				</p>
 
 				{/* CTAs */}

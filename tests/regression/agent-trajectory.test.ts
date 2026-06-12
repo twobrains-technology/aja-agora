@@ -3649,9 +3649,10 @@ describe("FIX-14-STATUS-VIA-TOOL — status real via check_proposal_status, zero
 // prazo. O card se explica com copy honesta apontando pro PDF da proposta.
 // ============================================================================
 
-describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ninguém inventa", () => {
-	// Detector: "98 meses", "em 110 meses", "prazo de 84 meses"… no contexto
-	// do fechamento (oferta de parceiro), QUALQUER "N meses" é número sem fonte.
+describe("FIX-13→FIX-39-PRAZO-COM-FONTE — prazo agora vem da API (campo real); ninguém DERIVA", () => {
+	// Detector: "98 meses", "em 110 meses", "prazo de 84 meses"… EM PROSA do agent.
+	// O prazo REAL (FIX-39) vai no CARD (campo estruturado, fonte da API), nunca
+	// despejado em texto livre onde a derivação valorCarta÷parcela mente (FIX-13).
 	const PRAZO_DETECTOR = /\b\d{1,3}\s*(meses|mês)\b/i;
 
 	const START_OK = {
@@ -3667,9 +3668,14 @@ describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ning
 		},
 		noOffer: false,
 	};
+	// FIX-39: a API nova devolve `prazo` → o mapper o coloca em termMonths.
+	const START_COM_PRAZO = {
+		...START_OK,
+		offer: { ...START_OK.offer, termMonths: 72 },
+	};
 
-	it("cassette: agent derivando prazo em texto ao apresentar a oferta real — detector pega", async () => {
-		// O que o agent NÃO pode falar (derivação de valorCarta ÷ parcela):
+	it("cassette: agent DERIVANDO prazo em texto (valorCarta÷parcela) — detector ainda pega", async () => {
+		// Mesmo com prazo real disponível, DERIVAR em prosa segue proibido (FIX-13):
 		const cassette =
 			"Confirmei com a CANOPUS: carta de R$ 46.000 com parcela de R$ 469,95 — " +
 			"isso dá aproximadamente 98 meses de prazo.";
@@ -3683,36 +3689,42 @@ describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ning
 		expect(PRAZO_DETECTOR.test(text)).toBe(true);
 	});
 
-	it("texto canônico de produção (realOfferPresentation) NÃO dispara o detector", () => {
-		const items = realOfferPresentation(START_OK);
-		const allText = items
-			.filter((i) => i.kind === "text")
-			.map((i) => i.text)
-			.join("\n");
-		expect(allText.length).toBeGreaterThan(0);
-		expect(PRAZO_DETECTOR.test(allText)).toBe(false);
+	it("texto canônico de produção (realOfferPresentation) NÃO despeja prazo em prosa — com OU sem prazo", () => {
+		for (const start of [START_OK, START_COM_PRAZO]) {
+			const items = realOfferPresentation(start);
+			const allText = items
+				.filter((i) => i.kind === "text")
+				.map((i) => i.text)
+				.join("\n");
+			expect(allText.length).toBeGreaterThan(0);
+			expect(PRAZO_DETECTOR.test(allText)).toBe(false);
+		}
 	});
 
-	it("payload do artifact real_offer: exatamente as chaves com fonte — sem term/prazo", () => {
-		const items = realOfferPresentation(START_OK);
-		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
-		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
-		expect(Object.keys(artifact.payload).sort()).toEqual([
-			"administradora",
-			"category",
-			"creditValue",
-			"grupo",
-			"monthlyPayment",
-			"proposalId",
-		]);
+	it("payload do real_offer: COM prazo real → termMonths presente; SEM prazo → ausente (nunca inventa)", () => {
+		const comPrazo = realOfferPresentation(START_COM_PRAZO).find(
+			(i) => i.kind === "artifact" && i.type === "real_offer",
+		);
+		if (comPrazo?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(comPrazo.payload.termMonths).toBe(72);
+
+		const semPrazo = realOfferPresentation(START_OK).find(
+			(i) => i.kind === "artifact" && i.type === "real_offer",
+		);
+		if (semPrazo?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("termMonths" in semPrazo.payload).toBe(false);
 	});
 
-	it("card se explica: copy honesta do prazo vive no componente (regra de produto)", () => {
+	it("componente consome o prazo REAL defensivamente e mantém o fallback honesto do PDF", () => {
 		const src = readSource("src/components/chat/artifacts/real-offer.tsx");
-		expect(src).toMatch(/[Pp]razo e demais condições/);
+		// Consome o campo real da API (gap do FIX-13 acabou):
+		expect(src).toMatch(/termMonths/);
+		// Defensivo (Number.isFinite) — nunca renderiza NaN/null:
+		expect(src).toMatch(/Number\.isFinite\(\s*payload\.termMonths\s*\)/);
+		// Fallback honesto quando ausente (API pode voltar atrás):
 		expect(src).toMatch(/proposta \(PDF\)/);
-		// E o componente não renderiza nenhum campo de prazo (não existe fonte):
-		expect(src).not.toMatch(/termMonths|prazoMeses/);
+		// NÃO deriva prazo de valorCarta÷parcela (sem divisão pra meses):
+		expect(src).not.toMatch(/creditValue\s*\/\s*\w*[Pp]ayment/);
 	});
 });
 

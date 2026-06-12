@@ -22,6 +22,9 @@ export function buildContractSummaryText(args: {
 	grupo: string | null;
 	creditValue: number;
 	monthlyPayment: number;
+	/** FIX-39: prazo REAL (meses) da oferta — só entra no resumo quando há fonte
+	 * (Number.isFinite). Ausente → linha omitida (D11: nenhum número sem fonte). */
+	termMonths?: number | null;
 	signatureLink: string | null;
 }): string {
 	const lines = [
@@ -29,6 +32,7 @@ export function buildContractSummaryText(args: {
 		"",
 		`Administradora: ${args.administradora}`,
 		...(args.grupo ? [`Grupo: ${args.grupo}`] : []),
+		...(Number.isFinite(args.termMonths) ? [`Prazo: ${args.termMonths} meses`] : []),
 		`Carta de crédito (valor do bem): ${brl(args.creditValue)}`,
 		`Parcela mensal: ${brl2(args.monthlyPayment)}`,
 		...(args.signatureLink ? ["", `Assinatura digital: ${args.signatureLink}`] : []),
@@ -98,6 +102,8 @@ export async function sendContractSummary(
 		grupo: row.grupo ?? null,
 		creditValue: Number(row.creditValue ?? 0),
 		monthlyPayment: Number(row.monthlyPayment ?? 0),
+		// FIX-39: prazo REAL persistido (null quando a API não o trouxe).
+		termMonths: row.termMonths ?? null,
 		signatureLink: row.consortiumProposalLink ?? null,
 	});
 

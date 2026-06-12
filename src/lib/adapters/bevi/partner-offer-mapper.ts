@@ -15,6 +15,12 @@ import { beviSegmentToCategory } from "./offer-mapper";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** FIX-39: prazo da API nova → meses, só com fonte real. Aceita number finito e
+ * positivo; ausente/0/negativo/ilegível → undefined (NUNCA chuta — regra D11). */
+function parseTermMonths(v: number | string | null | undefined): number | undefined {
+	return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : undefined;
+}
+
 /** BUG-PARCELA-STRING (dev real 2026-06-12): a API nova devolve `parcela` como
  * STRING pt-BR ("2.075,34"). round2(string) dava NaN → JSON.stringify(NaN) =
  * null → o RealOffer chamava null.toLocaleString e derrubava o front inteiro.
@@ -38,8 +44,10 @@ export interface RealOffer {
 	 * undefined honesto em vez de NaN (BUG-PARCELA-STRING). */
 	monthlyPayment?: number;
 	tipoOferta: "SPECIAL_OFFER" | "FREE_BID";
-	/** GAPs §11 — ausentes na oferta de parceiro. Preenchidos só pela Descoberta. */
+	/** FIX-39: prazo REAL (meses). A API nova (2026-06-12) trouxe `prazo` — o gap do
+	 * FIX-13 acabou. Opcional: shape antigo não tinha e a API pode voltar atrás. */
 	termMonths?: number;
+	/** GAP §11 — ainda ausente na oferta de parceiro (a API nova não trouxe taxa). */
 	adminFeePercent?: number;
 	/** Score bruto da oferta (taxaContemplacao). SEMÂNTICA TBD com a AGX — guardado
 	 * pra ordenação interna, NUNCA exibido como "taxa" pro usuário (spec §7). */
@@ -56,8 +64,9 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 		creditValue: offer.valorCarta,
 		monthlyPayment: parseMoney(offer.parcela),
 		tipoOferta: offer.tipoOferta,
-		// GAPs deste trilho — explicitamente ausentes:
-		termMonths: undefined,
+		// FIX-39: prazo agora vem da API nova (defensivo — gap do FIX-13 acabou).
+		termMonths: parseTermMonths(offer.prazo),
+		// GAP deste trilho — ainda ausente (a API nova não trouxe taxa):
 		adminFeePercent: undefined,
 		rawContemplationScore: offer.taxaContemplacao,
 	};

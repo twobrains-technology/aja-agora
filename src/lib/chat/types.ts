@@ -233,6 +233,10 @@ export interface RealOfferPayload {
 	/** Pode vir null/ausente — a API da Bevi mudou o shape (BUG-PARCELA-STRING
 	 * 2026-06-12); o card omite a linha em vez de morrer. */
 	monthlyPayment: number | null;
+	/** FIX-39: prazo REAL (meses) da oferta de parceiro — a API nova (2026-06-12)
+	 * passou a trazê-lo (gap do FIX-13 acabou). Opcional: shape antigo não tinha e
+	 * a API pode voltar atrás → ausente mantém a copy de fallback do card. */
+	termMonths?: number;
 }
 
 /** Encaminhamento pra assinatura digital da administradora (sem "trocar de

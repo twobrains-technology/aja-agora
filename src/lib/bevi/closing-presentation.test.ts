@@ -75,6 +75,26 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 			"proposalId",
 		]);
 	});
+
+	// FIX-39 — a API nova passou a trazer `prazo`; quando a oferta tem termMonths,
+	// o payload do real_offer o carrega (fonte real). Sem prazo, NÃO inventa (a
+	// chave nem existe — mantém o fallback honesto do card / FIX-13).
+	it("FIX-39: oferta COM prazo real → payload do real_offer carrega termMonths", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, termMonths: 72 },
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(artifact.payload.termMonths).toBe(72);
+	});
+
+	it("FIX-39: oferta SEM prazo (API volta atrás) → payload SEM termMonths (não inventa)", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("termMonths" in artifact.payload).toBe(false);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {

@@ -39,6 +39,9 @@ export function realOfferPresentation(result: StartContractResult): ClosingItem[
 				category: offer.category,
 				creditValue: offer.creditValue,
 				monthlyPayment: offer.monthlyPayment,
+				// FIX-39: prazo REAL só entra quando a API o devolveu (Number.isFinite);
+				// ausente → chave omitida e o card mantém a copy de fallback (D11).
+				...(Number.isFinite(offer.termMonths) ? { termMonths: offer.termMonths } : {}),
 			},
 		},
 	];
