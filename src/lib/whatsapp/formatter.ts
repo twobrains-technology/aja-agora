@@ -1018,13 +1018,38 @@ export function whatsappOptinToWhatsApp(): WhatsAppResponse {
 const brlWa = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-/** Passo 5: form de contratação. WhatsApp não tem form — pedimos o CPF por texto
- * (o WhatsApp já é o contato/celular) e o aceite LGPD vem implícito na resposta. */
+/** Passo 5: form de contratação. WhatsApp não tem form — vira diálogo guiado
+ * (FIX-25). A identidade JÁ foi coletada no gate identify (FIX-9), então a 1ª
+ * mensagem CONFIRMA os dados (CPF mascarado) com botões em vez de pedir CPF de
+ * novo. Sem identidade on file (defensivo), pede o CPF por texto. O aceite do
+ * botão/“sim” é o consentimento explícito que dispara a proposta real. */
 export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
+	const identityOnFile = payload.identityOnFile === true;
+	const cpfMasked = payload.prefilledCpfMasked as string | undefined;
+
+	if (!identityOnFile) {
+		return {
+			type: "text",
+			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD). 🔒`,
+		};
+	}
+
+	const dados = cpfMasked ? ` (CPF ${cpfMasked})` : "";
 	return {
-		type: "text",
-		text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD). 🔒`,
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: `Boa! Já tenho seus dados${dados} aqui do nosso atendimento. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}? Seus dados seguem protegidos (LGPD). 🔒`,
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "contract_confirm", title: "Confirmar" } },
+					{ type: "reply", reply: { id: "contract_cancel", title: "Ver outras" } },
+				],
+			},
+		},
 	};
 }
 
