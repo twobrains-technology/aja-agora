@@ -1,7 +1,9 @@
 ---
 id: FIX-39
 titulo: "Prazo REAL da oferta de parceiro no card de confirmação e no resumo — aposenta a copy de desculpa do FIX-13"
-status: todo
+status: done
+commit: 5896917
+executado_em: 2026-06-12
 bloco: bloco-u-campos-novos-bevi
 arquivos:
   - src/lib/adapters/bevi/partner-offer-mapper.ts (prazo → termMonths; deixa de ser GAP)
@@ -52,5 +54,18 @@ não o tinha. O mapper hoje seta `termMonths: undefined` explicitamente
 - **Camada 1**: mapper (prazo presente → termMonths; ausente → undefined);
   card com termMonths renderiza a linha, sem termMonths mantém a copy do
   FIX-13 e não morre; resumo com/sem prazo.
-- **Camada 2**: não aplicável (sem comportamento de agent — render/mapper).
-- **Camada 3**: sem mudança.
+- **Camada 2**: cassette `FIX-13→FIX-39-PRAZO-COM-FONTE` atualizado em
+  `tests/regression/agent-trajectory.test.ts` — o prazo agora TEM fonte real
+  (card consome `termMonths` defensivo), mas DERIVAR prazo em prosa do agent
+  segue proibido (detector mantido). O assert estrutural antigo
+  (`not.toMatch(/termMonths/)`) foi invertido pra refletir a nova política.
+- **Camada 3**: sem mudança (eval cirúrgico do pre-commit verde).
+
+## Executado — além do escopo previsto
+
+Persistência: coluna `bevi_proposals.term_months` (migration `0023`) +
+`proposal-repo`/`fulfillment` gravam/leem o prazo pro resumo WhatsApp.
+**Paridade de canal (FIX-25)**: o card `real_offer` do WhatsApp
+(`formatter.realOfferToWhatsApp` + `contract-capture.fireContract`) também
+passou a mostrar o prazo — não estava no escopo-arquivos original, mas evita
+drift web↔WhatsApp. Commit único `test+feat:` 5896917.

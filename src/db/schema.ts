@@ -255,6 +255,9 @@ export const beviProposals = pgTable(
 		grupo: varchar("grupo", { length: 30 }),
 		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
 		monthlyPayment: numeric("monthly_payment", { precision: 12, scale: 2 }),
+		// FIX-39: prazo REAL (meses) da oferta — a API nova (2026-06-12) passou a
+		// trazê-lo. Nullable: shape antigo não tinha e a API pode voltar atrás.
+		termMonths: integer("term_months"),
 		// Artefatos de fechamento
 		consortiumProposalLink: text("consortium_proposal_link"),
 		documentsLinkPersonal: text("documents_link_personal"),

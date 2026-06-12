@@ -218,6 +218,28 @@ describe("fireContract — disparo do startContract (CA-2, CA-6, CA-8)", () => {
 		assertNoCpfLeak();
 	});
 
+	it("FIX-39/40: oferta com prazo + lance médio → card WhatsApp carrega os dois (paridade web)", async () => {
+		mocks.startContract.mockResolvedValue({
+			proposalId: "p-1",
+			offer: { ...OFFER_RESULT.offer, termMonths: 72, avgBidValue: 69_361.27 },
+			noOffer: false,
+		});
+		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
+		await fireContract(WA, CONV_ID);
+
+		expect(mocks.sendInteractive).toHaveBeenCalledTimes(1);
+		const interactive = mocks.sendInteractive.mock.calls[0][1] as {
+			body?: { text?: string };
+		};
+		const text = interactive.body?.text ?? "";
+		expect(text).toMatch(/Prazo/i);
+		expect(text).toMatch(/72\s*meses/i);
+		expect(text).toMatch(/lance médio do grupo/i);
+		expect(text).toMatch(/69\.361/);
+		// rótulo honesto — sem promessa de contemplação no card
+		expect(text).not.toMatch(/contempl|garant|chance/i);
+	});
+
 	it("idempotência: 2º fireContract não re-chama startContract (estado já limpo)", async () => {
 		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
 		await fireContract(WA, CONV_ID);

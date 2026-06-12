@@ -17,6 +17,9 @@ export interface BeviProposalSnapshot {
 	grupo?: string | null;
 	creditValue?: number | null;
 	monthlyPayment?: number | null;
+	/** FIX-39: prazo REAL (meses) da oferta de parceiro — persistido pra alimentar
+	 * o resumo da contratação (WhatsApp). Integer (não numeric): meses inteiros. */
+	termMonths?: number | null;
 	consortiumProposalLink?: string | null;
 	documentsLinkPersonal?: string | null;
 	documentsLinkAddress?: string | null;
@@ -49,6 +52,7 @@ export async function createBeviProposal(
 			grupo: snapshot.grupo ?? null,
 			creditValue: toNumericString(snapshot.creditValue),
 			monthlyPayment: toNumericString(snapshot.monthlyPayment),
+			termMonths: snapshot.termMonths ?? null,
 			consortiumProposalLink: snapshot.consortiumProposalLink ?? null,
 			documentsLinkPersonal: snapshot.documentsLinkPersonal ?? null,
 			documentsLinkAddress: snapshot.documentsLinkAddress ?? null,
@@ -81,6 +85,7 @@ export async function updateBeviProposal(
 			...(patch.monthlyPayment !== undefined
 				? { monthlyPayment: toNumericString(patch.monthlyPayment) }
 				: {}),
+			...(patch.termMonths !== undefined ? { termMonths: patch.termMonths ?? null } : {}),
 			...(patch.consortiumProposalLink !== undefined
 				? { consortiumProposalLink: patch.consortiumProposalLink }
 				: {}),

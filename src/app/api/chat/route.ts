@@ -587,7 +587,12 @@ export async function POST(req: NextRequest) {
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
-									realOfferPresentation({ proposalId, offer, noOffer }),
+									// FIX-40: o lance declarado na qualificação habilita a frase de
+									// posição factual vs o lance médio do grupo (sem promessa).
+									realOfferPresentation(
+										{ proposalId, offer, noOffer },
+										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
+									),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,

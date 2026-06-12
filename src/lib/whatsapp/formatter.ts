@@ -1059,12 +1059,20 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const credit = Number(payload.creditValue ?? 0);
 	const parcela = Number(payload.monthlyPayment ?? 0);
 	const grupo = payload.grupo as string | undefined;
+	// FIX-39/40: campos novos da API (paridade com o card web). Defensivos —
+	// ausentes → linha omitida (D11). Lance médio com rótulo LITERAL, sem promessa.
+	const termMonths = Number(payload.termMonths);
+	const avgBidValue = Number(payload.avgBidValue);
+	const prazoLine = Number.isFinite(termMonths) ? `\n*Prazo:* ${termMonths} meses` : "";
+	const lanceLine = Number.isFinite(avgBidValue)
+		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
+		: "";
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `✅ Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}\n\nConfirma essa carta pra eu seguir?`,
+				text: `✅ Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [

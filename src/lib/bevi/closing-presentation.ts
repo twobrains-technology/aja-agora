@@ -13,8 +13,28 @@ export type ClosingItem =
 			payload: Record<string, unknown>;
 	  };
 
-/** Passo 5.1 — oferta REAL confirmada pela administradora, a confirmar pelo usuário. */
-export function realOfferPresentation(result: StartContractResult): ClosingItem[] {
+const fmtBRL = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** FIX-40: posição FACTUAL do lance declarado vs o lance médio do grupo. Rótulo
+ * literal do campo, sem prometer contemplação (proibido derivar "chance" — a
+ * semântica do lanceMedio não foi confirmada com a AGX). Só compara, nunca promete. */
+function bidPositionText(declaredLance: number, avgBid: number): string {
+	if (declaredLance > avgBid) {
+		return `Sobre o seu lance: ${fmtBRL(declaredLance)} fica acima do lance médio desse grupo (${fmtBRL(avgBid)}).`;
+	}
+	if (declaredLance < avgBid) {
+		return `Sobre o seu lance: ${fmtBRL(declaredLance)} fica abaixo do lance médio desse grupo (${fmtBRL(avgBid)}).`;
+	}
+	return `Sobre o seu lance: ${fmtBRL(declaredLance)} está na média do lance desse grupo (${fmtBRL(avgBid)}).`;
+}
+
+/** Passo 5.1 — oferta REAL confirmada pela administradora, a confirmar pelo usuário.
+ * `declaredLanceValue` (lance da qualificação) habilita a frase de posição do FIX-40. */
+export function realOfferPresentation(
+	result: StartContractResult,
+	opts: { declaredLanceValue?: number } = {},
+): ClosingItem[] {
 	if (result.noOffer || !result.offer) {
 		return [
 			{
@@ -24,7 +44,7 @@ export function realOfferPresentation(result: StartContractResult): ClosingItem[
 		];
 	}
 	const offer = result.offer;
-	return [
+	const items: ClosingItem[] = [
 		{
 			kind: "text",
 			text: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`,
@@ -39,9 +59,28 @@ export function realOfferPresentation(result: StartContractResult): ClosingItem[
 				category: offer.category,
 				creditValue: offer.creditValue,
 				monthlyPayment: offer.monthlyPayment,
+				// FIX-39: prazo REAL só entra quando a API o devolveu (Number.isFinite);
+				// ausente → chave omitida e o card mantém a copy de fallback (D11).
+				...(Number.isFinite(offer.termMonths) ? { termMonths: offer.termMonths } : {}),
+				// FIX-40: lance médio do grupo só com fonte (rótulo literal no card).
+				...(Number.isFinite(offer.avgBidValue) ? { avgBidValue: offer.avgBidValue } : {}),
 			},
 		},
 	];
+	// FIX-40: só compara quando há AMBOS — lance declarado (>0) E lance médio do
+	// grupo (fonte real). Sem um deles, silêncio (D11: nada de número sem fonte).
+	const declared = opts.declaredLanceValue;
+	if (
+		Number.isFinite(declared) &&
+		(declared as number) > 0 &&
+		Number.isFinite(offer.avgBidValue)
+	) {
+		items.push({
+			kind: "text",
+			text: bidPositionText(declared as number, offer.avgBidValue as number),
+		});
+	}
+	return items;
 }
 
 /** Passo 5.2 — confirmação: reforços literais do docx → assinatura + documentos

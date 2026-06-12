@@ -1,7 +1,9 @@
 ---
 id: FIX-40
 titulo: "lanceMedio do grupo — feedback honesto sobre o lance do usuário + âncora real no dial de contemplação"
-status: todo
+status: done
+commit: 84bfaf8
+executado_em: 2026-06-12
 bloco: bloco-u-campos-novos-bevi
 arquivos:
   - src/lib/adapters/bevi/partner-offer-mapper.ts (lanceMedio → avgBidValue)
@@ -57,3 +59,19 @@ não perguntar semântica fina pra Bevi/AGX; honestidade pelo rótulo.
   contemplado", "garante", "chance de X%").
 - **Camada 3**: critério na rubrica: comparação de lance presente quando há
   dado, zero promessa de contemplação.
+
+## Executado — decisões e escopo
+
+- Mapper/card web/closing/dial conforme spec. Frase de posição factual em
+  `closing-presentation.realOfferPresentation(result, { declaredLanceValue })`,
+  ligada no `route` web via `meta.qualifyAnswers.lanceValue`. Detector
+  anti-promessa (`/contempl|garant|chance/`) na Camada 2.
+- **Dial**: `offerSnapshotFromArtifact`/`coerceDialPayload` propagam
+  `avgBidValue` quando o artifact-âncora o carrega (defensivo, padrão FIX-C2) —
+  âncora pronta; nenhum artifact da Descoberta o carrega hoje, então só dispara
+  quando a fonte existir (nunca inventa).
+- **Paridade de canal (FIX-25)**: card `real_offer` do WhatsApp ganhou a linha
+  "Lance médio do grupo" (rótulo literal). A frase comparativa textual
+  (acima/abaixo) ficou só no web — o WhatsApp mostra o número do grupo no card;
+  comparação textual no WA é refinamento futuro se o Bernardo quiser.
+- Commit único `test+feat:` 84bfaf8.

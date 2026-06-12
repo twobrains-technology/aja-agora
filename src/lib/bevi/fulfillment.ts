@@ -105,6 +105,8 @@ export async function startContract(
 		grupo: offer?.grupo ?? null,
 		creditValue: offer?.creditValue ?? null,
 		monthlyPayment: offer?.monthlyPayment ?? null,
+		// FIX-39: prazo REAL da API nova (null quando a API não o trouxe).
+		termMonths: offer?.termMonths ?? null,
 		proposalStatus: "simulacao",
 	};
 

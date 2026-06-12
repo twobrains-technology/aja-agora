@@ -37,6 +37,25 @@ describe("buildContractSummaryText — resumo da contratação", () => {
 	it("se identifica como resumo da contratação (docx)", () => {
 		expect(text.toLowerCase()).toMatch(/resumo da( sua)? contratação/);
 	});
+
+	// FIX-39 — a API nova traz `prazo`; o resumo pós-contratação inclui "Prazo: NN
+	// meses" QUANDO há fonte. Sem termMonths (shape antigo) NÃO inventa prazo (D11).
+	it("FIX-39: com termMonths inclui 'Prazo: NN meses'", () => {
+		const comPrazo = buildContractSummaryText({
+			administradora: "ÂNCORA",
+			grupo: "1234",
+			creditValue: 60_000,
+			monthlyPayment: 980.5,
+			termMonths: 72,
+			signatureLink: null,
+		});
+		expect(comPrazo).toMatch(/Prazo:\s*72\s*meses/i);
+	});
+
+	it("FIX-39: sem termMonths NÃO inventa prazo (nenhuma linha de meses)", () => {
+		expect(text).not.toMatch(/Prazo:/i);
+		expect(text).not.toMatch(/\d+\s*meses/i);
+	});
 });
 
 describe("sendContractSummary — envio via WhatsApp", () => {
@@ -55,6 +74,19 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 		expect(to).toBe("5562999887766");
 		expect(text).toContain("ÂNCORA");
 		expect(text).toContain("https://assina.example/p1");
+	});
+
+	it("FIX-39: proposta com term_months → resumo enviado inclui o prazo", async () => {
+		const sendText = vi.fn().mockResolvedValue({ ok: true });
+		await sendContractSummary("conv-1b", {
+			loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+			getProposalImpl: async () => ({ ...(ROW as object), termMonths: 72 }) as never,
+			sendTextImpl: sendText,
+			whatsappConfigured: () => true,
+			persistMetaImpl: vi.fn(),
+		});
+		const [, text] = sendText.mock.calls[0];
+		expect(text).toMatch(/Prazo:\s*72\s*meses/i);
 	});
 
 	it("sem WhatsApp configurado: NÃO envia, marca contractSummaryPending e não lança", async () => {
