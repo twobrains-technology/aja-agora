@@ -100,6 +100,24 @@ export function lastUserText(
 	return null;
 }
 
+// FIX-31: o branch handed_off ecoa a user message no bus pro atendente. O eco
+// PRECISA preservar o id original do cliente — o provider dedupa por id, e um
+// id novo (crypto.randomUUID) nunca casa com o id otimista do useChat, então a
+// bolha aparecia 2×. Pega o id da última mensagem `user` do payload (a que o
+// useChat acabou de appendar localmente). Null quando ausente → caller faz
+// fallback pra UUID novo (não pior que o comportamento legado).
+export function lastUserMessageId(
+	messages: ({ role?: string; id?: unknown } | unknown)[] | undefined,
+): string | null {
+	if (!messages) return null;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i] as { role?: string; id?: unknown };
+		if (msg?.role !== "user") continue;
+		return typeof msg.id === "string" && msg.id.length > 0 ? msg.id : null;
+	}
+	return null;
+}
+
 function brl(n: number): string {
 	return n.toLocaleString("pt-BR", {
 		style: "currency",
@@ -251,7 +269,7 @@ export async function POST(req: NextRequest) {
 		const userName = conv.contactName ?? "Cliente";
 		await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
-			id: crypto.randomUUID(),
+			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),
 			role: "user",
 			content: userText,
 			createdAt: simulatorNow().toISOString(),
@@ -514,7 +532,10 @@ export async function POST(req: NextRequest) {
 								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
 								// diagnóstico impossível. Logar SEMPRE o erro original (lição
 								// empty-env-compose: tool errors logados). CPF nunca no log.
-								console.error(`[contract-submit] startContract falhou (conv=${conversationId})`, err);
+								console.error(
+									`[contract-submit] startContract falhou (conv=${conversationId})`,
+									err,
+								);
 								const delta =
 									err instanceof MinCreditError
 										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
