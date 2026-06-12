@@ -1,9 +1,10 @@
 ---
 id: FIX-18
 titulo: "Orçamento declarado não fecha com o bem → agente recomenda parcela 9,8× maior rotulada 'Compatível com seu perfil' sem confrontar"
-status: todo
+status: done
 bloco: bloco-m-ux-funil
-decisao_pendente: "Conversar com o Kairo antes (mexe na narrativa da jornada; C6 da auditoria 2026-06-11)"
+commit: 4f9ac51
+executado_em: 2026-06-11
 arquivos:
   - src/lib/agent/orchestrator/directives.ts (confronto pré/pós-busca)
   - src/lib/agent/system-prompt.ts (instrução de confronto honesto)
@@ -58,3 +59,29 @@ agente que guia, não que empurra.
 - Camada 2: cassette — reveal com monthlyFit=0 → texto do agente contém
   confronto, não celebração.
 - Camada 3: cenário de eval com perfil impossível (250k + 1k/mês).
+
+### Decisão (Kairo, registrada 2026-06-11)
+
+Resposta ao "Ponto pra conversa" acima: **confronto no picker E no reveal**
+(ambos) e **tom guia-não-empurra** (jornada: "Seu objetivo primeiro").
+
+### O que foi implementado
+
+- **Picker (passo 2)** — `plan-estimate.ts`: `computePlanEstimate` agora devolve
+  `budgetFeasible` + `viableAssetForBudget` (maior bem que cabe na parcela no
+  prazo máximo realista, `Math.floor` pra caber de fato). `plan-estimate-picker`
+  mostra um aviso (`data-testid="plan-budget-warning"`) quando a parcela não
+  fecha o bem — orienta pro bem viável e convida a ajustar, sem bloquear o submit.
+- **Card (reveal)** — `score-label.ts`: `recommendationFitLabel(score, monthlyFit)`
+  — `monthlyFit < 0.2` → "Melhor opção na faixa de crédito" (honesto), senão o
+  rótulo qualitativo do score. `recommendation-card.tsx` passou a usar essa
+  função. Guard **determinístico** (independe da LLM) — o card nunca mais mente.
+- **Reveal (narrativa)** — `directives.ts`: `buildSearchSummaryDirective` injeta
+  um bloco "CONFRONTO DE VIABILIDADE" quando há orçamento declarado (instrui
+  confrontar a parcela real × orçamento ANTES de celebrar, oferecer ajustar o
+  valor do bem, tom de guia). `system-prompt.ts`: regra dura espelhando isso.
+- **Camada 3**: o eval nightly (`agent-flow.eval.test.ts`) é o lugar do cenário
+  de perfil impossível (250k + 1k/mês) — não roda no PR; os guards
+  determinísticos (card + engine) já blindam o caminho de runtime.
+
+`formatter.ts` (`contractFormToWhatsApp`) **não foi tocado** (bloco K paralelo).
