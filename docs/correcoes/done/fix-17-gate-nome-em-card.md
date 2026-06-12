@@ -1,9 +1,10 @@
 ---
 id: FIX-17
 titulo: "Gate do nome ('como posso te chamar?') deve pedir o nome em CARD com input focado, não texto livre"
-status: todo
+status: done
 bloco: bloco-m-ux-funil
-decisao_pendente: "Kairo pediu pra CONVERSAR antes de implementar (2026-06-11) — não lançar sem alinhar o desenho"
+commit: cd159bc
+executado_em: 2026-06-11
 arquivos:
   - src/lib/chat/ui-message.ts (part data novo, ex: NameGatePartData)
   - src/components/chat/artifacts/name-prompt.tsx (componente novo: input + submit, autofocus)
@@ -73,3 +74,31 @@ estruturados vieram depois e o nome nunca foi migrado pro padrão.
   chamada UMA vez com o valor do card.
 - Camada 3: cenário de eval já cobre captura de nome (EVAL-SAVE-CONTACT-NAME-
   CIRURGICO) — estender pro card.
+
+### Decisão (Kairo, registrada 2026-06-11)
+
+Conversa alinhada e inlined no prompt de lançamento do workspace 3:
+
+1. **Autofocus em TODOS os forms do funil** (não só o do nome). Padronizado:
+   `name-prompt` (novo), `gate-identity-form` (CPF) e `contract-form` (CPF);
+   `lead-form` já tinha. Mobile-first — o teclado abre no lugar certo. Roubar
+   o foco do input do chat é o comportamento DESEJADO no mobile.
+2. **Coexistência card/texto.** O card NÃO vira caminho único — o usuário pode
+   digitar no card OU responder por texto livre no chat. Os dois convergem em
+   `conversations.contactName` (card → route persiste direto; texto → o
+   `save_contact_name` forçado via toolChoice, caminho intacto).
+
+### O que mudou vs. o rascunho (paths reais)
+
+- **Disparo determinístico**: em vez de mexer em `detect-name-turn.ts`, o gate
+  virou um `Gate` de verdade (`"name"`) — `nextGate` retorna `"name"` enquanto
+  o nome não foi capturado (antes era o no-op `"doubts-wait"`). O `runner` emite
+  o gate; `gateQuestion("name")=null` evita duplicar a pergunta (que já sai no
+  texto do directive de 1o contato).
+- **WhatsApp degrada pra texto**: tratado em `whatsapp/adapter.ts`
+  (`gateInteractive("name") → null`), não no `formatter.ts` — e o `runner` não
+  seta `prefix` pro gate `name` pra não descartar o texto da pergunta no canal.
+- **Submit do card**: handler `action.gate === "name"` em `route.ts` →
+  `saveContactName` + `buildNameCapturedDirective` (saúda) → orchestrator dispara
+  o gate de experience.
+- `formatter.ts` (`contractFormToWhatsApp`) **não foi tocado** (bloco K paralelo).
