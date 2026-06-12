@@ -14,6 +14,7 @@ print. Itens FIX-27..FIX-30, blocos N/O/P (onda 1, todos paralelos).
 | (mesma sessão — números contraditórios no card) | FIX-30 — "COM LANCE EMBUTIDO (74,43%)" rotulando o lance TOTAL necessário + "recebe R$ 80.000" (carta cheia) na mesma tela | bloco-p-acoes-e-lance-do-card |
 | "bug msg duplicada nesse cenario." | FIX-31 — handoff ecoa a user message no bus com UUID novo; dedupe por id do provider nunca casa → bolha 2× | bloco-q-handoff-msg-duplicada |
 | "qd tento rolar a tela para cima e ele esta conversando, buga tudo... o chat se move sozinho bem qd nao tem usuario querendo scrollar. qd ele quer escrolar deve conseguir" | FIX-32 — auto-scroll força o fundo durante streaming (`\|\| isStreaming`) e confunde posição com intenção do usuário | bloco-r-scroll-inteligente |
+| "ele fala que encontrou antes de buscar" (2026-06-12, pós-merge dos PRs #28/#30) | FIX-36 — frases-modelo do prompt/directives instruem "Encontrei opções" ANTES do search_groups completar (visível com o spinner "Buscando grupos") | bloco-t-copy-pre-tool |
 
 ## Achado transversal
 
