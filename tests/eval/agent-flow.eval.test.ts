@@ -1151,6 +1151,84 @@ describeIfKey("EVAL-FIX-12 — fim da qualificação NUNCA vira fechamento", () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EVAL-FIX-38 — clique explícito "Tenho interesse" avança em UM passo
+// Camada 3 (nightly): o clique EXPLÍCITO vai DIRETO pro passo 5
+// (present_contract_form) — sem o card de decisão "Esse plano faz sentido?"
+// (dupla confirmação por construção do FIX-34). Mirror do route pós-FIX-38:
+// decisionDispatched já marcado (libera present_contract_form na fase closing
+// da tool-policy) + buildAdvanceToContractDirective rodado pelo agent REAL.
+// Critério: nº de gates de confirmação entre o sinal explícito e o contrato ≤ 1
+// (zero card de decisão extra), sob não-determinismo do modelo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-38 — avanço explícito sem dupla confirmação", () => {
+	let advanceTurn: Turn | null = null;
+	let convId: string | null = null;
+
+	beforeAll(async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "auto",
+					currentCategory: "auto",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					identityCollected: true,
+					qualifyAnswers: { creditMax: 100_000, prazoMeses: 12, hasLance: "no" },
+					searchDispatched: true,
+					revealCompleted: true,
+					simulatorOfferDispatched: true,
+					// FIX-38: o route marca decisionDispatched ANTES de dirigir o avanço
+					// (sem isso, fase "reveal" filtraria present_contract_form da policy).
+					decisionDispatched: true,
+					recommendedAdministradora: "ITAÚ",
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		await saveMessage(convId, "user", "Tenho interesse", "web");
+		const { buildAdvanceToContractDirective } = await import(
+			"@/lib/agent/orchestrator/directives"
+		);
+		advanceTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: buildAdvanceToContractDirective({ administradora: "ITAÚ" }),
+			isUserTurn: false,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("dirige present_contract_form no passo de avanço", () => {
+		const tools = advanceTurn?.toolCalls ?? [];
+		const arts = (advanceTurn?.artifacts ?? []).map((a) => a.type);
+		expect(
+			tools.includes("present_contract_form") || arts.includes("contract_form"),
+			`Esperado present_contract_form/contract_form no avanço. Tools: [${tools.join(", ")}], artifacts: [${arts.join(", ")}].`,
+		).toBe(true);
+	});
+
+	it("NÃO re-apresenta o card de decisão (dupla confirmação) nem captura lead", () => {
+		const tools = advanceTurn?.toolCalls ?? [];
+		const arts = (advanceTurn?.artifacts ?? []).map((a) => a.type);
+		expect(tools).not.toContain("present_decision_prompt");
+		expect(arts).not.toContain("decision_prompt");
+		expect(tools).not.toContain("present_lead_form");
+		expect(arts).not.toContain("lead_form");
+	});
+
+	it("texto não re-pergunta 'faz sentido?' nem promete consultor humano", () => {
+		const text = (advanceTurn?.content ?? "").toLowerCase();
+		expect(text).not.toMatch(/faz sentido/);
+		expect(text).not.toContain("consultor");
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EVAL-FIX-14 — pergunta de status consulta a Bevi AO VIVO via tool (cirúrgico)
 // Plano de teste: docs/test-plans/fix-14-tool-status-proposta.md (CA-27/CA-28).
 // Conversa pós-fechamento (bevi_proposals seedada) + gateway dublê — usuário

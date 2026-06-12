@@ -41,6 +41,7 @@ import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import {
+	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
@@ -262,19 +263,22 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 		recommendedAdministradora: "ITAÚ",
 	};
 
-	it("cassette: turn pos-reveal com 'Tenho interesse' produz present_decision_prompt (NAO present_lead_form, sem 'consultor')", async () => {
-		// Trajetoria CORRETA — o que deve sair do agent quando o usuario sinaliza
-		// avanco pos-reveal. Mirror do que o handler determinístico do route faz.
+	it("cassette: turn pos-reveal com 'Tenho interesse' (clique explícito) avança self-service — NUNCA present_lead_form, sem 'consultor'", async () => {
+		// FIX-38 ajustou o destino do clique EXPLÍCITO: vai DIRETO pro passo 5
+		// (present_contract_form), sem o card de decisão. O INVARIANTE que este
+		// cassette protege é o do FIX-34 — o avanço NUNCA vira captura de lead pra
+		// consultor humano —, NÃO "interest passa pelo decision". Mirror do que o
+		// handler determinístico do route faz após buildAdvanceToContractDirective.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
-			...textChunks("t1", "Boa! Então deixa eu confirmar com você se esse plano faz sentido:"),
-			toolCallChunk("tc-dp-1", "present_decision_prompt", { administradora: "ITAÚ" }),
+			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
+			toolCallChunk("tc-cf-1", "present_contract_form", { administradora: "ITAÚ" }),
 			FINISH_TOOL_CALLS,
 		]);
 
 		expect(toolCalls).toHaveLength(1);
-		expect(toolCalls[0]?.toolName).toBe("present_decision_prompt");
-		// O detector do bug: NUNCA present_lead_form, NUNCA promessa de consultor.
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// O detector do bug FIX-34: NUNCA present_lead_form, NUNCA promessa de consultor.
 		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
 		expect(text.toLowerCase()).not.toContain("consultor");
 		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
@@ -298,6 +302,93 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 			expect(gatilhoEntaoLead.test(p)).toBe(false);
 			expect(leadEntaoGatilho.test(p)).toBe(false);
 		}
+	});
+});
+
+// ============================================================================
+// FIX-38 — clique explícito "Tenho interesse" NÃO passa por dupla confirmação
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12, jornada Itaú): clicar "Tenho interesse" no card
+// de simulação → card "Esse plano faz sentido?" → clicar "Sim, quero contratar
+// agora" → identify. Dois gates de confirmação consecutivos pra quem JÁ deu o
+// sinal explícito. "ta pedindo confirmacao demais, estou achando inutil isso."
+//
+// O FIX-34 (mergeado no PR #30) acertou em matar o funil de lead legado, mas
+// trocou por dupla confirmação por construção: o kind "interest" SEMPRE
+// disparava buildDecisionPromptDirective na 1ª vez. FIX-38: o clique explícito
+// vai DIRETO pro passo 5 (buildAdvanceToContractDirective), marcando
+// decisionDispatched (idempotência + libera present_contract_form na fase
+// closing da tool-policy). O card de decisão PERMANECE pros caminhos AMBÍGUOS
+// (gate "decision" do funil — satisfação difusa em texto; gate simulator-offer
+// "Agora não"). Valida contra a jornada-canonica.md passo 4→5 (o card de
+// decisão é instrumento pra DEFINIR, não pedágio após a definição já dada).
+// ============================================================================
+
+describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avança em UM passo", () => {
+	it("cassette: o turno do avanço dirige present_contract_form em UM passo, sem nova pergunta de confirmação", async () => {
+		// Trajetória CORRETA pós-FIX-38: o clique explícito já decidiu — o agente
+		// fecha com UMA frase e chama present_contract_form. Sem card de decisão,
+		// sem re-perguntar "faz sentido?".
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
+			toolCallChunk("tc-cf-1", "present_contract_form", { administradora: "ITAÚ" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// O detector do bug: NUNCA o segundo gate de confirmação no clique explícito.
+		expect(toolCalls.some((t) => t.toolName === "present_decision_prompt")).toBe(false);
+		// Texto não re-pergunta "faz sentido?" / "deixa eu confirmar" (dupla confirmação).
+		expect(text.toLowerCase()).not.toMatch(/faz sentido/);
+		expect(text.toLowerCase()).not.toMatch(/deixa eu confirmar/);
+		// Invariante FIX-34 preservado: nunca lead/consultor.
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+	});
+
+	it("estrutural: o branch interest do route vai DIRETO pro avanço (sem buildDecisionPromptDirective) e marca decisionDispatched", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const interestBlock =
+			route.match(
+				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
+		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
+		expect(
+			interestBlock.includes("buildAdvanceToContractDirective"),
+			"FIX-38: clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+		).toBe(true);
+		expect(
+			interestBlock.includes("buildDecisionPromptDirective"),
+			"FIX-38: clique explícito NÃO passa pelo card de decisão (sem dupla confirmação).",
+		).toBe(false);
+		expect(
+			interestBlock.includes("decisionDispatched"),
+			"FIX-38: marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
+		).toBe(true);
+	});
+
+	it("directives: avanço dirige present_contract_form; o card de decisão (caminho ambíguo) segue existindo e nunca vira lead", () => {
+		const advance = buildAdvanceToContractDirective({ administradora: "ITAÚ" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_lead_form");
+		expect(advance).not.toContain("present_decision_prompt");
+
+		// Caminho AMBÍGUO preservado: o card de decisão continua disponível (o
+		// route ainda o dispara no gate simulator-offer "Agora não").
+		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
+		expect(decision).toContain("present_decision_prompt");
+		const route = readSource("src/app/api/chat/route.ts");
+		const simulatorOfferBlock =
+			route.match(
+				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
+			)?.[0] ?? "";
+		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
+		expect(
+			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
+			"FIX-38: o card de decisão fica pros caminhos ambíguos — o gate simulator-offer 'Agora não' ainda o dispara.",
+		).toBe(true);
 	});
 });
 

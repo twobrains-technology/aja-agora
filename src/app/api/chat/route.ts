@@ -448,23 +448,27 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
-						// FIX-29/FIX-34: "Tenho interesse" pós-reveal é AVANÇO no funil
-						// canônico (decisão → contratação self-service), NUNCA captura de
-						// lead pra consultor humano. Espelha o branch simulator-offer "no":
-						// dispara o card de decisão; se a decisão JÁ passou, avança pro passo 5.
+						// FIX-29/FIX-34/FIX-38: "Tenho interesse" pós-reveal é AVANÇO no
+						// funil canônico (contratação self-service), NUNCA captura de lead
+						// pra consultor humano. O clique é o sinal EXPLÍCITO de avanço — JÁ
+						// é a decisão —, então vai DIRETO pro passo 5 (present_contract_form),
+						// sem o card "Esse plano faz sentido?". FIX-38: a dupla confirmação
+						// por construção do FIX-34 (interest sempre disparava o decision na
+						// 1ª vez) era fricção inútil pra quem já decidiu ("ta pedindo
+						// confirmacao demais"). Marca decisionDispatched ANTES de dirigir o
+						// avanço: a tool-policy só libera present_contract_form na fase
+						// "closing" (decisionDispatched===true) — sem a marca o avanço cairia
+						// na fase "reveal" e a tool seria filtrada. Idempotência: o gate
+						// "decision" do funil (caminho AMBÍGUO — satisfação difusa em texto)
+						// também não reaparece. O card de decisão fica pros caminhos ambíguos
+						// (gate simulator-offer "Agora não") — validado contra a
+						// jornada-canonica.md passo 4→5 (o card é instrumento pra DEFINIR,
+						// não pedágio depois da definição já dada no clique).
 						if (body.action?.kind === "interest") {
 							const fresh = await reloadMeta(conversationId);
 							const administradora = fresh.recommendedAdministradora ?? body.action.administradora;
 							if (!fresh.decisionDispatched) {
 								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
-								await pipeDirectiveTurn({
-									conversationId,
-									directive: buildDecisionPromptDirective({ administradora }),
-									contactName,
-									writer,
-									userKey,
-								});
-								return;
 							}
 							await pipeDirectiveTurn({
 								conversationId,
