@@ -9,7 +9,6 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
-import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
 import {
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
@@ -34,6 +33,7 @@ import {
 	closingPresentation,
 	realOfferPresentation,
 } from "@/lib/bevi/closing-presentation";
+import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
@@ -471,13 +471,6 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
-							const q = meta.qualifyAnswers ?? {};
-							const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
-							const valor = q.creditMax ?? q.creditMin ?? 50000;
-							const objetivo = q.objetivo ?? "contemplacao_rapida";
-							const lanceEmbutido = q.lanceEmbutido
-								? String(q.lanceEmbutidoPercent ?? 30)
-								: "nenhum";
 							// FIX-9: identidade já coletada no identify — o form confirma e o
 							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
 							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
@@ -501,18 +494,14 @@ export async function POST(req: NextRequest) {
 								return;
 							}
 							try {
-								const { proposalId, offer, noOffer } = await startContract(conversationId, {
-									cpf,
-									celular,
-									lgpd: body.action.lgpd,
-									segmento,
-									valor,
-									objetivo,
-									lanceEmbutido,
-									// Fechamento prefere a MESMA administradora que o usuário decidiu
-									// (BUG-ADMIN-TROCADA-NO-FECHAMENTO, E2E real 2026-06-04).
-									administradoraPreferida: meta.recommendedAdministradora ?? null,
-								});
+								// FIX-25: derivação canônica do input (segmento/valor/objetivo/lance
+								// + administradoraPreferida) — módulo único compartilhado com o
+								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
+								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
+								const { proposalId, offer, noOffer } = await startContract(
+									conversationId,
+									buildStartContractInput(meta, { cpf, celular, lgpd: body.action.lgpd }),
+								);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(

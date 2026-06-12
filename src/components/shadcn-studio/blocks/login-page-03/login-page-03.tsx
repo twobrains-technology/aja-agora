@@ -1,16 +1,12 @@
 import LogoVector from "@/assets/svg/logo-vector";
 import LoginForm from "@/components/shadcn-studio/blocks/login-page-03/login-form";
 import Logo from "@/components/shadcn-studio/logo";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const Login = () => {
 	return (
 		<div className="h-dvh lg:grid lg:grid-cols-2">
 			{/* Left — Form */}
 			<div className="relative flex h-full items-center justify-center px-8">
-				<div className="absolute top-6 right-6">
-					<ThemeToggle />
-				</div>
 				<div className="w-full max-w-sm space-y-8">
 					<Logo className="gap-3" />
 

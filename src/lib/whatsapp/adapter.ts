@@ -132,6 +132,14 @@ async function consumeEvents(
 		const artifacts = pendingArtifacts;
 		pendingArtifacts = [];
 		for (const artifact of artifacts) {
+			// FIX-25: passo 5 no WhatsApp — ao renderizar o contract_form, abre a
+			// máquina de estado do fechamento (confirm/cpf). O turno seguinte do
+			// usuário cai em captureContractText (processor) e os botões em
+			// interactive-handlers; o disparo do startContract é o aceite.
+			if (artifact.type === "contract_form") {
+				const { beginContractCollection } = await import("./contract-capture");
+				await beginContractCollection(conversationId, artifact.payload).catch(() => {});
+			}
 			const wa = artifactToWhatsApp(artifact.type, artifact.payload);
 			if (!wa) {
 				// Visibilidade: artifact sem mapper cai em silêncio. Se um tipo

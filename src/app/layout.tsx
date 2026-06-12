@@ -1,32 +1,28 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
+import { DM_Mono, Poppins } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const inter = Inter({
+const poppins = Poppins({
 	variable: "--font-sans",
 	subsets: ["latin"],
+	weight: ["300", "400", "500", "600", "700", "800"],
 });
 
-const sourceSerif = Source_Serif_4({
-	variable: "--font-serif",
-	subsets: ["latin"],
-	weight: ["400", "600", "700"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
+const dmMono = DM_Mono({
 	variable: "--font-mono",
 	subsets: ["latin"],
+	weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-	title: "Aja Agora | Consórcio inteligente com IA",
+	title: "Aja Agora | Seu consórcio, resolvido numa conversa",
 	description:
-		"Diga o que você quer e receba uma recomendação personalizada de consórcio. Sem formulário, sem corretor, 100% digital.",
+		"Consultoria de consórcio independente. Diga o que você quer conquistar e receba uma recomendação personalizada, sem juros, sem formulário e sem corretor.",
 	keywords: [
 		"consórcio",
 		"consórcio digital",
-		"consórcio IA",
+		"consórcio sem juros",
 		"consórcio online",
 		"consórcio sem corretor",
 		"simulação consórcio",
@@ -52,16 +48,12 @@ export default function RootLayout({
 	return (
 		<html
 			lang="pt-BR"
-			className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}
+			className={`${poppins.variable} ${dmMono.variable} h-full antialiased`}
 			suppressHydrationWarning
 		>
 			<body className="min-h-full flex flex-col">
-				<ThemeProvider
-					attribute="class"
-					defaultTheme="system"
-					enableSystem
-					disableTransitionOnChange
-				>
+				{/* App é light-only — tema escuro removido a pedido do produto. */}
+				<ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>
 					{children}
 				</ThemeProvider>
 			</body>

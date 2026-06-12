@@ -1,14 +1,20 @@
 ---
 id: FIX-25
 titulo: "MC-5 — fechamento Bevi no WhatsApp: captura de confirmação/CPF + máquina de estado do contrato no canal"
-status: todo
+status: done
 bloco: bloco-k-fechamento-whatsapp
+commit: 422606c
+executado_em: 2026-06-11
 arquivos:
-  - src/lib/whatsapp/processor.ts (roteamento do estado de contratação)
-  - src/lib/whatsapp/interactive-handlers.ts (botões de confirmação)
-  - src/lib/whatsapp/identify-capture.ts (padrão de captura — referência/extensão)
-  - src/lib/whatsapp/formatter.ts (contractFormToWhatsApp — fluxo guiado)
-  - tests/regression/agent-trajectory.test.ts (cassette)
+  - src/lib/bevi/contract-input.ts (NOVO — derivação canônica DRY web+whatsapp)
+  - src/lib/whatsapp/contract-capture.ts (NOVO — máquina de estado contractCollection)
+  - src/lib/whatsapp/processor.ts (interceptação textual do fechamento)
+  - src/lib/whatsapp/interactive-handlers.ts (botões contract_confirm/cancel + terminal)
+  - src/lib/whatsapp/formatter.ts (contractFormToWhatsApp — confirmação interativa)
+  - src/lib/whatsapp/adapter.ts (beginContractCollection no render do contract_form)
+  - src/app/api/chat/route.ts (refactor pra buildStartContractInput — DRY)
+  - src/lib/agent/personas.ts (tipo contractCollection no meta)
+  - tests/regression/agent-trajectory.test.ts (cassette Camada 2)
 rodada: 2026-06-11 (agregação de pendências pós-merge da onda G/H/I)
 ---
 

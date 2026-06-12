@@ -115,33 +115,65 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("whatif_")) return handleWhatIf(ctx);
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
+	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
+	if (replyId === "contract_cancel") return handleContractCancel(ctx);
 	if (replyId === "offer_confirm") return handleOfferConfirm(ctx);
 	if (replyId === "offer_reject") return handleOfferReject(ctx);
 
 	return false;
 }
 
+// ── Passo 5 "Contratar" (FIX-25) — botões do contract_form (fechamento Bevi) ──
+async function handleContractConfirm(ctx: Ctx): Promise<boolean> {
+	await recordUserClick(ctx);
+	const { fireContract } = await import("./contract-capture");
+	await fireContract(ctx.from, ctx.conversationId);
+	return true;
+}
+
+async function handleContractCancel(ctx: Ctx): Promise<boolean> {
+	await recordUserClick(ctx);
+	const meta = await loadMeta(ctx.conversationId);
+	const cleared = { ...meta };
+	delete cleared.contractCollection;
+	await persistMeta(ctx.conversationId, cleared);
+	const { CONTRACT_CANCELLED_REPLY } = await import("./contract-capture");
+	await sendTextMessage(ctx.from, CONTRACT_CANCELLED_REPLY);
+	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
+	return true;
+}
+
 // ── Passo 5 "Contratar" (fechamento Bevi) — botões do real_offer ──
+// Terminal idêntico ao web (route.ts offer-confirm, FIX-25): confirmOffer →
+// contractClosed=true → reforço literal + assinatura + documentos + "Parabéns!"
+// (closing-presentation.ts, copy única produção+eval) → resumo por WhatsApp.
 async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
 	const { from, conversationId } = ctx;
 	try {
 		const res = await confirmOffer(conversationId);
-		const sig = signatureHandoffToWhatsApp({
-			administradora: res.administradora ?? "",
-			consortiumProposalLink: res.consortiumProposalLink,
-		});
-		const doc = documentUploadToWhatsApp({});
-		const sigText = sig.type === "text" ? sig.text : "";
-		const docText = doc.type === "text" ? doc.text : "";
-		if (sigText) await sendTextMessage(from, sigText);
-		if (docText) await sendTextMessage(from, docText);
-		await saveMessage(
-			conversationId,
-			"assistant",
-			[sigText, docText].filter(Boolean).join("\n\n"),
-			"whatsapp",
-		);
+		// Estado TERMINAL: pós-confirmação o agente não re-apresenta contract_form.
+		const meta = await loadMeta(conversationId);
+		await persistMeta(conversationId, { ...meta, contractClosed: true });
+
+		const { closingPresentation } = await import("@/lib/bevi/closing-presentation");
+		const sentTexts: string[] = [];
+		for (const item of closingPresentation(res)) {
+			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
+			if (item.kind === "text") wa = { type: "text", text: item.text };
+			else if (item.type === "signature_handoff") wa = signatureHandoffToWhatsApp(item.payload);
+			else if (item.type === "document_upload") wa = documentUploadToWhatsApp(item.payload);
+			if (wa?.type === "text" && wa.text) {
+				await sendTextMessage(from, wa.text);
+				sentTexts.push(wa.text);
+			}
+		}
+		await saveMessage(conversationId, "assistant", sentTexts.join("\n\n"), "whatsapp");
+
+		// docx passo 5 (linha 52): resumo da contratação por WhatsApp. Nunca quebra
+		// o fechamento — falha vira contractSummaryPending.
+		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
+		await sendContractSummary(conversationId).catch(() => {});
 	} catch {
 		await sendTextMessage(
 			from,

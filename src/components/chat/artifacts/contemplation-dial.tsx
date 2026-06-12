@@ -16,9 +16,9 @@ const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const LIKELIHOOD_LABEL: Record<DialLikelihood, { text: string; cls: string }> = {
-	alta: { text: "chance alta", cls: "text-emerald-600" },
-	media: { text: "chance média", cls: "text-amber-600" },
-	baixa: { text: "chance menor", cls: "text-rose-600" },
+	alta: { text: "chance alta", cls: "text-success" },
+	media: { text: "chance média", cls: "text-warning" },
+	baixa: { text: "chance menor", cls: "text-destructive" },
 };
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
@@ -139,7 +139,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 							{/* FIX-C5: confronto com o lance declarado na qualificação */}
 							{declaredCovers != null && payload.declaredLanceValue != null ? (
 								<p
-									className={`text-xs ${declaredCovers ? "text-emerald-600" : "text-amber-600"}`}
+									className={`text-xs ${declaredCovers ? "text-success" : "text-warning"}`}
 									data-testid="dial-declared-lance"
 								>
 									{declaredCovers
