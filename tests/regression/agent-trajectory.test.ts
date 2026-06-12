@@ -51,6 +51,7 @@ import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
 
@@ -3085,7 +3086,9 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 
 	it("estrutural: badge do recommendation-card é qualitativo (sem % numérico)", () => {
 		const src = readSource("src/components/chat/artifacts/recommendation-card.tsx");
-		expect(src).toMatch(/scoreLabel/);
+		// FIX-18: o badge passou de scoreLabel pra recommendationFitLabel (rótulo
+		// honesto quando o orçamento não fecha) — segue qualitativo, sem % numérico.
+		expect(src).toMatch(/scoreLabel|recommendationFitLabel/);
 		expect(src).not.toMatch(/% compativel|% compatível/);
 	});
 });
@@ -4049,5 +4052,68 @@ describe("FIX-17 — gate do nome em card focado (primeiro contato)", () => {
 		// adapter limparia o textBuffer e a pergunta do nome se perderia no canal.
 		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
 		expect(runnerSrc).toMatch(/gate !== "name"/);
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-18: confronto de viabilidade quando o orcamento nao fecha
+// ----------------------------------------------------------------------------
+// Auditoria do dial / jornada BB real do Kairo (2026-06-11): perfil declarado
+// carro 250k · R$ 1.000/mes · ~27 meses. Combinacao impossivel (250k a 1k/mes
+// ~ 24 anos). O sistema buscou pela CARTA, achou ofertas com parcela de R$
+// 9.828,92/mes (9,8x o orcamento), rotulou "Compativel com seu perfil" com o
+// breakdown confessando "Orcamento 0%", e o agente CELEBROU ("bem proximo do
+// seu objetivo") em vez de confrontar.
+//
+// Defesa em 3 frentes (decisao do Kairo: confronto no picker E no reveal, tom
+// guia-nao-empurra): (1) card com rotulo honesto deterministico, (2) diretiva
+// do reveal instrui confronto, (3) regra dura no prompt.
+// ============================================================================
+
+describe("FIX-18 — confronto de viabilidade (orcamento declarado nao fecha)", () => {
+	it("cassette: agent CELEBRANDO uma parcela 9,8x acima do orcamento é o anti-padrao (bug original)", async () => {
+		const cassette = "Achei uma opcao bem proxima do seu objetivo! A parcela fica em R$ 9.828,92.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		// Reproducao fiel do bug: celebracao ("bem proxima do seu objetivo") sem
+		// nenhum confronto do estouro de orcamento.
+		expect(text).toBe(cassette);
+		const celebraSemConfronto =
+			/(bem )?pr[oó]xim[ao] do seu objetivo|[óo]tima (escolha|opcao)|achei (uma|a) (op[çc][ãa]o|carta)/i;
+		expect(celebraSemConfronto.test(cassette)).toBe(true);
+		// O texto do bug NAO confronta o orcamento.
+		expect(/acima do.*or[çc]amento|n[ãa]o fecha|fora do.*or[çc]amento/i.test(cassette)).toBe(false);
+	});
+
+	it("rotulo do card NUNCA mente: monthlyFit≈0 → 'Melhor opcao na faixa de credito' (deterministico)", () => {
+		// Guard mais forte (independe da LLM): o card nunca rotula "Compativel com
+		// seu perfil" quando a parcela estourou o orcamento (monthlyFit=0).
+		expect(recommendationFitLabel(0.68, 0)).toBe("Melhor opção na faixa de crédito");
+		expect(recommendationFitLabel(0.68, 0)).not.toBe("Compatível com seu perfil");
+	});
+
+	it("estrutural: diretiva do reveal instrui confronto antes de celebrar quando ha orcamento", () => {
+		const meta = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyAnswers: {
+				creditMin: 200_000,
+				creditMax: 250_000,
+				monthlyBudget: 1_000,
+				prazoMeses: 27,
+				hasLance: "no",
+			},
+		} as unknown as ConversationMetadata;
+		const d = buildSearchSummaryDirective({ category: "auto", meta });
+		expect(d).toMatch(/confront|acima do.*or[çc]amento|estoura/i);
+		expect(d).toMatch(/ajustar o valor do bem|ajustar o bem/i);
+	});
+
+	it("estrutural: prompt tem regra dura de confronto honesto de orcamento", () => {
+		const prompt = `${SPECIALIST_BASE_PROMPT}\n${SYSTEM_PROMPT}`;
+		expect(prompt).toMatch(/confront|n[ãa]o celebr|acima do.*or[çc]amento/i);
 	});
 });

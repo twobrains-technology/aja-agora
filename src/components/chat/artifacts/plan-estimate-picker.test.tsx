@@ -25,8 +25,24 @@ const payload: PlanGatePartData = {
 	kind: "plan",
 	gate: "credit",
 	category: "moto",
-	credit: { id: "credit", label: "Valor do bem", format: "currency", min: 8_000, max: 80_000, step: 1_000, default: 25_000 },
-	monthly: { id: "monthlyBudget", label: "Parcela mensal", format: "currency", min: 150, max: 2_500, step: 50, default: 500 },
+	credit: {
+		id: "credit",
+		label: "Valor do bem",
+		format: "currency",
+		min: 8_000,
+		max: 80_000,
+		step: 1_000,
+		default: 25_000,
+	},
+	monthly: {
+		id: "monthlyBudget",
+		label: "Parcela mensal",
+		format: "currency",
+		min: 150,
+		max: 2_500,
+		step: 50,
+		default: 500,
+	},
 	targetMonthDefault: 6,
 };
 
@@ -88,6 +104,48 @@ describe("FIX-3 — PlanEstimatePicker", () => {
 		fireEvent.click(screen.getByTestId("plan-submit"));
 		const [action] = sendAction.mock.calls[0];
 		expect(action.value.lanceEmbutido).toBe(true);
+	});
+});
+
+describe("FIX-18 — warning de inviabilidade orçamento × bem (confronto no picker)", () => {
+	// Bem alto (teto) + parcela baixa (piso) → a parcela não fecha o bem nem no
+	// prazo máximo realista. O picker tem que confrontar com tom de guia.
+	const inviavel: PlanGatePartData = {
+		kind: "plan",
+		gate: "credit",
+		category: "moto",
+		credit: {
+			id: "credit",
+			label: "Valor do bem",
+			format: "currency",
+			min: 8_000,
+			max: 80_000,
+			step: 1_000,
+			default: 80_000,
+		},
+		monthly: {
+			id: "monthlyBudget",
+			label: "Parcela mensal",
+			format: "currency",
+			min: 150,
+			max: 2_500,
+			step: 50,
+			default: 150,
+		},
+		targetMonthDefault: 6,
+	};
+
+	it("parcela não fecha o bem → aviso orientando ajuste (tom guia, não erro)", () => {
+		render(<PlanEstimatePicker payload={inviavel} />);
+		const warn = screen.getByTestId("plan-budget-warning");
+		expect(warn).toBeDefined();
+		// orienta pro bem que cabe + convite a ajustar (sem empurrar/bloquear)
+		expect(warn.textContent ?? "").toMatch(/cabe|ajustar/i);
+	});
+
+	it("combinação viável → SEM aviso de inviabilidade", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		expect(screen.queryByTestId("plan-budget-warning")).toBeNull();
 	});
 });
 

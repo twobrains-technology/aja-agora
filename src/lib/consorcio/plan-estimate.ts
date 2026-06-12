@@ -63,6 +63,13 @@ export interface PlanEstimate {
 	ownCashNeeded: number;
 	/** O lance disponível declarado cobre a parte do bolso? */
 	lanceCoberto: boolean;
+	/** FIX-18: a parcela declarada fecha o valor do bem dentro do prazo máximo
+	 * realista? `false` = combinação inviável (parcela baixa demais pro bem). */
+	budgetFeasible: boolean;
+	/** FIX-18: maior valor de bem que CABE na parcela declarada no prazo máximo
+	 * realista — orientação pro confronto ("com R$ X/mês o bem viável é ~R$ Y").
+	 * Igual a `assetValue` quando não há parcela declarada (nada a confrontar). */
+	viableAssetForBudget: number;
 	/** Valor que ele recebe se usar o embutido (carta − embutido). */
 	receivedCredit: number;
 	likelihood: DialLikelihood;
@@ -83,14 +90,32 @@ export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 	const assetValue = Math.max(0, input.assetValue);
 	const category = input.category;
 	const typicalTerm = TYPICAL_TERM_MONTHS[category];
+	// Teto realista de prazo (mesmo clamp usado na interligação parcela↔prazo).
+	const maxTerm = typicalTerm * 1.5;
+	const feeMult = 1 + TYPICAL_ADMIN_FEE_PCT[category] / 100;
+	const total = assetValue * feeMult;
+
+	const monthlyBudget = input.monthlyBudget && input.monthlyBudget > 0 ? input.monthlyBudget : 0;
+	const hasBudget = monthlyBudget > 0;
 
 	// Interligação parcela↔prazo: usuário definiu a parcela → o prazo estimado
 	// é o necessário pra caber nela (clamp entre 12m e 1.5× o prazo típico).
 	let termMonths = typicalTerm;
-	if (input.monthlyBudget && input.monthlyBudget > 0 && assetValue > 0) {
-		const total = assetValue * (1 + TYPICAL_ADMIN_FEE_PCT[category] / 100);
-		termMonths = Math.round(clamp(total / input.monthlyBudget, 12, typicalTerm * 1.5));
+	if (hasBudget && assetValue > 0) {
+		termMonths = Math.round(clamp(total / monthlyBudget, 12, maxTerm));
 	}
+
+	// FIX-18: a parcela declarada cabe no valor do bem dentro do prazo máximo
+	// realista? Se o prazo necessário (total/parcela) estoura o teto, a combinação
+	// é inviável — não existe grupo assim (jornada BB real: 250k a 1k/mês ≈ 24
+	// anos). viableAssetForBudget = maior bem que CABE na parcela no prazo máximo
+	// (orientação pro confronto, sem empurrar — decisão do Kairo: tom guia).
+	const budgetFeasible = !hasBudget || assetValue <= 0 || total / monthlyBudget <= maxTerm;
+	// floor (não round): o bem sugerido tem que CABER de fato na parcela — round
+	// pra cima estouraria o teto por centavos e a sugestão se contradiria.
+	const viableAssetForBudget = hasBudget
+		? Math.floor((monthlyBudget * maxTerm) / feeMult)
+		: assetValue;
 
 	const monthlyPayment = estimatePayment(assetValue, category, termMonths);
 	const targetMonth = clamp(Math.round(input.targetMonth), 1, termMonths);
@@ -115,6 +140,8 @@ export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 		embeddedBidValue: dial.embeddedBidValue,
 		ownCashNeeded,
 		lanceCoberto: dial.mode === "sorteio" || lanceDisponivel >= ownCashNeeded,
+		budgetFeasible,
+		viableAssetForBudget,
 		receivedCredit: dial.receivedCredit,
 		likelihood: dial.likelihood,
 		mode: dial.mode,

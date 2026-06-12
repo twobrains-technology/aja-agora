@@ -201,6 +201,24 @@ export function PlanEstimatePicker({
 						</p>
 					</div>
 
+					{/* FIX-18: a parcela declarada não fecha o valor do bem nem no prazo
+					    máximo realista — confronto honesto com tom de guia (decisão do
+					    Kairo). Orienta pro bem que cabe e convida a ajustar, sem bloquear. */}
+					{!estimate.budgetFeasible ? (
+						<div
+							className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+							data-testid="plan-budget-warning"
+						>
+							<Info className="size-3.5 mt-0.5 shrink-0 text-amber-600" />
+							<span>
+								Com <strong>{brl(monthlyBudget)}/mês</strong>, o bem que cabe é{" "}
+								<strong>~{brl(estimate.viableAssetForBudget)}</strong>. Pra um bem de{" "}
+								{brl(assetValue)}, a parcela precisaria ser bem maior — dá pra ajustar o valor do
+								bem ou a parcela.
+							</span>
+						</div>
+					) : null}
+
 					<Button
 						onClick={submit}
 						disabled={submitted || isStreaming}
