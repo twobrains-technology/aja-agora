@@ -41,6 +41,11 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						<Row label="Prazo" value={`${payload.termMonths} meses`} />
 					)}
 					<Row label="Grupo" value={payload.grupo} />
+					{/* FIX-40: lance médio do grupo — rótulo LITERAL do campo da Bevi.
+					    Só com fonte; NUNCA promete contemplação (regra D11). */}
+					{Number.isFinite(payload.avgBidValue) && (
+						<Row label="Lance médio do grupo" value={brl(payload.avgBidValue as number)} />
+					)}
 					<Row label="Administradora" value={payload.administradora} />
 				</div>
 

@@ -122,3 +122,35 @@ describe("RealOffer — FIX-39: prazo real (campo da API) renderiza; ausente man
 		expect(screen.getByText(/prazo e demais condições/i)).toBeDefined();
 	});
 });
+
+// FIX-40 (API nova Bevi 2026-06-12): a oferta de parceiro ganhou `lanceMedio` (R$
+// do grupo). Quando presente, o card mostra "Lance médio do grupo: R$ X" (rótulo
+// LITERAL do campo — sem prometer contemplação, regra D11). Ausente → omite a linha
+// e não morre (lição BUG-PARCELA-STRING).
+describe("RealOffer — FIX-40: lance médio do grupo (campo da API) renderiza; ausente omite", () => {
+	afterEach(cleanup);
+
+	it("com avgBidValue: mostra 'Lance médio do grupo' e o valor em R$ (rótulo literal)", () => {
+		render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
+		expect(screen.getByText(/lance médio do grupo/i)).toBeDefined();
+		expect(screen.getByText(/69\.361/)).toBeDefined();
+	});
+
+	it("rótulo NÃO promete contemplação (sem 'contemplação'/'garante'/'chance')", () => {
+		const { container } = render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
+		const text = container.textContent ?? "";
+		expect(text).not.toMatch(/contempl|garant|chance/i);
+	});
+
+	it("sem avgBidValue: NÃO renderiza a linha de lance médio", () => {
+		render(<RealOffer payload={PAYLOAD} />);
+		expect(screen.queryByText(/lance médio do grupo/i)).toBeNull();
+	});
+
+	it("avgBidValue null/não-finito: omite a linha e não morre (defensivo)", () => {
+		const payload = { ...PAYLOAD, avgBidValue: null as unknown as number };
+		expect(() => render(<RealOffer payload={payload} />)).not.toThrow();
+		expect(screen.queryByText(/lance médio do grupo/i)).toBeNull();
+		expect(screen.getByTestId("offer-confirm")).toBeDefined();
+	});
+});

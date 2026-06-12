@@ -237,6 +237,10 @@ export interface RealOfferPayload {
 	 * passou a trazê-lo (gap do FIX-13 acabou). Opcional: shape antigo não tinha e
 	 * a API pode voltar atrás → ausente mantém a copy de fallback do card. */
 	termMonths?: number;
+	/** FIX-40: lance médio do grupo (R$) — rótulo LITERAL do campo `lanceMedio` da
+	 * API nova. Opcional; exibido só com fonte (D11). NUNCA prometer contemplação a
+	 * partir dele (semântica não confirmada — só comparação factual de posição). */
+	avgBidValue?: number;
 }
 
 /** Encaminhamento pra assinatura digital da administradora (sem "trocar de
@@ -271,6 +275,9 @@ export interface ContemplationDialPayload {
 	 * real da oferta) — calibra a curva do dial pra bater com o card. */
 	referenceMonth?: number;
 	maxEmbutidoPct?: number;
+	/** FIX-40: lance médio do grupo (R$) — âncora REAL de lance quando o snapshot
+	 * da oferta a carrega. Opcional; referência factual, nunca probabilidade. */
+	avgBidValue?: number;
 	initialTargetMonth: number;
 	/** FIX-C5: lance que o usuário declarou ter na qualificação — o componente
 	 * confronta com o lance em dinheiro necessário ("cobre / não cobre"). */

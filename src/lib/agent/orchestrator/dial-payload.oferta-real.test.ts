@@ -114,3 +114,61 @@ describe("C5 — defaults do PERFIL declarado", () => {
 		expect(out.declaredLanceValue).toBe(117_000);
 	});
 });
+
+// FIX-40 (API nova Bevi 2026-06-12): a oferta de parceiro ganhou `lanceMedio` (R$
+// do grupo). Quando um artifact-âncora carrega esse valor (avgBidValue), o snapshot
+// o captura e o dial ganha a âncora de lance REAL do grupo — defensivo, NUNCA
+// inventa quando o artifact não a tem (regra D11 / padrão FIX-C2).
+describe("FIX-40 — âncora de lance médio do grupo (avgBidValue) no dial", () => {
+	it("offerSnapshotFromArtifact: captura avgBidValue do payload quando presente (>0)", () => {
+		const snap = offerSnapshotFromArtifact({
+			creditValue: 100_000,
+			termMonths: 60,
+			monthlyPayment: 1_500,
+			avgBidValue: 69_361.27,
+		});
+		expect(snap?.avgBidValue).toBe(69_361.27);
+	});
+
+	it("offerSnapshotFromArtifact: artifact SEM avgBidValue → snapshot sem âncora (nunca inventa)", () => {
+		const snap = offerSnapshotFromArtifact({
+			creditValue: 100_000,
+			termMonths: 60,
+			monthlyPayment: 1_500,
+		});
+		expect(snap?.avgBidValue).toBeUndefined();
+	});
+
+	it("offerSnapshotFromArtifact: avgBidValue 0/negativo/não-finito → ignorado (defensivo)", () => {
+		for (const bad of [0, -1, Number.NaN, "abc"]) {
+			const snap = offerSnapshotFromArtifact({
+				creditValue: 100_000,
+				termMonths: 60,
+				monthlyPayment: 1_500,
+				avgBidValue: bad as number,
+			});
+			expect(snap?.avgBidValue).toBeUndefined();
+		}
+	});
+
+	it("coerceDialPayload: propaga avgBidValue do snapshot pro payload do dial", () => {
+		const snap = offerSnapshotFromArtifact({
+			creditValue: 100_000,
+			termMonths: 60,
+			monthlyPayment: 1_500,
+			avgBidValue: 69_361.27,
+		});
+		const out = coerceDialPayload({ initialTargetMonth: 6 }, snap);
+		expect(out.avgBidValue).toBe(69_361.27);
+	});
+
+	it("coerceDialPayload: snapshot SEM avgBidValue → payload sem a âncora (não inventa)", () => {
+		const snap = offerSnapshotFromArtifact({
+			creditValue: 100_000,
+			termMonths: 60,
+			monthlyPayment: 1_500,
+		});
+		const out = coerceDialPayload({ initialTargetMonth: 6 }, snap);
+		expect("avgBidValue" in out).toBe(false);
+	});
+});

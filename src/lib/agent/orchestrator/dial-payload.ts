@@ -28,6 +28,9 @@ export interface RecommendedOfferSnapshot {
 	lanceRefMonth?: number;
 	/** Teto de lance embutido aceito pela oferta (bidPercentage da Bevi). */
 	maxEmbutidoPct?: number;
+	/** FIX-40: lance médio do grupo (R$) — `lanceMedio` da API nova quando o
+	 * artifact-âncora o carrega. Referência factual de lance, nunca probabilidade. */
+	avgBidValue?: number;
 }
 
 /** Perfil declarado na qualificação — alimenta os defaults do dial (FIX-C5). */
@@ -75,6 +78,11 @@ export function offerSnapshotFromArtifact(
 	const maxEmbutidoPct =
 		embeddedBid?.percent && embeddedBid.percent > 0 ? round2(embeddedBid.percent) : undefined;
 
+	// FIX-40: lance médio do grupo (R$) quando o artifact o carrega — defensivo
+	// (>0); ausente → âncora não entra no snapshot (nunca inventa, regra D11).
+	const rawAvgBid = Number(payload.avgBidValue);
+	const avgBidValue = Number.isFinite(rawAvgBid) && rawAvgBid > 0 ? round2(rawAvgBid) : undefined;
+
 	return {
 		administradora: typeof payload.administradora === "string" ? payload.administradora : undefined,
 		category: typeof payload.category === "string" ? (payload.category as Category) : undefined,
@@ -84,6 +92,7 @@ export function offerSnapshotFromArtifact(
 		...(lanceRefPct != null ? { lanceRefPct } : {}),
 		...(lanceRefMonth != null ? { lanceRefMonth } : {}),
 		...(maxEmbutidoPct != null ? { maxEmbutidoPct } : {}),
+		...(avgBidValue != null ? { avgBidValue } : {}),
 	};
 }
 
@@ -123,6 +132,8 @@ export function coerceDialPayload(
 		...(offer.lanceRefPct != null ? { historicalWinningBidPct: offer.lanceRefPct } : {}),
 		...(offer.lanceRefMonth != null ? { referenceMonth: offer.lanceRefMonth } : {}),
 		...(offer.maxEmbutidoPct != null ? { maxEmbutidoPct: offer.maxEmbutidoPct } : {}),
+		// FIX-40: âncora de lance médio do grupo (R$) quando a oferta a tem.
+		...(offer.avgBidValue != null ? { avgBidValue: offer.avgBidValue } : {}),
 		...(Number.isFinite(declaredLance) && declaredLance > 0
 			? { declaredLanceValue: declaredLance }
 			: {}),

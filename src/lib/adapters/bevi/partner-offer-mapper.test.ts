@@ -181,3 +181,50 @@ describe("partnerOfferToRealOffer — prazo real (API nova 2026-06): termMonths 
 		expect(real.adminFeePercent).toBeUndefined();
 	});
 });
+
+// FIX-40 (API nova Bevi 2026-06-12): a oferta de parceiro ganhou `lanceMedio` (R$
+// do grupo). Era a fonte que faltava pra falar de lance com número (o FIX-8 matou o
+// "lance estimado" por não existir fonte). O mapper o coloca em avgBidValue,
+// defensivo (Number.isFinite e > 0); ausente/0/ilegível → undefined (NUNCA chuta).
+// Captura live: proposta 6a2be7b1 → lanceMedio: 69361.27.
+describe("partnerOfferToRealOffer — lance médio do grupo (API nova): avgBidValue COM fonte (FIX-40)", () => {
+	const base = {
+		ofertaId: "0dbcb774-5ae2-41d3-bf93-0d7c63b59af5",
+		administradora: "BANCO DO BRASIL",
+		tipoOferta: "SPECIAL_OFFER" as const,
+		grupo: "1690",
+		valorCarta: 114760.54,
+		parcela: "2.075,34",
+		taxaContemplacao: 0.6044,
+		quotaId: "6a2b004df9ec5c948e8bfdfd",
+	};
+
+	it("lanceMedio: 69361.27 (number) → avgBidValue 69361.27", () => {
+		const real = partnerOfferToRealOffer({ ...base, lanceMedio: 69361.27 }, "AUTOS");
+		expect(real.avgBidValue).toBe(69361.27);
+	});
+
+	it("lanceMedio string pt-BR '69.361,27' → 69361.27 (defensivo, igual à parcela)", () => {
+		const real = partnerOfferToRealOffer(
+			{ ...base, lanceMedio: "69.361,27" as unknown as number },
+			"AUTOS",
+		);
+		expect(real.avgBidValue).toBe(69361.27);
+	});
+
+	it("lanceMedio ausente (shape antigo) → avgBidValue undefined (card omite a linha)", () => {
+		const real = partnerOfferToRealOffer({ ...base }, "AUTOS");
+		expect(real.avgBidValue).toBeUndefined();
+	});
+
+	it("lanceMedio 0/negativo/ilegível → avgBidValue undefined, NUNCA chuta (D11)", () => {
+		expect(partnerOfferToRealOffer({ ...base, lanceMedio: 0 }, "AUTOS").avgBidValue).toBeUndefined();
+		expect(
+			partnerOfferToRealOffer({ ...base, lanceMedio: -1 }, "AUTOS").avgBidValue,
+		).toBeUndefined();
+		expect(
+			partnerOfferToRealOffer({ ...base, lanceMedio: "abc" as unknown as number }, "AUTOS")
+				.avgBidValue,
+		).toBeUndefined();
+	});
+});

@@ -3729,6 +3729,80 @@ describe("FIX-13→FIX-39-PRAZO-COM-FONTE — prazo agora vem da API (campo real
 });
 
 // ============================================================================
+// CENARIO FIX-40 — Lance médio do grupo informa POSIÇÃO, nunca promete contemplação
+// ----------------------------------------------------------------------------
+// A API nova (2026-06-12) trouxe `lanceMedio` (R$ do grupo) — a fonte que faltava
+// pra falar de lance com número (o FIX-8 matou o "lance estimado" por não existir
+// fonte). Caso real da jornada do Kairo: lance declarado R$ 117 mil vs lanceMedio
+// R$ 69 mil. Decisão do Kairo: rótulo LITERAL do campo ("lance médio do grupo"),
+// comparação FACTUAL de posição (acima/abaixo) — PROIBIDO derivar "chance de
+// contemplar" / prometer contemplação (semântica não confirmada com a AGX).
+// ============================================================================
+describe("FIX-40-LANCE-MEDIO-SEM-PROMESSA — compara posição do lance; zero promessa de contemplação", () => {
+	// Detector de PROMESSA de contemplação (o que NINGUÉM pode dizer a partir do lance):
+	const PROMESSA_CONTEMPLACAO =
+		/(ser[áa]|vai|fica)\s+contemplad|garant\w*\s+(a\s+|sua\s+)?contempla|chance\s+de\s+\d|\d+\s*%\s*de\s*(chance|contempla)|contempla\w*\s+(garantid|cert)/i;
+
+	const START_COM_LANCE = {
+		proposalId: "prop-1",
+		offer: {
+			ofertaId: "oferta-1",
+			administradora: "BANCO DO BRASIL",
+			grupo: "1690",
+			category: "auto" as const,
+			creditValue: 114_760.54,
+			monthlyPayment: 2_075.34,
+			avgBidValue: 69_361.27,
+			tipoOferta: "SPECIAL_OFFER" as const,
+		},
+		noOffer: false,
+	};
+
+	it("cassette: agent prometendo contemplação a partir do lance médio — detector pega", async () => {
+		const cassette =
+			"Seu lance de R$ 117 mil está acima do lance médio do grupo (R$ 69 mil), " +
+			"então você será contemplado logo nas primeiras assembleias.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(PROMESSA_CONTEMPLACAO.test(text)).toBe(true);
+	});
+
+	it("texto canônico de produção (realOfferPresentation + lance declarado) compara SEM prometer", () => {
+		const items = realOfferPresentation(START_COM_LANCE, { declaredLanceValue: 117_000 });
+		const allText = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		// Posição factual presente (rótulo literal do campo):
+		expect(allText).toMatch(/acima/i);
+		expect(allText).toMatch(/lance médio/i);
+		// Zero promessa de contemplação:
+		expect(PROMESSA_CONTEMPLACAO.test(allText)).toBe(false);
+	});
+
+	it("sem lance declarado → produção NÃO injeta comparação (nada de acima/abaixo)", () => {
+		const allText = realOfferPresentation(START_COM_LANCE)
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(allText).not.toMatch(/acima|abaixo|na média/i);
+	});
+
+	it("componente: card mostra 'lance médio do grupo' (rótulo literal) defensivamente", () => {
+		const src = readSource("src/components/chat/artifacts/real-offer.tsx");
+		expect(src).toMatch(/[Ll]ance médio do grupo/);
+		expect(src).toMatch(/Number\.isFinite\(\s*payload\.avgBidValue\s*\)/);
+		// O card NÃO promete contemplação no rótulo:
+		expect(src).not.toMatch(/lance[^\n]{0,40}contempl/i);
+	});
+});
+
+// ============================================================================
 // CENARIO — BUG-REVEAL-3-OPCOES-1-CARD (teste manual Kairo 2026-06-11)
 // ----------------------------------------------------------------------------
 // Real (web, auto): o agente anunciou "Encontrei 3 opcoes pro seu perfil" mas o

@@ -49,6 +49,9 @@ export interface RealOffer {
 	termMonths?: number;
 	/** GAP §11 — ainda ausente na oferta de parceiro (a API nova não trouxe taxa). */
 	adminFeePercent?: number;
+	/** FIX-40: lance médio do grupo (R$) — campo `lanceMedio` da API nova. Rótulo
+	 * literal; comparação factual de posição, NUNCA promessa de contemplação. */
+	avgBidValue?: number;
 	/** Score bruto da oferta (taxaContemplacao). SEMÂNTICA TBD com a AGX — guardado
 	 * pra ordenação interna, NUNCA exibido como "taxa" pro usuário (spec §7). */
 	rawContemplationScore?: number;
@@ -56,6 +59,9 @@ export interface RealOffer {
 
 /** Converte a oferta real + o segmento da request (a oferta não traz segmento). */
 export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): RealOffer {
+	// FIX-40: lance médio do grupo só com fonte real e positiva (R$). Reusa o parse
+	// de money (number|string pt-BR); 0/negativo/ilegível → undefined (D11).
+	const avgBid = parseMoney(offer.lanceMedio);
 	return {
 		ofertaId: offer.ofertaId,
 		administradora: offer.administradora,
@@ -68,6 +74,8 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 		termMonths: parseTermMonths(offer.prazo),
 		// GAP deste trilho — ainda ausente (a API nova não trouxe taxa):
 		adminFeePercent: undefined,
+		// FIX-40: lance médio do grupo (rótulo literal; só quando > 0).
+		avgBidValue: avgBid != null && avgBid > 0 ? avgBid : undefined,
 		rawContemplationScore: offer.taxaContemplacao,
 	};
 }
