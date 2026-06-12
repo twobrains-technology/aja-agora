@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertCircle, Bike, Briefcase, Car, Home, type LucideIcon, RotateCcw } from "lucide-react";
+import {
+	AlertCircle,
+	Bike,
+	Briefcase,
+	Car,
+	Headset,
+	Home,
+	type LucideIcon,
+	RotateCcw,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -18,7 +27,6 @@ import type {
 } from "@/lib/chat/ui-message";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { useSmoothText } from "@/lib/hooks/use-smooth-text";
-import { cn } from "@/lib/utils";
 import { ArtifactRenderer } from "./artifact-renderer";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
@@ -170,8 +178,9 @@ export function ChatMessage({
 			.join("");
 		return (
 			<motion.div {...animationProps} className="flex w-full flex-col items-end gap-1">
-				<div className="max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-br-lg bg-primary px-3 py-2 text-base text-primary-foreground sm:max-w-[80%] sm:px-4 sm:py-2.5">
-					<span>{text}</span>
+				{/* Balão do usuário: azul primário, texto branco, rabicho sup-dir */}
+				<div className="max-w-[84%] rounded-2xl rounded-tr-[5px] bg-primary px-[14px] py-[10px] text-sm leading-[1.5] text-primary-foreground sm:max-w-[80%]">
+					<span className="whitespace-pre-wrap">{text}</span>
 				</div>
 			</motion.div>
 		);
@@ -220,7 +229,7 @@ export function ChatMessage({
 					)}
 
 					{isStreamingEmpty && (
-						<div className="max-w-full whitespace-pre-wrap rounded-2xl rounded-bl-lg bg-muted px-3 py-2 text-base text-foreground sm:px-4 sm:py-2.5">
+						<div className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-white px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
 							<StreamingDots tool={currentTool} />
 						</div>
 					)}
@@ -324,7 +333,7 @@ export function ChatMessage({
 					</AnimatePresence>
 
 					{showInflightDots && (
-						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pl-1">
+						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
 							<StreamingDots tool={currentTool} />
 						</motion.div>
 					)}
@@ -348,23 +357,36 @@ export function ChatMessage({
 	);
 }
 
+const CATEGORY_BADGE_COLOR: Record<Category, string> = {
+	imovel: "var(--cat-imovel)",
+	auto: "var(--cat-auto)",
+	moto: "var(--cat-moto)",
+	servicos: "var(--cat-servicos)",
+};
+
 export function AssistantAvatar({ category }: { category?: Category | null } = {}) {
-	const Icon = category ? CATEGORY_TRANSITION[category].icon : null;
 	return (
 		<motion.div
 			key={category ?? "concierge"}
 			initial={{ scale: 0.85, opacity: 0 }}
 			animate={{ scale: 1, opacity: 1 }}
 			transition={{ type: "spring", stiffness: 320, damping: 24 }}
-			className={cn(
-				"flex size-8 shrink-0 items-center justify-center rounded-full",
-				Icon ? "bg-primary" : "bg-[var(--surface-ink)]",
-			)}
+			className="relative shrink-0"
 		>
-			{Icon ? (
-				<Icon className="size-4 text-primary-foreground" strokeWidth={2} />
-			) : (
-				<SunMark variant="white" className="size-4.5" />
+			{/* Avatar: marca-sol sempre navy */}
+			<span
+				className="flex size-8 items-center justify-center rounded-full bg-[var(--surface-ink)] p-[6px]"
+				aria-hidden="true"
+			>
+				<SunMark variant="white" className="size-full" />
+			</span>
+			{/* Selo colorido por categoria — 13px, canto inf-dir, borda branca */}
+			{category && (
+				<span
+					className="absolute -right-[2px] -bottom-[2px] size-[13px] rounded-full border-2 border-white"
+					style={{ background: CATEGORY_BADGE_COLOR[category] }}
+					aria-hidden="true"
+				/>
 			)}
 		</motion.div>
 	);
@@ -381,27 +403,48 @@ const CATEGORY_TRANSITION: Record<
 };
 
 function TransitionDivider({ data }: { data: TransitionPartData }) {
+	const cat = data.toCategory as Category;
+	const catConfig = CATEGORY_TRANSITION[cat];
+	const badgeColor = CATEGORY_BADGE_COLOR[cat];
+
 	return (
 		<motion.div
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.3 }}
-			className="flex w-full items-center gap-3 py-1"
+			className="flex w-full flex-col items-center gap-2 py-1"
 		>
-			<div className="h-px flex-1 bg-border" />
-			<span className="shrink-0 text-[11px] text-muted-foreground">
-				{data.toPersonaName} entrou na conversa
+			{/* Divisor com texto centralizado */}
+			<div className="flex w-full items-center gap-[11px] text-muted-foreground">
+				<div className="h-px flex-1 bg-border" />
+				<span className="shrink-0 text-[11px]">{data.toPersonaName} entrou na conversa</span>
+				<div className="h-px flex-1 bg-border" />
+			</div>
+			{/* Rótulo de papel: uppercase + ponto colorido por categoria */}
+			<span className="inline-flex items-center gap-[7px] text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+				<span
+					className="size-[7px] rounded-full shrink-0"
+					style={{ background: badgeColor }}
+					aria-hidden="true"
+				/>
+				{catConfig.role}
 			</span>
-			<div className="h-px flex-1 bg-border" />
 		</motion.div>
 	);
 }
 
 function HandoffPrompt({ data }: { data: HandoffPartData }) {
 	return (
-		<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-			<p>Pra esse caso especificamente, recomendo conversar direto com nosso consultor humano.</p>
-			<p className="mt-1 text-[11px] opacity-70">Motivo: {data.reason}</p>
+		<div className="flex items-start gap-3 rounded-[13px] border border-warning/40 bg-warning/10 px-3 py-[10px]">
+			<Headset className="mt-[1px] size-4 shrink-0 text-warning" aria-hidden="true" />
+			<div className="flex flex-col gap-1">
+				<p className="text-xs font-medium leading-[1.5] text-foreground">
+					Pra esse caso, recomendo conversar direto com nosso consultor humano.
+				</p>
+				{data.reason && (
+					<p className="text-[11px] leading-[1.5] text-muted-foreground">Motivo: {data.reason}</p>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -436,7 +479,7 @@ function TextBubble({
 			initial={reducedMotion ? false : { opacity: 0, y: 6 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.3, ease: "easeOut" }}
-			className="max-w-full whitespace-pre-wrap rounded-2xl rounded-bl-lg bg-muted px-3 py-2 text-base text-foreground sm:px-4 sm:py-2.5"
+			className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-white px-[14px] py-[10px] text-sm leading-[1.5] text-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
 		>
 			<div className={cursor ? `${proseClass} streaming-text` : proseClass}>
 				<ReactMarkdown>{smoothed}</ReactMarkdown>

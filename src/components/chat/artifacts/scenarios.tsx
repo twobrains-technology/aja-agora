@@ -14,38 +14,56 @@ const SCENARIO_META = [
 
 export function Scenarios({ payload }: { payload: ScenariosPayload }) {
 	return (
-		<Card className="w-full max-w-md">
-			<CardHeader>
-				<p className="text-sm font-medium text-muted-foreground">
-					3 cenários · {payload.administradora} · {formatBRL(payload.creditValue)}
+		<Card className="w-full max-w-[360px] rounded-[18px] shadow-lg overflow-hidden">
+			<CardHeader className="pb-0 pt-4 px-4">
+				<p className="aja-eyebrow">
+					3 cenários · {payload.administradora} ·{" "}
+					<span className="aja-num">{formatBRL(payload.creditValue)}</span>
 				</p>
 			</CardHeader>
-			<CardContent className="space-y-3">
+			<CardContent className="space-y-2.5 p-4 pt-3">
 				{SCENARIO_META.map(({ key, label }) => {
 					const s = payload.scenarios[key];
+					const isProvavel = key === "provavel";
 					return (
 						<div
 							key={key}
-							className="rounded-md border bg-card p-3"
+							className={
+								isProvavel
+									? "rounded-xl border border-[#bcd3ff] bg-primary/[0.04] p-3"
+									: "rounded-xl border border-border bg-card p-3"
+							}
 							data-testid={`scenario-${key}`}
 						>
-							<div className="flex items-baseline justify-between">
-								<p className="text-sm font-semibold">{label}</p>
-								<p className="text-xs text-muted-foreground">~{s.expectedTermMonths} meses</p>
+							<div className="flex items-baseline justify-between gap-2">
+								<p
+									className={
+										isProvavel
+											? "text-sm font-semibold text-foreground"
+											: "text-sm font-semibold text-foreground"
+									}
+								>
+									{label}
+								</p>
+								<p className="aja-num text-xs text-muted-foreground shrink-0">
+									~{s.expectedTermMonths} meses
+								</p>
 							</div>
-							<p className="text-sm mt-1">{s.strategy}</p>
+							<p className="text-xs leading-relaxed mt-1 text-foreground">{s.strategy}</p>
 							{s.lanceValue > 0 && (
 								<p className="text-xs mt-2 text-muted-foreground">
-									Lance: <span className="font-mono">{formatBRL(s.lanceValue)}</span>
+									Lance: <span className="aja-num font-medium">{formatBRL(s.lanceValue)}</span>
 									{s.ownResourcesValue > 0 && (
 										<>
 											{" · "}Recursos próprios:{" "}
-											<span className="font-mono">{formatBRL(s.ownResourcesValue)}</span>
+											<span className="aja-num font-medium">{formatBRL(s.ownResourcesValue)}</span>
 										</>
 									)}
 								</p>
 							)}
-							<p className="text-[10px] mt-2 text-muted-foreground italic">{s.disclaimer}</p>
+							<p className="text-[10px] mt-2 text-muted-foreground italic leading-snug">
+								{s.disclaimer}
+							</p>
 						</div>
 					);
 				})}

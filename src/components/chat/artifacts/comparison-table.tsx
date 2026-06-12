@@ -1,9 +1,6 @@
 "use client";
 
 import { Crown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ComparisonTablePayload, GroupCardPayload } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
@@ -39,69 +36,71 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 	};
 
 	return (
-		<div className="flex gap-2.5 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+		<div
+			className={cn(
+				"flex gap-[11px] w-full overflow-x-auto pb-1.5",
+				"[-webkit-overflow-scrolling:touch]",
+				isStreaming && "pointer-events-none opacity-60",
+			)}
+		>
 			{groups.map((group, index) => {
 				const isBest = highlightBestIndex === index;
 				return (
-					<Card
+					<button
 						key={group.id}
-						role="button"
+						type="button"
 						tabIndex={0}
 						aria-label={`Simular ${group.administradora}, parcela ${formatBRL(group.monthlyPayment)} por mês`}
 						onClick={() => handleSelect(group)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleSelect(group);
-							}
-						}}
 						className={cn(
-							"w-[180px] shrink-0 cursor-pointer transition-colors",
-							"hover:ring-accent/50 hover:ring-2",
-							"focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2",
-							isStreaming && "pointer-events-none opacity-60",
-							isBest && "border-primary bg-primary/5",
+							"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
+							"flex flex-col gap-2 border bg-card cursor-pointer",
+							"transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+							isBest
+								? "border-primary bg-primary/[0.04] hover:bg-primary/[0.07]"
+								: "border-border hover:border-border/60 hover:bg-muted/40",
 						)}
 					>
-						<CardContent className="space-y-2 p-3">
-							{/* Header */}
-							<div className="flex items-center justify-between">
-								<span className="text-xs font-medium text-muted-foreground truncate">
-									{group.administradora}
+						{/* Header: administradora + optional crown */}
+						<div className="flex items-center justify-between gap-1.5 min-w-0">
+							<span className="text-xs font-medium text-muted-foreground truncate">
+								{group.administradora}
+							</span>
+							{isBest && (
+								<span
+									className="inline-flex items-center gap-[3px] shrink-0 h-5 px-[7px] rounded-full text-[10px] font-semibold"
+									style={{ background: "var(--surface-ink)", color: "#fff" }}
+								>
+									<Crown className="size-[11px]" />
+									Top
 								</span>
-								{isBest && (
-									<Badge className="gap-0.5 px-1.5 py-0 text-[10px]">
-										<Crown className="size-2.5" />
-										Top
-									</Badge>
-								)}
-							</div>
+							)}
+						</div>
 
-							{/* Main value */}
-							<div>
-								<p className="font-mono text-lg font-bold leading-tight">
-									{formatBRL(group.monthlyPayment)}
-								</p>
-								<p className="text-[10px] text-muted-foreground">/mês</p>
-							</div>
+						{/* Main value — parcela herói */}
+						<div>
+							<p className="aja-num text-lg font-bold leading-none text-foreground">
+								{formatBRL(group.monthlyPayment)}
+							</p>
+							<p className="text-[10px] text-muted-foreground mt-0.5">/mês</p>
+						</div>
 
-							<Separator />
+						{/* Divider */}
+						<div className="h-px bg-border" />
 
-							{/* Details */}
-							<div className="space-y-1 text-xs">
-								<div className="flex justify-between">
-									<span className="text-muted-foreground">Valor do bem</span>
-									<span className="font-mono font-medium">{formatBRL(group.creditValue)}</span>
-								</div>
-								{/* Bernardo 2026-06-11: sem "Taxa" no carrossel (assusta o leigo) —
-								    composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
-								<div className="flex justify-between">
-									<span className="text-muted-foreground">Prazo</span>
-									<span className="font-mono font-medium">{group.termMonths}m</span>
-								</div>
+						{/* Details — NÃO exibir taxa (assusta o leigo) */}
+						{/* Bernardo 2026-06-11: sem "Taxa" no carrossel — composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
+						<div className="flex flex-col gap-1">
+							<div className="flex items-center justify-between text-xs">
+								<span className="text-muted-foreground">Valor do bem</span>
+								<b className="aja-num font-semibold">{formatBRL(group.creditValue)}</b>
 							</div>
-						</CardContent>
-					</Card>
+							<div className="flex items-center justify-between text-xs">
+								<span className="text-muted-foreground">Prazo</span>
+								<b className="aja-num font-semibold">{group.termMonths}m</b>
+							</div>
+						</div>
+					</button>
 				);
 			})}
 		</div>

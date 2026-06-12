@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowLeft, RefreshCw, X } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
@@ -43,10 +42,28 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 	}, []);
 
 	return (
-		<div className="flex h-dvh flex-col overflow-x-hidden bg-background">
-			{/* Header — 48px, sticky top */}
-			<header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
-				<div className="flex items-center gap-3">
+		<div className="flex h-dvh flex-col overflow-x-hidden bg-[#fbfbf9]">
+			{/* Header — identidade + status à esquerda, ação à direita */}
+			<header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-white px-4 shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
+				{/* Identidade: avatar-sol + nome + status online */}
+				<div className="flex items-center gap-[11px]">
+					<span
+						className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-ink)] p-[6px]"
+						aria-hidden="true"
+					>
+						<SunMark variant="white" className="size-full" />
+					</span>
+					<div className="flex flex-col leading-none">
+						<span className="text-sm font-semibold text-foreground leading-[1.1]">Aja Agora</span>
+						<span className="mt-[2px] flex items-center gap-[6px] text-[11px] font-medium text-success leading-none">
+							<span className="size-[6px] rounded-full bg-success shrink-0" aria-hidden="true" />
+							online agora
+						</span>
+					</div>
+				</div>
+
+				{/* Ações à direita */}
+				<div className="flex items-center gap-2">
 					<Button
 						variant="ghost"
 						size="icon"
@@ -56,24 +73,15 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 					>
 						<ArrowLeft className="size-4" />
 					</Button>
-					<Link href="/" className="flex items-center gap-2">
-						<span className="flex size-7 items-center justify-center rounded-full bg-[var(--surface-ink)]">
-							<SunMark variant="white" className="size-4" />
-						</span>
-						<span className="text-sm font-semibold">Aja Agora</span>
-					</Link>
-				</div>
-				<div className="flex items-center gap-1">
 					{onReset && (
-						<Button
-							variant="ghost"
-							size="icon"
+						<button
+							type="button"
 							onClick={onReset}
 							aria-label="Nova conversa"
-							className="size-8"
+							className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-white text-muted-foreground transition-colors hover:bg-[#fbfbf9] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
-							<RefreshCw className="size-4" />
-						</Button>
+							<RefreshCw className="size-[18px]" />
+						</button>
 					)}
 				</div>
 			</header>

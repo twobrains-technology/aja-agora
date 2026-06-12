@@ -3,10 +3,8 @@
 import { ChevronDown } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
@@ -40,16 +38,17 @@ const FACTOR_LABELS: Partial<Record<keyof RecommendationCardPayload["scoreBreakd
 };
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
+	const pct = (value * 100).toFixed(0);
 	return (
-		<div className="space-y-1">
+		<div className="flex flex-col gap-[5px]">
 			<div className="flex items-center justify-between">
 				<span className="text-xs text-muted-foreground">{label}</span>
-				<span className="text-xs font-mono text-muted-foreground">{(value * 100).toFixed(0)}%</span>
+				<span className="aja-num text-xs text-muted-foreground">{pct}%</span>
 			</div>
-			<div className="bg-muted h-2 rounded-full overflow-hidden">
+			<div className="h-[7px] rounded-full bg-muted overflow-hidden">
 				<div
-					className="bg-primary h-full rounded-full transition-all duration-300"
-					style={{ width: `${(value * 100).toFixed(0)}%` }}
+					className="h-full rounded-full bg-primary transition-all duration-300"
+					style={{ width: `${pct}%` }}
 				/>
 			</div>
 		</div>
@@ -70,62 +69,82 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	};
 
 	return (
-		<Card className={cn("w-full max-w-sm", "border-primary/30 ring-1 ring-primary/20")}>
-			<CardHeader>
+		<div
+			className={cn(
+				"w-full max-w-sm bg-card overflow-hidden",
+				"rounded-[18px]",
+				// borda azul destacada (rec) + sombra card
+				"border border-[#bcd3ff]",
+				"shadow-[0_0_0_1px_rgba(3,110,255,.18),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+			)}
+		>
+			{/* Header */}
+			<div className="px-[18px] pt-4 pb-0 flex flex-col gap-[7px]">
+				{/* Selo "Recomendação" com marca-sol + rótulo qualitativo */}
 				<div className="flex items-center justify-between gap-2">
-					<Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-						Recomendacao
-					</Badge>
+					<span
+						className={cn(
+							"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
+							"bg-primary/10 text-primary border-primary/28",
+						)}
+					>
+						{/* Marca-sol colorida — assinatura da Aja Agora na recomendação */}
+						<SunMark variant="color" className="size-4" />
+						Recomendação
+					</span>
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
 					    (comparison-table); breakdown segue no expansível.
 					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
 					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
-					<span className="text-sm font-medium text-primary">
+					<span className="text-sm font-semibold text-primary">
 						{recommendationFitLabel(payload.score, payload.scoreBreakdown.monthlyFit)}
 					</span>
 				</div>
-				<p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
-			</CardHeader>
+				<p className="text-xs text-muted-foreground m-0 truncate">{payload.administradora}</p>
+			</div>
 
-			<CardContent className="space-y-4">
+			{/* Body */}
+			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
 				{/* Hero monthly payment */}
 				<div>
-					<p className="text-xs text-muted-foreground">Parcela mensal</p>
-					<p className="text-2xl font-bold font-mono leading-tight text-primary">
+					<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
+					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
 						{formatBRL(payload.monthlyPayment)}
 						<span className="text-base font-normal text-muted-foreground">/mês</span>
 					</p>
 				</div>
 
-				{/* Key metrics grid */}
-				<div className="grid grid-cols-2 gap-3">
+				{/* Key metrics grid 2×2 */}
+				<div className="grid grid-cols-2 gap-x-4 gap-y-3">
 					<div>
-						<p className="text-xs text-muted-foreground">Valor do bem</p>
-						<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
+						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+						<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(payload.creditValue)}</p>
 					</div>
 					<div>
-						<p className="text-xs text-muted-foreground">Prazo</p>
-						<p className="text-sm font-medium font-mono">{payload.termMonths} meses</p>
+						<p className="text-xs text-muted-foreground m-0">Prazo</p>
+						<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
 					</div>
 					{/* docx passo 4: qtde de contemplados/mês (contagem REAL da oferta).
 					    contemplationRate da Bevi é contagem, não % — só mostra o rótulo
 					    de percentual quando contempladosMes não veio. */}
 					{payload.contempladosMes !== undefined ? (
 						<div>
-							<p className="text-xs text-muted-foreground">Contemplados/mês</p>
-							<p className="text-sm font-medium font-mono">{payload.contempladosMes} por mês</p>
+							<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
+								{payload.contempladosMes} por mês
+							</p>
 						</div>
 					) : (
 						<div>
-							<p className="text-xs text-muted-foreground">Contemplação</p>
-							<p className="text-sm font-medium font-mono">
+							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
 								{formatPercent(payload.contemplationRate)}
 							</p>
 						</div>
 					)}
 					<div>
-						<p className="text-xs text-muted-foreground">Tipo de grupo</p>
-						<p className="text-sm font-medium font-mono">{CATEGORY_LABELS[payload.category]}</p>
+						<p className="text-xs text-muted-foreground m-0">Tipo de grupo</p>
+						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[payload.category]}</p>
 					</div>
 				</div>
 
@@ -153,7 +172,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 								transition={{ duration: 0.2 }}
 								className="overflow-hidden"
 							>
-								<div className="space-y-3 pt-3">
+								<div className="flex flex-col gap-[11px] pt-3">
 									{(
 										Object.entries(FACTOR_LABELS) as Array<
 											[keyof RecommendationCardPayload["scoreBreakdown"], string]
@@ -167,18 +186,23 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					</AnimatePresence>
 				</div>
 
-				<Separator />
+				{/* Divider */}
+				<div className="h-px bg-border" />
 
-				{/* CTA Button */}
+				{/* CTA primary */}
 				<Button
-					className="w-full min-h-[44px]"
+					className={cn(
+						"w-full min-h-[46px] rounded-[13px] font-semibold text-sm gap-2",
+						"shadow-[0_6px_16px_-6px_rgba(3,110,255,.5)]",
+						"hover:brightness-[1.06] transition-filter",
+					)}
 					size="lg"
 					onClick={handleCTA}
 					disabled={isStreaming}
 				>
 					Tenho interesse
 				</Button>
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 }

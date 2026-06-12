@@ -3,6 +3,7 @@
 import { ArrowRight, Check, Info } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -96,9 +97,14 @@ export function PlanEstimatePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="overflow-hidden border-primary/20">
+			<Card className="overflow-hidden rounded-[18px] border-[#bcd3ff] shadow-lg">
 				<CardContent className="space-y-3 p-3.5">
-					<p className="text-sm font-medium">Planeje sua conquista</p>
+					<p className="flex items-center gap-2 text-sm font-medium">
+						<span className="flex size-[26px] items-center justify-center rounded-full bg-[var(--surface-ink)] p-1.5">
+							<SunMark variant="white" className="size-full" />
+						</span>
+						Planeje sua conquista
+					</p>
 
 					{/* 1 — Valor do bem */}
 					<IndicatorSlider
@@ -149,7 +155,7 @@ export function PlanEstimatePicker({
 					/>
 
 					{/* 5 — Lance embutido (educação do docx + opt-in) */}
-					<div className="rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+					<div className="space-y-1.5 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
 						<div className="flex items-center justify-between gap-2">
 							<span className="text-xs font-medium">Considerar lance embutido?</span>
 							<Checkbox
@@ -167,7 +173,7 @@ export function PlanEstimatePicker({
 
 					{/* Estimativa ao vivo */}
 					<div
-						className="rounded-md border border-dashed border-primary/30 px-3 py-2 space-y-1"
+						className="space-y-1 rounded-xl bg-[var(--aja-cream)] px-3.5 py-3"
 						data-testid="plan-estimate"
 					>
 						<Row label="Parcela estimada" value={`${brlExact(estimate.monthlyPayment)}/mês`} />
@@ -223,7 +229,7 @@ export function PlanEstimatePicker({
 						onClick={submit}
 						disabled={submitted || isStreaming}
 						size="sm"
-						className="w-full gap-1.5 text-xs"
+						className="w-full gap-1.5 rounded-[13px] text-xs shadow-[var(--shadow-primary)]"
 						data-testid="plan-submit"
 					>
 						{submitted ? (
@@ -271,7 +277,7 @@ function IndicatorSlider({
 					key={value}
 					initial={{ scale: 1.05 }}
 					animate={{ scale: 1 }}
-					className="font-mono text-sm font-bold"
+					className="text-sm font-bold text-primary tabular-nums"
 				>
 					{display}
 				</motion.span>
@@ -290,9 +296,9 @@ function IndicatorSlider({
 
 function Row({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="flex justify-between text-xs">
+		<div className="flex justify-between gap-3 text-xs">
 			<span className="text-muted-foreground">{label}</span>
-			<span className="font-mono font-medium">{value}</span>
+			<span className="font-semibold tabular-nums">{value}</span>
 		</div>
 	);
 }

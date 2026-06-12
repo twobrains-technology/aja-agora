@@ -3,9 +3,9 @@
 import { Check, Loader2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { DocumentUploadPayload } from "@/lib/chat/types";
+import { cn } from "@/lib/utils";
 
 // Upload de documento direto no chat (sem redirect) — é AQUI que a ficha termina.
 //
@@ -98,93 +98,95 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 	);
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-3 pt-4">
-				<p className="text-sm font-medium">Envie seu documento (RG ou CNH)</p>
+		<div className="w-full max-w-sm rounded-[18px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+			{/* header */}
+			<div className="flex flex-col gap-[2px]">
+				<p className="text-sm font-semibold text-foreground">Envie seu documento (RG ou CNH)</p>
 				<p className="text-xs text-muted-foreground">
 					Frente e verso. É opcional — você pode enviar depois.
 				</p>
+			</div>
 
-				<div className="flex flex-col gap-2">
-					{SLOTS.map(({ slot, label }) => (
-						<div key={slot}>
-							<input
-								ref={(el) => {
-									inputs.current[slot] = el;
-								}}
-								type="file"
-								accept="image/*,application/pdf"
-								capture="environment"
-								className="hidden"
-								onChange={(e) => void onPick(slot, e.target.files?.[0])}
-								data-testid={`doc-input-${slot}`}
-							/>
-							<Button
-								type="button"
-								variant={sent[slot]?.ok ? "secondary" : "outline"}
-								size="sm"
-								className="w-full justify-start gap-2 min-h-[44px]"
-								onClick={() => inputs.current[slot]?.click()}
-								disabled={isStreaming || busy === slot || finished}
-								data-testid={`doc-upload-${slot}`}
-							>
-								{busy === slot ? (
-									<Loader2 className="size-4 animate-spin" />
-								) : sent[slot]?.ok ? (
-									<Check className="size-4 text-primary" />
-								) : (
-									<Upload className="size-4" />
-								)}
-								{sent[slot]?.ok ? `${label} — enviado` : label}
-							</Button>
-						</div>
-					))}
-				</div>
-
-				{fallbackLinks.length > 0 ? (
-					<p className="text-xs text-muted-foreground">
-						Não consegui anexar por aqui — finalize neste link:{" "}
-						<a
-							href={fallbackLinks[0]}
-							target="_blank"
-							rel="noreferrer"
-							className="underline underline-offset-2"
+			{/* slots */}
+			<div className="flex flex-col gap-2">
+				{SLOTS.map(({ slot, label }) => (
+					<div key={slot}>
+						<input
+							ref={(el) => {
+								inputs.current[slot] = el;
+							}}
+							type="file"
+							accept="image/*,application/pdf"
+							capture="environment"
+							className="hidden"
+							onChange={(e) => void onPick(slot, e.target.files?.[0])}
+							data-testid={`doc-input-${slot}`}
+						/>
+						<button
+							type="button"
+							className={cn(
+								"flex w-full items-center gap-[10px] h-[46px] rounded-[12px] border px-[14px] text-sm font-medium cursor-pointer transition-colors",
+								sent[slot]?.ok
+									? "bg-[#eafaf2] border-[rgba(31,157,99,0.3)] text-success"
+									: "bg-card border-border text-foreground hover:bg-muted",
+								(isStreaming || busy === slot || finished) && "opacity-60 cursor-not-allowed",
+							)}
+							onClick={() => inputs.current[slot]?.click()}
+							disabled={isStreaming || busy === slot || finished}
+							data-testid={`doc-upload-${slot}`}
 						>
-							{fallbackLinks[0]}
-						</a>
-					</p>
-				) : null}
+							{busy === slot ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : sent[slot]?.ok ? (
+								<Check className="size-4" />
+							) : (
+								<Upload className="size-4" />
+							)}
+							{sent[slot]?.ok ? `${label} — enviado` : label}
+						</button>
+					</div>
+				))}
+			</div>
 
-				{anySent && !finished ? (
-					<Button
-						type="button"
-						size="sm"
-						className="w-full min-h-[44px]"
-						onClick={() => finish(sent)}
-						disabled={isStreaming}
-						data-testid="doc-done"
+			{fallbackLinks.length > 0 ? (
+				<p className="text-xs text-muted-foreground">
+					Não consegui anexar por aqui — finalize neste link:{" "}
+					<a
+						href={fallbackLinks[0]}
+						target="_blank"
+						rel="noreferrer"
+						className="underline underline-offset-2"
 					>
-						Pronto, enviei tudo
-					</Button>
-				) : null}
+						{fallbackLinks[0]}
+					</a>
+				</p>
+			) : null}
 
-				{payload.optional && !finished ? (
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						className="w-full"
-						onClick={() =>
-							!isStreaming &&
-							void sendAction({ kind: "document-skip" }, "Pular documentos por agora")
-						}
-						disabled={isStreaming}
-						data-testid="doc-skip"
-					>
-						Pular por agora
-					</Button>
-				) : null}
-			</CardContent>
-		</Card>
+			{anySent && !finished ? (
+				<Button
+					type="button"
+					className="w-full h-[40px] min-h-[44px] rounded-[13px] bg-primary text-xs font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105"
+					onClick={() => finish(sent)}
+					disabled={isStreaming}
+					data-testid="doc-done"
+				>
+					Pronto, enviei tudo
+				</Button>
+			) : null}
+
+			{payload.optional && !finished ? (
+				<button
+					type="button"
+					className="w-full text-xs text-muted-foreground bg-transparent border-none cursor-pointer py-1 hover:text-foreground transition-colors"
+					onClick={() =>
+						!isStreaming && void sendAction({ kind: "document-skip" }, "Pular documentos por agora")
+					}
+					disabled={isStreaming}
+					data-testid="doc-skip"
+				>
+					Pular por agora
+				</button>
+			) : null}
+		</div>
 	);
 }

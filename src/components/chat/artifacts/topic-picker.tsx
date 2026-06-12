@@ -1,8 +1,6 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { TopicPickerPayload } from "@/lib/chat/types";
 
@@ -24,38 +22,37 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 	};
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-3 pt-4">
-				{payload.prompt && <p className="text-sm text-muted-foreground">{payload.prompt}</p>}
-				<div className="flex flex-wrap gap-2">
-					{payload.topics.map((topic) => (
-						<Button
-							key={topic}
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => handleTopic(topic)}
-							disabled={isStreaming}
-						>
-							{topic}
-						</Button>
-					))}
-				</div>
-				{payload.includeBackButton && (
-					<Button
+		<div className="w-full max-w-[340px] bg-card border border-border rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[13px]">
+			{payload.prompt && (
+				<p className="text-xs font-medium text-muted-foreground">{payload.prompt}</p>
+			)}
+
+			<div className="flex flex-wrap gap-2">
+				{payload.topics.map((topic) => (
+					<button
+						key={topic}
 						type="button"
-						variant="ghost"
-						size="sm"
-						className="gap-1"
-						onClick={handleBack}
+						onClick={() => handleTopic(topic)}
 						disabled={isStreaming}
-						data-testid="topic-picker-back"
+						className="inline-flex items-center h-[34px] px-[14px] border border-border rounded-full bg-card text-xs font-medium text-muted-foreground cursor-pointer transition-colors hover:border-primary/30 hover:bg-primary/[.05] hover:text-foreground disabled:cursor-default disabled:opacity-50"
 					>
-						<ArrowLeft className="size-4" />
-						Voltar
-					</Button>
-				)}
-			</CardContent>
-		</Card>
+						{topic}
+					</button>
+				))}
+			</div>
+
+			{payload.includeBackButton && (
+				<button
+					type="button"
+					onClick={handleBack}
+					disabled={isStreaming}
+					data-testid="topic-picker-back"
+					className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[13px] text-xs font-medium text-muted-foreground cursor-pointer transition-colors hover:bg-muted hover:text-foreground self-start disabled:cursor-default disabled:opacity-50"
+				>
+					<ArrowLeft className="size-3.5" />
+					Voltar
+				</button>
+			)}
+		</div>
 	);
 }
