@@ -684,6 +684,37 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 		).toEqual([]);
 	});
 
+	it("[FIX-36] coerência temporal: o texto ANTES de search_groups não afirma achado", () => {
+		// Camada 3: o agente REAL não pode escrever "Encontrei opções" antes do
+		// search_groups retornar (bug do print). Reconstrói o texto emitido ANTES
+		// do 1º tool-call de search_groups no turno (a ordem do stream = a ordem que
+		// o usuário vê). NÃO inclui "encontramos" no detector — a copy do docx
+		// "Encontramos 3 boas opções" é o anúncio PÓS-tool (legítimo) e nem aparece
+		// antes do tool-call no stream.
+		const AFIRMA_ACHADO = /\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op/i;
+		const turns = result?.turns ?? [];
+		let checked = 0;
+		for (const t of turns) {
+			if (t.role !== "agent") continue;
+			let preToolText = "";
+			let hitSearch = false;
+			for (const ev of t.events) {
+				if (ev.type === "tool-call" && ev.toolName === "search_groups") {
+					hitSearch = true;
+					break;
+				}
+				if (ev.type === "text-delta") preToolText += ev.text;
+			}
+			if (!hitSearch) continue;
+			checked++;
+			expect(
+				AFIRMA_ACHADO.test(preToolText),
+				`FIX-36: o texto que precede search_groups NÃO pode afirmar achado antes do resultado. Texto pré-tool: "${preToolText}"`,
+			).toBe(false);
+		}
+		console.log(`[FIX-36] turnos com search_groups validados (coerência temporal): ${checked}`);
+	});
+
 	it("[B9] frase de detalhamento contém 'detalhamento'/'simulação'/'ajustar' próximo a simulação", () => {
 		const turns = result?.turns ?? [];
 		const simTurn = turns.find((t) => t.artifacts.some((a) => a.type === "simulation_result"));
@@ -1147,6 +1178,151 @@ describeIfKey("EVAL-FIX-12 — fim da qualificação NUNCA vira fechamento", () 
 			.from(beviProposals)
 			.where(eq(beviProposals.conversationId, convId));
 		expect(rows).toHaveLength(0);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVAL-FIX-38 — clique explícito "Tenho interesse" avança em UM passo
+// Camada 3 (nightly): o clique EXPLÍCITO vai DIRETO pro passo 5
+// (present_contract_form) — sem o card de decisão "Esse plano faz sentido?"
+// (dupla confirmação por construção do FIX-34). Mirror do route pós-FIX-38:
+// decisionDispatched já marcado (libera present_contract_form na fase closing
+// da tool-policy) + buildAdvanceToContractDirective rodado pelo agent REAL.
+// Critério: nº de gates de confirmação entre o sinal explícito e o contrato ≤ 1
+// (zero card de decisão extra), sob não-determinismo do modelo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-38 — avanço explícito sem dupla confirmação", () => {
+	let advanceTurn: Turn | null = null;
+	let convId: string | null = null;
+
+	beforeAll(async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "auto",
+					currentCategory: "auto",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					identityCollected: true,
+					qualifyAnswers: { creditMax: 100_000, prazoMeses: 12, hasLance: "no" },
+					searchDispatched: true,
+					revealCompleted: true,
+					simulatorOfferDispatched: true,
+					// FIX-38: o route marca decisionDispatched ANTES de dirigir o avanço
+					// (sem isso, fase "reveal" filtraria present_contract_form da policy).
+					decisionDispatched: true,
+					recommendedAdministradora: "ITAÚ",
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		await saveMessage(convId, "user", "Tenho interesse", "web");
+		const { buildAdvanceToContractDirective } = await import(
+			"@/lib/agent/orchestrator/directives"
+		);
+		advanceTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: buildAdvanceToContractDirective({ administradora: "ITAÚ" }),
+			isUserTurn: false,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("dirige present_contract_form no passo de avanço", () => {
+		const tools = advanceTurn?.toolCalls ?? [];
+		const arts = (advanceTurn?.artifacts ?? []).map((a) => a.type);
+		expect(
+			tools.includes("present_contract_form") || arts.includes("contract_form"),
+			`Esperado present_contract_form/contract_form no avanço. Tools: [${tools.join(", ")}], artifacts: [${arts.join(", ")}].`,
+		).toBe(true);
+	});
+
+	it("NÃO re-apresenta o card de decisão (dupla confirmação) nem captura lead", () => {
+		const tools = advanceTurn?.toolCalls ?? [];
+		const arts = (advanceTurn?.artifacts ?? []).map((a) => a.type);
+		expect(tools).not.toContain("present_decision_prompt");
+		expect(arts).not.toContain("decision_prompt");
+		expect(tools).not.toContain("present_lead_form");
+		expect(arts).not.toContain("lead_form");
+	});
+
+	it("texto não re-pergunta 'faz sentido?' nem promete consultor humano", () => {
+		const text = (advanceTurn?.content ?? "").toLowerCase();
+		expect(text).not.toMatch(/faz sentido/);
+		expect(text).not.toContain("consultor");
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVAL-FIX-36 — texto pré-tool não afirma achado (reveal dirigido, determinístico)
+// Camada 3: o critério no cenário Monique depende do diálogo livre alcançar o
+// reveal (flaky — checked=0 quando o user-bot encerra cedo). Este cenário dirige
+// buildSearchSummaryDirective DIRETO pelo agente REAL e valida que o texto que
+// PRECEDE o tool-call de search_groups não afirma achado ("Encontrei/achei"),
+// sob não-determinismo do modelo. Descoberta via fixtures (mock do beforeAll).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-36 — reveal dirigido não afirma achado antes do search_groups", () => {
+	let revealTurn: Turn | null = null;
+	let convId: string | null = null;
+
+	beforeAll(async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Monique",
+				metadata: {
+					currentPersona: "imovel",
+					currentCategory: "imovel",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					identityCollected: true,
+					qualifyAnswers: {
+						creditMin: 70_000,
+						creditMax: 80_000,
+						monthlyBudget: 600,
+						prazoMeses: 12,
+						hasLance: "no",
+					},
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		await storeIdentity(convId, FIXTURE_IDENTITY);
+		const refreshed = await reloadMeta(convId);
+		const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
+		revealTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: buildSearchSummaryDirective({ category: "imovel", meta: refreshed }),
+			isUserTurn: false,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("o agente chamou search_groups (validação não-trivial)", () => {
+		expect(revealTurn?.toolCalls ?? []).toContain("search_groups");
+	});
+
+	it("o texto que PRECEDE search_groups não afirma achado", () => {
+		const AFIRMA_ACHADO = /\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op/i;
+		let preToolText = "";
+		for (const ev of revealTurn?.events ?? []) {
+			if (ev.type === "tool-call" && ev.toolName === "search_groups") break;
+			if (ev.type === "text-delta") preToolText += ev.text;
+		}
+		expect(
+			AFIRMA_ACHADO.test(preToolText),
+			`FIX-36: o texto que precede search_groups NÃO pode afirmar achado. Texto pré-tool: "${preToolText}"`,
+		).toBe(false);
 	});
 });
 

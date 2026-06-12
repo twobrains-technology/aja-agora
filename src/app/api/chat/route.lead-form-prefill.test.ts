@@ -135,7 +135,12 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 		expect(payload).toBeNull();
 	});
 
-	it("dirige o card de decisão (present_decision_prompt) e persiste decisionDispatched", async () => {
+	// FIX-38 (2026-06-12): o clique explícito "Tenho interesse" no plano em tela
+	// JÁ é o sinal de avanço — vai DIRETO pro passo 5 (present_contract_form),
+	// SEM o card de decisão "Esse plano faz sentido?" (a dupla confirmação por
+	// construção do FIX-34). Marca decisionDispatched pra idempotência (o gate
+	// "decision" do funil — caminho ambíguo — não reaparece depois).
+	it("FIX-38: dirige o avanço pro passo 5 (present_contract_form) SEM card de decisão e persiste decisionDispatched", async () => {
 		await (
 			await POST(
 				makeReq({
@@ -145,13 +150,16 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 			)
 		).text();
 
-		// O handler dispara o turno da decisão via pipeDirectiveTurn.
+		// O handler dispara o turno de AVANÇO via pipeDirectiveTurn — UM passo.
 		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
 		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
-		expect(arg.directive).toContain("present_decision_prompt");
+		// Avanço direto pro contrato — NÃO o card de decisão (sem dupla confirmação).
+		expect(arg.directive).toContain("present_contract_form");
+		expect(arg.directive).not.toContain("present_decision_prompt");
+		// Invariante FIX-34: NUNCA captura de lead pra consultor humano.
 		expect(arg.directive).not.toContain("present_lead_form");
 
-		// Estado avança (determinístico, independe da LLM).
+		// Estado avança (determinístico, independe da LLM): idempotência preservada.
 		const conv = await db.query.conversations.findFirst({
 			where: eq(conversations.id, convId),
 		});
@@ -217,7 +225,7 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 		).toBe(true);
 	});
 
-	it("FIX-29 — src/app/api/chat/route.ts: handler `interest` NÃO emite lead_form; dirige a decisão", () => {
+	it("FIX-38 — src/app/api/chat/route.ts: handler `interest` vai DIRETO pro avanço (sem card de decisão), marca decisionDispatched, sem lead_form", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		// Isola o corpo do branch interest (até o próximo branch de action).
 		const interestBlock =
@@ -228,14 +236,25 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 			interestBlock.length,
 			"branch `body.action?.kind === 'interest'` não foi encontrado em route.ts",
 		).toBeGreaterThan(0);
-		// FIX-29/FIX-34: o avanço pós-reveal é decision → contract_form, NÃO lead_form.
+		// FIX-29/FIX-34: o avanço pós-reveal NUNCA é captura de lead.
 		expect(
 			interestBlock.includes("lead_form"),
-			"handler `interest` NÃO pode emitir lead_form — o avanço pós-reveal é decision → contract_form.",
+			"handler `interest` NÃO pode emitir lead_form — o avanço pós-reveal é self-service.",
 		).toBe(false);
+		// FIX-38: clique explícito vai DIRETO pro passo 5 (avanço), sem dupla confirmação.
 		expect(
-			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(interestBlock),
-			"handler `interest` precisa dirigir o card de decisão / passo 5 (buildDecisionPromptDirective ou buildAdvanceToContractDirective).",
+			interestBlock.includes("buildAdvanceToContractDirective"),
+			"FIX-38: handler `interest` precisa dirigir buildAdvanceToContractDirective (passo 5) no clique explícito.",
+		).toBe(true);
+		expect(
+			interestBlock.includes("buildDecisionPromptDirective"),
+			"FIX-38: o clique EXPLÍCITO 'Tenho interesse' NÃO passa mais pelo card de decisão (dupla confirmação por construção). O decision_prompt fica nos caminhos ambíguos (simulator-offer 'Agora não', satisfação difusa em texto).",
+		).toBe(false);
+		// Idempotência: marca decisionDispatched pra o gate "decision" do funil não reaparecer
+		// E pra a tool-policy liberar present_contract_form (fase "closing").
+		expect(
+			interestBlock.includes("decisionDispatched"),
+			"FIX-38: handler `interest` precisa marcar decisionDispatched (idempotência + libera present_contract_form na fase closing da tool-policy).",
 		).toBe(true);
 	});
 

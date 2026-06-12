@@ -41,7 +41,9 @@ import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import {
+	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
+	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -263,19 +265,22 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 		recommendedAdministradora: "ITAÚ",
 	};
 
-	it("cassette: turn pos-reveal com 'Tenho interesse' produz present_decision_prompt (NAO present_lead_form, sem 'consultor')", async () => {
-		// Trajetoria CORRETA — o que deve sair do agent quando o usuario sinaliza
-		// avanco pos-reveal. Mirror do que o handler determinístico do route faz.
+	it("cassette: turn pos-reveal com 'Tenho interesse' (clique explícito) avança self-service — NUNCA present_lead_form, sem 'consultor'", async () => {
+		// FIX-38 ajustou o destino do clique EXPLÍCITO: vai DIRETO pro passo 5
+		// (present_contract_form), sem o card de decisão. O INVARIANTE que este
+		// cassette protege é o do FIX-34 — o avanço NUNCA vira captura de lead pra
+		// consultor humano —, NÃO "interest passa pelo decision". Mirror do que o
+		// handler determinístico do route faz após buildAdvanceToContractDirective.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
-			...textChunks("t1", "Boa! Então deixa eu confirmar com você se esse plano faz sentido:"),
-			toolCallChunk("tc-dp-1", "present_decision_prompt", { administradora: "ITAÚ" }),
+			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
+			toolCallChunk("tc-cf-1", "present_contract_form", { administradora: "ITAÚ" }),
 			FINISH_TOOL_CALLS,
 		]);
 
 		expect(toolCalls).toHaveLength(1);
-		expect(toolCalls[0]?.toolName).toBe("present_decision_prompt");
-		// O detector do bug: NUNCA present_lead_form, NUNCA promessa de consultor.
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// O detector do bug FIX-34: NUNCA present_lead_form, NUNCA promessa de consultor.
 		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
 		expect(text.toLowerCase()).not.toContain("consultor");
 		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
@@ -299,6 +304,179 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 			expect(gatilhoEntaoLead.test(p)).toBe(false);
 			expect(leadEntaoGatilho.test(p)).toBe(false);
 		}
+	});
+});
+
+// ============================================================================
+// FIX-38 — clique explícito "Tenho interesse" NÃO passa por dupla confirmação
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12, jornada Itaú): clicar "Tenho interesse" no card
+// de simulação → card "Esse plano faz sentido?" → clicar "Sim, quero contratar
+// agora" → identify. Dois gates de confirmação consecutivos pra quem JÁ deu o
+// sinal explícito. "ta pedindo confirmacao demais, estou achando inutil isso."
+//
+// O FIX-34 (mergeado no PR #30) acertou em matar o funil de lead legado, mas
+// trocou por dupla confirmação por construção: o kind "interest" SEMPRE
+// disparava buildDecisionPromptDirective na 1ª vez. FIX-38: o clique explícito
+// vai DIRETO pro passo 5 (buildAdvanceToContractDirective), marcando
+// decisionDispatched (idempotência + libera present_contract_form na fase
+// closing da tool-policy). O card de decisão PERMANECE pros caminhos AMBÍGUOS
+// (gate "decision" do funil — satisfação difusa em texto; gate simulator-offer
+// "Agora não"). Valida contra a jornada-canonica.md passo 4→5 (o card de
+// decisão é instrumento pra DEFINIR, não pedágio após a definição já dada).
+// ============================================================================
+
+describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avança em UM passo", () => {
+	it("cassette: o turno do avanço dirige present_contract_form em UM passo, sem nova pergunta de confirmação", async () => {
+		// Trajetória CORRETA pós-FIX-38: o clique explícito já decidiu — o agente
+		// fecha com UMA frase e chama present_contract_form. Sem card de decisão,
+		// sem re-perguntar "faz sentido?".
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
+			toolCallChunk("tc-cf-1", "present_contract_form", { administradora: "ITAÚ" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// O detector do bug: NUNCA o segundo gate de confirmação no clique explícito.
+		expect(toolCalls.some((t) => t.toolName === "present_decision_prompt")).toBe(false);
+		// Texto não re-pergunta "faz sentido?" / "deixa eu confirmar" (dupla confirmação).
+		expect(text.toLowerCase()).not.toMatch(/faz sentido/);
+		expect(text.toLowerCase()).not.toMatch(/deixa eu confirmar/);
+		// Invariante FIX-34 preservado: nunca lead/consultor.
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+	});
+
+	it("estrutural: o branch interest do route vai DIRETO pro avanço (sem buildDecisionPromptDirective) e marca decisionDispatched", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const interestBlock =
+			route.match(
+				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
+		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
+		expect(
+			interestBlock.includes("buildAdvanceToContractDirective"),
+			"FIX-38: clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+		).toBe(true);
+		expect(
+			interestBlock.includes("buildDecisionPromptDirective"),
+			"FIX-38: clique explícito NÃO passa pelo card de decisão (sem dupla confirmação).",
+		).toBe(false);
+		expect(
+			interestBlock.includes("decisionDispatched"),
+			"FIX-38: marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
+		).toBe(true);
+	});
+
+	it("directives: avanço dirige present_contract_form; o card de decisão (caminho ambíguo) segue existindo e nunca vira lead", () => {
+		const advance = buildAdvanceToContractDirective({ administradora: "ITAÚ" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_lead_form");
+		expect(advance).not.toContain("present_decision_prompt");
+
+		// Caminho AMBÍGUO preservado: o card de decisão continua disponível (o
+		// route ainda o dispara no gate simulator-offer "Agora não").
+		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
+		expect(decision).toContain("present_decision_prompt");
+		const route = readSource("src/app/api/chat/route.ts");
+		const simulatorOfferBlock =
+			route.match(
+				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
+			)?.[0] ?? "";
+		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
+		expect(
+			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
+			"FIX-38: o card de decisão fica pros caminhos ambíguos — o gate simulator-offer 'Agora não' ainda o dispara.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-36 — texto afirma achado ANTES do search_groups retornar
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12): clicar "Enviei meus dados pra buscar as ofertas"
+// → balão "Boa, Kairo! Encontrei opções na sua faixa — veja a que mais se
+// encaixa:" AO MESMO TEMPO que o indicador "Buscando grupos" girava. O texto
+// pré-tool afirmava o resultado de uma busca em andamento. Se a Bevi demora ou
+// falha ("tive um problema ao falar com a administradora" já visto nesta
+// rodada), o "Encontrei" vira mentira visível e mina a confiança.
+//
+// Root cause (instruído, não alucinado): frases-modelo pré-tool em directives.ts
+// + system-prompt.ts AFIRMAVAM achado. Fix: viram TRANSIÇÃO honesta (não afirma
+// resultado nem narra mecânica), com regra de proibição explícita. O anúncio do
+// achado (docx "Encontramos 3 boas opções") só vem PÓS-tool — preservado.
+// Defesa estrutural detalhada em src/lib/agent/system-prompt.fix-36-pre-tool
+// -honesty.test.ts.
+// ============================================================================
+
+describe("FIX-36-PRE-TOOL-HONESTY — texto não afirma achado antes do search_groups retornar", () => {
+	// Detector do bug: afirmação de RESULTADO em primeira pessoa pré-tool — distinta
+	// do anúncio PÓS-tool ("Encontramos 3 boas opcoes" do docx, que só vem depois).
+	const AFIRMA_ACHADO_PRE_TOOL =
+		/\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op|aqui ta a simula/i;
+
+	it("cassette: o texto que PRECEDE search_groups é transição honesta (não afirma achado)", async () => {
+		// Trajetória CORRETA pós-fix: transição honesta + tool (mirror do reveal).
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na sua faixa:"),
+			toolCallChunk("tc-sg-1", "search_groups", { category: "auto", creditMax: 100000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("search_groups");
+		// O texto (que precede o tool-call no stream) NÃO afirma achado.
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(false);
+	});
+
+	it("cassette: o detector PEGA o bug histórico ('Encontrei opções' antes de buscar)", async () => {
+		// Reprodução fiel do print — o agente afirmou o achado antes do tool retornar.
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa, Kairo! Encontrei opções na sua faixa — veja a que mais se encaixa:",
+			),
+			toolCallChunk("tc-sg-2", "search_groups", { category: "auto", creditMax: 100000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		// Se o detector não pega a frase clássica do bug, atualize o regex.
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(true);
+	});
+
+	it("cenário de erro Bevi: a transição honesta degrada bem — nenhuma afirmação de achado antes da falha", async () => {
+		// search_groups falha (Bevi fora). Como o texto pré-tool não afirmou achado,
+		// a mensagem de erro NÃO contradiz nada dito antes.
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na sua faixa:"),
+			toolCallChunk("tc-sg-3", "search_groups", { category: "auto", creditMax: 100000 }),
+			...textChunks(
+				"t2",
+				"Poxa, tive um problema ao falar com a administradora. Pode tentar de novo em instantes?",
+			),
+			FINISH_STOP,
+		]);
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(false);
+	});
+
+	it("estrutural: regra de proibição no prompt + frase-modelo pré-search honesta na directive", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/texto pre-tool NUNCA afirma achado/i);
+		const rangePicker = buildRangePickerDirective("Auto", "auto", "creditMax=100000", "1.500");
+		expect(rangePicker).not.toContain("Encontrei essas opcoes");
+		expect(rangePicker).toMatch(/PROIBIDO afirmar achado/i);
+		// O anúncio PÓS-tool do docx segue preservado no reveal.
+		const reveal = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				currentCategory: "auto",
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 100000, prazoMeses: 12, hasLance: "no" },
+			},
+		});
+		expect(reveal).toContain("Encontramos 3 boas opcoes");
 	});
 });
 

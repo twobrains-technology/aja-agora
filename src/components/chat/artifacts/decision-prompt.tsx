@@ -54,9 +54,14 @@ export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) 
 								variant={isPrimary ? "default" : "ghost"}
 								size="sm"
 								className={
+									// FIX-37: whitespace-normal + h-auto + text-left deixam o label
+									// longo ("Quero falar com um especialista da Aja Agora") quebrar
+									// linha em vez de transbordar o card (max-w-[340px]). A base do
+									// shadcn Button é whitespace-nowrap — sem o override (twMerge),
+									// o texto saía pela borda. min-h-[44px] preserva o alvo de toque.
 									isPrimary
-										? "justify-start gap-2 min-h-[44px] rounded-[13px] w-full shadow-[var(--shadow-primary)]"
-										: "justify-start gap-2 min-h-[44px] rounded-[13px] w-full text-muted-foreground"
+										? "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full shadow-[var(--shadow-primary)]"
+										: "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full text-muted-foreground"
 								}
 								onClick={() => choose(opt.intent, opt.label)}
 								disabled={isStreaming}
