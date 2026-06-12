@@ -60,7 +60,28 @@
 - 00:17 — Bloco R Camada 1 verde (7/7: scroll-intent + message-list). Subindo app pro E2E.
 - 00:37 — Bloco R fechado (3663229): Camada 1 + E2E Playwright 3×/3 verde.
 - 00:41 — Bloco O fechado (ce2cc3e): investigação DB (meta sem groupId, recommendedOffer presente) + dedupe por equivalência. Restam P e N.
-- 00:51 — Bloco P (FIX-30) Camada 1 verde (6 testes: mapper + component). embeddedPercent do teto real, não do lance total; render omite embutido contraditório. Suite 1493 verde. Commitando P.
+- 00:51 — Bloco P (FIX-30) fechado (71d0809): embeddedPercent do teto real, não do lance total; render omite embutido contraditório.
+- 01:12 — Bloco N (FIX-27) Camadas 1+2 verdes: stage "confirm" + contactPhone no meta + knownPhone no card + supressão em retry. Suite 1514 verde, 0 erro de tipo em produção. Commitando N (pre-commit roda Camada 3 LLM).
+
+### D3 · 00:55 — Bloco N (FIX-27): stage "confirm" 1-clique + contactPhone no meta + supressão em retry de fechamento
+- **Contexto:** opt-in pedia o WhatsApp pela 3ª vez. `deriveWhatsappOptinStage`
+  só olhava revealCompleted+whatsappOptinShown — não enxergava telefone já
+  capturado (lead form/identify) nem fechamento com erro Bevi pendente.
+- **Decidi (segue a recomendação do item):**
+  - `meta.contactPhone` (MASCARADO — LGPD, vai pro prompt) setado no leads route
+    e no contract-submit. `meta.contractRetryPending` setado no erro Bevi.
+  - `deriveWhatsappOptinStage`: novo stage `"confirm"` quando contactPhone
+    presente (não re-coleta, só confirma o canal); `"done"` quando respondido OU
+    retry de fechamento pendente; `"open"` só sem telefone.
+  - Card `whatsapp_optin` aceita `knownPhone` (runner enriquece o payload, igual
+    contract_form/identity) → confirmação 1-clique (sem input vazio). Action
+    `whatsapp_optin_confirm` usa o número já salvo (não re-digita).
+  - `shouldEmitWhatsappOptin` → false em retry pendente (determinismo na
+    tool-policy).
+- **Camadas:** C1 (derive/section/guard/mask/component/leads route) + C2
+  (cassette: pós-phone-capturado o agente confirma, não re-coleta) + C3 roda no
+  pre-commit (toca src/lib/agent/; ANTHROPIC_API_KEY presente em .env.local).
+- **Reversibilidade:** média (toca prompt + 9 arquivos; campos do meta aditivos).
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _pendente_

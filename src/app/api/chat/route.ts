@@ -7,7 +7,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { artifacts as artifactsTable, conversations } from "@/db/schema";
+import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import {
 	buildCreditReactionDirective,
@@ -39,7 +39,12 @@ import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
-import { isValidCpf, loadIdentity, storeIdentity } from "@/lib/conversation/identity";
+import {
+	isValidCpf,
+	loadIdentity,
+	maskPhoneForDisplay,
+	storeIdentity,
+} from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -401,6 +406,31 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
+						if (body.action?.kind === "whatsapp_optin_confirm") {
+							// FIX-27: número JÁ informado (lead form/identify) — confirma o
+							// canal sem re-digitar. Lê o telefone real já salvo (lead →
+							// identity) e marca o consentimento (LGPD: aceite explícito).
+							const greetName = contactName ? `, ${contactName}` : "";
+							const lead = await db.query.leads.findFirst({
+								where: eq(leads.conversationId, conversationId),
+								columns: { phone: true },
+							});
+							const phone =
+								lead?.phone ?? (await loadIdentity(conversationId).catch(() => null))?.celular;
+							if (phone) {
+								const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+								await saveContactWhatsapp(conversationId, phone);
+							}
+							await persistMeta(conversationId, { ...meta, whatsappOptinShown: true });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								`Perfeito${greetName}! Pode deixar — se precisar, te chamo no seu WhatsApp. ✅`,
+							);
+							return;
+						}
+
 						if (body.action?.kind === "whatsapp_optin_decline") {
 							await persistMeta(conversationId, {
 								...meta,
@@ -528,6 +558,14 @@ export async function POST(req: NextRequest) {
 									conversationId,
 									meta.currentPersona ?? null,
 								);
+								// FIX-27: proposta criada → telefone capturado (mascarado) p/ o
+								// opt-in virar confirmação; limpa retry pendente de tentativa anterior.
+								const okMeta = await reloadMeta(conversationId);
+								await persistMeta(conversationId, {
+									...okMeta,
+									contactPhone: maskPhoneForDisplay(celular),
+									contractRetryPending: false,
+								});
 							} catch (err) {
 								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
 								// diagnóstico impossível. Logar SEMPRE o erro original (lição
@@ -543,6 +581,17 @@ export async function POST(req: NextRequest) {
 											? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
 											: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
 								await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
+								// FIX-27: erro genérico de fechamento (não config/min-credit) →
+								// retry pendente (o opt-in não atropela a re-tentativa) + telefone
+								// capturado (mascarado) pra confirmação posterior.
+								if (!(err instanceof MinCreditError) && !(err instanceof BeviConfigError)) {
+									const fresh = await reloadMeta(conversationId);
+									await persistMeta(conversationId, {
+										...fresh,
+										contactPhone: maskPhoneForDisplay(celular),
+										contractRetryPending: true,
+									});
+								}
 							}
 							return;
 						}

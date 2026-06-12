@@ -742,14 +742,22 @@ ${renderExamplePairs(personaExamples)}
 // (whatsapp-optin-guard cobre o artifact, não o texto). Agora a seção é
 // dinamica por estagio, derivado do meta pela resolveAgent.
 
-export type WhatsappOptinStage = "locked" | "open" | "done";
+export type WhatsappOptinStage = "locked" | "open" | "confirm" | "done";
 
 export function deriveWhatsappOptinStage(meta: {
 	revealCompleted?: boolean;
 	whatsappOptinShown?: boolean;
+	contactPhone?: string;
+	contractRetryPending?: boolean;
 }): WhatsappOptinStage {
 	if (meta.revealCompleted !== true) return "locked";
 	if (meta.whatsappOptinShown === true) return "done";
+	// FIX-27: fechamento com erro Bevi pendente — o turno é pra re-tentar a
+	// proposta, não pra pedir WhatsApp. Suprime o opt-in até resolver.
+	if (meta.contractRetryPending === true) return "done";
+	// FIX-27: telefone já capturado (lead form/identify) — NÃO re-coletar; só
+	// confirmar o canal (LGPD: consentimento de canal ≠ ter o número).
+	if (meta.contactPhone && meta.contactPhone.length > 0) return "confirm";
 	return "open";
 }
 
@@ -778,6 +786,13 @@ EM SEGUIDA chame present_whatsapp_optin (sem parametros — o sistema preenche).
 NAO pergunte WhatsApp por texto sem chamar a tool em seguida.
 NAO emende o pedido de WhatsApp junto de outra pergunta — UMA pergunta acionavel por turno, sempre.
 NAO insista se o usuario clicar "Agora nao" — o sistema mostra apenas UMA frase de seguimento e voce continua a conversa normalmente.`;
+		case "confirm":
+			return `## WhatsApp — CONFIRME o canal (numero JA informado, NAO re-colete)
+O usuario JA informou o WhatsApp dele nesta conversa (lead form / identificacao do fechamento). NAO peca o numero de novo e NAO mostre input vazio — apenas confirme o canal: chame present_whatsapp_optin (o sistema preenche o numero mascarado e o card vira confirmacao de 1 clique).
+
+ANTES de chamar, escreva UMA frase curta confirmando o canal conhecido, SEM repetir o numero por extenso (o card ja mostra): por exemplo "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexao?".
+
+NAO repita o pedido de coleta do numero (ele ja foi informado). UMA pergunta acionavel por turno, sempre. Se o usuario ja aceitou ou recusou, NAO volte ao assunto.`;
 		case "done":
 			return `## WhatsApp — JA foi oferecido nesta conversa
 Assunto encerrado: NAO mencione, NAO ofereca de novo, NAO chame present_whatsapp_optin. Se o usuario pedir pra trocar o numero, chame save_contact_whatsapp com o novo. UMA pergunta acionavel por turno, sempre.`;

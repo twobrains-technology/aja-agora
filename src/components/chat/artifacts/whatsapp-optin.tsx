@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
+import type { WhatsappOptinPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
 const motionEntry = {
@@ -35,17 +36,29 @@ function isValidPhone(digits: string): boolean {
 	return /^[1-9]{2}9?\d{8}$/.test(digits);
 }
 
-export function WhatsappOptin() {
+export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 	const { sendAction } = useChatContext();
 	const [masked, setMasked] = useState("");
 	const [state, setState] = useState<"idle" | "accepted" | "declined">("idle");
+	// FIX-27: número já conhecido → confirmação 1-clique. "Usar outro número"
+	// reabre a coleta por input.
+	const [collectMode, setCollectMode] = useState(false);
 	const prefersReduced = useReducedMotion();
 	const digits = normalizeDigits(masked);
 	const valid = isValidPhone(digits);
+	const knownPhone = payload?.knownPhone;
+	const showConfirm = !!knownPhone && !collectMode;
 
 	const handleAccept = () => {
 		if (!valid || state !== "idle") return;
 		void sendAction({ kind: "whatsapp_optin", phone: digits }, "Quero receber pelo WhatsApp");
+		setState("accepted");
+	};
+
+	// FIX-27: confirma o canal usando o número JÁ salvo (sem re-digitar).
+	const handleConfirmKnown = () => {
+		if (state !== "idle") return;
+		void sendAction({ kind: "whatsapp_optin_confirm" }, "Pode me chamar nesse número");
 		setState("accepted");
 	};
 
@@ -70,34 +83,72 @@ export function WhatsappOptin() {
 					</p>
 				</CardHeader>
 				<CardContent className="space-y-3">
-					<Input
-						type="tel"
-						inputMode="numeric"
-						value={masked}
-						onChange={(e) => setMasked(formatPhoneMask(e.target.value))}
-						placeholder="(11) 98765-4321"
-						disabled={state !== "idle"}
-						className="w-full min-h-[44px]"
-					/>
-					<div className="flex flex-col gap-2 sm:flex-row">
-						<Button
-							type="button"
-							onClick={handleAccept}
-							disabled={!valid || state !== "idle"}
-							className="flex-1 min-h-[44px]"
-						>
-							{state === "accepted" ? "Anotado ✓" : "Quero receber"}
-						</Button>
-						<Button
-							type="button"
-							variant="ghost"
-							onClick={handleDecline}
-							disabled={state !== "idle"}
-							className="flex-1 min-h-[44px]"
-						>
-							{state === "declined" ? "Sem problema" : "Agora não"}
-						</Button>
-					</div>
+					{showConfirm ? (
+						<>
+							<p className="text-sm">
+								Posso te chamar no <span className="font-medium font-mono">{knownPhone}</span>?
+							</p>
+							<div className="flex flex-col gap-2 sm:flex-row">
+								<Button
+									type="button"
+									onClick={handleConfirmKnown}
+									disabled={state !== "idle"}
+									className="flex-1 min-h-[44px]"
+								>
+									{state === "accepted" ? "Anotado ✓" : "Pode sim"}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => setCollectMode(true)}
+									disabled={state !== "idle"}
+									className="flex-1 min-h-[44px]"
+								>
+									Usar outro número
+								</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									onClick={handleDecline}
+									disabled={state !== "idle"}
+									className="flex-1 min-h-[44px]"
+								>
+									{state === "declined" ? "Sem problema" : "Agora não"}
+								</Button>
+							</div>
+						</>
+					) : (
+						<>
+							<Input
+								type="tel"
+								inputMode="numeric"
+								value={masked}
+								onChange={(e) => setMasked(formatPhoneMask(e.target.value))}
+								placeholder="(11) 98765-4321"
+								disabled={state !== "idle"}
+								className="w-full min-h-[44px]"
+							/>
+							<div className="flex flex-col gap-2 sm:flex-row">
+								<Button
+									type="button"
+									onClick={handleAccept}
+									disabled={!valid || state !== "idle"}
+									className="flex-1 min-h-[44px]"
+								>
+									{state === "accepted" ? "Anotado ✓" : "Quero receber"}
+								</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									onClick={handleDecline}
+									disabled={state !== "idle"}
+									className="flex-1 min-h-[44px]"
+								>
+									{state === "declined" ? "Sem problema" : "Agora não"}
+								</Button>
+							</div>
+						</>
+					)}
 				</CardContent>
 			</Card>
 		</motion.div>

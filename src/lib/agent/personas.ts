@@ -135,6 +135,14 @@ export type ConversationMetadata = {
 	/** Marca que o user clicou "Agora não" no card WhatsApp opt-in.
 	 * Usado pra métrica de funil (decline rate). */
 	whatsappOptinDeclined?: boolean;
+	/** FIX-27 — telefone do usuário JÁ capturado (lead form / identify do
+	 * fechamento), MASCARADO (LGPD — vai pro prompt). Presença → o opt-in vira
+	 * confirmação de canal (stage "confirm") em vez de re-coletar o número. */
+	contactPhone?: string;
+	/** FIX-27 — fechamento (contract-submit) falhou com erro Bevi e aguarda
+	 * re-tentativa. Enquanto pendente, o opt-in de WhatsApp NÃO é oferecido —
+	 * o assunto do turno é re-tentar a proposta, não pedir WhatsApp. */
+	contractRetryPending?: boolean;
 	/** State da camada de memória (Letta sidecar — ADR 2026-05-16).
 	 * `reconciled` é setado true após cópia bem-sucedida do agent anônimo (cookie)
 	 * pro agent permanente (phone) — guarda idempotência pra não re-disparar. */
