@@ -41,12 +41,12 @@ vi.mock("@/lib/middleware/rate-limit", () => ({
 // determinístico e passou a dirigir um turno via pipeDirectiveTurn (decisão /
 // ajuste). Stub do adapter pra capturar a directive sem chamar a LLM real —
 // mantém o teste determinístico (o resto do adapter segue real).
-const pipeDirectiveTurnMock = vi.fn(async () => {});
+const pipeDirectiveTurnMock = vi.fn((_args: { directive: string }) => Promise.resolve());
 vi.mock("@/lib/web/adapter", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@/lib/web/adapter")>();
+	const actual = (await importOriginal()) as typeof import("@/lib/web/adapter");
 	return {
 		...actual,
-		pipeDirectiveTurn: (args: unknown) => pipeDirectiveTurnMock(args),
+		pipeDirectiveTurn: (args: { directive: string }) => pipeDirectiveTurnMock(args),
 	};
 });
 
@@ -147,7 +147,7 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 
 		// O handler dispara o turno da decisão via pipeDirectiveTurn.
 		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
-		const arg = pipeDirectiveTurnMock.mock.calls[0][0] as { directive: string };
+		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
 		expect(arg.directive).toContain("present_decision_prompt");
 		expect(arg.directive).not.toContain("present_lead_form");
 
@@ -175,7 +175,7 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 		expect(await extractLeadFormPayload(res)).toBeNull();
 
 		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
-		const arg = pipeDirectiveTurnMock.mock.calls[0][0] as { directive: string };
+		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
 		expect(arg.directive).not.toContain("present_lead_form");
 		expect(arg.directive).not.toContain("present_contract_form");
 		expect(arg.directive).toMatch(/ajustar|novo valor/i);
