@@ -1260,6 +1260,73 @@ describeIfKey("EVAL-FIX-38 — avanço explícito sem dupla confirmação", () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EVAL-FIX-36 — texto pré-tool não afirma achado (reveal dirigido, determinístico)
+// Camada 3: o critério no cenário Monique depende do diálogo livre alcançar o
+// reveal (flaky — checked=0 quando o user-bot encerra cedo). Este cenário dirige
+// buildSearchSummaryDirective DIRETO pelo agente REAL e valida que o texto que
+// PRECEDE o tool-call de search_groups não afirma achado ("Encontrei/achei"),
+// sob não-determinismo do modelo. Descoberta via fixtures (mock do beforeAll).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("EVAL-FIX-36 — reveal dirigido não afirma achado antes do search_groups", () => {
+	let revealTurn: Turn | null = null;
+	let convId: string | null = null;
+
+	beforeAll(async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Monique",
+				metadata: {
+					currentPersona: "imovel",
+					currentCategory: "imovel",
+					experiencePrev: "first",
+					qualifyConsented: true,
+					identityCollected: true,
+					qualifyAnswers: {
+						creditMin: 70_000,
+						creditMax: 80_000,
+						monthlyBudget: 600,
+						prazoMeses: 12,
+						hasLance: "no",
+					},
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		await storeIdentity(convId, FIXTURE_IDENTITY);
+		const refreshed = await reloadMeta(convId);
+		const { buildSearchSummaryDirective } = await import("@/lib/agent/orchestrator/directives");
+		revealTurn = await consumeAgentTurn({
+			conversationId: convId,
+			userText: buildSearchSummaryDirective({ category: "imovel", meta: refreshed }),
+			isUserTurn: false,
+		});
+	}, 120_000);
+
+	afterAll(async () => {
+		if (convId) await cleanup(convId);
+	});
+
+	it("o agente chamou search_groups (validação não-trivial)", () => {
+		expect(revealTurn?.toolCalls ?? []).toContain("search_groups");
+	});
+
+	it("o texto que PRECEDE search_groups não afirma achado", () => {
+		const AFIRMA_ACHADO = /\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op/i;
+		let preToolText = "";
+		for (const ev of revealTurn?.events ?? []) {
+			if (ev.type === "tool-call" && ev.toolName === "search_groups") break;
+			if (ev.type === "text-delta") preToolText += ev.text;
+		}
+		expect(
+			AFIRMA_ACHADO.test(preToolText),
+			`FIX-36: o texto que precede search_groups NÃO pode afirmar achado. Texto pré-tool: "${preToolText}"`,
+		).toBe(false);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EVAL-FIX-14 — pergunta de status consulta a Bevi AO VIVO via tool (cirúrgico)
 // Plano de teste: docs/test-plans/fix-14-tool-status-proposta.md (CA-27/CA-28).
 // Conversa pós-fechamento (bevi_proposals seedada) + gateway dublê — usuário
