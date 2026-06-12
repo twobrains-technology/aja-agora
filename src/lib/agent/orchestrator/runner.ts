@@ -426,12 +426,21 @@ export async function* runAgentTurn(args: {
 
 	// FIX-6 (what-if): re-simulação legítima atualiza o snapshot da oferta —
 	// o dial sempre acompanha o ÚLTIMO detalhamento que o usuário viu.
+	// BUG-ADMIN-DESSINCRONIZADA (2026-06-12): a administradora anda JUNTO com o
+	// snapshot — senão a directive do fechamento e a proposta real
+	// (contract-input.ts: administradoraPreferida) ficam presas na âncora do
+	// reveal antigo ("vai direto pra Âncora!" com simulação decidida na Itaú).
 	if (meta.revealCompleted) {
 		const newSim = artifacts.find((a) => a.type === "simulation_result");
 		const snap = offerSnapshotFromArtifact(newSim?.payload);
 		if (snap) {
 			const refreshed = await reloadMeta(conversationId);
-			await persistMeta(conversationId, { ...refreshed, recommendedOffer: snap });
+			await persistMeta(conversationId, {
+				...refreshed,
+				recommendedOffer: snap,
+				recommendedAdministradora:
+					snap.administradora ?? refreshed.recommendedAdministradora,
+			});
 		}
 	}
 

@@ -4435,3 +4435,49 @@ describe("FIX-WA-INTEREST — 'Tenho interesse' no WhatsApp dirige a DECISAO, na
 		expect(confirmBody.includes("startInterestHandoff")).toBe(true);
 	});
 });
+
+// ============================================================================
+// BUG-ADMIN-DESSINCRONIZADA-NO-WHATIF (teste manual Kairo 2026-06-12, dev):
+// jornada com reveal numa administradora e detalhamento posterior de OUTRA
+// (via "outras opções" / what-if). O bloco do what-if no runner atualizava
+// SÓ meta.recommendedOffer (snapshot) e deixava meta.recommendedAdministradora
+// presa na âncora do reveal. Resultado real na tela: simulação decidida com
+// Itaú e o agente anunciando "Preenche ali e a proposta vai direto pra
+// Âncora!" — e PIOR: o submit da proposta usa recommendedAdministradora como
+// administradoraPreferida (contract-input.ts), então a proposta REAL iria pra
+// administradora errada. Os dois campos têm que andar JUNTOS: a oferta
+// vigente é o último detalhamento que o usuário viu (semântica FIX-6).
+// ============================================================================
+
+describe("BUG-ADMIN-DESSINCRONIZADA — what-if atualiza administradora junto com o snapshot", () => {
+	function whatifBlock(): string {
+		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
+		// Isola o bloco "FIX-6 (what-if)" — do comentário até o fechamento do if.
+		return runner.match(/\/\/ FIX-6 \(what-if\)[\s\S]*?\n\t\}/)?.[0] ?? "";
+	}
+
+	it("source-level: o persistMeta do what-if grava recommendedAdministradora junto com recommendedOffer", () => {
+		const block = whatifBlock();
+		expect(block.length, "bloco 'FIX-6 (what-if)' não isolado no runner").toBeGreaterThan(0);
+		expect(
+			block.includes("recommendedOffer: snap"),
+			"o bloco precisa seguir atualizando o snapshot da oferta (FIX-6).",
+		).toBe(true);
+		expect(
+			/recommendedAdministradora:\s*snap\.administradora/.test(block),
+			"BUG-ADMIN-DESSINCRONIZADA: o persistMeta do what-if TEM que atualizar " +
+				"recommendedAdministradora a partir do snapshot — senão a directive do " +
+				"fechamento e a proposta real (contract-input.ts: administradoraPreferida) " +
+				"apontam pra administradora do reveal antigo, não pra que o usuário decidiu.",
+		).toBe(true);
+	});
+
+	it("source-level: contract-input segue preferindo a administradora do meta (fonte única)", () => {
+		const input = readSource("src/lib/bevi/contract-input.ts");
+		expect(
+			/administradoraPreferida:\s*meta\.recommendedAdministradora/.test(input),
+			"a proposta real deriva administradoraPreferida do meta — é por isso que o " +
+				"campo precisa acompanhar o último detalhamento.",
+		).toBe(true);
+	});
+});
