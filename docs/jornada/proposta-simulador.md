@@ -1,12 +1,12 @@
 # Proposta — Simulador de Contemplação (passo 4 da jornada)
 
-> **Status:** PROPOSTA aguardando validação do **Bernardo** · 2026-06-04 ·
-> **revisada 2026-06-11** (questionamento do Kairo: "uma vez que o consórcio já
-> foi escolhido, com base em que você muda o valor da parcela ou a data de
-> contemplação?")
-> O docx do cliente pede um simulador no passo 4, e o Bernardo é o dono do conceito
-> (o "simulador-agulha" / viés de contemplação), mas ainda não detalhou como deve ser.
-> Este documento é a nossa proposta concreta pra ele reagir — aprovar, ajustar ou redesenhar.
+> **Status:** REFERÊNCIA DE CONCEITO · 2026-06-04 · revisada 2026-06-11 ·
+> **pendências encerradas 2026-06-12** (decisão do Kairo: aval do Bernardo
+> deixou de ser bloqueio rastreado; perguntas à AGX encerradas — política
+> adotada: consumir os campos da Bevi com rótulo LITERAL, sem especulação de
+> semântica e sem consulta. Os campos novos da API de 2026-06-12 — `prazo` e
+> `lanceMedio` — supriram o dado de lance que faltava; consumo no bloco U,
+> FIX-39/40).
 
 ---
 
@@ -126,7 +126,14 @@ Tudo ancorado na **oferta real da Bevi** selecionada (grupo, prazo, taxas, corre
 
 ---
 
-## Perguntas pro Bernardo
+## Perguntas pro Bernardo — ENCERRADAS (2026-06-12)
+
+> Kairo encerrou todas as pendências abaixo em 2026-06-12: sem aguardar
+> resposta formal. Resolução: (5) narrativa segue como referência deste doc;
+> (6) o `lanceMedio` da API nova é a fonte real de lance — FIX-40; (7)/(8)
+> política do rótulo literal — exibimos o dado com o nome do campo, sem
+> derivar semântica (TODO no offer-mapper.ts atualizado). Mantidas abaixo só
+> como histórico.
 
 1. **Cartões 3/6/12 + agulha fina** — é essa a tua visão do "viés de contemplação", ou tu imaginava outra mecânica (ex.: probabilidade por faixa de lance, histórico de lances vencedores do grupo)?
 2. **Chance de contemplação**: a Bevi manda `taxaContemplacao` por oferta — quer mostrar isso como "chance" pro usuário, ou é arriscado (promessa implícita)? Como tu preferes comunicar?

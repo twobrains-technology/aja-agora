@@ -10,7 +10,7 @@ import {
 	CREDIT_BOUNDS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
-	MONTHLY_BOUNDS,
+	TERM_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
@@ -32,9 +32,9 @@ const creditSlider = (category: Category): SliderField => {
 	return { id: "credit", label: "Valor do bem", format: "currency", ...b };
 };
 
-const monthlySlider = (category: Category): SliderField => {
-	const b: Bounds = MONTHLY_BOUNDS[category];
-	return { id: "monthlyBudget", label: "Parcela mensal", format: "currency", ...b };
+const termSlider = (category: Category): SliderField => {
+	const b: Bounds = TERM_BOUNDS[category];
+	return { id: "term", label: "Em quantos meses quer pagar", format: "months", ...b };
 };
 
 const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
@@ -80,14 +80,17 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;
-			// FIX-3: "Planeje sua conquista" — 4 indicadores interligados em
-			// estimativa de mercado (substitui os 2 sliders simples).
+			// "Planeje sua conquista" — re-UX guiada por intenção (handoff): valor
+			// do bem + segmented "o que mais importa" + prazo, com a parcela como
+			// resultado calmo. Aderente à jornada canônica (valor → prioridade/tempo
+			// → lance), substitui os 4 sliders simultâneos.
 			return {
 				kind: "plan",
 				gate: "credit",
 				category,
 				credit: creditSlider(category),
-				monthly: monthlySlider(category),
+				term: termSlider(category),
+				intentDefault: "parcela",
 				targetMonthDefault: 6,
 			};
 		}

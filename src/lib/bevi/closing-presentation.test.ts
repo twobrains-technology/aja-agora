@@ -75,6 +75,88 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 			"proposalId",
 		]);
 	});
+
+	// FIX-39 — a API nova passou a trazer `prazo`; quando a oferta tem termMonths,
+	// o payload do real_offer o carrega (fonte real). Sem prazo, NÃO inventa (a
+	// chave nem existe — mantém o fallback honesto do card / FIX-13).
+	it("FIX-39: oferta COM prazo real → payload do real_offer carrega termMonths", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, termMonths: 72 },
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(artifact.payload.termMonths).toBe(72);
+	});
+
+	it("FIX-39: oferta SEM prazo (API volta atrás) → payload SEM termMonths (não inventa)", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("termMonths" in artifact.payload).toBe(false);
+	});
+
+	// FIX-40 — `lanceMedio` (lance médio do grupo) entra no payload do real_offer e,
+	// quando o usuário declarou um lance na qualificação, vira uma frase de POSIÇÃO
+	// factual (acima/abaixo). Regra D11: rótulo literal, SEM prometer contemplação
+	// (proibido derivar "chance de contemplar" da semântica não-confirmada).
+	const START_COM_LANCE = {
+		...START_OK,
+		offer: { ...START_OK.offer, avgBidValue: 69_361.27 },
+	};
+
+	it("FIX-40: oferta COM lanceMedio → payload do real_offer carrega avgBidValue", () => {
+		const items = realOfferPresentation(START_COM_LANCE);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(artifact.payload.avgBidValue).toBe(69_361.27);
+	});
+
+	it("FIX-40: oferta SEM lanceMedio → payload SEM avgBidValue (não inventa)", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("avgBidValue" in artifact.payload).toBe(false);
+	});
+
+	const lanceText = (items: ReturnType<typeof realOfferPresentation>) =>
+		items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+
+	it("FIX-40: lance declarado ACIMA do médio → frase factual 'acima', com os 2 números", () => {
+		const text = lanceText(realOfferPresentation(START_COM_LANCE, { declaredLanceValue: 117_000 }));
+		expect(text).toMatch(/lance/i);
+		expect(text).toMatch(/acima/i);
+		expect(text).toMatch(/117\.000/);
+		expect(text).toMatch(/69\.361/);
+	});
+
+	it("FIX-40: lance declarado ABAIXO do médio → frase factual 'abaixo'", () => {
+		const text = lanceText(realOfferPresentation(START_COM_LANCE, { declaredLanceValue: 50_000 }));
+		expect(text).toMatch(/abaixo/i);
+		expect(text).toMatch(/50\.000/);
+		expect(text).toMatch(/69\.361/);
+	});
+
+	it("FIX-40: frase de lance NUNCA promete contemplação (sem 'contempl'/'garant'/'chance')", () => {
+		const text = lanceText(realOfferPresentation(START_COM_LANCE, { declaredLanceValue: 117_000 }));
+		expect(text).not.toMatch(/contempl/i);
+		expect(text).not.toMatch(/garant/i);
+		expect(text).not.toMatch(/chance/i);
+		expect(text).not.toMatch(/\b\d{1,3}%/); // nada de "74% de chance"
+	});
+
+	it("FIX-40: sem lance declarado → NÃO injeta frase de lance (nada de comparação)", () => {
+		const text = lanceText(realOfferPresentation(START_COM_LANCE));
+		expect(text).not.toMatch(/acima|abaixo|na média/i);
+	});
+
+	it("FIX-40: lance declarado mas oferta SEM lanceMedio → NÃO compara (sem fonte, D11)", () => {
+		const text = lanceText(realOfferPresentation(START_OK, { declaredLanceValue: 117_000 }));
+		expect(text).not.toMatch(/acima|abaixo|na média/i);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {

@@ -109,6 +109,42 @@ describe("FIX-3 — computePlanEstimate (estimativa de mercado)", () => {
 	});
 });
 
+describe("handoff (re-UX por intenção) — prazo escolhido direto no slider", () => {
+	it("termMonths dado define o prazo e a parcela = total / termMonths", () => {
+		const e = computePlanEstimate({
+			category: "auto",
+			assetValue: 90_000,
+			targetMonth: 12,
+			termMonths: 72,
+		});
+		expect(e.termMonths).toBe(72);
+		// total = 90.000 × (1 + 0,15) = 103.500 · parcela = 103.500 / 72 ≈ 1.437,50
+		expect(e.monthlyPayment).toBeCloseTo(103_500 / 72, 1);
+	});
+
+	it("termMonths tem PRECEDÊNCIA sobre o prazo derivado da parcela legada", () => {
+		const e = computePlanEstimate({
+			category: "moto",
+			assetValue: 20_000,
+			targetMonth: 6,
+			termMonths: 48,
+			monthlyBudget: 250,
+		});
+		expect(e.termMonths).toBe(48);
+	});
+
+	it("prazo menor → parcela maior (a parcela é o resultado calmo da escolha)", () => {
+		const curto = computePlanEstimate({ category: "auto", assetValue: 90_000, targetMonth: 12, termMonths: 48 });
+		const longo = computePlanEstimate({ category: "auto", assetValue: 90_000, targetMonth: 12, termMonths: 96 });
+		expect(curto.monthlyPayment).toBeGreaterThan(longo.monthlyPayment);
+	});
+
+	it("termMonths é clampado a >= 1 (nunca divide por zero)", () => {
+		const e = computePlanEstimate({ category: "moto", assetValue: 20_000, targetMonth: 1, termMonths: 0 });
+		expect(e.termMonths).toBeGreaterThanOrEqual(1);
+	});
+});
+
 describe("FIX-18 — viabilidade orçamento × valor do bem (confronto no picker)", () => {
 	it("jornada real do Kairo: carro 250k · 1.000/mês → INVIÁVEL (parcela não fecha o bem)", () => {
 		// 250k de carro a R$ 1.000/mês ≈ 24 anos — não existe grupo de auto assim

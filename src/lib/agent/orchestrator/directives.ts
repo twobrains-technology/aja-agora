@@ -1,4 +1,5 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import type { PlanIntent } from "@/lib/agent/qualify-config";
 
 // ---- Transition ----
 
@@ -65,18 +66,30 @@ export function buildQualifyStartMoreDirective(): string {
 	return `[usuario clicou "Entender mais antes" — pergunte em uma frase curta sobre o que especificamente ele quer entender, sem despejar info ainda]`;
 }
 
-/** FIX-3 — reação ao "Planeje sua conquista" (híbrido VENDEDOR, decisão do
- * Kairo 2026-06-05): o usuário acabou de entregar valor do bem + mês-alvo +
- * parcela (+ lance) num componente só. O agente NÃO re-pergunta nada disso —
- * CONFIRMA proativamente como um vendedor que persuade o fechamento e avança. */
+/** Benefício a reforçar conforme a INTENÇÃO escolhida no segmented control do
+ * "Planeje sua conquista" (re-UX por intenção). */
+const PLAN_INTENT_BENEFIT: Record<PlanIntent, string> = {
+	parcela:
+		"ele priorizou a PARCELA LEVE (prazo mais longo deixa a mensalidade confortavel no bolso)",
+	rapido: "ele quer CONTEMPLAR LOGO (estrategia de receber o bem rapido)",
+	lance: "ele tem LANCE pra dar (lance acelera bastante a contemplacao)",
+};
+
+/** Reação ao "Planeje sua conquista" (híbrido VENDEDOR, decisão do Kairo). Na
+ * re-UX guiada por intenção o usuário entrega valor + prazo + a INTENÇÃO (o que
+ * mais importa) e, conforme ela, mês-alvo OU lance — num componente só. O agente
+ * NÃO re-pergunta nada disso: CONFIRMA proativamente como vendedor que persuade o
+ * fechamento, reforçando o benefício da PRIORIDADE dele, e avança. */
 export function buildPlanReactionDirective(args: {
 	assetLabel: string;
+	intent?: PlanIntent;
 	targetMonth?: number;
 	lanceLabel?: string;
 }): string {
 	const alvo = args.targetMonth ? ` em ~${args.targetMonth} meses` : "";
 	const lance = args.lanceLabel ? ` com lance de ${args.lanceLabel}` : "";
-	return `Usuario preencheu o plano da conquista via componente: ${args.assetLabel}${alvo}${lance}. FLUXO: escreva UMA mensagem curta (2-3 frases) DE VENDEDOR confirmando a estrategia dele com entusiasmo e autoridade — espelhe o que ele escolheu (valor, prazo-alvo${args.lanceLabel ? ", lance" : ""}) SEM re-perguntar nada disso, reforce em meia frase o beneficio da estrategia (ex: lance acelera a contemplacao / prazo confortavel deixa a parcela leve) e sinalize que o proximo passo e buscar as opcoes reais. NAO faca pergunta, NAO chame tools — o sistema conduz a proxima etapa.`;
+	const prioridade = args.intent ? ` Prioridade dele: ${PLAN_INTENT_BENEFIT[args.intent]}.` : "";
+	return `Usuario preencheu o plano da conquista via componente: ${args.assetLabel}${alvo}${lance}.${prioridade} FLUXO: escreva UMA mensagem curta (2-3 frases) DE VENDEDOR confirmando a estrategia dele com entusiasmo e autoridade — espelhe o que ele escolheu (valor, prazo${args.targetMonth ? ", prazo-alvo" : ""}${args.lanceLabel ? ", lance" : ""}) SEM re-perguntar nada disso, reforce em meia frase o beneficio da prioridade dele e sinalize que o proximo passo e buscar as opcoes reais. NAO faca pergunta, NAO chame tools — o sistema conduz a proxima etapa.`;
 }
 
 export function buildCreditReactionDirective(rangeTitle: string): string {

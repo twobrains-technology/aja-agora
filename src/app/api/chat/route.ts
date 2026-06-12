@@ -28,7 +28,12 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
-import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import {
+	LANCE_EMBUTIDO_DEFAULT_PERCENT,
+	objetivoForIntent,
+	objetivoForPrazo,
+	prazoMesesForIntent,
+} from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
 import {
 	type ClosingItem,
@@ -586,7 +591,12 @@ export async function POST(req: NextRequest) {
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
-									realOfferPresentation({ proposalId, offer, noOffer }),
+									// FIX-40: o lance declarado na qualificação habilita a frase de
+									// posição factual vs o lance médio do grupo (sem promessa).
+									realOfferPresentation(
+										{ proposalId, offer, noOffer },
+										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
+									),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
@@ -789,19 +799,35 @@ export async function POST(req: NextRequest) {
 						if (action.gate === "credit") {
 							const credit = action.value.credit;
 							const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
-							// FIX-3 ("Planeje sua conquista"): o componente do passo 2 entrega
-							// também mês-alvo, lance e (opcional) lance embutido — preenche os
-							// gates seguintes e o funil pula o que já veio. O que não veio
-							// (ex.: lanceEmbutido não decidido) segue pelos gates da conversa.
+							// "Planeje sua conquista" (re-UX guiada por intenção): o picker entrega
+							// valor + prazo + a INTENÇÃO ("o que mais importa") e, conforme ela,
+							// mês-alvo OU lance. A parcela (monthlyBudget) é o RESULTADO calculado.
+							// Esses campos preenchem os gates seguintes e o funil pula o que já veio.
+							// O `objetivo` da Bevi sai da intenção (fallback: do mês-alvo, p/ o
+							// caminho de texto livre que não tem intenção).
 							const v = action.value;
+							// Prazo de contemplação: o mês-alvo escolhido (intenção "receber
+							// rápido") OU o implícito da intenção — preenche prazoMeses pro funil
+							// PULAR o gate timeframe (sem re-perguntar o que a intenção já disse).
+							const prazoMeses =
+								typeof v.targetMonth === "number"
+									? v.targetMonth
+									: v.intent != null
+										? prazoMesesForIntent(v.intent)
+										: undefined;
+							const objetivo =
+								v.intent != null
+									? objetivoForIntent(v.intent)
+									: typeof v.targetMonth === "number"
+										? objetivoForPrazo(v.targetMonth)
+										: undefined;
 							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
 								...(meta.qualifyAnswers ?? {}),
 								creditMin,
 								creditMax: credit,
 								monthlyBudget: v.monthlyBudget,
-								...(typeof v.targetMonth === "number"
-									? { prazoMeses: v.targetMonth, objetivo: objetivoForPrazo(v.targetMonth) }
-									: {}),
+								...(prazoMeses != null ? { prazoMeses } : {}),
+								...(objetivo ? { objetivo } : {}),
 								...(typeof v.lanceValue === "number"
 									? v.lanceValue > 0
 										? { hasLance: "yes" as const, lanceValue: v.lanceValue }
@@ -810,12 +836,15 @@ export async function POST(req: NextRequest) {
 								...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-							const isPlanSubmit = typeof v.targetMonth === "number";
+							// Picker novo SEMPRE manda intenção → sempre é plan submit (o agente
+							// confirma o plano como vendedor, sem re-perguntar).
+							const isPlanSubmit = v.intent != null || typeof v.targetMonth === "number";
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: isPlanSubmit
 									? buildPlanReactionDirective({
 											assetLabel: action.label,
+											intent: v.intent,
 											targetMonth: v.targetMonth,
 											lanceLabel:
 												typeof v.lanceValue === "number" && v.lanceValue > 0

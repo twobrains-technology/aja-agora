@@ -151,9 +151,10 @@ export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
 	// teto comercial ~30%) na mesma tela que "recebe a carta cheia". Sem teto real →
 	// default histórico (30); o card OMITE a seção quando o recebido não fecha
 	// (receivedCredit = carta cheia) — coerência server + UI.
-	// TODO(AGX perguntas 7/8 — docs/jornada/proposta-simulador.md): confirmar a
-	// semântica de receivedCredit (líquido vs carta cheia) e de bidPercentage antes
-	// de exibir "% embutido" + "recebido" juntos sem o guardrail de coerência.
+	// Decisão Kairo 2026-06-12 (encerrou as perguntas 7/8 da proposta-simulador):
+	// NÃO consultamos a AGX sobre semântica — rótulo LITERAL do campo + o
+	// guardrail de coerência abaixo é a política permanente. Não exibir
+	// "% embutido" + "recebido" juntos quando os números não fecham.
 	const embeddedPercent = parseBeviAcceptPercent(offer.embeddedBidAcceptancePercentage) ?? 30;
 	const embeddedBidValue = round2(offer.embeddedBid ?? (offer.finalValue * embeddedPercent) / 100);
 	const receivedCredit = round2(offer.receivedCredit ?? offer.finalValue - embeddedBidValue);

@@ -49,6 +49,7 @@ import {
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -3407,34 +3408,50 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 });
 
 // ============================================================================
-// FIX-3 (visão do Kairo, design aprovado 2026-06-05) — "Planeje sua conquista"
-// no gate credit: 4 indicadores interligados + híbrido vendedor
+// "Planeje sua conquista" no gate credit — RE-UX GUIADA POR INTENÇÃO (handoff
+// componentes-aja, 2026-06-12). Kairo apontou os 4 sliders simultâneos como
+// "não era pra existir dessa forma mais".
 // ----------------------------------------------------------------------------
-// O gate credit deixou de ser 2 sliders simples: virou o componente dinâmico
-// (valor do bem · quando quer usar · parcela · lance · lance embutido) em modo
-// ESTIMATIVA DE MERCADO (selo obrigatório — a Bevi não simula sem CPF, D1).
-// Os campos extras preenchem qualifyAnswers e o funil PULA os gates já
-// respondidos; o agente confirma como VENDEDOR (sem re-perguntar). O simulador
-// do passo 4 PERMANECE (números reais da oferta ativa — FIX-6).
+// Os 4 sliders simultâneos (valor · quando · parcela · lance) confundiam. A forma
+// correta (handoff): valor do bem + segmented "O QUE MAIS IMPORTA" (menor parcela
+// / receber rápido / tenho um lance) + prazo, com a parcela como RESULTADO calmo
+// (não input). Só o controle relevante da intenção aparece. Aderente à jornada
+// canônica (valor → prioridade/tempo → lance). Modo ESTIMATIVA DE MERCADO (selo
+// obrigatório — a Bevi não simula sem CPF, D1). O `objetivo` da Bevi sai da
+// INTENÇÃO; o agente confirma a PRIORIDADE como VENDEDOR (sem re-perguntar). O
+// funil continua pulando os gates já respondidos. Simulador do passo 4 PERMANECE.
 //
-// Defesas detalhadas: plan-estimate.test.ts (engine),
-// plan-estimate-picker.test.tsx (componente), route (gate credit estendido).
+// Defesas detalhadas: plan-estimate.test.ts (engine: prazo como input),
+// plan-estimate-picker.test.tsx (componente: segmented + condicionais), route.
 // ============================================================================
 
-describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-pergunta", () => {
-	it("estrutural: gate credit serve o componente plan (não os 2 sliders simples)", () => {
+describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)", () => {
+	it("estrutural: gate credit serve o picker por intenção (term slider + intentDefault, sem monthly)", () => {
 		const src = readSource("src/lib/web/adapter.ts");
 		expect(src).toMatch(/kind: "plan"/);
+		expect(src).toMatch(/term: termSlider/);
+		expect(src).toMatch(/intentDefault/);
 		expect(src).toMatch(/targetMonthDefault/);
+		// a forma antiga (slider de parcela como input) não pode voltar
+		expect(src).not.toMatch(/monthly: monthlySlider/);
 	});
 
-	it("estrutural: route consome targetMonth/lanceValue/lanceEmbutido do componente", () => {
+	it("estrutural: componente é guiado por intenção (segmented control), não 4 sliders", () => {
+		const src = readSource("src/components/chat/artifacts/plan-estimate-picker.tsx");
+		expect(src).toMatch(/O que mais importa pra você agora/);
+		expect(src).toMatch(/plan-intent-/);
+		// a parcela é resultado calmo, não um slider "Parcela mensal" de entrada
+		expect(src).toMatch(/Sua parcela fica em/);
+		expect(src).not.toMatch(/label="Parcela mensal"/);
+	});
+
+	it("estrutural: route deriva o objetivo da Bevi da INTENÇÃO (não só do mês-alvo)", () => {
 		const src = readSource("src/app/api/chat/route.ts");
-		expect(src).toMatch(/targetMonth/);
+		expect(src).toMatch(/objetivoForIntent/);
 		expect(src).toMatch(/buildPlanReactionDirective/);
 	});
 
-	it("híbrido vendedor: directive confirma SEM re-perguntar e proíbe tools", () => {
+	it("híbrido vendedor: directive reforça a PRIORIDADE, confirma SEM re-perguntar e proíbe tools", () => {
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
 		const start = directives.indexOf("function buildPlanReactionDirective");
 		expect(start, "buildPlanReactionDirective precisa existir").toBeGreaterThan(-1);
@@ -3442,6 +3459,7 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		expect(body).toMatch(/VENDEDOR/i);
 		expect(body).toMatch(/SEM re-perguntar/i);
 		expect(body).toMatch(/NAO chame tools/i);
+		expect(body).toMatch(/[Pp]rioridade/);
 	});
 
 	it("funil: plano completo via componente pula direto pro identify (nada re-perguntado)", () => {
@@ -3485,6 +3503,38 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		const src = readSource("src/components/chat/artifacts/plan-estimate-picker.tsx");
 		expect(src).toMatch(/Estimativa de mercado/);
 		expect(src).toMatch(/valores reais v[eê]m das administradoras/);
+	});
+
+	// BUG (E2E 2026-06-12): após escolher "Menor parcela" no segmented, o agente
+	// RE-PERGUNTAVA "em quanto tempo você quer o carro?" (gate timeframe). A
+	// intenção JÁ define a prioridade de tempo — tem que preencher prazoMeses pro
+	// funil pular o timeframe (híbrido vendedor: confirma SEM re-perguntar).
+	it("intenção mapeia o prazo de contemplação (parcela=sem pressa, lance=antecipa)", () => {
+		expect(prazoMesesForIntent("parcela")).toBeGreaterThanOrEqual(120); // sem pressa → investimento
+		expect(prazoMesesForIntent("lance")).toBeLessThan(12); // lance antecipa
+		expect(prazoMesesForIntent("rapido")).toBeLessThan(120); // mira contemplar logo
+	});
+
+	it("funil NÃO re-pergunta timeframe quando a intenção já definiu o prazo", () => {
+		// qualifyAnswers como o route monta a partir de "Menor parcela" (sem mês-alvo).
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMin: 68_000,
+				creditMax: 80_000,
+				monthlyBudget: 1_278,
+				prazoMeses: prazoMesesForIntent("parcela"),
+				objetivo: "investimento",
+			},
+		};
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+	});
+
+	it("estrutural: route deriva prazoMeses da INTENÇÃO (não deixa o funil re-perguntar)", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		expect(src).toMatch(/prazoMesesForIntent/);
 	});
 });
 
@@ -3777,9 +3827,10 @@ describe("FIX-14-STATUS-VIA-TOOL — status real via check_proposal_status, zero
 // prazo. O card se explica com copy honesta apontando pro PDF da proposta.
 // ============================================================================
 
-describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ninguém inventa", () => {
-	// Detector: "98 meses", "em 110 meses", "prazo de 84 meses"… no contexto
-	// do fechamento (oferta de parceiro), QUALQUER "N meses" é número sem fonte.
+describe("FIX-13→FIX-39-PRAZO-COM-FONTE — prazo agora vem da API (campo real); ninguém DERIVA", () => {
+	// Detector: "98 meses", "em 110 meses", "prazo de 84 meses"… EM PROSA do agent.
+	// O prazo REAL (FIX-39) vai no CARD (campo estruturado, fonte da API), nunca
+	// despejado em texto livre onde a derivação valorCarta÷parcela mente (FIX-13).
 	const PRAZO_DETECTOR = /\b\d{1,3}\s*(meses|mês)\b/i;
 
 	const START_OK = {
@@ -3795,9 +3846,14 @@ describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ning
 		},
 		noOffer: false,
 	};
+	// FIX-39: a API nova devolve `prazo` → o mapper o coloca em termMonths.
+	const START_COM_PRAZO = {
+		...START_OK,
+		offer: { ...START_OK.offer, termMonths: 72 },
+	};
 
-	it("cassette: agent derivando prazo em texto ao apresentar a oferta real — detector pega", async () => {
-		// O que o agent NÃO pode falar (derivação de valorCarta ÷ parcela):
+	it("cassette: agent DERIVANDO prazo em texto (valorCarta÷parcela) — detector ainda pega", async () => {
+		// Mesmo com prazo real disponível, DERIVAR em prosa segue proibido (FIX-13):
 		const cassette =
 			"Confirmei com a CANOPUS: carta de R$ 46.000 com parcela de R$ 469,95 — " +
 			"isso dá aproximadamente 98 meses de prazo.";
@@ -3811,36 +3867,116 @@ describe("FIX-13-PRAZO-SEM-FONTE — oferta real de parceiro não tem term; ning
 		expect(PRAZO_DETECTOR.test(text)).toBe(true);
 	});
 
-	it("texto canônico de produção (realOfferPresentation) NÃO dispara o detector", () => {
-		const items = realOfferPresentation(START_OK);
+	it("texto canônico de produção (realOfferPresentation) NÃO despeja prazo em prosa — com OU sem prazo", () => {
+		for (const start of [START_OK, START_COM_PRAZO]) {
+			const items = realOfferPresentation(start);
+			const allText = items
+				.filter((i) => i.kind === "text")
+				.map((i) => i.text)
+				.join("\n");
+			expect(allText.length).toBeGreaterThan(0);
+			expect(PRAZO_DETECTOR.test(allText)).toBe(false);
+		}
+	});
+
+	it("payload do real_offer: COM prazo real → termMonths presente; SEM prazo → ausente (nunca inventa)", () => {
+		const comPrazo = realOfferPresentation(START_COM_PRAZO).find(
+			(i) => i.kind === "artifact" && i.type === "real_offer",
+		);
+		if (comPrazo?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(comPrazo.payload.termMonths).toBe(72);
+
+		const semPrazo = realOfferPresentation(START_OK).find(
+			(i) => i.kind === "artifact" && i.type === "real_offer",
+		);
+		if (semPrazo?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("termMonths" in semPrazo.payload).toBe(false);
+	});
+
+	it("componente consome o prazo REAL defensivamente e mantém o fallback honesto do PDF", () => {
+		const src = readSource("src/components/chat/artifacts/real-offer.tsx");
+		// Consome o campo real da API (gap do FIX-13 acabou):
+		expect(src).toMatch(/termMonths/);
+		// Defensivo (Number.isFinite) — nunca renderiza NaN/null:
+		expect(src).toMatch(/Number\.isFinite\(\s*payload\.termMonths\s*\)/);
+		// Fallback honesto quando ausente (API pode voltar atrás):
+		expect(src).toMatch(/proposta \(PDF\)/);
+		// NÃO deriva prazo de valorCarta÷parcela (sem divisão pra meses):
+		expect(src).not.toMatch(/creditValue\s*\/\s*\w*[Pp]ayment/);
+	});
+});
+
+// ============================================================================
+// CENARIO FIX-40 — Lance médio do grupo informa POSIÇÃO, nunca promete contemplação
+// ----------------------------------------------------------------------------
+// A API nova (2026-06-12) trouxe `lanceMedio` (R$ do grupo) — a fonte que faltava
+// pra falar de lance com número (o FIX-8 matou o "lance estimado" por não existir
+// fonte). Caso real da jornada do Kairo: lance declarado R$ 117 mil vs lanceMedio
+// R$ 69 mil. Decisão do Kairo: rótulo LITERAL do campo ("lance médio do grupo"),
+// comparação FACTUAL de posição (acima/abaixo) — PROIBIDO derivar "chance de
+// contemplar" / prometer contemplação (semântica não confirmada com a AGX).
+// ============================================================================
+describe("FIX-40-LANCE-MEDIO-SEM-PROMESSA — compara posição do lance; zero promessa de contemplação", () => {
+	// Detector de PROMESSA de contemplação (o que NINGUÉM pode dizer a partir do lance):
+	const PROMESSA_CONTEMPLACAO =
+		/(ser[áa]|vai|fica)\s+contemplad|garant\w*\s+(a\s+|sua\s+)?contempla|chance\s+de\s+\d|\d+\s*%\s*de\s*(chance|contempla)|contempla\w*\s+(garantid|cert)/i;
+
+	const START_COM_LANCE = {
+		proposalId: "prop-1",
+		offer: {
+			ofertaId: "oferta-1",
+			administradora: "BANCO DO BRASIL",
+			grupo: "1690",
+			category: "auto" as const,
+			creditValue: 114_760.54,
+			monthlyPayment: 2_075.34,
+			avgBidValue: 69_361.27,
+			tipoOferta: "SPECIAL_OFFER" as const,
+		},
+		noOffer: false,
+	};
+
+	it("cassette: agent prometendo contemplação a partir do lance médio — detector pega", async () => {
+		const cassette =
+			"Seu lance de R$ 117 mil está acima do lance médio do grupo (R$ 69 mil), " +
+			"então você será contemplado logo nas primeiras assembleias.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(PROMESSA_CONTEMPLACAO.test(text)).toBe(true);
+	});
+
+	it("texto canônico de produção (realOfferPresentation + lance declarado) compara SEM prometer", () => {
+		const items = realOfferPresentation(START_COM_LANCE, { declaredLanceValue: 117_000 });
 		const allText = items
 			.filter((i) => i.kind === "text")
 			.map((i) => i.text)
 			.join("\n");
-		expect(allText.length).toBeGreaterThan(0);
-		expect(PRAZO_DETECTOR.test(allText)).toBe(false);
+		// Posição factual presente (rótulo literal do campo):
+		expect(allText).toMatch(/acima/i);
+		expect(allText).toMatch(/lance médio/i);
+		// Zero promessa de contemplação:
+		expect(PROMESSA_CONTEMPLACAO.test(allText)).toBe(false);
 	});
 
-	it("payload do artifact real_offer: exatamente as chaves com fonte — sem term/prazo", () => {
-		const items = realOfferPresentation(START_OK);
-		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
-		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
-		expect(Object.keys(artifact.payload).sort()).toEqual([
-			"administradora",
-			"category",
-			"creditValue",
-			"grupo",
-			"monthlyPayment",
-			"proposalId",
-		]);
+	it("sem lance declarado → produção NÃO injeta comparação (nada de acima/abaixo)", () => {
+		const allText = realOfferPresentation(START_COM_LANCE)
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(allText).not.toMatch(/acima|abaixo|na média/i);
 	});
 
-	it("card se explica: copy honesta do prazo vive no componente (regra de produto)", () => {
+	it("componente: card mostra 'lance médio do grupo' (rótulo literal) defensivamente", () => {
 		const src = readSource("src/components/chat/artifacts/real-offer.tsx");
-		expect(src).toMatch(/[Pp]razo e demais condições/);
-		expect(src).toMatch(/proposta \(PDF\)/);
-		// E o componente não renderiza nenhum campo de prazo (não existe fonte):
-		expect(src).not.toMatch(/termMonths|prazoMeses/);
+		expect(src).toMatch(/[Ll]ance médio do grupo/);
+		expect(src).toMatch(/Number\.isFinite\(\s*payload\.avgBidValue\s*\)/);
+		// O card NÃO promete contemplação no rótulo:
+		expect(src).not.toMatch(/lance[^\n]{0,40}contempl/i);
 	});
 });
 

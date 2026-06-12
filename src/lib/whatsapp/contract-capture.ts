@@ -171,6 +171,10 @@ export async function fireContract(from: string, conversationId: string): Promis
 			grupo: offer.grupo,
 			creditValue: offer.creditValue,
 			monthlyPayment: offer.monthlyPayment,
+			// FIX-39/40: paridade com o card web — prazo e lance médio do grupo
+			// (defensivos no formatter; ausentes → linha omitida).
+			termMonths: offer.termMonths,
+			avgBidValue: offer.avgBidValue,
 		});
 		if (wa.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);

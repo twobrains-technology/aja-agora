@@ -1,4 +1,5 @@
 import type { Category, ExperiencePrev } from "@/lib/agent/personas";
+import type { PlanIntent } from "@/lib/agent/qualify-config";
 
 /**
  * Single source of truth for all client → server actions in the chat.
@@ -16,13 +17,20 @@ export type ChatAction =
 	| {
 			kind: "gate";
 			gate: "credit";
-			// FIX-3 ("Planeje sua conquista"): o gate credit virou o componente
-			// dinâmico de 4 indicadores — os campos extras preenchem os gates
-			// seguintes (timeframe/lance/lance-embutido) e o funil pula o que já
-			// veio (híbrido vendedor: o agente CONFIRMA em vez de re-perguntar).
+			// "Planeje sua conquista" — re-UX guiada por intenção (handoff). O picker
+			// entrega valor + prazo + a INTENÇÃO ("o que mais importa") e, conforme
+			// ela, mês-alvo OU lance. A parcela (`monthlyBudget`) é o RESULTADO
+			// calculado (total/prazo), não escolhida. Esses campos preenchem os gates
+			// seguintes e o funil pula o que já veio (híbrido vendedor: o agente
+			// CONFIRMA em vez de re-perguntar).
 			value: {
 				credit: number;
+				/** Parcela calculada (total/prazo) — alimenta a recomendação. */
 				monthlyBudget: number;
+				/** Prazo do plano escolhido no slider. */
+				termMonths?: number;
+				/** Intenção do segmented control (dirige objetivo + gates pulados). */
+				intent?: PlanIntent;
 				targetMonth?: number;
 				lanceValue?: number;
 				lanceEmbutido?: boolean;

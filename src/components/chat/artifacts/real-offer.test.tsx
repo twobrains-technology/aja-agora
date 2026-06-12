@@ -88,3 +88,69 @@ describe("RealOffer — BUG-PARCELA-STRING: payload com monthlyPayment null não
 		expect(screen.getByTestId("offer-confirm")).toBeDefined();
 	});
 });
+
+// FIX-39 (API nova Bevi 2026-06-12): a oferta de parceiro passou a trazer `prazo`
+// (meses) — o gap que originou o FIX-13 acabou. Quando termMonths chega (fonte
+// REAL, não derivado), o card mostra "Prazo: NN meses" e troca a copy de desculpa
+// por "Demais condições no PDF". Ausente (shape antigo / API volta atrás) → a copy
+// do FIX-13 PERMANECE como fallback. Defensivo (Number.isFinite) — nunca renderiza
+// NaN nem morre (lição BUG-PARCELA-STRING).
+describe("RealOffer — FIX-39: prazo real (campo da API) renderiza; ausente mantém fallback", () => {
+	afterEach(cleanup);
+
+	it("com termMonths: mostra 'Prazo' e 'NN meses' (fonte real, não derivado)", () => {
+		render(<RealOffer payload={{ ...PAYLOAD, termMonths: 72 }} />);
+		expect(screen.getByText("Prazo")).toBeDefined();
+		expect(screen.getByText(/72\s*meses/i)).toBeDefined();
+	});
+
+	it("com termMonths: aposenta a copy de desculpa 'Prazo e demais condições', mantém o PDF pras DEMAIS", () => {
+		const { container } = render(<RealOffer payload={{ ...PAYLOAD, termMonths: 72 }} />);
+		expect(container.textContent ?? "").not.toMatch(/prazo e demais condições/i);
+		expect(screen.getByText(/demais condições.*proposta \(PDF\)/i)).toBeDefined();
+	});
+
+	it("sem termMonths (shape antigo / API volta atrás): mantém copy FIX-13 e não morre", () => {
+		expect(() => render(<RealOffer payload={PAYLOAD} />)).not.toThrow();
+		expect(screen.getByText(/prazo e demais condições/i)).toBeDefined();
+	});
+
+	it("termMonths null/não-finito: não renderiza linha de prazo nem morre (defensivo)", () => {
+		const payload = { ...PAYLOAD, termMonths: null as unknown as number };
+		expect(() => render(<RealOffer payload={payload} />)).not.toThrow();
+		expect(screen.queryByText("Prazo")).toBeNull();
+		expect(screen.getByText(/prazo e demais condições/i)).toBeDefined();
+	});
+});
+
+// FIX-40 (API nova Bevi 2026-06-12): a oferta de parceiro ganhou `lanceMedio` (R$
+// do grupo). Quando presente, o card mostra "Lance médio do grupo: R$ X" (rótulo
+// LITERAL do campo — sem prometer contemplação, regra D11). Ausente → omite a linha
+// e não morre (lição BUG-PARCELA-STRING).
+describe("RealOffer — FIX-40: lance médio do grupo (campo da API) renderiza; ausente omite", () => {
+	afterEach(cleanup);
+
+	it("com avgBidValue: mostra 'Lance médio do grupo' e o valor em R$ (rótulo literal)", () => {
+		render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
+		expect(screen.getByText(/lance médio do grupo/i)).toBeDefined();
+		expect(screen.getByText(/69\.361/)).toBeDefined();
+	});
+
+	it("rótulo NÃO promete contemplação (sem 'contemplação'/'garante'/'chance')", () => {
+		const { container } = render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
+		const text = container.textContent ?? "";
+		expect(text).not.toMatch(/contempl|garant|chance/i);
+	});
+
+	it("sem avgBidValue: NÃO renderiza a linha de lance médio", () => {
+		render(<RealOffer payload={PAYLOAD} />);
+		expect(screen.queryByText(/lance médio do grupo/i)).toBeNull();
+	});
+
+	it("avgBidValue null/não-finito: omite a linha e não morre (defensivo)", () => {
+		const payload = { ...PAYLOAD, avgBidValue: null as unknown as number };
+		expect(() => render(<RealOffer payload={payload} />)).not.toThrow();
+		expect(screen.queryByText(/lance médio do grupo/i)).toBeNull();
+		expect(screen.getByTestId("offer-confirm")).toBeDefined();
+	});
+});
