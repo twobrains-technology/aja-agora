@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * Camada 1 — FIX-3: componente "Planeje sua conquista" (passo 2, gate credit).
- * 4 indicadores interligados + lance embutido + estimativa ao vivo com SELO
- * obrigatório de estimativa (decisão aprovada: nunca apresentar como dado
- * real — a Bevi só simula pós-identify).
+ * Camada 1 — "Planeje sua conquista" (passo 2, gate credit) na re-UX GUIADA POR
+ * INTENÇÃO (handoff componentes-aja). O usuário escolhe o que mais importa
+ * (menor parcela / receber rápido / tenho um lance) e só o controle relevante
+ * aparece; a parcela é RESULTADO calmo. SELO de estimativa sempre visível (a Bevi
+ * só simula pós-identify). Aderente à jornada canônica.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -34,15 +35,16 @@ const payload: PlanGatePartData = {
 		step: 1_000,
 		default: 25_000,
 	},
-	monthly: {
-		id: "monthlyBudget",
-		label: "Parcela mensal",
-		format: "currency",
-		min: 150,
-		max: 2_500,
-		step: 50,
-		default: 500,
+	term: {
+		id: "term",
+		label: "Em quantos meses quer pagar",
+		format: "months",
+		min: 24,
+		max: 80,
+		step: 6,
+		default: 60,
 	},
+	intentDefault: "parcela",
 	targetMonthDefault: 6,
 };
 
@@ -55,20 +57,18 @@ afterEach(() => {
 	cleanup();
 });
 
-describe("FIX-3 — PlanEstimatePicker", () => {
-	it("renderiza os 4 indicadores + lance embutido + estimativa ao vivo", () => {
+describe("PlanEstimatePicker — re-UX guiada por intenção (handoff)", () => {
+	it("renderiza valor do bem + segmented (3 intenções) + prazo + resultado calmo", () => {
 		render(<PlanEstimatePicker payload={payload} />);
 		const text = document.body.textContent ?? "";
-		expect(text).toContain("Valor do bem");
-		expect(text).toContain("Quando você quer usar o valor");
-		expect(text).toContain("Parcela mensal");
-		expect(text).toContain("Lance que você consegue dar");
-		expect(text).toContain("Considerar lance embutido?");
-		// educação do docx no próprio componente
-		expect(text).toMatch(/parte do próprio valor do bem|não tem.*em dinheiro hoje/);
-		// estimativa ao vivo
+		expect(text).toContain("Quanto custa o que você quer?");
+		expect(text).toContain("O que mais importa pra você agora?");
+		expect(screen.getByTestId("plan-intent-parcela")).toBeDefined();
+		expect(screen.getByTestId("plan-intent-rapido")).toBeDefined();
+		expect(screen.getByTestId("plan-intent-lance")).toBeDefined();
+		expect(text).toContain("Em quantos meses quer pagar");
+		expect(text).toContain("Sua parcela fica em");
 		expect(screen.getByTestId("plan-estimate")).toBeDefined();
-		expect(text).toContain("Parcela estimada");
 	});
 
 	it("SELO de estimativa SEMPRE visível (regra de produto)", () => {
@@ -78,7 +78,28 @@ describe("FIX-3 — PlanEstimatePicker", () => {
 		);
 	});
 
-	it("submit envia o gate credit com mês-alvo e lance (preenche os gates seguintes)", () => {
+	it("intenção 'menor parcela' (default): sem mês-alvo e sem bloco de lance", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		expect(screen.queryByTestId("plan-target")).toBeNull();
+		expect(screen.queryByTestId("plan-lance-block")).toBeNull();
+	});
+
+	it("intenção 'receber rápido' revela o mês-alvo de contemplação", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		fireEvent.click(screen.getByTestId("plan-intent-rapido"));
+		expect(screen.getByTestId("plan-target")).toBeDefined();
+		expect(document.body.textContent).toContain("Quero ser contemplado em até");
+	});
+
+	it("intenção 'tenho um lance' revela valor do lance + lance embutido", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		fireEvent.click(screen.getByTestId("plan-intent-lance"));
+		expect(screen.getByTestId("plan-lance-block")).toBeDefined();
+		expect(screen.getByTestId("plan-embutido")).toBeDefined();
+		expect(document.body.textContent).toContain("Somar lance embutido");
+	});
+
+	it("submit envia credit + parcela CALCULADA + termMonths + intent (sem mês-alvo/lance)", () => {
 		render(<PlanEstimatePicker payload={payload} />);
 		fireEvent.click(screen.getByTestId("plan-submit"));
 		expect(sendAction).toHaveBeenCalledTimes(1);
@@ -86,75 +107,40 @@ describe("FIX-3 — PlanEstimatePicker", () => {
 		expect(action.kind).toBe("gate");
 		expect(action.gate).toBe("credit");
 		expect(action.value.credit).toBe(25_000);
-		expect(action.value.monthlyBudget).toBe(500);
-		expect(action.value.targetMonth).toBe(6);
-		expect(action.value.lanceValue).toBe(0);
+		expect(action.value.termMonths).toBe(60);
+		expect(action.value.intent).toBe("parcela");
+		// parcela é resultado calculado (total/prazo), não input
+		expect(action.value.monthlyBudget).toBeGreaterThan(0);
+		// intenção "parcela" não manda mês-alvo nem lance
+		expect("targetMonth" in action.value).toBe(false);
+		expect("lanceValue" in action.value).toBe(false);
 	});
 
-	it("lance embutido NÃO decidido → action sem o campo (gate da conversa cobre a educação)", () => {
+	it("submit na intenção 'tenho um lance' carrega lanceValue + lanceEmbutido", () => {
 		render(<PlanEstimatePicker payload={payload} />);
-		fireEvent.click(screen.getByTestId("plan-submit"));
-		const [action] = sendAction.mock.calls[0];
-		expect("lanceEmbutido" in action.value).toBe(false);
-	});
-
-	it("lance embutido decidido no componente → action carrega a decisão", () => {
-		render(<PlanEstimatePicker payload={payload} />);
+		fireEvent.click(screen.getByTestId("plan-intent-lance"));
 		fireEvent.click(screen.getByTestId("plan-embutido"));
 		fireEvent.click(screen.getByTestId("plan-submit"));
 		const [action] = sendAction.mock.calls[0];
+		expect(action.value.intent).toBe("lance");
 		expect(action.value.lanceEmbutido).toBe(true);
-	});
-});
-
-describe("FIX-18 — warning de inviabilidade orçamento × bem (confronto no picker)", () => {
-	// Bem alto (teto) + parcela baixa (piso) → a parcela não fecha o bem nem no
-	// prazo máximo realista. O picker tem que confrontar com tom de guia.
-	const inviavel: PlanGatePartData = {
-		kind: "plan",
-		gate: "credit",
-		category: "moto",
-		credit: {
-			id: "credit",
-			label: "Valor do bem",
-			format: "currency",
-			min: 8_000,
-			max: 80_000,
-			step: 1_000,
-			default: 80_000,
-		},
-		monthly: {
-			id: "monthlyBudget",
-			label: "Parcela mensal",
-			format: "currency",
-			min: 150,
-			max: 2_500,
-			step: 50,
-			default: 150,
-		},
-		targetMonthDefault: 6,
-	};
-
-	it("parcela não fecha o bem → aviso orientando ajuste (tom guia, não erro)", () => {
-		render(<PlanEstimatePicker payload={inviavel} />);
-		const warn = screen.getByTestId("plan-budget-warning");
-		expect(warn).toBeDefined();
-		// orienta pro bem que cabe + convite a ajustar (sem empurrar/bloquear)
-		expect(warn.textContent ?? "").toMatch(/cabe|ajustar/i);
+		expect("lanceValue" in action.value).toBe(true);
 	});
 
-	it("combinação viável → SEM aviso de inviabilidade", () => {
+	it("submit na intenção 'receber rápido' carrega o mês-alvo", () => {
 		render(<PlanEstimatePicker payload={payload} />);
-		expect(screen.queryByTestId("plan-budget-warning")).toBeNull();
+		fireEvent.click(screen.getByTestId("plan-intent-rapido"));
+		fireEvent.click(screen.getByTestId("plan-submit"));
+		const [action] = sendAction.mock.calls[0];
+		expect(action.value.intent).toBe("rapido");
+		expect(typeof action.value.targetMonth).toBe("number");
 	});
 });
 
 describe("QA-crítico P2 — lance clampa quando o valor do bem diminui", () => {
 	it("clampLanceToAsset rebaixa o lance pro teto de 80% do bem (fonte única da regra)", async () => {
 		const { clampLanceToAsset } = await import("@/lib/consorcio/plan-estimate");
-		// usuário tinha 20k de lance com bem de 25k; reduziu o bem pra 8k
 		expect(clampLanceToAsset(20_000, 8_000)).toBe(6_400);
-		// dentro do teto, passa intacto; nunca negativo
 		expect(clampLanceToAsset(4_000, 20_000)).toBe(4_000);
 		expect(clampLanceToAsset(-5, 20_000)).toBe(0);
 	});

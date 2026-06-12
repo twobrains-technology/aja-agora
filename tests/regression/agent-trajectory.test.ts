@@ -47,6 +47,7 @@ import {
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -3229,34 +3230,50 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 });
 
 // ============================================================================
-// FIX-3 (visão do Kairo, design aprovado 2026-06-05) — "Planeje sua conquista"
-// no gate credit: 4 indicadores interligados + híbrido vendedor
+// "Planeje sua conquista" no gate credit — RE-UX GUIADA POR INTENÇÃO (handoff
+// componentes-aja, 2026-06-12). Kairo apontou os 4 sliders simultâneos como
+// "não era pra existir dessa forma mais".
 // ----------------------------------------------------------------------------
-// O gate credit deixou de ser 2 sliders simples: virou o componente dinâmico
-// (valor do bem · quando quer usar · parcela · lance · lance embutido) em modo
-// ESTIMATIVA DE MERCADO (selo obrigatório — a Bevi não simula sem CPF, D1).
-// Os campos extras preenchem qualifyAnswers e o funil PULA os gates já
-// respondidos; o agente confirma como VENDEDOR (sem re-perguntar). O simulador
-// do passo 4 PERMANECE (números reais da oferta ativa — FIX-6).
+// Os 4 sliders simultâneos (valor · quando · parcela · lance) confundiam. A forma
+// correta (handoff): valor do bem + segmented "O QUE MAIS IMPORTA" (menor parcela
+// / receber rápido / tenho um lance) + prazo, com a parcela como RESULTADO calmo
+// (não input). Só o controle relevante da intenção aparece. Aderente à jornada
+// canônica (valor → prioridade/tempo → lance). Modo ESTIMATIVA DE MERCADO (selo
+// obrigatório — a Bevi não simula sem CPF, D1). O `objetivo` da Bevi sai da
+// INTENÇÃO; o agente confirma a PRIORIDADE como VENDEDOR (sem re-perguntar). O
+// funil continua pulando os gates já respondidos. Simulador do passo 4 PERMANECE.
 //
-// Defesas detalhadas: plan-estimate.test.ts (engine),
-// plan-estimate-picker.test.tsx (componente), route (gate credit estendido).
+// Defesas detalhadas: plan-estimate.test.ts (engine: prazo como input),
+// plan-estimate-picker.test.tsx (componente: segmented + condicionais), route.
 // ============================================================================
 
-describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-pergunta", () => {
-	it("estrutural: gate credit serve o componente plan (não os 2 sliders simples)", () => {
+describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)", () => {
+	it("estrutural: gate credit serve o picker por intenção (term slider + intentDefault, sem monthly)", () => {
 		const src = readSource("src/lib/web/adapter.ts");
 		expect(src).toMatch(/kind: "plan"/);
+		expect(src).toMatch(/term: termSlider/);
+		expect(src).toMatch(/intentDefault/);
 		expect(src).toMatch(/targetMonthDefault/);
+		// a forma antiga (slider de parcela como input) não pode voltar
+		expect(src).not.toMatch(/monthly: monthlySlider/);
 	});
 
-	it("estrutural: route consome targetMonth/lanceValue/lanceEmbutido do componente", () => {
+	it("estrutural: componente é guiado por intenção (segmented control), não 4 sliders", () => {
+		const src = readSource("src/components/chat/artifacts/plan-estimate-picker.tsx");
+		expect(src).toMatch(/O que mais importa pra você agora/);
+		expect(src).toMatch(/plan-intent-/);
+		// a parcela é resultado calmo, não um slider "Parcela mensal" de entrada
+		expect(src).toMatch(/Sua parcela fica em/);
+		expect(src).not.toMatch(/label="Parcela mensal"/);
+	});
+
+	it("estrutural: route deriva o objetivo da Bevi da INTENÇÃO (não só do mês-alvo)", () => {
 		const src = readSource("src/app/api/chat/route.ts");
-		expect(src).toMatch(/targetMonth/);
+		expect(src).toMatch(/objetivoForIntent/);
 		expect(src).toMatch(/buildPlanReactionDirective/);
 	});
 
-	it("híbrido vendedor: directive confirma SEM re-perguntar e proíbe tools", () => {
+	it("híbrido vendedor: directive reforça a PRIORIDADE, confirma SEM re-perguntar e proíbe tools", () => {
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
 		const start = directives.indexOf("function buildPlanReactionDirective");
 		expect(start, "buildPlanReactionDirective precisa existir").toBeGreaterThan(-1);
@@ -3264,6 +3281,7 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		expect(body).toMatch(/VENDEDOR/i);
 		expect(body).toMatch(/SEM re-perguntar/i);
 		expect(body).toMatch(/NAO chame tools/i);
+		expect(body).toMatch(/[Pp]rioridade/);
 	});
 
 	it("funil: plano completo via componente pula direto pro identify (nada re-perguntado)", () => {
@@ -3307,6 +3325,38 @@ describe("FIX-3-PLANEJE-SUA-CONQUISTA — gate credit dinâmico + funil sem re-p
 		const src = readSource("src/components/chat/artifacts/plan-estimate-picker.tsx");
 		expect(src).toMatch(/Estimativa de mercado/);
 		expect(src).toMatch(/valores reais v[eê]m das administradoras/);
+	});
+
+	// BUG (E2E 2026-06-12): após escolher "Menor parcela" no segmented, o agente
+	// RE-PERGUNTAVA "em quanto tempo você quer o carro?" (gate timeframe). A
+	// intenção JÁ define a prioridade de tempo — tem que preencher prazoMeses pro
+	// funil pular o timeframe (híbrido vendedor: confirma SEM re-perguntar).
+	it("intenção mapeia o prazo de contemplação (parcela=sem pressa, lance=antecipa)", () => {
+		expect(prazoMesesForIntent("parcela")).toBeGreaterThanOrEqual(120); // sem pressa → investimento
+		expect(prazoMesesForIntent("lance")).toBeLessThan(12); // lance antecipa
+		expect(prazoMesesForIntent("rapido")).toBeLessThan(120); // mira contemplar logo
+	});
+
+	it("funil NÃO re-pergunta timeframe quando a intenção já definiu o prazo", () => {
+		// qualifyAnswers como o route monta a partir de "Menor parcela" (sem mês-alvo).
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMin: 68_000,
+				creditMax: 80_000,
+				monthlyBudget: 1_278,
+				prazoMeses: prazoMesesForIntent("parcela"),
+				objetivo: "investimento",
+			},
+		};
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+	});
+
+	it("estrutural: route deriva prazoMeses da INTENÇÃO (não deixa o funil re-perguntar)", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		expect(src).toMatch(/prazoMesesForIntent/);
 	});
 });
 

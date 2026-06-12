@@ -8,17 +8,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
+import type { PlanIntent } from "@/lib/agent/qualify-config";
 import { useChatContext } from "@/lib/chat/provider";
 import type { PlanGatePartData } from "@/lib/chat/ui-message";
-import { clampLanceToAsset, computePlanEstimate } from "@/lib/consorcio/plan-estimate";
+import {
+	clampLanceToAsset,
+	computePlanEstimate,
+	TYPICAL_ADMIN_FEE_PCT,
+} from "@/lib/consorcio/plan-estimate";
+import { cn } from "@/lib/utils";
 
-// FIX-3 — "Planeje sua conquista" (passo 2, gate credit). Componente dinâmico
-// do Bernardo na visão do Kairo: 4 indicadores interligados (valor do bem ·
-// quando quer usar · parcela mensal · lance disponível) + opt-in de lance
-// embutido com a educação do docx. Mexeu num indicador → estimativa recalcula
-// ao vivo. TUDO aqui é ESTIMATIVA DE MERCADO (selo obrigatório) — a Bevi só
-// simula com CPF (identify, D1); os números reais chegam no reveal e no
-// simulador do passo 4 (oferta ativa, FIX-6).
+// "Planeje sua conquista" (passo 2, gate credit) — re-UX GUIADA POR INTENÇÃO
+// (handoff componentes-aja). Os 4 sliders simultâneos confundiam; agora o usuário
+// escolhe O QUE MAIS IMPORTA ("menor parcela" / "receber rápido" / "tenho um
+// lance") e só o controle relevante aparece. A parcela é o RESULTADO calmo
+// (total / prazo), não input. Aderente à jornada canônica (valor → prioridade/
+// tempo → lance). TUDO aqui é ESTIMATIVA DE MERCADO (selo obrigatório) — a Bevi só
+// simula com CPF (identify, D1); os números reais chegam no reveal e no simulador
+// do passo 4 (oferta ativa).
 
 const brl = (v: number) =>
 	v >= 1_000_000
@@ -29,6 +36,12 @@ const brl = (v: number) =>
 
 const brlExact = (v: number) =>
 	`R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const INTENTS: { value: PlanIntent; label: string }[] = [
+	{ value: "parcela", label: "Menor parcela" },
+	{ value: "rapido", label: "Receber rápido" },
+	{ value: "lance", label: "Tenho um lance" },
+];
 
 export function PlanEstimatePicker({
 	payload,
@@ -42,46 +55,73 @@ export function PlanEstimatePicker({
 	const [submitted, setSubmitted] = useState(false);
 
 	const [assetValue, setAssetValue] = useState(payload.credit.default);
+	const [intent, setIntent] = useState<PlanIntent>(payload.intentDefault);
+	const [termMonths, setTermMonths] = useState(payload.term.default);
 	const [targetMonth, setTargetMonth] = useState(payload.targetMonthDefault);
-	const [monthlyBudget, setMonthlyBudget] = useState(payload.monthly.default);
 	const [lanceValueRaw, setLanceValue] = useState(0);
-	// QA-crítico P2: o teto do lance acompanha o valor do bem — se o usuário
-	// reduz o bem, o lance EFETIVO rebaixa pro teto novo (clamp derivado, sem
-	// estado duplicado): clampLanceToAsset é a fonte única da regra (testada
-	// em plan-estimate.test.ts).
+	const [lanceEmbutido, setLanceEmbutido] = useState(false);
+
+	const withTarget = intent === "rapido";
+	const withLance = intent === "lance";
+
+	// QA-crítico P2: o teto do lance acompanha o valor do bem — clamp derivado, sem
+	// estado duplicado (clampLanceToAsset é a fonte única, testada em
+	// plan-estimate.test.ts).
 	const lanceValue = clampLanceToAsset(lanceValueRaw, assetValue);
 	const lanceMax = Math.round(assetValue * 0.8);
-	// null = não decidiu (gate de lance embutido continua na conversa);
-	// true/false = decisão tomada aqui mesmo.
-	const [lanceEmbutido, setLanceEmbutido] = useState<boolean | null>(null);
+
+	// Mês-alvo efetivo: escolhido só na intenção "receber rápido"; nas demais usa o
+	// default só pra dimensionar a estimativa de lance, nunca passa do prazo.
+	const effectiveTargetMonth = Math.min(
+		withTarget ? targetMonth : payload.targetMonthDefault,
+		termMonths,
+	);
 
 	const estimate = useMemo(
 		() =>
 			computePlanEstimate({
 				category: payload.category,
 				assetValue,
-				targetMonth,
-				monthlyBudget,
-				lanceValue,
-				lanceEmbutido: lanceEmbutido === true,
+				termMonths,
+				targetMonth: effectiveTargetMonth,
+				lanceValue: withLance ? lanceValue : 0,
+				lanceEmbutido: withLance && lanceEmbutido,
 			}),
-		[payload.category, assetValue, targetMonth, monthlyBudget, lanceValue, lanceEmbutido],
+		[
+			payload.category,
+			assetValue,
+			termMonths,
+			effectiveTargetMonth,
+			withLance,
+			lanceValue,
+			lanceEmbutido,
+		],
 	);
+
+	const feePct = TYPICAL_ADMIN_FEE_PCT[payload.category];
+	const total = Math.round(assetValue * (1 + feePct / 100));
 
 	const submit = () => {
 		if (submitted || isStreaming) return;
 		setSubmitted(true);
-		const label = `${brl(assetValue)} · em ~${targetMonth} meses · ${brl(monthlyBudget)}/mês${lanceValue > 0 ? ` · lance ${brl(lanceValue)}` : " · sem lance"}`;
+		const intentLabel = INTENTS.find((i) => i.value === intent)?.label ?? "";
+		const label =
+			`${brl(assetValue)} · ${termMonths} meses · ${intentLabel}` +
+			(withTarget ? ` · contemplar em ~${effectiveTargetMonth}m` : "") +
+			(withLance && lanceValue > 0 ? ` · lance ${brl(lanceValue)}` : "");
 		void sendAction(
 			{
 				kind: "gate",
 				gate: "credit",
 				value: {
 					credit: assetValue,
-					monthlyBudget,
-					targetMonth,
-					lanceValue,
-					...(lanceEmbutido !== null ? { lanceEmbutido } : {}),
+					// parcela é o RESULTADO calmo (calculada), não escolhida — alimenta a
+					// recomendação com a parcela que o prazo escolhido produz.
+					monthlyBudget: estimate.monthlyPayment,
+					termMonths,
+					intent,
+					...(withTarget ? { targetMonth: effectiveTargetMonth } : {}),
+					...(withLance ? { lanceValue, lanceEmbutido } : {}),
 				},
 				label,
 			},
@@ -98,7 +138,7 @@ export function PlanEstimatePicker({
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
 			<Card className="overflow-hidden rounded-[18px] border-[#bcd3ff] shadow-lg">
-				<CardContent className="space-y-3 p-3.5">
+				<CardContent className="space-y-3.5 p-3.5">
 					<p className="flex items-center gap-2 text-sm font-medium">
 						<span className="flex size-[26px] items-center justify-center rounded-full bg-[var(--surface-ink)] p-1.5">
 							<SunMark variant="white" className="size-full" />
@@ -106,9 +146,9 @@ export function PlanEstimatePicker({
 						Planeje sua conquista
 					</p>
 
-					{/* 1 — Valor do bem */}
+					{/* Valor do bem */}
 					<IndicatorSlider
-						label="Valor do bem"
+						label="Quanto custa o que você quer?"
 						value={assetValue}
 						display={brl(assetValue)}
 						min={payload.credit.min}
@@ -118,112 +158,139 @@ export function PlanEstimatePicker({
 						testId="plan-asset"
 					/>
 
-					{/* 2 — Quando quer usar */}
-					<IndicatorSlider
-						label="Quando você quer usar o valor"
-						value={targetMonth}
-						display={`em ~${targetMonth} ${targetMonth === 1 ? "mês" : "meses"}`}
-						min={1}
-						max={estimate.termMonths}
-						step={1}
-						onChange={setTargetMonth}
-						testId="plan-target"
-					/>
-
-					{/* 3 — Parcela mensal */}
-					<IndicatorSlider
-						label="Parcela mensal"
-						value={monthlyBudget}
-						display={`${brl(monthlyBudget)}/mês`}
-						min={payload.monthly.min}
-						max={payload.monthly.max}
-						step={payload.monthly.step}
-						onChange={setMonthlyBudget}
-						testId="plan-monthly"
-					/>
-
-					{/* 4 — Lance disponível */}
-					<IndicatorSlider
-						label="Lance que você consegue dar"
-						value={lanceValue}
-						display={lanceValue > 0 ? brl(lanceValue) : "sem lance"}
-						min={0}
-						max={lanceMax}
-						step={payload.credit.step / 10 >= 100 ? Math.round(payload.credit.step / 10) : 100}
-						onChange={setLanceValue}
-						testId="plan-lance"
-					/>
-
-					{/* 5 — Lance embutido (educação do docx + opt-in) */}
-					<div className="space-y-1.5 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
-						<div className="flex items-center justify-between gap-2">
-							<span className="text-xs font-medium">Considerar lance embutido?</span>
-							<Checkbox
-								checked={lanceEmbutido === true}
-								onCheckedChange={(v) => setLanceEmbutido(v === true)}
-								disabled={isStreaming}
-								data-testid="plan-embutido"
-							/>
+					{/* Segmented control: o que mais importa (dirige os controles abaixo) */}
+					<div className="space-y-1.5">
+						<span className="text-xs font-medium text-muted-foreground">
+							O que mais importa pra você agora?
+						</span>
+						{/* biome-ignore lint/a11y/useSemanticElements: segmented custom (radiogroup) */}
+						<div
+							role="radiogroup"
+							aria-label="O que mais importa pra você agora?"
+							className="grid grid-cols-3 gap-1 rounded-xl bg-[#eef2f7] p-1"
+						>
+							{INTENTS.map((opt) => (
+								<button
+									key={opt.value}
+									type="button"
+									role="radio"
+									aria-checked={intent === opt.value}
+									disabled={isStreaming}
+									onClick={() => setIntent(opt.value)}
+									data-testid={`plan-intent-${opt.value}`}
+									className={cn(
+										"rounded-lg px-1.5 py-2 text-xs font-medium transition-colors",
+										intent === opt.value
+											? "bg-primary text-primary-foreground shadow-sm"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									{opt.label}
+								</button>
+							))}
 						</div>
-						<p className="text-xs text-muted-foreground">
-							O lance embutido usa parte do próprio valor do bem como lance — ajuda quem não tem
-							todo o valor do lance em dinheiro hoje.
-						</p>
 					</div>
 
-					{/* Estimativa ao vivo */}
+					{/* Prazo do plano (sempre presente) */}
+					<IndicatorSlider
+						label="Em quantos meses quer pagar"
+						value={termMonths}
+						display={`${termMonths} ${termMonths === 1 ? "mês" : "meses"}`}
+						min={payload.term.min}
+						max={payload.term.max}
+						step={payload.term.step}
+						onChange={setTermMonths}
+						testId="plan-term"
+					/>
+
+					{/* Condicional "receber rápido" → mês-alvo de contemplação */}
+					{withTarget ? (
+						<IndicatorSlider
+							label="Quero ser contemplado em até"
+							value={effectiveTargetMonth}
+							display={`${effectiveTargetMonth} ${effectiveTargetMonth === 1 ? "mês" : "meses"}`}
+							min={1}
+							max={termMonths}
+							step={1}
+							onChange={setTargetMonth}
+							testId="plan-target"
+						/>
+					) : null}
+
+					{/* Condicional "tenho um lance" → valor do lance + embutido */}
+					{withLance ? (
+						<div className="space-y-3" data-testid="plan-lance-block">
+							<IndicatorSlider
+								label="Quanto você tem pra dar de lance"
+								value={lanceValue}
+								display={lanceValue > 0 ? brl(lanceValue) : "sem lance"}
+								min={0}
+								max={lanceMax}
+								step={payload.credit.step / 10 >= 100 ? Math.round(payload.credit.step / 10) : 100}
+								onChange={setLanceValue}
+								testId="plan-lance"
+							/>
+							<div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
+								<div className="min-w-0">
+									<span className="text-xs font-medium">Somar lance embutido</span>
+									<p className="text-[11px] text-muted-foreground">
+										Usa parte do próprio valor do bem como lance — ajuda quem não tem todo o lance em
+										dinheiro hoje.
+									</p>
+								</div>
+								<Checkbox
+									checked={lanceEmbutido}
+									onCheckedChange={(v) => setLanceEmbutido(v === true)}
+									disabled={isStreaming}
+									data-testid="plan-embutido"
+								/>
+							</div>
+						</div>
+					) : null}
+
+					{/* Resultado calmo — a parcela como consequência, em faixa creme */}
 					<div
-						className="space-y-1 rounded-xl bg-[var(--aja-cream)] px-3.5 py-3"
+						className="space-y-1 rounded-2xl bg-[var(--aja-cream)] px-4 py-3.5"
 						data-testid="plan-estimate"
 					>
-						<Row label="Parcela estimada" value={`${brlExact(estimate.monthlyPayment)}/mês`} />
-						<Row label="Prazo estimado" value={`${estimate.termMonths} meses`} />
-						{estimate.mode === "lance" ? (
-							<>
-								<Row
-									label={`Lance estimado pro mês ${targetMonth}`}
-									value={`${brl(estimate.requiredLanceValue)} (~${estimate.requiredLancePct}%)`}
-								/>
-								{lanceEmbutido === true && estimate.embeddedBidValue > 0 ? (
-									<>
-										<Row label="↳ sai do valor do bem" value={brl(estimate.embeddedBidValue)} />
-										<Row label="↳ do bolso" value={brl(estimate.ownCashNeeded)} />
-										<Row label="Valor que você recebe" value={brl(estimate.receivedCredit)} />
-									</>
-								) : null}
-								{!estimate.lanceCoberto ? (
-									<p className="text-xs text-muted-foreground">
-										Seu lance declarado ainda não cobre essa estimativa — dá pra ajustar o mês-alvo
-										ou considerar o lance embutido.
-									</p>
-								) : null}
-							</>
-						) : (
-							<Row label="Contemplação" value="sorteio pode bastar" />
-						)}
-						<p className="flex items-start gap-1 text-[11px] text-muted-foreground">
-							<Info className="size-3 mt-0.5 shrink-0" />
+						<span className="text-xs font-medium text-muted-foreground">Sua parcela fica em</span>
+						<div className="flex items-baseline gap-1.5">
+							<motion.b
+								key={estimate.monthlyPayment}
+								initial={{ scale: 1.04 }}
+								animate={{ scale: 1 }}
+								className="text-[1.75rem] font-bold leading-none tabular-nums text-[var(--surface-ink)]"
+							>
+								{brlExact(estimate.monthlyPayment)}
+							</motion.b>
+							<span className="text-sm text-muted-foreground">/mês</span>
+						</div>
+						<p className="text-[11px] text-muted-foreground">
+							{brl(total)} no total · taxa de {feePct}% já inclusa
+						</p>
+
+						{withTarget && estimate.mode === "lance" ? (
+							<Row
+								label={`Lance pra contemplar no mês ${effectiveTargetMonth}`}
+								value={`${brl(estimate.requiredLanceValue)} (~${estimate.requiredLancePct}%)`}
+							/>
+						) : null}
+						{withLance ? (
+							<p
+								className={cn("text-[11px]", estimate.lanceCoberto ? "text-success" : "text-warning")}
+								data-testid="plan-lance-feedback"
+							>
+								{estimate.lanceCoberto
+									? "✓ Com esse lance dá pra antecipar bem a contemplação."
+									: "Seu lance ajuda, mas ainda não cobre contemplar logo no começo."}
+							</p>
+						) : null}
+
+						<p className="flex items-start gap-1 pt-0.5 text-[11px] text-muted-foreground">
+							<Info className="mt-0.5 size-3 shrink-0" />
 							Estimativa de mercado — os valores reais vêm das administradoras na próxima etapa.
 						</p>
 					</div>
-
-					{/* FIX-18: a parcela declarada não fecha o valor do bem nem no prazo
-					    máximo realista — confronto honesto com tom de guia (decisão do
-					    Kairo). Orienta pro bem que cabe e convida a ajustar, sem bloquear. */}
-					{!estimate.budgetFeasible ? (
-						<div
-							className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
-							data-testid="plan-budget-warning"
-						>
-							<Info className="size-3.5 mt-0.5 shrink-0 text-amber-600" />
-							<span>
-								Com <strong>{brl(monthlyBudget)}/mês</strong>, o bem que cabe é{" "}
-								<strong>~{brl(estimate.viableAssetForBudget)}</strong>. Pra um bem de{" "}
-								{brl(assetValue)}, a parcela precisaria ser bem maior — dá pra ajustar o valor do
-								bem ou a parcela.
-							</span>
-						</div>
-					) : null}
 
 					<Button
 						onClick={submit}

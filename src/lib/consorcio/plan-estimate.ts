@@ -40,8 +40,14 @@ export interface PlanEstimateInput {
 	assetValue: number;
 	/** Quando ele quer usar o valor (mês-alvo da contemplação). */
 	targetMonth: number;
-	/** Parcela que ele consegue pagar (R$/mês). Quando dada, o prazo estimado
-	 * se ajusta a ela (interligação parcela↔prazo). */
+	/** Prazo do plano em meses escolhido DIRETO no slider (handoff, re-UX guiada
+	 * por intenção). Quando dado, tem PRECEDÊNCIA sobre o típico/derivado — a
+	 * parcela passa a ser `total / termMonths`. É o modelo novo: o usuário escolhe
+	 * valor + prazo + intenção, e a parcela é o RESULTADO calmo. */
+	termMonths?: number;
+	/** Parcela que ele consegue pagar (R$/mês). LEGADO do picker de 4 sliders —
+	 * quando dada (e sem `termMonths`), o prazo estimado se ajusta a ela
+	 * (interligação parcela↔prazo). Mantido pra retrocompat de texto livre. */
 	monthlyBudget?: number;
 	/** Lance que ele consegue dar do bolso (R$). 0/ausente = sem lance. */
 	lanceValue?: number;
@@ -98,10 +104,15 @@ export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 	const monthlyBudget = input.monthlyBudget && input.monthlyBudget > 0 ? input.monthlyBudget : 0;
 	const hasBudget = monthlyBudget > 0;
 
-	// Interligação parcela↔prazo: usuário definiu a parcela → o prazo estimado
-	// é o necessário pra caber nela (clamp entre 12m e 1.5× o prazo típico).
+	// Prazo do plano. PRECEDÊNCIA (handoff, re-UX por intenção): se o usuário
+	// escolheu o prazo direto no slider, é ele — a parcela vira o resultado calmo
+	// `total / termMonths`. Sem prazo direto, cai no modelo legado: deriva da
+	// parcela declarada (interligação parcela↔prazo, clamp 12m..1.5× típico) ou
+	// usa o típico da categoria.
 	let termMonths = typicalTerm;
-	if (hasBudget && assetValue > 0) {
+	if (input.termMonths != null && input.termMonths > 0) {
+		termMonths = Math.max(1, Math.round(input.termMonths));
+	} else if (hasBudget && assetValue > 0) {
 		termMonths = Math.round(clamp(total / monthlyBudget, 12, maxTerm));
 	}
 
