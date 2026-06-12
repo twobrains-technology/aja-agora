@@ -7,7 +7,7 @@
   pre-commit verde em cada commit. E2E Playwright do bloco R se o ambiente
   permitir (senão impedimento técnico concreto registrado). Bloco Q (FIX-31)
   já concluído antes do /to-saindo (commit 8f11ee2).
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO
 
 ## Decisões
 
@@ -83,8 +83,37 @@
   pre-commit (toca src/lib/agent/; ANTHROPIC_API_KEY presente em .env.local).
 - **Reversibilidade:** média (toca prompt + 9 arquivos; campos do meta aditivos).
 
-## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:** _pendente_
-- **O que NÃO fiz e por quê:** _pendente_
-- **Revisar primeiro:** _pendente_
-- **Próximos passos sugeridos:** _pendente_
+## Linha do tempo (cont.)
+- 01:15 — Verificação final. E2E do R falhou 1× por **Turbopack virtiofs stale**
+  no container (simulation-result.tsx "Expected '</', got '<eof>'" — arquivo
+  íntegro, tsc 0 erro) após o hot reload das mudanças de P/N. `docker restart`
+  do app limpou o cache → `/chat` 200 → E2E **3/3 verde**. (Memória conhecida:
+  [[project_turbopack_virtiofs_stale]].) Teardown do app do workspace.
+
+## Relatório final
+- **Resultado vs critério de pronto: ✅ ATINGIDO.** 5/5 blocos completos, cada
+  um TDD strict (teste visto FALHAR antes do fix), 1 commit `test+fix:`, item em
+  `done/`, pasta do bloco removida:
+  - Q · FIX-31 (eco do handoff duplicava a bolha) — `8f11ee2`
+  - R · FIX-32 (auto-scroll brigava com o gesto) — `3663229` · E2E Playwright 3/3
+  - O · FIX-28 (outras opções duplicadas) — `ce2cc3e` · investigação DB registrada
+  - P · FIX-30 (lance total rotulado como embutido) — `c04eea8`
+  - N · FIX-27 (opt-in pedia número já informado) — `072b80e` · Camada 3 LLM verde
+  - Evidência fresca: suite Camadas 1+2 **1514 verde**, tsc **0 erro em produção**,
+    pre-commit verde por commit (N rodou Camada 3 LLM real).
+- **O que NÃO fiz e por quê:**
+  - `bloco-s-funil-canonico` — fora do escopo deste pedido (segue em `todo/`).
+  - **push / PR** — não pedido; a branch é tua, deixei os 5 commits locais pra tua
+    revisão/PR.
+  - **done-report** — são bugfixes (não feature visível nova); este diário cobre.
+- **Revisar primeiro:**
+  - **D3** (bloco N) — o mais invasivo: stage "confirm" + `contractRetryPending`
+    tocam o system-prompt e 9 arquivos. Olhar a UX do card de confirmação 1-clique
+    e a lógica de supressão em retry de fechamento.
+  - **D2** (bloco R) — E2E via `page.route` + SSE fake (intercepta 100% a rede; o
+    `/api/chat` real dá 500 no dev por DB sem schema). A regressão dura é a Camada 1.
+  - **FIX-28** — exclusão da recomendada por equivalência via `recommendedOffer`
+    (o meta não tem groupId, confirmado no DB) — não por groupId como o item sugeria.
+  - **FIX-30** — semântica AGX (perguntas 7/8) ficou como `TODO(AGX)` no mapper.
+- **Próximos passos sugeridos:** revisar e abrir PR da branch; executar o bloco-s;
+  responder as perguntas 7/8 à AGX pra destravar o `TODO` do FIX-30.
