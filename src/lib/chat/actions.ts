@@ -58,6 +58,9 @@ export type ChatAction =
 	// outras ofertas da descoberta (sem free-run do modelo).
 	| { kind: "show-other-options"; label?: string }
 	| { kind: "whatsapp_optin"; phone: string }
+	// FIX-27: número já informado → confirmação de canal sem re-digitar (o route
+	// usa o telefone já salvo no lead). Consentimento LGPD preservado.
+	| { kind: "whatsapp_optin_confirm" }
 	| { kind: "whatsapp_optin_decline" }
 	// ── Passo 5 "Contratar" (fechamento Bevi) ──
 	// Form de contratação: CPF + celular + aceite LGPD → cria proposta real + simula.

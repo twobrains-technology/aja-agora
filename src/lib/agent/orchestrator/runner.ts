@@ -216,6 +216,15 @@ export async function* runAgentTurn(args: {
 								// falha de decrypt/DB não pode derrubar o turno — form vazio.
 							}
 						}
+						// FIX-27: opt-in com número JÁ capturado (lead form/identify) →
+						// confirmação de 1 clique. knownPhone mascarado vem do meta (LGPD).
+						// Sem contactPhone, o card cai no modo coleta normal.
+						if (artifactType === "whatsapp_optin" && meta.contactPhone) {
+							payload = {
+								...(typeof input === "object" && input !== null ? input : {}),
+								knownPhone: meta.contactPhone,
+							};
+						}
 						// FIX-C3: números do card de simulação SEMPRE do retorno real do
 						// simulate_quota — o modelo alucinava campos (receivedCredit =
 						// carta cheia com embutido de 49%).

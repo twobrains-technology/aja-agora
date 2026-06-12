@@ -84,3 +84,35 @@ describe("WhatsappOptin", () => {
 		expect(input.disabled).toBe(true);
 	});
 });
+
+// FIX-27 (bloco-n): número já informado → confirmação 1-clique, sem input vazio.
+describe("FIX-27 — confirmação 1-clique com knownPhone", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+		mockSendAction.mockClear();
+	});
+
+	it("com knownPhone: mostra o número mascarado e NÃO mostra input de coleta", () => {
+		render(<WhatsappOptin payload={{ knownPhone: "(62) 9...-6793" }} />);
+		expect(screen.getByText(/\(62\) 9\.\.\.-6793/)).toBeDefined();
+		expect(document.querySelector("input[type='tel']")).toBeNull();
+	});
+
+	it("com knownPhone: confirmar dispara whatsapp_optin_confirm (sem re-digitar)", () => {
+		render(<WhatsappOptin payload={{ knownPhone: "(62) 9...-6793" }} />);
+		fireEvent.click(screen.getByRole("button", { name: /pode|sim|confirmar/i }));
+		expect(mockSendAction).toHaveBeenCalledTimes(1);
+		expect(mockSendAction.mock.calls[0][0]).toEqual({ kind: "whatsapp_optin_confirm" });
+	});
+
+	it("com knownPhone: 'usar outro número' revela o input de coleta", () => {
+		render(<WhatsappOptin payload={{ knownPhone: "(62) 9...-6793" }} />);
+		fireEvent.click(screen.getByRole("button", { name: /outro n[úu]mero/i }));
+		expect(document.querySelector("input[type='tel']")).not.toBeNull();
+	});
+
+	it("sem knownPhone (payload vazio): modo legado com input de coleta", () => {
+		render(<WhatsappOptin payload={{}} />);
+		expect(document.querySelector("input[type='tel']")).not.toBeNull();
+	});
+});

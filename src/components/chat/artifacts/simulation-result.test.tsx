@@ -221,6 +221,57 @@ describe("FIX-8 — lance estimado p/ contemplar nunca rende R$ 0,00", () => {
 	});
 });
 
+// FIX-30 (teste manual Kairo 2026-06-11): card exibia "COM LANCE EMBUTIDO
+// (74,43%)" + "recebe R$ 80.000" (carta cheia) na mesma tela — contradição.
+// Regra: nunca exibir % embutido + recebe carta cheia juntos; o lance estimado
+// p/ contemplar (real) fica na seção de lance, não some.
+describe("FIX-30 — não exibe % embutido + recebe carta cheia juntos", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	const cartaCheia = {
+		...basePayload,
+		creditValue: 80_000,
+		lanceScenario: { lancePercent: 74.43, expectedTermMonths: 6 },
+		embeddedBid: {
+			percent: 30,
+			embeddedBidValue: 24_000,
+			receivedCredit: 80_000, // = carta cheia → contradição com embutido
+			necessaryBidToContemplate: 59_544,
+		},
+	} as SimulationResultPayload;
+
+	it("embutido incoerente (recebe a carta CHEIA) → seção 'lance embutido' OMITIDA", () => {
+		render(<SimulationResult payload={cartaCheia} />);
+		expect(document.body.textContent).not.toContain("Com lance embutido");
+	});
+
+	it("o lance estimado p/ contemplar (real) continua visível mesmo sem o embutido", () => {
+		render(<SimulationResult payload={cartaCheia} />);
+		expect(document.body.textContent).toContain("Lance estimado p/ contemplar");
+		expect(document.body.textContent).toMatch(/59\.544/);
+	});
+
+	it("embutido COERENTE (recebido < carta) segue exibindo a seção", () => {
+		render(
+			<SimulationResult
+				payload={{
+					...basePayload,
+					creditValue: 80_000,
+					embeddedBid: {
+						percent: 30,
+						embeddedBidValue: 24_000,
+						receivedCredit: 56_000, // < carta
+						necessaryBidToContemplate: 34_520,
+					},
+				}}
+			/>,
+		);
+		expect(document.body.textContent).toContain("Com lance embutido");
+	});
+});
+
 // FIX-7 (teste manual Kairo 2026-06-05): CTA "Tenho interesse" duplicado —
 // botão interno do card + action igual vinda do payload (modelo).
 describe("FIX-7 — CTA duplicado filtrado", () => {

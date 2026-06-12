@@ -37,7 +37,7 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 		case "financing_comparison":
 			return <FinancingComparison payload={artifact.payload} />;
 		case "whatsapp_optin":
-			return <WhatsappOptin />;
+			return <WhatsappOptin payload={artifact.payload} />;
 		case "decision_prompt":
 			return <DecisionPrompt payload={artifact.payload} />;
 		case "contract_form":

@@ -2,11 +2,19 @@
 
 import { ArrowDown } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type TouchEvent as ReactTouchEvent,
+	type WheelEvent as ReactWheelEvent,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import type { AjaUIMessage, GatePartOption, TransitionPartData } from "@/lib/chat/ui-message";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
+import { isNearBottom } from "./scroll-intent";
 
 type Category = "imovel" | "auto" | "moto" | "servicos";
 
@@ -20,41 +28,63 @@ interface MessageListProps {
 export function MessageList({ messages, isStreaming, hasError, onRetry }: MessageListProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const sentinelRef = useRef<HTMLDivElement>(null);
-	const [isAtBottom, setIsAtBottom] = useState(true);
+	// `stick` = INTENÇÃO de acompanhar o fundo (não só estar nele). Inicia colado.
+	// O gesto do usuário (wheel/touch pra cima, ou rolar pra longe do fundo)
+	// SEMPRE vence e solta o stick — inclusive durante o streaming. Voltar ao
+	// fundo, ou clicar no pill, religa. FIX-32: separa intenção de posição.
+	const [stick, setStick] = useState(true);
+	// Distingue scroll PROGRAMÁTICO (nosso) de gesto do usuário, pra o onScroll
+	// não religar/soltar o stick por causa do auto-scroll.
+	const programmaticRef = useRef(false);
+	const touchStartY = useRef<number | null>(null);
 
-	// Track whether user is at the bottom via IntersectionObserver
-	useEffect(() => {
-		const sentinel = sentinelRef.current;
-		if (!sentinel) return;
-
-		const observer = new IntersectionObserver(
-			([entry]) => {
-				setIsAtBottom(entry.isIntersecting);
-			},
-			{
-				root: scrollContainerRef.current,
-				threshold: 0.5,
-			},
-		);
-
-		observer.observe(sentinel);
-		return () => observer.disconnect();
+	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+		programmaticRef.current = true;
+		sentinelRef.current?.scrollIntoView({ behavior });
+		// Libera no próximo frame — depois que o scroll programático assentou.
+		requestAnimationFrame(() => {
+			programmaticRef.current = false;
+		});
 	}, []);
 
-	// Auto-scroll when at bottom or streaming
+	// Auto-scroll SÓ quando colado. Sem `|| isStreaming` (FIX-32 Defeito 1): se o
+	// usuário soltou o stick durante o streaming, o conteúdo cresce mas a posição
+	// dele é preservada — o scroll não disputa com o gesto.
 	useEffect(() => {
-		if (isAtBottom || isStreaming) {
-			sentinelRef.current?.scrollIntoView({
-				behavior: isStreaming ? "auto" : "smooth",
-			});
-		}
-	}, [messages, isStreaming, isAtBottom]);
+		if (!stick) return;
+		scrollToBottom(isStreaming ? "auto" : "smooth");
+	}, [messages, isStreaming, stick, scrollToBottom]);
 
-	const scrollToBottom = useCallback(() => {
-		sentinelRef.current?.scrollIntoView({ behavior: "smooth" });
+	// Posição real do scroll governa a intenção (substitui o IntersectionObserver
+	// do sentinel — FIX-32 Defeito 2). Ignora o nosso próprio scroll programático.
+	const handleScroll = useCallback(() => {
+		const el = scrollContainerRef.current;
+		if (!el || programmaticRef.current) return;
+		setStick(isNearBottom(el));
 	}, []);
+
+	// Gesto explícito de subir solta o stick na hora — antes mesmo do scroll
+	// mudar — pra matar a briga durante o streaming.
+	const handleWheel = useCallback((e: ReactWheelEvent) => {
+		if (e.deltaY < 0) setStick(false);
+	}, []);
+	const handleTouchStart = useCallback((e: ReactTouchEvent) => {
+		touchStartY.current = e.touches[0]?.clientY ?? null;
+	}, []);
+	const handleTouchMove = useCallback((e: ReactTouchEvent) => {
+		const start = touchStartY.current;
+		const cur = e.touches[0]?.clientY ?? null;
+		// dedo descendo (cur > start) = conteúdo sobe = usuário quer o histórico
+		if (start != null && cur != null && cur - start > 8) setStick(false);
+	}, []);
+
+	const onPillClick = useCallback(() => {
+		setStick(true);
+		scrollToBottom("smooth");
+	}, [scrollToBottom]);
 
 	const hasMessages = messages.length > 0;
+	const showPill = !stick && hasMessages;
 
 	return (
 		<div
@@ -63,6 +93,10 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 			className="flex-1 overflow-y-auto"
 			role="log"
 			aria-live="polite"
+			onScroll={handleScroll}
+			onWheel={handleWheel}
+			onTouchStart={handleTouchStart}
+			onTouchMove={handleTouchMove}
 		>
 			<div className="flex flex-col gap-6 px-4 py-4 sm:px-6">
 				{!hasMessages && <EmptyState />}
@@ -94,13 +128,13 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 				<div ref={sentinelRef} className="h-20 shrink-0" aria-hidden="true" />
 			</div>
 
-			{/* Scroll-to-bottom pill when user has scrolled up */}
-			{!isAtBottom && hasMessages && (
+			{/* Scroll-to-bottom pill — aparece quando o usuário soltou o stick */}
+			{showPill && (
 				<div className="sticky bottom-4 flex justify-center">
 					<Button
 						variant="secondary"
 						size="sm"
-						onClick={scrollToBottom}
+						onClick={onPillClick}
 						className="gap-1.5 rounded-full shadow-md"
 					>
 						<ArrowDown className="size-3.5" />

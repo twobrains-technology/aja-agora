@@ -4,6 +4,8 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations, leads, messages as messagesTable } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { maskPhoneForDisplay } from "@/lib/conversation/identity";
+import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { handoffToAgents } from "@/lib/whatsapp/proxy";
@@ -86,6 +88,14 @@ export async function POST(req: NextRequest) {
 				email: parsed.data.email ?? null,
 			});
 			leadId = created.leadId;
+		}
+
+		// FIX-27: telefone do lead capturado → marca no meta (MASCARADO, LGPD) pra
+		// o opt-in de WhatsApp virar CONFIRMAÇÃO de canal em vez de re-coletar o
+		// número que o usuário já informou aqui.
+		const maskedPhone = maskPhoneForDisplay(parsed.data.phone);
+		if (maskedPhone) {
+			await persistMeta(conversationId as string, { ...metaOf(conv), contactPhone: maskedPhone });
 		}
 
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)

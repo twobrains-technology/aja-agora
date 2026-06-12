@@ -7,7 +7,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { artifacts as artifactsTable, conversations } from "@/db/schema";
+import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import {
 	buildCreditReactionDirective,
@@ -39,7 +39,12 @@ import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/
 import type { ChatAction } from "@/lib/chat/actions";
 import { publishMessage } from "@/lib/chat/message-bus";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
-import { isValidCpf, loadIdentity, storeIdentity } from "@/lib/conversation/identity";
+import {
+	isValidCpf,
+	loadIdentity,
+	maskPhoneForDisplay,
+	storeIdentity,
+} from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -96,6 +101,24 @@ export function lastUserText(
 		if (typeof msg.content === "string" && msg.content.length > 0) {
 			return msg.content;
 		}
+	}
+	return null;
+}
+
+// FIX-31: o branch handed_off ecoa a user message no bus pro atendente. O eco
+// PRECISA preservar o id original do cliente — o provider dedupa por id, e um
+// id novo (crypto.randomUUID) nunca casa com o id otimista do useChat, então a
+// bolha aparecia 2×. Pega o id da última mensagem `user` do payload (a que o
+// useChat acabou de appendar localmente). Null quando ausente → caller faz
+// fallback pra UUID novo (não pior que o comportamento legado).
+export function lastUserMessageId(
+	messages: ({ role?: string; id?: unknown } | unknown)[] | undefined,
+): string | null {
+	if (!messages) return null;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i] as { role?: string; id?: unknown };
+		if (msg?.role !== "user") continue;
+		return typeof msg.id === "string" && msg.id.length > 0 ? msg.id : null;
 	}
 	return null;
 }
@@ -251,7 +274,7 @@ export async function POST(req: NextRequest) {
 		const userName = conv.contactName ?? "Cliente";
 		await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
-			id: crypto.randomUUID(),
+			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),
 			role: "user",
 			content: userText,
 			createdAt: simulatorNow().toISOString(),
@@ -383,6 +406,31 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
+						if (body.action?.kind === "whatsapp_optin_confirm") {
+							// FIX-27: número JÁ informado (lead form/identify) — confirma o
+							// canal sem re-digitar. Lê o telefone real já salvo (lead →
+							// identity) e marca o consentimento (LGPD: aceite explícito).
+							const greetName = contactName ? `, ${contactName}` : "";
+							const lead = await db.query.leads.findFirst({
+								where: eq(leads.conversationId, conversationId),
+								columns: { phone: true },
+							});
+							const phone =
+								lead?.phone ?? (await loadIdentity(conversationId).catch(() => null))?.celular;
+							if (phone) {
+								const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+								await saveContactWhatsapp(conversationId, phone);
+							}
+							await persistMeta(conversationId, { ...meta, whatsappOptinShown: true });
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								`Perfeito${greetName}! Pode deixar — se precisar, te chamo no seu WhatsApp. ✅`,
+							);
+							return;
+						}
+
 						if (body.action?.kind === "whatsapp_optin_decline") {
 							await persistMeta(conversationId, {
 								...meta,
@@ -510,11 +558,22 @@ export async function POST(req: NextRequest) {
 									conversationId,
 									meta.currentPersona ?? null,
 								);
+								// FIX-27: proposta criada → telefone capturado (mascarado) p/ o
+								// opt-in virar confirmação; limpa retry pendente de tentativa anterior.
+								const okMeta = await reloadMeta(conversationId);
+								await persistMeta(conversationId, {
+									...okMeta,
+									contactPhone: maskPhoneForDisplay(celular),
+									contractRetryPending: false,
+								});
 							} catch (err) {
 								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
 								// diagnóstico impossível. Logar SEMPRE o erro original (lição
 								// empty-env-compose: tool errors logados). CPF nunca no log.
-								console.error(`[contract-submit] startContract falhou (conv=${conversationId})`, err);
+								console.error(
+									`[contract-submit] startContract falhou (conv=${conversationId})`,
+									err,
+								);
 								const delta =
 									err instanceof MinCreditError
 										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
@@ -522,6 +581,17 @@ export async function POST(req: NextRequest) {
 											? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
 											: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
 								await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
+								// FIX-27: erro genérico de fechamento (não config/min-credit) →
+								// retry pendente (o opt-in não atropela a re-tentativa) + telefone
+								// capturado (mascarado) pra confirmação posterior.
+								if (!(err instanceof MinCreditError) && !(err instanceof BeviConfigError)) {
+									const fresh = await reloadMeta(conversationId);
+									await persistMeta(conversationId, {
+										...fresh,
+										contactPhone: maskPhoneForDisplay(celular),
+										contractRetryPending: true,
+									});
+								}
 							}
 							return;
 						}

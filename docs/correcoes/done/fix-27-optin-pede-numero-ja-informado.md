@@ -1,7 +1,9 @@
 ---
 id: FIX-27
 titulo: "Opt-in de WhatsApp pede o número DEPOIS que ele já foi informado 2× (lead form + identify) — card abre vazio, sem prefill"
-status: todo
+status: done
+commit: 4c3099c
+executado_em: 2026-06-12
 bloco: bloco-n-optin-redundante
 arquivos:
   - src/lib/agent/system-prompt.ts (deriveWhatsappOptinStage + seção "open")
@@ -86,3 +88,26 @@ sido respondido em qualquer forma.
   present_whatsapp_optin pedindo número; turno re-tenta o fechamento.
 - Camada 3: cenário de eval — jornada com lead form preenchido → fechamento →
   erro → "sim": assert de que nenhuma re-coleta de telefone acontece.
+
+### Execução (2026-06-12) — seguiu a recomendação (stage "confirm" 1-clique)
+
+- **Meta:** `contactPhone` (MASCARADO, LGPD — `maskPhoneForDisplay` em
+  identity.ts) + `contractRetryPending`. Setados no `leads/route.ts` (lead form)
+  e no `chat/route.ts` contract-submit (celular do identify; retry no erro Bevi
+  genérico, limpo no sucesso).
+- **Derive (`system-prompt.ts`):** `deriveWhatsappOptinStage` ganhou o stage
+  `"confirm"` (telefone capturado → confirma o canal, não re-coleta) e retorna
+  `"done"` quando há retry de fechamento pendente. Seção `whatsappOptinSection
+  ("confirm")` instrui a confirmação sem re-pedir o número.
+- **Determinismo:** `shouldEmitWhatsappOptin` (tool-policy) suprime o card em
+  retry pendente. O `runner.ts` enriquece o payload do `whatsapp_optin` com
+  `knownPhone` (igual contract_form/identity).
+- **UI:** `whatsapp-optin.tsx` aceita `payload.knownPhone` → confirmação de 1
+  clique (número mascarado + "Pode sim" / "Usar outro número" / "Agora não"),
+  sem input vazio. Action `whatsapp_optin_confirm` usa o número já salvo (lead →
+  identity) — sem re-digitar. `artifact-renderer` passa o payload.
+- **Camadas:** C1 (derive/section/guard/mask/componente/leads route — vistos
+  FALHAR antes) + C2 (cassette `agent-trajectory.test.ts`: re-coleta dispara o
+  detector; confirmação não; + acoplamento runner/route/leads) + C3 (eval LLM no
+  pre-commit, src/lib/agent/ tocado). Suite Camadas 1+2 verde (1514). 0 erro de
+  tipo em produção (tsc).

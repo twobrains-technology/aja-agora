@@ -1,12 +1,14 @@
 ---
 id: FIX-28
 titulo: "'Quero ver outras opções' mostra cards duplicados — buildOtherOptions não dedupa ofertas equivalentes nem exclui a recomendada por id"
-status: todo
+status: done
 bloco: bloco-o-outras-opcoes-dedupe
 arquivos:
   - src/lib/bevi/other-options.ts
 rodada: 2026-06-11 (testes manuais do Kairo no dev, pós-deploy da auditoria do dial)
 anotado_em: 2026-06-11
+commit: 3dc1fb2
+executado_em: 2026-06-12
 ---
 
 # FIX-28 — "Outras opções" exibe a mesma oferta duplicada
@@ -39,6 +41,26 @@ Provado no código — o fluxo é DETERMINÍSTICO (`route.ts` kind
   `meta.recommendedAdministradora` não populado. Confirmar com query na
   conversa antes de codar.
 
+### Achado da investigação no DB do dev (2026-06-12 — confirma a hipótese pendente)
+
+Query no DB do dev (`db.aja-feat-jornada-bevi-lance-embutido`):
+
+- `recommendedAdministradora` **ESTÁ populado** pós-reveal (BANCO DO BRASIL ×3,
+  ITAÚ ×3, RODOBENS ×1, ÂNCORA ×1 — todas com `recommendedOffer` presente).
+- **O meta NUNCA guarda groupId** da cota recomendada: `recommendedGroupId`
+  presente em **0/10** conversas. Logo "excluir por groupId" é **impossível
+  sem tocar o reveal** (fora do escopo de arquivo do bloco O = só
+  `other-options.ts`).
+- O `recommendedOffer` (8/10 conversas) traz a chave de equivalência COMPLETA:
+  `{administradora, creditValue, termMonths, monthlyPayment}` — ex. conversa
+  ÂNCORA `a85e8315`: `{auto, 98m, 150000, ÂNCORA, 1954.55}`. Uso ele pra
+  exclusão por equivalência (substituto pragmático e preciso do groupId).
+- **Confirmado o 2º defeito**: havendo recomendada ÂNCORA, o filtro atual por
+  NOME (`g.administradora !== recommendedAdministradora`) **remove TODAS as
+  cotas ÂNCORA** — inclusive ofertas DIFERENTES e válidas da mesma
+  administradora — degradando "outras opções" a 0 (throw) OU, se o nome não
+  bate (acento/case/undefined), não remove nada e as duplicatas passam.
+
 ### Correção proposta
 
 | O quê | Onde |
@@ -59,3 +81,18 @@ Provado no código — o fluxo é DETERMINÍSTICO (`route.ts` kind
   cotas duplicadas → retorna deduplicado; recomendada excluída por id mesmo
   com nome igual. (Código não-agêntico puro — rota determinística — cassette
   dispensado pela regra do CLAUDE.md; camada 1 cobre.)
+
+### Execução (2026-06-12)
+
+- **Fix em `other-options.ts`:** dedupe por chave de equivalência de negócio
+  (`equivKey` = administradora|creditValue|monthlyPayment|termMonths) num loop com
+  `break` em 2 (no lugar do `slice(0, 2)`); exclusão da recomendada por
+  equivalência via `meta.recommendedOffer` (preciso — o meta não tem groupId,
+  confirmado no DB) com fallback por nome quando ausente; degradação honesta
+  mantém o throw quando sobra 0.
+- **Camada 1:** 3 testes novos em `other-options.test.ts` (dedupe; exclusão por
+  equivalência com mesma adm ÂNCORA; degradação) — vistos FALHAR antes (cards
+  idênticos / throw por filtro de nome). Os 3 testes anteriores seguem verdes.
+- **Camada 2:** atualizado o invariante estrutural em
+  `tests/regression/agent-trajectory.test.ts` (acoplamento show-other-options):
+  `slice(0, 2)` → `others.length === 2` + asserts de `recommendedOffer`/dedupe.

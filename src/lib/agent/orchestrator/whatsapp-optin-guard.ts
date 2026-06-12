@@ -16,5 +16,8 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
  */
 export function shouldEmitWhatsappOptin(meta: ConversationMetadata): boolean {
 	if (meta.revealCompleted !== true) return false;
+	// FIX-27: fechamento com erro Bevi pendente — o opt-in não atropela o retry
+	// da proposta (determinismo na tool-policy, não só no prompt).
+	if (meta.contractRetryPending === true) return false;
 	return meta.whatsappOptinShown !== true;
 }

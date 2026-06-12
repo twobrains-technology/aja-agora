@@ -14,6 +14,7 @@ import {
 } from "react";
 import { generateId } from "@/lib/utils/id";
 import type { ChatAction } from "./actions";
+import { appendBusMessage } from "./bus-merge";
 import type { AjaUIMessage } from "./ui-message";
 
 /** @deprecated Use `ChatAction` from `./actions`. Kept as alias for back-compat. */
@@ -162,10 +163,7 @@ export function ChatProvider({
 					role: m.role,
 					parts: [{ type: "text", text: m.content }],
 				} as AjaUIMessage;
-				setMessagesRef.current((prev) => {
-					if (prev.some((p) => p.id === m.id)) return prev;
-					return [...prev, ui];
-				});
+				setMessagesRef.current((prev) => appendBusMessage(prev, ui));
 			}
 		};
 		source.onerror = () => {

@@ -1,9 +1,11 @@
 ---
 id: FIX-30
 titulo: "Card de simulação rotula o lance TOTAL necessário (74,43%) como 'lance embutido' e mostra 'recebe R$ 80.000' (carta cheia) ao mesmo tempo — contradição na tela"
-status: todo
+status: done
+commit: 71d0809
+executado_em: 2026-06-12
+decisao_pendente: "Semântica bidPercentage/receivedCredit com a AGX (perguntas 7 e 8 da proposta-simulador.md) — a ROTULAGEM honesta foi feita; o que depende da AGX virou TODO(AGX) no offer-mapper.ts"
 bloco: bloco-p-lance-do-card
-decisao_pendente: "Semântica bidPercentage/receivedCredit com a AGX (perguntas 7 e 8 da proposta-simulador.md) — a ROTULAGEM honesta não depende disso e pode ir já"
 arquivos:
   - src/lib/adapters/bevi/offer-mapper.ts (embeddedPercent reusa bidPercentage)
   - src/components/chat/artifacts/simulation-result.tsx (rotulagem do bloco de lance)
@@ -86,3 +88,27 @@ de MAPEAMENTO e ROTULAGEM:
   (não-agêntico); adicionar mesmo assim se a directive/prompt mudar.
 - Camada 3: cenário de eval com oferta de bidPercentage alto — texto do agente
   não chama o lance total de "embutido".
+
+### Execução (2026-06-12)
+
+- **Rotulagem honesta (foi já):**
+  - `offer-mapper.ts`: `embeddedPercent` agora vem do teto REAL
+    (`embeddedBidAcceptancePercentage`, ex "30,00", parseado por
+    `parseBeviAcceptPercent`) — NUNCA mais de `lancePercent` (= bidPercentage =
+    lance total). Sem teto real → default histórico 30 (não herda 74,43%).
+  - `simulation-result.tsx`: o "Lance estimado p/ contemplar" (lance total REAL)
+    migrou pra a seção "Cenário com lance"; a seção "Com lance embutido" só
+    renderiza quando o recebido FECHA (`receivedCredit < creditValue`) — nunca
+    exibe "% embutido" + "recebe a carta cheia" juntos.
+- **TODO(AGX):** a semântica de `receivedCredit` (líquido vs carta cheia) e de
+  `bidPercentage` (perguntas 7/8) ficou marcada como `TODO(AGX...)` no mapper —
+  enquanto não responder, o guardrail de coerência omite o embutido contraditório.
+- **Camadas:**
+  - **Camada 1 (cobre):** 3 testes do mapper (`offer-mapper.test.ts` — captura
+    ÂNCORA jun: bidPercentage 0,7443, receivedCredit 80.000 carta cheia) + 3 do
+    component (`simulation-result.test.tsx`). Vistos FALHAR antes (percent 74,43;
+    "Com lance embutido (30%)" + "recebe R$ 80.000" juntos).
+  - **Camada 2/3 dispensadas** (regra CLAUDE.md): o fix é não-agêntico
+    (mapper + render); o número é coagido server-side, não passa pelo texto do
+    LLM. Suite Camadas 1+2 inteira verde (1493) — nenhum dos 12 consumidores de
+    `embeddedBid` regrediu.

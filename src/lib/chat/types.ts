@@ -174,6 +174,9 @@ export interface FinancingComparisonPayload {
 // O frontend resolve conversationId via context.
 export interface WhatsappOptinPayload {
 	conversationId?: string;
+	/** FIX-27 — telefone MASCARADO já capturado (lead form/identify). Presença →
+	 * o card vira confirmação de 1 clique (sem input vazio de re-coleta). */
+	knownPhone?: string;
 }
 
 // ---- Decision prompt ("Esse plano faz sentido?" — jornada do .docx etapa 4) ----

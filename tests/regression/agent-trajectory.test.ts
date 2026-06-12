@@ -2724,8 +2724,10 @@ describe("REVEAL-ORDER — recomendado em destaque + carrossel das opções no r
 		expect(src).toMatch(/buildOtherOptions/);
 		expect(src).toMatch(/comparison_table/);
 		const lib = readSource("src/lib/bevi/other-options.ts");
-		expect(lib).toMatch(/slice\(0, 2\)/); // docx: "as outras 2"
-		expect(lib).toMatch(/recommendedAdministradora/); // exclui a recomendada
+		expect(lib).toMatch(/others\.length === 2/); // docx: "as outras 2" (FIX-28: loop+break troca o slice)
+		expect(lib).toMatch(/recommendedAdministradora/); // exclui a recomendada (fallback por nome)
+		expect(lib).toMatch(/recommendedOffer/); // FIX-28: exclusão por equivalência (meta não tem groupId)
+		expect(lib).toMatch(/seen\.has|equivKey/); // FIX-28: dedupe das cotas equivalentes
 	});
 
 	it("acoplamento: o botão 'outras' do decision card dispara a action (não texto livre)", () => {
@@ -2884,6 +2886,89 @@ describe("FIX-5-OPTIN-TEXTO-PRE-REVEAL — WhatsApp pedido em texto sem tool, pr
 		expect(idx).toMatch(/deriveWhatsappOptinStage/);
 		const bld = readSource("src/lib/agent/agents/builder.ts");
 		expect(bld).toMatch(/whatsappOptinStage/);
+	});
+});
+
+// ============================================================================
+// FIX-27 (teste manual Kairo 2026-06-11) — opt-in pediu o WhatsApp pela 3ª vez
+// (lead form + identify já tinham coletado), input vazio, no meio de um
+// fechamento com erro Bevi pendente. deriveWhatsappOptinStage só olhava
+// revealCompleted+whatsappOptinShown. Stage novo "confirm" (1-clique) +
+// contactPhone no meta + supressão em retry de fechamento.
+// Defesa estrutural detalhada: system-prompt.fix-27.test.ts.
+// ============================================================================
+
+describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
+	/** Detector: o turno RE-PEDE o número (coleta) em vez de confirmar o canal. */
+	function recollectsKnownPhone(text: string): boolean {
+		return /(me compartilha|anotar|me passa|qual (é |e )?o seu)[^.?!]*whatsapp|seu whatsapp\?/i.test(
+			text,
+		);
+	}
+
+	it("cassette: a fala de RE-COLETA (bug) dispara o detector", async () => {
+		const cassette = "Pra garantir que você não perca o atendimento, me compartilha seu WhatsApp?";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(recollectsKnownPhone(text)).toBe(true);
+	});
+
+	it("cassette: a CONFIRMAÇÃO de canal (stage confirm) NÃO dispara o detector", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Posso te chamar no seu WhatsApp se precisar?"),
+			toolCallChunk("tc-wa-c", "present_whatsapp_optin", {}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(recollectsKnownPhone(text)).toBe(false);
+		expect(toolCalls.some((tc) => tc.toolName === "present_whatsapp_optin")).toBe(true);
+	});
+
+	it("estrutural: derive enxerga telefone capturado (confirm) e suprime em retry (done)", async () => {
+		const { deriveWhatsappOptinStage, whatsappOptinSection } = await import(
+			"@/lib/agent/system-prompt"
+		);
+		expect(
+			deriveWhatsappOptinStage({ revealCompleted: true, contactPhone: "(62) 9...-6793" }),
+		).toBe("confirm");
+		expect(
+			deriveWhatsappOptinStage({
+				revealCompleted: true,
+				contactPhone: "(62) 9...-6793",
+				contractRetryPending: true,
+			}),
+		).toBe("done");
+		// a seção confirm NÃO re-pede o número (já informado).
+		const s = whatsappOptinSection("confirm");
+		expect(s).not.toMatch(/me compartilha seu WhatsApp/i);
+		expect(s).not.toMatch(/anotar seu WhatsApp/i);
+		expect(s).toMatch(/present_whatsapp_optin/);
+	});
+
+	it("estrutural: guard remove present_whatsapp_optin em retry pendente (determinismo)", async () => {
+		const { shouldEmitWhatsappOptin } = await import(
+			"@/lib/agent/orchestrator/whatsapp-optin-guard"
+		);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true, contractRetryPending: true })).toBe(
+			false,
+		);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+	});
+
+	it("estrutural: acoplamento runtime (runner enriquece knownPhone, route confirma, leads marca)", () => {
+		const runner = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runner).toMatch(/whatsapp_optin/);
+		expect(runner).toMatch(/knownPhone/);
+		expect(runner).toMatch(/contactPhone/);
+		const route = readSource("src/app/api/chat/route.ts");
+		expect(route).toMatch(/whatsapp_optin_confirm/);
+		expect(route).toMatch(/contractRetryPending/);
+		const leadsRoute = readSource("src/app/api/leads/route.ts");
+		expect(leadsRoute).toMatch(/contactPhone/);
+		expect(leadsRoute).toMatch(/maskPhoneForDisplay/);
 	});
 });
 

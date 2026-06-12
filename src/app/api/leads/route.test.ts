@@ -71,6 +71,16 @@ describe("POST /api/leads", () => {
 		expect(res.status).toBe(400);
 	});
 
+	it("FIX-27: salvar lead com phone seta contactPhone (mascarado) no meta", async () => {
+		await POST(makeReq({ conversationId: convId, name: "Kairo", phone: "(11) 98765-4321" }));
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		const meta = (conv?.metadata ?? {}) as Record<string, unknown>;
+		// o opt-in passa a enxergar o telefone já informado → vira confirmação
+		expect(meta.contactPhone).toBe("(11) 9...-4321");
+	});
+
 	it("idempotente — segundo submit atualiza, não duplica", async () => {
 		await POST(
 			makeReq({

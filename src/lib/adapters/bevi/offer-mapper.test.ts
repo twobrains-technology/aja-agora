@@ -112,6 +112,42 @@ describe("FIX-8 — necessaryBidToContemplate: dado real ou null (nunca 43% inve
 		const s = beviOfferToQuotaSimulation(offer);
 		expect(s.embeddedBid.necessaryBidToContemplate).toBeNull();
 	});
+});
+
+// FIX-30 (teste manual Kairo 2026-06-11, ofertas ao vivo de jun): a ÂNCORA veio
+// com bidPercentage 0,7443 (= lance TOTAL necessário ÷ carta = 59.544/80.000),
+// receivedCredit 80.000 (carta CHEIA). O mapper reusava lancePercent como
+// embeddedPercent → "COM LANCE EMBUTIDO (74,43%)" + "recebe R$ 80.000" na mesma
+// tela. Três contradições. O embutido REAL é embeddedBidAcceptancePercentage.
+describe("FIX-30 — lance total (bidPercentage) NUNCA vira % embutido", () => {
+	const base = loadFixture("imovel").offers[0];
+	const ancoraJun: BeviOffer = {
+		...base,
+		bidPercentage: 0.7443, // lance TOTAL necessário (não embutido)
+		necessaryBidToContemplate: 59544,
+		receivedCredit: 80000, // carta CHEIA (contradição com embutido)
+		finalValue: 80000,
+		embeddedBidAcceptancePercentage: "30,00", // teto REAL de embutido
+	};
+
+	it("embeddedBid.percent usa o teto REAL de embutido (30), não o lance total (74,43)", () => {
+		const s = beviOfferToQuotaSimulation(ancoraJun);
+		expect(s.embeddedBid.percent).toBe(30);
+		expect(s.embeddedBid.percent).not.toBe(74.43);
+	});
+
+	it("o lance total (74,43%) fica no lanceScenario, separado do embutido", () => {
+		const s = beviOfferToQuotaSimulation(ancoraJun);
+		expect(s.lanceScenario.lancePercent).toBe(74.43); // lance total necessário
+		expect(s.embeddedBid.percent).not.toBe(s.lanceScenario.lancePercent); // semânticas separadas
+	});
+
+	it("sem teto real de embutido → percent NÃO herda o lance total (cai no default 30)", () => {
+		const semTeto: BeviOffer = { ...ancoraJun, embeddedBidAcceptancePercentage: undefined };
+		const s = beviOfferToQuotaSimulation(semTeto);
+		expect(s.embeddedBid.percent).not.toBe(74.43);
+		expect(s.embeddedBid.percent).toBe(30);
+	});
 
 	it("oferta com dado real (> 0) → valor literal preservado", () => {
 		const s = beviOfferToQuotaSimulation(base);

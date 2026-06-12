@@ -1,12 +1,15 @@
 ---
 id: FIX-32
 titulo: "Auto-scroll briga com o usuário durante streaming ('buga tudo' ao rolar pra cima) e, em outro cenário, não acompanha até a resposta nova"
-status: todo
+status: done
 bloco: bloco-r-scroll-inteligente
 arquivos:
   - src/components/chat/message-list.tsx
+  - src/components/chat/scroll-intent.ts (novo — isNearBottom puro)
 rodada: 2026-06-11 (testes manuais do Kairo no dev, pós-deploy da auditoria do dial)
 anotado_em: 2026-06-11
+commit: d7fb211
+executado_em: 2026-06-12
 ---
 
 # FIX-32 — Scroll do chat sem inteligência de intenção do usuário
@@ -71,3 +74,32 @@ useEffect(() => {
 - E2E (Playwright): cenário de streaming longo + wheel up → posição de scroll
   estável; depois clicar no pill → cola no fundo. (Comportamento de UI puro,
   sem LLM — cassette dispensado.)
+
+### Execução (2026-06-12)
+
+- **Decisão de lib (pedida no prompt do bloco):** avaliei `use-stick-to-bottom`
+  e scroll anchoring nativo (`overflow-anchor`). **Optei por implementação
+  própria leve** — não adicionar dependência. Razões: (1) a regra de produto
+  exige separar INTENÇÃO (gesto) de POSIÇÃO, e o gesto vencer inclusive durante
+  streaming — `use-stick-to-bottom` resolve sticky por posição mas não expõe
+  bem "gesto explícito desliga o stick na hora"; (2) a solução cabe em ~40
+  linhas (`stick` state + `isNearBottom` puro + handlers wheel/touch/scroll com
+  flag de scroll programático); (3) `overflow-anchor` nativo não dá controle do
+  pill nem da reativação. Menos superfície, mais testável.
+- **Fix:** removido `|| isStreaming` (Defeito 1) — auto-scroll só quando `stick`.
+  `stick` é solto por gesto (wheel deltaY<0 / touchmove pra cima / rolar pra
+  longe do fundo) e religado ao voltar ao fundo ou clicar no pill. Detecção de
+  "fundo" trocada do IntersectionObserver do sentinel (Defeito 2) por
+  `isNearBottom(container)` (posição real do scroll). `scroll-intent.ts` isola a
+  função pura.
+- **Camada 1 (7 testes, componente REAL + eventos REAIS):** `scroll-intent.test.ts`
+  (isNearBottom) + `message-list.test.tsx` (no fundo→acompanha; wheel durante
+  `isStreaming` NÃO rola; pill aparece e religa). Vistos falhar antes do fix
+  (wheel no streaming rolava; pill inexistente).
+- **E2E (Playwright, browser real):** `tests/e2e/specs/chat-scroll/scroll-intent.spec.ts`
+  — intercepta `/api/chat` com SSE fake (formato AI SDK 6, sem LLM), cobre os 2
+  defeitos: rolar pra cima + enviar nova resposta → scroll NÃO arranca pro
+  fundo; pill religa e cola. **Passou 3×/3** (estável). Nota: o app dev local
+  precisou ser subido (`bootstrap-workspace.sh`) e o E2E intercepta 100% a rede
+  (o `/api/chat` real dá 500 no dev — DB do container sem schema; o
+  migrate-guard só existe no build de prod — fora do escopo deste bloco).

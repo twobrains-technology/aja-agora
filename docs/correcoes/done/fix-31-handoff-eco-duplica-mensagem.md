@@ -1,13 +1,15 @@
 ---
 id: FIX-31
 titulo: "Conversa em handoff: mensagem do usuário aparece DUPLICADA — o backend ecoa a user message no bus com UUID novo e o dedupe por id do provider nunca casa"
-status: todo
+status: done
 bloco: bloco-q-handoff-msg-duplicada
 arquivos:
   - src/app/api/chat/route.ts (branch handed_off ~245-276 — publishMessage com id novo)
   - src/lib/chat/provider.tsx (consumer SSE ~158-168 — dedupe por id)
 rodada: 2026-06-11 (testes manuais do Kairo no dev, pós-deploy da auditoria do dial)
 anotado_em: 2026-06-11
+commit: 7d24e93
+executado_em: 2026-06-12
 ---
 
 # FIX-31 — Eco do handoff duplica a bolha do usuário
@@ -62,3 +64,19 @@ real — o defeito é o próprio cliente web re-receber o eco sem id estável.
 - Camada 1: route test do branch handed_off (eco com id preservado) + teste do
   provider (evento do bus com id já presente não duplica). Fluxo
   determinístico sem LLM — cassette dispensado pela regra do CLAUDE.md.
+
+### Execução (2026-06-12)
+
+- **Versão `ai` pinada**: `^6.0.158` (`@ai-sdk/react ^3.0.177`). As issues
+  vercel/ai #8131 (mensagens repetidas com tools) e #8227 (parts vazando entre
+  mensagens no mesmo stream) **não se aplicam**: nosso root cause é o eco do bus
+  com `crypto.randomUUID()` (provado no código, branch handed_off
+  `route.ts:271`), 100% determinístico e independente do agent loop / tools.
+  Descartado overlap com #8131/#8227.
+- **Fix**: `lastUserMessageId(body.messages)` no `route.ts` ecoa o id ORIGINAL
+  do cliente no `publishMessage` (fallback p/ UUID novo só quando ausente).
+  Dedupe do provider extraído pra `src/lib/chat/bus-merge.ts`
+  (`appendBusMessage`) — testável, sem mexer no comportamento.
+- **Testes (Camada 1)**: `route.handoff-echo.test.ts` (id ecoado == id da última
+  user message — visto FALHAR com UUID aleatório antes do fix) +
+  `bus-merge.test.ts` (dedupe por id não duplica / appenda id novo).

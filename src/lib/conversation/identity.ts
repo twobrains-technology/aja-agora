@@ -40,6 +40,15 @@ export function maskCpf(raw: string): string {
 	return `***.***.${cpf.slice(6, 9)}-${cpf.slice(9)}`;
 }
 
+/** FIX-27 — telefone mascarado pra exibição/confirmação ("(62) 9...-6793").
+ * Guardado no meta (vai pro prompt do LLM): nunca o número em claro. DDD +
+ * últimos 4 dígitos. Número curto/inválido → "" (caller omite). */
+export function maskPhoneForDisplay(raw: string): string {
+	const d = onlyDigits(raw);
+	if (d.length < 10) return "";
+	return `(${d.slice(0, 2)}) 9...-${d.slice(-4)}`;
+}
+
 const KEY_ERROR =
 	"IDENTITY_ENC_KEY ausente ou inválida (esperado: 32 bytes em base64). " +
 	"CPF não pode ser persistido em claro — gere com `openssl rand -base64 32`.";
