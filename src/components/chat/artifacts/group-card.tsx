@@ -10,27 +10,25 @@ import type { GroupCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
+// Categorias mapeadas à paleta da marca (tokens --cat-*, com variante dark
+// embutida): Imóvel=azul · Automóvel=cyan · Moto=coral · Serviços=navy.
 const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; className: string }> =
 	{
 		imovel: {
-			label: "Imovel",
-			className:
-				"bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
+			label: "Imóvel",
+			className: "bg-cat-imovel-soft text-cat-imovel border-cat-imovel/30",
 		},
 		auto: {
-			label: "Auto",
-			className:
-				"bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
+			label: "Automóvel",
+			className: "bg-cat-auto-soft text-cat-auto border-cat-auto/30",
 		},
 		moto: {
 			label: "Moto",
-			className:
-				"bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800",
+			className: "bg-cat-moto-soft text-cat-moto border-cat-moto/30",
 		},
 		servicos: {
-			label: "Servicos",
-			className:
-				"bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800",
+			label: "Serviços",
+			className: "bg-cat-servicos-soft text-cat-servicos border-cat-servicos/30",
 		},
 	};
 

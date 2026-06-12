@@ -4,7 +4,7 @@ import { ArrowLeft, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import LogoSvg from "@/assets/svg/logo";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -58,7 +58,9 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 						<ArrowLeft className="size-4" />
 					</Button>
 					<Link href="/" className="flex items-center gap-2">
-						<LogoSvg className="size-7" />
+						<span className="flex size-7 items-center justify-center rounded-full bg-[var(--surface-ink)]">
+							<SunMark variant="white" className="size-4" />
+						</span>
 						<span className="text-sm font-semibold">Aja Agora</span>
 					</Link>
 				</div>
