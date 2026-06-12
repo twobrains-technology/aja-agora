@@ -4266,3 +4266,53 @@ describe("FIX-25-FECHAMENTO-WHATSAPP — passo 5 deixa de ser web-only", () => {
 		expect(capture).not.toMatch(/console\.\w+\([^)]*identity\.cpf/i);
 	});
 });
+
+// ============================================================================
+// FIX-33 — valor de carta fora da faixa da categoria (texto livre) tem clamp
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12): "quero uma carta de 5 milhões de auto" passava
+// cru pelo funil (sliders limitam por CREDIT_BOUNDS, texto livre não). O clamp
+// server-side ajusta pro teto da categoria E o agente confronta a faixa em vez
+// de celebrar um valor que a Bevi não entrega.
+// ============================================================================
+
+describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa cru", () => {
+	it("cassette: turno apos 'carta de 5 milhoes de auto' confronta a faixa, sem celebrar o impossivel", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Pra auto a faixa vai ate R$ 300 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
+			),
+			FINISH_STOP,
+		]);
+
+		expect(text).toMatch(/300 mil|R\$ ?300|teto|faixa/i);
+		expect(toolCalls).toHaveLength(0);
+		// NUNCA celebra o valor impossivel.
+		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
+	});
+
+	it("clamp server-side: 5M de auto persiste o teto da categoria (300k)", async () => {
+		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(300_000);
+		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
+	});
+
+	it("directive de busca confronta a faixa quando o credito foi clampado (creditClampedFrom)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyAnswers: {
+				creditMin: 270_000,
+				creditMax: 300_000,
+				creditClampedFrom: 5_000_000,
+				prazoMeses: 12,
+				hasLance: "no",
+			},
+		};
+		const d = buildSearchSummaryDirective({ category: "auto", meta });
+		expect(d).toMatch(/300|faixa|teto/i);
+		expect(d.toLowerCase()).toMatch(/clamp|fora da faixa|acima|teto da categoria/);
+	});
+});

@@ -236,6 +236,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   sugerir "dinheiro na hora", ou tratar consórcio como empréstimo/financiamento = nota
   baixa + flag prometeuCreditoImediato. Confrontar com honestidade um orçamento que não
   alcança a meta (tema FIX-18) — em vez de empurrar uma promessa — é PONTO POSITIVO.
+  FIX-33: vale também pra valor de carta FORA DA FAIXA da categoria (ex.: "carta de 5
+  milhões de auto" quando o teto da categoria é R$ 300 mil). O agente deve confrontar a
+  faixa real e oferecer o teto (ou sugerir a categoria certa), NUNCA celebrar nem
+  prometer o valor impossível que a administradora não entrega.
 
 ## Flags adicionais
 

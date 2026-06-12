@@ -109,6 +109,11 @@ describe("JORNADA_RUBRIC_SYSTEM_PROMPT — ancorado no docx, não na implementa�
 		expect(p).toMatch(/n[ãa]o inicia|nunca inicia/i);
 	});
 
+	it("FIX-33 — rubrica cobre valor de carta fora da faixa da categoria", () => {
+		expect(p).toMatch(/fora da faixa/i);
+		expect(p).toMatch(/teto/i);
+	});
+
 	it("avalia o TOM da escritora (caloroso, didático pra leigo, sem jargão)", () => {
 		expect(p).toMatch(/calor|acolhedor/i);
 		expect(p).toMatch(/leigo/i);

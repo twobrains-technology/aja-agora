@@ -17,6 +17,10 @@ export type Objetivo = "contemplacao_rapida" | "investimento";
 export type QualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-33 — valor do bem ORIGINAL pedido por texto livre quando ficou FORA
+	 * da faixa da categoria e foi clampado pro teto/piso. Sinaliza ao agente pra
+	 * confrontar a faixa real ("auto vai até R$ 300 mil"). undefined = sem clamp. */
+	creditClampedFrom?: number;
 	/** Parcela mensal que o usuário consegue pagar (em reais). */
 	monthlyBudget?: number;
 	/** 0 = imediato (lance forte). */

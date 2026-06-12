@@ -34,8 +34,19 @@
 - **Evidência:** 3 camadas. Camada 1: simulation-result.test (roteamento por intent), route.lead-form-prefill.test (invertido, mock do adapter pra determinismo — interest→decision, adjust→ajuste, sem lead_form), directives.test. Camada 2: cassettes FIX-29-INTEREST-NAO-VIRA-LEAD + FIX-29-ADJUST-VALUE. Camada 3: critério "Ajustar valor reabre ajuste, não inicia fechamento" no jornada-rubric.
 - **Lint pré-existente (NÃO meu, fora do escopo):** `and`/`sql` unused import em route.ts:7; useTemplate em cassette alheio; destructure em teste antigo. Não toquei.
 
+### D4 · 00:43 — FIX-33: clamp server-side do valor de carta na faixa da categoria
+- **Contexto:** valor por texto livre ("carta de 5 milhões de auto") não tinha guardrail (sliders limitam, texto não) → passava cru até morrer na Bevi.
+- **Decidi:** `clampCreditToCategory(credit, category)` em qualify-config.ts (usa CREDIT_BOUNDS). `analyze.ts` aplica no merge: clampa creditMax/creditMin e grava `creditClampedFrom` (valor original) quando clampa. `buildSearchSummaryDirective` ganha bloco CONFRONTO DE FAIXA (espírito FIX-18) quando houve clamp.
+- **Reversibilidade:** fácil.
+- **Evidência:** 3 camadas. Camada 1: analyze.test.ts (função pura matriz por categoria + merge). Camada 2: cassette FIX-33-CLAMP-CARTA. Camada 3: critério no jornada-rubric.
+
+## Débitos / observações (NÃO bloqueiam — fora do escopo do bloco)
+- **tsc não é gate no projeto** (CI = biome + vitest/esbuild). Baseline tem ~19 erros de tipo PRÉ-EXISTENTES em testes (formatter.moto 9, system-prompt.acentuacao 2, vários route tests, agent-flow.eval). Não toquei. 1 erro pré-existente sobra no route.lead-form-prefill (cast de cookies no makeReq, idêntico ao route.test.ts).
+- **Lint warnings pré-existentes** em route.ts:7 (and/sql unused import) e cassettes alheios — não introduzidos por mim.
+
 ## Linha do tempo
 - 00:05 — setup (npm ci OK, db up via DB do clone original), baseline estrutural verde (51 testes).
 - 00:16 — FIX-34 verde nas 3 camadas; suíte estrutural 1477; commit 77c80ec.
 - 00:19 — hook bloqueou: ANTHROPIC_API_KEY era placeholder no .env.local; injetei a real do clone original (D1 atualizada).
-- 00:33 — FIX-29 verde nas 3 camadas; suíte estrutural 1487; route.lead-form-prefill 9/9. Commitando.
+- 00:33 — FIX-29 verde nas 3 camadas; suíte estrutural 1487; route.lead-form-prefill 9/9; commit d6e93dd.
+- 00:46 — FIX-33 verde nas 3 camadas; suíte estrutural 1506. Commitando.
