@@ -89,11 +89,29 @@ describe("TurnTrace — acumulador por turno (FIX-21)", () => {
 		expect(r.traceId).toBe("trace-fixed-id");
 		expect(r.handoff).toBe(false);
 		expect(r.transitionedTo).toBeNull();
-		// TODO(bloco-g): suppressões/cache vivem em console.log do runner — null/[]
-		// até o runner emitir TurnEvent dedicado.
+		// Back-compat (FIX-24): sem eventos `suppression`/`usage` no stream, os
+		// campos seguem null/[] — turno legado não regride.
 		expect(r.suppressed).toEqual([]);
 		expect(r.cacheRead).toBeNull();
 		expect(r.cacheWrite).toBeNull();
+	});
+
+	it("preenche suppressed/cacheRead/cacheWrite a partir de eventos suppression+usage (FIX-24)", () => {
+		const { deps } = makeDeps();
+		const trace = new TurnTrace({ conversationId: "conv-2", channel: "whatsapp" }, deps);
+		const events: TurnEvent[] = [
+			{ type: "text-delta", text: "ok" },
+			{ type: "suppression", artifactType: "lead_form", reason: "reveal-loop" },
+			{ type: "suppression", artifactType: "whatsapp_optin", reason: "whatsapp-optin" },
+			{ type: "usage", cacheRead: 12000, cacheWrite: 3400 },
+			{ type: "finish", reason: "ok" },
+		];
+		for (const ev of events) recordTurnEvent(trace, ev);
+		const r = trace.finalize();
+
+		expect(r.suppressed).toEqual(["lead_form", "whatsapp_optin"]);
+		expect(r.cacheRead).toBe(12000);
+		expect(r.cacheWrite).toBe(3400);
 	});
 
 	it("captura persona de transition (web/whatsapp sem persona inicial)", () => {

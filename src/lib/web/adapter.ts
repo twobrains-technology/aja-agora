@@ -291,7 +291,11 @@ export async function pipeOrchestratorToWriter(
 				break;
 
 			case "meta-update":
+			case "suppression":
+			case "usage":
 			case "finish":
+				// FIX-24: telemetria interna — consumida pelo turn-trace, não
+				// vira UI part. No-op no funil de SSE da web.
 				break;
 		}
 	}

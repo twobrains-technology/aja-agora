@@ -17,13 +17,12 @@
 //   • WhatsApp (adapter.ts): tap passthrough sobre o stream de TurnEvents
 //     (`traceTurnEvents` + `recordTurnEvent`).
 //
-// TODO(bloco-g): supressões de guard ([reveal-loop], [post-closure],
-// [contract-gate], [single-option], [whatsapp-optin]) e as métricas de cache
-// (cacheCreation/cacheRead da Anthropic) vivem SÓ em `console.log` dentro do
-// runner.ts (região do bloco G). Para popular `suppressed`/`cacheRead`/
-// `cacheWrite` aqui, o runner precisa emitir TurnEvents dedicados ('suppression'
-// e cache no evento 'finish'). Até lá esses campos saem como [] / null e a
-// trajetória observável já cobre gate/tools/artifacts/latência/finishReason.
+// FIX-24: supressões de guard ([reveal-loop], [post-closure], [contract-gate],
+// [single-option], [whatsapp-optin]) e as métricas de cache (cacheCreation/
+// cacheRead da Anthropic) também viram TurnEvents dedicados ('suppression' e
+// 'usage') emitidos pelo runner. Os `console.log` originais FICAM (cassettes e
+// grep de produção dependem deles) — os eventos são adição, não substituição.
+// Sem esses eventos no stream (turno legado), os campos seguem [] / null.
 
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -47,11 +46,11 @@ export type TurnTraceRecord = {
 	/** Artifacts emitidos (após guards), na ordem. */
 	artifactsEmitted: string[];
 	artifactCount: number;
-	/** TODO(bloco-g): supressões de guard — só no console.log do runner hoje. */
+	/** Artifacts suprimidos por guard neste turno (FIX-24), na ordem. */
 	suppressed: string[];
-	/** TODO(bloco-g): tokens lidos do cache da Anthropic (providerMetadata). */
+	/** Tokens lidos do cache da Anthropic (providerMetadata) — FIX-24. */
 	cacheRead: number | null;
-	/** TODO(bloco-g): tokens gravados no cache da Anthropic. */
+	/** Tokens gravados no cache da Anthropic — FIX-24. */
 	cacheWrite: number | null;
 	/** Soma do texto streamado (proxy de tamanho da resposta). */
 	textChars: number;
@@ -153,8 +152,15 @@ export class TurnTrace {
 	setFinish(reason: string): void {
 		this.finishReason = reason;
 	}
-	// TODO(bloco-g): addSuppression(tag) / setCache(read, write) quando o runner
-	// emitir os TurnEvents dedicados. A forma do record já reserva os campos.
+	/** FIX-24: registra um artifact suprimido por guard neste turno. */
+	addSuppression(artifactType: string): void {
+		this.suppressed.push(artifactType);
+	}
+	/** FIX-24: grava as métricas de cache da Anthropic (último report do turno). */
+	setCache(read: number, write: number): void {
+		this.cacheRead = read;
+		this.cacheWrite = write;
+	}
 
 	toRecord(): TurnTraceRecord {
 		return {
@@ -220,6 +226,12 @@ export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 			break;
 		case "meta-update":
 			if (ev.meta?.currentPersona) trace.setPersona(ev.meta.currentPersona);
+			break;
+		case "suppression":
+			trace.addSuppression(ev.artifactType);
+			break;
+		case "usage":
+			trace.setCache(ev.cacheRead, ev.cacheWrite);
 			break;
 		case "finish":
 			trace.setFinish(ev.reason);
