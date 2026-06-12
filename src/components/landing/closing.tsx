@@ -3,10 +3,11 @@
 import { ArrowRight } from "lucide-react";
 
 import { SunMark } from "@/components/brand/sun-mark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { ScrollReveal } from "@/components/landing/scroll-reveal";
 
 interface ClosingProps {
-	onStart: () => void;
+	onStart: TheaterOpener;
 }
 
 export function Closing({ onStart }: ClosingProps) {
@@ -31,7 +32,7 @@ export function Closing({ onStart }: ClosingProps) {
 						<div className="mt-8 flex flex-wrap items-center justify-center gap-3">
 							<button
 								type="button"
-								onClick={onStart}
+								onClick={(e) => onStart("", e.currentTarget)}
 								className="inline-flex items-center gap-2 rounded-[13px] bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-primary transition-[filter] hover:brightness-105 active:translate-y-px"
 							>
 								Falar com a gente
