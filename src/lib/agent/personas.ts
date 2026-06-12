@@ -117,6 +117,15 @@ export type ConversationMetadata = {
 		name?: string;
 		phone?: string;
 	};
+	/** Passo 5 "Contratar" no canal WhatsApp (FIX-25 / MC-5). Espelho conversacional
+	 * do fluxo de form do web: ativo entre o `contract_form` renderizado e o disparo
+	 * de `startContract`. `confirm` = identidade já on file (FIX-9), aguarda aceite
+	 * LGPD/confirmação; `cpf` = defensivo, identidade ausente, aguarda CPF por texto.
+	 * Limpo após o disparo (real_offer apresentado) ou recusa. WhatsApp-only — o web
+	 * fecha via POST de form (route.ts). */
+	contractCollection?: {
+		stage: "confirm" | "cpf";
+	};
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */
 	maxStageReached?: "engajado" | "qualificado";

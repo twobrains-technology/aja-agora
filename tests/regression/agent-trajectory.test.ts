@@ -44,13 +44,13 @@ import {
 	buildDecisionPromptDirective,
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
-import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
-import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
@@ -2639,8 +2639,12 @@ describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", ()
 
 describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-TROCADA)", () => {
 	it("acoplamento: route passa a recomendada e o pick prefere a marca", () => {
+		// FIX-25: a derivação de administradoraPreferida virou módulo único
+		// (contract-input.ts), consumido por route (web) e contract-capture (WhatsApp).
+		const contractInput = readSource("src/lib/bevi/contract-input.ts");
+		expect(contractInput).toMatch(/administradoraPreferida: meta.recommendedAdministradora/);
 		const route = readSource("src/app/api/chat/route.ts");
-		expect(route).toMatch(/administradoraPreferida: meta.recommendedAdministradora/);
+		expect(route).toMatch(/buildStartContractInput\(meta,/);
 		const pick = readSource("src/lib/adapters/bevi/partner-offer-mapper.ts");
 		expect(pick).toMatch(/preferAdministradora/);
 		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");
@@ -3935,7 +3939,12 @@ describe("FIX-21 — telemetria de trajetória (tap passthrough)", () => {
 		{ type: "text-delta", text: "encaixam no seu perfil:" },
 		{ type: "tool-call", toolName: "search_groups", input: {}, toolCallId: "c1" },
 		{ type: "tool-call", toolName: "simulate_quota", input: {}, toolCallId: "c2" },
-		{ type: "artifact", artifactType: "simulation_result", payload: { administradora: "CANOPUS" }, toolCallId: "c2" },
+		{
+			type: "artifact",
+			artifactType: "simulation_result",
+			payload: { administradora: "CANOPUS" },
+			toolCallId: "c2",
+		},
 		{ type: "lead-stage", stage: "qualificado" },
 		{ type: "gate", gate: "simulator-offer" },
 		{ type: "finish", reason: "ok" },
@@ -3994,5 +4003,93 @@ describe("FIX-21 — telemetria de trajetória (tap passthrough)", () => {
 		const r = trace as unknown as TurnTraceRecord;
 		expect(r.handoff).toBe(true);
 		expect(r.finishReason).toBe("handoff");
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-25 / MC-5 — fechamento Bevi pelo canal WhatsApp
+// ----------------------------------------------------------------------------
+// Gap P1 desde o PR #19: o passo 5 (Contratar) era WEB-ONLY. No WhatsApp o
+// contract_form degradava pra texto pedindo CPF e a conversa MORRIA —
+// `startContract` tinha ZERO referencia em src/lib/whatsapp/. O usuario chegava
+// ao passo 5 e caia no vazio.
+//
+// Fix: maquina de estado `contractCollection` (espelho do leadCollection),
+// captura conversacional do aceite (processor + contract-capture), botoes
+// interactive (contract_confirm/contract_cancel) e disparo de startContract no
+// aceite — terminal identico ao web (contractClosed + Parabens + resumo).
+//
+// Defesa estrutural detalhada:
+//   - src/lib/bevi/contract-input.test.ts (derivacao canonica DRY web+whatsapp)
+//   - src/lib/whatsapp/contract-capture.test.ts (transicoes/aceite/recusa/
+//     ambiguo/idempotencia/revealGuard + CPF nunca em claro)
+//   - src/lib/whatsapp/interactive-handlers.contract.test.ts (botoes + terminal)
+// Aqui: cassette do gatilho (present_contract_form pos-decisao) + acoplamento
+// estrutural da pipeline WhatsApp ao startContract.
+// ============================================================================
+
+describe("FIX-25-FECHAMENTO-WHATSAPP — passo 5 deixa de ser web-only", () => {
+	it("cassette: pos-decisao 'contratar agora' dispara present_contract_form (gatilho do fechamento)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Pra fechar, é rapidinho:"),
+			toolCallChunk("tc-cf25", "present_contract_form", { administradora: "ANCORA" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+	});
+
+	it("WhatsApp: contract_form com identidade on file vira CONFIRMACAO interativa (nao dead-end de CPF)", () => {
+		const wa = artifactToWhatsApp("contract_form", {
+			identityOnFile: true,
+			prefilledCpfMasked: "529.•••.•••-25",
+			administradora: "ANCORA",
+		});
+		expect(wa?.type).toBe("interactive");
+		const interactive = wa?.interactive as
+			| { action?: { buttons?: Array<{ reply: { id: string } }> }; body?: { text?: string } }
+			| undefined;
+		const ids = (interactive?.action?.buttons ?? []).map((b) => b.reply.id);
+		expect(ids).toContain("contract_confirm");
+		expect(ids).toContain("contract_cancel");
+		// nao pede CPF de novo (FIX-9: identidade ja coletada no identify)
+		const body = interactive?.body?.text ?? "";
+		expect(body).not.toMatch(/me manda seu \*CPF\*/i);
+	});
+
+	it("WhatsApp: contract_form SEM identidade cai no pedido de CPF (defensivo)", () => {
+		const wa = artifactToWhatsApp("contract_form", { administradora: "ANCORA" });
+		expect(wa?.type).toBe("text");
+		if (wa?.type === "text") expect(wa.text).toMatch(/CPF/i);
+	});
+
+	it("estrutural: contract-capture dispara startContract e a pipeline WhatsApp esta acoplada", () => {
+		const capture = readSource("src/lib/whatsapp/contract-capture.ts");
+		expect(capture).toMatch(/startContract\(/);
+		expect(capture).toMatch(/buildStartContractInput/);
+		// idempotencia: limpa o estado antes do disparo
+		expect(capture).toMatch(/delete cleared\.contractCollection/);
+
+		const processor = readSource("src/lib/whatsapp/processor.ts");
+		expect(processor).toMatch(/captureContractText/);
+		expect(processor).toMatch(/fireContract/);
+
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		expect(adapter).toMatch(/beginContractCollection/);
+
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(handlers).toMatch(/contract_confirm/);
+		expect(handlers).toMatch(/contract_cancel/);
+		// terminal paridade web: contractClosed + resumo
+		expect(handlers).toMatch(/contractClosed:\s*true/);
+		expect(handlers).toMatch(/sendContractSummary/);
+	});
+
+	it("LGPD estrutural: contract-capture NUNCA loga o CPF em claro", () => {
+		const capture = readSource("src/lib/whatsapp/contract-capture.ts");
+		// nenhum console.* imprimindo a variavel cpf/identity em claro
+		expect(capture).not.toMatch(/console\.\w+\([^)]*\bcpf\b/i);
+		expect(capture).not.toMatch(/console\.\w+\([^)]*identity\.cpf/i);
 	});
 });

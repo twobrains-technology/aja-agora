@@ -105,6 +105,38 @@ export async function processTextMessage(
 			}
 		}
 
+		// Passo 5 "Contratar" (FIX-25): fechamento ativo (contractCollection) →
+		// captura conversacional do aceite/recusa/CPF sem turno de agente.
+		{
+			const {
+				captureContractText,
+				fireContract,
+				CONTRACT_CPF_PROMPT,
+				CONTRACT_INVALID_CPF_REPLY,
+				CONTRACT_REPROMPT_CONFIRM,
+				CONTRACT_CANCELLED_REPLY,
+			} = await import("./contract-capture");
+			const capture = await captureContractText(from, text);
+			if (capture.handled) {
+				const conv = await db.query.conversations.findFirst({
+					where: eq(conversations.waId, from),
+				});
+				if (capture.outcome === "fire" && conv) {
+					await withSimulatorClockIfNeeded(conv, () => fireContract(from, conv.id));
+				} else if (capture.outcome === "cancel") {
+					await sendTextMessage(from, CONTRACT_CANCELLED_REPLY);
+					await processWithOrchestrator(from, "Quero ver outras opções", contactName);
+				} else if (capture.outcome === "invalid-cpf") {
+					await sendTextMessage(from, CONTRACT_INVALID_CPF_REPLY);
+				} else if (capture.outcome === "ask-cpf") {
+					await sendTextMessage(from, CONTRACT_CPF_PROMPT);
+				} else if (capture.outcome === "ask-confirm") {
+					await sendTextMessage(from, CONTRACT_REPROMPT_CONFIRM);
+				}
+				return;
+			}
+		}
+
 		// Typing indicator: Meta API real precisa de messageId; simulador precisa
 		// que o painel mostre as bolinhas, sem messageId Meta — publica no bus direto.
 		if (isSimulatedWaId(from)) {
