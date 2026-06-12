@@ -214,11 +214,12 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 - IMPORTANTE: o fechamento canônico NÃO é captura de lead ("deixa seu contato que a
   gente te chama"). Fechar em lead em vez de contrato = flag
   fechouEmLeadEmVezDeContrato + fechamentoContratacao baixo.
-- FIX-34 (GRAVE): quando o usuário sinaliza avanço pós-reveal ("tenho interesse",
+- FIX-34/FIX-WA (GRAVE): quando o usuário sinaliza avanço pós-reveal ("tenho interesse",
   "quero prosseguir", "quero contratar"), o caminho é SELF-SERVICE (card de decisão →
-  contratação direto na plataforma). Desviar pra "te conectar com nosso consultor"/
-  atendente humano por causa do interesse = flag desviouPraConsultorHumano. O produto
-  existe pra ELIMINAR o corretor — só um PEDIDO EXPLÍCITO de humano justifica handoff.
+  contratação direto na plataforma) — IGUAL nos dois canais (web e WhatsApp), é a mesma
+  jornada. Desviar pra "te conectar com nosso consultor"/atendente humano por causa do
+  interesse = flag desviouPraConsultorHumano. O produto existe pra ELIMINAR o corretor;
+  só um PEDIDO EXPLÍCITO de humano (ou trigger de erro/valor) justifica handoff.
 
 ## Dimensões transversais
 

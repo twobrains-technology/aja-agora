@@ -910,7 +910,7 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 		).toBe(false);
 	});
 
-	it("GAP #2 — interactive-handlers centraliza saveMessage do clique via recordUserClick (handleInterest deixou de ser excecao)", () => {
+	it("GAP #2 — handleInterest persiste o clique via recordUserClick (centralizado)", () => {
 		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
 		// O helper compartilhado tem que existir.
 		expect(
@@ -919,9 +919,6 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 				"centralizado. Antes do refactor cada handler chamava saveMessage e " +
 				"handleInterest esquecia — gap #2 do BUG-LEAD-HISTORY-INCOMPLETE.",
 		).toBe(true);
-		// handleInterest agora chama recordUserClick antes do startInterestHandoff.
-		// Isolamos a função (entre `async function handleInterest` e a próxima
-		// declaração top-level ou fim do arquivo) e validamos ordem dentro dela.
 		const interestMatch = handlers.match(
 			/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
 		);
@@ -933,14 +930,6 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 			interestBody.includes("recordUserClick"),
 			"handleInterest precisa chamar recordUserClick — sem isso o clique " +
 				"'Tenho interesse!' volta a sumir do histórico (gap #2).",
-		).toBe(true);
-		// recordUserClick tem que vir ANTES do startInterestHandoff dentro da fn.
-		const idxRecord = interestBody.indexOf("recordUserClick");
-		const idxHandoff = interestBody.indexOf("startInterestHandoff");
-		expect(
-			idxRecord > -1 && idxHandoff > -1 && idxRecord < idxHandoff,
-			"handleInterest precisa chamar recordUserClick ANTES de startInterestHandoff " +
-				"(ordem cronológica: user msg → frase final do bot).",
 		).toBe(true);
 	});
 
@@ -4314,5 +4303,50 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 		const d = buildSearchSummaryDirective({ category: "auto", meta });
 		expect(d).toMatch(/300|faixa|teto/i);
 		expect(d.toLowerCase()).toMatch(/clamp|fora da faixa|acima|teto da categoria/);
+	});
+});
+
+// ============================================================================
+// FIX-WA-INTEREST — WhatsApp "Tenho interesse" segue o MESMO funil da web
+// ----------------------------------------------------------------------------
+// Kairo 2026-06-12: "whatsapp precisa ser exatamente igual a web, é a mesma
+// jornada". O handleInterest do WhatsApp fazia startInterestHandoff (consultor
+// humano) no clique "Tenho interesse" — o MESMO bug do FIX-34/29 da web, no
+// outro canal. Agora dirige present_decision_prompt → present_contract_form
+// (self-service). O handoff humano fica SÓ no pedido explícito (handoff_confirm).
+// ============================================================================
+
+describe("FIX-WA-INTEREST — 'Tenho interesse' no WhatsApp dirige a DECISAO, nao handoff", () => {
+	function interestBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: handleInterest NAO faz startInterestHandoff; dirige a decisao (self-service)", () => {
+		const body = interestBody();
+		expect(body.length, "handleInterest não isolado").toBeGreaterThan(0);
+		expect(
+			body.includes("startInterestHandoff"),
+			"FIX-WA: o clique 'Tenho interesse' NÃO pode mais iniciar handoff pra consultor — é self-service (decisão → contratação).",
+		).toBe(false);
+		expect(
+			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(body),
+			"FIX-WA: handleInterest precisa dirigir present_decision_prompt / passo 5 (igual a web).",
+		).toBe(true);
+		// o clique segue persistido (GAP #2 do BUG-LEAD-HISTORY-INCOMPLETE).
+		expect(body.includes("recordUserClick")).toBe(true);
+	});
+
+	it("handoff EXPLICITO (handleHandoffConfirm) PRESERVA startInterestHandoff — pedido de humano é legítimo", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		const confirmBody =
+			handlers.match(
+				/async\s+function\s+handleHandoffConfirm[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? "";
+		expect(confirmBody.includes("startInterestHandoff")).toBe(true);
 	});
 });

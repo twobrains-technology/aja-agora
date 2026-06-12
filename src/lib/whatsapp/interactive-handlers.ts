@@ -545,25 +545,36 @@ async function handleDetail(ctx: Ctx): Promise<boolean> {
 }
 
 async function handleInterest(ctx: Ctx): Promise<boolean> {
-	const { from, contactName } = ctx;
+	const { from, conversationId } = ctx;
+	// Conversa já com atendente humano: não dispara o funil — o relay cuida.
 	const handoff = await getHandoffState(from);
-	if (!handoff?.conversationId || handoff.isHandedOff) {
-		// Sem state de handoff: fall-through pra processTextMessage. O
-		// orchestrator salva user msg lá dentro — não chamamos recordUserClick
-		// aqui pra evitar dupla persistência.
-		return false;
-	}
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.id, handoff.conversationId),
-	});
-	const storedName = contactName ?? conv?.contactName ?? null;
-	// Salva o "Tenho interesse!" ANTES do handoff — fica em ordem cronológica,
-	// antes da frase de fechamento do bot (que proxy.ts persiste no fix do
-	// gap #3). Antes do refactor, handleInterest era o único handler do
-	// arquivo que esquecia esse saveMessage — gap #2 do
-	// BUG-LEAD-HISTORY-INCOMPLETE. recordUserClick centraliza isso e evita
-	// que esse bug reapareça em handlers futuros.
+	if (handoff?.isHandedOff) return false;
+
+	// FIX-WA (Kairo 2026-06-12: "whatsapp precisa ser exatamente igual a web"):
+	// "Tenho interesse" pós-reveal é AVANÇO no funil canônico self-service
+	// (decisão → contratação), espelhando o handler web (FIX-29/FIX-34). NUNCA
+	// handoff pra consultor por sinal de interesse — o handoff humano fica SÓ no
+	// pedido explícito (suggest_handoff → handoff_confirm) e nos triggers de
+	// erro/valor da persona. O clique segue persistido (recordUserClick, GAP #2).
+	const meta = await loadMeta(conversationId);
 	await recordUserClick(ctx);
-	await startInterestHandoff(from, handoff.conversationId, storedName);
+	const { buildAdvanceToContractDirective, buildDecisionPromptDirective } = await import(
+		"@/lib/agent/orchestrator/directives"
+	);
+	if (!meta.decisionDispatched) {
+		await persistMeta(conversationId, { ...meta, decisionDispatched: true });
+		await runAgentDirective(
+			from,
+			conversationId,
+			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
+		);
+		return true;
+	}
+	// Decisão já apresentada — reafirmar interesse avança pro passo 5.
+	await runAgentDirective(
+		from,
+		conversationId,
+		buildAdvanceToContractDirective({ administradora: meta.recommendedAdministradora }),
+	);
 	return true;
 }
