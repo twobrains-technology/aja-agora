@@ -12,6 +12,7 @@ arquivos:
 rodada: 2026-06-12 (testes manuais do Kairo no dev)
 anotado_em: 2026-06-12
 executado_em: 2026-06-12
+commit: ca531ba
 ---
 
 # FIX-36 — "Encontrei" antes de buscar (texto afirma resultado pré-tool)

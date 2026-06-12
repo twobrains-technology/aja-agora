@@ -12,6 +12,7 @@ arquivos:
 rodada: 2026-06-12 (testes manuais do Kairo no dev, pós-merge PRs #28/#30)
 anotado_em: 2026-06-12
 executado_em: 2026-06-12
+commit: a1b8007
 ---
 
 # FIX-38 — Dupla confirmação no avanço explícito ("confirmação demais")

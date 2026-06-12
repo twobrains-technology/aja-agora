@@ -9,6 +9,7 @@ arquivos:
 rodada: 2026-06-12 (testes manuais do Kairo no dev, pós-merge PRs #28/#30)
 anotado_em: 2026-06-12
 executado_em: 2026-06-12
+commit: 29e9041
 varredura: "Outros artifacts com Button (whatsapp-optin, real-offer, signature-handoff, group-card etc.) usam labels curtos — sem overflow. O card de decisão era o caso agudo (label canônico de 44 chars em card de 340px). Fix mantido escopado nele."
 ---
 
