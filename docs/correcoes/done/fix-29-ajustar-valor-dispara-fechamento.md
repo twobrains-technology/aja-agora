@@ -1,7 +1,9 @@
 ---
 id: FIX-29
 titulo: "Botão 'Ajustar valor' dispara o fluxo de FECHAMENTO ('vou reservar essa opção... te conectar com nosso consultor' + lead form) — todas as actions do card mandam kind 'interest'"
-status: todo
+status: done
+commit: d6e93dd
+executado_em: 2026-06-12
 bloco: bloco-s-funil-canonico
 arquivos:
   - src/components/chat/artifacts/simulation-result.tsx (handleAction ignora intent)

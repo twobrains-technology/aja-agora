@@ -31,6 +31,7 @@ const validResult = {
 	flags: {
 		pulouPasso: false,
 		fechouEmLeadEmVezDeContrato: false,
+		desviouPraConsultorHumano: false,
 		jargaoNoLeigo: false,
 		tomRoboticoOuFrio: false,
 		prometeuCreditoImediato: false,
@@ -88,6 +89,29 @@ describe("JORNADA_RUBRIC_SYSTEM_PROMPT — ancorado no docx, não na implementa�
 		expect(p).toMatch(/contrata/i);
 		expect(p).toMatch(/NÃO é captura de lead/i);
 		expect(p).toContain("fechouEmLeadEmVezDeContrato");
+	});
+
+	it("FIX-34 — avalia desvio pra consultor humano por sinal de avanço (self-service)", () => {
+		expect(p).toContain("desviouPraConsultorHumano");
+		expect(p).toMatch(/self-service/i);
+		expect(p).toMatch(/consultor|corretor|atendente humano/i);
+		// o schema EXIGE a flag nova
+		const semFlag = {
+			...validResult,
+			flags: { ...validResult.flags, desviouPraConsultorHumano: undefined },
+		};
+		expect(() => jornadaJudgeResultSchema.parse(semFlag)).toThrow();
+	});
+
+	it("FIX-29 — rubrica reconhece que 'Ajustar valor' reabre o ajuste, não inicia fechamento", () => {
+		expect(p).toMatch(/ajustar valor/i);
+		expect(p).toMatch(/reabre|novo valor|what-if/i);
+		expect(p).toMatch(/n[ãa]o inicia|nunca inicia/i);
+	});
+
+	it("FIX-33 — rubrica cobre valor de carta fora da faixa da categoria", () => {
+		expect(p).toMatch(/fora da faixa/i);
+		expect(p).toMatch(/teto/i);
 	});
 
 	it("avalia o TOM da escritora (caloroso, didático pra leigo, sem jargão)", () => {

@@ -242,43 +242,63 @@ describe("BUG-META-NARRATIVE — agent verbalizou mecanismo da UI ao usuario", (
 // gatilho textual de avanco.
 // ============================================================================
 
-describe("BUG-LEAD-FUNNEL — agent precisa chamar present_lead_form apos sinal de avanco", () => {
-	it("cassette: turn pos opt-in com sinal de avanco produz tool-call present_lead_form", async () => {
-		// Simula trajetoria correta — o que deveria ter saido do agent no turn
-		// pos opt-in quando user disse "Tenho interesse, vamos prosseguir".
+describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, nao present_lead_form", () => {
+	// INVERSAO do ex-BUG-LEAD-FUNNEL (pre-Bevi): o funil legado capturava lead
+	// pra consultor humano no "Tenho interesse". A jornada-canonica.md (passos
+	// 4-5) fecha self-service: avanco pos-reveal -> present_decision_prompt
+	// ("Esse plano faz sentido?") -> passo 5 (present_contract_form via Bevi).
+	// Bug real (Kairo 2026-06-12, jornada Itau): clicar "Tenho interesse"
+	// respondia "vou reservar... te conectar com nosso consultor" + lead_form.
+
+	const REVEAL_META: ConversationMetadata = {
+		currentCategory: "auto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		identityCollected: true,
+		qualifyAnswers: { creditMax: 100_000, prazoMeses: 0, hasLance: "no" },
+		searchDispatched: true,
+		revealCompleted: true,
+		simulatorOfferDispatched: true,
+		recommendedAdministradora: "ITAÚ",
+	};
+
+	it("cassette: turn pos-reveal com 'Tenho interesse' produz present_decision_prompt (NAO present_lead_form, sem 'consultor')", async () => {
+		// Trajetoria CORRETA — o que deve sair do agent quando o usuario sinaliza
+		// avanco pos-reveal. Mirror do que o handler determinístico do route faz.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
-			...textChunks(
-				"t1",
-				"Show! Vou reservar essa opção pra você — só preciso de uns dados rapidinho:",
-			),
-			toolCallChunk("tc-lf-1", "present_lead_form", {}),
+			...textChunks("t1", "Boa! Então deixa eu confirmar com você se esse plano faz sentido:"),
+			toolCallChunk("tc-dp-1", "present_decision_prompt", { administradora: "ITAÚ" }),
 			FINISH_TOOL_CALLS,
 		]);
 
-		// Frase curta natural sem narrar passo a passo, seguida da tool.
-		expect(text).toMatch(/reservar|guardar|dados/i);
 		expect(toolCalls).toHaveLength(1);
-		expect(toolCalls[0]?.toolName).toBe("present_lead_form");
+		expect(toolCalls[0]?.toolName).toBe("present_decision_prompt");
+		// O detector do bug: NUNCA present_lead_form, NUNCA promessa de consultor.
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
 	});
 
-	it("regra do prompt: gatilho textual ('tenho interesse') casa com proximidade de present_lead_form", () => {
-		// Esse assert protege a regra estrutural — sem ela, o LLM nao converte
-		// sinal textual em tool call. Acopla o cassette acima ao prompt source.
-		const gatilhoLigadoAoLeadForm =
-			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|bora fechar|pode (prosseguir|fechar))[\s\S]{0,500}present_lead_form/i;
-
-		expect(
-			gatilhoLigadoAoLeadForm.test(SPECIALIST_BASE_PROMPT) ||
-				gatilhoLigadoAoLeadForm.test(SYSTEM_PROMPT),
-			"present_lead_form precisa estar a <500 chars de um gatilho textual de avanco no prompt. " +
-				"Sem isso, agent nao mapeia 'tenho interesse' (texto) -> present_lead_form (tool).",
-		).toBe(true);
+	it("tool-policy: present_lead_form NEM ENTRA no toolset pos-reveal (1a linha de defesa)", async () => {
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		expect(allowedTools(REVEAL_META)).not.toContain("present_lead_form");
+		// O caminho de avanco SIM esta disponivel.
+		expect(allowedTools(REVEAL_META)).toContain("present_decision_prompt");
 	});
 
-	// Cross-ref: src/lib/agent/system-prompt.lead-funnel.test.ts cobre o
-	// encadeamento save_contact_whatsapp -> present_lead_form ALEM do gatilho
-	// textual. Nao duplicado aqui.
+	it("regra do prompt: NENHUM gatilho de avanco esta amarrado a present_lead_form (anti-regressao)", () => {
+		// Inverso do legado: a proximidade gatilho<->lead_form que existia foi
+		// removida. Cross-ref detalhado em system-prompt.lead-funnel.test.ts.
+		const gatilhoEntaoLead =
+			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|bora fechar|sinal.{0,25}avan[çc]o)[\s\S]{0,400}present_lead_form/i;
+		const leadEntaoGatilho =
+			/present_lead_form[\s\S]{0,400}(tenho interesse|quero prosseguir|sinal.{0,25}avan[çc]o)/i;
+		for (const p of [SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT]) {
+			expect(gatilhoEntaoLead.test(p)).toBe(false);
+			expect(leadEntaoGatilho.test(p)).toBe(false);
+		}
+	});
 });
 
 // ============================================================================
@@ -890,7 +910,7 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 		).toBe(false);
 	});
 
-	it("GAP #2 — interactive-handlers centraliza saveMessage do clique via recordUserClick (handleInterest deixou de ser excecao)", () => {
+	it("GAP #2 — handleInterest persiste o clique via recordUserClick (centralizado)", () => {
 		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
 		// O helper compartilhado tem que existir.
 		expect(
@@ -899,9 +919,6 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 				"centralizado. Antes do refactor cada handler chamava saveMessage e " +
 				"handleInterest esquecia — gap #2 do BUG-LEAD-HISTORY-INCOMPLETE.",
 		).toBe(true);
-		// handleInterest agora chama recordUserClick antes do startInterestHandoff.
-		// Isolamos a função (entre `async function handleInterest` e a próxima
-		// declaração top-level ou fim do arquivo) e validamos ordem dentro dela.
 		const interestMatch = handlers.match(
 			/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
 		);
@@ -913,14 +930,6 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 			interestBody.includes("recordUserClick"),
 			"handleInterest precisa chamar recordUserClick — sem isso o clique " +
 				"'Tenho interesse!' volta a sumir do histórico (gap #2).",
-		).toBe(true);
-		// recordUserClick tem que vir ANTES do startInterestHandoff dentro da fn.
-		const idxRecord = interestBody.indexOf("recordUserClick");
-		const idxHandoff = interestBody.indexOf("startInterestHandoff");
-		expect(
-			idxRecord > -1 && idxHandoff > -1 && idxRecord < idxHandoff,
-			"handleInterest precisa chamar recordUserClick ANTES de startInterestHandoff " +
-				"(ordem cronológica: user msg → frase final do bot).",
 		).toBe(true);
 	});
 
@@ -970,43 +979,34 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — historico do lead pos-handoff perdia a
 //   - Camada 2 (este cassette): SSE end-to-end com DB real.
 // ============================================================================
 
-describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz lead_form com prefilledName", () => {
-	it("cassette source-level: route.ts action.kind === 'interest' continua passando contactName no payload", () => {
-		// Fonte de verdade do contrato. Se alguem mover o handler de pasta ou
-		// trocar o nome da variavel (contactName -> userName, prefilledName ->
-		// nameHint), o cassette aqui pega antes do integration test rodar.
+describe("FIX-29-INTEREST-NAO-VIRA-LEAD — clique 'Tenho interesse' dirige a DECISAO, nao lead_form", () => {
+	// INVERSAO do ex-BUG-LEAD-FORM-PREFILL-REGRESSION: o handler determinístico
+	// do clique "Tenho interesse" emitia lead_form + "te conectar com nosso
+	// consultor". FIX-29/FIX-34: o avanço pós-reveal vai pra present_decision_prompt
+	// → present_contract_form (self-service). O prefilledName segue valendo SÓ pro
+	// componente lead-form (usado na fase qualify) — o contrato de tipo permanece.
+	it("cassette source-level: branch 'interest' do route NAO emite lead_form; dirige a decisao", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 
-		// 1) O branch interest existe no source com a forma esperada.
 		const branchInterest = /body\.action\?\.kind\s*===\s*["']interest["']/;
-		expect(
-			branchInterest.test(route),
-			"route.ts precisa ter branch `body.action?.kind === 'interest'`. " +
-				"Sem ele o clique 'Tenho interesse' do card simulation_result nao " +
-				"produz artifact lead_form algum.",
-		).toBe(true);
+		expect(branchInterest.test(route), "route.ts precisa ter branch interest").toBe(true);
 
-		// 2) Dentro do mesmo arquivo, o data-artifact lead_form leva
-		// prefilledName lido de contactName.
-		const payloadInjection =
-			/type:\s*["']lead_form["'][\s\S]{0,200}prefilledName:\s*contactName\s*\?\?\s*null/;
-		expect(
-			payloadInjection.test(route),
-			"route.ts (branch interest) precisa emitir " +
-				"`payload: { conversationId, prefilledName: contactName ?? null }`. " +
-				"Sem essa linha o nome ja capturado pela conversa NAO chega ao " +
-				"frontend e o form aparece vazio — regressao reportada em tb-dev " +
-				"2026-05-18 (screenshot 'Seu nome' placeholder).",
-		).toBe(true);
+		// Isola o corpo do branch interest.
+		const interestBlock =
+			route.match(
+				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
+		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 
-		// 3) contactName tem que vir do conv.contactName lido no top do POST —
-		// sem isso, o ?? null sempre cai pra null e o fix vira no-op.
-		const lidoDoConv = /contactName\s*=\s*conv\.contactName\s*\?\?\s*null/;
+		// NUNCA mais lead_form no clique de avanço.
 		expect(
-			lidoDoConv.test(route),
-			"route.ts precisa ler `contactName = conv.contactName ?? null` antes " +
-				"do switch de actions. Se essa atribuicao sumir, prefilledName SEMPRE " +
-				"vai null e o form regride pra 'Seu nome' vazio.",
+			interestBlock.includes("lead_form"),
+			"FIX-29: o branch interest NÃO pode emitir lead_form — avanço pós-reveal é decision → contract_form.",
+		).toBe(false);
+		// Dirige a decisão (ou avanço pro contrato se a decisão já passou).
+		expect(
+			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(interestBlock),
+			"FIX-29: o branch interest precisa dirigir present_decision_prompt / passo 5.",
 		).toBe(true);
 	});
 
@@ -1048,6 +1048,52 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — clique 'Tenho interesse' produz l
 				"Se inverter ordem (data.name ?? payload.prefilledName), fetch que " +
 				"retorna name='' (lead vazio + contactName null) zera o prefill — bug volta.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-29 — "Ajustar valor" reabre o what-if, NUNCA inicia fechamento
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-11): clicar "Ajustar valor" no card de simulação
+// respondia "vou reservar essa opção... te conectar com nosso consultor" +
+// lead form — o OPOSTO da intenção (ele queria MUDAR o valor). handleAction
+// mandava kind "interest" pra TODA action. O fix re-roteia o intent e o handler
+// novo `adjust-value` dirige o ajuste sem tocar no funil de fechamento.
+// ============================================================================
+
+describe("FIX-29-ADJUST-VALUE — clique 'Ajustar valor' reabre ajuste, nao inicia fechamento", () => {
+	it("cassette: turno pós-adjust-value pergunta o novo valor (texto), SEM tool de fechamento", async () => {
+		// Trajetória correta dirigida por buildAdjustValueDirective: o agente
+		// pergunta o novo valor e PARA (espera a resposta) — zero lead_form/contract.
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Claro! Qual valor do bem você quer simular agora?"),
+			FINISH_STOP,
+		]);
+
+		expect(text).toMatch(/qual.*valor|novo valor|ajustar/i);
+		expect(toolCalls).toHaveLength(0);
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(toolCalls.some((t) => t.toolName === "present_contract_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
+	});
+
+	it("directive de ajuste proíbe fechamento e o de avanço dirige o passo 5 (estrutural)", async () => {
+		const { buildAdjustValueDirective, buildAdvanceToContractDirective } = await import(
+			"@/lib/agent/orchestrator/directives"
+		);
+		const adjust = buildAdjustValueDirective({
+			administradora: "Itaú",
+			currentCreditValue: 200_000,
+		});
+		expect(adjust).toMatch(/ajustar|novo valor/i);
+		expect(adjust).not.toContain("present_lead_form");
+		expect(adjust).not.toContain("present_contract_form");
+
+		const advance = buildAdvanceToContractDirective({ administradora: "Itaú" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_lead_form");
 	});
 });
 
@@ -4292,5 +4338,100 @@ describe("FIX-25-FECHAMENTO-WHATSAPP — passo 5 deixa de ser web-only", () => {
 		// nenhum console.* imprimindo a variavel cpf/identity em claro
 		expect(capture).not.toMatch(/console\.\w+\([^)]*\bcpf\b/i);
 		expect(capture).not.toMatch(/console\.\w+\([^)]*identity\.cpf/i);
+	});
+});
+
+// ============================================================================
+// FIX-33 — valor de carta fora da faixa da categoria (texto livre) tem clamp
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12): "quero uma carta de 5 milhões de auto" passava
+// cru pelo funil (sliders limitam por CREDIT_BOUNDS, texto livre não). O clamp
+// server-side ajusta pro teto da categoria E o agente confronta a faixa em vez
+// de celebrar um valor que a Bevi não entrega.
+// ============================================================================
+
+describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa cru", () => {
+	it("cassette: turno apos 'carta de 5 milhoes de auto' confronta a faixa, sem celebrar o impossivel", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Pra auto a faixa vai ate R$ 300 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
+			),
+			FINISH_STOP,
+		]);
+
+		expect(text).toMatch(/300 mil|R\$ ?300|teto|faixa/i);
+		expect(toolCalls).toHaveLength(0);
+		// NUNCA celebra o valor impossivel.
+		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
+	});
+
+	it("clamp server-side: 5M de auto persiste o teto da categoria (300k)", async () => {
+		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(300_000);
+		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
+	});
+
+	it("directive de busca confronta a faixa quando o credito foi clampado (creditClampedFrom)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyAnswers: {
+				creditMin: 270_000,
+				creditMax: 300_000,
+				creditClampedFrom: 5_000_000,
+				prazoMeses: 12,
+				hasLance: "no",
+			},
+		};
+		const d = buildSearchSummaryDirective({ category: "auto", meta });
+		expect(d).toMatch(/300|faixa|teto/i);
+		expect(d.toLowerCase()).toMatch(/clamp|fora da faixa|acima|teto da categoria/);
+	});
+});
+
+// ============================================================================
+// FIX-WA-INTEREST — WhatsApp "Tenho interesse" segue o MESMO funil da web
+// ----------------------------------------------------------------------------
+// Kairo 2026-06-12: "whatsapp precisa ser exatamente igual a web, é a mesma
+// jornada". O handleInterest do WhatsApp fazia startInterestHandoff (consultor
+// humano) no clique "Tenho interesse" — o MESMO bug do FIX-34/29 da web, no
+// outro canal. Agora dirige present_decision_prompt → present_contract_form
+// (self-service). O handoff humano fica SÓ no pedido explícito (handoff_confirm).
+// ============================================================================
+
+describe("FIX-WA-INTEREST — 'Tenho interesse' no WhatsApp dirige a DECISAO, nao handoff", () => {
+	function interestBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: handleInterest NAO faz startInterestHandoff; dirige a decisao (self-service)", () => {
+		const body = interestBody();
+		expect(body.length, "handleInterest não isolado").toBeGreaterThan(0);
+		expect(
+			body.includes("startInterestHandoff"),
+			"FIX-WA: o clique 'Tenho interesse' NÃO pode mais iniciar handoff pra consultor — é self-service (decisão → contratação).",
+		).toBe(false);
+		expect(
+			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(body),
+			"FIX-WA: handleInterest precisa dirigir present_decision_prompt / passo 5 (igual a web).",
+		).toBe(true);
+		// o clique segue persistido (GAP #2 do BUG-LEAD-HISTORY-INCOMPLETE).
+		expect(body.includes("recordUserClick")).toBe(true);
+	});
+
+	it("handoff EXPLICITO (handleHandoffConfirm) PRESERVA startInterestHandoff — pedido de humano é legítimo", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		const confirmBody =
+			handlers.match(
+				/async\s+function\s+handleHandoffConfirm[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? "";
+		expect(confirmBody.includes("startInterestHandoff")).toBe(true);
 	});
 });

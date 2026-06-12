@@ -41,10 +41,24 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 		void sendAction({ kind: "interest", administradora: payload.administradora, label }, label);
 	};
 
+	// FIX-29: o kind vem do INTENT da action (não mais "interest" pra tudo).
+	// "Comparar outra adm" → outras opções; ajuste/nova simulação → reabre o
+	// what-if. "interest" é EXCLUSIVO do botão "Tenho interesse" (handleInterest).
 	const handleAction = (action: { label: string; intent: string }) => {
 		if (isStreaming) return;
+		if (action.intent === "compare_other") {
+			void sendAction({ kind: "show-other-options", label: action.label }, action.label);
+			return;
+		}
+		// adjust_value, new_simulation e qualquer outro intent secundário reabrem o
+		// ajuste — nunca o funil de fechamento.
 		void sendAction(
-			{ kind: "interest", administradora: payload.administradora, label: action.label },
+			{
+				kind: "adjust-value",
+				administradora: payload.administradora,
+				creditValue: payload.creditValue,
+				label: action.label,
+			},
 			action.label,
 		);
 	};

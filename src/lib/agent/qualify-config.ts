@@ -42,6 +42,27 @@ export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };
 
+export type CreditClamp = {
+	/** Valor ajustado pra dentro da faixa [min, max] da categoria. */
+	value: number;
+	/** true quando o valor original caiu fora da faixa (foi ajustado). */
+	clamped: boolean;
+	min: number;
+	max: number;
+};
+
+/** FIX-33 — guardrail server-side do valor do bem na faixa da categoria. Os
+ * sliders da UI já limitam por CREDIT_BOUNDS, mas o caminho de TEXTO LIVRE
+ * ("quero uma carta de 5 milhões de auto") não tinha nada — passava cru até
+ * morrer na Bevi (MinCreditError) ou retornar oferta absurda. Clampa pro teto/
+ * piso da categoria e devolve a flag `clamped` + a faixa, pro agente confrontar
+ * a realidade em vez de celebrar um valor que a administradora não entrega. */
+export function clampCreditToCategory(credit: number, category: Category): CreditClamp {
+	const { min, max } = CREDIT_BOUNDS[category];
+	const value = Math.min(Math.max(credit, min), max);
+	return { value, clamped: value !== credit, min, max };
+}
+
 export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 	imovel: [
 		{ token: "200", title: "Até R$ 200 mil", desc: "Aptos compactos", min: 0, max: 200_000 },

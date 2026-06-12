@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SimulationResultPayload } from "@/lib/chat/types";
 import { SimulationResult } from "./simulation-result";
 
-// Mock do useChatContext — componente usa sendAction e status
+// Mock do useChatContext — sendAction estável pra inspecionar os args do clique.
+const sendActionMock = vi.fn();
 vi.mock("@/lib/chat/provider", () => ({
 	useChatContext: () => ({
-		sendAction: vi.fn(),
+		sendAction: sendActionMock,
 		status: "ready",
 	}),
 }));
@@ -155,6 +156,58 @@ describe("SimulationResult — CTAs explícitos no fechamento (bug #12)", () => 
 			actions: undefined,
 		};
 		expect(() => render(<SimulationResult payload={payloadWithoutActions} />)).not.toThrow();
+	});
+});
+
+// FIX-29 (teste manual Kairo 2026-06-11): TODO clique do card mandava kind
+// "interest" → handler de fechamento (lead form + "consultor"). "Ajustar valor"
+// virava reserva — o OPOSTO da intenção. handleAction precisa derivar o kind do
+// `intent` da action; "interest" fica SÓ pro botão "Tenho interesse".
+describe("FIX-29 — clique secundário deriva kind do intent (não manda tudo como 'interest')", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+		sendActionMock.mockClear();
+	});
+
+	const payloadWithActions: SimulationResultPayload = {
+		...basePayload,
+		actions: [
+			{ label: "Ajustar valor", intent: "adjust_value" },
+			{ label: "Nova simulação", intent: "new_simulation" },
+			{ label: "Comparar outra adm", intent: "compare_other" },
+		],
+	};
+
+	it("'Ajustar valor' envia kind 'adjust-value' (NUNCA 'interest')", () => {
+		render(<SimulationResult payload={payloadWithActions} />);
+		fireEvent.click(screen.getByRole("button", { name: /ajustar valor/i }));
+		expect(sendActionMock).toHaveBeenCalledTimes(1);
+		const [action] = sendActionMock.mock.calls[0];
+		expect(action.kind).toBe("adjust-value");
+		expect(action.kind).not.toBe("interest");
+		expect(action.administradora).toBe(payloadWithActions.administradora);
+		expect(action.creditValue).toBe(payloadWithActions.creditValue);
+	});
+
+	it("'Nova simulação' também reabre o ajuste (kind 'adjust-value', não fechamento)", () => {
+		render(<SimulationResult payload={payloadWithActions} />);
+		fireEvent.click(screen.getByRole("button", { name: /nova simula/i }));
+		const [action] = sendActionMock.mock.calls[0];
+		expect(action.kind).toBe("adjust-value");
+	});
+
+	it("'Comparar outra adm' vira kind 'show-other-options' (não 'interest')", () => {
+		render(<SimulationResult payload={payloadWithActions} />);
+		fireEvent.click(screen.getByRole("button", { name: /comparar outra/i }));
+		const [action] = sendActionMock.mock.calls[0];
+		expect(action.kind).toBe("show-other-options");
+	});
+
+	it("o botão principal 'Tenho interesse' continua kind 'interest'", () => {
+		render(<SimulationResult payload={payloadWithActions} />);
+		fireEvent.click(screen.getByTestId("tenho-interesse-cta"));
+		const [action] = sendActionMock.mock.calls[0];
+		expect(action.kind).toBe("interest");
 	});
 });
 

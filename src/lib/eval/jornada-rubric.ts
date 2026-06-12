@@ -78,6 +78,11 @@ export const jornadaJudgeResultSchema = z.object({
 	flags: z.object({
 		pulouPasso: z.boolean(),
 		fechouEmLeadEmVezDeContrato: z.boolean(),
+		desviouPraConsultorHumano: z
+			.boolean()
+			.describe(
+				"FIX-34: GRAVE — quando o usuário sinalizou avanço pós-reveal ('tenho interesse', 'quero contratar'), o agente desviou pra captura de lead/atendente humano ('te conectar com nosso consultor') em vez de conduzir o fechamento self-service (decisão → contratação). Pedido EXPLÍCITO de humano (suggest_handoff) NÃO conta — só o desvio indevido por sinal de avanço.",
+			),
 		jargaoNoLeigo: z.boolean(),
 		tomRoboticoOuFrio: z.boolean(),
 		prometeuCreditoImediato: z
@@ -181,6 +186,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   dados REAIS do plano).
 - Permitiu ver "outras opções" (as outras 2) pra comparação quando pedido — sem
   repetir a recomendada.
+- FIX-29: o clique "Ajustar valor"/"Nova simulação" no card de simulação REABRE o
+  ajuste (pergunta o novo valor / what-if), NUNCA inicia reserva, captura de lead ou
+  contratação. Tratar o clique de ajuste como avanço de fechamento é erro (o usuário
+  quer MUDAR o valor, não fechar).
 - Cruzou pro card de decisão: "Esse plano faz sentido para você?" com as 3 opções
   (contratar agora / ver outras opções / falar com especialista da Aja Agora).
 
@@ -205,6 +214,12 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 - IMPORTANTE: o fechamento canônico NÃO é captura de lead ("deixa seu contato que a
   gente te chama"). Fechar em lead em vez de contrato = flag
   fechouEmLeadEmVezDeContrato + fechamentoContratacao baixo.
+- FIX-34/FIX-WA (GRAVE): quando o usuário sinaliza avanço pós-reveal ("tenho interesse",
+  "quero prosseguir", "quero contratar"), o caminho é SELF-SERVICE (card de decisão →
+  contratação direto na plataforma) — IGUAL nos dois canais (web e WhatsApp), é a mesma
+  jornada. Desviar pra "te conectar com nosso consultor"/atendente humano por causa do
+  interesse = flag desviouPraConsultorHumano. O produto existe pra ELIMINAR o corretor;
+  só um PEDIDO EXPLÍCITO de humano (ou trigger de erro/valor) justifica handoff.
 
 ## Dimensões transversais
 
@@ -222,6 +237,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   sugerir "dinheiro na hora", ou tratar consórcio como empréstimo/financiamento = nota
   baixa + flag prometeuCreditoImediato. Confrontar com honestidade um orçamento que não
   alcança a meta (tema FIX-18) — em vez de empurrar uma promessa — é PONTO POSITIVO.
+  FIX-33: vale também pra valor de carta FORA DA FAIXA da categoria (ex.: "carta de 5
+  milhões de auto" quando o teto da categoria é R$ 300 mil). O agente deve confrontar a
+  faixa real e oferecer o teto (ou sugerir a categoria certa), NUNCA celebrar nem
+  prometer o valor impossível que a administradora não entrega.
 
 ## Flags adicionais
 

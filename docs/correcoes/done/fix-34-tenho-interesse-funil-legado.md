@@ -1,7 +1,9 @@
 ---
 id: FIX-34
 titulo: "'Tenho interesse' pós-reveal cai no funil de lead LEGADO (consultor humano) em vez do passo 5 (contract_form Bevi)"
-status: todo
+status: done
+commit: 77c80ec
+executado_em: 2026-06-12
 bloco: bloco-s-funil-canonico
 arquivos:
   - src/lib/agent/system-prompt.ts (regras 'Feche' e 'Fechamento — captura final via present_lead_form')

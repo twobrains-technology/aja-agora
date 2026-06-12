@@ -1,27 +1,18 @@
 /**
- * Bug A: "Tenho interesse" → form aparece com Nome VAZIO mesmo quando
- * o agente já capturou o nome durante a conversa
- * (conversations.contactName = "Monique").
+ * FIX-29/FIX-34 — funil canônico pós-reveal (atualizado 2026-06-12).
  *
- * Bug B: O agente NÃO oferece o WhatsApp proativamente DURANTE a
- * conversa com narrativa estratégica ("pra não perder seu atendimento
- * caso aconteça alguma instabilidade de internet, me compartilha seu
- * WhatsApp"). Hoje só pede WhatsApp depois da 1a simulacao via card
- * genérico (sem narrativa estratégica).
+ * Cenário A (ex-"Bug A", invertido): o clique "Tenho interesse" no card de
+ * simulação NÃO emite mais lead_form ("te conectar com nosso consultor"). O
+ * avanço pós-reveal é self-service: decision_prompt → contract_form. O handler
+ * dirige o turno via pipeDirectiveTurn (stub aqui pra determinismo). O clique
+ * "Ajustar valor" reabre o what-if, sem iniciar fechamento. (O prefilledName
+ * segue valendo SÓ pro componente lead-form da fase qualify — contrato de tipo
+ * preservado nos source-grep abaixo.)
  *
- * Integration test:
- *  - Cenário A bate no POST /api/chat real, com DB real, action
- *    `interest` (mesmo path do botão "Tenho interesse"). Drena o
- *    SSE stream do `createUIMessageStream` e parseia os data parts
- *    pra achar o artifact `lead_form`. Assert que o payload carrega
- *    o nome pré-capturado (campo `prefilledName` no contrato —
- *    hoje inexistente).
- *
- *  - Cenário B inspeciona o **contrato configuracional** do agente:
- *    o system_prompt e os examples seedados (mig 0016) precisam
- *    instruir o agente a oferecer o WhatsApp proativamente com a
- *    narrativa estratégica. Como o modelo é não-determinístico, o
- *    teste do contrato é o que captura a regressão de forma estável.
+ * Cenário B (mantido): inspeciona o contrato configuracional do agente — o
+ * system_prompt / examples seedados (mig 0016) instruem a oferta proativa de
+ * WhatsApp com narrativa estratégica. Como o modelo é não-determinístico, o
+ * teste do contrato é o que captura a regressão de forma estável.
  */
 
 import { readFileSync } from "node:fs";
@@ -31,7 +22,11 @@ import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, leads, personas } from "@/db/schema";
-import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT, whatsappOptinSection } from "@/lib/agent/system-prompt";
+import {
+	SPECIALIST_BASE_PROMPT,
+	SYSTEM_PROMPT,
+	whatsappOptinSection,
+} from "@/lib/agent/system-prompt";
 import { POST } from "./route";
 
 function readSource(rel: string): string {
@@ -41,6 +36,19 @@ function readSource(rel: string): string {
 vi.mock("@/lib/middleware/rate-limit", () => ({
 	checkRateLimit: () => ({ allowed: true }),
 }));
+
+// FIX-29: o handler `interest`/`adjust-value` deixou de emitir lead_form
+// determinístico e passou a dirigir um turno via pipeDirectiveTurn (decisão /
+// ajuste). Stub do adapter pra capturar a directive sem chamar a LLM real —
+// mantém o teste determinístico (o resto do adapter segue real).
+const pipeDirectiveTurnMock = vi.fn((_args: { directive: string }) => Promise.resolve());
+vi.mock("@/lib/web/adapter", async (importOriginal) => {
+	const actual = (await importOriginal()) as typeof import("@/lib/web/adapter");
+	return {
+		...actual,
+		pipeDirectiveTurn: (args: { directive: string }) => pipeDirectiveTurnMock(args),
+	};
+});
 
 function makeReq(body: unknown): NextRequest {
 	const req = new Request("http://localhost/api/chat", {
@@ -88,14 +96,26 @@ async function extractLeadFormPayload(res: Response): Promise<Record<string, unk
 	return null;
 }
 
-describe("Bug A — POST /api/chat action=interest deve pré-preencher nome no lead_form", () => {
+describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_form (vai pra decisão)", () => {
 	let convId: string;
 
 	beforeEach(async () => {
-		// Setup: usuário disse "Monique" durante a conversa e o agente já
-		// chamou save_contact_name, populando conversations.contactName.
-		// Esse é o cenário visto na screenshot.
-		const [c] = await db.insert(conversations).values({ contactName: "Monique" }).returning();
+		pipeDirectiveTurnMock.mockClear();
+		// Cenário pós-reveal real: usuário viu a recomendação/simulação e clica
+		// "Tenho interesse" no card. contactName já capturado.
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Monique",
+				metadata: {
+					currentCategory: "auto",
+					revealCompleted: true,
+					searchDispatched: true,
+					simulatorOfferDispatched: true,
+					recommendedAdministradora: "Rodobens",
+				},
+			})
+			.returning();
 		convId = c.id;
 	});
 
@@ -103,7 +123,7 @@ describe("Bug A — POST /api/chat action=interest deve pré-preencher nome no l
 		await cleanup(convId);
 	});
 
-	it("payload do lead_form (artifact) carrega o nome já capturado da conversation (contactName)", async () => {
+	it("NÃO emite artifact lead_form no stream (o avanço é decision → contract, não captura de lead)", async () => {
 		const res = await POST(
 			makeReq({
 				conversationId: convId,
@@ -111,19 +131,61 @@ describe("Bug A — POST /api/chat action=interest deve pré-preencher nome no l
 			}),
 		);
 		expect(res.status).toBe(200);
-
 		const payload = await extractLeadFormPayload(res);
-		expect(payload).not.toBeNull();
+		expect(payload).toBeNull();
+	});
 
-		// Contrato anti-regressão: o backend DEVE injetar o nome pré-capturado
-		// no payload do artifact. Hoje o handler só emite { conversationId },
-		// deixando o frontend depender de um GET /api/leads/[id] tardio — quando
-		// esse fetch falha ou roda fora de hora, o form aparece vazio (bug).
-		//
-		// O fix barato é o handler ler conversations.contactName e injetar
-		// `prefilledName` (ou shape similar) no payload — eliminando a
-		// dependência de fetch ad-hoc no client.
-		expect(payload).toMatchObject({ prefilledName: "Monique" });
+	it("dirige o card de decisão (present_decision_prompt) e persiste decisionDispatched", async () => {
+		await (
+			await POST(
+				makeReq({
+					conversationId: convId,
+					action: { kind: "interest", administradora: "Rodobens", label: "Tenho interesse" },
+				}),
+			)
+		).text();
+
+		// O handler dispara o turno da decisão via pipeDirectiveTurn.
+		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
+		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
+		expect(arg.directive).toContain("present_decision_prompt");
+		expect(arg.directive).not.toContain("present_lead_form");
+
+		// Estado avança (determinístico, independe da LLM).
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		const meta = (conv?.metadata ?? {}) as Record<string, unknown>;
+		expect(meta.decisionDispatched).toBe(true);
+	});
+
+	it("action=adjust-value reabre o ajuste (what-if) — sem lead_form, sem fechamento", async () => {
+		const res = await POST(
+			makeReq({
+				conversationId: convId,
+				action: {
+					kind: "adjust-value",
+					administradora: "Rodobens",
+					creditValue: 200000,
+					label: "Ajustar valor",
+				},
+			}),
+		);
+		expect(res.status).toBe(200);
+		expect(await extractLeadFormPayload(res)).toBeNull();
+
+		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
+		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
+		expect(arg.directive).not.toContain("present_lead_form");
+		expect(arg.directive).not.toContain("present_contract_form");
+		expect(arg.directive).toMatch(/ajustar|novo valor/i);
+
+		// "Ajustar valor" NÃO inicia fechamento — decisionDispatched permanece falso.
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		const meta = (conv?.metadata ?? {}) as Record<string, unknown>;
+		expect(meta.decisionDispatched ?? false).toBe(false);
 	});
 });
 
@@ -155,21 +217,40 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 		).toBe(true);
 	});
 
-	it("src/app/api/chat/route.ts injeta `prefilledName: contactName ?? null` no payload do data-artifact lead_form", () => {
+	it("FIX-29 — src/app/api/chat/route.ts: handler `interest` NÃO emite lead_form; dirige a decisão", () => {
 		const route = readSource("src/app/api/chat/route.ts");
-		// Match exato do call-site emitindo o artifact com prefilledName.
-		// Tolera variações de espaços/quebras mas exige:
-		//   - type: "lead_form" próximo (mesmo bloco do data-artifact)
-		//   - payload contém prefilledName lendo de contactName
-		const injecaoLiteral =
-			/type:\s*["']lead_form["'][\s\S]{0,200}payload:\s*\{[^}]*prefilledName:\s*contactName\s*\?\?\s*null/;
+		// Isola o corpo do branch interest (até o próximo branch de action).
+		const interestBlock =
+			route.match(
+				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
 		expect(
-			injecaoLiteral.test(route),
-			"src/app/api/chat/route.ts (action handler `interest`) precisa emitir " +
-				"`payload: { conversationId, prefilledName: contactName ?? null }` no " +
-				"data-artifact type=lead_form. Sem essa linha o nome já capturado pela " +
-				"conversation NUNCA chega ao frontend e o form aparece vazio (bug b7fc39e).",
+			interestBlock.length,
+			"branch `body.action?.kind === 'interest'` não foi encontrado em route.ts",
+		).toBeGreaterThan(0);
+		// FIX-29/FIX-34: o avanço pós-reveal é decision → contract_form, NÃO lead_form.
+		expect(
+			interestBlock.includes("lead_form"),
+			"handler `interest` NÃO pode emitir lead_form — o avanço pós-reveal é decision → contract_form.",
+		).toBe(false);
+		expect(
+			/buildDecisionPromptDirective|buildAdvanceToContractDirective/.test(interestBlock),
+			"handler `interest` precisa dirigir o card de decisão / passo 5 (buildDecisionPromptDirective ou buildAdvanceToContractDirective).",
 		).toBe(true);
+	});
+
+	it("FIX-29 — route.ts tem handler `adjust-value` que reabre o ajuste sem fechamento", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		expect(
+			/body\.action\?\.kind === "adjust-value"/.test(route),
+			"route.ts precisa ter branch `body.action?.kind === 'adjust-value'` (clique 'Ajustar valor').",
+		).toBe(true);
+		const adjustBlock =
+			route.match(
+				/body\.action\?\.kind === "adjust-value"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+			)?.[0] ?? "";
+		expect(adjustBlock.includes("lead_form")).toBe(false);
+		expect(/buildAdjustValueDirective/.test(adjustBlock)).toBe(true);
 	});
 
 	it("src/components/chat/artifacts/lead-form.tsx prioriza payload.prefilledName em defaultValues", () => {

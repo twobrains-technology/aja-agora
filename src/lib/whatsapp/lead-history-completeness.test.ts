@@ -165,12 +165,7 @@ vi.mock("@/lib/memory/orchestrator-bridge", () => ({
 // ─── Imports do código de produção (após os mocks) ──────────────────────────
 
 const { db } = await import("@/db");
-const {
-	conversations,
-	leads,
-	messages: messagesTable,
-	user: userTable,
-} = await import("@/db/schema");
+const { conversations, leads, user: userTable } = await import("@/db/schema");
 const { runDirectiveWithOrchestrator } = await import("./adapter");
 const { processInteractiveReply } = await import("./processor");
 const { invalidateAttendantCache } = await import("./proxy");
@@ -221,6 +216,10 @@ async function seedFixture(): Promise<{
 				currentCategory: "moto",
 				expertiseLevel: "neutro",
 				searchDispatched: true,
+				// FIX-WA: cenário pós-reveal — "Tenho interesse" é avanço self-service.
+				revealCompleted: true,
+				simulatorOfferDispatched: true,
+				recommendedAdministradora: "CANOPUS",
 			},
 		})
 		.returning();
@@ -292,7 +291,7 @@ async function fetchAdminHistory(leadId: string): Promise<
 
 // ─── Suite ──────────────────────────────────────────────────────────────────
 
-describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa cobrir artifacts + interest_* + frase de encerramento", () => {
+describe("BUG-LEAD-HISTORY-INCOMPLETE + FIX-WA — histórico cobre artifact + clique, e 'Tenho interesse' NÃO vira handoff", () => {
 	let convId: string;
 	let lead: Lead;
 	let attendantId: string;
@@ -311,10 +310,9 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa 
 		await cleanupFixture(convId, attendantId);
 	});
 
-	it("após simulation_result emitido + clique 'Tenho interesse!' + handoff, histórico admin contém artifact, mensagem-user do botão E frase final do bot", async () => {
+	it("após simulation_result + clique 'Tenho interesse!', histórico tem artifact + clique do user; o clique dirige a DECISÃO (self-service), sem frase de consultor", async () => {
 		// ── Passo 1: agent emite present_simulation_result via stub.
-		//    runner.ts: gera evento 'artifact' (que NUNCA é persistido — gap #1)
-		//    e grava assistant content "[tool: present_simulation_result]".
+		//    runner.ts persiste o assistant + o artifact (GAP #1).
 		await runDirectiveWithOrchestrator({
 			from: FAKE_WA_ID,
 			conversationId: convId,
@@ -323,91 +321,70 @@ describe("BUG-LEAD-HISTORY-INCOMPLETE — admin GET de conversa do lead precisa 
 		});
 
 		// ── Passo 2: usuário clica no botão "Tenho interesse!".
-		//    dispatchInteractiveReply → handleInterest → startInterestHandoff
-		//    → handoffToAgents → sendTextMessage("Perfeito, ...").
-		//    Gap #2: handleInterest NÃO chama saveMessage(user, replyTitle).
-		//    Gap #3: handoffToAgents NÃO chama saveMessage(assistant, frase final).
+		//    FIX-WA: handleInterest NÃO faz mais startInterestHandoff — persiste o
+		//    clique (recordUserClick, GAP #2), marca decisionDispatched e dirige o
+		//    card de decisão (mesmo funil self-service da web).
 		await processInteractiveReply(FAKE_WA_ID, REPLY_ID, REPLY_TITLE, "Marcos Silva");
 
-		// Sanity-check: a borda externa (Meta API mockada) recebeu a frase final
-		// do bot — confirma que o caminho foi exercido completo (não bateu em
-		// nenhum guard prematuro). Se isso falhar, o teste está medindo a coisa
-		// errada e os asserts abaixo viram inconclusivos.
+		// Sanity-check INVERTIDO: a borda externa (Meta API mockada) NUNCA pode ter
+		// recebido a frase de handoff — o "Tenho interesse" é self-service agora.
 		const allOutboundTexts = mocks.sendText.mock.calls.map((c) => String(c[1] ?? "")).join(" | ");
 		expect(
 			allOutboundTexts,
-			"sanity-check: o stub mockado de sendTextMessage tem que ter recebido a frase canônica de encerramento — se não, o handleInterest/startInterestHandoff bailou cedo e os asserts seguintes ficam falso-positivos",
-		).toContain("Já estou passando seu perfil pro consultor");
+			"FIX-WA: o clique 'Tenho interesse' NÃO pode disparar a frase de handoff pra consultor — é self-service (decisão → contratação).",
+		).not.toContain("Já estou passando seu perfil pro consultor");
 
 		// ── Passo 3: busca o histórico exatamente como o admin faz.
 		const history = await fetchAdminHistory(lead.id);
 
-		// ── Soft-asserts: acumulamos as 3 falhas e disparamos UM expect.fail no
-		//    final com a lista completa. Sem isso, vitest fail-fast esconde
-		//    GAPs #2 e #3 na primeira execução, forçando 3 ciclos pra ver tudo.
-		//    O Kairo pediu "os três gaps de uma vez" — então mostra os três.
 		const failures: string[] = [];
 
-		// GAP #1: pelo menos UMA mensagem tem artifacts > 0
-		const messagesWithArtifacts = history.filter((m) => m.artifacts.length > 0);
-		if (messagesWithArtifacts.length < 1) {
+		// GAP #1: pelo menos UMA mensagem tem artifact simulation_result (passo 1).
+		const simulationArtifacts = history.flatMap((m) =>
+			m.artifacts.filter((a) => a.type === "simulation_result"),
+		);
+		if (simulationArtifacts.length < 1) {
 			failures.push(
-				`GAP #1 (artifacts órfãos) — esperava >=1 mensagem com artifacts no histórico, achei ${messagesWithArtifacts.length}. ` +
-					`Total de mensagens: ${history.length}. ` +
-					`Roles: ${history.map((m) => m.role).join(",")}. ` +
-					`Artifacts persistidos: ${history.flatMap((m) => m.artifacts.map((a) => a.type)).join(",") || "(nenhum)"}. ` +
-					`Causa raiz: runner.ts:198-201 salva só o texto do assistant; o array 'artifacts' produzido nunca chega a db.insert(artifacts).`,
+				`GAP #1 (artifacts órfãos) — esperava >=1 artifact 'simulation_result' persistido, achei ${simulationArtifacts.length}. ` +
+					`Tipos achados: ${history.flatMap((m) => m.artifacts.map((a) => a.type)).join(",") || "(nenhum)"}.`,
 			);
-		} else {
-			// Precisão: artifact tem que ser do tipo esperado (simulation_result).
-			const simulationArtifacts = history.flatMap((m) =>
-				m.artifacts.filter((a) => a.type === "simulation_result"),
-			);
-			if (simulationArtifacts.length < 1) {
-				failures.push(
-					"GAP #1 (precisão) — havia artifacts persistidos mas NENHUM do tipo 'simulation_result' (foi o que o agent emitiu). " +
-						`Tipos achados: ${history.flatMap((m) => m.artifacts.map((a) => a.type)).join(",")}.`,
-				);
-			}
 		}
 
-		// GAP #2: existe message role=user com content == REPLY_TITLE
+		// GAP #2: existe message role=user com content == REPLY_TITLE (clique persistido).
 		const userInterestMsgs = history.filter((m) => m.role === "user" && m.content === REPLY_TITLE);
 		if (userInterestMsgs.length !== 1) {
 			failures.push(
-				`GAP #2 (clique do botão 'Tenho interesse!' não persistido) — esperava 1 mensagem role=user com content="${REPLY_TITLE}", achei ${userInterestMsgs.length}. ` +
-					`Conteúdos de mensagens user no histórico: ${
+				`GAP #2 (clique 'Tenho interesse!' não persistido) — esperava 1 mensagem role=user com content="${REPLY_TITLE}", achei ${userInterestMsgs.length}. ` +
+					`Conteúdos user: ${
 						history
 							.filter((m) => m.role === "user")
 							.map((m) => JSON.stringify(m.content))
 							.join(", ") || "(nenhuma)"
-					}. ` +
-					`Causa raiz: handleInterest em interactive-handlers.ts:356-368 NÃO chama saveMessage(user, replyTitle) antes de startInterestHandoff. Outros handlers do mesmo arquivo (handleSimulate, handleDetail, handleHandoffConfirm) salvam.`,
+					}.`,
 			);
 		}
 
-		// GAP #3: existe message role=assistant cujo content contém a frase
-		const handoffClosureMsgs = history.filter(
-			(m) =>
-				m.role === "assistant" && m.content.includes("Já estou passando seu perfil pro consultor"),
-		);
-		if (handoffClosureMsgs.length !== 1) {
+		// FIX-WA: NENHUMA mensagem promete consultor por "Tenho interesse".
+		const consultorMsgs = history.filter((m) => /consultor/i.test(m.content));
+		if (consultorMsgs.length > 0) {
 			failures.push(
-				`GAP #3 (frase final do bot não persistida) — esperava 1 mensagem role=assistant com a frase de encerramento "Perfeito, <nome>! Já estou passando seu perfil pro consultor — ele te chama aqui em instantes. 🤝", achei ${handoffClosureMsgs.length}. ` +
-					`Conteúdos de mensagens assistant: ${
-						history
-							.filter((m) => m.role === "assistant")
-							.map((m) => JSON.stringify(m.content.slice(0, 80)))
-							.join(", ") || "(nenhuma)"
-					}. ` +
-					`Causa raiz: proxy.ts:359-362 (startInterestHandoff/handoffToAgents) envia a frase via sendTextMessage direto na Meta API — não chama saveMessage(assistant, frase).`,
+				`FIX-WA (desvio pra consultor) — o clique 'Tenho interesse' não pode gerar mensagem com "consultor". Achei ${consultorMsgs.length}: ${consultorMsgs
+					.map((m) => JSON.stringify(m.content.slice(0, 80)))
+					.join(", ")}.`,
 			);
 		}
 
 		expect(
 			failures,
-			`BUG-LEAD-HISTORY-INCOMPLETE: ${failures.length} de 3 contratos violados.\n\n` +
+			`FIX-WA: ${failures.length} contrato(s) violado(s).\n\n` +
 				failures.map((f, i) => `[${i + 1}] ${f}`).join("\n\n"),
 		).toEqual([]);
+
+		// O funil avançou pra decisão (determinístico, persistido pelo handler).
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		const meta = (conv?.metadata ?? {}) as Record<string, unknown>;
+		expect(meta.decisionDispatched, "handleInterest deve marcar decisionDispatched").toBe(true);
 	}, 30_000);
 });

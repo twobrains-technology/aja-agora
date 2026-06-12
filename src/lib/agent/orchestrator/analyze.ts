@@ -1,5 +1,5 @@
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
-import { objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 const AFFIRMATIVE_REPLIES = new Set([
@@ -65,8 +65,21 @@ export async function analyzeAndMerge(
 	}
 	const q = meta.qualifyAnswers ?? {};
 	if (analysis.creditMax !== null && q.creditMax === undefined) {
-		q.creditMin = analysis.creditMin ?? Math.round(analysis.creditMax * 0.9);
-		q.creditMax = analysis.creditMax;
+		// FIX-33: o valor de texto livre não passa pelos sliders — clampa na faixa
+		// da categoria (quando conhecida) antes de gravar. Sem categoria ainda
+		// (concierge), grava o valor cru — não há faixa de referência.
+		const clamp = meta.currentCategory
+			? clampCreditToCategory(analysis.creditMax, meta.currentCategory)
+			: null;
+		const creditMax = clamp ? clamp.value : analysis.creditMax;
+		const rawMin = analysis.creditMin ?? Math.round(creditMax * 0.9);
+		// creditMin derivado herda o clamp — nunca acima do teto da faixa.
+		q.creditMin = clamp ? Math.min(Math.max(rawMin, clamp.min), clamp.max) : rawMin;
+		q.creditMax = creditMax;
+		if (clamp?.clamped) {
+			// Preserva o valor original pedido pro agente confrontar a faixa.
+			q.creditClampedFrom = analysis.creditMax;
+		}
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 		extractedQualifyField = true;

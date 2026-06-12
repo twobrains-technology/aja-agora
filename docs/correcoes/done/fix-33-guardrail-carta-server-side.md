@@ -1,7 +1,9 @@
 ---
 id: FIX-33
 titulo: "Valor de carta extraído por texto livre não tem guardrail server-side — fora da faixa da categoria passa direto"
-status: todo
+status: done
+commit: d4a9b77
+executado_em: 2026-06-12
 bloco: bloco-s-funil-canonico
 arquivos:
   - src/lib/agent/orchestrator/analyze.ts (clamp no merge do creditMax/creditMin)

@@ -96,7 +96,9 @@ const QUALIFY_EXPECTED = [
 
 const REVEAL_EXPECTED = [
 	...BASE,
-	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP)
+	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP).
+	// FIX-34: present_lead_form FORA — pós-reveal o avanço é decision → contract_form
+	// (jornada self-service), nunca captura de lead pra consultor humano.
 	"capture_lead",
 	"compare_with_financing",
 	"compute_scenarios",
@@ -105,7 +107,6 @@ const REVEAL_EXPECTED = [
 	"present_contemplation_dial",
 	"present_decision_prompt",
 	"present_financing_comparison",
-	"present_lead_form",
 	"present_scenarios",
 	"present_simulation_result",
 	"present_value_picker",
@@ -198,6 +199,15 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		expect(allowedTools(TERMINAL_META)).not.toContain("present_contract_form");
 	});
 
+	it("FIX-34 — present_lead_form: SÓ em qualify; AUSENTE em reveal/closing/terminal", () => {
+		// Pós-reveal o sinal de avanço é decision → contract_form (self-service).
+		// present_lead_form só faz sentido na captura de lead pré-reveal (qualify).
+		expect(allowedTools(QUALIFY_META)).toContain("present_lead_form");
+		expect(allowedTools(REVEAL_META)).not.toContain("present_lead_form");
+		expect(allowedTools(CLOSING_META)).not.toContain("present_lead_form");
+		expect(allowedTools(TERMINAL_META)).not.toContain("present_lead_form");
+	});
+
 	it("descoberta (search/recommend): AUSENTE em toda fase pós-reveal", () => {
 		for (const meta of [REVEAL_META, CLOSING_META, TERMINAL_META]) {
 			const allowed = allowedTools(meta);
@@ -288,6 +298,7 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).not.toContain("recommend_groups");
 		expect(tools).not.toContain("present_recommendation_card");
 		expect(tools).not.toContain("present_contract_form");
+		expect(tools).not.toContain("present_lead_form"); // FIX-34: avanço é decision→contract
 	});
 
 	it("closing: contract_form + check_proposal_status entram; decision_prompt permanece (directive pós-persist)", () => {
