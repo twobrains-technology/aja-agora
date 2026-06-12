@@ -47,6 +47,12 @@ Provado no código — o fluxo é DETERMINÍSTICO (`route.ts` kind
 | Excluir a recomendada por `groupId` (id da cota do reveal, guardado no meta), não por nome de administradora | `other-options.ts` (+ meta se precisar guardar o groupId recomendado) |
 | Se após dedupe sobrar < 1 "outra", degradar com honestidade (texto "só encontrei essa outra opção" / erro tratado como hoje) | `other-options.ts` |
 
+### Estado da arte (pesquisa web 2026-06-11 — ver `docs/correcoes/2026-06-11-pesquisa-stack-padroes.md`)
+
+- Pipeline canônico valida a proposta: dedupe DETERMINÍSTICO no adapter por
+  **chave composta de negócio** antes do dado virar payload de UI — nunca
+  delegado ao modelo (que aqui nem participa) nem ao componente.
+
 ### Regressão exigida
 
 - Camada 1: unit do `buildOtherOptions` com fixture de captura real contendo

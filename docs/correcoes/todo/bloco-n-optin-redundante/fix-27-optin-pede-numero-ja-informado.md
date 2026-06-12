@@ -65,10 +65,23 @@ Recomendação: stage `"confirm"` com 1-clique (consentimento de canal é
 diferente de ter o número — LGPD), supressão total só se o opt-in já tiver
 sido respondido em qualquer forma.
 
+### Estado da arte (pesquisa web 2026-06-11 — ver `docs/correcoes/2026-06-11-pesquisa-stack-padroes.md`)
+
+- O padrão dominante 2026 confirma e ENDURECE a correção: slot coletado se
+  grava **no mesmo fluxo do submit** (server-side) num estado estruturado, e a
+  capacidade de re-coleta se remove **por construção** — `prepareStep` +
+  `activeTools` do AI SDK tiram `present_whatsapp_optin` do toolset quando
+  `slots.phone` está preenchido (determinismo > instrução no prompt). Nosso
+  tool-policy por fase (FIX-19) já dá a infra — estender pra policy por SLOT.
+- Snapshot estruturado dos slots no prompt (YAML: `telefone: ✓ (62) 9...`) com
+  precedência explícita, em vez de só narrativa de estágio (padrão do OpenAI
+  Cookbook "Context Engineering for Personalization").
+
 ### Regressão exigida (3 camadas)
 
 - Camada 1: derive com phone capturado ≠ "open"; componente com `knownPhone`
-  renderiza confirmação (sem input vazio); leads route seta a flag no meta.
+  renderiza confirmação (sem input vazio); leads route seta a flag no meta;
+  tool-policy remove present_whatsapp_optin com slot preenchido.
 - Camada 2: cassette — pós-erro Bevi + "sim", agente NÃO chama
   present_whatsapp_optin pedindo número; turno re-tenta o fechamento.
 - Camada 3: cenário de eval — jornada com lead form preenchido → fechamento →

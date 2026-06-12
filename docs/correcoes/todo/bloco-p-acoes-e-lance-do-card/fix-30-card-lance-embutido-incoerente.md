@@ -64,6 +64,18 @@ de MAPEAMENTO e ROTULAGEM:
 | Rotulagem honesta no card: o que temos REAL é "lance estimado p/ contemplar R$ X (Y% da carta)" — exibir assim; "lance embutido" só quando a oferta traz o teto de embutido de verdade | `simulation-result.tsx` |
 | Coerência recebido×embutido: enquanto a AGX não responder (perguntas 7/8), nunca exibir "% embutido" e "recebe carta cheia" juntos — mostrar só o que não se contradiz | `simulation-result.tsx` |
 
+### Estado da arte (pesquisa web 2026-06-11 — ver `docs/correcoes/2026-06-11-pesquisa-stack-padroes.md`)
+
+- **`toModelOutput`** (novo no AI SDK 6) é o upgrade natural do nosso padrão
+  de coação (FIX-6/C3): o `execute` retorna o payload completo pra UI e o
+  modelo recebe só uma REFERÊNCIA ("oferta #123 renderizada") — números nunca
+  entram no contexto do modelo, coação server-side vira 2ª linha de defesa.
+  Avaliar na execução se cabe junto.
+- Guia fintech 2026: **logar cada coerção aplicada** (valor que o modelo
+  tentou × valor injetado) como trilha de auditoria — em produto regulado,
+  número alucinado exibido é finding de auditoria. Conecta com o turn-trace
+  (FIX-21).
+
 ### Regressão exigida (3 camadas)
 
 - Camada 1: unit do mapper com a captura real da ÂNCORA (bidPercentage 0,7443,

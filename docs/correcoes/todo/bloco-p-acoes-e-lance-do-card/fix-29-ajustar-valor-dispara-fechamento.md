@@ -59,6 +59,20 @@ Agravantes:
 | Copy do handler "interest" sem "consultor" (jornada: fecha direto na plataforma) | `route.ts` |
 | Auditar os DEMAIS artifacts com actions (recommendation-card etc.) — mesmo padrão de kind único? Corrigir junto | `recommendation-card.tsx` e afins |
 
+### Estado da arte (pesquisa web 2026-06-11 — ver `docs/correcoes/2026-06-11-pesquisa-stack-padroes.md`)
+
+- O AI SDK 6 resolve isso nativamente com **data parts tipados** (schema único
+  front↔back via `UIMessage<never, {...}>`) — o clique chega ao backend como
+  resposta ESTRUTURADA com enum, não como string que alguém re-mapeia. A
+  correção deve tipar o intent como `z.enum` compartilhado entre tool, payload
+  e handler (fonte única).
+- O servidor SEMPRE re-valida intent vindo do cliente contra o estado atual
+  (o próprio SDK lançou patch de segurança nessa linha — `ai@6.0.202`,
+  11 jun 2026, re-validação HMAC de approvals do histórico do cliente).
+- Pra ação de efeito conhecido ("Ajustar valor" → reabrir ajuste), o padrão
+  2026 é rotear deterministicamente SEM passar pelo modelo — exatamente o
+  desenho do handler novo proposto acima.
+
 ### Regressão exigida (3 camadas)
 
 - Camada 1: component test — clique em "Ajustar valor" envia kind

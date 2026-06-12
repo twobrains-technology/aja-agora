@@ -2,7 +2,7 @@
 bloco: bloco-p-acoes-e-lance-do-card
 onda: 1
 depends_on: []
-paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe]
+paralelo_com: [bloco-n-optin-redundante, bloco-o-outras-opcoes-dedupe, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente]
 itens: [FIX-29, FIX-30]
 escopo_arquivos:
   - src/components/chat/artifacts/simulation-result.tsx

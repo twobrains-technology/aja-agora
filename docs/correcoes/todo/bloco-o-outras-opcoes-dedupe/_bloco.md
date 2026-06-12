@@ -2,7 +2,7 @@
 bloco: bloco-o-outras-opcoes-dedupe
 onda: 1
 depends_on: []
-paralelo_com: [bloco-n-optin-redundante, bloco-p-acoes-e-lance-do-card]
+paralelo_com: [bloco-n-optin-redundante, bloco-p-acoes-e-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente]
 itens: [FIX-28]
 escopo_arquivos:
   - src/lib/bevi/other-options.ts

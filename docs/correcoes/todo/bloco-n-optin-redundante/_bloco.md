@@ -2,7 +2,7 @@
 bloco: bloco-n-optin-redundante
 onda: 1
 depends_on: []
-paralelo_com: [bloco-o-outras-opcoes-dedupe, bloco-p-acoes-e-lance-do-card]
+paralelo_com: [bloco-o-outras-opcoes-dedupe, bloco-p-acoes-e-lance-do-card, bloco-q-handoff-msg-duplicada, bloco-r-scroll-inteligente]
 itens: [FIX-27]
 escopo_arquivos:
   - src/lib/agent/system-prompt.ts
