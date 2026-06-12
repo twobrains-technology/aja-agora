@@ -148,6 +148,14 @@ Tudo ancorado na **oferta real da Bevi** selecionada (grupo, prazo, taxas, corre
    simulação mostra o dado literal da fonte e o simulador calcula
    carta − embutido — enquanto a semântica não for esclarecida com a AGX, os
    dois podem divergir nessa linha.
+8. **(2026-06-11) Semântica do `bidPercentage` da oferta**: na oferta ÂNCORA
+   (bem R$ 80.000) veio `bidPercentage = 0,7443` com
+   `necessaryBidToContemplate = R$ 59.544` — e 59.544 ÷ 80.000 = 74,43%
+   EXATO. Ou seja: nesse produto o campo parece ser o **lance total
+   necessário ÷ carta**, não o teto do lance EMBUTIDO (típico ≤ 25-30%).
+   O `bidPercentage` é embutido máximo ou lance necessário? Varia por
+   administradora/produto? Sem essa resposta, qualquer rótulo "lance
+   embutido (X%)" derivado dele pode estar errado (FIX-30).
 
 ---
 
