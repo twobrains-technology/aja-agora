@@ -2,7 +2,7 @@
 id: FIX-36
 titulo: "Agente afirma 'Encontrei opções na sua faixa' ANTES do search_groups completar — frase-modelo instruída no prompt/directives afirma resultado que ainda não existe"
 status: todo
-bloco: bloco-t-copy-pre-tool
+bloco: bloco-t-ux-chat
 arquivos:
   - src/lib/agent/orchestrator/directives.ts (frase-modelo do slider, linha ~154)
   - src/lib/agent/system-prompt.ts (ORDEM DE ENTREGA ~416, exemplo GOOD ~421, "introducao neutra" ~437, exemplo de quebra de linha ~123)

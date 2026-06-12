@@ -14,7 +14,10 @@ print. Itens FIX-27..FIX-30, blocos N/O/P (onda 1, todos paralelos).
 | (mesma sessão — números contraditórios no card) | FIX-30 — "COM LANCE EMBUTIDO (74,43%)" rotulando o lance TOTAL necessário + "recebe R$ 80.000" (carta cheia) na mesma tela | bloco-p-acoes-e-lance-do-card |
 | "bug msg duplicada nesse cenario." | FIX-31 — handoff ecoa a user message no bus com UUID novo; dedupe por id do provider nunca casa → bolha 2× | bloco-q-handoff-msg-duplicada |
 | "qd tento rolar a tela para cima e ele esta conversando, buga tudo... o chat se move sozinho bem qd nao tem usuario querendo scrollar. qd ele quer escrolar deve conseguir" | FIX-32 — auto-scroll força o fundo durante streaming (`\|\| isStreaming`) e confunde posição com intenção do usuário | bloco-r-scroll-inteligente |
-| "ele fala que encontrou antes de buscar" (2026-06-12, pós-merge dos PRs #28/#30) | FIX-36 — frases-modelo do prompt/directives instruem "Encontrei opções" ANTES do search_groups completar (visível com o spinner "Buscando grupos") | bloco-t-copy-pre-tool |
+| "ele fala que encontrou antes de buscar" (2026-06-12, pós-merge dos PRs #28/#30) | FIX-36 — frases-modelo do prompt/directives instruem "Encontrei opções" ANTES do search_groups completar (visível com o spinner "Buscando grupos") | bloco-t-ux-chat |
+| "veja o componente quebrando o layout" (2026-06-12) | FIX-37 — label "Quero falar com um especialista da Aja Agora" transborda o decision card (Button shadcn `whitespace-nowrap` + card 340px) | bloco-t-ux-chat |
+| "ta pedindo confirmacao demais, estou achando inutil isso" (2026-06-12) | FIX-38 — "Tenho interesse" → decision card → "Sim, quero contratar" → identify: dupla confirmação por construção (desenho do FIX-34/PR #30) | bloco-t-ux-chat |
+| "quem eh ancora? ... entenda se tem algo chumbado" (2026-06-12) | **resolvido na sessão** (`f0f7685`, test+fix): what-if atualizava só recommendedOffer e a administradora do fechamento/proposta ficava presa na âncora do reveal antigo. Âncora NÃO está chumbada — é administradora real do portfólio Bevi | — |
 
 ## Achado transversal
 
