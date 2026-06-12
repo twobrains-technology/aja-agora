@@ -80,7 +80,8 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
 				</div>
 
-				{/* Cenário com lance (bug #10) */}
+				{/* Cenário com lance (bug #10). FIX-30: o "lance estimado p/ contemplar"
+				    (REAL) vive aqui — é o lance TOTAL necessário, não o embutido. */}
 				{payload.lanceScenario && (
 					<div className="rounded-md bg-muted/40 px-3 py-2">
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -91,11 +92,24 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses (estimativa, não
 							garantia).
 						</p>
+						{/* FIX-8: só com dado real (> 0). FIX-30: movido pra cá — é o lance
+						    necessário p/ contemplar, NÃO o embutido. */}
+						{(payload.embeddedBid?.necessaryBidToContemplate ?? 0) > 0 && (
+							<div className="mt-1">
+								<CostLine
+									label="Lance estimado p/ contemplar"
+									value={formatBRL(payload.embeddedBid?.necessaryBidToContemplate as number)}
+								/>
+							</div>
+						)}
 					</div>
 				)}
 
-				{/* Cenário de lance embutido (jornada do .docx) — variação com/sem */}
-				{payload.embeddedBid && (
+				{/* Lance embutido (jornada do .docx). FIX-30: só quando o recebido FECHA
+				    (carta − embutido < carta). Se a fonte traz a carta CHEIA, "embute X%"
+				    + "recebe tudo" se contradizem — OMITIMOS a seção até a AGX confirmar a
+				    semântica (perguntas 7/8 da proposta-simulador.md). */}
+				{payload.embeddedBid && payload.embeddedBid.receivedCredit < payload.creditValue && (
 					<div className="rounded-md bg-muted/40 px-3 py-2">
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 							Com lance embutido ({payload.embeddedBid.percent}%)
@@ -105,13 +119,6 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 								label="Valor que você recebe"
 								value={formatBRL(payload.embeddedBid.receivedCredit)}
 							/>
-							{/* FIX-8: só com dado real (> 0) — "R$ 0,00" aqui é enganoso. */}
-							{(payload.embeddedBid.necessaryBidToContemplate ?? 0) > 0 && (
-								<CostLine
-									label="Lance estimado p/ contemplar"
-									value={formatBRL(payload.embeddedBid.necessaryBidToContemplate as number)}
-								/>
-							)}
 						</div>
 						<p className="text-xs text-muted-foreground mt-1">
 							Usa parte da própria carta como lance — sem precisar do valor todo em dinheiro

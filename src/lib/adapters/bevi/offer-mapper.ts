@@ -33,7 +33,8 @@ export interface BeviOffer {
 	monthlyAwardedQuotas?: number; // contemplados/mês
 	probContemplacaoMeses?: string; // estimativa de meses até contemplar
 	embeddedBid?: number; // R$ usado como lance embutido
-	bidPercentage?: number; // fração (0.3 = 30%)
+	embeddedBidAcceptancePercentage?: string | number; // teto REAL de embutido aceito ("30,00" / 0.3)
+	bidPercentage?: number; // fração (0.3 = 30%) — lance TOTAL necessário, NÃO o embutido
 	necessaryBidToContemplate?: number; // R$
 	quotaId: string;
 	productType?: string; // IMOVEL | AUTOS | MOTOS | SERVICOS | PESADOS | OUTROS BENS
@@ -79,6 +80,15 @@ function mapAdjustmentIndex(adjustmentType?: string): "INCC" | "IPCA" {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Parse do teto de embutido da Bevi: "30,00" | "30.00" | 0.3 | 30 → 30 (em %).
+ * null quando ausente/inválido (FIX-30: sem teto REAL não se inventa embutido). */
+function parseBeviAcceptPercent(v: string | number | undefined | null): number | null {
+	if (v == null) return null;
+	const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
+	if (!Number.isFinite(n) || n <= 0) return null;
+	return n <= 1 ? round2(n * 100) : round2(n);
+}
 
 /** Oferta Bevi → GroupSummary (card de busca/comparação). */
 export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
@@ -134,10 +144,17 @@ export function beviOfferToQuotaSimulation(offer: BeviOffer): QuotaSimulation {
 		Number(offer.probContemplacaoMeses ?? "0") || Math.round(offer.term * 0.4);
 	const lancePercent = offer.bidPercentage ? round2(offer.bidPercentage * 100) : 0;
 
-	// Lance embutido: a oferta real traz embeddedBid (R$) + bidPercentage (fração)
-	// + receivedCredit + necessaryBidToContemplate. Usa-os direto; cai pra cálculo
-	// a partir do percentual quando algum campo não vier.
-	const embeddedPercent = lancePercent || 30;
+	// Lance embutido: o % EMBUTIDO vem do teto REAL da oferta
+	// (embeddedBidAcceptancePercentage), NUNCA do lancePercent. FIX-30: lancePercent
+	// é o bidPercentage = lance TOTAL necessário (74,43% na ÂNCORA de jun/2026 =
+	// 59.544/80.000); reusá-lo como % embutido punha "embutido de 74%" (impossível,
+	// teto comercial ~30%) na mesma tela que "recebe a carta cheia". Sem teto real →
+	// default histórico (30); o card OMITE a seção quando o recebido não fecha
+	// (receivedCredit = carta cheia) — coerência server + UI.
+	// TODO(AGX perguntas 7/8 — docs/jornada/proposta-simulador.md): confirmar a
+	// semântica de receivedCredit (líquido vs carta cheia) e de bidPercentage antes
+	// de exibir "% embutido" + "recebido" juntos sem o guardrail de coerência.
+	const embeddedPercent = parseBeviAcceptPercent(offer.embeddedBidAcceptancePercentage) ?? 30;
 	const embeddedBidValue = round2(offer.embeddedBid ?? (offer.finalValue * embeddedPercent) / 100);
 	const receivedCredit = round2(offer.receivedCredit ?? offer.finalValue - embeddedBidValue);
 	// FIX-8: dado REAL ou null — sem fallback heurístico (43% era inventado,

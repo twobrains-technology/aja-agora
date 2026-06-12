@@ -58,6 +58,9 @@
 ## Linha do tempo (resumida)
 - 00:07 — /to-saindo ativado. Bloco Q já fechado (8f11ee2). Começando bloco R.
 - 00:17 — Bloco R Camada 1 verde (7/7: scroll-intent + message-list). Subindo app pro E2E.
+- 00:37 — Bloco R fechado (3663229): Camada 1 + E2E Playwright 3×/3 verde.
+- 00:41 — Bloco O fechado (ce2cc3e): investigação DB (meta sem groupId, recommendedOffer presente) + dedupe por equivalência. Restam P e N.
+- 00:51 — Bloco P (FIX-30) Camada 1 verde (6 testes: mapper + component). embeddedPercent do teto real, não do lance total; render omite embutido contraditório. Suite 1493 verde. Commitando P.
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _pendente_
