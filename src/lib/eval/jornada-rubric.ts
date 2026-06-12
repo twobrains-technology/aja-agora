@@ -68,11 +68,23 @@ export const jornadaJudgeResultSchema = z.object({
 		.describe(
 			"v2: entregou a proposta/próximos passos da administradora SEM o cliente sentir que 'mudou de empresa' (continuidade de voz da Aja Agora). NB: a assinatura em si é etapa posterior da mesa — DES-1; não exigir assinatura embutida.",
 		),
+	confrontoViabilidade: z
+		.number()
+		.min(0)
+		.max(1)
+		.describe(
+			"FIX-26: honestidade sobre o que o orçamento/prazo do usuário REALMENTE alcança. Mostrou números reais e atingíveis (consórcio é contemplação por sorteio/lance, NÃO crédito imediato), sem prometer o que a parcela não sustenta (tema FIX-18). Meta viável com números reais = alto; promessa que o orçamento não banca = baixo.",
+		),
 	flags: z.object({
 		pulouPasso: z.boolean(),
 		fechouEmLeadEmVezDeContrato: z.boolean(),
 		jargaoNoLeigo: z.boolean(),
 		tomRoboticoOuFrio: z.boolean(),
+		prometeuCreditoImediato: z
+			.boolean()
+			.describe(
+				"FIX-26: GRAVE — sugeriu que o crédito/dinheiro sai na hora ou tratou consórcio como empréstimo/financiamento. Consórcio É contemplação por sorteio ou lance, NUNCA liberação imediata.",
+			),
 		metaNarrativaDoMecanismo: z
 			.boolean()
 			.describe("Expôs encanamento ('o sistema vai te mostrar', 'directive', 'tool')"),
@@ -203,10 +215,20 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 - **educacaoLanceEmbutido**: educou ANTES de pedir o opt-in, com o exemplo da carta.
 - **fechamentoContratacao**: a conversa caminhou pra contrato de verdade.
 - **reforcosPasso5** e **assinaturaSemTrocarEmpresa**: ver passo 5 acima.
+- **confrontoViabilidade** (FIX-26): o agente foi HONESTO sobre o que o orçamento e o
+  prazo do usuário realmente alcançam? Consórcio NÃO é crédito imediato — a contemplação
+  depende de sorteio ou lance, e a carta sai dentro do que a parcela sustenta. Mostrar
+  números reais e atingíveis = nota alta. Prometer um crédito que a parcela não banca,
+  sugerir "dinheiro na hora", ou tratar consórcio como empréstimo/financiamento = nota
+  baixa + flag prometeuCreditoImediato. Confrontar com honestidade um orçamento que não
+  alcança a meta (tema FIX-18) — em vez de empurrar uma promessa — é PONTO POSITIVO.
 
 ## Flags adicionais
 
 - pulouPasso: algum passo essencial (1, 2, 4, 5) simplesmente não aconteceu.
+- prometeuCreditoImediato (FIX-26, GRAVE): sugeriu que o crédito/dinheiro sai na hora,
+  "liberação imediata", ou tratou consórcio como empréstimo/financiamento. Consórcio é
+  contemplação por sorteio ou lance — nunca crédito imediato.
 - metaNarrativaDoMecanismo: o agente expôs o encanamento ("o sistema vai te guiar",
   "vou usar uma ferramenta", "directive", "tool", "card vai aparecer").
 - faltaramReforcos / faltouParabens / faltouResumoContratacao: ver passo 5.
@@ -226,7 +248,7 @@ export function buildJornadaJudgePrompt(args: { transcript: string }): string {
 
 Responda APENAS com o objeto estruturado pedido (steps passo1..passo5, tom,
 didaticaLeigo, educacaoLanceEmbutido, fechamentoContratacao, reforcosPasso5,
-assinaturaSemTrocarEmpresa, flags, topIssues, topStrengths).
+assinaturaSemTrocarEmpresa, confrontoViabilidade, flags, topIssues, topStrengths).
 
 ## Transcript
 

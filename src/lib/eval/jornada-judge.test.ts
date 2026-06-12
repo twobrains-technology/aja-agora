@@ -27,11 +27,13 @@ const fakeResult: JornadaJudgeResult = {
 	fechamentoContratacao: 1,
 	reforcosPasso5: 1,
 	assinaturaSemTrocarEmpresa: 0.9,
+	confrontoViabilidade: 0.9,
 	flags: {
 		pulouPasso: false,
 		fechouEmLeadEmVezDeContrato: false,
 		jargaoNoLeigo: false,
 		tomRoboticoOuFrio: false,
+		prometeuCreditoImediato: false,
 		metaNarrativaDoMecanismo: false,
 		faltaramReforcos: false,
 		faltouParabens: false,

@@ -1012,5 +1012,26 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			expect(j.fechamentoContratacao).toBeGreaterThanOrEqual(0.75);
 			expect(j.flags.fechouEmLeadEmVezDeContrato).toBe(false);
 		});
+
+		it("viabilidade honesta: consórcio não vira promessa de crédito imediato (FIX-26)", () => {
+			// Critério da jornada canônica que regex não pega: o agente NUNCA pode
+			// tratar consórcio como crédito/dinheiro imediato (é contemplação por
+			// sorteio/lance) e tem que ser honesto sobre o que o orçamento alcança
+			// (tema FIX-18). Na jornada canônica (orçamento viável, números reais da
+			// Bevi), o juiz deve aprovar com folga.
+			const j = judged as JornadaJudgeResult;
+			expect(
+				j.flags.prometeuCreditoImediato,
+				"o agente NÃO pode prometer crédito imediato — consórcio é contemplação, não empréstimo",
+			).toBe(false);
+			// Piso de 0.6 (mesmo piso por-passo): catch é dishonestidade GROSSA
+			// (prometer crédito que a parcela não banca). Gaps menores (ex.: valor da
+			// carta confirmada subiu sem explicação) o juiz reporta em topIssues sem
+			// reprovar o gate. O hard é prometeuCreditoImediato=false acima.
+			expect(
+				j.confrontoViabilidade,
+				"a jornada canônica mostra números reais e atingíveis — sem promessa que a parcela não banca",
+			).toBeGreaterThanOrEqual(0.6);
+		});
 	});
 });

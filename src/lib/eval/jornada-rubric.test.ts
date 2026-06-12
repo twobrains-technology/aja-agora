@@ -27,11 +27,13 @@ const validResult = {
 	fechamentoContratacao: 1,
 	reforcosPasso5: 1,
 	assinaturaSemTrocarEmpresa: 0.9,
+	confrontoViabilidade: 0.9,
 	flags: {
 		pulouPasso: false,
 		fechouEmLeadEmVezDeContrato: false,
 		jargaoNoLeigo: false,
 		tomRoboticoOuFrio: false,
+		prometeuCreditoImediato: false,
 		metaNarrativaDoMecanismo: false,
 		faltaramReforcos: false,
 		faltouParabens: false,
@@ -163,5 +165,51 @@ describe("buildJornadaJudgePrompt", () => {
 		const prompt = buildJornadaJudgePrompt({ transcript: "Turn 1: oi\nTurn 2: olá" });
 		expect(prompt).toContain("Turn 1: oi");
 		expect(prompt).toMatch(/passo/i);
+	});
+});
+
+// FIX-26 — Camada 1: a rubrica do judge ganha os 2 critérios que faltavam pra
+// fechar a "rubrica mínima v1" (não promete crédito imediato + confronta a
+// viabilidade do orçamento honestamente, tema do FIX-18). Os outros 3 (lance
+// embutido, meta-narrativa, tom) já existiam.
+describe("FIX-26 — rubrica valida crédito imediato e viabilidade honesta", () => {
+	const p = JORNADA_RUBRIC_SYSTEM_PROMPT;
+
+	it("o system prompt instrui sobre 'crédito imediato' (consórcio ≠ empréstimo)", () => {
+		expect(p).toMatch(/cr[ée]dito imediato/i);
+		expect(p).toMatch(/prometeuCreditoImediato/);
+	});
+
+	it("o system prompt instrui sobre confronto honesto de viabilidade do orçamento", () => {
+		expect(p).toMatch(/confrontoViabilidade/);
+		expect(p).toMatch(/orçamento|or[çc]amento|parcela.*sustenta|alcan[çc]a/i);
+	});
+
+	it("o schema EXIGE confrontoViabilidade (0-1) e a flag prometeuCreditoImediato", () => {
+		const { confrontoViabilidade: _v, ...semViabilidade } = validResult as typeof validResult & {
+			confrontoViabilidade: number;
+		};
+		expect(() => jornadaJudgeResultSchema.parse(semViabilidade)).toThrow();
+
+		const semFlagCredito = {
+			...validResult,
+			flags: { ...validResult.flags, prometeuCreditoImediato: undefined },
+		};
+		expect(() => jornadaJudgeResultSchema.parse(semFlagCredito)).toThrow();
+	});
+
+	it("confrontoViabilidade fora de 0-1 é rejeitado", () => {
+		const bad = { ...validResult, confrontoViabilidade: 1.4 };
+		expect(() => jornadaJudgeResultSchema.parse(bad)).toThrow();
+	});
+
+	it("resultado RUIM (promete crédito imediato) é capturável pela flag", () => {
+		const ruim = jornadaJudgeResultSchema.parse({
+			...validResult,
+			confrontoViabilidade: 0.2,
+			flags: { ...validResult.flags, prometeuCreditoImediato: true },
+		});
+		expect(ruim.flags.prometeuCreditoImediato).toBe(true);
+		expect(ruim.confrontoViabilidade).toBeLessThan(0.5);
 	});
 });
