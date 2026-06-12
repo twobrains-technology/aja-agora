@@ -176,6 +176,10 @@ async function consumeEvents(
 				break;
 			case "tool-call":
 			case "meta-update":
+			case "suppression":
+			case "usage":
+				// FIX-24: telemetria interna — o tap `traceTurnEvents` já consumiu
+				// o evento; nada a enviar no WhatsApp.
 				break;
 			case "transition": {
 				await flushText();

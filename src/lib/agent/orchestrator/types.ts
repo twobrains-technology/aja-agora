@@ -39,6 +39,11 @@ export type TurnEvent =
 	| { type: "lead-stage"; stage: "novo" | "engajado" | "qualificado" }
 	| { type: "meta-update"; meta: ConversationMetadata }
 	| { type: "lead-collection-prompt"; field: LeadCollectionField; text: string }
+	// FIX-24: telemetria de observabilidade — emitidos pelo runner pra alimentar
+	// o turn-trace (suppressões de guard + métricas de cache da Anthropic). NÃO
+	// são user-facing: os adapters (web/whatsapp) os tratam como no-op.
+	| { type: "suppression"; artifactType: string; reason: string }
+	| { type: "usage"; cacheRead: number; cacheWrite: number }
 	| { type: "finish"; reason: string };
 
 export type TurnInput = {

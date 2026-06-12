@@ -198,6 +198,9 @@ export async function* runAgentTurn(args: {
 					});
 					if (!guardVerdict.allow) {
 						console.log(guardVerdict.logLine);
+						// FIX-24: além do console.log (que cassettes grepam), emite o
+						// evento de telemetria pro turn-trace popular `suppressed[]`.
+						yield { type: "suppression", artifactType, reason: guardVerdict.rule };
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
 						// ativa — coage payload com o snapshot do reveal (ou com o
@@ -284,6 +287,7 @@ export async function* runAgentTurn(args: {
 		};
 	}
 
+	let cacheUsage: { cacheRead: number; cacheWrite: number } | null = null;
 	try {
 		const pmeta = await result.providerMetadata;
 		const anthropicMeta = pmeta?.anthropic as
@@ -295,8 +299,15 @@ export async function* runAgentTurn(args: {
 			if (written > 0 || read > 0) {
 				console.log(`[cache] write=${written} read=${read} (persona=${currentPersona})`);
 			}
+			cacheUsage = { cacheRead: read, cacheWrite: written };
 		}
 	} catch {}
+	// FIX-24: além do console.log (cassettes grepam), emite o evento de telemetria
+	// pro turn-trace popular `cacheRead`/`cacheWrite`. Fora do try pra não engolir
+	// um throw do consumidor no ponto do yield.
+	if (cacheUsage) {
+		yield { type: "usage", ...cacheUsage };
+	}
 
 	const groupCards = artifacts.filter((a) => a.type === "group_card");
 	if (groupCards.length >= 2) {
