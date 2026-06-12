@@ -140,6 +140,37 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 		expect(lastBody().lanceEmbutido).toBe("nenhum");
 	});
 
+	// BUG-TEM-EMBUTIDO (dev real 2026-06-12): Bevi passou a exigir `temEmbutido`
+	// na simulação de contemplação rápida — sem o campo, 400 "Simulação inválida:
+	// temEmbutido é obrigatório para contemplação rápida" e o passo 5 morria com
+	// "Tive um problema ao falar com a administradora". O adapter enviava só
+	// `lanceEmbutido` (string) e nunca o boolean.
+	it("simulate: envia temEmbutido=true quando há lance embutido (%)", async () => {
+		mockFetchSequence(okSimulation);
+		await new BeviApiAdapter(CONFIG).simulate({
+			proposalId: "P1",
+			segmento: "AUTOS",
+			tipoSimulacao: "valor_total",
+			valor: 50000,
+			objetivo: "contemplacao_rapida",
+			lanceEmbutido: "30",
+		});
+		expect(lastBody().temEmbutido).toBe(true);
+		expect(lastBody().lanceEmbutido).toBe("30");
+	});
+
+	it("simulate: envia temEmbutido=false quando lanceEmbutido='nenhum'/omitido", async () => {
+		mockFetchSequence(okSimulation);
+		await new BeviApiAdapter(CONFIG).simulate({
+			proposalId: "P1",
+			segmento: "AUTOS",
+			tipoSimulacao: "valor_total",
+			valor: 50000,
+			objetivo: "contemplacao_rapida",
+		});
+		expect(lastBody().temEmbutido).toBe(false);
+	});
+
 	it("simulate: 404 transitório → retry → sucesso (spec §4.3)", async () => {
 		const transient404 = {
 			status: "NOT_FOUND",

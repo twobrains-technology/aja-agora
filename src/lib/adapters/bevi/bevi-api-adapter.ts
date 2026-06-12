@@ -146,6 +146,11 @@ export class BeviApiAdapter implements ProposalGateway {
 				valor: input.valor,
 				objetivo: input.objetivo,
 				lanceEmbutido: input.lanceEmbutido ?? "nenhum",
+				// BUG-TEM-EMBUTIDO (dev 2026-06-12): a Bevi exige o boolean
+				// `temEmbutido` na contemplação rápida — sem ele, 400 "Simulação
+				// inválida: temEmbutido é obrigatório" e o fechamento (passo 5)
+				// morria. Derivado do próprio lanceEmbutido (% ≠ "nenhum").
+				temEmbutido: (input.lanceEmbutido ?? "nenhum") !== "nenhum",
 				temLanceParaOfertar: input.temLanceParaOfertar ?? false,
 				...(input.temLanceParaOfertar && input.valorDoLance != null
 					? { valorDoLance: input.valorDoLance }
