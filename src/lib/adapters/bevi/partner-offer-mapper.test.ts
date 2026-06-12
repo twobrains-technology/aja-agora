@@ -91,3 +91,48 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 		});
 	});
 });
+
+// BUG-PARCELA-STRING (dev real 2026-06-12): a Bevi mudou a API do parceiro —
+// `parcela` virou STRING pt-BR ("2.075,34") e a resposta ganhou prazo/lanceMedio.
+// round2("2.075,34") = NaN → JSON null → RealOffer chamava null.toLocaleString
+// e derrubava o front INTEIRO ("This page couldn't load"). Capturado live:
+// re-simulação na proposta 6a2be7b1 devolveu o shape novo.
+describe("partnerOfferToRealOffer — parcela string pt-BR (API nova 2026-06)", () => {
+	const base = {
+		ofertaId: "0dbcb774-5ae2-41d3-bf93-0d7c63b59af5",
+		administradora: "BANCO DO BRASIL",
+		tipoOferta: "SPECIAL_OFFER" as const,
+		grupo: "1690",
+		valorCarta: 114760.54,
+		taxaContemplacao: 0.6044,
+		quotaId: "6a2b004df9ec5c948e8bfdfd",
+	};
+
+	it("parcela '2.075,34' (string pt-BR) → 2075.34", () => {
+		const real = partnerOfferToRealOffer({ ...base, parcela: "2.075,34" }, "AUTOS");
+		expect(real.monthlyPayment).toBe(2075.34);
+	});
+
+	it("parcela '469,95' (sem milhar) → 469.95", () => {
+		const real = partnerOfferToRealOffer({ ...base, parcela: "469,95" }, "AUTOS");
+		expect(real.monthlyPayment).toBe(469.95);
+	});
+
+	it("parcela number (shape antigo) continua funcionando", () => {
+		const real = partnerOfferToRealOffer({ ...base, parcela: 469.95 }, "AUTOS");
+		expect(real.monthlyPayment).toBe(469.95);
+	});
+
+	it("parcela ausente/ilegível → undefined, NUNCA NaN (NaN vira null no JSON e mata o front)", () => {
+		const semParcela = partnerOfferToRealOffer(
+			{ ...base, parcela: undefined as unknown as number },
+			"AUTOS",
+		);
+		expect(semParcela.monthlyPayment).toBeUndefined();
+		const ilegivel = partnerOfferToRealOffer(
+			{ ...base, parcela: "abc" as unknown as number },
+			"AUTOS",
+		);
+		expect(ilegivel.monthlyPayment).toBeUndefined();
+	});
+});

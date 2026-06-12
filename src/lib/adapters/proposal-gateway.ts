@@ -35,9 +35,15 @@ export interface PartnerOffer {
 	tipoOferta: "SPECIAL_OFFER" | "FREE_BID";
 	grupo: string;
 	valorCarta: number; // R$
-	parcela: number; // R$ (não arredondada na origem)
+	/** R$. BUG-PARCELA-STRING (2026-06-12): a API nova devolve STRING pt-BR
+	 * ("2.075,34"); o shape antigo era number. O mapper normaliza. */
+	parcela: number | string;
 	taxaContemplacao: number; // fração; SEMÂNTICA TBD — não exibir como taxa (spec §7)
 	quotaId: string;
+	/** Campos NOVOS da API 2026-06 (prazo em meses, lance médio R$) — opcionais
+	 * porque o shape antigo não os tinha. Ainda não consumidos no produto. */
+	prazo?: number;
+	lanceMedio?: number;
 }
 
 export interface CreateProposalInput {

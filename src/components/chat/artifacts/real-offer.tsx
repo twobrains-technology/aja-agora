@@ -25,10 +25,17 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 					<p className="text-sm font-semibold">Confirmado com a {payload.administradora}</p>
 				</div>
 
-				{/* Bloco de dados (stored) */}
+				{/* Bloco de dados (stored). BUG-PARCELA-STRING (2026-06-12): payload
+				    pode chegar com número null/ausente (a Bevi mudou o shape da API)
+				    — o card NUNCA morre por isso: omite a linha (D11: nenhum número
+				    inventado) e mantém os CTAs vivos. */}
 				<div className="rounded-xl bg-muted/40 p-3 space-y-2">
-					<Row label="Valor do bem" value={brl(payload.creditValue)} strong />
-					<Row label="Parcela" value={brl2(payload.monthlyPayment)} />
+					{Number.isFinite(payload.creditValue) && (
+						<Row label="Valor do bem" value={brl(payload.creditValue)} strong />
+					)}
+					{Number.isFinite(payload.monthlyPayment) && (
+						<Row label="Parcela" value={brl2(payload.monthlyPayment as number)} />
+					)}
 					<Row label="Grupo" value={payload.grupo} />
 					<Row label="Administradora" value={payload.administradora} />
 				</div>

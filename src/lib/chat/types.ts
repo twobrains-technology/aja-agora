@@ -230,7 +230,9 @@ export interface RealOfferPayload {
 	grupo: string;
 	category: "imovel" | "auto" | "moto" | "servicos";
 	creditValue: number;
-	monthlyPayment: number;
+	/** Pode vir null/ausente — a API da Bevi mudou o shape (BUG-PARCELA-STRING
+	 * 2026-06-12); o card omite a linha em vez de morrer. */
+	monthlyPayment: number | null;
 }
 
 /** Encaminhamento pra assinatura digital da administradora (sem "trocar de

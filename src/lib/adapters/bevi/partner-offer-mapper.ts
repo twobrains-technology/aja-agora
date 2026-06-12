@@ -15,6 +15,17 @@ import { beviSegmentToCategory } from "./offer-mapper";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** BUG-PARCELA-STRING (dev real 2026-06-12): a API nova devolve `parcela` como
+ * STRING pt-BR ("2.075,34"). round2(string) dava NaN → JSON.stringify(NaN) =
+ * null → o RealOffer chamava null.toLocaleString e derrubava o front inteiro.
+ * Normaliza number|string pra number; ilegível/ausente → undefined (NUNCA NaN). */
+export function parseMoney(v: number | string | null | undefined): number | undefined {
+	if (typeof v === "number") return Number.isFinite(v) ? round2(v) : undefined;
+	if (typeof v !== "string") return undefined;
+	const n = Number(v.replace(/\./g, "").replace(",", "."));
+	return Number.isFinite(n) ? round2(n) : undefined;
+}
+
 /** Oferta real confirmada, só com o que a API de Parceiro garante. Os GAPs (prazo,
  * taxas, correção) são opcionais e vêm `undefined` deste trilho. */
 export interface RealOffer {
@@ -23,7 +34,9 @@ export interface RealOffer {
 	grupo: string;
 	category: ConsorcioCategory;
 	creditValue: number; // valorCarta (R$)
-	monthlyPayment: number; // parcela (R$, arredondada)
+	/** parcela (R$, arredondada). Opcional: shape novo pode vir ilegível —
+	 * undefined honesto em vez de NaN (BUG-PARCELA-STRING). */
+	monthlyPayment?: number;
 	tipoOferta: "SPECIAL_OFFER" | "FREE_BID";
 	/** GAPs §11 — ausentes na oferta de parceiro. Preenchidos só pela Descoberta. */
 	termMonths?: number;
@@ -41,7 +54,7 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 		grupo: offer.grupo,
 		category: beviSegmentToCategory(segmento),
 		creditValue: offer.valorCarta,
-		monthlyPayment: round2(offer.parcela),
+		monthlyPayment: parseMoney(offer.parcela),
 		tipoOferta: offer.tipoOferta,
 		// GAPs deste trilho — explicitamente ausentes:
 		termMonths: undefined,

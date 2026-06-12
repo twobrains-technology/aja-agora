@@ -59,3 +59,32 @@ describe("RealOffer — FIX-13: prazo ausente explicado, nunca inventado", () =>
 		expect(screen.getByText(/Confirmado com a CANOPUS/)).toBeDefined();
 	});
 });
+
+// BUG-PARCELA-STRING (dev real 2026-06-12): payload com monthlyPayment null
+// (round2(undefined)=NaN → JSON null) fazia brl2(null) lançar TypeError e
+// derrubar a árvore React inteira — "This page couldn't load" pós-submit.
+// CONTRATO: o card NUNCA morre por campo ausente — omite a linha (D11) e
+// segue renderizável com os CTAs vivos.
+describe("RealOffer — BUG-PARCELA-STRING: payload com monthlyPayment null não derruba o front", () => {
+	afterEach(cleanup);
+
+	it("monthlyPayment null → renderiza sem lançar, sem linha de Parcela, CTAs presentes", () => {
+		const payload = {
+			...PAYLOAD,
+			monthlyPayment: null as unknown as number,
+		};
+		expect(() => render(<RealOffer payload={payload} />)).not.toThrow();
+		expect(screen.queryByText(/^Parcela$/)).toBeNull();
+		expect(screen.getByTestId("offer-confirm")).toBeDefined();
+	});
+
+	it("creditValue null também não derruba — card degrada com honestidade", () => {
+		const payload = {
+			...PAYLOAD,
+			creditValue: null as unknown as number,
+			monthlyPayment: null as unknown as number,
+		};
+		expect(() => render(<RealOffer payload={payload} />)).not.toThrow();
+		expect(screen.getByTestId("offer-confirm")).toBeDefined();
+	});
+});
