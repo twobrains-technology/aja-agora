@@ -2,11 +2,7 @@
 
 import { ShieldCheck } from "lucide-react";
 import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useChatContext } from "@/lib/chat/provider";
 
 // Gate "identify" (D1, docs/jornada/CONTEXT.md) — fim do passo 2: CPF + celular
@@ -69,68 +65,75 @@ export function GateIdentityForm({
 	};
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-4 pt-4">
-				<p className="text-sm font-medium">Pra buscar suas ofertas reais</p>
+		<div className="w-full max-w-[340px] bg-card border border-[#bcd3ff] rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
+			<p className="text-sm font-semibold text-foreground">Pra buscar suas ofertas reais</p>
 
-				<div className="space-y-2">
-					<Label htmlFor="identify-cpf" className="text-xs">
-						CPF
-					</Label>
-					<Input
-						id="identify-cpf"
-						inputMode="numeric"
-						placeholder="000.000.000-00"
-						value={cpf}
-						onChange={(e) => setCpf(maskCpf(e.target.value))}
-						disabled={isStreaming || submitted}
-						// FIX-17: autofocus padronizado nos forms do funil (mobile-first) —
-						// só quando ativo, pra não roubar foco de um card antigo no histórico.
-						autoFocus={active}
-						data-testid="identify-cpf"
-					/>
-				</div>
-
-				<div className="space-y-2">
-					<Label htmlFor="identify-phone" className="text-xs">
-						Celular
-					</Label>
-					<Input
-						id="identify-phone"
-						inputMode="numeric"
-						placeholder="(11) 99999-9999"
-						value={phone}
-						onChange={(e) => setPhone(maskPhone(e.target.value))}
-						disabled={isStreaming || submitted}
-						data-testid="identify-phone"
-					/>
-				</div>
-
-				<label className="flex items-start gap-2 text-xs text-muted-foreground">
-					<Checkbox
-						checked={lgpd}
-						onCheckedChange={(v) => setLgpd(v === true)}
-						disabled={isStreaming || submitted}
-						data-testid="identify-lgpd"
-						className="mt-0.5"
-					/>
-					<span>
-						Autorizo a consulta dos meus dados nas administradoras parceiras (LGPD) pra simular as
-						ofertas. Não é compromisso de contratação.
-					</span>
+			{/* CPF */}
+			<div className="flex flex-col gap-1.5">
+				<label htmlFor="identify-cpf" className="text-xs font-semibold text-foreground">
+					CPF
 				</label>
+				<input
+					id="identify-cpf"
+					inputMode="numeric"
+					placeholder="000.000.000-00"
+					value={cpf}
+					onChange={(e) => setCpf(maskCpf(e.target.value))}
+					disabled={isStreaming || submitted}
+					// FIX-17: autofocus padronizado nos forms do funil (mobile-first) —
+					// só quando ativo, pra não roubar foco de um card antigo no histórico.
+					// biome-ignore lint/a11y/noAutofocus: intencional — só quando active=true, não rouba foco de cards históricos
+					autoFocus={active}
+					data-testid="identify-cpf"
+					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-primary focus:shadow-[0_0_0_3px_rgba(3,110,255,.18)] disabled:opacity-50 disabled:cursor-not-allowed"
+				/>
+			</div>
 
-				<Button
-					type="button"
-					className="w-full min-h-[44px] gap-2"
-					onClick={submit}
-					disabled={!valid}
-					data-testid="identify-submit"
-				>
-					<ShieldCheck className="size-4" />
-					Buscar minhas ofertas
-				</Button>
-			</CardContent>
-		</Card>
+			{/* Celular */}
+			<div className="flex flex-col gap-1.5">
+				<label htmlFor="identify-phone" className="text-xs font-semibold text-foreground">
+					Celular
+				</label>
+				<input
+					id="identify-phone"
+					inputMode="numeric"
+					placeholder="(11) 99999-9999"
+					value={phone}
+					onChange={(e) => setPhone(maskPhone(e.target.value))}
+					disabled={isStreaming || submitted}
+					data-testid="identify-phone"
+					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-primary focus:shadow-[0_0_0_3px_rgba(3,110,255,.18)] disabled:opacity-50 disabled:cursor-not-allowed"
+				/>
+			</div>
+
+			{/* LGPD — label wraps checkbox + text (htmlFor not needed when input is inside label) */}
+			{/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox is inside the label element */}
+			<label className="flex items-start gap-[9px] text-[11px] text-muted-foreground leading-[1.45] cursor-pointer">
+				<Checkbox
+					checked={lgpd}
+					onCheckedChange={(v) => setLgpd(v === true)}
+					disabled={isStreaming || submitted}
+					data-testid="identify-lgpd"
+					className="mt-0.5 shrink-0"
+				/>
+				<span>
+					Autorizo a consulta dos meus dados nas administradoras parceiras (LGPD) pra simular as
+					ofertas.{" "}
+					<span className="text-foreground font-medium">Não é compromisso de contratação.</span>
+				</span>
+			</label>
+
+			{/* CTA */}
+			<button
+				type="button"
+				onClick={submit}
+				disabled={!valid}
+				data-testid="identify-submit"
+				className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-[13px] bg-primary text-primary-foreground text-sm font-semibold shadow-[var(--shadow-primary)] transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+			>
+				<ShieldCheck className="size-4" />
+				Buscar minhas ofertas
+			</button>
+		</div>
 	);
 }

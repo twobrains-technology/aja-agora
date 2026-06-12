@@ -96,18 +96,21 @@ export function ValuePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="overflow-hidden border-primary/20">
-				<CardContent className="space-y-3 p-3.5">
+			<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff] overflow-hidden">
+				<CardContent className="space-y-4 p-[18px]">
 					{/* Compact sliders */}
 					{payload.fields.map((field) => (
-						<div key={field.id} className="space-y-1.5">
-							<div className="flex items-baseline justify-between">
-								<span className="text-xs font-medium text-muted-foreground">{field.label}</span>
+						<div key={field.id} className="space-y-2">
+							<div className="flex items-baseline justify-between gap-2.5">
+								<span className="text-xs font-medium text-muted-foreground min-w-0">
+									{field.label}
+								</span>
 								<motion.span
 									key={values[field.id]}
-									initial={{ scale: 1.05 }}
+									initial={{ scale: 1.08 }}
 									animate={{ scale: 1 }}
-									className="font-mono text-sm font-bold"
+									transition={{ type: "spring", stiffness: 400, damping: 20 }}
+									className="aja-num text-sm font-bold text-primary shrink-0"
 								>
 									{formatValue(values[field.id], field.format)}
 								</motion.span>
@@ -128,9 +131,9 @@ export function ValuePicker({
 					{/* FIX-16: valores derivados de premissas típicas de mercado — nunca
 					    apresentar como dado de administradora (mesma regra do FIX-3) */}
 					{linkRoles && (
-						<p className="text-center text-[10px] leading-tight text-muted-foreground">
+						<span className="inline-flex items-center gap-1.5 self-center text-[10px] text-muted-foreground bg-[var(--cream-100)] rounded-full px-2.5 py-1 leading-tight">
 							Estimativa de mercado — os valores reais vêm das administradoras
-						</p>
+						</span>
 					)}
 
 					{/* Submit */}
@@ -138,7 +141,7 @@ export function ValuePicker({
 						onClick={handleSubmit}
 						disabled={submitted || isStreaming}
 						size="sm"
-						className="w-full gap-1.5 text-xs"
+						className="w-full gap-1.5 rounded-[13px] min-h-[44px]"
 					>
 						{submitted ? (
 							<>

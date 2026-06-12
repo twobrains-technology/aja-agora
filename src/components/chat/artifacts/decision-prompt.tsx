@@ -35,29 +35,34 @@ export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) 
 	};
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-3 pt-4">
-				<p className="text-sm font-medium">
+		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg">
+			<CardContent className="space-y-3 pt-4 px-4 pb-4">
+				<p className="text-sm font-semibold leading-snug">
 					{DECISION_PROMPT_QUESTION}
 					{payload.administradora ? (
-						<span className="text-muted-foreground"> ({payload.administradora})</span>
+						<span className="text-muted-foreground font-normal"> ({payload.administradora})</span>
 					) : null}
 				</p>
 				<div className="flex flex-col gap-2">
 					{DECISION_PROMPT_OPTIONS.map((opt) => {
 						const Icon = ICONS[opt.intent];
+						const isPrimary = opt.intent === "contratar";
 						return (
 							<Button
 								key={opt.intent}
 								type="button"
-								variant={opt.intent === "contratar" ? "default" : "outline"}
+								variant={isPrimary ? "default" : "ghost"}
 								size="sm"
-								className="justify-start gap-2 min-h-[44px]"
+								className={
+									isPrimary
+										? "justify-start gap-2 min-h-[44px] rounded-[13px] w-full shadow-[var(--shadow-primary)]"
+										: "justify-start gap-2 min-h-[44px] rounded-[13px] w-full text-muted-foreground"
+								}
 								onClick={() => choose(opt.intent, opt.label)}
 								disabled={isStreaming}
 								data-testid={`decision-${opt.intent}`}
 							>
-								<Icon className="size-4" />
+								<Icon className="size-4 shrink-0" />
 								{opt.label}
 							</Button>
 						);

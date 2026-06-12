@@ -2,7 +2,6 @@
 
 import { motion } from "motion/react";
 import { useCallback, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { type GateAction, useChatContext } from "@/lib/chat/provider";
 import type { GatePartData, GatePartOption } from "@/lib/chat/ui-message";
 
@@ -96,19 +95,18 @@ export function GateQuickReply({
 			initial={{ opacity: 0, y: 4 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 320, damping: 28 }}
-			className="flex flex-wrap gap-1.5"
+			className="flex flex-wrap gap-2"
 		>
 			{payload.options.map((opt) => (
-				<Button
+				<button
 					key={opt.value}
+					type="button"
 					onClick={() => onSelect(opt)}
 					disabled={isStreaming}
-					size="sm"
-					variant="outline"
-					className="h-8 rounded-full border-primary/30 bg-primary/5 text-xs font-medium text-foreground hover:bg-primary/10"
+					className="inline-flex items-center gap-[7px] h-[34px] px-[14px] border border-primary/[.28] rounded-full bg-primary/[.05] text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-primary/10 disabled:cursor-default disabled:opacity-50"
 				>
 					{opt.label}
-				</Button>
+				</button>
 			))}
 		</motion.div>
 	);

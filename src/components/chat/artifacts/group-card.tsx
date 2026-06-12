@@ -2,9 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { GroupCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
@@ -66,86 +64,84 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 
 	return (
 		<motion.div
-			whileHover={prefersReduced ? undefined : { scale: 1.02 }}
+			whileHover={prefersReduced ? undefined : { scale: 1.01, y: -2 }}
 			whileTap={prefersReduced ? undefined : { scale: 0.98 }}
 			transition={cardSpring}
 		>
-			<Card
+			<button
+				type="button"
 				className={cn(
-					"w-full cursor-pointer transition-colors",
-					"hover:ring-accent/50 hover:ring-2",
-					"focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2",
+					"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden cursor-pointer text-left",
+					"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+					"hover:border-primary/30 transition-colors",
+					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 				)}
-				role="button"
-				tabIndex={0}
 				aria-label={`Grupo ${payload.administradora} — credito ${formatBRL(payload.creditValue)}, parcela ${formatBRL(payload.monthlyPayment)}`}
 				onClick={handleClick}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						handleClick();
-					}
-				}}
 			>
-				<CardHeader>
-					<div className="flex items-center justify-between gap-2">
-						<Badge variant="outline" className={cn("text-xs font-medium", category.className)}>
-							{category.label}
-						</Badge>
-					</div>
-					<p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
-				</CardHeader>
+				{/* Header */}
+				<div className="px-[18px] pt-4 pb-0 flex flex-col gap-[7px]">
+					<span
+						className={cn(
+							"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold tracking-[.02em] border",
+							category.className,
+						)}
+					>
+						{category.label}
+					</span>
+					<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+				</div>
 
-				<CardContent className="space-y-3">
-					{/* Credit value - primary visual anchor */}
+				{/* Body */}
+				<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
+					{/* Credit value */}
 					<div>
-						<p className="text-xs text-muted-foreground">Valor do bem</p>
-						<p className="text-xl font-bold font-mono leading-tight text-foreground">
+						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+						<p className="aja-num text-xl font-bold leading-tight text-foreground mt-0.5">
 							{formatBRL(payload.creditValue)}
 						</p>
 					</div>
 
-					{/* Monthly payment - financial highlight */}
+					{/* Monthly payment — hero number, blue */}
 					<div>
-						<p className="text-xs text-muted-foreground">Parcela mensal</p>
-						<p className="text-2xl font-bold font-mono leading-tight text-primary">
+						<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
+						<p className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
 							{formatBRL(payload.monthlyPayment)}
 						</p>
 					</div>
 
-					{/* Admin fee + Term - 2-column grid */}
-					<div className="grid grid-cols-2 gap-3">
+					{/* 2×2 metrics grid */}
+					<div className="grid grid-cols-2 gap-x-4 gap-y-3">
 						<div>
-							<p className="text-xs text-muted-foreground">Taxa adm.</p>
-							<p className="text-sm font-medium font-mono">
+							<p className="text-xs text-muted-foreground m-0">Taxa adm.</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
 								{formatPercent(payload.adminFeePercent)}
 							</p>
 						</div>
 						<div>
-							<p className="text-xs text-muted-foreground">Prazo</p>
-							<p className="text-sm font-medium font-mono">{payload.termMonths} meses</p>
-						</div>
-					</div>
-
-					{/* Available slots + Contemplation rate - 2-column grid */}
-					<div className="grid grid-cols-2 gap-3">
-						<div>
-							<p className="text-xs text-muted-foreground">Vagas</p>
-							<p className="text-sm font-medium font-mono">{payload.availableSlots}</p>
+							<p className="text-xs text-muted-foreground m-0">Prazo</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
 						</div>
 						<div>
-							<p className="text-xs text-muted-foreground">Contemplação</p>
-							<p className="text-sm font-medium font-mono">
+							<p className="text-xs text-muted-foreground m-0">Vagas</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
 								{formatPercent(payload.contemplationRate)}
 							</p>
 						</div>
 					</div>
 
-					{/* CTA */}
+					{/* CTA ghost */}
 					<Button
 						size="sm"
-						variant="outline"
-						className="w-full gap-1 text-xs"
+						variant="ghost"
+						className={cn(
+							"w-full h-10 gap-1.5 text-xs font-semibold rounded-[13px]",
+							"border border-border hover:border-border/80 hover:bg-muted/50",
+						)}
 						disabled={isStreaming}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -155,8 +151,8 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 						Simular esse
 						<ChevronRight className="size-3.5" />
 					</Button>
-				</CardContent>
-			</Card>
+				</div>
+			</button>
 		</motion.div>
 	);
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Card } from "@/components/ui/card";
 import type { QuickReplyPayload } from "@/lib/chat/types";
 
 interface QuickRepliesProps {
@@ -24,6 +23,7 @@ export function QuickReplies({ payload, onSelect, disabled }: QuickRepliesProps)
 			{payload.options.map((option) => (
 				<motion.button
 					key={option.value}
+					type="button"
 					variants={{
 						hidden: { opacity: 0, y: 8, scale: 0.95 },
 						visible: {
@@ -33,16 +33,14 @@ export function QuickReplies({ payload, onSelect, disabled }: QuickRepliesProps)
 							transition: { type: "spring", stiffness: 300, damping: 20 },
 						},
 					}}
-					whileHover={disabled ? undefined : { scale: 1.04, y: -2 }}
+					whileHover={disabled ? undefined : { scale: 1.03, y: -2 }}
 					whileTap={disabled ? undefined : { scale: 0.97 }}
 					onClick={() => !disabled && onSelect(option.value)}
 					disabled={disabled}
-					className="group cursor-pointer disabled:cursor-default disabled:opacity-50"
+					className="inline-flex items-center gap-[9px] h-[40px] px-4 border border-border rounded-[13px] bg-card text-sm font-semibold text-foreground cursor-pointer transition-colors hover:border-primary/30 hover:bg-primary/[.05] disabled:cursor-default disabled:opacity-50"
 				>
-					<Card className="flex items-center gap-2.5 border-primary/20 bg-primary/5 px-4 py-2.5 shadow-none transition-colors hover:border-primary/40 hover:bg-primary/10">
-						{option.emoji && <span className="text-lg">{option.emoji}</span>}
-						<span className="text-sm font-medium">{option.label}</span>
-					</Card>
+					{option.emoji && <span className="text-[17px] leading-none">{option.emoji}</span>}
+					<span>{option.label}</span>
 				</motion.button>
 			))}
 		</motion.div>

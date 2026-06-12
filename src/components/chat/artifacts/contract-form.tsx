@@ -3,7 +3,6 @@
 import { ShieldCheck } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,99 +65,105 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	};
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-4 pt-4">
-				<div className="space-y-1">
-					<p className="text-sm font-medium">Vamos fechar sua proposta</p>
-					{payload.administradora ? (
-						<p className="text-xs text-muted-foreground">
-							Administradora: {payload.administradora}
-						</p>
-					) : null}
-				</div>
+		<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+			{/* header */}
+			<div className="flex flex-col gap-[2px]">
+				<p className="text-sm font-semibold text-foreground">Vamos fechar sua proposta</p>
+				{payload.administradora ? (
+					<p className="text-xs text-muted-foreground">Administradora: {payload.administradora}</p>
+				) : null}
+			</div>
 
-				{useStored ? (
-					/* FIX-9: confirmação dos dados já coletados — sem re-digitação. */
-					<div className="rounded-md bg-muted/40 px-3 py-2 space-y-1" data-testid="contract-stored">
-						<div className="flex justify-between text-sm">
-							<span className="text-muted-foreground">CPF</span>
-							<span className="font-mono">{payload.prefilledCpfMasked}</span>
-						</div>
-						<div className="flex justify-between text-sm">
-							<span className="text-muted-foreground">Celular</span>
-							<span className="font-mono">{payload.prefilledPhone}</span>
-						</div>
-						<button
-							type="button"
-							className="text-xs text-muted-foreground underline underline-offset-2"
-							onClick={() => setUseStored(false)}
-							disabled={isStreaming}
-							data-testid="contract-edit-identity"
-						>
-							Usar outros dados
-						</button>
-					</div>
-				) : (
-					<>
-						<div className="space-y-2">
-							<Label htmlFor="contract-cpf" className="text-xs">
-								CPF
-							</Label>
-							<Input
-								id="contract-cpf"
-								inputMode="numeric"
-								placeholder="000.000.000-00"
-								value={cpf}
-								onChange={(e) => setCpf(maskCpf(e.target.value))}
-								disabled={isStreaming}
-								// FIX-17: autofocus padronizado nos forms do funil (mobile-first).
-								autoFocus
-								data-testid="contract-cpf"
-							/>
-						</div>
-
-						<div className="space-y-2">
-							<Label htmlFor="contract-phone" className="text-xs">
-								Celular
-							</Label>
-							<Input
-								id="contract-phone"
-								inputMode="numeric"
-								placeholder="(11) 99999-9999"
-								value={phone}
-								onChange={(e) => setPhone(maskPhone(e.target.value))}
-								disabled={isStreaming}
-								data-testid="contract-phone"
-							/>
-						</div>
-					</>
-				)}
-
-				<label className="flex items-start gap-2 text-xs text-muted-foreground">
-					<Checkbox
-						checked={lgpd}
-						onCheckedChange={(v) => setLgpd(v === true)}
-						disabled={isStreaming}
-						data-testid="contract-lgpd"
-						className="mt-0.5"
-					/>
-					<span>
-						Autorizo a consulta dos meus dados e aceito os termos de tratamento (LGPD) para a
-						contratação do consórcio.
-					</span>
-				</label>
-
-				<Button
-					type="button"
-					className="w-full min-h-[44px] gap-2"
-					onClick={submit}
-					disabled={!valid}
-					data-testid="contract-submit"
+			{useStored ? (
+				/* FIX-9: confirmação dos dados já coletados — sem re-digitação. */
+				<div
+					className="rounded-[12px] bg-[#fbfbf9] border border-border px-[14px] py-[12px] flex flex-col gap-[7px]"
+					data-testid="contract-stored"
 				>
-					<ShieldCheck className="size-4" />
-					Continuar com segurança
-				</Button>
-			</CardContent>
-		</Card>
+					<div className="flex justify-between text-sm">
+						<span className="text-muted-foreground">CPF</span>
+						<b className="font-mono font-medium whitespace-nowrap">{payload.prefilledCpfMasked}</b>
+					</div>
+					<div className="flex justify-between text-sm">
+						<span className="text-muted-foreground">Celular</span>
+						<b className="font-mono font-medium whitespace-nowrap">{payload.prefilledPhone}</b>
+					</div>
+					<button
+						type="button"
+						className="text-left text-[11px] text-muted-foreground underline underline-offset-2 bg-transparent border-none cursor-pointer p-0 w-fit font-[inherit] hover:text-foreground transition-colors"
+						onClick={() => setUseStored(false)}
+						disabled={isStreaming}
+						data-testid="contract-edit-identity"
+					>
+						Usar outros dados
+					</button>
+				</div>
+			) : (
+				<>
+					<div className="flex flex-col gap-[6px]">
+						<Label htmlFor="contract-cpf" className="text-xs font-semibold">
+							CPF
+						</Label>
+						<Input
+							id="contract-cpf"
+							inputMode="numeric"
+							placeholder="000.000.000-00"
+							value={cpf}
+							onChange={(e) => setCpf(maskCpf(e.target.value))}
+							disabled={isStreaming}
+							// FIX-17: autofocus padronizado nos forms do funil (mobile-first).
+							autoFocus
+							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
+							data-testid="contract-cpf"
+						/>
+					</div>
+
+					<div className="flex flex-col gap-[6px]">
+						<Label htmlFor="contract-phone" className="text-xs font-semibold">
+							Celular
+						</Label>
+						<Input
+							id="contract-phone"
+							inputMode="numeric"
+							placeholder="(11) 99999-9999"
+							value={phone}
+							onChange={(e) => setPhone(maskPhone(e.target.value))}
+							disabled={isStreaming}
+							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
+							data-testid="contract-phone"
+						/>
+					</div>
+				</>
+			)}
+
+			<label
+				htmlFor="contract-lgpd"
+				className="flex items-start gap-[9px] text-[11px] text-muted-foreground leading-[1.45]"
+			>
+				<Checkbox
+					id="contract-lgpd"
+					checked={lgpd}
+					onCheckedChange={(v) => setLgpd(v === true)}
+					disabled={isStreaming}
+					data-testid="contract-lgpd"
+					className="mt-0.5 size-5 rounded-[6px] border-2 border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+				/>
+				<span>
+					Autorizo a consulta dos meus dados e aceito os termos de tratamento (LGPD) para a
+					contratação do consórcio.
+				</span>
+			</label>
+
+			<Button
+				type="button"
+				className="w-full h-[46px] min-h-[44px] gap-2 rounded-[13px] bg-primary text-sm font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105"
+				onClick={submit}
+				disabled={!valid}
+				data-testid="contract-submit"
+			>
+				<ShieldCheck className="size-4" />
+				Continuar com segurança
+			</Button>
+		</div>
 	);
 }
