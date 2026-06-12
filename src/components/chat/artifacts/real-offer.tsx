@@ -17,14 +17,16 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	return (
-		<Card className="w-full max-w-sm border-primary/40">
-			<CardContent className="space-y-3 pt-4">
-				<div className="flex items-center gap-2">
-					<BadgeCheck className="size-4 text-primary" />
-					<p className="text-sm font-medium">Confirmado com a {payload.administradora}</p>
+		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff]">
+			<CardContent className="space-y-3 pt-4 px-4 pb-4">
+				{/* Selo de confirmação */}
+				<div className="flex items-center gap-2 text-primary">
+					<BadgeCheck className="size-[18px] shrink-0" />
+					<p className="text-sm font-semibold">Confirmado com a {payload.administradora}</p>
 				</div>
 
-				<div className="rounded-lg bg-muted/40 p-3 space-y-1.5 text-sm">
+				{/* Bloco de dados (stored) */}
+				<div className="rounded-xl bg-muted/40 p-3 space-y-2">
 					<Row label="Valor do bem" value={brl(payload.creditValue)} strong />
 					<Row label="Parcela" value={brl2(payload.monthlyPayment)} />
 					<Row label="Grupo" value={payload.grupo} />
@@ -33,14 +35,15 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 
 				{/* FIX-13: a oferta de Parceiro não traz prazo (8 campos, sem `term` — spec §7).
 				    Regra D11: nenhum número sem fonte — explicar em vez de derivar/estimar. */}
-				<p className="text-xs text-muted-foreground">
+				<p className="text-[11px] text-muted-foreground leading-snug">
 					Prazo e demais condições: na sua proposta (PDF), logo após a confirmação.
 				</p>
 
-				<div className="flex flex-col gap-2">
+				{/* CTAs */}
+				<div className="flex flex-col gap-2 pt-0.5">
 					<Button
 						type="button"
-						className="w-full min-h-[44px] gap-2"
+						className="w-full min-h-[44px] rounded-[13px] gap-2 shadow-[var(--shadow-primary)]"
 						onClick={() =>
 							!isStreaming && void sendAction({ kind: "offer-confirm" }, "Confirmo essa carta")
 						}
@@ -54,7 +57,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="w-full"
+						className="w-full rounded-[13px] min-h-[44px]"
 						onClick={() => !isStreaming && void sendUserMessage("Quero ver outras opções")}
 						disabled={isStreaming}
 						data-testid="offer-reject"
@@ -71,7 +74,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 	return (
 		<div className="flex items-baseline justify-between gap-2">
 			<span className="text-muted-foreground text-xs">{label}</span>
-			<span className={strong ? "font-semibold" : ""}>{value}</span>
+			<span className={`aja-num text-sm${strong ? " font-bold" : " font-medium"}`}>{value}</span>
 		</div>
 	);
 }

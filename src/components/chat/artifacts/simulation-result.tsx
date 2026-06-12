@@ -2,10 +2,9 @@
 
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useChatContext } from "@/lib/chat/provider";
 import type { SimulationResultPayload } from "@/lib/chat/types";
+import { cn } from "@/lib/utils";
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -27,7 +26,7 @@ function CostLine({ label, value, bold = false }: CostLineProps) {
 			<span className={bold ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
 				{label}
 			</span>
-			<span className={bold ? "text-sm font-bold font-mono" : "text-sm font-mono"}>{value}</span>
+			<span className={cn("aja-num", bold ? "text-sm font-bold" : "text-sm")}>{value}</span>
 		</div>
 	);
 }
@@ -51,53 +50,66 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 	};
 
 	return (
-		<Card className="w-full max-w-sm">
-			<CardHeader>
-				<p className="text-sm font-medium text-muted-foreground">
-					Simulação · {payload.administradora}
-				</p>
-			</CardHeader>
+		<div
+			className={cn(
+				"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden",
+				"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+			)}
+		>
+			{/* Header */}
+			<div className="px-[18px] pt-4 pb-0">
+				<p className="text-xs text-muted-foreground m-0">Simulação · {payload.administradora}</p>
+			</div>
 
-			<CardContent className="space-y-4">
-				{/* Hero monthly payment */}
+			{/* Body */}
+			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
+				{/* Hero: parcela + prazo */}
 				<div>
-					<p className="text-2xl font-bold font-mono leading-tight text-primary">
+					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary tracking-[-0.02em]">
 						{formatBRL(payload.monthlyPayment)}
 						<span className="text-base font-normal text-muted-foreground">/mês</span>
 					</p>
-					<p className="text-sm text-muted-foreground mt-1">por {payload.termMonths} meses</p>
+					<p className="text-xs text-muted-foreground mt-1">por {payload.termMonths} meses</p>
 				</div>
 
-				<Separator />
+				{/* Divider */}
+				<div className="h-px bg-border" />
 
+				{/* Valor do bem */}
 				{/* Decisão de produto (Bernardo, 2026-06-11): card DIRETO — sem taxa de
 				    administração, fundo de reserva, seguro, custo total nem taxa efetiva
 				    (assustam o leigo). A composição completa (CMN 4.927/2021 + CDC art. 37)
 				    é disclosed no PDF da proposta (signature_handoff "Ver minha proposta")
 				    ANTES da assinatura — ver docs/jornada/CONTEXT.md. */}
 				<div>
-					<p className="text-xs text-muted-foreground">Valor do bem</p>
-					<p className="text-sm font-medium font-mono">{formatBRL(payload.creditValue)}</p>
+					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(payload.creditValue)}</p>
 				</div>
 
 				{/* Cenário com lance (bug #10) */}
 				{payload.lanceScenario && (
-					<div className="rounded-md bg-muted/40 px-3 py-2">
-						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					<div
+						className="rounded-[11px] px-[13px] py-[11px]"
+						style={{ background: "var(--aja-cream, #f2f2db)" }}
+					>
+						<p className="text-[10px] font-semibold uppercase tracking-[.06em] text-muted-foreground m-0">
 							Cenário com lance
 						</p>
-						<p className="text-sm mt-1">
+						<p className="text-xs mt-1 leading-[1.45]">
 							Com lance de {payload.lanceScenario.lancePercent}% do valor do bem, expectativa de
-							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses (estimativa, não
-							garantia).
+							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses{" "}
+							<span className="text-muted-foreground">(estimativa, não garantia)</span>.
 						</p>
 					</div>
 				)}
 
 				{/* Cenário de lance embutido (jornada do .docx) — variação com/sem */}
 				{payload.embeddedBid && (
-					<div className="rounded-md bg-muted/40 px-3 py-2">
-						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					<div
+						className="rounded-[11px] px-[13px] py-[11px]"
+						style={{ background: "var(--aja-cream, #f2f2db)" }}
+					>
+						<p className="text-[10px] font-semibold uppercase tracking-[.06em] text-muted-foreground m-0">
 							Com lance embutido ({payload.embeddedBid.percent}%)
 						</p>
 						<div className="mt-1 space-y-1">
@@ -122,19 +134,22 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 
 				{/* Correção prevista (bug #10) */}
 				{payload.expectedAdjustment && (
-					<p className="text-xs text-muted-foreground">
+					<p className="text-xs text-muted-foreground m-0">
 						Correção prevista:{" "}
 						<span className="font-medium">{payload.expectedAdjustment.index}</span> ~
 						{formatPercent(payload.expectedAdjustment.annualPercent, 1)}/ano (estimativa).
 					</p>
 				)}
 
-				<Separator />
-
+				{/* CTA primary */}
 				<Button
 					size="lg"
 					data-testid="tenho-interesse-cta"
-					className="w-full gap-1.5 min-h-[44px] shadow-lg shadow-primary/30 ring-1 ring-primary/40 hover:shadow-primary/50 transition-shadow"
+					className={cn(
+						"w-full gap-2 min-h-[46px] rounded-[13px] font-semibold text-sm",
+						"shadow-lg shadow-primary/30 ring-1 ring-primary/40",
+						"hover:shadow-primary/50 transition-shadow",
+					)}
 					onClick={handleInterest}
 					disabled={isStreaming}
 				>
@@ -152,9 +167,9 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 								<Button
 									key={action.intent}
 									type="button"
-									variant="outline"
+									variant="ghost"
 									size="sm"
-									className="w-full min-h-[40px]"
+									className="w-full min-h-[40px] rounded-[13px] border border-border hover:bg-muted/50"
 									onClick={() => handleAction(action)}
 									disabled={isStreaming}
 								>
@@ -163,7 +178,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 							))}
 					</div>
 				)}
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 }

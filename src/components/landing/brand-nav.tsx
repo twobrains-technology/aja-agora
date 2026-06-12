@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +14,11 @@ const LINKS = [
 	{ title: "Quem somos", href: "#sobre" },
 ];
 
-export function BrandNav() {
+interface BrandNavProps {
+	onStart: TheaterOpener;
+}
+
+export function BrandNav({ onStart }: BrandNavProps) {
 	const [scrolled, setScrolled] = useState(false);
 
 	useEffect(() => {
@@ -56,8 +61,7 @@ export function BrandNav() {
 					</Link>
 					<Button
 						className="h-[42px] rounded-[13px] bg-foreground px-5 text-background hover:bg-foreground/90"
-						render={<Link href="/chat" />}
-						nativeButton={false}
+						onClick={(e) => onStart("", e.currentTarget)}
 					>
 						Começar
 					</Button>

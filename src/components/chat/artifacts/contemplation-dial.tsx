@@ -1,29 +1,41 @@
 "use client";
 
-import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { ArrowRight, Grab, Info } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Card, CardContent } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
 import { computeContemplationDial, type DialLikelihood } from "@/lib/consorcio/contemplation-dial";
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { cn } from "@/lib/utils";
 
-// Simulador-agulha (viés de contemplação do Bernardo). A agulha aponta o mês-alvo;
-// arrastar pra mais cedo sobe o lance necessário. Recalcula client-side com a
-// MESMA função pura do backend (computeContemplationDial). Uma ressalva discreta
-// de "estimativa" no rodapé — CDC art. 30/37, sem plastrar.
+// Mostrador de contemplação — re-UX arrastável (handoff componentes-aja). O
+// ponteiro semicircular navega o mês-alvo (Pointer Events + teclado, role=slider);
+// o foco é o "antes → depois": as duas parcelas que importam (até contemplar e
+// após receber, com o lance abatido). Os VALORES continuam vindo da MESMA função
+// pura compartilhada com o backend (computeContemplationDial) — o protótipo é só
+// referência visual. Ressalva de "estimativa" no rodapé (CDC art. 30/37).
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-const LIKELIHOOD_LABEL: Record<DialLikelihood, { text: string; cls: string }> = {
-	alta: { text: "chance alta", cls: "text-success" },
-	media: { text: "chance média", cls: "text-warning" },
-	baixa: { text: "chance menor", cls: "text-destructive" },
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+// Bucket de chance → rótulo + cor + posição no medidor (coral→âmbar→verde).
+const LIKELIHOOD: Record<DialLikelihood, { label: string; cls: string; pos: number }> = {
+	alta: { label: "alta", cls: "text-success", pos: 82 },
+	media: { label: "média", cls: "text-warning", pos: 50 },
+	baixa: { label: "menor", cls: "text-destructive", pos: 18 },
 };
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
+	const reduce = useReducedMotion();
 	const maxMonth = Math.max(3, payload.termMonths);
-	const [month, setMonth] = useState(Math.min(payload.initialTargetMonth, maxMonth));
+	const MIN = 1;
+	const MAX = maxMonth;
+	const [month, setMonth] = useState(clamp(payload.initialTargetMonth, MIN, MAX));
+	const gaugeRef = useRef<HTMLDivElement>(null);
+	const draggingRef = useRef(false);
 
 	const r = useMemo(
 		() =>
@@ -32,8 +44,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				termMonths: payload.termMonths,
 				targetMonth: month,
 				historicalWinningBidPct: payload.historicalWinningBidPct,
-				// FIX-C1: calibra a curva no par real da oferta (lance% · mês) —
-				// no mês de referência o dial mostra o MESMO lance do card.
+				// FIX-C1: calibra a curva no par real da oferta (lance% · mês).
 				referenceMonth: payload.referenceMonth,
 				monthlyPayment: payload.monthlyPayment,
 				maxEmbutidoPct: payload.maxEmbutidoPct,
@@ -41,132 +52,222 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 		[month, payload],
 	);
 
-	// FIX-C5: confronto do lance declarado na qualificação com a parte em
-	// DINHEIRO exigida neste mês-alvo (o embutido sai da carta).
+	// FIX-C5: confronto do lance declarado na qualificação com a parte em DINHEIRO.
 	const declaredCovers =
 		payload.declaredLanceValue != null && r.mode === "lance"
 			? payload.declaredLanceValue >= r.ownCashValue
 			: null;
 
-	// agulha: mês 1 (esquerda, -90°) → fim do grupo (direita, +90°)
-	const fraction = (month - 1) / Math.max(1, maxMonth - 1);
-	const rotation = -90 + fraction * 180;
-	const like = LIKELIHOOD_LABEL[r.likelihood];
+	const fraction = (month - MIN) / Math.max(1, MAX - MIN);
+	const angle = Math.PI * (1 - fraction); // mês 1 → π (esquerda) · fim → 0 (direita)
+	const tipX = 100 + 72 * Math.cos(angle);
+	const tipY = 100 - 72 * Math.sin(angle);
+	const like = LIKELIHOOD[r.likelihood];
+
+	const setFromPointer = (clientX: number, clientY: number) => {
+		const el = gaugeRef.current;
+		if (!el) return;
+		const rect = el.getBoundingClientRect();
+		const cx = rect.left + (100 / 200) * rect.width;
+		const cy = rect.top + (100 / 106) * rect.height;
+		let a = Math.atan2(cy - clientY, clientX - cx);
+		a = Math.max(0, Math.min(Math.PI, a));
+		setMonth(clamp(Math.round(MIN + (1 - a / Math.PI) * (MAX - MIN)), MIN, MAX));
+	};
 
 	return (
 		<Card className="w-full max-w-sm">
-			<CardContent className="space-y-4 pt-4">
-				<p className="text-sm font-medium">Quando você quer ser contemplado?</p>
+			<CardContent className="space-y-3.5 pt-4">
+				<p className="flex items-center gap-2 text-sm font-medium">
+					<span className="flex size-6 items-center justify-center rounded-full bg-[var(--surface-ink)] p-1">
+						<SunMark variant="white" className="size-full" />
+					</span>
+					Quando você quer ser contemplado?
+				</p>
 
-				{/* mostrador / agulha */}
-				<div className="relative mx-auto w-[200px]">
-					<svg viewBox="0 0 200 118" className="w-full" aria-hidden>
+				{/* Gauge arrastável */}
+				{/* biome-ignore lint/a11y/useSemanticElements: gauge custom (role=slider) operavel por ponteiro+teclado */}
+				<div
+					ref={gaugeRef}
+					role="slider"
+					aria-label="Mês alvo de contemplação"
+					aria-valuemin={MIN}
+					aria-valuemax={MAX}
+					aria-valuenow={month}
+					tabIndex={0}
+					onPointerDown={(e) => {
+						draggingRef.current = true;
+						try {
+							e.currentTarget.setPointerCapture(e.pointerId);
+						} catch {
+							// happy-dom / browsers sem pointer capture — segue sem capturar
+						}
+						setFromPointer(e.clientX, e.clientY);
+						e.preventDefault();
+					}}
+					onPointerMove={(e) => {
+						if (draggingRef.current) setFromPointer(e.clientX, e.clientY);
+					}}
+					onPointerUp={(e) => {
+						draggingRef.current = false;
+						try {
+							e.currentTarget.releasePointerCapture(e.pointerId);
+						} catch {
+							// idem
+						}
+					}}
+					onPointerCancel={() => {
+						draggingRef.current = false;
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+							setMonth((m) => clamp(m - 1, MIN, MAX));
+							e.preventDefault();
+						} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+							setMonth((m) => clamp(m + 1, MIN, MAX));
+							e.preventDefault();
+						}
+					}}
+					className="relative mx-auto w-[230px] cursor-grab touch-none select-none rounded-md outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<svg viewBox="0 0 200 106" className="w-full overflow-visible" aria-hidden="true">
 						<path
 							d="M15 100 A 85 85 0 0 1 185 100"
 							fill="none"
 							stroke="currentColor"
-							strokeWidth={10}
+							strokeWidth={12}
 							strokeLinecap="round"
 							className="text-muted"
 						/>
-						<motion.g
-							style={{ originX: "100px", originY: "100px" }}
-							animate={{ rotate: rotation }}
-							transition={{ type: "spring", stiffness: 120, damping: 14 }}
-						>
-							<line
-								x1={100}
-								y1={100}
-								x2={100}
-								y2={26}
-								stroke="currentColor"
-								strokeWidth={3}
-								strokeLinecap="round"
-								className="text-primary"
-							/>
-						</motion.g>
-						<circle cx={100} cy={100} r={6} className="fill-primary" />
+						<path
+							d="M15 100 A 85 85 0 0 1 185 100"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth={12}
+							strokeLinecap="round"
+							pathLength={100}
+							strokeDasharray={100}
+							strokeDashoffset={100 - fraction * 100}
+							className={cn(
+								"text-primary",
+								!reduce && "transition-[stroke-dashoffset] duration-300",
+							)}
+						/>
+						<line
+							x1={100}
+							y1={100}
+							x2={tipX}
+							y2={tipY}
+							stroke="currentColor"
+							strokeWidth={3.6}
+							strokeLinecap="round"
+							className="text-[var(--surface-ink)]"
+						/>
+						<circle
+							cx={100}
+							cy={100}
+							r={7}
+							className="fill-background stroke-[var(--surface-ink)]"
+							strokeWidth={3}
+						/>
 					</svg>
-					<div className="flex justify-between text-[10px] text-muted-foreground -mt-1 px-1">
-						<span>Mais rápido</span>
-						<span>Sem pressa</span>
+				</div>
+
+				<div className="-mt-1 text-center">
+					<span className="text-[1.9rem] font-bold leading-none tabular-nums">{month}</span>
+					<span className="ml-1.5 text-xs text-muted-foreground">
+						{month === 1 ? "mês" : "meses"} até contemplar
+					</span>
+				</div>
+				<div className="-mt-1 flex justify-between px-1 text-[11px] text-muted-foreground">
+					<span>Mais rápido</span>
+					<span>Sem pressa</span>
+				</div>
+				<p className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-primary">
+					<Grab className="size-3" />
+					Arraste o ponteiro pra ajustar o prazo
+				</p>
+
+				{/* Medidor de chance */}
+				<div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+					<span>Chance de contemplação nesse prazo</span>
+					<b className={cn("font-bold capitalize", like.cls)}>{like.label}</b>
+				</div>
+				<div
+					className="relative h-2 rounded-full"
+					style={{
+						background: "linear-gradient(90deg,var(--aja-coral),var(--warning) 50%,var(--success))",
+					}}
+				>
+					<div
+						className={cn(
+							"absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-[var(--surface-ink)] bg-background shadow",
+							!reduce && "transition-[left] duration-300",
+						)}
+						style={{ left: `${like.pos}%` }}
+					/>
+				</div>
+
+				{/* Antes → depois: as duas parcelas que importam */}
+				<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+					<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
+						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+							Até contemplar
+						</span>
+						<b className="text-[1.18rem] font-bold tabular-nums">{brl(payload.monthlyPayment)}</b>
+						<small className="text-[10px] text-muted-foreground">
+							por ~{month} {month === 1 ? "mês" : "meses"}
+						</small>
+					</div>
+					<div className="flex items-center text-primary">
+						<ArrowRight className="size-4" />
+					</div>
+					<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-warning/25 bg-[var(--aja-cream)] px-3 py-2.5">
+						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+							Após receber
+						</span>
+						<b className="text-[1.18rem] font-bold tabular-nums text-[#8a5e09]">
+							{r.paymentAfterContemplation != null ? brl(r.paymentAfterContemplation) : "—"}
+						</b>
+						<small className="text-[10px] text-muted-foreground">menor, depois do lance</small>
 					</div>
 				</div>
 
-				<div className="text-center">
-					<span className="text-2xl font-semibold">{month}</span>
-					<span className="text-sm text-muted-foreground"> {month === 1 ? "mês" : "meses"}</span>
-					<span className={`block text-xs font-medium ${like.cls}`}>{like.text}</span>
-				</div>
-
-				<Slider
-					min={1}
-					max={maxMonth}
-					step={1}
-					value={[month]}
-					onValueChange={(v) => {
-						const next = Array.isArray(v) ? v[0] : v;
-						if (typeof next === "number") setMonth(next);
-					}}
-					data-testid="dial-slider"
-				/>
-
-				{/* receita */}
-				<div className="rounded-lg bg-muted/40 p-3 space-y-1.5 text-sm">
-					{r.mode === "sorteio" ? (
-						<p className="text-xs text-muted-foreground">
-							Nesse prazo, a contemplação vem mais pelo <strong>sorteio</strong> — lance é opcional
-							e a parcela fica menor.
+				{/* Receita */}
+				<div className="space-y-1.5 rounded-xl border border-border bg-card px-3.5 py-2.5">
+					<div className="flex items-baseline justify-between gap-3 text-xs">
+						<span className="text-muted-foreground">Lance pra contemplar no mês {month}</span>
+						<b className="tabular-nums">
+							{r.mode === "sorteio"
+								? "sem lance (sorteio)"
+								: `${brl(r.requiredLanceValue)} (${r.requiredLancePct}%)`}
+						</b>
+					</div>
+					<div className="flex items-baseline justify-between gap-3 text-xs">
+						<span className="text-muted-foreground">Valor que você recebe</span>
+						<b className="tabular-nums">{brl(r.receivedCredit)}</b>
+					</div>
+					{declaredCovers != null && payload.declaredLanceValue != null ? (
+						<p
+							className={cn("text-xs", declaredCovers ? "text-success" : "text-warning")}
+							data-testid="dial-declared-lance"
+						>
+							{declaredCovers
+								? `✓ Seu lance declarado (${brl(payload.declaredLanceValue)}) cobre a parte em dinheiro.`
+								: `Seu lance declarado (${brl(payload.declaredLanceValue)}) não cobre a parte em dinheiro deste prazo.`}
 						</p>
-					) : (
-						<>
-							<Row label="Lance necessário" value={`${r.requiredLancePct}%`} strong />
-							{r.embeddedBidValue > 0 ? (
-								<Row label="↳ lance embutido (da carta)" value={brl(r.embeddedBidValue)} />
-							) : null}
-							{r.ownCashValue > 0 ? (
-								<Row label="↳ lance próprio (dinheiro)" value={brl(r.ownCashValue)} />
-							) : null}
-							<Row label="Valor que você recebe" value={brl(r.receivedCredit)} />
-							{/* FIX-C4: parcela real até contemplar; depois, só o lance em
-							    DINHEIRO dilui (embutido reduz o crédito, não a dívida). */}
-							{payload.monthlyPayment > 0 ? (
-								<Row label="Parcela até contemplar" value={brl(payload.monthlyPayment)} />
-							) : null}
-							{r.paymentAfterContemplation != null ? (
-								<Row label="Parcela depois (estimada)" value={brl(r.paymentAfterContemplation)} />
-							) : null}
-							{/* FIX-C5: confronto com o lance declarado na qualificação */}
-							{declaredCovers != null && payload.declaredLanceValue != null ? (
-								<p
-									className={`text-xs ${declaredCovers ? "text-success" : "text-warning"}`}
-									data-testid="dial-declared-lance"
-								>
-									{declaredCovers
-										? `✓ Seu lance declarado (${brl(payload.declaredLanceValue)}) cobre a parte em dinheiro.`
-										: `Seu lance declarado (${brl(payload.declaredLanceValue)}) não cobre a parte em dinheiro deste prazo.`}
-								</p>
-							) : null}
-						</>
-					)}
+					) : null}
 				</div>
 
-				<p className="text-[10px] text-muted-foreground leading-snug" data-testid="dial-disclaimer">
-					{/* FIX-C1: copy honesta — "histórico do grupo" era enganoso (a conta
-					    usa o lance da oferta + premissas, não histórico de assembleias). */}
+				<p
+					className="flex items-start gap-1.5 text-[10px] leading-snug text-muted-foreground"
+					data-testid="dial-disclaimer"
+				>
+					<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 					Estimativa a partir dos dados da oferta. Contemplação por lance ou sorteio não é
 					garantida.
 				</p>
 			</CardContent>
 		</Card>
-	);
-}
-
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-	return (
-		<div className="flex items-baseline justify-between gap-2">
-			<span className="text-muted-foreground text-xs">{label}</span>
-			<span className={strong ? "font-semibold" : ""}>{value}</span>
-		</div>
 	);
 }

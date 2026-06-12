@@ -6,6 +6,7 @@ import Image from "next/image";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { SunMark } from "@/components/brand/sun-mark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
 const TYPEWRITER_PHRASES = [
@@ -22,15 +23,16 @@ const CHIPS = [
 ];
 
 interface HeroProps {
-	onGoalSelected: (message: string) => void;
+	onOpenChat: TheaterOpener;
 }
 
-export function Hero({ onGoalSelected }: HeroProps) {
+export function Hero({ onOpenChat }: HeroProps) {
 	const [value, setValue] = useState("");
 	const [placeholder, setPlaceholder] = useState("");
 	const [typingDone, setTypingDone] = useState(false);
 	const reduceMotion = useReducedMotion();
 	const inputRef = useRef<HTMLInputElement>(null);
+	const formRef = useRef<HTMLFormElement>(null);
 
 	// Typewriter — cicla as frases enquanto o input está vazio.
 	useEffect(() => {
@@ -67,10 +69,11 @@ export function Hero({ onGoalSelected }: HeroProps) {
 		return () => clearTimeout(timer);
 	}, [value, reduceMotion]);
 
+	// Enviar / Enter → abre o teatro morfando do composer. Texto digitado vira a
+	// 1ª mensagem; vazio abre na saudação do agente.
 	const submit = (e?: FormEvent) => {
 		e?.preventDefault();
-		const message = value.trim() || TYPEWRITER_PHRASES[0];
-		onGoalSelected(message);
+		onOpenChat(value.trim(), formRef.current);
 	};
 
 	return (
@@ -152,6 +155,7 @@ export function Hero({ onGoalSelected }: HeroProps) {
 						className="mt-8 max-w-[540px]"
 					>
 						<form
+							ref={formRef}
 							onSubmit={submit}
 							className="overflow-hidden rounded-[20px] border border-border bg-card shadow-[0_1px_2px_rgba(10,31,51,.04),0_20px_54px_-28px_rgba(10,31,51,.2)] transition-colors focus-within:border-[#bcd3ff]"
 						>
@@ -190,11 +194,7 @@ export function Hero({ onGoalSelected }: HeroProps) {
 										<button
 											key={chip.label}
 											type="button"
-											onClick={() => {
-												setValue(chip.fill);
-												setTypingDone(true);
-												inputRef.current?.focus();
-											}}
+											onClick={(e) => onOpenChat(chip.fill, e.currentTarget)}
 											className="inline-flex h-[34px] items-center gap-1.5 rounded-full border border-border bg-[#fbfbf9] px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-[#bcd3ff] hover:text-primary"
 										>
 											<chip.icon className="size-3.5" strokeWidth={1.8} />
