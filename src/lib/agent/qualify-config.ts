@@ -233,6 +233,8 @@ export function lanceValueOptions(creditMax: number): Bucket[] {
 }
 
 // ---- Monthly budget (parcela mensal) ----
+// LEGADO do picker de 4 sliders. No picker novo (handoff, guiado por intenção) a
+// parcela é RESULTADO, não input — estes bounds só servem ao caminho de texto livre.
 
 export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 1_000, max: 15_000, step: 500, default: 3_000 },
@@ -240,6 +242,43 @@ export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
 	moto: { min: 150, max: 1_500, step: 50, default: 500 },
 	servicos: { min: 200, max: 2_000, step: 100, default: 500 },
 };
+
+// ---- Prazo do plano (handoff, re-UX por intenção) ----
+// O usuário escolhe o prazo DIRETO num slider ("Em quantos meses quer pagar") e a
+// parcela vira o resultado calmo (total / prazo). Ranges típicos de grupo por
+// categoria (default = ponto típico de mercado, espelha TYPICAL_TERM_MONTHS).
+
+export const TERM_BOUNDS: Record<Category, Bounds> = {
+	imovel: { min: 120, max: 240, step: 12, default: 180 },
+	auto: { min: 36, max: 100, step: 6, default: 72 },
+	moto: { min: 24, max: 80, step: 6, default: 60 },
+	servicos: { min: 12, max: 60, step: 6, default: 40 },
+};
+
+// ---- Intenção do "Planeje sua conquista" (segmented control do handoff) ----
+// "O que mais importa pra você agora?" — dirige quais controles condicionais
+// aparecem e o eixo `objetivo` da Bevi. Mapeia a pergunta "Em quanto tempo você
+// quer o bem?" da jornada canônica num controle de prioridade, sem despejar 4
+// sliders de uma vez.
+export type PlanIntent = "parcela" | "rapido" | "lance";
+
+/** Deriva o eixo `objetivo` da Bevi a partir da intenção escolhida. "Menor
+ * parcela" = investimento (sem pressa); "receber rápido" e "tenho um lance"
+ * miram contemplação acelerada. Fonte única do mapeamento intenção→objetivo. */
+export function objetivoForIntent(intent: PlanIntent): Objetivo {
+	return intent === "parcela" ? "investimento" : "contemplacao_rapida";
+}
+
+/** Prazo de contemplação (mês-alvo) IMPLÍCITO por intenção, quando o usuário não
+ * escolhe um mês específico (só a intenção "receber rápido" coleta o mês exato no
+ * slider). Preenche `prazoMeses` no qualifyAnswers pro funil PULAR o gate
+ * timeframe — senão o agente re-pergunta "em quanto tempo você quer o bem?" logo
+ * depois do usuário escolher a prioridade (quebra do híbrido vendedor).
+ * "Menor parcela" = sem pressa (120m, eixo investimento); "tenho um lance" =
+ * antecipar o quanto der (mais rápido possível). */
+export function prazoMesesForIntent(intent: PlanIntent): number {
+	return intent === "parcela" ? 120 : intent === "lance" ? 0 : 6;
+}
 
 // ---- Timeframe ----
 

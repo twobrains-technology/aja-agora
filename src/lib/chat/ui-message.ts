@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import type { PlanIntent } from "@/lib/agent/qualify-config";
 import type { ArtifactByType } from "./types";
 
 export type ArtifactPartData = ArtifactByType;
@@ -19,15 +20,21 @@ export type SliderField = {
 	format: "currency" | "months";
 };
 
-/** FIX-3 — gate credit como componente "Planeje sua conquista" (4 indicadores
- * interligados em estimativa de mercado; ver plan-estimate-picker.tsx). */
+/** Gate credit = componente "Planeje sua conquista". Re-UX guiada por intenção
+ * (handoff componentes-aja): valor do bem + segmented "o que mais importa" +
+ * prazo (slider) + controles condicionais; a parcela é RESULTADO calmo, não
+ * input. Aderente à jornada canônica (valor → tempo/prioridade → lance). */
 export type PlanGatePartData = {
 	kind: "plan";
 	gate: "credit";
 	category: "imovel" | "auto" | "moto" | "servicos";
 	credit: SliderField;
-	monthly: SliderField;
-	/** Mês-alvo inicial da contemplação (default 6 — espelho do dial). */
+	/** Prazo do plano em meses (slider "Em quantos meses quer pagar"). */
+	term: SliderField;
+	/** Intenção pré-selecionada no segmented control. */
+	intentDefault: PlanIntent;
+	/** Mês-alvo inicial da contemplação (default 6 — condicional na intenção
+	 * "receber rápido"; espelho do dial). */
 	targetMonthDefault: number;
 };
 
