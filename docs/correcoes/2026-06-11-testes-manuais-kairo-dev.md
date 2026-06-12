@@ -39,6 +39,22 @@ legado). O bloco-p ficou só com o FIX-30 e virou bloco-p-lance-do-card. Todos
 os manifestos ganharam `branch:`/`workspace:` pra lançamento no Superset;
 ordem de merge consolidada: **S → P → N → Q** (O e R disjuntos).
 
+### Lançamento consolidado (decisão do Kairo, 2026-06-12: menos paralelismo)
+
+Os itens fora do bloco S são pequenos — 6 workspaces não se justificam.
+Lançamento em **2 sessões**:
+
+1. **`fix/funil-canonico-pos-reveal`** → bloco S (FIX-34 → FIX-29 → FIX-33).
+   O único bloco grande, com decisão de produto e cassettes.
+2. **`fix/rodada-ux-2026-06`** → blocos Q → R → O → P → N em sequência na
+   MESMA branch (FIX-31, 32, 28, 30, 27 — itens pequenos, arquivos disjuntos
+   entre si; sequencial elimina os conflitos nível 2 anotados). N por último
+   (é o maior dos cinco).
+
+Ordem de merge: S primeiro, depois a rodada-ux resolve os conflitos
+mecânicos em `route.ts`/`simulation-result.tsx`/`system-prompt.ts`.
+Os manifestos por bloco seguem válidos como spec dos itens.
+
 ## Pesquisa de estado da arte (pedido do Kairo na mesma sessão)
 
 Pesquisa web sobre o stack (AI SDK 6 / Next 16, mai-jun 2026) e estratégias
