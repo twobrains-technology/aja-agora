@@ -3,7 +3,7 @@ id: FIX-25
 titulo: "MC-5 — fechamento Bevi no WhatsApp: captura de confirmação/CPF + máquina de estado do contrato no canal"
 status: done
 bloco: bloco-k-fechamento-whatsapp
-commit: f8efc87
+commit: 422606c
 executado_em: 2026-06-11
 arquivos:
   - src/lib/bevi/contract-input.ts (NOVO — derivação canônica DRY web+whatsapp)
