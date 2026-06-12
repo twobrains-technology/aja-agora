@@ -3,7 +3,7 @@ id: FIX-18
 titulo: "Orçamento declarado não fecha com o bem → agente recomenda parcela 9,8× maior rotulada 'Compatível com seu perfil' sem confrontar"
 status: todo
 bloco: bloco-m-ux-funil
-decisao_pendente: "Conversar com o Kairo antes (mexe na narrativa da jornada; C6 da auditoria 2026-06-11)"
+decisao_pendente: resolvida (2026-06-11, ver seção "Decisão")
 arquivos:
   - src/lib/agent/orchestrator/directives.ts (confronto pré/pós-busca)
   - src/lib/agent/system-prompt.ts (instrução de confronto honesto)
@@ -47,9 +47,17 @@ confrontar o trade-off.
 | Reveal: diretiva instrui confronto honesto quando `monthlyFit ≈ 0`: "a menor parcela real nessa faixa é R$ Y — bem acima do seu orçamento de R$ Z. Quer ajustar o valor do bem?" ANTES de celebrar | `directives.ts` + `system-prompt.ts` |
 | Card: rótulo condicional — "Compatível com seu perfil" só com monthlyFit razoável; senão "Melhor opção na faixa de crédito" (honesto) | `recommendation-card.tsx` |
 
-**Ponto pra conversa:** confrontar ANTES da busca (no picker, mais barato) vs
-DEPOIS (no reveal, com números reais na mão) vs ambos. E o tom — docx pede
-agente que guia, não que empurra.
+### Decisão (conversa com o Kairo, 2026-06-11)
+
+**Confronto em AMBOS os pontos (defesa em camadas):**
+- **Picker (passo 2)**: warning cedo com estimativa — "com R$ 1.000/mês o bem
+  viável é ~R$ X — ou ajusta a parcela". Barato, evita busca fadada.
+- **Reveal**: confronto com números REAIS da Bevi ANTES de celebrar + rótulo
+  honesto no card ("Compatível com seu perfil" só com monthlyFit razoável;
+  senão "Melhor opção na faixa de crédito").
+
+**Tom**: o do docx — agente que GUIA, não que empurra. Confronto é informativo
+e propõe alternativas (ajustar bem OU parcela), nunca bloqueio seco.
 
 ### Regressão exigida (3 camadas)
 
