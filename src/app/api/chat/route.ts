@@ -511,6 +511,10 @@ export async function POST(req: NextRequest) {
 									meta.currentPersona ?? null,
 								);
 							} catch (err) {
+								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
+								// diagnóstico impossível. Logar SEMPRE o erro original (lição
+								// empty-env-compose: tool errors logados). CPF nunca no log.
+								console.error(`[contract-submit] startContract falhou (conv=${conversationId})`, err);
 								const delta =
 									err instanceof MinCreditError
 										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`

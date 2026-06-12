@@ -182,6 +182,9 @@ export async function fireContract(from: string, conversationId: string): Promis
 			);
 		}
 	} catch (err) {
+		// Bug dev 2026-06-11 (espelho do contract-submit web): erro engolido sem
+		// log inviabiliza diagnóstico. Logar SEMPRE o erro original; CPF nunca.
+		console.error(`[contract-capture] fireContract falhou (conv=${conversationId})`, err);
 		// Restaura o estado pra permitir retry sem reabrir o passo do zero.
 		await persistMeta(conversationId, { ...meta, contractCollection: { stage: "confirm" } });
 		const delta =
