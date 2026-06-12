@@ -242,43 +242,63 @@ describe("BUG-META-NARRATIVE — agent verbalizou mecanismo da UI ao usuario", (
 // gatilho textual de avanco.
 // ============================================================================
 
-describe("BUG-LEAD-FUNNEL — agent precisa chamar present_lead_form apos sinal de avanco", () => {
-	it("cassette: turn pos opt-in com sinal de avanco produz tool-call present_lead_form", async () => {
-		// Simula trajetoria correta — o que deveria ter saido do agent no turn
-		// pos opt-in quando user disse "Tenho interesse, vamos prosseguir".
+describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, nao present_lead_form", () => {
+	// INVERSAO do ex-BUG-LEAD-FUNNEL (pre-Bevi): o funil legado capturava lead
+	// pra consultor humano no "Tenho interesse". A jornada-canonica.md (passos
+	// 4-5) fecha self-service: avanco pos-reveal -> present_decision_prompt
+	// ("Esse plano faz sentido?") -> passo 5 (present_contract_form via Bevi).
+	// Bug real (Kairo 2026-06-12, jornada Itau): clicar "Tenho interesse"
+	// respondia "vou reservar... te conectar com nosso consultor" + lead_form.
+
+	const REVEAL_META: ConversationMetadata = {
+		currentCategory: "auto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		identityCollected: true,
+		qualifyAnswers: { creditMax: 100_000, prazoMeses: 0, hasLance: "no" },
+		searchDispatched: true,
+		revealCompleted: true,
+		simulatorOfferDispatched: true,
+		recommendedAdministradora: "ITAÚ",
+	};
+
+	it("cassette: turn pos-reveal com 'Tenho interesse' produz present_decision_prompt (NAO present_lead_form, sem 'consultor')", async () => {
+		// Trajetoria CORRETA — o que deve sair do agent quando o usuario sinaliza
+		// avanco pos-reveal. Mirror do que o handler determinístico do route faz.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
-			...textChunks(
-				"t1",
-				"Show! Vou reservar essa opção pra você — só preciso de uns dados rapidinho:",
-			),
-			toolCallChunk("tc-lf-1", "present_lead_form", {}),
+			...textChunks("t1", "Boa! Então deixa eu confirmar com você se esse plano faz sentido:"),
+			toolCallChunk("tc-dp-1", "present_decision_prompt", { administradora: "ITAÚ" }),
 			FINISH_TOOL_CALLS,
 		]);
 
-		// Frase curta natural sem narrar passo a passo, seguida da tool.
-		expect(text).toMatch(/reservar|guardar|dados/i);
 		expect(toolCalls).toHaveLength(1);
-		expect(toolCalls[0]?.toolName).toBe("present_lead_form");
+		expect(toolCalls[0]?.toolName).toBe("present_decision_prompt");
+		// O detector do bug: NUNCA present_lead_form, NUNCA promessa de consultor.
+		expect(toolCalls.some((t) => t.toolName === "present_lead_form")).toBe(false);
+		expect(text.toLowerCase()).not.toContain("consultor");
+		expect(text.toLowerCase()).not.toMatch(/reservar essa op[çc][ãa]o/);
 	});
 
-	it("regra do prompt: gatilho textual ('tenho interesse') casa com proximidade de present_lead_form", () => {
-		// Esse assert protege a regra estrutural — sem ela, o LLM nao converte
-		// sinal textual em tool call. Acopla o cassette acima ao prompt source.
-		const gatilhoLigadoAoLeadForm =
-			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|bora fechar|pode (prosseguir|fechar))[\s\S]{0,500}present_lead_form/i;
-
-		expect(
-			gatilhoLigadoAoLeadForm.test(SPECIALIST_BASE_PROMPT) ||
-				gatilhoLigadoAoLeadForm.test(SYSTEM_PROMPT),
-			"present_lead_form precisa estar a <500 chars de um gatilho textual de avanco no prompt. " +
-				"Sem isso, agent nao mapeia 'tenho interesse' (texto) -> present_lead_form (tool).",
-		).toBe(true);
+	it("tool-policy: present_lead_form NEM ENTRA no toolset pos-reveal (1a linha de defesa)", async () => {
+		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
+		expect(allowedTools(REVEAL_META)).not.toContain("present_lead_form");
+		// O caminho de avanco SIM esta disponivel.
+		expect(allowedTools(REVEAL_META)).toContain("present_decision_prompt");
 	});
 
-	// Cross-ref: src/lib/agent/system-prompt.lead-funnel.test.ts cobre o
-	// encadeamento save_contact_whatsapp -> present_lead_form ALEM do gatilho
-	// textual. Nao duplicado aqui.
+	it("regra do prompt: NENHUM gatilho de avanco esta amarrado a present_lead_form (anti-regressao)", () => {
+		// Inverso do legado: a proximidade gatilho<->lead_form que existia foi
+		// removida. Cross-ref detalhado em system-prompt.lead-funnel.test.ts.
+		const gatilhoEntaoLead =
+			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|bora fechar|sinal.{0,25}avan[çc]o)[\s\S]{0,400}present_lead_form/i;
+		const leadEntaoGatilho =
+			/present_lead_form[\s\S]{0,400}(tenho interesse|quero prosseguir|sinal.{0,25}avan[çc]o)/i;
+		for (const p of [SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT]) {
+			expect(gatilhoEntaoLead.test(p)).toBe(false);
+			expect(leadEntaoGatilho.test(p)).toBe(false);
+		}
+	});
 });
 
 // ============================================================================

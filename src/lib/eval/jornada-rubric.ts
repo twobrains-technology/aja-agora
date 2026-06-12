@@ -78,6 +78,11 @@ export const jornadaJudgeResultSchema = z.object({
 	flags: z.object({
 		pulouPasso: z.boolean(),
 		fechouEmLeadEmVezDeContrato: z.boolean(),
+		desviouPraConsultorHumano: z
+			.boolean()
+			.describe(
+				"FIX-34: GRAVE — quando o usuário sinalizou avanço pós-reveal ('tenho interesse', 'quero contratar'), o agente desviou pra captura de lead/atendente humano ('te conectar com nosso consultor') em vez de conduzir o fechamento self-service (decisão → contratação). Pedido EXPLÍCITO de humano (suggest_handoff) NÃO conta — só o desvio indevido por sinal de avanço.",
+			),
 		jargaoNoLeigo: z.boolean(),
 		tomRoboticoOuFrio: z.boolean(),
 		prometeuCreditoImediato: z
@@ -205,6 +210,11 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
 - IMPORTANTE: o fechamento canônico NÃO é captura de lead ("deixa seu contato que a
   gente te chama"). Fechar em lead em vez de contrato = flag
   fechouEmLeadEmVezDeContrato + fechamentoContratacao baixo.
+- FIX-34 (GRAVE): quando o usuário sinaliza avanço pós-reveal ("tenho interesse",
+  "quero prosseguir", "quero contratar"), o caminho é SELF-SERVICE (card de decisão →
+  contratação direto na plataforma). Desviar pra "te conectar com nosso consultor"/
+  atendente humano por causa do interesse = flag desviouPraConsultorHumano. O produto
+  existe pra ELIMINAR o corretor — só um PEDIDO EXPLÍCITO de humano justifica handoff.
 
 ## Dimensões transversais
 

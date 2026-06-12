@@ -2,82 +2,82 @@ import { describe, expect, it } from "vitest";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "./system-prompt";
 
 /**
- * Anti-regressão estrutural do funil de fechamento — eval agent-flow cenário imovel/Helena.
+ * Camada 1 (estrutural) — funil canônico pós-reveal (FIX-34, 2026-06-12).
  *
- * Bugs cobertos:
- *  - Bug A: agent dispara `present_whatsapp_optin` mas NUNCA dispara
- *    `present_lead_form`. Usuário diz "Tenho interesse, vamos prosseguir" e
- *    o funil quebra no opt-in WA. Lead não fecha.
- *  - Bug B: após `present_simulation_result` + `present_recommendation_card`
- *    o agent improvisa a frase de transição em vez de usar a canônica
- *    pedida pela Bruna: "Aqui está o detalhamento completo da {admin}.
- *    Quer ajustar o valor do bem?" (FIX-2: era 'a carta de crédito')
+ * Decisão de produto (docs/jornada/jornada-canonica.md passos 4-5): o sinal de
+ * avanço pós-reveal ("Tenho interesse", "quero prosseguir") leva ao CARD DE
+ * DECISÃO (present_decision_prompt, "Esse plano faz sentido?") e daí ao passo 5
+ * self-service (present_contract_form via Bevi). NUNCA a present_lead_form nem
+ * à promessa de "te conectar com nosso consultor" — o produto existe pra
+ * ELIMINAR o corretor do meio (core value do projeto).
  *
- * Testes estruturais (não chamam LLM): leem o source do prompt e validam
- * que as instruções obrigatórias estão presentes na variante que de fato
- * vai pro modelo em runtime (`SPECIALIST_BASE_PROMPT`, injetado em
- * `buildSpecialistPrompt`).
+ * Bug real (teste manual Kairo 2026-06-12, jornada Itaú real): clicar "Tenho
+ * interesse" no recommendation_card respondia "vou reservar essa opção... te
+ * conectar com nosso consultor" + present_lead_form. Regressão de proposta de
+ * valor.
+ *
+ * Estes asserts INVERTEM o contrato legado (ex-"Bug A", pré-Bevi): antes o
+ * prompt AMARRAVA sinal de avanço → present_lead_form. Agora isso é proibido.
  */
 
-describe("Bug A — present_lead_form gatilho explícito no SPECIALIST_BASE_PROMPT", () => {
-	it("menciona present_lead_form pelo menos uma vez", () => {
-		expect(
+describe("FIX-34 — sinal de avanço pós-reveal NÃO vira present_lead_form/consultor", () => {
+	const prompts = [
+		["SPECIALIST_BASE_PROMPT", SPECIALIST_BASE_PROMPT],
+		["SYSTEM_PROMPT", SYSTEM_PROMPT],
+	] as const;
+
+	// Gatilhos textuais de avanço que o prompt legado amarrava a present_lead_form.
+	const SINAIS =
+		"tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|bora fechar|pode (prosseguir|fechar)|sinal.{0,25}avan[çc]o|interesse explicito|intencao de avancar";
+
+	it("NENHUM prompt amarra gatilho textual de avanço a present_lead_form (proximidade < 400 chars)", () => {
+		const gatilhoEntaoLead = new RegExp(`(${SINAIS})[\\s\\S]{0,400}present_lead_form`, "i");
+		const leadEntaoGatilho = new RegExp(`present_lead_form[\\s\\S]{0,400}(${SINAIS})`, "i");
+		for (const [name, p] of prompts) {
+			expect(
+				gatilhoEntaoLead.test(p),
+				`${name}: sinal de avanço NÃO pode estar a <400 chars de present_lead_form (FIX-34 — o caminho é decision → contract_form).`,
+			).toBe(false);
+			expect(
+				leadEntaoGatilho.test(p),
+				`${name} (sentido inverso): present_lead_form NÃO pode estar a <400 chars de um sinal de avanço (FIX-34).`,
+			).toBe(false);
+		}
+	});
+
+	it("nenhum prompt promete 'consultor' como destino de 'tenho interesse'", () => {
+		// A copy legada "te conectar com nosso consultor" como resposta ao interesse
+		// contradiz o self-service. Handoff humano existe (suggest_handoff), mas o
+		// gatilho é PEDIDO DE HUMANO explícito, nunca o clique "Tenho interesse".
+		const interesseViraConsultor =
+			/(tenho interesse|clic\w+.{0,30}interesse)[\s\S]{0,220}consultor/i;
+		for (const [name, p] of prompts) {
+			expect(
+				interesseViraConsultor.test(p),
+				`${name}: "tenho interesse" NÃO pode levar a "consultor" (FIX-34 — fecha self-service na plataforma).`,
+			).toBe(false);
+		}
+	});
+
+	it("o caminho canônico pós-reveal aponta pra decisão/contratação (âncora positiva)", () => {
+		// O specialist precisa saber PRA ONDE o avanço vai: card de decisão
+		// (passo 4 close) → passo 5 (present_contract_form). Sem essa âncora o
+		// modelo improvisa de volta pro lead_form.
+		const apontaDecisao = /present_decision_prompt/.test(SPECIALIST_BASE_PROMPT);
+		const apontaContrato = /present_contract_form|passo 5|contratar agora/i.test(
 			SPECIALIST_BASE_PROMPT,
-			"SPECIALIST_BASE_PROMPT deve mencionar present_lead_form — é a tool que fecha o funil",
-		).toMatch(/present_lead_form/);
-	});
-
-	it("tem instrução EXPLÍCITA de chamar present_lead_form após save_contact_whatsapp / opt-in WhatsApp aceito", () => {
-		// O fluxo correto: usuário aceita WhatsApp (save_contact_whatsapp), agent
-		// pede para fechar via present_lead_form. Sem esse encadeamento no prompt,
-		// o agent para no opt-in e nunca avança pra captura final.
-		// A instrução tem que conectar os dois conceitos no MESMO trecho.
-		const haveLeadForm = /present_lead_form/;
-		const afterOptIn =
-			/(ap[óo]s|depois|em seguida).*(save_contact_whatsapp|opt-?in|whatsapp).*present_lead_form/is;
-		const optInThenLead =
-			/(save_contact_whatsapp|present_whatsapp_optin)[\s\S]{0,500}present_lead_form/i;
-
-		expect(SPECIALIST_BASE_PROMPT).toMatch(haveLeadForm);
+		);
 		expect(
-			afterOptIn.test(SPECIALIST_BASE_PROMPT) || optInThenLead.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa instruir explicitamente a chamar present_lead_form após o opt-in WhatsApp (save_contact_whatsapp). Atualmente o prompt termina o fluxo no opt-in e o lead nunca fecha.",
-		).toBe(true);
-	});
-
-	it("tem instrução EXPLÍCITA de chamar present_lead_form quando o usuário manifesta intenção de avançar em texto", () => {
-		// Cenário do eval: user digitou "Tenho interesse, vamos prosseguir".
-		// Sem gatilho textual no prompt, o LLM não converte sinal de avanço
-		// em call de present_lead_form.
-		const sinaisDeAvanco =
-			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|quero fechar|quero (avan[çc]ar|seguir)|bora fechar|pode (prosseguir|fechar)|prosseguir)/i;
-		const leadFormProximo =
-			/(tenho interesse|quero prosseguir|vamos (prosseguir|fechar|seguir)|quero fechar|bora fechar|pode (prosseguir|fechar))[\s\S]{0,400}present_lead_form/i;
-
-		expect(
-			sinaisDeAvanco.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa listar pelo menos um sinal textual de avanço (ex: 'tenho interesse', 'quero prosseguir', 'bora fechar') como gatilho do funil.",
-		).toBe(true);
-
-		expect(
-			leadFormProximo.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa amarrar sinal de avanço ('tenho interesse', 'quero prosseguir') à chamada de present_lead_form no MESMO bloco. Hoje o prompt menciona 'Tenho interesse' apenas como botão do card de simulação — sem dizer pro agent disparar present_lead_form quando o user repete em texto.",
-		).toBe(true);
-	});
-
-	it("SYSTEM_PROMPT também aponta present_lead_form com gatilho claro (defesa em camadas)", () => {
-		// SYSTEM_PROMPT é usado em outros pontos do produto. A regra do funil
-		// é tão crítica que precisa estar nos dois lugares.
-		expect(SYSTEM_PROMPT).toMatch(/present_lead_form/);
-		const gatilhoConcreto =
-			/(ap[óo]s|depois|quando).*(opt-?in|whatsapp|tenho interesse|quero prosseguir|interesse explicito)/i;
-		expect(
-			gatilhoConcreto.test(SYSTEM_PROMPT),
-			"SYSTEM_PROMPT cita present_lead_form mas só com 'quando demonstrar interesse' — vago. Precisa de gatilho concreto: após opt-in WA OU sinal textual de avanço.",
+			apontaDecisao && apontaContrato,
+			"SPECIALIST_BASE_PROMPT precisa nomear present_decision_prompt E o passo de contratação como destino pós-reveal.",
 		).toBe(true);
 	});
 });
 
+/**
+ * Bug B — frase canônica B9 'detalhamento completo / ajustar o valor do bem'
+ * (mantida — não tem relação com o lead_form; é a transição pós-detalhamento).
+ */
 describe("Bug B — frase canônica B9 'detalhamento completo / ajustar o valor do bem'", () => {
 	it("SPECIALIST_BASE_PROMPT contém a substring 'detalhamento completo' como frase canônica", () => {
 		expect(
@@ -94,9 +94,6 @@ describe("Bug B — frase canônica B9 'detalhamento completo / ajustar o valor 
 	});
 
 	it("frase canônica B9 está colocada no MESMO bloco que present_simulation_result OU present_recommendation_card", () => {
-		// A frase só faz sentido onde o detalhamento aparece — logo após
-		// present_simulation_result (ou present_recommendation_card no caso
-		// de destaque). Sem essa proximidade, o LLM não associa.
 		const blocoEsperado =
 			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
 		const blocoEsperadoReverso =
@@ -110,8 +107,6 @@ describe("Bug B — frase canônica B9 'detalhamento completo / ajustar o valor 
 	});
 
 	it("frase canônica B9 contém placeholder pro nome da administradora", () => {
-		// "Aqui está o detalhamento completo da {admin}" — sem o placeholder
-		// explicito, o LLM omite o nome OU inventa nome errado.
 		const placeholder =
 			/detalhamento completo[\s\S]{0,80}(\{admin\}|\{admin(istradora)?_name\}|\{group(_admin)?\}|da \{|do \{|<admin>|<administradora>)/i;
 		const placeholderAlternativo =

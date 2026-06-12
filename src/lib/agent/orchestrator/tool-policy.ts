@@ -74,8 +74,12 @@ const WHAT_IF_AND_DETAIL = [
 	"present_financing_comparison",
 ];
 
-/** Captura de lead — válida até o fechamento (depois o lead JÁ é contrato). */
-const LEAD_CAPTURE = ["present_value_picker", "present_lead_form", "capture_lead"];
+/** Seletor de valor + captura de lead — válidos até o fechamento (o
+ * present_value_picker reabre o ajuste de valor pós-reveal; capture_lead
+ * persiste o lead). FIX-34: present_lead_form NÃO entra aqui — pós-reveal o
+ * sinal de avanço é decision → contract_form (jornada self-service), nunca
+ * captura de lead pra consultor humano. A tool fica restrita a `qualify`. */
+const LEAD_CAPTURE = ["present_value_picker", "capture_lead"];
 
 /**
  * Tabela declarativa fase → tools permitidas. O builder INTERSETA o resultado
@@ -93,7 +97,15 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// FIX-12: present_contract_form FORA — identidade pré-reveal é assunto
 			// do gate identify do SERVIDOR, nunca do form de contratação.
 			// BUG-OPTIN-ENGOLE-GATES: present_whatsapp_optin FORA pré-reveal.
-			return [...BASE, ...DISCOVERY_AND_REVEAL_CARDS, ...WHAT_IF_AND_DETAIL, ...LEAD_CAPTURE];
+			// FIX-34: present_lead_form SÓ aqui (captura de lead pré-reveal) — some
+			// das fases pós-reveal, onde o avanço é decision → contract_form.
+			return [
+				...BASE,
+				...DISCOVERY_AND_REVEAL_CARDS,
+				...WHAT_IF_AND_DETAIL,
+				...LEAD_CAPTURE,
+				"present_lead_form",
+			];
 		case "reveal":
 			// BUG-REVEAL-LOOP: re-descoberta (search/recommend/cards do reveal)
 			// FORA — o que sobra de reveal é what-if/detalhe. Dial (passo 4) e

@@ -58,13 +58,20 @@ describe("prompt — roteamento das 3 ações do card de decisão", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/falar com um especialista[\s\S]{0,80}suggest_handoff/i);
 	});
 
-	it("'contratar agora' é gatilho de present_lead_form no prompt", () => {
+	it("FIX-34 — 'contratar agora' é gatilho de present_contract_form (passo 5), NÃO present_lead_form", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/contratar agora/i);
-		// o gatilho 'contratar' vive perto do present_lead_form
+		// Jornada canônica (passo 5): "Sim, quero contratar agora" → fechamento
+		// self-service via present_contract_form (proposta real). NUNCA lead_form.
+		expect(
+			/contratar[\s\S]{0,600}present_contract_form|present_contract_form[\s\S]{0,600}contratar/i.test(
+				SPECIALIST_BASE_PROMPT,
+			),
+		).toBe(true);
+		// E o gatilho de avanço não pode estar amarrado a present_lead_form.
 		expect(
 			/contratar[\s\S]{0,600}present_lead_form|present_lead_form[\s\S]{0,600}contratar/i.test(
 				SPECIALIST_BASE_PROMPT,
 			),
-		).toBe(true);
+		).toBe(false);
 	});
 });
