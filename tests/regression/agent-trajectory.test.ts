@@ -43,6 +43,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
+	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -389,6 +390,92 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
 			"FIX-38: o card de decisão fica pros caminhos ambíguos — o gate simulator-offer 'Agora não' ainda o dispara.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-36 — texto afirma achado ANTES do search_groups retornar
+// ----------------------------------------------------------------------------
+// Real (Kairo dev 2026-06-12): clicar "Enviei meus dados pra buscar as ofertas"
+// → balão "Boa, Kairo! Encontrei opções na sua faixa — veja a que mais se
+// encaixa:" AO MESMO TEMPO que o indicador "Buscando grupos" girava. O texto
+// pré-tool afirmava o resultado de uma busca em andamento. Se a Bevi demora ou
+// falha ("tive um problema ao falar com a administradora" já visto nesta
+// rodada), o "Encontrei" vira mentira visível e mina a confiança.
+//
+// Root cause (instruído, não alucinado): frases-modelo pré-tool em directives.ts
+// + system-prompt.ts AFIRMAVAM achado. Fix: viram TRANSIÇÃO honesta (não afirma
+// resultado nem narra mecânica), com regra de proibição explícita. O anúncio do
+// achado (docx "Encontramos 3 boas opções") só vem PÓS-tool — preservado.
+// Defesa estrutural detalhada em src/lib/agent/system-prompt.fix-36-pre-tool
+// -honesty.test.ts.
+// ============================================================================
+
+describe("FIX-36-PRE-TOOL-HONESTY — texto não afirma achado antes do search_groups retornar", () => {
+	// Detector do bug: afirmação de RESULTADO em primeira pessoa pré-tool — distinta
+	// do anúncio PÓS-tool ("Encontramos 3 boas opcoes" do docx, que só vem depois).
+	const AFIRMA_ACHADO_PRE_TOOL =
+		/\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op|aqui ta a simula/i;
+
+	it("cassette: o texto que PRECEDE search_groups é transição honesta (não afirma achado)", async () => {
+		// Trajetória CORRETA pós-fix: transição honesta + tool (mirror do reveal).
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na sua faixa:"),
+			toolCallChunk("tc-sg-1", "search_groups", { category: "auto", creditMax: 100000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("search_groups");
+		// O texto (que precede o tool-call no stream) NÃO afirma achado.
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(false);
+	});
+
+	it("cassette: o detector PEGA o bug histórico ('Encontrei opções' antes de buscar)", async () => {
+		// Reprodução fiel do print — o agente afirmou o achado antes do tool retornar.
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa, Kairo! Encontrei opções na sua faixa — veja a que mais se encaixa:",
+			),
+			toolCallChunk("tc-sg-2", "search_groups", { category: "auto", creditMax: 100000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		// Se o detector não pega a frase clássica do bug, atualize o regex.
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(true);
+	});
+
+	it("cenário de erro Bevi: a transição honesta degrada bem — nenhuma afirmação de achado antes da falha", async () => {
+		// search_groups falha (Bevi fora). Como o texto pré-tool não afirmou achado,
+		// a mensagem de erro NÃO contradiz nada dito antes.
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na sua faixa:"),
+			toolCallChunk("tc-sg-3", "search_groups", { category: "auto", creditMax: 100000 }),
+			...textChunks(
+				"t2",
+				"Poxa, tive um problema ao falar com a administradora. Pode tentar de novo em instantes?",
+			),
+			FINISH_STOP,
+		]);
+		expect(AFIRMA_ACHADO_PRE_TOOL.test(text)).toBe(false);
+	});
+
+	it("estrutural: regra de proibição no prompt + frase-modelo pré-search honesta na directive", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/texto pre-tool NUNCA afirma achado/i);
+		const rangePicker = buildRangePickerDirective("Auto", "auto", "creditMax=100000", "1.500");
+		expect(rangePicker).not.toContain("Encontrei essas opcoes");
+		expect(rangePicker).toMatch(/PROIBIDO afirmar achado/i);
+		// O anúncio PÓS-tool do docx segue preservado no reveal.
+		const reveal = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				currentCategory: "auto",
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 100000, prazoMeses: 12, hasLance: "no" },
+			},
+		});
+		expect(reveal).toContain("Encontramos 3 boas opcoes");
 	});
 });
 

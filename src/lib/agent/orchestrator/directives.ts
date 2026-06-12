@@ -107,7 +107,7 @@ export function buildSimulateDirective(
 	groupId: string,
 	creditValue: number,
 ): string {
-	return `Usuario quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva UMA frase curta de introducao no SEU TOM tipo "Show, vai aparecer aqui:" ou "Aqui ta a simulacao:" — proibido "vou simular" e proibido descrever numeros em texto. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result. O card ja tem botoes "Tenho interesse!" e "Ajustar valor". NAO simule de novo o mesmo grupo.`;
+	return `Usuario quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva UMA frase curta de introducao no SEU TOM tipo "Show, vai aparecer aqui:" ou "Olha so:" — proibido "vou simular", proibido afirmar que o resultado JA esta na tela ("aqui ta a simulacao", "aqui estao os numeros") ANTES de simulate_quota retornar, e proibido descrever numeros em texto. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result. O card ja tem botoes "Tenho interesse!" e "Ajustar valor". NAO simule de novo o mesmo grupo.`;
 }
 
 export function buildWhatIfDirective(administradora: string, currentCreditValue: number): string {
@@ -151,7 +151,7 @@ export function buildRangePickerDirective(
 	filtros: string,
 	budgetFmt: string,
 ): string {
-	return `Usuario escolheu via slider a faixa de ${categoryLabel} (${filtros}, orcamento mensal R$ ${budgetFmt}). FLUXO OBRIGATORIO: (1) escreva UMA frase curta de introducao no SEU TOM tipo "Encontrei essas opcoes na sua faixa, escolhe uma pra simular:" — NAO descreva numeros especificos dos grupos em texto, isso e o trabalho do card. (2) chame search_groups com category="${category}" e os filtros (${filtros}); (3) se retornar 1 grupo, chame present_group_card; se retornar 2 ou mais, chame present_comparison_table com TODOS os grupos. NUNCA descreva os grupos em texto corrido — o componente visual e obrigatorio. NAO chame recommend_groups.`;
+	return `Usuario escolheu via slider a faixa de ${categoryLabel} (${filtros}, orcamento mensal R$ ${budgetFmt}). FLUXO OBRIGATORIO: (1) escreva UMA frase curta de introducao no SEU TOM — uma TRANSICAO honesta que NAO afirma resultado, tipo "Bora ver o que encaixa na sua faixa:" ou "Olha so o que a gente consegue na sua faixa:". PROIBIDO afirmar achado ("encontrei", "achei", "aqui estao", "essas sao") ANTES de search_groups retornar — a busca pode demorar ou falhar e a frase vira mentira visivel. PROIBIDO tambem narrar mecanica ("vou buscar"). NAO descreva numeros especificos dos grupos em texto, isso e o trabalho do card. (2) chame search_groups com category="${category}" e os filtros (${filtros}); (3) se retornar 1 grupo, chame present_group_card; se retornar 2 ou mais, chame present_comparison_table com TODOS os grupos. NUNCA descreva os grupos em texto corrido — o componente visual e obrigatorio. NAO chame recommend_groups.`;
 }
 
 // ---- Search summary (composed) ----

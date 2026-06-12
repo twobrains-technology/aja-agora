@@ -684,6 +684,37 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 		).toEqual([]);
 	});
 
+	it("[FIX-36] coerência temporal: o texto ANTES de search_groups não afirma achado", () => {
+		// Camada 3: o agente REAL não pode escrever "Encontrei opções" antes do
+		// search_groups retornar (bug do print). Reconstrói o texto emitido ANTES
+		// do 1º tool-call de search_groups no turno (a ordem do stream = a ordem que
+		// o usuário vê). NÃO inclui "encontramos" no detector — a copy do docx
+		// "Encontramos 3 boas opções" é o anúncio PÓS-tool (legítimo) e nem aparece
+		// antes do tool-call no stream.
+		const AFIRMA_ACHADO = /\bencontrei\b|\bachei\b|aqui est[ãa]o (as )?op[çc]|essas s[ãa]o as op/i;
+		const turns = result?.turns ?? [];
+		let checked = 0;
+		for (const t of turns) {
+			if (t.role !== "agent") continue;
+			let preToolText = "";
+			let hitSearch = false;
+			for (const ev of t.events) {
+				if (ev.type === "tool-call" && ev.toolName === "search_groups") {
+					hitSearch = true;
+					break;
+				}
+				if (ev.type === "text-delta") preToolText += ev.text;
+			}
+			if (!hitSearch) continue;
+			checked++;
+			expect(
+				AFIRMA_ACHADO.test(preToolText),
+				`FIX-36: o texto que precede search_groups NÃO pode afirmar achado antes do resultado. Texto pré-tool: "${preToolText}"`,
+			).toBe(false);
+		}
+		console.log(`[FIX-36] turnos com search_groups validados (coerência temporal): ${checked}`);
+	});
+
 	it("[B9] frase de detalhamento contém 'detalhamento'/'simulação'/'ajustar' próximo a simulação", () => {
 		const turns = result?.turns ?? [];
 		const simTurn = turns.find((t) => t.artifacts.some((a) => a.type === "simulation_result"));

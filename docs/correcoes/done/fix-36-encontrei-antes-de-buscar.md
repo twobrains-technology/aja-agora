@@ -1,14 +1,17 @@
 ---
 id: FIX-36
 titulo: "Agente afirma 'Encontrei opções na sua faixa' ANTES do search_groups completar — frase-modelo instruída no prompt/directives afirma resultado que ainda não existe"
-status: todo
+status: done
 bloco: bloco-t-ux-chat
 arquivos:
-  - src/lib/agent/orchestrator/directives.ts (frase-modelo do slider, linha ~154)
-  - src/lib/agent/system-prompt.ts (ORDEM DE ENTREGA ~416, exemplo GOOD ~421, "introducao neutra" ~437, exemplo de quebra de linha ~123)
-  - tests/regression/agent-trajectory.test.ts (cassette)
+  - src/lib/agent/orchestrator/directives.ts (frase-modelo do slider + simulate — transição honesta)
+  - src/lib/agent/system-prompt.ts (ORDEM DE ENTREGA + REGRA DURA de proibição + exemplos honestos)
+  - src/lib/agent/system-prompt.fix-36-pre-tool-honesty.test.ts (Camada 1)
+  - tests/regression/agent-trajectory.test.ts (Camada 2 — cassette FIX-36-PRE-TOOL-HONESTY)
+  - tests/eval/agent-flow.eval.test.ts (Camada 3 — coerência temporal no cenário Monique)
 rodada: 2026-06-12 (testes manuais do Kairo no dev)
 anotado_em: 2026-06-12
+executado_em: 2026-06-12
 ---
 
 # FIX-36 — "Encontrei" antes de buscar (texto afirma resultado pré-tool)
