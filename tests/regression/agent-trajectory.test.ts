@@ -2724,8 +2724,10 @@ describe("REVEAL-ORDER — recomendado em destaque + carrossel das opções no r
 		expect(src).toMatch(/buildOtherOptions/);
 		expect(src).toMatch(/comparison_table/);
 		const lib = readSource("src/lib/bevi/other-options.ts");
-		expect(lib).toMatch(/slice\(0, 2\)/); // docx: "as outras 2"
-		expect(lib).toMatch(/recommendedAdministradora/); // exclui a recomendada
+		expect(lib).toMatch(/others\.length === 2/); // docx: "as outras 2" (FIX-28: loop+break troca o slice)
+		expect(lib).toMatch(/recommendedAdministradora/); // exclui a recomendada (fallback por nome)
+		expect(lib).toMatch(/recommendedOffer/); // FIX-28: exclusão por equivalência (meta não tem groupId)
+		expect(lib).toMatch(/seen\.has|equivKey/); // FIX-28: dedupe das cotas equivalentes
 	});
 
 	it("acoplamento: o botão 'outras' do decision card dispara a action (não texto livre)", () => {
