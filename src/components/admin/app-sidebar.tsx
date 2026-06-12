@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SunMark } from "@/components/brand/sun-mark";
 import {
 	Sidebar,
 	SidebarContent,
@@ -59,8 +60,8 @@ export function AppSidebar() {
 							className="gap-2.5 !bg-transparent [&>svg]:size-8"
 							render={<Link href="/admin" />}
 						>
-							<div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-								<span className="text-sm font-bold">A</span>
+							<div className="flex size-8 items-center justify-center rounded-lg bg-[var(--surface-ink)]">
+								<SunMark variant="white" className="size-5" />
 							</div>
 							<div className="flex flex-col items-start">
 								<span className="text-lg font-semibold">Aja Agora</span>

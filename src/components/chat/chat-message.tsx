@@ -1,18 +1,10 @@
 "use client";
 
-import {
-	AlertCircle,
-	Bike,
-	Bot,
-	Briefcase,
-	Car,
-	Home,
-	type LucideIcon,
-	RotateCcw,
-} from "lucide-react";
+import { AlertCircle, Bike, Briefcase, Car, Home, type LucideIcon, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import type { Artifact } from "@/lib/chat/types";
 import type {
@@ -26,6 +18,7 @@ import type {
 } from "@/lib/chat/ui-message";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { useSmoothText } from "@/lib/hooks/use-smooth-text";
+import { cn } from "@/lib/utils";
 import { ArtifactRenderer } from "./artifact-renderer";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
@@ -356,16 +349,23 @@ export function ChatMessage({
 }
 
 export function AssistantAvatar({ category }: { category?: Category | null } = {}) {
-	const Icon = category ? CATEGORY_TRANSITION[category].icon : Bot;
+	const Icon = category ? CATEGORY_TRANSITION[category].icon : null;
 	return (
 		<motion.div
 			key={category ?? "concierge"}
 			initial={{ scale: 0.85, opacity: 0 }}
 			animate={{ scale: 1, opacity: 1 }}
 			transition={{ type: "spring", stiffness: 320, damping: 24 }}
-			className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary"
+			className={cn(
+				"flex size-8 shrink-0 items-center justify-center rounded-full",
+				Icon ? "bg-primary" : "bg-[var(--surface-ink)]",
+			)}
 		>
-			<Icon className="size-4 text-primary-foreground" strokeWidth={2} />
+			{Icon ? (
+				<Icon className="size-4 text-primary-foreground" strokeWidth={2} />
+			) : (
+				<SunMark variant="white" className="size-4.5" />
+			)}
 		</motion.div>
 	);
 }

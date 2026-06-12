@@ -5,16 +5,18 @@ import { useCallback, useEffect, useState } from "react";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { MessageList } from "@/components/chat/message-list";
-import { BenefitsSection } from "@/components/landing/benefits-section";
-import { CtaSection } from "@/components/landing/cta-section";
-import { FaqSection } from "@/components/landing/faq-section";
-import { Footer } from "@/components/landing/footer";
-import { GalaxyTransition } from "@/components/landing/galaxy-transition";
-import { HowItWorks } from "@/components/landing/how-it-works";
-import { SocialProof } from "@/components/landing/social-proof";
-import Header from "@/components/shadcn-studio/blocks/hero-section-25/header";
-import { HeroSection25 } from "@/components/shadcn-studio/blocks/hero-section-25/hero-section-25";
+import { BrandFooter } from "@/components/landing/brand-footer";
+import { BrandNav } from "@/components/landing/brand-nav";
+import { Closing } from "@/components/landing/closing";
+import { Demo } from "@/components/landing/demo";
+import { Hero } from "@/components/landing/hero";
+import { Institutional } from "@/components/landing/institutional";
+import { Process } from "@/components/landing/process";
+import { SunBloomTransition } from "@/components/landing/sun-bloom-transition";
+import { Trust } from "@/components/landing/trust";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
+
+const DEFAULT_INTENT = "Quero entender como o consórcio pode me ajudar a conquistar meu objetivo.";
 
 export default function LandingPage() {
 	const [mode, setMode] = useState<"landing" | "transitioning" | "chat">("landing");
@@ -35,23 +37,23 @@ export default function LandingPage() {
 
 	return (
 		<>
-			<GalaxyTransition active={mode === "transitioning"} onComplete={handleTransitionComplete} />
+			<SunBloomTransition active={mode === "transitioning"} onComplete={handleTransitionComplete} />
 
 			<AnimatePresence mode="wait">
 				{mode === "landing" && (
 					<motion.main
 						key="landing"
-						className="flex min-h-screen flex-col"
+						className="flex min-h-screen flex-col bg-[#fbfbf9]"
 						exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.3 } }}
 					>
-						<Header />
-						<HeroSection25 onGoalSelected={handleGoalSelected} />
-						<HowItWorks />
-						<BenefitsSection />
-						<SocialProof />
-						<FaqSection />
-						<CtaSection />
-						<Footer />
+						<BrandNav />
+						<Hero onGoalSelected={handleGoalSelected} />
+						<Trust />
+						<Process />
+						<Demo />
+						<Institutional />
+						<Closing onStart={() => handleGoalSelected(DEFAULT_INTENT)} />
+						<BrandFooter />
 					</motion.main>
 				)}
 
