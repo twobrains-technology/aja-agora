@@ -2,7 +2,7 @@
 id: FIX-35
 titulo: "WhatsApp 'Tenho interesse' fazia handoff pra consultor — tem que seguir o MESMO funil self-service da web (mesma jornada)"
 status: done
-commit: pending
+commit: f2eb529
 executado_em: 2026-06-12
 bloco: bloco-s-funil-canonico (extensão — canal WhatsApp)
 arquivos:
