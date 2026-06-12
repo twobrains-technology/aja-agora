@@ -17,6 +17,7 @@ import {
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
+	buildNameCapturedDirective,
 	buildPlanReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
@@ -604,6 +605,38 @@ export async function POST(req: NextRequest) {
 
 						if (body.action?.kind !== "gate") return;
 						const action = body.action;
+
+						// FIX-17: nome enviado pelo card focado (passo 1). Persiste DIRETO
+						// (sem tool) e saúda — o caminho texto-livre (save_contact_name
+						// forçado no orchestrator) segue valendo em paralelo. Os dois
+						// convergem em conversations.contactName.
+						if (action.gate === "name") {
+							const { saveContactName } = await import("@/lib/leads/contact-capture");
+							const res = await saveContactName(conversationId, action.value.name);
+							if (!res.ok) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Pode me dizer como prefere ser chamado(a)? Pode ser só o primeiro nome.",
+								);
+								await pipeGatePrompt({ conversationId, gate: "name", writer });
+								return;
+							}
+							const fresh = await db.query.conversations.findFirst({
+								where: eq(conversations.id, conversationId),
+								columns: { contactName: true },
+							});
+							const savedName = fresh?.contactName ?? action.value.name;
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildNameCapturedDirective(savedName),
+								contactName: savedName,
+								writer,
+								userKey,
+							});
+							return;
+						}
 
 						if (action.gate === "experience") {
 							const choice = action.value;

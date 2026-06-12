@@ -108,3 +108,54 @@ describe("FIX-3 — computePlanEstimate (estimativa de mercado)", () => {
 		expect(e.termMonths).toBe(TYPICAL_TERM_MONTHS.servicos);
 	});
 });
+
+describe("FIX-18 — viabilidade orçamento × valor do bem (confronto no picker)", () => {
+	it("jornada real do Kairo: carro 250k · 1.000/mês → INVIÁVEL (parcela não fecha o bem)", () => {
+		// 250k de carro a R$ 1.000/mês ≈ 24 anos — não existe grupo de auto assim
+		// (típico ≤ 120m com o teto de 1.5×). O picker tem que sinalizar.
+		const e = computePlanEstimate({
+			category: "auto",
+			assetValue: 250_000,
+			targetMonth: 27,
+			monthlyBudget: 1_000,
+		});
+		expect(e.budgetFeasible).toBe(false);
+		// E orienta: com R$ 1.000/mês o bem viável fica na casa de ~R$ 100k.
+		expect(e.viableAssetForBudget).toBeGreaterThan(80_000);
+		expect(e.viableAssetForBudget).toBeLessThan(130_000);
+		// O bem viável é MUITO menor que o declarado (confronto faz sentido).
+		expect(e.viableAssetForBudget).toBeLessThan(250_000);
+	});
+
+	it("parcela que fecha o bem dentro do teto → viável", () => {
+		const e = computePlanEstimate({
+			category: "auto",
+			assetValue: 100_000,
+			targetMonth: 12,
+			monthlyBudget: 2_000,
+		});
+		expect(e.budgetFeasible).toBe(true);
+	});
+
+	it("sem parcela declarada → não julga viabilidade (budgetFeasible=true)", () => {
+		const e = computePlanEstimate({ category: "auto", assetValue: 250_000, targetMonth: 12 });
+		expect(e.budgetFeasible).toBe(true);
+	});
+
+	it("viableAssetForBudget cabe na parcela declarada no prazo máximo realista", () => {
+		// Sanidade: o bem viável calculado, ele PRÓPRIO, é viável com a parcela.
+		const e = computePlanEstimate({
+			category: "auto",
+			assetValue: 250_000,
+			targetMonth: 12,
+			monthlyBudget: 1_000,
+		});
+		const reCheck = computePlanEstimate({
+			category: "auto",
+			assetValue: e.viableAssetForBudget,
+			targetMonth: 12,
+			monthlyBudget: 1_000,
+		});
+		expect(reCheck.budgetFeasible).toBe(true);
+	});
+});

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
-import { scoreLabel } from "@/lib/consorcio/score-label";
+import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -77,8 +77,12 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						Recomendacao
 					</Badge>
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
-					    (comparison-table); breakdown segue no expansível. */}
-					<span className="text-sm font-medium text-primary">{scoreLabel(payload.score)}</span>
+					    (comparison-table); breakdown segue no expansível.
+					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
+					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
+					<span className="text-sm font-medium text-primary">
+						{recommendationFitLabel(payload.score, payload.scoreBreakdown.monthlyFit)}
+					</span>
 				</div>
 				<p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
 			</CardHeader>

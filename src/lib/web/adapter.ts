@@ -46,6 +46,10 @@ const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
  * Camada 1 validar a copy do docx sem DB). */
 export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartData | null {
 	switch (gate) {
+		case "name":
+			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
+			// texto do agente (gateQuestion('name')=null), o card só complementa.
+			return { kind: "name", gate: "name" };
 		case "experience":
 			return {
 				kind: "chips",

@@ -70,10 +70,13 @@ async function gateInteractive(
 		case "simulator-offer":
 			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
 			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
+		case "name":
 		case "identify":
 		case "doubts-wait":
 		case "search":
 		case "decision":
+			// FIX-17: "name" degrada pra texto no WhatsApp — a pergunta do nome já
+			// sai no texto do directive de primeiro contato; o card não existe aqui.
 			// "identify" não tem interactive — é coleta textual de CPF (fireGate
 			// manda o prompt como texto; captura em identify-capture.ts).
 			return null;

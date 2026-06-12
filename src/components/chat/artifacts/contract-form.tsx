@@ -111,6 +111,8 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 								value={cpf}
 								onChange={(e) => setCpf(maskCpf(e.target.value))}
 								disabled={isStreaming}
+								// FIX-17: autofocus padronizado nos forms do funil (mobile-first).
+								autoFocus
 								data-testid="contract-cpf"
 							/>
 						</div>

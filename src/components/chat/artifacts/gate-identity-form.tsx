@@ -84,6 +84,9 @@ export function GateIdentityForm({
 						value={cpf}
 						onChange={(e) => setCpf(maskCpf(e.target.value))}
 						disabled={isStreaming || submitted}
+						// FIX-17: autofocus padronizado nos forms do funil (mobile-first) —
+						// só quando ativo, pra não roubar foco de um card antigo no histórico.
+						autoFocus={active}
 						data-testid="identify-cpf"
 					/>
 				</div>

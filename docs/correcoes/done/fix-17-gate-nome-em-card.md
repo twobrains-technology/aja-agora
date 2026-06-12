@@ -1,9 +1,10 @@
 ---
 id: FIX-17
 titulo: "Gate do nome ('como posso te chamar?') deve pedir o nome em CARD com input focado, não texto livre"
-status: todo
+status: done
 bloco: bloco-m-ux-funil
-decisao_pendente: resolvida (2026-06-11, ver seção "Decisão")
+commit: cd159bc
+executado_em: 2026-06-11
 arquivos:
   - src/lib/chat/ui-message.ts (part data novo, ex: NameGatePartData)
   - src/components/chat/artifacts/name-prompt.tsx (componente novo: input + submit, autofocus)
@@ -58,16 +59,12 @@ estruturados vieram depois e o nome nunca foi migrado pro padrão.
 | Agent não repete a pergunta em texto após o card (mesma regra do value_picker) | `system-prompt.ts` |
 | WhatsApp segue 100% textual (card não existe lá) | `formatter.ts` — provavelmente zero mudança |
 
-### Decisão (conversa com o Kairo, 2026-06-11)
-
-1. **Autofocus: PADRONIZAR em todos os forms do funil** — card do nome,
-   identify e lead form ganham autofocus no 1º campo. Consistência
-   mobile-first; custo marginal.
-2. **Coexistência: os dois caminhos COEXISTEM** — o card é o caminho
-   principal; texto livre no chat continua funcionando (detect-name-turn já
-   cobre). Mesmo padrão dos outros gates.
-3. Escopo do autofocus dos demais forms entra NESTE item (mudança de 1 prop
-   por form + teste).
+**Pontos pra conversa com o Kairo:**
+1. Autofocus no input do card rouba o foco do input do chat — ok? (no mobile é
+   exatamente o que ele quer: teclado já aberto no lugar certo)
+2. O usuário ainda pode responder por texto livre no chat (os dois caminhos
+   coexistem) ou o card vira o único caminho?
+3. Vale aproveitar e padronizar o autofocus nos outros forms (identify/lead)?
 
 ### Regressão exigida (3 camadas, padrão do projeto)
 
@@ -77,3 +74,31 @@ estruturados vieram depois e o nome nunca foi migrado pro padrão.
   chamada UMA vez com o valor do card.
 - Camada 3: cenário de eval já cobre captura de nome (EVAL-SAVE-CONTACT-NAME-
   CIRURGICO) — estender pro card.
+
+### Decisão (Kairo, registrada 2026-06-11)
+
+Conversa alinhada e inlined no prompt de lançamento do workspace 3:
+
+1. **Autofocus em TODOS os forms do funil** (não só o do nome). Padronizado:
+   `name-prompt` (novo), `gate-identity-form` (CPF) e `contract-form` (CPF);
+   `lead-form` já tinha. Mobile-first — o teclado abre no lugar certo. Roubar
+   o foco do input do chat é o comportamento DESEJADO no mobile.
+2. **Coexistência card/texto.** O card NÃO vira caminho único — o usuário pode
+   digitar no card OU responder por texto livre no chat. Os dois convergem em
+   `conversations.contactName` (card → route persiste direto; texto → o
+   `save_contact_name` forçado via toolChoice, caminho intacto).
+
+### O que mudou vs. o rascunho (paths reais)
+
+- **Disparo determinístico**: em vez de mexer em `detect-name-turn.ts`, o gate
+  virou um `Gate` de verdade (`"name"`) — `nextGate` retorna `"name"` enquanto
+  o nome não foi capturado (antes era o no-op `"doubts-wait"`). O `runner` emite
+  o gate; `gateQuestion("name")=null` evita duplicar a pergunta (que já sai no
+  texto do directive de 1o contato).
+- **WhatsApp degrada pra texto**: tratado em `whatsapp/adapter.ts`
+  (`gateInteractive("name") → null`), não no `formatter.ts` — e o `runner` não
+  seta `prefix` pro gate `name` pra não descartar o texto da pergunta no canal.
+- **Submit do card**: handler `action.gate === "name"` em `route.ts` →
+  `saveContactName` + `buildNameCapturedDirective` (saúda) → orchestrator dispara
+  o gate de experience.
+- `formatter.ts` (`contractFormToWhatsApp`) **não foi tocado** (bloco K paralelo).

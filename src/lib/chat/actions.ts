@@ -7,6 +7,10 @@ import type { Category, ExperiencePrev } from "@/lib/agent/personas";
  * Adding a new action: extend this union — both call sites get it for free.
  */
 export type ChatAction =
+	// FIX-17 — gate do nome em card focado (passo 1). O submit do card persiste
+	// o nome no servidor (saveContactName) e dispara a saudação + gate experience.
+	// Convive com o caminho texto-livre (save_contact_name forçado no orchestrator).
+	| { kind: "gate"; gate: "name"; value: { name: string }; label: string }
 	| { kind: "gate"; gate: "experience"; value: ExperiencePrev; label: string }
 	| { kind: "gate"; gate: "consent"; value: "yes" | "more"; label: string }
 	| {

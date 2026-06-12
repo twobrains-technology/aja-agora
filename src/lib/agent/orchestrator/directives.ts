@@ -27,6 +27,16 @@ export function buildTransitionCrossSpecialistDirective(): string {
 	return `PRIMEIRA aparicao sua, mas o usuario ja conversou com outro especialista antes (sobre outra categoria). Comece DIRETO com a resposta a ultima mensagem do usuario NO SEU TOM. Nao se apresente nem mencione o especialista anterior. Em 1-2 frases.`;
 }
 
+// ---- Name captured (FIX-17: via card de nome) ----
+
+/** FIX-17 — o usuário enviou o nome pelo CARD focado (passo 1). O nome JÁ foi
+ * persistido no servidor (saveContactName) — o agente só saúda, sem re-chamar
+ * tool nem re-perguntar. Espelha a saudação do caminho texto-livre; o
+ * orchestrator dispara o gate de experience em seguida. */
+export function buildNameCapturedDirective(name: string): string {
+	return `O usuario informou que se chama "${name}" (pelo card de nome). O nome JA esta salvo — NAO chame save_contact_name, NAO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudacao usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NAO faca pergunta, NAO chame tools, NAO prometa "perguntas rapidas". PARE apos a saudacao — o sistema dispara o proximo passo (gate de experience) em seguida.`;
+}
+
 // ---- Experience choices ----
 
 export function buildExperienceFirstDirective(replyTitle: string): string {
@@ -144,6 +154,17 @@ export function buildSearchSummaryDirective(args: {
 		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
 		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;
 
+	// FIX-18 (jornada BB real do Kairo, 2026-06-11): a busca filtra pela FAIXA DE
+	// CREDITO; o orcamento declarado nao participa do filtro (limitacao da Bevi
+	// Trilho B). Quando a parcela real estoura o orcamento, o agente CELEBRAVA em
+	// vez de confrontar. Decisao do Kairo: confronto no reveal (alem do picker),
+	// tom guia-nao-empurra. So injeta o bloco quando ha orcamento pra confrontar.
+	const confrontoBudget = hasBudget
+		? `
+
+CONFRONTO DE VIABILIDADE (orcamento declarado R$ ${q.monthlyBudget}/mes): a busca filtra pela FAIXA DE CREDITO — a parcela real pode vir ACIMA do orcamento. ANTES de celebrar, compare a parcela da opcao recomendada com R$ ${q.monthlyBudget}/mes. SE a parcela ESTOURA o orcamento (claramente acima), NAO comemore nem diga que "ficou proximo do objetivo": confronte com honestidade em UMA frase — diga a parcela real, reconheca que ficou acima do orcamento de R$ ${q.monthlyBudget}/mes e ofereca ajustar o valor do bem pra caber no que ele pode pagar. Tom de guia que defende o objetivo do usuario, NUNCA de empurrar a venda. SE a parcela cabe no orcamento, siga a celebracao normal.`
+		: "";
+
 	// docx passos 3-4: mostrar PRIMEIRO o "Plano recomendado pela Aja Agora" em
 	// DESTAQUE + o detalhamento E o carrossel das opcoes lado a lado.
 	// Teste manual Kairo (2026-06-11): "disse que tinha 3 opcoes mas mostrou so
@@ -167,7 +188,7 @@ FLUXO OBRIGATORIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaq
 3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opcao retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score, scoreBreakdown E contempladosMes (copie de availableSlots do grupo — campo do resumo por opcao do docx) exatos. SE retornou apenas 1 grupo: NAO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card unico do reveal e a simulacao abaixo); seu texto faz o papel da recomendacao.
 4. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups (o carrossel de opcoes que o usuario anunciado pode comparar), com highlightBestIndex=0 pra DESTACAR a recomendada. Isso mostra as opcoes anunciadas ("3 boas opcoes") lado a lado no proprio reveal — NAO esconda as outras atras de um botao. SE retornou apenas 1 grupo: NAO chame present_comparison_table (so ha uma opcao).
 5. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — o detalhamento do docx. OBRIGATORIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variacao com/sem lance e com lance embutido — exigencia literal do docx); omiti-los e defeito.
-6. SE recommend_groups retornar insufficientOptions=true: diga com transparencia, em UMA frase, que as opcoes na faixa dele estao limitadas hoje e que voce expandiu a busca pra trazer o que ha de melhor — NUNCA esconda a escassez nem invente abundancia.
+6. SE recommend_groups retornar insufficientOptions=true: diga com transparencia, em UMA frase, que as opcoes na faixa dele estao limitadas hoje e que voce expandiu a busca pra trazer o que ha de melhor — NUNCA esconda a escassez nem invente abundancia.${confrontoBudget}
 
 A ORDEM dos cards no reveal: recommendation_card (a recomendada em destaque) → comparison_table (o carrossel de TODAS as opcoes, recomendada destacada) → simulation_result (detalhamento da recomendada). As "outras opcoes" tambem seguem acessiveis depois pelo botao do card de decisao, mas no reveal o usuario JA VE as opcoes anunciadas.
 
