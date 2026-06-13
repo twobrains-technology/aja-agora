@@ -1,8 +1,15 @@
 // src/lib/memory/letta-client.ts
 //
 // Cliente HTTP REST pro Letta. Descobre o endpoint via:
-// 1. LETTA_BASE_URL (override explícito — usado em dev local)
-// 2. LETTA_SRV_NAME → SRV record DNS (prod ECS via Cloud Map)
+// 1. LETTA_SRV_NAME → SRV record DNS (prod ECS via Cloud Map) — TEM PRECEDÊNCIA
+// 2. LETTA_BASE_URL (override explícito — dev local: localhost sem SRV)
+//
+// Precedência do SRV é deliberada (BUG-LETTA-SRV-IGNORADO, 2026-06-13): em prod
+// AMBOS ficam no secret, mas o LETTA_BASE_URL pode ser resíduo (ex.: apontar pro
+// nome SRV-only `letta-srv.tb.local:8283`, que não tem A record → fetch dá
+// ENOTFOUND e a memória cai no fallback silencioso). Quando há SRV_NAME, o lookup
+// descobre IP+porta REAIS do host (bridge mode = porta dinâmica) — é a fonte certa.
+// LETTA_BASE_URL só rege quando NÃO há SRV_NAME (dev local aponta pra localhost).
 //
 // Aplica timeout via AbortController, retorna `null`/throw conforme contrato.
 // Ver skill TwoBrains `shared-letta` pra topologia em prod.
@@ -18,14 +25,14 @@ let _baseUrlCache: { url: string; expiresAt: number } | null = null;
 
 /**
  * Resolve a URL base do Letta. Cacheia por 30s pra reduzir overhead de SRV
- * lookup em prod. Em dev local (`LETTA_BASE_URL` setado), retorna direto.
+ * lookup em prod. SRV_NAME tem precedência sobre BASE_URL (ver cabeçalho —
+ * BUG-LETTA-SRV-IGNORADO); BASE_URL só rege em dev local (sem SRV_NAME).
  */
 export async function resolveLettaBaseUrl(): Promise<string> {
-	const direct = process.env.LETTA_BASE_URL;
-	if (direct) return direct;
-
-	const srvName = process.env.LETTA_SRV_NAME;
+	const srvName = process.env.LETTA_SRV_NAME?.trim();
 	if (!srvName) {
+		const direct = process.env.LETTA_BASE_URL;
+		if (direct) return direct;
 		throw new MemoryError("Letta endpoint not configured (set LETTA_BASE_URL or LETTA_SRV_NAME)");
 	}
 
