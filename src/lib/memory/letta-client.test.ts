@@ -43,6 +43,25 @@ describe("resolveLettaBaseUrl", () => {
 		expect(dns.default.resolveSrv).not.toHaveBeenCalled();
 	});
 
+	it("BUG-LETTA-SRV-IGNORADO: com LETTA_SRV_NAME presente, SRV vence mesmo com LETTA_BASE_URL setado (resíduo)", async () => {
+		// Cenário real (2026-06-13, dev+prod): o secret carregava
+		// LETTA_BASE_URL=http://letta-srv.tb.local:8283 (resíduo da era Fargate/A-record)
+		// E LETTA_SRV_NAME=letta-srv.tb.local. Após a migração do Letta pra EC2/bridge,
+		// letta-srv.tb.local é SRV-only (sem A) → fetch direto no BASE_URL = ENOTFOUND →
+		// circuit breaker abre → memória cai no fallback silencioso. Quando há SRV_NAME,
+		// o SRV lookup (que descobre IP+porta reais do host) DEVE ter precedência.
+		vi.stubEnv("LETTA_BASE_URL", "http://letta-srv.tb.local:8283");
+		vi.stubEnv("LETTA_SRV_NAME", "letta-srv.tb.local");
+		vi.mocked(dns.default.resolveSrv).mockResolvedValueOnce([
+			{ name: "letta-instance.local", port: 8283, priority: 1, weight: 10 },
+		]);
+		vi.mocked(dns.default.resolve4).mockResolvedValueOnce(["10.30.1.28"]);
+
+		const url = await resolveLettaBaseUrl();
+		expect(url).toBe("http://10.30.1.28:8283");
+		expect(dns.default.resolveSrv).toHaveBeenCalledWith("letta-srv.tb.local");
+	});
+
 	it("usa LETTA_SRV_NAME quando LETTA_BASE_URL ausente", async () => {
 		// eslint-disable-next-line no-process-env
 		delete process.env.LETTA_BASE_URL;

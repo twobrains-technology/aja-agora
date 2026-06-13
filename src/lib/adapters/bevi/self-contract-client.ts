@@ -84,11 +84,22 @@ export interface SelfContractSimulationInput {
 }
 
 const TIMEOUT_MS = 15_000;
+// A simulação é a chamada pesada (offers de ~68 campos; IMÓVEL tem muitos grupos)
+// e o app de descoberta (DigitalOcean) tem cold-start. 15s estourava (bug
+// BUG-DISCOVERY-TIMEOUT, 2026-06-13) → timeout maior só pra ela.
+const SIM_TIMEOUT_MS = 30_000;
 const SIM_RETRY = 4; // 404 transitório do step de simulação (cookbook §5b)
 const SIM_RETRY_DELAY_MS = 400;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const onlyDigits = (s: string) => (s ?? "").replace(/\D/g, "");
+
+/** Erro de timeout (AbortSignal.timeout → DOMException TimeoutError) ou abort. */
+function isTimeoutError(err: unknown): boolean {
+	return (
+		err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")
+	);
+}
 
 export class BeviSelfContractClient {
 	private readonly config: SelfContractConfig;
@@ -105,19 +116,32 @@ export class BeviSelfContractClient {
 	 * `retryOn404` só pro step de simulação (estado ainda não materializado). */
 	private async call<T>(
 		path: string,
-		opts: { method?: string; body?: unknown; retryOn404?: boolean } = {},
+		opts: { method?: string; body?: unknown; retryOn404?: boolean; timeoutMs?: number } = {},
 	): Promise<T> {
-		const { method = "GET", body, retryOn404 = false } = opts;
+		const { method = "GET", body, retryOn404 = false, timeoutMs = TIMEOUT_MS } = opts;
 		const maxAttempts = retryOn404 ? SIM_RETRY : 1;
 
 		let lastErr: unknown;
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			const res = await fetch(this.url(path), {
-				method,
-				headers: body ? { "Content-Type": "application/json" } : {},
-				body: body ? JSON.stringify(body) : undefined,
-				signal: AbortSignal.timeout(TIMEOUT_MS),
-			});
+			let res: Response;
+			try {
+				res = await fetch(this.url(path), {
+					method,
+					headers: body ? { "Content-Type": "application/json" } : {},
+					body: body ? JSON.stringify(body) : undefined,
+					signal: AbortSignal.timeout(timeoutMs),
+				});
+			} catch (err) {
+				// TimeoutError do cold-start: retenta DENTRO do loop que a simulação já
+				// tem (maxAttempts>1). Chamadas leves (maxAttempts=1) sobem o erro direto
+				// — nada de mascarar lentidão crônica num retry silencioso.
+				lastErr = err;
+				if (attempt < maxAttempts && isTimeoutError(err)) {
+					await sleep(SIM_RETRY_DELAY_MS);
+					continue;
+				}
+				throw err;
+			}
 
 			const env = (await res.json()) as SelfContractEnvelope<T>;
 			if (env.success) return env.data;
@@ -189,6 +213,7 @@ export class BeviSelfContractClient {
 			{
 				method: "PATCH",
 				retryOn404: true,
+				timeoutMs: SIM_TIMEOUT_MS,
 				body: {
 					simulationType: input.simulationType ?? "TOTAL_VALUE",
 					simulationValue: input.simulationValue,
