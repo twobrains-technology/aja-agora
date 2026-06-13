@@ -31,6 +31,12 @@ Hoje cedo subi o prod do aja-agora e descobri que o `migrate-guard.mjs` re-escan
 - **Rede de segurança:** o service prod tem `deploymentCircuitBreaker rollback=true` — task que falha no boot faz rollback automático pra TD anterior.
 - **Reversibilidade:** média (2 deploys; revert = re-adicionar flag + TD anterior).
 
+### D4 · 11:10 — Entrypoint do guard via nome do script (não `import.meta.url`)
+- **Contexto:** refatorei o guard com `if (import.meta.url === pathToFileURL(process.argv[1])) main()`. Funciona no `.mjs` (ESM) e nos testes, MAS o runtime usa o **bundle CJS** (esbuild `--format=cjs`), onde `import.meta.url` vira um shim que NÃO bate com argv[1] → `main()` nunca roda → guard vira **no-op silencioso** (não aplica migrations, não detecta destrutivas). Confirmado: `node migrate-guard.bundle.cjs` sem DATABASE_URL saiu 0 sem erro. Prod bootou só porque o schema já estava aplicado — migrations futuras NÃO rodariam.
+- **Decidi:** detectar entrypoint por `/migrate-guard(\.bundle)?\.(mjs|cjs)$/.test(process.argv[1])` — funciona em ESM e no bundle CJS; teste (vitest) não casa o nome → não roda main.
+- **Bug que EU introduzi** na refatoração (D1); o guard original chamava `applyMigrations()` no top-level. Pego por teste novo que roda o BUNDLE (`node ...bundle.cjs` sem env → exit≠0 + "DATABASE_URL não definida").
+- **Reversibilidade:** fácil (commit incremental).
+
 ## Linha do tempo
 - 10:54 — objetivo capturado, diário criado, schema `__drizzle_migrations` confirmado (24 aplicadas). Começando TDD do guard.
 - 10:59 — guard refatorado (funções puras exportáveis + consulta DB + guard de entrypoint). Teste Camada 1 `tests/regression/migrate-guard.test.ts` 7/7 verde. Bundle esbuild compila (445kb).
