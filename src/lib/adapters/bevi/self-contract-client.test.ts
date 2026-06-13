@@ -192,4 +192,35 @@ describe("BeviSelfContractClient — contract contra capturas reais", () => {
 		expect(offers).toHaveLength(3);
 		expect(calls).toHaveLength(2);
 	});
+
+	it("BUG-DISCOVERY-TIMEOUT: simulate retenta TimeoutError (cold-start) e sucede", async () => {
+		// Bug 2026-06-13 (conversa cd50454c, IMÓVEL): a simulação de imóvel passou de
+		// 15s → TimeoutError travou search_groups 4×. Cold-start do app de descoberta
+		// (DigitalOcean). A simulação (pesada) ganha timeout maior + retry de timeout.
+		const timeoutErr = () =>
+			new DOMException("The operation was aborted due to timeout", "TimeoutError");
+		let n = 0;
+		globalThis.fetch = vi.fn(async (url: string, init: RequestInit) => {
+			calls.push({ url, init });
+			n += 1;
+			if (n === 1) throw timeoutErr();
+			return { json: async () => okSimulation } as Response;
+		}) as typeof fetch;
+
+		const offers = await client.simulate({ simulationValue: 320000 });
+		expect(offers).toHaveLength(3);
+		expect(calls).toHaveLength(2); // estourou 1×, retentou e sucedeu
+	});
+
+	it("BUG-DISCOVERY-TIMEOUT: chamadas leves (getSegments) NÃO retentam timeout — sobem o erro", async () => {
+		const timeoutErr = () =>
+			new DOMException("The operation was aborted due to timeout", "TimeoutError");
+		globalThis.fetch = vi.fn(async (url: string, init: RequestInit) => {
+			calls.push({ url, init });
+			throw timeoutErr();
+		}) as typeof fetch;
+
+		await expect(client.getSegments()).rejects.toThrow(/timeout/i);
+		expect(calls).toHaveLength(1); // sem retry — só a simulação retenta timeout
+	});
 });
