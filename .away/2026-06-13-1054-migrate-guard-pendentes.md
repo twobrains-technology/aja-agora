@@ -40,7 +40,10 @@ Hoje cedo subi o prod do aja-agora e descobri que o `migrate-guard.mjs` re-escan
 ## Linha do tempo
 - 10:54 — objetivo capturado, diário criado, schema `__drizzle_migrations` confirmado (24 aplicadas). Começando TDD do guard.
 - 10:59 — guard refatorado (funções puras exportáveis + consulta DB + guard de entrypoint). Teste Camada 1 `tests/regression/migrate-guard.test.ts` 7/7 verde. Bundle esbuild compila (445kb).
-- 11:00 — **validação contra DB dev real**: 24 aplicadas = 24 journal → 0 pendentes → VEREDITO "PROSSEGUIRIA ✓" sem flag. Confirma que destrutivas históricas não disparam mais. Próximo: commit + push + cutover.
+- 11:00 — **validação contra DB dev real**: 24 aplicadas = 24 journal → 0 pendentes → VEREDITO "PROSSEGUIRIA ✓" sem flag. Confirma que destrutivas históricas não disparam mais.
+- 11:01 — commit `test+fix:` + diário, pushed develop→main (build 27468888025).
+- 11:04 — build OK, prod re-deployou com a imagem nova (digest sha-35c47b7 confirmado). **MAS** boot não mostrou "[migrate-guard] aplicando" → descoberto o bug do entrypoint no bundle CJS (D4): main() era no-op. Prod bootou só porque schema já aplicado.
+- 11:17 — fix do entrypoint (D4): casa pelo nome do script. Teste do bundle 8/8 verde, suíte 1643 verde. Bundle confirmado: `node ...bundle.cjs` sem env → aborta corretamente. Commit `test+fix:`, pushed develop→main (build 27469256955).
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _pendente_
