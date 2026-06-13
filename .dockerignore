@@ -5,10 +5,15 @@
 .DS_Store
 node_modules
 .next
-.env*.local
+.env
+.env.*
+!.env.example
 *.md
 !README.md
 Dockerfile
 docker-compose.yml
 .dockerignore
-drizzle
+# Bundle é gerado dentro do build — versão local desatualizada não pode entrar
+scripts/*.bundle.mjs
+scripts/*.bundle.js
+scripts/*.bundle.cjs

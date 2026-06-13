@@ -1,19 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle } from "lucide-react";
-
-import { leadSchema, type LeadFormData } from "@/lib/validations/lead";
-import type { LeadFormPayload } from "@/lib/chat/types";
-import { useChatStore } from "@/lib/chat/store";
-import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Check } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { useChatContext } from "@/lib/chat/provider";
+import type { LeadFormPayload } from "@/lib/chat/types";
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { LEAD_FIELDS, type LeadFields, type LeadFieldsInput, leadSchema } from "@/lib/lead/schema";
 import { cn } from "@/lib/utils";
 
 const motionEntry = {
@@ -32,8 +29,7 @@ const reducedMotionEntry = {
 
 export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 	const [submitted, setSubmitted] = useState(false);
-	const conversationId = useChatStore((s) => s.conversationId);
-	const sendMessage = useChatStore((s) => s.sendMessage);
+	const { conversationId, refreshHandoff } = useChatContext();
 	const prefersReduced = useReducedMotion();
 	const anim = prefersReduced ? reducedMotionEntry : motionEntry;
 
@@ -41,12 +37,42 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		register,
 		handleSubmit,
 		setError,
+		reset,
 		formState: { errors, isSubmitting },
-	} = useForm<LeadFormData>({
+	} = useForm<LeadFieldsInput, unknown, LeadFields>({
 		resolver: zodResolver(leadSchema),
+		// Bug A: prioriza nome já capturado pelo backend no payload —
+		// elimina race com fetch tardio em /api/leads/[id] (que deixava
+		// o form vazio mesmo com conversations.contactName populado).
+		defaultValues: { name: payload.prefilledName ?? "", phone: "", email: "" },
 	});
 
-	const onSubmit = async (data: LeadFormData) => {
+	// Pré-preencher com dados já capturados conversacionalmente (Fase 6).
+	// GET /api/leads/[id] retorna { name, phone, email } com strings vazias.
+	// Mantido como fallback pra phone/email — nome já vem do payload.
+	useEffect(() => {
+		const id = conversationId ?? payload.conversationId;
+		if (!id) return;
+		let cancelled = false;
+		void fetch(`/api/leads/${id}`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((data) => {
+				if (cancelled || !data) return;
+				reset({
+					// payload.prefilledName tem prioridade sobre o fetch — só
+					// cai pro data.name se o backend não tiver enviado nada.
+					name: payload.prefilledName ?? data.name ?? "",
+					phone: data.phone ?? "",
+					email: data.email ?? "",
+				});
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [conversationId, payload.conversationId, payload.prefilledName, reset]);
+
+	const onSubmit = async (data: LeadFields) => {
 		try {
 			const response = await fetch("/api/leads", {
 				method: "POST",
@@ -59,21 +85,15 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 
 			if (!response.ok) {
 				const body = await response.json().catch(() => null);
-				throw new Error(
-					body?.error ?? "Erro ao enviar dados. Tente novamente.",
-				);
+				throw new Error(body?.error ?? "Erro ao enviar dados. Tente novamente.");
 			}
 
 			setSubmitted(true);
 
-			// Notify agent that lead was captured (no PII in message)
-			sendMessage("Dados enviados com sucesso");
+			void refreshHandoff();
 		} catch (err) {
 			setError("root", {
-				message:
-					err instanceof Error
-						? err.message
-						: "Erro ao enviar dados. Tente novamente.",
+				message: err instanceof Error ? err.message : "Erro ao enviar dados. Tente novamente.",
 			});
 		}
 	};
@@ -82,130 +102,70 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		<AnimatePresence mode="wait">
 			{submitted ? (
 				<motion.div key="success" {...anim}>
-					<Card className="border-primary/30 bg-primary/5">
-						<CardContent className="flex flex-col items-center gap-3 py-6">
-							<CheckCircle className="h-8 w-8 text-primary" />
-							<p className="text-lg font-semibold">Dados recebidos!</p>
-							<p className="text-sm text-muted-foreground">
-								Em breve entraremos em contato.
-							</p>
-						</CardContent>
-					</Card>
+					<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-[rgba(3,110,255,0.03)] p-[18px] shadow-lg">
+						<div className="flex flex-col items-center gap-[10px] py-2 text-center">
+							<span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eafaf2]">
+								<Check className="size-6 text-success" />
+							</span>
+							<p className="text-base font-semibold text-foreground">Dados recebidos!</p>
+							<p className="text-xs text-muted-foreground">Em breve entraremos em contato.</p>
+						</div>
+					</div>
 				</motion.div>
 			) : (
 				<motion.div key="form" {...anim}>
-					<Card className="border-primary/30">
-						<CardHeader className="space-y-1 pb-3">
-							<div className="flex items-center gap-2">
-								<Badge variant="secondary">Seus dados</Badge>
-							</div>
-							<p className="text-sm text-muted-foreground">
-								Para prosseguir com o consorcio
-							</p>
-						</CardHeader>
-						<CardContent>
-							<form
-								onSubmit={handleSubmit(onSubmit)}
-								className="space-y-4"
-								noValidate
+					<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+						{/* header */}
+						<div className="flex flex-col gap-[2px]">
+							<span className="inline-flex h-6 w-fit items-center rounded-full bg-[var(--neutral-100)] px-[11px] text-[11px] font-semibold tracking-[0.02em] text-muted-foreground">
+								Seus dados
+							</span>
+							<p className="mt-1 text-xs text-muted-foreground">Para prosseguir com o consórcio</p>
+						</div>
+
+						<form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[14px]" noValidate>
+							{LEAD_FIELDS.map((field, idx) => (
+								<div key={field.key} className="flex flex-col gap-[6px]">
+									<label
+										htmlFor={`lead-${field.key}`}
+										className="text-xs font-semibold leading-none text-foreground"
+									>
+										{field.label}
+										{!field.required && (
+											<span className="font-normal text-muted-foreground"> (opcional)</span>
+										)}
+									</label>
+									<Input
+										id={`lead-${field.key}`}
+										type={field.type}
+										inputMode={field.inputMode}
+										placeholder={field.placeholder}
+										autoFocus={idx === 0 && field.autoFocus}
+										className={cn(
+											"h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20",
+											errors[field.key] && "border-destructive",
+										)}
+										{...register(field.key)}
+									/>
+									{errors[field.key] && (
+										<p className="text-xs text-destructive">{errors[field.key]?.message}</p>
+									)}
+								</div>
+							))}
+
+							<Button
+								type="submit"
+								disabled={isSubmitting}
+								className="h-[46px] w-full rounded-[13px] bg-primary text-sm font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105 min-h-[44px]"
 							>
-								{/* Nome */}
-								<div className="space-y-1.5">
-									<label
-										htmlFor="lead-name"
-										className="text-sm font-medium leading-none"
-									>
-										Nome
-									</label>
-									<Input
-										id="lead-name"
-										type="text"
-										placeholder="Seu nome completo"
-										autoFocus
-										className={cn(
-											"w-full min-h-[44px]",
-											errors.name && "border-destructive",
-										)}
-										{...register("name")}
-									/>
-									{errors.name && (
-										<p className="text-xs text-destructive">
-											{errors.name.message}
-										</p>
-									)}
-								</div>
+								{isSubmitting ? "Enviando..." : "Enviar dados"}
+							</Button>
 
-								{/* Telefone */}
-								<div className="space-y-1.5">
-									<label
-										htmlFor="lead-phone"
-										className="text-sm font-medium leading-none"
-									>
-										Telefone
-									</label>
-									<Input
-										id="lead-phone"
-										type="tel"
-										inputMode="numeric"
-										placeholder="11999998888"
-										className={cn(
-											"w-full min-h-[44px]",
-											errors.phone && "border-destructive",
-										)}
-										{...register("phone")}
-									/>
-									{errors.phone && (
-										<p className="text-xs text-destructive">
-											{errors.phone.message}
-										</p>
-									)}
-								</div>
-
-								{/* Email */}
-								<div className="space-y-1.5">
-									<label
-										htmlFor="lead-email"
-										className="text-sm font-medium leading-none"
-									>
-										Email
-									</label>
-									<Input
-										id="lead-email"
-										type="email"
-										inputMode="email"
-										placeholder="seu@email.com"
-										className={cn(
-											"w-full min-h-[44px]",
-											errors.email && "border-destructive",
-										)}
-										{...register("email")}
-									/>
-									{errors.email && (
-										<p className="text-xs text-destructive">
-											{errors.email.message}
-										</p>
-									)}
-								</div>
-
-								{/* Submit */}
-								<Button
-									type="submit"
-									size="lg"
-									disabled={isSubmitting}
-									className="w-full min-h-[44px]"
-								>
-									{isSubmitting ? "Enviando..." : "Enviar dados"}
-								</Button>
-
-								{/* Root error */}
-								{errors.root && (
-									<p className="text-xs text-destructive text-center">
-										{errors.root.message}
-									</p>
-								)}
-							</form>
-						</CardContent>
-					</Card>
+							{errors.root && (
+								<p className="text-xs text-destructive text-center">{errors.root.message}</p>
+							)}
+						</form>
+					</div>
 				</motion.div>
 			)}
 		</AnimatePresence>

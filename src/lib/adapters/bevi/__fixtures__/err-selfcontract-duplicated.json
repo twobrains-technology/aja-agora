@@ -1,0 +1,6 @@
+{
+	"status": "BAD_REQUEST",
+	"code": 400,
+	"success": false,
+	"message": "Duplicated Hash: 6a1756d4bef180c41e909c07"
+}

@@ -2,7 +2,7 @@
 
 // ---- Domain types ----
 
-export type ConsorcioCategory = "imovel" | "auto" | "servicos";
+export type ConsorcioCategory = "imovel" | "auto" | "moto" | "servicos";
 
 export interface GroupSummary {
 	id: string;
@@ -19,6 +19,7 @@ export interface GroupSummary {
 
 export interface QuotaSimulation {
 	groupId: string;
+	category: ConsorcioCategory;
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -27,6 +28,29 @@ export interface QuotaSimulation {
 	totalCost: number;
 	termMonths: number;
 	effectiveRate: number; // taxa efetiva total over term
+	/** Projeção de cenário com lance (bug #10 Bruna v1 review). */
+	lanceScenario: {
+		lancePercent: number; // % do crédito ofertado como lance
+		expectedTermMonths: number; // prazo esperado até contemplação com esse lance
+	};
+	/** Cenário de lance embutido (jornada do .docx 2026-05-29 / Bevi).
+	 * Usa parte da própria carta como lance — o usuário recebe o crédito
+	 * líquido (carta − lance embutido). Sempre computado pra permitir a
+	 * comparação "com/sem lance embutido" que o doc pede. NÃO é garantia de
+	 * contemplação (CDC art. 30/37). */
+	embeddedBid: {
+		percent: number; // % da carta usado como lance embutido (30 default, Bevi aceita 30/50)
+		embeddedBidValue: number; // R$ da carta destinado ao lance embutido
+		receivedCredit: number; // crédito líquido recebido (carta − lance embutido)
+		/** Estimativa de lance pra contemplar (R$) — dado REAL da oferta ou null
+		 * (FIX-8: sem heurística; null = UI omite a linha). Não é garantia. */
+		necessaryBidToContemplate: number | null;
+	};
+	/** Correção prevista da carta — INCC pra imóvel, IPCA pra auto (bug #10). */
+	expectedAdjustment: {
+		index: "INCC" | "IPCA";
+		annualPercent: number;
+	};
 }
 
 export interface RateInfo {

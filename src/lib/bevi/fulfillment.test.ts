@@ -1,0 +1,127 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MockProposalGateway } from "../../../tests/helpers/mock-proposal-gateway";
+
+// Mock do repo (DB) — guarda em memória, mantém isOfferFresh real.
+const { store } = vi.hoisted(() => ({ store: new Map<string, Record<string, unknown>>() }));
+vi.mock("./proposal-repo", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./proposal-repo")>();
+	return {
+		...actual,
+		createBeviProposal: vi.fn(async (conversationId: string, snap: Record<string, unknown>) => {
+			const row = { id: `row-${conversationId}`, conversationId, ...snap };
+			store.set(conversationId, row);
+			return row;
+		}),
+		getLatestBeviProposal: vi.fn(
+			async (conversationId: string) => store.get(conversationId) ?? null,
+		),
+		updateBeviProposal: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+			for (const r of store.values()) if (r.id === id) Object.assign(r, patch);
+		}),
+	};
+});
+
+import { confirmOffer, startContract, uploadContractDocument } from "./fulfillment";
+
+const input = {
+	cpf: "12345678909",
+	celular: "11999998888",
+	lgpd: true,
+	segmento: "AUTOS",
+	objetivo: "contemplacao_rapida" as const,
+	valor: 50000,
+};
+
+beforeEach(() => store.clear());
+
+describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
+	it("startContract: cria proposta, devolve oferta real próxima do valor, persiste", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract("conv-1", input, gw);
+		expect(r.proposalId).toMatch(/^prop-mock-/);
+		expect(r.offer).toBeTruthy();
+		expect(r.offer?.category).toBe("auto");
+		expect(r.offer?.creditValue).toBeGreaterThan(30000);
+		expect(store.get("conv-1")?.proposalId).toBe(r.proposalId);
+		expect(store.get("conv-1")?.ofertaId).toBeTruthy();
+	});
+
+	it("confirmOffer: escolhe a oferta → link de assinatura + links de documento", async () => {
+		const gw = new MockProposalGateway();
+		await startContract("conv-2", input, gw);
+		const c = await confirmOffer("conv-2", gw);
+		expect(c.consortiumProposalLink).toContain("uselink.me");
+		expect(c.documentsLinkPersonal).toContain("uselink.me");
+		expect(store.get("conv-2")?.proposalStatus).toBe("documentos");
+		expect(store.get("conv-2")?.consortiumProposalLink).toContain("uselink.me");
+	});
+
+	it("uploadContractDocument: ok com mock; depois de confirmar a oferta", async () => {
+		const gw = new MockProposalGateway();
+		await startContract("conv-3", input, gw);
+		await confirmOffer("conv-3", gw);
+		const up = await uploadContractDocument(
+			"conv-3",
+			{
+				slot: "identidade_frente",
+				file: new Uint8Array([1]),
+				filename: "rg.jpg",
+				mimeType: "image/jpeg",
+			},
+			gw,
+		);
+		expect(up.ok).toBe(true);
+	});
+
+	it("uploadContractDocument: upload falho → fallback pro link (docs opcionais)", async () => {
+		const gw = new MockProposalGateway();
+		await startContract("conv-4", input, gw);
+		await confirmOffer("conv-4", gw);
+		const throwingGw = new MockProposalGateway();
+		throwingGw.uploadDocument = async () => {
+			throw new Error("anti-bot");
+		};
+		const up = await uploadContractDocument(
+			"conv-4",
+			{
+				slot: "identidade_frente",
+				file: new Uint8Array([1]),
+				filename: "rg.jpg",
+				mimeType: "image/jpeg",
+			},
+			throwingGw,
+		);
+		expect(up.ok).toBe(false);
+		expect(up.fallbackLink).toContain("uselink.me");
+	});
+
+	it("confirmOffer sem proposta → erro claro", async () => {
+		await expect(confirmOffer("conv-inexistente", new MockProposalGateway())).rejects.toThrow(
+			/Nenhuma proposta/i,
+		);
+	});
+
+	// EC-7 (QA crítico 2026-06-02): duplo-clique em "Continuar com segurança" criava
+	// 2 propostas na administradora (handler sem idempotência). Re-submit numa conversa
+	// com proposta 'simulacao' pendente DEVE reusar a proposta, não criar outra.
+	it("EC-7: duplo-submit reusa a proposta 'simulacao' pendente (idempotente por conversa)", async () => {
+		const gw = new MockProposalGateway();
+		const createSpy = vi.spyOn(gw, "createProposal");
+		const r1 = await startContract("conv-ec7", input, gw);
+		const r2 = await startContract("conv-ec7", input, gw); // duplo-submit
+		expect(createSpy, "só UMA proposta criada na administradora").toHaveBeenCalledTimes(1);
+		expect(r2.proposalId, "mesma proposta reusada").toBe(r1.proposalId);
+		expect(r2.offer, "ainda devolve a oferta pra confirmar").toBeTruthy();
+		// só 1 linha persistida pra conversa
+		expect(store.get("conv-ec7")?.proposalId).toBe(r1.proposalId);
+	});
+
+	it("EC-7: após confirmar (status documentos), novo contract cria proposta nova", async () => {
+		const gw = new MockProposalGateway();
+		const createSpy = vi.spyOn(gw, "createProposal");
+		await startContract("conv-ec7b", input, gw);
+		await confirmOffer("conv-ec7b", gw); // status vira 'documentos'
+		await startContract("conv-ec7b", input, gw); // recontratar → nova proposta
+		expect(createSpy, "reuso só vale enquanto status='simulacao'").toHaveBeenCalledTimes(2);
+	});
+});

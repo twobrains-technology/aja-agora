@@ -1,0 +1,13 @@
+{
+	"status": "CONFLICT",
+	"code": 409,
+	"success": false,
+	"message": "Existem propostas em andamento para este CPF.",
+	"data": {
+		"ongoingProposalIds": [
+			"6a1f7953cf5174e43aa4a10a",
+			"6a1f346110ffff8984ace724",
+			"6a1f32b4cf5174e43a7492e1"
+		]
+	}
+}

@@ -1,0 +1,251 @@
+# Template: AWS ECR build + push para sa-east-1 (ARM64 single-arch).
+#
+# Como usar:
+#   1. Copiar pra `.github/workflows/aws-ecr-deploy.yml` no repo do app.
+#   2. Substituir `aja-agora` pelo nome canônico do app (kebab-case).
+#      Ex.: sed -i 's/aja-agora/anfora-licitacoes/g' .github/workflows/aws-ecr-deploy.yml
+#
+# Pré-requisitos:
+#   - ECR repos `twobrains/<app>/dev` e `twobrains/<app>/prod` criados (skill 00 passo 1)
+#   - Secrets Manager `tb/dev/<app>/env` e `tb/prod/<app>/env` populados (skill 00 passo 4)
+#   - IAM role `gha-ecs-deploy` confia no repo da org `twobrains-technology` (uma vez)
+#
+# Comportamento:
+#   - main    → env=prod  → ECR twobrains/<app>/prod
+#   - develop → env=dev   → ECR twobrains/<app>/dev
+#   - workflow_dispatch → escolhe env (prod|dev) explicitamente
+
+name: AWS ECR Deploy (sa-east-1, arm64)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Target env (prod|dev)'
+        type: choice
+        options:
+          - prod
+          - dev
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write  # check-migration-pattern aplica label se destrutivo
+
+env:
+  AWS_REGION: sa-east-1
+  ECR_ACCOUNT: "438465163995"
+  APP: aja-agora
+
+jobs:
+  # Valida padrão de migrations (entrypoint, migrate runtime, pasta de migrations,
+  # detecção de statements destrutivos). Falha o pipeline se faltar.
+  #
+  # Inlined a partir de tb-aws-platform/.github/workflows/check-migration-pattern.yml
+  # (reusable workflow entre repos privados da org bloqueado por settings que
+  # precisam de admin:org pra ajustar — ver tb-aws-platform/reference/conventions.md).
+  check-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verifica docker-entrypoint.sh
+        run: |
+          if [ ! -f docker-entrypoint.sh ]; then
+            echo "::error::docker-entrypoint.sh ausente. Copie de tb-aws-platform/templates/docker-entrypoint.sh"
+            exit 1
+          fi
+          if [ ! -x docker-entrypoint.sh ]; then
+            echo "::error::docker-entrypoint.sh existe mas não é executável (chmod +x)"
+            exit 1
+          fi
+      - name: Verifica ENTRYPOINT no Dockerfile
+        run: |
+          if ! grep -qE '^[[:space:]]*ENTRYPOINT[[:space:]]+\[.*docker-entrypoint\.sh' Dockerfile; then
+            echo "::error::Dockerfile não declara ENTRYPOINT [\"/app/docker-entrypoint.sh\"]"
+            exit 1
+          fi
+      - name: Verifica migrate runtime command
+        run: |
+          has_drizzle=$(jq -r '.scripts."db:migrate:runtime" // empty' package.json 2>/dev/null)
+          has_prisma=0
+          [ -f prisma/schema.prisma ] && has_prisma=1
+          if [ -z "$has_drizzle" ] && [ "$has_prisma" = "0" ]; then
+            echo "::error::Sem db:migrate:runtime no package.json E sem prisma/schema.prisma."
+            exit 1
+          fi
+      - name: Verifica pasta de migrations
+        run: |
+          if [ -d drizzle ]; then
+            count=$(find drizzle -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')
+            if [ "$count" = "0" ]; then
+              echo "::warning::Pasta drizzle/ existe mas sem .sql"
+            fi
+          elif [ -d prisma/migrations ]; then
+            :
+          else
+            echo "::error::Sem pasta de migrations (drizzle/ ou prisma/migrations/)"
+            exit 1
+          fi
+      - name: Detecta statements destrutivos no diff (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -e
+          base="${{ github.base_ref }}"
+          git fetch origin "$base" --depth=1 || true
+          changed=$(git diff --name-only "origin/$base"...HEAD -- '*.sql' || true)
+          [ -z "$changed" ] && exit 0
+          patterns='\b(DROP\s+TABLE|DROP\s+SCHEMA|DROP\s+DATABASE|TRUNCATE|ALTER\s+TABLE\s+\S+\s+DROP\s+(COLUMN|CONSTRAINT)|ALTER\s+TABLE\s+\S+\s+ALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE)\b'
+          findings=""
+          for f in $changed; do
+            [ -f "$f" ] || continue
+            stripped=$(sed -E 's://.*$::g; s/--.*$//g' "$f")
+            if echo "$stripped" | grep -iEq "$patterns"; then
+              findings="$findings\n- $f"
+            fi
+          done
+          if [ -n "$findings" ]; then
+            gh pr edit $PR_NUMBER --add-label "migration:destructive" || true
+            gh pr comment $PR_NUMBER --body "⚠️ **Migration destrutiva detectada:**${findings}\n\nExige aprovação de DBA/sênior. Em prod, deploy aborta sem \`ALLOW_DESTRUCTIVE_MIGRATION=true\` no secret \`tb/prod/<app>/env\`. Ver \`tb-aws-platform/reference/conventions.md → Migrations\`." || true
+          fi
+
+  build:
+    needs: check-migrations
+    # Build/push só em push pra branch real — em PR só validação.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve env
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "env=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=dev" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Compose image repo
+        id: repo
+        run: |
+          echo "image_repo=${{ env.ECR_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/twobrains/${{ env.APP }}/${{ steps.vars.outputs.env }}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.ECR_ACCOUNT }}:role/gha-ecs-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Fetch env from Secrets Manager and write .env files + build-args
+        id: build_args
+        run: |
+          SECRET_ID="tb/${{ steps.vars.outputs.env }}/${{ env.APP }}/env"
+          if ! SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text 2>/dev/null); then
+            echo "::error::secret $SECRET_ID not found"
+            exit 1
+          fi
+          # NÃO escrever .env* no contexto do build. NEXT_PUBLIC_* são bake-in via
+          # build-args (passados como ENV no Dockerfile). Outras envs (DATABASE_URL etc)
+          # vêm do ECS task definition em runtime via Secrets Manager.
+          # Embutir .env* na imagem:
+          #   1. Vaza secrets em camadas (qualquer um com pull no ECR vê)
+          #   2. Trava o app aos valores de build-time — rotação de secret ou cutover de
+          #      DB exige rebuild. Caso real: migração anfora 2026-05-01.
+          # Detecta ARGs declarados no Dockerfile e gera build-args correspondentes
+          DOCKERFILE="Dockerfile"
+          mapfile -t arg_names < <(grep -E '^[[:space:]]*ARG[[:space:]]+' "$DOCKERFILE" 2>/dev/null | awk '{print $2}' | cut -d= -f1 | sort -u)
+          {
+            echo 'args<<EOF'
+            for arg in "${arg_names[@]}"; do
+              [ -z "$arg" ] && continue
+              val=$(printf '%s' "$SECRET_JSON" | jq -r --arg k "$arg" '.[$k] // empty')
+              [ -n "$val" ] && printf '%s=%s\n' "$arg" "$val"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          build-args: ${{ steps.build_args.outputs.args }}
+          tags: |
+            ${{ steps.repo.outputs.image_repo }}:latest
+            ${{ steps.repo.outputs.image_repo }}:sha-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=${{ steps.vars.outputs.env }}-arm64
+          cache-to: type=gha,mode=max,scope=${{ steps.vars.outputs.env }}-arm64
+
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect "${{ steps.repo.outputs.image_repo }}:latest"
+
+      - name: Force ECS service to pull new image
+        run: |
+          CLUSTER="tb-cluster"
+          SERVICE="${{ env.APP }}-${{ steps.vars.outputs.env }}"
+          echo "Forcing new deployment on cluster=$CLUSTER service=$SERVICE"
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'service.deployments[0].{status:status,rolloutState:rolloutState,taskDefinition:taskDefinition}' \
+            --output table
+
+      - name: Wait ECS rollout completion
+        run: |
+          CLUSTER="tb-cluster"
+          SERVICE="${{ env.APP }}-${{ steps.vars.outputs.env }}"
+          echo "Waiting rollout to complete (timeout ~10min)..."
+          # Polling em vez de wait services-stable (que pode demorar demais e nao reporta progresso)
+          for i in $(seq 1 30); do
+            state=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'services[0].deployments[?status==`PRIMARY`].rolloutState' \
+              --output text)
+            count=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'services[0].deployments | length(@)' \
+              --output text)
+            echo "[$i/30] PRIMARY rolloutState=$state deployments=$count"
+            if [ "$state" = "COMPLETED" ] && [ "$count" = "1" ]; then
+              echo "Rollout completed."
+              exit 0
+            fi
+            if [ "$state" = "FAILED" ]; then
+              echo "::error::ECS rollout FAILED"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::Rollout did not complete within ~10min"
+          exit 1

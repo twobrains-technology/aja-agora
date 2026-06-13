@@ -23,15 +23,13 @@ Regras:
 - Foque em informacoes explicitas da conversa, nao suposicoes
 - Valores monetarios devem ser numeros puros (sem "R$", sem pontos de milhar)`;
 
-export function buildInsightPrompt(
-  messages: Array<{ role: string; content: string }>,
-): string {
-  const transcript = messages
-    .map((m) => {
-      const label = m.role === "user" ? "Cliente" : "Agente";
-      return `[${label}]: ${m.content}`;
-    })
-    .join("\n");
+export function buildInsightPrompt(messages: Array<{ role: string; content: string }>): string {
+	const transcript = messages
+		.map((m) => {
+			const label = m.role === "user" ? "Cliente" : "Agente";
+			return `[${label}]: ${m.content}`;
+		})
+		.join("\n");
 
-  return `Analise a seguinte conversa entre um cliente e um agente de consorcio IA:\n\n${transcript}`;
+	return `Analise a seguinte conversa entre um cliente e um agente de consorcio IA:\n\n${transcript}`;
 }

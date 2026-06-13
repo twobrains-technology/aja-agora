@@ -9,11 +9,12 @@
  *   data: { type: "handoff", status: "claimed", agentName: "..." }
  *   data: { type: "ping" }
  */
-import { type NextRequest } from "next/server";
+
 import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { subscribeMessages, type BusMessage } from "@/lib/chat/message-bus";
+import { type BusMessage, subscribeMessages } from "@/lib/chat/message-bus";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,11 @@ export async function GET(req: NextRequest) {
 	// Verify conversation exists and is handed off
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
+		with: {
+			handedOffUser: {
+				columns: { name: true },
+			},
+		},
 	});
 
 	if (!conv) {
@@ -41,7 +47,7 @@ export async function GET(req: NextRequest) {
 			const initData = JSON.stringify({
 				type: "connected",
 				status: conv.status,
-				agentName: conv.agentName ?? null,
+				agentName: conv.handedOffUser?.name ?? null,
 			});
 			controller.enqueue(encoder.encode(`data: ${initData}\n\n`));
 
@@ -70,7 +76,11 @@ export async function GET(req: NextRequest) {
 			req.signal.addEventListener("abort", () => {
 				clearInterval(pingInterval);
 				unsubscribe();
-				try { controller.close(); } catch { /* already closed */ }
+				try {
+					controller.close();
+				} catch {
+					/* already closed */
+				}
 			});
 		},
 	});

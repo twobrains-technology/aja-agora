@@ -1,0 +1,2 @@
+ALTER TABLE "personas" DROP CONSTRAINT "personas_category_check";--> statement-breakpoint
+ALTER TABLE "personas" ADD CONSTRAINT "personas_category_check" CHECK ("personas"."category" IS NULL OR "personas"."category" IN ('imovel', 'auto', 'moto', 'servicos'));

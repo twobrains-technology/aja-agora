@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Integração Bevi · análise técnica + proposta de jornada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0a; --panel:#111;  --panel2:#161616; --line:#232323;
+  --ink:#fafafa; --muted:#9aa0a6; --muted2:#6e7479;
+  --blue:#3b82f6; --blue2:#60a5fa; --ok:#34d399; --warn:#fbbf24; --rose:#f43f5e; --violet:#a78bfa;
+  --grad:linear-gradient(90deg,#fff,#60a5fa);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Geist',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased;letter-spacing:-.005em}
+.mono{font-family:'Geist Mono',monospace;font-variant-numeric:tabular-nums}
+
+.deck{position:relative;width:100vw;height:100vh}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;
+  padding:54px 72px 72px;opacity:0;pointer-events:none;transition:opacity .35s ease}
+.slide.on{opacity:1;pointer-events:auto}
+.slide-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px}
+.slide-head .kicker{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.slide-head .step{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue2);font-weight:700}
+
+h1.title{font-size:54px;font-weight:800;letter-spacing:-.025em;line-height:1.05;margin-bottom:18px}
+h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+h2.shead{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin-bottom:10px}
+h2.shead .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+p.sub{font-size:17px;color:var(--muted);max-width:880px;line-height:1.5;margin-bottom:22px}
+
+.eyebrow{display:inline-block;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--blue2);font-weight:700;padding:5px 10px;border:1px solid rgba(96,165,250,.35);border-radius:999px;margin-bottom:18px;background:rgba(59,130,246,.06)}
+
+.foot{position:absolute;bottom:18px;left:72px;right:72px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted2);letter-spacing:.06em}
+.foot .num{font-family:'Geist Mono';font-weight:600;color:var(--muted)}
+.brandmark{display:flex;align-items:center;gap:7px;font-weight:600;color:var(--muted)}
+.brandmark .dot{width:9px;height:9px;background:linear-gradient(135deg,#EB2D77,#8B5CF6);border-radius:50%}
+
+/* nav controls */
+.nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:5px;z-index:50;background:rgba(20,20,20,.8);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;padding:5px}
+.nav button{background:transparent;border:0;color:var(--muted);width:28px;height:28px;border-radius:999px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.nav button:hover{background:var(--panel);color:var(--ink)}
+.nav .ind{padding:0 11px;font-family:'Geist Mono';font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.progress{position:fixed;top:0;left:0;right:0;height:2px;background:transparent;z-index:60}
+.progress .b{height:100%;background:var(--blue);width:0;transition:width .35s ease}
+
+/* cards & layout helpers */
+.row{display:flex;gap:22px}
+.col{display:flex;flex-direction:column;gap:18px}
+.flex1{flex:1;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.card h3{font-size:16px;font-weight:700;margin-bottom:9px;letter-spacing:-.01em}
+.card p{font-size:13.5px;color:var(--muted);line-height:1.55}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;background:rgba(96,165,250,.1);color:var(--blue2);border:1px solid rgba(96,165,250,.25)}
+.tag.warn{background:rgba(251,191,36,.1);color:var(--warn);border-color:rgba(251,191,36,.25)}
+.tag.ok{background:rgba(52,211,153,.1);color:var(--ok);border-color:rgba(52,211,153,.25)}
+.tag.rose{background:rgba(244,63,94,.1);color:var(--rose);border-color:rgba(244,63,94,.25)}
+.tag.violet{background:rgba(167,139,250,.1);color:var(--violet);border-color:rgba(167,139,250,.25)}
+.kbd{font-family:'Geist Mono';font-size:11.5px;background:#1d1d1d;border:1px solid var(--line);padding:2px 7px;border-radius:5px;color:var(--ink)}
+
+/* cover */
+.cover-bg{position:absolute;inset:0;background:radial-gradient(circle at 30% 0%,rgba(59,130,246,.18),transparent 50%),radial-gradient(circle at 80% 100%,rgba(235,45,119,.10),transparent 50%);pointer-events:none}
+.cover-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:64px 64px;pointer-events:none;mask:radial-gradient(circle at center,#000 30%,transparent 70%)}
+.cover-content{position:relative;z-index:2;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;flex:1;max-width:1100px}
+.cover h1{font-size:86px;font-weight:800;letter-spacing:-.035em;line-height:.98;margin-bottom:24px}
+.cover .lead{font-size:21px;color:var(--muted);max-width:760px;line-height:1.4}
+.cover .ribbon{display:flex;gap:22px;margin-top:46px;font-size:12.5px;color:var(--muted)}
+.cover .ribbon b{color:var(--ink);font-weight:600}
+
+/* tldr */
+.tldr-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.tldr-grid .card{padding:24px}
+.tldr-grid .num{font-family:'Geist Mono';font-size:36px;font-weight:700;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1;margin-bottom:14px}
+.tldr-grid .ttl{font-size:18px;font-weight:600;margin-bottom:6px}
+
+/* chain */
+.chain{display:flex;align-items:center;gap:14px;margin:30px 0 24px}
+.chain .node{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center}
+.chain .node .ico{font-size:22px;margin-bottom:6px;display:block}
+.chain .node b{font-size:14px;display:block}
+.chain .node span{font-size:11.5px;color:var(--muted)}
+.chain .arr{color:var(--blue2);font-family:'Geist Mono';font-size:24px;font-weight:600}
+.chain .node.us{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.10)}
+.chain .node.us b{color:var(--blue2)}
+
+.rails{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rail{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+.rail .lbl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+.rail h4{font-size:18px;font-weight:700;margin-bottom:8px}
+.rail .url{font-family:'Geist Mono';font-size:11.5px;color:var(--muted);background:#0c0c0c;padding:7px 10px;border-radius:6px;border:1px solid var(--line);margin-top:8px;word-break:break-all}
+.rail ul{margin-top:10px;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.6}
+
+/* tela split (print + api) */
+.split{display:grid;grid-template-columns:0.95fr 1.15fr;gap:20px;height:100%}
+.split .photo{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.split .photo img{max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,.4)}
+.split .photo .cap{font-size:11.5px;color:var(--muted);margin-top:10px;font-weight:500}
+.split .api{display:flex;flex-direction:column;gap:14px;min-width:0}
+.api .blk{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.api .blk .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:7px}
+.api .blk .lbl .verb{font-family:'Geist Mono';color:#fff;padding:2px 7px;border-radius:5px;font-size:10.5px;background:#27272a;border:1px solid var(--line)}
+.api .blk .lbl .verb.get{background:rgba(52,211,153,.18);color:var(--ok);border-color:rgba(52,211,153,.3)}
+.api .blk .lbl .verb.post{background:rgba(96,165,250,.18);color:var(--blue2);border-color:rgba(96,165,250,.3)}
+.api .blk .lbl .verb.patch{background:rgba(251,191,36,.18);color:var(--warn);border-color:rgba(251,191,36,.3)}
+.api .blk .path{font-family:'Geist Mono';font-size:12px;color:var(--ink);word-break:break-all;line-height:1.5}
+.api .blk pre{font-family:'Geist Mono';font-size:11.5px;color:#cbd5e1;background:#0c0c0c;border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin-top:8px;overflow:auto;line-height:1.5}
+.api .blk .desc{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+.api .blk .key{color:var(--blue2)}
+.api .blk .str{color:#f6e58d}
+.api .blk .num{color:var(--ok)}
+
+/* tabela segmentos */
+table.seg{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+table.seg th,table.seg td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.seg th{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700}
+table.seg tr:hover td{background:rgba(255,255,255,.015)}
+table.seg td b{color:var(--ink);font-weight:600}
+table.seg .mono{font-size:12.5px}
+table.seg .seg-name{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+table.seg .pill{font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;background:#1d1d1d;color:var(--muted)}
+table.seg .pill.hot{background:rgba(59,130,246,.18);color:var(--blue2)}
+table.seg .pill.solo{background:rgba(251,191,36,.16);color:var(--warn)}
+
+/* findings */
+.findings{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.finding{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;gap:14px;align-items:flex-start}
+.finding .n{flex-shrink:0;width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;font-family:'Geist Mono';font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.finding h4{font-size:15px;font-weight:700;margin-bottom:5px}
+.finding p{font-size:13px;color:var(--muted);line-height:1.5}
+.finding p b{color:var(--ink);font-weight:600}
+
+/* gaps */
+.gaps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.gap{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.gap .ti{display:flex;align-items:center;gap:9px;margin-bottom:10px;font-weight:700;font-size:15px}
+.gap p{font-size:13px;color:var(--muted);line-height:1.55}
+.gap .small{margin-top:9px;font-size:11.5px;color:var(--muted2);font-style:italic}
+
+/* gatilho */
+.q-slide{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:70px}
+.q-slide .pretitle{font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--blue2);margin-bottom:22px;font-weight:700}
+.q-slide .q{font-size:72px;font-weight:800;letter-spacing:-.03em;line-height:1.05;max-width:1180px;margin-bottom:28px}
+.q-slide .q em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.q-slide .why{font-size:18px;color:var(--muted);max-width:760px;line-height:1.5}
+
+/* tese */
+.thesis-flow{display:grid;grid-template-columns:1fr 60px 1fr;gap:14px;align-items:stretch;margin:24px 0}
+.thesis-flow .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.thesis-flow .step .lbl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue2);font-weight:700;margin-bottom:8px}
+.thesis-flow .step h4{font-size:21px;font-weight:700;margin-bottom:10px;letter-spacing:-.01em}
+.thesis-flow .step p{font-size:13.5px;color:var(--muted);line-height:1.55}
+.thesis-flow .arrow{display:flex;align-items:center;justify-content:center;color:var(--blue2);font-size:30px;font-family:'Geist Mono';font-weight:600}
+
+/* mockup slide */
+.mockup-slide{display:grid;grid-template-columns:0.95fr 1.05fr;gap:24px;flex:1;min-height:0}
+.mockup-slide .info{display:flex;flex-direction:column;gap:14px}
+.mockup-slide .info h2{font-size:32px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.mockup-slide .info h2 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.mockup-slide .info p{font-size:14px;color:var(--muted);line-height:1.55}
+.mockup-slide .info .features{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+.mockup-slide .info .features .f{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.45}
+.mockup-slide .info .features .f .dot{width:6px;height:6px;background:var(--blue);border-radius:50%;margin-top:7px;flex-shrink:0}
+.mockup-slide .info .features .f b{color:var(--ink);font-weight:600}
+.mockup-slide .iframe-wrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative;display:flex;flex-direction:column;min-height:0}
+.mockup-slide .iframe-wrap .bar{background:#0c0c0c;border-bottom:1px solid var(--line);padding:9px 14px;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted);font-family:'Geist Mono'}
+.mockup-slide .iframe-wrap .bar .dots{display:flex;gap:5px}
+.mockup-slide .iframe-wrap .bar .dots span{width:9px;height:9px;border-radius:50%;background:#2b2b2b}
+.mockup-slide .iframe-wrap iframe{flex:1;border:0;width:100%;background:#fafafa}
+.mockup-slide .iframe-wrap .open{position:absolute;top:8px;right:11px;background:var(--blue);color:#fff;border:0;padding:5px 10px;font-size:11px;font-family:'Geist';font-weight:600;border-radius:6px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px;z-index:5}
+.mockup-slide .iframe-wrap .open:hover{background:var(--blue2)}
+
+/* next steps */
+.steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px}
+.steps .st{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.steps .st .nb{font-family:'Geist Mono';font-size:11px;color:var(--blue2);font-weight:600;letter-spacing:.14em;margin-bottom:9px}
+.steps .st h4{font-size:18px;font-weight:700;margin-bottom:7px}
+.steps .st p{font-size:13.5px;color:var(--muted);line-height:1.5}
+
+.hint{position:fixed;bottom:14px;right:14px;font-size:10.5px;color:var(--muted2);background:rgba(20,20,20,.8);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:'Geist Mono';z-index:50;letter-spacing:.04em}
+</style>
+</head>
+<body>
+
+<div class="progress"><div class="b" id="prog"></div></div>
+
+<div class="deck" id="deck">
+
+<!-- 1. CAPA -->
+<div class="slide cover">
+  <div class="cover-grid"></div>
+  <div class="cover-bg"></div>
+  <div class="cover-content">
+    <span class="eyebrow">Aja Agora · TwoBrains Technology</span>
+    <h1>Integração <span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Bevi</span><br>análise técnica + proposta de jornada</h1>
+    <p class="lead">Engenharia reversa do simulador, mapeamento tela-a-API, varredura por segmento e duas propostas de jornada de cliente — web e WhatsApp.</p>
+    <div class="ribbon"><span><b>Maio 2026</b></span><span>·</span><span>Confidencial</span><span>·</span><span>v1.0</span></div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">01 / 17</span></div>
+</div>
+
+<!-- 2. TL;DR -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Resumo executivo</span><span class="step">TL;DR</span></div>
+  <h2 class="shead">O que <span class="g">fizemos</span> nas últimas semanas</h2>
+  <p class="sub">Quatro frentes em paralelo pra entender a integração antes de propor arquitetura.</p>
+  <div class="tldr-grid" style="margin-top:4px">
+    <div class="card"><div class="num">01</div><div class="ttl">Mapeamos os <b>2 trilhos</b> da API</div><p>API de Parceiro (Postman oficial) e Self-Contract (do simulador). Documentamos cada endpoint, payload e resposta.</p></div>
+    <div class="card"><div class="num">02</div><div class="ttl">Navegamos o simulador <b>ao vivo</b></div><p>Captura de tela-a-tela com print + chamada HTTP correspondente. Mostramos o fluxo real, não a teoria.</p></div>
+    <div class="card"><div class="num">03</div><div class="ttl">Varredura de <b>6 segmentos</b></div><p>Imóvel · Auto · Moto · Pesados · Serviços · Outros bens — todos com ofertas reais coletadas via API.</p></div>
+    <div class="card"><div class="num">04</div><div class="ttl">Duas <b>propostas de jornada</b></div><p>Protótipos hi-fi: chat da plataforma (web) + WhatsApp nativo melhorado — com a tensão Bevi/Aja resolvida.</p></div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">02 / 17</span></div>
+</div>
+
+<!-- 3. CADEIA + 2 TRILHOS -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Arquitetura da integração</span><span class="step">Contexto</span></div>
+  <h2 class="shead">A cadeia e os <span class="g">dois trilhos</span> da API</h2>
+  <p class="sub">A Bevi é uma camada de orquestração da AGX Software/CONEXIA (CreditHub) que distribui propostas a várias administradoras de consórcio.</p>
+
+  <div class="chain">
+    <div class="node us"><span class="ico">💬</span><b>Aja Agora</b><span>chat conversacional</span></div>
+    <div class="arr">→</div>
+    <div class="node"><span class="ico">🔌</span><b>AGX / CreditHub</b><span>Bevi (parceiro)</span></div>
+    <div class="arr">→</div>
+    <div class="node"><span class="ico">🏛️</span><b>Administradoras</b><span>Itaú · Âncora · BB ·<br>Rodobens · Canopus</span></div>
+  </div>
+
+  <div class="rails">
+    <div class="rail">
+      <div class="lbl">Trilho A · documentado</div>
+      <h4>API de Parceiro</h4>
+      <p style="font-size:13.5px;color:var(--muted);line-height:1.55">RPC via <span class="mono">service_id</span>. É o trilho da collection Postman oficial. Cobre simulação, criar proposta, escolher oferta, anexar documentos.</p>
+      <div class="url">api.uxvision.tech/.../credithub/services</div>
+      <ul><li>autenticação por token de parceiro</li><li>redireciona o usuário no <code class="kbd">choose_offer</code> (out-of-app)</li><li>upload de documentos via portal externo</li></ul>
+    </div>
+    <div class="rail">
+      <div class="lbl">Trilho B · descoberto</div>
+      <h4>Self-Contract</h4>
+      <p style="font-size:13.5px;color:var(--muted);line-height:1.55">É a API consumida pelo simulador white-label deles (<span class="mono">proposta.uxvision.tech</span>). Rotas <span class="mono">/unauth/...</span>, identificadas por CPF + fingerprint do device.</p>
+      <div class="url">core-production-selfcontract-atsb7.ondigitalocean.app</div>
+      <ul><li>sem token (identificação por device fingerprint)</li><li><b>KYC textual inline</b> — só upload de doc redireciona</li><li>shape de oferta mais rico que o trilho A</li></ul>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">03 / 17</span></div>
+</div>
+
+<!-- 4. INTRO ENGENHARIA REVERSA -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Parte 2</span><span class="step">Engenharia reversa do simulador</span></div>
+  <h2 class="shead">Cada tela, <span class="g">linkada à chamada HTTP</span> que a alimenta</h2>
+  <p class="sub">Para validar o que a API faz na prática e o que ela <i>realmente</i> retorna, navegamos o simulador deles ao vivo (Playwright) capturando <b>print + tráfego de rede</b> em cada passo. As próximas 6 lâminas mostram o mapeamento direto.</p>
+
+  <div class="row" style="margin-top:18px;gap:12px">
+    <div class="card flex1" style="padding:18px"><span class="tag">Tela 01</span><h3 style="margin-top:9px">Identificação</h3><p>CPF + LGPD · tratamento de 409 (proposta em andamento)</p></div>
+    <div class="card flex1" style="padding:18px"><span class="tag">Tela 02</span><h3 style="margin-top:9px">O que adquirir</h3><p>seleção de segmento entre os 6 disponíveis</p></div>
+    <div class="card flex1" style="padding:18px"><span class="tag">Tela 03</span><h3 style="margin-top:9px">Simulação</h3><p>valor · objetivo · lance embutido</p></div>
+  </div>
+  <div class="row" style="margin-top:12px;gap:12px">
+    <div class="card flex1" style="padding:18px"><span class="tag">Tela 04</span><h3 style="margin-top:9px">Leque de ofertas</h3><p>múltiplas administradoras com shape rico</p></div>
+    <div class="card flex1" style="padding:18px"><span class="tag">Tela 05</span><h3 style="margin-top:9px">KYC inline</h3><p>identidade, endereço, dados — opcionais</p></div>
+    <div class="card flex1" style="padding:18px"><span class="tag warn">Tela 06</span><h3 style="margin-top:9px">Upload → CONEXIA</h3><p>único redirect externo do fluxo</p></div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">04 / 17</span></div>
+</div>
+
+<!-- 5. TELA 1 -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 01 · Identificação (CPF + LGPD)</span><span class="step">Print ↔ API</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-01-dados-iniciais.png" alt="tela de dados iniciais"><div class="cap">Captura ao vivo — simulador Bevi/CONEXIA</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb get">GET</span> propostas em andamento (tratamento do 409)</div><div class="path">/unauth/product-self-contract/{hash}/get-multi-proposal/{cpf}</div><div class="desc">Detecta se o CPF já tem proposta aberta — abre o dialog "retomar ou iniciar nova".</div></div>
+      <div class="blk"><div class="lbl"><span class="verb post">POST</span> criar proposta</div><div class="path">/unauth/product-self-contract/create-proposal/{hash}</div>
+        <pre>{
+  <span class="key">"cpf"</span>: <span class="str">"***********"</span>,
+  <span class="key">"celular"</span>: <span class="str">"..."</span>,
+  <span class="key">"lgpd"</span>: { <span class="key">"aceite"</span>: <span class="num">true</span> },
+  <span class="key">"consultarDados"</span>: <span class="num">true</span>,
+  <span class="key">"ignoreOngoingProposals"</span>: <span class="num">true</span>
+}</pre>
+        <div class="desc"><b>Constraint descoberta:</b> 1 proposta ativa por device. Retorna <span class="mono">400 Duplicated Hash</span> se já existir.</div></div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">05 / 17</span></div>
+</div>
+
+<!-- 6. TELA 2 -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 02 · O que adquirir (segmento)</span><span class="step">Print ↔ API</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-02-o-que-adquirir.png" alt="tela de segmento"><div class="cap">6 segmentos disponíveis no produto Bevi</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb get">GET</span> segmentos disponíveis</div><div class="path">/unauth/product-self-contract/{hash}/segment-resource</div>
+        <pre>{
+  <span class="key">"data"</span>: { <span class="key">"segmentResource"</span>: [
+    <span class="str">"AUTOS"</span>, <span class="str">"IMOVEL"</span>, <span class="str">"MOTOS"</span>,
+    <span class="str">"OUTROS BENS"</span>, <span class="str">"PESADOS"</span>, <span class="str">"SERVICOS"</span>
+  ] }
+}</pre>
+      </div>
+      <div class="blk"><div class="lbl"><span class="verb patch">PATCH</span> grava segmento escolhido</div><div class="path">/unauth/product-self-contract/update-step/{hash}/step/oQueVocePretendeAdquirir</div>
+        <pre>{ <span class="key">"productType"</span>: <span class="str">"AUTOS"</span> }   <span class="desc" style="color:var(--muted)">// IMOVEL | MOTOS | PESADOS | SERVICOS | OUTROS BENS</span></pre>
+        <div class="desc">Define o universo da próxima simulação. Cada segmento tem leque de admins e índice de correção próprios.</div></div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">06 / 17</span></div>
+</div>
+
+<!-- 7. TELA 3 -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 03 · Simulação (o coração)</span><span class="step">Print ↔ API</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-03-simulacao.png" alt="tela de simulação"><div class="cap">Valor + objetivo + lance embutido (30%/50%/nenhum)</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb patch">PATCH</span> simular</div><div class="path">/unauth/product-self-contract/update-step/{hash}/step/simulation</div>
+        <pre>{
+  <span class="key">"simulationType"</span>: <span class="str">"TOTAL_VALUE"</span>,        <span class="desc" style="color:var(--muted)">// ou INSTALLMENT_VALUE</span>
+  <span class="key">"simulationValue"</span>: <span class="num">30000</span>,
+  <span class="key">"objective"</span>: <span class="str">"FAST_APPROVAL"</span>,         <span class="desc" style="color:var(--muted)">// ou INVESTMENT</span>
+  <span class="key">"embeddedPercentage"</span>: <span class="str">"30"</span>             <span class="desc" style="color:var(--muted)">// "30" | "50" | sem embutido</span>
+}</pre>
+        <div class="desc"><b>Diferencial validado:</b> lance embutido e contemplação rápida × investidor são <b>nativos</b> no parceiro — exatamente o eixo da UX do Aja.</div></div>
+      <div class="blk"><div class="lbl"><span class="verb get">GET</span> 404 transitório (edge case mapeado)</div><div class="desc">A 1ª chamada de <span class="mono">/simulation</span> logo após trocar o segmento pode retornar <b>404</b> — repetir após ~400ms resolve. Documentado.</div></div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">07 / 17</span></div>
+</div>
+
+<!-- 8. TELA 4 -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 04 · Leque de ofertas reais</span><span class="step">Print ↔ API · shape rico</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-04-oferta.png" alt="leque de ofertas"><div class="cap">Cards de "Melhores Ofertas" + "Outras Ofertas" (várias admins)</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb post">RESP</span> resposta do /simulation — <span style="color:var(--ok)">o achado central</span></div>
+        <pre>{ <span class="key">"data"</span>: { <span class="key">"data"</span>: { <span class="key">"offers"</span>: [{
+  <span class="key">"bank"</span>: <span class="str">"ÂNCORA"</span>, <span class="key">"group"</span>: <span class="str">"462"</span>, <span class="key">"term"</span>: <span class="num">98</span>,
+  <span class="key">"finalValue"</span>: <span class="num">54000</span>, <span class="key">"importedInstallmentValue"</span>: <span class="num">703.64</span>,
+  <span class="key">"adminFee"</span>: <span class="num">0.18</span>, <span class="key">"reserveFundFee"</span>: <span class="num">0.02</span>,
+  <span class="key">"adjustmentType"</span>: <span class="str">"IGPM"</span>,
+  <span class="key">"bidPaymentMode"</span>: <span class="str">"EMBEDDED"</span>, <span class="key">"embeddedBid"</span>: <span class="num">16200</span>,
+  <span class="key">"commission"</span>: { <span class="key">"totalRatePercent"</span>: <span class="str">"5,00"</span> },
+  <span class="key">"proximaAssembleia"</span>: <span class="str">"2026-..."</span>,
+  <span class="key">"type"</span>: <span class="str">"SPECIAL_OFFER"</span>
+  <span class="desc" style="color:var(--muted)">/* + 40 campos: seguro, fundo, prazo p/ contemplação, ... */</span>
+}, ... ] } } }</pre>
+      </div>
+      <div class="row" style="gap:9px"><span class="tag ok">✓ taxa adm real</span><span class="tag ok">✓ índice (INCC/IPCA/IGPM)</span><span class="tag ok">✓ comissão visível</span><span class="tag ok">✓ assembleia</span><span class="tag ok">✓ contemplação</span></div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">08 / 17</span></div>
+</div>
+
+<!-- 9. TELA 5 -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 05 · KYC inline</span><span class="step">Print ↔ API</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-05-documento.png" alt="KYC inline"><div class="cap">"Todos os documentos são opcionais" — KYC dentro do app</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb patch">PATCH</span> dados textuais (todos opcionais)</div>
+        <pre>/update-step/{hash}/step/<span style="color:var(--blue2)">documentoPessoal</span>
+/update-step/{hash}/step/<span style="color:var(--blue2)">dadosDoDocumentoDeIdentidade</span>
+/update-step/{hash}/step/<span style="color:var(--blue2)">endereco</span>
+/update-step/{hash}/step/<span style="color:var(--blue2)">comprovanteDeEndereco</span>
+/update-step/{hash}/step/<span style="color:var(--blue2)">waitingForUniqueCode</span>  <span class="desc" style="color:var(--muted)">// finaliza</span></pre>
+        <div class="desc">RG/órgão/UF, nome da mãe, endereço, profissão. <b>Tudo opcional</b> — usuário pode pular e finalizar.</div></div>
+      <div class="blk"><div class="lbl">📍 Achado de UX</div><div class="desc">O KYC textual é <b>todo inline</b> no app — não há redirect. Isso confirma que o gap da "API de Parceiro" no <span class="mono">choose_offer</span> (redirect) <b>é resolvível</b>.</div></div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">09 / 17</span></div>
+</div>
+
+<!-- 10. TELA 6 — redirect -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Tela 06 · Upload de documento</span><span class="step warn" style="color:var(--warn)">Única saída externa</span></div>
+  <div class="split" style="flex:1;min-height:0">
+    <div class="photo"><img src="./assets/bevi-06-redirect-upload.png" alt="portal CONEXIA"><div class="cap">Portal CONEXIA — fora do simulador (AGX)</div></div>
+    <div class="api">
+      <div class="blk"><div class="lbl"><span class="verb get">URL</span> CTA externa</div><div class="path">conexia.agxsoftware.com/proposals?documentsToken=...</div></div>
+      <div class="blk">
+        <h4 style="font-size:15px;font-weight:700;margin-bottom:7px;color:var(--warn)">⚠ Único ponto fora do fluxo</h4>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.55">O upload de <b>arquivos</b> (foto do RG/CNH) sempre redireciona pro portal AGX. KYC textual é inline; só o arquivo sai. <b>Isso é uma limitação real da integração</b> — qualquer jornada precisa lidar com isso explicitamente.</p>
+        <p style="font-size:12.5px;color:var(--muted2);margin-top:10px;font-style:italic">Na proposta de jornada, transformamos esse ponto na <b>única transição multicanal honesta</b> — não tentamos esconder.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">10 / 17</span></div>
+</div>
+
+<!-- 11. SWEEP 6 SEGMENTOS -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Parte 3 · Estudo de cenários</span><span class="step">Varredura completa</span></div>
+  <h2 class="shead">Os <span class="g">6 segmentos</span> sob a lente — comportamento varia <b>muito</b></h2>
+  <p class="sub" style="margin-bottom:14px">Mesma proposta, lance embutido 30%, objetivo "contemplação rápida". Dados brutos por segmento em <span class="mono">assets/segmentos/&lt;tipo&gt;/offers.json</span>.</p>
+  <table class="seg">
+    <thead><tr><th>Segmento</th><th>Pedido</th><th>Ofertas</th><th>Administradoras</th><th>Correção</th><th>Adm</th><th>Fundo</th><th>Comissão</th></tr></thead>
+    <tbody>
+      <tr><td class="seg-name">🏠 Imóvel</td><td class="mono">R$ 50.000</td><td><b>3</b></td><td>Rodobens · Âncora</td><td><b>INCC</b></td><td class="mono">26–29%</td><td class="mono">0–2%</td><td class="mono">3,5–5%</td></tr>
+      <tr><td class="seg-name">🚗 Veículo <span class="pill hot">+ líquido</span></td><td class="mono">R$ 30.000</td><td><b>7</b></td><td>Itaú · Âncora · BB</td><td>IPCA + IGPM</td><td class="mono">14–27%</td><td class="mono">2–3%</td><td class="mono">3,5–5%</td></tr>
+      <tr><td class="seg-name">🏍️ Motocicleta <span class="pill solo">solo</span></td><td class="mono">R$ 25.000</td><td><b>1</b></td><td><b>Canopus</b> (exclusivo)</td><td>IPCA</td><td class="mono">21%</td><td class="mono">0%</td><td class="mono"><b>6%</b></td></tr>
+      <tr><td class="seg-name">🚛 Pesados</td><td class="mono">R$ 100.000</td><td><b>2</b></td><td>só Itaú</td><td>IPCA + <b>PRÉ-FIXADO 3%</b></td><td class="mono">20%</td><td class="mono">2%</td><td class="mono">3,5%</td></tr>
+      <tr><td class="seg-name">🛠️ Serviços</td><td class="mono">R$ 20.000</td><td><b>1</b></td><td>só Âncora</td><td>IGPM</td><td class="mono"><b>35%</b></td><td class="mono"><b>5%</b></td><td class="mono">5%</td></tr>
+      <tr><td class="seg-name">📦 Outros bens</td><td class="mono">R$ 20.000</td><td><b>2</b></td><td>só Âncora</td><td><b>não possui</b></td><td class="mono">16–22%</td><td class="mono">0%</td><td class="mono">5%</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">11 / 17</span></div>
+</div>
+
+<!-- 12. ACHADOS-CHAVE -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Parte 3 · Estudo de cenários</span><span class="step">Padrões fortes</span></div>
+  <h2 class="shead">6 <span class="g">achados</span> que orientam o produto</h2>
+  <p class="sub">Padrões que emergiram da varredura — cada um vira decisão arquitetural.</p>
+  <div class="findings">
+    <div class="finding"><div class="n">1</div><div><h4>Liquidez varia 7×</h4><p>Auto tem <b>7 ofertas</b>; Serviços e Moto têm <b>1</b>. A UX precisa cobrir "muitas opções" (curar) e "uma só" (fallback honesto).</p></div></div>
+    <div class="finding"><div class="n">2</div><div><h4>Cada admin tem seu segmento</h4><p><b>Canopus só moto</b>, Rodobens só imóvel, BB só auto, Itaú em auto+pesados. <b>Âncora é transversal</b>. Recomendação não pode ser catálogo único.</p></div></div>
+    <div class="finding"><div class="n">3</div><div><h4>5 regimes de correção distintos</h4><p>INCC, IPCA, IGPM, <b>PRÉ-FIXADO 3%</b>, e <b>sem correção</b> — todos no mesmo parceiro. Agente lê <span class="mono">adjustmentType</span> da oferta (CDC art. 37).</p></div></div>
+    <div class="finding"><div class="n">4</div><div><h4>Taxa adm vai de 14% a 35%</h4><p>2,5× de variação. Comparabilidade entre segmentos exige normalização por <b>custo efetivo</b>, não só parcela.</p></div></div>
+    <div class="finding"><div class="n">5</div><div><h4>Lance embutido em 100% das ofertas</h4><p>Sempre <span class="mono">EMBEDDED</span>, sempre <b>30%</b> do crédito. <b>Valida o diferencial nativo do Aja</b> — cobre toda a vitrine sem exceção.</p></div></div>
+    <div class="finding"><div class="n">6</div><div><h4>Comissão visível na resposta</h4><p><b>3,5% a 6%</b>. Itaú/Rodobens/BB cobram <b>3,5%</b>; Âncora <b>5%</b>; <b>Canopus moto 6%</b>. Modelo de receita aberto — pricing já está mapeado.</p></div></div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">12 / 17</span></div>
+</div>
+
+<!-- 13. GAPS -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Parte 4 · Gaps reais</span><span class="step">A negociar com vocês e com o parceiro</span></div>
+  <h2 class="shead">Três <span class="g">gaps</span> em aberto</h2>
+  <p class="sub">Pontos onde a integração, do jeito que está hoje, conflita com a tese de produto do Aja.</p>
+  <div class="gaps">
+    <div class="gap"><div class="ti"><span class="tag rose">GAP 1</span> Sem simulação anônima</div><p>A Bevi é <b>proposta-first</b> — exige CPF antes de qualquer simulação. Conflita com o "sem formulário" do Aja, que prega exploração livre.</p><p class="small">Nossa proposta de jornada resolve isso transformando o CPF num momento de upgrade. Slide 15.</p></div>
+    <div class="gap"><div class="ti"><span class="tag warn">GAP 2</span> Redirect no <span class="mono">choose_offer</span></div><p>A "API de Parceiro" (trilho A) abre <span class="mono">consortiumProposalLink</span> em nova aba ao escolher oferta — mas o trilho self-contract <b>prova que inline é tecnicamente possível</b>. Vale negociar.</p></div>
+    <div class="gap"><div class="ti"><span class="tag warn">GAP 3</span> Upload sempre externo</div><p>Anexar documento <b>sempre</b> redireciona pro portal CONEXIA (<span class="mono">conexia.agxsoftware.com</span>). Endpoint <span class="mono">get_document_upload_links</span> da collection retorna <b>501</b>.</p></div>
+  </div>
+  <p class="sub" style="margin-top:20px;font-size:14.5px">Temos uma lista de <b>14 perguntas técnicas</b> pro parceiro Bevi, documentada em <span class="mono">bevi-consorcio-aderencia.md</span> — pronta pra disparar quando vocês quiserem.</p>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">13 / 17</span></div>
+</div>
+
+<!-- 14. PERGUNTA-GATILHO -->
+<div class="slide q-slide">
+  <div class="cover-bg"></div>
+  <div style="position:relative;z-index:2">
+    <div class="pretitle">Antes de seguir</div>
+    <h1 class="q">Vocês já fizeram a <em>especificação da jornada</em> do cliente para essa integração?</h1>
+    <p class="why">Pra a gente avançar com adapter, contratos de tela e prazo realista, precisamos partir de uma jornada acordada — quem decide cada etapa, o que é tela, o que é chat, onde entra cada artifact.</p>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">14 / 17</span></div>
+</div>
+
+<!-- 15. TESE -->
+<div class="slide">
+  <div class="slide-head"><span class="kicker">Parte 5 · Nossa proposta</span><span class="step">Tese de jornada</span></div>
+  <h2 class="shead">Se ajudar, deixamos uma <span class="g">proposta-exemplo</span> pronta</h2>
+  <p class="sub">A tensão central — Bevi exige CPF antes de simular, Aja prega "sem formulário" — vira uma <b>vantagem de UX</b> se a gente reordenar.</p>
+  <div class="thesis-flow">
+    <div class="step">
+      <div class="lbl">Fase 1 · anônima</div>
+      <h4>Exploração livre</h4>
+      <p>Usuário passa pela descoberta e pelos 3 gates (experiência · prazo · lance) e vê <b>simulação indicativa</b> (médias de mercado). Sem CPF, sem fricção. Preserva o "sem formulário".</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="step">
+      <div class="lbl">Fase 2 · sob demanda</div>
+      <h4>Oferta real on-demand</h4>
+      <p>No pico de intenção ("quero ver as reais"), o Aja pede CPF <b>uma única vez</b>, enquadrado como <i>destravar as cartas reais das administradoras</i>. Aí entra a Bevi → ofertas reais.</p>
+    </div>
+  </div>
+  <p class="sub" style="font-size:15px;margin-top:8px">O atrito do CPF deixa de ser <b>barreira de entrada</b> e vira <b>momento de upgrade</b>. Materializamos isso em dois protótipos — web e WhatsApp — nas próximas 2 lâminas.</p>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">15 / 17</span></div>
+</div>
+
+<!-- 16. MOCKUP WEB -->
+<div class="slide" style="padding-bottom:54px">
+  <div class="slide-head"><span class="kicker">Proposta · Canal Web</span><span class="step">Chat da plataforma + Bevi</span></div>
+  <div class="mockup-slide">
+    <div class="info">
+      <h2>Jornada <span class="g">no chat web</span></h2>
+      <p>Mockup hi-fi mostrando a sequência completa, do empty state ao opt-in WhatsApp, com os artifacts reais do produto (gates em chips, value picker, comparação, recomendação com score).</p>
+      <div class="features">
+        <div class="f"><span class="dot"></span><div><b>Welcome + 3 gates</b> em chips — experiência · prazo · lance</div></div>
+        <div class="f"><span class="dot"></span><div><b>Simulação indicativa</b> ainda anônima — "estimativa de mercado"</div></div>
+        <div class="f"><span class="dot"></span><div><b>Momento Bevi</b> — pede CPF como upgrade, não como barreira</div></div>
+        <div class="f"><span class="dot"></span><div><b>Comparativo real</b> de 3 administradoras (Âncora · BB · Itaú) com dados Bevi</div></div>
+        <div class="f"><span class="dot"></span><div><b>Recomendação</b> com score (92% compatível) e breakdown por fator</div></div>
+        <div class="f"><span class="dot"></span><div><b>Opt-in WhatsApp</b> pra continuidade multicanal</div></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted2);margin-top:auto;line-height:1.5"><b>Design fiel</b> ao app: fonte <span class="mono">Geist</span>, paleta neutra do <span class="mono">globals.css</span>, bolhas e cards reais.</p>
+    </div>
+    <div class="iframe-wrap">
+      <div class="bar"><div class="dots"><span></span><span></span><span></span></div><span>jornada-web.html</span></div>
+      <a class="open" href="./mockups/jornada-web.html" target="_blank">↗ abrir</a>
+      <iframe src="./mockups/jornada-web.html" loading="lazy"></iframe>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">16 / 17</span></div>
+</div>
+
+<!-- 17. MOCKUP WHATSAPP -->
+<div class="slide" style="padding-bottom:54px">
+  <div class="slide-head"><span class="kicker">Proposta · Canal WhatsApp</span><span class="step">Nativos Meta + Flows</span></div>
+  <div class="mockup-slide">
+    <div class="info">
+      <h2>Mesma jornada <span class="g">no WhatsApp</span></h2>
+      <p>Em componentes nativos da Meta — reply buttons, list message e <b>WhatsApp Flows</b> — com a única saída externa (upload de doc → CONEXIA) <b>explícita e honesta</b>.</p>
+      <div class="features">
+        <div class="f"><span class="dot"></span><div><b>Reply buttons</b> (≤3) pros 3 gates de qualificação</div></div>
+        <div class="f"><span class="dot"></span><div><b>List message</b> pro prazo e pras ofertas reais</div></div>
+        <div class="f"><span class="dot"></span><div><b>3 WhatsApp Flows</b> — montar plano · CPF + LGPD · KYC — tudo <b>inline</b></div></div>
+        <div class="f"><span class="dot"></span><div><b>Eliminação do redirect</b> que o trilho de parceiro faz no <span class="mono">choose_offer</span></div></div>
+        <div class="f"><span class="dot"></span><div><b>CTA URL</b> apenas no upload de documento — única saída honesta (CONEXIA)</div></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted2);margin-top:auto;line-height:1.5"><b>Limites Meta respeitados</b>: reply buttons ≤3, paleta WhatsApp oficial, Flows como bottom-sheet.</p>
+    </div>
+    <div class="iframe-wrap">
+      <div class="bar"><div class="dots"><span></span><span></span><span></span></div><span>jornada-whatsapp.html</span></div>
+      <a class="open" href="./mockups/jornada-whatsapp.html" target="_blank">↗ abrir</a>
+      <iframe src="./mockups/jornada-whatsapp.html" loading="lazy"></iframe>
+    </div>
+  </div>
+  <div class="foot"><span class="brandmark"><span class="dot"></span>TwoBrains Technology</span><span class="num">17 / 17</span></div>
+</div>
+
+</div>
+
+<!-- nav controls -->
+<div class="nav">
+  <button id="prev" aria-label="anterior"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <div class="ind"><span id="cur">1</span> / <span id="tot">17</span></div>
+  <button id="next" aria-label="proximo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+</div>
+<div class="hint">← / → · F fullscreen · 1–9 jump</div>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const tot=slides.length;
+  document.getElementById('tot').textContent=tot;
+  let i=0;
+  function go(n){
+    i=Math.max(0,Math.min(tot-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('on',k===i));
+    document.getElementById('cur').textContent=i+1;
+    document.getElementById('prog').style.width=((i+1)/tot*100)+'%';
+    history.replaceState(null,'','#'+(i+1));
+  }
+  // initial from hash
+  const h=parseInt(location.hash.replace('#',''),10);
+  go(isNaN(h)?0:h-1);
+  document.getElementById('prev').onclick=()=>go(i-1);
+  document.getElementById('next').onclick=()=>go(i+1);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown') go(i+1);
+    else if(e.key==='ArrowLeft'||e.key==='PageUp') go(i-1);
+    else if(e.key==='Home') go(0);
+    else if(e.key==='End') go(tot-1);
+    else if(e.key==='f'||e.key==='F'){
+      if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+    else if(/^[1-9]$/.test(e.key)) go(parseInt(e.key,10)-1);
+    else if(e.key==='0') go(9);
+  });
+  // click navigation on sides
+  document.addEventListener('click',e=>{
+    if(e.target.closest('.nav')||e.target.closest('a')||e.target.closest('iframe')||e.target.closest('button')) return;
+    const w=window.innerWidth;
+    if(e.clientX>w*0.6) go(i+1);
+    else if(e.clientX<w*0.4) go(i-1);
+  });
+})();
+</script>
+</body>
+</html>

@@ -7,25 +7,30 @@
  * are accepted directly as FlexibleSchema.
  */
 import { tool } from "ai";
-import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getAdapter } from "@/lib/adapters";
-import { rankGroups } from "@/lib/agent/recommendation";
-import {
-	searchGroupsInput,
-	simulateQuotaInput,
-	getRatesInput,
-	getGroupDetailsInput,
-} from "./schemas";
+import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
+import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
+import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
+import { computeScenarios } from "@/lib/agent/scenarios";
+import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
+import {
+	getGroupDetailsInput,
+	getRatesInput,
+	searchGroupsInput,
+	simulateQuotaInput,
+} from "./schemas";
 
 // ---- Presentation tool schemas (reused across definition + route) ----
 
 const groupCardSchema = z.object({
 	id: z.string().describe("ID do grupo (UUID)"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal estimada em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -35,15 +40,23 @@ const groupCardSchema = z.object({
 });
 
 const comparisonTableSchema = z.object({
-	groups: z.array(groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
-		availableSlots: z.number(),
-		contemplationRate: z.number(),
-	})).describe("Array de grupos para comparar"),
+	groups: z
+		.array(
+			groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
+				availableSlots: z.number(),
+				contemplationRate: z.number(),
+			}),
+		)
+		.describe("Array de grupos para comparar"),
 	highlightBestIndex: z.number().int().optional().describe("Indice (0-based) do grupo recomendado"),
 });
 
 const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
+	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem (define indice de correcao prevista: imovel=INCC, auto=IPCA)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFee: z.number().describe("Taxa de administracao total em reais"),
@@ -52,42 +65,128 @@ const simulationResultSchema = z.object({
 	totalCost: z.number().describe("Custo total em reais"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	effectiveRate: z.number().describe("Taxa efetiva total em percentual"),
+	lanceScenario: z
+		.object({
+			lancePercent: z.number().describe("Percentual do credito ofertado como lance"),
+			expectedTermMonths: z
+				.number()
+				.int()
+				.describe("Prazo esperado ate contemplacao com esse lance"),
+		})
+		.optional()
+		.describe("Cenario projetado com lance (bug #10)"),
+	embeddedBid: z
+		.object({
+			percent: z.number().describe("Percentual da carta usado como lance embutido (30 ou 50)"),
+			embeddedBidValue: z.number().describe("Valor da carta destinado ao lance embutido (R$)"),
+			receivedCredit: z.number().describe("Credito liquido recebido (carta - lance embutido)"),
+			necessaryBidToContemplate: z
+				.number()
+				.nullable()
+				.optional()
+				.describe(
+					"Estimativa de lance pra contemplar (R$) — NAO garantia. Copie LITERAL de simulate_quota (pode ser null — NUNCA invente valor).",
+				),
+		})
+		.optional()
+		.describe(
+			"Cenario de lance embutido (jornada do doc). Passe SEMPRE o que veio de simulate_quota pra mostrar a variacao com/sem lance embutido.",
+		),
+	expectedAdjustment: z
+		.object({
+			index: z.enum(["INCC", "IPCA"]).describe("Indice de correcao previsto"),
+			annualPercent: z.number().describe("Percentual anual estimado"),
+		})
+		.optional()
+		.describe("Correcao prevista da carta — INCC pra imovel, IPCA pra auto (bug #10)"),
+	actions: z
+		.array(
+			z.object({
+				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
+				intent: z
+					.string()
+					.describe(
+						"Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')",
+					),
+			}),
+		)
+		.optional()
+		.describe("CTAs explicitas pro fechamento (bug #12)"),
 });
 
 const recommendationSchema = z.object({
 	id: z.string().describe("ID do grupo recomendado"),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
+	contempladosMes: z
+		.number()
+		.int()
+		.optional()
+		.describe(
+			"Quantidade de contemplados por MES do grupo (docx passo 4) — use o availableSlots retornado por recommend_groups/search_groups. Dado REAL da oferta; omita se nao veio da busca.",
+		),
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
-	scoreBreakdown: z.object({
-		monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
-		contemplation: z.number().describe("Score de taxa de contemplacao 0-1"),
-		adminFee: z.number().describe("Score de taxa de administracao 0-1"),
-		termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
-	}).describe("Detalhamento do score por fator"),
+	scoreBreakdown: z
+		.object({
+			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
+			contemplation: z.number().describe("Score de taxa de contemplacao 0-1"),
+			adminFee: z.number().describe("Score de taxa de administracao 0-1"),
+			termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
+		})
+		.describe("Detalhamento do score por fator"),
 });
 
+/**
+ * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
+ * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
+ * `buildConsorcioTools(ctx)` e NÃO declara `conversationId` no schema —
+ * conversationId é contexto da request, injetado via closure.
+ *
+ * Background (BUG-CONVERSATION-ID-HALLUCINATION): quando o conversationId
+ * aparecia no schema, o modelo alucinava valores ("conv_001") em vez do
+ * UUID real, fazendo o UPDATE no DB falhar silenciosamente.
+ */
 const leadFormSchema = z.object({
-	conversationId: z.string().optional().describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
+	conversationId: z
+		.string()
+		.optional()
+		.describe("ID da conversa atual (opcional — o frontend resolve automaticamente)"),
+	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
+});
+
+const leadFormSchemaNoCtx = z.object({
 	recommendationId: z.string().optional().describe("ID da recomendacao que gerou o interesse"),
 });
 
 const valuePickerSchema = z.object({
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem para personalizar o visual"),
-	fields: z.array(z.object({
-		id: z.string().describe("Identificador do campo (ex: creditValue, monthlyBudget, term)"),
-		label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
-		min: z.number().describe("Valor minimo do slider"),
-		max: z.number().describe("Valor maximo do slider"),
-		step: z.number().describe("Incremento do slider"),
-		default: z.number().describe("Valor inicial padrao"),
-		format: z.enum(["currency", "months"]).optional().describe("Formato de exibicao do valor"),
-	})).describe("Campos/sliders a exibir no seletor"),
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem para personalizar o visual"),
+	fields: z
+		.array(
+			z.object({
+				// FIX-16: ids canonicos ativam a interligacao inteligente dos sliders
+				// (parcela/prazo arrastados -> valor do bem recalcula ao vivo pela
+				// matematica de consorcio). Prefira sempre os 3 campos juntos.
+				id: z
+					.string()
+					.describe(
+						"Identificador do campo. Use EXATAMENTE: creditValue (valor do bem), monthlyBudget (parcela mensal), term (prazo em meses) — esses ids interligam os sliders ao vivo",
+					),
+				label: z.string().describe("Label visivel para o usuario (ex: Valor do credito)"),
+				min: z.number().describe("Valor minimo do slider"),
+				max: z.number().describe("Valor maximo do slider"),
+				step: z.number().describe("Incremento do slider"),
+				default: z.number().describe("Valor inicial padrao"),
+				format: z.enum(["currency", "months"]).optional().describe("Formato de exibicao do valor"),
+			}),
+		)
+		.describe("Campos/sliders a exibir no seletor"),
 });
 
 const captureLeadSchema = z.object({
@@ -97,80 +196,202 @@ const captureLeadSchema = z.object({
 	email: z.string().email().describe("Email do lead"),
 });
 
+const scenariosSchema = z.object({
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo nominal do consorcio em meses"),
+});
+
+const topicPickerSchema = z.object({
+	prompt: z
+		.string()
+		.optional()
+		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
+	topics: z.array(z.string().min(1)).min(2).max(5).describe("Lista de topicos clicaveis (2-5)"),
+	includeBackButton: z
+		.boolean()
+		.default(true)
+		.describe("Se true, mostra botao 'Voltar' que retorna ao estado anterior (#06)"),
+});
+
+const compareWithFinancingSchema = z.object({
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem (define taxa CET padrao)"),
+	creditValue: z.number().positive().describe("Valor do credito em reais"),
+	termMonths: z.number().int().positive().describe("Prazo do consorcio em meses"),
+	consorcioMonthlyPayment: z
+		.number()
+		.describe("Parcela mensal do consorcio (vem de simulate_quota)"),
+	consorcioTotalCost: z.number().describe("Custo total do consorcio (vem de simulate_quota)"),
+	annualRateOverride: z
+		.number()
+		.optional()
+		.describe(
+			"Override da taxa CET anual do financiamento. Default: imovel 10%, auto 22%, moto 28%, servicos 25%.",
+		),
+});
+
 const recommendGroupsSchema = z.object({
-	category: z.enum(["imovel", "auto", "servicos"]).describe("Categoria do bem: imovel, automovel ou servicos"),
+	category: z
+		.enum(["imovel", "auto", "moto", "servicos"])
+		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
-	desiredTermMonths: z.number().int().min(0).default(0).describe("Prazo desejado em meses (0 = sem preferencia)"),
+	desiredTermMonths: z
+		.number()
+		.int()
+		.min(0)
+		.default(0)
+		.describe("Prazo desejado em meses (0 = sem preferencia)"),
 });
 
 // ---- Domain tools (data fetching) ----
+//
+// MOCK-RUNTIME-MORTO (diretiva 2026-06-04): a descoberta usa o adapter REAL
+// por conversa (getDiscoveryAdapter — Trilho B Bevi, exige identidade D1).
+// Os executes vivem em funções com adapter parametrizado; o registry estático
+// (sem conversationId) responde erro informativo — paths de produção montam as
+// tools via `buildConsorcioTools({ conversationId })`, que injeta o adapter.
+
+const DISCOVERY_NO_CONTEXT = {
+	error:
+		"[Descoberta indisponivel neste contexto: sem conversationId nao ha sessao Bevi. " +
+		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
+} as const;
+
+const STATUS_NO_CONTEXT = {
+	error:
+		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
+		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
+} as const;
+
+async function executeSearchGroups(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof searchGroupsInput>,
+) {
+	const groups = await adapter.searchGroups(args);
+	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
+	return { groups: groups.map(toModelGroupSummary), total: groups.length };
+}
+
+async function executeSimulateQuota(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof simulateQuotaInput>,
+) {
+	const [details, simulation] = await Promise.all([
+		adapter.getGroupDetails({ groupId: args.groupId }),
+		adapter.simulateQuota(args),
+	]);
+	const delta = Math.abs(args.creditValue - details.creditValue);
+	const relativeDelta = delta / details.creditValue;
+	if (delta > 1 && relativeDelta > 0.01) {
+		const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+		return {
+			...simulation,
+			creditAdjustmentNotice: {
+				requestedCreditValue: args.creditValue,
+				groupNominalCreditValue: details.creditValue,
+				message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+			},
+		};
+	}
+	return simulation;
+}
+
+async function executeGetRates(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof getRatesInput>,
+) {
+	const rates = await adapter.getRates(args);
+	return { rates, total: rates.length };
+}
+
+async function executeGetGroupDetails(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof getGroupDetailsInput>,
+) {
+	return await adapter.getGroupDetails(args);
+}
+
+async function executeRecommendGroups(
+	adapter: AdministradoraAdapter,
+	args: z.infer<typeof recommendGroupsSchema>,
+) {
+	const { budget, desiredTermMonths, ...searchParams } = args;
+	const fallbackResult = await recommendWithFallback(adapter, searchParams);
+	const ranked = rankGroups(fallbackResult.groups, {
+		budget,
+		desiredTermMonths: desiredTermMonths ?? 0,
+	});
+	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
+	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
+	return {
+		recommendations: ranked.map((r) => ({
+			// FIX-23: dieta — `totalParticipants` morto fora do tool-result.
+			...toModelGroupSummary(r.group),
+			score: r.score,
+			scoreBreakdown: r.factors,
+			alternativa: altById.get(r.group.id) ?? false,
+		})),
+		total: ranked.length,
+		expansionUsed: fallbackResult.expansionUsed,
+		insufficientOptions: fallbackResult.insufficientOptions,
+	};
+}
 
 export const consorcioTools = {
 	search_groups: tool({
 		description:
 			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar.",
 		inputSchema: searchGroupsInput,
-		execute: async (args: z.infer<typeof searchGroupsInput>) => {
-			const adapter = getAdapter();
-			const groups = await adapter.searchGroups(args);
-			return { groups, total: groups.length };
-		},
+		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	simulate_quota: tool({
 		description:
-			"Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo.",
+			'Simula parcela mensal, taxa de administracao, fundo de reserva e prazo para um grupo especifico com um valor de credito. Use apos o usuario escolher ou perguntar sobre um grupo. **REGRA Bv2-08**: por default use o creditValue NOMINAL do grupo (o que apareceu no comparativo/search_groups). Use creditValue diferente APENAS se o usuario pediu what-if explicito (ex: "e se fosse 200k?"). Quando creditValue divergir >1% do nominal, o sistema retorna creditAdjustmentNotice — voce DEVE relatar o ajuste pro user na sua resposta.',
 		inputSchema: simulateQuotaInput,
-		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
-			const adapter = getAdapter();
-			return await adapter.simulateQuota(args);
-		},
+		execute: async (_args: z.infer<typeof simulateQuotaInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	get_rates: tool({
 		description:
 			"Retorna taxas de administracao vigentes por administradora e categoria. Use quando o usuario perguntar sobre taxas, custos ou quiser comparar administradoras.",
 		inputSchema: getRatesInput,
-		execute: async (args: z.infer<typeof getRatesInput>) => {
-			const adapter = getAdapter();
-			const rates = await adapter.getRates(args);
-			return { rates, total: rates.length };
-		},
+		execute: async (_args: z.infer<typeof getRatesInput>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	get_group_details: tool({
 		description:
 			"Retorna detalhes completos de um grupo incluindo historico de contemplacao e proximas assembleias. Use quando o usuario quiser saber mais sobre um grupo especifico.",
 		inputSchema: getGroupDetailsInput,
-		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
-			const adapter = getAdapter();
-			return await adapter.getGroupDetails(args);
+		execute: async (_args: z.infer<typeof getGroupDetailsInput>) => DISCOVERY_NO_CONTEXT,
+	}),
+
+	compare_with_financing: tool({
+		description:
+			"Compara parcela e custo total de um consorcio com um financiamento bancario equivalente (Tabela Price, CET estimado por categoria). Use quando o usuario perguntar comparativo, hesitar entre consorcio e financiamento, ou quiser entender a diferenca em numeros. Sempre retornar com disclaimer de estimativa.",
+		inputSchema: compareWithFinancingSchema,
+		execute: async (args: z.infer<typeof compareWithFinancingSchema>) => {
+			return compareWithFinancing(args);
+		},
+	}),
+
+	compute_scenarios: tool({
+		description:
+			"Calcula 3 cenarios de contemplacao (Conservador sem lance, Provavel com 20% de lance, Acelerado com 30% lance + recursos proprios) para um grupo. Use SEMPRE antes de chamar present_scenarios. Estimativa, nao garantia.",
+		inputSchema: scenariosSchema,
+		execute: async (args: z.infer<typeof scenariosSchema>) => {
+			return computeScenarios(args);
 		},
 	}),
 
 	recommend_groups: tool({
 		description:
-			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao.",
+			"Analisa e ranqueia grupos por compatibilidade com o perfil do usuario. Use quando tiver informacoes suficientes sobre orcamento e prazo desejado para fazer uma recomendacao. Garante sempre >=3 opcoes (expande faixa de credito ate +-50% se necessario, marcando alternativas com flag).",
 		inputSchema: recommendGroupsSchema,
-		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
-			const adapter = getAdapter();
-			const { budget, desiredTermMonths, ...searchParams } = args;
-			const groups = await adapter.searchGroups(searchParams);
-			const ranked = rankGroups(groups, {
-				budget,
-				desiredTermMonths: desiredTermMonths ?? 0,
-			});
-			return {
-				recommendations: ranked.map((r) => ({
-					...r.group,
-					score: r.score,
-					scoreBreakdown: r.factors,
-				})),
-				total: ranked.length,
-			};
-		},
+		execute: async (_args: z.infer<typeof recommendGroupsSchema>) => DISCOVERY_NO_CONTEXT,
 	}),
 
 	// ---- Presentation tools ----
@@ -224,10 +445,161 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores com sliders para o usuario configurar orcamento, valor de credito, ou prazo. Use em vez de perguntar valores por texto — o usuario arrasta os sliders e clica em 'Buscar opcoes'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
+		},
+	}),
+
+	present_scenarios: tool({
+		description:
+			"Apresenta 3 cenarios de contemplacao lado a lado (Conservador sem lance, Provavel com 20% lance, Acelerado 30% lance + recursos proprios). Use apos calcular com compute_scenarios. Bug #16 Bruna v1 review.",
+		inputSchema: z.object({
+			groupId: z.string().describe("ID do grupo simulado"),
+			administradora: z.string().describe("Nome da administradora"),
+			creditValue: z.number().describe("Valor do credito em reais"),
+			termMonths: z.number().int().describe("Prazo nominal do consorcio em meses"),
+			scenarios: z
+				.object({
+					conservador: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					provavel: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+					acelerado: z.object({
+						lancePercent: z.number(),
+						expectedTermMonths: z.number().int(),
+						strategy: z.string(),
+						disclaimer: z.string(),
+					}),
+				})
+				.describe("Output de compute_scenarios"),
+		}),
+		execute: async (args) => {
+			return `[3 cenarios apresentados: ${args.administradora} R$ ${args.creditValue.toLocaleString("pt-BR")} — Conservador ${args.scenarios.conservador.expectedTermMonths}m / Provavel ${args.scenarios.provavel.expectedTermMonths}m / Acelerado ${args.scenarios.acelerado.expectedTermMonths}m]`;
+		},
+	}),
+
+	present_topic_picker: tool({
+		description:
+			"Apresenta lista de topicos clicaveis (chips) + botao 'Voltar' opcional. Use quando o usuario clicar 'Entender mais antes' ou pedir pra esclarecer duvidas — em vez de campo aberto, oferece atalhos pra topicos comuns. Bug #05 Bruna v1 review.",
+		inputSchema: topicPickerSchema,
+		execute: async (args: z.infer<typeof topicPickerSchema>) => {
+			return `[Topic picker apresentado: ${args.topics.length} topicos${args.includeBackButton ? " + botao Voltar" : ""}]`;
+		},
+	}),
+
+	present_financing_comparison: tool({
+		description:
+			"Apresenta como artifact visual a comparacao consorcio × financiamento (output de compare_with_financing). Use SEMPRE depois de chamar compare_with_financing — o output da tool de dados vai pro input desta. Bug #17.",
+		inputSchema: z.object({
+			category: z.enum(["imovel", "auto", "moto", "servicos"]),
+			creditValue: z.number().positive(),
+			termMonths: z.number().int().positive(),
+			consorcio: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+			}),
+			financing: z.object({
+				monthlyPayment: z.number(),
+				totalCost: z.number(),
+				annualRate: z.number(),
+			}),
+			diff: z.object({
+				monthlyDelta: z.number(),
+				totalDelta: z.number(),
+			}),
+			disclaimer: z.string(),
+		}),
+		execute: async (args) => {
+			return `[Comparativo apresentado: consorcio ${args.consorcio.monthlyPayment}/mes vs financ. ${args.financing.monthlyPayment}/mes]`;
+		},
+	}),
+
+	present_decision_prompt: tool({
+		description:
+			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (contratar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
+		inputSchema: z.object({
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano recomendado (contexto do card)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
+		},
+	}),
+
+	present_contract_form: tool({
+		description:
+			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
+		inputSchema: z.object({
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano escolhido (contexto)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			return `[Formulário de contratação (CPF/celular/LGPD) apresentado${args.administradora ? ` — ${args.administradora}` : ""}]`;
+		},
+	}),
+
+	present_contemplation_dial: tool({
+		description:
+			"Apresenta o simulador-agulha de contemplação: o usuário arrasta a agulha pro mês em que quer ser contemplado e vê ao vivo a RECEITA pra chegar lá (lance embutido até 30% + lance próprio, crédito líquido, parcela). Use no passo 4, depois da recomendação/simulação, quando o usuário quer entender QUANDO e COMO antecipar a contemplação. Passe os dados do plano recomendado. Não mencione 'arraste o slider' — diga algo como 'escolhe quando você quer ser contemplado'.",
+		inputSchema: z.object({
+			administradora: z.string().optional().describe("Administradora do plano (contexto)"),
+			category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
+			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais"),
+			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses"),
+			monthlyPayment: z.number().positive().describe("Parcela base em reais"),
+			historicalWinningBidPct: z
+				.number()
+				.optional()
+				.describe("Lance vencedor típico do grupo (% da carta), se conhecido"),
+			maxEmbutidoPct: z.number().optional().describe("Teto do lance embutido (default 30)"),
+			initialTargetMonth: z.number().int().positive().describe("Mês-alvo inicial da agulha"),
+		}),
+		execute: async (args: {
+			administradora?: string;
+			creditValue: number;
+			initialTargetMonth: number;
+		}) => {
+			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
+		},
+	}),
+
+	// ---- Control signals (intercepted by orchestrator) ----
+
+	suggest_handoff: tool({
+		description:
+			"Sinaliza ao sistema que UMA das condicoes da seção 'Quando sugerir consultor humano' do seu prompt foi satisfeita pela mensagem atual do usuario. Chame APENAS uma vez por turno e SOMENTE quando uma condicao for claramente atendida. Nao escreva texto pedindo o handoff — apenas chame esta tool. O sistema cuida da pergunta de confirmacao com botoes (Sim/Nao). Apos chamar, NAO chame outras tools no mesmo turno (search_groups, simulate_quota etc.) e NAO escreva resposta adicional.",
+		inputSchema: z.object({
+			triggerId: z
+				.string()
+				.optional()
+				.describe(
+					"ID do trigger que casou (opcional, se voce souber o ID exato dos triggers configurados).",
+				),
+			reason: z
+				.string()
+				.describe(
+					"Frase curta e factual descrevendo qual condicao foi satisfeita pela mensagem do usuario. Ex: 'Cliente mencionou valor R$ 1.500.000 (acima do teto)'. Sera usado em logs.",
+				),
+		}),
+		execute: async (args) => {
+			return {
+				acknowledged: true,
+				reason: args.reason,
+			};
 		},
 	}),
 
@@ -249,24 +621,83 @@ export const consorcioTools = {
 						name: args.name,
 						phone: args.phone,
 						email: args.email,
-						updatedAt: new Date(),
+						updatedAt: simulatorNow(),
 					})
 					.where(eq(leads.id, existing.id));
 				return `Lead atualizado com sucesso. Nome: ${args.name}`;
 			}
 
-			const [lead] = await db
-				.insert(leads)
-				.values({
-					conversationId: args.conversationId,
-					name: args.name,
-					phone: args.phone,
-					email: args.email,
-				})
-				.returning();
+			const { leadId } = await createLeadFromConversation({
+				conversationId: args.conversationId,
+				name: args.name,
+				phone: args.phone,
+				email: args.email,
+			});
 
-			return `Lead capturado com sucesso. Nome: ${args.name} (ID: ${lead.id})`;
+			return `Lead capturado com sucesso. Nome: ${args.name} (ID: ${leadId})`;
 		},
+	}),
+
+	// ---- Conversational contact capture (texto livre + card UI) ----
+
+	save_contact_name: tool({
+		description:
+			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+		inputSchema: z.object({
+			conversationId: z.string().describe("ID da conversa atual"),
+			name: z
+				.string()
+				.min(2)
+				.max(30)
+				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+		}),
+		execute: async (args) => {
+			const { saveContactName } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactName(args.conversationId, args.name);
+			if (!result.ok) {
+				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+			}
+			return `[Nome '${args.name}' salvo. Use-o nas proximas respostas.]`;
+		},
+	}),
+
+	save_contact_whatsapp: tool({
+		description:
+			"Salva o WhatsApp do usuario no banco. Use APENAS quando o usuario enviar o phone via card present_whatsapp_optin (sistema chama esta tool internamente). NAO chame ao receber telefone por texto livre — peca pelo card.",
+		inputSchema: z.object({
+			conversationId: z.string().describe("ID da conversa atual"),
+			phone: z.string().describe("Telefone com ou sem formatacao (a funcao normaliza)"),
+		}),
+		execute: async (args) => {
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactWhatsapp(args.conversationId, args.phone);
+			if (!result.ok) {
+				return `[Telefone invalido: ${result.error}]`;
+			}
+			return `[WhatsApp salvo. Lead promovido a 'engajado'.]`;
+		},
+	}),
+
+	present_whatsapp_optin: tool({
+		description:
+			"Apresenta um card pedindo o WhatsApp do usuario com input mascarado + botoes 'Quero receber' / 'Agora nao'. Use UMA UNICA VEZ por conversa, APOS apresentar present_simulation_result ou present_recommendation_card pela primeira vez. NAO peca WhatsApp por texto — sempre via este card. Sistema impede chamadas duplicadas; se ja mostrado, esta tool retorna no-op visual.",
+		inputSchema: z.object({}).optional(),
+		execute: async () => {
+			return "[Card WhatsApp opt-in apresentado ao usuario]";
+		},
+	}),
+
+	// ---- Status REAL da proposta (FIX-14) ----
+	// Schema VAZIO de proposito (anti-hallucination): o proposalId resolve
+	// server-side via getLatestBeviProposal(conversationId) — closure na factory.
+	// Esta versao estatica responde sentinel; o override com contexto vive em
+	// buildConsorcioTools.
+
+	check_proposal_status: tool({
+		description:
+			"Consulta o status REAL da proposta de consorcio do usuario na administradora, AO VIVO. Chame SEMPRE que o usuario perguntar status/andamento da proposta ja criada ('qual o status?', 'como ta minha proposta?', 'ja foi aprovada?'). Use a userMessage retornada como base da sua resposta — nunca invente estado. NAO use pra buscar/recomendar grupos.",
+		inputSchema: z.object({}),
+		execute: async () => STATUS_NO_CONTEXT,
 	}),
 };
 
@@ -278,4 +709,212 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_recommendation_card",
 	"present_lead_form",
 	"present_value_picker",
+	"present_scenarios",
+	"present_topic_picker",
+	"present_financing_comparison",
+	"present_whatsapp_optin",
+	"present_decision_prompt",
+	"present_contract_form",
+	"present_contemplation_dial",
 ]);
+
+// ============================================================================
+// Factory per-request — tools com conversationId injetado via closure
+// ----------------------------------------------------------------------------
+// BUG-CONVERSATION-ID-HALLUCINATION (eval Camada 3 cirúrgico, commit 9080db4):
+// modelo Claude inventava `conversationId: "conv_001"` ao chamar
+// `save_contact_name`. UPDATE no DB falhava silenciosamente (0 rows),
+// contact_name continuava NULL, form final aparecia vazio.
+//
+// Causa raiz: conversationId aparecia no `inputSchema` da tool, então o modelo
+// tentava "preencher" como se fosse input do usuário — e alucinava.
+//
+// Fix arquitetural: conversationId é CONTEXTO da request, NÃO input do usuário.
+// Tools sensíveis (`save_contact_name`, `save_contact_whatsapp`,
+// `present_lead_form`) ganham versão refactorada via factory abaixo, com
+// schema reduzido e conversationId injetado via closure.
+//
+// Builder de agent (`src/lib/agent/agents/builder.ts`) recebe `conversationId`
+// em `opts` e usa esta factory pra montar as tools sensíveis. Tools que NÃO
+// precisam de conversationId (search_groups, simulate_quota, etc.) seguem
+// expostas via registry estático `consorcioTools`.
+// ============================================================================
+
+export type ConsorcioToolsContext = {
+	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
+	conversationId?: string;
+	channel?: "web" | "whatsapp";
+};
+
+/**
+ * Constrói o registry completo de tools com `conversationId` injetado via
+ * closure nas tools sensíveis. Use ESTE no builder de agent — NÃO use
+ * `consorcioTools` direto pras tools sensíveis (vaza conversationId no
+ * schema e induz hallucination).
+ */
+export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
+	const { conversationId } = ctx;
+
+	const save_contact_name = tool({
+		description:
+			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+		inputSchema: z.object({
+			name: z
+				.string()
+				.min(2)
+				.max(30)
+				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+		}),
+		execute: async ({ name }: { name: string }) => {
+			if (!conversationId) {
+				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+			}
+			const { saveContactName } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactName(conversationId, name);
+			if (!result.ok) {
+				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+			}
+			return `[Nome '${name}' salvo. Use-o nas proximas respostas.]`;
+		},
+	});
+
+	const save_contact_whatsapp = tool({
+		description:
+			"Salva o WhatsApp do usuario no banco. Use APENAS quando o usuario enviar o phone via card present_whatsapp_optin (sistema chama esta tool internamente). NAO chame ao receber telefone por texto livre — peca pelo card.",
+		inputSchema: z.object({
+			phone: z.string().describe("Telefone com ou sem formatacao (a funcao normaliza)"),
+		}),
+		execute: async ({ phone }: { phone: string }) => {
+			if (!conversationId) {
+				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+			}
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			const result = await saveContactWhatsapp(conversationId, phone);
+			if (!result.ok) {
+				return `[Telefone invalido: ${result.error}]`;
+			}
+			return `[WhatsApp salvo. Lead promovido a 'engajado'.]`;
+		},
+	});
+
+	const present_lead_form = tool({
+		description:
+			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
+		inputSchema: leadFormSchemaNoCtx,
+		execute: async () => {
+			return "[Formulario de captura de dados do lead apresentado ao usuario]";
+		},
+	});
+
+	// ── Descoberta REAL por conversa (MOCK-RUNTIME-MORTO, 2026-06-04) ──
+	// O adapter Bevi (Trilho B) é resolvido via closure do conversationId; o
+	// registry estático responde erro informativo. Sem identidade (gate identify,
+	// D1) o adapter lança IdentityNotCollectedError — o orquestrador garante a
+	// ordem do funil; o erro é tripwire, nunca fallback fictício.
+	const discovery = () => {
+		if (!conversationId) return null;
+		return getDiscoveryAdapter(conversationId);
+	};
+
+	// BUG-BEVI-EMPTY-ENV (2026-06-04): o AI SDK converte o throw da tool em
+	// tool-error pro MODELO ("instabilidade") sem deixar rastro no servidor — um
+	// Invalid URL de config levou horas pra diagnosticar. Todo erro de descoberta
+	// é logado estruturado ANTES de subir.
+	const runDiscovery = async <T>(toolName: string, fn: () => Promise<T>): Promise<T> => {
+		try {
+			return await fn();
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "discovery",
+					tool: toolName,
+					conversation_id: conversationId,
+					error_name: err instanceof Error ? err.name : "unknown",
+					error_message: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			throw err;
+		}
+	};
+
+	const search_groups = tool({
+		description: consorcioTools.search_groups.description,
+		inputSchema: searchGroupsInput,
+		execute: async (args: z.infer<typeof searchGroupsInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));
+		},
+	});
+
+	const simulate_quota = tool({
+		description: consorcioTools.simulate_quota.description,
+		inputSchema: simulateQuotaInput,
+		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
+		},
+	});
+
+	const get_rates = tool({
+		description: consorcioTools.get_rates.description,
+		inputSchema: getRatesInput,
+		execute: async (args: z.infer<typeof getRatesInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return runDiscovery("get_rates", () => executeGetRates(adapter, args));
+		},
+	});
+
+	const get_group_details = tool({
+		description: consorcioTools.get_group_details.description,
+		inputSchema: getGroupDetailsInput,
+		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
+		},
+	});
+
+	const recommend_groups = tool({
+		description: consorcioTools.recommend_groups.description,
+		inputSchema: recommendGroupsSchema,
+		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
+			const adapter = discovery();
+			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
+		},
+	});
+
+	// ── Status REAL da proposta (FIX-14) ──
+	// proposalId NUNCA vem do modelo: resolve via getLatestBeviProposal
+	// (conversationId via closure). checkProposalStatus nunca lança — erros viram
+	// { ok:false, userMessage } honesto com log estruturado proprio.
+	const check_proposal_status = tool({
+		description: consorcioTools.check_proposal_status.description,
+		inputSchema: z.object({}),
+		execute: async () => {
+			if (!conversationId) return STATUS_NO_CONTEXT;
+			const { checkProposalStatus } = await import("@/lib/bevi/proposal-status");
+			return checkProposalStatus(conversationId);
+		},
+	});
+
+	return {
+		...consorcioTools,
+		// Overrides — schema reduzido (sem conversationId) + closure.
+		save_contact_name,
+		save_contact_whatsapp,
+		present_lead_form,
+		// Overrides — descoberta real por conversa (adapter Bevi Trilho B).
+		search_groups,
+		simulate_quota,
+		get_rates,
+		get_group_details,
+		recommend_groups,
+		// Override — status real da proposta (FIX-14).
+		check_proposal_status,
+	};
+}

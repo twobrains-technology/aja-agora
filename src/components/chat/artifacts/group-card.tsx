@@ -1,153 +1,158 @@
 "use client";
 
-import type { GroupCardPayload } from "@/lib/chat/types";
-import { motion } from "motion/react";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
-import { useChatStore, type ChatState } from "@/lib/chat/store";
-import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
+import { motion } from "motion/react";
+import { Button } from "@/components/ui/button";
+import { useChatContext } from "@/lib/chat/provider";
+import type { GroupCardPayload } from "@/lib/chat/types";
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { cn } from "@/lib/utils";
 
-const CATEGORY_STYLES: Record<
-  GroupCardPayload["category"],
-  { label: string; className: string }
-> = {
-  imovel: {
-    label: "Imovel",
-    className: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
-  },
-  auto: {
-    label: "Auto",
-    className: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
-  },
-  servicos: {
-    label: "Servicos",
-    className: "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800",
-  },
-};
+// Categorias mapeadas à paleta da marca (tokens --cat-*, com variante dark
+// embutida): Imóvel=azul · Automóvel=cyan · Moto=coral · Serviços=navy.
+const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; className: string }> =
+	{
+		imovel: {
+			label: "Imóvel",
+			className: "bg-cat-imovel-soft text-cat-imovel border-cat-imovel/30",
+		},
+		auto: {
+			label: "Automóvel",
+			className: "bg-cat-auto-soft text-cat-auto border-cat-auto/30",
+		},
+		moto: {
+			label: "Moto",
+			className: "bg-cat-moto-soft text-cat-moto border-cat-moto/30",
+		},
+		servicos: {
+			label: "Serviços",
+			className: "bg-cat-servicos-soft text-cat-servicos border-cat-servicos/30",
+		},
+	};
 
 const formatBRL = (value: number): string =>
-  new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value);
+	new Intl.NumberFormat("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+	}).format(value);
 
-const formatPercent = (value: number): string =>
-  `${value.toFixed(1)}%`;
+const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
 const cardSpring = { type: "spring" as const, stiffness: 400, damping: 17 };
 
 export function GroupCard({ payload }: { payload: GroupCardPayload }) {
-  const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.servicos;
-  const prefersReduced = useReducedMotion();
-  const sendMessage = useChatStore((s: ChatState) => s.sendMessage);
-  const isStreaming = useChatStore((s: ChatState) => s.isStreaming);
+	const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.servicos;
+	const prefersReduced = useReducedMotion();
+	const { sendAction, status } = useChatContext();
+	const isStreaming = status === "submitted" || status === "streaming";
 
-  const handleClick = () => {
-    if (!isStreaming) {
-      sendMessage(`Quero saber mais sobre esse grupo da ${payload.administradora} com crédito de ${formatBRL(payload.creditValue)}`);
-    }
-  };
+	const handleClick = () => {
+		if (isStreaming) return;
+		const label = `Simular ${payload.administradora} — ${formatBRL(payload.creditValue)}`;
+		void sendAction(
+			{
+				kind: "select-group",
+				groupId: payload.id,
+				administradora: payload.administradora,
+				creditValue: payload.creditValue,
+				termMonths: payload.termMonths,
+				label,
+			},
+			label,
+		);
+	};
 
-  return (
-    <motion.div
-      whileHover={prefersReduced ? undefined : { scale: 1.02 }}
-      whileTap={prefersReduced ? undefined : { scale: 0.98 }}
-      transition={cardSpring}
-    >
-    <Card
-      className={cn(
-        "w-full cursor-pointer transition-colors",
-        "hover:ring-accent/50 hover:ring-2",
-        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2",
-      )}
-      role="button"
-      tabIndex={0}
-      aria-label={`Grupo ${payload.administradora} — credito ${formatBRL(payload.creditValue)}, parcela ${formatBRL(payload.monthlyPayment)}`}
-      onClick={handleClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
-    >
-      <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <Badge
-            variant="outline"
-            className={cn("text-xs font-medium", category.className)}
-          >
-            {category.label}
-          </Badge>
-        </div>
-        <p className="truncate text-sm text-muted-foreground">{payload.administradora}</p>
-      </CardHeader>
+	return (
+		<motion.div
+			whileHover={prefersReduced ? undefined : { scale: 1.01, y: -2 }}
+			whileTap={prefersReduced ? undefined : { scale: 0.98 }}
+			transition={cardSpring}
+		>
+			<button
+				type="button"
+				className={cn(
+					"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden cursor-pointer text-left",
+					"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+					"hover:border-primary/30 transition-colors",
+					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+				)}
+				aria-label={`Grupo ${payload.administradora} — credito ${formatBRL(payload.creditValue)}, parcela ${formatBRL(payload.monthlyPayment)}`}
+				onClick={handleClick}
+			>
+				{/* Header */}
+				<div className="px-[18px] pt-4 pb-0 flex flex-col gap-[7px]">
+					<span
+						className={cn(
+							"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold tracking-[.02em] border",
+							category.className,
+						)}
+					>
+						{category.label}
+					</span>
+					<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+				</div>
 
-      <CardContent className="space-y-3">
-        {/* Credit value - primary visual anchor */}
-        <div>
-          <p className="text-xs text-muted-foreground">Credito</p>
-          <p className="text-xl font-bold font-mono leading-tight text-foreground">
-            {formatBRL(payload.creditValue)}
-          </p>
-        </div>
+				{/* Body */}
+				<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
+					{/* Credit value */}
+					<div>
+						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+						<p className="aja-num text-xl font-bold leading-tight text-foreground mt-0.5">
+							{formatBRL(payload.creditValue)}
+						</p>
+					</div>
 
-        {/* Monthly payment - financial highlight */}
-        <div>
-          <p className="text-xs text-muted-foreground">Parcela mensal</p>
-          <p className="text-2xl font-bold font-mono leading-tight text-primary">
-            {formatBRL(payload.monthlyPayment)}
-          </p>
-        </div>
+					{/* Monthly payment — hero number, blue */}
+					<div>
+						<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
+						<p className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
+							{formatBRL(payload.monthlyPayment)}
+						</p>
+					</div>
 
-        {/* Admin fee + Term - 2-column grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-muted-foreground">Taxa adm.</p>
-            <p className="text-sm font-medium font-mono">
-              {formatPercent(payload.adminFeePercent)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Prazo</p>
-            <p className="text-sm font-medium font-mono">
-              {payload.termMonths} meses
-            </p>
-          </div>
-        </div>
+					{/* 2×2 metrics grid */}
+					<div className="grid grid-cols-2 gap-x-4 gap-y-3">
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Taxa adm.</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
+								{formatPercent(payload.adminFeePercent)}
+							</p>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Prazo</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Vagas</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">
+								{formatPercent(payload.contemplationRate)}
+							</p>
+						</div>
+					</div>
 
-        {/* Available slots + Contemplation rate - 2-column grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-muted-foreground">Vagas</p>
-            <p className="text-sm font-medium font-mono">
-              {payload.availableSlots}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Contemplacao</p>
-            <p className="text-sm font-medium font-mono">
-              {formatPercent(payload.contemplationRate)}
-            </p>
-          </div>
-        </div>
-
-        {/* CTA */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-full gap-1 text-xs"
-          disabled={isStreaming}
-          onClick={(e) => { e.stopPropagation(); handleClick(); }}
-        >
-          Quero esse
-          <ChevronRight className="size-3.5" />
-        </Button>
-      </CardContent>
-    </Card>
-    </motion.div>
-  );
+					{/* CTA ghost */}
+					<Button
+						size="sm"
+						variant="ghost"
+						className={cn(
+							"w-full h-10 gap-1.5 text-xs font-semibold rounded-[13px]",
+							"border border-border hover:border-border/80 hover:bg-muted/50",
+						)}
+						disabled={isStreaming}
+						onClick={(e) => {
+							e.stopPropagation();
+							handleClick();
+						}}
+					>
+						Simular esse
+						<ChevronRight className="size-3.5" />
+					</Button>
+				</div>
+			</button>
+		</motion.div>
+	);
 }

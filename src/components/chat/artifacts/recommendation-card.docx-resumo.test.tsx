@@ -1,0 +1,72 @@
+// @vitest-environment happy-dom
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RecommendationCardPayload } from "@/lib/chat/types";
+import { RecommendationCard } from "./recommendation-card";
+
+// docx passo 4 (linha 38): resumo por opção = valor da carta · parcela · prazo ·
+// TIPO DE GRUPO · lance/embutido · qtde de CONTEMPLADOS/MÊS. Os dois últimos
+// faltavam no card (e contemplationRate da Bevi é CONTAGEM, não percentual).
+
+vi.mock("@/lib/chat/provider", () => ({
+	useChatContext: () => ({
+		sendAction: vi.fn(),
+		status: "ready",
+	}),
+}));
+
+const payload: RecommendationCardPayload = {
+	id: "grp-1",
+	administradora: "ÂNCORA",
+	category: "auto",
+	creditValue: 60_000,
+	monthlyPayment: 980,
+	adminFeePercent: 18,
+	termMonths: 80,
+	contemplationRate: 2,
+	contempladosMes: 2,
+	score: 0.91,
+	scoreBreakdown: { monthlyFit: 0.9, contemplation: 0.8, adminFee: 0.9, termMatch: 1 },
+};
+
+describe("RecommendationCard — resumo por opção do docx (passo 4)", () => {
+	beforeEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	it("exibe a quantidade de contemplados por mês (dado real da oferta)", () => {
+		render(<RecommendationCard payload={payload} />);
+		expect(screen.getByText(/contemplados\/m[êe]s/i)).toBeTruthy();
+		expect(screen.getByText(/2 por m[êe]s|^2$/)).toBeTruthy();
+	});
+
+	it("exibe o tipo de grupo (categoria)", () => {
+		render(<RecommendationCard payload={payload} />);
+		expect(screen.getByText(/autom[óo]vel|^auto$/i)).toBeTruthy();
+	});
+
+	it("sem contempladosMes não inventa número — cai no rótulo de contemplação", () => {
+		const { contempladosMes: _omit, ...rest } = payload;
+		render(<RecommendationCard payload={rest as RecommendationCardPayload} />);
+		expect(screen.queryByText(/contemplados\/m[êe]s/i)).toBeNull();
+	});
+
+	// Decisão de produto (Bernardo, 2026-06-11): card mais direto, sem taxa de
+	// administração — assusta o leigo. O resumo por opção (docx linha 38) não
+	// lista fees; eles vivem só na proposta (PDF) pré-assinatura. Some o tile
+	// "Taxa adm" e o fator "Taxa adm" do breakdown de score.
+	it("NÃO exibe taxa de administração (tile nem fator de score)", () => {
+		render(<RecommendationCard payload={payload} />);
+		expect(screen.queryByText(/taxa adm/i)).toBeNull();
+	});
+
+	// Teste manual Kairo (2026-06-11): "o card do carrossel tá muito grande".
+	// O recommendation_card era w-full sem cap, enquanto simulation_result e
+	// real_offer são w-full max-w-sm. Padroniza no max-w-sm (não estoura a largura
+	// do chat).
+	it("tem largura limitada (max-w-sm) — consistente com simulation_result/real_offer", () => {
+		const { container } = render(<RecommendationCard payload={payload} />);
+		const card = container.firstElementChild as HTMLElement;
+		expect(card.className).toMatch(/max-w-sm/);
+	});
+});

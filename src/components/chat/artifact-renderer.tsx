@@ -1,29 +1,56 @@
 import type { Artifact } from "@/lib/chat/types";
-import { GroupCard } from "./artifacts/group-card";
 import { ComparisonTable } from "./artifacts/comparison-table";
-import { SimulationResult } from "./artifacts/simulation-result";
-import { RecommendationCard } from "./artifacts/recommendation-card";
+import { ContemplationDial } from "./artifacts/contemplation-dial";
+import { ContractForm } from "./artifacts/contract-form";
+import { DecisionPrompt } from "./artifacts/decision-prompt";
+import { DocumentUpload } from "./artifacts/document-upload";
+import { FinancingComparison } from "./artifacts/financing-comparison";
+import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
+import { RealOffer } from "./artifacts/real-offer";
+import { RecommendationCard } from "./artifacts/recommendation-card";
+import { Scenarios } from "./artifacts/scenarios";
+import { SignatureHandoff } from "./artifacts/signature-handoff";
+import { SimulationResult } from "./artifacts/simulation-result";
+import { TopicPicker } from "./artifacts/topic-picker";
 import { ValuePicker } from "./artifacts/value-picker";
-import type { ComponentType } from "react";
-
-const ARTIFACT_COMPONENTS: Record<
-  string,
-  ComponentType<{ payload: unknown }>
-> = {
-  group_card: GroupCard as ComponentType<{ payload: unknown }>,
-  comparison_table: ComparisonTable as ComponentType<{ payload: unknown }>,
-  simulation_result: SimulationResult as ComponentType<{ payload: unknown }>,
-  recommendation_card: RecommendationCard as ComponentType<{ payload: unknown }>,
-  lead_form: LeadForm as ComponentType<{ payload: unknown }>,
-  value_picker: ValuePicker as ComponentType<{ payload: unknown }>,
-};
+import { WhatsappOptin } from "./artifacts/whatsapp-optin";
 
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
-  const Component = ARTIFACT_COMPONENTS[artifact.type];
-  if (!Component) {
-    console.warn(`Unknown artifact type: ${artifact.type}`);
-    return null;
-  }
-  return <Component payload={artifact.payload} />;
+	switch (artifact.type) {
+		case "group_card":
+			return <GroupCard payload={artifact.payload} />;
+		case "comparison_table":
+			return <ComparisonTable payload={artifact.payload} />;
+		case "simulation_result":
+			return <SimulationResult payload={artifact.payload} />;
+		case "recommendation_card":
+			return <RecommendationCard payload={artifact.payload} />;
+		case "lead_form":
+			return <LeadForm payload={artifact.payload} />;
+		case "value_picker":
+			return <ValuePicker payload={artifact.payload} />;
+		case "topic_picker":
+			return <TopicPicker payload={artifact.payload} />;
+		case "scenarios":
+			return <Scenarios payload={artifact.payload} />;
+		case "financing_comparison":
+			return <FinancingComparison payload={artifact.payload} />;
+		case "whatsapp_optin":
+			return <WhatsappOptin payload={artifact.payload} />;
+		case "decision_prompt":
+			return <DecisionPrompt payload={artifact.payload} />;
+		case "contract_form":
+			return <ContractForm payload={artifact.payload} />;
+		case "real_offer":
+			return <RealOffer payload={artifact.payload} />;
+		case "signature_handoff":
+			return <SignatureHandoff payload={artifact.payload} />;
+		case "document_upload":
+			return <DocumentUpload payload={artifact.payload} />;
+		case "contemplation_dial":
+			return <ContemplationDial payload={artifact.payload} />;
+		case "quick_reply":
+			return null;
+	}
 }

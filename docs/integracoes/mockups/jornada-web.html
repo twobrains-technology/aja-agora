@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aja Agora · Jornada Web (chat da plataforma + Bevi)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --paper:#ffffff; --ink:#1a1a1a; --primary:#1f1f1f;
+    --muted-bg:#f5f5f5; --muted-fg:#8a8a8a; --border:#e8e8e8;
+    --blue:#3b82f6; --ok:#16a34a; --radius:12px;
+    --shadow-card:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+    --shadow-pop:0 8px 30px rgba(0,0,0,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Geist',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;padding:40px 16px 80px;line-height:1.45}
+  .mono{font-family:'Geist Mono',monospace;font-variant-numeric:tabular-nums}
+
+  .stage-head{max-width:430px;margin:0 auto 22px;text-align:left}
+  .stage-head .ey{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-fg);font-weight:600}
+  .stage-head h1{font-size:20px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
+  .stage-head h1 .grad{background:linear-gradient(90deg,#1f1f1f,#60a5fa);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stage-head p{font-size:13px;color:var(--muted-fg);margin-top:6px;max-width:90%}
+
+  /* device */
+  .phone{width:418px;max-width:100%;margin:0 auto;background:#0b0b0b;border-radius:52px;padding:13px;
+    box-shadow:0 30px 70px rgba(0,0,0,.28),0 0 0 2px #1c1c1c inset}
+  .screen{background:var(--paper);border-radius:40px;overflow:hidden;position:relative}
+  .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:108px;height:30px;background:#0b0b0b;border-radius:18px;z-index:40}
+  .statusbar{height:46px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 26px 7px;font-size:13px;font-weight:600}
+  .statusbar .dots{display:flex;gap:5px;align-items:center}
+
+  /* chat header */
+  .chat-header{height:54px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);z-index:20}
+  .chat-header .ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--ink)}
+  .chat-header .brand{font-weight:700;letter-spacing:-.01em;font-size:15px;display:flex;align-items:center;gap:7px}
+  .chat-header .logo{width:26px;height:26px;border-radius:7px;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff}
+  .chat-header .sp{flex:1}
+  .chat-header .right{display:flex;gap:2px;color:var(--muted-fg)}
+
+  .body{padding:18px 14px 22px;display:flex;flex-direction:column;gap:14px;background:var(--paper)}
+
+  /* messages */
+  .row{display:flex;gap:9px;align-items:flex-end}
+  .row.user{justify-content:flex-end}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .bubble{max-width:80%;padding:10px 13px;font-size:14.5px;border-radius:18px}
+  .bubble.bot{background:var(--muted-bg);color:var(--ink);border-bottom-left-radius:5px}
+  .bubble.user{background:var(--primary);color:#fff;border-bottom-right-radius:5px}
+  .typing-meta{font-size:11px;color:var(--muted-fg);margin:2px 0 -4px 39px;display:flex;align-items:center;gap:6px}
+
+  /* artifact card frame */
+  .art{background:var(--paper);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-card);padding:14px;margin-left:39px;animation:rise .4s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .art .badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-fg);background:var(--muted-bg);padding:3px 8px;border-radius:999px}
+  .art .badge.blue{color:#1d4ed8;background:#eff6ff}
+  .art .badge.ok{color:#15803d;background:#f0fdf4}
+  .lbl{font-size:11px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.04em}
+
+  /* welcome categories */
+  .welcome{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .cat{border:1px solid var(--border);border-radius:14px;background:#fff;padding:14px 12px;display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:.15s}
+  .cat .ci{width:38px;height:38px;border-radius:11px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center}
+  .cat .cn{font-weight:600;font-size:14px}
+  .cat.sel{border-color:var(--primary);box-shadow:0 0 0 3px rgba(31,31,31,.07)}
+
+  /* chips */
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-size:13px;padding:8px 13px;border-radius:999px;border:1px solid var(--border);background:var(--muted-bg);color:var(--ink);cursor:pointer;transition:.15s}
+  .chip.sel{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+  /* sliders */
+  .slider-row{margin:11px 0}
+  .slider-row .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .slider-row .val{font-size:18px;font-weight:700}
+  .track{height:6px;border-radius:999px;background:var(--muted-bg);position:relative}
+  .track .fill{position:absolute;left:0;top:0;height:100%;border-radius:999px;background:var(--primary)}
+  .track .knob{position:absolute;top:50%;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--primary);transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.18)}
+
+  /* button */
+  .btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:inherit}
+  .btn.primary{background:var(--primary);color:#fff}
+  .btn.primary.lg{padding:13px;font-size:15px;box-shadow:0 4px 14px rgba(31,31,31,.18)}
+  .btn.ghost{background:transparent;color:var(--muted-fg)}
+  .btn.outline{background:#fff;border-color:var(--border);color:var(--ink)}
+  .btn-row{display:flex;gap:8px;margin-top:11px}
+
+  /* sim result rows */
+  .kv{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;padding:5px 0}
+  .kv .k{color:var(--muted-fg)}
+  .kv .v{font-weight:600}
+  .sep{height:1px;background:var(--border);margin:8px 0}
+  .hero-val{font-size:30px;font-weight:700;letter-spacing:-.02em}
+  .note{font-size:12px;color:var(--muted-fg);background:var(--muted-bg);border-radius:8px;padding:9px 11px;margin-top:10px;line-height:1.4}
+
+  /* comparison horizontal */
+  .scroller{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px;margin:0 -2px;scrollbar-width:thin}
+  .ccard{flex:0 0 178px;border:1px solid var(--border);border-radius:12px;padding:12px;background:#fff;position:relative}
+  .ccard.top{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.10)}
+  .ccard .crown{position:absolute;top:-9px;left:12px;font-size:10px;font-weight:700;background:var(--blue);color:#fff;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:4px}
+  .ccard .adm{font-weight:700;font-size:13px;letter-spacing:-.01em}
+  .ccard .pm{font-size:21px;font-weight:700;margin:7px 0 9px;letter-spacing:-.02em}
+  .ccard .mini{display:flex;justify-content:space-between;font-size:11.5px;padding:2px 0;color:var(--muted-fg)}
+  .ccard .mini b{color:var(--ink);font-weight:600}
+
+  /* recommendation */
+  .rec{border:1px solid var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.08),var(--shadow-card)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin:11px 0}
+  .grid2 .c .k{font-size:11px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.03em}
+  .grid2 .c .v{font-weight:700;font-size:14px;margin-top:1px}
+  .score-wrap{background:var(--muted-bg);border-radius:9px;padding:11px;margin-top:6px}
+  .score-row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:12px}
+  .score-row .sl{width:96px;color:var(--muted-fg)}
+  .score-row .sbar{flex:1;height:5px;border-radius:999px;background:#e3e3e3;position:relative;overflow:hidden}
+  .score-row .sbar i{position:absolute;left:0;top:0;height:100%;background:var(--blue);border-radius:999px}
+
+  /* identity / cpf */
+  .input{display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin:10px 0;font-size:15px;color:var(--ink);background:#fff}
+  .input .ph{letter-spacing:.12em;font-family:'Geist Mono'}
+  .check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted-fg);margin:7px 0}
+  .check .box{width:17px;height:17px;border-radius:5px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .secure{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ok);font-weight:600}
+
+  /* whatsapp optin */
+  .wa-opt{border:1px solid var(--border)}
+  .composer{display:flex;align-items:center;gap:9px;padding:11px 14px;border-top:1px solid var(--border);background:var(--paper)}
+  .composer .field{flex:1;background:var(--muted-bg);border-radius:999px;padding:10px 14px;color:var(--muted-fg);font-size:14px}
+  .composer .send{width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+  .phase{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);text-align:center;margin:6px 39px -2px;opacity:.9}
+  .footer-note{max-width:430px;margin:26px auto 0;font-size:12px;color:var(--muted-fg);line-height:1.6}
+  svg{display:block}
+</style>
+</head>
+<body>
+
+<div class="stage-head">
+  <div class="ey">Aja Agora · Proposta de Jornada</div>
+  <h1>Chat da plataforma <span class="grad">+ ofertas reais Bevi</span></h1>
+  <p>Exploração anônima → oferta real on-demand. O usuário simula sem CPF; só pede CPF uma vez, como upgrade, para destravar as cartas reais das administradoras (Bevi/AGX).</p>
+</div>
+
+<div class="phone">
+ <div class="screen">
+  <div class="island"></div>
+  <div class="statusbar">
+    <span class="mono">9:41</span>
+    <span class="dots">
+      <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="5" y="4" width="3" height="8" rx="1"/><rect x="10" y="1" width="3" height="11" rx="1" fill="#1a1a1a"/><rect x="15" y="1" width="3" height="11" rx="1" fill="#c8c8c8"/></svg>
+      <svg width="22" height="12" viewBox="0 0 24 12"><rect x="1" y="1" width="20" height="10" rx="3" fill="none" stroke="#1a1a1a" stroke-width="1.2"/><rect x="2.5" y="2.5" width="14" height="7" rx="1.5"/><rect x="22" y="4" width="2" height="4" rx="1"/></svg>
+    </span>
+  </div>
+
+  <!-- chat header -->
+  <div class="chat-header">
+    <div class="ic">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </div>
+    <div class="brand">
+      <span class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>
+      Aja Agora
+    </div>
+    <div class="sp"></div>
+    <div class="right">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></div>
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <!-- 1. empty + welcome -->
+    <div class="phase">descoberta — sem login, sem formulário</div>
+    <div class="row"><div class="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-6 0v4M5 9h14l1 12H4L5 9z"/></svg></div>
+      <div class="bubble bot">Olá! Sou sua consultora de consórcio. Me conta: o que você quer conquistar?</div>
+    </div>
+    <div class="art">
+      <div class="welcome">
+        <div class="cat"><div class="ci"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div><div class="cn">Imóvel</div></div>
+        <div class="cat sel"><div class="ci"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17H3v-5l2-5h12l2 5v5h-2M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17h10"/></svg></div><div class="cn">Automóvel</div></div>
+        <div class="cat"><div class="ci"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="17" r="3"/><path d="M8 17h6l3-6h-4l-2-3H7"/></svg></div><div class="cn">Moto</div></div>
+        <div class="cat"><div class="ci"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.8 5.7 21l2.3-7.2-6-4.4h7.6z"/></svg></div><div class="cn">Outros</div></div>
+      </div>
+    </div>
+
+    <div class="row user"><div class="bubble user">quero trocar de carro, uns 50 mil</div></div>
+
+    <div class="row"><div class="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17H3v-5l2-5h12l2 5v5h-2M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0"/></svg></div>
+      <div class="bubble bot">Boa, carro novo abre muitas portas! Aqui é a Helena, antes de eu te ajudar a achar a opção certa, como posso te chamar?</div>
+    </div>
+
+    <div class="row user"><div class="bubble user">Lucas</div></div>
+    <div class="row"><div class="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17H3v-5l2-5h12l2 5v5h-2M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0"/></svg></div>
+      <div class="bubble bot">Prazer, Lucas.</div>
+    </div>
+
+    <!-- 3 gates -->
+    <div class="phase">3 gates de qualificação</div>
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Você já fez consórcio antes?</div></div>
+    <div class="art"><div class="chips"><span class="chip sel">É a primeira vez</span><span class="chip">Já fiz</span><span class="chip">Tenho dúvidas</span></div></div>
+
+    <div class="row"><div class="avatar"></div><div class="bubble bot">E pra quando é esse carro?</div></div>
+    <div class="art"><div class="chips"><span class="chip">Já!</span><span class="chip sel">1 a 2 anos</span><span class="chip">3 a 5 anos</span><span class="chip">Sem pressa</span></div></div>
+
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Tem uma reserva pra dar de lance e acelerar a contemplação?</div></div>
+    <div class="art"><div class="chips"><span class="chip">Sim</span><span class="chip sel">Talvez</span><span class="chip">Não</span></div></div>
+
+    <!-- value picker -->
+    <div class="phase">simulação indicativa — ainda sem CPF</div>
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Bora montar seu plano! Ajusta o que cabe no seu momento:</div></div>
+    <div class="art">
+      <div class="slider-row">
+        <div class="top"><span class="lbl">Crédito</span><span class="val mono">R$ 50.000</span></div>
+        <div class="track"><div class="fill" style="width:42%"></div><div class="knob" style="left:42%"></div></div>
+      </div>
+      <div class="slider-row">
+        <div class="top"><span class="lbl">Parcela que cabe no mês</span><span class="val mono">R$ 800</span></div>
+        <div class="track"><div class="fill" style="width:55%"></div><div class="knob" style="left:55%"></div></div>
+      </div>
+      <button class="btn primary" style="margin-top:6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Buscar opções</button>
+    </div>
+
+    <!-- indicative simulation -->
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Achei opções pra ~R$ 50 mil. Essa é uma estimativa de mercado — já já te mostro as cartas reais:</div></div>
+    <div class="art">
+      <span class="badge">Estimativa</span>
+      <div style="margin:11px 0 2px"><span class="lbl">Parcela estimada</span><div class="hero-val mono">R$ 760<span style="font-size:15px;color:var(--muted-fg);font-weight:500">/mês</span></div></div>
+      <div class="sep"></div>
+      <div class="kv"><span class="k">Crédito</span><span class="v mono">R$ 50.000</span></div>
+      <div class="kv"><span class="k">Taxa de administração</span><span class="v mono">~22%</span></div>
+      <div class="kv"><span class="k">Fundo de reserva</span><span class="v mono">2%</span></div>
+      <div class="kv"><span class="k">Correção prevista</span><span class="v">IPCA ~4,5%/ano</span></div>
+      <div class="note">Com lance de 30%, contemplação esperada em <b>~14 meses</b>.</div>
+      <button class="btn primary lg" style="margin-top:11px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 13.6 6.9 17.2l1.9-5.8L4 7.8h6.1z"/></svg>Quero ver as cartas reais</button>
+    </div>
+
+    <div class="row user"><div class="bubble user">quero ver as reais</div></div>
+
+    <!-- CPF on-demand (Bevi gate) -->
+    <div class="phase">momento Bevi — CPF uma única vez, como upgrade</div>
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Pra destravar as cartas reais das administradoras — com taxa e índice de verdade — preciso do seu CPF uma única vez. Consulta segura, LGPD.</div></div>
+    <div class="art">
+      <span class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> conexão segura</span>
+      <div class="input"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h5M7 13h8"/></svg><span class="ph">***.***.***-**</span></div>
+      <div class="check"><span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Autorizo a consulta de CPF</div>
+      <div class="check"><span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Li e aceito a LGPD</div>
+      <button class="btn primary" style="margin-top:8px">Destravar ofertas reais</button>
+    </div>
+
+    <!-- real offers -->
+    <div class="phase">ofertas reais — leque de administradoras</div>
+    <div class="row"><div class="avatar"></div><div class="bubble bot">Prontinho, Lucas! Estas são as cartas reais, de várias administradoras:</div></div>
+    <div class="art">
+      <span class="badge ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> ofertas reais · via parceiro</span>
+      <div class="scroller" style="margin-top:12px">
+        <div class="ccard top">
+          <span class="crown"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 4L12 4l3.5 5L21 5l-2 11H5z"/></svg> Top</span>
+          <div class="adm">ÂNCORA</div>
+          <div class="pm mono">R$ 703,64<span style="font-size:11px;color:var(--muted-fg);font-weight:500">/mês</span></div>
+          <div class="mini"><span>Crédito</span><b class="mono">R$ 54.000</b></div>
+          <div class="mini"><span>Taxa adm</span><b class="mono">18%</b></div>
+          <div class="mini"><span>Prazo</span><b class="mono">98m</b></div>
+          <div class="mini"><span>Correção</span><b>IGPM</b></div>
+        </div>
+        <div class="ccard">
+          <div class="adm">BANCO DO BRASIL</div>
+          <div class="pm mono">R$ 728,41<span style="font-size:11px;color:var(--muted-fg);font-weight:500">/mês</span></div>
+          <div class="mini"><span>Crédito</span><b class="mono">R$ 50.000</b></div>
+          <div class="mini"><span>Taxa adm</span><b class="mono">25%</b></div>
+          <div class="mini"><span>Prazo</span><b class="mono">88m</b></div>
+          <div class="mini"><span>Correção</span><b>IPCA</b></div>
+        </div>
+        <div class="ccard">
+          <div class="adm">ITAÚ</div>
+          <div class="pm mono">R$ 1.009,36<span style="font-size:11px;color:var(--muted-fg);font-weight:500">/mês</span></div>
+          <div class="mini"><span>Crédito</span><b class="mono">R$ 54.832</b></div>
+          <div class="mini"><span>Taxa adm</span><b class="mono">21%</b></div>
+          <div class="mini"><span>Prazo</span><b class="mono">70m</b></div>
+          <div class="mini"><span>Correção</span><b>IPCA</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- recommendation -->
+    <div class="row"><div class="avatar"></div><div class="bubble bot">A da Âncora cabe certinho nos seus R$ 800 e ainda tem a melhor taxa. Minha recomendação:</div></div>
+    <div class="art rec">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="badge blue">Recomendação</span><span class="mono" style="color:var(--blue);font-weight:700;font-size:13px">92% compatível</span></div>
+      <div style="margin:11px 0 2px"><span class="lbl">ÂNCORA — Automóvel</span><div class="hero-val mono">R$ 703,64<span style="font-size:15px;color:var(--muted-fg);font-weight:500">/mês</span></div></div>
+      <div class="grid2">
+        <div class="c"><div class="k">Crédito</div><div class="v mono">R$ 54.000</div></div>
+        <div class="c"><div class="k">Prazo</div><div class="v mono">98 meses</div></div>
+        <div class="c"><div class="k">Taxa adm</div><div class="v mono">18%</div></div>
+        <div class="c"><div class="k">Correção</div><div class="v">IGPM</div></div>
+        <div class="c"><div class="k">Lance embutido</div><div class="v mono">30%</div></div>
+        <div class="c"><div class="k">Contemplação</div><div class="v">~14 meses</div></div>
+      </div>
+      <div class="score-wrap">
+        <div class="lbl" style="margin-bottom:3px">Por que esta recomendação?</div>
+        <div class="score-row"><span class="sl">Cabe no orçamento</span><span class="sbar"><i style="width:96%"></i></span></div>
+        <div class="score-row"><span class="sl">Contemplação</span><span class="sbar"><i style="width:78%"></i></span></div>
+        <div class="score-row"><span class="sl">Taxa de adm</span><span class="sbar"><i style="width:90%"></i></span></div>
+        <div class="score-row"><span class="sl">Prazo</span><span class="sbar"><i style="width:70%"></i></span></div>
+      </div>
+      <button class="btn primary lg" style="margin-top:12px">Tenho interesse</button>
+    </div>
+
+    <!-- whatsapp optin -->
+    <div class="phase">continuidade multicanal</div>
+    <div class="art wa-opt">
+      <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.4L3 21l2.1-5.7A8.4 8.4 0 1 1 21 11.5z"/></svg> Continuar pelo WhatsApp</span>
+      <p style="font-size:13.5px;color:var(--ink);margin:10px 0 2px">Lucas, pra não perder seu atendimento se cair a internet, me passa seu WhatsApp? A gente continua por lá sem perder nada.</p>
+      <div class="input"><span class="ph" style="letter-spacing:.06em">(__) _____-____</span></div>
+      <div class="btn-row">
+        <button class="btn primary">Quero receber</button>
+        <button class="btn ghost">Agora não</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- composer -->
+  <div class="composer">
+    <div class="field">Diga o que você quer realizar...</div>
+    <div class="send"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
+  </div>
+
+ </div>
+</div>
+
+<div class="footer-note">
+  <b>Tese de UX:</b> o atrito do CPF (exigência proposta-first da Bevi) vira um <i>momento de upgrade</i> — de números indicativos para cartas reais — em vez de uma barreira de entrada. Preserva o "sem formulário" do Aja na exploração e respeita o "proposta-first" da Bevi no fechamento.
+</div>
+
+</body>
+</html>

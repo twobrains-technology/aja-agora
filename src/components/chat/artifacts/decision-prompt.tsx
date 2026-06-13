@@ -1,0 +1,79 @@
+"use client";
+
+import { ArrowRight, FileSignature, Headset } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useChatContext } from "@/lib/chat/provider";
+import {
+	DECISION_PROMPT_OPTIONS,
+	DECISION_PROMPT_QUESTION,
+	type DecisionPromptPayload,
+} from "@/lib/chat/types";
+
+const ICONS = {
+	contratar: FileSignature,
+	outras: ArrowRight,
+	especialista: Headset,
+} as const;
+
+// Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4).
+// "Quero ver outras opções" é DETERMINÍSTICO (action show-other-options →
+// comparativo das outras ofertas da descoberta, docx: "as outras 2"). Os
+// demais botões enviam o label como mensagem (contratar → contract flow,
+// especialista → handoff).
+export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) {
+	const { sendAction, sendUserMessage, status } = useChatContext();
+	const isStreaming = status === "submitted" || status === "streaming";
+
+	const choose = (intent: string, label: string) => {
+		if (isStreaming) return;
+		if (intent === "outras") {
+			void sendAction({ kind: "show-other-options", label }, label);
+			return;
+		}
+		void sendUserMessage(label);
+	};
+
+	return (
+		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg">
+			<CardContent className="space-y-3 pt-4 px-4 pb-4">
+				<p className="text-sm font-semibold leading-snug">
+					{DECISION_PROMPT_QUESTION}
+					{payload.administradora ? (
+						<span className="text-muted-foreground font-normal"> ({payload.administradora})</span>
+					) : null}
+				</p>
+				<div className="flex flex-col gap-2">
+					{DECISION_PROMPT_OPTIONS.map((opt) => {
+						const Icon = ICONS[opt.intent];
+						const isPrimary = opt.intent === "contratar";
+						return (
+							<Button
+								key={opt.intent}
+								type="button"
+								variant={isPrimary ? "default" : "ghost"}
+								size="sm"
+								className={
+									// FIX-37: whitespace-normal + h-auto + text-left deixam o label
+									// longo ("Quero falar com um especialista da Aja Agora") quebrar
+									// linha em vez de transbordar o card (max-w-[340px]). A base do
+									// shadcn Button é whitespace-nowrap — sem o override (twMerge),
+									// o texto saía pela borda. min-h-[44px] preserva o alvo de toque.
+									isPrimary
+										? "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full shadow-[var(--shadow-primary)]"
+										: "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full text-muted-foreground"
+								}
+								onClick={() => choose(opt.intent, opt.label)}
+								disabled={isStreaming}
+								data-testid={`decision-${opt.intent}`}
+							>
+								<Icon className="size-4 shrink-0" />
+								{opt.label}
+							</Button>
+						);
+					})}
+				</div>
+			</CardContent>
+		</Card>
+	);
+}

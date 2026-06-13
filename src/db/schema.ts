@@ -1,21 +1,34 @@
-import { relations } from "drizzle-orm";
-import { boolean, index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import {
+	type AnyPgColumn,
+	boolean,
+	check,
+	index,
+	integer,
+	jsonb,
+	numeric,
+	pgEnum,
+	pgTable,
+	real,
+	text,
+	timestamp,
+	uuid,
+	varchar,
+} from "drizzle-orm/pg-core";
+import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
+import type { UserIntent } from "@/lib/agent/qualify-state";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
 
-export const artifactTypeEnum = pgEnum("artifact_type", [
-	"group_card",
-	"comparison_table",
-	"simulation_result",
-	"recommendation_card",
-	"lead_form",
-]);
-
 export const channelEnum = pgEnum("channel", ["web", "whatsapp"]);
 
-export const conversationStatusEnum = pgEnum("conversation_status", ["active", "handed_off", "closed"]);
+export const conversationStatusEnum = pgEnum("conversation_status", [
+	"active",
+	"handed_off",
+	"closed",
+]);
 
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
@@ -37,6 +50,15 @@ export const insightTypeEnum = pgEnum("insight_type", [
 	"next_action",
 ]);
 
+export const memoryEventTypeEnum = pgEnum("memory_event_type", [
+	"agent_created",
+	"context_loaded",
+	"memory_stored",
+	"reconciled",
+	"fallback_triggered",
+	"purged",
+]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -46,6 +68,12 @@ export const user = pgTable("user", {
 	emailVerified: boolean("email_verified").default(false).notNull(),
 	image: text("image"),
 	role: text("role").default("viewer").notNull(),
+	phone: varchar("phone", { length: 32 }),
+	isActive: boolean("is_active").default(true).notNull(),
+	invitedAt: timestamp("invited_at"),
+	invitedBy: text("invited_by").references((): AnyPgColumn => user.id),
+	inviteToken: text("invite_token").unique(),
+	inviteExpiresAt: timestamp("invite_expires_at"),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 	updatedAt: timestamp("updated_at")
 		.defaultNow()
@@ -115,61 +143,79 @@ export const verification = pgTable(
 // ─── Application Tables ─────────────────────────────────────────────────────
 
 // Conversations
-export const conversations = pgTable("conversations", {
-	id: uuid().defaultRandom().primaryKey(),
-	waId: varchar("wa_id", { length: 32 }),
-	channel: channelEnum().default("web").notNull(),
-	status: conversationStatusEnum().default("active").notNull(),
-	handedOffTo: varchar("handed_off_to", { length: 32 }),
-	agentName: varchar("agent_name", { length: 100 }),
-	contactName: varchar("contact_name", { length: 100 }),
-	metadata: jsonb().$type<Record<string, unknown>>(),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-	index("conversations_wa_id_idx").on(table.waId),
-	index("conversations_handed_off_to_idx").on(table.handedOffTo),
-]);
+export const conversations = pgTable(
+	"conversations",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		waId: varchar("wa_id", { length: 50 }),
+		channel: channelEnum().default("web").notNull(),
+		status: conversationStatusEnum().default("active").notNull(),
+		handedOffUserId: text("handed_off_user_id").references(() => user.id),
+		contactName: varchar("contact_name", { length: 100 }),
+		metadata: jsonb().$type<Record<string, unknown>>(),
+		isSimulated: boolean("is_simulated").default(false).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("conversations_wa_id_idx").on(table.waId),
+		index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
+	],
+);
 
 // Messages
-export const messages = pgTable("messages", {
-	id: uuid().defaultRandom().primaryKey(),
-	conversationId: uuid("conversation_id")
-		.notNull()
-		.references(() => conversations.id, { onDelete: "cascade" }),
-	role: messageRoleEnum().notNull(),
-	content: text().notNull(),
-	channel: channelEnum().default("web").notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const messages = pgTable(
+	"messages",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		role: messageRoleEnum().notNull(),
+		content: text().notNull(),
+		channel: channelEnum().default("web").notNull(),
+		// Persona slug que produziu este turno; NULL para user/system e mensagens
+		// históricas. Usado pelo eval pra segmentar transcript multi-persona.
+		personaId: text("persona_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
+);
 
 // Artifacts
+// `type` é `text` (não enum) porque a fonte de verdade da union é a TS
+// `ArtifactType` em `src/lib/chat/types.ts` — ela evolui frequentemente e
+// trocar enum DB a cada novo artifact é fricção sem ganho (não há consumer
+// SQL fora do código TS que precise validar via enum).
 export const artifacts = pgTable("artifacts", {
 	id: uuid().defaultRandom().primaryKey(),
 	messageId: uuid("message_id")
 		.notNull()
 		.references(() => messages.id, { onDelete: "cascade" }),
-	type: artifactTypeEnum().notNull(),
+	type: text().notNull(),
 	payload: jsonb().notNull().$type<Record<string, unknown>>(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Leads (PII separate from conversation logs)
-export const leads = pgTable("leads", {
-	id: uuid().defaultRandom().primaryKey(),
-	conversationId: uuid("conversation_id")
-		.notNull()
-		.references(() => conversations.id, { onDelete: "cascade" }),
-	name: text(),
-	phone: text(),
-	email: text(),
-	stage: leadStageEnum("stage").default("novo").notNull(),
-	creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-	index("leads_created_at_idx").on(table.createdAt),
-]);
+export const leads = pgTable(
+	"leads",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		name: text(),
+		phone: text(),
+		email: text(),
+		stage: leadStageEnum("stage").default("novo").notNull(),
+		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
+		isSimulated: boolean("is_simulated").default(false).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("leads_created_at_idx").on(table.createdAt)],
+);
 
 // Lead Events (funnel transition audit trail)
 export const leadEvents = pgTable("lead_events", {
@@ -185,24 +231,266 @@ export const leadEvents = pgTable("lead_events", {
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// Lead Insights (AI-generated insights cache)
-export const leadInsights = pgTable("lead_insights", {
-	id: uuid().defaultRandom().primaryKey(),
-	leadId: uuid("lead_id")
-		.notNull()
-		.references(() => leads.id, { onDelete: "cascade" }),
-	insightType: insightTypeEnum("insight_type").notNull(),
-	content: text().notNull(),
-	generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
-	model: varchar("model", { length: 100 }),
-});
+// Bevi Proposals (estado do FECHAMENTO real — passo 5 "Contratar")
+// Guarda só o necessário pra retomar a proposta entre turnos (web↔WhatsApp) e
+// pro back office acompanhar. LGPD-mínimo: NÃO armazena CPF — só os IDs Bevi e o
+// snapshot da oferta escolhida. O ofertaId expira em 30min (offerExpiresAt) →
+// re-simular antes do choose_offer.
+export const beviProposals = pgTable(
+	"bevi_proposals",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+		// IDs da API de Parceiro
+		proposalId: text("proposal_id").notNull(),
+		simulationSessionId: text("simulation_session_id"),
+		ofertaId: text("oferta_id"),
+		offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
+		// Snapshot da oferta escolhida (pro card/back office, sem re-simular)
+		segmento: varchar("segmento", { length: 30 }),
+		administradora: varchar("administradora", { length: 60 }),
+		grupo: varchar("grupo", { length: 30 }),
+		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
+		monthlyPayment: numeric("monthly_payment", { precision: 12, scale: 2 }),
+		// FIX-39: prazo REAL (meses) da oferta — a API nova (2026-06-12) passou a
+		// trazê-lo. Nullable: shape antigo não tinha e a API pode voltar atrás.
+		termMonths: integer("term_months"),
+		// Artefatos de fechamento
+		consortiumProposalLink: text("consortium_proposal_link"),
+		documentsLinkPersonal: text("documents_link_personal"),
+		documentsLinkAddress: text("documents_link_address"),
+		proposalStatus: varchar("proposal_status", { length: 60 }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("bevi_proposals_conversation_id_idx").on(table.conversationId),
+		index("bevi_proposals_proposal_id_idx").on(table.proposalId),
+	],
+);
+
+export type CampaignMentionPriority = "low" | "medium" | "high";
+
+export type PersonaCampaign = {
+	id: string;
+	title: string;
+	body: string;
+	startsAt: string | null;
+	endsAt: string | null;
+	enabled: boolean;
+	mentionPriority: CampaignMentionPriority;
+};
+
+export type PersonaHandoffTrigger = {
+	id: string;
+	condition: string;
+	enabled: boolean;
+};
+
+export type PersonaForbiddenTopic = {
+	id: string;
+	topic: string;
+	responseWhenAsked: string;
+	enabled: boolean;
+};
+
+// Few-shot example shown to the model to ground the persona's voice.
+// Anthropic recommends 3-5 examples wrapped in <example> tags — they
+// outperform free-text descriptions for tone steering.
+//
+// As condições `when*` filtram dinamicamente quais exemplos vão pro prompt
+// em cada turno (selectExamplesForTurn). Ausente/vazio = sempre aplica.
+// `enabled !== false` é tratado como ativo (default true por omissão pra
+// compat com exemplos legados); `origin` ausente = "manual".
+export type PersonaExample = {
+	id: string;
+	context?: string | null;
+	userMessage: string;
+	assistantResponse: string;
+
+	whenExpertise?: ExpertiseLevel[];
+	whenCategory?: Category[];
+	whenChannel?: "web" | "whatsapp";
+	whenIntent?: UserIntent[];
+
+	tags?: string[];
+
+	enabled?: boolean;
+	origin?: "manual" | "diagnosis";
+	sourceConversationId?: string | null;
+};
+
+// `version` increments on every admin update — used by the agent cache to
+// invalidate without explicit pub/sub.
+export const personas = pgTable(
+	"personas",
+	{
+		id: text("id").primaryKey(),
+		displayName: text("display_name").notNull(),
+		role: text("role").default("specialist").notNull(),
+		category: text("category"),
+		// Sub-niche within category. NULL = generalist (fallback). Free-form text;
+		// the analyzer is anchored to active values per category at call time.
+		expertise: text("expertise"),
+		voiceTone: text("voice_tone").notNull(),
+		examples: jsonb("examples").$type<PersonaExample[]>().default([]).notNull(),
+		// Per-persona temperature kept in DB for tuning, hidden from admin UI.
+		// Claude only exposes temperature (no topP/penalty), so this is the only sampling lever.
+		temperature: real("temperature").default(0.7).notNull(),
+		activeCampaigns: jsonb("active_campaigns").$type<PersonaCampaign[]>().default([]).notNull(),
+		handoffTriggers: jsonb("handoff_triggers")
+			.$type<PersonaHandoffTrigger[]>()
+			.default([])
+			.notNull(),
+		forbiddenTopics: jsonb("forbidden_topics")
+			.$type<PersonaForbiddenTopic[]>()
+			.default([])
+			.notNull(),
+		activeTools: jsonb("active_tools").$type<string[]>().default([]).notNull(),
+		isActive: boolean("is_active").default(true).notNull(),
+		version: integer("version").default(1).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		check("personas_role_check", sql`${table.role} IN ('concierge', 'specialist')`),
+		check(
+			"personas_category_check",
+			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'moto', 'servicos')`,
+		),
+		check(
+			"personas_specialist_has_category",
+			sql`${table.role} = 'concierge' OR ${table.category} IS NOT NULL`,
+		),
+		check(
+			"personas_temperature_check",
+			sql`${table.temperature} >= 0 AND ${table.temperature} <= 1`,
+		),
+	],
+);
+
+// Lead Insights (AI-generated insights cache, keyed by lead OR conversation)
+export const leadInsights = pgTable(
+	"lead_insights",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "cascade",
+		}),
+		insightType: insightTypeEnum("insight_type").notNull(),
+		content: text().notNull(),
+		generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+		model: varchar("model", { length: 100 }),
+	},
+	(table) => [
+		index("lead_insights_lead_id_idx").on(table.leadId),
+		index("lead_insights_conversation_id_idx").on(table.conversationId),
+		check(
+			"lead_insights_owner_check",
+			sql`(${table.leadId} IS NOT NULL) <> (${table.conversationId} IS NOT NULL)`,
+		),
+	],
+);
+
+// Conversation Evaluations (LLM-as-judge scoring per conversation)
+// Stores the most-recent score; re-evaluations replace prior rows by querying ordered desc.
+export type EvalDimensionPayload = { score: number; reasoning: string };
+
+export type EvalFlagsPayload = {
+	hallucination: boolean;
+	missedHandoff: boolean;
+	incompleteDiscovery: boolean;
+	lowEngagement: boolean;
+};
+
+export type EvalDimensionsPayload = {
+	engajamento: EvalDimensionPayload;
+	discovery: EvalDimensionPayload;
+	continuidade: EvalDimensionPayload;
+	naturalidade: EvalDimensionPayload;
+	assertividade: EvalDimensionPayload;
+	conversao: EvalDimensionPayload;
+};
+
+export const conversationEvaluations = pgTable(
+	"conversation_evaluations",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		personaId: text("persona_id"),
+		personaVersion: integer("persona_version"),
+		rubricVersion: text("rubric_version").notNull(),
+		judgeModel: varchar("judge_model", { length: 100 }).notNull(),
+		overallScore: numeric("overall_score", { precision: 3, scale: 2 }),
+		dimensions: jsonb().$type<EvalDimensionsPayload>(),
+		flags: jsonb().$type<EvalFlagsPayload>(),
+		topIssues: jsonb("top_issues").$type<string[]>(),
+		topStrengths: jsonb("top_strengths").$type<string[]>(),
+		tokensInput: integer("tokens_input"),
+		tokensOutput: integer("tokens_output"),
+		evaluatedUntilMessageId: uuid("evaluated_until_message_id").references(() => messages.id),
+		evaluatedAt: timestamp("evaluated_at", { withTimezone: true }).defaultNow().notNull(),
+		error: text(),
+	},
+	(table) => [
+		index("conversation_evaluations_conversation_id_evaluated_at_idx").on(
+			table.conversationId,
+			table.evaluatedAt.desc(),
+		),
+		check(
+			"conversation_evaluations_overall_score_check",
+			sql`${table.overallScore} IS NULL OR (${table.overallScore} >= 0 AND ${table.overallScore} <= 1)`,
+		),
+	],
+);
+
+// Memory Events (audit trail da camada de memória Letta)
+// Ver ADR 2026-05-16-aja-agora-letta-sidecar-integration.
+export const memoryEvents = pgTable(
+	"memory_events",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "set null",
+		}),
+		lettaAgentId: text("letta_agent_id"),
+		eventType: memoryEventTypeEnum("event_type").notNull(),
+		payload: jsonb().$type<Record<string, unknown>>(),
+		latencyMs: integer("latency_ms"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("memory_events_conversation_id_idx").on(table.conversationId),
+		index("memory_events_letta_agent_id_idx").on(table.lettaAgentId),
+		index("memory_events_created_at_idx").on(table.createdAt.desc()),
+	],
+);
 
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ one, many }) => ({
 	sessions: many(session),
 	accounts: many(account),
+	invitedByUser: one(user, {
+		fields: [user.invitedBy],
+		references: [user.id],
+		relationName: "userInvites",
+	}),
+	invitedAttendants: many(user, { relationName: "userInvites" }),
+	handedOffConversations: many(conversations),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -220,9 +508,16 @@ export const accountRelations = relations(account, ({ one }) => ({
 }));
 
 // Application relations
-export const conversationsRelations = relations(conversations, ({ many }) => ({
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	messages: many(messages),
 	leads: many(leads),
+	insights: many(leadInsights),
+	evaluations: many(conversationEvaluations),
+	beviProposals: many(beviProposals),
+	handedOffUser: one(user, {
+		fields: [conversations.handedOffUserId],
+		references: [user.id],
+	}),
 }));
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({
@@ -256,9 +551,42 @@ export const leadEventsRelations = relations(leadEvents, ({ one }) => ({
 	}),
 }));
 
+export const beviProposalsRelations = relations(beviProposals, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [beviProposals.conversationId],
+		references: [conversations.id],
+	}),
+	lead: one(leads, {
+		fields: [beviProposals.leadId],
+		references: [leads.id],
+	}),
+}));
+
 export const leadInsightsRelations = relations(leadInsights, ({ one }) => ({
 	lead: one(leads, {
 		fields: [leadInsights.leadId],
 		references: [leads.id],
+	}),
+	conversation: one(conversations, {
+		fields: [leadInsights.conversationId],
+		references: [conversations.id],
+	}),
+}));
+
+export const conversationEvaluationsRelations = relations(conversationEvaluations, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [conversationEvaluations.conversationId],
+		references: [conversations.id],
+	}),
+	evaluatedUntilMessage: one(messages, {
+		fields: [conversationEvaluations.evaluatedUntilMessageId],
+		references: [messages.id],
+	}),
+}));
+
+export const memoryEventsRelations = relations(memoryEvents, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [memoryEvents.conversationId],
+		references: [conversations.id],
 	}),
 }));

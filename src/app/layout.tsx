@@ -1,40 +1,36 @@
 import type { Metadata } from "next";
-import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import { DM_Mono, Poppins } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const inter = Inter({
+const poppins = Poppins({
 	variable: "--font-sans",
 	subsets: ["latin"],
+	weight: ["300", "400", "500", "600", "700", "800"],
 });
 
-const sourceSerif = Source_Serif_4({
-	variable: "--font-serif",
-	subsets: ["latin"],
-	weight: ["400", "600", "700"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
+const dmMono = DM_Mono({
 	variable: "--font-mono",
 	subsets: ["latin"],
+	weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-	title: "Aja Agora | Consorcio inteligente com IA",
+	title: "Aja Agora | Seu consórcio, resolvido numa conversa",
 	description:
-		"Diga o que voce quer e receba uma recomendacao personalizada de consorcio. Sem formulario, sem corretor, 100% digital.",
+		"Consultoria de consórcio independente. Diga o que você quer conquistar e receba uma recomendação personalizada, sem juros, sem formulário e sem corretor.",
 	keywords: [
-		"consorcio",
-		"consorcio digital",
-		"consorcio IA",
-		"consorcio online",
-		"consorcio sem corretor",
-		"simulacao consorcio",
+		"consórcio",
+		"consórcio digital",
+		"consórcio sem juros",
+		"consórcio online",
+		"consórcio sem corretor",
+		"simulação consórcio",
 	],
 	openGraph: {
-		title: "Aja Agora | Consorcio inteligente com IA",
+		title: "Aja Agora | Consórcio sem juros, parcela que cabe no seu mês",
 		description:
-			"Seu consultor de consorcio com inteligencia artificial. Recomendacoes personalizadas em segundos.",
+			"Diga o que você quer realizar e receba recomendações de consórcio com a parcela ideal pro seu mês. Sem juros, sem corretor, sem formulário.",
 		type: "website",
 		locale: "pt_BR",
 	},
@@ -50,9 +46,14 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html lang="pt-BR" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`} suppressHydrationWarning>
+		<html
+			lang="pt-BR"
+			className={`${poppins.variable} ${dmMono.variable} h-full antialiased`}
+			suppressHydrationWarning
+		>
 			<body className="min-h-full flex flex-col">
-				<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+				{/* App é light-only — tema escuro removido a pedido do produto. */}
+				<ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>
 					{children}
 				</ThemeProvider>
 			</body>

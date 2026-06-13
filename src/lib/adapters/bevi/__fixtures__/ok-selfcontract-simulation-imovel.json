@@ -1,0 +1,315 @@
+{
+	"status": "OK",
+	"code": 200,
+	"success": true,
+	"message": "Proposta atualizada com sucesso!",
+	"data": {
+		"selfContract": {
+			"hashId": "imovel-real-capture-2026-05-27"
+		},
+		"data": {
+			"offers": [
+				{
+					"bank": "RODOBENS",
+					"bankLabel": "RODOBENS",
+					"group": "2119",
+					"bidType": "FREE",
+					"term": 216,
+					"finalValue": 80000,
+					"receivedCredit": 56000,
+					"bidAmount": 58520,
+					"installmentValue": 396.51606349206344,
+					"importedInstallmentValue": 366.51,
+					"totalPaid": 110333.184,
+					"totalDue": 110333.184,
+					"adminFee": 0.29,
+					"reserveFundFee": 0,
+					"insuranceFee": 0.00032,
+					"reserveFundAmount": 0,
+					"insuranceTotalAmount": 7133.184,
+					"ownBidAmount": 0,
+					"totalBidAmount": 24000,
+					"paidInstallmentsBeforeContemplation": 6,
+					"remainingInstallmentsAfterContemplation": 210,
+					"paidInstallmentsAmountBeforeContemplation": 3064.8106666666667,
+					"creditNetAfterContemplation": 56000,
+					"bidPercentBase": "INSTALLMENT",
+					"lowestContemplationRate": 0.7315,
+					"averageBid": 58520,
+					"averageBidFromTotalPercentage": 0.7315,
+					"necessaryBidToContemplate": 34520,
+					"necessaryBidToContemplatePercentage": 0.4315,
+					"offeredBid": 0,
+					"offeredBidPercentage": 0,
+					"bidDifference": -34520,
+					"bidDifferencePercentage": -0.4315,
+					"individualQuotaValue": 80000,
+					"type": "SPECIAL_OFFER",
+					"quotaTipo": "IMOVEL",
+					"productType": "IMOVEL",
+					"productTypeLabel": "IMÓVEL",
+					"embeddedBidAcceptancePercentage": "30,00",
+					"quotaId": "6a0ca9ca3e68cce9b61d3fb8",
+					"commissionInstallmentsQty": 4,
+					"temEstorno": true,
+					"prazoPagamentoBoleto": "SEMANAL",
+					"contemplacaoFaturamento": "0,50%",
+					"validityStart": "2026-01-01T00:00:00.000Z",
+					"validityEnd": "2099-12-31T00:00:00.000Z",
+					"probContemplacaoMeses": "6",
+					"isLanceFixo": true,
+					"qtdLanceFixo": 2,
+					"qtdLanceLivre": 1,
+					"qtdLanceLimitado": 0,
+					"proximoVencimento": "2026-05-11T00:00:00.000Z",
+					"proximaAssembleia": "2026-05-13T00:00:00.000Z",
+					"seguroPrestamista": 0.00032,
+					"quotaLookupValue": 71428.57,
+					"quantityOfQuotas": 1,
+					"commission": {
+						"totalRatePercent": "3,50",
+						"totalCommission": 2800,
+						"commissionInstallmentsQty": 4,
+						"deferred": {
+							"d30": {
+								"ratePercent": "1,50",
+								"installmentCommission": 1200
+							},
+							"d60": {
+								"ratePercent": "1,00",
+								"installmentCommission": 800
+							},
+							"d90": {
+								"ratePercent": "0,50",
+								"installmentCommission": 400
+							}
+						}
+					},
+					"bidPercentage": 0.3,
+					"bidPaymentMode": "EMBEDDED",
+					"embeddedBid": 24000,
+					"highlight": true,
+					"minimumBidPercentage": 0.7315,
+					"averageBidPercentage": 0.7315,
+					"monthlyAwardedQuotas": 2,
+					"lookupCeiling": 71428.57,
+					"adjustmentType": "INCC",
+					"minContemplationPaymentBrl": 58520,
+					"minimumValueToBeContemplatedBrl": 58520
+				},
+				{
+					"bank": "ANCORA",
+					"bankLabel": "ÂNCORA",
+					"group": "704",
+					"bidType": "FREE",
+					"term": 198,
+					"finalValue": 80000,
+					"receivedCredit": 56000,
+					"bidAmount": 73600,
+					"installmentValue": 422.8917171717172,
+					"importedInstallmentValue": 547.89,
+					"totalPaid": 108482.56,
+					"totalDue": 108482.56,
+					"adminFee": 0.26,
+					"reserveFundFee": 0.02,
+					"insuranceFee": 0.0003,
+					"reserveFundAmount": 1600,
+					"insuranceTotalAmount": 6082.5599999999995,
+					"ownBidAmount": 0,
+					"totalBidAmount": 24000,
+					"paidInstallmentsBeforeContemplation": 6,
+					"remainingInstallmentsAfterContemplation": 192,
+					"paidInstallmentsAmountBeforeContemplation": 3287.3503030303027,
+					"creditNetAfterContemplation": 56000,
+					"bidPercentBase": "CREDIT",
+					"lowestContemplationRate": 0.92,
+					"averageBid": 73600,
+					"averageBidFromTotalPercentage": 0.92,
+					"necessaryBidToContemplate": 49600,
+					"necessaryBidToContemplatePercentage": 0.62,
+					"offeredBid": 0,
+					"offeredBidPercentage": 0,
+					"bidDifference": -49600,
+					"bidDifferencePercentage": -0.62,
+					"individualQuotaValue": 80000,
+					"type": "SPECIAL_OFFER",
+					"quotaTipo": "IMOVEL",
+					"productType": "IMOVEL",
+					"productTypeLabel": "IMÓVEL",
+					"embeddedBidAcceptancePercentage": "30,00",
+					"quotaId": "6a0ca9c73e68cce9b61d308f",
+					"commissionInstallmentsQty": 12,
+					"temEstorno": false,
+					"prazoPagamentoBoleto": "QUINZENAL",
+					"contemplacaoFaturamento": "",
+					"validityStart": "2026-01-01T00:00:00.000Z",
+					"validityEnd": "2099-12-31T00:00:00.000Z",
+					"probContemplacaoMeses": "6",
+					"isLanceFixo": true,
+					"qtdLanceFixo": 1,
+					"qtdLanceLivre": 1,
+					"qtdLanceLimitado": 0,
+					"proximoVencimento": "2026-05-21T00:00:00.000Z",
+					"proximaAssembleia": "2026-05-25T00:00:00.000Z",
+					"seguroPrestamista": 0.0003,
+					"quotaLookupValue": 71428.57,
+					"quantityOfQuotas": 1,
+					"commission": {
+						"totalRatePercent": "5,00",
+						"totalCommission": 4000,
+						"commissionInstallmentsQty": 12,
+						"deferred": {
+							"d30": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d60": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d90": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d120": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d150": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d180": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d210": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d240": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d270": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d300": {
+								"ratePercent": "0,40",
+								"installmentCommission": 320
+							},
+							"d330": {
+								"ratePercent": "0,50",
+								"installmentCommission": 400
+							},
+							"d360": {
+								"ratePercent": "0,50",
+								"installmentCommission": 400
+							}
+						}
+					},
+					"bidPercentage": 0.3,
+					"bidPaymentMode": "EMBEDDED",
+					"embeddedBid": 24000,
+					"highlight": true,
+					"minimumBidPercentage": 0.92,
+					"averageBidPercentage": 0.92,
+					"monthlyAwardedQuotas": 1,
+					"lookupCeiling": 71428.57,
+					"adjustmentType": "INCC",
+					"minContemplationPaymentBrl": 73600,
+					"minimumValueToBeContemplatedBrl": 73600
+				},
+				{
+					"bank": "RODOBENS",
+					"bankLabel": "RODOBENS",
+					"group": "2117",
+					"bidType": "FREE",
+					"term": 180,
+					"finalValue": 80000,
+					"receivedCredit": 56000,
+					"bidAmount": 56296,
+					"installmentValue": 454.32496551724137,
+					"importedInstallmentValue": 424.71,
+					"totalPaid": 106606.08,
+					"totalDue": 106606.08,
+					"adminFee": 0.26,
+					"reserveFundFee": 0,
+					"insuranceFee": 0.00032,
+					"reserveFundAmount": 0,
+					"insuranceTotalAmount": 5806.08,
+					"ownBidAmount": 0,
+					"totalBidAmount": 24000,
+					"paidInstallmentsBeforeContemplation": 6,
+					"remainingInstallmentsAfterContemplation": 174,
+					"paidInstallmentsAmountBeforeContemplation": 3553.536,
+					"creditNetAfterContemplation": 56000,
+					"bidPercentBase": "INSTALLMENT",
+					"lowestContemplationRate": 0.6990999999999999,
+					"averageBid": 56296,
+					"averageBidFromTotalPercentage": 0.7037,
+					"necessaryBidToContemplate": 32296,
+					"necessaryBidToContemplatePercentage": 0.4037,
+					"offeredBid": 0,
+					"offeredBidPercentage": 0,
+					"bidDifference": -32296,
+					"bidDifferencePercentage": -0.4037,
+					"individualQuotaValue": 80000,
+					"type": "EMBEDDED_BID",
+					"quotaTipo": "IMOVEL",
+					"productType": "IMOVEL",
+					"productTypeLabel": "IMÓVEL",
+					"embeddedBidAcceptancePercentage": "30,00",
+					"quotaId": "6a0ca9ca3e68cce9b61d3f44",
+					"commissionInstallmentsQty": 4,
+					"temEstorno": true,
+					"prazoPagamentoBoleto": "SEMANAL",
+					"contemplacaoFaturamento": "0,50%",
+					"validityStart": "2026-01-01T00:00:00.000Z",
+					"validityEnd": "2099-12-31T00:00:00.000Z",
+					"probContemplacaoMeses": "6",
+					"isLanceFixo": true,
+					"qtdLanceFixo": 2,
+					"qtdLanceLivre": 2,
+					"qtdLanceLimitado": 0,
+					"proximoVencimento": "2026-05-11T00:00:00.000Z",
+					"proximaAssembleia": "2026-05-13T00:00:00.000Z",
+					"seguroPrestamista": 0.00032,
+					"quotaLookupValue": 71428.57,
+					"quantityOfQuotas": 1,
+					"commission": {
+						"totalRatePercent": "3,50",
+						"totalCommission": 2800,
+						"commissionInstallmentsQty": 4,
+						"deferred": {
+							"d30": {
+								"ratePercent": "1,50",
+								"installmentCommission": 1200
+							},
+							"d60": {
+								"ratePercent": "1,00",
+								"installmentCommission": 800
+							},
+							"d90": {
+								"ratePercent": "0,50",
+								"installmentCommission": 400
+							}
+						}
+					},
+					"bidPercentage": 0.3,
+					"bidPaymentMode": "EMBEDDED",
+					"embeddedBid": 24000,
+					"highlight": false,
+					"minimumBidPercentage": 0.6990999999999999,
+					"averageBidPercentage": 0.7037,
+					"monthlyAwardedQuotas": 2,
+					"lookupCeiling": 71428.57,
+					"adjustmentType": "INCC",
+					"minContemplationPaymentBrl": 55927.99999999999,
+					"minimumValueToBeContemplatedBrl": 55927.99999999999
+				}
+			]
+		}
+	}
+}

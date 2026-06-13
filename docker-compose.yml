@@ -1,29 +1,115 @@
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/aja_agora
-    depends_on:
-      db:
-        condition: service_healthy
+# aja-agora — local dev por workspace
+#
+# Convenção TwoBrains: cada branch/worktree é um workspace isolado com
+# seu Postgres + App em containers nomeados por WORKSPACE_NAME. Só o
+# Letta é compartilhado (~/.tb-local/_shared/, network tb-local-net).
+#
+# DNS local via OrbStack (label dev.orbstack.domains):
+#   - aja-${WORKSPACE_NAME}.orb.local       → app
+#   - db.aja-${WORKSPACE_NAME}.orb.local    → postgres
+#   - aja-${WORKSPACE_NAME}.orb.local   → (default automático do OrbStack)
+#
+# Setup:
+#   ./.claude/skills/local-dev/scripts/bootstrap-workspace.sh
+#
+# Ver: ~/.tb-local/CONVENTIONS.md, .claude/skills/local-dev/SKILL.md
 
+name: aja-agora-${WORKSPACE_NAME:?WORKSPACE_NAME required (use the branch or worktree dir name)}
+
+services:
   db:
     image: postgres:16-alpine
-    ports:
-      - "5433:5432"
+    container_name: aja-pg-${WORKSPACE_NAME}
+    restart: unless-stopped
+    # DNS-first (padrão dev-stack): SEM publicar porta no host. O OrbStack
+    # roteia db.aja-<workspace>.orb.local:5432 → porta interna. Permite N
+    # workspaces simultâneos sem colisão de porta. (Override Windows publica
+    # porta — não há .orb.local lá.)
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aja_agora
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aja_agora}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: db.aja-${WORKSPACE_NAME}.orb.local
+      tb.workspace: ${WORKSPACE_NAME}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  app:
+    profiles: ["containerized"]
+    # Modo DEV/HMR (padrão dev-stack): Dockerfile.dev roda `next dev` com
+    # Turbopack. O source vem por bind mount (./:/app) — editar src/ recompila
+    # sem rebuild. node_modules e .next ficam em volumes anônimos pra não serem
+    # ocultados pelo bind.
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: aja-app-${WORKSPACE_NAME}
+    restart: unless-stopped
+    # DNS-first: SEM porta publicada. Acesso por http://aja-<workspace>.orb.local
+    # (OrbStack roteia → 3000 interna).
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      # Dev mode: HMR + Turbopack + source maps.
+      NODE_ENV: development
+      # OrbStack bind mount não emite inotify — watcher precisa de polling.
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # migrate-guard libera destrutivas em local.
+      TB_ENV: local
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@aja-pg-${WORKSPACE_NAME}:5432/${POSTGRES_DB:-aja_agora}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      LETTA_BASE_URL: http://letta:8283
+      LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
+      LETTA_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
+      LETTA_EMBEDDING: ${LETTA_EMBEDDING:-openai/text-embedding-3-small}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
+      BETTER_AUTH_URL: http://aja-${WORKSPACE_NAME}.orb.local
+      APP_URL: http://aja-${WORKSPACE_NAME}.orb.local
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_AGENT_PHONES: ${WHATSAPP_AGENT_PHONES:-}
+      WHATSAPP_AGENT_NAMES: ${WHATSAPP_AGENT_NAMES:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required (set in .env.local)}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required (set in .env.local)}
+      FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
+      # Bevi é a fonte ÚNICA (mock em runtime PROIBIDO — docs/jornada/CONTEXT.md).
+      # Descoberta (Trilho B): exige BEVI_SELFCONTRACT_HASH; falha alto sem.
+      BEVI_SELFCONTRACT_HASH: ${BEVI_SELFCONTRACT_HASH:-}
+      BEVI_SELFCONTRACT_BASE_URL: ${BEVI_SELFCONTRACT_BASE_URL:-}
+      # Identidade (gate identify): cifra do CPF — openssl rand -base64 32.
+      IDENTITY_ENC_KEY: ${IDENTITY_ENC_KEY:-}
+      # Fulfillment (passo 5): API de Parceiro real (exige BEVI_API_TOKEN).
+      PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-bevi}
+      BEVI_API_TOKEN: ${BEVI_API_TOKEN:-}
+      BEVI_BASE_URL: ${BEVI_BASE_URL:-}
+      BEVI_PRODUCT_ID: ${BEVI_PRODUCT_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: aja-${WORKSPACE_NAME}.orb.local
+      tb.workspace: ${WORKSPACE_NAME}
+
 volumes:
   pgdata:
+    name: aja-pg-${WORKSPACE_NAME}-data
+
+networks:
+  tb-local-net:
+    external: true
+    name: tb-local-net

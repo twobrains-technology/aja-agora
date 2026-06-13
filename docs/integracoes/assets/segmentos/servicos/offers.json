@@ -1,0 +1,97 @@
+{
+  "requestedValue": 20000,
+  "offers": [
+    {
+      "bank": "ANCORA",
+      "bankLabel": "ÂNCORA",
+      "group": "313",
+      "bidType": "FREE",
+      "term": 98,
+      "finalValue": 30000,
+      "receivedCredit": 21000,
+      "bidAmount": 20100,
+      "installmentValue": 360.1453416149068,
+      "importedInstallmentValue": 457.98,
+      "totalPaid": 44881.2,
+      "totalDue": 44881.2,
+      "adminFee": 0.35,
+      "reserveFundFee": 0.05,
+      "insuranceFee": 0.0007,
+      "reserveFundAmount": 1500,
+      "insuranceTotalAmount": 2881.2,
+      "ownBidAmount": 0,
+      "totalBidAmount": 9000,
+      "paidInstallmentsBeforeContemplation": 6,
+      "remainingInstallmentsAfterContemplation": 92,
+      "paidInstallmentsAmountBeforeContemplation": 2747.828571428571,
+      "creditNetAfterContemplation": 21000,
+      "bidPercentBase": "CREDIT",
+      "lowestContemplationRate": 0.67,
+      "averageBid": 20100,
+      "averageBidFromTotalPercentage": 0.67,
+      "necessaryBidToContemplate": 11100,
+      "necessaryBidToContemplatePercentage": 0.37,
+      "offeredBid": 0,
+      "offeredBidPercentage": 0,
+      "bidDifference": -11100,
+      "bidDifferencePercentage": -0.37,
+      "individualQuotaValue": 10000,
+      "type": "SPECIAL_OFFER",
+      "quotaTipo": "SERVICOS",
+      "productType": "SERVICOS",
+      "productTypeLabel": "SERVIÇOS",
+      "embeddedBidAcceptancePercentage": "30,00",
+      "quotaId": "6a0ca9c73e68cce9b61d30af",
+      "commissionInstallmentsQty": 5,
+      "temEstorno": false,
+      "prazoPagamentoBoleto": "QUINZENAL",
+      "contemplacaoFaturamento": "1,00%",
+      "validityStart": "2026-01-01T00:00:00.000Z",
+      "validityEnd": "2099-12-31T00:00:00.000Z",
+      "probContemplacaoMeses": "6",
+      "isLanceFixo": true,
+      "qtdLanceFixo": 1,
+      "qtdLanceLivre": 1,
+      "qtdLanceLimitado": 0,
+      "proximoVencimento": "2026-05-15T00:00:00.000Z",
+      "proximaAssembleia": "2026-05-18T00:00:00.000Z",
+      "seguroPrestamista": 0.0007,
+      "quotaLookupValue": 28571.43,
+      "quantityOfQuotas": 3,
+      "commission": {
+        "totalRatePercent": "5,00",
+        "totalCommission": 1500,
+        "commissionInstallmentsQty": 5,
+        "deferred": {
+          "d30": {
+            "ratePercent": "1,00",
+            "installmentCommission": 300
+          },
+          "d60": {
+            "ratePercent": "1,00",
+            "installmentCommission": 300
+          },
+          "d90": {
+            "ratePercent": "1,00",
+            "installmentCommission": 300
+          },
+          "d120": {
+            "ratePercent": "1,00",
+            "installmentCommission": 300
+          }
+        }
+      },
+      "bidPercentage": 0.3,
+      "bidPaymentMode": "EMBEDDED",
+      "embeddedBid": 9000,
+      "highlight": true,
+      "minimumBidPercentage": 0.67,
+      "averageBidPercentage": 0.67,
+      "monthlyAwardedQuotas": 1,
+      "lookupCeiling": 28571.43,
+      "adjustmentType": "IGPM",
+      "minContemplationPaymentBrl": 20100,
+      "minimumValueToBeContemplatedBrl": 20100
+    }
+  ]
+}

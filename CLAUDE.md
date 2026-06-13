@@ -1,4 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Aja Agora**
@@ -10,14 +9,19 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ### Constraints
 
 - **Stack:** Next.js (latest stable) + shadcn/ui + Tailwind CSS — padrão TwoBrains
-- **IA:** Anthropic Agent SDK (Claude) — multi-agent com tool use nativo
+- **IA:** Vercel AI SDK 6 (`ai` + `@ai-sdk/anthropic`) — agente com tool use nativo via Claude
 - **Deploy:** Docker/VPS — não serverless
 - **Adapter Pattern:** Toda integração com administradoras passa por camada de abstração — facilita trocar mock por real
 - **Mobile-first:** Consórcio é produto de massa, maioria acessa por celular
 - **Performance:** Chat precisa responder em < 3s para manter engajamento
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
+### REGRAS DE PRODUTO — jornada canônica e dados reais (INVIOLÁVEIS, 2026-06-04)
+
+1. **`docs/jornada/jornada-canonica.md` é a REGRA do fluxo** — é a visão do cliente (origem: `jornada.docx`), não inspiração. Toda feature/ajuste da jornada se valida contra ela. Divergência código×docx = defeito do código. Contexto e decisões: `docs/jornada/CONTEXT.md`.
+2. **PROIBIDO dado mockado em runtime.** A plataforma nasceu como piloto com mock de descoberta (`adapters/mock/`) — isso foi sentenciado à destruição. Nenhum grupo, oferta, simulação ou número exibido ao usuário pode vir de JSON fictício. **Bevi é a fonte única** (Trilho B self-contract pra descoberta/simulação; API de Parceiro pro fechamento). Fixtures de teste = capturas de respostas REAIS da Bevi (cassettes) — permitidas APENAS em testes, nunca em caminho de runtime.
+3. **QA e evals validam contra o docx**, não contra critérios derivados da implementação. O plano de teste de qualquer mudança na jornada referencia os passos da jornada canônica.
+4. **Simulador do passo 4** = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele.
+
 ## Technology Stack
 
 ## Recommended Stack
@@ -29,8 +33,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 | **TypeScript** | 5.7+ | Type safety | Non-negotiable for fintech. Zod schemas + Drizzle ORM + AI SDK all leverage TS inference end-to-end. |
 | **Tailwind CSS** | 4.2.x | Styling | CSS-native theme variables (no `tailwind.config.js`), 5x faster full builds, 100x faster incremental. Single CSS import. Works with shadcn/ui out of the box. |
 | **shadcn/ui** | CLI v4 (March 2026) | Component library | Copy-paste components, full ownership. CLI v4 adds design presets, unified `radix-ui` package, and `shadcn/skills` for AI agent integration. Built-in form components use react-hook-form + zod. |
-| **Anthropic Claude Agent SDK** | `@anthropic-ai/claude-agent-sdk` latest | Multi-agent AI orchestration | Official SDK for building agents with Claude's tool use. Supports multi-agent patterns, MCP integrations, in-process tool execution. Powers the conversational core. |
-| **Vercel AI SDK** | 6.x | Streaming UI + chat hooks | `useChat` hook handles SSE streaming, tool invocations, error states. Provider-agnostic (works with Anthropic). Decoupled state management (plugs into Zustand). Human-in-the-loop approval for tool calls. 20M+ monthly downloads. |
+| **Vercel AI SDK** | 6.x (`ai` + `@ai-sdk/anthropic`) | Agente + Streaming UI + chat hooks | SDK único do projeto. `streamText`/`tool` no backend executam o agent loop com tool calling automático via `stepCountIs`. `generateObject` para classificação estruturada. `useChat` no frontend para SSE streaming. Provider-agnostic (atualmente Anthropic Claude). Decoupled state management (plugs into Zustand). 20M+ monthly downloads. |
 | **Drizzle ORM** | 0.45.x (1.0 beta imminent) | Database access | Type-safe SQL, zero overhead, edge-compatible. Built-in Zod validator integration. Excellent migration system with DAG-based conflict detection. |
 | **PostgreSQL** | 16+ | Primary database | Conversations, user profiles, recommendations need relational integrity. JSON columns for flexible artifact storage. Battle-tested for fintech. Docker Compose trivial. |
 ### Supporting Libraries
@@ -38,7 +41,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 |---|---|---|---|
 | **Motion** (ex Framer Motion) | 12.x (latest 12.38) | Animation | Renamed from `framer-motion` to `motion`. Import from `motion/react`. Hardware-accelerated via Web Animations API, 120fps. Spring physics for card animations, layout transitions for artifact cards. |
 | **Zustand** | 5.x | Client state management | ~3KB, single store model. AI SDK 6 `useChat` supports decoupled state with Zustand. Perfect for chat UI state (active conversation, selected artifacts, UI mode). |
-| **Zod** | 3.24+ | Schema validation | Single validation layer shared across: form inputs, API routes, AI tool parameters, Drizzle schemas. Required dependency of Claude Agent SDK. |
+| **Zod** | 3.24+ | Schema validation | Single validation layer shared across: form inputs, API routes, AI tool parameters, Drizzle schemas. Used by Vercel AI SDK `tool({ inputSchema })` and `generateObject({ schema })`. |
 | **react-hook-form** | 7.x | Form handling | Progressive auth forms (name, phone, email). Uncontrolled components = minimal re-renders. `@hookform/resolvers` bridges to Zod. shadcn/ui Form component wraps it natively. |
 | **@ai-sdk/anthropic** | latest | Anthropic provider for AI SDK | Bridges Vercel AI SDK to Claude API. Handles streaming, tool use, and model switching. |
 | **Lucide React** | latest | Icons | Default icon set for shadcn/ui. Tree-shakeable. |
@@ -90,12 +93,13 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - **Concurrent writes** -- multiple users chatting simultaneously. SQLite's write lock becomes a bottleneck.
 - **Docker-native** -- `postgres:16-alpine` in Compose, zero setup.
 - **Migration path** -- if the platform scales, PostgreSQL scales vertically and horizontally (read replicas). SQLite doesn't.
-### Two SDKs: Claude Agent SDK + Vercel AI SDK (DECISÃO DO ARQUITETO — NÃO ALTERAR)
-- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): Backend orchestration. Define tools de domínio via `tool()` + `createSdkMcpServer()`, executa o agent loop via `query()` com tool calling automático. O SDK fornece o loop completo — Claude decide quais tools chamar, o SDK executa, e devolve o resultado pro Claude continuar. O "cérebro" da aplicação.
-- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`): Frontend streaming. `useChat` hook, SSE protocol, UI de chat. O "rosto" que o usuário vê.
-- **Ponte API Route**: `src/app/api/chat/route.ts` recebe mensagens do frontend (AI SDK), passa para o Agent SDK via `query()`, e faz streaming da resposta de volta como SSE.
-- **NÃO usar** AI SDK `streamText()`/`tool()` no backend para orquestração — essa responsabilidade é do Agent SDK.
-- **NÃO usar** `@anthropic-ai/sdk` (SDK padrão) diretamente — o Agent SDK abstrai o loop de tool calling.
+### Single SDK: Vercel AI SDK 6 (revisado em 2026-04-27)
+- **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`) é o SDK único do projeto, tanto no backend (orquestração de agente) quanto no frontend (streaming UI).
+- **Backend**: `streamText` executa o agent loop com tool calling automático via `stepCountIs`. Tools de domínio definidas com `tool({ inputSchema, execute })` em `src/lib/agent/tools/ai-sdk.ts`. `generateText` para chamadas one-shot (insights de admin). `generateObject` com schema Zod para classificação estruturada.
+- **Frontend**: `useChat` hook lida com SSE streaming, tool invocations, error states. Estado decoupled (Zustand).
+- **Ponte API Route**: `src/app/api/chat/route.ts` (chat web) e `src/lib/whatsapp/processor.ts` (WhatsApp) consomem `streamText` direto e fazem streaming/envio sequencial conforme o canal.
+- **Histórico**: o Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`) foi usado nas Phases 2-5 e descontinuado em 2026-04-27 — código órfão removido, dependência removida do `package.json`. Se for reintroduzido, deve ser via decisão arquitetural explícita.
+- **NÃO usar** `@anthropic-ai/sdk` (SDK padrão) diretamente — o Vercel AI SDK abstrai o loop de tool calling.
 ### State Management: Zustand (not Redux, not Jotai)
 - Chat has app-wide state (active conversation, user profile, auth state) -- store-based model fits better than atomic.
 - AI SDK 6 explicitly supports Zustand integration for decoupled `useChat` state.
@@ -119,7 +123,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ## Alternatives Considered
 | Alternative | Why Not Chosen |
 |---|---|
-| **LangChain/LangGraph** | Heavy framework with abstractions that fight Claude's native tool use. Anthropic Agent SDK is lighter, official, and purpose-built. |
+| **LangChain/LangGraph** | Heavy framework with abstractions that fight Claude's native tool use. Vercel AI SDK 6 is lighter and provides tool calling, streaming and structured output natively. |
 | **Vercel deployment** | Project requires Docker/VPS. WebSocket-like streaming, long-running agent processes, and PostgreSQL don't fit serverless constraints well. |
 | **SQLite / Turso** | No edge deployment benefit on VPS. PostgreSQL handles concurrent writes and relational integrity better for a multi-user fintech app. |
 | **MongoDB** | Conversation data is relational (user -> conversations -> messages -> artifacts). Document store adds complexity without benefit. |
@@ -136,7 +140,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 ## What NOT to Use
 | Technology | Reason |
 |---|---|
-| **LangChain** | Unnecessary abstraction over Claude's native capabilities. Adds 500KB+ bundle for features the Anthropic SDK handles natively. |
+| **LangChain** | Unnecessary abstraction over Claude's native capabilities. Adds 500KB+ bundle for features the Vercel AI SDK handles natively. |
 | **Pages Router** | Legacy Next.js routing. App Router is the only supported path forward in Next.js 16. |
 | **`tailwind.config.js`** | Tailwind CSS v4 uses CSS-native configuration. Config file is deprecated. |
 | **`getServerSideProps` / `getStaticProps`** | Pages Router patterns. Use Server Components and Server Actions instead. |
@@ -153,8 +157,6 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - [Next.js Releases](https://github.com/vercel/next.js/releases)
 - [Next.js Docker Example](https://github.com/vercel/next.js/blob/canary/examples/with-docker/README.md)
 - [Next.js Standalone Output Docs](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
-- [Anthropic Agent SDK Docs](https://platform.claude.com/docs/en/agent-sdk/overview)
-- [@anthropic-ai/claude-agent-sdk on npm](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
 - [AI SDK 6 Announcement](https://vercel.com/blog/ai-sdk-6)
 - [AI SDK Stream Protocols](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
 - [@ai-sdk/anthropic Provider](https://ai-sdk.dev/providers/ai-sdk-providers/anthropic)
@@ -170,44 +172,90 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - [Zustand vs Jotai 2026 Comparison](https://dev.to/jsgurujobs/state-management-in-2026-zustand-vs-jotai-vs-redux-toolkit-vs-signals-2gge)
 - [React Hook Form + Zod Guide](https://ui.shadcn.com/docs/forms/react-hook-form)
 - [Docker Next.js Guide](https://docs.docker.com/guides/nextjs/containerize/)
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
+## Feature Development Workflow (OBRIGATÓRIO)
 
-Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
+**Toda feature, refactor não-trivial ou correção de bug "complexo" segue este fluxo. Sempre sugira esse caminho antes de implementar — não pule etapas. Vale para features novas, lotes de bugfix e qualquer trabalho onde "feito" não é trivial.**
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-## Architecture
+Sequência (não inverter ordem):
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
+1. **Modo plano** — usar `ExitPlanMode` (ou equivalente do harness) antes de tocar em código. Aprovação do plano pelo Kairo é gate de entrada.
+2. **PO Lead (planejamento de QA)** — lançar agente com persona de **Product Owner Lead com skill de QA sênior**, modelo `claude-opus-4-7`. Produz um **plano de teste por feature/bug** contendo:
+   - Cenários (happy path + edge cases + regressões prováveis)
+   - **Critérios de aceite explícitos** (binários, verificáveis — "passa/não passa", nunca "deveria")
+   - Dados de teste necessários (fixtures, seeds, contas/personas)
+   - Pontos de falha conhecidos do domínio (race conditions, estados intermediários, multi-canal web↔WhatsApp)
+   - Output esperado por cenário (estado de DB, payload de API, screenshot de UI)
+   - Salvar em `docs/test-plans/<feature-slug>.md` para auditoria e diff em revisão de código.
+   Esse plano é a **fonte de verdade do que "feito" significa**. Critério não escrito = critério não validado.
+3. **Implementação TDD** — segue a regra global (`~/.claude/CLAUDE.md` → "Regra de TDD para bugs"). Testes primeiro, ver falhar, implementar, ver passar. Commits `test+fix:` ou `test+feat:` por unidade.
+4. **QA crítico (validação E2E)** — lançar agente com persona de **QA crítico e chato, primeiro QA do produto**, modelo `claude-opus-4-7`. Recebe o plano do PO Lead como input. Responsabilidade:
+   - Executar todos os cenários do plano (E2E via Playwright/Chrome DevTools quando aplicável; unit/integration quando E2E não cabe)
+   - **Rigor adversarial:** procurar buracos, não validar superficialmente. Tentar quebrar.
+   - Reportar falha por critério de aceite com **evidência** (screenshot, log, snippet, query do DB)
+   - Não deixar passar nada — ser explicitamente **chato**. Pedir refazer quando em dúvida.
+5. **Loop até verde** — qualquer critério reprovado → corrigir → re-rodar QA crítico → repetir. **Só declarar feature concluída quando todos os critérios de aceite do plano do PO Lead estiverem satisfeitos.** Não negociar critérios pra "fechar".
 
-<!-- GSD:skills-start source:skills/ -->
-## Project Skills
+**Modelos obrigatórios (não substituir por Sonnet/Haiku):**
+- PO Lead: `claude-opus-4-7` — planejamento qualitativo profundo, levantar edge cases que escapam de modelos menores
+- QA crítico: `claude-opus-4-7` — rigor adversarial > velocidade. Vale gastar token aqui.
 
-No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
+**Quando pular:** apenas tarefas triviais que não tocam código de produção (atualizar README, ajustar config local, renomear variável local, hotfix óbvio de 1 linha). Em dúvida, **não pule**.
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+**Lançamento dos agentes:** via `Agent` tool com `subagent_type: general-purpose`, `model: opus`, e prompt que inclui:
+- Persona literal: "Você é o PO Lead com skill de QA sênior..." ou "Você é o QA crítico e chato, primeiro QA do produto..."
+- Contexto da feature/bug (referências de arquivo, PRs relacionados)
+- Para QA crítico: **caminho do plano** do PO Lead no prompt (`docs/test-plans/<slug>.md`) para ele ler e validar contra
+- Saída esperada: PO Lead → markdown do plano; QA crítico → relatório de pass/fail por critério com evidência
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+## Autonomia — NUNCA perguntar "quer que eu siga?"
 
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
+Kairo odeia perguntas confirmatórias bobas dentro desse fluxo (e em geral). Quando uma fase termina e a próxima já está prevista no plano aprovado ou no workflow PO Lead → TDD → QA crítico, **execute a próxima diretamente** — não confirme.
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
+Proibido: "quer que eu lance o QA crítico?", "devo seguir pra Fase X?", "posso continuar?". Permitido: pause SÓ se aparecer ambiguidade arquitetural real (use `/grill-with-docs`) ou ação destrutiva (push/deploy/drop). Para tudo no meio, **execute e reporte** ("feito X, lançando Y agora").
 
+## Regressão de agent — 3 camadas OBRIGATÓRIAS
 
+Todo bug de comportamento do agent (tools que não disparam, frases proibidas/canônicas, gates pulados, artifacts dropados, meta-narrativa do mecanismo, alucinação de UI) **DEVE** virar regressão nas 3 camadas abaixo. Sem isso o bug volta — teste estrutural sozinho não pega comportamento da LLM, e LLM-as-judge sozinho é caro/lento e não roda em PR.
 
-<!-- GSD:profile-start -->
-## Developer Profile
+### Camada 1 — Structural (todo PR, <1s/arquivo)
+- Asserts contra source de produção: prompt contém substring X, tool Y em `active_tools`, builder injeta Z invariante, schema/seed corretos.
+- Onde: `src/**/*.test.ts` ao lado do código. Padrão: `system-prompt.<bug-slug>.test.ts`, `builder.<bug-slug>.test.ts`.
+- Pega: config errada, tools órfãs, regras faltando no prompt, seed quebrado.
+- **Não pega**: comportamento não-determinístico do modelo (alucinação, meta-narrativa em texto novo).
 
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+### Camada 2 — Trajectory snapshots (todo PR, <30s suite inteira)
+- **Arquivo único e obrigatório**: `tests/regression/agent-trajectory.test.ts`.
+- Usa `MockLanguageModelV2` da Vercel AI SDK (`import from "ai/test"`) + `simulateReadableStream`.
+- Cada bug real reportado = 1 `describe` novo ("cassette"). Cassette = stream determinístico de tokens/tool-calls do que o agent falou no bug.
+- Asserts em camadas: cassette dispara o detector (regex, contagem de tools, ordem) E asserts estruturais complementares no prompt/builder.
+- 100% determinístico — zero chamada Anthropic, zero DB necessário pros cassettes.
+- Cross-ref pra integration tests detalhados (admin-message-persistence, artifact-coverage, simulator-resume etc).
+- Pega: regressão em comportamento exato observado em prod/staging. Quebrou = alguém remexeu prompt/builder/tool e quebrou cassette → bloqueia merge.
+
+### Camada 3 — LLM-as-judge eval (nightly, lento mas profundo)
+- Onde: `tests/eval/agent-flow.eval.test.ts` (Vercel AI SDK 6, `claude-haiku-4-5` como user-bot + `claude-sonnet-4-6` real como agent).
+- Cenários canônicos por persona + canal (Helena/Rafael/Bruno/Camila × web/WhatsApp).
+- Asserts comportamentais via critérios estruturais (frases proibidas, tools chamadas, valores no DB) — não LLM-judge ainda, mas estrutura está pronta pra adicionar.
+- Roda apenas em **cron nightly** (não em PR), via `npx vitest run --config vitest.eval.config.ts`.
+- Pega: drift de modelo, comportamento sutil que cassette determinístico não cobre, casos edge novos.
+
+### Workflow obrigatório para todo bug de agent
+
+1. Bug reportado em dev/staging/prod → primeira ação = bug-tester escreve **Camada 1** (structural) + **Camada 2** (cassette em `tests/regression/agent-trajectory.test.ts`).
+2. Ver os 2 falharem (FAIL).
+3. Aplicar fix em produção (prompt/builder/tool/seed).
+4. Re-rodar — ambos verdes.
+5. Commit `test+fix:` único com Camada 1 + Camada 2 + fix.
+6. Push → GHA dispara CI que roda Camadas 1+2 em todo PR.
+7. **Camada 3 só roda nightly** — não bloqueia merge. Resultado é relatório, não gate.
+
+**NUNCA** aceitar fix sem cassette na Camada 2 — bug que voltou porque "não tinha teste cobrindo" é proibido. Cassette dura <100 linhas, roda em ms.
+
+### Quando NÃO precisa adicionar cassette
+- Bug em código não-agêntico puro (route HTTP que não chama streamText, query SQL pura, render React sem AI). Só Camada 1 já cobre.
+- Typo de copy em landing/footer. Só Camada 1.
+- Em dúvida, **adicione cassette mesmo assim** — overhead é desprezível.
+
+### Pre-commit hook automático (Camadas 1 + 2)
+Existe um pre-commit hook (`husky` em `.husky/pre-commit`) que **bloqueia o commit** se Camada 1 (`src/**/*.test.ts`) ou Camada 2 (`tests/regression/**`) falharem — roda via `npm run test:pre-commit` (vitest com `--reporter=dot --silent --bail=5`). Skip automático quando o commit não toca `.ts/.tsx/.sql` (commits só de docs). Camada 3 (eval LLM real em `tests/eval/`) **NÃO** roda no hook — é nightly via cron. Quebrou e está com pressa? `--no-verify` é permitido apenas em casos excepcionais (instalação do próprio hook, hotfix com fix de teste no próximo commit) — o padrão é manter verde.

@@ -1,29 +1,36 @@
-/**
- * Format AI responses and artifacts for WhatsApp.
- * Converts Markdown to WhatsApp text formatting and maps
- * artifacts to WhatsApp interactive message payloads.
- */
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 
-/** Convert basic Markdown to WhatsApp formatting */
 export function formatTextForWhatsApp(text: string): string {
-	return text
-		// Headers → bold
-		.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-		// Bold **text** stays as *text*
-		.replace(/\*\*(.+?)\*\*/g, "*$1*")
-		// Remove code blocks (triple backtick)
-		.replace(/```[\s\S]*?```/g, (match) => {
-			const code = match.replace(/```\w*\n?/g, "").trim();
-			return `\`\`\`${code}\`\`\``;
-		})
-		// Remove block quotes
-		.replace(/^>\s+/gm, "")
-		// Clean up excess newlines
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
+	return (
+		text
+			// Strip leaked system instructions ("[sistema: ...]" / "[contexto: ...]")
+			// that the AI sometimes echoes from conversation history.
+			.replace(/^\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "")
+			.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
+			// Strip hallucinated reproductions of the profile summary template.
+			.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
+			// Markdown headings → WhatsApp bold.
+			.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+			.replace(/\*\*(.+?)\*\*/g, "*$1*")
+			// Drop blockquote markers.
+			.replace(/^>\s+/gm, "")
+			// Add missing space in "frase.Outra" → "frase. Outra".
+			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// "frase:Outra" → "frase: Outra" (only when stuck without space).
+			.replace(/(:)([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
+			// Code blocks (preserva).
+			.replace(/```[\s\S]*?```/g, (match) => {
+				const code = match.replace(/```\w*\n?/g, "").trim();
+				return `\`\`\`${code}\`\`\``;
+			})
+			// Compactar 3+ quebras em 2 (paragrafo).
+			.replace(/\n{3,}/g, "\n\n")
+			.trim()
+	);
 }
 
-/** Split long text into chunks respecting WhatsApp's 4096 char limit */
 export function splitMessage(text: string, maxLen = 4096): string[] {
 	if (text.length <= maxLen) return [text];
 
@@ -49,18 +56,30 @@ export function splitMessage(text: string, maxLen = 4096): string[] {
 	return chunks;
 }
 
-/** Format currency value in BRL */
 function formatBRL(value: number): string {
 	if (value >= 1_000_000) {
-		return `R$ ${(value / 1_000_000).toFixed(1).replace(".", ",")}M`;
+		const millions = (value / 1_000_000).toLocaleString("pt-BR", {
+			minimumFractionDigits: 1,
+			maximumFractionDigits: 1,
+		});
+		return `R$ ${millions}M`;
 	}
-	if (value >= 1_000) {
-		return `R$ ${(value / 1_000).toFixed(0)}mil`;
-	}
-	return `R$ ${value.toFixed(0)}`;
+	return `R$ ${value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
 }
 
-// ---- Artifact → WhatsApp component mappers ----
+/** Compact form for the profile checklist: 100000 → "R$ 100 mil". */
+function formatBRLCompact(value: number): string {
+	if (value >= 1_000_000) {
+		const millions = (value / 1_000_000)
+			.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+			.replace(",0", "");
+		return `R$ ${millions}M`;
+	}
+	if (value >= 1_000) {
+		return `R$ ${Math.round(value / 1_000)} mil`;
+	}
+	return `R$ ${value}`;
+}
 
 export interface WhatsAppResponse {
 	type: "text" | "interactive";
@@ -71,10 +90,11 @@ export interface WhatsAppResponse {
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
 	const body = [
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("servicos", "Serviços")}`,
-		`💰 Crédito: ${formatBRL(p.creditValue as number)}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
+		`💰 Valor do bem: ${formatBRL(p.creditValue as number)}`,
 		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📊 Taxa admin: ${(p.adminFeePercent as number).toFixed(1)}%`,
+		// Bernardo 2026-06-11: sem taxa admin no card (assusta o leigo) — composição
+		// completa na proposta (PDF) pré-assinatura. Ver docs/jornada/CONTEXT.md.
 		`⏱ Prazo: ${p.termMonths} meses`,
 		`🎯 Contemplação: ${(p.contemplationRate as number).toFixed(1)}%/assembleia`,
 	].join("\n");
@@ -96,13 +116,23 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 }
 
 export function comparisonTableToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const groups = payload.groups as Array<Record<string, unknown>>;
-	const body = `*Comparativo — ${groups.length} opções encontradas*\nSelecione uma para ver detalhes:`;
+	const allGroups = payload.groups as Array<Record<string, unknown>>;
+	// WhatsApp interactive list limit: 10 rows per section.
+	const groups = allGroups.slice(0, 10);
+	const totalLabel =
+		allGroups.length > groups.length
+			? `${groups.length} de ${allGroups.length} opções`
+			: `${groups.length} opções encontradas`;
+	const body = `*Comparativo — ${totalLabel}*\nSelecione uma para ver detalhes:`;
 
-	const rows = groups.map((g, i) => ({
+	const rows = groups.map((g) => ({
 		id: `group_${g.id}`,
 		title: `${g.administradora}`.slice(0, 24),
-		description: `${formatBRL(g.creditValue as number)} • ${formatBRL(g.monthlyPayment as number)}/mês • ${g.termMonths}m`.slice(0, 72),
+		description:
+			`${formatBRL(g.creditValue as number)} • ${formatBRL(g.monthlyPayment as number)}/mês • ${g.termMonths}m`.slice(
+				0,
+				72,
+			),
 	}));
 
 	return {
@@ -120,20 +150,49 @@ export function comparisonTableToWhatsApp(payload: Record<string, unknown>): Wha
 
 export function simulationResultToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
-	const text = [
-		"*📊 Simulação de Cota*",
+	const groupId = p.groupId as string;
+	const lines = [
+		"*📋 Simulação de Cota*",
 		"",
-		`💰 Crédito: ${formatBRL(p.creditValue as number)}`,
-		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📋 Taxa admin: ${formatBRL(p.adminFee as number)}`,
-		`🛡 Fundo reserva: ${formatBRL(p.reserveFund as number)}`,
-		`🔒 Seguro: ${formatBRL(p.insurance as number)}`,
-		`💵 Custo total: ${formatBRL(p.totalCost as number)}`,
-		`⏱ Prazo: ${p.termMonths} meses`,
-		`📈 Taxa efetiva: ${(p.effectiveRate as number).toFixed(2)}%`,
-	].join("\n");
+		`💰 *Valor do bem:* ${formatBRL(p.creditValue as number)}`,
+		`📅 *Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
+		// Bernardo 2026-06-11: card DIRETO — taxa admin / fundo reserva / seguro /
+		// custo total / taxa efetiva saem (assustam o leigo). A composição completa
+		// (CMN 4.927/2021 + CDC art. 37) é disclosed no PDF da proposta pré-assinatura.
+		// Ver docs/jornada/CONTEXT.md.
+		`⏱ *Prazo:* ${p.termMonths} meses`,
+	];
+	const eb = p.embeddedBid as
+		| { percent: number; receivedCredit: number; necessaryBidToContemplate?: number | null }
+		| undefined;
+	if (eb) {
+		lines.push(
+			"",
+			`*Com lance embutido (${eb.percent}%):*`,
+			`🎯 Valor que você recebe: ${formatBRL(eb.receivedCredit)}`,
+		);
+		// FIX-8: só com dado real (> 0) — "R$ 0,00" é enganoso.
+		if ((eb.necessaryBidToContemplate ?? 0) > 0) {
+			lines.push(
+				`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate as number)}`,
+			);
+		}
+	}
+	const body = lines.join("\n");
 
-	return { type: "text", text };
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text: body },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: `interest_${groupId}`, title: "Tenho interesse!" } },
+					{ type: "reply", reply: { id: `whatif_${groupId}`, title: "Ajustar valor" } },
+				],
+			},
+		},
+	};
 }
 
 export function recommendationToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
@@ -142,9 +201,10 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	const body = [
 		`*⭐ Recomendação — ${score}% compatível*`,
 		"",
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("servicos", "Serviços")}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
 		`💰 ${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
-		`📊 ${(p.adminFeePercent as number).toFixed(1)}% admin • ${p.termMonths} meses`,
+		// Bernardo 2026-06-11: sem % admin no card (assusta o leigo).
+		`⏱ ${p.termMonths} meses`,
 		`🎯 ${(p.contemplationRate as number).toFixed(1)}% contemplação`,
 	].join("\n");
 
@@ -170,36 +230,199 @@ export function leadFormToWhatsApp(): WhatsAppResponse {
 	};
 }
 
-/** Pre-defined ranges by category — realistic market values */
-const RANGES: Record<string, Array<{ id: string; title: string; desc: string; creditMin: number; creditMax: number; budget: number }>> = {
+const RANGES: Record<
+	string,
+	Array<{
+		id: string;
+		title: string;
+		desc: string;
+		creditMin: number;
+		creditMax: number;
+		budget: number;
+	}>
+> = {
 	auto: [
-		{ id: "range_auto_50", title: "Até R$ 50 mil", desc: "Parcela ~R$ 600/mês • Seminovos", creditMin: 0, creditMax: 50000, budget: 600 },
-		{ id: "range_auto_80", title: "R$ 50 mil - R$ 80 mil", desc: "Parcela ~R$ 900/mês • Populares", creditMin: 50000, creditMax: 80000, budget: 900 },
-		{ id: "range_auto_120", title: "R$ 80 mil - R$ 120 mil", desc: "Parcela ~R$ 1.300/mês • Sedãs", creditMin: 80000, creditMax: 120000, budget: 1300 },
-		{ id: "range_auto_180", title: "R$ 120 mil - R$ 180 mil", desc: "Parcela ~R$ 2.000/mês • SUVs", creditMin: 120000, creditMax: 180000, budget: 2000 },
-		{ id: "range_auto_300", title: "Acima de R$ 180 mil", desc: "Parcela ~R$ 3.500/mês • Premium", creditMin: 180000, creditMax: 300000, budget: 3500 },
+		{
+			id: "range_auto_50",
+			title: "Até R$ 50 mil",
+			desc: "Parcela ~R$ 600/mês • Seminovos",
+			creditMin: 0,
+			creditMax: 50000,
+			budget: 600,
+		},
+		{
+			id: "range_auto_80",
+			title: "R$ 50 mil - R$ 80 mil",
+			desc: "Parcela ~R$ 900/mês • Populares",
+			creditMin: 50000,
+			creditMax: 80000,
+			budget: 900,
+		},
+		{
+			id: "range_auto_120",
+			title: "R$ 80 mil - R$ 120 mil",
+			desc: "Parcela ~R$ 1.300/mês • Sedãs",
+			creditMin: 80000,
+			creditMax: 120000,
+			budget: 1300,
+		},
+		{
+			id: "range_auto_180",
+			title: "R$ 120 mil - R$ 180 mil",
+			desc: "Parcela ~R$ 2.000/mês • SUVs",
+			creditMin: 120000,
+			creditMax: 180000,
+			budget: 2000,
+		},
+		{
+			id: "range_auto_300",
+			title: "Acima de R$ 180 mil",
+			desc: "Parcela ~R$ 3.500/mês • Premium",
+			creditMin: 180000,
+			creditMax: 300000,
+			budget: 3500,
+		},
 	],
 	imovel: [
-		{ id: "range_imovel_200", title: "Até R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Aptos compactos", creditMin: 0, creditMax: 200000, budget: 2000 },
-		{ id: "range_imovel_400", title: "R$ 200 mil - R$ 400 mil", desc: "Parcela ~R$ 3.500/mês • Aptos 2-3 quartos", creditMin: 200000, creditMax: 400000, budget: 3500 },
-		{ id: "range_imovel_600", title: "R$ 400 mil - R$ 600 mil", desc: "Parcela ~R$ 5.000/mês • Casas", creditMin: 400000, creditMax: 600000, budget: 5000 },
-		{ id: "range_imovel_1000", title: "R$ 600 mil - R$ 1 milhão", desc: "Parcela ~R$ 8.000/mês • Alto padrão", creditMin: 600000, creditMax: 1000000, budget: 8000 },
-		{ id: "range_imovel_2000", title: "Acima de R$ 1 milhão", desc: "Parcela ~R$ 15.000/mês • Luxo", creditMin: 1000000, creditMax: 2000000, budget: 15000 },
+		{
+			id: "range_imovel_200",
+			title: "Até R$ 200 mil",
+			desc: "Parcela ~R$ 2.000/mês • Aptos compactos",
+			creditMin: 0,
+			creditMax: 200000,
+			budget: 2000,
+		},
+		{
+			id: "range_imovel_400",
+			title: "R$ 200 mil - R$ 400 mil",
+			desc: "Parcela ~R$ 3.500/mês • Aptos 2-3 quartos",
+			creditMin: 200000,
+			creditMax: 400000,
+			budget: 3500,
+		},
+		{
+			id: "range_imovel_600",
+			title: "R$ 400 mil - R$ 600 mil",
+			desc: "Parcela ~R$ 5.000/mês • Casas",
+			creditMin: 400000,
+			creditMax: 600000,
+			budget: 5000,
+		},
+		{
+			id: "range_imovel_1000",
+			title: "R$ 600 mil - R$ 1 milhão",
+			desc: "Parcela ~R$ 8.000/mês • Alto padrão",
+			creditMin: 600000,
+			creditMax: 1000000,
+			budget: 8000,
+		},
+		{
+			id: "range_imovel_2000",
+			title: "Acima de R$ 1 milhão",
+			desc: "Parcela ~R$ 15.000/mês • Luxo",
+			creditMin: 1000000,
+			creditMax: 2000000,
+			budget: 15000,
+		},
+	],
+	moto: [
+		{
+			id: "range_moto_15",
+			title: "Até R$ 15 mil",
+			desc: "Parcela ~R$ 250/mês • Populares",
+			creditMin: 0,
+			creditMax: 15000,
+			budget: 250,
+		},
+		{
+			id: "range_moto_25",
+			title: "R$ 15 mil - R$ 25 mil",
+			desc: "Parcela ~R$ 400/mês • Trabalho",
+			creditMin: 15000,
+			creditMax: 25000,
+			budget: 400,
+		},
+		{
+			id: "range_moto_40",
+			title: "R$ 25 mil - R$ 40 mil",
+			desc: "Parcela ~R$ 650/mês • Médias",
+			creditMin: 25000,
+			creditMax: 40000,
+			budget: 650,
+		},
+		{
+			id: "range_moto_70",
+			title: "R$ 40 mil - R$ 70 mil",
+			desc: "Parcela ~R$ 1.100/mês • Esportivas",
+			creditMin: 40000,
+			creditMax: 70000,
+			budget: 1100,
+		},
+		{
+			id: "range_moto_120",
+			title: "Acima de R$ 70 mil",
+			desc: "Parcela ~R$ 1.800/mês • Premium",
+			creditMin: 70000,
+			creditMax: 120000,
+			budget: 1800,
+		},
 	],
 	servicos: [
-		{ id: "range_serv_30", title: "Até R$ 30 mil", desc: "Parcela ~R$ 400/mês • Reformas simples", creditMin: 0, creditMax: 30000, budget: 400 },
-		{ id: "range_serv_60", title: "R$ 30 mil - R$ 60 mil", desc: "Parcela ~R$ 700/mês • Reformas médias", creditMin: 30000, creditMax: 60000, budget: 700 },
-		{ id: "range_serv_100", title: "R$ 60 mil - R$ 100 mil", desc: "Parcela ~R$ 1.100/mês • Reformas completas", creditMin: 60000, creditMax: 100000, budget: 1100 },
-		{ id: "range_serv_200", title: "R$ 100 mil - R$ 200 mil", desc: "Parcela ~R$ 2.000/mês • Grandes projetos", creditMin: 100000, creditMax: 200000, budget: 2000 },
-		{ id: "range_serv_500", title: "Acima de R$ 200 mil", desc: "Parcela ~R$ 4.000/mês • Investimentos", creditMin: 200000, creditMax: 500000, budget: 4000 },
+		{
+			id: "range_serv_30",
+			title: "Até R$ 30 mil",
+			desc: "Parcela ~R$ 400/mês • Reformas simples",
+			creditMin: 0,
+			creditMax: 30000,
+			budget: 400,
+		},
+		{
+			id: "range_serv_60",
+			title: "R$ 30 mil - R$ 60 mil",
+			desc: "Parcela ~R$ 700/mês • Reformas médias",
+			creditMin: 30000,
+			creditMax: 60000,
+			budget: 700,
+		},
+		{
+			id: "range_serv_100",
+			title: "R$ 60 mil - R$ 100 mil",
+			desc: "Parcela ~R$ 1.100/mês • Reformas completas",
+			creditMin: 60000,
+			creditMax: 100000,
+			budget: 1100,
+		},
+		{
+			id: "range_serv_200",
+			title: "R$ 100 mil - R$ 200 mil",
+			desc: "Parcela ~R$ 2.000/mês • Grandes projetos",
+			creditMin: 100000,
+			creditMax: 200000,
+			budget: 2000,
+		},
+		{
+			id: "range_serv_500",
+			title: "Acima de R$ 200 mil",
+			desc: "Parcela ~R$ 4.000/mês • Investimentos",
+			creditMin: 200000,
+			creditMax: 500000,
+			budget: 4000,
+		},
 	],
 };
 
-/** Exported so processor can resolve range IDs to search params */
-export function resolveRange(rangeId: string): { creditMin: number; creditMax: number; budget: number; category: string } | null {
+export function resolveRange(
+	rangeId: string,
+): { creditMin: number; creditMax: number; budget: number; category: string } | null {
 	for (const [cat, ranges] of Object.entries(RANGES)) {
 		const found = ranges.find((r) => r.id === rangeId);
-		if (found) return { creditMin: found.creditMin, creditMax: found.creditMax, budget: found.budget, category: cat };
+		if (found)
+			return {
+				creditMin: found.creditMin,
+				creditMax: found.creditMax,
+				budget: found.budget,
+				category: cat,
+			};
 	}
 	return null;
 }
@@ -211,6 +434,7 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	const categoryLabel: Record<string, string> = {
 		imovel: "Imóvel",
 		auto: "Carro",
+		moto: "Moto",
 		servicos: "Serviço",
 	};
 
@@ -223,20 +447,692 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 			body: { text: body },
 			action: {
 				button: "Ver faixas de valor",
-				sections: [{
-					title: `Faixas — ${categoryLabel[category] ?? "Consórcio"}`,
-					rows: ranges.map((r) => ({
-						id: r.id,
-						title: r.title.slice(0, 24),
-						description: r.desc.slice(0, 72),
-					})),
-				}],
+				sections: [
+					{
+						title: `Faixas — ${categoryLabel[category] ?? "Consórcio"}`,
+						rows: ranges.map((r) => ({
+							id: r.id,
+							title: r.title.slice(0, 24),
+							description: r.desc.slice(0, 72),
+						})),
+					},
+				],
 			},
 		},
 	};
 }
 
-/** Map artifact type to WhatsApp response */
+// Bridge message shown right before the specialist takes over. Hardcoded
+// (system voice, not persona's) — purpose é UX: tell the user they're being
+// connected so the persona-voice change doesn't feel abrupt. Quente mas curto.
+export function transitionBridgeText(specialist: { name: string; categoryLabel: string }): string {
+	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
+}
+
+import {
+	CREDIT_BUCKETS,
+	LANCE_EMBUTIDO_OPTIONS,
+	lanceValueOptions,
+	TIMEFRAME_OPTIONS as TIMEFRAMES,
+} from "@/lib/agent/qualify-config";
+
+const CREDIT_RANGES = CREDIT_BUCKETS;
+
+export function creditRangeQuestionToWhatsApp(
+	category: "imovel" | "auto" | "moto" | "servicos",
+	prefix?: string,
+): WhatsAppResponse {
+	const ranges = CREDIT_RANGES[category];
+	const question = gateQuestion("credit", category) ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher faixa",
+				sections: [
+					{
+						title: "Faixas de valor do bem",
+						rows: ranges.map((r) => ({
+							id: `credit_${category}_${r.token}`,
+							title: r.title.slice(0, 24),
+							description: (r.desc ?? "").slice(0, 72),
+						})),
+					},
+				],
+			},
+		},
+	};
+}
+
+export function timeframeQuestionToWhatsApp(
+	category: "imovel" | "auto" | "moto" | "servicos",
+	prefix?: string,
+): WhatsAppResponse {
+	const question = gateQuestion("timeframe", category) ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher prazo",
+				sections: [
+					{
+						title: "Prazo desejado",
+						rows: TIMEFRAMES.map((t) => ({
+							id: `timeframe_${t.token}`,
+							title: t.title.slice(0, 24),
+							description: t.desc.slice(0, 72),
+						})),
+					},
+				],
+			},
+		},
+	};
+}
+
+export function resolveCreditReply(replyId: string): {
+	category: "imovel" | "auto" | "moto" | "servicos";
+	min: number;
+	max: number;
+	title: string;
+} | null {
+	if (!replyId.startsWith("credit_")) return null;
+	const parts = replyId.split("_");
+	if (parts.length < 3) return null;
+	const category = parts[1] as "imovel" | "auto" | "moto" | "servicos";
+	const token = parts[2];
+	const ranges = CREDIT_RANGES[category];
+	if (!ranges) return null;
+	const range = ranges.find((r) => r.token === token);
+	if (!range) return null;
+	return { category, min: range.min, max: range.max, title: range.title };
+}
+
+export function resolveTimeframeReply(replyId: string): {
+	prazoMeses: number;
+	title: string;
+} | null {
+	if (!replyId.startsWith("timeframe_")) return null;
+	const token = replyId.replace("timeframe_", "");
+	const t = TIMEFRAMES.find((x) => x.token === token);
+	if (!t) return null;
+	return { prazoMeses: t.prazoMeses, title: t.title };
+}
+
+export function qualifyConsentToWhatsApp(
+	prefix?: string,
+	opts: { firstTime?: boolean } = {},
+): WhatsAppResponse {
+	const question = gateQuestion("consent") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	// docx passo 2: pós-explicação de primeira vez o botão é "Entendi, pode
+	// continuar" — no WhatsApp o título encurta pro limite de 20 chars.
+	const yesTitle = opts.firstTime ? "Entendi, continuar" : "Bora!";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "qualify_start_yes", title: yesTitle } },
+					{ type: "reply", reply: { id: "qualify_start_more", title: "Entender mais antes" } },
+				],
+			},
+		},
+	};
+}
+
+export function handoffConfirmationToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: "Pra esse caso especificamente, recomendo conversar direto com nosso consultor humano. Quer que eu te conecte?",
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "handoff_confirm", title: "Sim, conectar" } },
+					{ type: "reply", reply: { id: "handoff_decline", title: "Continuar mesmo" } },
+				],
+			},
+		},
+	};
+}
+
+const LANCE_OPTIONS = [
+	{ token: "yes", title: "Sim, tenho reserva" },
+	{ token: "maybe", title: "Talvez, depende" },
+	{ token: "no", title: "Por enquanto não" },
+] as const;
+
+type LanceValue = (typeof LANCE_OPTIONS)[number]["token"];
+
+export function lanceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("lance") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: LANCE_OPTIONS.map((o) => ({
+					type: "reply",
+					reply: { id: `lance_${o.token}`, title: o.title },
+				})),
+			},
+		},
+	};
+}
+
+export function resolveLanceReply(replyId: string): { value: LanceValue; title: string } | null {
+	if (!replyId.startsWith("lance_")) return null;
+	const token = replyId.replace("lance_", "");
+	const opt = LANCE_OPTIONS.find((o) => o.token === token);
+	if (!opt) return null;
+	return { value: opt.token, title: opt.title };
+}
+
+// docx passo 2 (linha 21-22): se "sim" pro lance → "Qual valor aproximado?"
+// Faixas relativas ao crédito (lista — 4 opções não cabem em buttons).
+export function lanceValueQuestionToWhatsApp(creditMax: number, prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("lance-value") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text },
+			action: {
+				button: "Escolher valor",
+				sections: [
+					{
+						title: "Valor do lance",
+						rows: lanceValueOptions(creditMax).map((o) => ({
+							id: `lancevalue_${o.token}`,
+							title: o.title.slice(0, 24),
+							description: (o.desc ?? "").slice(0, 72),
+						})),
+					},
+				],
+			},
+		},
+	};
+}
+
+export function resolveLanceValueReply(replyId: string): { value: number } | null {
+	if (!replyId.startsWith("lancevalue_")) return null;
+	const value = Number(replyId.replace("lancevalue_", ""));
+	if (!Number.isFinite(value) || value <= 0) return null;
+	return { value };
+}
+
+export function lanceEmbutidoQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("lance-embutido") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: LANCE_EMBUTIDO_OPTIONS.map((o) => ({
+					type: "reply",
+					// Botões do WhatsApp limitam título a 20 chars — usa rótulo curto.
+					reply: {
+						id: `lanceembutido_${o.token}`,
+						title: o.token === "yes" ? "Sim, considerar" : "Sem lance embutido",
+					},
+				})),
+			},
+		},
+	};
+}
+
+export function resolveLanceEmbutidoReply(
+	replyId: string,
+): { value: "yes" | "no"; title: string } | null {
+	if (!replyId.startsWith("lanceembutido_")) return null;
+	const token = replyId.replace("lanceembutido_", "");
+	const opt = LANCE_EMBUTIDO_OPTIONS.find((o) => o.token === token);
+	if (!opt) return null;
+	return { value: opt.token, title: opt.title };
+}
+
+// docx passo 4 (linha 34): oferta do simulador na sequência do reveal.
+export function simulatorOfferToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("simulator-offer") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "simoffer_yes", title: "Quero ver!" } },
+					{ type: "reply", reply: { id: "simoffer_no", title: "Agora não" } },
+				],
+			},
+		},
+	};
+}
+
+export function resolveSimulatorOfferReply(replyId: string): { value: "yes" | "no" } | null {
+	if (!replyId.startsWith("simoffer_")) return null;
+	const token = replyId.replace("simoffer_", "");
+	return token === "yes" || token === "no" ? { value: token } : null;
+}
+
+function prazoLabel(months: number): string {
+	if (months === 0) return "o mais rápido possível";
+	if (months <= 6) return "até 6 meses";
+	if (months <= 12) return "1 ano";
+	if (months <= 24) return "2 anos ou mais";
+	return "sem pressa";
+}
+
+function lanceLabel(value: LanceValue): string {
+	if (value === "yes") return "tem reserva";
+	if (value === "maybe") return "depende do valor";
+	return "sem reserva por enquanto";
+}
+
+export function profileSummaryText(answers: {
+	creditMin?: number;
+	creditMax?: number;
+	prazoMeses?: number;
+	hasLance?: LanceValue;
+}): string {
+	const lines: string[] = ["*Show! Já tenho seu perfil pronto:*", ""];
+
+	if (answers.creditMax !== undefined) {
+		const credit =
+			answers.creditMin && answers.creditMin > 0
+				? `${formatBRLCompact(answers.creditMin)} a ${formatBRLCompact(answers.creditMax)}`
+				: `até ${formatBRLCompact(answers.creditMax)}`;
+		lines.push(`✅ Valor do bem: ${credit}`);
+	}
+	if (answers.prazoMeses !== undefined) {
+		lines.push(`✅ Prazo: ${prazoLabel(answers.prazoMeses)}`);
+	}
+	if (answers.hasLance) {
+		lines.push(`✅ Lance: ${lanceLabel(answers.hasLance)}`);
+	}
+
+	lines.push("", "Vou puxar as melhores opções pra você.");
+	return lines.join("\n");
+}
+
+export function experienceQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
+	const question = gateQuestion("experience") ?? "";
+	const text = prefix ? `${prefix}\n\n${question}` : question;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "experience_first", title: "🌱 É a primeira vez" } },
+					{ type: "reply", reply: { id: "experience_returning", title: "✅ Já conheço" } },
+					{ type: "reply", reply: { id: "experience_doubts", title: "🤔 Tenho dúvidas" } },
+				],
+			},
+		},
+	};
+}
+
+export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: "Escolhe abaixo ou digita livremente.",
+			},
+			action: {
+				// Bv2-01 / Bruna v1 #20: moto SUBSTITUI servicos nos chips
+				// (3 chips, mesma decisão da landing). WhatsApp limita
+				// interactive button a 3.
+				buttons: [
+					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
+					{ type: "reply", reply: { id: "category_auto", title: "🚗 Carro" } },
+					{ type: "reply", reply: { id: "category_moto", title: "🏍 Moto" } },
+				],
+			},
+		},
+	};
+}
+
+/**
+ * topic_picker — converte lista de chips clicáveis (2-5 tópicos do
+ * schema topicPickerSchema) em interactive WhatsApp:
+ *   - ≤3 tópicos → interactive type=button (limite Meta: 3 botões)
+ *   - 4-5 tópicos → interactive type=list (sections)
+ * IDs gerados por índice (topic_0..topic_4) já que tópicos são strings.
+ */
+export function topicPickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const topics = payload.topics as string[] | undefined;
+	if (!Array.isArray(topics) || topics.length === 0) return null;
+
+	const prompt = (payload.prompt as string | undefined) ?? "Escolha uma opção:";
+	const includeBackButton = (payload.includeBackButton as boolean | undefined) ?? false;
+
+	// Total de slots: tópicos + (eventual "Voltar") devem caber em button (3) ou
+	// list (10). Como schema limita topics a 2-5, sempre cabe em list.
+	const wantsBackButton = includeBackButton;
+	const totalButtons = topics.length + (wantsBackButton ? 1 : 0);
+
+	if (totalButtons <= 3) {
+		const buttons = topics.map((title, i) => ({
+			type: "reply" as const,
+			reply: { id: `topic_${i}`, title: String(title).slice(0, 20) },
+		}));
+		if (wantsBackButton) {
+			buttons.push({ type: "reply", reply: { id: "topic_back", title: "Voltar" } });
+		}
+		return {
+			type: "interactive",
+			interactive: {
+				type: "button",
+				body: { text: prompt },
+				action: { buttons },
+			},
+		};
+	}
+
+	const rows = topics.map((title, i) => ({
+		id: `topic_${i}`,
+		title: String(title).slice(0, 24),
+	}));
+	if (wantsBackButton) {
+		rows.push({ id: "topic_back", title: "Voltar" });
+	}
+	return {
+		type: "interactive",
+		interactive: {
+			type: "list",
+			body: { text: prompt },
+			action: {
+				button: "Ver tópicos",
+				sections: [{ title: "Tópicos", rows }],
+			},
+		},
+	};
+}
+
+/**
+ * scenarios — 3 cenários de contemplação (Conservador / Provável / Acelerado)
+ * Shape vem de ScenariosPayload (src/lib/chat/types.ts): groupId, administradora,
+ * creditValue, termMonths, scenarios.{conservador|provavel|acelerado}.
+ * Cada ScenarioPayload tem: lancePercent, expectedTermMonths, strategy, disclaimer.
+ * Vira texto formatado com hierarquia visual via emojis.
+ */
+export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const scenarios = payload.scenarios as
+		| {
+				conservador?: Record<string, unknown>;
+				provavel?: Record<string, unknown>;
+				acelerado?: Record<string, unknown>;
+		  }
+		| undefined;
+	if (!scenarios) return null;
+
+	const administradora = (payload.administradora as string | undefined) ?? "";
+	const creditValue = payload.creditValue as number | undefined;
+	const header =
+		administradora && creditValue !== undefined
+			? `*3 cenários — ${administradora} • ${formatBRL(creditValue)}*`
+			: "*3 cenários de contemplação*";
+
+	const renderBlock = (
+		emoji: string,
+		label: string,
+		s: Record<string, unknown> | undefined,
+	): string | null => {
+		if (!s) return null;
+		const lancePercent = s.lancePercent as number | undefined;
+		const months = s.expectedTermMonths as number | undefined;
+		const strategy = (s.strategy as string | undefined) ?? "";
+		const lanceLabel =
+			typeof lancePercent === "number" && lancePercent > 0 ? `${lancePercent}% lance` : "sem lance";
+		const monthsLabel = typeof months === "number" ? `${months}m` : "—";
+		const head = `${emoji} *${label}* — ${lanceLabel}, contempla em ~${monthsLabel}`;
+		return strategy ? `${head}\nEstratégia: ${strategy}` : head;
+	};
+
+	const blocks = [
+		renderBlock("🟢", "Conservador", scenarios.conservador),
+		renderBlock("🟡", "Provável", scenarios.provavel),
+		renderBlock("🔴", "Acelerado", scenarios.acelerado),
+	].filter((b): b is string => b !== null);
+
+	// Mesmo com cenários parciais/vazios, retorna o header — drop silencioso
+	// seria pior que texto mínimo (cliente cobrou exatamente esse bug).
+	const disclaimer =
+		(scenarios.conservador as Record<string, unknown> | undefined)?.disclaimer ??
+		(scenarios.provavel as Record<string, unknown> | undefined)?.disclaimer ??
+		(scenarios.acelerado as Record<string, unknown> | undefined)?.disclaimer ??
+		"";
+
+	const parts = [header, "", ...blocks];
+	if (disclaimer) {
+		parts.push("", `_${disclaimer}_`);
+	}
+
+	return { type: "text", text: parts.join("\n") };
+}
+
+/**
+ * financing_comparison — comparativo consórcio × financiamento.
+ * Shape vem de FinancingComparisonPayload (src/lib/chat/types.ts):
+ *   category, creditValue, termMonths,
+ *   consorcio: { monthlyPayment, totalCost },
+ *   financing: { monthlyPayment, totalCost, annualRate },
+ *   diff: { monthlyDelta, totalDelta },
+ *   disclaimer.
+ */
+export function financingComparisonToWhatsApp(
+	payload: Record<string, unknown>,
+): WhatsAppResponse | null {
+	const consorcio = payload.consorcio as
+		| { monthlyPayment?: number; totalCost?: number }
+		| undefined;
+	const financing = payload.financing as
+		| { monthlyPayment?: number; totalCost?: number; annualRate?: number }
+		| undefined;
+	if (!consorcio || !financing) return null;
+
+	const creditValue = payload.creditValue as number | undefined;
+	const termMonths = payload.termMonths as number | undefined;
+	const diff = payload.diff as { monthlyDelta?: number; totalDelta?: number } | undefined;
+	const disclaimer = (payload.disclaimer as string | undefined) ?? "";
+
+	const lines: string[] = ["*Consórcio vs Financiamento*"];
+	if (creditValue !== undefined) {
+		lines.push(
+			"",
+			`Valor do bem: ${formatBRL(creditValue)}${termMonths ? ` • ${termMonths} meses` : ""}`,
+		);
+	}
+
+	lines.push("", "*Consórcio*");
+	if (consorcio.monthlyPayment !== undefined) {
+		lines.push(`• Parcela: ${formatBRL(consorcio.monthlyPayment)}/mês`);
+	}
+	if (consorcio.totalCost !== undefined) {
+		lines.push(`• Total pago: ${formatBRL(consorcio.totalCost)}`);
+	}
+	lines.push("• Juros: zero");
+
+	lines.push("", "*Financiamento*");
+	if (financing.monthlyPayment !== undefined) {
+		lines.push(`• Parcela: ${formatBRL(financing.monthlyPayment)}/mês`);
+	}
+	if (financing.annualRate !== undefined) {
+		lines.push(`• Taxa: ${financing.annualRate.toFixed(1)}% a.a.`);
+	}
+	if (financing.totalCost !== undefined) {
+		lines.push(`• Total pago: ${formatBRL(financing.totalCost)}`);
+	}
+
+	if (diff?.monthlyDelta !== undefined || diff?.totalDelta !== undefined) {
+		lines.push("", "*Economia no consórcio*");
+		if (diff.monthlyDelta !== undefined) {
+			lines.push(`• Por mês: ${formatBRL(Math.abs(diff.monthlyDelta))}`);
+		}
+		if (diff.totalDelta !== undefined) {
+			lines.push(`• Total: ${formatBRL(Math.abs(diff.totalDelta))}`);
+		}
+	}
+
+	if (disclaimer) {
+		lines.push("", `_${disclaimer}_`);
+	}
+
+	return { type: "text", text: lines.join("\n") };
+}
+
+/**
+ * whatsapp_optin — usuário já está no canal WhatsApp, então pedir opt-in
+ * via card seria redundante. Em vez de dropar silencioso (que mascararia
+ * bugs), emite um texto curto reconhecendo o estado: o usuário tá no WA,
+ * vamos continuar daqui. Esse mapper EXISTE de propósito — semântica do
+ * canal: opt-in é implícito.
+ */
+export function whatsappOptinToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Show — como você já está no WhatsApp, vou seguir conversando por aqui mesmo. 👍",
+	};
+}
+
+const brlWa = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/** Passo 5: form de contratação. WhatsApp não tem form — vira diálogo guiado
+ * (FIX-25). A identidade JÁ foi coletada no gate identify (FIX-9), então a 1ª
+ * mensagem CONFIRMA os dados (CPF mascarado) com botões em vez de pedir CPF de
+ * novo. Sem identidade on file (defensivo), pede o CPF por texto. O aceite do
+ * botão/“sim” é o consentimento explícito que dispara a proposta real. */
+export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = payload.administradora as string | undefined;
+	const identityOnFile = payload.identityOnFile === true;
+	const cpfMasked = payload.prefilledCpfMasked as string | undefined;
+
+	if (!identityOnFile) {
+		return {
+			type: "text",
+			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD). 🔒`,
+		};
+	}
+
+	const dados = cpfMasked ? ` (CPF ${cpfMasked})` : "";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: `Boa! Já tenho seus dados${dados} aqui do nosso atendimento. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}? Seus dados seguem protegidos (LGPD). 🔒`,
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "contract_confirm", title: "Confirmar" } },
+					{ type: "reply", reply: { id: "contract_cancel", title: "Ver outras" } },
+				],
+			},
+		},
+	};
+}
+
+/** Oferta REAL pra confirmar (botão). */
+export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = (payload.administradora as string) ?? "administradora";
+	const credit = Number(payload.creditValue ?? 0);
+	const parcela = Number(payload.monthlyPayment ?? 0);
+	const grupo = payload.grupo as string | undefined;
+	// FIX-39/40: campos novos da API (paridade com o card web). Defensivos —
+	// ausentes → linha omitida (D11). Lance médio com rótulo LITERAL, sem promessa.
+	const termMonths = Number(payload.termMonths);
+	const avgBidValue = Number(payload.avgBidValue);
+	const prazoLine = Number.isFinite(termMonths) ? `\n*Prazo:* ${termMonths} meses` : "";
+	const lanceLine = Number.isFinite(avgBidValue)
+		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
+		: "";
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text: `✅ Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "offer_confirm", title: "Confirmar carta" } },
+					{ type: "reply", reply: { id: "offer_reject", title: "Ver outras" } },
+				],
+			},
+		},
+	};
+}
+
+/** Encaminhamento pra assinatura (link). */
+export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = (payload.administradora as string) ?? "administradora";
+	const link = payload.consortiumProposalLink as string;
+	return {
+		type: "text",
+		text: `Perfeito! Você está contratando um consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil — e a gente segue com você até a contemplação.\n\nÉ só finalizar a assinatura aqui:\n${link}`,
+	};
+}
+
+/** Envio de documento (WhatsApp aceita foto). */
+export function documentUploadToWhatsApp(_payload: Record<string, unknown>): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*. 📄",
+	};
+}
+
+/** Simulador-agulha estático (WhatsApp não tem slider) — marcos 3/6/12/24 meses. */
+export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const creditValue = Number(payload.creditValue ?? 0);
+	const termMonths = Number(payload.termMonths ?? 0);
+	if (!creditValue || !termMonths) {
+		return {
+			type: "text",
+			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o valor que você recebe.",
+		};
+	}
+	const marks = contemplationDialMarks({
+		creditValue,
+		termMonths,
+		monthlyPayment: Number(payload.monthlyPayment ?? 0),
+		historicalWinningBidPct: payload.historicalWinningBidPct as number | undefined,
+		// FIX-C1: calibra no par real da oferta — WhatsApp mostra os mesmos
+		// números do card, igual ao dial web.
+		referenceMonth: payload.referenceMonth as number | undefined,
+		maxEmbutidoPct: payload.maxEmbutidoPct as number | undefined,
+	});
+	const lines = marks.map((m) => {
+		if (m.mode === "sorteio")
+			return `*${m.targetMonth}m:* mais pelo sorteio — lance opcional, parcela menor`;
+		return `*${m.targetMonth}m:* lance ~${m.requiredLancePct}% · recebe ${brlWa(m.receivedCredit)}`;
+	});
+	return {
+		type: "text",
+		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa a partir dos dados da oferta — contemplação não é garantida._`,
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -254,7 +1150,48 @@ export function artifactToWhatsApp(
 			return leadFormToWhatsApp();
 		case "value_picker":
 			return valuePickerToWhatsApp(payload);
+		case "topic_picker":
+			return topicPickerToWhatsApp(payload);
+		case "scenarios":
+			return scenariosToWhatsApp(payload);
+		case "financing_comparison":
+			return financingComparisonToWhatsApp(payload);
+		case "whatsapp_optin":
+			return whatsappOptinToWhatsApp();
+		case "decision_prompt":
+			return decisionPromptToWhatsApp(payload);
+		case "contract_form":
+			return contractFormToWhatsApp(payload);
+		case "real_offer":
+			return realOfferToWhatsApp(payload);
+		case "signature_handoff":
+			return signatureHandoffToWhatsApp(payload);
+		case "document_upload":
+			return documentUploadToWhatsApp(payload);
+		case "contemplation_dial":
+			return contemplationDialToWhatsApp(payload);
 		default:
 			return null;
 	}
+}
+
+/** Card de decisão (jornada do .docx etapa 4). 3 botões; os títulos (≤20 chars)
+ * caem no processamento de texto (sem handler dedicado) e os fluxos existentes
+ * interpretam (contratar → lead form, especialista → handoff). */
+export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const admin = payload.administradora as string | undefined;
+	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text },
+			action: {
+				buttons: DECISION_PROMPT_OPTIONS.map((o) => ({
+					type: "reply",
+					reply: { id: `decision_${o.intent}`, title: o.waTitle },
+				})),
+			},
+		},
+	};
 }
