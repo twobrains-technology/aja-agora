@@ -23,7 +23,6 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 // ---------- detector de statements destrutivos (puro) ----------
 //
@@ -205,9 +204,12 @@ async function main() {
 	});
 }
 
-// Só roda o main quando invocado como entrypoint (node migrate-guard.mjs);
-// importar o módulo (testes) não dispara efeitos colaterais.
-const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
-if (import.meta.url === invokedPath) {
+// Só roda o main quando invocado como entrypoint. Detecta pelo NOME do script
+// (não por import.meta.url): o runtime usa o bundle CJS do esbuild, onde
+// import.meta.url vira um shim que não bate com argv[1] → main() virava no-op
+// silencioso (BUG-MIGRATE-GUARD-BUNDLE-NOOP). O nome casa tanto o .mjs (ESM)
+// quanto o .bundle.cjs (runtime); o vitest (argv[1]=vitest) não casa.
+const invoked = process.argv[1] ?? "";
+if (/migrate-guard(\.bundle)?\.(mjs|cjs)$/.test(invoked)) {
 	main();
 }

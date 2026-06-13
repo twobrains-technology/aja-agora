@@ -7,6 +7,7 @@
 // destrutivas FUTURAS. Fix: consultar drizzle.__drizzle_migrations (count de
 // aplicadas) e escanear só as entries do journal além desse count.
 
+import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 // @ts-expect-error — .mjs sem types; importamos as funções puras do guard.
@@ -69,5 +70,31 @@ describe("migrate-guard — detect (puro, sql inline)", () => {
 			{ file: "0002_add_table.sql", sql: 'CREATE TABLE "x" ("id" serial);' },
 		]);
 		expect(findings).toEqual([]);
+	});
+});
+
+describe("migrate-guard — entrypoint roda no BUNDLE CJS (não vira no-op)", () => {
+	it("BUG-MIGRATE-GUARD-BUNDLE-NOOP: bundle executado sem DATABASE_URL aborta (main rodou)", () => {
+		// O runtime usa o bundle CJS (esbuild), onde import.meta.url não bate com
+		// argv[1] → o guard de entrypoint via import.meta.url tornava main() um
+		// no-op silencioso (migrations não aplicadas). O entrypoint deve casar pelo
+		// NOME do script. Gera o bundle e roda sem DATABASE_URL: main() tem que
+		// rodar e abortar com a mensagem.
+		execSync("npm run db:migrate:bundle", { cwd: process.cwd(), stdio: "ignore" });
+		let stderr = "";
+		let exitCode = 0;
+		try {
+			execSync("node scripts/migrate-guard.bundle.cjs", {
+				cwd: process.cwd(),
+				env: { ...process.env, DATABASE_URL: "" },
+				stdio: ["ignore", "ignore", "pipe"],
+			});
+		} catch (e: unknown) {
+			const err = e as { status?: number; stderr?: Buffer };
+			exitCode = err.status ?? 0;
+			stderr = err.stderr?.toString() ?? "";
+		}
+		expect(exitCode).not.toBe(0);
+		expect(stderr).toMatch(/DATABASE_URL não definida/);
 	});
 });
