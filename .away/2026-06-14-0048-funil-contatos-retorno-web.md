@@ -75,6 +75,27 @@ Decisão de escopo: os 3 blocos estavam desenhados como ondas/branches paralelas
 - **Reversibilidade:** fácil (migração nova).
 - **⚠️ Dívida:** o meta do drizzle continua quebrado — `generate` não funciona até reparo. Vale uma faxina futura (fora do escopo destes blocos).
 
+- 01:13 — **FIX-43 COMPLETO** (commit 12ebee8). Split do fechamento em 3 raias (na_administradora→aguardando_pagamento→fechado_ganho), STAGE_ORDER 9 itens, transition forward-only por default (regressão via allowRegression). Migração 0025 (enum) no container. Camada 1 (4) + integration (5) verdes; labels/cores no kanban+dashboard. Suíte 1662 verde.
+- 01:27 — **FIX-44 COMPLETO** (commit 49651a9). Automação do desfecho: createBeviProposal→proposta_enviada, stageForProposalStatus (máquina do Kairo), worker BullMQ (Redis no compose), perdido por inatividade 14d, rota forward-only+flag 409. Camada 1 (9) + integration (4) verdes; Redis OK do host; worker type-clean. Suíte 1671 verde. **Bloco-B na metade do FIX-45.** Ver D8, D9, D10.
+
+### D8 · 01:24 — Camada 2 (cassette) do FIX-44 substituída por Camada 1 + integration
+- **Contexto:** o fix file exigia cassette ("proposta nasce, raia não move"). Mas a raia é decidida por evento DETERMINÍSTICO (createBeviProposal / status da API), não por comportamento do LLM. CLAUDE.md tem exceção explícita: "Bug em código não-agêntico puro → só Camada 1".
+- **Decidi:** cobrir com Camada 1 (mapa status→raia exato, puro) + integration DB real (createBeviProposal→proposta_enviada; reconcile por status; idempotência; inatividade). Sem cassette no agent-trajectory (o agente não decide a raia).
+- **Reversibilidade:** fácil (cassette pode ser adicionado depois se a lógica virar agêntica).
+
+### D9 · 01:26 — Worker BullMQ como processo separado; Redis prod = PENDENTE-KAIRO
+- **Contexto:** worker exige Redis. Kairo: "mesmo container se der".
+- **Decidi:** worker como processo separado (`npm run worker:proposal`), Redis segregado por workspace no compose local (validado: PING OK do host). bullmq/ioredis importados dinamicamente (não pesam no bundle do app — o app não quebra sem Redis). Import `type` do ConnectionOptions (apagado em build).
+- **⚠️ PENDENTE-KAIRO:** subir Redis em PROD (ElastiCache ou sidecar) + rodar o worker (processo no mesmo container ou task separada). Blast radius de infra → não fiz autônomo. Container LOCAL precisa rebuild pra rodar o worker (node_modules do volume é anterior às deps novas) — testes rodam no host, então não bloqueia.
+
+### D10 · 01:27 — em_negociação por simulate repetida + notificação proativa: DIFERIDOS (partial)
+- **Contexto:** FIX-44 listava 2 itens secundários: (a) "em_negociação também por card de decisão / simulate_quota repetida pós-recomendação"; (b) "worker dispara mensagem proativa no canal".
+- **Decidi DIFERIR ambos**, conscientemente:
+  - (a) em_negociação já tem trigger (handoff, proxy.ts). O trigger chat-side extra exige mexer no runner do agente + 2 adapters + event union + tracker → risco aos cassettes do agente, baixo valor incremental. O bug-alvo PRIMÁRIO do FIX-44 ("proposta nasce, raia não move") está 100% resolvido.
+  - (b) notificação proativa é OUTBOUND a usuários reais (to-saindo §4: enviar pra fora = blast radius). Auto-disparar WhatsApp/web de um worker em background a clientes reais não é seguro fazer autônomo. O hook de transição existe (worker sabe quando a raia muda); o envio fica gated/pendente.
+- **⚠️ Follow-up:** decidir com o Kairo se (b) auto-envia ou vira notificação interna pro time. (a) é refinamento de funil de baixa prioridade.
+- **Reversibilidade:** N/A (não implementado; sem dívida de código).
+
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _pendente_
 - **O que NÃO fiz e por quê:** _pendente_
