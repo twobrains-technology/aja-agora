@@ -1,7 +1,9 @@
 ---
 id: FIX-42
 titulo: "Backfill de contacts + resolveContact() + religar pontos de captura"
-status: todo
+status: done
+commit: fa62081
+executado_em: 2026-06-14
 bloco: bloco-a-identidade-contatos
 arquivos:
   - src/lib/contacts/resolve.ts        # novo

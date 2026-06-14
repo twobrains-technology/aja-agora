@@ -1,7 +1,9 @@
 ---
 id: FIX-45
 titulo: "Visão consolidada do contato (timeline web+whatsapp + propostas + histórico de raia)"
-status: todo
+status: done
+commit: 3906a67
+executado_em: 2026-06-14
 bloco: bloco-b-funil-raias
 arquivos:
   - src/app/api/admin/contacts/[id]/route.ts          # novo

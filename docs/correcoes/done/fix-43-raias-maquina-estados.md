@@ -1,7 +1,9 @@
 ---
 id: FIX-43
 titulo: "Redesenho das raias + máquina de estados forward-only"
-status: todo
+status: done
+commit: 12ebee8
+executado_em: 2026-06-14
 bloco: bloco-b-funil-raias
 arquivos:
   - src/db/schema.ts

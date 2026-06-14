@@ -1,7 +1,9 @@
 ---
 id: FIX-46
 titulo: "Retomada de contexto no mesmo dispositivo (cookie ↔ conversa + /api/chat/resume)"
-status: todo
+status: done
+commit: c1c29fc
+executado_em: 2026-06-14
 bloco: bloco-c-retorno-web
 arquivos:
   - src/app/api/chat/resume/route.ts     # novo

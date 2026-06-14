@@ -1,7 +1,9 @@
 ---
 id: FIX-44
 titulo: "Automação das raias de fechamento (proposta automática + worker de polling da mesa) + forward-only"
-status: todo
+status: done
+commit: 49651a9
+executado_em: 2026-06-14
 bloco: bloco-b-funil-raias
 arquivos:
   - src/lib/admin/lead-stage-tracker.ts

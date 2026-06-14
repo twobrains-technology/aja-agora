@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-14 00:48 · **Sessão:** aja-agora / feat/funil-e-retorno-para-sessao
 - **Critério de pronto:** todos os 7 FIXes (41→47) implementados com TDD strict; suíte unit verde (`npm run test:unit`); integration verde nos itens que tocam DB; cassettes (Camada 2) verdes onde exigidos; E2E dos fluxos críticos (FIX-45, 46, 47) passando; cada item movido pra `docs/correcoes/done/` com `commit:`/`executado_em:`; tudo commitado em conventional commits.
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO
 
 ## Contexto da ativação
 
@@ -96,8 +96,27 @@ Decisão de escopo: os 3 blocos estavam desenhados como ondas/branches paralelas
 - **⚠️ Follow-up:** decidir com o Kairo se (b) auto-envia ou vira notificação interna pro time. (a) é refinamento de funil de baixa prioridade.
 - **Reversibilidade:** N/A (não implementado; sem dívida de código).
 
-## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:** _pendente_
-- **O que NÃO fiz e por quê:** _pendente_
-- **Revisar primeiro:** D2 (OTP vs piloto) é a decisão mais discutível.
-- **Próximos passos sugeridos:** _pendente_
+- 01:39 — **FIX-45 COMPLETO** (commit 3906a67). API de agregação /api/admin/contacts/[id], dedup do kanban por contato (badge multi-canal), contact-detail-panel (Timeline/Propostas/Funil), CPF mascarado. Camada 1 (4) + integration (2) + **E2E Playwright PASSOU** (login admin real → pipeline → card dedup → painel cross-channel; screenshot test-results/fix45-contact-detail.png). **Bloco-B 100% encerrado.** Restart do app resolveu cache stale do Turbopack (memória conhecida). Suíte unit 1675 verde.
+
+- 01:54 — **FIX-47 COMPLETO** (commit 120452c) + **TODOS OS 7 FIXES CONCLUÍDOS**. Recuperação cross-device opção A: contexto leve livre, dado sensível atrás de OTP (anti-pretexting). Integration (6) + E2E (3) verdes. **Bloco-C 100% encerrado, todo/ vazio.** Fix de isolamento dos integration tests (CPF/telefone distintos por arquivo — commit a60a3de).
+- 01:54 — **VERIFICAÇÃO FINAL (evidência fresca):** suíte unit **1675 passed** (4 skip); **26 integration** (DB real) passam JUNTOS; **6 E2E Playwright** passam JUNTOS (FIX-45 UI admin, FIX-46 same-device, FIX-47 anti-pretexting).
+
+## Relatório final
+- **Resultado vs critério de pronto:** ✅ ATINGIDO. 7/7 FIXes (41→47) implementados com TDD. Suíte unit 1675 verde. 26 integration tests (DB real) verdes. 6 E2E Playwright verdes. Cada item movido pra `docs/correcoes/done/` com commit/executado_em. Migrações (0024 contacts, 0025 enum) aplicadas no container. Tudo em conventional commits.
+- **O que NÃO fiz e por quê (partials conscientes, documentados):**
+  - **Worker em prod + Redis prod** (FIX-44): infra/deploy = blast radius. Worker implementado e testado (reconcile/poll/inatividade); subir Redis (ElastiCache/sidecar) + rodar o processo é PENDENTE-KAIRO.
+  - **Backfill no entrypoint de prod** (FIX-42): rodei no container local; encadear `db:backfill:contacts:runtime` no release de prod é PENDENTE-KAIRO (1 linha, idempotente).
+  - **Notificação proativa do worker** (FIX-44, D10): outbound a usuários reais = não faço autônomo. Hook existe, envio gated/pendente.
+  - **em_negociação por simulate-repetida** (FIX-44, D10): refinamento de funil de baixa prioridade (já há trigger via handoff). Diferido.
+  - **UI de recuperação no chat + saudação do agente + cópia de archival Letta** (FIX-47): o BACKEND seguro + API E2E estão 100%; a UX do "quando/como oferecer a recuperação" depende de decisão de produto (Kairo/Bernardo) — não inventei UI autônoma. Backend pronto pra plugar.
+- **Revisar primeiro (as mais discutíveis):**
+  - **D2** (FIX-47): escolhi opção A (OTP) por LGPD/segurança. Se quiser modo piloto B (sem OTP), removo o gate `/recover/verify` — 1 bloco. É a decisão mais discutível.
+  - **D8** (FIX-44): Camada 2 cassette substituída por Camada 1 + integration (raia é determinística, não-agêntica — exceção do CLAUDE.md).
+  - **D6** (FIX-41): meta do drizzle corrompido (pré-existente no develop) → migrations hand-written. `generate` continua quebrado (dívida fora de escopo).
+- **Próximos passos sugeridos:**
+  1. Aprovar/ajustar D2 (OTP vs piloto).
+  2. Provisionar Redis prod + rodar o worker de polling (destrava o funil de fechamento automático).
+  3. Encadear o backfill no release de prod (consolida contatos existentes).
+  4. Definir a UX da recuperação no chat (FIX-47 frontend) com o Bernardo.
+  5. Faxina do meta do drizzle (destrava `drizzle-kit generate`).
+  6. Rodar `/qa-flow` completo se quiser QA adversarial além do que já cobri.

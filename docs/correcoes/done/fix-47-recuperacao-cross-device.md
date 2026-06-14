@@ -1,7 +1,9 @@
 ---
 id: FIX-47
 titulo: "Recuperação cross-device por telefone/CPF + verificação de posse (decisão Kairo)"
-status: todo
+status: done
+commit: 120452c
+executado_em: 2026-06-14
 bloco: bloco-c-retorno-web
 arquivos:
   - src/app/api/chat/route.ts
