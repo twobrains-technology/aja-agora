@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
-import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { attachContact } from "@/lib/contacts";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 export type TrackableStage = "engajado" | "qualificado";
 
