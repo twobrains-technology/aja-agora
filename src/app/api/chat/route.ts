@@ -261,14 +261,22 @@ export async function POST(req: NextRequest) {
 			})
 		: undefined;
 
+	// FIX-46: vincula o cookie `aja_uid` à conversa web ao criar, pra retomada
+	// same-device (GET /api/chat/resume acha "a conversa deste cookie").
 	if (providedId && !conv) {
-		const [created] = await db.insert(conversations).values({ id: providedId }).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ id: providedId, metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	} else if (conv) {
 		conversationId = conv.id;
 		contactName = conv.contactName ?? null;
 	} else {
-		const [created] = await db.insert(conversations).values({}).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	}
 

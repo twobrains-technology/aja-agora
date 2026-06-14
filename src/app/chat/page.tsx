@@ -1,31 +1,32 @@
-"use client";
+// FIX-46 — retomada same-device. Server component lê o cookie `aja_uid`, busca a
+// última conversa web ativa daquele cookie e hidrata o ChatProvider com
+// initialConversationId + initialMessages. Sem cookie / sem conversa → primeira
+// vez intacta (provider gera UUID novo, começa vazio).
 
-import { ChatInput } from "@/components/chat/chat-input";
-import { ChatLayout } from "@/components/chat/chat-layout";
-import { MessageList } from "@/components/chat/message-list";
-import { ChatProvider, useChatContext } from "@/lib/chat/provider";
+import { cookies } from "next/headers";
+import { ChatProvider } from "@/lib/chat/provider";
+import { getResumableConversation } from "@/lib/chat/resume";
+import type { AjaUIMessage } from "@/lib/chat/ui-message";
+import { COOKIE_NAME } from "@/lib/memory/identity";
+import { ChatPageContent } from "./chat-page-content";
 
-export default function ChatPage() {
+export default async function ChatPage() {
+	const cookieStore = await cookies();
+	const cookieValue = cookieStore.get(COOKIE_NAME)?.value ?? null;
+	const resumed = await getResumableConversation(cookieValue);
+
+	const initialMessages = resumed?.messages.map(
+		(m) =>
+			({
+				id: m.id,
+				role: m.role,
+				parts: [{ type: "text", text: m.content }],
+			}) as AjaUIMessage,
+	);
+
 	return (
-		<ChatProvider>
+		<ChatProvider initialConversationId={resumed?.conversationId} initialMessages={initialMessages}>
 			<ChatPageContent />
 		</ChatProvider>
-	);
-}
-
-function ChatPageContent() {
-	const { messages, status, regenerate, reset, error } = useChatContext();
-	const isStreaming = status === "submitted" || status === "streaming";
-
-	return (
-		<ChatLayout onReset={reset} error={error?.message ?? null}>
-			<MessageList
-				messages={messages}
-				isStreaming={isStreaming}
-				hasError={!!error}
-				onRetry={regenerate}
-			/>
-			<ChatInput isStreaming={isStreaming} />
-		</ChatLayout>
 	);
 }
