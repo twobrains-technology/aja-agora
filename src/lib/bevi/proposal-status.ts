@@ -12,6 +12,7 @@
 
 import { getProposalGateway } from "@/lib/adapters";
 import type { ProposalGateway, ProposalStatus } from "@/lib/adapters/proposal-gateway";
+import type { LeadStage } from "@/lib/admin/lead-stages";
 import { getLatestBeviProposal } from "./proposal-repo";
 
 // ============================================================================
@@ -138,6 +139,43 @@ export function translateProposalStatus(status: ProposalStatus): {
 		userMessage: `O andamento atual da sua proposta na administradora é: ${status.statusName}.`,
 		lastTransition,
 	};
+}
+
+// ============================================================================
+// FIX-44 — máquina de estados do DESFECHO (status da administradora → raia)
+// ============================================================================
+
+/**
+ * Mapa do DESFECHO fornecido pelo Kairo (2026-06-14): cada systemicValue da fase
+ * pós-`waitingForUniqueCode` (movida pela MESA, timing da Conexia) → raia do funil.
+ * Detectado por POLLING (não há webhook). Estados de documentação pré-mesa não
+ * entram aqui — já estão em `proposta_enviada` (setado por createBeviProposal).
+ */
+export const PROPOSAL_STATUS_TO_STAGE: Record<string, LeadStage> = {
+	approveWaitingForUniqueCode: "na_administradora", // "Inserir proposta"
+	aguard_pag_cliente: "aguardando_pagamento", // "Aguardando Pagto Cliente"
+	prop_efetivada: "fechado_ganho", // "Proposta Efetivada" (comissão)
+	approved: "fechado_ganho", // "Aprovada"
+	repproved: "perdido", // "Reprovado"
+};
+
+/**
+ * Raia resultante do status REAL da proposta, ou `null` se o estado atual não
+ * move o funil. Precedência (terminais primeiro):
+ *   reprovado > aprovado/efetivado > aguardando pagto > na administradora.
+ * Função PURA (Camada 1). O worker (FIX-44) aplica com forward-only.
+ */
+export function stageForProposalStatus(status: ProposalStatus): LeadStage | null {
+	if (status.reprovedAt) return "perdido";
+	if (status.approvedAt) return "fechado_ganho";
+	const sysValue = extractLastTransition(status)?.state;
+	if (sysValue && PROPOSAL_STATUS_TO_STAGE[sysValue]) {
+		return PROPOSAL_STATUS_TO_STAGE[sysValue];
+	}
+	// integrationCode presente = proposta já inserida na administradora (mesa),
+	// mesmo que o systemicValue corrente não esteja no mapa.
+	if (status.integrationCode) return "na_administradora";
+	return null;
 }
 
 // ============================================================================

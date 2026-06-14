@@ -5,7 +5,8 @@
 
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { beviProposals } from "@/db/schema";
+import { beviProposals, conversations } from "@/db/schema";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 
 export interface BeviProposalSnapshot {
 	proposalId: string;
@@ -38,11 +39,19 @@ export async function createBeviProposal(
 	snapshot: BeviProposalSnapshot,
 	leadId?: string | null,
 ): Promise<Row> {
+	// FIX-41/44: denormaliza contactId da conversa pra consulta direta por
+	// telefone/CPF ("buscar tudo que o cliente já fez").
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { contactId: true },
+	});
+
 	const [row] = await db
 		.insert(beviProposals)
 		.values({
 			conversationId,
 			leadId: leadId ?? null,
+			contactId: conv?.contactId ?? null,
 			proposalId: snapshot.proposalId,
 			simulationSessionId: snapshot.simulationSessionId ?? null,
 			ofertaId: snapshot.ofertaId ?? null,
@@ -59,6 +68,14 @@ export async function createBeviProposal(
 			proposalStatus: snapshot.proposalStatus ?? null,
 		})
 		.returning();
+
+	// FIX-44: a proposta Bevi já nasce automática (com PDF). A raia passa a
+	// acompanhar o evento que JÁ existe — move o lead pra `proposta_enviada`
+	// (system, forward-only). Antes a proposta nascia e a raia não movia.
+	if (leadId) {
+		await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
+	}
+
 	return row;
 }
 

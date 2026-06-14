@@ -42,6 +42,23 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    # FIX-44: Redis pro worker de polling do desfecho (BullMQ). Segregado por
+    # workspace, DNS-first (sem porta publicada).
+    image: redis:7-alpine
+    container_name: aja-redis-${WORKSPACE_NAME}
+    restart: unless-stopped
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: redis.aja-${WORKSPACE_NAME}.orb.local
+      tb.workspace: ${WORKSPACE_NAME}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app:
     profiles: ["containerized"]
     # Modo DEV/HMR (padrão dev-stack): Dockerfile.dev roda `next dev` com
@@ -68,6 +85,7 @@ services:
       # migrate-guard libera destrutivas em local.
       TB_ENV: local
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@aja-pg-${WORKSPACE_NAME}:5432/${POSTGRES_DB:-aja_agora}
+      REDIS_URL: redis://aja-redis-${WORKSPACE_NAME}:6379
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
       LETTA_BASE_URL: http://letta:8283
       LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
