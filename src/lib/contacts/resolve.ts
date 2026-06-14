@@ -142,6 +142,29 @@ async function resolveContactTx(tx: Tx, n: NormalizedContactInput): Promise<Cont
 }
 
 /**
+ * Lookup READ-ONLY do contato por telefone e/ou CPF — NUNCA cria (FIX-47:
+ * recuperação cross-device não pode materializar contatos a partir de um número
+ * digitado por qualquer um). Retorna o contato existente ou null.
+ */
+export async function findContactByIdentifier(input: {
+	phone?: string | null;
+	cpf?: string | null;
+}): Promise<Contact | null> {
+	const n = normalizeContactInput(input);
+	const conds = [];
+	if (n.phone) conds.push(eq(contacts.phone, n.phone));
+	if (n.cpf) conds.push(eq(contacts.cpf, n.cpf));
+	if (conds.length === 0) return null;
+
+	const [match] = await db
+		.select()
+		.from(contacts)
+		.where(or(...conds))
+		.limit(1);
+	return match ?? null;
+}
+
+/**
  * Resolve o contato e religa as FKs: grava `contactId` na conversa e/ou no lead
  * dados. Idempotente. Usado pelos pontos de captura (telefone/CPF/e-mail) pra
  * alimentar `contacts` daqui pra frente. Nunca lança — captura não pode quebrar

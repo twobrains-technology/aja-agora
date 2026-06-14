@@ -4,6 +4,7 @@ export {
 	type Contact,
 	type ContactInput,
 	consolidateIdentifiers,
+	findContactByIdentifier,
 	hasIdentifier,
 	type NormalizedContactInput,
 	normalizeContactInput,
