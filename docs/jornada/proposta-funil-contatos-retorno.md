@@ -124,26 +124,38 @@ feliz.
 | 2 | **Engajado** | Declarou objetivo + perfil; respondendo qualificação (passo 1-2) | Capturou tipo+valor do bem **ou** nome **ou** rodou `simulate_quota` | contact-capture / `simulate_quota` | Nenhuma — IA qualifica |
 | 3 | **Qualificado** | Recebeu as recomendações de grupo (passo 3-4) | tool `recommend_groups` | `runner.ts` LEAD_STAGE_BY_TOOL | Acompanhar; intervir se a IA travar |
 | 4 | **Em negociação** | Decidindo: simulando cenários, abriu card de decisão, ou pediu especialista (passo 4) | Card de decisão aberto · `simulate_quota` repetida pós-recomendação · **handoff** humano | artifacts + `whatsapp/proxy` | Abordar quem pediu especialista / reaquecer quem esfriou |
-| 5 | **Proposta enviada** | Proposta Bevi gerada (PDF) + coleta de documentos (passo 5) | **`createBeviProposal`** (automático, já existe) + avanço de `proposalStatus`/docs | `proposal-repo` / portal CONEXIA | Acompanhar a documentação |
-| 6 | **Na administradora (mesa)** | Docs completos → proposta inserida; a **mesa** (back office humano da operadora) efetiva (passo 5-6) | **polling** de `getStatus` (`changesHistory`: `waitingForUniqueCode`→inserção). **Sem webhook.** | `check_proposal_status` (FIX-14) | Acompanhar — a mesa é trabalho **manual NA operadora**, fora do sistema |
-| 7 | **Contratado — boleto emitido** | A mesa volta com **contrato + boleto** e atualiza na **Conexia** (passo 6) | polling de `getStatus` (estado pós-inserção — **ainda não observado**, gap) | `getStatus` / Conexia | Encaminhar o boleto ao cliente |
-| 8 | **Fechado — ganho** | **1º boleto PAGO** — o evento de sucesso do funil (destrava a comissão) | a confirmar com Bevi/AGX (gap G2/G3) | — | Onboarding pós-venda (passo 7) |
-| — | **Perdido** | Desistiu, abandonou (fica `pending` eterno) ou foi reprovado | Inatividade > N dias (timeout **nosso** — a API não sinaliza abandono) · `reprovedAt` · admin manual | job de inatividade / `getStatus` | Reengajar |
+| 5 | **Proposta enviada** | Proposta Bevi gerada (PDF) + cliente anexando documentos pelo link (auto-contratação, passo 5) | `createBeviProposal` + estados CONEXIA até `waitingForUniqueCode` | `proposal-repo` / portal CONEXIA | Acompanhar a documentação |
+| 6 | **Na administradora (mesa)** | A **mesa** (back office humano) insere a proposta na administradora (passo 6) | status **`approveWaitingForUniqueCode`** ("Inserir proposta") — **polling** | worker → `getStatus` | Acompanhar — mesa manual, timing da Conexia |
+| 7 | **Aguardando pagamento** | Proposta inserida; o cliente precisa **pagar o 1º boleto** pelo link (passo 6) | status **`aguard_pag_cliente`** ("Aguardando Pagto Cliente") — polling | worker → `getStatus` | Lembrar/ajudar o cliente a pagar |
+| 8 | **Fechado — ganho** | Pago + efetivada/aprovada — sucesso do funil (**destrava a comissão**) | status **`prop_efetivada`** ("Proposta Efetivada") / **`approved`** ("Aprovada") — polling | worker → `getStatus` | Onboarding pós-venda (passo 7) |
+| — | **Perdido** | Reprovado pela administradora, ou abandonou (fica `pending` eterno) | status **`repproved`** ("Reprovado") · inatividade > N dias (timeout **nosso**) · admin manual | worker → `getStatus` / job | Reengajar |
 
-> **O que é automático × o que é manual (corrige meu erro anterior):** a
-> **proposta Bevi já nasce automática** (com PDF) — o que falta é a *raia*
-> acompanhar esse evento que já existe. O passo **manual é a MESA** (back office
-> humano na operadora), não o sistema. O sistema **não executa a mesa nem é
-> notificado** por ela — ele **detecta o resultado por polling** do status na
-> Conexia (`getStatus`/FIX-14). **Não há webhook** (confirmado na POC de
-> 2026-06-05). Acompanhamento = polling agendado por proposta pendente.
+> **O que é automático × o que é manual:** a **proposta Bevi já nasce automática**
+> (com PDF). A **API de Parceiro cobre até o envio de documento** — disponibiliza
+> o link pro cliente anexar e fechar a auto-contratação (`waitingForUniqueCode`).
+> Daí em diante o passo é a **MESA** (back office humano), com **timing definido
+> pela Conexia** — o sistema **não é notificado**, detecta tudo por **polling**.
+> **Não existe webhook** nem emissão de boleto separada: o cliente **segue pelo
+> próprio link** pra pagar (`aguard_pag_cliente`). Confirmado pelo Kairo
+> 2026-06-14.
 >
-> ⚠️ **Gap que limita as raias 7-8:** nenhuma proposta real passou de
-> `waitingForUniqueCode` na POC — os estados de **contrato / boleto / pago**
-> ainda **não foram observados**. As raias 7-8 dependem de mapeá-los quando a
-> primeira proposta avançar na mesa. E a regra "comissão no 1º boleto pago"
-> (raia 8) é hipótese a confirmar com a Bevi/AGX. Tudo rastreado em
-> [`jornada-ate-boleto.md`](./jornada-ate-boleto.md) (G1/G2/G3).
+> **Máquina de estados do desfecho (fornecida pelo Kairo — fecha o antigo gap):**
+>
+> ```
+> [API/auto-contratação] … comprovanteDeEndereco → waitingForUniqueCode
+> ──────── MESA (manual; timing da Conexia) — via POLLING ────────
+> approveWaitingForUniqueCode  "Inserir proposta"        → raia 6
+> aguard_pag_cliente           "Aguardando Pagto Cliente" → raia 7  (cliente paga pelo link)
+> prop_efetivada               "Proposta Efetivada"       → raia 8
+> approved                     "Aprovada"                 → raia 8  (sucesso/comissão)
+> repproved                    "Reprovado"                → Perdido
+> ```
+>
+> **Mecanismo de acompanhamento:** worker do próprio aja-agora (**BullMQ**, mesmo
+> projeto/container se possível — implica **Redis**) com job recorrente que faz
+> polling de `consult_proposal_status` por proposta pendente, mapeia o status →
+> raia e dispara mensagem proativa no canal do cliente (web/WhatsApp). Detalhe em
+> [`jornada-ate-boleto.md`](./jornada-ate-boleto.md) (G1/G2/G5 respondidos).
 
 ### O que muda em relação a hoje
 
