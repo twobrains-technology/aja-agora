@@ -13,7 +13,9 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 	let rec: typeof import("./recovery");
 
 	const PHONE = "62991470001";
-	const CPF = "52998224725";
+	// CPF distinto por arquivo (evita o merge do resolve.integration apagar este
+	// contato em execução paralela no mesmo DB).
+	const CPF = "77788899900";
 	let contactId: string;
 	let convId: string;
 
@@ -71,11 +73,15 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 	});
 
 	it("telefone desconhecido → found:false (não cria contato)", async () => {
-		const before = await db.select().from(schema.contacts);
-		const light = await rec.getLightContext({ phone: "62900000000" });
+		const UNKNOWN = "62900000017";
+		const light = await rec.getLightContext({ phone: UNKNOWN });
 		expect(light.found).toBe(false);
-		const after = await db.select().from(schema.contacts);
-		expect(after.length).toBe(before.length); // nada criado
+		// isolation-safe: o telefone específico não materializou contato
+		const created = await db
+			.select()
+			.from(schema.contacts)
+			.where(eq(schema.contacts.phone, UNKNOWN));
+		expect(created.length).toBe(0);
 	});
 
 	it("OTP: gera, verifica código errado (null), verifica certo (contactId), single-use", async () => {
@@ -100,7 +106,7 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 		const session = await rec.getRecoveredSession(contactId);
 		expect(session?.proposals.length).toBe(1);
 		expect(session?.proposals[0].consortiumProposalLink).toContain("uselink.me");
-		expect(session?.contact.cpf).toBe("***.***.247-25");
+		expect(session?.contact.cpf).toBe("***.***.999-00"); // 77788899900 mascarado
 		expect(session?.contact.cpf).not.toContain(CPF);
 	});
 

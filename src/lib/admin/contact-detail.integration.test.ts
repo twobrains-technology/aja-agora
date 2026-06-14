@@ -13,7 +13,9 @@ describeIfDb("FIX-45 — getContactDetail (integration)", () => {
 	let getContactDetail: typeof import("./contact-detail").getContactDetail;
 
 	let contactId: string;
-	const CPF = "52998224725";
+	// CPF distinto por arquivo de integration (evita o merge do resolve.integration
+	// — que casa/deleta por CPF — apagar este contato em execução paralela).
+	const CPF = "33344455566";
 
 	beforeAll(async () => {
 		({ db } = await import("@/db"));
@@ -113,8 +115,8 @@ describeIfDb("FIX-45 — getContactDetail (integration)", () => {
 		// raia atual = mais avançada
 		expect(detail.currentStage).toBe("proposta_enviada");
 
-		// CPF mascarado por default
-		expect(detail.contact.cpf).toBe("***.***.247-25");
+		// CPF mascarado por default (33344455566 → ***.***.555-66)
+		expect(detail.contact.cpf).toBe("***.***.555-66");
 		expect(detail.contact.cpf).not.toContain(CPF);
 	});
 
