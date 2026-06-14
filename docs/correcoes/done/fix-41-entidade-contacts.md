@@ -1,7 +1,9 @@
 ---
 id: FIX-41
 titulo: "Entidade contacts (cliente unificado) + FKs contactId + índices"
-status: todo
+status: done
+commit: 2d45bcd
+executado_em: 2026-06-14
 bloco: bloco-a-identidade-contatos
 arquivos:
   - src/db/schema.ts
