@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { attachContact } from "@/lib/contacts";
 
 export type TrackableStage = "engajado" | "qualificado";
 
@@ -82,6 +83,16 @@ export async function createLeadFromConversation(opts: {
 		.returning();
 
 	await applyTrackedStageToLead(opts.conversationId, created.id);
+
+	// FIX-42: religa o cliente unificado. Resolve por phone/email/name e grava
+	// contactId no lead e na conversa. Não bloqueia a criação do lead.
+	if (opts.phone || opts.email) {
+		await attachContact({
+			conversationId: opts.conversationId,
+			leadId: created.id,
+			input: { phone: opts.phone, email: opts.email, name: opts.name },
+		});
+	}
 
 	return { leadId: created.id, isSimulated };
 }
