@@ -50,10 +50,10 @@ não tem problema estar raw por hora."*
 | Entidade "cliente" | **Não existe.** `leads` é 1:1 com `conversation`. Mesmo telefone em web+WhatsApp = **leads duplicados** no kanban. | `schema.ts:201-218` (sem índice em `phone`/`email`) |
 | Visão cross-channel | Só a **IA** vê (Letta unifica por identidade). **Admin vê silos** — `lead-detail` mostra UMA conversa. | `letta-adapter.ts:257-260` (`channels[]`), `api/admin/leads/[id]/conversation` (singular) |
 | CPF | Cifrado AES-256-GCM em `conversations.metadata.identityEnc` — **não pesquisável** sem decifrar a base toda. | `conversation/identity.ts:64-108` |
-| Funil — automação | **Híbrido.** Automático até `qualificado` (tools) e `em_negociacao` (handoff WhatsApp). `proposta_enviada` e `fechado_ganho` são **100% manuais** (drag-and-drop). | `runner.ts:39-41`, `whatsapp/proxy.ts`, `kanban-board.tsx:60-96` |
+| Funil — automação | **Híbrido.** Automático até `qualificado` (tools) e `em_negociacao` (handoff). A **proposta Bevi já é gerada automaticamente** (com PDF), mas a **raia não acompanha** — não há gatilho ligando `createBeviProposal` → `proposta_enviada`. O desfecho é detectável por polling de status, hoje só sob demanda no chat. | `runner.ts:39-41`, `proposal-repo.ts`, `kanban-board.tsx:60-96` |
 | Funil — regressão | Drag-and-drop **permite regredir** (rota não usa `onlyAdvance`). | `api/admin/leads/[id]/stage/route.ts` |
 | Auditoria | `lead_events` registra cada transição (quem/quando/de-onde) mas **nunca é exibida na UI**. | `schema.ts:221-232` |
-| Sinais de fechamento | `bevi_proposals` tem `proposalStatus` (`simulacao`→`documentos`), links de PDF, `leadId`. **Sinal pronto** pra automatizar as raias finais. | `schema.ts:239-276` |
+| Sinais de fechamento | `createBeviProposal` (proposta + PDF, **automático**) sinaliza `proposta_enviada`. O avanço na administradora vem por **polling** de `getStatus`/`check_proposal_status` (FIX-14) — **não há webhook** (confirmado na POC). Estados pós-`waitingForUniqueCode` (contrato/boleto/pago) **ainda não observados** — gap aberto. | `schema.ts:239-276`, `bevi/proposal-status.ts`, `jornada-ate-boleto.md` |
 | Retorno same-device | **Não retoma.** `conversationId` é **gerado novo a cada visita**; cookie não é vinculado à conversa no banco. | `chat/provider.tsx:80-81`, `api/chat/route.ts:230-273` |
 | Retorno cross-device | **Zero ponte** na web. Só o WhatsApp reconhece (via `waId`). | (sem rota `resume`/lookup por telefone) |
 | Base reaproveitável | Cookie `aja_uid` 90d HttpOnly · reconciliação cookie→telefone no Letta · gate de CPF cifrado · `loadConversationHistory()`. | `identity.ts:11-12`, `reconciler.ts:32-78` |
@@ -118,31 +118,52 @@ Vocabulário comercial (o time entende), ancorado na jornada canônica, e
 inteiramente movido por eventos — o admin não precisa arrastar nada no caminho
 feliz.
 
-| # | Raia | Significado (jornada canônica) | Gatilho de ENTRADA (automático) | Sinal no código | Próxima ação do time |
+| # | Raia | Significado (jornada canônica) | Gatilho de ENTRADA | Sinal no código | Próxima ação do time |
 |---|---|---|---|---|---|
 | 1 | **Novo** | Entrou, ainda não disse o objetivo (passo 1) | Conversa criada (web/WhatsApp) | insert em `conversations` | Nenhuma — IA conduz |
 | 2 | **Engajado** | Declarou objetivo + perfil; respondendo qualificação (passo 1-2) | Capturou tipo+valor do bem **ou** nome **ou** rodou `simulate_quota` | contact-capture / `simulate_quota` | Nenhuma — IA qualifica |
 | 3 | **Qualificado** | Recebeu as recomendações de grupo (passo 3-4) | tool `recommend_groups` | `runner.ts` LEAD_STAGE_BY_TOOL | Acompanhar; intervir se a IA travar |
 | 4 | **Em negociação** | Decidindo: simulando cenários, abriu card de decisão, ou pediu especialista (passo 4) | Card de decisão aberto · `simulate_quota` repetida pós-recomendação · **handoff** humano | artifacts + `whatsapp/proxy` | Abordar quem pediu especialista / reaquecer quem esfriou |
-| 5 | **Proposta enviada** | Proposta Bevi gerada, em coleta de documentos/assinatura (passo 5) | **`bevi_proposals` criada** / `proposalStatus` avança | `proposal-repo` create/update | Acompanhar documentos e assinatura |
-| 6 | **Fechado — ganho** | Contrato efetivado (passo 5-6) | `proposalStatus = documentos`/assinado **ou** `confirmOffer` | `fulfillment.confirmOffer` | Onboarding pós-venda (passo 7) |
-| — | **Perdido** | Desistiu ou esfriou | Inatividade > N dias (job) **ou** admin marca manual | job de inatividade / ação admin | Reengajar (campanha/retomada) |
+| 5 | **Proposta enviada** | Proposta Bevi gerada (PDF) + coleta de documentos (passo 5) | **`createBeviProposal`** (automático, já existe) + avanço de `proposalStatus`/docs | `proposal-repo` / portal CONEXIA | Acompanhar a documentação |
+| 6 | **Na administradora (mesa)** | Docs completos → proposta inserida; a **mesa** (back office humano da operadora) efetiva (passo 5-6) | **polling** de `getStatus` (`changesHistory`: `waitingForUniqueCode`→inserção). **Sem webhook.** | `check_proposal_status` (FIX-14) | Acompanhar — a mesa é trabalho **manual NA operadora**, fora do sistema |
+| 7 | **Contratado — boleto emitido** | A mesa volta com **contrato + boleto** e atualiza na **Conexia** (passo 6) | polling de `getStatus` (estado pós-inserção — **ainda não observado**, gap) | `getStatus` / Conexia | Encaminhar o boleto ao cliente |
+| 8 | **Fechado — ganho** | **1º boleto PAGO** — o evento de sucesso do funil (destrava a comissão) | a confirmar com Bevi/AGX (gap G2/G3) | — | Onboarding pós-venda (passo 7) |
+| — | **Perdido** | Desistiu, abandonou (fica `pending` eterno) ou foi reprovado | Inatividade > N dias (timeout **nosso** — a API não sinaliza abandono) · `reprovedAt` · admin manual | job de inatividade / `getStatus` | Reengajar |
+
+> **O que é automático × o que é manual (corrige meu erro anterior):** a
+> **proposta Bevi já nasce automática** (com PDF) — o que falta é a *raia*
+> acompanhar esse evento que já existe. O passo **manual é a MESA** (back office
+> humano na operadora), não o sistema. O sistema **não executa a mesa nem é
+> notificado** por ela — ele **detecta o resultado por polling** do status na
+> Conexia (`getStatus`/FIX-14). **Não há webhook** (confirmado na POC de
+> 2026-06-05). Acompanhamento = polling agendado por proposta pendente.
+>
+> ⚠️ **Gap que limita as raias 7-8:** nenhuma proposta real passou de
+> `waitingForUniqueCode` na POC — os estados de **contrato / boleto / pago**
+> ainda **não foram observados**. As raias 7-8 dependem de mapeá-los quando a
+> primeira proposta avançar na mesa. E a regra "comissão no 1º boleto pago"
+> (raia 8) é hipótese a confirmar com a Bevi/AGX. Tudo rastreado em
+> [`jornada-ate-boleto.md`](./jornada-ate-boleto.md) (G1/G2/G3).
 
 ### O que muda em relação a hoje
 
-1. **Fecha os dois buracos de automação:** `proposta_enviada` passa a entrar
-   sozinha quando a proposta Bevi nasce; `fechado_ganho` quando o status avança.
-   Hoje os dois são 100% manuais.
+1. **Corrige a leitura do fechamento:** `proposta_enviada` passa a entrar sozinha
+   no evento que **já existe** (`createBeviProposal` + PDF) — hoje a proposta é
+   automática mas a raia não acompanha. As raias 6-8 refletem a realidade
+   (mesa manual → boleto) e são alimentadas por **polling**, não por arrasto de
+   card nem por webhook.
 2. **"Em negociação" deixa de depender só do handoff WhatsApp** — passa a captar
    também quem está decidendo no chat (card de decisão / simulações repetidas).
 3. **Forward-only por padrão:** a automação nunca regride. O admin ainda pode
    mover manualmente (inclusive marcar `Perdido`), mas o drag passa a registrar
    intenção e a UI sinaliza regressões em vez de permiti-las em silêncio.
-4. **`Perdido` deixa de ser só botão:** ganha gatilho por inatividade (lead
-   parado há N dias sem fechar) — abre trabalho de reengajamento pro time.
+4. **`Perdido` deixa de ser só botão:** ganha gatilho por inatividade (proposta
+   abandonada fica `pending` eterno — a API não expira; o timeout é nosso).
 
-> Os **nomes** das raias podem mudar na sua revisão — a tabela é proposta. O que
-> defendo é a **mecânica**: 1 raia = 1 gatilho automático + 1 ação de time.
+> As raias 6-8 desdobram o que antes eu tratava como um único `fechado_ganho`,
+> pra refletir a mesa e o boleto. **Nomes e granularidade são proposta** — você
+> revisa. O que defendo é a **mecânica**: 1 raia = 1 gatilho rastreável + 1 ação
+> de time; e ser honesto sobre o que é polling/gap vs evento pronto.
 
 ---
 

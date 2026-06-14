@@ -41,7 +41,7 @@ relação ao enum atual, a síntese mantém o vocabulário comercial e formaliza
 | O quê | Onde |
 |---|---|
 | `STAGE_ORDER` completo (todas as raias + terminais) — base do forward-only | `lead-stages.ts` |
-| Ajustes de enum se a revisão do Kairo pedir rename/split (ex.: "Em negociação" captar decisão no chat, não só handoff) | `schema.ts` (migração) |
+| Ajustes de enum conforme a Parte 2 aprovada — provável **split do fechamento** em `na_administradora` / `contratado_boleto` / `fechado_ganho` (raias 6-8, refletindo mesa→boleto) + possível rename de "Em negociação" | `schema.ts` (migração) |
 | `transitionLeadStage` com forward-only como **default** pra atores `system`; `admin` pode mover livre (inclusive marcar terminal) mas a regressão é explícita | `lead-transitions.ts` |
 
 > Se a revisão mantiver o enum atual, este item vira só `STAGE_ORDER` + regra de
