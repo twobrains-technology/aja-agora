@@ -30,12 +30,17 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
 	"closed",
 ]);
 
+// FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
+// fechado_ganho) refletindo mesa manual + boleto, alimentado por polling
+// (FIX-44). Ordem = funil forward-only; `perdido` é terminal.
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
 	"engajado",
 	"qualificado",
 	"em_negociacao",
 	"proposta_enviada",
+	"na_administradora",
+	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",
 ]);
