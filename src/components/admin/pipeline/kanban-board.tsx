@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STAGE_ORDER } from "@/lib/admin/lead-stages";
+import { ContactDetailPanel } from "./contact-detail-panel";
 import { KanbanColumn } from "./kanban-column";
 import type { Lead } from "./lead-card";
 import { LeadDetailPanel } from "./lead-detail-panel";
@@ -134,11 +135,21 @@ export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }
 				</ScrollArea>
 			</DragDropContext>
 
-			<LeadDetailPanel
-				lead={selectedLead}
-				open={!!selectedLeadId}
-				onClose={() => setSelectedLeadId(null)}
-			/>
+			{/* FIX-45: card com contato resolvido abre a visão consolidada; lead
+			    anônimo (sem contactId) mantém o detalhe de conversa única. */}
+			{selectedLead?.contactId ? (
+				<ContactDetailPanel
+					contactId={selectedLead.contactId}
+					open={!!selectedLeadId}
+					onClose={() => setSelectedLeadId(null)}
+				/>
+			) : (
+				<LeadDetailPanel
+					lead={selectedLead}
+					open={!!selectedLeadId}
+					onClose={() => setSelectedLeadId(null)}
+				/>
+			)}
 		</>
 	);
 }
