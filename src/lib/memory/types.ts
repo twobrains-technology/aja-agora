@@ -28,6 +28,8 @@ export type LeadStage =
 	| "qualificado"
 	| "em_negociacao"
 	| "proposta_enviada"
+	| "na_administradora"
+	| "aguardando_pagamento"
 	| "fechado_ganho"
 	| "perdido";
 

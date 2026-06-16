@@ -24,6 +24,10 @@ export function computeConversaoDimension(signals: DeterministicSignals): EvalDi
 
 export function scoreConversao(stage: LeadStage, hasLead: boolean): number {
 	if (stage === "fechado_ganho") return 1.0;
+	// FIX-43: split do fechamento — pós-proposta, quase-fechados (mesa da
+	// administradora → boleto). Score alto e monotônico rumo ao fechamento.
+	if (stage === "aguardando_pagamento") return 0.98;
+	if (stage === "na_administradora") return 0.97;
 	if (stage === "proposta_enviada") return 0.95;
 	if (stage === "em_negociacao") return 0.85;
 	if (stage === "qualificado") return hasLead ? 1.0 : 0.7;

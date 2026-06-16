@@ -38,6 +38,21 @@ describe("scoreConversao — mapping stage → score", () => {
 		expect(scoreConversao("fechado_ganho", true)).toBe(1.0);
 		expect(scoreConversao("perdido", true)).toBe(0.1);
 	});
+
+	// FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
+	// fechado_ganho). São estágios pós-proposta, quase-fechados → score alto,
+	// acima de proposta_enviada (0.95) e abaixo de fechado_ganho (1.0). Antes
+	// caíam no fallback `return 0.0` (tratados como "novo") — bug silencioso.
+	it("na_administradora e aguardando_pagamento pontuam alto (pós-proposta, quase-fechados)", () => {
+		expect(scoreConversao("na_administradora", true)).toBeGreaterThan(0.95);
+		expect(scoreConversao("na_administradora", true)).toBeLessThan(1.0);
+		expect(scoreConversao("aguardando_pagamento", true)).toBeGreaterThan(0.95);
+		expect(scoreConversao("aguardando_pagamento", true)).toBeLessThan(1.0);
+		// monotônico: aguardando_pagamento mais perto do fechamento que na_administradora
+		expect(scoreConversao("aguardando_pagamento", true)).toBeGreaterThan(
+			scoreConversao("na_administradora", true),
+		);
+	});
 });
 
 describe("computeConversaoDimension — reasoning carrega contexto", () => {
