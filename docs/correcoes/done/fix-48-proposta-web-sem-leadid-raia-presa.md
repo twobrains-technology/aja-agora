@@ -1,7 +1,9 @@
 ---
 id: FIX-48
 titulo: "Proposta criada no fluxo web não vincula leadId → raia presa em 'qualificado'"
-status: todo
+status: done
+commit: 012ee52
+executado_em: 2026-06-15
 bloco: bloco-a-polir-funil-retorno
 arquivos:
   - src/lib/bevi/contract-input.ts
