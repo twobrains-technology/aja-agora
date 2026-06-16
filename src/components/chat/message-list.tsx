@@ -3,10 +3,12 @@
 import { ArrowDown } from "lucide-react";
 import { motion } from "motion/react";
 import {
+	Fragment,
 	type TouchEvent as ReactTouchEvent,
 	type WheelEvent as ReactWheelEvent,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 } from "react";
@@ -33,10 +35,17 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 	// SEMPRE vence e solta o stick — inclusive durante o streaming. Voltar ao
 	// fundo, ou clicar no pill, religa. FIX-32: separa intenção de posição.
 	const [stick, setStick] = useState(true);
+	// FIX-49: a pill só faz sentido depois de um GESTO real do usuário ("você
+	// subiu, clique pra voltar"). Sem isso, a hidratação da retomada (scroll
+	// programático pro fim) acendia a pill como se houvesse mensagem não lida.
+	const [userScrolled, setUserScrolled] = useState(false);
 	// Distingue scroll PROGRAMÁTICO (nosso) de gesto do usuário, pra o onScroll
 	// não religar/soltar o stick por causa do auto-scroll.
 	const programmaticRef = useRef(false);
 	const touchStartY = useRef<number | null>(null);
+	// FIX-49: âncora de retomada — índice da última mensagem hidratada (histórico).
+	// O divisor "Você voltou" entra logo depois dela (antes do 1º turno novo).
+	const lastResumedIndex = messages.reduce((acc, m, i) => (m.metadata?.resumed ? i : acc), -1);
 
 	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
 		programmaticRef.current = true;
@@ -45,6 +54,14 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 		requestAnimationFrame(() => {
 			programmaticRef.current = false;
 		});
+	}, []);
+
+	// FIX-49: na MONTAGEM com histórico (retomada hidratada), ancora direto no fim
+	// — instantâneo, antes da pintura — pra não "cair no começo" da conversa antiga.
+	// Layout effect roda 1x; o auto-scroll suave abaixo cuida dos turnos seguintes.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: âncora de mount, roda 1x
+	useLayoutEffect(() => {
+		if (messages.length > 0) scrollToBottom("auto");
 	}, []);
 
 	// Auto-scroll SÓ quando colado. Sem `|| isStreaming` (FIX-32 Defeito 1): se o
@@ -64,9 +81,13 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 	}, []);
 
 	// Gesto explícito de subir solta o stick na hora — antes mesmo do scroll
-	// mudar — pra matar a briga durante o streaming.
+	// mudar — pra matar a briga durante o streaming. Marca `userScrolled` (gesto
+	// real) → libera a pill (FIX-49: hidratação não acende pill sem gesto).
 	const handleWheel = useCallback((e: ReactWheelEvent) => {
-		if (e.deltaY < 0) setStick(false);
+		if (e.deltaY < 0) {
+			setStick(false);
+			setUserScrolled(true);
+		}
 	}, []);
 	const handleTouchStart = useCallback((e: ReactTouchEvent) => {
 		touchStartY.current = e.touches[0]?.clientY ?? null;
@@ -75,7 +96,10 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 		const start = touchStartY.current;
 		const cur = e.touches[0]?.clientY ?? null;
 		// dedo descendo (cur > start) = conteúdo sobe = usuário quer o histórico
-		if (start != null && cur != null && cur - start > 8) setStick(false);
+		if (start != null && cur != null && cur - start > 8) {
+			setStick(false);
+			setUserScrolled(true);
+		}
 	}, []);
 
 	const onPillClick = useCallback(() => {
@@ -84,7 +108,7 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 	}, [scrollToBottom]);
 
 	const hasMessages = messages.length > 0;
-	const showPill = !stick && hasMessages;
+	const showPill = !stick && hasMessages && userScrolled;
 
 	return (
 		<div
@@ -111,15 +135,17 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 							activeCategory = (transitionPart.data as TransitionPartData).toCategory;
 						}
 						return (
-							<ChatMessage
-								key={message.id}
-								message={message}
-								isNew={index >= messages.length - 2}
-								onRetry={showRetry ? onRetry : undefined}
-								isStreaming={isStreaming}
-								isLast={isLast}
-								activeCategory={activeCategory}
-							/>
+							<Fragment key={message.id}>
+								<ChatMessage
+									message={message}
+									isNew={index >= messages.length - 2}
+									onRetry={showRetry ? onRetry : undefined}
+									isStreaming={isStreaming}
+									isLast={isLast}
+									activeCategory={activeCategory}
+								/>
+								{index === lastResumedIndex && <ResumeAnchor />}
+							</Fragment>
 						);
 					});
 				})()}
@@ -143,6 +169,24 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 				</div>
 			)}
 		</div>
+	);
+}
+
+/** FIX-49 — âncora de retomada: divisor discreto entre o histórico hidratado e o
+ * 1º turno novo. Responde "você parou AQUI, continue" em vez de despejar o log. */
+function ResumeAnchor() {
+	return (
+		<motion.div
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			transition={{ duration: 0.3 }}
+			data-testid="resume-anchor"
+			className="flex w-full items-center gap-[11px] py-1 text-muted-foreground"
+		>
+			<div className="h-px flex-1 bg-border" />
+			<span className="shrink-0 text-[11px]">Você voltou — continue de onde parou</span>
+			<div className="h-px flex-1 bg-border" />
+		</motion.div>
 	);
 }
 

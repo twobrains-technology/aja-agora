@@ -4,6 +4,9 @@ import { requireRole } from "@/lib/admin/require-role";
 
 const stageSchema = z.object({
 	stage: z.enum(STAGE_ORDER),
+	// FIX-44: regressão (mover pra raia anterior) exige flag explícita. Default
+	// forward-only — o admin não regride em silêncio por arrasto acidental.
+	allowRegression: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,13 +30,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		);
 	}
 
-	const result = await transitionLeadStage(id, parsed.data.stage, {
-		type: "admin",
-		id: session!.user.id,
-	});
+	const result = await transitionLeadStage(
+		id,
+		parsed.data.stage,
+		{ type: "admin", id: session!.user.id },
+		{ allowRegression: parsed.data.allowRegression ?? false },
+	);
 
 	if (!result) {
 		return Response.json({ error: "Lead not found" }, { status: 404 });
+	}
+
+	// Regressão pedida sem a flag → no-op silencioso vira sinal explícito pro UI.
+	if (result.stage !== parsed.data.stage) {
+		return Response.json(
+			{ error: "Regression blocked", reason: "forward_only", current: result.stage },
+			{ status: 409 },
+		);
 	}
 
 	return Response.json(result);

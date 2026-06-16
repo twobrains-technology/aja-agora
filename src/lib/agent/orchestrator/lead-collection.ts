@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { attachContact } from "@/lib/contacts";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
 import {
@@ -154,6 +155,9 @@ export async function* runLeadCollectionTurn(args: {
 				.update(leads)
 				.set({ name, phone, email, updatedAt: simulatorNow() })
 				.where(eq(leads.id, existing.id));
+			// FIX-42: religa cliente unificado (lead atualizado direto, sem passar
+			// por createLeadFromConversation).
+			await attachContact({ conversationId, leadId: existing.id, input: { phone, email, name } });
 		} else {
 			await createLeadFromConversation({ conversationId, name, phone, email });
 		}

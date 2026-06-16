@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
+import { attachContact } from "@/lib/contacts";
 import { normalizePhoneBR } from "./phone";
 
 export type ContactCaptureResult =
@@ -143,6 +144,8 @@ export async function saveContactWhatsapp(
 		await db.update(leads).set({ phone, updatedAt: new Date() }).where(eq(leads.id, existing.id));
 
 		await transitionLeadStage(existing.id, "engajado", { type: "system" }, { onlyAdvance: true });
+		// FIX-42: religa cliente unificado pelo telefone.
+		await attachContact({ conversationId, leadId: existing.id, input: { phone } });
 		return { ok: true, leadId: existing.id, created: false };
 	}
 

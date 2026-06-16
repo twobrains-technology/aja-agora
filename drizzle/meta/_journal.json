@@ -169,6 +169,20 @@
 			"when": 1781000000000,
 			"tag": "0023_bevi_term_months",
 			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1781000500000,
+			"tag": "0024_contacts_unified",
+			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1781001000000,
+			"tag": "0025_lead_stage_closing_split",
+			"breakpoints": true
 		}
 	]
 }

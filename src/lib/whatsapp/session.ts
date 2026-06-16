@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
+import { attachContact } from "@/lib/contacts";
 import {
 	loadConversationHistory,
 	saveMessage as saveMessageWithChannel,
@@ -43,7 +44,7 @@ export async function getOrCreateConversation(
 	// applyTrackedStageToLead só roda quando lead recebe stage real depois.
 	try {
 		const phone = waIdToPhone(waId);
-		await db
+		const [seededLead] = await db
 			.insert(leads)
 			.values({
 				conversationId: conv.id,
@@ -52,7 +53,13 @@ export async function getOrCreateConversation(
 				email: null,
 				isSimulated,
 			})
-			.onConflictDoNothing();
+			.onConflictDoNothing()
+			.returning({ id: leads.id });
+		// FIX-42: religa cliente unificado pelo telefone do WhatsApp. Simulados
+		// (SIM-...) não geram phone normalizável → attachContact é no-op.
+		if (phone && !isSimulated) {
+			await attachContact({ conversationId: conv.id, leadId: seededLead?.id, input: { phone } });
+		}
 	} catch (err) {
 		// Não bloqueia a criação da conversation se o insert do lead falhar
 		// (ex: race condition raro). Lead pode ser criado depois via handoff.

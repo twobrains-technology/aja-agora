@@ -30,12 +30,17 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
 	"closed",
 ]);
 
+// FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
+// fechado_ganho) refletindo mesa manual + boleto, alimentado por polling
+// (FIX-44). Ordem = funil forward-only; `perdido` é terminal.
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
 	"engajado",
 	"qualificado",
 	"em_negociacao",
 	"proposta_enviada",
+	"na_administradora",
+	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",
 ]);
@@ -142,12 +147,51 @@ export const verification = pgTable(
 
 // ─── Application Tables ─────────────────────────────────────────────────────
 
+// Contacts (cliente unificado — FIX-41)
+// Uma entidade CLIENTE resolvida por telefone, CPF ou e-mail, agregando N
+// conversas/leads/propostas de qualquer canal (web/WhatsApp). Antes não existia:
+// `leads` era 1:1 com `conversation` e o mesmo cliente em dois canais virava dois
+// cards. Ver docs/jornada/proposta-funil-contatos-retorno.md (Parte 1).
+export const contacts = pgTable(
+	"contacts",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		phone: text(), // E.164, normalizePhoneBR — nullable
+		// DES-CPF-RAW: CPF em texto puro por hora (decisão Kairo 2026-06-14:
+		// "preciso do CPF, não tem problema estar raw por hora"). Endurecer
+		// pós-piloto (HMAC determinístico ou cifra+hash pesquisável). Mitigações
+		// que valem já: NUNCA logar, NUNCA injetar no prompt do LLM, mascarar na
+		// UI admin por padrão.
+		cpf: text(),
+		email: text(),
+		name: text(), // melhor nome conhecido
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("contacts_phone_idx").on(table.phone),
+		index("contacts_cpf_idx").on(table.cpf),
+		index("contacts_email_idx").on(table.email),
+		// Invariante: ao menos um identificador presente (cliente sem telefone,
+		// CPF nem e-mail não é resolvível — leads anônimos ficam sem contactId).
+		check(
+			"contacts_identifier_check",
+			sql`${table.phone} IS NOT NULL OR ${table.cpf} IS NOT NULL OR ${table.email} IS NOT NULL`,
+		),
+	],
+);
+
 // Conversations
 export const conversations = pgTable(
 	"conversations",
 	{
 		id: uuid().defaultRandom().primaryKey(),
 		waId: varchar("wa_id", { length: 50 }),
+		// Cliente unificado (FIX-41) — nullable até a identidade ser resolvida.
+		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
 		channel: channelEnum().default("web").notNull(),
 		status: conversationStatusEnum().default("active").notNull(),
 		handedOffUserId: text("handed_off_user_id").references(() => user.id),
@@ -205,6 +249,8 @@ export const leads = pgTable(
 		conversationId: uuid("conversation_id")
 			.notNull()
 			.references(() => conversations.id, { onDelete: "cascade" }),
+		// Cliente unificado (FIX-41) — nullable (leads anônimos sem contato).
+		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
 		name: text(),
 		phone: text(),
 		email: text(),
@@ -214,7 +260,11 @@ export const leads = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [index("leads_created_at_idx").on(table.createdAt)],
+	(table) => [
+		index("leads_created_at_idx").on(table.createdAt),
+		// Consulta legada por telefone (dedup/backfill) — FIX-41.
+		index("leads_phone_idx").on(table.phone),
+	],
 );
 
 // Lead Events (funnel transition audit trail)
@@ -244,6 +294,9 @@ export const beviProposals = pgTable(
 			.notNull()
 			.references(() => conversations.id, { onDelete: "cascade" }),
 		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+		// Cliente unificado (FIX-41) — denormaliza p/ consulta direta por
+		// telefone/CPF ("buscar tudo que o cliente já fez"). Nullable até resolver.
+		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
 		// IDs da API de Parceiro
 		proposalId: text("proposal_id").notNull(),
 		simulationSessionId: text("simulation_session_id"),
@@ -508,12 +561,22 @@ export const accountRelations = relations(account, ({ one }) => ({
 }));
 
 // Application relations
+export const contactsRelations = relations(contacts, ({ many }) => ({
+	conversations: many(conversations),
+	leads: many(leads),
+	beviProposals: many(beviProposals),
+}));
+
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	messages: many(messages),
 	leads: many(leads),
 	insights: many(leadInsights),
 	evaluations: many(conversationEvaluations),
 	beviProposals: many(beviProposals),
+	contact: one(contacts, {
+		fields: [conversations.contactId],
+		references: [contacts.id],
+	}),
 	handedOffUser: one(user, {
 		fields: [conversations.handedOffUserId],
 		references: [user.id],
@@ -540,6 +603,10 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
 		fields: [leads.conversationId],
 		references: [conversations.id],
 	}),
+	contact: one(contacts, {
+		fields: [leads.contactId],
+		references: [contacts.id],
+	}),
 	events: many(leadEvents),
 	insights: many(leadInsights),
 }));
@@ -559,6 +626,10 @@ export const beviProposalsRelations = relations(beviProposals, ({ one }) => ({
 	lead: one(leads, {
 		fields: [beviProposals.leadId],
 		references: [leads.id],
+	}),
+	contact: one(contacts, {
+		fields: [beviProposals.contactId],
+		references: [contacts.id],
 	}),
 }));
 

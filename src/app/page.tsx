@@ -33,7 +33,7 @@ function LandingShell() {
 			<Demo />
 			<Institutional />
 			<Closing onStart={openTheater} />
-			<BrandFooter />
+			<BrandFooter onStart={openTheater} />
 		</main>
 	);
 }

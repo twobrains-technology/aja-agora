@@ -52,4 +52,23 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		expect(input.administradoraPreferida).toBeNull();
 		expect(input.lgpd).toBe(false);
 	});
+
+	// FIX-48 (Camada 1): o caller (route web / WhatsApp) resolve o leadId da
+	// conversa e o injeta — sem isso a proposta nasce órfã e a raia trava em
+	// `qualificado`. buildStartContractInput precisa PROPAGAR o leadId pro shape.
+	it("FIX-48: propaga o leadId resolvido pelo caller pro input do startContract", () => {
+		const meta: ConversationMetadata = { currentCategory: "auto" } as ConversationMetadata;
+		const input = buildStartContractInput(
+			meta,
+			{ ...identity, lgpd: true },
+			{ leadId: "lead-123" },
+		);
+		expect(input.leadId).toBe("lead-123");
+	});
+
+	it("FIX-48: leadId é null quando o caller não resolve (não vira undefined silencioso)", () => {
+		const meta: ConversationMetadata = { currentCategory: "auto" } as ConversationMetadata;
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+		expect(input.leadId).toBeNull();
+	});
 });

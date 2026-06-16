@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
+import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
@@ -261,14 +262,22 @@ export async function POST(req: NextRequest) {
 			})
 		: undefined;
 
+	// FIX-46: vincula o cookie `aja_uid` à conversa web ao criar, pra retomada
+	// same-device (GET /api/chat/resume acha "a conversa deste cookie").
 	if (providedId && !conv) {
-		const [created] = await db.insert(conversations).values({ id: providedId }).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ id: providedId, metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	} else if (conv) {
 		conversationId = conv.id;
 		contactName = conv.contactName ?? null;
 	} else {
-		const [created] = await db.insert(conversations).values({}).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	}
 
@@ -580,13 +589,22 @@ export async function POST(req: NextRequest) {
 								return;
 							}
 							try {
+								// FIX-48: resolve o leadId da conversa AQUI (a ponta primária) e
+								// injeta no input — sem ele a proposta nasce órfã e a raia trava
+								// em `qualificado` (createBeviProposal pula a transição). O lead
+								// já existe (gate identify/qualify criou) no caminho web.
+								const leadId = await getLeadIdForConversation(conversationId);
 								// FIX-25: derivação canônica do input (segmento/valor/objetivo/lance
 								// + administradoraPreferida) — módulo único compartilhado com o
 								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
 								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
 								const { proposalId, offer, noOffer } = await startContract(
 									conversationId,
-									buildStartContractInput(meta, { cpf, celular, lgpd: body.action.lgpd }),
+									buildStartContractInput(
+										meta,
+										{ cpf, celular, lgpd: body.action.lgpd },
+										{ leadId },
+									),
 								);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).

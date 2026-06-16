@@ -3,9 +3,10 @@
 // LGPD-mínimo: nada de CPF — só IDs Bevi + snapshot da oferta. Ver schema
 // `beviProposals` (drizzle/0022_bevi_fulfillment.sql).
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { beviProposals } from "@/db/schema";
+import { beviProposals, conversations } from "@/db/schema";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 
 export interface BeviProposalSnapshot {
 	proposalId: string;
@@ -38,11 +39,19 @@ export async function createBeviProposal(
 	snapshot: BeviProposalSnapshot,
 	leadId?: string | null,
 ): Promise<Row> {
+	// FIX-41/44: denormaliza contactId da conversa pra consulta direta por
+	// telefone/CPF ("buscar tudo que o cliente já fez").
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { contactId: true },
+	});
+
 	const [row] = await db
 		.insert(beviProposals)
 		.values({
 			conversationId,
 			leadId: leadId ?? null,
+			contactId: conv?.contactId ?? null,
 			proposalId: snapshot.proposalId,
 			simulationSessionId: snapshot.simulationSessionId ?? null,
 			ofertaId: snapshot.ofertaId ?? null,
@@ -59,7 +68,45 @@ export async function createBeviProposal(
 			proposalStatus: snapshot.proposalStatus ?? null,
 		})
 		.returning();
+
+	// FIX-44: a proposta Bevi já nasce automática (com PDF). A raia passa a
+	// acompanhar o evento que JÁ existe — move o lead pra `proposta_enviada`
+	// (system, forward-only). Antes a proposta nascia e a raia não movia.
+	if (leadId) {
+		await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
+	} else {
+		// FIX-48: telemetria — proposta nasceu ÓRFÃ (sem leadId). No caminho web
+		// isso trava a raia em `qualificado` (o resgate retroativo em /api/leads
+		// cura, mas logamos pra caçar regressões na ponta primária). Sem PII.
+		console.warn(
+			`[proposal-repo] createBeviProposal sem leadId (conv=${conversationId}, proposal=${snapshot.proposalId}) — proposta órfã, raia não avança até religação (FIX-48)`,
+		);
+	}
+
 	return row;
+}
+
+/**
+ * FIX-48 — resgate retroativo: religa as propostas órfãs (leadId null) de uma
+ * conversa ao lead recém-resolvido e dispara a transição `proposta_enviada`
+ * (system, forward-only). Cobre a corrida "proposta criada antes do lead" (o web
+ * não tinha resgate; o WhatsApp mascarava pelo polling via conversationId).
+ * Idempotente: sem órfãs, no-op.
+ */
+export async function relinkOrphanProposals(
+	conversationId: string,
+	leadId: string,
+): Promise<number> {
+	const relinked = await db
+		.update(beviProposals)
+		.set({ leadId, updatedAt: new Date() })
+		.where(and(eq(beviProposals.conversationId, conversationId), isNull(beviProposals.leadId)))
+		.returning({ id: beviProposals.id });
+
+	if (relinked.length > 0) {
+		await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
+	}
+	return relinked.length;
 }
 
 /** Atualiza o estado da proposta mais recente da conversa (re-simular, escolher,
