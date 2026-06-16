@@ -1,7 +1,9 @@
 ---
 id: FIX-51
 titulo: "Retomada same-device hidrata automático sem dar escolha — popup 'voltar à conversa anterior ou começar nova'"
-status: todo
+status: done
+commit: 0bfddba
+executado_em: 2026-06-16
 bloco: bloco-a-polir-funil-retorno
 arquivos:
   - src/components/chat/theater/theater-chat.tsx
