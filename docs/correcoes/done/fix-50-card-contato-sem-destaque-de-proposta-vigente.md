@@ -1,7 +1,9 @@
 ---
 id: FIX-50
 titulo: "Card do contato não destaca proposta vigente nem conversa ativa — vários itens iguais, sem 'onde ele está agora'"
-status: todo
+status: done
+commit: 098c81c
+executado_em: 2026-06-16
 bloco: bloco-a-polir-funil-retorno
 arquivos:
   - src/components/admin/pipeline/contact-detail-panel.tsx
