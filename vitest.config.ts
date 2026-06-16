@@ -13,6 +13,13 @@ export default defineConfig({
 	test: {
 		globals: false,
 		environment: "node",
+		// O suite mistura testes de DB-integração (Postgres do workspace via ponte
+		// OrbStack). O default de 5s estoura sob CARGA CONCORRENTE — o fluxo do
+		// projeto roda vários agentes em paralelo (Superset), competindo por CPU; a
+		// resolução das promises de DB atrasa além de 5s mesmo com o DB ocioso
+		// (6/100 conexões). 20s dá headroom sem deixar de pegar hang real.
+		testTimeout: 20_000,
+		hookTimeout: 20_000,
 		include: [
 			"src/**/*.test.ts",
 			"src/**/*.test.tsx",
