@@ -19,6 +19,34 @@ export interface ResumableMessage {
 export interface ResumableConversation {
 	conversationId: string;
 	messages: ResumableMessage[];
+	/** FIX-51: metadados leves pro popup decidir/rotular (sem vazar dado sensível). */
+	messageCount: number;
+	lastActivityAt: string;
+	/** Server-derived: a conversa tem progresso real (acima do limiar)? Decide se
+	 * o popup "voltar/nova" aparece — abaixo do limiar hidrata direto (zero ruído). */
+	meaningfulProgress: boolean;
+}
+
+/** FIX-51 — limiar de mensagens pro popup de retomada (≈2 trocas reais). Abaixo
+ * disso, sem sinal de raia, a conversa é "1 fala" → hidrata sem perguntar. */
+export const RESUME_MIN_MESSAGES = 4;
+
+/** FIX-51 — a conversa tem progresso significativo pra justificar o popup? Pura
+ * (testável sem DB). ADR Decisão 1: contagem de mensagens OU sinal de raia
+ * (passou da qualificação / reveal / fechamento). */
+export function hasMeaningfulProgress(
+	messageCount: number,
+	meta:
+		| { revealCompleted?: boolean; maxStageReached?: string; contractClosed?: boolean }
+		| null
+		| undefined,
+): boolean {
+	if (messageCount >= RESUME_MIN_MESSAGES) return true;
+	if (!meta) return false;
+	if (meta.revealCompleted === true) return true;
+	if (meta.contractClosed === true) return true;
+	if (meta.maxStageReached === "qualificado") return true;
+	return false;
 }
 
 /**
@@ -54,5 +82,17 @@ export async function getResumableConversation(
 	// reidratar), evita "ressuscitar" uma conversa vazia.
 	if (messages.length === 0) return null;
 
-	return { conversationId: conv.id, messages };
+	// FIX-51: metadados leves pro popup decidir (limiar) e rotular (recência).
+	const meta = (conv.metadata ?? {}) as {
+		revealCompleted?: boolean;
+		maxStageReached?: string;
+		contractClosed?: boolean;
+	};
+	return {
+		conversationId: conv.id,
+		messages,
+		messageCount: messages.length,
+		lastActivityAt: (conv.updatedAt ?? conv.createdAt ?? new Date()).toISOString(),
+		meaningfulProgress: hasMeaningfulProgress(messages.length, meta),
+	};
 }

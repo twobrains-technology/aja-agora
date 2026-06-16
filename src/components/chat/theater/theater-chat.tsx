@@ -7,6 +7,7 @@ import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "../chat-input";
 import { MessageList } from "../message-list";
+import { ResumePrompt } from "./resume-prompt";
 
 interface TheaterChatProps {
 	/** Mensagem-semente: não-vazia vira a próxima mensagem do usuário; vazia abre na saudação/retomada. */
@@ -18,11 +19,36 @@ interface TheaterChatProps {
 type ResumePayload = {
 	conversationId: string;
 	messages: { id: string; role: "user" | "assistant"; content: string }[];
+	messageCount: number;
+	lastActivityAt: string;
+	meaningfulProgress: boolean;
 };
 
 type ResumeState =
 	| { phase: "loading" }
+	// FIX-51: gate de escolha entre "achei conversa retomável" e "montei o chat".
+	| {
+			phase: "prompt";
+			conversationId: string;
+			messages: AjaUIMessage[];
+			lastActivityAt: string;
+	  }
 	| { phase: "ready"; conversationId?: string; messages?: AjaUIMessage[] };
+
+/** Converte o payload do resume nas mensagens hidratadas (FIX-49: marca resumed). */
+function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
+	return conv.messages.map(
+		(m) =>
+			({
+				id: m.id,
+				role: m.role,
+				parts: [{ type: "text", text: m.content }],
+				// FIX-49: marca o histórico hidratado — a UI ancora o scroll, mostra a
+				// âncora "Você voltou" e sela artifacts/gates antigos.
+				metadata: { resumed: true },
+			}) as AjaUIMessage,
+	);
+}
 
 /**
  * O chat de produção REAL renderizado dentro do painel teatro — único ponto de
@@ -49,21 +75,22 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 				const conv = (data?.conversation ?? null) as ResumePayload | null;
 				if (!alive) return;
 				if (conv && conv.messages.length > 0) {
-					setResume({
-						phase: "ready",
-						conversationId: conv.conversationId,
-						messages: conv.messages.map(
-							(m) =>
-								({
-									id: m.id,
-									role: m.role,
-									parts: [{ type: "text", text: m.content }],
-									// FIX-49: marca o histórico hidratado — a UI ancora o scroll,
-									// mostra a âncora "Você voltou" e sela artifacts/gates antigos.
-									metadata: { resumed: true },
-								}) as AjaUIMessage,
-						),
-					});
+					// FIX-51: COM progresso real → popup de escolha (voltar/nova). Sem
+					// progresso (1-2 falas) → hidrata direto, sem perguntar (zero ruído).
+					if (conv.meaningfulProgress) {
+						setResume({
+							phase: "prompt",
+							conversationId: conv.conversationId,
+							messages: toResumedMessages(conv),
+							lastActivityAt: conv.lastActivityAt,
+						});
+					} else {
+						setResume({
+							phase: "ready",
+							conversationId: conv.conversationId,
+							messages: toResumedMessages(conv),
+						});
+					}
 				} else {
 					setResume({ phase: "ready" });
 				}
@@ -80,6 +107,31 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 	// estado inicial no primeiro render). O shell vazio respeita o fade do morph.
 	if (resume.phase === "loading") {
 		return <TheaterStage settled={settled} />;
+	}
+
+	// FIX-51: gate de escolha — palco vazio atrás + popup por cima. Só sai pra
+	// "ready" por uma das duas ações (o ChatProvider não monta antes da escolha).
+	if (resume.phase === "prompt") {
+		return (
+			<>
+				<TheaterStage settled={settled} />
+				<ResumePrompt
+					lastActivityAt={resume.lastActivityAt}
+					onResume={() =>
+						setResume({
+							phase: "ready",
+							conversationId: resume.conversationId,
+							messages: resume.messages,
+						})
+					}
+					// "Começar nova": thread limpa (sem initialMessages/conversationId). O
+					// cookie aja_uid é preservado → mesmo contato/identidade no POST /api/chat
+					// (não vira lead órfão). A conversa anterior fica no DB; a recência da
+					// nova a supersede no próximo resume. Ver ADR Decisão 2.
+					onFresh={() => setResume({ phase: "ready" })}
+				/>
+			</>
+		);
 	}
 
 	return (
