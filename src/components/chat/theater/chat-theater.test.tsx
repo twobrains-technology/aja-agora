@@ -60,11 +60,23 @@ function renderTheater(seed = "") {
 beforeEach(() => {
 	sendUserMessage.mockClear();
 	document.body.style.overflow = "";
+	// TheaterChat consulta GET /api/chat/resume ao abrir (FIX-46). Sem mock, o
+	// fetch real pende/falha e o painel fica preso em "loading" — o chat nunca
+	// monta. Default destes testes: SEM conversa anterior (primeira vez), que é
+	// o cenário em que a semente vira a 1ª mensagem.
+	vi.stubGlobal(
+		"fetch",
+		vi.fn().mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({ conversation: null }),
+		}),
+	);
 });
 
 afterEach(() => {
 	cleanup();
 	document.body.style.overflow = "";
+	vi.unstubAllGlobals();
 });
 
 describe("Modo Teatro — casca de transição", () => {
@@ -117,16 +129,20 @@ describe("Modo Teatro — casca de transição", () => {
 		await waitFor(() => expect(screen.queryByTestId("chat-theater")).toBeNull());
 	});
 
-	it("semente não-vazia vira a 1ª mensagem do usuário no chat real", () => {
+	it("semente não-vazia vira a 1ª mensagem do usuário no chat real", async () => {
 		vi.useFakeTimers();
 		try {
 			renderTheater("Quero trocar de carro.");
 			act(() => {
 				fireEvent.click(screen.getByTestId("trigger"));
 			});
+			// resolve o GET /api/chat/resume (sem conversa anterior) → monta o chat
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
 			expect(sendUserMessage).not.toHaveBeenCalled();
-			act(() => {
-				vi.advanceTimersByTime(500);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(500);
 			});
 			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.");
 		} finally {
@@ -134,7 +150,7 @@ describe("Modo Teatro — casca de transição", () => {
 		}
 	});
 
-	it("REGRESSÃO: semente sobrevive ao double-invoke do StrictMode (Next dev) — envia 1x", () => {
+	it("REGRESSÃO: semente sobrevive ao double-invoke do StrictMode (Next dev) — envia 1x", async () => {
 		// Em dev, o React StrictMode roda mount→cleanup→remount. Um guard via ref
 		// (sentRef) persiste entre os invokes: o cleanup do 1º timer dispara, mas o
 		// guard impede reagendar no remount → a semente nunca era enviada (bug
@@ -153,8 +169,13 @@ describe("Modo Teatro — casca de transição", () => {
 			act(() => {
 				fireEvent.click(screen.getByTestId("trigger"));
 			});
-			act(() => {
-				vi.advanceTimersByTime(600);
+			// resolve o(s) fetch(es) de resume (StrictMode dispara o effect 2x) →
+			// monta o chat e agenda o timer da semente; só então avança o relógio.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(600);
 			});
 			expect(sendUserMessage).toHaveBeenCalledTimes(1);
 			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.");
@@ -163,15 +184,16 @@ describe("Modo Teatro — casca de transição", () => {
 		}
 	});
 
-	it("semente vazia NÃO dispara mensagem (abre na saudação do agente)", () => {
+	it("semente vazia NÃO dispara mensagem (abre na saudação do agente)", async () => {
 		vi.useFakeTimers();
 		try {
 			renderTheater("");
 			act(() => {
 				fireEvent.click(screen.getByTestId("trigger"));
 			});
-			act(() => {
-				vi.advanceTimersByTime(500);
+			// resolve o resume e monta o chat — mesmo montado, semente vazia não envia
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(500);
 			});
 			expect(sendUserMessage).not.toHaveBeenCalled();
 		} finally {
