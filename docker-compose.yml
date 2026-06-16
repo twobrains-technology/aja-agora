@@ -63,8 +63,15 @@ services:
     profiles: ["containerized"]
     # Modo DEV/HMR (padrão dev-stack): Dockerfile.dev roda `next dev` com
     # Turbopack. O source vem por bind mount (./:/app) — editar src/ recompila
-    # sem rebuild. node_modules e .next ficam em volumes anônimos pra não serem
-    # ocultados pelo bind.
+    # sem rebuild.
+    #
+    # Arquitetura pnpm (regra global — anti-fritar Mac):
+    # - app_node_modules é NAMED (não anônimo) → I/O rápido fora do VirtioFS,
+    #   sobrevive recreate. Dockerfile.dev NÃO instala deps; o install roda no
+    #   CMD na 1ª subida gravando aqui.
+    # - pnpm_store é UM volume externo compartilhado por TODOS os workspaces
+    #   (tb-pnpm-store-shared), mesmo filesystem que node_modules → hardlink →
+    #   subir workspace novo = install quase instantâneo, ~zero disco extra.
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -74,11 +81,13 @@ services:
     # (OrbStack roteia → 3000 interna).
     volumes:
       - ./:/app
-      - /app/node_modules
+      - app_node_modules:/app/node_modules
+      - pnpm_store:/pnpm/store
       - /app/.next
     environment:
       # Dev mode: HMR + Turbopack + source maps.
       NODE_ENV: development
+      PNPM_STORE_DIR: /pnpm/store
       # OrbStack bind mount não emite inotify — watcher precisa de polling.
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
@@ -126,6 +135,10 @@ services:
 volumes:
   pgdata:
     name: aja-pg-${WORKSPACE_NAME}-data
+  app_node_modules:                      # por workspace (deps materializadas, fora do bind)
+  pnpm_store:                            # store content-addressable, 1 cópia física global
+    name: tb-pnpm-store-shared
+    external: true
 
 networks:
   tb-local-net:

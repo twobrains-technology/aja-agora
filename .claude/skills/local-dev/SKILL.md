@@ -13,8 +13,9 @@ segregados por **workspace** (= nome da branch git atual, ou do diretório
 do worktree). **Apenas o Letta** é compartilhado entre todos os projetos
 TwoBrains via `~/.tb-local/_shared/`.
 
-Sem `npm run dev` no host. Sem Postgres no host. Sem nada do projeto
-no host. **Tudo em container.**
+Sem `pnpm dev`/`next dev` no host. Sem Postgres no host. Sem nada do
+projeto no host. **Tudo em container.** (E `pnpm` é o único gestor de
+pacotes — `npm`/`yarn` proibidos. Ver CLAUDE.md → "Package manager — pnpm ÚNICO".)
 
 ## Workspace = branch
 
@@ -112,7 +113,8 @@ Esta skill é **template**. Pra adotar em outro projeto:
 
 ## Anti-padrões
 
-- ❌ **NUNCA** rodar `npm run dev`, `npm run build`, `next start` no host. Stack inteira em container, sempre.
+- ❌ **NUNCA** rodar `pnpm dev`, `pnpm build`, `next start`/`next dev` no host. Stack inteira em container, sempre.
+- ❌ **NUNCA** usar `npm`/`yarn` (lockfile, store e dev local dependem de pnpm). `pnpm` é o único.
 - ❌ **NUNCA** rodar Postgres do projeto no host (Postgres.app, brew). Sempre em container do workspace.
 - ❌ **NUNCA** criar um Letta dentro do `docker-compose.yml` do projeto.
 - ❌ **NUNCA** rodar `docker compose -f ~/.tb-local/_shared/... down -v` no dia a dia (apaga memória de todos os projetos).

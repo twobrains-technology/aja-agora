@@ -48,12 +48,12 @@ if [ -n "$AGENT_CHANGED" ]; then
   fi
 
   echo "[pre-commit] mudança em prompt/agent/tool/migration detectada — rodando Camadas 1+2+3 (vitest + eval real)..."
-  npm run test:pre-commit
+  pnpm test:pre-commit
   STATUS=$?
   LAYER_HINT="Camada 3 (LLM real cirúrgico)"
 else
   echo "[pre-commit] rodando Camadas 1+2 (vitest)..."
-  npm run test:unit
+  pnpm test:unit
   STATUS=$?
   LAYER_HINT="Camadas 1 e 2"
 fi
