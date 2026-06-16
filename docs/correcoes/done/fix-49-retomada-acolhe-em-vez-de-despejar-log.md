@@ -1,7 +1,9 @@
 ---
 id: FIX-49
 titulo: "Retomada (resume) despeja o log em vez de acolher: scroll no topo, pill falsa, artifacts antigos clicáveis, gates respondidos reabertos"
-status: todo
+status: done
+commit: e4a1d27
+executado_em: 2026-06-16
 bloco: bloco-a-polir-funil-retorno
 arquivos:
   - src/components/chat/theater/theater-chat.tsx
