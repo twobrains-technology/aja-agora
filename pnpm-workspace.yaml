@@ -1,0 +1,20 @@
+# aja-agora — single-package (não monorepo). Arquivo existe pra fixar a config
+# de build-scripts da arquitetura dev local TwoBrains (anti-fritar Mac).
+#
+# NB: este projeto usa node-linker=hoisted (.npmrc) — node_modules flat, exigido
+# por esbuild (binário auto-extraído) + Next 16 Turbopack/standalone. Por isso
+# NÃO se usa `enableGlobalVirtualStore` (é do layout isolado/symlinkado, mutuamente
+# exclusivo com hoisted). O anti-fritar é mantido pelo store content-addressable
+# compartilhado (tb-pnpm-store-shared): o node_modules flat hardlinka do store →
+# 1 cópia física global, ~zero disco extra por workspace.
+
+# pnpm 10+ exige allowlist explícita de pacotes que rodam build script (postinstall).
+# esbuild          → binário nativo do bundle do migrate-guard (db:migrate:bundle) + evals.
+# sharp            → otimização de imagem do Next em runtime (prod).
+# msgpackr-extract → acelerador nativo opcional (serialização); npm já compilava.
+# msw              → mock service worker (transitivo, dev-only); não precisa build.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  msgpackr-extract: true
+  msw: false

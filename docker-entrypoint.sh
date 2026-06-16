@@ -7,9 +7,9 @@
 #
 # Detecção (em ordem):
 #   1. $MIGRATE_CMD             — override explícito (qualquer comando shell)
-#   2. npm run db:migrate:runtime — convenção pra apps Drizzle/runtime-only
+#   2. pnpm run db:migrate:runtime — convenção pra apps Drizzle/runtime-only
 #                                   (sem drizzle-kit no runtime; usa drizzle-orm/migrator)
-#   3. npx prisma migrate deploy  — apps Prisma (precisam de `prisma` em deps,
+#   3. pnpm exec prisma migrate deploy — apps Prisma (precisam de `prisma` em deps,
 #                                   não devDeps, pra estar no runtime)
 #
 # Opt-out: SKIP_MIGRATIONS=true   — pra rebuild emergencial / rollback de schema.
@@ -35,9 +35,9 @@ CMD=""
 if [ -n "${MIGRATE_CMD}" ]; then
   CMD="${MIGRATE_CMD}"
 elif [ -f /app/package.json ] && grep -q '"db:migrate:runtime"' /app/package.json 2>/dev/null; then
-  CMD="npm run --silent db:migrate:runtime"
+  CMD="pnpm run --silent db:migrate:runtime"
 elif [ -f /app/prisma/schema.prisma ]; then
-  CMD="npx --no-install prisma migrate deploy"
+  CMD="pnpm exec prisma migrate deploy"
 fi
 
 if [ -n "${CMD}" ]; then

@@ -2,12 +2,17 @@
 	"name": "aja-agora",
 	"version": "0.1.0",
 	"private": true,
+	"packageManager": "pnpm@11.7.0",
+	"engines": {
+		"pnpm": ">=11"
+	},
 	"scripts": {
 		"dev": "next dev",
 		"build": "next build",
 		"start": "next start",
 		"lint": "biome check .",
 		"format": "biome check --write .",
+		"typecheck": "tsc --noEmit",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:migrate:bundle": "esbuild scripts/migrate-guard.mjs --bundle --platform=node --target=node22 --format=cjs --packages=bundle --outfile=scripts/migrate-guard.bundle.cjs",
@@ -26,9 +31,9 @@
 		"test:e2e": "playwright test",
 		"test:eval": "vitest run --config vitest.eval.config.ts",
 		"test:eval:quick": "vitest run --config vitest.eval.config.ts -t 'EVAL-SAVE-CONTACT-NAME-CIRURGICO|EVAL-ASSISTANT-LESS-FORMAL'",
-		"test:pre-commit": "npm run test:unit && npm run test:eval:quick",
+		"test:pre-commit": "pnpm test:unit && pnpm test:eval:quick",
 		"eval:calibrate:bundle": "esbuild scripts/eval-calibrate.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/eval-calibrate.bundle.cjs",
-		"eval:calibrate": "npm run eval:calibrate:bundle && node --env-file-if-exists=.env scripts/eval-calibrate.bundle.cjs",
+		"eval:calibrate": "pnpm eval:calibrate:bundle && node --env-file-if-exists=.env scripts/eval-calibrate.bundle.cjs",
 		"prepare": "husky"
 	},
 	"dependencies": {
