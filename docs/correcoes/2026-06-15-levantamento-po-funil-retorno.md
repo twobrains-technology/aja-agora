@@ -30,6 +30,7 @@ do admin.
 | 1 | Proposta web não move a raia (fica em `qualificado`) | **FIX-48** | Bug real, root cause provado: `buildStartContractInput` não passa `leadId` → transição pulada + proposta órfã + polling ignora |
 | 2 | Retomada despeja log (scroll topo, pill falsa, artifacts antigos clicáveis, gates reabertos) | **FIX-49** | UX confirmada no código; artifact antigo clicável re-dispara ação (alimenta o #1) |
 | 3 | Card do contato não destaca proposta vigente / conversa ativa | **FIX-50** | Visão consolidada lista tudo sem hierarquizar o presente |
+| 3b | Retomada same-device hidrata automático, sem escolha do usuário | **FIX-51** | Pedido posterior do operador: popup "voltar à conversa anterior ou começar nova", seguindo o design system. Mesmos arquivos de retomada do FIX-49 → mesmo bloco/dev |
 | 4 | "Valor do lance ausente" (jornada linha 25) | **DESCARTADO** | Já existe: `plan-estimate-picker.tsx:61,87,124` emite `lanceValue`; `types.ts:284` `declaredLanceValue`. Anotação da jornada está desatualizada |
 | 5 | "Resumo da contratação por WhatsApp/e-mail" (passo 5) | **DESCARTADO** | Já existe: `src/lib/bevi/contract-summary.ts` + `sendContractSummary` em `route.ts:667` e `interactive-handlers.ts:175` |
 | 6 | Feedback de recebimento de documentos | **DESCARTADO** | Marginal e sobrepõe FIX-10 (done), que já tratou o timing do disparo. Não justifica fix dedicado |
