@@ -105,6 +105,12 @@ describeIfDb("FIX-45 — getContactDetail (integration)", () => {
 		expect(detail.proposals.length).toBe(1);
 		expect(detail.proposals[0].proposalId).toBe("prop-fix45");
 
+		// FIX-50: presente hierarquizado — a única proposta (lead não-perdido) é a
+		// vigente; há conversa ativa; a timeline carrega o status da conversa.
+		expect(detail.currentProposalId).toBe(detail.proposals[0].id);
+		expect(detail.activeConversationId).toBeTruthy();
+		expect(detail.timeline.every((t) => t.conversationStatus === "active")).toBe(true);
+
 		// histórico de raia ordenado
 		expect(detail.stageHistory.map((e) => e.toStage)).toEqual([
 			"engajado",

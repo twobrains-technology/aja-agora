@@ -32,7 +32,9 @@ const STAGE_LABELS: Record<string, string> = {
 
 interface TimelineMsg {
 	id: string;
+	conversationId: string;
 	channel: "web" | "whatsapp";
+	conversationStatus: string;
 	role: string;
 	content: string;
 	createdAt: string;
@@ -64,6 +66,8 @@ interface ContactDetail {
 	channels: ("web" | "whatsapp")[];
 	currentStage: string | null;
 	conversationCount: number;
+	currentProposalId: string | null;
+	activeConversationId: string | null;
 	timeline: TimelineMsg[];
 	proposals: Proposal[];
 	stageHistory: StageEvent[];
@@ -154,6 +158,16 @@ export function ContactDetailPanel({
 							<div key={msg.id} className="text-sm" data-testid="timeline-message">
 								<div className="flex items-center gap-2 mb-0.5">
 									<ChannelBadge channel={msg.channel} />
+									{/* FIX-50: selo só nas mensagens da conversa que ainda está rodando. */}
+									{detail?.activeConversationId === msg.conversationId && (
+										<Badge
+											variant="outline"
+											className="text-[10px] h-5 px-1.5 border-green-600/40 text-green-700"
+											data-testid="conversation-active-badge"
+										>
+											Em andamento
+										</Badge>
+									)}
 									<span className="text-[11px] text-muted-foreground">
 										{msg.role} · {format(new Date(msg.createdAt), "dd/MM HH:mm", { locale: ptBR })}
 									</span>
@@ -167,25 +181,46 @@ export function ContactDetailPanel({
 						{detail?.proposals.length === 0 && (
 							<p className="text-sm text-muted-foreground">Nenhuma proposta.</p>
 						)}
-						{detail?.proposals.map((p) => (
-							<div key={p.id} className="rounded-lg border p-3 text-sm" data-testid="proposal-item">
-								<div className="font-medium">{p.administradora ?? "Proposta"}</div>
-								<div className="text-xs text-muted-foreground">
-									Crédito {p.creditValue ?? "—"} · Parcela {p.monthlyPayment ?? "—"} · Status{" "}
-									{p.proposalStatus ?? "—"}
+						{detail?.proposals.map((p) => {
+							// FIX-50: a vigente sobe em destaque; as superadas ficam esmaecidas.
+							const isCurrent = detail?.currentProposalId === p.id;
+							return (
+								<div
+									key={p.id}
+									className={`rounded-lg border p-3 text-sm ${
+										isCurrent ? "border-primary/40 bg-primary/[.04]" : "opacity-60"
+									}`}
+									data-testid={`proposal-item-${p.id}`}
+									data-current={isCurrent ? "true" : undefined}
+								>
+									<div className="flex items-center gap-2">
+										<span className="font-medium">{p.administradora ?? "Proposta"}</span>
+										{isCurrent && (
+											<Badge
+												className="text-[10px] h-5 px-1.5"
+												data-testid="proposal-current-badge"
+											>
+												Atual
+											</Badge>
+										)}
+									</div>
+									<div className="text-xs text-muted-foreground">
+										Crédito {p.creditValue ?? "—"} · Parcela {p.monthlyPayment ?? "—"} · Status{" "}
+										{p.proposalStatus ?? "—"}
+									</div>
+									{p.consortiumProposalLink && (
+										<a
+											href={p.consortiumProposalLink}
+											target="_blank"
+											rel="noreferrer"
+											className="text-xs text-blue-600 underline"
+										>
+											Abrir PDF da proposta
+										</a>
+									)}
 								</div>
-								{p.consortiumProposalLink && (
-									<a
-										href={p.consortiumProposalLink}
-										target="_blank"
-										rel="noreferrer"
-										className="text-xs text-blue-600 underline"
-									>
-										Abrir PDF da proposta
-									</a>
-								)}
-							</div>
-						))}
+							);
+						})}
 					</TabsContent>
 
 					<TabsContent value="funil" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
