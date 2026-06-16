@@ -2871,7 +2871,10 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 		const contractInput = readSource("src/lib/bevi/contract-input.ts");
 		expect(contractInput).toMatch(/administradoraPreferida: meta.recommendedAdministradora/);
 		const route = readSource("src/app/api/chat/route.ts");
-		expect(route).toMatch(/buildStartContractInput\(meta,/);
+		// FIX-48: o builder ganhou um 3º arg ({ leadId }) e o biome quebrou a
+		// chamada em múltiplas linhas — a regex tolera o whitespace. O contrato
+		// (route passa `meta` como 1º arg ao módulo único) segue intacto.
+		expect(route).toMatch(/buildStartContractInput\(\s*meta,/);
 		const pick = readSource("src/lib/adapters/bevi/partner-offer-mapper.ts");
 		expect(pick).toMatch(/preferAdministradora/);
 		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");

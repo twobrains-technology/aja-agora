@@ -22,6 +22,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
+import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { startContract } from "@/lib/bevi/fulfillment";
@@ -151,11 +152,19 @@ export async function fireContract(from: string, conversationId: string): Promis
 	await persistMeta(conversationId, cleared);
 
 	try {
-		const input = buildStartContractInput(meta, {
-			cpf: identity.cpf,
-			celular: identity.celular,
-			lgpd: true, // aceite explícito = consentimento LGPD do passo 5
-		});
+		// FIX-48: vincula a proposta ao lead da conversa (o WhatsApp cria o lead no
+		// handoff antes do fechamento). Antes o polling resgatava via conversationId
+		// — manter o leadId explícito blinda a raia sem depender do resgate.
+		const leadId = await getLeadIdForConversation(conversationId);
+		const input = buildStartContractInput(
+			meta,
+			{
+				cpf: identity.cpf,
+				celular: identity.celular,
+				lgpd: true, // aceite explícito = consentimento LGPD do passo 5
+			},
+			{ leadId },
+		);
 		const { offer, noOffer } = await startContract(conversationId, input);
 
 		if (noOffer || !offer) {

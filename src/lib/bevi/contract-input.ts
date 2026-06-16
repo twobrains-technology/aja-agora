@@ -17,11 +17,19 @@ export interface ContractIdentityInput {
 	lgpd: boolean;
 }
 
+/** Vínculos de funil resolvidos pelo caller (web ou WhatsApp). FIX-48: o `leadId`
+ * é resolvido no momento do fechamento e PRECISA chegar à proposta — sem ele a
+ * raia trava em `qualificado` (createBeviProposal pula a transição). */
+export interface ContractLinkInput {
+	leadId?: string | null;
+}
+
 /** Monta o input do `startContract` a partir do estado da conversa + identidade.
  * Os defaults (valor 50000, objetivo rápido, lance "nenhum") espelham o web. */
 export function buildStartContractInput(
 	meta: ConversationMetadata,
 	identity: ContractIdentityInput,
+	links: ContractLinkInput = {},
 ): StartContractInput {
 	const q = meta.qualifyAnswers ?? {};
 	const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
@@ -39,5 +47,8 @@ export function buildStartContractInput(
 		// Fechamento prefere a MESMA administradora que o usuário decidiu
 		// (BUG-ADMIN-TROCADA-NO-FECHAMENTO).
 		administradoraPreferida: meta.recommendedAdministradora ?? null,
+		// FIX-48: vincula a proposta ao lead já existente da conversa pra a raia
+		// avançar (qualificado→proposta_enviada). null explícito (nunca undefined).
+		leadId: links.leadId ?? null,
 	};
 }

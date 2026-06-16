@@ -26,6 +26,12 @@ vi.mock("@/db", () => ({
 			conversations: {
 				findFirst: vi.fn(async () => ({ id: CONV_ID, metadata: mocks.metaStore[CONV_ID] ?? {} })),
 			},
+			// FIX-48: fireContract resolve o leadId da conversa (getLeadIdForConversation)
+			// pra vincular a proposta. Sem lead no fixture → null (paridade com o
+			// comportamento anterior: a proposta nascia sem leadId).
+			leads: {
+				findFirst: vi.fn(async () => null),
+			},
 		},
 	},
 }));
