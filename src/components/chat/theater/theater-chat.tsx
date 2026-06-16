@@ -58,6 +58,9 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 									id: m.id,
 									role: m.role,
 									parts: [{ type: "text", text: m.content }],
+									// FIX-49: marca o histórico hidratado — a UI ancora o scroll,
+									// mostra a âncora "Você voltou" e sela artifacts/gates antigos.
+									metadata: { resumed: true },
 								}) as AjaUIMessage,
 						),
 					});

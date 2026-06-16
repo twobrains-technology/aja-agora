@@ -24,6 +24,14 @@ function msg(id: string, text: string, role: "user" | "assistant" = "assistant")
 	return { id, role, parts: [{ type: "text", text }] } as AjaUIMessage;
 }
 
+function resumedMsg(
+	id: string,
+	text: string,
+	role: "user" | "assistant" = "assistant",
+): AjaUIMessage {
+	return { id, role, parts: [{ type: "text", text }], metadata: { resumed: true } } as AjaUIMessage;
+}
+
 function container(): Element {
 	const el = document.querySelector("[data-message-list]");
 	if (!el) throw new Error("scroll container não encontrado");
@@ -59,6 +67,35 @@ describe("FIX-32 — scroll inteligente (gesto do usuário vence)", () => {
 		// chega mais conteúdo durante o streaming
 		rerender(<MessageList messages={[msg("a", "oi"), msg("b", "token")]} isStreaming={true} />);
 		expect(scrollSpy).not.toHaveBeenCalled();
+	});
+
+	it("FIX-49: histórico hidratado mostra a âncora 'Você voltou — continue de onde parou'", () => {
+		render(
+			<MessageList
+				messages={[resumedMsg("a", "oi"), resumedMsg("b", "resposta antiga")]}
+				isStreaming={false}
+			/>,
+		);
+		expect(screen.getByTestId("resume-anchor")).toBeDefined();
+		expect(screen.getByText(/Você voltou/i)).toBeDefined();
+	});
+
+	it("FIX-49: conversa fresca (sem mensagens resumidas) NÃO mostra a âncora", () => {
+		render(<MessageList messages={[msg("a", "oi"), msg("b", "resposta")]} isStreaming={false} />);
+		expect(screen.queryByTestId("resume-anchor")).toBeNull();
+	});
+
+	it("FIX-49: hidratação NÃO mostra a pill 'Novas mensagens' sem o usuário ter rolado", () => {
+		render(
+			<MessageList
+				messages={[resumedMsg("a", "oi"), resumedMsg("b", "resposta antiga")]}
+				isStreaming={false}
+			/>,
+		);
+		// scroll programático (a âncora rola sozinha) NÃO pode acender a pill —
+		// pill = "você subiu, clique pra voltar", exige GESTO do usuário.
+		fireEvent.scroll(container());
+		expect(screen.queryByText("Novas mensagens")).toBeNull();
 	});
 
 	it("pill 'Novas mensagens' aparece após subir e religa o stick ao clicar", () => {
