@@ -37,7 +37,9 @@ export type TimeframeOption = {
 
 export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 100_000, max: 2_000_000, step: 50_000, default: 400_000 },
-	auto: { min: 20_000, max: 300_000, step: 10_000, default: 80_000 },
+	// FIX-54: teto elevado 300k → 500k (carros novos/premium passavam de 300k).
+	// Alinha com `servicos` e cobre a faixa real sem virar irreal pra Bevi.
+	auto: { min: 20_000, max: 500_000, step: 10_000, default: 80_000 },
 	moto: { min: 8_000, max: 80_000, step: 1_000, default: 25_000 },
 	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };
@@ -103,7 +105,8 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 			title: "Acima de R$ 200 mil",
 			desc: "Top de linha",
 			min: 200_000,
-			max: 300_000,
+			// FIX-54: acompanha o novo teto de auto (CREDIT_BOUNDS) — multicanal coerente.
+			max: 500_000,
 		},
 	],
 	moto: [

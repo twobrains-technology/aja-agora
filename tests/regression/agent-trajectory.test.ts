@@ -4673,20 +4673,20 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 			{ type: "stream-start", warnings: [] },
 			...textChunks(
 				"t1",
-				"Pra auto a faixa vai ate R$ 300 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
+				"Pra auto a faixa vai ate R$ 500 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
 			),
 			FINISH_STOP,
 		]);
 
-		expect(text).toMatch(/300 mil|R\$ ?300|teto|faixa/i);
+		expect(text).toMatch(/500 mil|R\$ ?500|teto|faixa/i);
 		expect(toolCalls).toHaveLength(0);
 		// NUNCA celebra o valor impossivel.
 		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
 	});
 
-	it("clamp server-side: 5M de auto persiste o teto da categoria (300k)", async () => {
+	it("clamp server-side: 5M de auto persiste o teto da categoria (500k — FIX-54)", async () => {
 		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
-		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(300_000);
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(500_000);
 		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
 	});
 
@@ -4695,15 +4695,15 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyAnswers: {
-				creditMin: 270_000,
-				creditMax: 300_000,
+				creditMin: 450_000,
+				creditMax: 500_000,
 				creditClampedFrom: 5_000_000,
 				prazoMeses: 12,
 				hasLance: "no",
 			},
 		};
 		const d = buildSearchSummaryDirective({ category: "auto", meta });
-		expect(d).toMatch(/300|faixa|teto/i);
+		expect(d).toMatch(/500|faixa|teto/i);
 		expect(d.toLowerCase()).toMatch(/clamp|fora da faixa|acima|teto da categoria/);
 	});
 });
