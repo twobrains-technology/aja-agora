@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-19 00:37 · **Sessão:** aja-agora/develop
 - **Critério de pronto:** feedbacks do docx mapeados ao código real → itens `fix-NN` (FIX-52+) escritos com root cause investigado → agrupados em ~3 blocos paralelizáveis disjuntos (`docs/correcoes/todo/`) com `_bloco.md` + `_prompt.md` implement-and-push → onda lançada via `launch-blocks.sh --wave 1` (workspaces Superset criados + abertos). Anotação commitada (`docs:`).
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO
 
 ## Origem
 `/Users/kairo/Downloads/jornada2_revisão.docx` — revisão 2 da jornada, feedbacks de teste manual do stakeholder (Bernardo) rodando o produto em ajaagora.com.br. 8 screenshots + comentários. Texto extraído em /tmp/jornada2.txt, imagens em /tmp/jornada2_imgs/.
@@ -61,8 +61,28 @@ Copy geral (landing):
 - 00:37 — 3 Explores lançados. Diário criado.
 - 00:55 — 3 Explores concluídos com arquivo:linha. 9 fix-NN + 3 _bloco.md + 3 _prompt.md + ata escritos. Partição fechada.
 
-## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:**
+### D4 · 03:51 — Lançar só os 3 blocos da jornada2 via --block (pular bloco-pnpm)
+- **Contexto:** dry-run mostrou que `--wave 1` dispararia 4 workspaces, incluindo `bloco-pnpm` (pré-existente, não é desta rodada; a migração pnpm já consta nos commits recentes da develop).
+- **Decidi:** lançar via `--block` os 3 blocos da jornada2; deixar `bloco-pnpm` intocado (fora de escopo, não mexer em bloco de outra rodada em modo autônomo).
+- **Reversibilidade:** fácil.
+- **Evidência:** dry-run + commits "build: migra aja-agora pra pnpm".
+
+## Relatório final
+- **Resultado vs critério de pronto:** ✅ ATINGIDO. 9 itens (FIX-52..60) escritos com root cause investigado nos Explores (arquivo:linha), agrupados em 3 blocos disjuntos com `_bloco.md` + `_prompt.md` implement-and-push. Anotação commitada+pushada (`cdd6d14` em origin/develop). Onda 1 lançada: 3 workspaces Superset criados, agentes Claude disparados (ok:true) e abertos na sidebar:
+  - bloco-a-funil-coleta-ordem → ws 982341c7 (branch fix/funil-coleta-ordem)
+  - bloco-b-simulador-recomendacao → ws 835cdadc (branch fix/simulador-recomendacao)
+  - bloco-c-landing-copy-ui → ws 88b097db (branch fix/landing-copy-ui)
+  Cada agente vai implementar + push da branch + criar reminder de revisão (NÃO abre PR/merge — você revisa e mergeia).
 - **O que NÃO fiz e por quê:**
+  - Não mergeei nem abri PR (linha vermelha do fluxo — é sua decisão via reminders).
+  - Não disparei o `bloco-pnpm` (fora de escopo; parece já concluído nos commits — vale mover pra done/ ou apagar do todo/ numa limpeza futura).
+  - Não corrigi o bug do `launch-blocks.sh` (o `open` recebe o JSON do create em vez do id — contornei abrindo os 3 manualmente). Fora de escopo; mexer em tooling global autônomo é arriscado. Recomendo corrigir o parsing do id no script.
+  - Não gerei a figura "mais brasileira" do hero nem decidi a interpretação de "ícone WA móvel" — deixei como decisão do executor (gerar candidata) + validação visual sua (FIX-60).
 - **Revisar primeiro:**
+  1. **D3 + FIX-58** — reposicionar o simulador antes da indicação toca a jornada canônica (regra de produto). Tem aval do Bernardo no docx pro reposicionamento; redesenho ficou fora de escopo. Confirme se é só isso que ele quer.
+  2. **FIX-53** — mudar "dados antes do valor" altera a ordem da jornada canônica; o executor vai atualizar o docx da jornada. Confira se a nova ordem bate com a visão.
+  3. **Ordem de merge A→B** (overlap nível 2 em ai-sdk.ts/cassettes) — mergeie A antes de B.
 - **Próximos passos sugeridos:**
+  - Acompanhar os 3 agentes na sidebar do Superset; revisar+mergear pelos reminders que cada um cria.
+  - Limpeza: resolver o `bloco-pnpm` órfão no todo/.
+  - Onda 2 (se houver) só após merge da onda 1.
