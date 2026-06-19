@@ -84,12 +84,11 @@ export function Demo() {
 
 					{/* Painel — Recomendação (artefato de marketing) */}
 					<div className="rounded-[20px] border border-border bg-card p-6 shadow-xs">
-						<div className="flex items-center justify-between gap-2">
+						<div className="flex items-center gap-2">
 							<span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
 								<SunMark variant="color" className="size-[18px]" />
 								Recomendação
 							</span>
-							<span className="text-xs text-[#9aa7b6]">Consórcio Bevi · Grupo 1042</span>
 						</div>
 
 						<div className="mt-5">
