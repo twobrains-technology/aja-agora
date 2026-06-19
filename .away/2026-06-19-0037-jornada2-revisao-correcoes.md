@@ -1,8 +1,9 @@
 # Away — Transformar jornada2_revisão.docx em blocos de correção (todo-blocks) e lançar a onda no Superset
 
 - **Início:** 2026-06-19 00:37 · **Sessão:** aja-agora/develop
-- **Critério de pronto:** feedbacks do docx mapeados ao código real → itens `fix-NN` (FIX-52+) escritos com root cause investigado → agrupados em ~3 blocos paralelizáveis disjuntos (`docs/correcoes/todo/`) com `_bloco.md` + `_prompt.md` implement-and-push → onda lançada via `launch-blocks.sh --wave 1` (workspaces Superset criados + abertos). Anotação commitada (`docs:`).
-- **Status:** COMPLETO
+- **Critério de pronto (FASE 1 — anotação+lançamento, ✅ CONCLUÍDA):** feedbacks mapeados → fix-NN escritos → 3 blocos disjuntos → onda lançada (workspaces criados+abertos). Anotação commitada+pushada.
+- **Critério de pronto (FASE 2 — "tudo pronto até amanhã", reaberto 04:0X):** os 3 agentes terminam → cada branch validada (lint + typecheck + testes verdes na branch) → mergeada na develop em ordem A→B→C quando verde E sem decisão humana pendente; o que exigir olho humano (figura visual do FIX-60, conflito não-trivial, falha de teste) → PENDENTE-KAIRO com comando exato. `bloco-pnpm` resolvido (lançado se pendente, ou marcado obsoleto). PROD intocado.
+- **Status:** EM ANDAMENTO (Fase 2)
 
 ## Origem
 `/Users/kairo/Downloads/jornada2_revisão.docx` — revisão 2 da jornada, feedbacks de teste manual do stakeholder (Bernardo) rodando o produto em ajaagora.com.br. 8 screenshots + comentários. Texto extraído em /tmp/jornada2.txt, imagens em /tmp/jornada2_imgs/.
@@ -86,3 +87,27 @@ Copy geral (landing):
   - Acompanhar os 3 agentes na sidebar do Superset; revisar+mergear pelos reminders que cada um cria.
   - Limpeza: resolver o `bloco-pnpm` órfão no todo/.
   - Onda 2 (se houver) só após merge da onda 1.
+
+---
+
+# FASE 2 — execução autônoma até "tudo pronto" (Kairo: "lanca tudo... amanhã quero tudo pronto")
+
+### D5 · 04:0X — Integrar autonomamente, com salvaguardas (não esperar merge manual)
+- **Contexto:** Kairo expandiu o objetivo: quer tudo PRONTO de manhã, em modo autônomo total (2º /to-saindo). Indo dormir → não dá pra perguntar (AskUserQuestion travaria a noite). O fluxo todo-blocks normal pára no push (Kairo mergeia). "Tudo pronto" empurra além disso.
+- **Decidi:** acompanhar os agentes via wakeups; quando cada branch for pushada+finalizada (tem `.done/` do bloco), VALIDAR (lint + typecheck + testes na branch) e MERGEAR na develop em ordem A→B→C — mas só se verde e sem decisão humana. NÃO tocar prod (deploy é fluxo separado; develop≠prod).
+- **Salvaguardas (linha vermelha mantida):** NÃO mergeio branch com teste vermelho, conflito não-trivial, ou conteúdo que exige olho humano (figura "brasileira" gerada por IA no FIX-60; qualquer redesenho além do escopo). Esses viram PENDENTE-KAIRO com o comando exato. Sem push --force, sem deploy/merge em prod, sem deletar nada.
+- **Alternativas:** (a) parar no push e deixar tudo pra ele mergear de manhã — rejeitado: não atende "tudo pronto"; (b) perguntar — rejeitado: ele foi dormir, travaria. (c) mergear tudo cego — rejeitado: blast radius sem validação.
+- **Reversibilidade:** média (merge na develop é revertível com `git revert`; prod não é tocado).
+
+### ⚠️ PENDENTE-KAIRO · 04:0X — Merge na develop é integração autônoma de código gerado por IA
+- **O que é:** vou integrar na develop branches escritas por agentes autônomos, validadas por mim (testes verdes + diff revisado), sem revisão humana prévia.
+- **Por que segui mesmo assim:** você pediu "tudo pronto" + autonomia total; gate de qualidade robusto (3 camadas + pre-commit + CI); prod intocado; tudo revertível.
+- **Como auditar:** cada merge é um commit de merge na develop com o bloco no título; o diff de cada branch está revisado no relatório da Fase 2 abaixo. Reverter um bloco: `git revert -m 1 <merge-hash>`.
+
+### D6 · 04:0X — bloco-pnpm NÃO lançado (obsoleto) → removido do todo/
+- **Contexto:** "lanca tudo" incluiria o bloco-pnpm. Mas a migração pnpm já está 100% na develop (commits 1e6eecf/d0b06ba, `packageManager: pnpm@11.7.0`, done-report `.done/2026-06-16-0147-migracao-pnpm.md`, sem package-lock).
+- **Decidi:** NÃO lançar (agente refaria trabalho feito = conflito/confusão). Removi a pasta órfã `todo/bloco-pnpm` (commit 25749ed). "Tudo" = os 3 blocos reais da jornada2.
+- **Reversibilidade:** fácil (git revert; é docs).
+
+## Linha do tempo — Fase 2
+- 04:0X — objetivo reaberto; D5/D6 logadas; bloco-pnpm removido (obsoleto). Branches fix/* ainda não pushadas (agentes implementando). Wakeup agendado p/ acompanhar.
