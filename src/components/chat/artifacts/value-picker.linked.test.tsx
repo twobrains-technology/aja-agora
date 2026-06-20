@@ -43,20 +43,24 @@ describe("FIX-16 — ValuePicker interligado pela matemática de consórcio", ()
 		expect(src).toMatch(/recalcLinkedValues/);
 	});
 
+	// FIX-55: campos de dinheiro agora são inputs livres — o valor exibido vive
+	// no `value` do input, não no textContent. Lemos via testid.
+	const inputVal = (id: string) =>
+		(screen.getByTestId(`value-input-${id}`) as HTMLInputElement).value;
+
 	it("arrastou a PARCELA (teclado no slider) → o VALOR DO BEM sobe junto", () => {
 		render(<ValuePicker payload={payload} />);
 		const sliders = screen.getAllByRole("slider");
 		expect(sliders.length).toBe(3);
 
 		// estado inicial vem do agent, intacto (não reconciliamos o histórico)
-		expect(document.body.textContent).toContain("R$ 80 mil");
+		expect(inputVal("creditValue")).toBe("80.000");
 
 		// ArrowRight no slider da parcela: 2000 → 2100
-		// bem derivado: 2100 × 60 / 1.15 = 109.565 → snap step 1000 = 110.000 → "R$ 110 mil"
+		// bem derivado: 2100 × 60 / 1.15 = 109.565 → snap step 1000 = 110.000
 		fireEvent.keyDown(sliders[1], { key: "ArrowRight" });
-		const text = document.body.textContent ?? "";
-		expect(text).toContain("R$ 2.100");
-		expect(text).toContain("R$ 110 mil");
+		expect(inputVal("monthlyBudget")).toBe("2.100");
+		expect(inputVal("creditValue")).toBe("110.000");
 	});
 
 	it("arrastou o PRAZO → o VALOR DO BEM se ajusta mantendo a parcela", () => {
@@ -64,12 +68,11 @@ describe("FIX-16 — ValuePicker interligado pela matemática de consórcio", ()
 		const sliders = screen.getAllByRole("slider");
 
 		// ArrowRight no prazo: 60 → 61 meses
-		// bem derivado: 2000 × 61 / 1.15 = 106.086 → snap 106.000 → "R$ 106 mil"
+		// bem derivado: 2000 × 61 / 1.15 = 106.086 → snap 106.000
 		fireEvent.keyDown(sliders[2], { key: "ArrowRight" });
-		const text = document.body.textContent ?? "";
-		expect(text).toContain("61 meses");
-		expect(text).toContain("R$ 106 mil");
-		expect(text).toContain("R$ 2.000"); // parcela intacta
+		expect(document.body.textContent).toContain("61 meses");
+		expect(inputVal("creditValue")).toBe("106.000");
+		expect(inputVal("monthlyBudget")).toBe("2.000"); // parcela intacta
 	});
 
 	it("arrastou o BEM → a PARCELA se ajusta (prazo fixo)", () => {
@@ -79,10 +82,9 @@ describe("FIX-16 — ValuePicker interligado pela matemática de consórcio", ()
 		// ArrowRight no bem: 80.000 → 81.000
 		// parcela derivada: 81.000 × 1.15 / 60 = 1.552,50 → snap step 100 = 1.600
 		fireEvent.keyDown(sliders[0], { key: "ArrowRight" });
-		const text = document.body.textContent ?? "";
-		expect(text).toContain("R$ 81 mil");
-		expect(text).toContain("R$ 1.600");
-		expect(text).toContain("60 meses");
+		expect(inputVal("creditValue")).toBe("81.000");
+		expect(inputVal("monthlyBudget")).toBe("1.600");
+		expect(document.body.textContent).toContain("60 meses");
 	});
 
 	it("SELO de estimativa visível quando o link está ativo (regra de produto FIX-3)", () => {

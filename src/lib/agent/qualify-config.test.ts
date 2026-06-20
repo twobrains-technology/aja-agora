@@ -47,3 +47,29 @@ describe("FIX-54 — teto de carro elevado em CREDIT_BOUNDS", () => {
 		expect(ultimo.max).toBeGreaterThanOrEqual(NOVO_TETO_AUTO);
 	});
 });
+
+// FIX-55 (jornada2_revisão.docx, Bernardo): "O simulador não está sensível a
+// números quebrados, é isso mesmo?". O `step` de 10.000 no slider de valor do
+// bem (auto) forçava múltiplos redondos (80k, 90k, 100k…). Decisão
+// (docs/correcoes/decisions/2026-06-19-bloco-b-simulador.md): step fino (1.000)
+// no slider + input numérico livre nos componentes (precisão exata). O clamp
+// server-side NÃO re-quantiza — um valor digitado livre sobrevive ponta a ponta.
+describe("FIX-55 — números quebrados (step fino + clamp sem re-quantizar)", () => {
+	it("step de auto permite granularidade fina (<= 1.000)", () => {
+		expect(CREDIT_BOUNDS.auto.step).toBeLessThanOrEqual(1_000);
+	});
+
+	it("valor quebrado (R$ 347.500) sobrevive ao clamp de auto — não vira múltiplo de 10k", () => {
+		const r = clampCreditToCategory(347_500, "auto");
+		expect(r.value).toBe(347_500);
+		expect(r.clamped).toBe(false);
+		// continua "quebrado" — o clamp não re-quantiza para múltiplo de 10k nem do step
+		expect(r.value % 10_000).not.toBe(0);
+	});
+
+	it("valor quebrado dentro da faixa de qualquer categoria sobrevive ao clamp", () => {
+		expect(clampCreditToCategory(137_300, "auto").value).toBe(137_300);
+		expect(clampCreditToCategory(423_750, "imovel").value).toBe(423_750);
+		expect(clampCreditToCategory(27_250, "moto").value).toBe(27_250);
+	});
+});

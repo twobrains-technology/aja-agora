@@ -137,6 +137,50 @@ describe("PlanEstimatePicker — re-UX guiada por intenção (handoff)", () => {
 	});
 });
 
+// FIX-55 (Bernardo): o slider de valor do bem só aceitava múltiplos do step,
+// forçando arredondamento. Agora há um input numérico livre ao lado do slider
+// — o usuário digita o valor exato (R$ 37.500) e ele sobrevive (sem snap).
+describe("FIX-55 — input numérico livre no valor do bem aceita número quebrado", () => {
+	it("renderiza um input numérico editável para o valor do bem", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		const input = screen.getByTestId("plan-asset-input") as HTMLInputElement;
+		expect(input).toBeDefined();
+		expect(input.inputMode).toBe("numeric");
+	});
+
+	it("digitar valor quebrado propaga no submit sem re-quantizar para múltiplo de 10k", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		const input = screen.getByTestId("plan-asset-input");
+		fireEvent.change(input, { target: { value: "37500" } });
+		fireEvent.blur(input);
+		fireEvent.click(screen.getByTestId("plan-submit"));
+		const [action] = sendAction.mock.calls[0];
+		expect(action.value.credit).toBe(37_500);
+		expect(action.value.credit % 10_000).not.toBe(0);
+	});
+
+	it("input clampa ao teto da categoria quando acima do max (guardrail)", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		const input = screen.getByTestId("plan-asset-input");
+		// payload.credit.max = 80_000 (moto)
+		fireEvent.change(input, { target: { value: "999999" } });
+		fireEvent.blur(input);
+		fireEvent.click(screen.getByTestId("plan-submit"));
+		const [action] = sendAction.mock.calls[0];
+		expect(action.value.credit).toBe(payload.credit.max);
+	});
+
+	it("input aceita dígitos com separadores e extrai o número (R$ 37.500 → 37500)", () => {
+		render(<PlanEstimatePicker payload={payload} />);
+		const input = screen.getByTestId("plan-asset-input");
+		fireEvent.change(input, { target: { value: "R$ 37.500" } });
+		fireEvent.blur(input);
+		fireEvent.click(screen.getByTestId("plan-submit"));
+		const [action] = sendAction.mock.calls[0];
+		expect(action.value.credit).toBe(37_500);
+	});
+});
+
 describe("QA-crítico P2 — lance clampa quando o valor do bem diminui", () => {
 	it("clampLanceToAsset rebaixa o lance pro teto de 80% do bem (fonte única da regra)", async () => {
 		const { clampLanceToAsset } = await import("@/lib/consorcio/plan-estimate");

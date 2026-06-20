@@ -39,7 +39,9 @@ export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 100_000, max: 2_000_000, step: 50_000, default: 400_000 },
 	// FIX-54: teto elevado 300k → 500k (carros novos/premium passavam de 300k).
 	// Alinha com `servicos` e cobre a faixa real sem virar irreal pra Bevi.
-	auto: { min: 20_000, max: 500_000, step: 10_000, default: 80_000 },
+	// FIX-55: step 10k → 1k (granularidade fina no slider; o input livre dos
+	// componentes cobre a precisão exata de valores quebrados).
+	auto: { min: 20_000, max: 500_000, step: 1_000, default: 80_000 },
 	moto: { min: 8_000, max: 80_000, step: 1_000, default: 25_000 },
 	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };

@@ -2,9 +2,10 @@
 
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
@@ -28,6 +29,56 @@ function formatValue(value: number, format?: "currency" | "months"): string {
 	}
 	if (format === "months") return `${value} meses`;
 	return `R$ ${value.toLocaleString("pt-BR")}`;
+}
+
+// FIX-55: input numérico livre pra campos `currency` — o usuário digita o valor
+// exato (R$ 347.500) e ele propaga sem snap ao step do slider. Estado de texto
+// próprio (digitação livre), commit (parse + clamp à faixa) no blur/Enter.
+function CurrencyInput({
+	field,
+	value,
+	disabled,
+	onCommit,
+}: {
+	field: ValuePickerField;
+	value: number;
+	disabled: boolean;
+	onCommit: (v: number) => void;
+}) {
+	const [text, setText] = useState(() => value.toLocaleString("pt-BR"));
+	useEffect(() => {
+		setText(value.toLocaleString("pt-BR"));
+	}, [value]);
+
+	const commit = () => {
+		const digits = text.replace(/\D/g, "");
+		const parsed = digits ? Number.parseInt(digits, 10) : field.min;
+		const clamped = Math.min(field.max, Math.max(field.min, parsed));
+		onCommit(clamped);
+		setText(clamped.toLocaleString("pt-BR"));
+	};
+
+	return (
+		<span className="flex shrink-0 items-center gap-1 text-primary">
+			<span className="text-xs font-medium">R$</span>
+			<Input
+				value={text}
+				inputMode="numeric"
+				disabled={disabled}
+				onChange={(e) => setText(e.target.value)}
+				onBlur={commit}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						e.preventDefault();
+						commit();
+					}
+				}}
+				data-testid={`value-input-${field.id}`}
+				aria-label={field.label}
+				className="h-7 w-28 px-2 text-right text-sm font-bold text-primary tabular-nums"
+			/>
+		</span>
+	);
 }
 
 export function ValuePicker({
@@ -105,15 +156,26 @@ export function ValuePicker({
 								<span className="text-xs font-medium text-muted-foreground min-w-0">
 									{field.label}
 								</span>
-								<motion.span
-									key={values[field.id]}
-									initial={{ scale: 1.08 }}
-									animate={{ scale: 1 }}
-									transition={{ type: "spring", stiffness: 400, damping: 20 }}
-									className="aja-num text-sm font-bold text-primary shrink-0"
-								>
-									{formatValue(values[field.id], field.format)}
-								</motion.span>
+								{/* FIX-55: campos de dinheiro ganham input livre (valor exato);
+								    os demais (prazo etc.) seguem com o display animado. */}
+								{field.format === "currency" ? (
+									<CurrencyInput
+										field={field}
+										value={values[field.id]}
+										disabled={submitted}
+										onCommit={(v) => handleChange(field, v)}
+									/>
+								) : (
+									<motion.span
+										key={values[field.id]}
+										initial={{ scale: 1.08 }}
+										animate={{ scale: 1 }}
+										transition={{ type: "spring", stiffness: 400, damping: 20 }}
+										className="aja-num text-sm font-bold text-primary shrink-0"
+									>
+										{formatValue(values[field.id], field.format)}
+									</motion.span>
+								)}
 							</div>
 							<Slider
 								value={[values[field.id]]}
