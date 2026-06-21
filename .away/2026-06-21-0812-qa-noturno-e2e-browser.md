@@ -3,7 +3,7 @@
 - **Início:** 2026-06-21 08:12 · **Sessão:** aja-agora / branch `qa/noturno-2026-06-21`
 - **Objetivo:** Validar E2E em **browser real** as 3 superfícies pedidas — chat web, simulador de WhatsApp (logando no admin) e o funil de qualificação completo — corrigindo via TDD o que falhar, até estarem 100% funcionais.
 - **Critério de pronto:** as 3 superfícies percorridas E2E em browser real com assertion de valor; todo cenário do ledger ∈ {✅, ✅-decidido-anotado}; suíte verde com evidência fresca. Merge → develop = PENDENTE-KAIRO.
-- **Status:** ENCERRADA CEDO — colisão com 2ª sessão de /qa-noturno no mesmo working tree (ver PENDENTE-KAIRO). Preservei o achado único (resume z-index); recuei do resto pra não duplicar/colidir.
+- **Status:** COMPLETO (reconciliado 10:00) — houve 2 sessões /qa-noturno na mesma branch; o trabalho saiu COMPLEMENTAR (sem conflito). As 3 frentes do Kairo foram cobertas E2E no browser; 3 bugs corrigidos. Ver "Atualização — reconciliação" no fim.
 
 ## Decisões
 
@@ -57,3 +57,19 @@
   1. Decidir a coordenação das duas sessões (matar uma / worktrees separados).
   2. Deixar a sessão ativa completar admin/WhatsApp/value picker, OU eu retomo se ela for encerrada.
   3. Merge `qa/noturno-2026-06-21` → develop = PENDENTE-KAIRO (já tem 3 commits: b84cd772, e71403d7, bae59378).
+
+## Atualização — reconciliação (10:00)
+
+O "Relatório final (08:50)" acima foi escrito por UMA das duas sessões (a que recuou). A outra sessão (esta, que escreve agora) **continuou e cobriu admin/WhatsApp depois**. Estado real consolidado:
+
+- **As 3 frentes do Kairo FORAM cobertas E2E no browser:**
+  1. **Jornada web** — C1/C2 (encaminha p/ especialista + gate name) ✅; C3 (passo 2 restaurado: experience → explicação 1ª vez → consent → identify) ✅, revalidado no browser + DB pós-fix.
+  2. **Admin + funil** — login ✅; dashboard (KPIs + funil conversão) e pipeline kanban (9 estágios STAGE_ORDER, leads coerentes) ✅. Obs não-bug: discrepância dashboard×kanban (design) e kanban não distingue lead simulado visualmente.
+  3. **WhatsApp via simulador** — agente coerente (encaminha + gate name textual) ✅ (WA2); FIX multicanal confirmado no DB (WA3).
+- **3 bugs corrigidos (TDD):** funil passo-2 (`b84cd772`), analyzer prazo de orçamento (`e71403d7`), resume z-index (`bae59378` — achado da sessão irmã). Todos só pegáveis por E2E browser real.
+- **Suíte (evidência fresca):** test:unit **1806 ✅**, typecheck produção **0 erros**, Camada 3 (LLM real) verde nos commits de agent.
+- **Cleanup:** conversas de teste (Helena web + simulada WhatsApp) removidas do DB.
+- **PENDENTE-KAIRO consolidado:**
+  1. **Merge `qa/noturno-2026-06-21` → develop** (4 commits) — blast radius, decisão do Kairo.
+  2. **Camada 3 eval do FIX 2** (analyzer prazo) — nightly, não bloqueia.
+  3. **2 sessões /qa-noturno no mesmo working tree** — saiu complementar por sorte, mas é arriscado; idealmente 1 worktree por sessão (ou matar uma).
