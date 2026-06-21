@@ -1,7 +1,9 @@
 ---
 id: FIX-63
 titulo: "Atendente de mesa — cadastro simples (nome + whatsapp)"
-status: todo
+status: done
+commit: 67f4023c
+executado_em: 2026-06-21
 bloco: bloco-mesa-a-cadastros
 arquivos:
   - src/app/admin/(dashboard)/atendentes-mesa/

@@ -1,7 +1,9 @@
 ---
 id: FIX-62
 titulo: "Documentos da administradora (PDF: storage + extração + CRUD)"
-status: todo
+status: done
+commit: 68cd9938
+executado_em: 2026-06-21
 bloco: bloco-mesa-a-cadastros
 arquivos:
   - src/app/api/admin/administradora-docs/
