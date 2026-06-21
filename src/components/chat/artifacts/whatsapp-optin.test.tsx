@@ -29,6 +29,15 @@ describe("WhatsappOptin", () => {
 		expect(screen.getByRole("button", { name: /agora não/i })).toBeDefined();
 	});
 
+	// FIX-60 (revisão 2): o header usa o glyph DE MARCA do WhatsApp, não o
+	// MessageSquare genérico do lucide.
+	it("usa o ícone de marca do WhatsApp (não o MessageSquare genérico)", () => {
+		const { container } = render(<WhatsappOptin />);
+		expect(container.querySelector("[data-testid='whatsapp-icon']")).not.toBeNull();
+		// lucide renderiza `<svg class="lucide lucide-message-square">` — não pode existir.
+		expect(container.querySelector(".lucide-message-square")).toBeNull();
+	});
+
 	it("aplica máscara (DD) 9XXXX-XXXX no input", () => {
 		render(<WhatsappOptin />);
 		const input = screen.getByPlaceholderText(/98765-4321/) as HTMLInputElement;
