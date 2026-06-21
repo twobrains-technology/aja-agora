@@ -57,7 +57,6 @@ export async function analyzeAndMerge(
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
 
-	let extractedQualifyField = false;
 	if (analysis.experiencePrev && !meta.experiencePrev) {
 		meta.experiencePrev = analysis.experiencePrev;
 		newlyExtractedExperience = analysis.experiencePrev;
@@ -82,30 +81,28 @@ export async function analyzeAndMerge(
 		}
 		meta.qualifyAnswers = q;
 		metaChanged = true;
-		extractedQualifyField = true;
 	}
 	if (analysis.prazoMeses !== null && q.prazoMeses === undefined) {
 		q.prazoMeses = analysis.prazoMeses;
 		q.objetivo = objetivoForPrazo(analysis.prazoMeses);
 		meta.qualifyAnswers = q;
 		metaChanged = true;
-		extractedQualifyField = true;
 	}
 	if (analysis.hasLance && !q.hasLance) {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;
 		metaChanged = true;
-		extractedQualifyField = true;
 	}
-	if (extractedQualifyField && !meta.qualifyConsented) {
-		meta.qualifyConsented = true;
-		metaChanged = true;
-	}
-	if (extractedQualifyField && !meta.experiencePrev) {
-		meta.experiencePrev = "returning";
-		metaChanged = true;
-	}
-
+	// BUG-FUNIL-PULA-PASSO2 (QA noturno 2026-06-21): NÃO presumir experiência nem
+	// consentimento só porque o usuário voluntariou um dado de qualificação (valor/
+	// prazo/lance) em texto livre. Antes, qualquer extração cravava
+	// experiencePrev="returning" + qualifyConsented=true, e o nextGate pulava os
+	// gates `experience` e `consent` (passo 2 da jornada-canonica §2) — justamente
+	// no caminho mais comum, já que a landing incentiva dizer o valor de cara. Os
+	// dados extraídos acima PERMANECEM salvos (não se re-pergunta o valor); o passo
+	// 2 volta a ser dirigido pelos botões reais: o gate `experience` persiste
+	// experiencePrev e o gate `consent` persiste qualifyConsented (route.ts:776-803).
+	// A confirmação curta ("sim"/"bora") ainda destrava o consent logo abaixo.
 	if (
 		meta.currentCategory &&
 		!meta.qualifyConsented &&
