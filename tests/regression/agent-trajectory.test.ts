@@ -2265,12 +2265,15 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 		expect(promptCombined).toMatch(/lance/i);
 	});
 
-	it("CROSS-REF: HARD_RULES.md sec 2.2 explicita ordem dos 3 gates antes do valor", () => {
+	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES de prazo/lance, FIX-53)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		const ordemCorreta = /experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+		// Ordem da revisão 2 (docx + FIX-53): experience → consent → identidade →
+		// valor → timeframe → lance. Os DADOS e o VALOR precedem prazo e lance.
+		const ordemReal =
+			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
 		expect(
-			ordemCorreta.test(hardRules),
-			"HARD_RULES.md sec 2.2 precisa listar os 3 gates na ordem experience → timeframe → lance",
+			ordemReal.test(hardRules),
+			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → timeframe → lance",
 		).toBe(true);
 	});
 });
