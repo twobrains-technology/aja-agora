@@ -31,4 +31,6 @@ ENV PNPM_HOME=/pnpm \
 EXPOSE 3000
 
 # Install no boot (store compartilhado → instantâneo) e sobe o dev server.
-CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm dev -- --port 3000 --hostname 0.0.0.0"]
+# `pnpm exec next ...` chama o binário direto: `pnpm dev -- --port` vazava o `--`
+# pro Next 16 (interpretava como diretório → "Invalid project directory /app/--port").
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm exec next dev --port 3000 --hostname 0.0.0.0"]
