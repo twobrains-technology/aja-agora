@@ -99,6 +99,10 @@ Kairo saiu pedindo: ajustar entendimentos (Q-K5 ✅ feito, commit c019e5d6) → 
   gate-failed (quarentena). Investiguei: re-merge de cadastros sobre base-com-copiloto + gate =
   **1855 testes passed, 0 fail** → o gate-failed foi TRANSIENTE (install das deps novas
   unpdf/@aws-sdk concorrente ao vitest na 1ª vez). Re-rodando o merge-wave pra landar cadastros.
+- 21:10 — **cadastros mergeado clean** (base 92b7a8f3, gate verde — flake confirmado). **2/3 na
+  base** (copiloto + cadastros). transbordo ainda implementando (sem push). Kairo pediu pra avisar
+  ao terminar e "ficar na espreita". Re-agendado wakeup +30min; se transbordo não pushar até ~2h
+  total, investigo se travou (superset workspaces open 0c0bea60).
 
 ### D7 · 20:41 — Gate do merge-back inclui `pnpm install` (blocos adicionam deps)
 - **Contexto:** os blocos adicionam dependências novas (ex.: pdf lib no cadastros). O node_modules
