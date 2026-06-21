@@ -34,8 +34,9 @@ export function ArtifactRenderer({
 		<div
 			data-sealed="true"
 			aria-disabled="true"
-			// @ts-expect-error inert é atributo HTML válido; tipos do React podem não expô-lo
-			inert=""
+			// React 19: `inert` é boolean prop; string vazia vira `false` e o atributo
+			// some (selo furado p/ teclado/SR). Tem que ser `inert={true}`.
+			inert={true}
 			className="pointer-events-none select-none opacity-60"
 		>
 			{inner}
