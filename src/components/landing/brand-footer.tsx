@@ -34,7 +34,7 @@ export function BrandFooter({ onStart }: { onStart: TheaterOpener }) {
 					<div className="max-w-sm">
 						<Wordmark className="h-11 w-auto" />
 						<p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-							Consultoria de consórcio independente. Transparente, estratégica e do seu lado.
+							Consultoria de consórcio independente. Transparente, alinhada e do seu lado.
 						</p>
 					</div>
 					<div className="flex gap-16">

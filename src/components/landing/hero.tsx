@@ -212,8 +212,8 @@ export function Hero({ onOpenChat }: HeroProps) {
 							</div>
 						</form>
 						<p className="mt-3 text-xs text-[#9aa7b6]">
-							<b className="font-semibold text-muted-foreground">Sem cadastro.</b> Sem compromisso.
-							A primeira conversa é por nossa conta.
+							<b className="font-semibold text-muted-foreground">Sem compromisso.</b> A primeira
+							conversa é por nossa conta.
 						</p>
 					</motion.div>
 				</div>

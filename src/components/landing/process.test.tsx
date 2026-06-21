@@ -9,7 +9,8 @@ describe("Process — 3 passos da marca, com benefícios re-ancorados", () => {
 		const titles = PROCESS_STEPS.map((s) => s.title);
 		expect(titles[0]).toMatch(/conta o sonho|sonho/i);
 		expect(titles[1]).toMatch(/compara/i);
-		expect(titles[2]).toMatch(/juntos|seguimos/i);
+		// FIX-59 (revisão 2): passo 3 "Seguimos juntos" virou mensagem de privacidade.
+		expect(titles[2]).toMatch(/privacidade/i);
 	});
 
 	it("cada passo tem ícone lucide", () => {

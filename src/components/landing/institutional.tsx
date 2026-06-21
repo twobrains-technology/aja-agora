@@ -14,8 +14,8 @@ const VALUES = [
 	},
 	{
 		n: "03",
-		title: "Estratégica",
-		body: "Comparamos o mercado e miramos o plano certo para o seu momento financeiro.",
+		title: "Alinhada",
+		body: "Trabalhamos alinhados ao seu interesse — miramos o plano certo pro seu momento, não a maior comissão.",
 	},
 	{
 		n: "04",
@@ -60,6 +60,12 @@ export function Institutional() {
 							Acreditamos que conquistar patrimônio não precisa ser confuso. Por isso explicamos
 							cada etapa com clareza e cuidamos da vida do seu plano com você — do sonho à
 							conquista.
+						</p>
+						<p>
+							A gente viu de perto que nem todo mundo entende as regras de consórcio direito — e
+							resolveu tomar uma atitude. Viemos de grandes empresas, onde aprendemos como esse
+							mercado funciona por dentro, e decidimos empreender pra colocar esse conhecimento do
+							seu lado.
 						</p>
 					</ScrollReveal>
 				</div>
