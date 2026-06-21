@@ -64,6 +64,23 @@ export const memoryEventTypeEnum = pgEnum("memory_event_type", [
 	"purged",
 ]);
 
+// ─── Mesa de operação (transbordo + copiloto) ────────────────────────────────
+// Spec de negócio: docs/visao/mesa-de-operacao.md.
+export const administradoraDocTipoEnum = pgEnum("administradora_doc_tipo", [
+	"manual",
+	"tabela",
+	"outro",
+]);
+
+export const mesaHandoffStatusEnum = pgEnum("mesa_handoff_status", [
+	"aberto",
+	"em_andamento",
+	"concluido",
+	"cancelado",
+]);
+
+export const mesaCopilotRoleEnum = pgEnum("mesa_copilot_role", ["assistant", "attendant"]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -531,6 +548,126 @@ export const memoryEvents = pgTable(
 	],
 );
 
+// ─── Mesa de operação (transbordo humano + agente copiloto) ──────────────────
+// Spec de negócio: docs/visao/mesa-de-operacao.md. A "mesa" é fornecida pela Bevi
+// hoje, mas é da administradora (Q-K5) — modelo faseado, fonte abstraída.
+
+// Administradora — entidade interna (dossiê de operação). NÃO é fonte de
+// grupos/ofertas (Bevi fonte única); só alimenta o copiloto. Casa por nome/código
+// com beviProposals.administradora (varchar hoje).
+export const administradoras = pgTable(
+	"administradoras",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		nome: varchar("nome", { length: 80 }).notNull().unique(),
+		slug: varchar("slug", { length: 80 }).notNull().unique(),
+		// match opcional com o identificador da administradora vindo da Bevi
+		codigoBevi: varchar("codigo_bevi", { length: 60 }),
+		isActive: boolean("is_active").default(true).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [index("administradoras_nome_idx").on(table.nome)],
+);
+
+// Documento da administradora — manual de contratação (PDF). Binário no object
+// storage (storageKey); textoExtraido injetado no system prompt do copiloto.
+export const administradoraDocs = pgTable(
+	"administradora_docs",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		administradoraId: uuid("administradora_id")
+			.notNull()
+			.references(() => administradoras.id, { onDelete: "cascade" }),
+		titulo: varchar("titulo", { length: 160 }).notNull(),
+		tipo: administradoraDocTipoEnum("tipo").default("manual").notNull(),
+		// chave no object storage (MinIO local / S3 prod) do PDF original
+		storageKey: text("storage_key").notNull(),
+		// texto extraído do PDF — contexto do copiloto (nullable até a extração rodar)
+		textoExtraido: text("texto_extraido"),
+		versao: integer("versao").default(1).notNull(),
+		isActive: boolean("is_active").default(true).notNull(),
+		uploadedBy: text("uploaded_by").references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [index("administradora_docs_administradora_id_idx").on(table.administradoraId)],
+);
+
+// Atendente de mesa — cadastro SIMPLES (nome + whatsapp, SEM login). Distinto do
+// user role=attendant (handoff de chat). whatsapp = chave de roteamento do copiloto.
+export const mesaAttendants = pgTable(
+	"mesa_attendants",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		nome: varchar("nome", { length: 100 }).notNull(),
+		// E.164 sem '+' (ex.: 5562999998888) — chave única de roteamento WhatsApp
+		whatsapp: varchar("whatsapp", { length: 32 }).notNull().unique(),
+		isActive: boolean("is_active").default(true).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [index("mesa_attendants_whatsapp_idx").on(table.whatsapp)],
+);
+
+// Transbordo — registro de um caso enviado do kanban pra um atendente de mesa.
+export const mesaHandoffs = pgTable(
+	"mesa_handoffs",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		leadId: uuid("lead_id")
+			.notNull()
+			.references(() => leads.id, { onDelete: "cascade" }),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "set null",
+		}),
+		// a cota/oferta escolhida que define a administradora do dossiê
+		beviProposalId: uuid("bevi_proposal_id").references(() => beviProposals.id, {
+			onDelete: "set null",
+		}),
+		mesaAttendantId: uuid("mesa_attendant_id")
+			.notNull()
+			.references(() => mesaAttendants.id),
+		administradoraId: uuid("administradora_id").references(() => administradoras.id, {
+			onDelete: "set null",
+		}),
+		status: mesaHandoffStatusEnum("status").default("aberto").notNull(),
+		// admin (user) que disparou o transbordo
+		createdBy: text("created_by").references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		closedAt: timestamp("closed_at", { withTimezone: true }),
+	},
+	(table) => [
+		index("mesa_handoffs_lead_id_idx").on(table.leadId),
+		index("mesa_handoffs_mesa_attendant_id_idx").on(table.mesaAttendantId),
+		index("mesa_handoffs_status_idx").on(table.status),
+	],
+);
+
+// Conversa copiloto ↔ atendente (orientação de contratação no WhatsApp do atendente).
+export const mesaCopilotMessages = pgTable(
+	"mesa_copilot_messages",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		mesaHandoffId: uuid("mesa_handoff_id")
+			.notNull()
+			.references(() => mesaHandoffs.id, { onDelete: "cascade" }),
+		role: mesaCopilotRoleEnum("role").notNull(),
+		content: text().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("mesa_copilot_messages_handoff_id_idx").on(table.mesaHandoffId)],
+);
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations
@@ -659,5 +796,58 @@ export const memoryEventsRelations = relations(memoryEvents, ({ one }) => ({
 	conversation: one(conversations, {
 		fields: [memoryEvents.conversationId],
 		references: [conversations.id],
+	}),
+}));
+
+// Mesa de operação relations
+export const administradorasRelations = relations(administradoras, ({ many }) => ({
+	docs: many(administradoraDocs),
+	handoffs: many(mesaHandoffs),
+}));
+
+export const administradoraDocsRelations = relations(administradoraDocs, ({ one }) => ({
+	administradora: one(administradoras, {
+		fields: [administradoraDocs.administradoraId],
+		references: [administradoras.id],
+	}),
+	uploadedByUser: one(user, {
+		fields: [administradoraDocs.uploadedBy],
+		references: [user.id],
+	}),
+}));
+
+export const mesaAttendantsRelations = relations(mesaAttendants, ({ many }) => ({
+	handoffs: many(mesaHandoffs),
+}));
+
+export const mesaHandoffsRelations = relations(mesaHandoffs, ({ one, many }) => ({
+	lead: one(leads, { fields: [mesaHandoffs.leadId], references: [leads.id] }),
+	conversation: one(conversations, {
+		fields: [mesaHandoffs.conversationId],
+		references: [conversations.id],
+	}),
+	beviProposal: one(beviProposals, {
+		fields: [mesaHandoffs.beviProposalId],
+		references: [beviProposals.id],
+	}),
+	mesaAttendant: one(mesaAttendants, {
+		fields: [mesaHandoffs.mesaAttendantId],
+		references: [mesaAttendants.id],
+	}),
+	administradora: one(administradoras, {
+		fields: [mesaHandoffs.administradoraId],
+		references: [administradoras.id],
+	}),
+	createdByUser: one(user, {
+		fields: [mesaHandoffs.createdBy],
+		references: [user.id],
+	}),
+	copilotMessages: many(mesaCopilotMessages),
+}));
+
+export const mesaCopilotMessagesRelations = relations(mesaCopilotMessages, ({ one }) => ({
+	handoff: one(mesaHandoffs, {
+		fields: [mesaCopilotMessages.mesaHandoffId],
+		references: [mesaHandoffs.id],
 	}),
 }));

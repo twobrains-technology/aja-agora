@@ -183,6 +183,13 @@
 			"when": 1781001000000,
 			"tag": "0025_lead_stage_closing_split",
 			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1782081022000,
+			"tag": "0026_mesa_operacao",
+			"breakpoints": true
 		}
 	]
 }
