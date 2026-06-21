@@ -244,6 +244,50 @@ describe("FIX-66 handleMesaCopilot — handoff aberto: persiste e responde", () 
 			.where(eq(mesaCopilotMessages.mesaHandoffId, seed.mesaHandoffId));
 		expect(msgs).toHaveLength(4);
 	});
+
+	// BUG-copiloto-sem-split-format (QA noturno 2026-06-21): o reply do LLM tem que
+	// passar por formatTextForWhatsApp + splitMessage(4096) antes de enviar — igual
+	// ao caminho de vendas. WhatsApp rejeita > 4096 chars e não renderiza markdown.
+	it("reply longo é dividido em chunks ≤ 4096 ao enviar (WhatsApp não aceita > 4096)", async () => {
+		const seed = await seedCase({ withOpenHandoff: true });
+		const longReply = `${"Passo a passo bem detalhado da contratação. ".repeat(250)}`;
+		expect(longReply.length).toBeGreaterThan(4096);
+		mocks.copilotReplyMock.mockResolvedValueOnce(longReply);
+
+		await handleMesaCopilot(seed.attendantPhone, "me explica tudo em detalhe");
+
+		// Enviou em múltiplos chunks, cada um dentro do limite do WhatsApp.
+		expect(mocks.sendTextMock.mock.calls.length).toBeGreaterThan(1);
+		for (const call of mocks.sendTextMock.mock.calls) {
+			expect(call[1].length).toBeLessThanOrEqual(4096);
+		}
+
+		// Persistência mantém UMA linha assistant com o reply CRU (histórico fiel).
+		const assistantMsgs = (
+			await db
+				.select()
+				.from(mesaCopilotMessages)
+				.where(eq(mesaCopilotMessages.mesaHandoffId, seed.mesaHandoffId))
+		).filter((m) => m.role === "assistant");
+		expect(assistantMsgs).toHaveLength(1);
+		expect(assistantMsgs[0].content).toBe(longReply);
+	});
+
+	it("markdown do LLM é convertido pro formato WhatsApp ao enviar (sem ## nem **)", async () => {
+		const seed = await seedCase({ withOpenHandoff: true });
+		mocks.copilotReplyMock.mockResolvedValueOnce(
+			"## Primeiro passo\nAcesse o **portal do parceiro** da Canopus.",
+		);
+
+		await handleMesaCopilot(seed.attendantPhone, "primeiro passo?");
+
+		const sent = mocks.sendTextMock.mock.calls.map((c) => c[1]).join("\n");
+		expect(sent).not.toContain("## ");
+		expect(sent).not.toContain("**");
+		// O conteúdo (negrito WhatsApp com 1 asterisco) chega ao atendente.
+		expect(sent).toMatch(/\*Primeiro passo\*/);
+		expect(sent).toMatch(/\*portal do parceiro\*/);
+	});
 });
 
 describe("FIX-66 handleMesaCopilot — SEM handoff aberto: ack, não chama o LLM, não cai em vendas", () => {

@@ -17,6 +17,7 @@ import { db } from "@/db";
 import { administradoraDocs, mesaAttendants, mesaCopilotMessages, mesaHandoffs } from "@/db/schema";
 import { generateMesaCopilotReply, type MesaCopilotCaso } from "@/lib/agent/mesa-copilot";
 import { sendTextMessage } from "../api";
+import { formatTextForWhatsApp, splitMessage } from "../formatter";
 
 interface MesaAttendant {
 	id: string;
@@ -103,11 +104,17 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 
 	const reply = await generateMesaCopilotReply({ caso, history });
 
+	// Persiste o reply CRU (histórico = palavras reais do agente; formatação é só
+	// apresentação). Ao ENVIAR, formata pro WhatsApp e divide em chunks ≤ 4096 —
+	// mesmo pipeline de saída do caminho de vendas (adapter.ts). WhatsApp rejeita
+	// mensagem > 4096 chars e não renderiza markdown (##/**).
 	await db
 		.insert(mesaCopilotMessages)
 		.values({ mesaHandoffId: handoff.id, role: "assistant", content: reply });
 
-	await sendTextMessage(from, reply);
+	for (const chunk of splitMessage(formatTextForWhatsApp(reply))) {
+		await sendTextMessage(from, chunk);
+	}
 }
 
 type HandoffWithRelations = NonNullable<
