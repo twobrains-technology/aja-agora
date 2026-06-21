@@ -39,13 +39,16 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 				"Quer considerar esse tipo de lance nas suas simulações?"
 			);
 		case "identify":
-			// Gancho literal do docx (fim do passo 2) + por quê do CPF (D1: a Bevi
+			// FIX-53 (Bernardo, rev2): a identidade subiu pra ANTES do valor (logo
+			// após o consent). O gancho do docx "Com essas informações…" pressupunha
+			// dados já coletados — incoerente cedo. Reescrito forward-looking ("pra eu
+			// analisar e já buscar"), preservando as âncoras do docx (analisar várias
+			// administradoras / aderentes ao seu perfil) + o porquê do CPF (D1: a Bevi
 			// exige CPF+celular+LGPD antes de simular — sem isso não há oferta real).
 			return (
-				"Com essas informações, a Aja Agora vai analisar várias administradoras e " +
-				"selecionar as opções mais aderentes ao seu perfil e objetivo.\n\n" +
-				"Pra buscar as ofertas reais nas administradoras, preciso do seu CPF e celular — " +
-				"seus dados ficam protegidos (LGPD) e isso não é compromisso nenhum, tá?"
+				"Pra eu analisar várias administradoras e já buscar as opções mais aderentes " +
+				"ao seu perfil, preciso do seu CPF e celular — seus dados ficam protegidos " +
+				"(LGPD) e isso não é compromisso nenhum, tá?"
 			);
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.

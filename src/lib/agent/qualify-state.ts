@@ -41,6 +41,16 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		return "consent";
 	}
 
+	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
+	// dados, antes do valor". O gate `identify` (CPF+celular+LGPD, cifrado, D1)
+	// — que era o ÚLTIMO da qualificação — sobe para ANTES do `credit` (seletor
+	// de valor / present_value_picker), logo após o consent. A Bevi exige
+	// CPF+celular+LGPD antes de simular de qualquer forma (D1), então coletar
+	// cedo só reforça D1. Os handlers de identidade (web/route + whatsapp/
+	// processor) NÃO disparam mais o reveal — despacham o próximo gate; o reveal
+	// segue sendo disparado por pipeSearchSummaryTurn no fim da qualificação.
+	if (!meta.identityCollected) return "identify";
+
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
 	if (q.prazoMeses === undefined) return "timeframe";
@@ -57,11 +67,9 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// "maybe"/"no" — o ramo educativo "sumia" e parecia intermitência.
 	if (q.lanceEmbutido === undefined) return "lance-embutido";
 
-	// Gate "identify" (D1, docs/jornada/CONTEXT.md): a Bevi exige CPF+celular+LGPD
-	// ANTES de simular — não existe descoberta anônima com dado real. Coleta ao
-	// fim do passo 2, no gancho do docx ("Com essas informações, a Aja Agora vai
-	// analisar várias administradoras…"). Sem identidade, a busca NÃO libera.
-	if (!meta.identityCollected) return "identify";
+	// (FIX-53) O gate `identify` foi movido para ANTES do `credit` — ver acima.
+	// A busca real continua exigindo identidade (tripwire em pipeSearchSummaryTurn /
+	// runSearchSummaryWithOrchestrator); aqui ela já foi coletada cedo.
 
 	// Funil pós-qualificação (jornada.docx): search (passo 3+4 reveal) →
 	// decision (fim do passo 4: "Esse plano faz sentido?"). searchDispatched e

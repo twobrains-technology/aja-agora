@@ -4798,3 +4798,79 @@ describe("BUG-ADMIN-DESSINCRONIZADA — what-if atualiza administradora junto co
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// FIX-53-DADOS-ANTES-VALOR (jornada2_revisão.docx — Bernardo, 2026-06-19)
+// ----------------------------------------------------------------------------
+// Stakeholder: "Precisa pedir os dados, antes do valor" + "Voltou a pedir o
+// valor". (1) o gate identify (CPF/celular) sobe pra ANTES do credit (value
+// picker); (2) o agente NUNCA re-pergunta o valor já coletado nem re-mostra o
+// present_value_picker. Cassette do bug (re-pergunta) + caminho correto, com
+// asserts estruturais (gate order + guard + prompt).
+// ============================================================================
+
+describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir o valor", () => {
+	// Detector: re-pergunta de valor em texto — o bug exato da image4.
+	const REASK_VALUE =
+		/qual valor aproximado.*(lance|bem)|qual valor do bem|qual valor.*voc[eê] (pensa|quer|tem em mente)/i;
+
+	it("cassette do bug: agent RE-PERGUNTA o valor do lance em texto (reproduz a image4)", async () => {
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! E qual valor aproximado você pensa em dar de lance?"),
+			FINISH_STOP,
+		]);
+		// O detector PEGA a re-pergunta — é exatamente o que o fix proíbe.
+		expect(text).toMatch(REASK_VALUE);
+	});
+
+	it("cassette correto: valor já coletado → confirma em 1 frase, SEM re-perguntar nem present_value_picker", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa, R$ 30 mil de lance então. Anotado!"),
+			FINISH_STOP,
+		]);
+		expect(text).not.toMatch(REASK_VALUE);
+		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
+	});
+
+	it("cassette: pré-identidade o agente NÃO dispara present_value_picker (dados antes do valor)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Beleza!"),
+			FINISH_STOP,
+		]);
+		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
+	});
+
+	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
+		const base: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+		};
+		expect(nextGate(base, { hasContactName: true })).toBe("identify");
+		expect(nextGate({ ...base, identityCollected: true }, { hasContactName: true })).toBe("credit");
+	});
+
+	it("estrutural: o prompt proíbe re-pedir o valor e explica o enforcement do servidor", () => {
+		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(p).toMatch(/identidade antes do valor/);
+		expect(p).toMatch(/valor j[áa] coletado/);
+		expect(p).toMatch(/servidor/);
+		expect(p).toMatch(/voltou a pedir o valor/);
+	});
+
+	it("estrutural: o artifact-guard tem a regra value-picker-order (2ª linha de defesa)", () => {
+		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(src).toMatch(/value-picker-order/);
+		expect(src).toMatch(/dados antes do valor/);
+	});
+
+	it("estrutural: o handler de identidade (web/route) despacha o próximo gate, NÃO o reveal", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		// Após storeIdentity, computa nextGate e segue a qualificação (não revela cedo).
+		expect(src).toMatch(/nextAfterIdentity/);
+		expect(src).toMatch(/pipeGatePrompt\(\{ conversationId, gate: nextAfterIdentity/);
+	});
+});
