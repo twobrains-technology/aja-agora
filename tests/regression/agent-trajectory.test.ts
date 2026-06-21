@@ -3491,6 +3491,10 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
+			// FIX-53: `identify` precede `credit`. Com a identidade já coletada, o
+			// funil chega ao gate educativo de lance embutido — que é o foco deste
+			// teste (plano parcial, falta só decidir o lance embutido).
+			identityCollected: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
