@@ -43,3 +43,19 @@ export const updateAdministradoraSchema = z
 
 export type CreateAdministradoraInput = z.infer<typeof createAdministradoraSchema>;
 export type UpdateAdministradoraInput = z.infer<typeof updateAdministradoraSchema>;
+
+// ── FIX-62: Documento da administradora (PDF) ────────────────────────────────
+// Metadados do upload (o binário do PDF chega separado via multipart/form-data).
+export const administradoraDocTipos = ["manual", "tabela", "outro"] as const;
+
+export const createAdministradoraDocSchema = z.object({
+	administradoraId: z.string().uuid("administradoraId inválido"),
+	titulo: z
+		.string()
+		.trim()
+		.min(2, "Título deve ter pelo menos 2 caracteres")
+		.max(160, "Título deve ter no máximo 160 caracteres"),
+	tipo: z.enum(administradoraDocTipos).default("manual"),
+});
+
+export type CreateAdministradoraDocInput = z.infer<typeof createAdministradoraDocSchema>;

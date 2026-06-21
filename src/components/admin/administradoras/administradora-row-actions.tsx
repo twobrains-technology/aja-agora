@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
+import { FileText, MoreHorizontal, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AdministradoraDocsDialog } from "./administradora-docs-dialog";
 import type { Administradora } from "./administradoras-table";
 
 interface Props {
@@ -27,6 +28,7 @@ interface Props {
 
 export function AdministradoraRowActions({ administradora, onEdit, onRefresh }: Props) {
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [docsOpen, setDocsOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [actionError, setActionError] = useState<string | null>(null);
 
@@ -85,6 +87,10 @@ export function AdministradoraRowActions({ administradora, onEdit, onRefresh }: 
 						<Pencil className="size-4" />
 						Editar
 					</DropdownMenuItem>
+					<DropdownMenuItem onClick={() => setDocsOpen(true)}>
+						<FileText className="size-4" />
+						Documentos
+					</DropdownMenuItem>
 					<DropdownMenuItem onClick={toggleActive}>
 						{administradora.isActive ? (
 							<>
@@ -136,6 +142,12 @@ export function AdministradoraRowActions({ administradora, onEdit, onRefresh }: 
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<AdministradoraDocsDialog
+				administradora={administradora}
+				open={docsOpen}
+				onOpenChange={setDocsOpen}
+			/>
 		</>
 	);
 }
