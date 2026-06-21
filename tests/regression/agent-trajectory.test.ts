@@ -5067,3 +5067,53 @@ describe("BUG-MESA-COPILOT — copiloto injeta o PDF da administradora e não va
 		expect(idxSrc).toMatch(/content:\s*stable[\s\S]{0,160}cacheControl/);
 	});
 });
+
+// ============================================================================
+// BUG-MESA-COPILOT-ROUTING — número de atendente de mesa → copiloto, NÃO vendas
+// (FIX-66, bloco-mesa-c, spec §8 anti-colisão de canal).
+// ----------------------------------------------------------------------------
+// Parte (2) do cassette do copiloto: o hook do processor.ts roteia a mensagem
+// de um número de atendente de mesa pro copiloto (handleMesaCopilot), e ANTES do
+// caminho de vendas (processWithOrchestrator). Colisão de canal já causou bug no
+// projeto (FIX-31/FIX-35) — este cassette estrutural trava a ordem do roteamento
+// e que routing.ts consulta a tabela de atendentes de mesa.
+// ============================================================================
+
+describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não pra vendas", () => {
+	const processorSrc = readSource("src/lib/whatsapp/processor.ts");
+	const routingSrc = readSource("src/lib/whatsapp/mesa/routing.ts");
+
+	it("o processor tem o early-return de mesa (isMesaAttendantPhone → handleMesaCopilot)", () => {
+		expect(processorSrc).toMatch(/if\s*\(await isMesaAttendantPhone\(from\)\)/);
+		expect(processorSrc).toMatch(/handleMesaCopilot\(from, text\)/);
+	});
+
+	it("o check de mesa vem ANTES do roteamento de vendas (processWithOrchestrator)", () => {
+		const mesaIdx = processorSrc.indexOf("isMesaAttendantPhone(from)");
+		const vendasIdx = processorSrc.indexOf("processWithOrchestrator(from, text");
+		expect(mesaIdx).toBeGreaterThan(-1);
+		expect(vendasIdx).toBeGreaterThan(-1);
+		expect(mesaIdx).toBeLessThan(vendasIdx);
+	});
+
+	it("o check de mesa vem ANTES do atendente-de-chat (isAttendantPhone) — precedência de mesa", () => {
+		const mesaIdx = processorSrc.indexOf("isMesaAttendantPhone(from)");
+		const chatIdx = processorSrc.indexOf("isAttendantPhone(from)");
+		expect(mesaIdx).toBeGreaterThan(-1);
+		expect(chatIdx).toBeGreaterThan(-1);
+		expect(mesaIdx).toBeLessThan(chatIdx);
+	});
+
+	it("routing.ts consulta a tabela mesa_attendants ativos (chave do roteamento)", () => {
+		expect(routingSrc).toMatch(/from\(mesaAttendants\)/);
+		expect(routingSrc).toMatch(/eq\(mesaAttendants\.isActive, true\)/);
+	});
+
+	it("handleMesaCopilot persiste nos dois papéis e NÃO chama o orchestrator de vendas", () => {
+		expect(routingSrc).toMatch(/role:\s*"attendant"/);
+		expect(routingSrc).toMatch(/role:\s*"assistant"/);
+		// O copiloto é um canal separado — routing.ts não pode importar/chamar
+		// o orchestrator de vendas (evita a colisão de canal da spec §8).
+		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
+	});
+});
