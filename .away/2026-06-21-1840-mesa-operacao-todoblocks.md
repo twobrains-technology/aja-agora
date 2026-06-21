@@ -95,6 +95,10 @@ Kairo saiu pedindo: ajustar entendimentos (Q-K5 ✅ feito, commit c019e5d6) → 
 - 20:09 — poll 1: 3 pending, nenhuma branch feat/mesa-* pushada ainda (agentes implementando, ~30min).
   Re-agendado wakeup +30min.
 - 20:41 — poll 2: **cadastros DONE (+13 commits), copiloto DONE (+7)**, transbordo pending. Mergeando os 2.
+- 21:05 — merge-back 1: **copiloto mergeado clean** (base 0d26b135, gate verde). cadastros deu
+  gate-failed (quarentena). Investiguei: re-merge de cadastros sobre base-com-copiloto + gate =
+  **1855 testes passed, 0 fail** → o gate-failed foi TRANSIENTE (install das deps novas
+  unpdf/@aws-sdk concorrente ao vitest na 1ª vez). Re-rodando o merge-wave pra landar cadastros.
 
 ### D7 · 20:41 — Gate do merge-back inclui `pnpm install` (blocos adicionam deps)
 - **Contexto:** os blocos adicionam dependências novas (ex.: pdf lib no cadastros). O node_modules
