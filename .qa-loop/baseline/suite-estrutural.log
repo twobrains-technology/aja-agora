@@ -1,0 +1,144 @@
+### TYPECHECK ###
+15:30:32
+src/app/api/chat/route.admin-message-persistence.test.ts(188,2): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.closing-persistence.test.ts(83,2): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.contract-error-logging.test.ts(70,2): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.contract-lead-link.integration.test.ts(92,2): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.handoff-echo.test.ts(48,3): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.lead-form-prefill.test.ts(64,2): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/app/api/chat/route.test.ts(79,3): error TS2322: Type '{ get: () => undefined; }' is not assignable to type 'RequestCookies & { get: (name: string) => { value: string; } | undefined; }'.
+  Type '{ get: () => undefined; }' is missing the following properties from type 'RequestCookies': size, getAll, has, set, and 3 more.
+src/lib/adapters/bevi/partner-offer-mapper.test.ts(16,47): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/lib/agent/system-prompt.acentuacao.test.ts(2,10): error TS2305: Module '"node:fs/promises"' has no exported member 'glob'.
+src/lib/agent/system-prompt.acentuacao.test.ts(54,14): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/lib/agent/system-prompt.test.ts(222,140): error TS1501: This regular expression flag is only available when targeting 'es2018' or later.
+src/lib/eval/jornada-judge.test.ts(31,2): error TS2741: Property 'desviouPraConsultorHumano' is missing in type '{ pulouPasso: false; fechouEmLeadEmVezDeContrato: false; jargaoNoLeigo: false; tomRoboticoOuFrio: false; prometeuCreditoImediato: false; metaNarrativaDoMecanismo: false; faltaramReforcos: false; faltouParabens: false; faltouResumoContratacao: false; }' but required in type '{ pulouPasso: boolean; fechouEmLeadEmVezDeContrato: boolean; desviouPraConsultorHumano: boolean; jargaoNoLeigo: boolean; tomRoboticoOuFrio: boolean; prometeuCreditoImediato: boolean; metaNarrativaDoMecanismo: boolean; faltaramReforcos: boolean; faltouParabens: boolean; faltouResumoContratacao: boolean; }'.
+src/lib/whatsapp/artifact-coverage.test.ts(100,66): error TS2352: Conversion of type '{ id: string; waId: string; }' to type '{ id: string; isNew: boolean; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'isNew' is missing in type '{ id: string; waId: string; }' but required in type '{ id: string; isNew: boolean; }'.
+src/lib/whatsapp/formatter.moto.test.ts(11,45): error TS2339: Property 'sections' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(11,71): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/lib/whatsapp/formatter.moto.test.ts(12,45): error TS2339: Property 'sections' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(12,71): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/lib/whatsapp/formatter.moto.test.ts(19,45): error TS2339: Property 'sections' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(27,40): error TS2339: Property 'text' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(36,42): error TS2339: Property 'buttons' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(44,42): error TS2339: Property 'buttons' does not exist on type '{}'.
+src/lib/whatsapp/formatter.moto.test.ts(50,42): error TS2339: Property 'buttons' does not exist on type '{}'.
+tests/e2e/specs/web-resume/same-device.spec.ts(38,12): error TS2353: Object literal may only specify known properties, and 'reducedMotion' does not exist in type 'Fixtures<{}, {}, PlaywrightTestArgs & PlaywrightTestOptions, PlaywrightWorkerArgs & PlaywrightWorkerOptions>'.
+tests/eval/agent-flow.eval.test.ts(144,5): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.
+tests/regression/migrate-guard.test.ts(13,1): error TS2578: Unused '@ts-expect-error' directive.
+EXIT_TYPECHECK=1
+
+### TEST:UNIT (Camada 1 estrutural) ###
+15:30:35
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'name' se não há lead nem nome
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'phone' se tem nome capturado mas sem phone
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'email' se nome e phone já foram capturados
+Error: Failed query: insert into "conversations" ("id", "wa_id", "contact_id", "channel", "status", "handed_off_user_id", "contact_name", "metadata", "is_simulated", "created_at", "updated_at") values (default, default, default, default, default, default, $1, default, default, default, default) returning "id", "wa_id", "contact_id", "channel", "status", "handed_off_user_id", "contact_name", "metadata", "is_simulated", "created_at", "updated_at"
+params: Kairo
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/src/pg-core/session.ts:73:10
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:18
+ ❯ src/lib/agent/orchestrator/lead-collection.test.ts:15:15
+     13|  let convId: string;
+     14|  beforeEach(async () => {
+     15|   const [c] = await db.insert(conversations).values({ contactName: "Ka…
+       |               ^
+     16|   convId = c.id;
+     17|  });
+
+Caused by: Error: getaddrinfo ENOTFOUND db.aja-feat-jornada-bevi-lance-embutido.orb.local
+ ❯ node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/node-postgres/session.js:124:18
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/pg-core/session.js:39:16
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/node-postgres/session.js:117:22
+ ❯ src/lib/agent/orchestrator/lead-collection.test.ts:15:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -3008, code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname: 'db.aja-feat-jornada-bevi-lance-embutido.orb.local' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'name' se não há lead nem nome
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'phone' se tem nome capturado mas sem phone
+ FAIL  src/lib/agent/orchestrator/lead-collection.test.ts > initializeLeadCollection — skip stages com dados capturados > começa em 'email' se nome e phone já foram capturados
+Error: Failed query: delete from "leads" where "leads"."conversation_id" = $1
+params: 
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/src/pg-core/session.ts:73:10
+ ❯ cleanup src/lib/agent/orchestrator/lead-collection.test.ts:8:2
+      6|
+      7| async function cleanup(convId: string): Promise<void> {
+      8|  await db.delete(leads).where(eq(leads.conversationId, convId));
+       |  ^
+      9|  await db.delete(conversations).where(eq(conversations.id, convId));
+     10| }
+ ❯ src/lib/agent/orchestrator/lead-collection.test.ts:19:3
+
+Caused by: Error: getaddrinfo ENOTFOUND db.aja-feat-jornada-bevi-lance-embutido.orb.local
+ ❯ node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/node-postgres/session.js:113:20
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/pg-core/session.js:39:16
+ ❯ cleanup src/lib/agent/orchestrator/lead-collection.test.ts:8:2
+ ❯ src/lib/agent/orchestrator/lead-collection.test.ts:19:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -3008, code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname: 'db.aja-feat-jornada-bevi-lance-embutido.orb.local' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+
+ Test Files  1 failed | 5 passed (169)
+      Tests  7 failed | 87 passed (179)
+   Start at  15:30:35
+   Duration  1.22s (transform 2.57s, setup 179ms, import 6.19s, tests 2.36s, environment 946ms)
+
+EXIT_UNIT=
+
+### REGRESSION (Camada 2 trajetória) ###
+15:30:36
+
+ RUN  v4.1.6 /Users/kairo/code/aja-agora
+
+···································································x······························································································································································
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/regression/agent-trajectory.test.ts > BUG-CONVERSATION-ID-HALLUCINATION — tool emite save_contact_name sem conversationId no input, factory injeta via closure > execute via buildConsorcioTools(ctx) persiste no UUID real (closure) com input só { name }
+Error: Failed query: insert into "conversations" ("id", "wa_id", "contact_id", "channel", "status", "handed_off_user_id", "contact_name", "metadata", "is_simulated", "created_at", "updated_at") values (default, default, default, default, default, default, default, default, default, default, default) returning "id", "wa_id", "contact_id", "channel", "status", "handed_off_user_id", "contact_name", "metadata", "is_simulated", "created_at", "updated_at"
+params: 
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/src/pg-core/session.ts:73:10
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:18
+ ❯ tests/regression/agent-trajectory.test.ts:1780:15
+    1778|   const { eq } = await import("drizzle-orm");
+    1779|
+    1780|   const [c] = await db.insert(conversations).values({}).returning();
+       |               ^
+    1781|   const realConvId = c.id;
+    1782|   try {
+
+Caused by: Error: getaddrinfo ENOTFOUND db.aja-feat-jornada-bevi-lance-embutido.orb.local
+ ❯ node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/node-postgres/session.js:124:18
+ ❯ NodePgPreparedQuery.queryWithCache node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/pg-core/session.js:39:16
+ ❯ node_modules/.pnpm/drizzle-orm@0.45.2_@opentelemetry+api@1.9.1_@types+pg@8.20.0_kysely@0.28.17_pg@8.20.0/node_modules/drizzle-orm/node-postgres/session.js:117:22
+ ❯ tests/regression/agent-trajectory.test.ts:1780:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -3008, code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname: 'db.aja-feat-jornada-bevi-lance-embutido.orb.local' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 225 passed (226)
+   Start at  15:30:37
+   Duration  897ms (transform 215ms, setup 19ms, import 402ms, tests 732ms, environment 0ms)
+
+EXIT_REGRESSION=
+
+### DONE ###
+15:30:38

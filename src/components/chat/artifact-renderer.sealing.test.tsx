@@ -42,4 +42,16 @@ describe("FIX-49 — artifact selado fora do turno ativo", () => {
 		expect(sealed?.getAttribute("aria-disabled")).toBe("true");
 		expect(sealed?.className).toContain("pointer-events-none");
 	});
+
+	it("active=false → wrapper REALMENTE inert (teclado/screen-reader também, não só o mouse)", () => {
+		const { container } = render(<ArtifactRenderer artifact={groupArtifact} active={false} />);
+		const sealed = container.querySelector('[data-sealed="true"]');
+		// `pointer-events-none` cobre só o mouse; o atributo `inert` (boolean) é o que
+		// sela o card antigo pra Tab/foco/screen-reader. Em React 19, `inert=""` (string
+		// vazia) é tratado como `false` e o atributo NÃO é renderizado → selo furado.
+		expect(
+			sealed?.hasAttribute("inert"),
+			"card selado precisa do atributo inert (boolean) — sem ele, Tab/SR alcançam o card antigo e re-disparam a ação (FIX-49/FIX-48)",
+		).toBe(true);
+	});
 });

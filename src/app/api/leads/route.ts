@@ -43,6 +43,14 @@ export async function POST(req: NextRequest) {
 		return Response.json({ ok: false, error: "conversationId is required" }, { status: 400 });
 	}
 
+	// Formato UUID antes de tocar o DB: conversationId malformado é erro do
+	// cliente (400). Sem isso, a query `findFirst(conversations.id = ...)` (fora
+	// do try) faz o Postgres lançar `invalid input syntax for type uuid` → 500.
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	if (!UUID_RE.test(conversationId)) {
+		return Response.json({ ok: false, error: "conversationId is malformed" }, { status: 400 });
+	}
+
 	// Validate form fields with shared Zod schema
 	const parsed = leadSchema.safeParse(formFields);
 	if (!parsed.success) {
