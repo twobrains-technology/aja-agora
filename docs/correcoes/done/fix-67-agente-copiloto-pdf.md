@@ -1,8 +1,10 @@
 ---
 id: FIX-67
 titulo: "Agente copiloto + injeção do PDF da administradora + cassette"
-status: todo
+status: done
 bloco: bloco-mesa-c-copiloto
+commit: ce97c354
+executado_em: 2026-06-21
 arquivos:
   - src/lib/agent/mesa-copilot/
   - tests/regression/agent-trajectory.test.ts
