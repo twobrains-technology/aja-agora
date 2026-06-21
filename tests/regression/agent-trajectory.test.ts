@@ -4932,3 +4932,138 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 		expect(src).toMatch(/pipeGatePrompt\(\{ conversationId, gate: nextAfterIdentity/);
 	});
 });
+
+// ============================================================================
+// BUG-MESA-COPILOT — copiloto de mesa orienta o ATENDENTE com o PDF da
+// administradora injetado (FIX-67, bloco-mesa-c).
+// ----------------------------------------------------------------------------
+// Feature nova (mesa de operação): mensagem do WhatsApp de um ATENDENTE DE MESA
+// vai pro copiloto (não pro agente de vendas), que injeta o manual full-text da
+// administradora da cota (DEC-C) e orienta o atendente a contratar passo a passo.
+// Este cassette trava: (1) o builder injeta o texto do PDF da administradora
+// certa no system prompt enviado ao modelo; (3) o copiloto não vaza meta-
+// narrativa/stack trace. A parte (2) — roteamento por número → copiloto, não
+// vendas — vive no describe BUG-MESA-COPILOT-ROUTING abaixo (FIX-66), que assere
+// o hook do processor.ts + a consulta de routing.ts.
+//
+// Spec: docs/visao/mesa-de-operacao.md §5 + DEC-C. Decisões:
+// docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+// ============================================================================
+
+describe("BUG-MESA-COPILOT — copiloto injeta o PDF da administradora e não vaza mecanismo", () => {
+	const CANOPUS_MANUAL =
+		"MANUAL CANOPUS — para contratar: 1) acesse o portal do parceiro; 2) selecione o grupo; " +
+		"3) preencha CPF e dados do cliente; 4) confirme a carta de crédito; 5) gere o boleto.";
+
+	it("cassette: o manual full-text da administradora chega ao modelo no system prompt (1)", async () => {
+		const { generateMesaCopilotReply } = await import("@/lib/agent/mesa-copilot");
+
+		// Captura o prompt que o copiloto envia ao modelo.
+		let capturedPrompt = "";
+		const model = new MockLanguageModelV3({
+			doStream: async (options: { prompt: unknown }) => {
+				capturedPrompt = JSON.stringify(options.prompt);
+				return {
+					// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loose
+					stream: simulateReadableStream({
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							...textChunks(
+								"t1",
+								"Beleza! No portal do parceiro, comece selecionando o grupo 1234 e confirme a carta.",
+							),
+							FINISH_STOP,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const reply = await generateMesaCopilotReply({
+			caso: {
+				administradoraNome: "Canopus",
+				docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+				grupo: "1234",
+				clienteNome: "Helena Souza",
+			},
+			history: [{ role: "attendant", content: "Como começo a contratação na Canopus?" }],
+			model,
+		});
+
+		// O manual full-text foi para o modelo (DEC-C: injeção, não RAG).
+		expect(capturedPrompt).toContain("MANUAL CANOPUS");
+		expect(capturedPrompt).toContain("portal do parceiro");
+		// E a oferta/cliente do caso também chegaram (dossiê do caso).
+		expect(capturedPrompt).toContain("1234");
+		expect(capturedPrompt).toContain("Helena Souza");
+		// O copiloto devolveu a orientação ao atendente.
+		expect(reply).toContain("grupo 1234");
+	});
+
+	it("cassette: resposta do copiloto NÃO casa detectores de meta-narrativa nem stack trace (3)", async () => {
+		const { generateMesaCopilotReply } = await import("@/lib/agent/mesa-copilot");
+
+		const cleanReply =
+			"Para esse caso: 1) acesse o portal da Canopus; 2) selecione o grupo 1234; " +
+			"3) preencha o CPF da Helena; 4) confirme a carta de R$ 80.000 e gere o boleto.";
+
+		const model = new MockLanguageModelV3({
+			doStream: async () => ({
+				// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loose
+				stream: simulateReadableStream({
+					chunks: [
+						{ type: "stream-start", warnings: [] },
+						...textChunks("t1", cleanReply),
+						FINISH_STOP,
+					] as any[],
+				}),
+			}),
+		});
+
+		const reply = await generateMesaCopilotReply({
+			caso: {
+				administradoraNome: "Canopus",
+				docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+			},
+			history: [{ role: "attendant", content: "passo a passo?" }],
+			model,
+		});
+
+		// Sem meta-narrativa do mecanismo.
+		const metaDetectors = [
+			/o sistema (vai|ir[áa]) (te )?(guiar|conduzir|processar|injetar)/i,
+			/estou (processando|injetando|carregando)/i,
+			/vou (processar|injetar) o manual/i,
+		];
+		for (const rx of metaDetectors) expect(reply).not.toMatch(rx);
+
+		// Sem stack trace / detalhe técnico vazado.
+		const stackDetectors = [
+			/\bat\s+\/?\w+.*:\d+:\d+/i, // "at file.ts:12:3"
+			/\berror:\s/i,
+			/\bundefined is not\b/i,
+			/\bTypeError\b|\bReferenceError\b/,
+			/node_modules|\.ts:\d+/i,
+		];
+		for (const rx of stackDetectors) expect(reply).not.toMatch(rx);
+
+		// E a persona-fonte realmente proíbe esses vazamentos (acoplamento ao builder).
+		const promptSrc = readSource("src/lib/agent/mesa-copilot/system-prompt.ts");
+		expect(promptSrc.toLowerCase()).toMatch(/stack trace/);
+		expect(promptSrc.toLowerCase()).toMatch(/meta-?narrativa|mecanismo do sistema/);
+	});
+
+	it("estrutural: o builder injeta o texto_extraido no bloco STABLE (cacheável)", async () => {
+		const { buildMesaCopilotPrompt } = await import("@/lib/agent/mesa-copilot");
+		const { stable, dynamic } = buildMesaCopilotPrompt({
+			administradoraNome: "Canopus",
+			docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+		});
+		expect(stable).toContain("MANUAL CANOPUS");
+		// O manual NÃO vaza pro bloco dinâmico (que não é cacheado).
+		expect(dynamic).not.toContain("MANUAL CANOPUS");
+		// index.ts cacheia o stable.
+		const idxSrc = readSource("src/lib/agent/mesa-copilot/index.ts");
+		expect(idxSrc).toMatch(/content:\s*stable[\s\S]{0,160}cacheControl/);
+	});
+});
