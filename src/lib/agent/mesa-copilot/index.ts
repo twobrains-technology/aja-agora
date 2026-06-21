@@ -10,12 +10,7 @@
  * administradora) — mesmo padrão de cache do agente principal (builder.ts).
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
-import {
-	type LanguageModel,
-	type ModelMessage,
-	streamText,
-	type SystemModelMessage,
-} from "ai";
+import { type LanguageModel, type ModelMessage, type SystemModelMessage, streamText } from "ai";
 import { buildMesaCopilotPrompt, type MesaCopilotCaso } from "./system-prompt";
 
 const anthropic = createAnthropic();
@@ -72,5 +67,5 @@ export async function generateMesaCopilotReply(input: {
 	return text.trim();
 }
 
-export { buildMesaCopilotPrompt } from "./system-prompt";
 export type { MesaCopilotCaso, MesaCopilotDoc } from "./system-prompt";
+export { buildMesaCopilotPrompt } from "./system-prompt";
