@@ -36,6 +36,12 @@ Verificado em tela pelo Kairo em 2026-06-05 com a proposta real do teste manual
 - **A Bevi tem uma "mesa"** dentro da parte de contratação — é lá que a proposta é
   efetivada pro cliente (back office, manual — ver DES-1 no CONTEXT.md: assinatura é
   da mesa, não automatizada).
+  - 🆕 **Mesa de operação Aja Agora** (2026-06-21): o Kairo propôs uma **mesa própria** — um
+    atendente humano nosso assume o caso (transbordo no kanban) e faz o contrato na
+    administradora, orientado por um **agente copiloto** com o PDF daquela administradora.
+    É a peça humana desta travessia. Spec de negócio:
+    [`../visao/mesa-de-operacao.md`](../visao/mesa-de-operacao.md). ⚠️ A confirmar (Q-K5) se
+    ela substitui/complementa a mesa da Bevi e se opera direto na administradora.
 - **Do lado Aja Agora, a jornada tem que chegar até o pagamento** (1º boleto). Razão:
 
 > "Pra mim o consórcio está apto a pagar a comissão quando o cara fizer o **primeiro

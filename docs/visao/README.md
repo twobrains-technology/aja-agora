@@ -29,6 +29,7 @@ de virar plano de implementação.
 | [`jornada-perfeita.md`](./jornada-perfeita.md) | Como é a jornada no seu melhor, ponta a ponta (camadas 0-8)? | Só com decisão de produto (Kairo/Bernardo) |
 | [`gap-analysis.md`](./gap-analysis.md) | Onde o código de hoje fica aquém da jornada perfeita? | Toda feature mergeada que feche (ou abra) um gap |
 | [`pos-contratacao-canais.md`](./pos-contratacao-canais.md) | O que o agente faz quando o cliente volta (web × WhatsApp), hoje × MVP × futuro? | Quando o comportamento de retorno mudar |
+| [`mesa-de-operacao.md`](./mesa-de-operacao.md) | Como o caso é transbordado do kanban pra um atendente de mesa humano, orientado por um agente copiloto que conhece o PDF de cada administradora? | Quando a operação da travessia (mesa humana) mudar |
 | [`roadmap-mvp.md`](./roadmap-mvp.md) | O que é P0 antes da campanha, e o que vem depois? | Re-priorização ou conclusão de onda |
 | [`perguntas-abertas.md`](./perguntas-abertas.md) | O que só Kairo/Bernardo/Bevi/AGX podem responder? | Sempre que uma resposta chegar (mover pra "respondidas", nunca deletar) |
 
@@ -57,7 +58,10 @@ elos, em ordem de urgência:
 2. **A travessia** — entre "ficha completa" e a efetivação na administradora existe um
    limbo (mesa, análise, inserção) que hoje é silencioso e manual. O funil de negócio só
    fecha no **1º boleto pago** (hipótese G3, a confirmar) — a jornada não pode terminar
-   antes dele ([`../jornada/jornada-ate-boleto.md`](../jornada/jornada-ate-boleto.md)).
+   antes dele ([`../jornada/jornada-ate-boleto.md`](../jornada/jornada-ate-boleto.md)). A
+   peça **humana** dessa travessia — transbordar o caso pra um atendente de mesa orientado
+   por um agente copiloto (com o PDF da administradora) — está em
+   [`mesa-de-operacao.md`](./mesa-de-operacao.md).
 3. **A vida de consorciado** — pós-venda canônico (passo 7 do docx): assembleias,
    lances, contemplação, indicação. É onde a promessa "a Aja Agora segue com você até a
    contemplação e depois dela" se prova.

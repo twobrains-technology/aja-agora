@@ -13,6 +13,9 @@
 | Q-K2 | Quem é o financiador citado como "AGE/AGX" e qual o vínculo formal com a comissão? | Primer §5 está com ⚠️; afeta a quem reportamos o funil | Clareza do modelo de receita |
 | Q-K3 | Data prevista da campanha e canais (Meta? Google?) | Dimensiona a janela do P0 e quais UTMs/integrações de atribuição importam | P0.3 |
 | Q-K4 | O resgate de abandono via WhatsApp (1 mensagem) é aceitável como política? | Opt-in existe; falta a decisão de usá-lo pra resgate | Camada 0 |
+| Q-K5 | **Mesa de operação Aja Agora × mesa da Bevi**: a nossa mesa substitui, complementa ou opera junto? O contrato é feito **direto na administradora** ou ainda via Bevi/Conexia? Isso implica **multi-administradora além do que a Bevi agrega** (hoje anti-escopo)? | Define se a feature da mesa é operação interna sobre o fluxo Bevi ou uma nova frente de integração direta com administradoras | [`mesa-de-operacao.md`](./mesa-de-operacao.md) §8 |
+| Q-K6 (=DEC-A) | O **atendente de mesa** é entidade nova simples (nome+whatsapp, sem login) ou deve reusar/estender o `user role=attendant` já existente (handoff de chat)? E o copiloto fala no WhatsApp dele ou em tela web? | Evita duplicar (ou conflitar com) o conceito de "pessoa que atende via WhatsApp" | Modelagem da mesa |
+| Q-K7 (=DEC-B) | O transbordo no kanban é só **botão manual** ou também **automático por estágio** (round-robin)? | Muda UX e lógica do pipeline | Escopo do transbordo |
 
 ## Pra Bevi (parceria/API)
 
