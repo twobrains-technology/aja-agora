@@ -31,11 +31,11 @@ const NEUTRAL: TurnAnalysis = {
 };
 
 describe("FIX-33 — clampCreditToCategory (função pura)", () => {
-	it("acima do teto clampa no teto (auto: 300k)", () => {
+	it("acima do teto clampa no teto (auto: 500k — FIX-54)", () => {
 		const r = clampCreditToCategory(5_000_000, "auto");
-		expect(r.value).toBe(300_000);
+		expect(r.value).toBe(500_000);
 		expect(r.clamped).toBe(true);
-		expect(r.max).toBe(300_000);
+		expect(r.max).toBe(500_000);
 		expect(r.min).toBe(20_000);
 	});
 
@@ -55,7 +55,7 @@ describe("FIX-33 — clampCreditToCategory (função pura)", () => {
 	it.each<[Category, number, number]>([
 		["imovel", 5_000_000, 2_000_000],
 		["imovel", 50_000, 100_000],
-		["auto", 5_000_000, 300_000],
+		["auto", 5_000_000, 500_000],
 		["auto", 500, 20_000],
 		["moto", 200_000, 80_000],
 		["moto", 1_000, 8_000],
@@ -71,15 +71,15 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("carta de 5 milhões de auto → creditMax clampado (300k), creditClampedFrom=5M", async () => {
+	it("carta de 5 milhões de auto → creditMax clampado (500k — FIX-54), creditClampedFrom=5M", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("quero uma carta de 5 milhoes de auto", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(300_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
 		expect(meta.qualifyAnswers?.creditClampedFrom).toBe(5_000_000);
 		// creditMin derivado respeita a faixa.
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(300_000);
+		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
 		expect(meta.qualifyAnswers?.creditMin ?? 0).toBeGreaterThan(0);
 	});
 
@@ -101,8 +101,8 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("entre 4 e 5 milhoes", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(300_000);
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(300_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
+		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
 	});
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {

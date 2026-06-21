@@ -2,11 +2,12 @@
 
 import { ArrowRight, Check, Info } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
 import { useChatContext } from "@/lib/chat/provider";
@@ -36,6 +37,13 @@ const brl = (v: number) =>
 
 const brlExact = (v: number) =>
 	`R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// FIX-55: extrai o número de um texto livre ("R$ 37.500", "37500") — só dígitos.
+// null quando não há dígito algum (input vazio).
+const parseDigits = (s: string): number | null => {
+	const d = s.replace(/\D/g, "");
+	return d ? Number.parseInt(d, 10) : null;
+};
 
 const INTENTS: { value: PlanIntent; label: string }[] = [
 	{ value: "parcela", label: "Menor parcela" },
@@ -146,7 +154,8 @@ export function PlanEstimatePicker({
 						Planeje sua conquista
 					</p>
 
-					{/* Valor do bem */}
+					{/* Valor do bem — FIX-55: input numérico livre ao lado do slider, pro
+					    usuário digitar valor quebrado (R$ 347.500) sem snap ao step. */}
 					<IndicatorSlider
 						label="Quanto custa o que você quer?"
 						value={assetValue}
@@ -156,6 +165,8 @@ export function PlanEstimatePicker({
 						step={payload.credit.step}
 						onChange={setAssetValue}
 						testId="plan-asset"
+						editable
+						inputTestId="plan-asset-input"
 					/>
 
 					{/* Segmented control: o que mais importa (dirige os controles abaixo) */}
@@ -326,6 +337,8 @@ function IndicatorSlider({
 	step,
 	onChange,
 	testId,
+	editable = false,
+	inputTestId,
 }: {
 	label: string;
 	value: number;
@@ -335,19 +348,57 @@ function IndicatorSlider({
 	step: number;
 	onChange: (v: number) => void;
 	testId: string;
+	/** FIX-55: troca o display estático por um input numérico livre (valor exato). */
+	editable?: boolean;
+	inputTestId?: string;
 }) {
+	// FIX-55: o texto do input é estado próprio (permite digitar livre); só
+	// commita (parse + clamp) no blur/Enter. Reflete o arrasto do slider via effect.
+	const [text, setText] = useState(() => value.toLocaleString("pt-BR"));
+	useEffect(() => {
+		setText(value.toLocaleString("pt-BR"));
+	}, [value]);
+
+	const commit = () => {
+		const parsed = parseDigits(text);
+		const clamped = Math.min(max, Math.max(min, parsed ?? min));
+		onChange(clamped);
+		setText(clamped.toLocaleString("pt-BR"));
+	};
+
 	return (
 		<div className="space-y-1.5">
-			<div className="flex items-baseline justify-between">
+			<div className="flex items-baseline justify-between gap-2">
 				<span className="text-xs font-medium text-muted-foreground">{label}</span>
-				<motion.span
-					key={value}
-					initial={{ scale: 1.05 }}
-					animate={{ scale: 1 }}
-					className="text-sm font-bold text-primary tabular-nums"
-				>
-					{display}
-				</motion.span>
+				{editable ? (
+					<span className="flex items-center gap-1 text-primary">
+						<span className="text-xs font-medium">R$</span>
+						<Input
+							value={text}
+							inputMode="numeric"
+							onChange={(e) => setText(e.target.value)}
+							onBlur={commit}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									commit();
+								}
+							}}
+							data-testid={inputTestId}
+							aria-label={label}
+							className="h-7 w-24 px-2 text-right text-sm font-bold text-primary tabular-nums"
+						/>
+					</span>
+				) : (
+					<motion.span
+						key={value}
+						initial={{ scale: 1.05 }}
+						animate={{ scale: 1 }}
+						className="text-sm font-bold text-primary tabular-nums"
+					>
+						{display}
+					</motion.span>
+				)}
 			</div>
 			<Slider
 				value={[value]}
