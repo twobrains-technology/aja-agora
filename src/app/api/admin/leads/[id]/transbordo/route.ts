@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireRole } from "@/lib/admin/require-role";
 import { createMesaHandoff } from "@/lib/mesa/handoff";
+import { sendCaseToAttendant, toDossier } from "@/lib/whatsapp/mesa/outbound";
 
 // Transbordo manual de um lead do kanban para um atendente de mesa (FIX-64).
 // Gatilho é o botão no card (DEC-B). Spec: docs/visao/mesa-de-operacao.md §4.
@@ -56,7 +57,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		);
 	}
 
-	// FIX-65 acopla aqui o outbound do dossiê (sendCaseToAttendant) — best-effort,
-	// sem rollback do registro.
-	return Response.json({ handoff: result.handoff }, { status: 201 });
+	// FIX-65: outbound do dossiê pro WhatsApp do atendente. Best-effort — o handoff já
+	// está registrado (fonte de verdade); falha do canal externo é reportada, não
+	// derruba o caso nem faz rollback.
+	let outboundError: string | undefined;
+	try {
+		const dossier = toDossier({
+			attendant: result.attendant,
+			lead: result.lead,
+			proposal: result.proposal,
+		});
+		const sent = await sendCaseToAttendant(dossier);
+		if ("error" in sent && sent.error) outboundError = sent.error;
+	} catch (err) {
+		outboundError = String(err);
+	}
+
+	return Response.json({ handoff: result.handoff, outboundError }, { status: 201 });
 }
