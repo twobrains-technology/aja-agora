@@ -44,6 +44,24 @@ de cada administradora e orienta o atendente passo a passo, pelo WhatsApp.
                           ↳ orienta o atendente a fazer o contrato → proposta efetivada
 ```
 
+### Modelo faseado — hoje via Bevi, amanhã administradora direto (resolvido 2026-06-21, Q-K5)
+
+A "mesa" é **hoje fornecida pela Bevi** (o back office que efetiva a proposta), mas é, no
+fundo, **a mesa da administradora** — a Bevi a intermedia. O plano de negócio é **migrar para
+operar a administradora direto** num futuro próximo. Consequências de desenho:
+
+- A mesa de operação Aja Agora **não é uma frente multi-administradora paralela à Bevi** — é a
+  **mesma operação com a fonte abstraída**: hoje via Bevi/Conexia, amanhã direto na
+  administradora. **Não dispara** o anti-escopo de multi-administradora do
+  [`roadmap-mvp.md`](./roadmap-mvp.md) — é evolução faseada planejada, não nova integração.
+- O **Adapter Pattern** (constraint do projeto: "toda integração com administradoras passa por
+  camada de abstração") é exatamente o que viabiliza a troca sem reescrever a feature — a
+  camada de operação tem um adapter `via-bevi` (hoje) e abre espaço pro `direto-administradora`
+  (futuro).
+- O **dossiê de PDF por administradora é o que destrava o "direto na administradora"**: o
+  copiloto passa a conhecer o procedimento de cada uma. Ou seja, esta feature não é só
+  operação humana — é o **pré-requisito** da migração pra integração direta.
+
 ## 2. Vocabulário — desambiguar TRÊS "mesas/atendentes" (não confundir)
 
 | Termo | O que é | Existe? |
@@ -142,7 +160,7 @@ a eleva a **entidade de primeira classe**, com CRUD no admin.
 | DEC-A | Modelo do atendente de mesa + canal | **Entidade nova simples (nome+whatsapp, sem login); copiloto no WhatsApp do atendente** | Fiel a "simples, só nome e whatsapp" + "manda pro whatsapp de um deles". ⚠️ confirmar se reusa `user role=attendant`. |
 | DEC-B | Gatilho do transbordo | **Botão manual no card do kanban** (caminho principal); auto por estágio = evolução | "ter a opção de transbordar". ⚠️ confirmar se quer auto-transbordo. |
 | DEC-C | Consumo do PDF | **Texto extraído → full-text no system prompt + prompt caching** (não RAG/embeddings) | 1 manual por administradora cabe no contexto; mais simples e barato que pipeline de embeddings. Reavaliar só se os manuais ficarem grandes/numerosos. |
-| DEC-D | Administradora × Bevi | **Cadastro interno manual** (admin cadastra), casando por nome/código com `beviProposals.administradora` | Respeita "Bevi fonte única": a entidade é dossiê operacional, não fonte de oferta. ⚠️ alternativa: auto-popular das administradoras vistas na Bevi. |
+| DEC-D | Administradora × Bevi | **Cadastro interno manual**; a mesa opera **hoje via Bevi**, com migração planejada pra **administradora direto** — Adapter Pattern abstrai a fonte | ✅ Resolvido (Q-K5): Bevi fornece a mesa hoje (que é da administradora); o dossiê por administradora destrava o "direto". Respeita "Bevi fonte única" pra DESCOBERTA/oferta — a entidade Administradora é só operação, casando por nome/código com `beviProposals.administradora`. |
 | DEC-E | Storage do binário | **Object storage** (MinIO local / S3 prod), texto extraído no Postgres | Stack já tem MinIO; binário fora do banco, texto no banco pra injeção rápida. |
 
 ## 7. Relação com o que JÁ existe (não duplicar nem quebrar)
@@ -162,7 +180,7 @@ a eleva a **entidade de primeira classe**, com CRUD no admin.
 |---|---|
 | **LGPD / PII no WhatsApp do atendente** | Transbordar dados do cliente pro WhatsApp de um operador é PII saindo num canal externo. Minimizar o payload (só o necessário pra contratar), registrar consentimento/base legal, e tratar o atendente como parte da operação (contrato/termo). |
 | **Bevi fonte única** | A entidade Administradora **não pode** virar fonte alternativa de grupos/ofertas/números ao cliente — só dossiê de operação. Guard-rail permanente. |
-| **Mesa Bevi × mesa Aja Agora** | ⚠️ A CONFIRMAR: a mesa de operação Aja Agora **substitui**, **complementa** ou **opera junto** com a mesa da Bevi? E o contrato é feito **direto na administradora** ou ainda via Bevi/Conexia? Isso define se há **multi-administradora além do que a Bevi agrega** (hoje anti-escopo no [`roadmap-mvp.md`](./roadmap-mvp.md) — exige decisão explícita). |
+| **Mesa Bevi × mesa Aja Agora** | ✅ Resolvido (Q-K5, 2026-06-21): a mesa é fornecida pela Bevi hoje (e é, no fundo, da administradora); plano = operar a administradora **direto** em breve. Não é multi-administradora paralela — é evolução faseada com a fonte abstraída. Desenho: camada de operação com adapter `via-bevi` (hoje), deixando espaço pro `direto-administradora` (futuro). Ver "Modelo faseado" no topo. |
 | **Frescor do PDF** | Procedimento de administradora muda. Versionar o doc e invalidar o cache do copiloto ao subir versão nova. |
 | **Roteamento de número** | Garantir que o número de um atendente de mesa nunca caia no agente de vendas (e vice-versa) — colisão de canal já causou bug no projeto. |
 
@@ -191,6 +209,7 @@ operação **não depende da Bevi responder** — é processo nosso. Posicioname
 onda própria, em paralelo ao P0.4-P0.6. Detalhe no roadmap.
 
 ---
-*Anotado em 2026-06-21 a partir de pedido verbal do Kairo. Decisões DEC-A/DEC-B marcadas
-revisáveis (pergunta sem resposta na sessão). Pontos de mesa Bevi × mesa Aja Agora e
-multi-administradora espelhados em [`perguntas-abertas.md`](./perguntas-abertas.md).*
+*Anotado em 2026-06-21 a partir de pedido verbal do Kairo. Q-K5 (mesa Bevi × mesa Aja Agora /
+multi-administradora) RESOLVIDO em 2026-06-21 — modelo faseado (Bevi hoje → administradora
+direto). DEC-A/DEC-B (modelo do atendente + gatilho do transbordo) seguem como default
+revisável, mas NÃO bloqueiam a implementação.*
