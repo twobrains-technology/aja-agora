@@ -1,7 +1,12 @@
 // Camada 1 (structural) — schemas Zod da mesa de operação.
 // FIX-61 (administradora). FIX-63 (atendente) adiciona seus casos abaixo.
 import { describe, expect, it } from "vitest";
-import { createAdministradoraSchema, updateAdministradoraSchema } from "@/lib/validations/mesa";
+import {
+	createAdministradoraSchema,
+	createMesaAttendantSchema,
+	updateAdministradoraSchema,
+	updateMesaAttendantSchema,
+} from "@/lib/validations/mesa";
 
 describe("FIX-61 — createAdministradoraSchema", () => {
 	it("aceita nome válido e codigoBevi opcional", () => {
@@ -56,5 +61,57 @@ describe("FIX-61 — updateAdministradoraSchema", () => {
 
 	it("rejeita objeto vazio (nada pra atualizar)", () => {
 		expect(updateAdministradoraSchema.safeParse({}).success).toBe(false);
+	});
+});
+
+describe("FIX-63 — createMesaAttendantSchema", () => {
+	it("normaliza whatsapp formatado pra E.164 com DDI", () => {
+		const r = createMesaAttendantSchema.safeParse({
+			nome: "João da Mesa",
+			whatsapp: "(62) 99999-8888",
+		});
+		expect(r.success).toBe(true);
+		if (r.success) expect(r.data.whatsapp).toBe("5562999998888");
+	});
+
+	it("aceita whatsapp já com DDI (idempotente)", () => {
+		const r = createMesaAttendantSchema.safeParse({
+			nome: "Maria Operação",
+			whatsapp: "5562999998888",
+		});
+		expect(r.success).toBe(true);
+		if (r.success) expect(r.data.whatsapp).toBe("5562999998888");
+	});
+
+	it("rejeita whatsapp inválido", () => {
+		expect(
+			createMesaAttendantSchema.safeParse({ nome: "Fulano Tal", whatsapp: "123" }).success,
+		).toBe(false);
+	});
+
+	it("rejeita nome curto", () => {
+		expect(
+			createMesaAttendantSchema.safeParse({ nome: "A", whatsapp: "62999998888" }).success,
+		).toBe(false);
+	});
+
+	it("rejeita sem whatsapp", () => {
+		expect(createMesaAttendantSchema.safeParse({ nome: "Fulano" }).success).toBe(false);
+	});
+});
+
+describe("FIX-63 — updateMesaAttendantSchema", () => {
+	it("aceita atualizar só o status", () => {
+		expect(updateMesaAttendantSchema.safeParse({ isActive: false }).success).toBe(true);
+	});
+
+	it("normaliza whatsapp na atualização", () => {
+		const r = updateMesaAttendantSchema.safeParse({ whatsapp: "62 99999-8888" });
+		expect(r.success).toBe(true);
+		if (r.success) expect(r.data.whatsapp).toBe("5562999998888");
+	});
+
+	it("rejeita objeto vazio", () => {
+		expect(updateMesaAttendantSchema.safeParse({}).success).toBe(false);
 	});
 });
