@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-20 22:30 · **Sessão:** aja-agora / branch `qa/noturno-2026-06-20` (a partir de `develop`)
 - **Critério de pronto:** Todos os cenários do ledger ∈ {✅, ⚠️ bloqueado-Kairo}, nenhum bloco de correção pendente, suíte (typecheck + test:unit Camadas 1+2) verde com evidência fresca, e a superfície de mudança dos FIX-52..60 validada contra a jornada canônica. Merge `qa/noturno-*` → develop fica PENDENTE-KAIRO.
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO (loop encerrado 02:02 — critério de PRONTO atingido)
 
 ## Decisões
 
@@ -66,8 +66,16 @@
 - **Reversibilidade:** n/a (decisão de escopo).
 - **Evidência:** card `inbox/2026-06-21-eval-jornada-gate-sequence-fix53.md`.
 
-## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:** _pendente_
-- **O que NÃO fiz e por quê:** _pendente_
-- **Revisar primeiro:** _pendente_
-- **Próximos passos sugeridos:** _pendente_
+## Relatório final (loop encerrado 02:02)
+- **Resultado vs critério de pronto:** ✅ ATINGIDO. Toda a revisão 2 (FIX-52..60) validada contra a jornada canônica em 3 rodadas; todos os cenários ∈ {✅, ⚠️ bloqueado-Kairo}; suíte verde com evidência fresca (test:unit 1798, typecheck produção 0 erros, E2E landing 4). 5 problemas corrigidos, 3 documentados como PENDENTE-KAIRO.
+- **O que NÃO fiz e por quê:**
+  - **Merge → develop:** PENDENTE-KAIRO (blast radius — branch `qa/noturno-2026-06-20` pronta pra você revisar e mergear).
+  - **3 PENDENTE-KAIRO (fora da revisão 2):** typecheck em testes (T1, 25 erros, não bloqueia build), saneamento E2E lead-capture/resume (testes furados + flaky pré-existentes), eval jornada GATE_SEQUENCE pré-FIX-53 (reescrita do harness + validação LLM cara). Cards em `docs/correcoes/inbox/`.
+  - Não promovi develop/main, não rodei eval LLM completo da jornada (caro; nightly).
+- **Revisar primeiro (decisões mais discutíveis):**
+  - **D6** — reescrita da REGRA DURA de ordem de gates no system-prompt (mudança na "voz" do produto; validei nas 3 camadas + Camada 3 LLM, mas é a sua decisão de produto confirmar o texto).
+  - **D1** — branch de trabalho separada da develop.
+- **Próximos passos sugeridos:**
+  1. Revisar e mergear `qa/noturno-2026-06-20` → develop (7 commits).
+  2. Agendar 3 blocos de saneamento (typecheck testes / E2E lead-capture / eval jornada) — todos não-bloqueantes mas dívida real.
+  3. Rodar o eval nightly da jornada após o merge pra validação comportamental completa do prompt corrigido.
