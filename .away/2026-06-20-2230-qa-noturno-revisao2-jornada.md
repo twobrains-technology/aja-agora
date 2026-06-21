@@ -53,6 +53,19 @@
 - 00:25 — Validada cobertura FIX-54/55/56/57/58 + regra inviolável #2 (Bevi fonte única).
 - 00:35 — E2E integração: 20→17 pós-restart Turbopack; 10 fails restantes diagnosticados como furados/flaky pré-existentes (não-regressão v2).
 
+### D6 · 01:25 — Rodada 2: corrige ordem de gates no system-prompt (achado novo, alto valor)
+- **Contexto:** o system-prompt (REGRA DURA "3 gates pré-valor") afirmava experience→timeframe→lance ANTES do valor. Mas o nextGate real e o docx (passo 2: valor→prazo→lance, + FIX-53 identidade antes do valor) fazem experience→consent→identify→VALOR→timeframe→lance. Prompt descrevia a ordem invertida + exemplos BAD/GOOD ensinando o padrão errado.
+- **Decidi:** corrigir inline via TDD 3 camadas (provado encadeando nextGate num teste de sequência novo). Reescrevi a REGRA DURA pra "você não dirige o funil; o orchestrator dispara cada gate na ordem", preservando a proteção anti-skip. Atualizei HARD_RULES §2.2 + 3 testes que codificavam a ordem antiga.
+- **Alternativas:** mudar o nextGate/código (rejeitado — o código está CERTO, alinhado ao docx; o defeito era no prompt).
+- **Reversibilidade:** média (mudança no system-prompt de produção; vai pra branch qa/noturno, Kairo revisa no merge).
+- **Evidência:** commit ebfd312a; suíte 1798 verde + Camada 3 (LLM real) verde no hook.
+
+### D7 · 01:20 — Eval jornada desatualizado (FIX-53): documentar, não corrigir inline
+- **Contexto:** `tests/eval/jornada-aja-agora.eval.test.ts` GATE_SEQUENCE percorre os gates na ordem PRÉ-FIX-53 (identify por último). O harness foi construído em torno da tripwire-no-fim.
+- **Decidi:** documentar como card/bloco (reescrita do harness + validação LLM cara = >15min; Camada 3 nightly não-bloqueante; ordem real já coberta na Camada 1). NÃO corrigir inline (risco de quebrar o eval sem validação cara).
+- **Reversibilidade:** n/a (decisão de escopo).
+- **Evidência:** card `inbox/2026-06-21-eval-jornada-gate-sequence-fix53.md`.
+
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _pendente_
 - **O que NÃO fiz e por quê:** _pendente_
