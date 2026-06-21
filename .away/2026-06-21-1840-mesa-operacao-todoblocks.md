@@ -92,6 +92,18 @@ Kairo saiu pedindo: ajustar entendimentos (Q-K5 ✅ feito, commit c019e5d6) → 
   - feat-mesa-copiloto → ws 831b43cb (branch feat/mesa-copiloto)
   base/atendente-mesa-e-agente pushada pra origin (fundação visível aos forks). Agora: poll até
   block-done/<name> → merge-back com gate `test:unit` no container (D6) → revalida.
+- 20:09 — poll 1: 3 pending, nenhuma branch feat/mesa-* pushada ainda (agentes implementando, ~30min).
+  Re-agendado wakeup +30min.
+- 20:41 — poll 2: **cadastros DONE (+13 commits), copiloto DONE (+7)**, transbordo pending. Mergeando os 2.
+
+### D7 · 20:41 — Gate do merge-back inclui `pnpm install` (blocos adicionam deps)
+- **Contexto:** os blocos adicionam dependências novas (ex.: pdf lib no cadastros). O node_modules
+  do container foi instalado no boot (lockfile da fundação, sem essas deps). `test:unit` puro
+  falharia por módulo faltando — falso-vermelho que quarentenaria bloco bom.
+- **Decidi:** gate = `pnpm install --frozen-lockfile --prefer-offline && pnpm test:unit` no
+  container (prefer-offline, não offline — lição nfe-ia do CLAUDE.md). Instala as deps do lockfile
+  mergeado antes de testar.
+- **Reversibilidade:** fácil (só o comando do gate).
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** —
