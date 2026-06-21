@@ -86,6 +86,12 @@ Kairo saiu pedindo: ajustar entendimentos (Q-K5 ✅ feito, commit c019e5d6) → 
 - 19:25 — migration 0026 à mão (D5), aplicada no container, 5 tabelas criadas.
 - 19:30 — typecheck: schema limpo, repo cronicamente vermelho em test files (D6). test:unit VERDE.
 - 19:35 — 3 blocos montados (mesa-a-cadastros, mesa-b-transbordo, mesa-c-copiloto), onda 2, paralelos.
+- 19:40 — fundação commitada (31bbb8a2) + anotação (dbd69fed). **Onda 2 autônoma DISPARADA**:
+  - feat-mesa-cadastros → ws 9ee678bc (branch feat/mesa-cadastros)
+  - feat-mesa-transbordo → ws 0c0bea60 (branch feat/mesa-transbordo)
+  - feat-mesa-copiloto → ws 831b43cb (branch feat/mesa-copiloto)
+  base/atendente-mesa-e-agente pushada pra origin (fundação visível aos forks). Agora: poll até
+  block-done/<name> → merge-back com gate `test:unit` no container (D6) → revalida.
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** —
