@@ -9,6 +9,7 @@ import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
+import { handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -52,6 +53,16 @@ export async function processTextMessage(
 			}
 			await sendTextMessage(from, "🔄 Conversa resetada. Manda um oi pra começar de novo!");
 			console.log(`[whatsapp-processor] Reset conversation for ${from}`);
+			return;
+		}
+
+		// Mesa de operação (FIX-66): número de um atendente de mesa cadastrado vai
+		// pro COPILOTO, nunca pro agente de vendas (spec §8 — anti-colisão de
+		// canal). Precedência sobre o atendente-de-chat (isAttendantPhone): o
+		// roteamento por número é binário — é mesa → é copiloto, com ou sem
+		// handoff aberto (handleMesaCopilot acolhe o caso sem handoff).
+		if (await isMesaAttendantPhone(from)) {
+			await handleMesaCopilot(from, text);
 			return;
 		}
 
@@ -115,9 +126,7 @@ export async function processTextMessage(
 						);
 					} else {
 						await sendTextMessage(from, IDENTIFY_CONTINUE_REPLY);
-						await withSimulatorClockIfNeeded(conv, () =>
-							fireGate(from, conv.id, nextG, cMeta),
-						);
+						await withSimulatorClockIfNeeded(conv, () => fireGate(from, conv.id, nextG, cMeta));
 					}
 				}
 				return;

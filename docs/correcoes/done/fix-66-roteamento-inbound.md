@@ -1,8 +1,10 @@
 ---
 id: FIX-66
 titulo: "Roteamento inbound por número de atendente de mesa + persistência"
-status: todo
+status: done
 bloco: bloco-mesa-c-copiloto
+commit: d038cbf4
+executado_em: 2026-06-21
 arquivos:
   - src/lib/whatsapp/processor.ts
   - src/lib/whatsapp/mesa/routing.ts
