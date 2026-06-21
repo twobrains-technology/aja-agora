@@ -902,9 +902,14 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
-							// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance
-							// embutido (educa + opt-in) antes da busca. O directive dispara o
-							// gate `lance-embutido` em seguida. "maybe"/"no" vão direto pra busca.
+							// Jornada do doc (passo 2, FIX-4): a educação de lance embutido vale
+							// pra QUALQUER resposta (Sim/Não/Talvez) — o próprio texto mira quem
+							// NÃO tem o valor do lance hoje. "yes" reage primeiro (e segue pro
+							// gate lance-value, que então dispara lance-embutido); "no"/"maybe"
+							// vão direto pro gate `lance-embutido` (educa + opt-in) ANTES da busca.
+							// BUG-LANCE-EMBUTIDO-PULADO (QA noturno E2E 2026-06-21): antes "no"/
+							// "maybe" caíam direto em pipeSearchSummaryTurn, pulando a educação —
+							// regressão do FIX-4 (o nextGate já passava por todos; o handler não).
 							if (action.value === "yes") {
 								await pipeDirectiveTurn({
 									conversationId,
@@ -915,7 +920,7 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}
 
