@@ -1,0 +1,45 @@
+### INTEGRATION SERIAL (--no-file-parallelism) — prova bug-de-produto vs isolamento ###
+15:37:26
+stdout | src/app/api/admin/leads/route.simulator-whatsapp.test.ts > BUG: simulador WhatsApp não cria lead na pipeline > paridade: rota /api/admin/simulator/whatsapp/.../send (a que o painel chama de fato) também produz lead
+[simulator-bus] publish client waId=SIM-336849cf-39ce-4cc8-8272-edd02d3a8449 listeners=0 typing=true
+
+··stdout | src/app/api/chat/route.lead-form-prefill.test.ts > FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_form (vai pra decisão) > NÃO emite artifact lead_form no stream (o avanço é decision → contract, não captura de lead)
+[turn-trace] {"traceId":"43c13d57-52d5-453e-9402-4c3698e02ba2","conversationId":"bdaf7905-31eb-40c5-9b7c-3a19e196aa75","channel":"web","persona":null,"gate":null,"toolsCalled":[],"toolCount":0,"artifactsEmitted":[],"artifactCount":0,"suppressed":[],"cacheRead":null,"cacheWrite":null,"textChars":0,"handoff":false,"transitionedTo":null,"leadStage":null,"durationMs":6,"finishReason":"ok","startedAt":1782067127735}
+
+stdout | src/app/api/chat/route.lead-form-prefill.test.ts > FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_form (vai pra decisão) > FIX-38: dirige o avanço pro passo 5 (present_contract_form) SEM card de decisão e persiste decisionDispatched
+[turn-trace] {"traceId":"a3baf865-fcf1-4bf5-9cb6-a1f4a9ab3960","conversationId":"5aa162a7-9e12-4697-acd0-53befa74584b","channel":"web","persona":null,"gate":null,"toolsCalled":[],"toolCount":0,"artifactsEmitted":[],"artifactCount":0,"suppressed":[],"cacheRead":null,"cacheWrite":null,"textChars":0,"handoff":false,"transitionedTo":null,"leadStage":null,"durationMs":3,"finishReason":"ok","startedAt":1782067127750}
+
+stdout | src/app/api/chat/route.lead-form-prefill.test.ts > FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_form (vai pra decisão) > action=adjust-value reabre o ajuste (what-if) — sem lead_form, sem fechamento
+[turn-trace] {"traceId":"2731d669-aaf3-4174-9187-6797d8020a59","conversationId":"30c7e033-e205-466f-a232-bf7dcf2f5df4","channel":"web","persona":null,"gate":null,"toolsCalled":[],"toolCount":0,"artifactsEmitted":[],"artifactCount":0,"suppressed":[],"cacheRead":null,"cacheWrite":null,"textChars":0,"handoff":false,"transitionedTo":null,"leadStage":null,"durationMs":7,"finishReason":"ok","startedAt":1782067127762}
+
+·········stdout | src/app/api/chat/route.contract-error-logging.test.ts > contract-submit loga o erro do startContract (bug dev 2026-06-11) > erro genérico da Bevi → console.error com [contract-submit] + erro original; mensagem amigável preservada
+[turn-trace] {"traceId":"81724c2b-4d5a-4a9f-b2af-5a1ba463e28a","conversationId":"b5d72134-64e0-4972-ab12-2327211ca259","channel":"web","persona":"auto","gate":null,"toolsCalled":[],"toolCount":0,"artifactsEmitted":[],"artifactCount":0,"suppressed":[],"cacheRead":null,"cacheWrite":null,"textChars":87,"handoff":false,"transitionedTo":null,"leadStage":null,"durationMs":14,"finishReason":"ok","startedAt":1782067128143}
+
+······························stderr | src/lib/memory/observability.integration.test.ts > recordMemoryEvent (integration, Postgres) > FK inválida cai no try/catch sem throw
+{"level":"warn","ts":"2026-06-21T18:38:50.910Z","source":"memory","letta_op":"store_memories","error":"recordMemoryEvent failed: Error: Failed query: insert into \"memory_events\" (\"id\", \"conversation_id\", \"letta_agent_id\", \"event_type\", \"payload\", \"latency_ms\", \"created_at\") values (default, $1, $2, $3, $4, $5, default)\nparams: 00000000-0000-0000-0000-000000000999,agent-fk-fail,fallback_triggered,,"}
+
+····················---
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/memory/letta-adapter.integration.test.ts > LettaMemoryAdapter (integration, real Letta) > searchArchival > semantic match: insere 'Honda Civic 60 meses' + 'objeção contemplação', busca 'contemplação' → retorna hit
+AssertionError: expected 0 to be greater than or equal to 1
+ ❯ src/lib/memory/letta-adapter.integration.test.ts:243:24
+    241|    if (ctx?.agentId) createdAgentIds.add(ctx.agentId);
+    242|
+    243|    expect(hits.length).toBeGreaterThanOrEqual(1);
+       |                        ^
+    244|    // O hit mais relevante deve mencionar contemplação
+    245|    const hasContemplacao = hits.some((h) => h.text.toLowerCase().inclu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 28 passed | 2 skipped (31)
+      Tests  1 failed | 122 passed | 3 skipped (126)
+   Start at  15:37:26
+   Duration  85.93s (transform 541ms, setup 76ms, import 5.89s, tests 78.06s, environment 1ms)
+
+EXIT=
+### FIM ###
+15:38:52

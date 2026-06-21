@@ -1,0 +1,79 @@
+=== DATABASE_URL override: aja-pg-develop.orb.local:5432 ===
+### CAMADA 1 — test:unit ###
+15:34:58
+
+ RUN  v4.1.6 /Users/kairo/code/aja-agora
+
+·················································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································----································································································
+
+ Test Files  168 passed | 1 skipped (169)
+      Tests  1809 passed | 4 skipped (1813)
+   Start at  15:34:59
+   Duration  6.68s (transform 8.41s, setup 1.64s, import 43.59s, tests 17.01s, environment 6.50s)
+
+EXIT_UNIT=
+
+### CAMADA 2 — regression ###
+15:35:05
+
+ RUN  v4.1.6 /Users/kairo/code/aja-agora
+
+··································································································································································································································
+
+ Test Files  2 passed (2)
+      Tests  226 passed (226)
+   Start at  15:35:06
+   Duration  1.02s (transform 240ms, setup 20ms, import 449ms, tests 797ms, environment 0ms)
+
+EXIT_REGRESSION=
+
+### INTEGRATION — route/builder/integration (DB real) ###
+15:35:07
+[test cleanup] DELETE agent agent-060ef95d-969f-4b35-94de-5c81533b4011 falhou: MemoryError: Letta DELETE /v1/agents/agent-060ef95d-969f-4b35-94de-5c81533b4011 failed: HTTP 404 {"detail":"Agent not found with id='['agent-060ef95d-969f-4b35-94de-5c81533b4011']', access level in ['read'] for actor='id='user-00000000-0000-4000-8000-000000000000' organization_id='org-00000000-0000-4000-8000-000000000000' name='default_user' created_at=None updated_at=datetime.datetime(2026, 5, 16, 23, 45, 22, 660210, tzinfo=TzInfo(UTC)) is_deleted=False'"}
+
+stderr | src/lib/memory/letta-adapter.integration.test.ts > LettaMemoryAdapter (integration, real Letta)
+[test cleanup] DELETE agent agent-169336fb-6fd1-4940-8def-eb7818b9cdf3 falhou: MemoryError: Letta DELETE /v1/agents/agent-169336fb-6fd1-4940-8def-eb7818b9cdf3 failed: HTTP 404 {"detail":"Agent not found with id='['agent-169336fb-6fd1-4940-8def-eb7818b9cdf3']', access level in ['read'] for actor='id='user-00000000-0000-4000-8000-000000000000' organization_id='org-00000000-0000-4000-8000-000000000000' name='default_user' created_at=None updated_at=datetime.datetime(2026, 5, 16, 23, 45, 22, 660210, tzinfo=TzInfo(UTC)) is_deleted=False'"}
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/contacts/resolve.integration.test.ts > FIX-42 — backfillContacts (integration) > dedup por telefone (web+WhatsApp) + CPF cifrado + idempotência
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/lib/contacts/resolve.integration.test.ts:187:30
+    185|    .from(schema.contacts)
+    186|    .where(eq(schema.contacts.phone, BF_P));
+    187|   expect(afterSecond.length).toBe(1);
+       |                              ^
+    188|   expect(afterSecond[0].id).toBe(contactId);
+    189|  });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/lib/memory/letta-adapter.integration.test.ts > LettaMemoryAdapter (integration, real Letta) > searchArchival > semantic match: insere 'Honda Civic 60 meses' + 'objeção contemplação', busca 'contemplação' → retorna hit
+AssertionError: expected 0 to be greater than or equal to 1
+ ❯ src/lib/memory/letta-adapter.integration.test.ts:243:24
+    241|    if (ctx?.agentId) createdAgentIds.add(ctx.agentId);
+    242|
+    243|    expect(hits.length).toBeGreaterThanOrEqual(1);
+       |                        ^
+    244|    // O hit mais relevante deve mencionar contemplação
+    245|    const hasContemplacao = hits.some((h) => h.text.toLowerCase().inclu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 27 passed | 2 skipped (31)
+      Tests  2 failed | 121 passed | 3 skipped (126)
+   Start at  15:35:07
+   Duration  79.52s (transform 3.63s, setup 196ms, import 20.49s, tests 91.24s, environment 2ms)
+
+EXIT_INTEGRATION=
+### FIM ###
+15:36:27
