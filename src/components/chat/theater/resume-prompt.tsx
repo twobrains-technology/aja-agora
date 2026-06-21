@@ -43,7 +43,11 @@ export function ResumePrompt({ lastActivityAt, onResume, onFresh }: ResumePrompt
 
 	return (
 		<Dialog open onOpenChange={() => {}}>
-			<DialogContent showCloseButton={false} className="max-w-sm">
+			{/* z-[110]: o popup precisa ficar ACIMA do ChatTheater (z-[90]), senão o
+			    palco vazio do teatro cobre o popup e o usuário de retorno fica preso
+			    num modal de chat vazio (BUG-RESUME-ATRAS-DO-THEATER, QA 2026-06-21).
+			    O design pretendido é "palco atrás + popup por cima" (theater-chat.tsx). */}
+			<DialogContent showCloseButton={false} className="z-[110] max-w-sm">
 				<DialogHeader>
 					<DialogTitle>Continuar de onde você parou?</DialogTitle>
 					<DialogDescription>

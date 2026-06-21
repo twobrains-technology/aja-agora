@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import { clampCreditToCategory } from "@/lib/agent/qualify-config";
 import type { TurnAnalysis } from "@/lib/agent/turn-analyzer";
+import { nextGate } from "@/lib/agent/qualify-state";
 import { analyzeAndMerge } from "./analyze";
 
 // FIX-33 — guardrail server-side do valor de carta na faixa da categoria.
@@ -112,5 +113,55 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
 		expect(meta.qualifyAnswers?.creditClampedFrom).toBeUndefined();
+	});
+});
+
+// BUG (QA noturno E2E browser, 2026-06-21): o funil pulava o passo 2 da jornada
+// canônica (experiência + consent) sempre que o usuário mencionava o valor em
+// texto livre — caminho MAIS comum, pois a landing incentiva "Quero um carro de
+// até R$ 80 mil…". `analyze.ts` cravava experiencePrev="returning" + consent=true
+// só por ter extraído um campo de qualificação, e o nextGate caía direto em
+// `identify`. Confronto: jornada-canonica.md §2 ("Você já participou de um
+// consórcio antes?" → explicação se não → "Entendi, pode continuar") é etapa
+// sequencial obrigatória, NÃO condicionada a "não ter dito o valor".
+// Card: docs/correcoes/inbox/2026-06-21-funil-pula-experience-consent.md
+describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiência/consent", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("valor sem sinal de experiência NÃO crava experiencePrev='returning' nem consent (dado fica salvo)", async () => {
+		// Espelha o cenário real do browser: "carro de 80 mil, 850/mês" — o
+		// analyzer extrai o valor mas NÃO detecta experiência (experiencePrev=null).
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um carro de uns 80 mil, gastando perto de 850 por mes", "auto", meta);
+
+		// o valor é preservado — não se re-pergunta
+		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
+		// mas a experiência NÃO é inventada e o consent NÃO é presumido
+		expect(meta.experiencePrev).toBeUndefined();
+		expect(meta.qualifyConsented).toBeFalsy();
+	});
+
+	it("meta resultante → nextGate dispara 'experience' (passo 2 do docx), não 'identify'", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("um carro de 80 mil", "auto", meta);
+
+		// nome já capturado; o próximo gate canônico é a pergunta de experiência
+		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+	});
+
+	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 80_000,
+			experiencePrev: "returning",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("ja fiz consorcio antes, quero um carro de 80 mil", "auto", meta);
+
+		expect(meta.experiencePrev).toBe("returning");
 	});
 });
