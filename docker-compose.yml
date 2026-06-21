@@ -59,6 +59,26 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    # FIX-62: object storage S3-compatível pros PDFs das administradoras (dossiê
+    # de operação do copiloto). Segregado por workspace, DNS-first (sem porta
+    # publicada). Em prod as S3_* apontam pro S3 real (sem S3_ENDPOINT). O bucket
+    # é criado on-demand pelo client (ensureBucket) — sem passo de provisionamento.
+    image: minio/minio:latest
+    container_name: aja-minio-${WORKSPACE_NAME}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: minio.aja-${WORKSPACE_NAME}.orb.local console.aja-minio-${WORKSPACE_NAME}.orb.local
+      tb.workspace: ${WORKSPACE_NAME}
+
   app:
     profiles: ["containerized"]
     # Modo DEV/HMR (padrão dev-stack): Dockerfile.dev roda `next dev` com
@@ -95,6 +115,14 @@ services:
       TB_ENV: local
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@aja-pg-${WORKSPACE_NAME}:5432/${POSTGRES_DB:-aja_agora}
       REDIS_URL: redis://aja-redis-${WORKSPACE_NAME}:6379
+      # FIX-62: object storage S3-compatível (MinIO local / S3 prod). Vazio em
+      # S3_ENDPOINT = AWS real (prod). forcePathStyle obrigatório pro MinIO.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://aja-minio-${WORKSPACE_NAME}:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-aja-administradora-docs}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
       LETTA_BASE_URL: http://letta:8283
       LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
@@ -135,6 +163,8 @@ services:
 volumes:
   pgdata:
     name: aja-pg-${WORKSPACE_NAME}-data
+  miniodata:                             # PDFs das administradoras, por workspace
+    name: aja-minio-${WORKSPACE_NAME}-data
   app_node_modules:                      # por workspace (deps materializadas, fora do bind)
   pnpm_store:                            # store content-addressable, 1 cópia física global
     name: tb-pnpm-store-shared

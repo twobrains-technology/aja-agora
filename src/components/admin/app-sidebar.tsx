@@ -2,8 +2,10 @@
 
 import {
 	BotIcon,
+	BuildingIcon,
 	ChartPieIcon,
 	FlaskConicalIcon,
+	HeadsetIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
 	SettingsIcon,
@@ -39,6 +41,8 @@ export function AppSidebar() {
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
+		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
+		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
 		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
 	];

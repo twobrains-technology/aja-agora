@@ -1,7 +1,9 @@
 ---
 id: FIX-61
 titulo: "Administradora — entidade + CRUD admin"
-status: todo
+status: done
+commit: 93710a8d
+executado_em: 2026-06-21
 bloco: bloco-mesa-a-cadastros
 arquivos:
   - src/app/admin/(dashboard)/administradoras/
