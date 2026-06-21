@@ -2,6 +2,7 @@
 
 import {
 	BotIcon,
+	BuildingIcon,
 	ChartPieIcon,
 	FlaskConicalIcon,
 	KanbanIcon,
@@ -39,6 +40,7 @@ export function AppSidebar() {
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
+		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
 		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
 	];
