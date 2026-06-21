@@ -1,7 +1,8 @@
 ---
 id: FIX-64
 titulo: "Botão de transbordo no kanban + registro do handoff"
-status: todo
+status: done
+executado_em: 2026-06-21
 bloco: bloco-mesa-b-transbordo
 arquivos:
   - src/components/admin/pipeline/lead-detail-panel.tsx
