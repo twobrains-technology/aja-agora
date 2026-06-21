@@ -233,6 +233,57 @@ describe("BUG-META-NARRATIVE — agent verbalizou mecanismo da UI ao usuario", (
 });
 
 // ============================================================================
+// BUG-FALLBACK-REFRESH — agent verbalizou solução manual de UI
+// ----------------------------------------------------------------------------
+// Real (FIX-52, jornada2_revisão.docx, Bernardo): ao ficar sem ação (o card de
+// dados nao disparava), o agent improvisava "atualiza a página e tenta de novo"
+// — empurra trabalho manual pro usuario, a solucao preguiçosa que e regra de
+// produto evitar. A CAUSA foi corrigida (card identify dispara, ver cassette
+// "funil: qualificacao completa SEM identidade vai pro gate identify"); este
+// cassette trava a FRASE como regressao de defesa-em-profundidade.
+// ============================================================================
+
+describe("BUG-FALLBACK-REFRESH — agent sugeriu solução manual (atualiza a página)", () => {
+	const REFRESH_DETECTORS = [
+		/atualiz[ae]\s+a?\s*p[áa]gina/i,
+		/recarregu?e\s+a?\s*p[áa]gina/i,
+		/recarregar\s+a?\s*p[áa]gina/i,
+		/d[áê]\s+um\s+refresh/i,
+	];
+
+	it("cassette: stream com o fallback proibido vazado, reproduzido fielmente", async () => {
+		const cassette =
+			"Ops, deu um probleminha aqui. Atualiza a página e tenta de novo, por favor.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector regex de fallback manual pega o cassette do bug real", () => {
+		const cassette = "Atualiza a página e tenta de novo.";
+		const hits = REFRESH_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			`Cassette do fallback deve casar com >=1 detector. Cassette: "${cassette}". ` +
+				"Se ZERO casarem, alguem afrouxou o detector e o bug volta sem ser pego.",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: o prompt de produção veta esse fallback (sincronia com a regra dura)", () => {
+		const rule =
+			/N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+		expect(
+			rule.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa vetar o fallback 'atualiza a página'.",
+		).toBe(true);
+	});
+});
+
+// ============================================================================
 // CENARIO 2 — Lead form nao dispara apos opt-in WhatsApp (BUG-LEAD-FUNNEL)
 // ----------------------------------------------------------------------------
 // Real: agent chamou present_whatsapp_optin (callback ok), usuario depois

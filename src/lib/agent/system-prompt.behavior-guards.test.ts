@@ -736,3 +736,29 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — prompt obriga gates experience/time
 		).toBe(true);
 	});
 });
+
+// ============================================================================
+// BUG-FALLBACK-REFRESH — agente sugere solução manual ("atualiza a página")
+// ----------------------------------------------------------------------------
+// FIX-52 (jornada2_revisão.docx, Bernardo): ao ficar sem ação clara, o agente
+// caía em fallback proibido instruindo o usuário a "atualizar a página". O
+// FIX-52 corrigiu a CAUSA (card identify passou a disparar); aqui travamos a
+// defesa-em-profundidade contra a FRASE — empurrar trabalho manual pro usuário
+// é solução preguiçosa vetada por regra de produto.
+// ============================================================================
+
+describe("BUG-FALLBACK-REFRESH — prompt proíbe sugerir atualizar/recarregar a página", () => {
+	const REFRESH_RULE =
+		/N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+
+	it("SPECIALIST_BASE_PROMPT tem regra dura vetando o fallback de refresh", () => {
+		expect(
+			REFRESH_RULE.test(SPECIALIST_BASE_PROMPT),
+			"Sem regra anti-refresh, o agent volta a empurrar 'atualiza a página' quando trava.",
+		).toBe(true);
+	});
+
+	it("SYSTEM_PROMPT (concierge) também veta sugerir atualizar a página", () => {
+		expect(REFRESH_RULE.test(SYSTEM_PROMPT)).toBe(true);
+	});
+});
