@@ -661,78 +661,115 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 // Sem isso, persona row do DB (Camada DB) fica isolada e modelo regride.
 // ============================================================================
 
-describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — prompt obriga gates experience/timeframe/lance ANTES de pedir valor", () => {
-	it("SPECIALIST_BASE_PROMPT cita os 3 gates pré-valor por nome (experience, timeframe, lance)", () => {
-		// Os 3 gates precisam aparecer próximos no prompt acoplados à proibição
-		// de pedir valor antes. Lista NÃO opcional — modelo precisa enxergar os
-		// 3 explícitos.
+describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent não antecipa o valor; o orchestrator dirige a coleta", () => {
+	it("SPECIALIST_BASE_PROMPT cita os gates da coleta por nome (experience, timeframe, lance)", () => {
+		// Os gates precisam aparecer explícitos para o modelo enxergá-los. A ORDEM
+		// entre eles é validada em BUG-PROMPT-ORDEM-GATES (valor antes de prazo/lance).
 		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
 		const gates = ["experience", "timeframe", "lance"];
 		const faltando = gates.filter((g) => !promptLower.includes(g));
 		expect(
 			faltando,
-			"Gates ausentes no SPECIALIST_BASE_PROMPT: " +
-				`${JSON.stringify(faltando)}. ` +
-				"Os 3 gates (experience/timeframe/lance) precisam ser citados " +
-				"explícitos para que o modelo respeite a ordem.",
+			`Gates ausentes no SPECIALIST_BASE_PROMPT: ${JSON.stringify(faltando)}.`,
 		).toEqual([]);
 	});
 
-	it("contém regra dura proibindo pedir valor/parcela ANTES dos 3 gates de qualificação", () => {
-		// Pattern: regra dura citando "valor" / "carta" / "parcela" PRECEDIDA
-		// por menção aos 3 gates (experience + timeframe + lance) num mesmo
-		// bloco. A regra precisa ser ATEMPORAL — não pedir valor SEM ter
-		// experience+timeframe+lance.
-		//
-		// Aceita 2 ordens equivalentes:
-		//   A) "ANTES de [valor/parcela/picker] ... experience ... timeframe ... lance"
-		//   B) "experience ... timeframe ... lance ... ANTES de [valor/parcela/picker]"
-		const ordemA =
-			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
-		const ordemB =
-			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+	it("contém regra dura proibindo ANTECIPAR o valor / pular a coleta após o nome", () => {
+		// Proteção anti-skip (bug Monique/Helena tb-dev: agent pulou direto pra valor
+		// após save_contact_name). Agnóstico à ordem dos gates — a ordem é coberta
+		// por BUG-PROMPT-ORDEM-GATES.
+		const antiSkip =
+			/NUNCA[\s\S]{0,200}(pergunt|most|cham|anteci)[\s\S]{0,160}(valor|parcela|carta|present_value_picker|seletor)/i;
 		expect(
-			ordemA.test(SPECIALIST_BASE_PROMPT) || ordemB.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa ter regra dura acoplando os 3 gates " +
-				"(experience/timeframe/lance) à proibição de pedir valor/parcela ANTES. " +
-				"Bug Monique/Helena tb-dev: agent pulou direto pra valor após save_contact_name.",
+			antiSkip.test(SPECIALIST_BASE_PROMPT),
+			"Prompt precisa proibir antecipar valor/seletor após o nome (proteção anti-skip).",
 		).toBe(true);
 	});
 
-	it("regra vale para as 4 specialists (auto/imovel/moto/servicos) — não cita persona específica", () => {
-		// O SPECIALIST_BASE_PROMPT é compartilhado. O bloco da regra NÃO pode
-		// citar Rafael/Helena/Bruno/Camila — vale igualmente pras 4.
-		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
-			/(experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance|ANTES[\s\S]{0,400}(valor|parcela|carta)[\s\S]{0,600}experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance)/i,
+	it("regra vale para as 4 specialists (auto/imovel/moto/servicos)", () => {
+		// A regra é compartilhada — precisa afirmar que vale pras 4 categorias,
+		// não ser específica de uma persona.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/4 specialists[\s\S]{0,40}auto[\s\S]{0,20}imovel[\s\S]{0,20}moto[\s\S]{0,20}servicos/i,
 		);
-		expect(
-			blocoMatch,
-			"Bloco com os 3 gates não encontrado — sem ele, asserção de bias " +
-				"fica sem alvo. Fix do prompt deve adicionar bloco unificado.",
-		).not.toBeNull();
-		if (!blocoMatch) return;
-		const bloco = blocoMatch[0].toLowerCase();
-		const personas = ["rafael", "helena", "bruno", "camila"];
-		const enviesadas = personas.filter((p) => bloco.includes(p));
-		expect(
-			enviesadas,
-			"Bloco da regra cita persona específica: " +
-				`${JSON.stringify(enviesadas)}. ` +
-				"Regra vale pras 4 specialists igualmente — remova o nome.",
-		).toEqual([]);
 	});
 
-	it("regra menciona o ponto de entrada (save_contact_name) — ordem temporal explícita", () => {
-		// O fluxo correto é: save_contact_name → 3 gates → valor. Sem amarrar
-		// ao save_contact_name, o agent pode pular gates noutros momentos.
-		// Aceitamos qualquer das duas formulações: regra cita save_contact_name
-		// próximo aos gates OU "apos nome" próximo aos gates.
+	it("regra ancora no save_contact_name — quem dirige a coleta é o orchestrator", () => {
+		// Sem amarrar ao save_contact_name + "o orchestrator dispara/dirige", o
+		// agent pode antecipar gates noutros momentos do funil.
 		const ancoragem =
-			/(save_contact_name|ap[óo]s.{0,20}nome|p[óo]s-nome)[\s\S]{0,800}(experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance|3\s*gates|tr[êe]s gates)/i;
+			/save_contact_name[\s\S]{0,600}(orchestrator|sistema)[\s\S]{0,200}(dispara|dirige)/i;
 		expect(
 			ancoragem.test(SPECIALIST_BASE_PROMPT),
-			"Regra precisa amarrar ordem 'após save_contact_name → 3 gates → valor'. " +
-				"Sem ancoragem ao save_contact_name, o agent pula gates em outros momentos do funil.",
+			"Regra precisa amarrar 'após save_contact_name, o orchestrator dirige a coleta'.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// BUG-FALLBACK-REFRESH — agente sugere solução manual ("atualiza a página")
+// ----------------------------------------------------------------------------
+// FIX-52 (jornada2_revisão.docx, Bernardo): ao ficar sem ação clara, o agente
+// caía em fallback proibido instruindo o usuário a "atualizar a página". O
+// FIX-52 corrigiu a CAUSA (card identify passou a disparar); aqui travamos a
+// defesa-em-profundidade contra a FRASE — empurrar trabalho manual pro usuário
+// é solução preguiçosa vetada por regra de produto.
+// ============================================================================
+
+// ============================================================================
+// BUG-PROMPT-ORDEM-GATES — prompt descrevia timeframe/lance "pré-valor"
+// ----------------------------------------------------------------------------
+// Ordem real (nextGate + docx passo 2 + FIX-53): experience → consent →
+// identify → VALOR → timeframe → lance. O prompt afirmava timeframe/lance ANTES
+// do valor (REGRA DURA "3 gates pré-valor"), contradizendo o produto e o docx.
+// Provado em qualify-state.sequence.test.ts.
+// ============================================================================
+
+describe("BUG-PROMPT-ORDEM-GATES — prompt reflete a ordem real (valor antes de prazo/lance)", () => {
+	const haystack = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+
+	it("NÃO afirma que present_value_picker exige prazoMeses/hasLance antes (ordem invertida)", () => {
+		// A regra antiga: "NUNCA chame present_value_picker ANTES de ... prazoMeses + hasLance".
+		// Isso é a ordem ERRADA (prazo/lance vêm DEPOIS do valor). Não pode reaparecer.
+		const ordemInvertida =
+			/present_value_picker[\s\S]{0,80}(antes|ANTES)[\s\S]{0,80}(prazoMeses|prazo|hasLance|lance)/i;
+		expect(
+			ordemInvertida.test(haystack),
+			"O prompt não pode exigir prazo/lance ANTES do valor — a ordem real é valor → prazo → lance (docx + nextGate).",
+		).toBe(false);
+	});
+
+	it("NÃO lista timeframe/lance como gates obrigatórios PRÉ-valor", () => {
+		// Captura a formulação errada "3 gates ... timeframe ... lance ... pré/antes ... valor".
+		const tresGatesPreValor =
+			/(3 gates|tr[êe]s gates)[\s\S]{0,200}timeframe[\s\S]{0,80}lance[\s\S]{0,200}(pr[ée]-?valor|antes[\s\S]{0,20}valor)/i;
+		expect(
+			tresGatesPreValor.test(haystack),
+			"timeframe e lance são PÓS-valor na revisão 2 — não podem ser descritos como pré-valor.",
+		).toBe(false);
+	});
+
+	it("afirma a ordem correta: identidade/valor ANTES de prazo e lance", () => {
+		// Defesa positiva: o prompt deve deixar claro que a identidade precede o
+		// valor e que prazo/lance vêm depois (alinhado ao docx + FIX-53).
+		const ordemCorreta =
+			/identidade[\s\S]{0,200}(antes|ANTES)[\s\S]{0,40}valor/i;
+		expect(ordemCorreta.test(haystack)).toBe(true);
+	});
+});
+
+describe("BUG-FALLBACK-REFRESH — prompt proíbe sugerir atualizar/recarregar a página", () => {
+	const REFRESH_RULE =
+		/N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+
+	it("SPECIALIST_BASE_PROMPT tem regra dura vetando o fallback de refresh", () => {
+		expect(
+			REFRESH_RULE.test(SPECIALIST_BASE_PROMPT),
+			"Sem regra anti-refresh, o agent volta a empurrar 'atualiza a página' quando trava.",
+		).toBe(true);
+	});
+
+	it("SYSTEM_PROMPT (concierge) também veta sugerir atualizar a página", () => {
+		expect(REFRESH_RULE.test(SYSTEM_PROMPT)).toBe(true);
 	});
 });

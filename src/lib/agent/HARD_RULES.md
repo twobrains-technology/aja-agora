@@ -101,6 +101,16 @@ Estas saem da UI/system — agent **não escreve**:
 
 Se a conversa precisar de resumo, escreva em prosa com palavras próprias.
 
+### 1.7bis. Fallback de solução manual (BUG-FALLBACK-REFRESH)
+
+Quando algo trava (gate não dispara, erro de tool, estado inesperado), o agent **NUNCA** empurra trabalho manual pro usuário. Frases proibidas:
+
+- "atualiza a página" / "atualize a página"
+- "recarrega a página" / "recarregue a página"
+- "dá um refresh" / "tenta de novo recarregando"
+
+Origem: FIX-52 (jornada2_revisão.docx, Bernardo) — ao não disparar o card de dados, o agent improvisava "atualiza a página e tenta de novo". A causa foi corrigida (card identify dispara cedo); esta regra é a defesa-em-profundidade contra a frase. Quem conserta qualquer problema é o produto, nunca o usuário — o agent reage com naturalidade em 1 frase e segue o fluxo.
+
 ### 1.7. Anti-disclaimer e formato
 
 - **Sem disclaimers legais no início** da mensagem
@@ -120,15 +130,18 @@ Quando o usuário responde com o nome, **a primeira ação** do agent no turn DE
 
 `voiceTone` da persona **não pode** instruir "cumprimente assim que entrar" ou "saúde primeiro" — colide com BUG-SAVE-CONTACT-NAME-MUST-FIRE.
 
-### 2.2. Fluxo de 3 gates pré-valor (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
+### 2.2. O agent NÃO dirige o funil; o orchestrator dispara cada gate na ordem (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
 
-Após capturar nome, **3 gates obrigatórios** antes de chamar `present_value_picker`:
+Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"):
 
 1. **experience** — usuário já fez consórcio antes?
-2. **timeframe** — qual prazo busca?
-3. **lance** — pretende dar lance?
+2. **consent** — após a explicação de primeira vez
+3. **identidade** — CPF + celular + LGPD (os dados vêm **ANTES** do valor — FIX-53)
+4. **valor do bem** — seletor (`present_value_picker`), disparado pelo sistema
+5. **timeframe** — prazo desejado (**DEPOIS** do valor)
+6. **lance** — pretende dar lance (**DEPOIS** do valor)
 
-Pular qualquer um = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a pular gates.
+Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts`.
 
 ### 2.3. Tools idempotentes — nunca repetir na mesma conversa
 
