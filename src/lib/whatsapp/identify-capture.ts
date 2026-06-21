@@ -12,11 +12,14 @@ import { nextGate } from "@/lib/agent/qualify-state";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf } from "@/lib/conversation/meta";
 
-/** Pergunta do gate identify no WhatsApp — gancho literal do docx + LGPD. */
+/** Pergunta do gate identify no WhatsApp — gancho do docx (analisar várias
+ * administradoras / aderentes ao perfil) + LGPD. FIX-53: a identidade subiu pra
+ * ANTES do valor (logo após o consent), então o gancho é forward-looking ("pra
+ * eu analisar e buscar"), não mais "Com essas informações…" (que pressupunha
+ * dados já coletados). No WhatsApp o celular já é o waId — só falta o CPF. */
 export const IDENTIFY_WHATSAPP_PROMPT =
-	"Com essas informações, a Aja Agora vai analisar várias administradoras e " +
-	"selecionar as opções mais aderentes ao seu perfil e objetivo.\n\n" +
-	"Pra buscar as ofertas reais, me envia seu *CPF* (só os números). " +
+	"Pra eu analisar várias administradoras e buscar as opções mais aderentes " +
+	"ao seu perfil, me envia seu *CPF* (só os números). " +
 	"Seus dados ficam protegidos (LGPD) e, ao enviar, você autoriza a consulta " +
 	"nas administradoras — não é compromisso nenhum, tá? " +
 	"Seu celular eu já tenho daqui do WhatsApp 😉";
@@ -24,7 +27,12 @@ export const IDENTIFY_WHATSAPP_PROMPT =
 export const IDENTIFY_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — dá uma olhadinha nos números e me manda de novo?";
 
+/** Confirmação quando a identidade fecha a qualificação e a busca segue logo. */
 export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as melhores opções 🔎";
+
+/** FIX-53: identidade vem ANTES do valor — após o CPF a qualificação CONTINUA
+ * (valor/prazo/lance), então a confirmação não promete busca ainda. */
+export const IDENTIFY_CONTINUE_REPLY = "Perfeito, recebido!";
 
 /** Extrai um CPF VÁLIDO (11 dígitos + DV) do texto livre. Null se não houver. */
 export function extractCpf(text: string): string | null {

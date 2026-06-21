@@ -45,6 +45,8 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"premature-contract",
 			"reveal-loop",
 			"single-option",
+			// FIX-53: value_picker fora de ordem (dados antes do valor + anti-repetição).
+			"value-picker-order",
 		]);
 	});
 

@@ -132,6 +132,25 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId }) =>
 			`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
 	},
+	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
+	// dados, antes do valor" + "Voltou a pedir o valor". O credit gate (value
+	// picker server-emitido) já respeita a ordem nova via qualify-state; esta é
+	// a 2ª linha de defesa se o MODELO chamar present_value_picker fora de ordem.
+	// PRÉ-reveal, suprime o value_picker quando: (a) a identidade ainda não foi
+	// coletada (dados ANTES do valor) OU (b) o valor já foi coletado (anti-
+	// repetição — confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-
+	// reveal o picker é legítimo (ajuste de valor) — não cai aqui.
+	{
+		name: "value-picker-order",
+		applies: ({ artifactType, meta }) =>
+			artifactType === "value_picker" &&
+			meta.revealCompleted !== true &&
+			(meta.identityCollected !== true || meta.qualifyAnswers?.creditMax !== undefined),
+		logLine: ({ meta, conversationId }) =>
+			`[value-picker-order] guard: suprimindo value_picker pré-reveal — ${
+				meta.identityCollected !== true ? "identidade ainda não coletada (dados antes do valor)" : "valor já coletado (anti-repetição)"
+			} (conv=${conversationId})`,
+	},
 ];
 
 /** Avalia as regras NA ORDEM; a primeira que aplicar suprime e assina o log. */

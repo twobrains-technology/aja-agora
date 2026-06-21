@@ -3,38 +3,40 @@ import type { ConversationMetadata } from "./personas";
 import { decideShowGate, nextGate } from "./qualify-state";
 
 // Gate "identify" — D1 (docs/jornada/CONTEXT.md): a Bevi exige CPF+celular+LGPD
-// ANTES de simular. A identidade é coletada ao FIM do passo 2 (depois de
-// lance/lance-embutido, antes da busca), no gancho do docx: "Com essas
-// informações, a Aja Agora vai analisar várias administradoras…".
+// ANTES de simular. FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19):
+// "Precisa pedir os dados, antes do valor" — a identidade subiu de ÚLTIMO gate
+// da qualificação para LOGO APÓS o consent, ANTES do `credit` (valor). A busca
+// real continua exigindo identidade (tripwire), aqui já coletada cedo.
 
 const qualifiedBase: ConversationMetadata = {
 	experiencePrev: "first",
 	qualifyConsented: true,
+	identityCollected: true,
 	// FIX-4: lanceEmbutido respondido — o gate de lance embutido agora vale
 	// pra TODO hasLance (docx educa todo mundo); qualificação completa o inclui.
 	qualifyAnswers: { creditMax: 80_000, prazoMeses: 12, hasLance: "no", lanceEmbutido: false },
 };
 
-describe("nextGate — identify entra entre a qualificação e a busca", () => {
-	it("qualificação completa (lance=no) SEM identidade → identify", () => {
-		expect(nextGate(qualifiedBase)).toBe("identify");
+describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
+	it("consent dado, SEM identidade → identify (antes de qualquer valor)", () => {
+		const meta: ConversationMetadata = { experiencePrev: "first", qualifyConsented: true };
+		expect(nextGate(meta)).toBe("identify");
 	});
 
-	it("lance=yes + lance-embutido respondido SEM identidade → identify", () => {
+	it("identify precede o valor mesmo com valor já volunteered", () => {
 		const meta: ConversationMetadata = {
-			...qualifiedBase,
-			qualifyAnswers: {
-				...qualifiedBase.qualifyAnswers,
-				hasLance: "yes",
-				lanceValue: 30_000,
-				lanceEmbutido: true,
-				lanceEmbutidoPercent: 30,
-			},
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: { creditMax: 80_000, prazoMeses: 12 },
 		};
 		expect(nextGate(meta)).toBe("identify");
 	});
 
-	it("lance=yes SEM lance-embutido respondido → lance-embutido vem ANTES de identify", () => {
+	it("COM identidade + qualificação completa (lance=no) → search (descoberta liberada)", () => {
+		expect(nextGate(qualifiedBase)).toBe("search");
+	});
+
+	it("COM identidade, lance=yes SEM lance-embutido respondido → lance-embutido (antes da busca)", () => {
 		const meta: ConversationMetadata = {
 			...qualifiedBase,
 			// lanceValue já respondido (gate lance-value tem suite própria)
@@ -49,15 +51,11 @@ describe("nextGate — identify entra entre a qualificação e a busca", () => {
 		expect(nextGate(meta)).toBe("lance-embutido");
 	});
 
-	it("COM identidade coletada → search (descoberta liberada)", () => {
-		const meta: ConversationMetadata = { ...qualifiedBase, identityCollected: true };
-		expect(nextGate(meta)).toBe("search");
-	});
-
-	it("identify NÃO aparece antes da qualificação completa", () => {
+	it("COM identidade, valor já coletado → segue timeframe (NÃO re-pede o valor)", () => {
 		const meta: ConversationMetadata = {
 			experiencePrev: "first",
 			qualifyConsented: true,
+			identityCollected: true,
 			qualifyAnswers: { creditMax: 80_000 },
 		};
 		expect(nextGate(meta)).toBe("timeframe");

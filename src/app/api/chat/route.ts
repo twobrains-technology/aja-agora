@@ -974,7 +974,27 @@ export async function POST(req: NextRequest) {
 							// Celular vira contato do lead (mesma régua do whatsapp_optin).
 							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 							await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
+							// qualificação despachando o próximo gate (credit/value picker). O
+							// reveal continua sendo disparado por pipeSearchSummaryTurn no fim da
+							// qualificação (o tripwire de identidade agora sempre passa). Se a
+							// qualificação já estava completa (dados volunteered), nextGate=search
+							// e revelamos direto.
+							const afterIdentity = await reloadMeta(conversationId);
+							const nextAfterIdentity = nextGate(afterIdentity, {
+								hasContactName: Boolean(contactName),
+							});
+							if (nextAfterIdentity === "search") {
+								await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							} else {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Perfeito, recebido!",
+								);
+								await pipeGatePrompt({ conversationId, gate: nextAfterIdentity, writer });
+							}
 							return;
 						}
 
