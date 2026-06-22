@@ -99,6 +99,23 @@ Kairo saiu pedindo: ajustar entendimentos (Q-K5 ✅ feito, commit c019e5d6) → 
   gate-failed (quarentena). Investiguei: re-merge de cadastros sobre base-com-copiloto + gate =
   **1855 testes passed, 0 fail** → o gate-failed foi TRANSIENTE (install das deps novas
   unpdf/@aws-sdk concorrente ao vitest na 1ª vez). Re-rodando o merge-wave pra landar cadastros.
+- 21:10 — **cadastros mergeado clean** (base 92b7a8f3, gate verde — flake confirmado). **2/3 na
+  base** (copiloto + cadastros). transbordo ainda implementando (sem push).
+- 21:25 — **Kairo autorizou fechar a wave com 2/3** + merge base→develop + qa-noturno completo.
+  transbordo vira bloco separado.
+  - **Descoberta:** develop JÁ TINHA a mesa — um **QA noturno paralelo** (clone principal, sessão
+    1531) detectou a feature e mergeou copiloto+cadastros+fundação na develop (af097757, "18 commits"),
+    validando jornada E2E + admin. Meu merge `811bdd9b` (base→develop) veio **limpo** — só sincronizou
+    o diário. develop tem schema mesa (27 refs), storage, pdf, mesa-copilot, routing. transbordo NÃO.
+  - Validando develop pós-merge (test:unit container develop) antes de pushar (compartilhada).
+
+### D9 · 21:25 — transbordo (mesa-b) fica como bloco separado pendente
+- **Contexto:** o agente feat-mesa-transbordo (ws 0c0bea60) não pushou em ~2h — único dos 3.
+- **Decidi:** seguir o Kairo — fechar com 2/3 e deixar transbordo como bloco já anotado
+  (`docs/correcoes/todo/bloco-mesa-b-transbordo/`) pra uma onda futura. Quando o agente pushar +
+  tag block-done, basta `merge-wave.sh merge --wave 2 --block feat-mesa-transbordo`. Se nunca
+  pushar, relançar o bloco.
+- **PENDENTE-KAIRO:** transbordo no kanban (botão + outbound WhatsApp) ainda não na develop.
 
 ### D7 · 20:41 — Gate do merge-back inclui `pnpm install` (blocos adicionam deps)
 - **Contexto:** os blocos adicionam dependências novas (ex.: pdf lib no cadastros). O node_modules

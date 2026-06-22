@@ -1,7 +1,8 @@
 ---
 id: FIX-65
 titulo: "Outbound: dossiê + orientação pro WhatsApp do atendente"
-status: todo
+status: done
+executado_em: 2026-06-21
 bloco: bloco-mesa-b-transbordo
 arquivos:
   - src/lib/whatsapp/mesa/outbound.ts
