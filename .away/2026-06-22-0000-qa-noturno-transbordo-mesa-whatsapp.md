@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-22 00:00 · **Sessão:** aja-agora / `qa-base/2026-06-22-transbordo-mesa-whatsapp`
 - **Critério de pronto:** cenários T1–T9 do ledger ✅ (ou decididos+anotados) + gate de profundidade nos de agente + zero regressão nova. Evidência fresca (não "estava verde ontem").
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO · **Fim:** 2026-06-22 04:30
 
 ## Decisões
 <!-- adicionar NA HORA -->
@@ -44,5 +44,13 @@
 - 03:55 — Causa-raiz do ambiente: DB develop sem schema mesa (A1). `db:push` no container resolveu (D2). T1,T2,T5,T6 verdes (integration DB real).
 - 04:02 — T9 (coerência E2E) verde (D3). Achados A2 (DELETE 500) e A3 (isolamento) pra tratar. Falta T8 (E2E browser).
 
-## Relatório final (preencher ao encerrar)
-- (pendente)
+## Relatório final
+- **Resultado vs critério de pronto:** ✅ ATINGIDO. Cenários T1–T9 todos ✅ (integration DB real + E2E browser real + spec Playwright re-rodável). Evidência fresca: suíte mesa inteira 10 arq/51 testes verde junta (04:24); pre-commit host 1869 verde; suíte completa container 2034 passed (1 fail = A6, fora do escopo).
+- **Achados de produto (2 bugs corrigidos, TDD):**
+  - **A5 (crítico):** transbordo via kanban estava 100% quebrado — dialog lia `data.attendants` mas a API devolve `{ mesaAttendants }` → lista sempre vazia → admin nunca transbordava. Fix + regressão (component test happy-dom + E2E). Achado dirigindo o browser real.
+  - **A2:** DELETE de atendente com handoff vinculado dava 500 (FK) → agora 409 gracioso (desative em vez de remover), auditoria preservada.
+- **Ambiente consertado na fonte:** `.env.local` apontava pra host de worktree morto (DATABASE_URL+APP_URL) → host não rodava testes DB nem o pre-commit; corrigido pra `aja-develop` (D4). DB do develop sem schema da mesa → `db:push` no container (D2).
+- **O que NÃO fiz e por quê:** (1) **não promovi develop** — blast radius, é decisão do Kairo (§9); qa-base pronta. (2) **A6 (Letta archival timeout)** — fora do escopo do transbordo, não é regressão minha (não toco `src/lib/memory`), ambiental. (3) **A4 (5 typecheck errors pré-existentes)** + **A3 isolamento sistêmico** (fiz o fix barato pontual; isolamento por schema efêmero segue como bloco de infra no inbox).
+- **Revisar primeiro:** D5 (fix do dialog — chave da API; conferir se concorda com ler `mesaAttendants`), D2/D4 (db:push + .env.local — ambiente dev), A2 (decisão de bloquear hard-delete com 409 — reversível).
+- **Próximos passos sugeridos:** promover `qa-base/2026-06-22-transbordo-mesa-whatsapp` → develop quando validar; abrir bloco pro isolamento de teste (A3 sistêmico) + typecheck (A4) + investigar Letta archival lento (A6).
+- **Status:** COMPLETO.
