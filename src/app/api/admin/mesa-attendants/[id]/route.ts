@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { mesaAttendants } from "@/db/schema";
+import { mesaAttendants, mesaHandoffs } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isUniqueViolation } from "@/lib/mesa/pg-error";
 import { updateMesaAttendantSchema } from "@/lib/validations/mesa";
@@ -52,6 +52,24 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 	if (error) return error;
 
 	const { id } = await params;
+
+	// Não apaga atendente com caso vinculado: a FK mesa_handoffs.mesa_attendant_id é
+	// ON DELETE no action e o histórico de handoffs é auditoria (§8) — o hard-delete cru
+	// estouraria 23503 (500). O caminho pra tirar de circulação é DESATIVAR (PATCH isActive).
+	const [referenced] = await db
+		.select({ id: mesaHandoffs.id })
+		.from(mesaHandoffs)
+		.where(eq(mesaHandoffs.mesaAttendantId, id))
+		.limit(1);
+	if (referenced) {
+		return Response.json(
+			{
+				error:
+					"Atendente tem casos (handoffs) vinculados — desative em vez de remover; o histórico é preservado.",
+			},
+			{ status: 409 },
+		);
+	}
 
 	const [deleted] = await db
 		.delete(mesaAttendants)
