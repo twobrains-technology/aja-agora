@@ -60,10 +60,20 @@ export function MesaTransbordoDialog({
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				return res.json();
 			})
-			.then((data: MesaAttendant[] | { attendants?: MesaAttendant[] }) => {
-				const list = Array.isArray(data) ? data : (data.attendants ?? []);
-				setAttendants(list.filter((a) => a.isActive));
-			})
+			.then(
+				(
+					data:
+						| MesaAttendant[]
+						| { mesaAttendants?: MesaAttendant[]; attendants?: MesaAttendant[] },
+				) => {
+					// Contrato real do endpoint (bloco A): { mesaAttendants: [...] }. Tolera
+					// { attendants } e array cru por robustez.
+					const list = Array.isArray(data)
+						? data
+						: (data.mesaAttendants ?? data.attendants ?? []);
+					setAttendants(list.filter((a) => a.isActive));
+				},
+			)
 			.catch(() => setAttendants([]))
 			.finally(() => setLoading(false));
 	}, [open]);

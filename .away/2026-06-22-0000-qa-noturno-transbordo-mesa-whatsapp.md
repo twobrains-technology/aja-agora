@@ -33,6 +33,12 @@
 - **Reversibilidade:** fácil (`.env.local` é gitignored, dev-only). De quebra resolve o `Better Auth: Invalid origin` que vinha do APP_URL errado.
 - **Evidência:** `pnpm test:unit` no host **1868 passed | 4 skipped** (era 26 fails). Pre-commit verde.
 
+### D5 · 04:20 — BUG CRÍTICO achado no browser: transbordo via kanban quebrado (chave errada da API) → TDD fix
+- **Contexto:** dirigindo o browser real (MCP) pra validar T8, o dialog de transbordo mostrava "Nenhum atendente de mesa ativo cadastrado" mesmo com atendente ativo seedado. O GET `/api/admin/mesa-attendants` no contexto da página retornava `{ mesaAttendants: [1 ativo] }` (200), mas o dialog lia `data.attendants` (chave inexistente) → lista vazia. **O admin NUNCA conseguia transbordar pelo kanban** — exatamente o elo "via kanban" que o Kairo pediu.
+- **Decidi:** fix de contrato — dialog lê `data.mesaAttendants ?? data.attendants ?? []` (a chave canônica + tolerância). TDD: `mesa-transbordo-dialog.test.tsx` (happy-dom) mockando a resposta real, falhou→verde. Validado AO VIVO no browser pós-HMR: atendente listado → selecionado → transbordo → handoff `404b8ffa` criado no DB (administradora resolvida da cota). Spec E2E re-rodável `admin-mesa-transbordo/golden-path.spec.ts` 1/1 verde (3.1s).
+- **Por que os testes não pegaram:** integration cobria API e dialog ISOLADOS, nunca o contrato de shape entre bloco-a (endpoint) e bloco-b (dialog). Lição: contrato de runtime entre blocos precisa de teste de borda.
+- **Reversibilidade:** fácil (git revert).
+
 ## Linha do tempo
 - 00:00 — Stack já de pé (minha, develop). App reiniciado limpo. Ledger criado. Explore mapeando o fluxo. Baseline determinístico rodando.
 - 03:55 — Causa-raiz do ambiente: DB develop sem schema mesa (A1). `db:push` no container resolveu (D2). T1,T2,T5,T6 verdes (integration DB real).
