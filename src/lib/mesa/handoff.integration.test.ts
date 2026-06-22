@@ -94,7 +94,8 @@ describeIfDb("FIX-64 — createMesaHandoff (integration)", () => {
 	}
 
 	it("cria mesa_handoffs com FKs certos e administradora resolvida pela proposta", async () => {
-		const attendant = await seedAttendant("Atendente Um", "5562988887777");
+		// phone único deste arquivo (evita colidir com mesa-attendants no DB compartilhado — A3)
+		const attendant = await seedAttendant("Atendente Um", "5562988880101");
 		const admin = await seedAdministradora("Canopus", "canopus");
 		const { conversationId, leadId, proposalId } = await seedLeadWithProposal({
 			administradoraVarchar: "CANOPUS", // varchar da Bevi (case difere) → casa por nome
