@@ -55,6 +55,7 @@ Os 2 são independentes (D=tool-policy, E=adapter/discovery) → paralelos.
 - 22:58 — anotação dos 2 blocos pronta (FIX-68/69/70). Dry-run validado. Lançando onda 2.
 - 22:59 — onda 2 disparada (commit anotação `32221c17`). Workspaces: `fix-resimula-faixa-reveal`=e4978eab, `feat-sweep-multifaixa-descoberta`=88e6fbfa. Poll inicial: 2 pending. Wakeup agendado (~30min).
 - 23:0X — Kairo pediu poll a cada 5min. Cadência alterada pra 270s (≈5min, janela de cache; 300s seria o pior caso). Ajustado na FONTE (`todo-blocks/SKILL.md` passo 3 do loop autônomo). Poll: ainda 2 pending.
+- 23:34 — Kairo perguntou se travou. Investiguei os worktrees locais (tag `block-done` só vem no push final, daí o poll "pending"). NÃO travou: `fix-resimula-faixa-reveal` tem 1 commit `test+fix:` + atividade <10min; `feat-sweep-multifaixa-descoberta` tem 7 commits (ADR+spike+impl+itens em done/) + atividade <10min. Ambos finalizando. ⚠️ Spike FIX-69 marcado PENDENTE-KAIRO pelo agente (sem `BEVI_SELFCONTRACT_HASH` no worktree, não rodou ao vivo — script pronto).
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _(pendente)_
