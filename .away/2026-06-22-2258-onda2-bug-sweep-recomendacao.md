@@ -51,6 +51,18 @@ Os 2 são independentes (D=tool-policy, E=adapter/discovery) → paralelos.
   o conflito por design.
 - **Reversibilidade:** fácil (limite anotado no fix-70 + _prompt.md).
 
+### D4 · 23:58 — Gate de merge-back = `pnpm test:unit` (não o default `typecheck && test`)
+- **Contexto:** o `merge-wave merge` default rodou `pnpm -s typecheck && pnpm -s test --run` e deu VERMELHO nos 2 blocos. Investiguei: a develop **já tem 25 erros de `tsc --noEmit`** na base (dívida pré-existente em arquivos `.test.ts`: `route.test.ts`, `partner-offer-mapper.test.ts`, `formatter.moto.test.ts`, `jornada-judge.test.ts` etc.) — `typecheck exit=1` ANTES de qualquer merge. O `&&` matava o gate antes dos testes.
+- **Decidi:** re-rodar o merge-back com `--gate "pnpm test:unit"` — o gate verde RECONHECIDO do projeto (pre-commit roda `test:pre-commit`=`test:unit`; `tsc` global NÃO está no caminho de merge; memória `project_aja_worktree_env_bootstrap` confirma "test:unit é o gate verde"). Baseline `test:unit` na develop = **VERDE** (1869 testes, 0 falhas).
+- **Alternativas:** (a) rodar a suíte completa (`test`, inclui integration/route/builder) — descartado: exige DB/API no host, o projeto a roda em container; não é o gate de pre-commit. (b) consertar os 25 erros de `tsc` agora — descartado: fora do escopo, dívida pré-existente; anotei como PENDENTE-KAIRO abaixo.
+- **Reversibilidade:** fácil (gate é parâmetro do merge; nada pushado ainda).
+- **Evidência:** `typecheck` 25 erros / `test:unit` 1869 passed na develop limpa.
+
+### ⚠️ PENDENTE-KAIRO · 23:58 — `tsc --noEmit` global vermelho na develop (25 erros, pré-existente)
+- **O que é:** a develop acumulou 25 erros de typecheck em arquivos de TESTE (não produção). Não quebra o pre-commit (que roda vitest, não tsc) nem o build, mas suja qualquer gate que inclua `tsc`.
+- **Por que não fiz:** fora do escopo da onda 2 (bug+sweep); é dívida anterior à minha sessão. Consertar agora seria desviar.
+- **Como destrava:** decidir se vale um bloco de "limpar typecheck dos testes" (provável bloco futuro) — `pnpm typecheck` lista os 25.
+
 ## Linha do tempo (resumida)
 - 22:58 — anotação dos 2 blocos pronta (FIX-68/69/70). Dry-run validado. Lançando onda 2.
 - 22:59 — onda 2 disparada (commit anotação `32221c17`). Workspaces: `fix-resimula-faixa-reveal`=e4978eab, `feat-sweep-multifaixa-descoberta`=88e6fbfa. Poll inicial: 2 pending. Wakeup agendado (~30min).
