@@ -54,6 +54,7 @@ Os 2 são independentes (D=tool-policy, E=adapter/discovery) → paralelos.
 ## Linha do tempo (resumida)
 - 22:58 — anotação dos 2 blocos pronta (FIX-68/69/70). Dry-run validado. Lançando onda 2.
 - 22:59 — onda 2 disparada (commit anotação `32221c17`). Workspaces: `fix-resimula-faixa-reveal`=e4978eab, `feat-sweep-multifaixa-descoberta`=88e6fbfa. Poll inicial: 2 pending. Wakeup agendado (~30min).
+- 23:0X — Kairo pediu poll a cada 5min. Cadência alterada pra 270s (≈5min, janela de cache; 300s seria o pior caso). Ajustado na FONTE (`todo-blocks/SKILL.md` passo 3 do loop autônomo). Poll: ainda 2 pending.
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _(pendente)_
