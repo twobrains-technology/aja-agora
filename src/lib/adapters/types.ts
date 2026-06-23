@@ -93,6 +93,11 @@ export interface SearchGroupsParams {
 	category: ConsorcioCategory;
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-70: quando true, a descoberta varre 3-5 faixas de valor ao redor do
+	 * alvo (sweep sequencial), acumulando alternativas reais no índice pra montar
+	 * comparação. Default/omitido = busca rápida de 1 faixa. Adapters que não
+	 * suportam sweep (ex.: fechamento Trilho A) ignoram o campo. */
+	sweep?: boolean;
 }
 
 export interface SimulateQuotaParams {

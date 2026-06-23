@@ -266,10 +266,24 @@ const STATUS_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+// FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
+// multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
+// faixa de valor (sem objetivo×lance). O adapter Bevi varre o alvo + vizinhas e
+// devolve a UNIÃO; adapters sem suporte ignoram o campo.
+const searchGroupsSweepInput = searchGroupsInput.extend({
+	sweep: z
+		.boolean()
+		.optional()
+		.describe(
+			"Quando true, varre 3-5 faixas de valor ao redor do alvo e devolve um espectro real de grupos pra comparar (acumula alternativas no indice). Use ao montar uma comparacao ou quando o usuario quiser ver OUTRAS opcoes/faixas de preco. Omita (default) pra busca rapida de 1 faixa — a primeira impressao sai mais rapida.",
+		),
+});
+
 async function executeSearchGroups(
 	adapter: AdministradoraAdapter,
-	args: z.infer<typeof searchGroupsInput>,
+	args: z.infer<typeof searchGroupsSweepInput>,
 ) {
+	// `args` (incl. sweep) flui direto pro adapter — SearchGroupsParams.sweep.
 	const groups = await adapter.searchGroups(args);
 	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
 	return { groups: groups.map(toModelGroupSummary), total: groups.length };
@@ -839,9 +853,11 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	};
 
 	const search_groups = tool({
-		description: consorcioTools.search_groups.description,
-		inputSchema: searchGroupsInput,
-		execute: async (args: z.infer<typeof searchGroupsInput>) => {
+		// FIX-70: opt-in `sweep` (varredura multi-faixa) só na tool por-request — a
+		// versão estática (registry) segue como sentinel sem contexto.
+		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais.`,
+		inputSchema: searchGroupsSweepInput,
+		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));
