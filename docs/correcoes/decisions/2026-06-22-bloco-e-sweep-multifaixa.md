@@ -128,14 +128,20 @@ near-equals. Helper **puro** `deriveSweepValues(target, opts)`:
   **vizinhas**, QUALQUER erro (throttle, timeout, transitório) **para o sweep** e
   retorna o que já acumulou — nunca relança (a UX já tem o alvo).
 
-**Escolhida: (b).** Mais o cuidado de **detectar throttle distintamente**: adiciono
-um `BeviThrottleError` (HTTP 429) no client (`self-contract-client.ts`) pra logar
-"throttle observado" com clareza (alimenta a calibração do FIX-69). O comportamento
-do breaker é o mesmo pra qualquer erro de vizinha (parar), mas o log distingue
-throttle de transitório. Também um **budget de tempo** (`maxSweepMs`, default
-conservador 10.000ms) e o **gap** entre chamadas (`gapMs`, default 400ms — provado
-no cookbook §6): o sweep não lança nova faixa se o orçamento de tempo estourou.
-Defaults parametrizáveis no construtor do adapter (testes injetam `gapMs: 0`).
+**Escolhida: (b).** Mais o cuidado de **detectar throttle distintamente**. Também
+um **budget de tempo** (`maxSweepMs`, default conservador 10.000ms) e o **gap**
+entre chamadas (`gapMs`, default 400ms — provado no cookbook §6): o sweep não lança
+nova faixa se o orçamento de tempo estourou. Defaults parametrizáveis no construtor
+do adapter (testes injetam `gapMs: 0`).
+
+> **Refinamento na implementação (honestidade > consistência com o rascunho):**
+> a detecção de throttle ficou **no próprio circuit breaker do adapter** — lê
+> `(err).code === 429` (+ regex na mensagem) e loga `event: "throttle_breaker"`
+> vs `"neighbor_error_breaker"`. **NÃO** adicionei `BeviThrottleError` ao client:
+> o `toBeviError` do client já carrega `code` no erro tipado, então uma classe
+> nova seria YAGNI e mexeria no hot path do `call()` sem ganho. Resultado:
+> `self-contract-client.ts` **não foi tocado** (escopo ainda menor). O breaker
+> para em QUALQUER erro de vizinha; o log só distingue throttle de transitório.
 
 ---
 
