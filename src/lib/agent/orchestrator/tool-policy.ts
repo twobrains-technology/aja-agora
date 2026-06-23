@@ -82,6 +82,29 @@ const WHAT_IF_AND_DETAIL = [
 const LEAD_CAPTURE = ["present_value_picker", "capture_lead"];
 
 /**
+ * FIX-68 — o usuário trocou de FAIXA DE VALOR pós-reveal?
+ *
+ * Compara o valor-alvo atual (`qualifyAnswers.creditMax`, atualizado pelo
+ * analyzer quando o usuário pede um valor novo pós-reveal — analyze.ts) com o
+ * snapshot da última descoberta (`discoveredCreditTarget`, gravado pelo runner).
+ *
+ * Distingue os dois casos que colidiam na fase `reveal`:
+ *   - TROCA DE FAIXA (valor ≠ descoberto) → re-descoberta legítima: a busca volta.
+ *   - RE-REVEAL LOOP (mesmo valor, afirmativo curto "ta otimo") → a busca FICA
+ *     fora — é o BUG-REVEAL-LOOP (2026-06-02) que não pode regredir.
+ *
+ * Fail-safe: sem baseline (`discoveredCreditTarget` ausente — descoberta anterior
+ * ao fix) ou sem valor-alvo, retorna false (NÃO reabre — só reabre com sinal
+ * POSITIVO de troca). Mantém a matriz exata da fase reveal pros estados estáveis.
+ */
+export function revealValueTargetChanged(meta: ConversationMetadata): boolean {
+	const current = meta.qualifyAnswers?.creditMax;
+	const discovered = meta.discoveredCreditTarget;
+	if (typeof current !== "number" || typeof discovered !== "number") return false;
+	return current !== discovered;
+}
+
+/**
  * Tabela declarativa fase → tools permitidas. O builder INTERSETA o resultado
  * com (activeTools do admin ∪ primitivos) — a policy nunca ADICIONA tool que o
  * builder não exporia; só corta o que está fora de fase.
@@ -108,14 +131,22 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			];
 		case "reveal":
 			// BUG-REVEAL-LOOP: re-descoberta (search/recommend/cards do reveal)
-			// FORA — o que sobra de reveal é what-if/detalhe. Dial (passo 4) e
-			// decision_prompt entram; contract_form SÓ depois da decisão.
+			// FORA por padrão — o que sobra de reveal é what-if/detalhe. Dial
+			// (passo 4) e decision_prompt entram; contract_form SÓ depois da decisão.
+			//
+			// FIX-68 (exceção cirúrgica): quando o usuário TROCA de faixa de valor
+			// (valor-alvo ≠ o da última descoberta), a re-descoberta VOLTA — sem ela
+			// o agent ficava sem `search_groups`, fabricava um groupId sintético
+			// (`auto-130k-60m`) e travava em loop de "instabilidade" (conversa
+			// a8b0a80d, 2026-06-22). O afirmativo curto na MESMA faixa NÃO cai aqui
+			// (revealValueTargetChanged=false) → o anti-loop original continua valendo.
 			return [
 				...BASE,
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "closing":

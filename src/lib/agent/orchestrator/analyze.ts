@@ -63,7 +63,20 @@ export async function analyzeAndMerge(
 		metaChanged = true;
 	}
 	const q = meta.qualifyAnswers ?? {};
-	if (analysis.creditMax !== null && q.creditMax === undefined) {
+	// FIX-68: pós-reveal o usuário pode TROCAR de faixa de valor — um creditMax
+	// novo, fornecido explicitamente (providing_info) e DIFERENTE do que já está
+	// no perfil, é re-descoberta legítima, então atualiza (e a tool-policy
+	// reabilita `search_groups` via revealValueTargetChanged). Sem isso o valor
+	// ficava preso no original e o agent fabricava um id pra simular a faixa nova
+	// (conversa a8b0a80d, 2026-06-22). Compara contra o valor ORIGINAL pedido
+	// (creditClampedFrom, quando clampado) pra não re-disparar por causa do clamp.
+	const lastRequested = q.creditClampedFrom ?? q.creditMax;
+	const isRevealRefit =
+		meta.revealCompleted === true &&
+		analysis.userIntent === "providing_info" &&
+		analysis.creditMax !== null &&
+		analysis.creditMax !== lastRequested;
+	if (analysis.creditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
 		// FIX-33: o valor de texto livre não passa pelos sliders — clampa na faixa
 		// da categoria (quando conhecida) antes de gravar. Sem categoria ainda
 		// (concierge), grava o valor cru — não há faixa de referência.
@@ -78,6 +91,10 @@ export async function analyzeAndMerge(
 		if (clamp?.clamped) {
 			// Preserva o valor original pedido pro agente confrontar a faixa.
 			q.creditClampedFrom = analysis.creditMax;
+		} else {
+			// FIX-68: num refit (troca de faixa) sem clamp, o creditClampedFrom do
+			// pedido anterior ficaria stale e poderia mascarar a próxima troca.
+			q.creditClampedFrom = undefined;
 		}
 		meta.qualifyAnswers = q;
 		metaChanged = true;

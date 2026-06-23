@@ -420,8 +420,26 @@ export async function* runAgentTurn(args: {
 			// re-disparar OUTRO reveal — trata o que já apareceu como "a busca".
 			searchDispatched: true,
 			recommendedAdministradora: administradora,
+			// FIX-68: snapshot do valor-alvo desta descoberta — baseline pra detectar
+			// uma TROCA de faixa no próximo turno (tool-policy.revealValueTargetChanged).
+			...(typeof refreshed.qualifyAnswers?.creditMax === "number"
+				? { discoveredCreditTarget: refreshed.qualifyAnswers.creditMax }
+				: {}),
 			...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
 		});
+	}
+
+	// FIX-68: re-descoberta pós-reveal (o usuário trocou de faixa e a nova busca
+	// produziu cards) — re-snapshota o valor-alvo pra FECHAR o ciclo: a partir daí
+	// um afirmativo curto sobre a faixa NOVA ("ta otimo" no 130k) tem
+	// creditMax == discoveredCreditTarget → tool-policy/artifact-guard voltam a
+	// segurar a busca (anti BUG-REVEAL-LOOP), em vez de reabrir pra sempre.
+	if (meta.revealCompleted === true && artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type))) {
+		const refreshed = await reloadMeta(conversationId);
+		const target = refreshed.qualifyAnswers?.creditMax;
+		if (typeof target === "number" && target !== refreshed.discoveredCreditTarget) {
+			await persistMeta(conversationId, { ...refreshed, discoveredCreditTarget: target });
+		}
 	}
 
 	// FIX-6 (what-if): re-simulação legítima atualiza o snapshot da oferta —
