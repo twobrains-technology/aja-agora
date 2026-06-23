@@ -1,6 +1,7 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
+import { revealValueTargetChanged } from "./tool-policy";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 /**
@@ -107,7 +108,13 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	{
 		name: "reveal-loop",
 		applies: ({ meta, artifactType, userIntent, isUserTurn }) => {
-			const revealLoopActive = meta.revealCompleted === true && isUserTurn;
+			// FIX-68: trocou de FAIXA DE VALOR (valor-alvo ≠ o descoberto) → os cards
+			// da NOVA faixa são re-descoberta legítima, não re-reveal. Não suprime —
+			// a tool-policy já reabilitou search/recommend nesse caso. O afirmativo
+			// curto na MESMA faixa (revealValueTargetChanged=false) continua caindo no
+			// guard (BUG-REVEAL-LOOP intacto).
+			const revealLoopActive =
+				meta.revealCompleted === true && isUserTurn && !revealValueTargetChanged(meta);
 			const isRereveal =
 				revealLoopActive &&
 				(artifactType === "comparison_table" ||

@@ -1,13 +1,20 @@
 ---
 id: FIX-68
 titulo: "Re-descoberta por mudança de valor na fase reveal (agent não consegue trocar de faixa)"
-status: todo
+status: done
+commit: 914c7b421a726c7e06f0f4056fa97cb6fc84b4b7
+executado_em: 2026-06-22
 bloco: bloco-d-resimula-faixa-reveal
 arquivos:
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/lib/agent/orchestrator/tool-policy.test.ts
   - src/lib/agent/system-prompt.ts
   - tests/regression/agent-trajectory.test.ts
+  # escopo expandido na execução (cadeia necessária pro fix funcionar em runtime):
+  - src/lib/agent/personas.ts            # campo discoveredCreditTarget no meta
+  - src/lib/agent/orchestrator/analyze.ts # atualiza creditMax pós-reveal na troca
+  - src/lib/agent/orchestrator/runner.ts  # snapshota discoveredCreditTarget
+  - src/lib/agent/orchestrator/artifact-guard.ts # reveal-loop libera cards na troca
 rodada: 2026-06-22 — investigação dos logs do agent na develop (conversa a8b0a80d, "Maria")
 ---
 
@@ -90,3 +97,31 @@ do `phaseFromMeta`) — investigar `ConversationMetadata`.
 
 TDD strict: escrever Camadas 1+2, **ver as duas FALHAREM** com a assinatura do bug,
 só então aplicar o fix em `tool-policy.ts`/`system-prompt.ts`, re-rodar e ver verde.
+
+## 6. Execução (2026-06-22, commit 914c7b4)
+
+A investigação revelou que o fix exige uma **cadeia** maior que os 2 arquivos da
+proposta — sem ela o guard não teria como detectar a troca em runtime:
+
+- `analyze.ts:66` só atualizava `creditMax` na 1ª extração (`=== undefined`); pós-
+  reveal o novo valor por texto era **ignorado**. Causa oculta do bug: mesmo com
+  `search_groups` reabilitado, o meta nunca refletiria a faixa nova. Corrigido pra
+  atualizar quando o usuário fornece um valor explícito (`providing_info`) e
+  diferente, pós-reveal.
+- `runner.ts` passou a **snapshotar** `meta.discoveredCreditTarget` (= creditMax)
+  ao fechar o reveal e a re-snapshotar quando a re-descoberta completa — fecha o
+  ciclo (o afirmativo curto na faixa NOVA volta a ser segurado pelo anti-loop).
+- `artifact-guard.ts` (`reveal-loop`) deixou de suprimir os cards da faixa nova
+  quando `revealValueTargetChanged(meta)` — senão a re-descoberta rodava mas os
+  cards sumiam.
+- `personas.ts` ganhou o campo `discoveredCreditTarget`.
+
+**Como o guard distingue troca de faixa de re-reveal loop:** compara
+`qualifyAnswers.creditMax` (valor-alvo atual) com `discoveredCreditTarget`
+(snapshot da última busca). Diferentes = troca → search volta. Iguais (afirmativo
+curto "ta otimo") ou sem baseline = re-reveal/loop → search fica fora. O
+BUG-REVEAL-LOOP continua bloqueado (anti-regressão verde).
+
+**3 camadas verdes:** Camada 1 (`tool-policy.test.ts`, +9 testes) + Camada 2
+(`agent-trajectory.test.ts`, cassette FIX-68 com 5 asserts) + suíte inteira
+(1883 unit) + Camada 3 eval LLM real cirúrgico (5 passed) no pre-commit.

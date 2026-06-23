@@ -47,6 +47,7 @@ import {
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
@@ -2708,6 +2709,123 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		// e cita o gatilho textual do print ("ta otimo") perto da proibicao.
 		const reveal = SPECIALIST_BASE_PROMPT.toLowerCase();
 		expect(reveal).toMatch(/ta otimo|ta ótimo|faz sentido/);
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-68 — re-descoberta por TROCA DE FAIXA pos-reveal
+// ----------------------------------------------------------------------------
+// Real (conversa a8b0a80d, "Maria joaquina", auto, 2026-06-22): pos-reveal de
+// 256k (RODOBENS 308k/96m, id real 6a2b004ff9ec5c948e8c07d0), o usuario trocou a
+// faixa ("Valor do bem: R$ 130.000, Prazo: 60 meses"). O agent foi DIRETO pra
+// simulate_quota("auto-130k-60m") SEM re-buscar — id FABRICADO (padrao
+// categoria-valor-prazo, nao existe no codigo) — e o adapter recusou ("Oferta/
+// grupo nao encontrado na descoberta atual"). Loop de "instabilidade" 6x.
+//
+// Causa: tool-policy removia search_groups da fase `reveal` (BUG-REVEAL-LOOP) —
+// pos-reveal o agent so tinha simulate_quota, que NAO descobre faixa nova
+// (resolve groupId contra o offerIndex da busca ANTERIOR). Sem id real de 130k e
+// sem search, o modelo alucinou o id.
+//
+// Fix: search_groups VOLTA na fase reveal SO quando o valor-alvo mudou vs a
+// ultima descoberta (revealValueTargetChanged) + prompt manda RE-BUSCAR ao
+// trocar de faixa e NUNCA fabricar groupId. O re-reveal da MESMA faixa
+// (afirmativo curto) continua bloqueado.
+//
+// Defesa estrutural detalhada: src/lib/agent/orchestrator/tool-policy.test.ts
+// (matriz fase x tool + revealValueTargetChanged).
+// ============================================================================
+
+describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", () => {
+	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "rafael-auto",
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMax: 256_000,
+				monthlyBudget: 4_000,
+				prazoMeses: 60,
+				objetivo: "contemplacao_rapida",
+				hasLance: "no",
+				lanceEmbutido: false,
+			},
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			simulatorOfferDispatched: true,
+			// Snapshot da descoberta de 256k (gravado pelo runner no reveal).
+			discoveredCreditTarget: 256_000,
+			...over,
+		};
+	}
+
+	// Detector do id FABRICADO observado em prod: padrao `categoria-valorK-prazoM`.
+	// O id real da Bevi e um hash hex de 24 chars (6a2b004ff9ec5c948e8c07d0).
+	const FABRICATED_ID = /^[a-z]+-\d+k-\d+m$/;
+
+	it("cassette: stream do bug — trocou pra 130k e o agent simulou um id FABRICADO sem re-buscar", async () => {
+		// Reproducao fiel: usuario mandou "Valor do bem: R$ 130.000, Prazo: 60 meses".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Deixa eu calcular pra essa nova faixa."),
+			toolCallChunk("tc-1", "simulate_quota", { groupId: "auto-130k-60m", creditValue: 130000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// O bug: id fabricado E nenhuma busca antes.
+		expect(FABRICATED_ID.test(groupId)).toBe(true);
+		expect(toolCalls.some((tc) => tc.toolName === "search_groups")).toBe(false);
+	});
+
+	it("trajetoria correta: troca de faixa dispara search_groups ANTES de simulate_quota com id REAL", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa nessa nova faixa:"),
+			toolCallChunk("tc-1", "search_groups", { category: "auto", creditMax: 130000 }),
+			toolCallChunk("tc-2", "present_comparison_table", {
+				groups: [{ administradora: "Rodobens" }],
+			}),
+			toolCallChunk("tc-3", "simulate_quota", {
+				groupId: "7c3d115ee0fd6da59f9d18e1",
+				creditValue: 130000,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		const searchIdx = names.indexOf("search_groups");
+		const simulateIdx = names.indexOf("simulate_quota");
+		expect(searchIdx).toBeGreaterThanOrEqual(0);
+		expect(simulateIdx).toBeGreaterThan(searchIdx); // re-buscou ANTES de simular
+		const groupId =
+			(toolCalls[simulateIdx]?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// id REAL (da descoberta), nunca o padrao fabricado.
+		expect(FABRICATED_ID.test(groupId)).toBe(false);
+	});
+
+	it("estrutural: trocar de faixa REABILITA search_groups na fase reveal (assinatura do fix)", () => {
+		// Pre-fix: o case `reveal` da tool-policy nao tinha search_groups → o agent
+		// nao tinha como re-buscar → fabricava o id. Este assert FALHA sem o fix.
+		const trocou = postRevealMeta({
+			qualifyAnswers: { ...postRevealMeta().qualifyAnswers, creditMax: 130_000 },
+		});
+		expect(allowedTools(trocou)).toContain("search_groups");
+	});
+
+	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita search (anti BUG-REVEAL-LOOP)", () => {
+		// Mesmo valor-alvo (256k) da descoberta → continua sem descoberta na fase.
+		expect(allowedTools(postRevealMeta())).not.toContain("search_groups");
+	});
+
+	it("acoplamento: o prompt manda RE-BUSCAR ao trocar de faixa e NUNCA fabricar groupId", () => {
+		// re-buscar com search_groups ao mudar a faixa de valor
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/RE-?BUSQUE[\s\S]{0,160}search_groups/i);
+		// proibicao explicita de inventar/fabricar id de grupo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA[\s\S]{0,80}(invente|fabrique)[\s\S]{0,40}id/i);
+		// cita o exemplo do id fabricado real como contra-exemplo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-130k-60m/);
 	});
 });
 

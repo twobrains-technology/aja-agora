@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { buildAgent } from "@/lib/agent/agents/builder";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PersonaRow } from "@/lib/agent/system-prompt";
-import { allowedTools, phaseFromMeta } from "./tool-policy";
+import { allowedTools, phaseFromMeta, revealValueTargetChanged } from "./tool-policy";
 
 // ============================================================================
 // Metas canônicas por fase (mesmos estados dos bugs reais)
@@ -336,5 +336,103 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 			meta: QUALIFY_META,
 		});
 		expect(exposedTools(agent)).toEqual([]);
+	});
+});
+
+// ============================================================================
+// FIX-68 — re-descoberta por TROCA DE FAIXA pós-reveal (sem reabrir o loop)
+// ----------------------------------------------------------------------------
+// Bug real (conversa a8b0a80d, "Maria", 2026-06-22): pós-reveal de 256k, o
+// usuário pediu OUTRA faixa ("130.000") e o agent — sem search_groups na fase
+// reveal (removido pelo BUG-REVEAL-LOOP) — fabricou o id `auto-130k-60m` e
+// travou em loop de "instabilidade". O search precisa VOLTAR na fase reveal,
+// porém SÓ quando o valor-alvo mudou (troca de faixa), nunca num afirmativo
+// curto sobre a MESMA faixa (esse é o BUG-REVEAL-LOOP que não pode regredir).
+//
+// O sinal de "troca" vive no meta: qualifyAnswers.creditMax (valor-alvo atual,
+// atualizado pelo analyzer pós-reveal) vs discoveredCreditTarget (snapshot da
+// última descoberta, gravado pelo runner).
+// ============================================================================
+
+const REVEAL_DISCOVERY_TOOLS = [
+	"search_groups",
+	"recommend_groups",
+	"present_recommendation_card",
+	"present_comparison_table",
+	"present_group_card",
+];
+
+/** Pós-reveal de 256k, usuário pediu 130k — valor-alvo DIVERGE da descoberta. */
+const REVEAL_TROCA_FAIXA: ConversationMetadata = {
+	...REVEAL_META,
+	qualifyAnswers: { ...REVEAL_META.qualifyAnswers, creditMax: 130_000 },
+	discoveredCreditTarget: 256_000,
+};
+
+/** Pós-reveal de 256k, afirmativo curto SEM troca — valor-alvo == descoberta. */
+const REVEAL_MESMA_FAIXA: ConversationMetadata = {
+	...REVEAL_META,
+	qualifyAnswers: { ...REVEAL_META.qualifyAnswers, creditMax: 256_000 },
+	discoveredCreditTarget: 256_000,
+};
+
+/** Descoberta antiga (antes do snapshot do FIX-68): baseline ausente. */
+const REVEAL_SEM_BASELINE: ConversationMetadata = {
+	...REVEAL_META,
+	qualifyAnswers: { ...REVEAL_META.qualifyAnswers, creditMax: 130_000 },
+	// discoveredCreditTarget undefined de propósito.
+};
+
+describe("FIX-68 — revealValueTargetChanged: distingue troca de faixa de re-reveal loop", () => {
+	it("valor-alvo DIFERENTE do descoberto = troca de faixa (true)", () => {
+		expect(revealValueTargetChanged(REVEAL_TROCA_FAIXA)).toBe(true);
+	});
+
+	it("MESMO valor-alvo = re-reveal/afirmativo, NÃO é troca (false — anti BUG-REVEAL-LOOP)", () => {
+		expect(revealValueTargetChanged(REVEAL_MESMA_FAIXA)).toBe(false);
+	});
+
+	it("sem baseline (descoberta pré-fix) = fail-safe NÃO reabre (false)", () => {
+		expect(revealValueTargetChanged(REVEAL_SEM_BASELINE)).toBe(false);
+	});
+
+	it("sem valor-alvo (creditMax ausente) = false", () => {
+		expect(
+			revealValueTargetChanged({ revealCompleted: true, discoveredCreditTarget: 256_000 }),
+		).toBe(false);
+	});
+});
+
+describe("FIX-68 — allowedTools(reveal): search VOLTA na troca de faixa, FICA fora no loop", () => {
+	it("a fase continua sendo reveal (troca de valor NÃO muda a fase)", () => {
+		expect(phaseFromMeta(REVEAL_TROCA_FAIXA)).toBe("reveal");
+	});
+
+	it("TROCA de faixa: search/recommend/cards de descoberta VOLTAM ao toolset", () => {
+		const allowed = allowedTools(REVEAL_TROCA_FAIXA);
+		for (const tool of REVEAL_DISCOVERY_TOOLS) {
+			expect(allowed).toContain(tool);
+		}
+		// e o what-if/decisão continuam disponíveis (não é regressão da fase reveal)
+		expect(allowed).toContain("simulate_quota");
+		expect(allowed).toContain("present_decision_prompt");
+	});
+
+	it("MESMA faixa (afirmativo): descoberta CONTINUA fora (BUG-REVEAL-LOOP não regride)", () => {
+		const allowed = allowedTools(REVEAL_MESMA_FAIXA);
+		for (const tool of REVEAL_DISCOVERY_TOOLS) {
+			expect(allowed).not.toContain(tool);
+		}
+	});
+
+	it("sem baseline: descoberta fora (fail-safe — só reabre com sinal positivo de troca)", () => {
+		const allowed = allowedTools(REVEAL_SEM_BASELINE);
+		expect(allowed).not.toContain("search_groups");
+	});
+
+	it("troca de faixa NÃO antecipa o passo 5 — contract_form/lead_form continuam fora", () => {
+		const allowed = allowedTools(REVEAL_TROCA_FAIXA);
+		expect(allowed).not.toContain("present_contract_form");
+		expect(allowed).not.toContain("present_lead_form");
 	});
 });
