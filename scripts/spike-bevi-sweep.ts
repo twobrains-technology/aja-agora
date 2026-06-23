@@ -30,11 +30,11 @@
 // (o operador roda depois). O FIX-70 procede com defaults conservadores — o spike
 // só CALIBRA os parâmetros (nº de faixas, gap, maxSweepMs).
 
+import { DuplicatedProposalError } from "@/lib/adapters/bevi/bevi-errors";
 import {
 	BeviSelfContractClient,
 	loadSelfContractConfigFromEnv,
 } from "@/lib/adapters/bevi/self-contract-client";
-import { DuplicatedProposalError } from "@/lib/adapters/bevi/bevi-errors";
 
 interface SampleResult {
 	value: number;
@@ -187,24 +187,32 @@ async function main() {
 		);
 		if (BURST_GAP_MS > 0) await sleep(BURST_GAP_MS);
 	}
-	const throttled = burst.filter((s) => s.status === "error" && (s.errorCode === 429 || /throttle/i.test(s.errorName ?? "")));
+	const throttled = burst.filter(
+		(s) => s.status === "error" && (s.errorCode === 429 || /throttle/i.test(s.errorName ?? "")),
+	);
 	const anyError = burst.filter((s) => s.status === "error");
 	console.log("\n── Veredito de rate-limit ──");
 	if (throttled.length > 0) {
 		console.log(`  ⚠️ THROTTLE observado: ${throttled.length}/${BURST} respostas 429/throttle.`);
 		console.log("  → sweep precisa de gap maior / circuit breaker mais agressivo.");
 	} else if (anyError.length > 0) {
-		console.log(`  ${anyError.length}/${BURST} erros NÃO-throttle (${anyError.map((e) => e.errorName).join(", ")}).`);
+		console.log(
+			`  ${anyError.length}/${BURST} erros NÃO-throttle (${anyError.map((e) => e.errorName).join(", ")}).`,
+		);
 		console.log("  → provável transitório/timeout, não rate-limit. Reveja antes de concluir.");
 	} else {
-		console.log(`  ✅ Nenhum throttle em rajada de ${BURST} sem gap. Rate-limit não observado nessa pressão.`);
+		console.log(
+			`  ✅ Nenhum throttle em rajada de ${BURST} sem gap. Rate-limit não observado nessa pressão.`,
+		);
 	}
 
 	console.log("\n── Recomendação de calibração do FIX-70 ──");
 	const p95 = percentile(okLatencies, 95);
 	const safeBands = Number.isFinite(p95) && p95 > 0 ? Math.max(1, Math.floor(8000 / p95)) : 3;
 	console.log(`  p95≈${p95}ms → ~${safeBands} faixas cabem num budget de ~8s (maxSweepMs).`);
-	console.log(`  gap sugerido: ${throttled.length > 0 ? ">=800ms (throttle visto)" : "400ms (sem throttle)"}.`);
+	console.log(
+		`  gap sugerido: ${throttled.length > 0 ? ">=800ms (throttle visto)" : "400ms (sem throttle)"}.`,
+	);
 	console.log("══════════════════════════════════════════════════════════════");
 }
 
