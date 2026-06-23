@@ -1,15 +1,24 @@
 ---
 id: FIX-70
 titulo: "Sweep sequencial multi-faixa na descoberta (varre 3-5 faixas, acumula no offerIndex)"
-status: todo
+status: done
 bloco: bloco-e-sweep-multifaixa
 arquivos:
   - src/lib/adapters/bevi/bevi-self-contract-adapter.ts
-  - src/lib/adapters/bevi/self-contract-client.ts
   - src/lib/adapters/bevi/bevi-self-contract-adapter.test.ts
   - src/lib/agent/tools/ai-sdk.ts
-  - src/lib/agent/orchestrator/discovery-count.ts
+  - src/lib/adapters/types.ts
 rodada: 2026-06-22 — investigação dos logs do agent na develop
+commit: d236aa6d
+executado_em: 2026-06-22
+nota_execucao: |
+  Gatilho = flag opt-in `sweep` no search_groups (ADR Decisão 2). NÃO tocou
+  self-contract-client.ts nem discovery-count.ts (não precisaram); throttle (429)
+  detectado no circuit breaker do adapter via code, sem nova classe de erro no
+  client (refinamento da ADR Decisão 4 — YAGNI). Tocou types.ts (campo opcional
+  `sweep` em SearchGroupsParams — aditivo, baixo risco de merge). Sem cassette
+  (Camada 2): mudança é backend, agent chama as MESMAS tools (search_groups só
+  ganhou arg opcional) — integration/adapter test basta (ADR).
 ---
 
 ## 1. Palavras do operador (Kairo)
