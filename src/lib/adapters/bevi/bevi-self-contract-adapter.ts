@@ -49,6 +49,72 @@ export interface SelfContractSessionProvider {
 	getSimulationPrefs(): Promise<SelfContractSimulationPrefs>;
 }
 
+// ── FIX-70: sweep sequencial multi-faixa ────────────────────────────────────
+// A Bevi é stateful (1 proposta ativa por device — cookbook §3) → batch SÓ
+// sequencial (re-PATCH do step `simulation` na mesma proposta). O sweep varre o
+// alvo + vizinhas pra enriquecer o índice cumulativo (sobrevive a conversa) com
+// um espectro real de ofertas pra comparar. Defaults conservadores; o spike
+// FIX-69 calibra (latência/rate-limit não documentados no cookbook).
+
+const DEFAULT_SWEEP_SPREAD = [0.7, 1.0, 1.3] as const;
+/** Piso de crédito do segmento (cookbook §5a / MinCreditError) — vizinha abaixo
+ * volta 200 com offers vazio; não varrer no vácuo. */
+const DEFAULT_CREDIT_FLOOR = 15_000;
+
+export interface SweepValueOpts {
+	/** Multiplicadores em torno do alvo. 1.0 = o próprio alvo. Default [0.7,1,1.3]. */
+	spread?: number[];
+	/** Piso de crédito — vizinhas abaixo são descartadas. Default 15.000. */
+	floor?: number;
+}
+
+/** Arredonda a faixa pra um passo redondo por magnitude (cai em grupos reais e
+ * deduplica vizinhas near-equal). O ALVO nunca é arredondado (é o valor exato
+ * do usuário); só as vizinhas derivadas. */
+function roundBand(value: number): number {
+	if (value < 50_000) return Math.round(value / 5_000) * 5_000;
+	if (value < 200_000) return Math.round(value / 10_000) * 10_000;
+	return Math.round(value / 25_000) * 25_000;
+}
+
+/** Deriva os valores a varrer a partir do alvo: alvo (exato) PRIMEIRO, depois
+ * vizinhas arredondadas (±spread), deduplicadas e acima do piso de crédito.
+ * Puro/determinístico — testado em isolamento (FIX-70). */
+export function deriveSweepValues(target: number, opts: SweepValueOpts = {}): number[] {
+	const spread = opts.spread ?? [...DEFAULT_SWEEP_SPREAD];
+	const floor = opts.floor ?? DEFAULT_CREDIT_FLOOR;
+	const result: number[] = [target];
+	const seen = new Set<number>([target]);
+	for (const factor of spread) {
+		if (factor === 1) continue; // o alvo já entrou (exato)
+		const neighbor = roundBand(target * factor);
+		if (neighbor >= floor && !seen.has(neighbor)) {
+			seen.add(neighbor);
+			result.push(neighbor);
+		}
+	}
+	return result;
+}
+
+/** Config do sweep — parametrizável (testes injetam gapMs:0). */
+export interface SweepConfig {
+	spread: number[];
+	floor: number;
+	/** Gap entre simulações sequenciais (cookbook §6 ~400ms). */
+	gapMs: number;
+	/** Budget de tempo total do sweep — não lança nova vizinha se estourar. */
+	maxSweepMs: number;
+}
+
+const DEFAULT_SWEEP_CONFIG: SweepConfig = {
+	spread: [...DEFAULT_SWEEP_SPREAD],
+	floor: DEFAULT_CREDIT_FLOOR,
+	gapMs: 400,
+	maxSweepMs: 10_000,
+};
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /** Busca disparada ANTES da identidade coletada — erro de orquestração, não de
  * dados. O funil (gate identify, Fase 2) garante a ordem; este erro é a tripwire
  * que impede silenciosamente cair em dado inventado. */
@@ -69,18 +135,27 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	private readonly offerCache = new Map<string, BeviOffer[]>();
 	/** Índice quotaId → oferta, pra simulateQuota/getGroupDetails O(1). */
 	private readonly offerIndex = new Map<string, BeviOffer>();
+	private readonly sweepConfig: SweepConfig;
 
 	constructor(
 		private readonly client: BeviSelfContractClient,
 		private readonly session: SelfContractSessionProvider,
-	) {}
+		sweepConfig: Partial<SweepConfig> = {},
+	) {
+		this.sweepConfig = { ...DEFAULT_SWEEP_CONFIG, ...sweepConfig };
+	}
 
 	async searchGroups(params: SearchGroupsParams): Promise<GroupSummary[]> {
 		const value = params.creditMax ?? params.creditMin;
 		if (!value || value <= 0) {
 			throw new Error("searchGroups exige creditMax/creditMin > 0 (valor do bem do passo 2).");
 		}
-		const offers = await this.ensureOffers(categoryToBeviSegment(params.category), value);
+		const segment = categoryToBeviSegment(params.category);
+		// FIX-70: sweep opt-in (default off) — a busca simples mantém o < 3s da 1ª
+		// impressão; o sweep enriquece o índice cumulativo com 3-5 faixas.
+		const offers = params.sweep
+			? await this.sweepOffers(segment, value)
+			: await this.ensureOffers(segment, value);
 		return offers.map(beviOfferToGroupSummary);
 	}
 
@@ -174,6 +249,81 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		this.offerCache.set(key, offers);
 		for (const offer of offers) this.offerIndex.set(offer.quotaId, offer);
 		return offers;
+	}
+
+	/** FIX-70 — sweep sequencial multi-faixa. Varre alvo + vizinhas (1 proposta
+	 * ativa, re-PATCH sequencial — cookbook §3), acumula no offerIndex cumulativo
+	 * e devolve a UNIÃO (alvo primeiro, dedup por quotaId). Reusa `ensureOffers`
+	 * (cache-aware: faixa já buscada = lookup instantâneo).
+	 *
+	 * Defensivo:
+	 * - A faixa-ALVO mantém o comportamento de hoje: erro propaga (descoberta real
+	 *   falhou). A 1ª oferta é o que o usuário precisa.
+	 * - Falha em VIZINHA aciona o circuit breaker: para o sweep e devolve o que já
+	 *   acumulou (nunca relança). Throttle (429) é logado distintamente (calibra o
+	 *   gap — o limite de rate não está no cookbook, o spike FIX-69 sonda).
+	 * - Budget de tempo (`maxSweepMs`): não lança nova vizinha se estourar.
+	 * - Faixa vazia (piso, §5a) não contribui ofertas, mas não para o sweep. */
+	private async sweepOffers(segment: string, target: number): Promise<BeviOffer[]> {
+		const { spread, floor, gapMs, maxSweepMs } = this.sweepConfig;
+		const values = deriveSweepValues(target, { spread, floor });
+		const collected: BeviOffer[] = [];
+		const seen = new Set<string>();
+		const startedAt = Date.now();
+
+		for (let i = 0; i < values.length; i++) {
+			const value = values[i];
+			const isTarget = i === 0;
+
+			if (!isTarget) {
+				if (Date.now() - startedAt >= maxSweepMs) {
+					console.warn(
+						JSON.stringify({
+							level: "warn",
+							source: "discovery-sweep",
+							event: "budget_exhausted",
+							segment,
+							target,
+							swept: i,
+							of: values.length,
+						}),
+					);
+					break;
+				}
+				if (gapMs > 0) await sleep(gapMs);
+			}
+
+			try {
+				const offers = await this.ensureOffers(segment, value);
+				for (const offer of offers) {
+					if (!seen.has(offer.quotaId)) {
+						seen.add(offer.quotaId);
+						collected.push(offer);
+					}
+				}
+			} catch (err) {
+				// Faixa-alvo: erro real de descoberta → propaga (como hoje).
+				if (isTarget) throw err;
+				// Vizinha: circuit breaker — para o sweep, devolve o acumulado.
+				const code = (err as { code?: number }).code ?? (err as { status?: number }).status;
+				const throttled =
+					code === 429 || /throttle|too many/i.test(err instanceof Error ? err.message : "");
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						source: "discovery-sweep",
+						event: throttled ? "throttle_breaker" : "neighbor_error_breaker",
+						segment,
+						target,
+						failed_value: value,
+						error_name: err instanceof Error ? err.name : "unknown",
+						code,
+					}),
+				);
+				break;
+			}
+		}
+		return collected;
 	}
 }
 

@@ -1,11 +1,14 @@
 ---
 id: FIX-69
 titulo: "Spike de validação ao vivo da Bevi — latência por simulate quente + rate-limit (gate técnico do sweep)"
-status: todo
+status: done
 bloco: bloco-e-sweep-multifaixa
 arquivos:
   - scripts/spike-bevi-sweep.ts
 rodada: 2026-06-22 — investigação dos logs do agent na develop
+commit: dcc0b64c
+executado_em: 2026-06-22
+resultado: PENDENTE-KAIRO — script entregue e type-clean; sem BEVI_SELFCONTRACT_HASH no worktree, NÃO rodou ao vivo. Rodar com `pnpm spike:bevi-sweep` (env no header do script). FIX-70 procedeu com defaults conservadores.
 ---
 
 ## 1. Palavras do operador (Kairo)

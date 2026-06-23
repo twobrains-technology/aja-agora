@@ -18,6 +18,7 @@
 		"db:migrate:bundle": "esbuild scripts/migrate-guard.mjs --bundle --platform=node --target=node22 --format=cjs --packages=bundle --outfile=scripts/migrate-guard.bundle.cjs",
 		"db:migrate:runtime": "node scripts/migrate-guard.bundle.cjs",
 		"worker:proposal": "tsx scripts/proposal-worker.ts",
+		"spike:bevi-sweep": "pnpm dlx tsx scripts/spike-bevi-sweep.ts",
 		"db:backfill:contacts": "tsx scripts/backfill-contacts.ts",
 		"db:backfill:contacts:bundle": "esbuild scripts/backfill-contacts.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/backfill-contacts.bundle.cjs",
 		"db:backfill:contacts:runtime": "node scripts/backfill-contacts.bundle.cjs",
