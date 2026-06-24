@@ -31,9 +31,16 @@
 - **Armadilhas registradas no _prompt.md:** (a) NÃO tocar nos 3 cassettes (fixtures de bug); (b) marcadores parseados pelo código (`Nome do usuario:` etc.) só mudam se mudar nos DOIS lados — default = preservar; (c) identificadores (`computeConversaoDimension`) fora de escopo; (d) só diacrítico/ortografia, zero reescrita de sentido.
 - **Reversibilidade:** média (system-prompt é core; gate central + quarentena protegem).
 
+### D5 · 18:32 — Poll/merge escopados com `--block` + conserto de atrito na skill
+- **Contexto:** `merge-wave.sh poll --wave 1` enxerga os 4 blocos da onda 1; os 3 dormentes (a/b/c, nunca lançados) ficam `pending` eternamente → `all_terminal` nunca true → loop travaria.
+- **Decidi:** usar `poll/merge --wave 1 --block bloco-d-acentuacao-textos` (o script suporta `--block`). E consertei o atrito na fonte: adicionei nota no `~/.claude/skills/todo-blocks/SKILL.md` (seção Comandos do modo autônomo) avisando pra escopar `--block` quando se lança subconjunto da onda.
+- **Reversibilidade:** fácil.
+- **Evidência:** `merge-wave.sh poll --wave 1 --block bloco-d-...` → 1 pending; SKILL.md editado.
+
 ## Linha do tempo (resumida)
 - 18:20 — Skills todo-blocks + to-saindo carregadas. CLAUDE.md global atualizado (D1). Explore disparado.
 - 18:24 — Inventário recebido (epicentro = prompts .ts; landing limpa). Bloco-d desenhado (D4). Escrevendo manifesto/itens/prompt.
+- 18:30 — Bloco-d (FIX-73/74/75 + _prompt) commitado e pushado na develop (`980fe627`). Workspace autônomo lançado: `fix-acentuacao-textos-ptbr` (wsId `348cf356-f536-4771-8736-c76604bc824d`, branch `fix/acentuacao-textos-ptbr`). Iniciando poll da tag-sentinela.
 
 ## Relatório final (preencher ao encerrar)
 - **Resultado vs critério de pronto:** _(pendente)_
