@@ -81,10 +81,32 @@ function formatBRLCompact(value: number): string {
 	return `R$ ${value}`;
 }
 
+// Shape navegável do payload interactive do WhatsApp. Tipa o que os testes/
+// consumidores acessam (body.text, action.button/buttons/sections.rows) e mantém
+// índice [k]: unknown em cada nível pra os ~20 builders não baterem em
+// excess-property (campos extras como header/footer são absorvidos).
+export interface WhatsAppInteractive {
+	type?: string;
+	body?: { text?: string; [k: string]: unknown };
+	action?: {
+		button?: string;
+		buttons?: Array<{
+			reply: { id: string; title?: string; [k: string]: unknown };
+			[k: string]: unknown;
+		}>;
+		sections?: Array<{
+			rows?: Array<{ id: string; title?: string; description?: string; [k: string]: unknown }>;
+			[k: string]: unknown;
+		}>;
+		[k: string]: unknown;
+	};
+	[k: string]: unknown;
+}
+
 export interface WhatsAppResponse {
 	type: "text" | "interactive";
 	text?: string;
-	interactive?: Record<string, unknown>;
+	interactive?: WhatsAppInteractive;
 }
 
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {

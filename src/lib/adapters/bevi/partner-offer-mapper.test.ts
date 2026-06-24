@@ -13,7 +13,7 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 		expect(real.grupo).toBe(offers[0].grupo);
 		expect(real.category).toBe("auto");
 		expect(real.creditValue).toBe(offers[0].valorCarta);
-		expect(real.monthlyPayment).toBe(Math.round(offers[0].parcela * 100) / 100);
+		expect(real.monthlyPayment).toBe(Math.round(Number(offers[0].parcela) * 100) / 100);
 	});
 
 	it("GAPs §11 ficam undefined — nunca chuta prazo/taxa", () => {

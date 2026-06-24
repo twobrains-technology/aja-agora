@@ -326,6 +326,9 @@ async function handleGateEvent(args: {
 			// já materializa como artifact no turn do usuário.
 			return null;
 	}
+
+	// gate não tratado explicitamente → sem turno simulado
+	return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

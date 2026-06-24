@@ -31,6 +31,7 @@ const fakeResult: JornadaJudgeResult = {
 	flags: {
 		pulouPasso: false,
 		fechouEmLeadEmVezDeContrato: false,
+		desviouPraConsultorHumano: false,
 		jargaoNoLeigo: false,
 		tomRoboticoOuFrio: false,
 		prometeuCreditoImediato: false,

@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { glob } from "node:fs/promises";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { INSIGHTS_SYSTEM_PROMPT } from "@/lib/admin/insights-prompt";
@@ -234,14 +233,17 @@ describe("regressão: acentuação", () => {
 		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toContain("acentua");
 	});
 
-	it("texto de UI visível (.tsx) não contém palavras PT-BR sem acento", async () => {
+	it("texto de UI visível (.tsx) não contém palavras PT-BR sem acento", () => {
 		const pattern = new RegExp(`>[^<>{}]*\\b(${FORBIDDEN_UI.join("|")})\\b[^<>{}]*<`, "i");
 		const root = join(__dirname, "..", "..");
 		const offenders: string[] = [];
-		for await (const file of glob("**/*.tsx", {
-			cwd: root,
-			exclude: (p: string) => p.includes("node_modules") || p.endsWith(".test.tsx"),
-		})) {
+		// readdirSync recursivo (tipado no @types/node 20) — node:fs/promises.glob
+		// é Node 22, não tipado aqui. Filtra .tsx visível, fora de node_modules/.test.tsx.
+		const files = readdirSync(root, { recursive: true, encoding: "utf8" });
+		for (const file of files) {
+			if (!file.endsWith(".tsx") || file.endsWith(".test.tsx") || file.includes("node_modules")) {
+				continue;
+			}
 			const content = readFileSync(join(root, file), "utf8");
 			for (const line of content.split("\n")) {
 				if (pattern.test(line)) offenders.push(`${file}: ${line.trim()}`);

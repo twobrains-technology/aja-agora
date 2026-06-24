@@ -71,9 +71,12 @@ describe("BeviSelfContractAdapter — id fora do offerIndex sinaliza re-busca (F
 		await expect(
 			adapter.simulateQuota({ groupId: "nao-existe", creditValue: 180000 }),
 		).rejects.toThrow(/oferta|grupo/i);
-		const err = await adapter
-			.getGroupDetails({ groupId: "auto-180k" })
-			.catch((e) => e as GroupNotInDiscoveryError);
+		const err = await adapter.getGroupDetails({ groupId: "auto-180k" }).then(
+			() => {
+				throw new Error("getGroupDetails deveria rejeitar para id fora da descoberta");
+			},
+			(e) => e as GroupNotInDiscoveryError,
+		);
 		expect(err.groupId).toBe("auto-180k");
 	});
 

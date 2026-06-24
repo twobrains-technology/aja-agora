@@ -219,7 +219,7 @@ describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () =>
 	it("Bv2-06: SPECIALIST_BASE_PROMPT VETA 'taxa dentro da média do mercado'", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/taxa\s+dentro\s+da\s+m[ée]dia/i);
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
-			/(VETADO|PROIBIDO|NUNCA|nao\s+escreva).*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia.*(VETADO|PROIBIDO|NUNCA|sem fonte)/is,
+			/(VETADO|PROIBIDO|NUNCA|nao\s+escreva)[\s\S]*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia[\s\S]*(VETADO|PROIBIDO|NUNCA|sem fonte)/i,
 		);
 	});
 });
