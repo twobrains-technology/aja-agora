@@ -1,7 +1,9 @@
 ---
 id: FIX-75
 titulo: "Acentuar admin UI (.tsx) + sweep de artifacts/templates voltados ao usuário"
-status: todo
+status: done
+commit: 1bc22d63
+executado_em: 2026-06-24
 bloco: bloco-d-acentuacao-textos
 arquivos:
   - src/app/admin/(dashboard)/page.tsx

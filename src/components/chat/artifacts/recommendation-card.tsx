@@ -32,8 +32,8 @@ const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
 // scoreBreakdown do payload (entra no cálculo do score), só não é exibido. A
 // composição completa de custos é disclosed na proposta (PDF) pré-assinatura.
 const FACTOR_LABELS: Partial<Record<keyof RecommendationCardPayload["scoreBreakdown"], string>> = {
-	monthlyFit: "Orcamento",
-	contemplation: "Contemplacao",
+	monthlyFit: "Orçamento",
+	contemplation: "Contemplação",
 	termMatch: "Prazo",
 };
 

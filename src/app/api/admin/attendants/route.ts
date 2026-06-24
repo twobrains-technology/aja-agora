@@ -59,13 +59,13 @@ export async function POST(req: Request) {
 	try {
 		body = await req.json();
 	} catch {
-		return Response.json({ error: "JSON invalido" }, { status: 400 });
+		return Response.json({ error: "JSON inválido" }, { status: 400 });
 	}
 
 	const parsed = createAttendantSchema.safeParse(body);
 	if (!parsed.success) {
 		return Response.json(
-			{ error: "Dados invalidos", details: parsed.error.flatten() },
+			{ error: "Dados inválidos", details: parsed.error.flatten() },
 			{ status: 400 },
 		);
 	}
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
 		where: eq(userTable.email, email),
 	});
 	if (existing) {
-		return Response.json({ error: "Ja existe um usuario com este email" }, { status: 409 });
+		return Response.json({ error: "Já existe um usuário com este email" }, { status: 409 });
 	}
 
 	// Create user via better-auth (creates user + account rows with hashed password)
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
 		return Response.json(
 			{
 				id: createdUserId,
-				warning: `Atendente criado, mas o email nao foi enviado: ${message}. Use 'Reenviar convite'.`,
+				warning: `Atendente criado, mas o email não foi enviado: ${message}. Use 'Reenviar convite'.`,
 			},
 			{ status: 201 },
 		);

@@ -15,13 +15,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 	try {
 		body = await req.json();
 	} catch {
-		return Response.json({ error: "JSON invalido" }, { status: 400 });
+		return Response.json({ error: "JSON inválido" }, { status: 400 });
 	}
 
 	const parsed = updateAttendantSchema.safeParse(body);
 	if (!parsed.success) {
 		return Response.json(
-			{ error: "Dados invalidos", details: parsed.error.flatten() },
+			{ error: "Dados inválidos", details: parsed.error.flatten() },
 			{ status: 400 },
 		);
 	}
@@ -30,7 +30,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		where: eq(userTable.id, id),
 	});
 	if (!existing || existing.role !== "attendant") {
-		return Response.json({ error: "Atendente nao encontrado" }, { status: 404 });
+		return Response.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
 	await db.update(userTable).set(parsed.data).where(eq(userTable.id, id));
@@ -50,7 +50,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 		where: eq(userTable.id, id),
 	});
 	if (!existing || existing.role !== "attendant") {
-		return Response.json({ error: "Atendente nao encontrado" }, { status: 404 });
+		return Response.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
 	await db.update(userTable).set({ isActive: false }).where(eq(userTable.id, id));

@@ -1,7 +1,9 @@
 ---
 id: FIX-73
 titulo: "Estender o guard de acentuação para cobrir prompts .ts + ampliar blocklist (teste-primeiro)"
-status: todo
+status: done
+commit: 07c893b1
+executado_em: 2026-06-24
 bloco: bloco-d-acentuacao-textos
 arquivos:
   - src/lib/agent/system-prompt.acentuacao.test.ts
