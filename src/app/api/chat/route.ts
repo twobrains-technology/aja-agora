@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
+import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
@@ -261,14 +262,22 @@ export async function POST(req: NextRequest) {
 			})
 		: undefined;
 
+	// FIX-46: vincula o cookie `aja_uid` à conversa web ao criar, pra retomada
+	// same-device (GET /api/chat/resume acha "a conversa deste cookie").
 	if (providedId && !conv) {
-		const [created] = await db.insert(conversations).values({ id: providedId }).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ id: providedId, metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	} else if (conv) {
 		conversationId = conv.id;
 		contactName = conv.contactName ?? null;
 	} else {
-		const [created] = await db.insert(conversations).values({}).returning();
+		const [created] = await db
+			.insert(conversations)
+			.values({ metadata: { webCookie: userKey } })
+			.returning();
 		conversationId = created.id;
 	}
 
@@ -580,13 +589,22 @@ export async function POST(req: NextRequest) {
 								return;
 							}
 							try {
+								// FIX-48: resolve o leadId da conversa AQUI (a ponta primária) e
+								// injeta no input — sem ele a proposta nasce órfã e a raia trava
+								// em `qualificado` (createBeviProposal pula a transição). O lead
+								// já existe (gate identify/qualify criou) no caminho web.
+								const leadId = await getLeadIdForConversation(conversationId);
 								// FIX-25: derivação canônica do input (segmento/valor/objetivo/lance
 								// + administradoraPreferida) — módulo único compartilhado com o
 								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
 								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
 								const { proposalId, offer, noOffer } = await startContract(
 									conversationId,
-									buildStartContractInput(meta, { cpf, celular, lgpd: body.action.lgpd }),
+									buildStartContractInput(
+										meta,
+										{ cpf, celular, lgpd: body.action.lgpd },
+										{ leadId },
+									),
 								);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
@@ -884,9 +902,14 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
-							// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance
-							// embutido (educa + opt-in) antes da busca. O directive dispara o
-							// gate `lance-embutido` em seguida. "maybe"/"no" vão direto pra busca.
+							// Jornada do doc (passo 2, FIX-4): a educação de lance embutido vale
+							// pra QUALQUER resposta (Sim/Não/Talvez) — o próprio texto mira quem
+							// NÃO tem o valor do lance hoje. "yes" reage primeiro (e segue pro
+							// gate lance-value, que então dispara lance-embutido); "no"/"maybe"
+							// vão direto pro gate `lance-embutido` (educa + opt-in) ANTES da busca.
+							// BUG-LANCE-EMBUTIDO-PULADO (QA noturno E2E 2026-06-21): antes "no"/
+							// "maybe" caíam direto em pipeSearchSummaryTurn, pulando a educação —
+							// regressão do FIX-4 (o nextGate já passava por todos; o handler não).
 							if (action.value === "yes") {
 								await pipeDirectiveTurn({
 									conversationId,
@@ -897,7 +920,7 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}
 
@@ -956,7 +979,27 @@ export async function POST(req: NextRequest) {
 							// Celular vira contato do lead (mesma régua do whatsapp_optin).
 							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 							await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
+							// qualificação despachando o próximo gate (credit/value picker). O
+							// reveal continua sendo disparado por pipeSearchSummaryTurn no fim da
+							// qualificação (o tripwire de identidade agora sempre passa). Se a
+							// qualificação já estava completa (dados volunteered), nextGate=search
+							// e revelamos direto.
+							const afterIdentity = await reloadMeta(conversationId);
+							const nextAfterIdentity = nextGate(afterIdentity, {
+								hasContactName: Boolean(contactName),
+							});
+							if (nextAfterIdentity === "search") {
+								await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							} else {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Perfeito, recebido!",
+								);
+								await pipeGatePrompt({ conversationId, gate: nextAfterIdentity, writer });
+							}
 							return;
 						}
 

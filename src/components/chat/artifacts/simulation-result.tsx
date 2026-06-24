@@ -125,6 +125,17 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 								/>
 							</div>
 						)}
+						{/* FIX-57 (jornada2): clareza meses×lance. O stakeholder achou que
+						    "mais meses = menos lance" era regra do grupo — é a mecânica do
+						    consórcio (contemplation-dial.ts, correta). Aqui só comunicamos a
+						    relação, sem tocar no cálculo. */}
+						<p
+							data-testid="meses-lance-hint"
+							className="text-[11px] text-muted-foreground mt-2 leading-[1.45] m-0"
+						>
+							Quanto antes você quiser ser contemplado, maior o lance; com mais meses, o lance
+							necessário vai caindo.
+						</p>
 					</div>
 				)}
 
@@ -177,6 +188,17 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					<Sparkles className="size-4" />
 					Tenho interesse
 				</Button>
+
+					{/* FIX-57 (jornada2): o card terminava só no "Tenho interesse" e
+					    parecia um beco sem saída — o usuário não percebia o que vinha
+					    depois. Esta linha sinaliza que a jornada continua (confirmação
+					    no card de decisão), sem poluir o card com mais um botão. */}
+					<p
+						data-testid="proximo-passo-hint"
+						className="text-[11px] text-muted-foreground text-center -mt-1.5 m-0"
+					>
+						Próximo passo: confirmar se esse plano faz sentido pra você.
+					</p>
 
 				{/* CTAs secundárias (bug #12). FIX-7: o modelo às vezes repete
 				    "Tenho interesse" nas actions — o botão interno já cobre, filtra. */}

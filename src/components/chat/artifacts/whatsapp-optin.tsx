@@ -1,8 +1,8 @@
 "use client";
 
-import { MessageSquare } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
+import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
@@ -80,7 +80,7 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 				{/* header */}
 				<div className="flex flex-col gap-[2px]">
 					<div className="flex items-center gap-2">
-						<MessageSquare className="size-[17px] text-primary" />
+						<WhatsappGlyph className="size-[17px] text-[#25D366]" />
 						<span className="inline-flex h-6 items-center rounded-full bg-[var(--neutral-100)] px-[11px] text-[11px] font-semibold tracking-[0.02em] text-muted-foreground">
 							Continuar pelo WhatsApp
 						</span>

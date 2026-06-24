@@ -27,8 +27,15 @@ import {
 
 // ---- Presentation tool schemas (reused across definition + route) ----
 
-const groupCardSchema = z.object({
-	id: z.string().describe("ID do grupo (UUID)"),
+export const groupCardSchema = z.object({
+	// FIX-71: o id e um hash OPACO da descoberta (Bevi quotaId). O agent precisa
+	// copia-lo LITERAL pra simular o grupo escolhido depois — se derivar um slug
+	// (banco-categoria-valor-prazo) o simulate_quota recusa. A descricao trava isso.
+	id: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups (um hash, ex.: 6a0ca9ca1b2c3d4e5f607182). NUNCA derive nem fabrique de banco/categoria/valor/prazo (ex.: 'bb-auto-200k-72m').",
+		),
 	administradora: z.string().describe("Nome da administradora"),
 	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
@@ -39,7 +46,7 @@ const groupCardSchema = z.object({
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
 });
 
-const comparisonTableSchema = z.object({
+export const comparisonTableSchema = z.object({
 	groups: z
 		.array(
 			groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
@@ -114,8 +121,13 @@ const simulationResultSchema = z.object({
 		.describe("CTAs explicitas pro fechamento (bug #12)"),
 });
 
-const recommendationSchema = z.object({
-	id: z.string().describe("ID do grupo recomendado"),
+export const recommendationSchema = z.object({
+	// FIX-71: id LITERAL opaco da descoberta — o agent copia, nunca deriva slug.
+	id: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo recomendado, copiado EXATAMENTE como veio de search_groups/recommend_groups. NUNCA derive nem fabrique de banco/categoria/valor/prazo (ex.: 'bb-auto-200k-72m').",
+		),
 	administradora: z.string().describe("Nome da administradora"),
 	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
@@ -266,19 +278,57 @@ const STATUS_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+// FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
+// multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
+// faixa de valor (sem objetivo×lance). O adapter Bevi varre o alvo + vizinhas e
+// devolve a UNIÃO; adapters sem suporte ignoram o campo.
+const searchGroupsSweepInput = searchGroupsInput.extend({
+	sweep: z
+		.boolean()
+		.optional()
+		.describe(
+			"Quando true, varre 3-5 faixas de valor ao redor do alvo e devolve um espectro real de grupos pra comparar (acumula alternativas no indice). Use ao montar uma comparacao ou quando o usuario quiser ver OUTRAS opcoes/faixas de preco. Omita (default) pra busca rapida de 1 faixa — a primeira impressao sai mais rapida.",
+		),
+});
+
 async function executeSearchGroups(
 	adapter: AdministradoraAdapter,
-	args: z.infer<typeof searchGroupsInput>,
+	args: z.infer<typeof searchGroupsSweepInput>,
 ) {
+	// `args` (incl. sweep) flui direto pro adapter — SearchGroupsParams.sweep.
 	const groups = await adapter.searchGroups(args);
 	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
 	return { groups: groups.map(toModelGroupSummary), total: groups.length };
+}
+
+/**
+ * FIX-71/FIX-68 — detecta um groupId FABRICADO pela LLM. Os ids reais da
+ * descoberta (Bevi quotaId) sao hashes opacos; o id alucinado segue o padrao
+ * `[banco-]categoria-valor-prazo` e SEMPRE termina em "-NNNk-NNm"
+ * (ex.: "bb-auto-200k-72m", "auto-130k-60m"). Pega ambos sem falso-positivo no
+ * hash (que nunca tem esse sufixo). Usado pra curto-circuitar com guidance
+ * acionavel em vez de gastar round-trip na Bevi e o erro virar "instabilidade".
+ */
+export function looksLikeFabricatedGroupId(groupId: string): boolean {
+	return /-\d+k-\d+m$/i.test((groupId ?? "").trim());
 }
 
 async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof simulateQuotaInput>,
 ) {
+	// FIX-71: id fabricado (banco-categoria-valor-prazo) NUNCA existe na descoberta
+	// — nem chama a Bevi. Devolve guidance acionavel (mesmo shape de erro de tool)
+	// pro modelo se auto-corrigir com o id LITERAL ou re-buscar. Degradacao
+	// graciosa preservada (sem loop de "instabilidade").
+	if (looksLikeFabricatedGroupId(args.groupId)) {
+		return {
+			error:
+				`O groupId "${args.groupId}" parece fabricado (padrao banco-categoria-valor-prazo) e nao existe na descoberta. ` +
+				"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
+				"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive o id de banco/categoria/valor/prazo.",
+		};
+	}
 	const [details, simulation] = await Promise.all([
 		adapter.getGroupDetails({ groupId: args.groupId }),
 		adapter.simulateQuota(args),
@@ -839,9 +889,11 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	};
 
 	const search_groups = tool({
-		description: consorcioTools.search_groups.description,
-		inputSchema: searchGroupsInput,
-		execute: async (args: z.infer<typeof searchGroupsInput>) => {
+		// FIX-70: opt-in `sweep` (varredura multi-faixa) só na tool por-request — a
+		// versão estática (registry) segue como sentinel sem contexto.
+		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais.`,
+		inputSchema: searchGroupsSweepInput,
+		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));

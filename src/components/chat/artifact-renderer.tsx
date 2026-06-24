@@ -16,7 +16,35 @@ import { TopicPicker } from "./artifacts/topic-picker";
 import { ValuePicker } from "./artifacts/value-picker";
 import { WhatsappOptin } from "./artifacts/whatsapp-optin";
 
-export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
+export function ArtifactRenderer({
+	artifact,
+	active = true,
+}: {
+	artifact: Artifact;
+	active?: boolean;
+}) {
+	const inner = renderArtifact(artifact);
+	// FIX-49: só o turno ATIVO é interativo. Card do histórico (mensagem antiga ou
+	// hidratada da retomada) fica selado: pointer-events-none + aria-disabled +
+	// inert (read-only de verdade) e levemente esmaecido. Preserva o histórico
+	// visível, mas re-clicar não re-dispara a ação (vetor de duplicação, cruza
+	// com FIX-48). quick_reply renderiza null → nada pra selar.
+	if (active || inner === null) return inner;
+	return (
+		<div
+			data-sealed="true"
+			aria-disabled="true"
+			// React 19: `inert` é boolean prop; string vazia vira `false` e o atributo
+			// some (selo furado p/ teclado/SR). Tem que ser `inert={true}`.
+			inert={true}
+			className="pointer-events-none select-none opacity-60"
+		>
+			{inner}
+		</div>
+	);
+}
+
+function renderArtifact(artifact: Artifact) {
 	switch (artifact.type) {
 		case "group_card":
 			return <GroupCard payload={artifact.payload} />;

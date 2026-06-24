@@ -10,7 +10,7 @@
 
 ```bash
 # 1. Deps no HOST (pra rodar vitest/tsc/biome no host) — worktree vem SEM node_modules
-npm ci                       # real, NUNCA symlink (symlink quebra Turbopack do container)
+pnpm install                 # rápido com o store compartilhado; NUNCA symlink
 
 # 2. Sobe a stack do workspace (Postgres + App em container, hot reload)
 ~/.claude/skills/local-dev/scripts/bootstrap-workspace.sh
@@ -18,7 +18,7 @@ npm ci                       # real, NUNCA symlink (symlink quebra Turbopack do 
 
 # 3. Migrations NÃO rodam sozinhas no bootstrap — schema nasce VAZIO.
 #    Rode DENTRO do container (nunca psql/drizzle manual contra o DB):
-docker exec aja-app-<workspace> npm run db:migrate
+docker exec aja-app-<workspace> pnpm db:migrate
 
 # 4. App: http://aja-<workspace>.orb.local   (workspace = basename do worktree)
 ```
@@ -30,10 +30,9 @@ docker exec aja-app-<workspace> npm run db:migrate
 ## 1. Worktree vem SEM node_modules
 
 `git worktree add` não copia `node_modules`. Testes de host (vitest/tsc/biome)
-falham com "Cannot find module". **`npm ci` real** (rápido, ~10s). NUNCA
+falham com "Cannot find module". **`pnpm install`** (rápido com store compartilhado). NUNCA
 symlinkar do clone principal — symlink quebra o Turbopack do container
-(ver memória global `worktree_node_modules_symlink`). `npx vitest` pega um
-vitest errado do cache global; use `./node_modules/.bin/vitest`.
+(ver memória global `worktree_node_modules_symlink`). `pnpm exec vitest` resolve o binário do projeto (use `./node_modules/.bin/vitest` se preferir explícito).
 
 ## 2. `.env.local` gerado do `.env.example` NÃO tem os secrets obrigatórios
 
@@ -83,12 +82,12 @@ A landing renderiza sem DB; o chat real (e qualquer rota que toca o banco) quebr
 Correto (convenção do projeto — migration sempre dentro do container, nunca
 manual contra o DB):
 ```bash
-docker exec aja-app-<workspace> npm run db:migrate
+docker exec aja-app-<workspace> pnpm db:migrate
 ```
 
 ## 4. Testes de INTEGRAÇÃO no host precisam do DB do workspace
 
-`npm run test:unit` (Camadas 1+2 do pre-commit) inclui testes que conectam num
+`pnpm test:unit` (Camadas 1+2 do pre-commit) inclui testes que conectam num
 Postgres **real** (ex.: `src/lib/agent/tools/ai-sdk.test.ts`,
 `src/lib/**/lead-history-completeness.test.ts`, e alguns cassettes de
 `tests/regression/agent-trajectory.test.ts` que persistem no DB). Sem DB

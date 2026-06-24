@@ -88,6 +88,14 @@ export type ConversationMetadata = {
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */
 	recommendedAdministradora?: string;
+	/** FIX-68 — valor-alvo (creditMax) usado na ÚLTIMA descoberta que produziu o
+	 * reveal. Baseline pra distinguir "trocar de faixa de valor" (re-buscar é
+	 * legítimo) de "re-revelar a MESMA faixa em loop" (BUG-REVEAL-LOOP, que NÃO
+	 * pode voltar). Snapshotado pelo runner quando os cards de descoberta saem;
+	 * comparado contra qualifyAnswers.creditMax em tool-policy/artifact-guard
+	 * (revealValueTargetChanged). undefined = descoberta anterior ao fix → fail-safe
+	 * (não reabre a busca, mantém o anti-loop). */
+	discoveredCreditTarget?: number;
 	/** FIX-6: snapshot dos NÚMEROS da oferta ativa (capturado no reveal e
 	 * atualizado em what-if). O payload do contemplation_dial é coagido
 	 * server-side a partir daqui (coerceDialPayload) — o modelo passava o

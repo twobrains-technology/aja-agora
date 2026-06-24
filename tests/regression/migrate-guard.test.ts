@@ -80,7 +80,7 @@ describe("migrate-guard — entrypoint roda no BUNDLE CJS (não vira no-op)", ()
 		// no-op silencioso (migrations não aplicadas). O entrypoint deve casar pelo
 		// NOME do script. Gera o bundle e roda sem DATABASE_URL: main() tem que
 		// rodar e abortar com a mensagem.
-		execSync("npm run db:migrate:bundle", { cwd: process.cwd(), stdio: "ignore" });
+		execSync("pnpm run db:migrate:bundle", { cwd: process.cwd(), stdio: "ignore" });
 		let stderr = "";
 		let exitCode = 0;
 		try {

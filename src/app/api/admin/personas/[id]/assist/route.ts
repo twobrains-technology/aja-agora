@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/llm/gateway-anthropic";
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";

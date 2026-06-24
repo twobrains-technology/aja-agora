@@ -36,6 +36,12 @@ Verificado em tela pelo Kairo em 2026-06-05 com a proposta real do teste manual
 - **A Bevi tem uma "mesa"** dentro da parte de contratação — é lá que a proposta é
   efetivada pro cliente (back office, manual — ver DES-1 no CONTEXT.md: assinatura é
   da mesa, não automatizada).
+  - 🆕 **Mesa de operação Aja Agora** (2026-06-21): o Kairo propôs uma **mesa própria** — um
+    atendente humano nosso assume o caso (transbordo no kanban) e faz o contrato na
+    administradora, orientado por um **agente copiloto** com o PDF daquela administradora.
+    É a peça humana desta travessia. Spec de negócio:
+    [`../visao/mesa-de-operacao.md`](../visao/mesa-de-operacao.md). ⚠️ A confirmar (Q-K5) se
+    ela substitui/complementa a mesa da Bevi e se opera direto na administradora.
 - **Do lado Aja Agora, a jornada tem que chegar até o pagamento** (1º boleto). Razão:
 
 > "Pra mim o consórcio está apto a pagar a comissão quando o cara fizer o **primeiro
@@ -174,6 +180,40 @@ Consultadas TODAS as propostas reais conhecidas (DB local + IDs capturados nas d
 4. **Boleto e pagamento** — depende de G1/G2: exibir/encaminhar o boleto e detectar o
    pagamento. **Evento "1º boleto pago" = sucesso do funil** (dispara comissão, G3).
 
+## 6. RESOLUÇÃO 2026-06-14 (Kairo) — máquina de estados do desfecho
+
+O Kairo forneceu os estados pós-`waitingForUniqueCode` (G1 fechado) e esclareceu
+boleto (G2) e webhook (G5). **Esses estados são manuais — movidos pela MESA; o
+tempo de inserção é definido pela Conexia.**
+
+| Status (nome) | Valor sistêmico | Raia do funil |
+|---|---|---|
+| Inserir proposta | `approveWaitingForUniqueCode` | Na administradora (mesa) |
+| Aguardando Pagto Cliente | `aguard_pag_cliente` | Aguardando pagamento |
+| Proposta Efetivada | `prop_efetivada` | Fechado — ganho |
+| Aprovada | `approved` | Fechado — ganho |
+| Reprovado | `repproved` *(typo real da Bevi)* | Perdido |
+
+### Gaps fechados
+
+- **G1 (estados pós-`waitingForUniqueCode`)** — ✅ respondido (tabela acima).
+- **G2 (boleto)** — ✅ **não existe emissão/entrega separada**; o cliente **segue
+  pelo link** pós incluir os documentos. O estado `aguard_pag_cliente` é o
+  "aguardando pagamento do cliente".
+- **G5 (webhook)** — ✅ **não há webhook**; acompanhamento é **polling**. Decisão:
+  **worker do próprio aja-agora** (BullMQ, back junto no mesmo projeto/container
+  se der — implica Redis) com job recorrente de `consult_proposal_status` por
+  proposta pendente, mapeando status→raia e disparando mensagem proativa.
+- **Escopo da API de Parceiro** — leva até a **etapa de envio de documento**
+  (disponibiliza o link pro cliente anexar e fechar a auto-contratação). Do envio
+  de docs em diante = mesa + polling.
+- **G3 (comissão)** — segue a confirmar qual transição exata dispara (provável
+  saída de `aguard_pag_cliente` → `prop_efetivada`).
+
+> Consumido em `docs/jornada/proposta-funil-contatos-retorno.md` (Parte 2, raias
+> 5-8) e na anotação `docs/correcoes/todo/bloco-b-funil-raias/fix-44`.
+
 ---
 *Anotado durante a sessão de testes manuais de 2026-06-05. Campos das telas CONEXIA
-registrados sem os valores (PII real do operador nos prints).*
+registrados sem os valores (PII real do operador nos prints). Desfecho da máquina
+de estados adicionado em 2026-06-14 (resposta do Kairo).*

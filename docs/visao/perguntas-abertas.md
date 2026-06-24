@@ -13,6 +13,8 @@
 | Q-K2 | Quem é o financiador citado como "AGE/AGX" e qual o vínculo formal com a comissão? | Primer §5 está com ⚠️; afeta a quem reportamos o funil | Clareza do modelo de receita |
 | Q-K3 | Data prevista da campanha e canais (Meta? Google?) | Dimensiona a janela do P0 e quais UTMs/integrações de atribuição importam | P0.3 |
 | Q-K4 | O resgate de abandono via WhatsApp (1 mensagem) é aceitável como política? | Opt-in existe; falta a decisão de usá-lo pra resgate | Camada 0 |
+| Q-K6 (=DEC-A) | O **atendente de mesa** é entidade nova simples (nome+whatsapp, sem login) ou deve reusar/estender o `user role=attendant` já existente (handoff de chat)? E o copiloto fala no WhatsApp dele ou em tela web? | Evita duplicar (ou conflitar com) o conceito de "pessoa que atende via WhatsApp" | Modelagem da mesa |
+| Q-K7 (=DEC-B) | O transbordo no kanban é só **botão manual** ou também **automático por estágio** (round-robin)? | Muda UX e lógica do pipeline | Escopo do transbordo |
 
 ## Pra Bevi (parceria/API)
 
@@ -37,4 +39,6 @@
 
 ## Respondidas
 
-*(vazio — mover pra cá com data, fonte e consequência aplicada)*
+| ID | Pergunta | Resposta (fonte, data) | Consequência aplicada |
+|---|---|---|---|
+| Q-K5 | Mesa de operação Aja Agora × mesa da Bevi: substitui/complementa? Contrato direto na administradora ou via Bevi? Multi-administradora? | **Modelo faseado** (Kairo, verbal, 2026-06-21): a mesa é fornecida pela Bevi hoje, mas é **da administradora**; plano = operar a administradora **direto** em breve. **Não** é multi-administradora paralela — é a mesma operação com a fonte abstraída. | [`mesa-de-operacao.md`](./mesa-de-operacao.md) "Modelo faseado" + DEC-D + §8 atualizados. Desenho: camada de operação com adapter `via-bevi` (hoje) + espaço pro `direto-administradora`. NÃO bloqueia mais a implementação. |

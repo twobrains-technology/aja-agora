@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import { clampCreditToCategory } from "@/lib/agent/qualify-config";
 import type { TurnAnalysis } from "@/lib/agent/turn-analyzer";
+import { nextGate } from "@/lib/agent/qualify-state";
 import { analyzeAndMerge } from "./analyze";
 
 // FIX-33 — guardrail server-side do valor de carta na faixa da categoria.
@@ -31,11 +32,11 @@ const NEUTRAL: TurnAnalysis = {
 };
 
 describe("FIX-33 — clampCreditToCategory (função pura)", () => {
-	it("acima do teto clampa no teto (auto: 300k)", () => {
+	it("acima do teto clampa no teto (auto: 500k — FIX-54)", () => {
 		const r = clampCreditToCategory(5_000_000, "auto");
-		expect(r.value).toBe(300_000);
+		expect(r.value).toBe(500_000);
 		expect(r.clamped).toBe(true);
-		expect(r.max).toBe(300_000);
+		expect(r.max).toBe(500_000);
 		expect(r.min).toBe(20_000);
 	});
 
@@ -55,7 +56,7 @@ describe("FIX-33 — clampCreditToCategory (função pura)", () => {
 	it.each<[Category, number, number]>([
 		["imovel", 5_000_000, 2_000_000],
 		["imovel", 50_000, 100_000],
-		["auto", 5_000_000, 300_000],
+		["auto", 5_000_000, 500_000],
 		["auto", 500, 20_000],
 		["moto", 200_000, 80_000],
 		["moto", 1_000, 8_000],
@@ -71,15 +72,15 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("carta de 5 milhões de auto → creditMax clampado (300k), creditClampedFrom=5M", async () => {
+	it("carta de 5 milhões de auto → creditMax clampado (500k — FIX-54), creditClampedFrom=5M", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("quero uma carta de 5 milhoes de auto", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(300_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
 		expect(meta.qualifyAnswers?.creditClampedFrom).toBe(5_000_000);
 		// creditMin derivado respeita a faixa.
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(300_000);
+		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
 		expect(meta.qualifyAnswers?.creditMin ?? 0).toBeGreaterThan(0);
 	});
 
@@ -101,8 +102,8 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("entre 4 e 5 milhoes", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(300_000);
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(300_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
+		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
 	});
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {
@@ -112,5 +113,55 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
 		expect(meta.qualifyAnswers?.creditClampedFrom).toBeUndefined();
+	});
+});
+
+// BUG (QA noturno E2E browser, 2026-06-21): o funil pulava o passo 2 da jornada
+// canônica (experiência + consent) sempre que o usuário mencionava o valor em
+// texto livre — caminho MAIS comum, pois a landing incentiva "Quero um carro de
+// até R$ 80 mil…". `analyze.ts` cravava experiencePrev="returning" + consent=true
+// só por ter extraído um campo de qualificação, e o nextGate caía direto em
+// `identify`. Confronto: jornada-canonica.md §2 ("Você já participou de um
+// consórcio antes?" → explicação se não → "Entendi, pode continuar") é etapa
+// sequencial obrigatória, NÃO condicionada a "não ter dito o valor".
+// Card: docs/correcoes/inbox/2026-06-21-funil-pula-experience-consent.md
+describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiência/consent", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("valor sem sinal de experiência NÃO crava experiencePrev='returning' nem consent (dado fica salvo)", async () => {
+		// Espelha o cenário real do browser: "carro de 80 mil, 850/mês" — o
+		// analyzer extrai o valor mas NÃO detecta experiência (experiencePrev=null).
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um carro de uns 80 mil, gastando perto de 850 por mes", "auto", meta);
+
+		// o valor é preservado — não se re-pergunta
+		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
+		// mas a experiência NÃO é inventada e o consent NÃO é presumido
+		expect(meta.experiencePrev).toBeUndefined();
+		expect(meta.qualifyConsented).toBeFalsy();
+	});
+
+	it("meta resultante → nextGate dispara 'experience' (passo 2 do docx), não 'identify'", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("um carro de 80 mil", "auto", meta);
+
+		// nome já capturado; o próximo gate canônico é a pergunta de experiência
+		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+	});
+
+	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 80_000,
+			experiencePrev: "returning",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("ja fiz consorcio antes, quero um carro de 80 mil", "auto", meta);
+
+		expect(meta.experiencePrev).toBe("returning");
 	});
 });

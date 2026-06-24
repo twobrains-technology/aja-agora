@@ -2,9 +2,25 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
+import { attachContact } from "@/lib/contacts";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 export type TrackableStage = "engajado" | "qualificado";
+
+/**
+ * FIX-48: resolve o leadId da conversa (o lead já existe quando o fechamento
+ * dispara — gate identify/qualify criou). O caller injeta no input do
+ * startContract pra a proposta nascer VINCULADA e a raia avançar. Null quando
+ * a conversa ainda não tem lead (raro no caminho web — o fechamento exige reveal,
+ * que vem depois do identify que já cria o lead).
+ */
+export async function getLeadIdForConversation(conversationId: string): Promise<string | null> {
+	const lead = await db.query.leads.findFirst({
+		where: eq(leads.conversationId, conversationId),
+		columns: { id: true },
+	});
+	return lead?.id ?? null;
+}
 
 const STAGE_ORDER: Record<"novo" | TrackableStage, number> = {
 	novo: 0,
@@ -82,6 +98,16 @@ export async function createLeadFromConversation(opts: {
 		.returning();
 
 	await applyTrackedStageToLead(opts.conversationId, created.id);
+
+	// FIX-42: religa o cliente unificado. Resolve por phone/email/name e grava
+	// contactId no lead e na conversa. Não bloqueia a criação do lead.
+	if (opts.phone || opts.email) {
+		await attachContact({
+			conversationId: opts.conversationId,
+			leadId: created.id,
+			input: { phone: opts.phone, email: opts.email, name: opts.name },
+		});
+	}
 
 	return { leadId: created.id, isSimulated };
 }

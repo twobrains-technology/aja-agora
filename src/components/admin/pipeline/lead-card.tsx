@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 export interface Lead {
 	id: string;
 	conversationId: string;
+	contactId?: string | null;
 	name: string | null;
 	phone: string | null;
 	email: string | null;
@@ -17,6 +18,8 @@ export interface Lead {
 	creditValue: string | null;
 	createdAt: string;
 	updatedAt: string;
+	// FIX-45: canais usados pelo contato (dedup). Vazio → cai no canal da conversa.
+	channels?: string[];
 	conversation: {
 		channel: "web" | "whatsapp";
 		createdAt: string;
@@ -81,12 +84,19 @@ export function LeadCard({
 			<CardContent className="space-y-2.5">
 				<div className="flex items-center justify-between gap-2">
 					<span className="font-medium truncate text-sm">{getDisplayName(lead)}</span>
-					<Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 h-5">
-						<ChannelIcon channel={lead.conversation.channel} />
-						<span className="ml-0.5">
-							{lead.conversation.channel === "whatsapp" ? "WA" : "Web"}
-						</span>
-					</Badge>
+					{/* FIX-45: badge multi-canal (dedup por contato). Fallback pro canal
+					    da conversa quando o card não veio deduplicado. */}
+					<div className="flex shrink-0 items-center gap-1" data-testid="lead-channels">
+						{(lead.channels && lead.channels.length > 0
+							? lead.channels
+							: [lead.conversation.channel]
+						).map((ch) => (
+							<Badge key={ch} variant="secondary" className="text-[10px] px-1.5 h-5">
+								<ChannelIcon channel={ch as "web" | "whatsapp"} />
+								<span className="ml-0.5">{ch === "whatsapp" ? "WA" : "Web"}</span>
+							</Badge>
+						))}
+					</div>
 				</div>
 
 				<div className="flex flex-col gap-1.5 text-xs text-muted-foreground">

@@ -1,13 +1,15 @@
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1.7
 # aja-agora — Dockerfile DE DESENVOLVIMENTO (HMR via volume mount + next dev)
 #
-# Diferenças vs Dockerfile (prod):
-# - Single-stage: instala deps no /app e roda `npm run dev` direto. O source
-#   vem por volume mount (./:/app) declarado no docker-compose.yml — ele
-#   sobrescreve o /app desta imagem, exceto os volumes anônimos pra
-#   /app/node_modules e /app/.next.
-# - Não roda `next build`. Não cria standalone. Não tem entrypoint de
-#   migration (em dev rodamos `npm run db:push` / `db:migrate` no host quando
+# Arquitetura pnpm (regra global TwoBrains — anti-fritar Mac):
+# - NÃO instala deps aqui dentro (sem RUN install). As deps são materializadas
+#   no boot (CMD) gravando no named volume app_node_modules, usando o store pnpm
+#   compartilhado (tb-pnpm-store-shared) montado em /pnpm/store via compose.
+#   Com store populado, `pnpm install` é quase instantâneo (hardlink) → nada de
+#   reconstruir a imagem com node_modules a cada `up --build`.
+# - O source vem por bind mount (./:/app) declarado no docker-compose.yml.
+# - Não roda `next build`. Não cria standalone. Não tem entrypoint de migration
+#   (em dev rodamos `pnpm db:push` / `db:migrate` dentro do container quando
 #   precisa, via DNS do Postgres do workspace).
 # - Roda como root pra evitar dor de permission no bind mount.
 # - NODE_ENV=development → Next ativa HMR + Turbopack + source maps.
@@ -15,18 +17,20 @@
 FROM node:22-alpine
 
 RUN apk add --no-cache libc6-compat
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-# Instala deps. Quando o compose monta ./:/app por cima, esses node_modules
-# ficam ocultos — por isso o compose também monta um volume anônimo em
-# /app/node_modules apontando pro que está instalado AQUI dentro da imagem.
-COPY package.json package-lock.json ./
-RUN npm ci
-
-ENV NODE_ENV=development
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    PNPM_STORE_DIR=/pnpm/store \
+    NODE_ENV=development \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
-CMD ["npm", "run", "dev", "--", "--port", "3000", "--hostname", "0.0.0.0"]
+
+# Install no boot (store compartilhado → instantâneo) e sobe o dev server.
+# `pnpm exec next ...` chama o binário direto: `pnpm dev -- --port` vazava o `--`
+# pro Next 16 (interpretava como diretório → "Invalid project directory /app/--port").
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm exec next dev --port 3000 --hostname 0.0.0.0"]

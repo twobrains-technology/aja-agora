@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, type LucideIcon, MessageCircle, Scale } from "lucide-react";
+import { type LucideIcon, MessageCircle, Scale, ShieldCheck } from "lucide-react";
 import { motion, useInView } from "motion/react";
 import { useRef } from "react";
 
@@ -30,14 +30,14 @@ export const PROCESS_STEPS: ProcessStep[] = [
 		step: "2",
 		title: "Nós comparamos",
 		description:
-			"Buscamos entre as administradoras o plano mais inteligente pro seu perfil, comparando taxa, prazo e histórico de cada grupo.",
+			"Buscamos entre as administradoras o plano mais inteligente pro seu perfil — comparando taxa, prazo, histórico de assembleias e de contemplação de cada grupo, e a hora certa de dar um lance.",
 	},
 	{
-		icon: Heart,
+		icon: ShieldCheck,
 		step: "3",
-		title: "Seguimos juntos",
+		title: "Preservamos sua privacidade",
 		description:
-			"Explicamos cada assembleia e o melhor momento de dar um lance, e acompanhamos seu plano até a contemplação. Sempre por perto.",
+			"Pedimos seu CPF só porque as administradoras exigem pra liberar as informações dos planos. É só pra isso — seus dados não viram moeda de troca.",
 	},
 ];
 

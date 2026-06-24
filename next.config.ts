@@ -20,6 +20,17 @@ const nextConfig: NextConfig = {
 			},
 		],
 	},
+	// A rota /chat foi removida — o chat vive só no modal (teatro) da home.
+	// Redirect 308 preserva bookmarks/links antigos sem dar 404.
+	async redirects() {
+		return [
+			{
+				source: "/chat",
+				destination: "/",
+				permanent: true,
+			},
+		];
+	},
 };
 
 export default nextConfig;

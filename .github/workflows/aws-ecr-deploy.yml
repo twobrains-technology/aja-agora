@@ -11,9 +11,13 @@
 #   - IAM role `gha-ecs-deploy` confia no repo da org `twobrains-technology` (uma vez)
 #
 # Comportamento:
-#   - main    → env=prod  → ECR twobrains/<app>/prod
-#   - develop → env=dev   → ECR twobrains/<app>/dev
+#   - main    → env=prod  → ECR twobrains/<app>/prod   (auto em push)
+#   - develop → env=dev   → ECR twobrains/<app>/dev     (MANUAL — push NÃO deploya;
+#               só valida migrations. Deploy do dev via workflow_dispatch env=dev.)
 #   - workflow_dispatch → escolhe env (prod|dev) explicitamente
+#
+# Custo: o auto-deploy da develop a cada push (runner ARM + build + ECS) foi
+# desligado em 2026-06-23 (Kairo) — develop deploya só sob demanda.
 
 name: AWS ECR Deploy (sa-east-1, arm64)
 
@@ -124,8 +128,12 @@ jobs:
 
   build:
     needs: check-migrations
-    # Build/push só em push pra branch real — em PR só validação.
-    if: github.event_name != 'pull_request'
+    # Deploy automático SÓ em push na main (prod) OU disparo manual (workflow_dispatch).
+    # Push na develop NÃO builda/deploya — corte de custo (2026-06-23): develop deploya
+    # só sob demanda via "Run workflow" (workflow_dispatch, env=dev). PR roda só check-migrations.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4

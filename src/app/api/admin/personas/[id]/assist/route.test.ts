@@ -24,7 +24,7 @@ vi.mock("ai", async (importOriginal) => {
 	};
 });
 
-vi.mock("@ai-sdk/anthropic", () => ({
+vi.mock("@/lib/llm/gateway-anthropic", () => ({
 	anthropic: vi.fn(() => ({ id: "anthropic-mock" })),
 }));
 

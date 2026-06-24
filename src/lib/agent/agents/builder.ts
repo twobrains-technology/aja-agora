@@ -1,4 +1,4 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
@@ -14,7 +14,7 @@ import {
 } from "../system-prompt";
 import { buildConsorcioTools, consorcioTools } from "../tools/ai-sdk";
 
-const anthropic = createAnthropic();
+const anthropic = createGatewayAnthropic();
 
 type ConsorcioToolName = keyof typeof consorcioTools;
 type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;

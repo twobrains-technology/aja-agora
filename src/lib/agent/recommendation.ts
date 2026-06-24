@@ -118,7 +118,30 @@ export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3
 		};
 	});
 
-	return scored.sort((a, b) => b.score - a.score).slice(0, topN);
+	const sorted = scored.sort((a, b) => b.score - a.score);
+
+	// FIX-56 (jornada2 revisão 2): diversifica por administradora. Em vez de só
+	// fatiar o top N por score (que deixava 2 grupos da mesma adm entrarem
+	// juntos), monta o top N com no máximo 1 grupo por administradora, na ordem
+	// de score. Se faltar administradora distinta pra preencher N, completa com
+	// os melhores grupos restantes (fallback — não corta abaixo de N à toa).
+	const seenAdmins = new Set<string>();
+	const picked: ScoredGroup[] = [];
+	const leftovers: ScoredGroup[] = [];
+	for (const s of sorted) {
+		const admin = s.group.administradora;
+		if (picked.length < topN && admin && !seenAdmins.has(admin)) {
+			seenAdmins.add(admin);
+			picked.push(s);
+		} else {
+			leftovers.push(s);
+		}
+	}
+	for (const s of leftovers) {
+		if (picked.length >= topN) break;
+		picked.push(s);
+	}
+	return picked;
 }
 
 // ---- Fallback: garantia de ≥3 opções (bug #09) ----

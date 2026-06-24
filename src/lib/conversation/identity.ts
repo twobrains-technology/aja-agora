@@ -10,6 +10,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { attachContact } from "@/lib/contacts";
 
 export interface StoredIdentity {
 	cpf: string; // só dígitos
@@ -97,6 +98,12 @@ export async function storeIdentity(
 		...meta,
 		identityCollected: true,
 		identityEnc: encryptIdentity(identity),
+	});
+	// FIX-42: identidade capturada (CPF + celular) → resolve o cliente unificado
+	// e religa a conversa. attachContact nunca lança nem loga o CPF.
+	await attachContact({
+		conversationId,
+		input: { cpf: identity.cpf, phone: identity.celular },
 	});
 }
 

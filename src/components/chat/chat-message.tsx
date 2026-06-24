@@ -149,6 +149,11 @@ export function ChatMessage({
 	const isUser = message.role === "user";
 	const prefersReduced = useReducedMotion();
 	const parts = classifyParts(message);
+	// FIX-49: interativo só no TURNO ATIVO. Mensagem hidratada da retomada
+	// (`metadata.resumed`) é histórico — artifacts/gates selados, mesmo sendo a
+	// última (até o usuário mandar a próxima mensagem). Fecha a duplicação (FIX-48).
+	const isResumed = message.metadata?.resumed === true;
+	const isInteractive = isLast && !isResumed;
 	const [completedTextIds, setCompletedTextIds] = useState<Set<string>>(() => new Set());
 	const handleTextComplete = useCallback((id: string) => {
 		setCompletedTextIds((prev) => {
@@ -281,7 +286,7 @@ export function ChatMessage({
 											}}
 											className="w-full"
 										>
-											<ArtifactRenderer artifact={segment.artifact} />
+											<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
 										</motion.div>
 									);
 								}
@@ -295,7 +300,7 @@ export function ChatMessage({
 											transition={{ duration: 0.2 }}
 											className="w-full"
 										>
-											<GateRenderer payload={segment.data} active={isLast} />
+											<GateRenderer payload={segment.data} active={isInteractive} />
 										</motion.div>
 									);
 								}
@@ -309,7 +314,7 @@ export function ChatMessage({
 											transition={{ duration: 0.2 }}
 											className="w-full"
 										>
-											<WelcomeCategories payload={segment.data} active={isLast} />
+											<WelcomeCategories payload={segment.data} active={isInteractive} />
 										</motion.div>
 									);
 								}

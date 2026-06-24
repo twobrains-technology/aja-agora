@@ -1,15 +1,16 @@
-import Link from "next/link";
-
 import { Wordmark } from "@/components/brand/wordmark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 
-const COLS = [
+type FooterLink = { label: string; href?: string; seed?: string };
+
+const COLS: { title: string; links: FooterLink[] }[] = [
 	{
 		title: "Consórcio",
 		links: [
-			{ label: "Imóvel", href: "/chat" },
-			{ label: "Automóvel", href: "/chat" },
-			{ label: "Moto", href: "/chat" },
-			{ label: "Serviços", href: "/chat" },
+			{ label: "Imóvel", seed: "Quero conquistar um imóvel" },
+			{ label: "Automóvel", seed: "Quero comprar um carro" },
+			{ label: "Moto", seed: "Quero comprar uma moto" },
+			{ label: "Serviços", seed: "Quero contratar serviços" },
 		],
 	},
 	{
@@ -22,7 +23,10 @@ const COLS = [
 	},
 ];
 
-export function BrandFooter() {
+const LINK_CLASS =
+	"text-left text-sm text-muted-foreground transition-colors hover:text-foreground";
+
+export function BrandFooter({ onStart }: { onStart: TheaterOpener }) {
 	return (
 		<footer className="border-t border-border bg-[#fbfbf9] px-5 pb-10 pt-12 sm:px-8">
 			<div className="mx-auto max-w-[1120px]">
@@ -30,7 +34,7 @@ export function BrandFooter() {
 					<div className="max-w-sm">
 						<Wordmark className="h-11 w-auto" />
 						<p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-							Consultoria de consórcio independente. Transparente, estratégica e do seu lado.
+							Consultoria de consórcio independente. Transparente, alinhada e do seu lado.
 						</p>
 					</div>
 					<div className="flex gap-16">
@@ -39,24 +43,21 @@ export function BrandFooter() {
 								<h5 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
 									{col.title}
 								</h5>
-								<div className="mt-3 flex flex-col gap-2">
+								<div className="mt-3 flex flex-col items-start gap-2">
 									{col.links.map((link) =>
-										link.href.startsWith("#") ? (
-											<a
+										link.seed !== undefined ? (
+											<button
 												key={link.label}
-												href={link.href}
-												className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+												type="button"
+												onClick={(e) => onStart(link.seed ?? "", e.currentTarget)}
+												className={LINK_CLASS}
 											>
+												{link.label}
+											</button>
+										) : (
+											<a key={link.label} href={link.href} className={LINK_CLASS}>
 												{link.label}
 											</a>
-										) : (
-											<Link
-												key={link.label}
-												href={link.href}
-												className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-											>
-												{link.label}
-											</Link>
 										),
 									)}
 								</div>

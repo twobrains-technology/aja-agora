@@ -1,4 +1,4 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import {
 	buildJudgePrompt,
@@ -69,7 +69,7 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 			`[judge] sanitized ${stripped} lone surrogate(s) from prompt (length=${rawPrompt.length})`,
 		);
 	}
-	const anthropic = createAnthropic();
+	const anthropic = createGatewayAnthropic();
 	const start = Date.now();
 
 	let lastError: unknown;

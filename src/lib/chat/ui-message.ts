@@ -105,4 +105,12 @@ export type AjaDataParts = {
 	tool: ToolStatusPartData;
 };
 
-export type AjaUIMessage = UIMessage<unknown, AjaDataParts>;
+/** FIX-49 — metadados por mensagem. `resumed` marca o que veio da HIDRATAÇÃO da
+ * retomada (não chegou ao vivo neste turno): a UI usa pra ancorar o scroll,
+ * mostrar a âncora "Você voltou" e SELAR artifacts/gates do histórico (read-only,
+ * só o turno ativo é clicável — fecha o vetor de duplicação do funil, FIX-48). */
+export type AjaMessageMetadata = {
+	resumed?: boolean;
+};
+
+export type AjaUIMessage = UIMessage<AjaMessageMetadata, AjaDataParts>;

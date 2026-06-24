@@ -2,16 +2,23 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+> **Package manager: `pnpm` é o único suportado.** `npm`/`yarn` são proibidos
+> (lockfile, store e arquitetura dev local dependem de pnpm). Ative com
+> `corepack enable && corepack prepare pnpm@latest --activate`.
+
+A stack de dev roda em containers por workspace (convenção TwoBrains local-dev,
+OrbStack) — **não** rode `next dev` no host:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# sobe Postgres + Redis + app (HMR via bind mount) no workspace atual
+docker compose --profile containerized up -d
+# app em http://aja-<workspace>.orb.local
+```
+
+Pra rodar testes/typecheck/lint no host (worktree vem sem node_modules):
+
+```bash
+pnpm install   # rápido com o store compartilhado tb-pnpm-store-shared
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

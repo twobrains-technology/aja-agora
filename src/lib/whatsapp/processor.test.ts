@@ -4,6 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	sendTextMock: vi.fn().mockResolvedValue(undefined),
 	processOrchestratorMock: vi.fn().mockResolvedValue(undefined),
+	isMesaAttendantPhoneMock: vi.fn().mockResolvedValue(false),
+	handleMesaCopilotMock: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./mesa/routing", () => ({
+	isMesaAttendantPhone: mocks.isMesaAttendantPhoneMock,
+	handleMesaCopilot: mocks.handleMesaCopilotMock,
 }));
 
 vi.mock("@/db", () => ({
@@ -45,6 +52,9 @@ describe("WhatsApp processor — paridade web + early-return 'voltar' (bug #06 #
 	beforeEach(() => {
 		mocks.sendTextMock.mockClear();
 		mocks.processOrchestratorMock.mockClear();
+		mocks.isMesaAttendantPhoneMock.mockClear();
+		mocks.isMesaAttendantPhoneMock.mockResolvedValue(false);
+		mocks.handleMesaCopilotMock.mockClear();
 	});
 
 	it("mensagem 'voltar' → early-return: NÃO chama orchestrator, manda ack", async () => {
@@ -82,5 +92,24 @@ describe("WhatsApp processor — paridade web + early-return 'voltar' (bug #06 #
 		await processTextMessage("5511999999999", "quero uma moto nova", "Teste", "msg5");
 		expect(mocks.processOrchestratorMock).toHaveBeenCalledTimes(1);
 		expect(mocks.processOrchestratorMock.mock.calls[0][1]).toMatch(/moto/i);
+	});
+
+	// FIX-66: número de atendente de mesa → copiloto, NUNCA vendas (spec §8).
+	it("número de atendente de mesa → handleMesaCopilot, NÃO chama o orchestrator de vendas", async () => {
+		mocks.isMesaAttendantPhoneMock.mockResolvedValue(true);
+		await processTextMessage("5562999998888", "como faço o contrato na Canopus?", "Op", "msgM");
+		expect(mocks.handleMesaCopilotMock).toHaveBeenCalledWith(
+			"5562999998888",
+			"como faço o contrato na Canopus?",
+		);
+		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
+	});
+
+	it("o check de mesa vem ANTES do funil normal — early-return mesmo com texto comum", async () => {
+		mocks.isMesaAttendantPhoneMock.mockResolvedValue(true);
+		await processTextMessage("5562999998888", "quero comprar uma moto", "Op", "msgM2");
+		// Texto que normalmente iria pro orchestrator não vaza pra vendas.
+		expect(mocks.handleMesaCopilotMock).toHaveBeenCalledTimes(1);
+		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
 	});
 });

@@ -35,6 +35,22 @@ em "anúncio → proposta que ANDA".
 > usa durable workflow — coexistindo com o chat síncrono, não o substituindo
 > ([`../decisions/2026-06-11-durable-workflow-borda-assincrona.md`](../decisions/2026-06-11-durable-workflow-borda-assincrona.md), FIX-22).
 
+## PM — Mesa de operação (travessia humana; não depende da Bevi responder)
+
+> Peça **humana** da travessia (camada 6). Roda em paralelo ao P0.4-P0.6 — é processo
+> nosso, não bloqueado pelas [`perguntas-abertas.md`](./perguntas-abertas.md) da Bevi.
+> Detalhe completo: [`mesa-de-operacao.md`](./mesa-de-operacao.md).
+
+| # | Entrega | Por quê (negócio) | Depende de |
+|---|---|---|---|
+| PM.1 | **Entidade Administradora + CRUD** de PDFs (dossiê de operação), casando por nome com `beviProposals.administradora` | Dá ao copiloto a fonte de "como contratar" por administradora; não é fonte de oferta (Bevi fonte única) | — |
+| PM.2 | **Cadastro de atendente de mesa** (nome+whatsapp, sem login) + CRUD admin | A figura que assume o caso na travessia | DEC-A (Q-K6) |
+| PM.3 | **Transbordo no kanban** — botão no card → escolhe atendente → dispara o caso pro WhatsApp dele | "Ter a opção de transbordar" | PM.2 + DEC-B (Q-K7) |
+| PM.4 | **Agente copiloto** — injeta o PDF da administradora da cota + dados do caso, orienta o atendente e tira dúvidas no WhatsApp | "O agente vai ter o PDF e vai saber exatamente tudo" | PM.1 + PM.3 |
+
+⚠️ Escopo institucional a confirmar (Q-K5): se a mesa opera **direto na administradora**
+(vs via Bevi/Conexia), isso toca o anti-escopo de multi-administradora abaixo.
+
 ## P2 — vida de consorciado (docx passo 7; hoje declaradamente fora de escopo — D8)
 
 | # | Entrega | Depende de |

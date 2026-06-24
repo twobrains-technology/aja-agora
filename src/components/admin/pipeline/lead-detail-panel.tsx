@@ -2,9 +2,10 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Smartphone } from "lucide-react";
+import { Globe, Headset, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Sheet,
 	SheetContent,
@@ -16,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
 import type { Lead } from "./lead-card";
+import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
 
 const STAGE_LABELS: Record<string, string> = {
 	novo: "Novo",
@@ -23,6 +25,8 @@ const STAGE_LABELS: Record<string, string> = {
 	qualificado: "Qualificado",
 	em_negociacao: "Em Negociacao",
 	proposta_enviada: "Proposta Enviada",
+	na_administradora: "Na Administradora",
+	aguardando_pagamento: "Aguardando Pagamento",
 	fechado_ganho: "Fechado Ganho",
 	perdido: "Perdido",
 };
@@ -44,11 +48,15 @@ export function LeadDetailPanel({
 }) {
 	const [activeTab, setActiveTab] = useState("conversa");
 	const [insightsLoaded, setInsightsLoaded] = useState(false);
+	const [transbordoOpen, setTransbordoOpen] = useState(false);
 
-	// Reset insights state when lead changes
+	// Reset insights/transbordo state when lead changes. lead?.id é a CHAVE do reset
+	// (não uma dependência usada no corpo) — daí o ignore do useExhaustiveDependencies.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: efeito de reset keyed em lead?.id
 	useEffect(() => {
 		setInsightsLoaded(false);
 		setActiveTab("conversa");
+		setTransbordoOpen(false);
 	}, [lead?.id]);
 
 	// Track when insights tab is first activated
@@ -84,6 +92,16 @@ export function LeadDetailPanel({
 									})}
 								</span>
 							</div>
+							{/* FIX-64: transbordo manual pra mesa de operação (DEC-B). */}
+							<Button
+								variant="outline"
+								size="sm"
+								className="mt-2 w-fit"
+								onClick={() => setTransbordoOpen(true)}
+							>
+								<Headset className="size-3.5" />
+								Transbordar para a mesa
+							</Button>
 						</SheetHeader>
 
 						<Tabs
@@ -110,6 +128,13 @@ export function LeadDetailPanel({
 								)}
 							</TabsContent>
 						</Tabs>
+
+						<MesaTransbordoDialog
+							leadId={lead.id}
+							leadName={lead.name}
+							open={transbordoOpen}
+							onOpenChange={setTransbordoOpen}
+						/>
 					</>
 				)}
 			</SheetContent>

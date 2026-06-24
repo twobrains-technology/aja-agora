@@ -1,0 +1,12 @@
+### REVERIFICAÇÃO FINAL — 20:42:15 ###
+## Camada 1 (test:unit) ##
+ Test Files  168 passed | 1 skipped (169)
+      Tests  1810 passed | 4 skipped (1814)
+## Camada 2 (regression) ##
+ Test Files  2 passed (2)
+      Tests  226 passed (226)
+## Integration SERIAL (produto; Letta externa esperada falhar) ##
+ FAIL  src/lib/memory/letta-adapter.integration.test.ts > LettaMemoryAdapter (integration, real Letta)
+ Test Files  1 failed | 29 passed | 2 skipped (32)
+      Tests  115 passed | 13 skipped (128)
+### FIM 20:42:40 ###

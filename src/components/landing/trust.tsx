@@ -6,7 +6,7 @@ const PILLARS: { icon: LucideIcon; title: string; body: string }[] = [
 	{
 		icon: Scale,
 		title: "Independentes",
-		body: "Não trabalhamos para uma administradora só. Comparamos o mercado inteiro pra você.",
+		body: "Não trabalhamos para uma administradora só. Comparamos as melhores administradoras pra você.",
 	},
 	{
 		icon: Eye,
@@ -16,7 +16,7 @@ const PILLARS: { icon: LucideIcon; title: string; body: string }[] = [
 	{
 		icon: Heart,
 		title: "Do seu lado",
-		body: "Acompanhamos a vida do seu plano — do primeiro “oi” até a conquista.",
+		body: "Nosso compromisso é achar o melhor plano para você. E não o que paga mais comissão ou mais taxa de administração.",
 	},
 ];
 

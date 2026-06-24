@@ -3,11 +3,13 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { nextGate } from "@/lib/agent/qualify-state";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
+import { handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -54,6 +56,16 @@ export async function processTextMessage(
 			return;
 		}
 
+		// Mesa de operação (FIX-66): número de um atendente de mesa cadastrado vai
+		// pro COPILOTO, nunca pro agente de vendas (spec §8 — anti-colisão de
+		// canal). Precedência sobre o atendente-de-chat (isAttendantPhone): o
+		// roteamento por número é binário — é mesa → é copiloto, com ou sem
+		// handoff aberto (handleMesaCopilot acolhe o caso sem handoff).
+		if (await isMesaAttendantPhone(from)) {
+			await handleMesaCopilot(from, text);
+			return;
+		}
+
 		if (await isAttendantPhone(from)) {
 			const handled = await handleAgentMessage(from, text);
 			if (!handled) {
@@ -83,23 +95,39 @@ export async function processTextMessage(
 		// Gate "identify" (D1): funil aguardando CPF → captura textual determinística
 		// (valida DV, persiste cifrado, celular = waId) sem turno de agente.
 		{
-			const { captureIdentifyText, IDENTIFY_CONFIRMED_REPLY, IDENTIFY_INVALID_CPF_REPLY } =
-				await import("./identify-capture");
+			const {
+				captureIdentifyText,
+				IDENTIFY_CONFIRMED_REPLY,
+				IDENTIFY_CONTINUE_REPLY,
+				IDENTIFY_INVALID_CPF_REPLY,
+			} = await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
 				if (capture.outcome === "invalid") {
 					await sendTextMessage(from, IDENTIFY_INVALID_CPF_REPLY);
 					return;
 				}
-				await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
 				const conv = await db.query.conversations.findFirst({
 					where: eq(conversations.waId, from),
 				});
 				if (conv) {
-					const { runSearchSummaryWithOrchestrator } = await import("./adapter");
-					await withSimulatorClockIfNeeded(conv, () =>
-						runSearchSummaryWithOrchestrator({ from, conversationId: conv.id }),
-					);
+					// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
+					// qualificação despachando o próximo gate (mesmo padrão do
+					// handleHandoffDecline). Só revela se a qualificação já estava
+					// completa (nextGate=search). O tripwire de identidade do reveal
+					// agora sempre passa, pois a identidade já foi coletada cedo.
+					const cMeta = metaOf(conv);
+					const nextG = nextGate(cMeta);
+					const { runSearchSummaryWithOrchestrator, fireGate } = await import("./adapter");
+					if (nextG === "search") {
+						await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
+						await withSimulatorClockIfNeeded(conv, () =>
+							runSearchSummaryWithOrchestrator({ from, conversationId: conv.id }),
+						);
+					} else {
+						await sendTextMessage(from, IDENTIFY_CONTINUE_REPLY);
+						await withSimulatorClockIfNeeded(conv, () => fireGate(from, conv.id, nextG, cMeta));
+					}
 				}
 				return;
 			}

@@ -1,6 +1,7 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
+import { revealValueTargetChanged } from "./tool-policy";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 /**
@@ -107,7 +108,13 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	{
 		name: "reveal-loop",
 		applies: ({ meta, artifactType, userIntent, isUserTurn }) => {
-			const revealLoopActive = meta.revealCompleted === true && isUserTurn;
+			// FIX-68: trocou de FAIXA DE VALOR (valor-alvo ≠ o descoberto) → os cards
+			// da NOVA faixa são re-descoberta legítima, não re-reveal. Não suprime —
+			// a tool-policy já reabilitou search/recommend nesse caso. O afirmativo
+			// curto na MESMA faixa (revealValueTargetChanged=false) continua caindo no
+			// guard (BUG-REVEAL-LOOP intacto).
+			const revealLoopActive =
+				meta.revealCompleted === true && isUserTurn && !revealValueTargetChanged(meta);
 			const isRereveal =
 				revealLoopActive &&
 				(artifactType === "comparison_table" ||
@@ -131,6 +138,25 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			artifactType === "recommendation_card" && discoveryCount === 1,
 		logLine: ({ conversationId }) =>
 			`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
+	},
+	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
+	// dados, antes do valor" + "Voltou a pedir o valor". O credit gate (value
+	// picker server-emitido) já respeita a ordem nova via qualify-state; esta é
+	// a 2ª linha de defesa se o MODELO chamar present_value_picker fora de ordem.
+	// PRÉ-reveal, suprime o value_picker quando: (a) a identidade ainda não foi
+	// coletada (dados ANTES do valor) OU (b) o valor já foi coletado (anti-
+	// repetição — confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-
+	// reveal o picker é legítimo (ajuste de valor) — não cai aqui.
+	{
+		name: "value-picker-order",
+		applies: ({ artifactType, meta }) =>
+			artifactType === "value_picker" &&
+			meta.revealCompleted !== true &&
+			(meta.identityCollected !== true || meta.qualifyAnswers?.creditMax !== undefined),
+		logLine: ({ meta, conversationId }) =>
+			`[value-picker-order] guard: suprimindo value_picker pré-reveal — ${
+				meta.identityCollected !== true ? "identidade ainda não coletada (dados antes do valor)" : "valor já coletado (anti-repetição)"
+			} (conv=${conversationId})`,
 	},
 ];
 

@@ -47,12 +47,13 @@ import {
 	buildSearchSummaryDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
@@ -230,6 +231,55 @@ describe("BUG-META-NARRATIVE — agent verbalizou mecanismo da UI ao usuario", (
 	// Cross-ref: defesa estrutural completa em
 	// src/lib/agent/system-prompt.meta-narrative.test.ts (3 describes / 5 its).
 	// Nao duplicado aqui — esse cassette de regression e o smoke do detector.
+});
+
+// ============================================================================
+// BUG-FALLBACK-REFRESH — agent verbalizou solução manual de UI
+// ----------------------------------------------------------------------------
+// Real (FIX-52, jornada2_revisão.docx, Bernardo): ao ficar sem ação (o card de
+// dados nao disparava), o agent improvisava "atualiza a página e tenta de novo"
+// — empurra trabalho manual pro usuario, a solucao preguiçosa que e regra de
+// produto evitar. A CAUSA foi corrigida (card identify dispara, ver cassette
+// "funil: qualificacao completa SEM identidade vai pro gate identify"); este
+// cassette trava a FRASE como regressao de defesa-em-profundidade.
+// ============================================================================
+
+describe("BUG-FALLBACK-REFRESH — agent sugeriu solução manual (atualiza a página)", () => {
+	const REFRESH_DETECTORS = [
+		/atualiz[ae]\s+a?\s*p[áa]gina/i,
+		/recarregu?e\s+a?\s*p[áa]gina/i,
+		/recarregar\s+a?\s*p[áa]gina/i,
+		/d[áê]\s+um\s+refresh/i,
+	];
+
+	it("cassette: stream com o fallback proibido vazado, reproduzido fielmente", async () => {
+		const cassette = "Ops, deu um probleminha aqui. Atualiza a página e tenta de novo, por favor.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector regex de fallback manual pega o cassette do bug real", () => {
+		const cassette = "Atualiza a página e tenta de novo.";
+		const hits = REFRESH_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			`Cassette do fallback deve casar com >=1 detector. Cassette: "${cassette}". ` +
+				"Se ZERO casarem, alguem afrouxou o detector e o bug volta sem ser pego.",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: o prompt de produção veta esse fallback (sincronia com a regra dura)", () => {
+		const rule = /N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+		expect(
+			rule.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa vetar o fallback 'atualiza a página'.",
+		).toBe(true);
+	});
 });
 
 // ============================================================================
@@ -2214,12 +2264,15 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 		expect(promptCombined).toMatch(/lance/i);
 	});
 
-	it("CROSS-REF: HARD_RULES.md sec 2.2 explicita ordem dos 3 gates antes do valor", () => {
+	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES de prazo/lance, FIX-53)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		const ordemCorreta = /experience[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+		// Ordem da revisão 2 (docx + FIX-53): experience → consent → identidade →
+		// valor → timeframe → lance. Os DADOS e o VALOR precedem prazo e lance.
+		const ordemReal =
+			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
 		expect(
-			ordemCorreta.test(hardRules),
-			"HARD_RULES.md sec 2.2 precisa listar os 3 gates na ordem experience → timeframe → lance",
+			ordemReal.test(hardRules),
+			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → timeframe → lance",
 		).toBe(true);
 	});
 });
@@ -2658,6 +2711,235 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 });
 
 // ============================================================================
+// CENARIO — FIX-68 — re-descoberta por TROCA DE FAIXA pos-reveal
+// ----------------------------------------------------------------------------
+// Real (conversa a8b0a80d, "Maria joaquina", auto, 2026-06-22): pos-reveal de
+// 256k (RODOBENS 308k/96m, id real 6a2b004ff9ec5c948e8c07d0), o usuario trocou a
+// faixa ("Valor do bem: R$ 130.000, Prazo: 60 meses"). O agent foi DIRETO pra
+// simulate_quota("auto-130k-60m") SEM re-buscar — id FABRICADO (padrao
+// categoria-valor-prazo, nao existe no codigo) — e o adapter recusou ("Oferta/
+// grupo nao encontrado na descoberta atual"). Loop de "instabilidade" 6x.
+//
+// Causa: tool-policy removia search_groups da fase `reveal` (BUG-REVEAL-LOOP) —
+// pos-reveal o agent so tinha simulate_quota, que NAO descobre faixa nova
+// (resolve groupId contra o offerIndex da busca ANTERIOR). Sem id real de 130k e
+// sem search, o modelo alucinou o id.
+//
+// Fix: search_groups VOLTA na fase reveal SO quando o valor-alvo mudou vs a
+// ultima descoberta (revealValueTargetChanged) + prompt manda RE-BUSCAR ao
+// trocar de faixa e NUNCA fabricar groupId. O re-reveal da MESMA faixa
+// (afirmativo curto) continua bloqueado.
+//
+// Defesa estrutural detalhada: src/lib/agent/orchestrator/tool-policy.test.ts
+// (matriz fase x tool + revealValueTargetChanged).
+// ============================================================================
+
+describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", () => {
+	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "rafael-auto",
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			qualifyAnswers: {
+				creditMax: 256_000,
+				monthlyBudget: 4_000,
+				prazoMeses: 60,
+				objetivo: "contemplacao_rapida",
+				hasLance: "no",
+				lanceEmbutido: false,
+			},
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			simulatorOfferDispatched: true,
+			// Snapshot da descoberta de 256k (gravado pelo runner no reveal).
+			discoveredCreditTarget: 256_000,
+			...over,
+		};
+	}
+
+	// Detector do id FABRICADO observado em prod: padrao `categoria-valorK-prazoM`.
+	// O id real da Bevi e um hash hex de 24 chars (6a2b004ff9ec5c948e8c07d0).
+	const FABRICATED_ID = /^[a-z]+-\d+k-\d+m$/;
+
+	it("cassette: stream do bug — trocou pra 130k e o agent simulou um id FABRICADO sem re-buscar", async () => {
+		// Reproducao fiel: usuario mandou "Valor do bem: R$ 130.000, Prazo: 60 meses".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Deixa eu calcular pra essa nova faixa."),
+			toolCallChunk("tc-1", "simulate_quota", { groupId: "auto-130k-60m", creditValue: 130000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// O bug: id fabricado E nenhuma busca antes.
+		expect(FABRICATED_ID.test(groupId)).toBe(true);
+		expect(toolCalls.some((tc) => tc.toolName === "search_groups")).toBe(false);
+	});
+
+	it("trajetoria correta: troca de faixa dispara search_groups ANTES de simulate_quota com id REAL", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa nessa nova faixa:"),
+			toolCallChunk("tc-1", "search_groups", { category: "auto", creditMax: 130000 }),
+			toolCallChunk("tc-2", "present_comparison_table", {
+				groups: [{ administradora: "Rodobens" }],
+			}),
+			toolCallChunk("tc-3", "simulate_quota", {
+				groupId: "7c3d115ee0fd6da59f9d18e1",
+				creditValue: 130000,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		const searchIdx = names.indexOf("search_groups");
+		const simulateIdx = names.indexOf("simulate_quota");
+		expect(searchIdx).toBeGreaterThanOrEqual(0);
+		expect(simulateIdx).toBeGreaterThan(searchIdx); // re-buscou ANTES de simular
+		const groupId =
+			(toolCalls[simulateIdx]?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// id REAL (da descoberta), nunca o padrao fabricado.
+		expect(FABRICATED_ID.test(groupId)).toBe(false);
+	});
+
+	it("estrutural: trocar de faixa REABILITA search_groups na fase reveal (assinatura do fix)", () => {
+		// Pre-fix: o case `reveal` da tool-policy nao tinha search_groups → o agent
+		// nao tinha como re-buscar → fabricava o id. Este assert FALHA sem o fix.
+		const trocou = postRevealMeta({
+			qualifyAnswers: { ...postRevealMeta().qualifyAnswers, creditMax: 130_000 },
+		});
+		expect(allowedTools(trocou)).toContain("search_groups");
+	});
+
+	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita search (anti BUG-REVEAL-LOOP)", () => {
+		// Mesmo valor-alvo (256k) da descoberta → continua sem descoberta na fase.
+		expect(allowedTools(postRevealMeta())).not.toContain("search_groups");
+	});
+
+	it("acoplamento: o prompt manda RE-BUSCAR ao trocar de faixa e NUNCA fabricar groupId", () => {
+		// re-buscar com search_groups ao mudar a faixa de valor
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/RE-?BUSQUE[\s\S]{0,160}search_groups/i);
+		// proibicao explicita de inventar/fabricar id de grupo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA[\s\S]{0,80}(invente|fabrique)[\s\S]{0,40}id/i);
+		// cita o exemplo do id fabricado real como contra-exemplo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-130k-60m/);
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-71 — ESCOLHER um grupo ja apresentado fabrica o groupId
+// ----------------------------------------------------------------------------
+// Real (smoke ao vivo da jornada, 2026-06-23, develop 0460c42a): pos-reveal com
+// comparison_table de 3 grupos (~R$ 200k: BANCO DO BRASIL / ITAU / RODOBENS), o
+// usuario ESCOLHEU um por TEXTO ("Gostei do Banco do Brasil, quero seguir com
+// ele"). O agent foi pra simulate_quota("bb-auto-200k-72m") — id FABRICADO no
+// padrao banco-categoria-valor-prazo — e o adapter recusou ("Oferta/grupo
+// 'bb-auto-200k-72m' nao encontrado na descoberta atual"). A simulacao do grupo
+// ESCOLHIDO nao aconteceu.
+//
+// E o MESMO root cause do FIX-68 (LLM fabrica id), mas no caminho de SELECAO de
+// um grupo ja apresentado — o id real (hash opaco, ex. 6a0ca9ca...) JA estava no
+// historico do present_comparison_table; o agent so precisava copia-lo LITERAL.
+//
+// Positivo a preservar: o agent degradou gracioso (ofereceu a 2a opcao), NAO
+// entrou no loop de "instabilidade". O fix nao pode regredir isso.
+//
+// Fix: (a) prompt manda usar o id LITERAL do grupo escolhido e PROIBE fabricar
+// banco-categoria-valor-prazo (cita bb-auto-200k-72m); (b) a descricao do campo
+// `id` dos cards manda copiar o id opaco de search/recommend; (c) detector
+// server-side (looksLikeFabricatedGroupId) curto-circuita o id fabricado com
+// guidance acionavel em vez de "instabilidade".
+//
+// Camada 1: src/lib/agent/system-prompt.fix-71.test.ts +
+//           src/lib/agent/tools/ai-sdk.fix-71.test.ts
+// ============================================================================
+
+describe("FIX-71 — escolher grupo da comparison usa id REAL, nao fabrica slug", () => {
+	// id real da Bevi = hash opaco. id FABRICADO = padrao "...-NNNk-NNm".
+	const FABRICATED_SLUG = /-\d+k-\d+m$/i;
+	const REAL_QUOTA_ID = /^[0-9a-f]{24}$/i;
+
+	// Conjunto descoberto (o que foi pra present_comparison_table) — ids opacos reais.
+	const DISCOVERED = {
+		bb: "6a0ca9ca1b2c3d4e5f607182",
+		itau: "7c3d115ee0fd6da59f9d18e1",
+		rodobens: "8d4e226ff1ae7eb6a0ae29f2",
+	} as const;
+
+	it("cassette: stream do bug — escolheu o BB e o agent simulou um id FABRICADO", async () => {
+		// Reproducao fiel: "Gostei do Banco do Brasil, quero seguir com ele".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa escolha! Da uma olhada na simulacao do Banco do Brasil:"),
+			toolCallChunk("tc-1", "simulate_quota", {
+				groupId: "bb-auto-200k-72m",
+				creditValue: 200000,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// A assinatura do bug: id no padrao banco-categoria-valor-prazo, fora do conjunto real.
+		expect(FABRICATED_SLUG.test(groupId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(groupId)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(groupId as never)).toBe(false);
+	});
+
+	it("trajetoria correta: escolha por nome simula com o id LITERAL do grupo apresentado", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t0", "Olha so as opcoes que encaixam:"),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: [
+					{
+						id: DISCOVERED.bb,
+						administradora: "Banco do Brasil",
+						creditValue: 200000,
+						termMonths: 72,
+					},
+					{ id: DISCOVERED.itau, administradora: "Itau", creditValue: 200000, termMonths: 80 },
+					{
+						id: DISCOVERED.rodobens,
+						administradora: "Rodobens",
+						creditValue: 200000,
+						termMonths: 72,
+					},
+				],
+			}),
+			...textChunks("t1", "Beleza, da uma olhada na simulacao do Banco do Brasil:"),
+			toolCallChunk("tc-sim", "simulate_quota", { groupId: DISCOVERED.bb, creditValue: 200000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const presented = toolCalls.find((tc) => tc.toolName === "present_comparison_table");
+		const presentedIds = (
+			(presented?.input as { groups?: Array<{ id?: string }> } | undefined)?.groups ?? []
+		).map((g) => g.id ?? "");
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// Usou o id LITERAL opaco de um grupo que ele ACABOU de apresentar — nunca um slug.
+		expect(FABRICATED_SLUG.test(groupId)).toBe(false);
+		expect(REAL_QUOTA_ID.test(groupId)).toBe(true);
+		expect(presentedIds).toContain(groupId);
+	});
+
+	it("acoplamento: o prompt manda usar o id LITERAL e PROIBE fabricar o slug", () => {
+		// usa o id literal/opaco do grupo escolhido
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/id\s+(literal|opaco)/i);
+		// proibe fabricar/derivar id de banco-categoria-valor-prazo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/nunca\s+(fabrique|derive|invente)/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/banco-categoria-valor-prazo/i);
+		// cita o contra-exemplo real (como o FIX-68 cita auto-130k-60m)
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/bb-auto-200k-72m/);
+	});
+
+	it("acoplamento: detector server-side reconhece o slug fabricado e nao o id real", () => {
+		expect(looksLikeFabricatedGroupId("bb-auto-200k-72m")).toBe(true);
+		expect(looksLikeFabricatedGroupId(DISCOVERED.bb)).toBe(false);
+	});
+});
+
+// ============================================================================
 // GATE-IDENTIFY (D1, docs/jornada/CONTEXT.md) — CPF antecipado antes da busca
 // ----------------------------------------------------------------------------
 // A Bevi exige CPF+celular+LGPD ANTES de simular (Trilho B é proposta-first).
@@ -2871,7 +3153,10 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 		const contractInput = readSource("src/lib/bevi/contract-input.ts");
 		expect(contractInput).toMatch(/administradoraPreferida: meta.recommendedAdministradora/);
 		const route = readSource("src/app/api/chat/route.ts");
-		expect(route).toMatch(/buildStartContractInput\(meta,/);
+		// FIX-48: o builder ganhou um 3º arg ({ leadId }) e o biome quebrou a
+		// chamada em múltiplas linhas — a regex tolera o whitespace. O contrato
+		// (route passa `meta` como 1º arg ao módulo único) segue intacto.
+		expect(route).toMatch(/buildStartContractInput\(\s*meta,/);
 		const pick = readSource("src/lib/adapters/bevi/partner-offer-mapper.ts");
 		expect(pick).toMatch(/preferAdministradora/);
 		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");
@@ -3488,6 +3773,10 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
+			// FIX-53: `identify` precede `credit`. Com a identidade já coletada, o
+			// funil chega ao gate educativo de lance embutido — que é o foco deste
+			// teste (plano parcial, falta só decidir o lance embutido).
+			identityCollected: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -4670,20 +4959,20 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 			{ type: "stream-start", warnings: [] },
 			...textChunks(
 				"t1",
-				"Pra auto a faixa vai ate R$ 300 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
+				"Pra auto a faixa vai ate R$ 500 mil. Quer ver as opcoes nesse teto, ou seria um imovel?",
 			),
 			FINISH_STOP,
 		]);
 
-		expect(text).toMatch(/300 mil|R\$ ?300|teto|faixa/i);
+		expect(text).toMatch(/500 mil|R\$ ?500|teto|faixa/i);
 		expect(toolCalls).toHaveLength(0);
 		// NUNCA celebra o valor impossivel.
 		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
 	});
 
-	it("clamp server-side: 5M de auto persiste o teto da categoria (300k)", async () => {
+	it("clamp server-side: 5M de auto persiste o teto da categoria (500k — FIX-54)", async () => {
 		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
-		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(300_000);
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(500_000);
 		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
 	});
 
@@ -4692,15 +4981,15 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyAnswers: {
-				creditMin: 270_000,
-				creditMax: 300_000,
+				creditMin: 450_000,
+				creditMax: 500_000,
 				creditClampedFrom: 5_000_000,
 				prazoMeses: 12,
 				hasLance: "no",
 			},
 		};
 		const d = buildSearchSummaryDirective({ category: "auto", meta });
-		expect(d).toMatch(/300|faixa|teto/i);
+		expect(d).toMatch(/500|faixa|teto/i);
 		expect(d.toLowerCase()).toMatch(/clamp|fora da faixa|acima|teto da categoria/);
 	});
 });
@@ -4793,5 +5082,266 @@ describe("BUG-ADMIN-DESSINCRONIZADA — what-if atualiza administradora junto co
 			"a proposta real deriva administradoraPreferida do meta — é por isso que o " +
 				"campo precisa acompanhar o último detalhamento.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-53-DADOS-ANTES-VALOR (jornada2_revisão.docx — Bernardo, 2026-06-19)
+// ----------------------------------------------------------------------------
+// Stakeholder: "Precisa pedir os dados, antes do valor" + "Voltou a pedir o
+// valor". (1) o gate identify (CPF/celular) sobe pra ANTES do credit (value
+// picker); (2) o agente NUNCA re-pergunta o valor já coletado nem re-mostra o
+// present_value_picker. Cassette do bug (re-pergunta) + caminho correto, com
+// asserts estruturais (gate order + guard + prompt).
+// ============================================================================
+
+describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir o valor", () => {
+	// Detector: re-pergunta de valor em texto — o bug exato da image4.
+	const REASK_VALUE =
+		/qual valor aproximado.*(lance|bem)|qual valor do bem|qual valor.*voc[eê] (pensa|quer|tem em mente)/i;
+
+	it("cassette do bug: agent RE-PERGUNTA o valor do lance em texto (reproduz a image4)", async () => {
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! E qual valor aproximado você pensa em dar de lance?"),
+			FINISH_STOP,
+		]);
+		// O detector PEGA a re-pergunta — é exatamente o que o fix proíbe.
+		expect(text).toMatch(REASK_VALUE);
+	});
+
+	it("cassette correto: valor já coletado → confirma em 1 frase, SEM re-perguntar nem present_value_picker", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa, R$ 30 mil de lance então. Anotado!"),
+			FINISH_STOP,
+		]);
+		expect(text).not.toMatch(REASK_VALUE);
+		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
+	});
+
+	it("cassette: pré-identidade o agente NÃO dispara present_value_picker (dados antes do valor)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Beleza!"),
+			FINISH_STOP,
+		]);
+		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
+	});
+
+	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
+		const base: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+		};
+		expect(nextGate(base, { hasContactName: true })).toBe("identify");
+		expect(nextGate({ ...base, identityCollected: true }, { hasContactName: true })).toBe("credit");
+	});
+
+	it("estrutural: o prompt proíbe re-pedir o valor e explica o enforcement do servidor", () => {
+		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(p).toMatch(/identidade antes do valor/);
+		expect(p).toMatch(/valor j[áa] coletado/);
+		expect(p).toMatch(/servidor/);
+		expect(p).toMatch(/voltou a pedir o valor/);
+	});
+
+	it("estrutural: o artifact-guard tem a regra value-picker-order (2ª linha de defesa)", () => {
+		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(src).toMatch(/value-picker-order/);
+		expect(src).toMatch(/dados antes do valor/);
+	});
+
+	it("estrutural: o handler de identidade (web/route) despacha o próximo gate, NÃO o reveal", () => {
+		const src = readSource("src/app/api/chat/route.ts");
+		// Após storeIdentity, computa nextGate e segue a qualificação (não revela cedo).
+		expect(src).toMatch(/nextAfterIdentity/);
+		expect(src).toMatch(/pipeGatePrompt\(\{ conversationId, gate: nextAfterIdentity/);
+	});
+});
+
+// ============================================================================
+// BUG-MESA-COPILOT — copiloto de mesa orienta o ATENDENTE com o PDF da
+// administradora injetado (FIX-67, bloco-mesa-c).
+// ----------------------------------------------------------------------------
+// Feature nova (mesa de operação): mensagem do WhatsApp de um ATENDENTE DE MESA
+// vai pro copiloto (não pro agente de vendas), que injeta o manual full-text da
+// administradora da cota (DEC-C) e orienta o atendente a contratar passo a passo.
+// Este cassette trava: (1) o builder injeta o texto do PDF da administradora
+// certa no system prompt enviado ao modelo; (3) o copiloto não vaza meta-
+// narrativa/stack trace. A parte (2) — roteamento por número → copiloto, não
+// vendas — vive no describe BUG-MESA-COPILOT-ROUTING abaixo (FIX-66), que assere
+// o hook do processor.ts + a consulta de routing.ts.
+//
+// Spec: docs/visao/mesa-de-operacao.md §5 + DEC-C. Decisões:
+// docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+// ============================================================================
+
+describe("BUG-MESA-COPILOT — copiloto injeta o PDF da administradora e não vaza mecanismo", () => {
+	const CANOPUS_MANUAL =
+		"MANUAL CANOPUS — para contratar: 1) acesse o portal do parceiro; 2) selecione o grupo; " +
+		"3) preencha CPF e dados do cliente; 4) confirme a carta de crédito; 5) gere o boleto.";
+
+	it("cassette: o manual full-text da administradora chega ao modelo no system prompt (1)", async () => {
+		const { generateMesaCopilotReply } = await import("@/lib/agent/mesa-copilot");
+
+		// Captura o prompt que o copiloto envia ao modelo.
+		let capturedPrompt = "";
+		const model = new MockLanguageModelV3({
+			doStream: async (options: { prompt: unknown }) => {
+				capturedPrompt = JSON.stringify(options.prompt);
+				return {
+					// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loose
+					stream: simulateReadableStream({
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							...textChunks(
+								"t1",
+								"Beleza! No portal do parceiro, comece selecionando o grupo 1234 e confirme a carta.",
+							),
+							FINISH_STOP,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const reply = await generateMesaCopilotReply({
+			caso: {
+				administradoraNome: "Canopus",
+				docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+				grupo: "1234",
+				clienteNome: "Helena Souza",
+			},
+			history: [{ role: "attendant", content: "Como começo a contratação na Canopus?" }],
+			model,
+		});
+
+		// O manual full-text foi para o modelo (DEC-C: injeção, não RAG).
+		expect(capturedPrompt).toContain("MANUAL CANOPUS");
+		expect(capturedPrompt).toContain("portal do parceiro");
+		// E a oferta/cliente do caso também chegaram (dossiê do caso).
+		expect(capturedPrompt).toContain("1234");
+		expect(capturedPrompt).toContain("Helena Souza");
+		// O copiloto devolveu a orientação ao atendente.
+		expect(reply).toContain("grupo 1234");
+	});
+
+	it("cassette: resposta do copiloto NÃO casa detectores de meta-narrativa nem stack trace (3)", async () => {
+		const { generateMesaCopilotReply } = await import("@/lib/agent/mesa-copilot");
+
+		const cleanReply =
+			"Para esse caso: 1) acesse o portal da Canopus; 2) selecione o grupo 1234; " +
+			"3) preencha o CPF da Helena; 4) confirme a carta de R$ 80.000 e gere o boleto.";
+
+		const model = new MockLanguageModelV3({
+			doStream: async () => ({
+				// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loose
+				stream: simulateReadableStream({
+					chunks: [
+						{ type: "stream-start", warnings: [] },
+						...textChunks("t1", cleanReply),
+						FINISH_STOP,
+					] as any[],
+				}),
+			}),
+		});
+
+		const reply = await generateMesaCopilotReply({
+			caso: {
+				administradoraNome: "Canopus",
+				docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+			},
+			history: [{ role: "attendant", content: "passo a passo?" }],
+			model,
+		});
+
+		// Sem meta-narrativa do mecanismo.
+		const metaDetectors = [
+			/o sistema (vai|ir[áa]) (te )?(guiar|conduzir|processar|injetar)/i,
+			/estou (processando|injetando|carregando)/i,
+			/vou (processar|injetar) o manual/i,
+		];
+		for (const rx of metaDetectors) expect(reply).not.toMatch(rx);
+
+		// Sem stack trace / detalhe técnico vazado.
+		const stackDetectors = [
+			/\bat\s+\/?\w+.*:\d+:\d+/i, // "at file.ts:12:3"
+			/\berror:\s/i,
+			/\bundefined is not\b/i,
+			/\bTypeError\b|\bReferenceError\b/,
+			/node_modules|\.ts:\d+/i,
+		];
+		for (const rx of stackDetectors) expect(reply).not.toMatch(rx);
+
+		// E a persona-fonte realmente proíbe esses vazamentos (acoplamento ao builder).
+		const promptSrc = readSource("src/lib/agent/mesa-copilot/system-prompt.ts");
+		expect(promptSrc.toLowerCase()).toMatch(/stack trace/);
+		expect(promptSrc.toLowerCase()).toMatch(/meta-?narrativa|mecanismo do sistema/);
+	});
+
+	it("estrutural: o builder injeta o texto_extraido no bloco STABLE (cacheável)", async () => {
+		const { buildMesaCopilotPrompt } = await import("@/lib/agent/mesa-copilot");
+		const { stable, dynamic } = buildMesaCopilotPrompt({
+			administradoraNome: "Canopus",
+			docs: [{ titulo: "Manual", tipo: "manual", textoExtraido: CANOPUS_MANUAL }],
+		});
+		expect(stable).toContain("MANUAL CANOPUS");
+		// O manual NÃO vaza pro bloco dinâmico (que não é cacheado).
+		expect(dynamic).not.toContain("MANUAL CANOPUS");
+		// index.ts cacheia o stable.
+		const idxSrc = readSource("src/lib/agent/mesa-copilot/index.ts");
+		expect(idxSrc).toMatch(/content:\s*stable[\s\S]{0,160}cacheControl/);
+	});
+});
+
+// ============================================================================
+// BUG-MESA-COPILOT-ROUTING — número de atendente de mesa → copiloto, NÃO vendas
+// (FIX-66, bloco-mesa-c, spec §8 anti-colisão de canal).
+// ----------------------------------------------------------------------------
+// Parte (2) do cassette do copiloto: o hook do processor.ts roteia a mensagem
+// de um número de atendente de mesa pro copiloto (handleMesaCopilot), e ANTES do
+// caminho de vendas (processWithOrchestrator). Colisão de canal já causou bug no
+// projeto (FIX-31/FIX-35) — este cassette estrutural trava a ordem do roteamento
+// e que routing.ts consulta a tabela de atendentes de mesa.
+// ============================================================================
+
+describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não pra vendas", () => {
+	const processorSrc = readSource("src/lib/whatsapp/processor.ts");
+	const routingSrc = readSource("src/lib/whatsapp/mesa/routing.ts");
+
+	it("o processor tem o early-return de mesa (isMesaAttendantPhone → handleMesaCopilot)", () => {
+		expect(processorSrc).toMatch(/if\s*\(await isMesaAttendantPhone\(from\)\)/);
+		expect(processorSrc).toMatch(/handleMesaCopilot\(from, text\)/);
+	});
+
+	it("o check de mesa vem ANTES do roteamento de vendas (processWithOrchestrator)", () => {
+		const mesaIdx = processorSrc.indexOf("isMesaAttendantPhone(from)");
+		const vendasIdx = processorSrc.indexOf("processWithOrchestrator(from, text");
+		expect(mesaIdx).toBeGreaterThan(-1);
+		expect(vendasIdx).toBeGreaterThan(-1);
+		expect(mesaIdx).toBeLessThan(vendasIdx);
+	});
+
+	it("o check de mesa vem ANTES do atendente-de-chat (isAttendantPhone) — precedência de mesa", () => {
+		const mesaIdx = processorSrc.indexOf("isMesaAttendantPhone(from)");
+		const chatIdx = processorSrc.indexOf("isAttendantPhone(from)");
+		expect(mesaIdx).toBeGreaterThan(-1);
+		expect(chatIdx).toBeGreaterThan(-1);
+		expect(mesaIdx).toBeLessThan(chatIdx);
+	});
+
+	it("routing.ts consulta a tabela mesa_attendants ativos (chave do roteamento)", () => {
+		expect(routingSrc).toMatch(/from\(mesaAttendants\)/);
+		expect(routingSrc).toMatch(/eq\(mesaAttendants\.isActive, true\)/);
+	});
+
+	it("handleMesaCopilot persiste nos dois papéis e NÃO chama o orchestrator de vendas", () => {
+		expect(routingSrc).toMatch(/role:\s*"attendant"/);
+		expect(routingSrc).toMatch(/role:\s*"assistant"/);
+		// O copiloto é um canal separado — routing.ts não pode importar/chamar
+		// o orchestrator de vendas (evita a colisão de canal da spec §8).
+		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
 	});
 });

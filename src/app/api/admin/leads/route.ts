@@ -1,6 +1,7 @@
 import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
+import { dedupLeadsByContact } from "@/lib/admin/kanban-dedup";
 import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-transitions";
 import { requireRole } from "@/lib/admin/require-role";
 
@@ -25,15 +26,23 @@ export async function GET() {
 		},
 	});
 
-	// Group leads by stage
-	const groupedLeads: Record<string, typeof allLeads> = {};
+	// FIX-45: dedup por CONTATO — o mesmo cliente em web + WhatsApp vira UM card
+	// (não dois). Leads anônimos (sem contactId) ficam individuais. Cada card
+	// carrega `channels` (badge multi-canal) e `contactId` (abre a visão
+	// consolidada). Lógica pura em @/lib/admin/kanban-dedup.
+	const cards = dedupLeadsByContact(
+		allLeads.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() })),
+	);
+
+	// Agrupa os cards por raia.
+	const groupedLeads: Record<string, typeof cards> = {};
 	for (const stage of STAGE_ORDER) {
 		groupedLeads[stage] = [];
 	}
-	for (const lead of allLeads) {
-		const stage = lead.stage as LeadStage;
+	for (const card of cards) {
+		const stage = card.stage as LeadStage;
 		if (groupedLeads[stage]) {
-			groupedLeads[stage].push(lead);
+			groupedLeads[stage].push(card);
 		}
 	}
 

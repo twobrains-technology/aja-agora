@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversations, leads, messages as messagesTable } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { relinkOrphanProposals } from "@/lib/bevi/proposal-repo";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { leadSchema } from "@/lib/lead/schema";
@@ -40,6 +41,14 @@ export async function POST(req: NextRequest) {
 	// Validate conversationId
 	if (!conversationId || typeof conversationId !== "string") {
 		return Response.json({ ok: false, error: "conversationId is required" }, { status: 400 });
+	}
+
+	// Formato UUID antes de tocar o DB: conversationId malformado é erro do
+	// cliente (400). Sem isso, a query `findFirst(conversations.id = ...)` (fora
+	// do try) faz o Postgres lançar `invalid input syntax for type uuid` → 500.
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	if (!UUID_RE.test(conversationId)) {
+		return Response.json({ ok: false, error: "conversationId is malformed" }, { status: 400 });
 	}
 
 	// Validate form fields with shared Zod schema
@@ -88,6 +97,16 @@ export async function POST(req: NextRequest) {
 				email: parsed.data.email ?? null,
 			});
 			leadId = created.leadId;
+		}
+
+		// FIX-48: resgate retroativo — se a proposta foi criada ANTES do lead
+		// (corrida web: o fechamento gera a proposta e só depois o form captura
+		// nome/telefone), ela ficou órfã (leadId null) e a raia travou. Religa ao
+		// lead recém-resolvido e dispara a transição `proposta_enviada`. Idempotente.
+		try {
+			await relinkOrphanProposals(conversationId as string, leadId);
+		} catch (err) {
+			console.error("[leads] relinkOrphanProposals error:", err);
 		}
 
 		// FIX-27: telefone do lead capturado → marca no meta (MASCARADO, LGPD) pra

@@ -11,6 +11,8 @@ const STAGE_LABELS: Record<string, string> = {
 	qualificado: "Qualificado",
 	em_negociacao: "Em Negociacao",
 	proposta_enviada: "Proposta Enviada",
+	na_administradora: "Na Administradora",
+	aguardando_pagamento: "Aguardando Pagamento",
 	fechado_ganho: "Fechado Ganho",
 	perdido: "Perdido",
 };
@@ -21,6 +23,8 @@ const STAGE_DOT_COLORS: Record<string, string> = {
 	qualificado: "bg-violet-500",
 	em_negociacao: "bg-orange-500",
 	proposta_enviada: "bg-cyan-500",
+	na_administradora: "bg-indigo-500",
+	aguardando_pagamento: "bg-teal-500",
 	fechado_ganho: "bg-emerald-500",
 	perdido: "bg-gray-400",
 };

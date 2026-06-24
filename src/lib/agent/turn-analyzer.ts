@@ -1,10 +1,10 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
-const anthropic = createAnthropic();
+const anthropic = createGatewayAnthropic();
 
 const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5-20251001";
 // 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
@@ -107,7 +107,7 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	userIntent: "neutral",
 };
 
-const BASE_SYSTEM_INSTRUCTION = `Voce analisa turnos de WhatsApp em portugues brasileiro de um sistema de consorcio.
+export const BASE_SYSTEM_INSTRUCTION = `Voce analisa turnos de WhatsApp em portugues brasileiro de um sistema de consorcio.
 Sua resposta sera usada por codigo pra (1) rotear pro especialista certo e (2) preencher dados de qualificacao da conversa.
 
 Regras gerais:
@@ -118,6 +118,7 @@ Regras gerais:
 - expertiseLevel reflete o vocabulario da mensagem atual. Sem sinal claro -> neutro.
 - "100k", "100 mil", "R$ 100000", "cem mil" sao todos 100000.
 - Para prazoMeses, traduza: 0=imediato/com lance forte, 12=1ano, 24=2anos, 36=3anos, 60=5anos, 120=10+anos/sem pressa.
+- prazoMeses SO deve ser preenchido quando houver mencao explicita de TEMPO/horizonte ("em 2 anos", "daqui a 18 meses", "o mais rapido possivel", "sem pressa"). ORCAMENTO/parcela mensal NAO e prazo: "R$ 850 por mes", "850 mensais", "pago 800/mes", "cabe 1000 no mes" dizem QUANTO a pessoa paga por mes, nao o horizonte de tempo. Na duvida sobre prazo, prazoMeses=null (o sistema pergunta o prazo num passo proprio).
 - Para hasLance, so retorne yes/no/maybe quando o usuario falar de reserva/lance/capacidade de antecipar — nao confunda com prazo.
 - Quando o usuario der so o limite inferior ("acima de 500k", "a partir de 300", "uns X pra cima", "no minimo Y"): preencha creditMin com o valor citado E creditMax com uma estimativa razoavel de teto (entre 1.5x e 2x o piso). Isso destrava o sistema sem precisar perguntar de novo. Nao retorne null em creditMax nesses casos.
 - Quando o usuario der so o limite superior ("ate 400 mil", "no maximo 700", "menos de X"): preencha apenas creditMax com o valor; deixe creditMin em null (o sistema usa um piso default).
@@ -128,6 +129,8 @@ Exemplos:
 - "imóvel de 200k" -> { detectedCategory: "imovel", detectedSubTopic: null, isExplicitSwitch: false, expertiseLevel: "neutro", creditMax: 200000 }
 - "queria fazer uma reforma" -> { detectedCategory: "servicos", detectedSubTopic: null, expertiseLevel: "neutro" }
 - "quero comprar um carro de uns 80 mil em 2 anos" -> { detectedCategory: "auto", creditMax: 80000, prazoMeses: 24 }
+- "carro de 80 mil, uns 850 por mes" -> { detectedCategory: "auto", creditMax: 80000, prazoMeses: null }  // 850/mes e orcamento mensal, NAO prazo
+- "quero um imovel de 300k, pago uns 2 mil mensais" -> { detectedCategory: "imovel", creditMax: 300000, prazoMeses: null }  // 2 mil mensais e orcamento, NAO prazo
 - "ja conheço, tenho dinheiro pra dar lance" -> { experiencePrev: "returning", hasLance: "yes" }
 - "lance livre embutido na cota" -> { expertiseLevel: "expert" }
 - "na verdade prefiro carro" (persona ativa: imovel) -> { detectedCategory: "auto", isExplicitSwitch: true }

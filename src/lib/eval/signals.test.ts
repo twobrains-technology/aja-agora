@@ -267,6 +267,10 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 				currentCategory: "imovel",
 				experiencePrev: "first",
 				qualifyConsented: true,
+				// FIX-53: o gate `identify` subiu para antes de `credit`. Com a
+				// identidade já coletada, o próximo gate pendente após o valor é o
+				// prazo (timeframe) — que é o que este teste valida.
+				identityCollected: true,
 				qualifyAnswers: { creditMax: 200000 },
 			},
 			channel: "web",

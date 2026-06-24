@@ -22,6 +22,21 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 3. **QA e evals validam contra o docx**, não contra critérios derivados da implementação. O plano de teste de qualquer mudança na jornada referencia os passos da jornada canônica.
 4. **Simulador do passo 4** = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele.
 
+## Package manager — pnpm ÚNICO
+
+**`pnpm` é o único gestor de pacotes permitido. `npm` e `yarn` são PROIBIDOS** —
+em código, Dockerfile, compose, CI, scripts ou docs. Regra global completa em
+`~/.claude/CLAUDE.md` → "Regra de Package Manager — pnpm é o ÚNICO permitido".
+
+- Só `pnpm-lock.yaml` versionado (nunca `package-lock.json`/`yarn.lock`).
+- **Dev sem build de deps:** `node_modules` em named volume (`app_node_modules`),
+  store pnpm compartilhado via volume externo `tb-pnpm-store-shared` montado em
+  `/pnpm/store`. `Dockerfile.dev` NÃO instala deps — o install roda no boot (CMD).
+- **Build prod:** BuildKit cache mount + `pnpm fetch --frozen-lockfile` (lockfile-only)
+  → `pnpm install --frozen-lockfile --offline` → `pnpm build`.
+- Build scripts (esbuild/sharp) liberados via `allowBuilds` no `pnpm-workspace.yaml`.
+- Comandos: `pnpm <script>`, `pnpm exec <bin>`, `pnpm dlx <pkg>` (nunca `npm run`/`npx`).
+
 ## Technology Stack
 
 ## Recommended Stack
@@ -55,7 +70,7 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 | **Biome** | 2.x | Linting + formatting | Replaces ESLint + Prettier. Single tool, 10-100x faster. Native TypeScript support. |
 | **drizzle-kit** | latest | Database migrations | `drizzle-kit push` for dev, `drizzle-kit migrate` for production. Schema introspection < 1s. |
 | **Turbopack** | (built into Next.js 16) | Dev server / bundler | Default in Next.js 16. No config needed. Microsecond incremental builds. |
-| **shadcn/studio Pro** | MCP + CLI | Premium UI components | Registries `@ss-components`, `@ss-blocks`, `@ss-themes` configurados em `components.json`. MCP `shadcn-studio-mcp` integrado ao Claude Code. CLI: `npx shadcn@latest add @ss-components/<name>`. |
+| **shadcn/studio Pro** | MCP + CLI | Premium UI components | Registries `@ss-components`, `@ss-blocks`, `@ss-themes` configurados em `components.json`. MCP `shadcn-studio-mcp` integrado ao Claude Code. CLI: `pnpm dlx shadcn@latest add @ss-components/<name>`. |
 ## Design System: shadcn/studio Pro (OBRIGATÓRIO)
 
 **Todo layout e design visual DEVE usar blocos do shadcn/studio Pro via MCP.**
@@ -237,7 +252,7 @@ Todo bug de comportamento do agent (tools que não disparam, frases proibidas/ca
 - Onde: `tests/eval/agent-flow.eval.test.ts` (Vercel AI SDK 6, `claude-haiku-4-5` como user-bot + `claude-sonnet-4-6` real como agent).
 - Cenários canônicos por persona + canal (Helena/Rafael/Bruno/Camila × web/WhatsApp).
 - Asserts comportamentais via critérios estruturais (frases proibidas, tools chamadas, valores no DB) — não LLM-judge ainda, mas estrutura está pronta pra adicionar.
-- Roda apenas em **cron nightly** (não em PR), via `npx vitest run --config vitest.eval.config.ts`.
+- Roda apenas em **cron nightly** (não em PR), via `pnpm exec vitest run --config vitest.eval.config.ts`.
 - Pega: drift de modelo, comportamento sutil que cassette determinístico não cobre, casos edge novos.
 
 ### Workflow obrigatório para todo bug de agent
@@ -258,4 +273,4 @@ Todo bug de comportamento do agent (tools que não disparam, frases proibidas/ca
 - Em dúvida, **adicione cassette mesmo assim** — overhead é desprezível.
 
 ### Pre-commit hook automático (Camadas 1 + 2)
-Existe um pre-commit hook (`husky` em `.husky/pre-commit`) que **bloqueia o commit** se Camada 1 (`src/**/*.test.ts`) ou Camada 2 (`tests/regression/**`) falharem — roda via `npm run test:pre-commit` (vitest com `--reporter=dot --silent --bail=5`). Skip automático quando o commit não toca `.ts/.tsx/.sql` (commits só de docs). Camada 3 (eval LLM real em `tests/eval/`) **NÃO** roda no hook — é nightly via cron. Quebrou e está com pressa? `--no-verify` é permitido apenas em casos excepcionais (instalação do próprio hook, hotfix com fix de teste no próximo commit) — o padrão é manter verde.
+Existe um pre-commit hook (`husky` em `.husky/pre-commit`) que **bloqueia o commit** se Camada 1 (`src/**/*.test.ts`) ou Camada 2 (`tests/regression/**`) falharem — roda via `pnpm test:pre-commit` (vitest com `--reporter=dot --silent --bail=5`). Skip automático quando o commit não toca `.ts/.tsx/.sql` (commits só de docs). Camada 3 (eval LLM real em `tests/eval/`) **NÃO** roda no hook — é nightly via cron. Quebrou e está com pressa? `--no-verify` é permitido apenas em casos excepcionais (instalação do próprio hook, hotfix com fix de teste no próximo commit) — o padrão é manter verde.
