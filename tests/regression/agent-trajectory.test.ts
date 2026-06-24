@@ -53,7 +53,7 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
@@ -253,8 +253,7 @@ describe("BUG-FALLBACK-REFRESH — agent sugeriu solução manual (atualiza a p�
 	];
 
 	it("cassette: stream com o fallback proibido vazado, reproduzido fielmente", async () => {
-		const cassette =
-			"Ops, deu um probleminha aqui. Atualiza a página e tenta de novo, por favor.";
+		const cassette = "Ops, deu um probleminha aqui. Atualiza a página e tenta de novo, por favor.";
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", cassette),
@@ -275,8 +274,7 @@ describe("BUG-FALLBACK-REFRESH — agent sugeriu solução manual (atualiza a p�
 	});
 
 	it("structural: o prompt de produção veta esse fallback (sincronia com a regra dura)", () => {
-		const rule =
-			/N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+		const rule = /N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
 		expect(
 			rule.test(SPECIALIST_BASE_PROMPT),
 			"SPECIALIST_BASE_PROMPT precisa vetar o fallback 'atualiza a página'.",
@@ -2826,6 +2824,118 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA[\s\S]{0,80}(invente|fabrique)[\s\S]{0,40}id/i);
 		// cita o exemplo do id fabricado real como contra-exemplo
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-130k-60m/);
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-71 — ESCOLHER um grupo ja apresentado fabrica o groupId
+// ----------------------------------------------------------------------------
+// Real (smoke ao vivo da jornada, 2026-06-23, develop 0460c42a): pos-reveal com
+// comparison_table de 3 grupos (~R$ 200k: BANCO DO BRASIL / ITAU / RODOBENS), o
+// usuario ESCOLHEU um por TEXTO ("Gostei do Banco do Brasil, quero seguir com
+// ele"). O agent foi pra simulate_quota("bb-auto-200k-72m") — id FABRICADO no
+// padrao banco-categoria-valor-prazo — e o adapter recusou ("Oferta/grupo
+// 'bb-auto-200k-72m' nao encontrado na descoberta atual"). A simulacao do grupo
+// ESCOLHIDO nao aconteceu.
+//
+// E o MESMO root cause do FIX-68 (LLM fabrica id), mas no caminho de SELECAO de
+// um grupo ja apresentado — o id real (hash opaco, ex. 6a0ca9ca...) JA estava no
+// historico do present_comparison_table; o agent so precisava copia-lo LITERAL.
+//
+// Positivo a preservar: o agent degradou gracioso (ofereceu a 2a opcao), NAO
+// entrou no loop de "instabilidade". O fix nao pode regredir isso.
+//
+// Fix: (a) prompt manda usar o id LITERAL do grupo escolhido e PROIBE fabricar
+// banco-categoria-valor-prazo (cita bb-auto-200k-72m); (b) a descricao do campo
+// `id` dos cards manda copiar o id opaco de search/recommend; (c) detector
+// server-side (looksLikeFabricatedGroupId) curto-circuita o id fabricado com
+// guidance acionavel em vez de "instabilidade".
+//
+// Camada 1: src/lib/agent/system-prompt.fix-71.test.ts +
+//           src/lib/agent/tools/ai-sdk.fix-71.test.ts
+// ============================================================================
+
+describe("FIX-71 — escolher grupo da comparison usa id REAL, nao fabrica slug", () => {
+	// id real da Bevi = hash opaco. id FABRICADO = padrao "...-NNNk-NNm".
+	const FABRICATED_SLUG = /-\d+k-\d+m$/i;
+	const REAL_QUOTA_ID = /^[0-9a-f]{24}$/i;
+
+	// Conjunto descoberto (o que foi pra present_comparison_table) — ids opacos reais.
+	const DISCOVERED = {
+		bb: "6a0ca9ca1b2c3d4e5f607182",
+		itau: "7c3d115ee0fd6da59f9d18e1",
+		rodobens: "8d4e226ff1ae7eb6a0ae29f2",
+	} as const;
+
+	it("cassette: stream do bug — escolheu o BB e o agent simulou um id FABRICADO", async () => {
+		// Reproducao fiel: "Gostei do Banco do Brasil, quero seguir com ele".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa escolha! Da uma olhada na simulacao do Banco do Brasil:"),
+			toolCallChunk("tc-1", "simulate_quota", {
+				groupId: "bb-auto-200k-72m",
+				creditValue: 200000,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// A assinatura do bug: id no padrao banco-categoria-valor-prazo, fora do conjunto real.
+		expect(FABRICATED_SLUG.test(groupId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(groupId)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(groupId as never)).toBe(false);
+	});
+
+	it("trajetoria correta: escolha por nome simula com o id LITERAL do grupo apresentado", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t0", "Olha so as opcoes que encaixam:"),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: [
+					{
+						id: DISCOVERED.bb,
+						administradora: "Banco do Brasil",
+						creditValue: 200000,
+						termMonths: 72,
+					},
+					{ id: DISCOVERED.itau, administradora: "Itau", creditValue: 200000, termMonths: 80 },
+					{
+						id: DISCOVERED.rodobens,
+						administradora: "Rodobens",
+						creditValue: 200000,
+						termMonths: 72,
+					},
+				],
+			}),
+			...textChunks("t1", "Beleza, da uma olhada na simulacao do Banco do Brasil:"),
+			toolCallChunk("tc-sim", "simulate_quota", { groupId: DISCOVERED.bb, creditValue: 200000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const presented = toolCalls.find((tc) => tc.toolName === "present_comparison_table");
+		const presentedIds = (
+			(presented?.input as { groups?: Array<{ id?: string }> } | undefined)?.groups ?? []
+		).map((g) => g.id ?? "");
+		const simulate = toolCalls.find((tc) => tc.toolName === "simulate_quota");
+		const groupId = (simulate?.input as { groupId?: string } | undefined)?.groupId ?? "";
+		// Usou o id LITERAL opaco de um grupo que ele ACABOU de apresentar — nunca um slug.
+		expect(FABRICATED_SLUG.test(groupId)).toBe(false);
+		expect(REAL_QUOTA_ID.test(groupId)).toBe(true);
+		expect(presentedIds).toContain(groupId);
+	});
+
+	it("acoplamento: o prompt manda usar o id LITERAL e PROIBE fabricar o slug", () => {
+		// usa o id literal/opaco do grupo escolhido
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/id\s+(literal|opaco)/i);
+		// proibe fabricar/derivar id de banco-categoria-valor-prazo
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/nunca\s+(fabrique|derive|invente)/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/banco-categoria-valor-prazo/i);
+		// cita o contra-exemplo real (como o FIX-68 cita auto-130k-60m)
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/bb-auto-200k-72m/);
+	});
+
+	it("acoplamento: detector server-side reconhece o slug fabricado e nao o id real", () => {
+		expect(looksLikeFabricatedGroupId("bb-auto-200k-72m")).toBe(true);
+		expect(looksLikeFabricatedGroupId(DISCOVERED.bb)).toBe(false);
 	});
 });
 
