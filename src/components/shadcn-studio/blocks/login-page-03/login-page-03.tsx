@@ -28,7 +28,7 @@ const Login = () => {
 				<div className="relative z-10 space-y-4">
 					<h1 className="text-4xl font-bold tracking-tight text-primary-foreground">Aja Agora</h1>
 					<p className="text-lg text-primary-foreground/70 max-w-sm">
-						Painel de vendas inteligente para a sua operacao de consorcio.
+						Painel de vendas inteligente para a sua operação de consórcio.
 					</p>
 				</div>
 

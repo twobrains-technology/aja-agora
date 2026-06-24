@@ -91,7 +91,7 @@ function DashboardContent() {
 			<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-					<p className="text-muted-foreground text-sm mt-1">Visao geral do funil de vendas</p>
+					<p className="text-muted-foreground text-sm mt-1">Visão geral do funil de vendas</p>
 				</div>
 				<DateRangeFilter />
 			</div>
@@ -108,7 +108,7 @@ function DashboardContent() {
 
 			{/* Funnel Chart */}
 			{loading || !data ? (
-				<ChartSkeleton title="Funil de Conversao" />
+				<ChartSkeleton title="Funil de Conversão" />
 			) : (
 				<FunnelChart stages={data.funnel_stages} />
 			)}

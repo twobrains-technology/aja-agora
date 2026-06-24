@@ -83,7 +83,7 @@ export function KpiCards({ kpis }: { kpis: KpiData }) {
 				invertTrend
 			/>
 			<KpiCard
-				title="Taxa de Conversao"
+				title="Taxa de Conversão"
 				value={kpis.conversionRate}
 				suffix="%"
 				decimalPlaces={1}
