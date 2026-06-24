@@ -1,8 +1,11 @@
 ---
 id: FIX-72
 titulo: "Resolução robusta de groupId — acaba com a fabricação de id em qualquer tool"
-status: todo
+status: done
 bloco: bloco-g-groupid-resolucao-robusta
+commit: a58de991
+executado_em: 2026-06-24
+abordagem: "(a) erro-estruturado-força-rebusca — defense-in-depth: fast-path de slug (marcador valor-em-k) + GroupNotInDiscoveryError pelo conjunto, capturado pela tool. ADR: docs/correcoes/decisions/2026-06-24-bloco-g-groupid-resolucao-robusta.md"
 arquivos:
   - src/lib/adapters/bevi/bevi-self-contract-adapter.ts
   - src/lib/agent/tools/ai-sdk.ts
