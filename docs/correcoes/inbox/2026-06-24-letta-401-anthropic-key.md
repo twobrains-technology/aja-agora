@@ -1,32 +1,34 @@
-# ⚠️ PENDENTE-KAIRO — Letta memory archival falha com 401 (Anthropic key inválida)
+# Letta — Anthropic 401 RESOLVIDO; embedding OpenAI = dívida best-effort
 
-**Achado:** qa-noturno 2026-06-24, smoke ao vivo da jornada (develop).
-**Severidade:** média — best-effort (NÃO derruba a app; turno `finishReason:ok`), mas a memória archival NÃO está sendo persistida.
+**Rodada:** qa-noturno 2026-06-24 (Kairo autorizou resolver, inclusive prod).
 
-## Evidência (log do servidor)
+## ✅ Resolvido: Anthropic 401 (a causa do erro nos logs do app)
 
-```
-{"source":"memory","letta_op":"store_memories","letta_agent_id":"agent-729a...",
- "error":"insertArchival simulation: MemoryError: Letta POST /v1/agents/.../archival-memory failed:
-  HTTP 401 {"error":{"type":"llm_authentication","message":"Authentication failed with the LLM model provider.",
-  "detail":"...Authentication failed with Anthropic: Error code: 401 - 'message': 'invalid x-api-key'"}}"}
-```
+A key Anthropic do Letta shared (`sk-ant-api03-M…`) estava REVOGADA (401) — **mesma key
+em local (`.env.shared`) E prod (`tb/shared/letta/env`)**. Reposta a key de plataforma
+válida (a do LiteLLM, `sk-ant-api03-5…`, HTTP 200):
+- **LOCAL:** `~/.tb-local/_shared/.env.shared` + `docker compose up -d --force-recreate` → container healthy, key 200.
+- **PROD:** merge atômico em `tb/shared/letta/env` (Secrets Manager) + `force-new-deployment` do service `letta-shared` (tb-cluster) → rollout COMPLETED.
 
-## O que é
+## 💤 Dívida (decisão do Kairo: best-effort por ora): embedding OpenAI sem quota
 
-O **Letta shared** (memory layer, `~/.tb-local/_shared/`) usa uma API key da Anthropic pra
-processar memória, e essa key está **inválida/expirada** (`invalid x-api-key`). Cada
-`store_memories` da jornada falha com 401 → memória archival (fatos/simulações) não persiste.
+Ao validar, apareceu um 2º problema SEPARADO: o insert archival usa **OpenAI pra
+embeddings** e a conta OpenAI da TwoBrains está **sem crédito** (`429 insufficient_quota`,
+key `sk-proj-t_MfGew0…`, mesma no Letta e no LiteLLM — afeta toda a conta, não só o Letta).
 
-## Por que NÃO corrigi (PENDENTE-KAIRO)
+**Investigação das alternativas sem-OpenAI (todas com bloqueador):**
+- **Google/Gemini:** NÃO suportado pelo Letta (doc só cita OpenAI; server não lista; Gemini key 404 no embed API).
+- **letta-free** (dim 1536, seria sem re-embed): `inference.letta.com` exige LETTA_API_KEY (Letta Cloud) → 404 sem auth.
+- **Ollama local:** viável/zero-custo, mas infra nova + re-embed (dim 768≠1536) + Ollama no ECS pra prod.
+- **Recarregar OpenAI:** centavos (embeddings são baratíssimos), resolve amplo, zero re-embed — ação do Kairo no painel.
 
-É **secret/config do Letta shared** (compartilhado entre TODOS os projetos TwoBrains —
-fpma, sparkflow, letdrill, aja-agora). Rotacionar/corrigir a key do Letta é **blast radius
-alto** (afeta outros projetos) e mexe em secret — decisão/ação do Kairo, não autônoma.
+**Decisão (Kairo, 2026-06-24):** deixar best-effort. A archival fica off — **NÃO afeta a
+jornada do usuário** (smoke E2E funcionou com o Letta archival quebrado; é memória de longo
+prazo do agente, nice-to-have no piloto). Reabrir quando a archival virar prioridade.
 
-## Como destrava
+**Como destravar (quando for hora):** recarregar OpenAI (mais simples, centavos) OU autorizar
+Ollama. O embedding do aja é por-projeto via env `LETTA_EMBEDDING` (`letta-adapter.ts:509`) —
+corrige só o aja sem tocar o Letta prod compartilhado.
 
-Conferir/atualizar a `ANTHROPIC_API_KEY` (ou a config de provider LLM) do container
-`tb-letta-shared` em `~/.tb-local/_shared/` (provável `.env.shared` ou compose do Letta).
-Validar com um `store_memories` de teste. A app NÃO depende disso pra funcionar (telemetria
-best-effort), então não é urgente — mas a memória de longo prazo do agente está cega até lá.
+**Follow-up arquitetural:** key Anthropic direta pode re-expirar calada → migrar Letta →
+LiteLLM gateway (rotação central, cost-tracking, alerta de validade). Bloco futuro.
