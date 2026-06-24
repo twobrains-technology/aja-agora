@@ -1,7 +1,9 @@
 ---
 id: FIX-74
 titulo: "Acentuar prompts/diretivas do agente (.ts) — cirúrgico, só diacrítico/ortografia"
-status: todo
+status: done
+commit: 07c893b1
+executado_em: 2026-06-24
 bloco: bloco-d-acentuacao-textos
 arquivos:
   - src/lib/agent/system-prompt.ts
