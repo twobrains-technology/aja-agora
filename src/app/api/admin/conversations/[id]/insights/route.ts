@@ -1,4 +1,4 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateText } from "ai";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
@@ -74,7 +74,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 		return Response.json({ error: "Nenhuma mensagem para analisar" }, { status: 400 });
 	}
 
-	const anthropic = createAnthropic();
+	const anthropic = createGatewayAnthropic();
 	let parsed: InsightsPayload;
 
 	try {

@@ -2,7 +2,7 @@
 // Mesmo padrão do judgeConversation (judge.ts): generateObject + Sonnet,
 // temperature 0, 1 retry, seam injetável pra testes (zero rede em PR).
 
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import {
 	buildJornadaJudgePrompt,
@@ -32,7 +32,7 @@ export async function judgeJornada(args: { transcript: string }): Promise<Jornad
 	const { text: prompt } = sanitizeUnicode(
 		buildJornadaJudgePrompt({ transcript: args.transcript }),
 	);
-	const anthropic = createAnthropic();
+	const anthropic = createGatewayAnthropic();
 	const start = Date.now();
 
 	let lastError: unknown;
