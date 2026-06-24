@@ -2940,6 +2940,134 @@ describe("FIX-71 — escolher grupo da comparison usa id REAL, nao fabrica slug"
 });
 
 // ============================================================================
+// CENARIO — FIX-72 — PEDIR OUTRAS OPCOES/DETALHAR fabrica o groupId (a RAIZ)
+// ----------------------------------------------------------------------------
+// Real (qa-noturno 2026-06-24, CPF/celular reais, revalidando o FIX-71 ao vivo):
+// jornada auto 180k → recomendacao ITAU ✅. O usuario pediu "Me mostra as outras
+// opcoes dessa faixa pra eu comparar". O agent foi pra get_group_details e
+// simulate_quota com ids FABRICADOS — `auto-180k` e `auto-180k-kairo` (este com o
+// NOME do usuario no id!) — e o adapter recusou ("Oferta/grupo nao encontrado na
+// descoberta atual"). Degradou gracioso ("esse grupo deu um problema") mas NAO
+// entregou.
+//
+// E a MESMA raiz do FIX-68 (auto-130k-60m) e FIX-71 (bb-auto-200k-72m), mas dois
+// buracos provados deixaram a raiz aberta:
+//   1. detector fragil: `looksLikeFabricatedGroupId = /-\d+k-\d+m$/i` NAO pega
+//      `auto-180k` (sem `-NNm`) nem `auto-180k-kairo` (sufixo `-nome`);
+//   2. cobertura parcial: o guard so existia em simulate_quota, nao em
+//      get_group_details.
+//
+// Fix (defense-in-depth): (a) fast-path generalizado pro marcador de valor-em-k
+// (pega ambos, nao confunde o hash); (b) rede de seguranca — o adapter lanca
+// GroupNotInDiscoveryError pra QUALQUER id fora do offerIndex, a tool captura e
+// devolve diretiva acionavel de re-busca (nao erro cru). Vale pras DUAS tools.
+// Degradacao graciosa preservada: re-busca/id-literal, sem loop de "instabilidade".
+//
+// Camada 1: src/lib/agent/tools/ai-sdk.fix-72.test.ts +
+//           src/lib/adapters/bevi/bevi-self-contract-adapter.fix-72.test.ts +
+//           src/lib/agent/system-prompt.fix-72.test.ts
+// ============================================================================
+
+describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-180k", () => {
+	const REAL_QUOTA_ID = /^[0-9a-f]{24}$/i;
+
+	// Conjunto descoberto (180k, foi pro present_comparison_table) — ids opacos reais.
+	const DISCOVERED = {
+		itau: "6a0ca9c73e68cce9b61d30fd",
+		bb: "7c3d115ee0fd6da59f9d18e1",
+	} as const;
+
+	it("cassette: stream do bug — 'as outras opcoes' e o agent fabricou auto-180k / auto-180k-kairo em get_group_details E simulate_quota", async () => {
+		// Reproducao fiel: "Me mostra as outras opcoes dessa faixa pra eu comparar".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Deixa eu detalhar e comparar as outras opcoes dessa faixa:"),
+			toolCallChunk("tc-1", "get_group_details", { groupId: "auto-180k-kairo" }),
+			toolCallChunk("tc-2", "simulate_quota", { groupId: "auto-180k", creditValue: 180000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const detailsId =
+			(toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+				| { groupId?: string }
+				| undefined)?.groupId ?? "";
+		const simulateId =
+			(toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+				| { groupId?: string }
+				| undefined)?.groupId ?? "";
+
+		// A assinatura do bug: ids fabricados (slug categoria-valor[-nome]) em AMBAS as
+		// tools, fora do conjunto real. O detector server-side TEM que pegar os dois —
+		// o regex antigo (`-NNNk-NNm$`) deixava passar ambos.
+		expect(detailsId).toBe("auto-180k-kairo");
+		expect(simulateId).toBe("auto-180k");
+		expect(looksLikeFabricatedGroupId(detailsId)).toBe(true);
+		expect(looksLikeFabricatedGroupId(simulateId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(detailsId)).toBe(false);
+		expect(REAL_QUOTA_ID.test(simulateId)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(detailsId as never)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(simulateId as never)).toBe(false);
+	});
+
+	it("trajetoria correta: detalhar/simular um grupo ja mostrado usa o id LITERAL opaco do card", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t0", "Olha as opcoes que encaixam nessa faixa:"),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: [
+					{ id: DISCOVERED.itau, administradora: "Itau", creditValue: 180000, termMonths: 72 },
+					{
+						id: DISCOVERED.bb,
+						administradora: "Banco do Brasil",
+						creditValue: 180000,
+						termMonths: 80,
+					},
+				],
+			}),
+			...textChunks("t1", "Beleza, deixa eu detalhar o Itau pra voce:"),
+			toolCallChunk("tc-det", "get_group_details", { groupId: DISCOVERED.itau }),
+			toolCallChunk("tc-sim", "simulate_quota", { groupId: DISCOVERED.itau, creditValue: 180000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const presentedIds = (
+			(toolCalls.find((tc) => tc.toolName === "present_comparison_table")?.input as
+				| { groups?: Array<{ id?: string }> }
+				| undefined)?.groups ?? []
+		).map((g) => g.id ?? "");
+		const detailsId =
+			(toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+				| { groupId?: string }
+				| undefined)?.groupId ?? "";
+		const simulateId =
+			(toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+				| { groupId?: string }
+				| undefined)?.groupId ?? "";
+
+		// Usou o id LITERAL opaco de um grupo que ACABOU de apresentar — nas DUAS tools.
+		expect(REAL_QUOTA_ID.test(detailsId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(simulateId)).toBe(true);
+		expect(looksLikeFabricatedGroupId(detailsId)).toBe(false);
+		expect(looksLikeFabricatedGroupId(simulateId)).toBe(false);
+		expect(presentedIds).toContain(detailsId);
+		expect(presentedIds).toContain(simulateId);
+	});
+
+	it("acoplamento: detector reconhece auto-180k e auto-180k-kairo (FIX-72) e nao o hash real", () => {
+		expect(looksLikeFabricatedGroupId("auto-180k")).toBe(true);
+		expect(looksLikeFabricatedGroupId("auto-180k-kairo")).toBe(true);
+		expect(looksLikeFabricatedGroupId(DISCOVERED.itau)).toBe(false);
+		// nao regride os formatos do FIX-68/FIX-71
+		expect(looksLikeFabricatedGroupId("bb-auto-200k-72m")).toBe(true);
+		expect(looksLikeFabricatedGroupId("auto-130k-60m")).toBe(true);
+	});
+
+	it("acoplamento: o prompt tem regra unica de id literal valida pra simular E detalhar (FIX-72)", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/FIX-72/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-180k/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/get_group_details/);
+	});
+});
+
+// ============================================================================
 // GATE-IDENTIFY (D1, docs/jornada/CONTEXT.md) — CPF antecipado antes da busca
 // ----------------------------------------------------------------------------
 // A Bevi exige CPF+celular+LGPD ANTES de simular (Trilho B é proposta-first).
