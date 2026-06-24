@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-24 18:20 · **Sessão:** aja-agora / develop
 - **Critério de pronto:** (1) regra de "português correto em página/UI" adicionada ao `~/.claude/CLAUDE.md` global; (2) bloco `bloco-d-acentuacao-textos` (FIX-73) anotado, commitado e pushado; (3) workspace Superset autônomo lançado; (4) branch mergeada na `develop` com gate verde (`pnpm test:unit` — Camadas 1+2 de CI/pre-commit; ver D6), ou quarentenada com `⚠️ PENDENTE-KAIRO`.
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO
 
 ## Decisões
 
@@ -50,8 +50,18 @@
 - 18:30 — Bloco-d (FIX-73/74/75 + _prompt) commitado e pushado na develop (`980fe627`). Workspace autônomo lançado: `fix-acentuacao-textos-ptbr` (wsId `348cf356-f536-4771-8736-c76604bc824d`, branch `fix/acentuacao-textos-ptbr`). Iniciando poll da tag-sentinela.
 - ~19:40 — Tag `block-done` detectada (~65min). Merge-back #1 com gate `typecheck && test:unit` → vermelho (typecheck pré-existente) → quarentenado/desfeito, develop intacta. Diagnóstico (D6): gate errado. Re-mergeando com `test:unit`.
 
+- ~19:40 — `block-done` detectado. Merge #1 (gate typecheck+test:unit) → vermelho por typecheck pré-existente → quarentena/desfeito. Diagnóstico D6.
+- 19:44 — Merge #2 (gate `test:unit`) → **clean, verde, pushed na develop** (`2ec0e266..76e0c159`). Itens FIX-73/74/75 em `done/`, pasta bloco-d removida, `.done/` gerado.
+- 19:45 — Verificação fresca: guard 4/4 verde · admin UI limpa · `system-prompt.ts` 0 "voce"→121 "você" · 3 cassettes de bug intactos · 0 regressão nova de typecheck.
+
 ## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:** _(pendente)_
-- **O que NÃO fiz e por quê:** _(pendente)_
-- **Revisar primeiro:** _(pendente)_
-- **Próximos passos sugeridos:** _(pendente)_
+- **Resultado vs critério de pronto:** ✅ TODOS atingidos. (1) Regra de português correto no `~/.claude/CLAUDE.md` global. (2) Bloco-d anotado/pushado (`980fe627`). (3) Workspace autônomo lançado e concluído (~65min). (4) Mergeado **clean na develop** (`76e0c159`) com gate `pnpm test:unit` VERDE (1926 passed no meu clone com PG). Evidência fresca: guard verde, sweep aplicado (system-prompt 0→0 sem acento), cassettes de bug intactos.
+- **O que NÃO fiz e por quê:** (a) NÃO consertei os **26 erros de typecheck pré-existentes** da develop (arquivos de teste route/e2e/eval/whatsapp) — fora do escopo (acentuação); é dívida do repo, não do bloco. (b) NÃO deletei o workspace/branch do Superset (housekeeping do Kairo via `/delete-workspace`; branch já mergeada, seguro deletar).
+- **Revisar primeiro:**
+  - **D6** — troca do gate de merge de `typecheck` p/ `test:unit`. É a decisão mais discutível: confiei no gate de CI/pre-commit (test:unit) em vez do tsc whole-repo. Justificada com evidência (26 erros pré-existentes na develop, 0 novos no branch).
+  - **D1** — regra nova no CLAUDE.md GLOBAL (não no do projeto), porque você disse "cloud global".
+  - O agente tocou 4 asserts em `agent-trajectory.test.ts` (fora dos 3 cassettes proibidos) pra refletir o output agora acentuado — revisei, são corretos/necessários.
+- **Próximos passos sugeridos:**
+  - **Dívida de typecheck (26 erros em arquivos de teste):** vale um bloco/limpeza separada — `tsc --noEmit` whole-repo está vermelho na develop há tempo; hoje só `test:unit` segura a linha. Se quiser, anoto via todo-blocks.
+  - Lançar os blocos dormentes a/b/c (funil, simulador, landing-copy) quando quiser — vão rebasar sobre a acentuação (conflito mecânico) e o copy novo já nasce acentuado pela regra global.
+  - `/delete-workspace` pra limpar `fix-acentuacao-textos-ptbr` do Superset.
