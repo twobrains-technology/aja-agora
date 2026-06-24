@@ -194,9 +194,13 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 		if (!blocoMatch) return;
 
 		const bloco = blocoMatch[0].toLowerCase();
-		// Normaliza tolerando ç/c e õ/o pra match case-insensitive.
+		// Normaliza removendo TODOS os diacríticos (o prompt é acentuado; o
+		// detector runtime também usa strip de acento) — match acento-insensitive.
 		const normalizar = (s: string) =>
-			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
+			s
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
 		const blocoNorm = normalizar(bloco);
 
 		const variantes = [

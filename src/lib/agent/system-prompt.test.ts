@@ -44,7 +44,7 @@ describe("system-prompt — overclaim de adequação financeira (bug #08)", () =
 
 describe("Helena 1ª fala calorosa (bug #04)", () => {
 	const helenaFirstTurn = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
-		ex.context?.includes("Primeiro turno apos transicao"),
+		ex.context?.includes("Primeiro turno após transição"),
 	);
 
 	it("existe example shared pro primeiro turno do specialist", () => {

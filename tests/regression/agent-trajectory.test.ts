@@ -526,7 +526,7 @@ describe("FIX-36-PRE-TOOL-HONESTY — texto não afirma achado antes do search_g
 				qualifyAnswers: { creditMax: 100000, prazoMeses: 12, hasLance: "no" },
 			},
 		});
-		expect(reveal).toContain("Encontramos 3 boas opcoes");
+		expect(reveal).toContain("Encontramos 3 boas opções");
 	});
 });
 
@@ -662,7 +662,7 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 		// LLM ainda pode parafrasear pra 'confira abaixo', 'olhe abaixo', 'olha
 		// ai'. Regra dura tem que cobrir explicito.
 		const normalizar = (s: string) =>
-			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
+			s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
 
 		const variantesExtras = ["confira abaixo", "olhe abaixo", "olha ai"];
@@ -2492,7 +2492,7 @@ describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gat
 		expect(m, "buildLanceReactionDirective precisa existir em directives.ts").not.toBeNull();
 		const body = m?.[0] ?? "";
 		// Deve mandar reagir curto e explicitamente NAO explicar embutido aqui.
-		expect(body).toMatch(/NAO explique o que e lance embutido/i);
+		expect(body).toMatch(/N[ÃA]O explique o que [eé] lance embutido/i);
 	});
 
 	it("a educacao de lance embutido vive no gate-questions (fonte do sistema), nao no agent", () => {
@@ -3871,7 +3871,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 		const body = directives.slice(start, start + 1800);
 		expect(body).toMatch(/VENDEDOR/i);
 		expect(body).toMatch(/SEM re-perguntar/i);
-		expect(body).toMatch(/NAO chame tools/i);
+		expect(body).toMatch(/N[ÃA]O chame tools/i);
 		expect(body).toMatch(/[Pp]rioridade/);
 	});
 
