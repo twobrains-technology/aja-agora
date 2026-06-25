@@ -9,11 +9,11 @@
  * string) pra anexar `cacheControl` ephemeral no bloco STABLE (o manual da
  * administradora) — mesmo padrão de cache do agente principal (builder.ts).
  */
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { type LanguageModel, type ModelMessage, type SystemModelMessage, streamText } from "ai";
 import { buildMesaCopilotPrompt, type MesaCopilotCaso } from "./system-prompt";
 
-const anthropic = createAnthropic();
+const anthropic = createGatewayAnthropic();
 
 export interface MesaCopilotTurn {
 	role: "attendant" | "assistant";

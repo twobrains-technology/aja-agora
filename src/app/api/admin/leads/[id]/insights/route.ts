@@ -1,4 +1,4 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -79,7 +79,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	}
 
 	// Generate insights via Claude Haiku
-	const anthropic = createAnthropic();
+	const anthropic = createGatewayAnthropic();
 	let parsed: InsightsPayload;
 
 	try {

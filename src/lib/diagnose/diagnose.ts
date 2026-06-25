@@ -1,7 +1,7 @@
 // Wrapper de chamada do "doutor" — generateObject contra Claude com retry,
 // mesma forma do judge (lib/eval/judge.ts). Não persiste; só executa.
 
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import { sanitizeUnicode } from "@/lib/eval/judge";
 import {
@@ -61,7 +61,7 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 		);
 	}
 
-	const anthropic = createAnthropic();
+	const anthropic = createGatewayAnthropic();
 	const start = Date.now();
 	let lastError: unknown;
 

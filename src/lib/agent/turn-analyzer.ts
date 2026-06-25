@@ -1,10 +1,10 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
-const anthropic = createAnthropic();
+const anthropic = createGatewayAnthropic();
 
 const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5-20251001";
 // 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
