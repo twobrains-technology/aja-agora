@@ -6,7 +6,7 @@ import { listExpertisesByCategory } from "./personas-repo";
 
 const anthropic = createGatewayAnthropic();
 
-const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5-20251001";
+const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5";
 // 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
 // faz o concierge atender mesmo quando o usuário foi explicito ("quero imovel").
 // 6s permite Haiku completar com folga; usuário nem percebe diferença.
