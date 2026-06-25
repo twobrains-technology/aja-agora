@@ -34,4 +34,30 @@ describe("FIX-62 — getStorageConfig", () => {
 		});
 		expect(cfg.forcePathStyle).toBe(true);
 	});
+
+	// FIX (bug dev AWS 2026-06-25): no ECS o app não recebe chaves estáticas — usa
+	// a task role via cadeia de credenciais do SDK. O default `minioadmin` só vale
+	// pro MinIO local; em AWS real sem chaves, NÃO força credencial (senão o
+	// minioadmin sobrescreve a role → InvalidAccessKeyId → 500 no upload).
+	it("AWS real sem chaves explícitas: credenciais indefinidas (usa task role/cadeia padrão)", () => {
+		const cfg = getStorageConfig({ S3_ENDPOINT: "" });
+		expect(cfg.accessKeyId).toBeUndefined();
+		expect(cfg.secretAccessKey).toBeUndefined();
+	});
+
+	it("MinIO sem chaves: mantém default minioadmin (dev local)", () => {
+		const cfg = getStorageConfig({ S3_ENDPOINT: "http://aja-minio-x:9000" });
+		expect(cfg.accessKeyId).toBe("minioadmin");
+		expect(cfg.secretAccessKey).toBe("minioadmin");
+	});
+
+	it("AWS real com chaves explícitas: respeita o que veio do env", () => {
+		const cfg = getStorageConfig({
+			S3_ENDPOINT: "",
+			S3_ACCESS_KEY_ID: "AKIAEXEMPLO",
+			S3_SECRET_ACCESS_KEY: "segredo",
+		});
+		expect(cfg.accessKeyId).toBe("AKIAEXEMPLO");
+		expect(cfg.secretAccessKey).toBe("segredo");
+	});
 });
