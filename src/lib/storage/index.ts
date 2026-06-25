@@ -15,8 +15,10 @@ export interface StorageConfig {
 	endpoint?: string;
 	region: string;
 	bucket: string;
-	accessKeyId: string;
-	secretAccessKey: string;
+	// Indefinidos em AWS real sem chaves no env → o SDK usa a cadeia de
+	// credenciais padrão (task role do ECS). Só o MinIO local recebe default.
+	accessKeyId?: string;
+	secretAccessKey?: string;
 	forcePathStyle: boolean;
 }
 
@@ -27,12 +29,17 @@ export function getStorageConfig(
 	const forcePathStyle = env.S3_FORCE_PATH_STYLE
 		? env.S3_FORCE_PATH_STYLE === "true"
 		: Boolean(endpoint); // MinIO precisa de path-style; AWS real usa virtual-hosted
+	// Default minioadmin SÓ pro MinIO local (endpoint setado). Em AWS real
+	// (sem endpoint) sem chaves, deixa indefinido pra cair na task role — forçar
+	// `minioadmin` aqui causava InvalidAccessKeyId → 500 no upload (bug dev AWS).
+	const accessKeyId = env.S3_ACCESS_KEY_ID || (endpoint ? "minioadmin" : undefined);
+	const secretAccessKey = env.S3_SECRET_ACCESS_KEY || (endpoint ? "minioadmin" : undefined);
 	return {
 		endpoint,
 		region: env.S3_REGION || "us-east-1",
 		bucket: env.S3_BUCKET || "aja-administradora-docs",
-		accessKeyId: env.S3_ACCESS_KEY_ID || "minioadmin",
-		secretAccessKey: env.S3_SECRET_ACCESS_KEY || "minioadmin",
+		accessKeyId,
+		secretAccessKey,
 		forcePathStyle,
 	};
 }
@@ -45,7 +52,12 @@ function getClient(cfg: StorageConfig): S3Client {
 		region: cfg.region,
 		endpoint: cfg.endpoint,
 		forcePathStyle: cfg.forcePathStyle,
-		credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+		// Sem chaves (AWS real) → omite `credentials` pra o SDK resolver via cadeia
+		// padrão (task role do ECS). Com chaves (MinIO/keys explícitas) → usa elas.
+		credentials:
+			cfg.accessKeyId && cfg.secretAccessKey
+				? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey }
+				: undefined,
 	});
 	return cachedClient;
 }
