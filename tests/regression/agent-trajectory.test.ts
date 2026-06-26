@@ -39,7 +39,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -5568,5 +5568,91 @@ describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_g
 		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
 			true,
 		);
+	});
+});
+
+// ============================================================================
+// FIX-77 — system role dentro de `messages` dispara warning de prompt-injection
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, monitor de logs do aja-app-develop): a cada turno do
+// agente principal saía no stdout:
+//   "AI SDK Warning: System messages in the prompt or messages fields can be a
+//    security risk because they may enable prompt injection attacks. Use the
+//    system option instead when possible..."
+// Origem: o orchestrator prependava role:"system" DENTRO do array `messages` de
+// agent.stream(...). A AI SDK 6 emite o warning via console.warn em
+// standardizePrompt quando messages.some(m => m.role === "system").
+//
+// O cassette prova o shape: messages COM system → warning; system na OPÇÃO
+// (instructions/system) + messages SEM system → sem warning. Cross-ref dos
+// asserts estruturais: src/lib/agent/orchestrator/system-messages.fix-77.test.ts.
+// ============================================================================
+
+describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno", () => {
+	// Mock model mínimo: 1 texto + finish stop. Reutilizável nos dois shapes.
+	function mockModel() {
+		return new MockLanguageModelV3({
+			doStream: async () => ({
+				// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loosely
+				stream: simulateReadableStream({
+					chunks: [
+						{ type: "stream-start", warnings: [] },
+						...textChunks("t1", "ok"),
+						FINISH_STOP,
+						// biome-ignore lint/suspicious/noExplicitAny: idem
+					] as any[],
+				}),
+			}),
+		});
+	}
+
+	// Detector do warning exato observado em prod.
+	const INJECTION_WARNING = /System messages in the prompt or messages fields can be a security risk|prompt injection/i;
+
+	async function warnsFrom(run: () => ReturnType<typeof streamText>): Promise<string[]> {
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const r = run();
+			for await (const _ of r.textStream) {
+				// drena
+			}
+			await r.warnings;
+			return spy.mock.calls.map((c) => String(c[0]));
+		} finally {
+			spy.mockRestore();
+		}
+	}
+
+	it("cassette: role:'system' DENTRO de messages dispara o warning (bug original)", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [
+					{ role: "system", content: "Nome do usuario: \"Kairo\"" },
+					{ role: "user", content: "oi" },
+					// biome-ignore lint/suspicious/noExplicitAny: idem
+				] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"messages com role:'system' TÊM que disparar o warning de prompt-injection (reproduz o bug).",
+		).toBe(true);
+	});
+
+	it("shape CORRETO pós-fix: system na opção + messages sem system → SEM warning", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				system: "Nome do usuario: \"Kairo\"",
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [{ role: "user", content: "oi" }] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"system na OPÇÃO (instructions/system) não pode disparar o warning — é o shape que a Opção A entrega.",
+		).toBe(false);
 	});
 });

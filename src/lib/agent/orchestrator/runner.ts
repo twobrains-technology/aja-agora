@@ -77,6 +77,13 @@ export async function* runAgentTurn(args: {
 	 */
 	// biome-ignore lint/suspicious/noExplicitAny: ToolChoice<T> é genérico sobre o ToolSet do agent — repassamos como-está pro resolveAgent.
 	forceToolChoice?: ToolChoice<any>;
+	/**
+	 * FIX-77: blocos de system dinâmicos por turno (knownName/experience/doubts)
+	 * montados pelo orchestrator (buildSystemContext). ANTES iam prependados em
+	 * `messages`; agora vão pro builder junto do examplesBlock (instructions, sem
+	 * cacheControl) — sem warning de prompt-injection e sem duplicar a memória.
+	 */
+	systemContextBlocks?: string[];
 }): AsyncGenerator<TurnEvent, RunAgentResult> {
 	const {
 		conversationId,
@@ -88,6 +95,7 @@ export async function* runAgentTurn(args: {
 		userIntent = "neutral",
 		memoryContext = null,
 		forceToolChoice,
+		systemContextBlocks = [],
 	} = args;
 
 	let fullResponse = "";
@@ -109,18 +117,8 @@ export async function* runAgentTurn(args: {
 	// builder (resolveAgent repassa o meta). Usada SÓ pro tripwire
 	// [tool-policy-violation]; a 1ª linha de defesa é o toolset filtrado.
 	const toolPolicyAllowed = new Set(allowedTools(meta, channel));
-	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
-	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
-	// via closure nas tools sensíveis (save_contact_name etc.). Sem isso, modelo
-	// alucinava "conv_001" e UPDATE no Postgres falhava silenciosamente.
-	const agent = await resolveAgent(currentPersona, meta, {
-		memoryContext,
-		conversationId,
-		channel,
-		toolChoice: forceToolChoice,
-	});
 
-	// Examples filtrados por contexto do turno. Vão num system message separado
+	// Examples filtrados por contexto do turno. Vão num system block separado
 	// pra preservar o cache da Anthropic no system prompt estático (ver
 	// example-selector.ts pra ranking e renderPersonaExamplesBlock pra formato).
 	const row = await getPersona(currentPersona);
@@ -131,11 +129,27 @@ export async function* runAgentTurn(args: {
 		intent: userIntent,
 	});
 	const examplesBlock = renderPersonaExamplesBlock(selected);
-	const messagesWithExamples = examplesBlock
-		? [{ role: "system" as const, content: examplesBlock }, ...messages]
-		: messages;
 
-	const result = await agent.stream({ messages: messagesWithExamples });
+	// FIX-77: systemContext (knownName/experience/doubts) + examplesBlock vão pro
+	// builder via `instructions` (campo `system` da SDK), NÃO prependados em
+	// `messages` — system dentro de `messages` dispara o warning de prompt-injection
+	// da AI SDK 6 a cada turno e duplicava a memória Letta. Ordem: systemContext
+	// antes do examplesBlock (examples mais perto da fala do usuário, recency bias).
+	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter(Boolean);
+
+	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
+	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
+	// via closure nas tools sensíveis (save_contact_name etc.). Sem isso, modelo
+	// alucinava "conv_001" e UPDATE no Postgres falhava silenciosamente.
+	const agent = await resolveAgent(currentPersona, meta, {
+		memoryContext,
+		conversationId,
+		channel,
+		toolChoice: forceToolChoice,
+		extraSystemBlocks,
+	});
+
+	const result = await agent.stream({ messages });
 
 	for await (const part of result.fullStream) {
 		switch (part.type) {
