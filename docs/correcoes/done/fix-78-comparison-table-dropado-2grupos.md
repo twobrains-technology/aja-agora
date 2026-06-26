@@ -1,7 +1,9 @@
 ---
 id: FIX-78
 titulo: "Agente dropa o comparison_table no reveal com 2+ grupos (usuário vê só 1 proposta, sem o carrossel comparativo)"
-status: todo
+status: done
+commit: 4d9d3c1c
+executado_em: 2026-06-26
 bloco: bloco-a-agente-passos-obrigatorios
 arquivos:
   - src/lib/agent/orchestrator/directives.ts
