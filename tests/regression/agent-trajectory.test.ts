@@ -5656,3 +5656,102 @@ describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno
 		).toBe(false);
 	});
 });
+
+// ============================================================================
+// FIX-78 — comparison_table dropado no reveal com 2+ grupos
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, conv a9c5effa, traceId 6b09c87f): no reveal de 2+
+// grupos o agente chamou present_recommendation_card mas DROPOU
+// present_comparison_table — artifactsEmitted = [recommendation_card,
+// simulation_result], comparison_table AUSENTE. O usuário viu só a proposta
+// recomendada, sem o carrossel comparativo das demais. Ter chamado
+// recommendation_card PROVA que o modelo classificou como 2+ grupos (com 1 só
+// grupo o prompt manda NÃO chamar recommendation_card), logo o comparativo era
+// obrigatório e faltou.
+//
+// Mesma classe do FIX-76 (passo obrigatório da jornada omitido pelo modelo). A
+// defesa é a REGRA DURA de inseparabilidade no buildSearchSummaryDirective
+// (Camada 1: directives.fix-78.test.ts). Aqui o cassette reproduz o drop e o
+// detector o pega.
+// ============================================================================
+
+describe("FIX-78-COMPARISON-DROPADO — recommendation_card sem comparison_table (2+ grupos)", () => {
+	// Detector da violação: num reveal com 2+ grupos, recommendation_card e
+	// comparison_table são INSEPARÁVEIS — emitir o primeiro sem o segundo é o bug.
+	function violaInseparabilidade(toolNames: string[]): boolean {
+		const hasRec = toolNames.includes("present_recommendation_card");
+		const hasComp = toolNames.includes("present_comparison_table");
+		return hasRec && !hasComp;
+	}
+
+	it("cassette: reveal 2+ grupos emite recommendation_card SEM comparison_table (bug exato)", async () => {
+		// Trajetória do bug: recommendation_card sai, comparison_table NÃO.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos boas opções pro seu perfil. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).not.toContain("present_comparison_table");
+		// O detector PEGA o drop — é o sinal de regressão.
+		expect(
+			violaInseparabilidade(names),
+			"Detector tem que pegar recommendation_card sem comparison_table no reveal 2+ grupos.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: reveal 2+ grupos emite os DOIS cards (recommendation + comparison)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-ct", "present_comparison_table", {
+				groups: [{ administradora: "ITAÚ" }, { administradora: "BRADESCO" }],
+				highlightBestIndex: 0,
+			}),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_comparison_table");
+		expect(violaInseparabilidade(names)).toBe(false);
+	});
+
+	it("structural: o directive do reveal veta o drop (regra de inseparabilidade)", () => {
+		const reveal = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				currentCategory: "auto",
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 100_000, prazoMeses: 12, hasLance: "no" },
+			},
+		});
+		expect(
+			/INSEPAR[ÁA]VE/i.test(reveal),
+			"buildSearchSummaryDirective precisa da REGRA DURA de inseparabilidade (FIX-78).",
+		).toBe(true);
+		const colado =
+			/present_recommendation_card[\s\S]{0,260}present_comparison_table|present_comparison_table[\s\S]{0,260}present_recommendation_card/;
+		expect(colado.test(reveal)).toBe(true);
+	});
+});
