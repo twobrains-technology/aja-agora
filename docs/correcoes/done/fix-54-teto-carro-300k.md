@@ -1,13 +1,15 @@
 ---
 id: FIX-54
 titulo: "Simulador de carro limitado a R$ 300k (teto hardcoded por categoria em CREDIT_BOUNDS)"
-status: todo
+status: done
 bloco: bloco-b-simulador-recomendacao
 arquivos:
   - src/lib/agent/qualify-config.ts
   - src/components/chat/artifacts/value-picker.tsx
   - tests/regression/agent-trajectory.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: c11c4f3f
+executado_em: 2026-06-26
 ---
 
 # FIX-54 — Carro indo só até R$ 300 mil

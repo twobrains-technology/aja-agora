@@ -1,7 +1,7 @@
 ---
 id: FIX-59
 titulo: "Lote de ajustes de copy da landing (comentários gerais do stakeholder)"
-status: todo
+status: done
 bloco: bloco-c-landing-copy-ui
 arquivos:
   - src/components/landing/hero.tsx
@@ -12,6 +12,8 @@ arquivos:
   - src/components/landing/brand-footer.tsx
   - src/components/landing/copy.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (comentários gerais Bernardo)
+commit: 4d91490c
+executado_em: 2026-06-26
 ---
 
 # FIX-59 — Ajustes de copy da landing

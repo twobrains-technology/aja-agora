@@ -1,13 +1,15 @@
 ---
 id: FIX-55
 titulo: "Simulador não sensível a números quebrados (step de 10k no slider de valor força múltiplos redondos)"
-status: todo
+status: done
 bloco: bloco-b-simulador-recomendacao
 arquivos:
   - src/lib/agent/qualify-config.ts
   - src/components/chat/artifacts/value-picker.tsx
   - src/components/chat/artifacts/plan-estimate-picker.tsx
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: c11c4f3f
+executado_em: 2026-06-26
 ---
 
 # FIX-55 — Simulador não aceita valores quebrados

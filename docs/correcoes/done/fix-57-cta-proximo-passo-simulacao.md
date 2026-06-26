@@ -1,12 +1,14 @@
 ---
 id: FIX-57
 titulo: "Fim do simulador/recomendação inconclusivo: falta CTA claro de próximo passo + deixar explícita a relação meses×lance"
-status: todo
+status: done
 bloco: bloco-b-simulador-recomendacao
 arquivos:
   - src/components/chat/artifacts/simulation-result.tsx
   - src/components/chat/artifacts/decision-prompt.tsx
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: c11c4f3f
+executado_em: 2026-06-26
 ---
 
 # FIX-57 — "Ficou inconclusivo o que faz depois" + clareza meses×lance

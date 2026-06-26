@@ -1,13 +1,15 @@
 ---
 id: FIX-60
 titulo: "UI da landing: figura do hero 'mais brasileira' + ícone do WhatsApp no mobile"
-status: todo
+status: done
 bloco: bloco-c-landing-copy-ui
 arquivos:
   - src/components/landing/hero.tsx
   - src/components/chat/artifacts/whatsapp-optin.tsx
   - public/brand/hero-scene.png
 rodada: 2026-06-19 — jornada2_revisão.docx (comentários gerais Bernardo)
+commit: 4d91490c
+executado_em: 2026-06-26
 ---
 
 # FIX-60 — Figura mais brasileira + ícone WhatsApp mobile

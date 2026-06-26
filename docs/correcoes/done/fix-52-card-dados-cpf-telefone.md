@@ -1,7 +1,7 @@
 ---
 id: FIX-52
 titulo: "Card de dados não dispara com CPF+telefone juntos; agente cai em fallback proibido (atualiza página + meta-narrativa do mecanismo)"
-status: todo
+status: done
 bloco: bloco-a-funil-coleta-ordem
 arquivos:
   - src/lib/agent/system-prompt.ts
@@ -10,6 +10,8 @@ arquivos:
   - src/lib/leads/phone.ts
   - tests/regression/agent-trajectory.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: 2138f1b1
+executado_em: 2026-06-26
 ---
 
 # FIX-52 — Card de coleta de dados não aparece + agente empurra "atualiza a página"

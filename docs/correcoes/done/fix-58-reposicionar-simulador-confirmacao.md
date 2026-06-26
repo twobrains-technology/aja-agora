@@ -1,7 +1,7 @@
 ---
 id: FIX-58
 titulo: "Reposicionar o simulador de contemplação para ANTES da indicação do melhor grupo + confirmar premissas antes de avançar"
-status: todo
+status: done
 bloco: bloco-a-funil-coleta-ordem
 arquivos:
   - src/lib/agent/system-prompt.ts
@@ -11,6 +11,8 @@ arquivos:
   - docs/jornada/CONTEXT.md
   - tests/regression/agent-trajectory.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (decisão do stakeholder Bernardo)
+commit: 2138f1b1
+executado_em: 2026-06-26
 ---
 
 # FIX-58 — Simulador de contemplação antes da indicação + confirmação de premissas

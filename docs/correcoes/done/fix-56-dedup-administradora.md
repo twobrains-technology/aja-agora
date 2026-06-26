@@ -1,12 +1,14 @@
 ---
 id: FIX-56
 titulo: "Recomendação mostra 2 grupos da mesma administradora (rankGroups sem dedup/diversificação por administradora)"
-status: todo
+status: done
 bloco: bloco-b-simulador-recomendacao
 arquivos:
   - src/lib/agent/recommendation.ts
   - tests/regression/agent-trajectory.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: c11c4f3f
+executado_em: 2026-06-26
 ---
 
 # FIX-56 — Dois grupos da mesma administradora na recomendação

@@ -1,7 +1,7 @@
 ---
 id: FIX-53
 titulo: "Ordem do funil: pedir os dados (CPF/celular) ANTES do valor; e parar de repetir o pedido de valor já respondido"
-status: todo
+status: done
 bloco: bloco-a-funil-coleta-ordem
 arquivos:
   - src/lib/agent/system-prompt.ts
@@ -11,6 +11,8 @@ arquivos:
   - docs/jornada/CONTEXT.md
   - tests/regression/agent-trajectory.test.ts
 rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora.com.br)
+commit: 2138f1b1
+executado_em: 2026-06-26
 ---
 
 # FIX-53 — Dados antes do valor + não repetir o pedido de valor
