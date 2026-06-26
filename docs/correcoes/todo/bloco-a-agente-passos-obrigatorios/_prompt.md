@@ -1,0 +1,26 @@
+Você é o executor do bloco **bloco-a-agente-passos-obrigatorios** no worktree isolado deste branch (`fix/agente-passos-obrigatorios`). Trabalha SOZINHO, sem o Kairo para responder: NÃO faça perguntas, NÃO espere aprovação — você É o decisor (best practice + padrões do repo).
+
+## Contexto
+Achados da rodada de **QA manual do Kairo (2026-06-25)** na jornada do chat/fechamento (`http://aja-develop.orb.local`). Este bloco é a **robustez do agente / orchestrator nos passos obrigatórios da jornada** — três bugs de comportamento NÃO-determinístico do modelo (pula ou inventa passos).
+
+## Passos
+1. Leia `docs/correcoes/README.md` (regras do fluxo) e a pasta `docs/correcoes/todo/bloco-a-agente-passos-obrigatorios/` inteira: `_bloco.md` + `fix-76`, `fix-77`, `fix-78` (cada um já traz root cause investigado com arquivo:linha, cenário, correção e regressão exigida). Leia também `CLAUDE.md` do projeto (REGRAS DE PRODUTO — Bevi fonte única; e a regra "Regressão de agent — 3 camadas OBRIGATÓRIAS") e `docs/jornada/jornada-canonica.md`.
+
+2. DESIGN: os três `fix-NN` já vêm com root cause fechado e correção apontada (FIX-77 inclusive já fixa a Opção A). Para qualquer ponto com alternativa real (ex.: FIX-78 — reforçar prompt vs. artifact-guard no orchestrator vs. ambos), use o raciocínio da skill `superpowers:brainstorming` (explore contexto, 2-3 abordagens, trade-offs, YAGNI) mas DECIDA sozinho — NÃO trave no HARD-GATE. Registre cada decisão em `docs/correcoes/decisions/2026-06-25-bloco-a-agente-passos-obrigatorios.md` (o que decidiu · opções · escolhida + porquê). Commit `docs:` desse ADR.
+
+3. Execute os itens NA ORDEM: **FIX-76 → FIX-77 → FIX-78**. Os três convergem em `runner.ts`/`builder.ts`/`agent-trajectory.test.ts`; sequencial evita reescrever a mesma região e conflitar os cassettes (append-only). TDD strict por item.
+
+4. **Regressão de agent OBRIGATÓRIA — 3 camadas (CLAUDE.md → "Regressão de agent — 3 camadas OBRIGATÓRIAS"):** para CADA um dos três (são todos bugs de comportamento do agente), escreva ANTES do fix: **Camada 1** (structural, `src/**/*.test.ts` ao lado do código — assert contra a fonte de produção) + **Camada 2** (cassette novo, 1 `describe` por item, em `tests/regression/agent-trajectory.test.ts`, usando `MockLanguageModelV2` de `ai/test` + `simulateReadableStream`). Veja os 2 FALHAREM, então corrija (prompt/builder/orchestrator/gate/guard), veja PASSAR. **Sem cassette na Camada 2 = fix RECUSADO** (regra inviolável do projeto). Camada 3 (eval nightly) é opcional/append — não bloqueia. Pontos críticos a cobrir por item:
+   - **FIX-76:** Camada 1 — assert de substring da regra anti-alucinação no prompt produzido por `builder.ts` (PROIBIR afirmar instabilidade/erro/dificuldade de busca se `search_groups` não foi chamada e não retornou erro NESTE turno; PROIBIR reapresentar valor do histórico como "dado real disponível" sem `search_groups` no mesmo turno). Camada 2 — cassette com o modelo dizendo "instabilidade nas buscas" com `toolsCalled` vazio → detector regex pega a frase de falha-de-busca quando nenhuma tool de busca foi chamada no turno; complementar com assert do gate (retomada com valor-alvo → busca forçada, não cair em conversacional). Cobre a regra inviolável Bevi fonte única.
+   - **FIX-77:** Camada 1 — assert que o orchestrator NÃO passa nenhuma mensagem `role:"system"` em `messages` (runner/index/system-context/orchestrator-bridge) e que os system dinâmicos chegam via `instructions`/`system`. Camada 2 — detector validando ausência do warning / shape correto do prompt. APÓS o fix, confirme que (a) o **prompt caching por bloco continua intacto** (`stable` continua 1º item do `system`, byte-idêntico, único com `cacheControl: ephemeral`) e (b) a **duplicação da memória Letta sumiu**. NÃO troque `ToolLoopAgent`/`agent.stream` por `streamText`.
+   - **FIX-78:** Camada 2 (OBRIGATÓRIA) — cassette de reveal com `recommendation_card` emitido mas SEM `comparison_table` (2+ grupos) → detector falha. Camada 1 — assert da regra de inseparabilidade `recommendation_card`↔`comparison_table` no prompt produzido por `directives.ts` (ou do artifact-guard que escolher).
+
+5. 1 commit Conventional (PT-BR) por item — use `test+fix:` (teste de regressão das 3 camadas + correção no mesmo commit, teste primeiro). Bug de agente → o pre-commit hook roda Camadas 1+2 e bloqueia se vermelho; mantenha verde, NÃO use `--no-verify`.
+
+6. Ao concluir cada item: MOVA o `fix-NN` pra `docs/correcoes/done/` com `status: done` + `commit: <hash>` + `executado_em: <data>`. Bloco esvaziou (só `_bloco.md`) → apague a pasta.
+
+7. Ao terminar: **push da branch** (`git push origin fix/agente-passos-obrigatorios`) + gere `.done/{data}-bloco-a-agente-passos-obrigatorios.md` (resumo + decisões + testes das 3 camadas + gaps).
+
+8. **PROIBIDO**: abrir PR, fazer merge, rodar deploy/restart, criar reminder, `--no-verify`. A integração na base é do ORQUESTRADOR; a revisão+merge é decisão do Kairo. Sua linha vermelha é só **push da branch**. A sinalização de conclusão (tag-sentinela) é injetada automaticamente pelo `launch-blocks.sh` no fim deste prompt — siga o footer.
+
+9. RESUMO FINAL: liste as decisões de design que tomou (do `decisions/`) — "decidi X em vez de Y porque Z" por linha. Sem decisão real num item? Diga isso.

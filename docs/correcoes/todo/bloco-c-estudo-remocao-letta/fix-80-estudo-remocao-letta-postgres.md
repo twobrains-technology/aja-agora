@@ -1,3 +1,15 @@
+---
+id: FIX-80
+titulo: "ESTUDO/PLANO de remoção do Letta — re-home da memória pro Postgres (NÃO arranca; entrega ADR + plano + stub do PostgresMemoryAdapter)"
+status: todo
+bloco: bloco-c-estudo-remocao-letta
+arquivos:
+  - docs/correcoes/decisions/2026-06-25-remocao-letta-postgres.md
+  - docs/
+  - src/lib/memory/postgres-adapter.ts
+rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+---
+
 # Refactor / Decisão arquitetural (NÃO é bug de runtime) — Estudar a fundo e remover o Letta: re-home da memória pro Postgres
 
 - **Natureza:** **SOLICITAÇÃO DE REFACTOR / DECISÃO ARQUITETURAL** (candidata a bloco `todo-blocks`), NÃO bug de runtime. Nada está quebrado em produção por causa disto; é simplificação de arquitetura. Registrado a pedido do Kairo.

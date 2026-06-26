@@ -1,3 +1,17 @@
+---
+id: FIX-76
+titulo: "Agente alucina falha de busca sem chamar search_groups e ressuscita valor STALE do histórico como 'dado real disponível' (viola Bevi fonte única)"
+status: todo
+bloco: bloco-a-agente-passos-obrigatorios
+arquivos:
+  - src/lib/agent/agents/builder.ts
+  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/turn-analyzer.ts
+  - src/lib/agent/qualify-state.ts
+  - tests/regression/agent-trajectory.test.ts
+rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+---
+
 # Bug — Agente alucina "instabilidade na busca" sem chamar search_groups e ressuscita valor STALE do histórico como "dado real disponível"
 
 - **Data:** 2026-06-25 (teste manual do Kairo — chat web, persona Maria, consórcio de carro, conversa antiga retomada)

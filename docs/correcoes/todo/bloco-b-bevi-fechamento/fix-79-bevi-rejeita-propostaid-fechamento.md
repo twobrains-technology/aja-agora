@@ -1,3 +1,15 @@
+---
+id: FIX-79
+titulo: "Fechamento trava: Bevi rejeita o propostaId ('Proposta não pertence ao Bevi Consórcio') — provável BEVI_PRODUCT_ID hardcoded fora da conta do token"
+status: todo
+bloco: bloco-b-bevi-fechamento
+arquivos:
+  - src/lib/adapters/bevi/bevi-api-adapter.ts
+  - src/lib/bevi/fulfillment.ts
+  - src/lib/adapters/bevi/bevi-errors.ts
+rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+---
+
 # Bug (INTEGRAÇÃO Bevi — não é bug de agente) — Fechamento de contrato trava: Bevi rejeita o `propostaId` ("Proposta não pertence ao Bevi Consórcio")
 
 - **Natureza:** bug de **integração com a Bevi** (via adapter), NÃO comportamento do agente. Provável mismatch de `productId`/conta entre criar e simular a proposta.

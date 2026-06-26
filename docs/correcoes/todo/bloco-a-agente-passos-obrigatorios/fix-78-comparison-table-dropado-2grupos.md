@@ -1,3 +1,15 @@
+---
+id: FIX-78
+titulo: "Agente dropa o comparison_table no reveal com 2+ grupos (usuário vê só 1 proposta, sem o carrossel comparativo)"
+status: todo
+bloco: bloco-a-agente-passos-obrigatorios
+arquivos:
+  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/orchestrator/runner.ts
+  - tests/regression/agent-trajectory.test.ts
+rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+---
+
 # Bug — Agente dropa o `comparison_table` no reveal com 2+ grupos (usuário vê só 1 proposta, sem o carrossel comparativo)
 
 - **Natureza:** bug de **comportamento do agente** (não-determinístico) — mesma classe do bug da Maria (passo obrigatório omitido pelo modelo).

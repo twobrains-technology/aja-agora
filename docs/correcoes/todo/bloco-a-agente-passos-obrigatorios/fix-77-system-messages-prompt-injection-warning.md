@@ -1,3 +1,18 @@
+---
+id: FIX-77
+titulo: "System role dentro de messages no orchestrator dispara warning de prompt-injection a cada turno + memória Letta injetada em dobro"
+status: todo
+bloco: bloco-a-agente-passos-obrigatorios
+arquivos:
+  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/orchestrator/index.ts
+  - src/lib/agent/orchestrator/system-context.ts
+  - src/lib/agent/agents/builder.ts
+  - src/lib/memory/orchestrator-bridge.ts
+  - tests/regression/agent-trajectory.test.ts
+rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+---
+
 # Bug — Warning de prompt-injection da AI SDK a cada turno do agente principal (system messages no campo `messages`)
 
 - **Data:** 2026-06-25 (teste manual do Kairo via monitor de logs do container `aja-app-develop`)
