@@ -9,7 +9,7 @@ arquivos:
   - src/lib/memory/postgres-adapter.ts
 rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
 executado_em: 2026-06-26
-commit: PENDENTE-HASH
+commit: "881bc730 (docs: ADR+plano+move) · 30de3123 (chore: stub)"
 entrega: "ESTUDO concluído — ADR (2026-06-25-remocao-letta-postgres.md) + plano de migração faseado + stub não-ligado (src/lib/memory/postgres-adapter.ts). NÃO arrancou o Letta, nenhum código de runtime tocado. PENDENTE-KAIRO: medição em prod (§7 do ADR) antes de executar."
 ---
 
