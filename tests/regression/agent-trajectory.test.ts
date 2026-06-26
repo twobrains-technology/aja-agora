@@ -39,7 +39,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -5471,5 +5471,287 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 		// O copiloto é um canal separado — routing.ts não pode importar/chamar
 		// o orchestrator de vendas (evita a colisão de canal da spec §8).
 		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
+	});
+});
+
+// ============================================================================
+// FIX-76 — agente alucina falha de busca + ressuscita valor STALE como dado real
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
+// simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
+// "estou com dificuldade em acessar os grupos" / "instabilidade nas buscas"
+// (turn-trace: toolsCalled=[] — search_groups NUNCA foi chamada, ZERO erro de
+// tool) e ofereceu "a faixa de R$ 256.000 que já temos dados reais disponíveis"
+// — número ressuscitado do histórico, apresentado como dado real. Viola a regra
+// inviolável Bevi fonte única (proibido número stale/fictício em runtime).
+//
+// Defesa em duas frentes:
+//   • prompt (Camada 1, system-prompt.fix-76.test.ts): veta a frase.
+//   • gate (Camada 1, qualify-state.fix76.test.ts): troca de faixa reabre busca.
+// Aqui o cassette de stream reproduz a alucinação e o detector a pega; mais o
+// assert de que o gate FORÇA a busca na retomada com valor-alvo trocado.
+// ============================================================================
+
+describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_groups", () => {
+	// Detector da frase tóxica: falha/instabilidade/indisponibilidade de BUSCA.
+	const FALHA_BUSCA_ALUCINADA =
+		/instabilidade\s+n[ao]s?\s+busca|dificuldade\s+(em|de|pra|para)?\s*acess\w*\s+(os\s+)?grupos|problema\w*\s+(em|pra|para)?\s*acess\w*\s+(os\s+)?grupos|inst[áa]vel\s+(a|na)\s+busca/i;
+	// Detector do valor stale apresentado como dado real.
+	const VALOR_STALE_COMO_REAL =
+		/(dados?\s+reais?\s+(dispon[íi]ve|que\s+(j[áa]\s+)?temos)|j[áa]\s+temos\s+(dados\s+)?dispon)/i;
+
+	it("cassette: stream reproduz 'instabilidade nas buscas' SEM tool-call (bug exato Maria)", async () => {
+		const cassette =
+			"Poxa, estou com dificuldade em acessar os grupos no momento — uma instabilidade nas buscas. " +
+			"Mas a faixa de R$ 256.000 que já temos dados reais disponíveis segue valendo, quer seguir nela?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reprodução fiel: texto fabricou a falha + ofereceu valor stale, ZERO tool.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// O detector PEGA a frase quando NENHUMA tool de busca foi chamada no turno.
+		const buscouNoTurno = toolCalls.some(
+			(t) => t.toolName === "search_groups" || t.toolName === "recommend_groups",
+		);
+		expect(buscouNoTurno).toBe(false);
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(cassette),
+			"Detector tem que pegar a frase de falha-de-busca alucinada. Se não pega, atualize o regex.",
+		).toBe(true);
+		expect(
+			VALOR_STALE_COMO_REAL.test(cassette),
+			"Detector tem que pegar o valor stale apresentado como 'dados reais disponíveis'.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: com troca de faixa, o turno chama search_groups na faixa nova (sem alucinar)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na faixa de 130 mil:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 130_000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("search_groups");
+		// Texto honesto: nem falha alucinada, nem valor stale como dado real.
+		expect(FALHA_BUSCA_ALUCINADA.test(text)).toBe(false);
+		expect(VALOR_STALE_COMO_REAL.test(text)).toBe(false);
+	});
+
+	it("structural: o prompt de produção veta a alucinação de falha de busca (sincronia com a regra dura)", () => {
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa citar a frase tóxica ('instabilidade nas buscas') na regra dura FIX-76.",
+		).toBe(true);
+	});
+
+	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			currentPersona: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: { creditMax: 130_000, prazoMeses: 60, hasLance: "no", lanceEmbutido: false },
+			searchDispatched: true,
+			revealCompleted: true,
+			discoveredCreditTarget: 256_000,
+		};
+		// O orquestrador volta a dirigir o gate de busca (em vez de deixar o modelo
+		// livre pra alucinar) e libera mesmo num turno de intent fraco.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
+	});
+});
+
+// ============================================================================
+// FIX-77 — system role dentro de `messages` dispara warning de prompt-injection
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, monitor de logs do aja-app-develop): a cada turno do
+// agente principal saía no stdout:
+//   "AI SDK Warning: System messages in the prompt or messages fields can be a
+//    security risk because they may enable prompt injection attacks. Use the
+//    system option instead when possible..."
+// Origem: o orchestrator prependava role:"system" DENTRO do array `messages` de
+// agent.stream(...). A AI SDK 6 emite o warning via console.warn em
+// standardizePrompt quando messages.some(m => m.role === "system").
+//
+// O cassette prova o shape: messages COM system → warning; system na OPÇÃO
+// (instructions/system) + messages SEM system → sem warning. Cross-ref dos
+// asserts estruturais: src/lib/agent/orchestrator/system-messages.fix-77.test.ts.
+// ============================================================================
+
+describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno", () => {
+	// Mock model mínimo: 1 texto + finish stop. Reutilizável nos dois shapes.
+	function mockModel() {
+		return new MockLanguageModelV3({
+			doStream: async () => ({
+				// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loosely
+				stream: simulateReadableStream({
+					chunks: [
+						{ type: "stream-start", warnings: [] },
+						...textChunks("t1", "ok"),
+						FINISH_STOP,
+						// biome-ignore lint/suspicious/noExplicitAny: idem
+					] as any[],
+				}),
+			}),
+		});
+	}
+
+	// Detector do warning exato observado em prod.
+	const INJECTION_WARNING = /System messages in the prompt or messages fields can be a security risk|prompt injection/i;
+
+	async function warnsFrom(run: () => ReturnType<typeof streamText>): Promise<string[]> {
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const r = run();
+			for await (const _ of r.textStream) {
+				// drena
+			}
+			await r.warnings;
+			return spy.mock.calls.map((c) => String(c[0]));
+		} finally {
+			spy.mockRestore();
+		}
+	}
+
+	it("cassette: role:'system' DENTRO de messages dispara o warning (bug original)", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [
+					{ role: "system", content: "Nome do usuario: \"Kairo\"" },
+					{ role: "user", content: "oi" },
+					// biome-ignore lint/suspicious/noExplicitAny: idem
+				] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"messages com role:'system' TÊM que disparar o warning de prompt-injection (reproduz o bug).",
+		).toBe(true);
+	});
+
+	it("shape CORRETO pós-fix: system na opção + messages sem system → SEM warning", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				system: "Nome do usuario: \"Kairo\"",
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [{ role: "user", content: "oi" }] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"system na OPÇÃO (instructions/system) não pode disparar o warning — é o shape que a Opção A entrega.",
+		).toBe(false);
+	});
+});
+
+// ============================================================================
+// FIX-78 — comparison_table dropado no reveal com 2+ grupos
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, conv a9c5effa, traceId 6b09c87f): no reveal de 2+
+// grupos o agente chamou present_recommendation_card mas DROPOU
+// present_comparison_table — artifactsEmitted = [recommendation_card,
+// simulation_result], comparison_table AUSENTE. O usuário viu só a proposta
+// recomendada, sem o carrossel comparativo das demais. Ter chamado
+// recommendation_card PROVA que o modelo classificou como 2+ grupos (com 1 só
+// grupo o prompt manda NÃO chamar recommendation_card), logo o comparativo era
+// obrigatório e faltou.
+//
+// Mesma classe do FIX-76 (passo obrigatório da jornada omitido pelo modelo). A
+// defesa é a REGRA DURA de inseparabilidade no buildSearchSummaryDirective
+// (Camada 1: directives.fix-78.test.ts). Aqui o cassette reproduz o drop e o
+// detector o pega.
+// ============================================================================
+
+describe("FIX-78-COMPARISON-DROPADO — recommendation_card sem comparison_table (2+ grupos)", () => {
+	// Detector da violação: num reveal com 2+ grupos, recommendation_card e
+	// comparison_table são INSEPARÁVEIS — emitir o primeiro sem o segundo é o bug.
+	function violaInseparabilidade(toolNames: string[]): boolean {
+		const hasRec = toolNames.includes("present_recommendation_card");
+		const hasComp = toolNames.includes("present_comparison_table");
+		return hasRec && !hasComp;
+	}
+
+	it("cassette: reveal 2+ grupos emite recommendation_card SEM comparison_table (bug exato)", async () => {
+		// Trajetória do bug: recommendation_card sai, comparison_table NÃO.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos boas opções pro seu perfil. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).not.toContain("present_comparison_table");
+		// O detector PEGA o drop — é o sinal de regressão.
+		expect(
+			violaInseparabilidade(names),
+			"Detector tem que pegar recommendation_card sem comparison_table no reveal 2+ grupos.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: reveal 2+ grupos emite os DOIS cards (recommendation + comparison)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-ct", "present_comparison_table", {
+				groups: [{ administradora: "ITAÚ" }, { administradora: "BRADESCO" }],
+				highlightBestIndex: 0,
+			}),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_comparison_table");
+		expect(violaInseparabilidade(names)).toBe(false);
+	});
+
+	it("structural: o directive do reveal veta o drop (regra de inseparabilidade)", () => {
+		const reveal = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				currentCategory: "auto",
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 100_000, prazoMeses: 12, hasLance: "no" },
+			},
+		});
+		expect(
+			/INSEPAR[ÁA]VE/i.test(reveal),
+			"buildSearchSummaryDirective precisa da REGRA DURA de inseparabilidade (FIX-78).",
+		).toBe(true);
+		const colado =
+			/present_recommendation_card[\s\S]{0,260}present_comparison_table|present_comparison_table[\s\S]{0,260}present_recommendation_card/;
+		expect(colado.test(reveal)).toBe(true);
 	});
 });

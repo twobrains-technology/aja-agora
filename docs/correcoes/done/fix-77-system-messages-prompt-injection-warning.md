@@ -1,7 +1,9 @@
 ---
 id: FIX-77
 titulo: "System role dentro de messages no orchestrator dispara warning de prompt-injection a cada turno + memória Letta injetada em dobro"
-status: todo
+status: done
+commit: 591ea120
+executado_em: 2026-06-26
 bloco: bloco-a-agente-passos-obrigatorios
 arquivos:
   - src/lib/agent/orchestrator/runner.ts

@@ -1,7 +1,9 @@
 ---
 id: FIX-76
 titulo: "Agente alucina falha de busca sem chamar search_groups e ressuscita valor STALE do histórico como 'dado real disponível' (viola Bevi fonte única)"
-status: todo
+status: done
+commit: 6bc848a7
+executado_em: 2026-06-26
 bloco: bloco-a-agente-passos-obrigatorios
 arquivos:
   - src/lib/agent/agents/builder.ts
