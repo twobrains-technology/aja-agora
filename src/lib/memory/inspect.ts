@@ -1,12 +1,12 @@
 // src/lib/memory/inspect.ts
 //
 // Helper de inspeção pro simulator dev tool. Retorna snapshot completo da
-// memória Letta da identidade da conversa simulada — bloco humano, archival
-// sample, preview do hint de reativação que seria injetado no próximo turno,
-// e estado do clock simulado.
+// memória da identidade da conversa simulada — bloco humano, preview do hint de
+// reativação que seria injetado no próximo turno, e estado do clock simulado.
 //
-// Read-only: nada de side-effect; nunca cria agent novo. Se identity não
-// existe ou Letta indisponível, retorna shape com `agentExists: false`.
+// Read-only: nada de side-effect; nunca grava nada. Se identity não existe,
+// retorna shape com `agentExists: false`. Fala com a memória pelo factory
+// (`getMemoryAdapter()`) — backend-agnóstico (FIX-81: Postgres no lugar do Letta).
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -17,8 +17,7 @@ import {
 	identityFromWaId,
 	shouldCreateAnonAgent,
 } from "./identity";
-import { LettaMemoryAdapter } from "./letta-adapter";
-import { lettaFetch } from "./letta-client";
+import { getMemoryAdapter } from "./index";
 import { buildReactivationHint } from "./reactivation";
 import type { ArchivalHit, HumanMemoryBlock, UserIdentity } from "./types";
 
@@ -31,7 +30,11 @@ export interface MemoryInspectResult {
 	archivalSample: ArchivalHit[];
 	clockOffsetMs: number;
 	simulatedNow: string;
-	/** Letta circuit aberto ou indisponível — UI mostra banner. */
+	/**
+	 * Disponibilidade do backend de memória. Após FIX-81 a memória vive no
+	 * mesmo Postgres do app (co-localizada) — sempre `true`. Mantido no shape
+	 * por compatibilidade com a UI dev do simulador.
+	 */
 	lettaAvailable: boolean;
 	/** Conv web abaixo do threshold de criação automática. null se whatsapp ou web ≥ threshold. */
 	webEngagementProgress: { current: number; required: number } | null;
@@ -47,8 +50,8 @@ interface InspectArgs {
 }
 
 /**
- * Lê snapshot de memória pra UI do simulador. Usa `LettaMemoryAdapter.loadContext`
- * direto (timeout 2s, com archivalQuery genérica). Não cria agent novo.
+ * Lê snapshot de memória pra UI do simulador via `getMemoryAdapter().loadContext`
+ * (timeout 2.5s). Read-only — nunca grava. Backend-agnóstico (Postgres, FIX-81).
  */
 export async function inspectSimulatorMemory({
 	conversation,
@@ -71,10 +74,6 @@ export async function inspectSimulatorMemory({
 	}
 
 	if (!identity) {
-		// Sem identity ainda não conseguimos consultar Letta agent, mas o painel
-		// ainda precisa saber se Letta está reachable pra mostrar banner offline
-		// quando aplicável (ex: conv web pré-cookie ou conv whatsapp + Letta down).
-		const available = await quickHealthCheck();
 		return {
 			identity: null,
 			agentExists: false,
@@ -84,21 +83,19 @@ export async function inspectSimulatorMemory({
 			archivalSample: [],
 			clockOffsetMs,
 			simulatedNow,
-			lettaAvailable: available,
+			lettaAvailable: true,
 			webEngagementProgress,
 		};
 	}
 
-	// Tenta carregar contexto. Timeout/erro/circuit = retorna `null` (não throw).
-	const adapter = new LettaMemoryAdapter();
+	// Tenta carregar contexto. Timeout/erro = retorna `null` (não throw).
+	const adapter = getMemoryAdapter();
 	const context = await adapter
 		.loadContext(identity, { timeoutMs: 2500, archivalQuery: "" })
 		.catch(() => null);
 
 	if (!context) {
-		// Distingue: identidade existe mas agent não OU Letta indisponível.
-		// Tentamos um health check rápido pra decidir.
-		const available = await quickHealthCheck();
+		// Identidade existe mas ainda não há linha de memória pra ela.
 		return {
 			identity,
 			agentExists: false,
@@ -108,13 +105,13 @@ export async function inspectSimulatorMemory({
 			archivalSample: [],
 			clockOffsetMs,
 			simulatedNow,
-			lettaAvailable: available,
+			lettaAvailable: true,
 			webEngagementProgress,
 		};
 	}
 
-	// Archival sample — lista 10 mais recentes (best-effort).
-	const archivalSample = await listArchivalSample(context.agentId).catch(() => []);
+	// Archival semântico saiu na fase 1 (FIX-81) — sample vazio (pgvector é fase 2).
+	const archivalSample: ArchivalHit[] = [];
 
 	// `daysSinceLastInteraction` do `loadContext` foi calculado com `new Date()`
 	// dentro do adapter (que respeita ALS quando dentro do scope; aqui o GET roda
@@ -177,35 +174,6 @@ async function countUserTurns(conversationId: string): Promise<number> {
 		.from(messages)
 		.where(and(eq(messages.conversationId, conversationId), eq(messages.role, "user")));
 	return rows.length;
-}
-
-async function listArchivalSample(agentId: string): Promise<ArchivalHit[]> {
-	interface LettaPassage {
-		id: string;
-		text: string;
-		tags?: string[] | null;
-		created_at: string;
-	}
-	const passages = await lettaFetch<LettaPassage[]>(
-		`/v1/agents/${agentId}/archival-memory?limit=10`,
-		{ timeoutMs: 2500 },
-	);
-	return passages.map((p) => ({
-		id: p.id,
-		text: p.text,
-		score: 0,
-		createdAt: p.created_at,
-		metadata: p.tags ? { tags: p.tags } : undefined,
-	}));
-}
-
-async function quickHealthCheck(): Promise<boolean> {
-	try {
-		await lettaFetch<{ status: string }>("/v1/health/", { timeoutMs: 800 });
-		return true;
-	} catch {
-		return false;
-	}
 }
 
 /**

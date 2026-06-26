@@ -211,33 +211,32 @@ describe("shouldCreateAnonAgent", () => {
 });
 
 describe("getNamespace", () => {
-	const originalEnv = process.env.LETTA_NAMESPACE;
-
 	beforeEach(() => {
-		vi.stubEnv("LETTA_NAMESPACE", "");
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
+		// eslint-disable-next-line no-process-env
+		delete process.env.LETTA_NAMESPACE;
 	});
 
 	afterEach(() => {
-		if (originalEnv === undefined) {
-			vi.unstubAllEnvs();
-		} else {
-			vi.stubEnv("LETTA_NAMESPACE", originalEnv);
-		}
 		vi.unstubAllEnvs();
 	});
 
-	it("retorna LETTA_NAMESPACE quando setado", () => {
-		vi.stubEnv("LETTA_NAMESPACE", "aja-agora-prod");
+	it("retorna MEMORY_NAMESPACE quando setado", () => {
+		vi.stubEnv("MEMORY_NAMESPACE", "aja-agora-prod");
 		expect(getNamespace()).toBe("aja-agora-prod");
 	});
 
-	it("retorna default quando env ausente", () => {
-		vi.stubEnv("LETTA_NAMESPACE", "");
-		// stubEnv com string vazia ainda define a var como "" — getNamespace usa
-		// `??` que só pega `null`/`undefined`. Aceitamos o comportamento atual:
-		// se LETTA_NAMESPACE="" o getNamespace retorna "". Esse teste verifica
-		// SOMENTE o caso de var efetivamente undefined.
-		// Hack: temos que de fato remover a var.
+	it("cai pra LETTA_NAMESPACE quando MEMORY_NAMESPACE ausente (transição FIX-81)", () => {
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
+		vi.stubEnv("LETTA_NAMESPACE", "aja-agora-legacy");
+		expect(getNamespace()).toBe("aja-agora-legacy");
+	});
+
+	it("retorna default quando ambas as envs ausentes ou vazias", () => {
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
 		// eslint-disable-next-line no-process-env
 		delete process.env.LETTA_NAMESPACE;
 		expect(getNamespace()).toBe("aja-agora-local-default");
