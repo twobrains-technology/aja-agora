@@ -140,6 +140,15 @@ export class BeviApiAdapter implements ProposalGateway {
 		const data = await this.callService<SimulationResult>("calculate_simulation_bevi_consorcio", {
 			retryOn404: true,
 			body: {
+				// FIX-79 (QA Kairo 2026-06-25): a Bevi recusava o fechamento com 400
+				// "Proposta não pertence ao Bevi Consórcio." — `createProposal` enviava
+				// `productId` explícito mas o `simulate` NÃO, deixando criar e simular
+				// referenciando o product por caminhos diferentes. Mandamos o MESMO
+				// `productId` da criação pra fechar a assimetria do nosso lado. ⚠️ A
+				// correção DEFINITIVA depende de dado externo: `BEVI_PRODUCT_ID` correto
+				// da conta do token (PENDENTE-KAIRO — acionar Bevi/AGX). Ver
+				// docs/correcoes/decisions/2026-06-25-bloco-b-bevi-fechamento.md.
+				productId: this.config.productId,
 				propostaId: input.proposalId, // camelCase! "proposta", não "proposal"
 				segmento: input.segmento,
 				tipoSimulacao: input.tipoSimulacao,
