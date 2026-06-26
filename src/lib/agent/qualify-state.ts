@@ -1,3 +1,4 @@
+import { revealValueTargetChanged } from "./orchestrator/tool-policy";
 import type { ConversationMetadata } from "./personas";
 
 export type Gate =
@@ -78,6 +79,17 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// agent re-disparava o reveal em loop e nunca cruzava pro passo 5
 	// (BUG-REVEAL-LOOP, 2026-06-02).
 	if (!meta.searchDispatched) return "search";
+	// FIX-76 (Maria, retomada 2026-06-25): o usuário pediu um valor-alvo NOVO
+	// sobre um reveal antigo (256k → 130k). A tool-policy (FIX-68) já reabria
+	// search_groups no toolset via revealValueTargetChanged, mas sem reabrir o
+	// GATE o orquestrador não FORÇAVA o reveal — o modelo ficava livre pra
+	// alucinar "instabilidade" e ressuscitar o valor antigo como dado real
+	// (viola Bevi fonte única). Reabrir aqui faz o orquestrador re-disparar a
+	// busca determinística na faixa nova. Converge: o runner re-snapshota
+	// discoveredCreditTarget ao produzir os cards da nova faixa →
+	// revealValueTargetChanged volta a false → sem loop. Anti BUG-REVEAL-LOOP:
+	// afirmativo curto na MESMA faixa (valor == descoberto) NÃO cai aqui.
+	if (revealValueTargetChanged(meta)) return "search";
 	// docx passo 4 (linha 34-36): após apresentar o plano, OFERECER o simulador
 	// ("contemplado em 3, 6 ou 12 meses — que tal?") ANTES do card de decisão.
 	// Conceito do Bernardo (simulador-agulha) no caminho padrão da jornada.
@@ -126,6 +138,11 @@ export function decideShowGate(args: {
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.
 	// Exige sinal EXPLICITO do usuario. Nunca dispara em neutral/asking/doubt/off-topic.
 	if (gate === "search") {
+		// FIX-76: numa retomada com valor-alvo TROCADO (revealValueTargetChanged),
+		// o próprio sinal de troca de faixa já justifica re-buscar — o analyzer
+		// costuma marcar a mensagem da retomada como conversacional (neutral),
+		// e cair em conversacional deixava o modelo alucinar "instabilidade".
+		if (revealValueTargetChanged(meta)) return true;
 		return intent === "ready_to_proceed" || intent === "providing_info";
 	}
 

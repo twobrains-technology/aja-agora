@@ -18,6 +18,7 @@ import { buildDecisionPromptDirective, buildSearchSummaryDirective } from "./dir
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
+import { revealValueTargetChanged } from "./tool-policy";
 import { buildSystemContext } from "./system-context";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { ChatMessage, TurnEvent, TurnInput } from "./types";
@@ -238,7 +239,12 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 
 	if (result.nextGateToFire === "search") {
 		const refreshed = await reloadMeta(conversationId);
-		if (refreshed.searchDispatched) {
+		// FIX-76: na troca de faixa (revealValueTargetChanged) a busca é uma
+		// re-descoberta LEGÍTIMA da faixa nova — não pode ser barrada pelo guard de
+		// idempotência do reveal original. Sem essa exceção, a retomada com
+		// valor-alvo novo abortava em "search-already-dispatched" e o modelo
+		// preenchia o vácuo com alucinação de "instabilidade" + valor stale.
+		if (refreshed.searchDispatched && !revealValueTargetChanged(refreshed)) {
 			yield { type: "finish", reason: "search-already-dispatched" };
 			return;
 		}

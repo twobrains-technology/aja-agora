@@ -5473,3 +5473,100 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
 	});
 });
+
+// ============================================================================
+// FIX-76 — agente alucina falha de busca + ressuscita valor STALE como dado real
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
+// simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
+// "estou com dificuldade em acessar os grupos" / "instabilidade nas buscas"
+// (turn-trace: toolsCalled=[] — search_groups NUNCA foi chamada, ZERO erro de
+// tool) e ofereceu "a faixa de R$ 256.000 que já temos dados reais disponíveis"
+// — número ressuscitado do histórico, apresentado como dado real. Viola a regra
+// inviolável Bevi fonte única (proibido número stale/fictício em runtime).
+//
+// Defesa em duas frentes:
+//   • prompt (Camada 1, system-prompt.fix-76.test.ts): veta a frase.
+//   • gate (Camada 1, qualify-state.fix76.test.ts): troca de faixa reabre busca.
+// Aqui o cassette de stream reproduz a alucinação e o detector a pega; mais o
+// assert de que o gate FORÇA a busca na retomada com valor-alvo trocado.
+// ============================================================================
+
+describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_groups", () => {
+	// Detector da frase tóxica: falha/instabilidade/indisponibilidade de BUSCA.
+	const FALHA_BUSCA_ALUCINADA =
+		/instabilidade\s+n[ao]s?\s+busca|dificuldade\s+(em|de|pra|para)?\s*acess\w*\s+(os\s+)?grupos|problema\w*\s+(em|pra|para)?\s*acess\w*\s+(os\s+)?grupos|inst[áa]vel\s+(a|na)\s+busca/i;
+	// Detector do valor stale apresentado como dado real.
+	const VALOR_STALE_COMO_REAL =
+		/(dados?\s+reais?\s+(dispon[íi]ve|que\s+(j[áa]\s+)?temos)|j[áa]\s+temos\s+(dados\s+)?dispon)/i;
+
+	it("cassette: stream reproduz 'instabilidade nas buscas' SEM tool-call (bug exato Maria)", async () => {
+		const cassette =
+			"Poxa, estou com dificuldade em acessar os grupos no momento — uma instabilidade nas buscas. " +
+			"Mas a faixa de R$ 256.000 que já temos dados reais disponíveis segue valendo, quer seguir nela?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reprodução fiel: texto fabricou a falha + ofereceu valor stale, ZERO tool.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// O detector PEGA a frase quando NENHUMA tool de busca foi chamada no turno.
+		const buscouNoTurno = toolCalls.some(
+			(t) => t.toolName === "search_groups" || t.toolName === "recommend_groups",
+		);
+		expect(buscouNoTurno).toBe(false);
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(cassette),
+			"Detector tem que pegar a frase de falha-de-busca alucinada. Se não pega, atualize o regex.",
+		).toBe(true);
+		expect(
+			VALOR_STALE_COMO_REAL.test(cassette),
+			"Detector tem que pegar o valor stale apresentado como 'dados reais disponíveis'.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: com troca de faixa, o turno chama search_groups na faixa nova (sem alucinar)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na faixa de 130 mil:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 130_000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("search_groups");
+		// Texto honesto: nem falha alucinada, nem valor stale como dado real.
+		expect(FALHA_BUSCA_ALUCINADA.test(text)).toBe(false);
+		expect(VALOR_STALE_COMO_REAL.test(text)).toBe(false);
+	});
+
+	it("structural: o prompt de produção veta a alucinação de falha de busca (sincronia com a regra dura)", () => {
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa citar a frase tóxica ('instabilidade nas buscas') na regra dura FIX-76.",
+		).toBe(true);
+	});
+
+	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			currentPersona: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: { creditMax: 130_000, prazoMeses: 60, hasLance: "no", lanceEmbutido: "no" },
+			searchDispatched: true,
+			revealCompleted: true,
+			discoveredCreditTarget: 256_000,
+		};
+		// O orquestrador volta a dirigir o gate de busca (em vez de deixar o modelo
+		// livre pra alucinar) e libera mesmo num turno de intent fraco.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
+	});
+});
