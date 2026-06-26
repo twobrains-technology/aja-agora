@@ -26,7 +26,7 @@ const REVEAL_TROCA_DE_FAIXA: ConversationMetadata = {
 		creditMax: 130_000,
 		prazoMeses: 60,
 		hasLance: "no",
-		lanceEmbutido: "no",
+		lanceEmbutido: false,
 	},
 	searchDispatched: true,
 	revealCompleted: true,

@@ -5557,7 +5557,7 @@ describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_g
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
-			qualifyAnswers: { creditMax: 130_000, prazoMeses: 60, hasLance: "no", lanceEmbutido: "no" },
+			qualifyAnswers: { creditMax: 130_000, prazoMeses: 60, hasLance: "no", lanceEmbutido: false },
 			searchDispatched: true,
 			revealCompleted: true,
 			discoveredCreditTarget: 256_000,

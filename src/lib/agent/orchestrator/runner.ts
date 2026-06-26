@@ -135,7 +135,9 @@ export async function* runAgentTurn(args: {
 	// `messages` — system dentro de `messages` dispara o warning de prompt-injection
 	// da AI SDK 6 a cada turno e duplicava a memória Letta. Ordem: systemContext
 	// antes do examplesBlock (examples mais perto da fala do usuário, recency bias).
-	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter(Boolean);
+	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter(
+		(b): b is string => Boolean(b),
+	);
 
 	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
 	// resolveAgent → buildAgent → buildConsorcioTools({ conversationId }) injeta
