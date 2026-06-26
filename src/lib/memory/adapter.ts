@@ -1,8 +1,10 @@
 // src/lib/memory/adapter.ts
 //
 // Interface do MemoryAdapter — abstração sobre o store de memória persistente
-// cross-channel. Implementações: LettaMemoryAdapter (real), NoopMemoryAdapter
-// (testes + circuit breaker em runtime). Ver ADR 2026-05-16.
+// cross-channel. Implementações: PostgresMemoryAdapter (real — FIX-81 / ADR
+// 2026-06-25-remocao-letta-postgres) e NoopMemoryAdapter (testes + flag).
+// O LettaMemoryAdapter foi removido (re-home pro Postgres). Ver ADR 2026-05-16
+// pra o contexto histórico.
 
 import type { ArchivalHit, MemoryContext, MemoryEntry, StoreMetadata, UserIdentity } from "./types";
 
@@ -39,11 +41,13 @@ export interface MemoryAdapter {
 	 * Persiste fatos novos do turno. Chamado DEPOIS do stream (fire-and-forget).
 	 * Não throw em erros transientes — log e drop.
 	 *
-	 * Comportamento:
-	 * 1. Inserts cada entry em `archival_memory` do agent (uma op REST por entry).
-	 * 2. Aplica `metadata.blockPatch` ao memory_block "human" via read-modify-write.
-	 *    `lastInteractionAt` é sempre setado pelo adapter (hora atual).
-	 * 3. Se o agent não existe, **cria lazy** com identity + block inicial vazio.
+	 * Comportamento observável (contrato, agnóstico ao backend):
+	 * 1. Aplica `metadata.blockPatch` ao block "human" via read-modify-write
+	 *    atômico. `lastInteractionAt` é sempre setado pelo adapter (hora atual);
+	 *    `channels` faz union com o canal do turno; `objections` faz dedup.
+	 * 2. Se a identidade ainda não tem memória, **cria lazy** (block inicial).
+	 * 3. `memories` (archival semântico) fica reservado pra fase 2 (pgvector);
+	 *    o backend atual (Postgres) o ignora — paridade com o archival morto.
 	 */
 	storeMemories(
 		identity: UserIdentity,

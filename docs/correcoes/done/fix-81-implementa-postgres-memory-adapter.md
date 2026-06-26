@@ -1,7 +1,12 @@
 ---
 id: FIX-81
 titulo: "Remove o Letta e re-homeia a memória pro Postgres (executa a Opção B do ADR FIX-80)"
-status: todo
+status: done
+executado_em: 2026-06-26
+commits:
+  - "43dcd3bc test+feat: PostgresMemoryAdapter com store/load/reconcile/purge"
+  - "036ed2b8 refactor: cutover do factory de memória pro Postgres"
+  - "7855904e chore: remove LettaMemoryAdapter, client e circuit-breaker órfãos"
 bloco: bloco-a-remove-letta-postgres
 arquivos:
   - src/lib/memory/adapter.ts
