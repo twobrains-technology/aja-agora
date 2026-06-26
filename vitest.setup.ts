@@ -2,8 +2,8 @@ import { loadEnvFile } from "node:process";
 
 // Ordem importa: loadEnvFile NÃO sobrescreve vars já setadas.
 // Carrega prioridade mais alta PRIMEIRO (local-dev/test) e .env como baseline.
-// Integration tests dependem de DATABASE_URL e LETTA_BASE_URL do .env.local
-// (workspace OrbStack aponta Postgres em 5434; .env legacy aponta 5433).
+// Integration tests dependem de DATABASE_URL do .env.local (workspace OrbStack
+// aponta Postgres em 5434; .env legacy aponta 5433).
 try {
 	loadEnvFile(".env.local");
 } catch {

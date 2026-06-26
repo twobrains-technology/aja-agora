@@ -12,11 +12,13 @@ import {
 	real,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
 import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
+import type { HumanMemoryBlock } from "@/lib/memory/types";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -545,6 +547,33 @@ export const memoryEvents = pgTable(
 		index("memory_events_conversation_id_idx").on(table.conversationId),
 		index("memory_events_letta_agent_id_idx").on(table.lettaAgentId),
 		index("memory_events_created_at_idx").on(table.createdAt.desc()),
+	],
+);
+
+// Memory Identities — re-home da memória cross-channel do Letta pro Postgres
+// (FIX-81 / ADR 2026-06-25-remocao-letta-postgres, Opção B).
+//
+// 1 linha por identidade (web anon-cookie / phone / email). O `block` jsonb é o
+// `HumanMemoryBlock` que antes vivia serializado num memory_block do Letta —
+// agora nativo no banco que o app já opera. Chave de negócio: (namespace, kind,
+// value), espelhando `UserIdentity`. `reconciled_from` guarda a chave canônica
+// da identidade de origem quando um cookie web é reconciliado num phone
+// (continuidade web → WhatsApp). Archival semântico (pgvector) é fase 2 do ADR.
+export const memoryIdentities = pgTable(
+	"memory_identities",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		namespace: varchar("namespace", { length: 120 }).notNull(),
+		kind: varchar("kind", { length: 20 }).notNull(), // phone | email | anon-cookie
+		value: varchar("value", { length: 200 }).notNull(),
+		block: jsonb().$type<HumanMemoryBlock>().notNull(),
+		reconciledFrom: text("reconciled_from"),
+		lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("memory_identities_key_idx").on(table.namespace, table.kind, table.value),
 	],
 );
 
