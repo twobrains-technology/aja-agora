@@ -1,7 +1,9 @@
 ---
 id: FIX-79
 titulo: "Fechamento trava: Bevi rejeita o propostaId ('Proposta não pertence ao Bevi Consórcio') — provável BEVI_PRODUCT_ID hardcoded fora da conta do token"
-status: todo
+status: done
+commit: e2436990
+executado_em: 2026-06-26
 bloco: bloco-b-bevi-fechamento
 arquivos:
   - src/lib/adapters/bevi/bevi-api-adapter.ts
