@@ -1,13 +1,16 @@
 ---
 id: FIX-80
 titulo: "ESTUDO/PLANO de remoção do Letta — re-home da memória pro Postgres (NÃO arranca; entrega ADR + plano + stub do PostgresMemoryAdapter)"
-status: todo
+status: done
 bloco: bloco-c-estudo-remocao-letta
 arquivos:
   - docs/correcoes/decisions/2026-06-25-remocao-letta-postgres.md
   - docs/
   - src/lib/memory/postgres-adapter.ts
 rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"
+executado_em: 2026-06-26
+commit: "881bc730 (docs: ADR+plano+move) · 30de3123 (chore: stub)"
+entrega: "ESTUDO concluído — ADR (2026-06-25-remocao-letta-postgres.md) + plano de migração faseado + stub não-ligado (src/lib/memory/postgres-adapter.ts). NÃO arrancou o Letta, nenhum código de runtime tocado. PENDENTE-KAIRO: medição em prod (§7 do ADR) antes de executar."
 ---
 
 # Refactor / Decisão arquitetural (NÃO é bug de runtime) — Estudar a fundo e remover o Letta: re-home da memória pro Postgres
