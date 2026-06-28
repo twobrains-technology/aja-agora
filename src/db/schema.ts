@@ -217,12 +217,17 @@ export const conversations = pgTable(
 		contactName: varchar("contact_name", { length: 100 }),
 		metadata: jsonb().$type<Record<string, unknown>>(),
 		isSimulated: boolean("is_simulated").default(false).notNull(),
+		// FIX-86: lastInboundAt rastreia o último inbound do cliente no WhatsApp.
+		// Essencial para controlar a janela de 24h da Meta Cloud API — texto livre
+		// só é permitido se o último inbound foi há menos de 24h.
+		lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
 		index("conversations_wa_id_idx").on(table.waId),
 		index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
+		index("conversations_last_inbound_at_idx").on(table.lastInboundAt),
 	],
 );
 
