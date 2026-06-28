@@ -1,24 +1,23 @@
 /**
- * FIX-79 — Fechamento Bevi: rejeição do propostaId no `simulate`
- * ("Proposta não pertence ao Bevi Consórcio.") — QA manual Kairo 2026-06-25,
- * conv a9c5effa, administradora TRADIÇÃO.
+ * FIX-79 (+ REVERT 2026-06-28) — Fechamento Bevi: rejeição do propostaId no
+ * `simulate` ("Proposta não pertence ao Bevi Consórcio.") — QA manual Kairo
+ * 2026-06-25, conv a9c5effa, administradora TRADIÇÃO.
  *
  * Bug de INTEGRAÇÃO via adapter (NÃO de agente → integration/contract test, não
  * cassette). Exercita o caminho REAL de produção: `startContract` → `BeviApiAdapter`
  * real → boundary HTTP mockado (`global.fetch`), com o repo (DB) em memória.
  *
- * SMOKING GUN reproduzido: `createProposal` manda `productId` explícito, mas o
- * `simulate` não mandava — a proposta nascia sob um product e o `simulate` recusava
- * por ownership. O fetch mock devolve o ownership-400 SE o `simulate` não enviar
- * `productId`, e 200 (ofertas) quando enviar — encodando a hipótese como contrato.
+ * HISTÓRIA: o FIX-79 hipotetizou que mandar `productId` no `simulate` resolveria o
+ * ownership-400 e adicionou o campo. O dossiê 2026-06-26 + re-validação ao vivo
+ * (28/06) REFUTARAM: o erro é EXTERNO (Bevi/AGX — o productId que o insert aceita
+ * está desvinculado do produto "Consórcio" na conta do token) e ocorre SEMPRE, com
+ * ou sem productId no simulate. A doc oficial (collection + spec §4.3) NÃO tem
+ * productId no simulate. O FIX-79 foi revertido (o simulate não manda productId).
  *
- * TDD strict: ANTES do fix o `simulate` não envia `productId` → ownership-400 →
- * `startContract` rejeita → vermelho. Depois do fix (productId no body) → ofertas → verde.
- *
- * O fallback gracioso ao usuário (route → "Tive um problema…") já é coberto por
- * `src/app/api/chat/route.contract-error-logging.test.ts`; aqui asseguramos que o
- * adapter/fulfillment SURGE o erro de ownership tipado e limpo — o input exato que
- * aquele catch consome.
+ * Este teste agora garante: (1) caminho feliz do fechamento, com o `simulate` SEM
+ * productId (contrato do revert no nível do fulfillment); (2) quando a Bevi recusa
+ * (o estado real hoje, PENDENTE-KAIRO), o erro surge TIPADO (ProposalOwnershipError)
+ * pro fallback gracioso do route — o input exato que aquele catch consome.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,13 +78,9 @@ interface SimCall {
 	body: Record<string, unknown>;
 }
 
-/**
- * Instala um fetch que roteia pelo header `service_id`:
- *  - insert_proposal → cria a proposta (ecoa o productId enviado);
- *  - calculate_simulation → ownership-400 quando `ownershipUnlessProductId` e o body
- *    NÃO traz productId; 200 (ofertas reais) caso contrário.
- */
-function installFetchMock(opts: { ownershipUnlessProductId: boolean }): SimCall[] {
+/** fetch feliz: insert → 201; calculate_simulation → 200 (ofertas reais). Captura
+ * as chamadas pra inspecionar o body enviado. */
+function installHappyFetch(): SimCall[] {
 	const calls: SimCall[] = [];
 	globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
 		const serviceId = (init.headers as Record<string, string>).service_id;
@@ -104,10 +99,6 @@ function installFetchMock(opts: { ownershipUnlessProductId: boolean }): SimCall[
 			} as Response;
 		}
 		if (serviceId === "calculate_simulation_bevi_consorcio") {
-			const hasProduct = typeof body.productId === "string" && body.productId.length > 0;
-			if (opts.ownershipUnlessProductId && !hasProduct) {
-				return { json: async () => OWNERSHIP_400 } as Response;
-			}
 			return { json: async () => okSimulation } as Response;
 		}
 		throw new Error(`fetch inesperado: service_id=${serviceId}`);
@@ -118,10 +109,9 @@ function installFetchMock(opts: { ownershipUnlessProductId: boolean }): SimCall[
 beforeEach(() => store.clear());
 afterEach(() => vi.restoreAllMocks());
 
-describe("FIX-79 — fechamento Bevi: propostaId aceito quando simulate envia productId", () => {
-	it("startContract simula SEM 400 de ownership (simulate carrega o productId da proposta)", async () => {
-		// A proposta só é reconhecida se o simulate referenciar o mesmo product da criação.
-		const calls = installFetchMock({ ownershipUnlessProductId: true });
+describe("FIX-79 (revertido 2026-06-28) — fechamento Bevi: simulate sem productId + ownership tipado", () => {
+	it("caminho feliz: startContract simula e devolve oferta; simulate NÃO manda productId (revert)", async () => {
+		const calls = installHappyFetch();
 
 		const r = await startContract("conv-79", input, new BeviApiAdapter(CONFIG));
 
@@ -129,16 +119,17 @@ describe("FIX-79 — fechamento Bevi: propostaId aceito quando simulate envia pr
 		expect(r.proposalId).toBe("PID-79");
 		expect(r.offer).toBeTruthy();
 
-		// CONTRATO do fix: o simulate envia o MESMO productId que criou a proposta.
+		// CONTRATO do revert: o simulate NÃO carrega productId (doc oficial não tem;
+		// mandá-lo não resolvia o ownership — é pendência externa da Bevi).
 		const sim = calls.find((c) => c.serviceId === "calculate_simulation_bevi_consorcio");
 		expect(sim, "houve chamada de simulate").toBeTruthy();
-		expect(sim?.body.productId).toBe(CONFIG.productId);
+		expect(sim?.body).not.toHaveProperty("productId");
 	});
 
-	it("ownership-400 persistente (productId errado no env) → erro tipado p/ o fallback gracioso", async () => {
-		// Mesmo enviando productId, a Bevi recusa (simula BEVI_PRODUCT_ID genuinamente
-		// errado — o caso PENDENTE-KAIRO). O erro precisa surgir limpo e tipado pro
-		// catch do route virar a mensagem amigável (sem crash).
+	it("ownership-400 (productId desvinculado na Bevi — PENDENTE-KAIRO) → erro tipado p/ fallback gracioso", async () => {
+		// A Bevi recusa SEMPRE hoje (com ou sem productId — o vínculo do produto na
+		// conta do token está quebrado, causa-raiz externa). O erro precisa surgir
+		// limpo e tipado pro catch do route virar a mensagem amigável (sem crash).
 		globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
 			const serviceId = (init.headers as Record<string, string>).service_id;
 			const body = init.body ? JSON.parse(init.body as string) : {};
