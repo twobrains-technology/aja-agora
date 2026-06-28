@@ -40,6 +40,23 @@ criar lead, simular, rodar o Trilho A (fechamento) é **SEGURO e esperado**, nã
 - (2026-06-26: travei o P0 do qa-noturno achando que poderia ser produção — era homologação o
   tempo todo. Não repetir.)
 
+### Contas de teste canônicas (Bevi/Conexia homologação) — SEMPRE usar estas
+
+**Toda jornada/QA/simulação/fechamento de teste DEVE usar uma destas contas reais de
+homologação — NUNCA inventar CPF.** São 2 contas: **Kairo** (titular/operador) e
+**Mirella**.
+
+🔒 **Os valores reais (CPF/celular/nome/nascimento) ficam FORA do git** (PII +
+LGPD de terceiro). Estão encriptados no vault — obtenha com:
+
+```
+secrets.sh decrypt contas-teste
+```
+
+Detalhe e notas operacionais em `docs/integracoes/contas-teste-homologacao.md`.
+Como é homologação, fechar proposta com estes CPFs é seguro e esperado (não "suja
+produção").
+
 ## Package manager — pnpm ÚNICO
 
 **`pnpm` é o único gestor de pacotes permitido. `npm` e `yarn` são PROIBIDOS** —
