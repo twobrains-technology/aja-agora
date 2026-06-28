@@ -19,12 +19,16 @@ Lançar como blocos paralelos (todo-blocks) as 3 features alinhadas nesta sessã
 - **Reversibilidade:** fácil (a base não vai pra develop sem o Kairo).
 - **Evidência:** fallback anti-trava do to-saindo §3.1.
 
+### D2 · 15:42 — push da develop pro origin (necessário: Superset forka do remoto)
+- **Contexto:** o `setup-base` faz `git fetch origin` e o Superset forka de **origin/develop**, que estava 13 commits atrás (revert FIX-79, matching, designs, blocos). Sem push, os agentes trabalhariam em código velho e sem os blocos.
+- **Decidi:** `git push origin develop` (fast-forward limpo: 13 ahead / 0 behind; sem PII no diff). Resolve também o "push que não chegou".
+- **Alternativas:** não pushar e torcer pra base carregar os commits locais (NÃO funciona — Superset forka do remoto).
+- **Reversibilidade:** difícil (push), mas dev-safe (não-prod, deploy dev é o fluxo normal). to-saindo §4 libera push de develop dev-safe.
+- **Evidência:** `2807722a..6b1ff837 develop -> develop`.
+
 ## ⚠️ PENDENTE-KAIRO
 
-### ⚠️ PENDENTE-KAIRO · 15:35 — `develop` local à frente do `origin` (push não chegou)
-- **O que é:** 10 commits locais não-pushados na develop (revert FIX-79, matching, designs, ADR, cards). Você disse "push foi enviada", mas `git log origin/develop..develop` mostra 10 à frente.
-- **Por que não fiz:** push de develop não foi pedido AGORA (você afirmou que já fez); a base do todo-blocks carrega esses commits pro remoto via a branch `integ/`, então a onda não fica bloqueada.
-- **Como destrava:** `git push origin develop` (dev-safe, dispara deploy dev) quando quiser alinhar o remoto.
+### ✅ RESOLVIDO · 15:42 — push da develop (era PENDENTE) → feito em D2.
 
 ### ⚠️ PENDENTE-KAIRO · 15:35 — dependências externas das 3 features (código será implementado; o externo fica pra você)
 - **Documentos:** bucket S3 dedicado + KMS key + policy de acesso mínimo (IaC, dev/prod). Molde: `aja-administradora-docs`. O bloco implementa o código (usa MinIO local em dev); a provisão prod é tua.
