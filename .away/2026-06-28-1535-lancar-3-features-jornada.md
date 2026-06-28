@@ -101,3 +101,11 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - **Revisar primeiro:** D6 + card `develop-quebrada-drizzle-meta-bloqueia-onda` (decisão crítica). D3/D4 (race de sessões).
 - **Próximos passos (após desbloquear o drizzle):** gerar migrations 0028 (last_inbound_at) + 0029 (client_documents) etc; `test:unit` verde; poll→merge dos 3 (escopado --block); só então qa-autonomo. PENDENTE-KAIRO externos: bucket+KMS (docs), template Meta HSM (chat-mesa), step-doc do B ao vivo (fechamento).
 - **Status:** BLOQUEADO (aguardando decisão do Kairo sobre o drizzle meta).
+
+## Re-lançamento (D8 cont.) · 18:25
+- Deletei os 2 workspaces travados + re-lancei com prompts corrigidos (migration à mão):
+  - feat-documentos-cliente-s3 → b2ca89aa-b20d-4bd1-b14b-2a3cf9d1a7b1
+  - feat-fechamento-trilho-b → 6370ac62-11c2-4c52-b74f-d0a13310eae9
+- Keep-alive dos agentes = notch app. Quando terminarem (push + tag block-done), integrar
+  (escopado --block) e — ATENÇÃO — conferir/completar a migration à mão de cada um (client_documents
+  no documentos), senão re-quebram a develop como o chat-mesa. Só então qa-autonomo.
