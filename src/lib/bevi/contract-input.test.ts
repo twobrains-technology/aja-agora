@@ -31,6 +31,32 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		expect(input.administradoraPreferida).toBe("ANCORA");
 	});
 
+	// Matching preparatório (2026-06-28): o prazo da oferta vista na Descoberta
+	// (snapshot em meta.recommendedOffer) desempata o pickClosestOffer dentro da
+	// admin preferida, pra o fechamento não trocar por outro prazo.
+	it("propaga prazoPreferido de meta.recommendedOffer.termMonths", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ANCORA",
+			recommendedOffer: {
+				administradora: "ANCORA",
+				category: "auto",
+				creditValue: 80000,
+				termMonths: 84,
+				monthlyPayment: 950,
+			},
+			qualifyAnswers: { creditMax: 80000 },
+		} as ConversationMetadata;
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+		expect(input.prazoPreferido).toBe(84);
+	});
+
+	it("prazoPreferido null quando não há recommendedOffer", () => {
+		const meta: ConversationMetadata = { currentCategory: "auto" } as ConversationMetadata;
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+		expect(input.prazoPreferido).toBeNull();
+	});
+
 	it("lanceEmbutido vira percentual string quando o usuário optou", () => {
 		const meta: ConversationMetadata = {
 			currentCategory: "imovel",

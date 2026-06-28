@@ -3289,8 +3289,13 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 		expect(pick).toMatch(/preferAdministradora/);
 		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");
 		expect(fulfillment).toMatch(/input.administradoraPreferida/);
-		// Re-sim por TTL também mantém a marca confirmada.
-		expect(fulfillment).toMatch(/row.administradora\)/);
+		// Matching preparatório (2026-06-28): o pick também recebe o prazo preferido
+		// (4º arg) — desempata dentro da marca pra não trocar a oferta por outro prazo.
+		expect(fulfillment).toMatch(/input.prazoPreferido/);
+		// Re-sim por TTL mantém a marca E o prazo confirmados (row.administradora
+		// agora seguido de vírgula, pois há o 4º arg row.termMonths).
+		expect(fulfillment).toMatch(/row\.administradora,/);
+		expect(fulfillment).toMatch(/row\.termMonths/);
 	});
 });
 

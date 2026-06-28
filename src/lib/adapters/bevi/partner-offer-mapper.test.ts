@@ -90,6 +90,48 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 			expect(chosen?.administradora).toBe("ANCORA");
 		});
 	});
+
+	// Matching preparatório (2026-06-28) — fidelidade B→A: dentro da admin preferida,
+	// desempata pela proximidade de PRAZO além do valor, pra o fechamento não trocar
+	// a oferta por outra de prazo bem diferente do que o usuário viu na Descoberta.
+	// preferTermMonths vem de meta.recommendedOffer.termMonths (contract-input.ts).
+	// ⚠️ GATED: só validável E2E quando a Bevi destravar o productId (o A não simula
+	// hoje). Aqui garantimos a lógica pura, testável com fixtures.
+	describe("desempate por prazo (matching preparatório)", () => {
+		const mkT = (administradora: string, valorCarta: number, prazo: number): PartnerOffer =>
+			({
+				ofertaId: `of-${administradora}-${valorCarta}-${prazo}`,
+				administradora,
+				tipoOferta: "FREE_BID",
+				grupo: "500",
+				valorCarta,
+				parcela: valorCarta / prazo,
+				taxaContemplacao: 0.5,
+				quotaId: `q-${valorCarta}-${prazo}`,
+				prazo,
+			}) as PartnerOffer;
+
+		it("dentro da admin preferida, escolhe o prazo mais próximo do que o usuário viu", () => {
+			// mesmo valor (empate por crédito) → o prazo decide; usuário viu ~80 meses
+			const list = [mkT("RODOBENS", 60_000, 120), mkT("RODOBENS", 60_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS", 80);
+			expect(chosen?.prazo).toBe(84);
+		});
+
+		it("sem preferTermMonths → desempate só por valor (retrocompatível)", () => {
+			const list = [mkT("RODOBENS", 58_000, 120), mkT("RODOBENS", 60_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS");
+			expect(chosen?.valorCarta).toBe(60_000);
+		});
+
+		it("oferta sem prazo não quebra — decide por valor", () => {
+			const noTerm = mkT("RODOBENS", 60_000, 0);
+			delete (noTerm as { prazo?: number }).prazo;
+			const list = [noTerm, mkT("RODOBENS", 70_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS", 80);
+			expect(chosen?.valorCarta).toBe(60_000);
+		});
+	});
 });
 
 // BUG-PARCELA-STRING (dev real 2026-06-12): a Bevi mudou a API do parceiro —

@@ -96,16 +96,29 @@ export function pickClosestOffer(
 	offers: PartnerOffer[],
 	targetCredit: number,
 	preferAdministradora?: string | null,
+	preferTermMonths?: number | null,
 ): PartnerOffer | undefined {
 	if (offers.length === 0) return undefined;
-	const closest = (list: PartnerOffer[]) =>
-		list.reduce((best, o) =>
-			Math.abs(o.valorCarta - targetCredit) < Math.abs(best.valorCarta - targetCredit) ? o : best,
-		);
+	// Score = distância RELATIVA de crédito + (quando há prazo-alvo e a oferta traz
+	// prazo) distância relativa de prazo. Menor = mais fiel ao que o usuário viu na
+	// Descoberta. Sem preferTermMonths o termo de prazo é 0 → ordem idêntica ao
+	// closest-por-valor de antes (retrocompatível). MATCHING PREPARATÓRIO: desempata
+	// dentro da admin preferida pra o fechamento não trocar por outro prazo (ver
+	// docs/correcoes/decisions/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md).
+	const hasTerm = preferTermMonths != null && preferTermMonths > 0;
+	const score = (o: PartnerOffer): number => {
+		const creditTerm = targetCredit > 0 ? Math.abs(o.valorCarta - targetCredit) / targetCredit : 0;
+		const termTerm =
+			hasTerm && typeof o.prazo === "number" && o.prazo > 0
+				? Math.abs(o.prazo - (preferTermMonths as number)) / (preferTermMonths as number)
+				: 0;
+		return creditTerm + termTerm;
+	};
+	const best = (list: PartnerOffer[]) => list.reduce((b, o) => (score(o) < score(b) ? o : b));
 	if (preferAdministradora) {
 		const pref = normalizeAdmin(preferAdministradora);
 		const preferred = offers.filter((o) => normalizeAdmin(o.administradora) === pref);
-		if (preferred.length > 0) return closest(preferred);
+		if (preferred.length > 0) return best(preferred);
 	}
-	return closest(offers);
+	return best(offers);
 }
