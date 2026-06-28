@@ -1,6 +1,6 @@
 ---
-id: FIX-88
-bloco: bloco-b-artifacts-produto
+id: FIX-96
+bloco: bloco-f-artifacts-produto
 slug: expandir-recomendacoes-remover-teto-3
 titulo: "Remover o teto de 3 recomendações: 1 hero + 5 ranqueadas + 'ver todas' expansível (ordenar/filtrar)"
 status: todo

@@ -1,8 +1,8 @@
 ---
-id: FIX-93
+id: FIX-101
 titulo: "Modal de resume coberto pelo chat-theater (z-index) — elevar DialogContent acima do theater (z-90)"
 status: todo
-bloco: bloco-d-chat-render
+bloco: bloco-h-chat-render
 arquivos:
   - src/components/chat/theater/resume-prompt.tsx
   - src/components/chat/theater/resume-prompt.test.tsx

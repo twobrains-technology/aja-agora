@@ -1,8 +1,8 @@
 ---
-id: FIX-82
+id: FIX-90
 titulo: "Analyzer infere prazoMeses a partir do orçamento mensal — endurecer prompt do classifier"
 status: todo
-bloco: bloco-a-funil-qualificacao
+bloco: bloco-e-funil-qualificacao
 arquivos:
   - src/lib/agent/turn-analyzer.ts
   - src/lib/agent/turn-analyzer.prompt.test.ts

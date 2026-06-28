@@ -1,8 +1,8 @@
 ---
-id: FIX-89
+id: FIX-97
 titulo: "Saneamento de infra de teste: isolamento de DB nos integration (flaky) + limpar 23 erros de typecheck em test files"
 status: todo
-bloco: bloco-c-infra-teste
+bloco: bloco-g-infra-teste
 arquivos:
   - tests/integration
   - src/lib/consorcio/resolve.integration.test.ts

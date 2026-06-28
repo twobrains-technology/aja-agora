@@ -1,8 +1,8 @@
 ---
-id: FIX-92
+id: FIX-100
 titulo: "Endurecer migrate-guard pra detectar drift (count vs presença real da tabela)"
 status: todo
-bloco: bloco-c-infra-teste
+bloco: bloco-g-infra-teste
 arquivos:
   - scripts/migrate-guard.mjs
   - scripts/migrate-guard.test.ts

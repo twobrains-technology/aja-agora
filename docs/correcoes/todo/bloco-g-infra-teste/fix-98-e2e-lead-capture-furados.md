@@ -1,8 +1,8 @@
 ---
-id: FIX-90
+id: FIX-98
 titulo: "E2E lead-capture furados + flaky; hardening /api/leads (500→400 em UUID inválido) + helper createConversation"
 status: todo
-bloco: bloco-c-infra-teste
+bloco: bloco-g-infra-teste
 arquivos:
   - tests/e2e/specs/lead-capture-web/ec-names-unicode.spec.ts
   - tests/e2e/utils/db.ts

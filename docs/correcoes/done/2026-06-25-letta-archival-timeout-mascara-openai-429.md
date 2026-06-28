@@ -1,3 +1,5 @@
+> **OBSOLETO / SUPERADO por FIX-81 (2026-06-26):** o Letta foi removido e a memória re-homada pro Postgres — `src/lib/memory/letta-adapter.ts` e `circuit-state.ts` não existem mais. Mantido só como registro histórico; não há fix de código a fazer aqui.
+
 # Bug (OPERACIONAL/INFRA — não é bug de código do app) — Memória archival do Letta morrendo silenciosamente: timeout de 8s mascarando OpenAI 429 (quota de embeddings esgotada)
 
 - **Natureza:** **OPERACIONAL / INFRA**, NÃO defeito de código do app. A causa-raiz e a correção vivem **fora do repo do app** (billing/config do `tb-letta-shared`). O código do app está se comportando como projetado (best-effort). Registrado aqui só pra não perder o achado e dar visibilidade.

@@ -35,8 +35,23 @@ Lançar como blocos paralelos (todo-blocks) as 3 features alinhadas nesta sessã
 - **Chat-mesa:** template HSM precisa ser CRIADO/APROVADO na Meta Business pra reabrir janela. O bloco implementa `sendTemplate` + a lógica; o template aprovado é externo.
 - **Fechamento B:** validar ao vivo o step de upload de doc do self-contract (portal CONEXIA/documentsToken) — o bloco implementa contra o cookbook + stub do despacho de docs; ajuste pós-validação.
 
+### D3 · 15:58 — LANÇAMENTO PAUSADO: outra sessão Claude editando o working tree principal (race)
+- **Contexto:** preparei os 3 blocos (bloco-a/b/c, FIX-82..89) e criei a base `integ/jornada-pos-descoberta`. No dry-run apareceram 4 blocos PRÉ-EXISTENTES no `todo/` (backlog do inbox qa-noturno: funil, artifacts[SEGURADO/Bernardo], infra-teste, chat-render) usando FIX-82..94 → **colisão** com os meus. Ao diagnosticar, descobri que **OUTRA sessão Claude renumerou os antigos** (→ bloco-e/f/g/h, FIX-90..102) no MESMO working tree principal (mudanças staged não-commitadas, timestamp 15:54), + 2 `done/` modificados. `ps` confirma várias instâncias `claude --dangerously-skip-permissions` ativas.
+- **Decidi:** PAUSAR o lançamento. NÃO commitar/lançar competindo no working tree (risco de corromper o trabalho da outra sessão). NÃO toquei as mudanças staged dela (não fiz restore/reset). Registro sem commitar pra não mexer no git/index enquanto ela atua.
+- **Alternativas:** lançar mesmo assim (race → corrupção possível); reverter as mudanças dela (apagaria trabalho que não é meu — proibido).
+- **Reversibilidade:** n/a (não executei a ação de risco).
+- **Estado preparado e pronto pra retomar:** 3 blocos especificados (cards+manifestos+prompts, commitados em 6b1ff837/cb74a11b, no remoto); base `integ/jornada-pos-descoberta` criada (worktree `~/.superset/worktrees/ac2f26b2-.../integ/jornada-pos-descoberta`). Pós-renumeração da outra sessão NÃO há colisão (meus 82-89, antigos 90-102).
+
+## ⚠️ PENDENTE-KAIRO · 15:58 — sessões Claude concorrentes no working tree principal
+- **O que é:** ao menos 2 sessões editando `/Users/kairo/code/aja-agora` (a minha + a que renumerou os blocos do inbox). Não sei se você abriu a outra de propósito (organizar o backlog do inbox em paralelo) ou se é resíduo.
+- **Por que não segui:** lançar a onda exige commitar o `todo/`, que carregaria as mudanças staged da outra sessão — competir no git/working tree compartilhado é blast-radius alto.
+- **Como destrava (escolha uma):** (a) você confirma que a outra sessão terminou → eu commito o estado coerente (já sem colisão) e lanço os 3 blocos meus; (b) você diz qual sessão deve lançar o quê (evita lançar 2x); (c) isolar: cada feature num worktree próprio antes de lançar.
+
 ## Linha do tempo
-- 15:35 — to-saindo + todo-blocks ativados; mapas de documentos e WhatsApp concluídos; diário criado. Próximo: escrever specs (fechamento-B, chat-mesa) + estrutura todo-blocks (3 blocos, FIX-82+) + lançar onda 1.
+- 15:35 — to-saindo + todo-blocks ativados; mapas concluídos; diário criado.
+- 15:42 — D2: push da develop (sync remoto, fast-forward).
+- 15:50 — 3 blocos especificados (FIX-82..89) + base `integ/jornada-pos-descoberta` criada; dry-run OK (6 workspaces onda-1 visíveis).
+- 15:58 — D3: detectada colisão FIX-NN + outra sessão renumerando os antigos no working tree principal → **lançamento PAUSADO** (race). Aguardando o Kairo.
 
 ## Relatório final (preencher ao encerrar)
 - (pendente)

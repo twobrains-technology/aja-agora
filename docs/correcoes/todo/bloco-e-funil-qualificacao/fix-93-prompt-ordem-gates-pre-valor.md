@@ -1,8 +1,8 @@
 ---
-id: FIX-85
+id: FIX-93
 titulo: "system-prompt descreve ordem de gates errada (timeframe/lance pré-valor) — alinhar à ordem real pós-FIX-53"
 status: todo
-bloco: bloco-a-funil-qualificacao
+bloco: bloco-e-funil-qualificacao
 arquivos:
   - src/lib/agent/system-prompt.ts
   - src/lib/agent/HARD_RULES.md

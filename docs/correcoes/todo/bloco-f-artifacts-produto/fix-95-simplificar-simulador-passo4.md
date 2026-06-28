@@ -1,6 +1,6 @@
 ---
-id: FIX-87
-bloco: bloco-b-artifacts-produto
+id: FIX-95
+bloco: bloco-f-artifacts-produto
 slug: simplificar-simulador-passo4-so-valor
 titulo: "Trocar o simulador do passo 4 por um seletor simples só de valor (slider de valor, sem os demais campos)"
 status: todo

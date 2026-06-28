@@ -1,8 +1,8 @@
 ---
-id: FIX-83
+id: FIX-91
 titulo: "Funil pula experience+consent quando o usuário diz valor cedo — remover auto-sets em analyze.ts"
 status: todo
-bloco: bloco-a-funil-qualificacao
+bloco: bloco-e-funil-qualificacao
 arquivos:
   - src/lib/agent/orchestrator/analyze.ts
   - src/lib/agent/orchestrator/analyze.test.ts

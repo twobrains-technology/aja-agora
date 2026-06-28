@@ -1,8 +1,8 @@
 ---
-id: FIX-86
+id: FIX-94
 titulo: "Vetar agente sugerir 'atualiza a página/refresh' como fallback (defesa em profundidade)"
 status: todo
-bloco: bloco-a-funil-qualificacao
+bloco: bloco-e-funil-qualificacao
 arquivos:
   - src/lib/agent/HARD_RULES.md
   - src/lib/agent/system-prompt.ts

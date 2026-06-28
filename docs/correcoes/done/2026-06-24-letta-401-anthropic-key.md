@@ -1,3 +1,5 @@
+> **OBSOLETO / SUPERADO por FIX-81 (2026-06-26):** o Letta foi removido e a memória re-homada pro Postgres — `src/lib/memory/letta-adapter.ts` e `circuit-state.ts` não existem mais. Mantido só como registro histórico; não há fix de código a fazer aqui.
+
 # Letta — Anthropic 401 RESOLVIDO; embedding OpenAI = dívida best-effort
 
 **Rodada:** qa-noturno 2026-06-24 (Kairo autorizou resolver, inclusive prod).

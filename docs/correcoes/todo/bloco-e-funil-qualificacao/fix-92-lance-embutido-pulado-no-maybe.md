@@ -1,8 +1,8 @@
 ---
-id: FIX-84
+id: FIX-92
 titulo: "Gate lance-embutido pulado para Não/Talvez — handler do route não acompanhou o FIX-4"
 status: todo
-bloco: bloco-a-funil-qualificacao
+bloco: bloco-e-funil-qualificacao
 arquivos:
   - src/app/api/chat/route.ts
   - src/app/api/chat/lance-embutido-gate.test.ts

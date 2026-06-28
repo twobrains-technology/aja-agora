@@ -1,8 +1,8 @@
 ---
-id: FIX-91
+id: FIX-99
 titulo: "Eval da jornada com GATE_SEQUENCE pré-FIX-53 (identify no fim) — reordenar + ajustar harness"
 status: todo
-bloco: bloco-c-infra-teste
+bloco: bloco-g-infra-teste
 arquivos:
   - tests/eval/jornada-aja-agora.eval.test.ts
 rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
