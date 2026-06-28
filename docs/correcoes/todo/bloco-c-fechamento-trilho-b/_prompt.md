@@ -14,7 +14,8 @@ Você é o executor do bloco **bloco-c-fechamento-trilho-b** no worktree isolado
    - **Dependência nível 3 (bloco-a):** o despacho do documento usa `dispatchClientDocument(documentId, "bevi_b")` de `src/lib/documents/dispatch.ts` (bloco-a). Implemente contra um STUB local com a assinatura exata + `TODO(bloco-a): usar o dispatch real após o merge`. NÃO duplique a lógica de storage — só consuma o contrato.
    - Validar ao vivo o step de upload de doc do self-contract é **PENDENTE-KAIRO** — deixe o caminho de doc do fechamento delegando ao dispatch (stub) e marque o TODO.
    - Camada 2 (cassette) SÓ se o comportamento do agente no passo 5 mudar (texto/artifact). Senão, Camada 1 + integration bastam. Decida pelo diff.
-   - pnpm único; local-dev em container; migration (se houver) via drizzle-kit, nunca na mão.
+   - pnpm único; local-dev em container.
+   - ⚠️ **MIGRATION À MÃO** se mudar `src/db/schema.ts` — `db:generate` está QUEBRADO (collision no meta; bloco-g/FIX-100). NÃO rode `db:generate`. Escreva a `.sql` à mão em `drizzle/00NN_<nome>.sql` + entry em `drizzle/meta/_journal.json` (padrão das 0027/0028). VALIDE: `pnpm db:migrate` + `pnpm test:unit` verde antes do push. Sem isso a develop quebra.
 
 6. Ao terminar: **push da branch** (`git push origin feat/fechamento-trilho-b`) + gere `.done/{data}-bloco-c-fechamento-trilho-b.md`. **NÃO abra PR, NÃO faça merge, NÃO rode deploy/restart, NÃO crie reminder.** Integração é do ORQUESTRADOR; a tag-sentinela é injetada no fim deste prompt.
 

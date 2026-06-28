@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-28 15:35 · **Sessão:** aja-agora/develop
 - **Critério de pronto:** 3 blocos especificados (cards FIX-NN + _bloco.md + _prompt.md) + base `integ/` criada + onda 1 disparada no Superset + (quando os blocos terminarem) integrados na base com gate verde (quarentena os que falharem). NÃO levar pra develop (decisão D1).
-- **Status:** BLOQUEADO (drizzle meta collision trava a onda — ver D6)
+- **Status:** EM ANDAMENTO — develop DESBLOQUEADA/verde (D7); 2 blocos travaram, re-lançando (D8)
 
 ## Objetivo
 Lançar como blocos paralelos (todo-blocks) as 3 features alinhadas nesta sessão:
@@ -82,6 +82,16 @@ Finalização: `finish-wave.sh jornada-pos-descoberta` (SEM --to-develop — dec
 - **O que é:** `db:generate` quebrado (snapshots 0011-0013 id duplicado) bloqueia TODA mudança de schema. develop vermelha (chat-mesa). É o escopo do bloco-g/FIX-100 (NÃO lançado por mim — backlog inbox).
 - **Como destrava (escolha):** (a) consertar/regenerar o meta do drizzle (você ou autoriza eu a mexer); (b) priorizar/lançar o bloco-g-infra-teste (FIX-100) que trata do migrate-guard/drift; (c) reverter o merge do chat-mesa da develop (volta a 0027, verde) e re-integrar quando o drizzle voltar.
 - **Por que não fiz:** migrations = blast-radius; mexer no meta sozinho à noite pode corromper tudo. Diagnóstico e caminho prontos.
+
+### D7 · 18:15 — DESBLOQUEIO: develop verde (migration 0028 à mão + window.ts)
+- **Decidi (autorizado pelo Kairo):** o conserto do meta (reconstruir 14 snapshots) é grande/blast-radius, MAS descobri o padrão real do projeto: as migrations 0014-0027 são TODAS escritas À MÃO (a própria 0027 documenta: "db:generate quebrado; migrate usa journal+sql"). Então escrevi a **migration 0028 à mão** (last_inbound_at) + entry no journal — dentro do padrão, NÃO mexi nos snapshots corrompidos.
+- **Validação:** criei DB temp fresco → `db:migrate` aplicou 0000-0028 limpo (✓) → renomeei o temp pra aja_agora (o DB de dev estava sujo via push, __drizzle_migrations dessincronizado). Reescrevi `window.ts` (require→import ESM, db singleton, `eq()` — o agente do chat-mesa tinha escrito com require de alias + API drizzle errada) e `window.test.ts`. **Suíte verde: 1939 testes.** Commit `9e1b7711`.
+- **Reversibilidade:** o conserto do meta (snapshots) NÃO foi feito — segue PENDENTE-KAIRO/bloco-g (db:generate continua quebrado; migrate funciona).
+
+### D8 · 18:18 — documentos + fechamento TRAVARAM (re-lançando com prompt corrigido)
+- **Contexto:** após ~2h, os blocos documentos (0 trabalho) e fechamento (só o ADR) NÃO produziram código nem tag/branch — travaram cedo (provável keep-alive do notch). E ambos mudam schema → quebrariam a develop igual ao chat-mesa (db:generate quebrado).
+- **Decidi:** corrigir o atrito na FONTE — os _prompt.md dos blocos diziam "migrations via drizzle-kit" (errado; o generate está quebrado). Troquei pela instrução de **migration à mão** (padrão do projeto: escrever .sql + journal entry, validar com db:migrate + test:unit). Re-lançar os 2.
+- **Keep-alive:** dos re-lançados é do notch app (não meu controle). Se re-travarem, é o notch/ambiente.
 
 ## Lição de FLOW (a registrar quando destravar)
 todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos que mudam schema → blocos sobem incompletos (sem migration) e quebram a develop ao integrar. Melhoria: gate de `db:generate` limpo no launch-blocks/merge-wave pra blocos com mudança de schema.
