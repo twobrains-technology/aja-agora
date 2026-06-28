@@ -53,5 +53,26 @@ Lançar como blocos paralelos (todo-blocks) as 3 features alinhadas nesta sessã
 - 15:50 — 3 blocos especificados (FIX-82..89) + base `integ/jornada-pos-descoberta` criada; dry-run OK (6 workspaces onda-1 visíveis).
 - 15:58 — D3: detectada colisão FIX-NN + outra sessão renumerando os antigos no working tree principal → **lançamento PAUSADO** (race). Aguardando o Kairo.
 
+### D4 · 16:10 — destravado (Kairo: opção a) → commit coerente + 3 blocos lançados
+- **Contexto:** Kairo confirmou que a outra sessão terminou (mudanças staged-e-paradas). Liberou commitar e lançar só os 3 meus (NÃO o bloco-f-artifacts, SEGURADO/Bernardo; NÃO os antigos e/g/h).
+- **Decidi:** `git add -A` + commit `a06ab52a` (absorve renumeração dos antigos + meus 3 blocos, sem colisão) + push develop. Atualizei a base via `merge --ff-only origin/develop`. Lancei só os 3 meus com `launch-blocks --block` (3x, pois o script aceita 1 filtro por vez).
+- **Evidência:** commit `a06ab52a`; workspaces criados: feat-documentos-cliente-s3 `26738398`, feat-chat-mesa-whatsapp `1a4da40c`, feat-fechamento-trilho-b `6e1fdc84` (todos `open` forçado).
+- **PENDENTE-KAIRO de sessões concorrentes:** RESOLVIDO (Kairo confirmou).
+
+## Linha do tempo (cont.)
+- 16:10 — D4: commit a06ab52a + push develop + base atualizada + 3 workspaces lançados e abertos no Superset. Agentes implementando (forka de integ/jornada-pos-descoberta).
+
+## Próximo passo (orquestrador — notch me re-invoca; NÃO agendo wakeup)
+Os 3 agentes rodam ~20-60min, depois push + tag `block-done/<branch>`. Quando retomar:
+```
+cd /Users/kairo/.superset/worktrees/ac2f26b2-a2ba-4148-96b8-47b55f0dd5ad/integ/jornada-pos-descoberta
+merge-wave.sh poll  --wave 1 --block bloco-a-documentos-cliente --block bloco-b-chat-mesa-whatsapp --block bloco-c-fechamento-trilho-b   # repetir até all_terminal
+merge-wave.sh merge --wave 1 --target integ/jornada-pos-descoberta   # gate por bloco; quarentena o que reprovar
+```
+⚠️ Escopar poll/merge SÓ aos 3 meus (--block) — os antigos e/g/h NÃO foram lançados; sem filtro o poll espera por eles pra sempre.
+Finalização: `finish-wave.sh jornada-pos-descoberta` (SEM --to-develop — decisão D1: base fica pra revisão do Kairo).
+
 ## Relatório final (preencher ao encerrar)
-- (pendente)
+- **Resultado vs critério de pronto:** PARCIAL — 3 blocos especificados + base criada + onda 1 lançada (3 workspaces rodando). Falta: integração na base (poll→merge) quando os agentes terminarem.
+- **Revisar primeiro:** D3/D4 (race de sessões concorrentes — resolvido com aval do Kairo) e os specs dos 3 blocos antes do merge.
+- **Próximos passos:** poll→merge dos 3; revisar a base integ/jornada-pos-descoberta; decidir levar pra develop. PENDENTE-KAIRO externos: bucket+KMS (docs), template Meta HSM (chat-mesa), step-doc do B ao vivo (fechamento).
