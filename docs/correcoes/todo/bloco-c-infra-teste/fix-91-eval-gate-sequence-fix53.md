@@ -1,3 +1,13 @@
+---
+id: FIX-91
+titulo: "Eval da jornada com GATE_SEQUENCE pré-FIX-53 (identify no fim) — reordenar + ajustar harness"
+status: todo
+bloco: bloco-c-infra-teste
+arquivos:
+  - tests/eval/jornada-aja-agora.eval.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug (Camada 3) — Eval da jornada percorre gates na ordem PRÉ-FIX-53 (identify no fim)
 
 - **Data:** 2026-06-21 (achado no QA noturno da jornada v2, rodada 2)

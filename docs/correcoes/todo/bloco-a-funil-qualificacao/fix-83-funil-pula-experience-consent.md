@@ -1,3 +1,14 @@
+---
+id: FIX-83
+titulo: "Funil pula experience+consent quando o usuário diz valor cedo — remover auto-sets em analyze.ts"
+status: todo
+bloco: bloco-a-funil-qualificacao
+arquivos:
+  - src/lib/agent/orchestrator/analyze.ts
+  - src/lib/agent/orchestrator/analyze.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — funil pula o passo 2 (experiência + consent) quando o usuário diz o valor cedo
 
 - **Data:** 2026-06-21 · **Achado em:** QA noturno E2E browser (rodada 2026-06-21-0812) · **Superfície:** funil de qualificação (chat web)

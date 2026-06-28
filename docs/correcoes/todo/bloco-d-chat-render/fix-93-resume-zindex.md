@@ -1,3 +1,14 @@
+---
+id: FIX-93
+titulo: "Modal de resume coberto pelo chat-theater (z-index) — elevar DialogContent acima do theater (z-90)"
+status: todo
+bloco: bloco-d-chat-render
+arquivos:
+  - src/components/chat/theater/resume-prompt.tsx
+  - src/components/chat/theater/resume-prompt.test.tsx
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — modal de resume fica coberto pelo chat-theater (z-index), usuário de retorno trava
 
 - **Data:** 2026-06-21 · **Achado em:** QA noturno E2E browser (rodada 2026-06-21-0812) · **Superfície:** chat web (fluxo de retorno same-device, FIX-51)

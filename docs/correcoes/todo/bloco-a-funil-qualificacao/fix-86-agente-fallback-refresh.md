@@ -1,3 +1,16 @@
+---
+id: FIX-86
+titulo: "Vetar agente sugerir 'atualiza a página/refresh' como fallback (defesa em profundidade)"
+status: todo
+bloco: bloco-a-funil-qualificacao
+arquivos:
+  - src/lib/agent/HARD_RULES.md
+  - src/lib/agent/system-prompt.ts
+  - tests/regression/agent-trajectory.test.ts
+  - src/lib/agent/system-prompt.behavior-guards.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — Agente pode sugerir "atualiza a página/recarregue" como fallback (sem regressão que vete)
 
 - **Data:** 2026-06-21 (achado no QA noturno, ancorado na revisão 2 da jornada)

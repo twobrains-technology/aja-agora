@@ -1,3 +1,14 @@
+---
+id: FIX-84
+titulo: "Gate lance-embutido pulado para Não/Talvez — handler do route não acompanhou o FIX-4"
+status: todo
+bloco: bloco-a-funil-qualificacao
+arquivos:
+  - src/app/api/chat/route.ts
+  - src/app/api/chat/lance-embutido-gate.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — gate de lance embutido pulado para "Não"/"Talvez" (regressão do FIX-4)
 
 - **Data:** 2026-06-21 · **Achado em:** QA noturno E2E browser (rodada 2026-06-21-0812, continuação /to-saindo) · **Superfície:** funil de qualificação (chat web) — handler do gate `lance`

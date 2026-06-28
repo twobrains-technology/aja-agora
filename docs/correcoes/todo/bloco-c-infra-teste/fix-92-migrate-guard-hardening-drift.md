@@ -1,3 +1,14 @@
+---
+id: FIX-92
+titulo: "Endurecer migrate-guard pra detectar drift (count vs presença real da tabela)"
+status: todo
+bloco: bloco-c-infra-teste
+arquivos:
+  - scripts/migrate-guard.mjs
+  - scripts/migrate-guard.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Risco de DEPLOY (INFRA/MIGRATION — não é bug de runtime do app) — `__drizzle_migrations` inconsistente com o schema: migrate-guard por count pode quebrar o deploy da migration 0027 (FIX-81)
 
 - **Natureza:** **INFRA / MIGRATION** — risco de **release/deploy**, NÃO bug de comportamento do app. NÃO bloqueia dev/QA local (já desbloqueado à mão), mas pode **travar o deploy do FIX-81 em prod** no boot.

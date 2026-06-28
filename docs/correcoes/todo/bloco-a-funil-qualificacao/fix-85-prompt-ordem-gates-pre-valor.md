@@ -1,3 +1,15 @@
+---
+id: FIX-85
+titulo: "system-prompt descreve ordem de gates errada (timeframe/lance pré-valor) — alinhar à ordem real pós-FIX-53"
+status: todo
+bloco: bloco-a-funil-qualificacao
+arquivos:
+  - src/lib/agent/system-prompt.ts
+  - src/lib/agent/HARD_RULES.md
+  - src/lib/agent/qualify-state.sequence.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — system-prompt descreve ordem de gates ERRADA (timeframe/lance "pré-valor")
 
 - **Data:** 2026-06-21 (achado no QA noturno da jornada v2, rodada 2)

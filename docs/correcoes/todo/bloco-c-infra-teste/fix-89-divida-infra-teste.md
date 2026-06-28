@@ -1,3 +1,20 @@
+---
+id: FIX-89
+titulo: "Saneamento de infra de teste: isolamento de DB nos integration (flaky) + limpar 23 erros de typecheck em test files"
+status: todo
+bloco: bloco-c-infra-teste
+arquivos:
+  - tests/integration
+  - src/lib/consorcio/resolve.integration.test.ts
+  - src/lib/agent/system-prompt.test.ts
+  - src/lib/agent/system-prompt.acentuacao.test.ts
+  - tests/eval/jornada-judge.test.ts
+  - tests/e2e/specs/web-resume/same-device.spec.ts
+  - src/lib/whatsapp/formatter.moto.test.ts
+  - scripts/migrate-guard.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Dívida de infra de teste — consolidado do QA noturno (2026-06-21)
 
 > Achados do QA noturno (profundidade de negócio). **Nenhum é regressão de produto

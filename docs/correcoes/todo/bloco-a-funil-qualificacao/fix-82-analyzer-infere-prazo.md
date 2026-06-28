@@ -1,3 +1,14 @@
+---
+id: FIX-82
+titulo: "Analyzer infere prazoMeses a partir do orçamento mensal — endurecer prompt do classifier"
+status: todo
+bloco: bloco-a-funil-qualificacao
+arquivos:
+  - src/lib/agent/turn-analyzer.ts
+  - src/lib/agent/turn-analyzer.prompt.test.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug — analyzer infere `prazoMeses` a partir do orçamento mensal
 
 - **Data:** 2026-06-21 · **Achado em:** QA noturno E2E browser (rodada 2026-06-21-0812) · **Superfície:** classifier de turno (`turn-analyzer`) → funil de qualificação

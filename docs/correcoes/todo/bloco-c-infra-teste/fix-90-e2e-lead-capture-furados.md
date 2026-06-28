@@ -1,3 +1,15 @@
+---
+id: FIX-90
+titulo: "E2E lead-capture furados + flaky; hardening /api/leads (500→400 em UUID inválido) + helper createConversation"
+status: todo
+bloco: bloco-c-infra-teste
+arquivos:
+  - tests/e2e/specs/lead-capture-web/ec-names-unicode.spec.ts
+  - tests/e2e/utils/db.ts
+  - src/app/api/leads/route.ts
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+---
+
 # Bug (dívida de teste) — Suíte E2E de lead-capture/resume com testes furados + flaky
 
 - **Data:** 2026-06-21 (achado no QA noturno da jornada v2)

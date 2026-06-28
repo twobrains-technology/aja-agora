@@ -1,7 +1,9 @@
 ---
+id: FIX-94
+bloco: bloco-d-chat-render
 slug: assistant-texto-duplicado-eco
 titulo: "Eliminar texto duplicado/eco nas respostas do assistant (degeneração da LLM)"
-status: inbox
+status: todo
 severidade: baixa
 projeto: aja-agora
 rodada: 2026-06-28 — validação E2E da jornada web (descoberta Trilho B, imóvel)

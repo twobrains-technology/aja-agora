@@ -1,7 +1,9 @@
 ---
+id: FIX-88
+bloco: bloco-b-artifacts-produto
 slug: expandir-recomendacoes-remover-teto-3
 titulo: "Remover o teto de 3 recomendações: 1 hero + 5 ranqueadas + 'ver todas' expansível (ordenar/filtrar)"
-status: inbox
+status: todo
 severidade: media
 projeto: aja-agora
 rodada: 2026-06-28 — revisão da etapa de recomendação (passo 5 da jornada)
