@@ -1,73 +1,41 @@
 /**
- * Verifica se a janela de 24h do WhatsApp está aberta para uma conversa.
+ * Janela de 24h da WhatsApp Cloud API (FIX-86 / bloco-b chat-mesa).
  *
- * A janela de 24h da Meta Cloud API permite texto livre apenas se o último
- * inbound (mensagem recebida do cliente) foi nos últimos 24 horas.
- *
- * @param conversationId — ID da conversa no DB
- * @returns Objeto com { open: boolean, expiresAt: Date }
+ * A API oficial da Meta só permite TEXTO LIVRE se o último inbound (mensagem
+ * recebida do cliente) foi nos últimos 24h. Fora dessa janela, só template (HSM).
+ * `lastInboundAt` é atualizado pelo webhook a cada mensagem recebida do cliente.
  */
+
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations } from "@/db/schema";
+
+/** 24h em milissegundos — duração da janela de atendimento da Meta. */
+export const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Janela aberta? Consulta o `lastInboundAt` da conversa. Sem inbound (ou inbound
+ * há mais de 24h) → fechada (open=false). */
 export async function isWindowOpen(conversationId: string): Promise<{
 	open: boolean;
 	expiresAt: Date | null;
 }> {
-	// Importação tardia para não circular
-	const databaseUrl = process.env.DATABASE_URL;
-	if (!databaseUrl) {
-		throw new Error("DATABASE_URL environment variable not set");
-	}
+	const [row] = await db
+		.select({ lastInboundAt: conversations.lastInboundAt })
+		.from(conversations)
+		.where(eq(conversations.id, conversationId))
+		.limit(1);
 
-	// Usar require para evitar circular dependency
-	const schemaModule = require("@/db/schema");
-	const { drizzle } = require("drizzle-orm/node-postgres");
+	if (!row?.lastInboundAt) return { open: false, expiresAt: null };
 
-	const dbInstance = drizzle(databaseUrl, { schema: schemaModule });
-	const { conversations } = schemaModule;
-
-	const [result] = await dbInstance.select({
-		id: conversations.id,
-		lastInboundAt: conversations.lastInboundAt,
-	}).from(conversations).where(conversations.id.eq(conversationId)).limit(1);
-
-	// Se não há conversa ou lastInboundAt está ausente/nulo, janela fechada
-	if (!result || !result.lastInboundAt) {
-		return {
-			open: false,
-			expiresAt: null,
-		};
-	}
-
-	// Calcula a data de expiração da janela (24h após o último inbound)
-	const expiresAt = new Date(result.lastInboundAt.getTime() + 24 * 60 * 60 * 1000);
-	const now = new Date();
-
-	return {
-		open: now < expiresAt,
-		expiresAt: expiresAt,
-	};
+	const expiresAt = new Date(row.lastInboundAt.getTime() + WINDOW_MS);
+	return { open: new Date() < expiresAt, expiresAt };
 }
 
-/**
- * Verifica rapidamente se a janela está aberta (versão sem DB).
- * Útil para validações de front-end ou contextos sem acesso ao DB.
- *
- * @param lastInboundAt — timestamp do último inbound do cliente
- * @returns true se a janela está aberta
- */
-export function isWindowOpenFast(
-	lastInboundAt: Date | string | null,
-): boolean {
-	if (!lastInboundAt) {
-		return false;
-	}
-
-	const inboundDate = typeof lastInboundAt === "string" ? new Date(lastInboundAt) : lastInboundAt;
-	if (Number.isNaN(inboundDate.getTime())) {
-		return false;
-	}
-
-	const now = new Date();
-	const windowClosedAt = new Date(inboundDate.getTime() + 24 * 60 * 60 * 1000);
-
-	return now < windowClosedAt;
+/** Versão pura (sem DB) — recebe o timestamp e diz se a janela está aberta.
+ * Útil pro front (gate do input de chat) e pra testar a lógica sem I/O. */
+export function isWindowOpenFast(lastInboundAt: Date | string | null): boolean {
+	if (!lastInboundAt) return false;
+	const inbound = typeof lastInboundAt === "string" ? new Date(lastInboundAt) : lastInboundAt;
+	if (Number.isNaN(inbound.getTime())) return false;
+	return new Date() < new Date(inbound.getTime() + WINDOW_MS);
 }
