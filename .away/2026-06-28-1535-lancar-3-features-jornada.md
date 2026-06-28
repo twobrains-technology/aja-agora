@@ -2,7 +2,7 @@
 
 - **Início:** 2026-06-28 15:35 · **Sessão:** aja-agora/develop
 - **Critério de pronto:** 3 blocos especificados (cards FIX-NN + _bloco.md + _prompt.md) + base `integ/` criada + onda 1 disparada no Superset + (quando os blocos terminarem) integrados na base com gate verde (quarentena os que falharem). NÃO levar pra develop (decisão D1).
-- **Status:** EM ANDAMENTO
+- **Status:** BLOQUEADO (drizzle meta collision trava a onda — ver D6)
 
 ## Objetivo
 Lançar como blocos paralelos (todo-blocks) as 3 features alinhadas nesta sessão:
@@ -72,7 +72,22 @@ merge-wave.sh merge --wave 1 --target integ/jornada-pos-descoberta   # gate por 
 ⚠️ Escopar poll/merge SÓ aos 3 meus (--block) — os antigos e/g/h NÃO foram lançados; sem filtro o poll espera por eles pra sempre.
 Finalização: `finish-wave.sh jornada-pos-descoberta` (SEM --to-develop — decisão D1: base fica pra revisão do Kairo).
 
-## Relatório final (preencher ao encerrar)
-- **Resultado vs critério de pronto:** PARCIAL — 3 blocos especificados + base criada + onda 1 lançada (3 workspaces rodando). Falta: integração na base (poll→merge) quando os agentes terminarem.
-- **Revisar primeiro:** D3/D4 (race de sessões concorrentes — resolvido com aval do Kairo) e os specs dos 3 blocos antes do merge.
-- **Próximos passos:** poll→merge dos 3; revisar a base integ/jornada-pos-descoberta; decidir levar pra develop. PENDENTE-KAIRO externos: bucket+KMS (docs), template Meta HSM (chat-mesa), step-doc do B ao vivo (fechamento).
+### D6 · 18:00 — BLOQUEIO: develop quebrada + onda travada pelo drizzle meta (blast-radius, não mexi)
+- **Contexto:** retomei (Kairo: "resolva tudo, se vire, qa-autonomo assim que mergeado"). Achei: o notch/outra sessão integrou meu chat-mesa direto na develop (`09b30d63`), mas `test:unit` está VERMELHO (12 falhas: `last_inbound_at` não existe). O chat-mesa adicionou a coluna no schema SEM migration — porque `db:generate` está quebrado (collision: snapshots `0011/0012/0013` com mesmo id `d12d60bd`). Caos pré-existente (FIX-81/bloco-g/FIX-100).
+- **Decidi NÃO executar** (blast-radius): (a) consertar o meta do drizzle (regenerar cadeia de snapshots — erro corrompe TODAS as migrations); (b) `db:push`/ALTER manual (❌ regra de migrations); (c) reverter o chat-mesa da develop (race com o notch + reverte feature). Nenhum caminho seguro desbloqueia sem o Kairo.
+- **Diagnóstico + correção encaminhada:** card `docs/correcoes/inbox/2026-06-28-develop-quebrada-drizzle-meta-bloqueia-onda.md`.
+- **Impacto:** a onda INTEIRA está bloqueada — documentos (tabela client_documents) e fechamento também precisam de migration que não gera. O app/DB de dev está sem a coluna → qa-autonomo não roda verde.
+
+## ⚠️ PENDENTE-KAIRO · 18:00 — desbloquear migrations (drizzle meta) antes de integrar a onda / rodar qa-autonomo
+- **O que é:** `db:generate` quebrado (snapshots 0011-0013 id duplicado) bloqueia TODA mudança de schema. develop vermelha (chat-mesa). É o escopo do bloco-g/FIX-100 (NÃO lançado por mim — backlog inbox).
+- **Como destrava (escolha):** (a) consertar/regenerar o meta do drizzle (você ou autoriza eu a mexer); (b) priorizar/lançar o bloco-g-infra-teste (FIX-100) que trata do migrate-guard/drift; (c) reverter o merge do chat-mesa da develop (volta a 0027, verde) e re-integrar quando o drizzle voltar.
+- **Por que não fiz:** migrations = blast-radius; mexer no meta sozinho à noite pode corromper tudo. Diagnóstico e caminho prontos.
+
+## Lição de FLOW (a registrar quando destravar)
+todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos que mudam schema → blocos sobem incompletos (sem migration) e quebram a develop ao integrar. Melhoria: gate de `db:generate` limpo no launch-blocks/merge-wave pra blocos com mudança de schema.
+
+## Relatório final
+- **Resultado vs critério de pronto:** BLOQUEADO/PARCIAL. Feito: 3 blocos especificados (FIX-82-89) + base criada + onda lançada; chat-mesa integrado na develop pelo notch (mas quebra os testes); documentos+fechamento ainda rodando. NÃO feito: develop verde, integração limpa da onda, qa-autonomo — TUDO travado pelo drizzle meta (blast-radius).
+- **Revisar primeiro:** D6 + card `develop-quebrada-drizzle-meta-bloqueia-onda` (decisão crítica). D3/D4 (race de sessões).
+- **Próximos passos (após desbloquear o drizzle):** gerar migrations 0028 (last_inbound_at) + 0029 (client_documents) etc; `test:unit` verde; poll→merge dos 3 (escopado --block); só então qa-autonomo. PENDENTE-KAIRO externos: bucket+KMS (docs), template Meta HSM (chat-mesa), step-doc do B ao vivo (fechamento).
+- **Status:** BLOQUEADO (aguardando decisão do Kairo sobre o drizzle meta).
