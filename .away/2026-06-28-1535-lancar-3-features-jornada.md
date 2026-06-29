@@ -124,3 +124,8 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - **Prompt:** cada revisor (Opus) roda checklist adversarial (imports/alias-require, APIs de lib inventadas via context7, lógica, regras CLAUDE.md, testes, segurança), TDD strict por bug, push da branch rev/*. NÃO PR/merge/deploy.
 - **Próximo (orquestrador/notch):** `merge-wave.sh poll --wave 1 --block bloco-rev-{a..e}` até all_terminal → `merge --target integ/revisao-modelo-errado` (gate por bloco) → decisão de levar pra develop (PENDENTE: perguntar ao Kairo no fim) → qa-autonomo.
 - **Reversibilidade:** média (correções vão pra base com gate; develop só recebe merge final aprovado).
+
+### D11 · 19:15 — Kairo autorizou develop + qa-autonomo (autônomo)
+- **Decidi (Kairo):** finish-wave `--to-develop` = SIM; rodar qa-autonomo assim que a revisão integrar — sem nova pergunta.
+- **Mecânica do poll:** merge-wave `--block` não acumula e os blocos pendentes (a/b/c/e/g/h) são onda:1 → orquestro a conclusão por `git ls-remote --tags origin | grep block-done/rev-*` (5 tags = pronto) e faço `merge --block` individual por bloco.
+- **Estado 19:15:** 2/5 terminaram (rev-jornada-bevi, rev-whatsapp-chat) — rápido demais, inspecionando qualidade. Faltam rev-agente-nucleo, rev-mesa-kanban, rev-fundacao-ui.
