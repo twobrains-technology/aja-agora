@@ -256,7 +256,7 @@ export function buildSimulatorDialDirective(args: { administradora?: string }): 
 	// simulador ("contemplado em 3, 6 ou 12 meses?"). O orquestrador dirige o
 	// dial UMA vez — determinístico, não a critério do modelo.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha que legal — arrasta a agulha pro mês que você quer e ve como fica:").
+1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.
 2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;

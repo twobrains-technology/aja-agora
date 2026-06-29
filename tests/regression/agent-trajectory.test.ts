@@ -45,6 +45,7 @@ import {
 	buildDecisionPromptDirective,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
+	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
@@ -5838,5 +5839,48 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 			conversationId: "conv-rev-a-multi-option",
 		});
 		expect(verdict.allow).toBe(true);
+	});
+});
+
+// ============================================================================
+// REV-A — directive do simulador ENSINAVA o agent a descrever o gesto da UI
+// ----------------------------------------------------------------------------
+// system-prompt.ts proíbe descrever a UI ("arraste") no simulador-agulha —
+// "diga algo como 'dá pra ver quando você consegue ser contemplado aqui'". As
+// tool descriptions e o cassette bevi-fulfillment.structural barram "arraste o
+// slider". MAS buildSimulatorDialDirective dava como frase-modelo "arrasta a
+// agulha pro mês que você quer e ve como fica" — descrição de gesto que escapa
+// do detector exato ("arraste o slider") e é injetada por turno (vence o prompt
+// estável). Defeito de alucinação/meta-narrativa de UI.
+// ============================================================================
+
+describe("REV-A-SIMULATOR-UI-GESTURE — directive não ensina o agent a descrever o gesto", () => {
+	const GESTURE_DETECTORS = [
+		/arrast/i, // arrasta / arraste / arrastar
+		/desliz/i, // desliza / deslize
+		/puxa\s+a\s+agulha/i,
+		/move\s+a\s+agulha/i,
+	];
+
+	it("buildSimulatorDialDirective não descreve gesto de UI (com e sem administradora)", () => {
+		for (const args of [{}, { administradora: "Porto Seguro" }]) {
+			const d = buildSimulatorDialDirective(args);
+			const hits = GESTURE_DETECTORS.filter((rx) => rx.test(d));
+			expect(
+				hits.length,
+				`directive do simulador descreve gesto de UI (proibido por system-prompt.ts). Directive: "${d}"`,
+			).toBe(0);
+		}
+	});
+
+	it("detector pega o cassette do bug (frase-modelo antiga descrevia o gesto)", () => {
+		const cassette = "Olha que legal — arrasta a agulha pro mês que você quer e ve como fica:";
+		const hits = GESTURE_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: a regra anti-descrição-de-UI vive no system prompt", () => {
+		// Sincronia: o directive segue a regra do prompt estável.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/n[ãa]o descreva a ui|arraste/i);
 	});
 });
