@@ -30,7 +30,7 @@ import {
 
 const settingsItems = [
 	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },
-	{ title: "Configuracoes", href: "/admin/settings", icon: SettingsIcon },
+	{ title: "Configurações", href: "/admin/settings", icon: SettingsIcon },
 ];
 
 export function AppSidebar() {
@@ -98,7 +98,7 @@ export function AppSidebar() {
 				)}
 
 				<SidebarGroup>
-					<SidebarGroupLabel>Aplicacoes</SidebarGroupLabel>
+					<SidebarGroupLabel>Aplicações</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{applicationItems.map((item) => (
@@ -118,7 +118,7 @@ export function AppSidebar() {
 				</SidebarGroup>
 
 				<SidebarGroup>
-					<SidebarGroupLabel>Configuracoes</SidebarGroupLabel>
+					<SidebarGroupLabel>Configurações</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{settingsItems.map((item) => (

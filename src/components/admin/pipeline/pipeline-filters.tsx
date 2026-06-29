@@ -162,7 +162,7 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 					render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
 				>
 					<CalendarIcon className="size-3.5" />
-					{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Ate"}
+					{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Até"}
 				</PopoverTrigger>
 				<PopoverContent className="w-auto p-0" align="start">
 					<Calendar
