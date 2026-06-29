@@ -136,3 +136,13 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - **Gate:** `test:unit` 1981 verde; suíte completa em **série** 2156 verde. Em paralelo, 1 flaky (`resolve.integration`) por contaminação de DB entre workers → card no inbox (`2026-06-29-testes-integracao-contaminam-em-paralelo.md`), não-bloqueante (código correto, arquivo intocado pela revisão).
 - **Resultado:** ~24 bugs reais corrigidos (2 de segurança: CRUD admin-only; HARD_RULES no bundle/500 prod; sendTemplate HSM return morto; waId; normalizePhoneBR DDD 55; meta do Drizzle reconstruído = FIX-100; muita ortografia PT-BR).
 - **Próximo:** limpar workspaces (5 rev + base) + qa-autonomo.
+
+### D13 · 00:35 — QA autônomo da revisão: VALIDADA, zero regressão
+- Reiniciei a stack `aja-app-develop` (bind=este worktree, código pós-merge); ancorei 41 commits; ledger `.qa-loop/2026-06-29-0015-ledger.md`.
+- **E2E** (Playwright host, chromium, `http://aja-app-develop.orb.local` + DATABASE_URL do .env.local):
+  - ✅ `web-recovery` 3/3 — valida o fix `normalizePhoneBR` DDD 55 (rev-a).
+  - ✅ `admin-mesa-cadastros` (CRUD admin-only — rev-c segurança), `admin-mesa-transbordo` (contrato — rev-c), `admin-persona-assistant`, `contact-consolidated-view`.
+  - ✅ Agente real `/api/chat`: rotea (Rafael) + dispara `save_contact_name` (formato `data-tool` do AI SDK 6); `/api/chat/resume` retorna `meaningfulProgress:true`.
+  - ⚠️ `lead-capture-web` (10) + `web-resume` FIX-51 (2): falham, mas **PRÉ-EXISTENTES** — provado: formato `data-tool` é de `cf13595d`/`889afb47` (antes da onda); componente `resume-prompt` intocado; backends corretos. **Não-regressão.** Cards no inbox.
+- 3 cards de achados pré-existentes (lead-capture E2E formato antigo/redundante; web-resume FIX-51; integração-DB flaky em paralelo).
+- **Veredito:** onda de revisão (24 bugs) validada na develop, **sem regressão**. Gate 2156 + E2E das áreas tocadas verdes.
