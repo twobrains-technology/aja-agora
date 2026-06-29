@@ -115,3 +115,12 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - **Decidi (com Kairo):** ele já REMOVEU o agent/preset errado no Superset (fonte corrigida → opus[1m]). Paro os 2 re-lançados (modelo errado) — FEITO (deletados). Lanço uma onda todo-blocks de REVISÃO+correção de tudo que entrou com modelo errado, agora com Opus.
 - **Escopo (Kairo):** TUDO que entrou na develop com modelo errado (não só a onda jornada).
 - **Reversibilidade:** média (correções vão pra base de revisão, gate antes da develop).
+
+### D10 · 19:05 — onda de REVISÃO disparada (5 blocos, Opus, escopados)
+- **Contexto:** modelo errado nas sessões Superset (D9). Fonte corrigida pelo Kairo (removeu o agent errado → default opus[1m]). Lancei a onda de auditoria adversarial.
+- **Partição (decisão técnica):** 5 blocos por área funcional — A agente-núcleo, B jornada-Bevi, C mesa-kanban, D whatsapp-chat, E fundação-UI (único dono de schema/drizzle; absorve PENDENTE-REV-E dos outros + reconstrói o meta do Drizzle / bloco-g-FIX-100).
+- **Mecânica:** base `integ/revisao-modelo-errado` (ws 5b1b0710) forkada da develop verde. `launch-blocks` NÃO acumula múltiplos `--block` (usa o último) e os blocos pendentes a/b/c/e/g/h são onda:1 → lancei os 5 rev-* UM A UM com `--block` pra não tocar os pendentes.
+- **Workspaces:** rev-agente-nucleo 8e862b3f · rev-jornada-bevi 0bd1c934 · rev-mesa-kanban 0cc43df1 · rev-whatsapp-chat a4dc8fae · rev-fundacao-ui 9b9e82e5. Todos `open`.
+- **Prompt:** cada revisor (Opus) roda checklist adversarial (imports/alias-require, APIs de lib inventadas via context7, lógica, regras CLAUDE.md, testes, segurança), TDD strict por bug, push da branch rev/*. NÃO PR/merge/deploy.
+- **Próximo (orquestrador/notch):** `merge-wave.sh poll --wave 1 --block bloco-rev-{a..e}` até all_terminal → `merge --target integ/revisao-modelo-errado` (gate por bloco) → decisão de levar pra develop (PENDENTE: perguntar ao Kairo no fim) → qa-autonomo.
+- **Reversibilidade:** média (correções vão pra base com gate; develop só recebe merge final aprovado).
