@@ -151,7 +151,7 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase. (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
+	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção ou atendente humano (a contratação é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
 }
 
 export function buildDetailDirective(groupId: string): string {

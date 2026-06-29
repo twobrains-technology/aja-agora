@@ -45,6 +45,7 @@ import {
 	buildDecisionPromptDirective,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
+	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -5882,5 +5883,30 @@ describe("REV-A-SIMULATOR-UI-GESTURE — directive não ensina o agent a descrev
 	it("structural: a regra anti-descrição-de-UI vive no system prompt", () => {
 		// Sincronia: o directive segue a regra do prompt estável.
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/n[ãa]o descreva a ui|arraste/i);
+	});
+});
+
+// ============================================================================
+// REV-A — frase PROIBIDA "vou reservar essa opção" como frase-modelo no directive
+// ----------------------------------------------------------------------------
+// "vou reservar essa opção" é banida (system-prompt.ts + buildAdjustValueDirective
+// a proíbem explicitamente — a plataforma é self-service, nada é "reservado").
+// MAS buildSimulationInterestDirective dava ESSA frase como modelo POSITIVO
+// ("escreva ... tipo 'Show, vou reservar essa opção pra você'"). Hoje sem callers
+// em produção, mas é landmine: religar o fluxo "Tenho interesse" emite a frase
+// banida. Frase-modelo trocada por uma de fechamento self-service.
+// ============================================================================
+
+describe("REV-A-RESERVAR-LANDMINE — directive não emite a frase banida 'reservar essa opção'", () => {
+	it("buildSimulationInterestDirective não usa a frase-modelo proibida", () => {
+		const d = buildSimulationInterestDirective("Porto Seguro");
+		expect(
+			d.toLowerCase(),
+			"directive emite frase banida 'reservar essa opção' como modelo positivo",
+		).not.toMatch(/reservar essa op[çc][ãa]o/);
+	});
+
+	it("a frase segue PROIBIDA no prompt estável (sincronia)", () => {
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/reservar essa op[çc][ãa]o/);
 	});
 });
