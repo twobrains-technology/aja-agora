@@ -99,7 +99,8 @@ describe("LeadDetailPanel — contrato do chat do operador (FIX-87)", () => {
 	});
 
 	it("exibe a mensagem real do erro da API (data.message), não o fallback genérico", async () => {
-		const REAL_MSG = "A janela de 24h do WhatsApp está fechada. Envie um template HSM para reabrir a conversa.";
+		const REAL_MSG =
+			"A janela de 24h do WhatsApp está fechada. Envie um template HSM para reabrir a conversa.";
 		installFetchMock({
 			ok: false,
 			status: 429,
