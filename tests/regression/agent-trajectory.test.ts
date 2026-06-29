@@ -5760,3 +5760,83 @@ describe("FIX-78-COMPARISON-DROPADO — recommendation_card sem comparison_table
 		expect(colado.test(reveal)).toBe(true);
 	});
 });
+
+// ============================================================================
+// REV-A — single-option guard MORTO no caminho search_groups
+// ----------------------------------------------------------------------------
+// Revisão por modelo errado (2026-06-28). O FIX-7 (single-option) suprime o
+// recommendation_card quando a descoberta retorna 1 grupo — pra não duplicar o
+// grupo (recommendation_card + simulation_result do MESMO grupo). O runner
+// alimenta o guard com extractDiscoveryCount(toolName, output).
+//
+// BUG: o branch de `search_groups` testava `Array.isArray(output)`, mas
+// `executeSearchGroups` (ai-sdk.ts) devolve `{ groups, total }` — NUNCA array.
+// Logo o count era SEMPRE null → o single-option guard nunca disparava num
+// reveal de opção única descoberto via search_groups → card duplicado voltava
+// (o exato defeito que o FIX-7 corrigiu, só que pro caminho recommend_groups).
+// O teste antigo passava `[{id}]` (array) — shape que a produção nunca emite —
+// e ficava verde testando o cenário errado.
+//
+// Defesa estrutural (Camada 1): src/lib/agent/orchestrator/discovery-count.test.ts
+// Aqui (Camada 2): a cadeia REAL search_groups → count → guard suprime.
+// ============================================================================
+
+describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no caminho search_groups", () => {
+	// Shape REAL do tool-result de search_groups (executeSearchGroups).
+	const searchGroupsOutput = (n: number) => ({
+		groups: Array.from({ length: n }, (_, i) => ({ id: `g${i}` })),
+		total: n,
+	});
+
+	it("extractDiscoveryCount conta o shape real {groups,total} de search_groups (não array)", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		// ANTES do fix: Array.isArray({groups,total}) === false → null. Quebra aqui.
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(1))).toBe(1);
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(3))).toBe(3);
+	});
+
+	it("cadeia completa: opção única via search_groups suprime o recommendation_card", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		const { evaluateArtifactGuards } = await import(
+			"@/lib/agent/orchestrator/artifact-guard"
+		);
+		// 1) o runner conta a descoberta do tool-result REAL de search_groups…
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(1));
+		expect(discoveryCount).toBe(1);
+		// 2) …e o single-option guard suprime o recommendation_card duplicado.
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-single-option",
+		});
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("single-option");
+	});
+
+	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		const { evaluateArtifactGuards } = await import(
+			"@/lib/agent/orchestrator/artifact-guard"
+		);
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
+		expect(discoveryCount).toBe(3);
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-multi-option",
+		});
+		expect(verdict.allow).toBe(true);
+	});
+});
