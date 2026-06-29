@@ -97,11 +97,11 @@ export function buildCreditReactionDirective(rangeTitle: string): string {
 }
 
 export function buildTimeframeReactionDirective(rangeTitle: string): string {
-	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, da pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
+	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
 }
 
 export function buildLanceReactionDirective(rangeTitle: string): string {
-	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance da pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
+	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
 }
 
 // ---- Group actions ----
@@ -112,7 +112,7 @@ export function buildGroupSelectedDirective(
 	creditValue: number,
 	termMonths: number,
 ): string {
-	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva UMA frase curta de introdução no SEU TOM tipo "Beleza, da uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botoes "Tenho interesse!" e "Ajustar valor".`;
+	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva UMA frase curta de introdução no SEU TOM tipo "Beleza, dá uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botoes "Tenho interesse!" e "Ajustar valor".`;
 }
 
 export function buildSimulateDirective(
