@@ -28,7 +28,13 @@ function parseTermMonths(v: number | string | null | undefined): number | undefi
 export function parseMoney(v: number | string | null | undefined): number | undefined {
 	if (typeof v === "number") return Number.isFinite(v) ? round2(v) : undefined;
 	if (typeof v !== "string") return undefined;
-	const n = Number(v.replace(/\./g, "").replace(",", "."));
+	// BUG-PARCELA-VAZIA (auditoria Opus 2026-06-28): `Number("") === 0` e
+	// `Number("   ") === 0` — string vazia/whitespace é "ausente/ilegível", NÃO
+	// parcela zero. Sem este guard, vazava R$ 0,00 (número sem fonte) no card e no
+	// resumo. Trim + early-return undefined antes do Number().
+	const s = v.trim();
+	if (!s) return undefined;
+	const n = Number(s.replace(/\./g, "").replace(",", "."));
 	return Number.isFinite(n) ? round2(n) : undefined;
 }
 

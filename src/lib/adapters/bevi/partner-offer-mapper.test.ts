@@ -177,6 +177,26 @@ describe("partnerOfferToRealOffer — parcela string pt-BR (API nova 2026-06)", 
 		);
 		expect(ilegivel.monthlyPayment).toBeUndefined();
 	});
+
+	// BUG-PARCELA-VAZIA (auditoria adversarial Opus 2026-06-28): a pegadinha
+	// `Number("") === 0` (e `Number("   ") === 0`) fazia a string VAZIA/whitespace
+	// — uma forma de "ausente/ilegível" — virar parcela 0, NÃO undefined. Como
+	// `monthlyPayment: parseMoney(offer.parcela)` não tem guarda `> 0` a jusante,
+	// uma `parcela: ""` da API vazava "R$ 0,00" no card "Essa é a sua carta real"
+	// (closing-presentation) e no resumo WhatsApp — número FALSO sem fonte, que o
+	// próprio contrato da função ("ausente/ilegível → undefined, NUNCA") proíbe (D11/FIX-8).
+	it("parcela '' (vazia) ou whitespace → undefined, NUNCA 0 (Number('')===0)", () => {
+		const vazia = partnerOfferToRealOffer(
+			{ ...base, parcela: "" as unknown as number },
+			"AUTOS",
+		);
+		expect(vazia.monthlyPayment).toBeUndefined();
+		const branca = partnerOfferToRealOffer(
+			{ ...base, parcela: "   " as unknown as number },
+			"AUTOS",
+		);
+		expect(branca.monthlyPayment).toBeUndefined();
+	});
 });
 
 // FIX-39 (API nova Bevi 2026-06-12): a mesma leva que mudou a `parcela` trouxe o
