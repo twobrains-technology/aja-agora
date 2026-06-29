@@ -87,3 +87,31 @@ describe("contemplationDialMarks — fallback estático (WhatsApp)", () => {
 		expect(marks.every((m) => m.targetMonth <= 10)).toBe(true);
 	});
 });
+
+// BUG-DIAL-NAN (auditoria adversarial Opus 2026-06-28): input fora de contrato
+// (creditValue/termMonths/targetMonth NaN, ex.: Math.max(0, NaN) === NaN a montante)
+// vazava NaN em requiredLanceValue/embeddedBidValue → "R$ NaN" na tela. Sanitiza na
+// fronteira: NaN/não-finito vira o degenerado seguro, NUNCA propaga NaN.
+describe("computeContemplationDial — blindagem contra NaN (input fora de contrato)", () => {
+	it("creditValue NaN → nenhum campo numérico vira NaN", () => {
+		const r = computeContemplationDial({ creditValue: Number.NaN, termMonths: 80, targetMonth: 12 });
+		for (const [k, v] of Object.entries(r)) {
+			if (typeof v === "number") expect(Number.isNaN(v), `campo ${k}`).toBe(false);
+		}
+	});
+
+	it("TODOS os campos numéricos NaN → degrada sem vazar NaN", () => {
+		const r = computeContemplationDial({
+			creditValue: Number.NaN,
+			termMonths: Number.NaN,
+			targetMonth: Number.NaN,
+			historicalWinningBidPct: Number.NaN,
+			referenceMonth: Number.NaN,
+			monthlyPayment: Number.NaN,
+			maxEmbutidoPct: Number.NaN,
+		});
+		for (const [k, v] of Object.entries(r)) {
+			if (typeof v === "number") expect(Number.isNaN(v), `campo ${k}`).toBe(false);
+		}
+	});
+});
