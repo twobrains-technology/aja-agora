@@ -109,3 +109,9 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - Keep-alive dos agentes = notch app. Quando terminarem (push + tag block-done), integrar
   (escopado --block) e — ATENÇÃO — conferir/completar a migration à mão de cada um (client_documents
   no documentos), senão re-quebram a develop como o chat-mesa. Só então qa-autonomo.
+
+### D9 · 18:40 — modelo errado nas sessões Superset → onda de revisão (Opus)
+- **Contexto:** Kairo apontou que TODAS as sessões Superset rodaram com modelo errado (bate com os bugs bobos do chat-mesa: require de alias, API drizzle inventada, migration esquecida). Investiguei: preset `claude` roda `claude` SEM --model (herda o default do Claude Code), não-editável via CLI (só app). Default atual = opus[1m]. Sem override no projeto/worktrees/env.
+- **Decidi (com Kairo):** ele já REMOVEU o agent/preset errado no Superset (fonte corrigida → opus[1m]). Paro os 2 re-lançados (modelo errado) — FEITO (deletados). Lanço uma onda todo-blocks de REVISÃO+correção de tudo que entrou com modelo errado, agora com Opus.
+- **Escopo (Kairo):** TUDO que entrou na develop com modelo errado (não só a onda jornada).
+- **Reversibilidade:** média (correções vão pra base de revisão, gate antes da develop).
