@@ -68,20 +68,24 @@ export function LeadDetailPanel({
 		setWindowError(null);
 
 		try {
-			const endpoint = `/api/admin/conversations/${lead.id}/message`;
+			// O id da CONVERSA (≠ id do lead) é a chave que a rota usa pra resolver a
+			// janela de 24h e persistir a mensagem. Usar lead.id aqui batia na conversa errada.
+			const endpoint = `/api/admin/conversations/${lead.conversationId}/message`;
 
 			const res = await fetch(endpoint, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 				},
-				body: JSON.stringify({ conversationId: lead.id, text }),
+				body: JSON.stringify({ conversationId: lead.conversationId, text }),
 			});
 
 			const data = await res.json();
 
 			if (!res.ok) {
-				throw new Error(data.error?.message || "Falha ao enviar mensagem");
+				// A rota devolve { error: "<código>", message: "<motivo legível>" } — mostrar
+				// `message` (não `error.message`, que não existe e caía sempre no fallback).
+				throw new Error(data.message || "Falha ao enviar mensagem");
 			}
 
 			// Alert visual simples
