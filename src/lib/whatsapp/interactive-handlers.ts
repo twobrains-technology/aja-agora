@@ -494,7 +494,7 @@ async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 		console.error(`[whatsapp-processor] Failed to load group ${groupId}:`, err);
 		await sendTextMessage(
 			from,
-			"Tive um problema ao localizar esse grupo. Pode tentar selecionar outra opcao ou me dizer um valor de credito que voce quer simular?",
+			"Tive um problema ao localizar esse grupo. Pode tentar selecionar outra opção ou me dizer um valor de crédito que você quer simular?",
 		);
 	}
 	return true;

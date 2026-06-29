@@ -57,6 +57,26 @@ export async function POST(
 			);
 		}
 
+		// ---- Resolver o destinatário real (waId) ----
+		// A Meta envia para o waId (número WhatsApp), NUNCA para o conversationId
+		// (UUID interno). Sem waId, a conversa é de canal web — não há WhatsApp
+		// pra onde enviar.
+		const conversation = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId),
+			columns: { waId: true },
+		});
+		if (!conversation?.waId) {
+			return NextResponse.json(
+				{
+					error: "NoWhatsApp",
+					message:
+						"Esta conversa não tem WhatsApp (canal web) — não é possível enviar mensagem por aqui.",
+				},
+				{ status: 422 },
+			);
+		}
+		const to = conversation.waId;
+
 		// ---- Verificar janela de 24h (FIX-86) ----
 		const windowStatus = await isWindowOpen(conversationId);
 
@@ -76,7 +96,7 @@ export async function POST(
 				);
 			}
 
-			const result = await sendTextMessage(conversationId, text);
+			const result = await sendTextMessage(to, text);
 			messageId = result.messageId;
 			sentType = "text";
 
@@ -110,7 +130,7 @@ export async function POST(
 			}
 
 			const result = await sendTemplate(
-				conversationId,
+				to,
 				templateName,
 				languageCode,
 				undefined, // componentes opcionais

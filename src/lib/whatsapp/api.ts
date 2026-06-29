@@ -201,16 +201,19 @@ export async function sendTypingIndicator(messageId: string) {
  * @param components — componentes opcionais do template (ex.: buttons, body)
  *
  * @example
- * // Template com botões
+ * // Template com componentes (Meta espera um ARRAY de componentes)
  * await sendTemplate(
  *   "5562999998888",
  *   "aja_agora_reabrir_conversa",
  *   "pt_BR",
- *   {
- *     buttons: [
- *       { index: "1", reply: "Reabrir conversa" }
- *     ]
- *   }
+ *   [
+ *     {
+ *       type: "button",
+ *       sub_type: "quick_reply",
+ *       index: "0",
+ *       parameters: [{ type: "payload", payload: "reabrir" }],
+ *     },
+ *   ]
  * );
  *
  * @example
@@ -225,20 +228,22 @@ export async function sendTemplate(
 	to: string,
 	templateName: string,
 	languageCode: string,
-	components?: Record<string, unknown>,
+	components?: unknown[],
 ) {
-	// Templates não são suportados na simulação por agora
-	return simulatedAck();
+	// Destinatário simulado (SIM-<uuid>): não bate na Meta — só ack sintético.
+	// Templates não são renderizados no simulador por agora.
+	if (isSimulatedWaId(to)) return simulatedAck();
 	const { accessToken, phoneNumberId } = getConfig();
 	return callApi(phoneNumberId, accessToken, {
 		to,
-		type: "template" as any,
+		type: "template",
 		template: {
 			name: templateName,
 			language: {
 				code: languageCode,
 			},
-			components,
+			// Meta Cloud API v21: `components` é um ARRAY; omitido quando ausente.
+			...(components ? { components } : {}),
 		},
 	});
 }
