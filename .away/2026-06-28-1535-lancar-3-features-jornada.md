@@ -129,3 +129,10 @@ todo-blocks/launch NÃO verifica se `db:generate` roda ANTES de lançar blocos q
 - **Decidi (Kairo):** finish-wave `--to-develop` = SIM; rodar qa-autonomo assim que a revisão integrar — sem nova pergunta.
 - **Mecânica do poll:** merge-wave `--block` não acumula e os blocos pendentes (a/b/c/e/g/h) são onda:1 → orquestro a conclusão por `git ls-remote --tags origin | grep block-done/rev-*` (5 tags = pronto) e faço `merge --block` individual por bloco.
 - **Estado 19:15:** 2/5 terminaram (rev-jornada-bevi, rev-whatsapp-chat) — rápido demais, inspecionando qualidade. Faltam rev-agente-nucleo, rev-mesa-kanban, rev-fundacao-ui.
+
+### D12 · 00:10 — onda de revisão INTEGRADA na develop (gate verde)
+- **Merge:** os 5 rev-* no working tree principal (tem node_modules → gate roda de verdade; a base do Superset não tem, e o gate auto-detectado puxava typecheck whole-repo já vermelho).
+- **Conflito** (esperado) em `route.ts` do chat do operador: mesa-kanban × whatsapp-chat ambos corrigiram o waId. Resolvido pela versão **mesa-kanban** (limpa: Response.json + conv.waId + requireRole); descartada a do whatsapp-chat (NextResponse sem import → quebraria). Adaptei o teste `send-to-waid` à versão vencedora (mock requireRole + db.select).
+- **Gate:** `test:unit` 1981 verde; suíte completa em **série** 2156 verde. Em paralelo, 1 flaky (`resolve.integration`) por contaminação de DB entre workers → card no inbox (`2026-06-29-testes-integracao-contaminam-em-paralelo.md`), não-bloqueante (código correto, arquivo intocado pela revisão).
+- **Resultado:** ~24 bugs reais corrigidos (2 de segurança: CRUD admin-only; HARD_RULES no bundle/500 prod; sendTemplate HSM return morto; waId; normalizePhoneBR DDD 55; meta do Drizzle reconstruído = FIX-100; muita ortografia PT-BR).
+- **Próximo:** limpar workspaces (5 rev + base) + qa-autonomo.
