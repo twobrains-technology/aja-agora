@@ -52,7 +52,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-	const { error, session } = await requireRole("admin", "attendant");
+	// Criar atendente (envia convite + cria conta de login) é gestão de equipe — só admin.
+	const { error, session } = await requireRole("admin");
 	if (error) return error;
 
 	let body: unknown;
