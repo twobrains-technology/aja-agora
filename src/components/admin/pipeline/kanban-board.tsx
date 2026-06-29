@@ -92,7 +92,7 @@ export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }
 			}
 		} catch {
 			setColumns(previous);
-			window.alert("Erro de conexao. Tente novamente.");
+			window.alert("Erro de conexão. Tente novamente.");
 		}
 	}, []);
 

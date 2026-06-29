@@ -11,7 +11,7 @@ export const FUNNEL_STAGES: { stage: Exclude<LeadStage, "perdido">; label: strin
 	{ stage: "novo", label: "Novo" },
 	{ stage: "engajado", label: "Engajado" },
 	{ stage: "qualificado", label: "Qualificado" },
-	{ stage: "em_negociacao", label: "Em Negociacao" },
+	{ stage: "em_negociacao", label: "Em Negociação" },
 	{ stage: "proposta_enviada", label: "Proposta Enviada" },
 	{ stage: "na_administradora", label: "Na Administradora" },
 	{ stage: "aguardando_pagamento", label: "Aguardando Pagamento" },
