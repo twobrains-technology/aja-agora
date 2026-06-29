@@ -77,6 +77,22 @@ describe("normalizePhoneBR", () => {
 		expect(normalizePhoneBR("55")).toBeNull();
 	});
 
+	// REV-A: "55" inicial só é código de país quando o total tem 12-13 dígitos.
+	// Antes, qualquer "55…" tinha os 2 primeiros removidos, então um móvel do DDD
+	// 55 (Santa Maria-RS) sem CC virava 9 dígitos e era REJEITADO — e como o phone
+	// é a chave de identidade da memória, esse usuário nunca casava histórico.
+	it("aceita móvel do DDD 55 sem CC (11 dígitos começando com 55)", () => {
+		expect(normalizePhoneBR("55999998888")).toBe("+5555999998888");
+	});
+
+	it("aceita móvel do DDD 55 COM CC (13 dígitos)", () => {
+		expect(normalizePhoneBR("5555999998888")).toBe("+5555999998888");
+	});
+
+	it("aceita fixo do DDD 55 sem CC (10 dígitos começando com 55)", () => {
+		expect(normalizePhoneBR("5533334444")).toBe("+555533334444");
+	});
+
 	it("retorna null pra phone US (não BR)", () => {
 		// "+1 415 555 0000" → digits "14155550000" → starts with "1" not "55", length 11 → "+5514155550000"
 		// Esse caso é intencionalmente uma limitação: a normalização não valida o DDD.
