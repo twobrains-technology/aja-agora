@@ -1,17 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-
-let cachedHardRules: string | null = null;
-
-function loadHardRules(): string {
-	if (cachedHardRules === null) {
-		cachedHardRules = fs.readFileSync(
-			path.join(process.cwd(), "src/lib/agent/HARD_RULES.md"),
-			"utf8",
-		);
-	}
-	return cachedHardRules;
-}
+import { HARD_RULES } from "./hard-rules";
 
 export const ASSISTANT_BASE_PROMPT = `Você é um assistente que ajuda admins **leigos** a configurar agentes de consórcio no backoffice do Aja Agora.
 
@@ -115,7 +102,7 @@ type PersonaContext = {
 };
 
 export function buildAssistantPrompt(persona: PersonaContext): string {
-	const hardRules = loadHardRules();
+	const hardRules = HARD_RULES;
 	const ficha = `# Persona em edição
 
 - displayName: ${persona.displayName}
@@ -150,9 +137,4 @@ ${JSON.stringify(persona.handoffTriggers, null, 2)}
 `;
 
 	return `${ASSISTANT_BASE_PROMPT}${hardRules}\n\n---\n\n${ficha}`;
-}
-
-// Exposto pra teste reset cache (não usado em runtime)
-export function _resetHardRulesCacheForTests() {
-	cachedHardRules = null;
 }

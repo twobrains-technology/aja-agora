@@ -341,3 +341,30 @@ describe("regressão: acentuação", () => {
 		expect(offenders).toEqual([]);
 	});
 });
+
+describe("REV-A — verbo 'dá' acentuado nas frases-modelo do agente", () => {
+	// O varredor FORBIDDEN_PROMPT acima não inclui "da"/"ve" (ambíguos: "da" =
+	// contração de+a é válida). Por isso as frases-modelo que o agente reproduz ao
+	// cliente passavam com "da pra"/"da uma olhada" (verbo dar SEM acento). Regra
+	// inviolável de PT-BR: copy ao cliente totalmente acentuada. Asserts cirúrgicos
+	// nos builders/trechos específicos (não global — a lista de frases PROIBIDAS
+	// do prompt fica fora deste escopo de propósito).
+	it("directives de reação de gate usam 'dá pra'/'dá uma' (verbo dar)", () => {
+		const timeframe = directives.buildTimeframeReactionDirective("prazo X");
+		expect(timeframe).toMatch(/dá pra/);
+		expect(timeframe).not.toMatch(/\bda pra\b/);
+
+		const lance = directives.buildLanceReactionDirective("sim");
+		expect(lance).toMatch(/dá pra/);
+		expect(lance).not.toMatch(/\bda pra\b/);
+
+		const group = directives.buildGroupSelectedDirective("Adm", "gid", 100000, 60);
+		expect(group).toMatch(/dá uma olhada/);
+		expect(group).not.toMatch(/\bda uma olhada\b/);
+	});
+
+	it("system prompt: frase-modelo anti-UI do simulador usa 'dá pra ver'", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/dá pra ver quando/);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/\bda pra ver quando/);
+	});
+});

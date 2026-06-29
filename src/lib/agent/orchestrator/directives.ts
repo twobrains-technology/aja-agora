@@ -97,11 +97,11 @@ export function buildCreditReactionDirective(rangeTitle: string): string {
 }
 
 export function buildTimeframeReactionDirective(rangeTitle: string): string {
-	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, da pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
+	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
 }
 
 export function buildLanceReactionDirective(rangeTitle: string): string {
-	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance da pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
+	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
 }
 
 // ---- Group actions ----
@@ -112,7 +112,7 @@ export function buildGroupSelectedDirective(
 	creditValue: number,
 	termMonths: number,
 ): string {
-	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva UMA frase curta de introdução no SEU TOM tipo "Beleza, da uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botoes "Tenho interesse!" e "Ajustar valor".`;
+	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva UMA frase curta de introdução no SEU TOM tipo "Beleza, dá uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botoes "Tenho interesse!" e "Ajustar valor".`;
 }
 
 export function buildSimulateDirective(
@@ -151,7 +151,7 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Show, vou reservar essa opção pra você. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase. (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
+	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção ou atendente humano (a contratação é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
 }
 
 export function buildDetailDirective(groupId: string): string {
@@ -256,7 +256,7 @@ export function buildSimulatorDialDirective(args: { administradora?: string }): 
 	// simulador ("contemplado em 3, 6 ou 12 meses?"). O orquestrador dirige o
 	// dial UMA vez — determinístico, não a critério do modelo.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha que legal — arrasta a agulha pro mês que você quer e ve como fica:").
+1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.
 2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;

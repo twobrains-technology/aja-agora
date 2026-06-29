@@ -241,13 +241,10 @@ describe("meta — qualifyAnswers", () => {
 				} as unknown as ConversationMetadata,
 			}),
 		);
-		// "R$ 50.000,00" → cleaned "50.000.00" → wait, replace `,` → "."
-		// digits-extract: "50.000,00" → "50.000.00" — Number.parseFloat → 50
-		// Função real: replace(/[^\d.,-]/g, "") preserva pontos e vírgulas.
-		// Depois replace(",", ".") — só primeira vírgula. Resultado: "50.000.00"
-		// → parseFloat("50.000.00") = 50.
-		// Aceitamos limitação: parsing BR não é robusto. Doc: input "R$50000" funciona melhor.
-		expect(r.blockPatch.creditMin).toBe(50);
+		// "R$ 50.000,00" = cinquenta mil. REV-A: o parser agora remove o
+		// separador de milhar BR antes de converter (antes virava 50 — corrompia
+		// o valor financeiro em 1000x; o teste antigo abençoava essa "limitação").
+		expect(r.blockPatch.creditMin).toBe(50000);
 	});
 
 	it("string 'R$50000' (sem separador) é parseada como 50000", () => {
@@ -402,5 +399,42 @@ describe("artifact tipo desconhecido", () => {
 			}),
 		);
 		expect(r.entries).toEqual([]);
+	});
+});
+
+// REV-A (revisão por modelo errado): numeric() limpava com
+// `.replace(/[^\d.,-]/g,"").replace(",",".")` — pro formato BR "100.000,00" isso
+// produzia "100.000.00" e Number.parseFloat parava no 2º ponto, devolvendo 100.
+// Valores financeiros (creditMax/monthlyBudget) eram truncados em ordens de
+// grandeza no hint de reativação ("Buscava auto de até R$ 100").
+describe("REV-A — numeric parseia valor BR com separador de milhar", () => {
+	function patchFromQualify(q: Record<string, unknown>) {
+		return extractMemoriesFromTurn(
+			baseArgs({ meta: { qualifyAnswers: q } as unknown as ConversationMetadata }),
+		).blockPatch;
+	}
+
+	it("creditMax string BR '100.000,00' vira 100000 (não 100)", () => {
+		expect(patchFromQualify({ creditMax: "100.000,00" }).creditMax).toBe(100000);
+	});
+
+	it("milhão com centavos '1.234.567,89' preserva o valor", () => {
+		expect(patchFromQualify({ creditMax: "1.234.567,89" }).creditMax).toBe(1234567.89);
+	});
+
+	it("milhar sem centavos '1.600' vira 1600", () => {
+		expect(patchFromQualify({ monthlyBudget: "1.600" }).monthlyBudget).toBe(1600);
+	});
+
+	it("prefixo de moeda 'R$ 100.000' vira 100000", () => {
+		expect(patchFromQualify({ creditMax: "R$ 100.000" }).creditMax).toBe(100000);
+	});
+
+	it("número puro segue intacto", () => {
+		expect(patchFromQualify({ creditMax: 250000 }).creditMax).toBe(250000);
+	});
+
+	it("decimal US de 2 casas '100.50' não é tratado como milhar", () => {
+		expect(patchFromQualify({ monthlyBudget: "100.50" }).monthlyBudget).toBe(100.5);
 	});
 });

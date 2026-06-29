@@ -45,6 +45,8 @@ import {
 	buildDecisionPromptDirective,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
+	buildSimulationInterestDirective,
+	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
@@ -5758,5 +5760,153 @@ describe("FIX-78-COMPARISON-DROPADO — recommendation_card sem comparison_table
 		const colado =
 			/present_recommendation_card[\s\S]{0,260}present_comparison_table|present_comparison_table[\s\S]{0,260}present_recommendation_card/;
 		expect(colado.test(reveal)).toBe(true);
+	});
+});
+
+// ============================================================================
+// REV-A — single-option guard MORTO no caminho search_groups
+// ----------------------------------------------------------------------------
+// Revisão por modelo errado (2026-06-28). O FIX-7 (single-option) suprime o
+// recommendation_card quando a descoberta retorna 1 grupo — pra não duplicar o
+// grupo (recommendation_card + simulation_result do MESMO grupo). O runner
+// alimenta o guard com extractDiscoveryCount(toolName, output).
+//
+// BUG: o branch de `search_groups` testava `Array.isArray(output)`, mas
+// `executeSearchGroups` (ai-sdk.ts) devolve `{ groups, total }` — NUNCA array.
+// Logo o count era SEMPRE null → o single-option guard nunca disparava num
+// reveal de opção única descoberto via search_groups → card duplicado voltava
+// (o exato defeito que o FIX-7 corrigiu, só que pro caminho recommend_groups).
+// O teste antigo passava `[{id}]` (array) — shape que a produção nunca emite —
+// e ficava verde testando o cenário errado.
+//
+// Defesa estrutural (Camada 1): src/lib/agent/orchestrator/discovery-count.test.ts
+// Aqui (Camada 2): a cadeia REAL search_groups → count → guard suprime.
+// ============================================================================
+
+describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no caminho search_groups", () => {
+	// Shape REAL do tool-result de search_groups (executeSearchGroups).
+	const searchGroupsOutput = (n: number) => ({
+		groups: Array.from({ length: n }, (_, i) => ({ id: `g${i}` })),
+		total: n,
+	});
+
+	it("extractDiscoveryCount conta o shape real {groups,total} de search_groups (não array)", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		// ANTES do fix: Array.isArray({groups,total}) === false → null. Quebra aqui.
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(1))).toBe(1);
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(3))).toBe(3);
+	});
+
+	it("cadeia completa: opção única via search_groups suprime o recommendation_card", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		const { evaluateArtifactGuards } = await import(
+			"@/lib/agent/orchestrator/artifact-guard"
+		);
+		// 1) o runner conta a descoberta do tool-result REAL de search_groups…
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(1));
+		expect(discoveryCount).toBe(1);
+		// 2) …e o single-option guard suprime o recommendation_card duplicado.
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-single-option",
+		});
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("single-option");
+	});
+
+	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
+		const { extractDiscoveryCount } = await import(
+			"@/lib/agent/orchestrator/discovery-count"
+		);
+		const { evaluateArtifactGuards } = await import(
+			"@/lib/agent/orchestrator/artifact-guard"
+		);
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
+		expect(discoveryCount).toBe(3);
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-multi-option",
+		});
+		expect(verdict.allow).toBe(true);
+	});
+});
+
+// ============================================================================
+// REV-A — directive do simulador ENSINAVA o agent a descrever o gesto da UI
+// ----------------------------------------------------------------------------
+// system-prompt.ts proíbe descrever a UI ("arraste") no simulador-agulha —
+// "diga algo como 'dá pra ver quando você consegue ser contemplado aqui'". As
+// tool descriptions e o cassette bevi-fulfillment.structural barram "arraste o
+// slider". MAS buildSimulatorDialDirective dava como frase-modelo "arrasta a
+// agulha pro mês que você quer e ve como fica" — descrição de gesto que escapa
+// do detector exato ("arraste o slider") e é injetada por turno (vence o prompt
+// estável). Defeito de alucinação/meta-narrativa de UI.
+// ============================================================================
+
+describe("REV-A-SIMULATOR-UI-GESTURE — directive não ensina o agent a descrever o gesto", () => {
+	const GESTURE_DETECTORS = [
+		/arrast/i, // arrasta / arraste / arrastar
+		/desliz/i, // desliza / deslize
+		/puxa\s+a\s+agulha/i,
+		/move\s+a\s+agulha/i,
+	];
+
+	it("buildSimulatorDialDirective não descreve gesto de UI (com e sem administradora)", () => {
+		for (const args of [{}, { administradora: "Porto Seguro" }]) {
+			const d = buildSimulatorDialDirective(args);
+			const hits = GESTURE_DETECTORS.filter((rx) => rx.test(d));
+			expect(
+				hits.length,
+				`directive do simulador descreve gesto de UI (proibido por system-prompt.ts). Directive: "${d}"`,
+			).toBe(0);
+		}
+	});
+
+	it("detector pega o cassette do bug (frase-modelo antiga descrevia o gesto)", () => {
+		const cassette = "Olha que legal — arrasta a agulha pro mês que você quer e ve como fica:";
+		const hits = GESTURE_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: a regra anti-descrição-de-UI vive no system prompt", () => {
+		// Sincronia: o directive segue a regra do prompt estável.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/n[ãa]o descreva a ui|arraste/i);
+	});
+});
+
+// ============================================================================
+// REV-A — frase PROIBIDA "vou reservar essa opção" como frase-modelo no directive
+// ----------------------------------------------------------------------------
+// "vou reservar essa opção" é banida (system-prompt.ts + buildAdjustValueDirective
+// a proíbem explicitamente — a plataforma é self-service, nada é "reservado").
+// MAS buildSimulationInterestDirective dava ESSA frase como modelo POSITIVO
+// ("escreva ... tipo 'Show, vou reservar essa opção pra você'"). Hoje sem callers
+// em produção, mas é landmine: religar o fluxo "Tenho interesse" emite a frase
+// banida. Frase-modelo trocada por uma de fechamento self-service.
+// ============================================================================
+
+describe("REV-A-RESERVAR-LANDMINE — directive não emite a frase banida 'reservar essa opção'", () => {
+	it("buildSimulationInterestDirective não usa a frase-modelo proibida", () => {
+		const d = buildSimulationInterestDirective("Porto Seguro");
+		expect(
+			d.toLowerCase(),
+			"directive emite frase banida 'reservar essa opção' como modelo positivo",
+		).not.toMatch(/reservar essa op[çc][ãa]o/);
+	});
+
+	it("a frase segue PROIBIDA no prompt estável (sincronia)", () => {
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/reservar essa op[çc][ãa]o/);
 	});
 });
