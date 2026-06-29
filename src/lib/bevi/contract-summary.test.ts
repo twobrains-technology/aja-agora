@@ -56,6 +56,39 @@ describe("buildContractSummaryText — resumo da contratação", () => {
 		expect(text).not.toMatch(/Prazo:/i);
 		expect(text).not.toMatch(/\d+\s*meses/i);
 	});
+
+	// BUG-RESUMO-ZERO (auditoria adversarial Opus 2026-06-28): carta/parcela ausentes
+	// (oferta sem parcela → null no DB → Number(null ?? 0) === 0) imprimiam
+	// "R$ 0,00" no resumo — número FALSO sem fonte, enquanto `termMonths` no mesmo
+	// arquivo JÁ é omitido quando não há fonte. Aplica D11/FIX-8 de forma consistente:
+	// valor ≤ 0 / não-finito → linha omitida, NUNCA "R$ 0,00".
+	it("BUG-RESUMO-ZERO: parcela 0/ausente NÃO vira 'R$ 0,00' (linha omitida)", () => {
+		const semParcela = buildContractSummaryText({
+			administradora: "ÂNCORA",
+			grupo: "1234",
+			creditValue: 60_000,
+			monthlyPayment: 0,
+			signatureLink: null,
+		});
+		expect(semParcela).not.toMatch(/R\$\s*0,00/);
+		expect(semParcela).not.toMatch(/Parcela mensal/i);
+		// a carta válida continua aparecendo
+		expect(semParcela).toMatch(/60\.000/);
+	});
+
+	it("BUG-RESUMO-ZERO: carta 0/ausente NÃO vira 'R$ 0,00' (linha omitida)", () => {
+		const semCarta = buildContractSummaryText({
+			administradora: "ÂNCORA",
+			grupo: "1234",
+			creditValue: 0,
+			monthlyPayment: 980.5,
+			signatureLink: null,
+		});
+		expect(semCarta).not.toMatch(/R\$\s*0,00/);
+		expect(semCarta).not.toMatch(/Carta de crédito/i);
+		// a parcela válida continua aparecendo
+		expect(semCarta).toMatch(/980/);
+	});
 });
 
 describe("sendContractSummary — envio via WhatsApp", () => {
