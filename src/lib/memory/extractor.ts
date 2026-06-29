@@ -141,7 +141,15 @@ export function extractMemoriesFromTurn(args: {
 function numeric(v: unknown): number | undefined {
 	if (typeof v === "number" && Number.isFinite(v)) return v;
 	if (typeof v === "string") {
-		const cleaned = v.replace(/[^\d.,-]/g, "").replace(",", ".");
+		// Formato BR: "100.000,00" / "R$ 1.234.567,89" / "1.600". O `.` é separador
+		// de milhar (ponto seguido de exatamente 3 dígitos e fim/não-dígito); a `,`
+		// é o decimal. Remover só o `,` (como antes) deixava "100.000.00" e o
+		// parseFloat parava no 2º ponto → 100. Tira o milhar antes de converter; um
+		// `.` decimal genuíno (ex. "100.50", 2 casas) não casa o lookahead e fica.
+		const cleaned = v
+			.replace(/[^\d.,-]/g, "")
+			.replace(/\.(?=\d{3}(\D|$))/g, "")
+			.replace(",", ".");
 		const n = Number.parseFloat(cleaned);
 		return Number.isFinite(n) ? n : undefined;
 	}
