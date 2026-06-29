@@ -6,7 +6,8 @@ import { updateAttendantSchema } from "@/lib/validations/attendant";
 import { invalidateAttendantCache } from "@/lib/whatsapp/proxy";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error } = await requireRole("admin", "attendant");
+	// Editar/ativar atendente é gestão de equipe — só admin.
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const { id } = await params;
@@ -41,7 +42,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error } = await requireRole("admin", "attendant");
+	// Desativar atendente é gestão de equipe — só admin.
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const { id } = await params;
