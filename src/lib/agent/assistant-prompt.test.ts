@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ASSISTANT_BASE_PROMPT, buildAssistantPrompt } from "./assistant-prompt";
+import { HARD_RULES } from "./hard-rules";
 
 const examplePersona = {
 	id: "test-1",
@@ -84,5 +86,36 @@ describe("buildAssistantPrompt", () => {
 		expect(built).toContain("ex-1");
 		expect(built).toContain("test");
 		expect(built).toContain("response");
+	});
+});
+
+describe("REV-A — HARD_RULES disponível no runtime standalone (prod)", () => {
+	it("buildAssistantPrompt monta o prompt mesmo com cwd SEM src/ (Docker standalone não copia src/)", () => {
+		// Em prod (output:"standalone") o Dockerfile copia só .next/standalone —
+		// NUNCA src/. O bug: assistant-prompt lia HARD_RULES.md via
+		// readFileSync(process.cwd()/src/...) → ENOENT → a rota /assist 500ava.
+		// Simulamos isso mudando o cwd pra um dir sem src/: o prompt tem que sair
+		// das HARD_RULES do BUNDLE, sem tocar o disco.
+		const orig = process.cwd();
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aja-standalone-"));
+		try {
+			process.chdir(tmp);
+			const built = buildAssistantPrompt(examplePersona);
+			expect(built).toContain("Frases absolutamente proibidas");
+			expect(built).toContain("Fluxos obrigatórios");
+		} finally {
+			process.chdir(orig);
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it("HARD_RULES (bundle) está em sincronia byte-a-byte com HARD_RULES.md (fonte)", () => {
+		// hard-rules.ts é GERADO de HARD_RULES.md. Editou o .md e esqueceu de
+		// regenerar (ou vice-versa)? Quebra aqui — sem drift silencioso.
+		const md = fs.readFileSync(path.join(process.cwd(), "src/lib/agent/HARD_RULES.md"), "utf8");
+		expect(
+			HARD_RULES,
+			"hard-rules.ts dessincronizou de HARD_RULES.md — regenere (ver header do hard-rules.ts).",
+		).toBe(md);
 	});
 });
