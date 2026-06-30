@@ -52,7 +52,7 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
+import { parseValorDoBem, prazoMesesForIntent } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -680,48 +680,61 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 });
 
 // ============================================================================
-// CENARIO 4 — Value picker em texto puro (BUG-CREDIT-PICKER)
+// FIX-104 — valor do bem por CONVERSA (inverte o antigo BUG-CREDIT-PICKER)
 // ----------------------------------------------------------------------------
-// Real (Helena/imovel): agent disse "Qual faixa de credito voce esta pensando?"
-// em texto puro, sem chamar present_value_picker. Usuario forcado a digitar.
-//
-// Causa raiz: persona.activeTools nao incluia present_value_picker. Fix em
-// builder.ts + migration 0019 (cobertos por builder.credit-picker.test.ts).
-// Aqui cassette + assert estrutural no prompt.
+// Decisão Kairo 2026-06-28: "usuário só fala o valor agora, não tem mais aquele
+// componente complexo de valor". O que ANTES era bug (perguntar valor por texto)
+// agora é o comportamento DESEJADO: o agente coleta o valor do bem por conversa
+// e NÃO emite present_value_picker na entrada. O componente complexo morre na
+// entrada (web vira slider simples; WhatsApp vira conversa — blocos irmãos).
+// O analyzer normaliza "uns 80 mil"/"80k" → 80000 (parseValorDoBem é o contrato).
 // ============================================================================
 
-describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value_picker", () => {
-	it("cassette: stream com pergunta de faixa em texto puro SEM tool-call", async () => {
-		const cassette = "Qual faixa de credito voce esta pensando pra esse imovel?";
-
+describe("FIX-104 — valor do bem por conversa (sem present_value_picker na entrada)", () => {
+	it("cassette: agent pergunta o valor por conversa e NÃO emite present_value_picker", async () => {
+		const cassette = "Quanto custa o carro que você quer conquistar?";
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", cassette),
 			FINISH_STOP,
 		]);
-
-		// Reproducao fiel: pergunta de valor em prosa, sem present_value_picker.
 		expect(text).toBe(cassette);
+		// O comportamento correto do FIX-104: pergunta conversacional, ZERO picker.
 		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
-
-		// Detector: o agent pediu faixa/valor/orcamento por texto.
-		const perguntaValorTexto =
-			/(qual|quanto)[\s\S]{0,40}(faixa|valor|cr[ée]dito|or[çc]amento|carta)/i;
-		expect(perguntaValorTexto.test(cassette)).toBe(true);
+		const perguntaValorConversa = /(qual|quanto)[\s\S]{0,40}(valor|custa|cr[ée]dito|carta|bem)/i;
+		expect(perguntaValorConversa.test(cassette)).toBe(true);
 	});
 
-	it("prompt SPECIALIST_BASE_PROMPT proibe perguntar valor por texto", () => {
-		// system-prompt.ts:13 contem "NUNCA pergunte valores por texto. Use
-		// present_value_picker para mostrar sliders interativos."
-		// Garante que o prompt nunca afrouxa essa regra.
-		const proibicaoValorTexto =
-			/NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
+	it("cassette: usuário fala 'uns 80 mil' → agent confirma e segue, sem picker", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// parseValorDoBem é o contrato determinístico da normalização.
+		expect(parseValorDoBem("uns 80 mil")).toBe(80_000);
+		expect(parseValorDoBem("80k")).toBe(80_000);
+	});
 
+	it("estrutural: o prompt NÃO manda mais usar present_value_picker pra pedir o valor", () => {
+		// Regra ANTIGA (oposta ao FIX-104) não pode reaparecer em nenhum prompt.
+		const regraAntiga = /NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
 		expect(
-			proibicaoValorTexto.test(SYSTEM_PROMPT) || proibicaoValorTexto.test(SPECIALIST_BASE_PROMPT),
-			"Prompt precisa proibir EXPLICITAMENTE 'NUNCA pergunte valores por texto' acoplado a present_value_picker. " +
-				"Sem essa regra, o LLM cai em prosa nas perguntas de faixa/orcamento.",
-		).toBe(true);
+			regraAntiga.test(SYSTEM_PROMPT) || regraAntiga.test(SPECIALIST_BASE_PROMPT),
+			"FIX-104: o prompt não pode mandar usar present_value_picker pra coletar o valor — o valor é conversa.",
+		).toBe(false);
+	});
+
+	it("estrutural: o prompt instrui valor por conversa e proíbe emitir o picker na entrada", () => {
+		expect(`${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`).toMatch(
+			/valor do bem[\s\S]{0,120}(conversa|texto)/i,
+		);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/N(Ã|A)O (emita|emite|chame|mostre)[\s\S]{0,80}present_value_picker/i,
+		);
 	});
 });
 

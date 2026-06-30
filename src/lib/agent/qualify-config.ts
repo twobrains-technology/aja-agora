@@ -86,6 +86,53 @@ export function clampCreditToCategory(credit: number, category: Category): Credi
 	return { value, clamped: value !== credit, min, max };
 }
 
+/**
+ * FIX-104 — normalizador DETERMINÍSTICO do valor do bem dito em texto livre.
+ *
+ * A entrada deixa de usar o `present_value_picker`: o usuário FALA o valor do bem
+ * ("um carro de uns 80 mil", "80k", "R$ 80.000"). O turn-analyzer (LLM) é o
+ * extrator de runtime — entende inclusive por extenso ("oitenta mil"). Este
+ * helper é o CONTRATO determinístico + backstop, fonte única de parsing pros
+ * caminhos não-LLM: o input de texto livre do slider simples da web
+ * (TODO(bloco-web-valor-agulha): consumir aqui em vez de re-parsear) e qualquer
+ * validação determinística. Cobre dígitos com multiplicador (mil/milhão/k/mi) e
+ * formatos BRL; retorna null pra texto por extenso (deixa o LLM resolver).
+ */
+export function parseValorDoBem(text: string): number | null {
+	if (!text) return null;
+	const lower = text.toLowerCase();
+	// 1) Captura "<número> [mil|milhão|milhões|mi|k]" — número aceita ponto/vírgula.
+	// Ordem da alternância importa: `milh…` e `mil` ANTES de `mi` (senão "mil"
+	// casaria o prefixo "mi" → multiplicador de milhão errado).
+	const m = lower.match(/(\d[\d.,]*)\s*(milh(?:ão|ões|oes)|mil|mi|k)?/);
+	if (!m) return null;
+	const rawNum = m[1];
+	const unit = m[2];
+	// Normaliza o número: se tem unidade (mil/milhão/k), ponto/vírgula são decimais
+	// ("1,5 milhão" = 1.5). Sem unidade, ponto/vírgula são separadores de milhar
+	// ("80.000" = 80000, "80.000,00" = 80000).
+	let value: number;
+	if (unit) {
+		// Com unidade o número é pequeno e o separador é DECIMAL ("1,5"/"1.5" = 1.5).
+		const normalized = rawNum.replace(",", ".");
+		value = Number.parseFloat(normalized);
+	} else {
+		// Remove separadores de milhar (.) e centavos (,XX) de formato BRL.
+		const noCents = rawNum.replace(/,\d{1,2}$/, "");
+		value = Number.parseFloat(noCents.replace(/[.,]/g, ""));
+	}
+	if (!Number.isFinite(value) || value <= 0) return null;
+	const multiplier =
+		unit === "mil"
+			? 1_000
+			: unit === "k"
+				? 1_000
+				: unit === "mi" || unit?.startsWith("milh")
+					? 1_000_000
+					: 1;
+	return Math.round(value * multiplier);
+}
+
 export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 	imovel: [
 		{ token: "200", title: "Até R$ 200 mil", desc: "Aptos compactos", min: 0, max: 200_000 },
