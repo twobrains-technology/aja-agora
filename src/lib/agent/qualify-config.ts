@@ -1,5 +1,24 @@
 import type { Category, Objetivo } from "@/lib/agent/personas";
 
+// ============================================================================
+// CONTRATO — bloco-jornada-entrada (revisão da jornada de entrada, Kairo 2026-06-28)
+// ----------------------------------------------------------------------------
+// Os blocos irmãos (web-valor-agulha, whatsapp-apresentacao) dependem deste:
+//
+//  1. O agente PARA de emitir `present_value_picker` NA ENTRADA — o valor do bem
+//     vira CONVERSA (texto livre, normalizado). A tool segue existindo; a WEB a
+//     troca por um slider simples (1k em 1k), o WhatsApp não manda mais a lista
+//     de faixas. (FIX-104)
+//  2. O gate `timeframe` (prazo de contemplação) SAIU da qualificação —
+//     `nextGate` (qualify-state.ts) nunca mais o emite. "timeframe" segue no
+//     union `Gate` e `TIMEFRAME_OPTIONS`/`objetivoForPrazo`/`prazoMesesForIntent`
+//     ficam aqui como LEGADO (web/whatsapp ainda importam; blocos irmãos limpam).
+//     (FIX-103)
+//  3. O simulador de contemplação é conduzido em LOOP conversacional pelo agente
+//     (tool `simulate_contemplation` em tools/ai-sdk.ts). A WEB mantém a agulha
+//     arrastável (`present_contemplation_dial`). (FIX-106)
+// ============================================================================
+
 /**
  * Single source of truth for qualification ranges/buckets across channels.
  *
@@ -285,8 +304,14 @@ export function prazoMesesForIntent(intent: PlanIntent): number {
 	return intent === "parcela" ? 120 : intent === "lance" ? 0 : 6;
 }
 
-// ---- Timeframe ----
-
+// ---- Timeframe (LEGADO — FIX-103) ----
+//
+// ⚠️ LEGADO. O gate `timeframe` SAIU da qualificação (FIX-103, 2026-06-28):
+// `nextGate` (qualify-state.ts) nunca mais o emite. Estas opções permanecem só
+// por compat com consumidores fora do escopo deste bloco (web/adapter.ts,
+// whatsapp/formatter.ts) que os blocos irmãos (web-valor-agulha,
+// whatsapp-apresentacao) vão limpar. NÃO use em caminho novo de runtime.
+//
 // Jornada canônica do .docx (2026-05-29): 5 opções de prazo. Cada uma deriva o
 // `objetivo` da Bevi (contemplacao_rapida × investimento), input nativo da simulação.
 export const TIMEFRAME_OPTIONS: TimeframeOption[] = [

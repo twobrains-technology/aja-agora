@@ -51,14 +51,14 @@ describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 		expect(nextGate(meta)).toBe("lance-embutido");
 	});
 
-	it("COM identidade, valor já coletado → segue timeframe (NÃO re-pede o valor)", () => {
+	it("COM identidade, valor já coletado → segue lance (NÃO re-pede o valor; FIX-103: prazo fora)", () => {
 		const meta: ConversationMetadata = {
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 80_000 },
 		};
-		expect(nextGate(meta)).toBe("timeframe");
+		expect(nextGate(meta)).toBe("lance");
 	});
 
 	it("fluxo pós-busca não regride: search dispatched + reveal → decision", () => {

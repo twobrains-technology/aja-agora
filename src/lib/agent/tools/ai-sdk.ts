@@ -251,12 +251,20 @@ const recommendGroupsSchema = z.object({
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
+	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
+	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
+	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
+	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
+	// explicito num what-if pos-reveal.
 	desiredTermMonths: z
 		.number()
 		.int()
 		.min(0)
 		.default(0)
-		.describe("Prazo desejado em meses (0 = sem preferencia)"),
+		.describe(
+			"Prazo desejado em meses. 0 = sem preferencia (PADRAO — o prazo nao e coletado na entrada, FIX-103). So passe > 0 se o usuario pedir um prazo explicito num what-if.",
+		),
 });
 
 // ---- Domain tools (data fetching) ----

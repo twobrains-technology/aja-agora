@@ -54,7 +54,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
-	if (q.prazoMeses === undefined) return "timeframe";
+	// FIX-103 (revisão da jornada de entrada — Kairo 2026-06-28): o gate
+	// `timeframe` (prazo desejado de contemplação) SAIU da qualificação
+	// ("usuario so vai falar o valor agora, prazo nao"). O funil pula direto de
+	// `credit` (valor) pra `lance`. "timeframe" segue no union `Gate` e o campo
+	// `prazoMeses` segue opcional no meta — por compat com consumidores fora do
+	// escopo deste bloco (web/whatsapp/orchestrator), que os blocos irmãos
+	// (web-valor-agulha, whatsapp-apresentacao) limpam. `nextGate` NUNCA mais o
+	// emite (prova: qualify-state.fix-103.test.ts). O prazo deixa de pesar na
+	// recomendação (desiredTermMonths=0 → fator neutro, ver tools/ai-sdk.ts).
 	if (!q.hasLance) return "lance";
 	// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
 	// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado

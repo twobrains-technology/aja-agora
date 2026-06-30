@@ -1,7 +1,9 @@
 ---
 id: FIX-103
 titulo: "Remover o gate de prazo (timeframe) da qualificação"
-status: todo
+status: done
+executado_em: 2026-06-29
+commit: "feat: remove o gate de prazo (timeframe) da qualificação (FIX-103)"
 bloco: bloco-jornada-entrada
 arquivos:
   - src/lib/agent/qualify-config.ts

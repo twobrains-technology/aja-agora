@@ -4,7 +4,6 @@ import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 import { gatePartData } from "@/lib/web/adapter";
 import { qualifyConsentToWhatsApp } from "@/lib/whatsapp/formatter";
 import type { ConversationMetadata } from "../personas";
-import { TIMEFRAME_OPTIONS } from "../qualify-config";
 import {
 	buildExperienceFirstDirective,
 	buildSearchSummaryDirective,
@@ -29,11 +28,9 @@ describe("perguntas de gate — fiéis ao docx", () => {
 		);
 	});
 
-	it("prazo (auto): fala do carro novo, no jeito do docx", () => {
-		const q = gateQuestion("timeframe", "auto") ?? "";
-		expect(q.toLowerCase()).toMatch(/carro/);
-		expect(q.toLowerCase()).toMatch(/quanto tempo/);
-	});
+	// FIX-103 (2026-06-28): o gate de prazo SAIU da qualificação — o agente não
+	// pergunta mais "em quanto tempo você quer o bem?" na entrada. A copy do gate
+	// timeframe vira legado (não validamos mais fidelidade ao docx pra ela).
 
 	it("lance: pergunta sobre reserva pra antecipar a contemplação", () => {
 		const q = gateQuestion("lance") ?? "";
@@ -146,17 +143,10 @@ describe("texto-ponte do passo 1 — docx linha 14", () => {
 	});
 });
 
-describe("prazo — as 5 opções LITERAIS do docx (passo 2, linha 23)", () => {
-	it("TIMEFRAME_OPTIONS tem exatamente as 5 labels do docx, na ordem", () => {
-		expect(TIMEFRAME_OPTIONS.map((o) => o.title)).toEqual([
-			"O mais rápido possível",
-			"Até 6 meses",
-			"1 ano",
-			"2 anos ou mais",
-			"Sem pressa, quero menor parcela",
-		]);
-	});
-});
+// FIX-103 (2026-06-28): o gate de prazo SAIU da qualificação. TIMEFRAME_OPTIONS
+// permanece como LEGADO (compat web/whatsapp dos blocos irmãos), mas não é mais
+// parte da jornada conversacional — a coerência das constantes legadas é
+// validada em qualify-config.timeframe.test.ts, não como copy do docx aqui.
 
 describe('passo 3 — "Encontramos 3 boas opções" (docx linha 32)', () => {
 	it("directive do reveal manda anunciar as 3 boas opções pro perfil", () => {

@@ -1920,20 +1920,26 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os 3 gates à proibição de pedir valor antes", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
-		// continuaria reproduzível em prod.
-		const regraComOs3Gates =
-			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
-		const regraInvertida =
-			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
+		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
+		const ordemDosGates =
+			/experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		const proibeValorAntes =
+			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
-			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) || regraInvertida.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa amarrar (experience+timeframe+lance) " +
-				"à proibição de pedir valor/parcela ANTES. Sem isso, persona row no DB " +
-				"(migration 0021) fica solta — modelo cai no padrão antigo.",
+			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → lance) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo NÃO entra mais na ordem.",
 		).toBe(true);
+	});
+
+	it("CROSS-REF prompt (FIX-103): SPECIALIST_BASE_PROMPT NÃO instrui pedir prazo de contemplação na entrada", () => {
+		// O gate de prazo saiu — o prompt proíbe explicitamente perguntar prazo.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA pergunte "em quanto tempo/i);
 	});
 
 	it("CROSS-REF migration 0021: arquivo da migration de persona row existe e seta fluxo de 3 gates pré-valor", () => {
@@ -1965,6 +1971,94 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 			"Migration 0021 precisa ter guard de idempotência (NOT LIKE, NOT @>, IS NULL ou jsonb_array_length) " +
 				"— rodar 2x não pode duplicar/corromper dados.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-103 — gate de prazo (timeframe) fora da qualificação
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("usuario so vai falar o valor agora, prazo nao"):
+// o gate de prazo de contemplação saiu da entrada. Camada 2:
+//   - funil determinístico nunca emite "timeframe" (web e WhatsApp usam a MESMA
+//     máquina nextGate — canal-agnóstica);
+//   - cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação;
+//   - acoplamento ao prompt (não instrui pedir prazo).
+// ============================================================================
+
+describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
+	// nextGate é canal-agnóstico: o mesmo funil vale pra web e WhatsApp. Provar
+	// que NUNCA passa por timeframe cobre os dois canais (o contrato da spec).
+	function walk(hasLance: "yes" | "no"): string[] {
+		let meta: ConversationMetadata = {};
+		let hasName = false;
+		const seq: string[] = [];
+		for (let i = 0; i < 24; i++) {
+			const g = nextGate(meta, { hasContactName: hasName });
+			seq.push(g);
+			const q = meta.qualifyAnswers ?? {};
+			if (g === "name") hasName = true;
+			else if (g === "experience") meta = { ...meta, experiencePrev: "first" };
+			else if (g === "consent") meta = { ...meta, qualifyConsented: true };
+			else if (g === "identify") meta = { ...meta, identityCollected: true };
+			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
+			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
+			else if (g === "lance-value")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
+			else if (g === "lance-embutido")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
+			else if (g === "search")
+				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+			else if (g === "simulator-offer") meta = { ...meta, simulatorOfferDispatched: true };
+			else if (g === "decision") break;
+			else break;
+		}
+		return seq;
+	}
+
+	it("a qualificação completa NUNCA emite o gate timeframe (sem lance e com lance)", () => {
+		expect(walk("no")).not.toContain("timeframe");
+		expect(walk("yes")).not.toContain("timeframe");
+	});
+
+	it("cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação", async () => {
+		// Reação correta pós-valor (FIX-103): confirma o valor e PARA — sem
+		// perguntar prazo. O detector pega a REGRESSÃO (pergunta de prazo).
+		const cassette = "Boa, 80 mil então.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		expect(
+			perguntaPrazo.test(cassette),
+			"FIX-103: a reação ao valor NÃO pode perguntar prazo de contemplação.",
+		).toBe(false);
+	});
+
+	it("detector pega a pergunta de prazo proibida (variantes das 4 specialists)", () => {
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		const proibidas = [
+			"Em quanto tempo você quer estar com o carro novo?",
+			"Em quanto tempo você gostaria de estar com seu bem?",
+			"E qual prazo de contemplação faz sentido pra você?",
+			"Quando você quer ser contemplado?",
+		];
+		const misses = proibidas.filter((v) => !perguntaPrazo.test(v));
+		expect(misses, `Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`).toEqual(
+			[],
+		);
+	});
+
+	it("CROSS-REF prompt: nem SYSTEM_PROMPT nem SPECIALIST_BASE_PROMPT instruem pedir prazo na entrada", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// Não pode haver instrução de coletar prazo como gate da qualificação.
+		expect(combined).not.toMatch(/gate[\s\S]{0,20}timeframe/i);
+		// O reforço explícito de que o prazo saiu precisa estar lá.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
 	});
 });
 
@@ -2254,27 +2348,30 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 });
 
 describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
-	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os gates da coleta (experience/lance) — FIX-103: sem prazo", async () => {
 		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
 		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
 
-		// Combined precisa mencionar os 3 gates por nome — assistant injeta
+		// Combined precisa mencionar os gates binários por nome — assistant injeta
 		// HARD_RULES no system prompt em runtime, então a regra chega no LLM.
+		// FIX-103: o gate de prazo (timeframe) saiu — não exigimos mais.
 		expect(promptCombined).toMatch(/experience/i);
-		expect(promptCombined).toMatch(/timeframe/i);
 		expect(promptCombined).toMatch(/lance/i);
+		// E o prazo NÃO deve mais ser parte da ordem da coleta no HARD_RULES.
+		expect(hardRules).toMatch(/prazo de contempla[çc][ãa]o saiu da qualifica[çc][ãa]o/i);
 	});
 
-	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES de prazo/lance, FIX-53)", () => {
+	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES do lance, FIX-53 + FIX-103: sem prazo)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		// Ordem da revisão 2 (docx + FIX-53): experience → consent → identidade →
-		// valor → timeframe → lance. Os DADOS e o VALOR precedem prazo e lance.
+		// Ordem da revisão 2 (docx + FIX-53) com FIX-103: experience → consent →
+		// identidade → valor → lance. Os DADOS e o VALOR precedem o lance; o prazo
+		// saiu da qualificação.
 		const ordemReal =
-			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
 		expect(
 			ordemReal.test(hardRules),
-			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → timeframe → lance",
+			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → lance (sem prazo)",
 		).toBe(true);
 	});
 });
