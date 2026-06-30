@@ -2731,6 +2731,80 @@ describe("FEAT-CONTEMPLATION-DIAL — simulador-agulha (passo 4)", () => {
 });
 
 // ============================================================================
+// FIX-106 — simulador de contemplação CONVERSACIONAL (loop)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("loop conversacional"): no WhatsApp (e no what-if de
+// mês em qualquer canal) o agente conduz o simulador por CONVERSA — o usuário
+// pergunta um mês-alvo ("e em 6 meses?"), o agente chama simulate_contemplation
+// (cálculo, reusa computeContemplationDial), narra os números e pode iterar. A
+// WEB mantém a agulha (present_contemplation_dial). Camada 2: cassette do loop +
+// acoplamento ao prompt/tool.
+// ============================================================================
+
+describe("FIX-106 — simulador conversacional (loop por texto)", () => {
+	it("cassette: 'e em 6 meses?' → agent chama simulate_contemplation(targetMonth=6) e narra", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 6 meses ficaria assim (estimativa):"),
+			toolCallChunk("tc-sc-1", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 6,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(6);
+		// NÃO usa a agulha (present_contemplation_dial) pra cada iteração de texto.
+		expect(toolCalls.some((t) => t.toolName === "present_contemplation_dial")).toBe(false);
+	});
+
+	it("cassette: itera — 'e em 12 meses?' recalcula com simulate_contemplation no novo mês", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 12 meses, olha como muda:"),
+			toolCallChunk("tc-sc-2", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 12,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(12);
+	});
+
+	it("estrutural: simulate_contemplation reusa computeContemplationDial (números batem com a agulha)", async () => {
+		const { computeContemplationDial } = await import("@/lib/consorcio/contemplation-dial");
+		const { consorcioTools } = await import("@/lib/agent/tools/ai-sdk");
+		const args = { creditValue: 80_000, termMonths: 80, targetMonth: 6, monthlyPayment: 950 };
+		// biome-ignore lint/suspicious/noExplicitAny: execute opaco
+		const fromTool = await (consorcioTools.simulate_contemplation as any).execute(args);
+		expect(fromTool).toEqual(computeContemplationDial(args));
+		// e NÃO é tool de apresentação (é cálculo, igual compute_scenarios).
+		expect(PRESENTATION_TOOLS.has("simulate_contemplation")).toBe(false);
+	});
+
+	it("CROSS-REF prompt: o loop manda chamar simulate_contemplation no what-if de mês; web mantém a agulha", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/simulate_contemplation/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_contemplation_dial/);
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/m[êe]s-alvo|e em \d|outro prazo/);
+	});
+
+	it("policy: simulate_contemplation disponível no reveal e closing (onde o simulador roda)", () => {
+		const reveal = allowedTools({ revealCompleted: true } as ConversationMetadata);
+		const closing = allowedTools({
+			revealCompleted: true,
+			decisionDispatched: true,
+		} as ConversationMetadata);
+		expect(reveal).toContain("simulate_contemplation");
+		expect(closing).toContain("simulate_contemplation");
+	});
+});
+
+// ============================================================================
 // CENARIO — BUG-REVEAL-LOOP — agent preso re-apresentando os cards do reveal
 // ----------------------------------------------------------------------------
 // Real (Kairo, print 2026-06-02, persona Rafael/auto): depois de ver

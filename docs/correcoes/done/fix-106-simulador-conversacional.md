@@ -1,7 +1,9 @@
 ---
 id: FIX-106
 titulo: "Simulador de contemplação conversacional (loop) — comportamento do agente"
-status: todo
+status: done
+executado_em: 2026-06-30
+commit: "feat: simulador de contemplação conversacional em loop (FIX-106)"
 bloco: bloco-jornada-entrada
 arquivos:
   - src/lib/agent/system-prompt.ts

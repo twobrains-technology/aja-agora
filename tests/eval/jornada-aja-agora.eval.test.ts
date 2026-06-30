@@ -456,6 +456,7 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		explica?: Turn;
 		reveal?: Turn;
 		simulador?: Turn;
+		simuladorWhatIf?: Turn;
 		decisao?: Turn;
 		outras?: Turn;
 		contrato?: Turn;
@@ -566,6 +567,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				turns.push(...r.turns);
 				cap.simulador = r.turns[r.turns.length - 1];
 			}
+			// FIX-106: LOOP conversacional — o usuário pergunta um mês-alvo por TEXTO
+			// e o agente recalcula via simulate_contemplation (não re-renderiza a
+			// agulha). É o caminho do WhatsApp e o what-if de mês em qualquer canal.
+			const whatIf = "e se eu quiser ser contemplado em 6 meses, como ficam as parcelas?";
+			const whatIfTurn = await consumeTurn(
+				conv.id,
+				whatIf,
+				true,
+				"passo4:simulador-whatif",
+				whatIf,
+			);
+			turns.push(whatIfTurn);
+			cap.simuladorWhatIf = whatIfTurn;
 		}
 
 		// ── passo 4 close — avança com afirmativos até o card de decisão ──
@@ -854,6 +868,20 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(p?.creditValue ?? 0, "carta real no dial").toBeGreaterThan(0);
 		expect(p?.termMonths ?? 0, "prazo real no dial").toBeGreaterThan(0);
 		expect(p?.monthlyPayment ?? 0, "parcela real no dial").toBeGreaterThan(0);
+	});
+
+	it("passo 4 — LOOP conversacional: what-if de mês recalcula via simulate_contemplation (FIX-106)", () => {
+		// O usuário perguntou "e em 6 meses?" por TEXTO — o agente deve recalcular
+		// com a tool de CÁLCULO (simulate_contemplation), não re-renderizar a agulha.
+		const t = cap.simuladorWhatIf;
+		expect(t, "turno de what-if do simulador não capturado").toBeTruthy();
+		const tools = (t?.events ?? [])
+			.filter((e) => e.type === "tool-call")
+			.map((e) => (e as { toolName: string }).toolName);
+		expect(
+			tools.includes("simulate_contemplation"),
+			`Esperado simulate_contemplation no what-if de mês. Tools: [${tools.join(", ")}]`,
+		).toBe(true);
 	});
 
 	it("passo 4 — a oferta do simulador foi EMITIDA pela máquina de estado (sem fallback)", () => {

@@ -1,7 +1,9 @@
 ---
 id: FIX-104
 titulo: "Valor do bem coletado por conversa (sem value_picker na entrada)"
-status: todo
+status: done
+executado_em: 2026-06-29
+commit: "feat: coleta o valor do bem por conversa, sem value_picker na entrada (FIX-104)"
 bloco: bloco-jornada-entrada
 arquivos:
   - src/lib/agent/qualify-state.ts

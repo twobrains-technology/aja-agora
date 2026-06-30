@@ -1,7 +1,9 @@
 ---
 id: FIX-105
 titulo: "Qualificação híbrida: binárias com botão, valor por conversa"
-status: todo
+status: done
+executado_em: 2026-06-29
+commit: "feat: torna a qualificação híbrida explícita — binárias por botão, valor por conversa (FIX-105)"
 bloco: bloco-jornada-entrada
 arquivos:
   - src/lib/agent/qualify-config.ts

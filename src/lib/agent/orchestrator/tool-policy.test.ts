@@ -91,6 +91,7 @@ const QUALIFY_EXPECTED = [
 	"present_value_picker",
 	"recommend_groups",
 	"search_groups",
+	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
 
@@ -111,6 +112,7 @@ const REVEAL_EXPECTED = [
 	"present_simulation_result",
 	"present_value_picker",
 	"present_whatsapp_optin",
+	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
 
