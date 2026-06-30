@@ -1,6 +1,5 @@
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
-import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 
 export function formatTextForWhatsApp(text: string): string {
 	return (
@@ -236,9 +235,14 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 			type: "button",
 			body: { text: body },
 			action: {
+				// FIX-108 (decisão Kairo 2026-06-28): a recomendada vem em DESTAQUE
+				// (este card) com os CTAs de ação + "Ver outras opções", que abre a
+				// comparação das alternativas (handleShowOthers). Não é mais lista
+				// plana. WhatsApp limita a 3 botões — cabe certo.
 				buttons: [
 					{ type: "reply", reply: { id: `interest_${p.id}`, title: "Tenho interesse!" } },
 					{ type: "reply", reply: { id: `simulate_${p.id}`, title: "Simular valores" } },
+					{ type: "reply", reply: { id: "show_others", title: "Ver outras opções" } },
 				],
 			},
 		},
@@ -449,38 +453,25 @@ export function resolveRange(
 	return null;
 }
 
+// FIX-109 (decisão Kairo 2026-06-28): o valor do bem agora é CONVERSA — o
+// usuário fala quanto custa o que quer ("uns 80 mil"), sem o componente de
+// faixas. O agente (bloco-jornada-entrada FIX-104) parou de emitir value_picker;
+// este mapper degrada pra um pedido conversacional caso o artifact ainda chegue
+// — anti-drop preservado (nunca retorna null), mas NÃO renderiza mais a lista.
+// TODO(bloco-jornada-entrada): confirmar a parada de emissão do value_picker.
 export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const category = payload.category as string;
-	const ranges = RANGES[category] ?? RANGES.auto;
-
-	const categoryLabel: Record<string, string> = {
-		imovel: "Imóvel",
-		auto: "Carro",
-		moto: "Moto",
-		servicos: "Serviço",
+	const category = payload.category as string | undefined;
+	const bemLabel: Record<string, string> = {
+		imovel: "imóvel",
+		auto: "carro",
+		moto: "moto",
+		servicos: "serviço",
 	};
-
-	const body = `Escolha a faixa de valor do seu *${categoryLabel[category] ?? "bem"}*:`;
+	const bem = (category && bemLabel[category]) || "bem";
 
 	return {
-		type: "interactive",
-		interactive: {
-			type: "list",
-			body: { text: body },
-			action: {
-				button: "Ver faixas de valor",
-				sections: [
-					{
-						title: `Faixas — ${categoryLabel[category] ?? "Consórcio"}`,
-						rows: ranges.map((r) => ({
-							id: r.id,
-							title: r.title.slice(0, 24),
-							description: r.desc.slice(0, 72),
-						})),
-					},
-				],
-			},
-		},
+		type: "text",
+		text: `Quanto custa o ${bem} que você tem em mente? Pode me dizer o valor aproximado, tipo "uns 80 mil". 💰`,
 	};
 }
 
@@ -1124,34 +1115,84 @@ export function documentUploadToWhatsApp(_payload: Record<string, unknown>): Wha
 	};
 }
 
-/** Simulador-agulha estático (WhatsApp não tem slider) — marcos 3/6/12/24 meses. */
-export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const creditValue = Number(payload.creditValue ?? 0);
-	const termMonths = Number(payload.termMonths ?? 0);
-	if (!creditValue || !termMonths) {
-		return {
-			type: "text",
-			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o valor que você recebe.",
-		};
+// FIX-109: o WhatsApp não tem slider — o simulador-agulha vira um LOOP
+// CONVERSACIONAL conduzido pelo agente (bloco-jornada-entrada FIX-106). O
+// usuário diz o mês-alvo, o agente recalcula via computeContemplationDial e
+// devolve o CENÁRIO. Aqui só FORMATAMOS o cenário — nunca recalculamos.
+const SIMULATOR_DISCLAIMER =
+	"_Estimativa a partir dos dados da oferta — contemplação não é garantida._";
+
+/** Visão mínima do cenário calculado (ContemplationDialResult) que o agente
+ * devolve por iteração. Lido defensivamente do payload (não recalcula). */
+interface DialScenarioView {
+	targetMonth: number;
+	mode?: "lance" | "sorteio";
+	requiredLancePct?: number;
+	requiredLanceValue?: number;
+	receivedCredit?: number;
+	paymentAfterContemplation?: number;
+}
+
+/** Extrai o cenário JÁ calculado pelo agente. Aceita tanto `payload.scenario`
+ * (objeto aninhado) quanto os campos do ContemplationDialResult no topo do
+ * payload. Retorna null quando o payload traz só os inputs do plano (abertura
+ * do simulador) — aí a apresentação é o convite ao loop.
+ * TODO(bloco-jornada-entrada): confirmar o shape final do cenário no payload. */
+function readDialScenario(payload: Record<string, unknown>): DialScenarioView | null {
+	const raw = (payload.scenario as Record<string, unknown> | undefined) ?? payload;
+	const targetMonth = Number(raw.targetMonth);
+	// "cenário calculado" exige o RESULTADO (mês-alvo + lance/modo), não só os
+	// inputs (initialTargetMonth/creditValue do ContemplationDialPayload).
+	const hasResult = raw.requiredLancePct !== undefined || raw.mode !== undefined;
+	if (!Number.isFinite(targetMonth) || !hasResult) return null;
+	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+	return {
+		targetMonth,
+		mode: raw.mode === "sorteio" || raw.mode === "lance" ? raw.mode : undefined,
+		requiredLancePct: num(raw.requiredLancePct),
+		requiredLanceValue: num(raw.requiredLanceValue),
+		receivedCredit: num(raw.receivedCredit),
+		paymentAfterContemplation: num(raw.paymentAfterContemplation),
+	};
+}
+
+/** Formata UMA iteração do simulador conversacional (o cenário recalculado pelo
+ * agente). Só apresentação — o cálculo vem de computeContemplationDial. */
+function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
+	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
+	const lines: string[] = [`*Contemplação em ${monthLabel}* 🎯`, ""];
+
+	const isSorteio = s.mode === "sorteio" || (s.requiredLancePct ?? 0) <= 0;
+	if (isSorteio) {
+		lines.push("Nesse prazo dá pra contar mais com o sorteio — lance opcional e parcela menor.");
+	} else {
+		const lanceStr =
+			s.requiredLanceValue !== undefined
+				? `*${s.requiredLancePct}%* (${brlWa(s.requiredLanceValue)})`
+				: `*${s.requiredLancePct}%*`;
+		lines.push(`Pra antecipar pra esse mês, o lance fica em torno de ${lanceStr}.`);
+		if (s.receivedCredit !== undefined) {
+			lines.push(`Você recebe ${brlWa(s.receivedCredit)} de crédito.`);
+		}
+		if (s.paymentAfterContemplation !== undefined) {
+			lines.push(
+				`Depois da contemplação, a parcela fica em ~${brlWa(s.paymentAfterContemplation)}/mês.`,
+			);
+		}
 	}
-	const marks = contemplationDialMarks({
-		creditValue,
-		termMonths,
-		monthlyPayment: Number(payload.monthlyPayment ?? 0),
-		historicalWinningBidPct: payload.historicalWinningBidPct as number | undefined,
-		// FIX-C1: calibra no par real da oferta — WhatsApp mostra os mesmos
-		// números do card, igual ao dial web.
-		referenceMonth: payload.referenceMonth as number | undefined,
-		maxEmbutidoPct: payload.maxEmbutidoPct as number | undefined,
-	});
-	const lines = marks.map((m) => {
-		if (m.mode === "sorteio")
-			return `*${m.targetMonth}m:* mais pelo sorteio — lance opcional, parcela menor`;
-		return `*${m.targetMonth}m:* lance ~${m.requiredLancePct}% · recebe ${brlWa(m.receivedCredit)}`;
-	});
+	lines.push("", SIMULATOR_DISCLAIMER);
+	return { type: "text", text: lines.join("\n") };
+}
+
+export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	// Iteração do loop: o agente já calculou o cenário do mês-alvo → formata.
+	const scenario = readDialScenario(payload);
+	if (scenario) return simulatorScenarioToWhatsApp(scenario);
+	// Abertura do simulador (só inputs do plano): sem slider, convidamos o loop —
+	// o usuário diz o mês-alvo e o agente itera (recalcula a cada resposta).
 	return {
 		type: "text",
-		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa a partir dos dados da oferta — contemplação não é garantida._`,
+		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe. 🎯",
 	};
 }
 

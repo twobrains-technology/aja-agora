@@ -668,7 +668,10 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 		// LLM ainda pode parafrasear pra 'confira abaixo', 'olhe abaixo', 'olha
 		// ai'. Regra dura tem que cobrir explicito.
 		const normalizar = (s: string) =>
-			s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+			s
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
 		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
 
 		const variantesExtras = ["confira abaixo", "olhe abaixo", "olha ai"];
@@ -3228,13 +3231,17 @@ describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-
 			FINISH_TOOL_CALLS,
 		]);
 		const detailsId =
-			(toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
-				| { groupId?: string }
-				| undefined)?.groupId ?? "";
+			(
+				toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
 		const simulateId =
-			(toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
-				| { groupId?: string }
-				| undefined)?.groupId ?? "";
+			(
+				toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
 
 		// A assinatura do bug: ids fabricados (slug categoria-valor[-nome]) em AMBAS as
 		// tools, fora do conjunto real. O detector server-side TEM que pegar os dois —
@@ -3270,18 +3277,24 @@ describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-
 			FINISH_TOOL_CALLS,
 		]);
 		const presentedIds = (
-			(toolCalls.find((tc) => tc.toolName === "present_comparison_table")?.input as
-				| { groups?: Array<{ id?: string }> }
-				| undefined)?.groups ?? []
+			(
+				toolCalls.find((tc) => tc.toolName === "present_comparison_table")?.input as
+					| { groups?: Array<{ id?: string }> }
+					| undefined
+			)?.groups ?? []
 		).map((g) => g.id ?? "");
 		const detailsId =
-			(toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
-				| { groupId?: string }
-				| undefined)?.groupId ?? "";
+			(
+				toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
 		const simulateId =
-			(toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
-				| { groupId?: string }
-				| undefined)?.groupId ?? "";
+			(
+				toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
 
 		// Usou o id LITERAL opaco de um grupo que ACABOU de apresentar — nas DUAS tools.
 		expect(REAL_QUOTA_ID.test(detailsId)).toBe(true);
@@ -5853,7 +5866,8 @@ describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno
 	}
 
 	// Detector do warning exato observado em prod.
-	const INJECTION_WARNING = /System messages in the prompt or messages fields can be a security risk|prompt injection/i;
+	const INJECTION_WARNING =
+		/System messages in the prompt or messages fields can be a security risk|prompt injection/i;
 
 	async function warnsFrom(run: () => ReturnType<typeof streamText>): Promise<string[]> {
 		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -5875,7 +5889,7 @@ describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno
 				model: mockModel(),
 				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
 				messages: [
-					{ role: "system", content: "Nome do usuario: \"Kairo\"" },
+					{ role: "system", content: 'Nome do usuario: "Kairo"' },
 					{ role: "user", content: "oi" },
 					// biome-ignore lint/suspicious/noExplicitAny: idem
 				] as any,
@@ -5891,7 +5905,7 @@ describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno
 		const warns = await warnsFrom(() =>
 			streamText({
 				model: mockModel(),
-				system: "Nome do usuario: \"Kairo\"",
+				system: 'Nome do usuario: "Kairo"',
 				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
 				messages: [{ role: "user", content: "oi" }] as any,
 			}),
@@ -6030,21 +6044,15 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 	});
 
 	it("extractDiscoveryCount conta o shape real {groups,total} de search_groups (não array)", async () => {
-		const { extractDiscoveryCount } = await import(
-			"@/lib/agent/orchestrator/discovery-count"
-		);
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
 		// ANTES do fix: Array.isArray({groups,total}) === false → null. Quebra aqui.
 		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(1))).toBe(1);
 		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(3))).toBe(3);
 	});
 
 	it("cadeia completa: opção única via search_groups suprime o recommendation_card", async () => {
-		const { extractDiscoveryCount } = await import(
-			"@/lib/agent/orchestrator/discovery-count"
-		);
-		const { evaluateArtifactGuards } = await import(
-			"@/lib/agent/orchestrator/artifact-guard"
-		);
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		// 1) o runner conta a descoberta do tool-result REAL de search_groups…
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(1));
 		expect(discoveryCount).toBe(1);
@@ -6062,12 +6070,8 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 	});
 
 	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
-		const { extractDiscoveryCount } = await import(
-			"@/lib/agent/orchestrator/discovery-count"
-		);
-		const { evaluateArtifactGuards } = await import(
-			"@/lib/agent/orchestrator/artifact-guard"
-		);
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
 		expect(discoveryCount).toBe(3);
 		const verdict = evaluateArtifactGuards({
@@ -6147,5 +6151,165 @@ describe("REV-A-RESERVAR-LANDMINE — directive não emite a frase banida 'reser
 
 	it("a frase segue PROIBIDA no prompt estável (sincronia)", () => {
 		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/reservar essa op[çc][ãa]o/);
+	});
+});
+
+// ============================================================================
+// FIX-108 — escolha do grupo no WhatsApp = card da recomendada + "Ver outras"
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 (spec jornada-entrada-simulador, decisão #5): no
+// WhatsApp a escolha do grupo NÃO é lista plana. A recomendada vem em DESTAQUE
+// (card com os CTAs de ação) + botão "Ver outras opções" que abre as
+// alternativas. O reveal do agente emite present_recommendation_card; o canal
+// WhatsApp o renderiza como esse card destacado.
+//
+// Defesa estrutural complementar:
+//   - src/lib/whatsapp/formatter.card-recomendada.test.ts (botões do card)
+//   - src/lib/whatsapp/interactive-handlers.show-others.test.ts (clique → agente)
+// ============================================================================
+
+describe("FIX-108-CARD-RECOMENDADA-VER-OUTRAS — recomendada em destaque + 'Ver outras opções'", () => {
+	it("cassette: o reveal do agente emite present_recommendation_card", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada pra você:"),
+			toolCallChunk("tc-rec", "recommend_groups", { category: "auto" }),
+			toolCallChunk("tc-card", "present_recommendation_card", {
+				id: "porto-80k",
+				administradora: "Porto Seguro",
+				category: "auto",
+				creditValue: 80000,
+				monthlyPayment: 1200,
+				termMonths: 80,
+				contemplationRate: 2,
+				score: 0.92,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls.some((tc) => tc.toolName === "present_recommendation_card")).toBe(true);
+	});
+
+	it("no WhatsApp a recomendada vira card com 'Ver outras opções' + CTAs preservados", () => {
+		const wa = artifactToWhatsApp("recommendation_card", {
+			id: "porto-80k",
+			administradora: "Porto Seguro",
+			category: "auto",
+			creditValue: 80000,
+			monthlyPayment: 1200,
+			termMonths: 80,
+			contemplationRate: 2,
+			score: 0.92,
+		});
+		const buttons = wa?.interactive?.action?.buttons ?? [];
+		const ids = buttons.map((b) => b.reply.id);
+		const titles = buttons.map((b) => b.reply.title ?? "");
+		expect(ids).toContain("show_others");
+		expect(titles.some((t) => /ver outras op/i.test(t))).toBe(true);
+		// CTAs de ação preservados (regra do bloco).
+		expect(ids).toContain("interest_porto-80k");
+		expect(ids).toContain("simulate_porto-80k");
+		expect(buttons.length).toBeLessThanOrEqual(3);
+	});
+
+	it("'Ver outras opções' tem alvo: a comparação segue mapeada (anti-drop)", () => {
+		const wa = artifactToWhatsApp("comparison_table", {
+			groups: [
+				{
+					id: "g1",
+					administradora: "Porto",
+					creditValue: 80000,
+					monthlyPayment: 1200,
+					termMonths: 80,
+				},
+				{
+					id: "g2",
+					administradora: "Itaú",
+					creditValue: 82000,
+					monthlyPayment: 1250,
+					termMonths: 84,
+				},
+			],
+		});
+		expect(wa).not.toBeNull();
+		expect(wa?.interactive?.action?.sections?.[0]?.rows?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("acoplamento: o handler do clique conduz às alternativas via agente", () => {
+		const src = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(src).toMatch(/replyId === "show_others"/);
+		expect(src).toMatch(/handleShowOthers/);
+		expect(src).toMatch(/Quero ver outras op[çc][õo]es/);
+	});
+});
+
+// ============================================================================
+// FIX-109 — simulador conversacional + valor por conversa no WhatsApp
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 (spec jornada-entrada-simulador, decisões #2 e #6):
+//  (a) o valor do bem virou CONVERSA — o WhatsApp não manda mais a lista de
+//      faixas (value_picker degrada pra pedido conversacional);
+//  (b) o simulador é um LOOP CONVERSACIONAL: a abertura convida o mês-alvo;
+//      cada iteração apresenta o cenário que o agente calculou (via
+//      computeContemplationDial — bloco-jornada-entrada). O canal SÓ formata,
+//      nunca recalcula.
+//
+// Defesa estrutural complementar:
+//   - src/lib/whatsapp/formatter.simulador.test.ts (formatter)
+//   - src/lib/whatsapp/formatter.moto.test.ts (value_picker conversacional)
+// ============================================================================
+
+describe("FIX-109-SIMULADOR-CONVERSACIONAL — valor por conversa + dial em loop", () => {
+	it("value_picker NÃO vira mais lista de faixas (vira pedido conversacional)", () => {
+		const wa = artifactToWhatsApp("value_picker", { category: "auto", fields: [] });
+		expect(wa).not.toBeNull(); // anti-drop preservado
+		expect(wa?.type).toBe("text");
+		expect(wa?.interactive?.action?.sections).toBeUndefined();
+	});
+
+	it("abertura do simulador (só inputs): convida o loop, sem marcos 3/6/12/24", () => {
+		const wa = artifactToWhatsApp("contemplation_dial", {
+			category: "auto",
+			creditValue: 80000,
+			termMonths: 80,
+			monthlyPayment: 1200,
+			initialTargetMonth: 6,
+		});
+		expect(wa?.type).toBe("text");
+		expect(wa?.text ?? "").not.toMatch(/\b3m:|\b6m:|\b12m:|\b24m:/);
+		expect(wa?.text ?? "").toMatch(/quantos meses|quando.*contemplad/i);
+	});
+
+	it("iteração: o canal formata o cenário recalculado pelo agente (sem recalcular)", () => {
+		// O agente (bloco-jornada-entrada) calcula via computeContemplationDial e
+		// devolve o cenário do mês-alvo no payload; o canal só apresenta.
+		const wa = artifactToWhatsApp("contemplation_dial", {
+			administradora: "Porto Seguro",
+			creditValue: 80000,
+			termMonths: 80,
+			scenario: {
+				targetMonth: 6,
+				mode: "lance",
+				requiredLancePct: 45,
+				requiredLanceValue: 36000,
+				receivedCredit: 64000,
+				paymentAfterContemplation: 1200,
+			},
+		});
+		const t = wa?.text ?? "";
+		expect(t).toMatch(/6 meses/);
+		expect(t).toMatch(/45%/);
+		expect(t).toMatch(/64\.000/);
+		expect(t).toMatch(/contemplação não é garantida/i);
+	});
+
+	it("acoplamento: o canal NÃO recalcula o dial (sem contemplationDialMarks no formatter)", () => {
+		const src = readSource("src/lib/whatsapp/formatter.ts");
+		expect(src).not.toMatch(/contemplationDialMarks/);
+	});
+
+	it("acoplamento: o adapter documenta a parada de emissão do value_picker (FIX-109)", () => {
+		const src = readSource("src/lib/whatsapp/adapter.ts");
+		expect(src).toMatch(/value_picker/);
+		expect(src).toMatch(/FIX-109/);
 	});
 });

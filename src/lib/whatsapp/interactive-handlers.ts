@@ -114,6 +114,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("simulate_")) return handleSimulate(ctx);
 	if (replyId.startsWith("whatif_")) return handleWhatIf(ctx);
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
+	if (replyId === "show_others") return handleShowOthers(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
 	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
 	if (replyId === "contract_cancel") return handleContractCancel(ctx);
@@ -541,6 +542,21 @@ async function handleDetail(ctx: Ctx): Promise<boolean> {
 	const groupId = replyId.replace("detail_", "");
 	await recordUserClick(ctx);
 	await runAgentDirective(from, conversationId, buildDetailDirective(groupId));
+	return true;
+}
+
+// FIX-108: "Ver outras opções" do card da recomendada. A recomendada é o
+// destaque; este botão abre as alternativas (a comparação). Pede ao agente as
+// outras opções pelo texto canônico — o MESMO caminho provado de offer_reject/
+// contract_cancel (o agente re-apresenta o comparison_table com os grupos REAIS
+// que já estão no contexto da conversa, sem fabricar ids).
+// TODO(bloco-jornada-entrada): o reveal deve apresentar a recomendada PRIMEIRO e
+// segurar o comparison_table até este clique (hoje o reveal ainda emite a
+// comparação no mesmo turno — quando o contrato do reveal mudar, esta passa a
+// ser a ÚNICA via de abrir as alternativas).
+async function handleShowOthers(ctx: Ctx): Promise<boolean> {
+	await recordUserClick(ctx);
+	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
 	return true;
 }
 
