@@ -7,3 +7,6 @@ if (!databaseUrl) {
 }
 
 export const db = drizzle(databaseUrl, { schema });
+
+// Re-export para compatibilidade com globalDb
+export { db as globalDb };

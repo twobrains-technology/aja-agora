@@ -44,6 +44,10 @@ export interface StartContractInput {
 	/** Administradora recomendada na Descoberta — o fechamento prefere a MESMA
 	 * marca que o usuário decidiu (BUG-ADMIN-TROCADA-NO-FECHAMENTO). */
 	administradoraPreferida?: string | null;
+	/** Prazo (meses) da oferta que o usuário viu na Descoberta. Desempata o
+	 * matching dentro da admin preferida pra o fechamento não trocar por outro
+	 * prazo (matching preparatório 2026-06-28). Vem de meta.recommendedOffer. */
+	prazoPreferido?: number | null;
 }
 
 export interface StartContractResult {
@@ -92,7 +96,12 @@ export async function startContract(
 		lanceEmbutido: input.lanceEmbutido ?? "nenhum",
 	});
 
-	const chosen = pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida);
+	const chosen = pickClosestOffer(
+		sim.offers,
+		input.valor,
+		input.administradoraPreferida,
+		input.prazoPreferido,
+	);
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
 	const snapshot = {
@@ -146,8 +155,13 @@ export async function confirmOffer(
 			valor: Number(row.creditValue ?? 0) || 0,
 			objetivo: "contemplacao_rapida",
 		});
-		// Re-sim por TTL mantém a MESMA marca que o usuário confirmou.
-		const fresh = pickClosestOffer(sim.offers, Number(row.creditValue ?? 0), row.administradora);
+		// Re-sim por TTL mantém a MESMA marca E o MESMO prazo que o usuário confirmou.
+		const fresh = pickClosestOffer(
+			sim.offers,
+			Number(row.creditValue ?? 0),
+			row.administradora,
+			Number(row.termMonths) || null,
+		);
 		ofertaId = fresh?.ofertaId ?? ofertaId;
 		await updateBeviProposal(row.id, {
 			simulationSessionId: sim.simulationSessionId,

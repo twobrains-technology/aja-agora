@@ -62,10 +62,8 @@ export function Institutional() {
 							conquista.
 						</p>
 						<p>
-							A gente viu de perto que nem todo mundo entende as regras de consórcio direito — e
-							resolveu tomar uma atitude. Viemos de grandes empresas, onde aprendemos como esse
-							mercado funciona por dentro, e decidimos empreender pra colocar esse conhecimento do
-							seu lado.
+							A gente viu que nem todo mundo entende as regras de consórcio direito. E resolvemos
+							tomar uma atitude.
 						</p>
 					</ScrollReveal>
 				</div>

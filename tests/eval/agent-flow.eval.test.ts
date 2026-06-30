@@ -326,6 +326,9 @@ async function handleGateEvent(args: {
 			// já materializa como artifact no turn do usuário.
 			return null;
 	}
+
+	// gate não tratado explicitamente → sem turno simulado
+	return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -574,16 +577,20 @@ Você é leiga: se ele falar de "lance", "contemplação", "carta", aceite natur
 		).toBe(true);
 	});
 
-	it("[mig 0017] present_value_picker foi chamado (faixa de crédito)", () => {
+	it("[FIX-104] o valor do bem é coletado pelo gate credit (conversa) — agent NÃO emite present_value_picker", () => {
 		const tools = allToolCalls(result?.turns ?? []);
-		// Aceita present_value_picker OU o gate `credit` (Web usa gate; alguns flows usam picker)
+		// FIX-104: o valor vira CONVERSA. O gate `credit` continua existindo (coleta
+		// o valor), mas o AGENTE não emite mais present_value_picker na entrada.
 		const hasGate = (result?.turns ?? []).some((t) =>
 			t.events.some((e) => e.type === "gate" && e.gate === "credit"),
 		);
+		expect(hasGate, `Esperado o gate 'credit' na jornada. Tool calls: [${tools.join(", ")}].`).toBe(
+			true,
+		);
 		expect(
-			tools.includes("present_value_picker") || hasGate,
-			`Esperado present_value_picker ou gate 'credit'. Tool calls: [${tools.join(", ")}].`,
-		).toBe(true);
+			tools.includes("present_value_picker"),
+			"FIX-104: o agente NÃO deve emitir present_value_picker na entrada (valor é conversa).",
+		).toBe(false);
 	});
 
 	it("[mig 0018] quando o opt-in de WhatsApp aparece, vem com narrativa estratégica antes", () => {

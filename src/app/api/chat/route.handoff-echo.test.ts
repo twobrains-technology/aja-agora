@@ -4,7 +4,7 @@
 // do eco nunca casa com o id otimista do useChat → duplica, 100% reproduzível.
 // Contrato: o eco preserva o id ORIGINAL da mensagem do cliente.
 import { eq } from "drizzle-orm";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
@@ -35,17 +35,14 @@ vi.mock("@/lib/conversation/messages", async (importOriginal) => ({
 
 describe("FIX-31 — branch handed_off ecoa user message com id original", () => {
 	function makeReq(body: unknown): NextRequest {
-		const req = new Request("http://localhost/api/chat", {
+		const req = new NextRequest("http://localhost/api/chat", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				"x-forwarded-for": "127.0.0.1",
 			},
 			body: JSON.stringify(body),
-		}) as unknown as NextRequest & {
-			cookies: { get: (name: string) => { value: string } | undefined };
-		};
-		req.cookies = { get: () => undefined };
+		});
 		return req;
 	}
 

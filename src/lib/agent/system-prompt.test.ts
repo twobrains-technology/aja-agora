@@ -44,7 +44,7 @@ describe("system-prompt — overclaim de adequação financeira (bug #08)", () =
 
 describe("Helena 1ª fala calorosa (bug #04)", () => {
 	const helenaFirstTurn = SHARED_SPECIALIST_EXAMPLES.find((ex) =>
-		ex.context?.includes("Primeiro turno apos transicao"),
+		ex.context?.includes("Primeiro turno após transição"),
 	);
 
 	it("existe example shared pro primeiro turno do specialist", () => {
@@ -219,7 +219,7 @@ describe("Plano consolidado v2 — Bv2-06/-07/-08 anti-regressão prompt", () =>
 	it("Bv2-06: SPECIALIST_BASE_PROMPT VETA 'taxa dentro da média do mercado'", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/taxa\s+dentro\s+da\s+m[ée]dia/i);
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
-			/(VETADO|PROIBIDO|NUNCA|nao\s+escreva).*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia.*(VETADO|PROIBIDO|NUNCA|sem fonte)/is,
+			/(VETADO|PROIBIDO|NUNCA|nao\s+escreva)[\s\S]*taxa\s+dentro\s+da\s+m[ée]dia|taxa\s+dentro\s+da\s+m[ée]dia[\s\S]*(VETADO|PROIBIDO|NUNCA|sem fonte)/i,
 		);
 	});
 });

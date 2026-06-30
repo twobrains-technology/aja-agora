@@ -10,7 +10,7 @@
 import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
-// @ts-expect-error — .mjs sem types; importamos as funções puras do guard.
+// .mjs sem types; importamos as funções puras do guard.
 import { detect, selectPendingTags } from "../../scripts/migrate-guard.mjs";
 
 const JOURNAL = [

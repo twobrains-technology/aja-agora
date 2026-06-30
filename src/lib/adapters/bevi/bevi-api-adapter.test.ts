@@ -171,6 +171,34 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 		expect(lastBody().temEmbutido).toBe(false);
 	});
 
+	// FIX-79 REVERT (2026-06-28): o FIX-79 (commit e2436990) adicionou `productId`
+	// no body do `simulate` tentando resolver o 400 "Proposta não pertence ao Bevi
+	// Consórcio". O dossiê 2026-06-26 + a re-validação ao vivo provaram que o erro é
+	// EXTERNO (Bevi/AGX: productId desvinculado do Consórcio na conta do token) e
+	// independe do productId no simulate. A doc oficial (collection + spec §4.3) NÃO
+	// tem productId no simulate — mandá-lo só nos desalinha do contrato. Revertido:
+	// o vínculo correto é do insert_proposal + da conta do token, não deste passo.
+	it("simulate: NÃO envia productId no body (revert FIX-79 — alinha à doc oficial)", async () => {
+		mockFetchSequence(okSimulation);
+		await new BeviApiAdapter(CONFIG).simulate({
+			proposalId: "P1",
+			segmento: "AUTOS",
+			tipoSimulacao: "valor_total",
+			valor: 50000,
+			objetivo: "contemplacao_rapida",
+		});
+		const body = lastBody();
+		expect(body).not.toHaveProperty("productId");
+		// contrato oficial (spec §4.3) — os campos que DEVEM continuar presentes:
+		expect(body.propostaId).toBe("P1");
+		expect(body.segmento).toBe("AUTOS");
+		expect(body.tipoSimulacao).toBe("valor_total");
+		expect(body.objetivo).toBe("contemplacao_rapida");
+		expect(body.lanceEmbutido).toBe("nenhum");
+		expect(body).toHaveProperty("temEmbutido");
+		expect(body).toHaveProperty("temLanceParaOfertar");
+	});
+
 	it("simulate: 404 transitório → retry → sucesso (spec §4.3)", async () => {
 		const transient404 = {
 			status: "NOT_FOUND",

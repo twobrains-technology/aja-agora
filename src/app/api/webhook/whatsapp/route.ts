@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
+import { updateLastInboundAt } from "@/app/actions/whatsapp";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
@@ -83,6 +84,12 @@ export async function POST(req: NextRequest) {
 			// Mark as read so the customer's blue checks update; typing indicator
 			// is fired later in the processor only on the AI path.
 			markAsRead(message.id).catch(() => {});
+
+			// FIX-86: Atualiza lastInboundAt ao receber mensagem do cliente.
+			// Isso abre/reabre a janela de 24h para texto livre.
+			updateLastInboundAt(from, message.id).catch((err) =>
+				console.error("[whatsapp] Update lastInboundAt failed:", err),
+			);
 
 			switch (msgType) {
 				case "text": {

@@ -13,7 +13,9 @@ import { BASE_SYSTEM_INSTRUCTION } from "./turn-analyzer";
 // Card: docs/correcoes/inbox/2026-06-21-analyzer-infere-prazo-de-orcamento.md
 describe("BUG-ANALYZER-PRAZO-DE-ORCAMENTO — prompt veta confundir orçamento mensal com prazo", () => {
 	it("tem regra explícita: orçamento/parcela mensal NÃO é prazo", () => {
-		expect(BASE_SYSTEM_INSTRUCTION).toMatch(/orcamento.{0,40}n[ãa]o\s+(e|é|define|vira).{0,20}prazo/i);
+		expect(BASE_SYSTEM_INSTRUCTION).toMatch(
+			/or[çc]amento.{0,40}n[ãa]o\s+(e|é|define|vira).{0,20}prazo/i,
+		);
 	});
 
 	it("exige menção temporal explícita para preencher prazoMeses", () => {

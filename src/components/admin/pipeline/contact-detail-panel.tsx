@@ -22,7 +22,7 @@ const STAGE_LABELS: Record<string, string> = {
 	novo: "Novo",
 	engajado: "Engajado",
 	qualificado: "Qualificado",
-	em_negociacao: "Em Negociacao",
+	em_negociacao: "Em Negociação",
 	proposta_enviada: "Proposta Enviada",
 	na_administradora: "Na Administradora",
 	aguardando_pagamento: "Aguardando Pagamento",

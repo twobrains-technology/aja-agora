@@ -35,7 +35,7 @@ const MSG_USER = `quero um apartamento — ${TAG}`;
 const MSG_ASSISTANT = `legal, vamos planejar isso — ${TAG}`;
 
 // reduced-motion → pula o morph do teatro (determinístico, sem WAAPI).
-test.use({ reducedMotion: "reduce" });
+test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
 	const db = new Client({ connectionString: DATABASE_URL });

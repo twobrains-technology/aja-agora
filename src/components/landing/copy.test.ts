@@ -61,7 +61,8 @@ const REQUIRED_PRESENT = [
 	/melhor plano/i, // trust — "Nosso compromisso é achar o melhor plano para você"
 	/comiss[ãa]o/i, // trust/institutional — "não o que paga mais comissão"
 	/tomar uma atitude/i, // institutional — história anônima
-	/empreender/i, // institutional — "decidimos empreender"
+	// "empreender" removido em 2026-06-26: copy institucional encurtada a pedido
+	// do stakeholder (Kairo) para a versão "A gente viu... E resolvemos tomar uma atitude".
 ] as const;
 
 describe("Landing copy — sem overclaim de IA, foco em benefícios", () => {

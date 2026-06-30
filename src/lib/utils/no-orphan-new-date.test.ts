@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 
 const WATCHED_FILES = [
-	"src/lib/memory/letta-adapter.ts",
+	"src/lib/memory/postgres-adapter.ts",
 	"src/lib/memory/extractor.ts",
 	"src/lib/memory/inspect.ts",
 	"src/lib/agent/orchestrator/index.ts",

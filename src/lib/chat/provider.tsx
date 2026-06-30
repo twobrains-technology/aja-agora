@@ -15,6 +15,7 @@ import {
 import { generateId } from "@/lib/utils/id";
 import type { ChatAction } from "./actions";
 import { appendBusMessage } from "./bus-merge";
+import { isStreamStuck } from "./stream-watchdog";
 import type { AjaUIMessage } from "./ui-message";
 
 /** @deprecated Use `ChatAction` from `./actions`. Kept as alias for back-compat. */
@@ -108,22 +109,61 @@ export function ChatProvider({
 		// conversa). Em fluxos sem hidratação (chat público), permanece undefined
 		// e o hook começa com [].
 		messages: initialMessages,
+		// FIX-110: erro do stream nunca pode ser silencioso. O useChat já põe o
+		// status em "error" e popula chat.error (a UI mostra o retry) — aqui só
+		// registramos pra observabilidade.
+		onError: (err) => {
+			console.error("[chat] erro no stream:", err);
+		},
 	});
 
 	const setMessagesRef = useRef(chat.setMessages);
 	setMessagesRef.current = chat.setMessages;
 
+	// FIX-110 — watchdog de stream preso. Se o stream MORRER sem emitir fim nem
+	// erro (conexão/proxy caiu no meio), o useChat ficaria preso em
+	// "submitted"/"streaming" pra sempre e o ChatInput (disabled durante o
+	// streaming) nunca liberaria. Marcamos a última atividade (troca de status ou
+	// chegada de mensagem) e, passado o teto sem nada, abortamos o stream e
+	// expomos um erro recuperável — a UI mostra o retry e o input volta.
+	const [watchdogError, setWatchdogError] = useState<Error | undefined>(undefined);
+	const chatRef = useRef(chat);
+	chatRef.current = chat;
+	const lastActivityRef = useRef<number>(Date.now());
+	// biome-ignore lint/correctness/useExhaustiveDependencies: chat.messages é TRIGGER de atividade (cada delta reseta o relógio do watchdog), não dependência do corpo
+	useEffect(() => {
+		lastActivityRef.current = Date.now();
+		// Turno novo começou → limpa o erro do watchdog do turno anterior.
+		if (chat.status === "submitted") setWatchdogError(undefined);
+	}, [chat.messages, chat.status]);
+	useEffect(() => {
+		if (chat.status !== "submitted" && chat.status !== "streaming") return;
+		const interval = setInterval(() => {
+			const c = chatRef.current;
+			if (
+				isStreamStuck({
+					status: c.status,
+					msSinceLastActivity: Date.now() - lastActivityRef.current,
+				})
+			) {
+				c.stop?.();
+				setWatchdogError(new Error("A resposta demorou demais. Pode tentar de novo?"));
+			}
+		}, 5_000);
+		return () => clearInterval(interval);
+	}, [chat.status]);
+
 	// Quando o pai (ex: simulador) troca conversationId via prop, limpa o estado
 	// herdado da sessão anterior (mensagens + handoff). Sem isso, as mensagens
 	// da sessão antiga vazam pra UI da nova até o useChat reconciliar. Se o pai
 	// já entregou `initialMessages` pra nova conversa, hidrata em vez de zerar.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: dispara só ao trocar pai
 	useEffect(() => {
 		if (!initialConversationId) return;
 		if (initialConversationId === conversationId) return;
 		setMessagesRef.current(seedMessagesRef.current ?? []);
 		setConversationId(initialConversationId);
 		setHandoff({ status: "active", agentName: null });
-		// biome-ignore lint/correctness/useExhaustiveDependencies: dispara só ao trocar pai
 	}, [initialConversationId]);
 
 	const refreshHandoff = useCallback(async () => {
@@ -194,6 +234,7 @@ export function ChatProvider({
 	const reset = useCallback(() => {
 		chat.setMessages([]);
 		chat.clearError?.();
+		setWatchdogError(undefined);
 		setConversationId(generateId());
 		setHandoff({ status: "active", agentName: null });
 	}, [chat]);
@@ -218,7 +259,7 @@ export function ChatProvider({
 			conversationId,
 			messages: chat.messages,
 			status: chat.status,
-			error: chat.error,
+			error: chat.error ?? watchdogError,
 			handoff,
 			sendUserMessage,
 			sendAction,
@@ -232,6 +273,7 @@ export function ChatProvider({
 			chat.messages,
 			chat.status,
 			chat.error,
+			watchdogError,
 			handoff,
 			sendUserMessage,
 			sendAction,

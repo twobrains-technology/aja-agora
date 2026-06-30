@@ -13,7 +13,7 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 		expect(real.grupo).toBe(offers[0].grupo);
 		expect(real.category).toBe("auto");
 		expect(real.creditValue).toBe(offers[0].valorCarta);
-		expect(real.monthlyPayment).toBe(Math.round(offers[0].parcela * 100) / 100);
+		expect(real.monthlyPayment).toBe(Math.round(Number(offers[0].parcela) * 100) / 100);
 	});
 
 	it("GAPs §11 ficam undefined — nunca chuta prazo/taxa", () => {
@@ -90,6 +90,48 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 			expect(chosen?.administradora).toBe("ANCORA");
 		});
 	});
+
+	// Matching preparatório (2026-06-28) — fidelidade B→A: dentro da admin preferida,
+	// desempata pela proximidade de PRAZO além do valor, pra o fechamento não trocar
+	// a oferta por outra de prazo bem diferente do que o usuário viu na Descoberta.
+	// preferTermMonths vem de meta.recommendedOffer.termMonths (contract-input.ts).
+	// ⚠️ GATED: só validável E2E quando a Bevi destravar o productId (o A não simula
+	// hoje). Aqui garantimos a lógica pura, testável com fixtures.
+	describe("desempate por prazo (matching preparatório)", () => {
+		const mkT = (administradora: string, valorCarta: number, prazo: number): PartnerOffer =>
+			({
+				ofertaId: `of-${administradora}-${valorCarta}-${prazo}`,
+				administradora,
+				tipoOferta: "FREE_BID",
+				grupo: "500",
+				valorCarta,
+				parcela: valorCarta / prazo,
+				taxaContemplacao: 0.5,
+				quotaId: `q-${valorCarta}-${prazo}`,
+				prazo,
+			}) as PartnerOffer;
+
+		it("dentro da admin preferida, escolhe o prazo mais próximo do que o usuário viu", () => {
+			// mesmo valor (empate por crédito) → o prazo decide; usuário viu ~80 meses
+			const list = [mkT("RODOBENS", 60_000, 120), mkT("RODOBENS", 60_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS", 80);
+			expect(chosen?.prazo).toBe(84);
+		});
+
+		it("sem preferTermMonths → desempate só por valor (retrocompatível)", () => {
+			const list = [mkT("RODOBENS", 58_000, 120), mkT("RODOBENS", 60_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS");
+			expect(chosen?.valorCarta).toBe(60_000);
+		});
+
+		it("oferta sem prazo não quebra — decide por valor", () => {
+			const noTerm = mkT("RODOBENS", 60_000, 0);
+			delete (noTerm as { prazo?: number }).prazo;
+			const list = [noTerm, mkT("RODOBENS", 70_000, 84)];
+			const chosen = pickClosestOffer(list, 60_000, "RODOBENS", 80);
+			expect(chosen?.valorCarta).toBe(60_000);
+		});
+	});
 });
 
 // BUG-PARCELA-STRING (dev real 2026-06-12): a Bevi mudou a API do parceiro —
@@ -134,6 +176,26 @@ describe("partnerOfferToRealOffer — parcela string pt-BR (API nova 2026-06)", 
 			"AUTOS",
 		);
 		expect(ilegivel.monthlyPayment).toBeUndefined();
+	});
+
+	// BUG-PARCELA-VAZIA (auditoria adversarial Opus 2026-06-28): a pegadinha
+	// `Number("") === 0` (e `Number("   ") === 0`) fazia a string VAZIA/whitespace
+	// — uma forma de "ausente/ilegível" — virar parcela 0, NÃO undefined. Como
+	// `monthlyPayment: parseMoney(offer.parcela)` não tem guarda `> 0` a jusante,
+	// uma `parcela: ""` da API vazava "R$ 0,00" no card "Essa é a sua carta real"
+	// (closing-presentation) e no resumo WhatsApp — número FALSO sem fonte, que o
+	// próprio contrato da função ("ausente/ilegível → undefined, NUNCA") proíbe (D11/FIX-8).
+	it("parcela '' (vazia) ou whitespace → undefined, NUNCA 0 (Number('')===0)", () => {
+		const vazia = partnerOfferToRealOffer(
+			{ ...base, parcela: "" as unknown as number },
+			"AUTOS",
+		);
+		expect(vazia.monthlyPayment).toBeUndefined();
+		const branca = partnerOfferToRealOffer(
+			{ ...base, parcela: "   " as unknown as number },
+			"AUTOS",
+		);
+		expect(branca.monthlyPayment).toBeUndefined();
 	});
 });
 

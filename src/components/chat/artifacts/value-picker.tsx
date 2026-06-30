@@ -2,33 +2,34 @@
 
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
-import { identifyLinkRoles, recalcLinkedValues } from "@/lib/consorcio/value-picker-link";
 
 export type { ValuePickerField, ValuePickerPayload };
 
-function formatValue(value: number, format?: "currency" | "months"): string {
-	if (format === "currency") {
-		if (value >= 1_000_000) {
-			const m = value / 1_000_000;
-			return m % 1 === 0 ? `R$ ${m.toFixed(0)} mi` : `R$ ${m.toFixed(1)} mi`;
-		}
-		// FIX-16: abaixo de 10 mil o valor exato importa (parcela derivada) —
-		// "R$ 1.600" arredondado pra "R$ 2 mil" vira mentira visual.
-		if (value >= 10_000) {
-			const k = value / 1_000;
-			return k % 1 === 0 ? `R$ ${k.toFixed(0)} mil` : `R$ ${k.toFixed(1).replace(".", ",")} mil`;
-		}
-		return `R$ ${value.toLocaleString("pt-BR")}`;
-	}
-	if (format === "months") return `${value} meses`;
-	return `R$ ${value.toLocaleString("pt-BR")}`;
+// FIX-107 (revisão da jornada de entrada, 2026-06-28): a web trocou o value_picker
+// COMPLEXO (3 sliders interligados valor/parcela/prazo — FIX-16, com recálculo via
+// engine value-picker-link) por uma AGULHA SIMPLES só do VALOR DO BEM, de R$ 1.000
+// em R$ 1.000. Decisão do Kairo: o valor é coletado por conversa; a parcela vem das
+// ofertas REAIS da Bevi (não é mais estimada/derivada na entrada) e o prazo saiu da
+// entrada. Este slider é só o apoio visual pro "quanto custa o que você quer".
+//
+// TODO(bloco-jornada-entrada): o agente para de emitir present_value_picker na
+// entrada (valor por conversa, FIX-104). Quando o shape final do que o backend
+// emitir estabilizar, alinhar o id/label do campo de valor lido aqui.
+
+/** Passo da agulha: R$ 1.000 (regra de produto — "1k em 1k", FIX-107). */
+export const VALUE_STEP = 1000;
+
+/** Escolhe o campo do VALOR DO BEM: o primeiro campo em reais (a entrada não tem
+ * mais parcela/prazo). Fallback no primeiro campo do payload. */
+function pickAssetField(fields: ValuePickerField[]): ValuePickerField {
+	return fields.find((field) => field.format === "currency") ?? fields[0];
 }
 
 // FIX-55: input numérico livre pra campos `currency` — o usuário digita o valor
@@ -92,52 +93,35 @@ export function ValuePicker({
 }) {
 	const { sendUserMessage, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
-	const [values, setValues] = useState<Record<string, number>>(() => {
-		const initial: Record<string, number> = {};
-		for (const field of payload.fields) initial[field.id] = field.default;
-		return initial;
-	});
+	const field = pickAssetField(payload.fields);
+
+	const [value, setValue] = useState(field.default);
 	const [submitted, setSubmitted] = useState(false);
 
-	// FIX-16: sliders interligados pela relação de consórcio (plan-estimate).
-	// Arrastou parcela/prazo → o bem se ajusta; arrastou o bem → a parcela.
-	// Papéis não identificáveis no payload → null = comportamento solto.
-	const linkRoles = useMemo(() => identifyLinkRoles(payload.fields), [payload.fields]);
+	const clamp = (v: number) => Math.min(field.max, Math.max(field.min, v));
 
-	const handleChange = useCallback(
-		(field: ValuePickerField, raw: number | readonly number[]) => {
-			const v = Array.isArray(raw) ? raw[0] : raw;
-			setValues((prev) => {
-				const next = { ...prev, [field.id]: v };
-				if (!linkRoles) return next;
-				return recalcLinkedValues({
-					fields: payload.fields,
-					roles: linkRoles,
-					category: payload.category,
-					values: next,
-					changedId: field.id,
-				});
-			});
-		},
-		[linkRoles, payload.fields, payload.category],
-	);
+	// FIX-55: input numérico livre ao lado da agulha — o usuário digita o valor
+	// exato (R$ 347.500) sem snap ao step de R$ 1.000. Estado de texto próprio
+	// (digitação livre), commit (parse + clamp à faixa) no blur/Enter.
+	const [text, setText] = useState(() => field.default.toLocaleString("pt-BR"));
+	useEffect(() => {
+		setText(value.toLocaleString("pt-BR"));
+	}, [value]);
 
-	const handleSubmit = useCallback(() => {
+	const commitText = () => {
+		const digits = text.replace(/\D/g, "");
+		const parsed = digits ? Number.parseInt(digits, 10) : field.min;
+		setValue(clamp(parsed));
+	};
+
+	const handleSubmit = () => {
 		setSubmitted(true);
 		if (onSubmit) {
-			onSubmit(values);
+			onSubmit({ [field.id]: value });
 			return;
 		}
-		const parts: string[] = [];
-		for (const field of payload.fields) {
-			const val = values[field.id];
-			if (field.format === "currency")
-				parts.push(`${field.label}: R$ ${val.toLocaleString("pt-BR")}`);
-			else if (field.format === "months") parts.push(`${field.label}: ${val} meses`);
-			else parts.push(`${field.label}: R$ ${val.toLocaleString("pt-BR")}/mês`);
-		}
-		void sendUserMessage(parts.join(", "));
-	}, [values, payload.fields, sendUserMessage, onSubmit]);
+		void sendUserMessage(`${field.label}: R$ ${value.toLocaleString("pt-BR")}`);
+	};
 
 	if (submitted || !active) return null;
 
@@ -149,56 +133,43 @@ export function ValuePicker({
 		>
 			<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff] overflow-hidden">
 				<CardContent className="space-y-4 p-[18px]">
-					{/* Compact sliders */}
-					{payload.fields.map((field) => (
-						<div key={field.id} className="space-y-2">
-							<div className="flex items-baseline justify-between gap-2.5">
-								<span className="text-xs font-medium text-muted-foreground min-w-0">
-									{field.label}
-								</span>
-								{/* FIX-55: campos de dinheiro ganham input livre (valor exato);
-								    os demais (prazo etc.) seguem com o display animado. */}
-								{field.format === "currency" ? (
-									<CurrencyInput
-										field={field}
-										value={values[field.id]}
-										disabled={submitted}
-										onCommit={(v) => handleChange(field, v)}
-									/>
-								) : (
-									<motion.span
-										key={values[field.id]}
-										initial={{ scale: 1.08 }}
-										animate={{ scale: 1 }}
-										transition={{ type: "spring", stiffness: 400, damping: 20 }}
-										className="aja-num text-sm font-bold text-primary shrink-0"
-									>
-										{formatValue(values[field.id], field.format)}
-									</motion.span>
-								)}
-							</div>
-							<Slider
-								value={[values[field.id]]}
-								min={field.min}
-								max={field.max}
-								step={field.step}
-								onValueChange={(val) => {
-									if (!submitted) handleChange(field, val);
-								}}
-								disabled={submitted}
-							/>
+					<div className="space-y-2">
+						<div className="flex items-baseline justify-between gap-2.5">
+							<span className="text-xs font-medium text-muted-foreground min-w-0">
+								{field.label}
+							</span>
+							<span className="flex shrink-0 items-center gap-1 text-primary">
+								<span className="text-xs font-medium">R$</span>
+								<Input
+									value={text}
+									inputMode="numeric"
+									disabled={submitted}
+									onChange={(e) => setText(e.target.value)}
+									onBlur={commitText}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											commitText();
+										}
+									}}
+									data-testid={`value-input-${field.id}`}
+									aria-label={field.label}
+									className="h-7 w-28 px-2 text-right text-sm font-bold text-primary tabular-nums"
+								/>
+							</span>
 						</div>
-					))}
+						<Slider
+							value={[value]}
+							min={field.min}
+							max={field.max}
+							step={VALUE_STEP}
+							onValueChange={(val) => {
+								if (!submitted) setValue(clamp(Array.isArray(val) ? val[0] : val));
+							}}
+							disabled={submitted}
+						/>
+					</div>
 
-					{/* FIX-16: valores derivados de premissas típicas de mercado — nunca
-					    apresentar como dado de administradora (mesma regra do FIX-3) */}
-					{linkRoles && (
-						<span className="inline-flex items-center gap-1.5 self-center text-[10px] text-muted-foreground bg-[var(--cream-100)] rounded-full px-2.5 py-1 leading-tight">
-							Estimativa de mercado — os valores reais vêm das administradoras
-						</span>
-					)}
-
-					{/* Submit */}
 					<Button
 						onClick={handleSubmit}
 						disabled={submitted || isStreaming}

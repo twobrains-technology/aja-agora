@@ -6,7 +6,8 @@ import { updateAttendantSchema } from "@/lib/validations/attendant";
 import { invalidateAttendantCache } from "@/lib/whatsapp/proxy";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error } = await requireRole("admin", "attendant");
+	// Editar/ativar atendente é gestão de equipe — só admin.
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const { id } = await params;
@@ -15,13 +16,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 	try {
 		body = await req.json();
 	} catch {
-		return Response.json({ error: "JSON invalido" }, { status: 400 });
+		return Response.json({ error: "JSON inválido" }, { status: 400 });
 	}
 
 	const parsed = updateAttendantSchema.safeParse(body);
 	if (!parsed.success) {
 		return Response.json(
-			{ error: "Dados invalidos", details: parsed.error.flatten() },
+			{ error: "Dados inválidos", details: parsed.error.flatten() },
 			{ status: 400 },
 		);
 	}
@@ -30,7 +31,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		where: eq(userTable.id, id),
 	});
 	if (!existing || existing.role !== "attendant") {
-		return Response.json({ error: "Atendente nao encontrado" }, { status: 404 });
+		return Response.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
 	await db.update(userTable).set(parsed.data).where(eq(userTable.id, id));
@@ -41,7 +42,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error } = await requireRole("admin", "attendant");
+	// Desativar atendente é gestão de equipe — só admin.
+	const { error } = await requireRole("admin");
 	if (error) return error;
 
 	const { id } = await params;
@@ -50,7 +52,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 		where: eq(userTable.id, id),
 	});
 	if (!existing || existing.role !== "attendant") {
-		return Response.json({ error: "Atendente nao encontrado" }, { status: 404 });
+		return Response.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
 	await db.update(userTable).set({ isActive: false }).where(eq(userTable.id, id));

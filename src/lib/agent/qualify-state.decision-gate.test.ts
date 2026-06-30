@@ -71,7 +71,8 @@ describe("nextGate — avanço pro card de decisão pós-reveal", () => {
 	});
 
 	it("não interfere na coleta: enquanto faltar qualify, nunca retorna 'decision'", () => {
-		// Sem prazo respondido → ainda está coletando, gate é "timeframe".
+		// FIX-103: prazo saiu do funil. Com valor + hasLance="yes" mas sem o valor
+		// do lance respondido → ainda está coletando, gate é "lance-value".
 		const meta = postRevealMeta({
 			searchDispatched: false,
 			revealCompleted: false,
@@ -79,7 +80,7 @@ describe("nextGate — avanço pro card de decisão pós-reveal", () => {
 		});
 		const g = nextGate(meta, { hasContactName: true });
 		expect(g).not.toBe("decision");
-		expect(g).toBe("timeframe");
+		expect(g).toBe("lance-value");
 	});
 });
 

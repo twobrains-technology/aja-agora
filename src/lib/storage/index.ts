@@ -72,7 +72,14 @@ export async function ensureBucket(): Promise<void> {
 		try {
 			await client.send(new CreateBucketCommand({ Bucket: cfg.bucket }));
 		} catch (err) {
-			// corrida (outro request criou) é benigna — só re-lança se ainda não existe
+			// Corrida (outro request criou o bucket entre o Head e o Create) é
+			// benigna: o S3 responde BucketAlreadyOwnedByYou/BucketAlreadyExists. A
+			// função é idempotente, então tratamos isso como sucesso e só re-lançamos
+			// erros reais (ex.: AccessDenied, credencial inválida).
+			const name = err instanceof Error ? err.name : "";
+			if (name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists") {
+				return;
+			}
 			console.error(
 				"[storage] falha ao criar bucket:",
 				err instanceof Error ? err.message : String(err),

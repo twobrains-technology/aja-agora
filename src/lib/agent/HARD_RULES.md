@@ -132,16 +132,15 @@ Quando o usuário responde com o nome, **a primeira ação** do agent no turn DE
 
 ### 2.2. O agent NÃO dirige o funil; o orchestrator dispara cada gate na ordem (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
 
-Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"):
+Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"; FIX-103: prazo removido):
 
 1. **experience** — usuário já fez consórcio antes?
 2. **consent** — após a explicação de primeira vez
 3. **identidade** — CPF + celular + LGPD (os dados vêm **ANTES** do valor — FIX-53)
-4. **valor do bem** — seletor (`present_value_picker`), disparado pelo sistema
-5. **timeframe** — prazo desejado (**DEPOIS** do valor)
-6. **lance** — pretende dar lance (**DEPOIS** do valor)
+4. **valor do bem** — coletado na entrada (**DEPOIS** da identidade)
+5. **lance** — pretende dar lance (**DEPOIS** do valor)
 
-Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts`.
+O gate de **prazo de contemplação saiu da qualificação (FIX-103)** — `nextGate` nunca mais o emite e o agent nunca pergunta prazo na entrada. Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts` + `qualify-state.fix-103.test.ts`.
 
 ### 2.3. Tools idempotentes — nunca repetir na mesma conversa
 

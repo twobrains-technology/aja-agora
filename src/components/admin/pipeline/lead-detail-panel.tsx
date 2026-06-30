@@ -2,7 +2,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Headset, Smartphone } from "lucide-react";
+import { Globe, Headset, Smartphone, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ const STAGE_LABELS: Record<string, string> = {
 	novo: "Novo",
 	engajado: "Engajado",
 	qualificado: "Qualificado",
-	em_negociacao: "Em Negociacao",
+	em_negociacao: "Em Negociação",
 	proposta_enviada: "Proposta Enviada",
 	na_administradora: "Na Administradora",
 	aguardando_pagamento: "Aguardando Pagamento",
@@ -49,20 +49,59 @@ export function LeadDetailPanel({
 	const [activeTab, setActiveTab] = useState("conversa");
 	const [insightsLoaded, setInsightsLoaded] = useState(false);
 	const [transbordoOpen, setTransbordoOpen] = useState(false);
+	const [message, setMessage] = useState("");
+	const [sending, setSending] = useState(false);
+	const [windowError, setWindowError] = useState<string | null>(null);
 
-	// Reset insights/transbordo state when lead changes. lead?.id é a CHAVE do reset
-	// (não uma dependência usada no corpo) — daí o ignore do useExhaustiveDependencies.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: efeito de reset keyed em lead?.id
 	useEffect(() => {
 		setInsightsLoaded(false);
 		setActiveTab("conversa");
 		setTransbordoOpen(false);
+		setMessage("");
+		setSending(false);
+		setWindowError(null);
 	}, [lead?.id]);
 
-	// Track when insights tab is first activated
-	useEffect(() => {
-		if (activeTab === "insights") setInsightsLoaded(true);
-	}, [activeTab]);
+	const handleSendMessage = async (text: string) => {
+		if (!lead) return;
+		setSending(true);
+		setWindowError(null);
+
+		try {
+			// O id da CONVERSA (≠ id do lead) é a chave que a rota usa pra resolver a
+			// janela de 24h e persistir a mensagem. Usar lead.id aqui batia na conversa errada.
+			const endpoint = `/api/admin/conversations/${lead.conversationId}/message`;
+
+			const res = await fetch(endpoint, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ conversationId: lead.conversationId, text }),
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				// A rota devolve { error: "<código>", message: "<motivo legível>" } — mostrar
+				// `message` (não `error.message`, que não existe e caía sempre no fallback).
+				throw new Error(data.message || "Falha ao enviar mensagem");
+			}
+
+			// Alert visual simples
+			alert(`Mensagem enviada com sucesso!\nId: ${data.messageId}`);
+
+			setMessage("");
+			onClose();
+		} catch (err) {
+			const errorMsg =
+				err instanceof Error ? err.message : "Erro desconhecido";
+			setWindowError(errorMsg);
+			alert(`Erro ao enviar mensagem:\n${errorMsg}`);
+		} finally {
+			setSending(false);
+		}
+	};
 
 	return (
 		<Sheet
@@ -92,7 +131,6 @@ export function LeadDetailPanel({
 									})}
 								</span>
 							</div>
-							{/* FIX-64: transbordo manual pra mesa de operação (DEC-B). */}
 							<Button
 								variant="outline"
 								size="sm"
@@ -114,7 +152,9 @@ export function LeadDetailPanel({
 								<TabsTrigger value="insights">Insights</TabsTrigger>
 							</TabsList>
 							<TabsContent value="conversa" className="flex-1 min-h-0">
-								<ConversationTimeline endpoint={`/api/admin/leads/${lead.id}/conversation`} />
+								<ConversationTimeline
+									endpoint={`/api/admin/leads/${lead.id}/conversation`}
+								/>
 							</TabsContent>
 							<TabsContent value="insights" className="p-4">
 								{insightsLoaded ? (
@@ -128,6 +168,40 @@ export function LeadDetailPanel({
 								)}
 							</TabsContent>
 						</Tabs>
+
+						{/* FIX-87: Chat do operador no Kanban → WhatsApp oficial */}
+						<div className="border-t p-4 bg-muted/30">
+							<h4 className="text-sm font-semibold mb-3">Chat com o cliente</h4>
+
+							{/* Erro da API */}
+							{windowError && (
+								<div className="mb-3 p-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded">
+									{windowError}
+								</div>
+							)}
+
+							{/* Input de chat */}
+							<div className="space-y-2">
+								<textarea
+									placeholder="Digite sua mensagem para o cliente..."
+									value={message}
+									onChange={(e) => setMessage(e.target.value)}
+									rows={3}
+									className="w-full resize-none rounded border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+									disabled={sending}
+								/>
+								<div className="flex justify-end">
+									<Button
+										size="sm"
+										onClick={() => handleSendMessage(message)}
+										disabled={!message.trim() || sending}
+									>
+										<Send className="size-4 mr-2" />
+										{sending ? "Enviando..." : "Enviar"}
+									</Button>
+								</div>
+							</div>
+						</div>
 
 						<MesaTransbordoDialog
 							leadId={lead.id}

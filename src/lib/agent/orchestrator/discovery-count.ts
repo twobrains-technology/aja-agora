@@ -12,7 +12,10 @@ export function extractDiscoveryCount(toolName: string, output: unknown): number
 		return Array.isArray(recs) ? recs.length : null;
 	}
 	if (toolName === "search_groups") {
-		return Array.isArray(output) ? output.length : null;
+		// `executeSearchGroups` devolve `{ groups, total }` (ai-sdk.ts) — nunca
+		// um array. (Sem adapter, devolve `{ error }` → groups ausente → null.)
+		const groups = (output as { groups?: unknown[] } | null)?.groups;
+		return Array.isArray(groups) ? groups.length : null;
 	}
 	return null;
 }

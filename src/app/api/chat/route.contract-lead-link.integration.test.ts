@@ -24,7 +24,7 @@
  */
 
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import {
@@ -82,14 +82,11 @@ const CLOSED_META: ConversationMetadata = {
 };
 
 function makeChatReq(body: unknown): NextRequest {
-	const req = new Request("http://localhost/api/chat", {
+	const req = new NextRequest("http://localhost/api/chat", {
 		method: "POST",
 		headers: { "Content-Type": "application/json", "x-forwarded-for": "127.0.0.1" },
 		body: JSON.stringify(body),
-	}) as unknown as NextRequest & {
-		cookies: { get: (name: string) => { value: string } | undefined };
-	};
-	req.cookies = { get: () => undefined };
+	});
 	return req;
 }
 

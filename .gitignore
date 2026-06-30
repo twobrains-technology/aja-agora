@@ -35,6 +35,11 @@ yarn-error.log*
 .env*
 !.env.example
 
+# segredos decriptados do vault (secrets.sh decrypt) — PII/credenciais, NUNCA versionar
+contas-teste.env
+*.dec.env
+*.decrypted.env
+
 # vercel
 .vercel
 

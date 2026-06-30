@@ -358,7 +358,17 @@ async function callService<T>(serviceId: string, body?: unknown, opts?: { method
 
 ## 7. Shape REAL da oferta (o ponto crítico do mapper)
 
-A simulação devolve `data.offers[]`. **Cada oferta tem exatamente estes 8 campos:**
+> ⚠️ **ATUALIZAÇÃO 2026-06-30 (re-validação ao vivo):** o shape abaixo (8 campos,
+> `parcela` numérica) é a captura de **2026-06-02** e está **defasado**. A API ao vivo
+> hoje devolve **10 campos**: além dos 8, **`prazo`** (meses — ex. 117/216; é o
+> `termMonths` que a §11 listava como GAP, **agora preenchido**) e **`lanceMedio`**
+> (R$ médio de lance do grupo). E **`parcela` mudou de número → STRING pt-BR**
+> (`"651,44"`, `"1.356,64"` com separador de milhar). O **código já trata** isso desde
+> 2026-06-12: `partner-offer-mapper.ts` (`parseMoney` para a string pt-BR com milhar,
+> `parseTermMonths` para o `prazo`, `lanceMedio`→`avgBidValue`). Use o
+> `partner-offer-mapper.ts` como fonte do shape REAL atual, não esta tabela de 8 campos.
+
+A simulação devolve `data.offers[]`. (Captura 2026-06-02 — **8 campos**, ver nota acima:)
 
 ```jsonc
 {

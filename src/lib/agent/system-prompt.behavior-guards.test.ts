@@ -194,9 +194,13 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 		if (!blocoMatch) return;
 
 		const bloco = blocoMatch[0].toLowerCase();
-		// Normaliza tolerando ç/c e õ/o pra match case-insensitive.
+		// Normaliza removendo TODOS os diacríticos (o prompt é acentuado; o
+		// detector runtime também usa strip de acento) — match acento-insensitive.
 		const normalizar = (s: string) =>
-			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
+			s
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
 		const blocoNorm = normalizar(bloco);
 
 		const variantes = [
@@ -662,11 +666,12 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 // ============================================================================
 
 describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent não antecipa o valor; o orchestrator dirige a coleta", () => {
-	it("SPECIALIST_BASE_PROMPT cita os gates da coleta por nome (experience, timeframe, lance)", () => {
+	it("SPECIALIST_BASE_PROMPT cita os gates da coleta por nome (experience, lance) — FIX-103: prazo removido", () => {
 		// Os gates precisam aparecer explícitos para o modelo enxergá-los. A ORDEM
-		// entre eles é validada em BUG-PROMPT-ORDEM-GATES (valor antes de prazo/lance).
+		// entre eles é validada em BUG-PROMPT-ORDEM-GATES (valor antes do lance).
+		// FIX-103: o gate de prazo (timeframe) saiu da qualificação — não exigimos mais.
 		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
-		const gates = ["experience", "timeframe", "lance"];
+		const gates = ["experience", "lance"];
 		const faltando = gates.filter((g) => !promptLower.includes(g));
 		expect(
 			faltando,

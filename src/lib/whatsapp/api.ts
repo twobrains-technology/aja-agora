@@ -183,3 +183,67 @@ export async function sendTypingIndicator(messageId: string) {
 		typing_indicator: { type: "text" },
 	});
 }
+
+/**
+ * Envia uma mensagem de template HSM (HTTP-to-SMS) no WhatsApp Business API.
+ *
+ * Templates HSM são usados para:
+ * - Reabrir a janela de 24h quando está fechada
+ * - Mensagens não-solicitadas (opt-in requerido)
+ * - Notificações programadas
+ *
+ * O nome do template deve ser aprovado previamente na Meta Business Suite.
+ * O idioma e os componentes são enviados via env para flexibilidade.
+ *
+ * @param to — phone_number_id do WhatsApp (ex.: 5562999998888)
+ * @param templateName — nome do template aprovado na Meta
+ * @param languageCode — código de idioma do template (ex.: pt_BR, en_US)
+ * @param components — componentes opcionais do template (ex.: buttons, body)
+ *
+ * @example
+ * // Template com componentes (Meta espera um ARRAY de componentes)
+ * await sendTemplate(
+ *   "5562999998888",
+ *   "aja_agora_reabrir_conversa",
+ *   "pt_BR",
+ *   [
+ *     {
+ *       type: "button",
+ *       sub_type: "quick_reply",
+ *       index: "0",
+ *       parameters: [{ type: "payload", payload: "reabrir" }],
+ *     },
+ *   ]
+ * );
+ *
+ * @example
+ * // Template simples (sem componentes)
+ * await sendTemplate(
+ *   "5562999998888",
+ *   "aja_agora_boas_vindas",
+ *   "pt_BR"
+ * );
+ */
+export async function sendTemplate(
+	to: string,
+	templateName: string,
+	languageCode: string,
+	components?: unknown[],
+) {
+	// Destinatário simulado (SIM-<uuid>): não bate na Meta — só ack sintético.
+	// Templates não são renderizados no simulador por agora.
+	if (isSimulatedWaId(to)) return simulatedAck();
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, {
+		to,
+		type: "template",
+		template: {
+			name: templateName,
+			language: {
+				code: languageCode,
+			},
+			// Meta Cloud API v21: `components` é um ARRAY; omitido quando ausente.
+			...(components ? { components } : {}),
+		},
+	});
+}

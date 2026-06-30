@@ -15,7 +15,7 @@ const formSchema = z
 		password: z
 			.string()
 			.min(8, "Senha deve ter pelo menos 8 caracteres")
-			.max(128, "Senha deve ter no maximo 128 caracteres"),
+			.max(128, "Senha deve ter no máximo 128 caracteres"),
 		confirmPassword: z.string(),
 	})
 	.refine((data) => data.password === data.confirmPassword, {

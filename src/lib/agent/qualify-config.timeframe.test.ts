@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { TIMEFRAME_OPTIONS } from "./qualify-config";
 
-// Camada 1 (estrutural) — jornada canônica do .docx (2026-05-29).
-// O doc define EXATAMENTE 5 opções de prazo, e cada uma mapeia pro eixo
-// `objetivo` da Bevi (investimento × contemplacao_rapida).
-describe("TIMEFRAME_OPTIONS — jornada do doc + objetivo Bevi", () => {
-	it("tem as 5 opções do doc, na ordem", () => {
+// Camada 1 (estrutural) — TIMEFRAME_OPTIONS é LEGADO (FIX-103, 2026-06-28).
+// O gate `timeframe` SAIU da qualificação — `nextGate` nunca mais o emite (ver
+// qualify-state.fix-103.test.ts). Estas constantes permanecem só por compat com
+// consumidores fora do escopo deste bloco (web/adapter.ts, whatsapp/formatter.ts)
+// que os blocos irmãos vão limpar. Este teste garante que, ENQUANTO existirem, as
+// 5 opções seguem internamente coerentes — pra não quebrar quem ainda importa.
+describe("TIMEFRAME_OPTIONS — constantes LEGADO ainda coerentes (FIX-103)", () => {
+	it("tem as 5 opções legadas, na ordem", () => {
 		expect(TIMEFRAME_OPTIONS.map((t) => t.title)).toEqual([
 			"O mais rápido possível",
 			"Até 6 meses",

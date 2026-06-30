@@ -58,6 +58,19 @@ export class DuplicatedProposalError extends BeviApiError {
 	}
 }
 
+/** 400 "Proposta não pertence ao Bevi Consórcio." — a proposta foi criada sob um
+ * `productId`/conta que o token não reconhece como "Bevi Consórcio" no `simulate`
+ * (FIX-79). NÃO é transitório: nasce de `BEVI_PRODUCT_ID` errado na criação e NUNCA
+ * cura no retry — a correção é setar o `productId` correto no env (PENDENTE-KAIRO,
+ * dado externo da Bevi/AGX). Tipado pra ops greparem a classe exata e o teste
+ * asseverar; o route já degrada gracioso no catch genérico. */
+export class ProposalOwnershipError extends BeviApiError {
+	constructor(message: string, errors: BeviFieldError[] = [], data: unknown = null) {
+		super(400, message, errors, data);
+		this.name = "ProposalOwnershipError";
+	}
+}
+
 /** ofertaId expirado (TTL 30min) — re-simular antes do chooseOffer. */
 export class OfferExpiredError extends BeviApiError {
 	constructor(message = "Oferta expirada — re-simule antes de escolher.", data: unknown = null) {
@@ -99,6 +112,11 @@ export function toBeviError(
 			const m = valorErr.message.match(/R\$\s*([\d.]+)/);
 			const min = m ? Number(m[1].replace(/\./g, "")) : 15000;
 			return new MinCreditError(valorErr.message, min, errors, data);
+		}
+		// FIX-79: ownership da proposta ("não pertence ao Bevi Consórcio") — product
+		// mismatch na criação. Tipado pra diagnóstico (PENDENTE-KAIRO: BEVI_PRODUCT_ID).
+		if (errors.some((e) => e.field === "propostaId")) {
+			return new ProposalOwnershipError(message, errors, data);
 		}
 	}
 	return new BeviApiError(code, message, errors, data);

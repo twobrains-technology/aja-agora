@@ -209,16 +209,17 @@ export async function pipeOrchestratorToWriter(
 				writer.write({ type: "text-delta", id: ensureTextStarted(), delta: ev.text });
 				break;
 
-			case "lead-collection-prompt":
+			case "lead-collection-prompt": {
+				// Bloco de texto isolado e FECHADO — um único id que abre, recebe o
+				// delta e fecha. (Antes: um text-start órfão com id aleatório + outro
+				// id do ensureTextStarted pro delta → 2 starts, 1 end no stream.)
 				closeTextIfOpen();
-				writer.write({ type: "text-start", id: crypto.randomUUID() });
-				writer.write({
-					type: "text-delta",
-					id: ensureTextStarted(),
-					delta: ev.text,
-				});
-				closeTextIfOpen();
+				const id = crypto.randomUUID();
+				writer.write({ type: "text-start", id });
+				writer.write({ type: "text-delta", id, delta: ev.text });
+				writer.write({ type: "text-end", id });
 				break;
+			}
 
 			case "artifact":
 				closeTextIfOpen();

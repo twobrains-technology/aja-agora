@@ -52,8 +52,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Migrations runtime — pasta de migrations + bundle do guard + package.json
-# (entrypoint chama `pnpm run --silent db:migrate:runtime` que aponta pro bundle)
+# Migrations runtime — pasta de migrations + bundle do guard + package.json.
+# O guard é um bundle self-contained (pg + drizzle-orm/migrator) que roda com
+# `node` PURO — NÃO precisa de pnpm. Por isso MIGRATE_CMD aponta direto pro node
+# (ver ENV abaixo): o default do entrypoint (`pnpm run db:migrate:runtime`) faria
+# o corepack BAIXAR pnpm@<packageManager> do npm em runtime — e a task roda como
+# `nextjs` (cache do corepack é do root), sem egress garantido → download trava →
+# EssentialContainerExited → o serviço nunca sobe. (Incidente dev 2026-06-25.)
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-guard.bundle.cjs ./scripts/migrate-guard.bundle.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
@@ -66,6 +71,10 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+# Roda a migration com node direto (bundle self-contained) — evita corepack
+# baixar pnpm em runtime (ver bloco "Migrations runtime" acima). Override #1 do
+# entrypoint TwoBrains. Sobrescritível via env do task def, se preciso.
+ENV MIGRATE_CMD="node scripts/migrate-guard.bundle.cjs"
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

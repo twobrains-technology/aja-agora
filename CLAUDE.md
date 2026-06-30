@@ -22,6 +22,41 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 3. **QA e evals validam contra o docx**, não contra critérios derivados da implementação. O plano de teste de qualquer mudança na jornada referencia os passos da jornada canônica.
 4. **Simulador do passo 4** = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele.
 
+### ⚠️ AMBIENTE BEVI/CONEXIA = HOMOLOGAÇÃO (INVIOLÁVEL — não tratar como produção)
+
+**A loja Bevi/Conexia inteira É de HOMOLOGAÇÃO. NÃO existe ambiente de produção da Bevi.**
+Estamos em homologação. A loja-piloto já é o ambiente de homologação — fechar proposta,
+criar lead, simular, rodar o Trilho A (fechamento) é **SEGURO e esperado**, não "suja produção".
+
+- O **`BEVI_API_TOKEN` é o MESMO em dev e prod** (`tb/dev/aja-agora/env` == `tb/prod/aja-agora/env`,
+  prefixo `rp3rmx…`, len 44) **justamente porque é a mesma loja de homologação**. `BEVI_SELFCONTRACT_HASH`
+  = `6a1756d4bef180c41e909c07`, `BEVI_PRODUCT_ID` = `6986245b3518ceb00e7844da` — iguais nos dois.
+- **NÃO travar QA/fechamento/T-5.1 "por falta de sandbox"** — a loja toda é o sandbox/homologação.
+  O "protocolo de parar sem evidência de sandbox" NÃO se aplica: aqui o ambiente já É homologação.
+  Pode rodar o fechamento real (Trilho A) com CPF de teste sem medo de sujar produção.
+- Endpoints: Trilho B (descoberta/simulação) `core-production-selfcontract-atsb7.ondigitalocean.app`
+  (o "production" no host é nome do serviço DigitalOcean da Bevi, NÃO nosso ambiente prod);
+  Trilho A (parceiro/fechamento) `api.uxvision.tech/api/v1/credithub/services`.
+- (2026-06-26: travei o P0 do qa-noturno achando que poderia ser produção — era homologação o
+  tempo todo. Não repetir.)
+
+### Contas de teste canônicas (Bevi/Conexia homologação) — SEMPRE usar estas
+
+**Toda jornada/QA/simulação/fechamento de teste DEVE usar uma destas contas reais de
+homologação — NUNCA inventar CPF.** São 2 contas: **Kairo** (titular/operador) e
+**Mirella**.
+
+🔒 **Os valores reais (CPF/celular/nome/nascimento) ficam FORA do git** (PII +
+LGPD de terceiro). Estão encriptados no vault — obtenha com:
+
+```
+secrets.sh decrypt contas-teste
+```
+
+Detalhe e notas operacionais em `docs/integracoes/contas-teste-homologacao.md`.
+Como é homologação, fechar proposta com estes CPFs é seguro e esperado (não "suja
+produção").
+
 ## Package manager — pnpm ÚNICO
 
 **`pnpm` é o único gestor de pacotes permitido. `npm` e `yarn` são PROIBIDOS** —

@@ -37,20 +37,28 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { streamText } from "ai";
+import { createUIMessageStream, streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { describe, expect, it } from "vitest";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
+import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
+	buildSimulationInterestDirective,
+	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
+import {
+	parseValorDoBem,
+	prazoMesesForIntent,
+	QUALIFY_GATE_INPUT_KIND,
+} from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -526,7 +534,7 @@ describe("FIX-36-PRE-TOOL-HONESTY — texto não afirma achado antes do search_g
 				qualifyAnswers: { creditMax: 100000, prazoMeses: 12, hasLance: "no" },
 			},
 		});
-		expect(reveal).toContain("Encontramos 3 boas opcoes");
+		expect(reveal).toContain("Encontramos 3 boas opções");
 	});
 });
 
@@ -662,7 +670,10 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 		// LLM ainda pode parafrasear pra 'confira abaixo', 'olhe abaixo', 'olha
 		// ai'. Regra dura tem que cobrir explicito.
 		const normalizar = (s: string) =>
-			s.toLowerCase().replace(/ç/g, "c").replace(/õ/g, "o").replace(/á/g, "a");
+			s
+				.toLowerCase()
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "");
 		const promptNorm = normalizar(SPECIALIST_BASE_PROMPT);
 
 		const variantesExtras = ["confira abaixo", "olhe abaixo", "olha ai"];
@@ -678,48 +689,112 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 });
 
 // ============================================================================
-// CENARIO 4 — Value picker em texto puro (BUG-CREDIT-PICKER)
+// FIX-104 — valor do bem por CONVERSA (inverte o antigo BUG-CREDIT-PICKER)
 // ----------------------------------------------------------------------------
-// Real (Helena/imovel): agent disse "Qual faixa de credito voce esta pensando?"
-// em texto puro, sem chamar present_value_picker. Usuario forcado a digitar.
-//
-// Causa raiz: persona.activeTools nao incluia present_value_picker. Fix em
-// builder.ts + migration 0019 (cobertos por builder.credit-picker.test.ts).
-// Aqui cassette + assert estrutural no prompt.
+// Decisão Kairo 2026-06-28: "usuário só fala o valor agora, não tem mais aquele
+// componente complexo de valor". O que ANTES era bug (perguntar valor por texto)
+// agora é o comportamento DESEJADO: o agente coleta o valor do bem por conversa
+// e NÃO emite present_value_picker na entrada. O componente complexo morre na
+// entrada (web vira slider simples; WhatsApp vira conversa — blocos irmãos).
+// O analyzer normaliza "uns 80 mil"/"80k" → 80000 (parseValorDoBem é o contrato).
 // ============================================================================
 
-describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value_picker", () => {
-	it("cassette: stream com pergunta de faixa em texto puro SEM tool-call", async () => {
-		const cassette = "Qual faixa de credito voce esta pensando pra esse imovel?";
-
+describe("FIX-104 — valor do bem por conversa (sem present_value_picker na entrada)", () => {
+	it("cassette: agent pergunta o valor por conversa e NÃO emite present_value_picker", async () => {
+		const cassette = "Quanto custa o carro que você quer conquistar?";
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", cassette),
 			FINISH_STOP,
 		]);
-
-		// Reproducao fiel: pergunta de valor em prosa, sem present_value_picker.
 		expect(text).toBe(cassette);
+		// O comportamento correto do FIX-104: pergunta conversacional, ZERO picker.
 		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
-
-		// Detector: o agent pediu faixa/valor/orcamento por texto.
-		const perguntaValorTexto =
-			/(qual|quanto)[\s\S]{0,40}(faixa|valor|cr[ée]dito|or[çc]amento|carta)/i;
-		expect(perguntaValorTexto.test(cassette)).toBe(true);
+		const perguntaValorConversa = /(qual|quanto)[\s\S]{0,40}(valor|custa|cr[ée]dito|carta|bem)/i;
+		expect(perguntaValorConversa.test(cassette)).toBe(true);
 	});
 
-	it("prompt SPECIALIST_BASE_PROMPT proibe perguntar valor por texto", () => {
-		// system-prompt.ts:13 contem "NUNCA pergunte valores por texto. Use
-		// present_value_picker para mostrar sliders interativos."
-		// Garante que o prompt nunca afrouxa essa regra.
-		const proibicaoValorTexto =
-			/NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
+	it("cassette: usuário fala 'uns 80 mil' → agent confirma e segue, sem picker", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// parseValorDoBem é o contrato determinístico da normalização.
+		expect(parseValorDoBem("uns 80 mil")).toBe(80_000);
+		expect(parseValorDoBem("80k")).toBe(80_000);
+	});
 
+	it("estrutural: o prompt NÃO manda mais usar present_value_picker pra pedir o valor", () => {
+		// Regra ANTIGA (oposta ao FIX-104) não pode reaparecer em nenhum prompt.
+		const regraAntiga = /NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
 		expect(
-			proibicaoValorTexto.test(SYSTEM_PROMPT) || proibicaoValorTexto.test(SPECIALIST_BASE_PROMPT),
-			"Prompt precisa proibir EXPLICITAMENTE 'NUNCA pergunte valores por texto' acoplado a present_value_picker. " +
-				"Sem essa regra, o LLM cai em prosa nas perguntas de faixa/orcamento.",
-		).toBe(true);
+			regraAntiga.test(SYSTEM_PROMPT) || regraAntiga.test(SPECIALIST_BASE_PROMPT),
+			"FIX-104: o prompt não pode mandar usar present_value_picker pra coletar o valor — o valor é conversa.",
+		).toBe(false);
+	});
+
+	it("estrutural: o prompt instrui valor por conversa e proíbe emitir o picker na entrada", () => {
+		expect(`${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`).toMatch(
+			/valor do bem[\s\S]{0,120}(conversa|texto)/i,
+		);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/N(Ã|A)O (emita|emite|chame|mostre)[\s\S]{0,80}present_value_picker/i,
+		);
+	});
+});
+
+// ============================================================================
+// FIX-105 — qualificação HÍBRIDA (binárias = botão, valor = conversa)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28: perguntas binárias (experiência, lance) mantêm o
+// botão; a pergunta aberta de valor vira conversa. Sem isso a qualificação vira
+// menu atrás de menu (o que mais robotiza). Camada 2: classificação canônica +
+// cassette de reação a botão (binária) vs conversa (valor).
+// ============================================================================
+
+describe("FIX-105 — qualificação híbrida (binárias=botão, valor=conversa)", () => {
+	it("classificação canônica: experience/lance=button, credit/lance-value=conversation", () => {
+		expect(QUALIFY_GATE_INPUT_KIND.experience).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.lance).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.credit).toBe("conversation");
+		expect(QUALIFY_GATE_INPUT_KIND["lance-value"]).toBe("conversation");
+	});
+
+	it("cassette: agent reage à resposta da binária (experience) em UMA frase, sem repetir a pergunta", async () => {
+		// O botão da binária já fez a pergunta — o agent só reage curto e PARA.
+		const cassette = "Boa, primeira vez é com a gente!";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// NÃO re-pergunta a binária em texto (o botão cuida disso).
+		expect(/voc[êe] j[áa] fez cons[óo]rcio/i.test(cassette)).toBe(false);
+	});
+
+	it("cassette: o valor (aberta) vem por conversa — agent confirma o que o usuário falou", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		// valor é conversa → nenhum componente de seleção é emitido pelo agent.
+		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
+	});
+
+	it("CROSS-REF prompt: SPECIALIST_BASE_PROMPT descreve o híbrido (binárias=botão, valor=conversa)", () => {
+		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(p).toMatch(/h[íi]brid/);
+		expect(p).toMatch(/bin[áa]ri[ao]s?[\s\S]{0,80}bot[ãa]o/);
+		expect(p).toMatch(/valor[\s\S]{0,80}conversa/);
 	});
 });
 
@@ -1918,20 +1993,26 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os 3 gates à proibição de pedir valor antes", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
-		// continuaria reproduzível em prod.
-		const regraComOs3Gates =
-			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
-		const regraInvertida =
-			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
+		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
+		const ordemDosGates =
+			/experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		const proibeValorAntes =
+			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
-			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) || regraInvertida.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa amarrar (experience+timeframe+lance) " +
-				"à proibição de pedir valor/parcela ANTES. Sem isso, persona row no DB " +
-				"(migration 0021) fica solta — modelo cai no padrão antigo.",
+			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → lance) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo NÃO entra mais na ordem.",
 		).toBe(true);
+	});
+
+	it("CROSS-REF prompt (FIX-103): SPECIALIST_BASE_PROMPT NÃO instrui pedir prazo de contemplação na entrada", () => {
+		// O gate de prazo saiu — o prompt proíbe explicitamente perguntar prazo.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA pergunte "em quanto tempo/i);
 	});
 
 	it("CROSS-REF migration 0021: arquivo da migration de persona row existe e seta fluxo de 3 gates pré-valor", () => {
@@ -1963,6 +2044,94 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 			"Migration 0021 precisa ter guard de idempotência (NOT LIKE, NOT @>, IS NULL ou jsonb_array_length) " +
 				"— rodar 2x não pode duplicar/corromper dados.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-103 — gate de prazo (timeframe) fora da qualificação
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("usuario so vai falar o valor agora, prazo nao"):
+// o gate de prazo de contemplação saiu da entrada. Camada 2:
+//   - funil determinístico nunca emite "timeframe" (web e WhatsApp usam a MESMA
+//     máquina nextGate — canal-agnóstica);
+//   - cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação;
+//   - acoplamento ao prompt (não instrui pedir prazo).
+// ============================================================================
+
+describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
+	// nextGate é canal-agnóstico: o mesmo funil vale pra web e WhatsApp. Provar
+	// que NUNCA passa por timeframe cobre os dois canais (o contrato da spec).
+	function walk(hasLance: "yes" | "no"): string[] {
+		let meta: ConversationMetadata = {};
+		let hasName = false;
+		const seq: string[] = [];
+		for (let i = 0; i < 24; i++) {
+			const g = nextGate(meta, { hasContactName: hasName });
+			seq.push(g);
+			const q = meta.qualifyAnswers ?? {};
+			if (g === "name") hasName = true;
+			else if (g === "experience") meta = { ...meta, experiencePrev: "first" };
+			else if (g === "consent") meta = { ...meta, qualifyConsented: true };
+			else if (g === "identify") meta = { ...meta, identityCollected: true };
+			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
+			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
+			else if (g === "lance-value")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
+			else if (g === "lance-embutido")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
+			else if (g === "search")
+				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+			else if (g === "simulator-offer") meta = { ...meta, simulatorOfferDispatched: true };
+			else if (g === "decision") break;
+			else break;
+		}
+		return seq;
+	}
+
+	it("a qualificação completa NUNCA emite o gate timeframe (sem lance e com lance)", () => {
+		expect(walk("no")).not.toContain("timeframe");
+		expect(walk("yes")).not.toContain("timeframe");
+	});
+
+	it("cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação", async () => {
+		// Reação correta pós-valor (FIX-103): confirma o valor e PARA — sem
+		// perguntar prazo. O detector pega a REGRESSÃO (pergunta de prazo).
+		const cassette = "Boa, 80 mil então.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		expect(
+			perguntaPrazo.test(cassette),
+			"FIX-103: a reação ao valor NÃO pode perguntar prazo de contemplação.",
+		).toBe(false);
+	});
+
+	it("detector pega a pergunta de prazo proibida (variantes das 4 specialists)", () => {
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		const proibidas = [
+			"Em quanto tempo você quer estar com o carro novo?",
+			"Em quanto tempo você gostaria de estar com seu bem?",
+			"E qual prazo de contemplação faz sentido pra você?",
+			"Quando você quer ser contemplado?",
+		];
+		const misses = proibidas.filter((v) => !perguntaPrazo.test(v));
+		expect(misses, `Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`).toEqual(
+			[],
+		);
+	});
+
+	it("CROSS-REF prompt: nem SYSTEM_PROMPT nem SPECIALIST_BASE_PROMPT instruem pedir prazo na entrada", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// Não pode haver instrução de coletar prazo como gate da qualificação.
+		expect(combined).not.toMatch(/gate[\s\S]{0,20}timeframe/i);
+		// O reforço explícito de que o prazo saiu precisa estar lá.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
 	});
 });
 
@@ -2252,27 +2421,30 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 });
 
 describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
-	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os gates da coleta (experience/lance) — FIX-103: sem prazo", async () => {
 		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
 		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
 
-		// Combined precisa mencionar os 3 gates por nome — assistant injeta
+		// Combined precisa mencionar os gates binários por nome — assistant injeta
 		// HARD_RULES no system prompt em runtime, então a regra chega no LLM.
+		// FIX-103: o gate de prazo (timeframe) saiu — não exigimos mais.
 		expect(promptCombined).toMatch(/experience/i);
-		expect(promptCombined).toMatch(/timeframe/i);
 		expect(promptCombined).toMatch(/lance/i);
+		// E o prazo NÃO deve mais ser parte da ordem da coleta no HARD_RULES.
+		expect(hardRules).toMatch(/prazo de contempla[çc][ãa]o saiu da qualifica[çc][ãa]o/i);
 	});
 
-	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES de prazo/lance, FIX-53)", () => {
+	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES do lance, FIX-53 + FIX-103: sem prazo)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		// Ordem da revisão 2 (docx + FIX-53): experience → consent → identidade →
-		// valor → timeframe → lance. Os DADOS e o VALOR precedem prazo e lance.
+		// Ordem da revisão 2 (docx + FIX-53) com FIX-103: experience → consent →
+		// identidade → valor → lance. Os DADOS e o VALOR precedem o lance; o prazo
+		// saiu da qualificação.
 		const ordemReal =
-			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
 		expect(
 			ordemReal.test(hardRules),
-			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → timeframe → lance",
+			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → lance (sem prazo)",
 		).toBe(true);
 	});
 });
@@ -2492,7 +2664,7 @@ describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gat
 		expect(m, "buildLanceReactionDirective precisa existir em directives.ts").not.toBeNull();
 		const body = m?.[0] ?? "";
 		// Deve mandar reagir curto e explicitamente NAO explicar embutido aqui.
-		expect(body).toMatch(/NAO explique o que e lance embutido/i);
+		expect(body).toMatch(/N[ÃA]O explique o que [eé] lance embutido/i);
 	});
 
 	it("a educacao de lance embutido vive no gate-questions (fonte do sistema), nao no agent", () => {
@@ -2560,6 +2732,80 @@ describe("FEAT-CONTEMPLATION-DIAL — simulador-agulha (passo 4)", () => {
 				monthlyPayment: 600,
 			}),
 		).not.toBeNull();
+	});
+});
+
+// ============================================================================
+// FIX-106 — simulador de contemplação CONVERSACIONAL (loop)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("loop conversacional"): no WhatsApp (e no what-if de
+// mês em qualquer canal) o agente conduz o simulador por CONVERSA — o usuário
+// pergunta um mês-alvo ("e em 6 meses?"), o agente chama simulate_contemplation
+// (cálculo, reusa computeContemplationDial), narra os números e pode iterar. A
+// WEB mantém a agulha (present_contemplation_dial). Camada 2: cassette do loop +
+// acoplamento ao prompt/tool.
+// ============================================================================
+
+describe("FIX-106 — simulador conversacional (loop por texto)", () => {
+	it("cassette: 'e em 6 meses?' → agent chama simulate_contemplation(targetMonth=6) e narra", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 6 meses ficaria assim (estimativa):"),
+			toolCallChunk("tc-sc-1", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 6,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(6);
+		// NÃO usa a agulha (present_contemplation_dial) pra cada iteração de texto.
+		expect(toolCalls.some((t) => t.toolName === "present_contemplation_dial")).toBe(false);
+	});
+
+	it("cassette: itera — 'e em 12 meses?' recalcula com simulate_contemplation no novo mês", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 12 meses, olha como muda:"),
+			toolCallChunk("tc-sc-2", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 12,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(12);
+	});
+
+	it("estrutural: simulate_contemplation reusa computeContemplationDial (números batem com a agulha)", async () => {
+		const { computeContemplationDial } = await import("@/lib/consorcio/contemplation-dial");
+		const { consorcioTools } = await import("@/lib/agent/tools/ai-sdk");
+		const args = { creditValue: 80_000, termMonths: 80, targetMonth: 6, monthlyPayment: 950 };
+		// biome-ignore lint/suspicious/noExplicitAny: execute opaco
+		const fromTool = await (consorcioTools.simulate_contemplation as any).execute(args);
+		expect(fromTool).toEqual(computeContemplationDial(args));
+		// e NÃO é tool de apresentação (é cálculo, igual compute_scenarios).
+		expect(PRESENTATION_TOOLS.has("simulate_contemplation")).toBe(false);
+	});
+
+	it("CROSS-REF prompt: o loop manda chamar simulate_contemplation no what-if de mês; web mantém a agulha", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/simulate_contemplation/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_contemplation_dial/);
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/m[êe]s-alvo|e em \d|outro prazo/);
+	});
+
+	it("policy: simulate_contemplation disponível no reveal e closing (onde o simulador roda)", () => {
+		const reveal = allowedTools({ revealCompleted: true } as ConversationMetadata);
+		const closing = allowedTools({
+			revealCompleted: true,
+			decisionDispatched: true,
+		} as ConversationMetadata);
+		expect(reveal).toContain("simulate_contemplation");
+		expect(closing).toContain("simulate_contemplation");
 	});
 });
 
@@ -2940,6 +3186,144 @@ describe("FIX-71 — escolher grupo da comparison usa id REAL, nao fabrica slug"
 });
 
 // ============================================================================
+// CENARIO — FIX-72 — PEDIR OUTRAS OPCOES/DETALHAR fabrica o groupId (a RAIZ)
+// ----------------------------------------------------------------------------
+// Real (qa-noturno 2026-06-24, CPF/celular reais, revalidando o FIX-71 ao vivo):
+// jornada auto 180k → recomendacao ITAU ✅. O usuario pediu "Me mostra as outras
+// opcoes dessa faixa pra eu comparar". O agent foi pra get_group_details e
+// simulate_quota com ids FABRICADOS — `auto-180k` e `auto-180k-kairo` (este com o
+// NOME do usuario no id!) — e o adapter recusou ("Oferta/grupo nao encontrado na
+// descoberta atual"). Degradou gracioso ("esse grupo deu um problema") mas NAO
+// entregou.
+//
+// E a MESMA raiz do FIX-68 (auto-130k-60m) e FIX-71 (bb-auto-200k-72m), mas dois
+// buracos provados deixaram a raiz aberta:
+//   1. detector fragil: `looksLikeFabricatedGroupId = /-\d+k-\d+m$/i` NAO pega
+//      `auto-180k` (sem `-NNm`) nem `auto-180k-kairo` (sufixo `-nome`);
+//   2. cobertura parcial: o guard so existia em simulate_quota, nao em
+//      get_group_details.
+//
+// Fix (defense-in-depth): (a) fast-path generalizado pro marcador de valor-em-k
+// (pega ambos, nao confunde o hash); (b) rede de seguranca — o adapter lanca
+// GroupNotInDiscoveryError pra QUALQUER id fora do offerIndex, a tool captura e
+// devolve diretiva acionavel de re-busca (nao erro cru). Vale pras DUAS tools.
+// Degradacao graciosa preservada: re-busca/id-literal, sem loop de "instabilidade".
+//
+// Camada 1: src/lib/agent/tools/ai-sdk.fix-72.test.ts +
+//           src/lib/adapters/bevi/bevi-self-contract-adapter.fix-72.test.ts +
+//           src/lib/agent/system-prompt.fix-72.test.ts
+// ============================================================================
+
+describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-180k", () => {
+	const REAL_QUOTA_ID = /^[0-9a-f]{24}$/i;
+
+	// Conjunto descoberto (180k, foi pro present_comparison_table) — ids opacos reais.
+	const DISCOVERED = {
+		itau: "6a0ca9c73e68cce9b61d30fd",
+		bb: "7c3d115ee0fd6da59f9d18e1",
+	} as const;
+
+	it("cassette: stream do bug — 'as outras opcoes' e o agent fabricou auto-180k / auto-180k-kairo em get_group_details E simulate_quota", async () => {
+		// Reproducao fiel: "Me mostra as outras opcoes dessa faixa pra eu comparar".
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa! Deixa eu detalhar e comparar as outras opcoes dessa faixa:"),
+			toolCallChunk("tc-1", "get_group_details", { groupId: "auto-180k-kairo" }),
+			toolCallChunk("tc-2", "simulate_quota", { groupId: "auto-180k", creditValue: 180000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const detailsId =
+			(
+				toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
+		const simulateId =
+			(
+				toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
+
+		// A assinatura do bug: ids fabricados (slug categoria-valor[-nome]) em AMBAS as
+		// tools, fora do conjunto real. O detector server-side TEM que pegar os dois —
+		// o regex antigo (`-NNNk-NNm$`) deixava passar ambos.
+		expect(detailsId).toBe("auto-180k-kairo");
+		expect(simulateId).toBe("auto-180k");
+		expect(looksLikeFabricatedGroupId(detailsId)).toBe(true);
+		expect(looksLikeFabricatedGroupId(simulateId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(detailsId)).toBe(false);
+		expect(REAL_QUOTA_ID.test(simulateId)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(detailsId as never)).toBe(false);
+		expect(Object.values(DISCOVERED).includes(simulateId as never)).toBe(false);
+	});
+
+	it("trajetoria correta: detalhar/simular um grupo ja mostrado usa o id LITERAL opaco do card", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t0", "Olha as opcoes que encaixam nessa faixa:"),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: [
+					{ id: DISCOVERED.itau, administradora: "Itau", creditValue: 180000, termMonths: 72 },
+					{
+						id: DISCOVERED.bb,
+						administradora: "Banco do Brasil",
+						creditValue: 180000,
+						termMonths: 80,
+					},
+				],
+			}),
+			...textChunks("t1", "Beleza, deixa eu detalhar o Itau pra voce:"),
+			toolCallChunk("tc-det", "get_group_details", { groupId: DISCOVERED.itau }),
+			toolCallChunk("tc-sim", "simulate_quota", { groupId: DISCOVERED.itau, creditValue: 180000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		const presentedIds = (
+			(
+				toolCalls.find((tc) => tc.toolName === "present_comparison_table")?.input as
+					| { groups?: Array<{ id?: string }> }
+					| undefined
+			)?.groups ?? []
+		).map((g) => g.id ?? "");
+		const detailsId =
+			(
+				toolCalls.find((tc) => tc.toolName === "get_group_details")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
+		const simulateId =
+			(
+				toolCalls.find((tc) => tc.toolName === "simulate_quota")?.input as
+					| { groupId?: string }
+					| undefined
+			)?.groupId ?? "";
+
+		// Usou o id LITERAL opaco de um grupo que ACABOU de apresentar — nas DUAS tools.
+		expect(REAL_QUOTA_ID.test(detailsId)).toBe(true);
+		expect(REAL_QUOTA_ID.test(simulateId)).toBe(true);
+		expect(looksLikeFabricatedGroupId(detailsId)).toBe(false);
+		expect(looksLikeFabricatedGroupId(simulateId)).toBe(false);
+		expect(presentedIds).toContain(detailsId);
+		expect(presentedIds).toContain(simulateId);
+	});
+
+	it("acoplamento: detector reconhece auto-180k e auto-180k-kairo (FIX-72) e nao o hash real", () => {
+		expect(looksLikeFabricatedGroupId("auto-180k")).toBe(true);
+		expect(looksLikeFabricatedGroupId("auto-180k-kairo")).toBe(true);
+		expect(looksLikeFabricatedGroupId(DISCOVERED.itau)).toBe(false);
+		// nao regride os formatos do FIX-68/FIX-71
+		expect(looksLikeFabricatedGroupId("bb-auto-200k-72m")).toBe(true);
+		expect(looksLikeFabricatedGroupId("auto-130k-60m")).toBe(true);
+	});
+
+	it("acoplamento: o prompt tem regra unica de id literal valida pra simular E detalhar (FIX-72)", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/FIX-72/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-180k/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/get_group_details/);
+	});
+});
+
+// ============================================================================
 // GATE-IDENTIFY (D1, docs/jornada/CONTEXT.md) — CPF antecipado antes da busca
 // ----------------------------------------------------------------------------
 // A Bevi exige CPF+celular+LGPD ANTES de simular (Trilho B é proposta-first).
@@ -3161,8 +3545,13 @@ describe("E2E-REAL — fechamento mantém a administradora decidida (BUG-ADMIN-T
 		expect(pick).toMatch(/preferAdministradora/);
 		const fulfillment = readSource("src/lib/bevi/fulfillment.ts");
 		expect(fulfillment).toMatch(/input.administradoraPreferida/);
-		// Re-sim por TTL também mantém a marca confirmada.
-		expect(fulfillment).toMatch(/row.administradora\)/);
+		// Matching preparatório (2026-06-28): o pick também recebe o prazo preferido
+		// (4º arg) — desempata dentro da marca pra não trocar a oferta por outro prazo.
+		expect(fulfillment).toMatch(/input.prazoPreferido/);
+		// Re-sim por TTL mantém a marca E o prazo confirmados (row.administradora
+		// agora seguido de vírgula, pois há o 4º arg row.termMonths).
+		expect(fulfillment).toMatch(/row\.administradora,/);
+		expect(fulfillment).toMatch(/row\.termMonths/);
 	});
 });
 
@@ -3743,7 +4132,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 		const body = directives.slice(start, start + 1800);
 		expect(body).toMatch(/VENDEDOR/i);
 		expect(body).toMatch(/SEM re-perguntar/i);
-		expect(body).toMatch(/NAO chame tools/i);
+		expect(body).toMatch(/N[ÃA]O chame tools/i);
 		expect(body).toMatch(/[Pp]rioridade/);
 	});
 
@@ -5343,5 +5732,732 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 		// O copiloto é um canal separado — routing.ts não pode importar/chamar
 		// o orchestrator de vendas (evita a colisão de canal da spec §8).
 		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
+	});
+});
+
+// ============================================================================
+// FIX-76 — agente alucina falha de busca + ressuscita valor STALE como dado real
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
+// simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
+// "estou com dificuldade em acessar os grupos" / "instabilidade nas buscas"
+// (turn-trace: toolsCalled=[] — search_groups NUNCA foi chamada, ZERO erro de
+// tool) e ofereceu "a faixa de R$ 256.000 que já temos dados reais disponíveis"
+// — número ressuscitado do histórico, apresentado como dado real. Viola a regra
+// inviolável Bevi fonte única (proibido número stale/fictício em runtime).
+//
+// Defesa em duas frentes:
+//   • prompt (Camada 1, system-prompt.fix-76.test.ts): veta a frase.
+//   • gate (Camada 1, qualify-state.fix76.test.ts): troca de faixa reabre busca.
+// Aqui o cassette de stream reproduz a alucinação e o detector a pega; mais o
+// assert de que o gate FORÇA a busca na retomada com valor-alvo trocado.
+// ============================================================================
+
+describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_groups", () => {
+	// Detector da frase tóxica: falha/instabilidade/indisponibilidade de BUSCA.
+	const FALHA_BUSCA_ALUCINADA =
+		/instabilidade\s+n[ao]s?\s+busca|dificuldade\s+(em|de|pra|para)?\s*acess\w*\s+(os\s+)?grupos|problema\w*\s+(em|pra|para)?\s*acess\w*\s+(os\s+)?grupos|inst[áa]vel\s+(a|na)\s+busca/i;
+	// Detector do valor stale apresentado como dado real.
+	const VALOR_STALE_COMO_REAL =
+		/(dados?\s+reais?\s+(dispon[íi]ve|que\s+(j[áa]\s+)?temos)|j[áa]\s+temos\s+(dados\s+)?dispon)/i;
+
+	it("cassette: stream reproduz 'instabilidade nas buscas' SEM tool-call (bug exato Maria)", async () => {
+		const cassette =
+			"Poxa, estou com dificuldade em acessar os grupos no momento — uma instabilidade nas buscas. " +
+			"Mas a faixa de R$ 256.000 que já temos dados reais disponíveis segue valendo, quer seguir nela?";
+
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+
+		// Reprodução fiel: texto fabricou a falha + ofereceu valor stale, ZERO tool.
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+
+		// O detector PEGA a frase quando NENHUMA tool de busca foi chamada no turno.
+		const buscouNoTurno = toolCalls.some(
+			(t) => t.toolName === "search_groups" || t.toolName === "recommend_groups",
+		);
+		expect(buscouNoTurno).toBe(false);
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(cassette),
+			"Detector tem que pegar a frase de falha-de-busca alucinada. Se não pega, atualize o regex.",
+		).toBe(true);
+		expect(
+			VALOR_STALE_COMO_REAL.test(cassette),
+			"Detector tem que pegar o valor stale apresentado como 'dados reais disponíveis'.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: com troca de faixa, o turno chama search_groups na faixa nova (sem alucinar)", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que encaixa na faixa de 130 mil:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 130_000 }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("search_groups");
+		// Texto honesto: nem falha alucinada, nem valor stale como dado real.
+		expect(FALHA_BUSCA_ALUCINADA.test(text)).toBe(false);
+		expect(VALOR_STALE_COMO_REAL.test(text)).toBe(false);
+	});
+
+	it("structural: o prompt de produção veta a alucinação de falha de busca (sincronia com a regra dura)", () => {
+		expect(
+			FALHA_BUSCA_ALUCINADA.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa citar a frase tóxica ('instabilidade nas buscas') na regra dura FIX-76.",
+		).toBe(true);
+	});
+
+	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			currentPersona: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: { creditMax: 130_000, prazoMeses: 60, hasLance: "no", lanceEmbutido: false },
+			searchDispatched: true,
+			revealCompleted: true,
+			discoveredCreditTarget: 256_000,
+		};
+		// O orquestrador volta a dirigir o gate de busca (em vez de deixar o modelo
+		// livre pra alucinar) e libera mesmo num turno de intent fraco.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
+	});
+});
+
+// ============================================================================
+// FIX-77 — system role dentro de `messages` dispara warning de prompt-injection
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, monitor de logs do aja-app-develop): a cada turno do
+// agente principal saía no stdout:
+//   "AI SDK Warning: System messages in the prompt or messages fields can be a
+//    security risk because they may enable prompt injection attacks. Use the
+//    system option instead when possible..."
+// Origem: o orchestrator prependava role:"system" DENTRO do array `messages` de
+// agent.stream(...). A AI SDK 6 emite o warning via console.warn em
+// standardizePrompt quando messages.some(m => m.role === "system").
+//
+// O cassette prova o shape: messages COM system → warning; system na OPÇÃO
+// (instructions/system) + messages SEM system → sem warning. Cross-ref dos
+// asserts estruturais: src/lib/agent/orchestrator/system-messages.fix-77.test.ts.
+// ============================================================================
+
+describe("FIX-77-SYSTEM-IN-MESSAGES — warning de prompt-injection a cada turno", () => {
+	// Mock model mínimo: 1 texto + finish stop. Reutilizável nos dois shapes.
+	function mockModel() {
+		return new MockLanguageModelV3({
+			doStream: async () => ({
+				// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing aceita loosely
+				stream: simulateReadableStream({
+					chunks: [
+						{ type: "stream-start", warnings: [] },
+						...textChunks("t1", "ok"),
+						FINISH_STOP,
+						// biome-ignore lint/suspicious/noExplicitAny: idem
+					] as any[],
+				}),
+			}),
+		});
+	}
+
+	// Detector do warning exato observado em prod.
+	const INJECTION_WARNING =
+		/System messages in the prompt or messages fields can be a security risk|prompt injection/i;
+
+	async function warnsFrom(run: () => ReturnType<typeof streamText>): Promise<string[]> {
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const r = run();
+			for await (const _ of r.textStream) {
+				// drena
+			}
+			await r.warnings;
+			return spy.mock.calls.map((c) => String(c[0]));
+		} finally {
+			spy.mockRestore();
+		}
+	}
+
+	it("cassette: role:'system' DENTRO de messages dispara o warning (bug original)", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [
+					{ role: "system", content: 'Nome do usuario: "Kairo"' },
+					{ role: "user", content: "oi" },
+					// biome-ignore lint/suspicious/noExplicitAny: idem
+				] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"messages com role:'system' TÊM que disparar o warning de prompt-injection (reproduz o bug).",
+		).toBe(true);
+	});
+
+	it("shape CORRETO pós-fix: system na opção + messages sem system → SEM warning", async () => {
+		const warns = await warnsFrom(() =>
+			streamText({
+				model: mockModel(),
+				system: 'Nome do usuario: "Kairo"',
+				// biome-ignore lint/suspicious/noExplicitAny: shape de mensagem cru pro teste
+				messages: [{ role: "user", content: "oi" }] as any,
+			}),
+		);
+		expect(
+			warns.some((w) => INJECTION_WARNING.test(w)),
+			"system na OPÇÃO (instructions/system) não pode disparar o warning — é o shape que a Opção A entrega.",
+		).toBe(false);
+	});
+});
+
+// ============================================================================
+// FIX-78 — comparison_table dropado no reveal com 2+ grupos
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, conv a9c5effa, traceId 6b09c87f): no reveal de 2+
+// grupos o agente chamou present_recommendation_card mas DROPOU
+// present_comparison_table — artifactsEmitted = [recommendation_card,
+// simulation_result], comparison_table AUSENTE. O usuário viu só a proposta
+// recomendada, sem o carrossel comparativo das demais. Ter chamado
+// recommendation_card PROVA que o modelo classificou como 2+ grupos (com 1 só
+// grupo o prompt manda NÃO chamar recommendation_card), logo o comparativo era
+// obrigatório e faltou.
+//
+// Mesma classe do FIX-76 (passo obrigatório da jornada omitido pelo modelo). A
+// defesa é a REGRA DURA de inseparabilidade no buildSearchSummaryDirective
+// (Camada 1: directives.fix-78.test.ts). Aqui o cassette reproduz o drop e o
+// detector o pega.
+// ============================================================================
+
+describe("FIX-78-COMPARISON-DROPADO — recommendation_card sem comparison_table (2+ grupos)", () => {
+	// Detector da violação: num reveal com 2+ grupos, recommendation_card e
+	// comparison_table são INSEPARÁVEIS — emitir o primeiro sem o segundo é o bug.
+	function violaInseparabilidade(toolNames: string[]): boolean {
+		const hasRec = toolNames.includes("present_recommendation_card");
+		const hasComp = toolNames.includes("present_comparison_table");
+		return hasRec && !hasComp;
+	}
+
+	it("cassette: reveal 2+ grupos emite recommendation_card SEM comparison_table (bug exato)", async () => {
+		// Trajetória do bug: recommendation_card sai, comparison_table NÃO.
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos boas opções pro seu perfil. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).not.toContain("present_comparison_table");
+		// O detector PEGA o drop — é o sinal de regressão.
+		expect(
+			violaInseparabilidade(names),
+			"Detector tem que pegar recommendation_card sem comparison_table no reveal 2+ grupos.",
+		).toBe(true);
+	});
+
+	it("trajetória CORRETA: reveal 2+ grupos emite os DOIS cards (recommendation + comparison)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada é:"),
+			toolCallChunk("tc-sg", "search_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rg", "recommend_groups", { category: "auto", creditMax: 100_000 }),
+			toolCallChunk("tc-rc", "present_recommendation_card", { administradora: "ITAÚ", score: 0.9 }),
+			toolCallChunk("tc-ct", "present_comparison_table", {
+				groups: [{ administradora: "ITAÚ" }, { administradora: "BRADESCO" }],
+				highlightBestIndex: 0,
+			}),
+			toolCallChunk("tc-sq", "simulate_quota", { groupId: "abc123", creditValue: 100_000 }),
+			toolCallChunk("tc-sr", "present_simulation_result", {
+				groupId: "abc123",
+				monthlyPayment: 1500,
+				termMonths: 60,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((t) => t.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_comparison_table");
+		expect(violaInseparabilidade(names)).toBe(false);
+	});
+
+	it("structural: o directive do reveal veta o drop (regra de inseparabilidade)", () => {
+		const reveal = buildSearchSummaryDirective({
+			category: "auto",
+			meta: {
+				currentCategory: "auto",
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 100_000, prazoMeses: 12, hasLance: "no" },
+			},
+		});
+		expect(
+			/INSEPAR[ÁA]VE/i.test(reveal),
+			"buildSearchSummaryDirective precisa da REGRA DURA de inseparabilidade (FIX-78).",
+		).toBe(true);
+		const colado =
+			/present_recommendation_card[\s\S]{0,260}present_comparison_table|present_comparison_table[\s\S]{0,260}present_recommendation_card/;
+		expect(colado.test(reveal)).toBe(true);
+	});
+});
+
+// ============================================================================
+// REV-A — single-option guard MORTO no caminho search_groups
+// ----------------------------------------------------------------------------
+// Revisão por modelo errado (2026-06-28). O FIX-7 (single-option) suprime o
+// recommendation_card quando a descoberta retorna 1 grupo — pra não duplicar o
+// grupo (recommendation_card + simulation_result do MESMO grupo). O runner
+// alimenta o guard com extractDiscoveryCount(toolName, output).
+//
+// BUG: o branch de `search_groups` testava `Array.isArray(output)`, mas
+// `executeSearchGroups` (ai-sdk.ts) devolve `{ groups, total }` — NUNCA array.
+// Logo o count era SEMPRE null → o single-option guard nunca disparava num
+// reveal de opção única descoberto via search_groups → card duplicado voltava
+// (o exato defeito que o FIX-7 corrigiu, só que pro caminho recommend_groups).
+// O teste antigo passava `[{id}]` (array) — shape que a produção nunca emite —
+// e ficava verde testando o cenário errado.
+//
+// Defesa estrutural (Camada 1): src/lib/agent/orchestrator/discovery-count.test.ts
+// Aqui (Camada 2): a cadeia REAL search_groups → count → guard suprime.
+// ============================================================================
+
+describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no caminho search_groups", () => {
+	// Shape REAL do tool-result de search_groups (executeSearchGroups).
+	const searchGroupsOutput = (n: number) => ({
+		groups: Array.from({ length: n }, (_, i) => ({ id: `g${i}` })),
+		total: n,
+	});
+
+	it("extractDiscoveryCount conta o shape real {groups,total} de search_groups (não array)", async () => {
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		// ANTES do fix: Array.isArray({groups,total}) === false → null. Quebra aqui.
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(1))).toBe(1);
+		expect(extractDiscoveryCount("search_groups", searchGroupsOutput(3))).toBe(3);
+	});
+
+	it("cadeia completa: opção única via search_groups suprime o recommendation_card", async () => {
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		// 1) o runner conta a descoberta do tool-result REAL de search_groups…
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(1));
+		expect(discoveryCount).toBe(1);
+		// 2) …e o single-option guard suprime o recommendation_card duplicado.
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-single-option",
+		});
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("single-option");
+	});
+
+	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
+		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
+		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
+		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
+		expect(discoveryCount).toBe(3);
+		const verdict = evaluateArtifactGuards({
+			meta: { currentCategory: "auto" } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-multi-option",
+		});
+		expect(verdict.allow).toBe(true);
+	});
+});
+
+// ============================================================================
+// REV-A — directive do simulador ENSINAVA o agent a descrever o gesto da UI
+// ----------------------------------------------------------------------------
+// system-prompt.ts proíbe descrever a UI ("arraste") no simulador-agulha —
+// "diga algo como 'dá pra ver quando você consegue ser contemplado aqui'". As
+// tool descriptions e o cassette bevi-fulfillment.structural barram "arraste o
+// slider". MAS buildSimulatorDialDirective dava como frase-modelo "arrasta a
+// agulha pro mês que você quer e ve como fica" — descrição de gesto que escapa
+// do detector exato ("arraste o slider") e é injetada por turno (vence o prompt
+// estável). Defeito de alucinação/meta-narrativa de UI.
+// ============================================================================
+
+describe("REV-A-SIMULATOR-UI-GESTURE — directive não ensina o agent a descrever o gesto", () => {
+	const GESTURE_DETECTORS = [
+		/arrast/i, // arrasta / arraste / arrastar
+		/desliz/i, // desliza / deslize
+		/puxa\s+a\s+agulha/i,
+		/move\s+a\s+agulha/i,
+	];
+
+	it("buildSimulatorDialDirective não descreve gesto de UI (com e sem administradora)", () => {
+		for (const args of [{}, { administradora: "Porto Seguro" }]) {
+			const d = buildSimulatorDialDirective(args);
+			const hits = GESTURE_DETECTORS.filter((rx) => rx.test(d));
+			expect(
+				hits.length,
+				`directive do simulador descreve gesto de UI (proibido por system-prompt.ts). Directive: "${d}"`,
+			).toBe(0);
+		}
+	});
+
+	it("detector pega o cassette do bug (frase-modelo antiga descrevia o gesto)", () => {
+		const cassette = "Olha que legal — arrasta a agulha pro mês que você quer e ve como fica:";
+		const hits = GESTURE_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: a regra anti-descrição-de-UI vive no system prompt", () => {
+		// Sincronia: o directive segue a regra do prompt estável.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/n[ãa]o descreva a ui|arraste/i);
+	});
+});
+
+// ============================================================================
+// REV-A — frase PROIBIDA "vou reservar essa opção" como frase-modelo no directive
+// ----------------------------------------------------------------------------
+// "vou reservar essa opção" é banida (system-prompt.ts + buildAdjustValueDirective
+// a proíbem explicitamente — a plataforma é self-service, nada é "reservado").
+// MAS buildSimulationInterestDirective dava ESSA frase como modelo POSITIVO
+// ("escreva ... tipo 'Show, vou reservar essa opção pra você'"). Hoje sem callers
+// em produção, mas é landmine: religar o fluxo "Tenho interesse" emite a frase
+// banida. Frase-modelo trocada por uma de fechamento self-service.
+// ============================================================================
+
+describe("REV-A-RESERVAR-LANDMINE — directive não emite a frase banida 'reservar essa opção'", () => {
+	it("buildSimulationInterestDirective não usa a frase-modelo proibida", () => {
+		const d = buildSimulationInterestDirective("Porto Seguro");
+		expect(
+			d.toLowerCase(),
+			"directive emite frase banida 'reservar essa opção' como modelo positivo",
+		).not.toMatch(/reservar essa op[çc][ãa]o/);
+	});
+
+	it("a frase segue PROIBIDA no prompt estável (sincronia)", () => {
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/reservar essa op[çc][ãa]o/);
+	});
+});
+
+// ============================================================================
+// FIX-108 — escolha do grupo no WhatsApp = card da recomendada + "Ver outras"
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 (spec jornada-entrada-simulador, decisão #5): no
+// WhatsApp a escolha do grupo NÃO é lista plana. A recomendada vem em DESTAQUE
+// (card com os CTAs de ação) + botão "Ver outras opções" que abre as
+// alternativas. O reveal do agente emite present_recommendation_card; o canal
+// WhatsApp o renderiza como esse card destacado.
+//
+// Defesa estrutural complementar:
+//   - src/lib/whatsapp/formatter.card-recomendada.test.ts (botões do card)
+//   - src/lib/whatsapp/interactive-handlers.show-others.test.ts (clique → agente)
+// ============================================================================
+
+describe("FIX-108-CARD-RECOMENDADA-VER-OUTRAS — recomendada em destaque + 'Ver outras opções'", () => {
+	it("cassette: o reveal do agente emite present_recommendation_card", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada pra você:"),
+			toolCallChunk("tc-rec", "recommend_groups", { category: "auto" }),
+			toolCallChunk("tc-card", "present_recommendation_card", {
+				id: "porto-80k",
+				administradora: "Porto Seguro",
+				category: "auto",
+				creditValue: 80000,
+				monthlyPayment: 1200,
+				termMonths: 80,
+				contemplationRate: 2,
+				score: 0.92,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls.some((tc) => tc.toolName === "present_recommendation_card")).toBe(true);
+	});
+
+	it("no WhatsApp a recomendada vira card com 'Ver outras opções' + CTAs preservados", () => {
+		const wa = artifactToWhatsApp("recommendation_card", {
+			id: "porto-80k",
+			administradora: "Porto Seguro",
+			category: "auto",
+			creditValue: 80000,
+			monthlyPayment: 1200,
+			termMonths: 80,
+			contemplationRate: 2,
+			score: 0.92,
+		});
+		const buttons = wa?.interactive?.action?.buttons ?? [];
+		const ids = buttons.map((b) => b.reply.id);
+		const titles = buttons.map((b) => b.reply.title ?? "");
+		expect(ids).toContain("show_others");
+		expect(titles.some((t) => /ver outras op/i.test(t))).toBe(true);
+		// CTAs de ação preservados (regra do bloco).
+		expect(ids).toContain("interest_porto-80k");
+		expect(ids).toContain("simulate_porto-80k");
+		expect(buttons.length).toBeLessThanOrEqual(3);
+	});
+
+	it("'Ver outras opções' tem alvo: a comparação segue mapeada (anti-drop)", () => {
+		const wa = artifactToWhatsApp("comparison_table", {
+			groups: [
+				{
+					id: "g1",
+					administradora: "Porto",
+					creditValue: 80000,
+					monthlyPayment: 1200,
+					termMonths: 80,
+				},
+				{
+					id: "g2",
+					administradora: "Itaú",
+					creditValue: 82000,
+					monthlyPayment: 1250,
+					termMonths: 84,
+				},
+			],
+		});
+		expect(wa).not.toBeNull();
+		expect(wa?.interactive?.action?.sections?.[0]?.rows?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("acoplamento: o handler do clique conduz às alternativas via agente", () => {
+		const src = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(src).toMatch(/replyId === "show_others"/);
+		expect(src).toMatch(/handleShowOthers/);
+		expect(src).toMatch(/Quero ver outras op[çc][õo]es/);
+	});
+});
+
+// ============================================================================
+// FIX-109 — simulador conversacional + valor por conversa no WhatsApp
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 (spec jornada-entrada-simulador, decisões #2 e #6):
+//  (a) o valor do bem virou CONVERSA — o WhatsApp não manda mais a lista de
+//      faixas (value_picker degrada pra pedido conversacional);
+//  (b) o simulador é um LOOP CONVERSACIONAL: a abertura convida o mês-alvo;
+//      cada iteração apresenta o cenário que o agente calculou (via
+//      computeContemplationDial — bloco-jornada-entrada). O canal SÓ formata,
+//      nunca recalcula.
+//
+// Defesa estrutural complementar:
+//   - src/lib/whatsapp/formatter.simulador.test.ts (formatter)
+//   - src/lib/whatsapp/formatter.moto.test.ts (value_picker conversacional)
+// ============================================================================
+
+describe("FIX-109-SIMULADOR-CONVERSACIONAL — valor por conversa + dial em loop", () => {
+	it("value_picker NÃO vira mais lista de faixas (vira pedido conversacional)", () => {
+		const wa = artifactToWhatsApp("value_picker", { category: "auto", fields: [] });
+		expect(wa).not.toBeNull(); // anti-drop preservado
+		expect(wa?.type).toBe("text");
+		expect(wa?.interactive?.action?.sections).toBeUndefined();
+	});
+
+	it("abertura do simulador (só inputs): convida o loop, sem marcos 3/6/12/24", () => {
+		const wa = artifactToWhatsApp("contemplation_dial", {
+			category: "auto",
+			creditValue: 80000,
+			termMonths: 80,
+			monthlyPayment: 1200,
+			initialTargetMonth: 6,
+		});
+		expect(wa?.type).toBe("text");
+		expect(wa?.text ?? "").not.toMatch(/\b3m:|\b6m:|\b12m:|\b24m:/);
+		expect(wa?.text ?? "").toMatch(/quantos meses|quando.*contemplad/i);
+	});
+
+	it("iteração: o canal formata o cenário recalculado pelo agente (sem recalcular)", () => {
+		// O agente (bloco-jornada-entrada) calcula via computeContemplationDial e
+		// devolve o cenário do mês-alvo no payload; o canal só apresenta.
+		const wa = artifactToWhatsApp("contemplation_dial", {
+			administradora: "Porto Seguro",
+			creditValue: 80000,
+			termMonths: 80,
+			scenario: {
+				targetMonth: 6,
+				mode: "lance",
+				requiredLancePct: 45,
+				requiredLanceValue: 36000,
+				receivedCredit: 64000,
+				paymentAfterContemplation: 1200,
+			},
+		});
+		const t = wa?.text ?? "";
+		expect(t).toMatch(/6 meses/);
+		expect(t).toMatch(/45%/);
+		expect(t).toMatch(/64\.000/);
+		expect(t).toMatch(/contemplação não é garantida/i);
+	});
+
+	it("acoplamento: o canal NÃO recalcula o dial (sem contemplationDialMarks no formatter)", () => {
+		const src = readSource("src/lib/whatsapp/formatter.ts");
+		expect(src).not.toMatch(/contemplationDialMarks/);
+	});
+
+	it("acoplamento: o adapter documenta a parada de emissão do value_picker (FIX-109)", () => {
+		const src = readSource("src/lib/whatsapp/adapter.ts");
+		expect(src).toMatch(/value_picker/);
+		expect(src).toMatch(/FIX-109/);
+	});
+});
+
+// ============================================================================
+// FIX-110 — agente fica mudo (turno preso)
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD, 2026-06-30): agente pergunta sobre lance
+// embutido → usuário "Não, prefiro sem lance embutido" → SILÊNCIO (sem typing,
+// sem resposta) → usuário "travou?" → aí o agente responde + dispara search.
+//
+// Diagnóstico CONFIRMADO no código (diverge da hipótese inicial do card, que
+// culpava o onError ausente): um spike provou que `createUIMessageStream` SEM
+// onError NÃO engole o erro — emite { type:"error", errorText } na mesma. E o
+// ChatInput é `disabled={isStreaming}` (o usuário SÓ conseguiu digitar "travou?"
+// porque o status já tinha saído de "streaming"). Logo o turno FECHOU com
+// sucesso SEM emitir nenhuma part visível = turno mudo. Defesas:
+//   (a) onError uniforme (streamErrorMessage) em todo stream do route;
+//   (b) guard de turno-vazio no user-turn (isTurnEmpty → fallback honesto);
+//   (c) watchdog no client (stream-watchdog) — fora deste cassette (React).
+// ============================================================================
+
+async function drainUIStream(
+	stream: ReadableStream<unknown>,
+): Promise<Array<{ type?: string; [k: string]: unknown }>> {
+	const reader = stream.getReader();
+	const parts: Array<{ type?: string; [k: string]: unknown }> = [];
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		parts.push(value as { type?: string });
+	}
+	return parts;
+}
+
+describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno vazio)", () => {
+	const ROUTE = "src/app/api/chat/route.ts";
+
+	it("structural: TODO createUIMessageStream do route registra onError", () => {
+		const src = readSource(ROUTE);
+		const streams = (src.match(/createUIMessageStream<AjaUIMessage>\(/g) ?? []).length;
+		const onErrors = (src.match(/onError:/g) ?? []).length;
+		expect(streams).toBeGreaterThanOrEqual(4);
+		expect(
+			onErrors,
+			`route.ts tem ${streams} createUIMessageStream mas só ${onErrors} onError — ` +
+				"todo stream precisa de onError pra fechar o turno com erro tipado (FIX-110).",
+		).toBeGreaterThanOrEqual(streams);
+	});
+
+	it("structural: o onError vem do helper único streamErrorMessage (sem inline divergente)", () => {
+		const src = readSource(ROUTE);
+		expect(src).toMatch(/streamErrorMessage/);
+	});
+
+	it("structural: o user-turn é blindado contra turno mudo (isTurnEmpty)", () => {
+		const src = readSource(ROUTE);
+		expect(src).toMatch(/isTurnEmpty/);
+	});
+
+	it("cassette: stream que erra no meio emite error part tipado (turno fecha, client sai de streaming)", async () => {
+		const stream = createUIMessageStream({
+			execute: () => {
+				throw new Error("a administradora caiu no meio do turno");
+			},
+			onError: streamErrorMessage,
+		});
+		const parts = await drainUIStream(stream as ReadableStream<unknown>);
+		const err = parts.find((p) => p.type === "error");
+		expect(
+			err,
+			"stream que erra DEVE emitir error part — sem isso o client fica mudo",
+		).toBeDefined();
+		expect((err as { errorText?: string }).errorText).toBe(
+			"a administradora caiu no meio do turno",
+		);
+	});
+
+	it("cassette: turno que fecha sem emitir nada visível é detectado como mudo (root cause real)", () => {
+		const recordVazio = {
+			textChars: 0,
+			toolCount: 0,
+			artifactCount: 0,
+			gate: null,
+			handoff: false,
+			transitionedTo: null,
+		};
+		expect(isTurnEmpty(recordVazio)).toBe(true);
+		// Contra-exemplo: turno que disparou search_groups (tool) NÃO é mudo.
+		expect(isTurnEmpty({ ...recordVazio, toolCount: 1 })).toBe(false);
+		// O fallback existe e é uma frase honesta (não-vazia).
+		expect(EMPTY_TURN_FALLBACK.length).toBeGreaterThan(0);
+	});
+});
+
+// ============================================================================
+// FIX-112 — fim da proposta bugado ("bora" lido como recusa)
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
+// perguntou "quer completar?" e o usuário respondeu "bora" / "ok estou pronto"
+// (AVANÇO) → o agente respondeu "Sem problema! Quando quiser retomar..." (leu
+// como recusa) → beco sem saída de texto, nenhum card de upload.
+//
+// O código já gateava o documento certo (confirmOffer ordena choose→links; card
+// só vem via offer-confirm; ver fulfillment.test.ts). O gap é comportamento de
+// LLM — defendido por 2 REGRAS DURAS no SPECIALIST_BASE_PROMPT. Este cassette
+// trava a FRASE de adiamento como regressão e prova que um afirmativo de avanço
+// NÃO casa com ela.
+// ============================================================================
+
+describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
+	const REFUSAL_DETECTORS = [
+		/sem problema!?\s*quando quiser/i,
+		/quando quiser retomar/i,
+		/sem pressa[\s\S]{0,30}quando quiser/i,
+	];
+
+	it("cassette: a frase de adiamento do bug é reproduzida fielmente (fixture do detector)", async () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar. 😊";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector pega a frase de adiamento indevida (regressão se voltar)", () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar.";
+		const hits = REFUSAL_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length, "a frase de adiamento DEVE ser detectável").toBeGreaterThanOrEqual(1);
+	});
+
+	it("um afirmativo de AVANÇO nunca casa com os detectores de recusa", () => {
+		for (const advance of ["bora", "ok estou pronto", "vamos", "pode ser", "tô pronto"]) {
+			const anyHit = REFUSAL_DETECTORS.some((rx) => rx.test(advance));
+			expect(anyHit, `"${advance}" é avanço, não pode disparar adiamento`).toBe(false);
+		}
+	});
+
+	it("structural: o prompt fixa 'bora'/'estou pronto' como avanço e gateia o documento", () => {
+		const src = readSource("src/lib/agent/system-prompt.ts");
+		expect(src).toMatch(/FIX-112/);
+		expect(src.toLowerCase()).toMatch(/bora/);
+		// gate: documento só depois de confirmar a oferta
+		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
 	});
 });

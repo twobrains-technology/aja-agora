@@ -12,10 +12,12 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -58,7 +60,7 @@ export const comparisonTableSchema = z.object({
 	highlightBestIndex: z.number().int().optional().describe("Indice (0-based) do grupo recomendado"),
 });
 
-const simulationResultSchema = z.object({
+export const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	category: z
@@ -250,12 +252,20 @@ const recommendGroupsSchema = z.object({
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
+	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
+	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
+	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
+	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
+	// explicito num what-if pos-reveal.
 	desiredTermMonths: z
 		.number()
 		.int()
 		.min(0)
 		.default(0)
-		.describe("Prazo desejado em meses (0 = sem preferencia)"),
+		.describe(
+			"Prazo desejado em meses. 0 = sem preferencia (PADRAO — o prazo nao e coletado na entrada, FIX-103). So passe > 0 se o usuario pedir um prazo explicito num what-if.",
+		),
 });
 
 // ---- Domain tools (data fetching) ----
@@ -302,51 +312,75 @@ async function executeSearchGroups(
 }
 
 /**
- * FIX-71/FIX-68 — detecta um groupId FABRICADO pela LLM. Os ids reais da
- * descoberta (Bevi quotaId) sao hashes opacos; o id alucinado segue o padrao
- * `[banco-]categoria-valor-prazo` e SEMPRE termina em "-NNNk-NNm"
- * (ex.: "bb-auto-200k-72m", "auto-130k-60m"). Pega ambos sem falso-positivo no
- * hash (que nunca tem esse sufixo). Usado pra curto-circuitar com guidance
- * acionavel em vez de gastar round-trip na Bevi e o erro virar "instabilidade".
+ * FIX-72/FIX-71/FIX-68 — fast-path que reconhece um groupId FABRICADO pela LLM.
+ * Os ids reais da descoberta (Bevi quotaId) sao hashes opacos (Mongo ObjectId,
+ * 24 hex) — e hex NUNCA contem a letra `k`. O id alucinado segue o padrao slug
+ * `[banco-]categoria-valorK[-prazoM|-nome]` e SEMPRE carrega um valor em milhares
+ * (`-180k`, `-200k`, `-130k`). Detectamos esse marcador: pega `auto-180k`,
+ * `auto-180k-kairo` (FIX-72, com o NOME do usuario no id), `bb-auto-200k-72m`
+ * (FIX-71), `auto-130k-60m` (FIX-68) — e NUNCA o hash (sem `k`).
+ *
+ * O regex antigo (`/-\d+k-\d+m$/`) so pegava o sufixo `-NNNk-NNm`, deixando passar
+ * `auto-180k` e `auto-180k-kairo` (a raiz do FIX-72). E so um ATALHO de latencia
+ * (<3s): a rede de seguranca real e o `GroupNotInDiscoveryError` capturado abaixo,
+ * que cobre QUALQUER id fora do conjunto real — inclusive slug sem valor-k.
  */
 export function looksLikeFabricatedGroupId(groupId: string): boolean {
-	return /-\d+k-\d+m$/i.test((groupId ?? "").trim());
+	return /(?:^|-)\d+k(?:-|$)/i.test((groupId ?? "").trim());
 }
 
-async function executeSimulateQuota(
+/**
+ * FIX-72 — diretiva ACIONAVEL (mesmo shape de erro de tool) que devolve o controle
+ * pro modelo se auto-corrigir com o id LITERAL ou re-buscar, em vez de propagar
+ * erro cru (que o AI SDK converte em "instabilidade" e trava o usuario). Reusada
+ * pelos dois caminhos (fast-path de slug + rede do GroupNotInDiscoveryError) e
+ * pelas duas tools (simulate_quota / get_group_details). Degradacao graciosa
+ * preservada — guidance pra retomar, nunca loop.
+ */
+function rebuscaDirective(groupId: string): { error: string } {
+	return {
+		error:
+			`O groupId "${groupId}" nao existe na descoberta atual (nao e um id real retornado por search_groups/recommend_groups). ` +
+			"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
+			"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.",
+	};
+}
+
+export async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof simulateQuotaInput>,
 ) {
-	// FIX-71: id fabricado (banco-categoria-valor-prazo) NUNCA existe na descoberta
-	// — nem chama a Bevi. Devolve guidance acionavel (mesmo shape de erro de tool)
-	// pro modelo se auto-corrigir com o id LITERAL ou re-buscar. Degradacao
-	// graciosa preservada (sem loop de "instabilidade").
+	// FIX-72 (fast-path): id com cara de slug fabricado (marcador de valor-em-k)
+	// NUNCA existe na descoberta — nem chama a Bevi, devolve guidance acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return {
-			error:
-				`O groupId "${args.groupId}" parece fabricado (padrao banco-categoria-valor-prazo) e nao existe na descoberta. ` +
-				"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
-				"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive o id de banco/categoria/valor/prazo.",
-		};
+		return rebuscaDirective(args.groupId);
 	}
-	const [details, simulation] = await Promise.all([
-		adapter.getGroupDetails({ groupId: args.groupId }),
-		adapter.simulateQuota(args),
-	]);
-	const delta = Math.abs(args.creditValue - details.creditValue);
-	const relativeDelta = delta / details.creditValue;
-	if (delta > 1 && relativeDelta > 0.01) {
-		const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-		return {
-			...simulation,
-			creditAdjustmentNotice: {
-				requestedCreditValue: args.creditValue,
-				groupNominalCreditValue: details.creditValue,
-				message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
-			},
-		};
+	try {
+		const [details, simulation] = await Promise.all([
+			adapter.getGroupDetails({ groupId: args.groupId }),
+			adapter.simulateQuota(args),
+		]);
+		const delta = Math.abs(args.creditValue - details.creditValue);
+		const relativeDelta = delta / details.creditValue;
+		if (delta > 1 && relativeDelta > 0.01) {
+			const fmt = (n: number) =>
+				n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			return {
+				...simulation,
+				creditAdjustmentNotice: {
+					requestedCreditValue: args.creditValue,
+					groupNominalCreditValue: details.creditValue,
+					message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+				},
+			};
+		}
+		return simulation;
+	} catch (err) {
+		// FIX-72 (rede de seguranca): id fora do conjunto real (qualquer formato —
+		// hex inventado, oferta expirada) → diretiva de re-busca, nunca erro cru.
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		throw err;
 	}
-	return simulation;
 }
 
 async function executeGetRates(
@@ -357,11 +391,22 @@ async function executeGetRates(
 	return { rates, total: rates.length };
 }
 
-async function executeGetGroupDetails(
+export async function executeGetGroupDetails(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof getGroupDetailsInput>,
 ) {
-	return await adapter.getGroupDetails(args);
+	// FIX-72: mesma resolucao robusta de simulate_quota — o get_group_details
+	// recebia id fabricado (`auto-180k-kairo` no log) e devolvia erro cru. Fast-path
+	// pro slug + rede do GroupNotInDiscoveryError → diretiva de re-busca acionavel.
+	if (looksLikeFabricatedGroupId(args.groupId)) {
+		return rebuscaDirective(args.groupId);
+	}
+	try {
+		return await adapter.getGroupDetails(args);
+	} catch (err) {
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		throw err;
+	}
 }
 
 async function executeRecommendGroups(
@@ -495,7 +540,7 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"[LEGADO/WEB — FIX-104] Seletor interativo de valores (sliders). NAO use na ENTRADA da jornada: o valor do bem agora e coletado por CONVERSA (o usuario FALA o valor; o analyzer extrai). Esta tool segue disponivel apenas como apoio de UI da WEB (slider simples) renderizado pelo sistema — o agente NUNCA a dispara na entrada pra pedir o valor do bem. Se chamar, NUNCA escreva 'arrasta o slider' nem mencione UI especifica.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
@@ -624,6 +669,55 @@ export const consorcioTools = {
 			initialTargetMonth: number;
 		}) => {
 			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
+		},
+	}),
+
+	// FIX-106 — simulador de contemplação CONVERSACIONAL (loop). Versão de CÁLCULO
+	// (paralela a compute_scenarios): RECALCULA o cenário pra um mês-alvo e DEVOLVE
+	// os números pro agente NARRAR (WhatsApp + what-if de mês em qualquer canal).
+	// A WEB mantém a agulha arrastável (present_contemplation_dial). Reusa o MESMO
+	// motor puro (computeContemplationDial) — dial e conversa batem número a número.
+	simulate_contemplation: tool({
+		description:
+			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
+		inputSchema: z.object({
+			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais — do plano recomendado"),
+			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses — do plano recomendado"),
+			targetMonth: z
+				.number()
+				.int()
+				.positive()
+				.describe("Mês-alvo de contemplação que o usuário quer simular (a 'agulha')"),
+			monthlyPayment: z
+				.number()
+				.positive()
+				.describe("Parcela base do grupo em reais — do plano recomendado"),
+			historicalWinningBidPct: z
+				.number()
+				.optional()
+				.describe("Lance vencedor típico do grupo (% da carta), da oferta real, se conhecido"),
+			referenceMonth: z
+				.number()
+				.int()
+				.optional()
+				.describe("Mês em que o lance de referência vence (da oferta real), se conhecido"),
+			maxEmbutidoPct: z
+				.number()
+				.optional()
+				.describe("Teto do lance embutido aceito pelo grupo (default 30)"),
+		}),
+		execute: async (args: {
+			creditValue: number;
+			termMonths: number;
+			targetMonth: number;
+			monthlyPayment: number;
+			historicalWinningBidPct?: number;
+			referenceMonth?: number;
+			maxEmbutidoPct?: number;
+		}) => {
+			// Reuso obrigatório do motor puro (regra 6 do bloco) — dial e conversa
+			// usam exatamente o mesmo cálculo, então os números nunca divergem.
+			return computeContemplationDial(args);
 		},
 	}),
 

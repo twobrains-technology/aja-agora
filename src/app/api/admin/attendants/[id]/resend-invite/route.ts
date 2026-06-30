@@ -19,13 +19,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 		where: eq(userTable.id, id),
 	});
 	if (!attendant || attendant.role !== "attendant") {
-		return Response.json({ error: "Atendente nao encontrado" }, { status: 404 });
+		return Response.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
-	// Onboarding ja concluido — nao ha porque reenviar.
+	// Onboarding já concluído — não há porquê reenviar.
 	if (attendant.emailVerified && !attendant.inviteToken) {
 		return Response.json(
-			{ error: "Atendente ja ativou a conta. Nao e necessario reenviar o convite." },
+			{ error: "Atendente já ativou a conta. Não é necessário reenviar o convite." },
 			{ status: 409 },
 		);
 	}

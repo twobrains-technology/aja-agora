@@ -116,6 +116,17 @@ export function buildAgent(
 		 * só 1 vez por conversa, ok).
 		 */
 		toolChoice?: ToolChoice<ConsorcioToolSet>;
+		/**
+		 * FIX-77: blocos de system DINÂMICOS por turno (systemContext —
+		 * knownName/experience/doubts — + examplesBlock filtrados) que ANTES o
+		 * orchestrator prependava DENTRO do array `messages` de agent.stream(...),
+		 * disparando o warning de prompt-injection da AI SDK a cada turno e
+		 * injetando a memória Letta em dobro. Agora chegam aqui e são anexados ao
+		 * fim do `instructions` (mapeado pro campo `system` pela SDK — sem warning),
+		 * DEPOIS de stable/dynamic/memory e SEM `cacheControl` — o prefixo cacheado
+		 * (stable, 1º item, único com ephemeral) fica intacto.
+		 */
+		extraSystemBlocks?: string[];
 	} = {},
 ): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
@@ -171,6 +182,9 @@ export function buildAgent(
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,
 				present_contemplation_dial: registry.present_contemplation_dial,
+				// FIX-106: simulador de contemplação CONVERSACIONAL (cálculo p/ loop por
+				// texto/WhatsApp) — primitivo do sistema, sempre exposto (como a agulha).
+				simulate_contemplation: registry.simulate_contemplation,
 				// Status REAL da proposta (FIX-14) — primitivo do sistema: pergunta de
 				// status tem que funcionar mesmo se o admin nao listar em activeTools.
 				check_proposal_status: registry.check_proposal_status,
@@ -214,9 +228,18 @@ export function buildAgent(
 				},
 			];
 
-	const instructions = memoryText
+	const withMemory = memoryText
 		? [...baseInstructions, { role: "system" as const, content: memoryText }]
 		: baseInstructions;
+
+	// FIX-77: os blocos dinâmicos por turno (systemContext + examplesBlock) entram
+	// no FIM do instructions, SEM cacheControl — preserva o prefixo cacheado
+	// (stable continua 1º item, byte-idêntico, único com ephemeral). Vinham em
+	// `messages` (warning de prompt-injection + memória Letta duplicada).
+	const extraBlocks = (opts.extraSystemBlocks ?? [])
+		.filter((b): b is string => Boolean(b))
+		.map((content) => ({ role: "system" as const, content }));
+	const instructions = [...withMemory, ...extraBlocks];
 
 	const settings = {
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
