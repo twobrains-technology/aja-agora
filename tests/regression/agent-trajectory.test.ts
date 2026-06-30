@@ -52,7 +52,11 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { parseValorDoBem, prazoMesesForIntent } from "@/lib/agent/qualify-config";
+import {
+	parseValorDoBem,
+	prazoMesesForIntent,
+	QUALIFY_GATE_INPUT_KIND,
+} from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -735,6 +739,57 @@ describe("FIX-104 — valor do bem por conversa (sem present_value_picker na ent
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
 			/N(Ã|A)O (emita|emite|chame|mostre)[\s\S]{0,80}present_value_picker/i,
 		);
+	});
+});
+
+// ============================================================================
+// FIX-105 — qualificação HÍBRIDA (binárias = botão, valor = conversa)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28: perguntas binárias (experiência, lance) mantêm o
+// botão; a pergunta aberta de valor vira conversa. Sem isso a qualificação vira
+// menu atrás de menu (o que mais robotiza). Camada 2: classificação canônica +
+// cassette de reação a botão (binária) vs conversa (valor).
+// ============================================================================
+
+describe("FIX-105 — qualificação híbrida (binárias=botão, valor=conversa)", () => {
+	it("classificação canônica: experience/lance=button, credit/lance-value=conversation", () => {
+		expect(QUALIFY_GATE_INPUT_KIND.experience).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.lance).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.credit).toBe("conversation");
+		expect(QUALIFY_GATE_INPUT_KIND["lance-value"]).toBe("conversation");
+	});
+
+	it("cassette: agent reage à resposta da binária (experience) em UMA frase, sem repetir a pergunta", async () => {
+		// O botão da binária já fez a pergunta — o agent só reage curto e PARA.
+		const cassette = "Boa, primeira vez é com a gente!";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// NÃO re-pergunta a binária em texto (o botão cuida disso).
+		expect(/voc[êe] j[áa] fez cons[óo]rcio/i.test(cassette)).toBe(false);
+	});
+
+	it("cassette: o valor (aberta) vem por conversa — agent confirma o que o usuário falou", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		// valor é conversa → nenhum componente de seleção é emitido pelo agent.
+		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
+	});
+
+	it("CROSS-REF prompt: SPECIALIST_BASE_PROMPT descreve o híbrido (binárias=botão, valor=conversa)", () => {
+		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(p).toMatch(/h[íi]brid/);
+		expect(p).toMatch(/bin[áa]ri[ao]s?[\s\S]{0,80}bot[ãa]o/);
+		expect(p).toMatch(/valor[\s\S]{0,80}conversa/);
 	});
 });
 

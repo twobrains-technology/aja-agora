@@ -28,6 +28,29 @@ import type { Category, Objetivo } from "@/lib/agent/personas";
  * To change a range or add a new bucket: edit only this file.
  */
 
+/**
+ * FIX-105 — classificação HÍBRIDA dos gates de qualificação (decisão Kairo
+ * 2026-06-28). Perguntas BINÁRIAS (resposta clara e rápida) mantêm o BOTÃO;
+ * a pergunta ABERTA de valor vira CONVERSA (texto livre — FIX-104). Contrato
+ * consumido pelos blocos de canal (web/whatsapp) pra escolher o tipo de input
+ * de cada gate: TODO(bloco-web-valor-agulha)/TODO(bloco-whatsapp-apresentacao)
+ * — renderizar `conversation` como texto, não como componente de seleção.
+ *
+ * Observação (FIX-103): o gate `timeframe` (prazo) saiu da qualificação — não
+ * é classificado aqui. `name`/`identify`/`search`/`simulator-offer`/`decision`
+ * não são gates de qualificação de perfil (são captura/funil), fora deste mapa.
+ */
+export type GateInputKind = "button" | "conversation";
+
+export const QUALIFY_GATE_INPUT_KIND = {
+	experience: "button",
+	consent: "button",
+	credit: "conversation",
+	lance: "button",
+	"lance-value": "conversation",
+	"lance-embutido": "button",
+} as const satisfies Record<string, GateInputKind>;
+
 export type Bounds = {
 	min: number;
 	max: number;
