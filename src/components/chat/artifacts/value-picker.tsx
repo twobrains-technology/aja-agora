@@ -32,6 +32,56 @@ function pickAssetField(fields: ValuePickerField[]): ValuePickerField {
 	return fields.find((field) => field.format === "currency") ?? fields[0];
 }
 
+// FIX-55: input numérico livre pra campos `currency` — o usuário digita o valor
+// exato (R$ 347.500) e ele propaga sem snap ao step do slider. Estado de texto
+// próprio (digitação livre), commit (parse + clamp à faixa) no blur/Enter.
+function CurrencyInput({
+	field,
+	value,
+	disabled,
+	onCommit,
+}: {
+	field: ValuePickerField;
+	value: number;
+	disabled: boolean;
+	onCommit: (v: number) => void;
+}) {
+	const [text, setText] = useState(() => value.toLocaleString("pt-BR"));
+	useEffect(() => {
+		setText(value.toLocaleString("pt-BR"));
+	}, [value]);
+
+	const commit = () => {
+		const digits = text.replace(/\D/g, "");
+		const parsed = digits ? Number.parseInt(digits, 10) : field.min;
+		const clamped = Math.min(field.max, Math.max(field.min, parsed));
+		onCommit(clamped);
+		setText(clamped.toLocaleString("pt-BR"));
+	};
+
+	return (
+		<span className="flex shrink-0 items-center gap-1 text-primary">
+			<span className="text-xs font-medium">R$</span>
+			<Input
+				value={text}
+				inputMode="numeric"
+				disabled={disabled}
+				onChange={(e) => setText(e.target.value)}
+				onBlur={commit}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						e.preventDefault();
+						commit();
+					}
+				}}
+				data-testid={`value-input-${field.id}`}
+				aria-label={field.label}
+				className="h-7 w-28 px-2 text-right text-sm font-bold text-primary tabular-nums"
+			/>
+		</span>
+	);
+}
+
 export function ValuePicker({
 	payload,
 	onSubmit,
