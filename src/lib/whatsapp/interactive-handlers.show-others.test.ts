@@ -48,7 +48,13 @@ function dispatch(replyId: string, replyTitle = "x") {
 }
 
 beforeEach(() => {
-	for (const m of [mocks.sendText, mocks.sendInteractive, mocks.saveMessage, mocks.persistMeta, mocks.processText])
+	for (const m of [
+		mocks.sendText,
+		mocks.sendInteractive,
+		mocks.saveMessage,
+		mocks.persistMeta,
+		mocks.processText,
+	])
 		m.mockClear();
 	mocks.meta = {} as ConversationMetadata;
 });
@@ -60,6 +66,11 @@ describe("show_others — 'Ver outras opções' do card da recomendada (FIX-108)
 		const handled = await dispatch("show_others", "Ver outras opções");
 		expect(handled).toBe(true);
 		expect(mocks.processText).toHaveBeenCalledWith(WA, "Quero ver outras opções", undefined);
-		expect(mocks.saveMessage).toHaveBeenCalledWith(CONV_ID, "user", "Ver outras opções", "whatsapp");
+		expect(mocks.saveMessage).toHaveBeenCalledWith(
+			CONV_ID,
+			"user",
+			"Ver outras opções",
+			"whatsapp",
+		);
 	});
 });

@@ -132,6 +132,16 @@ async function consumeEvents(
 		const artifacts = pendingArtifacts;
 		pendingArtifacts = [];
 		for (const artifact of artifacts) {
+			// FIX-109: o valor do bem virou CONVERSA — o agente (bloco-jornada-entrada)
+			// parou de emitir value_picker. Se ainda chegar um, NÃO renderizamos a
+			// lista de faixas: o formatter degrada pra um pedido conversacional. O warn
+			// flagra em produção se a emissão não tiver sido removida no agente.
+			// TODO(bloco-jornada-entrada): confirmar a parada de emissão do value_picker.
+			if (artifact.type === "value_picker") {
+				console.warn(
+					"[whatsapp/adapter] value_picker chegou no WhatsApp — valor agora é conversa (FIX-109); degradando pra pedido conversacional",
+				);
+			}
 			// FIX-25: passo 5 no WhatsApp — ao renderizar o contract_form, abre a
 			// máquina de estado do fechamento (confirm/cpf). O turno seguinte do
 			// usuário cai em captureContractText (processor) e os botões em

@@ -46,8 +46,20 @@ describe("FIX-108 — card da recomendada + 'Ver outras opções' (WhatsApp)", (
 	it("comparison_table segue mapeada (alvo do 'Ver outras opções') — anti-drop", () => {
 		const r = comparisonTableToWhatsApp({
 			groups: [
-				{ id: "g1", administradora: "Porto", creditValue: 80000, monthlyPayment: 1200, termMonths: 80 },
-				{ id: "g2", administradora: "Itaú", creditValue: 82000, monthlyPayment: 1250, termMonths: 84 },
+				{
+					id: "g1",
+					administradora: "Porto",
+					creditValue: 80000,
+					monthlyPayment: 1200,
+					termMonths: 80,
+				},
+				{
+					id: "g2",
+					administradora: "Itaú",
+					creditValue: 82000,
+					monthlyPayment: 1250,
+					termMonths: 84,
+				},
 			],
 		});
 		expect(r).not.toBeNull();
