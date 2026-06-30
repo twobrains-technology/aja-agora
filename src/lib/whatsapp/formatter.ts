@@ -236,9 +236,14 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 			type: "button",
 			body: { text: body },
 			action: {
+				// FIX-108 (decisão Kairo 2026-06-28): a recomendada vem em DESTAQUE
+				// (este card) com os CTAs de ação + "Ver outras opções", que abre a
+				// comparação das alternativas (handleShowOthers). Não é mais lista
+				// plana. WhatsApp limita a 3 botões — cabe certo.
 				buttons: [
 					{ type: "reply", reply: { id: `interest_${p.id}`, title: "Tenho interesse!" } },
 					{ type: "reply", reply: { id: `simulate_${p.id}`, title: "Simular valores" } },
+					{ type: "reply", reply: { id: "show_others", title: "Ver outras opções" } },
 				],
 			},
 		},

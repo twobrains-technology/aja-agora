@@ -5910,3 +5910,79 @@ describe("REV-A-RESERVAR-LANDMINE — directive não emite a frase banida 'reser
 		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/reservar essa op[çc][ãa]o/);
 	});
 });
+
+// ============================================================================
+// FIX-108 — escolha do grupo no WhatsApp = card da recomendada + "Ver outras"
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 (spec jornada-entrada-simulador, decisão #5): no
+// WhatsApp a escolha do grupo NÃO é lista plana. A recomendada vem em DESTAQUE
+// (card com os CTAs de ação) + botão "Ver outras opções" que abre as
+// alternativas. O reveal do agente emite present_recommendation_card; o canal
+// WhatsApp o renderiza como esse card destacado.
+//
+// Defesa estrutural complementar:
+//   - src/lib/whatsapp/formatter.card-recomendada.test.ts (botões do card)
+//   - src/lib/whatsapp/interactive-handlers.show-others.test.ts (clique → agente)
+// ============================================================================
+
+describe("FIX-108-CARD-RECOMENDADA-VER-OUTRAS — recomendada em destaque + 'Ver outras opções'", () => {
+	it("cassette: o reveal do agente emite present_recommendation_card", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Encontramos 3 boas opções. A mais adequada pra você:"),
+			toolCallChunk("tc-rec", "recommend_groups", { category: "auto" }),
+			toolCallChunk("tc-card", "present_recommendation_card", {
+				id: "porto-80k",
+				administradora: "Porto Seguro",
+				category: "auto",
+				creditValue: 80000,
+				monthlyPayment: 1200,
+				termMonths: 80,
+				contemplationRate: 2,
+				score: 0.92,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls.some((tc) => tc.toolName === "present_recommendation_card")).toBe(true);
+	});
+
+	it("no WhatsApp a recomendada vira card com 'Ver outras opções' + CTAs preservados", () => {
+		const wa = artifactToWhatsApp("recommendation_card", {
+			id: "porto-80k",
+			administradora: "Porto Seguro",
+			category: "auto",
+			creditValue: 80000,
+			monthlyPayment: 1200,
+			termMonths: 80,
+			contemplationRate: 2,
+			score: 0.92,
+		});
+		const buttons = wa?.interactive?.action?.buttons ?? [];
+		const ids = buttons.map((b) => b.reply.id);
+		const titles = buttons.map((b) => b.reply.title ?? "");
+		expect(ids).toContain("show_others");
+		expect(titles.some((t) => /ver outras op/i.test(t))).toBe(true);
+		// CTAs de ação preservados (regra do bloco).
+		expect(ids).toContain("interest_porto-80k");
+		expect(ids).toContain("simulate_porto-80k");
+		expect(buttons.length).toBeLessThanOrEqual(3);
+	});
+
+	it("'Ver outras opções' tem alvo: a comparação segue mapeada (anti-drop)", () => {
+		const wa = artifactToWhatsApp("comparison_table", {
+			groups: [
+				{ id: "g1", administradora: "Porto", creditValue: 80000, monthlyPayment: 1200, termMonths: 80 },
+				{ id: "g2", administradora: "Itaú", creditValue: 82000, monthlyPayment: 1250, termMonths: 84 },
+			],
+		});
+		expect(wa).not.toBeNull();
+		expect(wa?.interactive?.action?.sections?.[0]?.rows?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("acoplamento: o handler do clique conduz às alternativas via agente", () => {
+		const src = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(src).toMatch(/replyId === "show_others"/);
+		expect(src).toMatch(/handleShowOthers/);
+		expect(src).toMatch(/Quero ver outras op[çc][õo]es/);
+	});
+});
