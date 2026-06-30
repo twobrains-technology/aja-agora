@@ -182,6 +182,9 @@ export function buildAgent(
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,
 				present_contemplation_dial: registry.present_contemplation_dial,
+				// FIX-106: simulador de contemplação CONVERSACIONAL (cálculo p/ loop por
+				// texto/WhatsApp) — primitivo do sistema, sempre exposto (como a agulha).
+				simulate_contemplation: registry.simulate_contemplation,
 				// Status REAL da proposta (FIX-14) — primitivo do sistema: pergunta de
 				// status tem que funcionar mesmo se o admin nao listar em activeTools.
 				check_proposal_status: registry.check_proposal_status,

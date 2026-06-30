@@ -19,8 +19,9 @@
  *
  *   ┌─ passo 1  Entender a necessidade  → acolhe o sonho + pergunta o nome
  *   ├─ passo 2  Entender o cliente      → experience → consent → credit →
- *   │                                      timeframe → lance → lance-value →
+ *   │                                      lance → lance-value →
  *   │                                      lance-embutido → identify (D1)
+ *   │                                      (FIX-103: gate de prazo removido)
  *   ├─ passo 3  Buscar alternativas     → "encontramos boas opções" (3 reais)
  *   ├─ passo 4  Avaliar/simular/definir  → recomendado → simulador (Bernardo)
  *   │                                      → outras opções → decisão
@@ -455,6 +456,7 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		explica?: Turn;
 		reveal?: Turn;
 		simulador?: Turn;
+		simuladorWhatIf?: Turn;
 		decisao?: Turn;
 		outras?: Turn;
 		contrato?: Turn;
@@ -519,11 +521,12 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		// A FIDELIDADE vem de renderGate (pergunta + botões reais que o usuário vê)
 		// + a reação real do modelo capturada em cada turno; o judge avalia
 		// tom/didática/conteúdo, não o encadeamento (isso é Camada 1).
+		// FIX-103 (2026-06-28): o gate de prazo (timeframe) saiu da qualificação —
+		// a sequência pula de credit (valor) direto pra lance.
 		const GATE_SEQUENCE: Gate[] = [
 			"experience",
 			"consent",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
@@ -564,6 +567,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				turns.push(...r.turns);
 				cap.simulador = r.turns[r.turns.length - 1];
 			}
+			// FIX-106: LOOP conversacional — o usuário pergunta um mês-alvo por TEXTO
+			// e o agente recalcula via simulate_contemplation (não re-renderiza a
+			// agulha). É o caminho do WhatsApp e o what-if de mês em qualquer canal.
+			const whatIf = "e se eu quiser ser contemplado em 6 meses, como ficam as parcelas?";
+			const whatIfTurn = await consumeTurn(
+				conv.id,
+				whatIf,
+				true,
+				"passo4:simulador-whatif",
+				whatIf,
+			);
+			turns.push(whatIfTurn);
+			cap.simuladorWhatIf = whatIfTurn;
 		}
 
 		// ── passo 4 close — avança com afirmativos até o card de decisão ──
@@ -723,15 +739,15 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	});
 
 	it("passo 2 — a CADEIA REAL de gates aconteceu na ordem do docx (zero pré-seed)", () => {
-		// experience → consent → credit → timeframe → lance → lance-value →
-		// lance-embutido → identify. O harness só responde o que o produto emite —
-		// se um gate não aparecer aqui, o PRODUTO pulou um passo do docx.
+		// FIX-103: experience → consent → credit → lance → lance-value →
+		// lance-embutido → identify (o gate de prazo/timeframe saiu). O harness só
+		// responde o que o produto emite — se um gate não aparecer aqui, o PRODUTO
+		// pulou um passo.
 		const seq = allGates(turns);
 		const expected: Gate[] = [
 			"experience",
 			"consent",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
@@ -767,10 +783,8 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			"valor do lance veio do gate lance-value (opção ~30% da carta)",
 		).toBe(Number(lanceValueOptions(55_000)[2].token));
 		expect(meta.qualifyAnswers?.lanceEmbutido, "opt-in de lance embutido gravado").toBe(true);
-		expect(
-			meta.qualifyAnswers?.objetivo,
-			"objetivo derivado do prazo (rápido → contemplação)",
-		).toBe("contemplacao_rapida");
+		// FIX-103: o gate de prazo saiu — o `objetivo` não é mais derivado de um
+		// prazo declarado na qualificação (calibrado pelo tom da conversa, se houver).
 		expect(meta.identityCollected, "identidade coletada no gate identify (D1)").toBe(true);
 	});
 
@@ -854,6 +868,20 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(p?.creditValue ?? 0, "carta real no dial").toBeGreaterThan(0);
 		expect(p?.termMonths ?? 0, "prazo real no dial").toBeGreaterThan(0);
 		expect(p?.monthlyPayment ?? 0, "parcela real no dial").toBeGreaterThan(0);
+	});
+
+	it("passo 4 — LOOP conversacional: what-if de mês recalcula via simulate_contemplation (FIX-106)", () => {
+		// O usuário perguntou "e em 6 meses?" por TEXTO — o agente deve recalcular
+		// com a tool de CÁLCULO (simulate_contemplation), não re-renderizar a agulha.
+		const t = cap.simuladorWhatIf;
+		expect(t, "turno de what-if do simulador não capturado").toBeTruthy();
+		const tools = (t?.events ?? [])
+			.filter((e) => e.type === "tool-call")
+			.map((e) => (e as { toolName: string }).toolName);
+		expect(
+			tools.includes("simulate_contemplation"),
+			`Esperado simulate_contemplation no what-if de mês. Tools: [${tools.join(", ")}]`,
+		).toBe(true);
 	});
 
 	it("passo 4 — a oferta do simulador foi EMITIDA pela máquina de estado (sem fallback)", () => {

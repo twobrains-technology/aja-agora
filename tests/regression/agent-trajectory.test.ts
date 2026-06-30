@@ -52,7 +52,11 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { prazoMesesForIntent } from "@/lib/agent/qualify-config";
+import {
+	parseValorDoBem,
+	prazoMesesForIntent,
+	QUALIFY_GATE_INPUT_KIND,
+} from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
@@ -680,48 +684,112 @@ describe("BUG-TOPIC-PICKER-AUTO-VARIANT — variante 'da uma olhada' escapa do r
 });
 
 // ============================================================================
-// CENARIO 4 — Value picker em texto puro (BUG-CREDIT-PICKER)
+// FIX-104 — valor do bem por CONVERSA (inverte o antigo BUG-CREDIT-PICKER)
 // ----------------------------------------------------------------------------
-// Real (Helena/imovel): agent disse "Qual faixa de credito voce esta pensando?"
-// em texto puro, sem chamar present_value_picker. Usuario forcado a digitar.
-//
-// Causa raiz: persona.activeTools nao incluia present_value_picker. Fix em
-// builder.ts + migration 0019 (cobertos por builder.credit-picker.test.ts).
-// Aqui cassette + assert estrutural no prompt.
+// Decisão Kairo 2026-06-28: "usuário só fala o valor agora, não tem mais aquele
+// componente complexo de valor". O que ANTES era bug (perguntar valor por texto)
+// agora é o comportamento DESEJADO: o agente coleta o valor do bem por conversa
+// e NÃO emite present_value_picker na entrada. O componente complexo morre na
+// entrada (web vira slider simples; WhatsApp vira conversa — blocos irmãos).
+// O analyzer normaliza "uns 80 mil"/"80k" → 80000 (parseValorDoBem é o contrato).
 // ============================================================================
 
-describe("BUG-CREDIT-PICKER — pergunta valor por texto em vez de present_value_picker", () => {
-	it("cassette: stream com pergunta de faixa em texto puro SEM tool-call", async () => {
-		const cassette = "Qual faixa de credito voce esta pensando pra esse imovel?";
-
+describe("FIX-104 — valor do bem por conversa (sem present_value_picker na entrada)", () => {
+	it("cassette: agent pergunta o valor por conversa e NÃO emite present_value_picker", async () => {
+		const cassette = "Quanto custa o carro que você quer conquistar?";
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", cassette),
 			FINISH_STOP,
 		]);
-
-		// Reproducao fiel: pergunta de valor em prosa, sem present_value_picker.
 		expect(text).toBe(cassette);
+		// O comportamento correto do FIX-104: pergunta conversacional, ZERO picker.
 		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
-
-		// Detector: o agent pediu faixa/valor/orcamento por texto.
-		const perguntaValorTexto =
-			/(qual|quanto)[\s\S]{0,40}(faixa|valor|cr[ée]dito|or[çc]amento|carta)/i;
-		expect(perguntaValorTexto.test(cassette)).toBe(true);
+		const perguntaValorConversa = /(qual|quanto)[\s\S]{0,40}(valor|custa|cr[ée]dito|carta|bem)/i;
+		expect(perguntaValorConversa.test(cassette)).toBe(true);
 	});
 
-	it("prompt SPECIALIST_BASE_PROMPT proibe perguntar valor por texto", () => {
-		// system-prompt.ts:13 contem "NUNCA pergunte valores por texto. Use
-		// present_value_picker para mostrar sliders interativos."
-		// Garante que o prompt nunca afrouxa essa regra.
-		const proibicaoValorTexto =
-			/NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
+	it("cassette: usuário fala 'uns 80 mil' → agent confirma e segue, sem picker", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// parseValorDoBem é o contrato determinístico da normalização.
+		expect(parseValorDoBem("uns 80 mil")).toBe(80_000);
+		expect(parseValorDoBem("80k")).toBe(80_000);
+	});
 
+	it("estrutural: o prompt NÃO manda mais usar present_value_picker pra pedir o valor", () => {
+		// Regra ANTIGA (oposta ao FIX-104) não pode reaparecer em nenhum prompt.
+		const regraAntiga = /NUNCA pergunte valores? por texto[\s\S]{0,200}present_value_picker/i;
 		expect(
-			proibicaoValorTexto.test(SYSTEM_PROMPT) || proibicaoValorTexto.test(SPECIALIST_BASE_PROMPT),
-			"Prompt precisa proibir EXPLICITAMENTE 'NUNCA pergunte valores por texto' acoplado a present_value_picker. " +
-				"Sem essa regra, o LLM cai em prosa nas perguntas de faixa/orcamento.",
-		).toBe(true);
+			regraAntiga.test(SYSTEM_PROMPT) || regraAntiga.test(SPECIALIST_BASE_PROMPT),
+			"FIX-104: o prompt não pode mandar usar present_value_picker pra coletar o valor — o valor é conversa.",
+		).toBe(false);
+	});
+
+	it("estrutural: o prompt instrui valor por conversa e proíbe emitir o picker na entrada", () => {
+		expect(`${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`).toMatch(
+			/valor do bem[\s\S]{0,120}(conversa|texto)/i,
+		);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(
+			/N(Ã|A)O (emita|emite|chame|mostre)[\s\S]{0,80}present_value_picker/i,
+		);
+	});
+});
+
+// ============================================================================
+// FIX-105 — qualificação HÍBRIDA (binárias = botão, valor = conversa)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28: perguntas binárias (experiência, lance) mantêm o
+// botão; a pergunta aberta de valor vira conversa. Sem isso a qualificação vira
+// menu atrás de menu (o que mais robotiza). Camada 2: classificação canônica +
+// cassette de reação a botão (binária) vs conversa (valor).
+// ============================================================================
+
+describe("FIX-105 — qualificação híbrida (binárias=botão, valor=conversa)", () => {
+	it("classificação canônica: experience/lance=button, credit/lance-value=conversation", () => {
+		expect(QUALIFY_GATE_INPUT_KIND.experience).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.lance).toBe("button");
+		expect(QUALIFY_GATE_INPUT_KIND.credit).toBe("conversation");
+		expect(QUALIFY_GATE_INPUT_KIND["lance-value"]).toBe("conversation");
+	});
+
+	it("cassette: agent reage à resposta da binária (experience) em UMA frase, sem repetir a pergunta", async () => {
+		// O botão da binária já fez a pergunta — o agent só reage curto e PARA.
+		const cassette = "Boa, primeira vez é com a gente!";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		// NÃO re-pergunta a binária em texto (o botão cuida disso).
+		expect(/voc[êe] j[áa] fez cons[óo]rcio/i.test(cassette)).toBe(false);
+	});
+
+	it("cassette: o valor (aberta) vem por conversa — agent confirma o que o usuário falou", async () => {
+		const cassette = "Boa, 80 mil então.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		// valor é conversa → nenhum componente de seleção é emitido pelo agent.
+		expect(toolCalls.filter((t) => t.toolName === "present_value_picker")).toEqual([]);
+	});
+
+	it("CROSS-REF prompt: SPECIALIST_BASE_PROMPT descreve o híbrido (binárias=botão, valor=conversa)", () => {
+		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
+		expect(p).toMatch(/h[íi]brid/);
+		expect(p).toMatch(/bin[áa]ri[ao]s?[\s\S]{0,80}bot[ãa]o/);
+		expect(p).toMatch(/valor[\s\S]{0,80}conversa/);
 	});
 });
 
@@ -1920,20 +1988,26 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os 3 gates à proibição de pedir valor antes", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
-		// continuaria reproduzível em prod.
-		const regraComOs3Gates =
-			/ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)[\s\S]{0,800}experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance/i;
-		const regraInvertida =
-			/experience[\s\S]{0,400}timeframe[\s\S]{0,400}lance[\s\S]{0,800}ANTES[\s\S]{0,400}(valor|parcela|carta|present_value_picker|search_groups)/i;
+		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
+		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
+		const ordemDosGates =
+			/experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		const proibeValorAntes =
+			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
-			regraComOs3Gates.test(SPECIALIST_BASE_PROMPT) || regraInvertida.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa amarrar (experience+timeframe+lance) " +
-				"à proibição de pedir valor/parcela ANTES. Sem isso, persona row no DB " +
-				"(migration 0021) fica solta — modelo cai no padrão antigo.",
+			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → lance) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo NÃO entra mais na ordem.",
 		).toBe(true);
+	});
+
+	it("CROSS-REF prompt (FIX-103): SPECIALIST_BASE_PROMPT NÃO instrui pedir prazo de contemplação na entrada", () => {
+		// O gate de prazo saiu — o prompt proíbe explicitamente perguntar prazo.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA pergunte "em quanto tempo/i);
 	});
 
 	it("CROSS-REF migration 0021: arquivo da migration de persona row existe e seta fluxo de 3 gates pré-valor", () => {
@@ -1965,6 +2039,94 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 			"Migration 0021 precisa ter guard de idempotência (NOT LIKE, NOT @>, IS NULL ou jsonb_array_length) " +
 				"— rodar 2x não pode duplicar/corromper dados.",
 		).toBe(true);
+	});
+});
+
+// ============================================================================
+// FIX-103 — gate de prazo (timeframe) fora da qualificação
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("usuario so vai falar o valor agora, prazo nao"):
+// o gate de prazo de contemplação saiu da entrada. Camada 2:
+//   - funil determinístico nunca emite "timeframe" (web e WhatsApp usam a MESMA
+//     máquina nextGate — canal-agnóstica);
+//   - cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação;
+//   - acoplamento ao prompt (não instrui pedir prazo).
+// ============================================================================
+
+describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
+	// nextGate é canal-agnóstico: o mesmo funil vale pra web e WhatsApp. Provar
+	// que NUNCA passa por timeframe cobre os dois canais (o contrato da spec).
+	function walk(hasLance: "yes" | "no"): string[] {
+		let meta: ConversationMetadata = {};
+		let hasName = false;
+		const seq: string[] = [];
+		for (let i = 0; i < 24; i++) {
+			const g = nextGate(meta, { hasContactName: hasName });
+			seq.push(g);
+			const q = meta.qualifyAnswers ?? {};
+			if (g === "name") hasName = true;
+			else if (g === "experience") meta = { ...meta, experiencePrev: "first" };
+			else if (g === "consent") meta = { ...meta, qualifyConsented: true };
+			else if (g === "identify") meta = { ...meta, identityCollected: true };
+			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
+			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
+			else if (g === "lance-value")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
+			else if (g === "lance-embutido")
+				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
+			else if (g === "search")
+				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+			else if (g === "simulator-offer") meta = { ...meta, simulatorOfferDispatched: true };
+			else if (g === "decision") break;
+			else break;
+		}
+		return seq;
+	}
+
+	it("a qualificação completa NUNCA emite o gate timeframe (sem lance e com lance)", () => {
+		expect(walk("no")).not.toContain("timeframe");
+		expect(walk("yes")).not.toContain("timeframe");
+	});
+
+	it("cassette: ao reagir ao valor, o agent NÃO pergunta prazo de contemplação", async () => {
+		// Reação correta pós-valor (FIX-103): confirma o valor e PARA — sem
+		// perguntar prazo. O detector pega a REGRESSÃO (pergunta de prazo).
+		const cassette = "Boa, 80 mil então.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		expect(
+			perguntaPrazo.test(cassette),
+			"FIX-103: a reação ao valor NÃO pode perguntar prazo de contemplação.",
+		).toBe(false);
+	});
+
+	it("detector pega a pergunta de prazo proibida (variantes das 4 specialists)", () => {
+		const perguntaPrazo =
+			/em quanto tempo[\s\S]{0,40}(quer|gostaria|bem|contempl)|prazo de contempla|quando (voc[êe] )?quer ser contemplad/i;
+		const proibidas = [
+			"Em quanto tempo você quer estar com o carro novo?",
+			"Em quanto tempo você gostaria de estar com seu bem?",
+			"E qual prazo de contemplação faz sentido pra você?",
+			"Quando você quer ser contemplado?",
+		];
+		const misses = proibidas.filter((v) => !perguntaPrazo.test(v));
+		expect(misses, `Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`).toEqual(
+			[],
+		);
+	});
+
+	it("CROSS-REF prompt: nem SYSTEM_PROMPT nem SPECIALIST_BASE_PROMPT instruem pedir prazo na entrada", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// Não pode haver instrução de coletar prazo como gate da qualificação.
+		expect(combined).not.toMatch(/gate[\s\S]{0,20}timeframe/i);
+		// O reforço explícito de que o prazo saiu precisa estar lá.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/N[ÃA]O existe mais gate de prazo/i);
 	});
 });
 
@@ -2254,27 +2416,30 @@ describe("BUG-ASSISTANT-META-NARRATIVE — example.add cujo assistantResponse va
 });
 
 describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando gates pré-valor é proibido pelo prompt (R-04)", () => {
-	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os 3 gates (experience/timeframe/lance)", async () => {
+	it("CROSS-REF: ASSISTANT_BASE_PROMPT + HARD_RULES.md sec 2.2 mencionam os gates da coleta (experience/lance) — FIX-103: sem prazo", async () => {
 		const { ASSISTANT_BASE_PROMPT } = await import("@/lib/agent/assistant-prompt");
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
 		const promptCombined = `${ASSISTANT_BASE_PROMPT}\n\n${hardRules}`;
 
-		// Combined precisa mencionar os 3 gates por nome — assistant injeta
+		// Combined precisa mencionar os gates binários por nome — assistant injeta
 		// HARD_RULES no system prompt em runtime, então a regra chega no LLM.
+		// FIX-103: o gate de prazo (timeframe) saiu — não exigimos mais.
 		expect(promptCombined).toMatch(/experience/i);
-		expect(promptCombined).toMatch(/timeframe/i);
 		expect(promptCombined).toMatch(/lance/i);
+		// E o prazo NÃO deve mais ser parte da ordem da coleta no HARD_RULES.
+		expect(hardRules).toMatch(/prazo de contempla[çc][ãa]o saiu da qualifica[çc][ãa]o/i);
 	});
 
-	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES de prazo/lance, FIX-53)", () => {
+	it("CROSS-REF: HARD_RULES.md sec 2.2 documenta a ordem real (identidade+valor ANTES do lance, FIX-53 + FIX-103: sem prazo)", () => {
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
-		// Ordem da revisão 2 (docx + FIX-53): experience → consent → identidade →
-		// valor → timeframe → lance. Os DADOS e o VALOR precedem prazo e lance.
+		// Ordem da revisão 2 (docx + FIX-53) com FIX-103: experience → consent →
+		// identidade → valor → lance. Os DADOS e o VALOR precedem o lance; o prazo
+		// saiu da qualificação.
 		const ordemReal =
-			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}timeframe[\s\S]{0,200}lance/i;
+			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
 		expect(
 			ordemReal.test(hardRules),
-			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → timeframe → lance",
+			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → lance (sem prazo)",
 		).toBe(true);
 	});
 });
@@ -2562,6 +2727,80 @@ describe("FEAT-CONTEMPLATION-DIAL — simulador-agulha (passo 4)", () => {
 				monthlyPayment: 600,
 			}),
 		).not.toBeNull();
+	});
+});
+
+// ============================================================================
+// FIX-106 — simulador de contemplação CONVERSACIONAL (loop)
+// ----------------------------------------------------------------------------
+// Decisão Kairo 2026-06-28 ("loop conversacional"): no WhatsApp (e no what-if de
+// mês em qualquer canal) o agente conduz o simulador por CONVERSA — o usuário
+// pergunta um mês-alvo ("e em 6 meses?"), o agente chama simulate_contemplation
+// (cálculo, reusa computeContemplationDial), narra os números e pode iterar. A
+// WEB mantém a agulha (present_contemplation_dial). Camada 2: cassette do loop +
+// acoplamento ao prompt/tool.
+// ============================================================================
+
+describe("FIX-106 — simulador conversacional (loop por texto)", () => {
+	it("cassette: 'e em 6 meses?' → agent chama simulate_contemplation(targetMonth=6) e narra", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 6 meses ficaria assim (estimativa):"),
+			toolCallChunk("tc-sc-1", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 6,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(6);
+		// NÃO usa a agulha (present_contemplation_dial) pra cada iteração de texto.
+		expect(toolCalls.some((t) => t.toolName === "present_contemplation_dial")).toBe(false);
+	});
+
+	it("cassette: itera — 'e em 12 meses?' recalcula com simulate_contemplation no novo mês", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Em 12 meses, olha como muda:"),
+			toolCallChunk("tc-sc-2", "simulate_contemplation", {
+				creditValue: 80_000,
+				termMonths: 80,
+				targetMonth: 12,
+				monthlyPayment: 950,
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls[0]?.toolName).toBe("simulate_contemplation");
+		expect((toolCalls[0]?.input as { targetMonth?: number })?.targetMonth).toBe(12);
+	});
+
+	it("estrutural: simulate_contemplation reusa computeContemplationDial (números batem com a agulha)", async () => {
+		const { computeContemplationDial } = await import("@/lib/consorcio/contemplation-dial");
+		const { consorcioTools } = await import("@/lib/agent/tools/ai-sdk");
+		const args = { creditValue: 80_000, termMonths: 80, targetMonth: 6, monthlyPayment: 950 };
+		// biome-ignore lint/suspicious/noExplicitAny: execute opaco
+		const fromTool = await (consorcioTools.simulate_contemplation as any).execute(args);
+		expect(fromTool).toEqual(computeContemplationDial(args));
+		// e NÃO é tool de apresentação (é cálculo, igual compute_scenarios).
+		expect(PRESENTATION_TOOLS.has("simulate_contemplation")).toBe(false);
+	});
+
+	it("CROSS-REF prompt: o loop manda chamar simulate_contemplation no what-if de mês; web mantém a agulha", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/simulate_contemplation/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/present_contemplation_dial/);
+		expect(SPECIALIST_BASE_PROMPT.toLowerCase()).toMatch(/m[êe]s-alvo|e em \d|outro prazo/);
+	});
+
+	it("policy: simulate_contemplation disponível no reveal e closing (onde o simulador roda)", () => {
+		const reveal = allowedTools({ revealCompleted: true } as ConversationMetadata);
+		const closing = allowedTools({
+			revealCompleted: true,
+			decisionDispatched: true,
+		} as ConversationMetadata);
+		expect(reveal).toContain("simulate_contemplation");
+		expect(closing).toContain("simulate_contemplation");
 	});
 });
 

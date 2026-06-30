@@ -666,11 +666,12 @@ describe("BUG-SHORT-GREETING-AFTER-NAME — prompt tem exemplo BAD/GOOD literal 
 // ============================================================================
 
 describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent não antecipa o valor; o orchestrator dirige a coleta", () => {
-	it("SPECIALIST_BASE_PROMPT cita os gates da coleta por nome (experience, timeframe, lance)", () => {
+	it("SPECIALIST_BASE_PROMPT cita os gates da coleta por nome (experience, lance) — FIX-103: prazo removido", () => {
 		// Os gates precisam aparecer explícitos para o modelo enxergá-los. A ORDEM
-		// entre eles é validada em BUG-PROMPT-ORDEM-GATES (valor antes de prazo/lance).
+		// entre eles é validada em BUG-PROMPT-ORDEM-GATES (valor antes do lance).
+		// FIX-103: o gate de prazo (timeframe) saiu da qualificação — não exigimos mais.
 		const promptLower = SPECIALIST_BASE_PROMPT.toLowerCase();
-		const gates = ["experience", "timeframe", "lance"];
+		const gates = ["experience", "lance"];
 		const faltando = gates.filter((g) => !promptLower.includes(g));
 		expect(
 			faltando,

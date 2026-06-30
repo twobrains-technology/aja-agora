@@ -8,9 +8,11 @@ import { type Gate, nextGate } from "./qualify-state";
 // real ponta-a-ponta — o que faltava: os testes existentes cobrem cada transição
 // isolada, não a progressão inteira.
 //
-// Ordem do docx (passo 2): valor → prazo → lance. FIX-53 (revisão 2): identidade
-// (CPF+celular) ANTES do valor. Logo o VALOR (credit) precede prazo (timeframe)
-// e lance — provado aqui contra regressão de reordenação.
+// Ordem do docx (passo 2): valor → lance. FIX-53 (revisão 2): identidade
+// (CPF+celular) ANTES do valor. FIX-103 (2026-06-28): o gate de PRAZO
+// (timeframe) saiu da qualificação — o funil pula de `credit` (valor) direto
+// pra `lance`. Logo o VALOR (credit) precede o lance — provado aqui contra
+// regressão de reordenação (e contra a volta do gate de prazo).
 // ============================================================================
 
 /** Percorre o funil do zero até `decision`, respondendo cada gate. */
@@ -39,9 +41,6 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 			case "credit":
 				meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
 				break;
-			case "timeframe":
-				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 12 } };
-				break;
 			case "lance":
 				meta = { ...meta, qualifyAnswers: { ...q, hasLance: opts.hasLance } };
 				break;
@@ -66,16 +65,16 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 	return seq;
 }
 
-describe("funil — sequência canônica completa (docx passo 2 + FIX-53)", () => {
-	it("sem lance: identidade e VALOR precedem prazo e lance", () => {
+describe("funil — sequência canônica completa (docx passo 2 + FIX-53 + FIX-103)", () => {
+	it("sem lance: identidade e VALOR precedem o lance; SEM gate de prazo", () => {
 		const seq = walkFunnel({ hasLance: "no" });
+		expect(seq).not.toContain("timeframe");
 		expect(seq).toEqual([
 			"name",
 			"experience",
 			"consent",
 			"identify",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-embutido",
 			"search",
@@ -84,15 +83,15 @@ describe("funil — sequência canônica completa (docx passo 2 + FIX-53)", () =
 		]);
 	});
 
-	it("com lance: lance-value entra logo após lance, ainda pós-valor", () => {
+	it("com lance: lance-value entra logo após lance, ainda pós-valor; SEM gate de prazo", () => {
 		const seq = walkFunnel({ hasLance: "yes" });
+		expect(seq).not.toContain("timeframe");
 		expect(seq).toEqual([
 			"name",
 			"experience",
 			"consent",
 			"identify",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
@@ -102,14 +101,14 @@ describe("funil — sequência canônica completa (docx passo 2 + FIX-53)", () =
 		]);
 	});
 
-	it("INVARIANTE FIX-53/docx: identify e credit(valor) vêm ANTES de timeframe e lance", () => {
+	it("INVARIANTE FIX-53/FIX-103: identify e credit(valor) vêm ANTES do lance; prazo fora do funil", () => {
 		const seq = walkFunnel({ hasLance: "no" });
 		const idx = (g: Gate) => seq.indexOf(g);
 		// identidade antes do valor (FIX-53)
 		expect(idx("identify")).toBeLessThan(idx("credit"));
-		// valor antes de prazo e lance (docx passo 2: valor → prazo → lance)
-		expect(idx("credit")).toBeLessThan(idx("timeframe"));
+		// valor antes do lance (docx passo 2: valor → lance)
 		expect(idx("credit")).toBeLessThan(idx("lance"));
-		expect(idx("timeframe")).toBeLessThan(idx("lance"));
+		// FIX-103: prazo (timeframe) não existe mais no funil
+		expect(idx("timeframe")).toBe(-1);
 	});
 });

@@ -69,6 +69,10 @@ const WHAT_IF_AND_DETAIL = [
 	"get_group_details",
 	"compare_with_financing",
 	"compute_scenarios",
+	// FIX-106: simulador de contemplação CONVERSACIONAL (cálculo p/ loop por texto).
+	// É what-if de mês — legítimo no reveal/closing (e qualify não faz mal: o prompt
+	// só o aciona pós-reveal). A WEB segue usando a agulha (present_contemplation_dial).
+	"simulate_contemplation",
 	"present_simulation_result",
 	"present_scenarios",
 	"present_financing_comparison",

@@ -17,6 +17,7 @@ import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -251,12 +252,20 @@ const recommendGroupsSchema = z.object({
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
+	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
+	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
+	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
+	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
+	// explicito num what-if pos-reveal.
 	desiredTermMonths: z
 		.number()
 		.int()
 		.min(0)
 		.default(0)
-		.describe("Prazo desejado em meses (0 = sem preferencia)"),
+		.describe(
+			"Prazo desejado em meses. 0 = sem preferencia (PADRAO — o prazo nao e coletado na entrada, FIX-103). So passe > 0 se o usuario pedir um prazo explicito num what-if.",
+		),
 });
 
 // ---- Domain tools (data fetching) ----
@@ -531,7 +540,7 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"[LEGADO/WEB — FIX-104] Seletor interativo de valores (sliders). NAO use na ENTRADA da jornada: o valor do bem agora e coletado por CONVERSA (o usuario FALA o valor; o analyzer extrai). Esta tool segue disponivel apenas como apoio de UI da WEB (slider simples) renderizado pelo sistema — o agente NUNCA a dispara na entrada pra pedir o valor do bem. Se chamar, NUNCA escreva 'arrasta o slider' nem mencione UI especifica.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
@@ -660,6 +669,55 @@ export const consorcioTools = {
 			initialTargetMonth: number;
 		}) => {
 			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
+		},
+	}),
+
+	// FIX-106 — simulador de contemplação CONVERSACIONAL (loop). Versão de CÁLCULO
+	// (paralela a compute_scenarios): RECALCULA o cenário pra um mês-alvo e DEVOLVE
+	// os números pro agente NARRAR (WhatsApp + what-if de mês em qualquer canal).
+	// A WEB mantém a agulha arrastável (present_contemplation_dial). Reusa o MESMO
+	// motor puro (computeContemplationDial) — dial e conversa batem número a número.
+	simulate_contemplation: tool({
+		description:
+			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
+		inputSchema: z.object({
+			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais — do plano recomendado"),
+			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses — do plano recomendado"),
+			targetMonth: z
+				.number()
+				.int()
+				.positive()
+				.describe("Mês-alvo de contemplação que o usuário quer simular (a 'agulha')"),
+			monthlyPayment: z
+				.number()
+				.positive()
+				.describe("Parcela base do grupo em reais — do plano recomendado"),
+			historicalWinningBidPct: z
+				.number()
+				.optional()
+				.describe("Lance vencedor típico do grupo (% da carta), da oferta real, se conhecido"),
+			referenceMonth: z
+				.number()
+				.int()
+				.optional()
+				.describe("Mês em que o lance de referência vence (da oferta real), se conhecido"),
+			maxEmbutidoPct: z
+				.number()
+				.optional()
+				.describe("Teto do lance embutido aceito pelo grupo (default 30)"),
+		}),
+		execute: async (args: {
+			creditValue: number;
+			termMonths: number;
+			targetMonth: number;
+			monthlyPayment: number;
+			historicalWinningBidPct?: number;
+			referenceMonth?: number;
+			maxEmbutidoPct?: number;
+		}) => {
+			// Reuso obrigatório do motor puro (regra 6 do bloco) — dial e conversa
+			// usam exatamente o mesmo cálculo, então os números nunca divergem.
+			return computeContemplationDial(args);
 		},
 	}),
 
