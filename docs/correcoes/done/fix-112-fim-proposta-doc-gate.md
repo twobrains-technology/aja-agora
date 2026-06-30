@@ -1,7 +1,9 @@
 ---
 id: FIX-112
 titulo: "Fim da proposta bugado — passo do documento sem confirmOffer (sem links) + 'bora' lido como recusa"
-status: todo
+status: done
+commit: 3e3b4885
+executado_em: 2026-06-30
 bloco: bloco-streaming-chat-layer
 arquivos:
   - src/lib/bevi/fulfillment.ts

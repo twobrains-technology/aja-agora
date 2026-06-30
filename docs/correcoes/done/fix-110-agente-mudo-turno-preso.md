@@ -1,7 +1,9 @@
 ---
 id: FIX-110
 titulo: "Agente fica mudo (turno preso) — stream fecha sem surfacear erro; só destrava no próximo input"
-status: todo
+status: done
+commit: 2182d51c
+executado_em: 2026-06-30
 bloco: bloco-streaming-chat-layer
 arquivos:
   - src/app/api/chat/route.ts
@@ -52,3 +54,19 @@ disparou; checar se é específico de quick-reply (`sendAction`) ou qualquer inp
   ERRA no meio → o client recebe evento de erro e o `status` sai de "streaming"
   (não fica mudo). Mock via `MockLanguageModelV2`/`simulateReadableStream`.
 - (Camada 3 nightly cobre o caminho real.)
+
+## RESULTADO DA EXECUÇÃO (2026-06-30) — root cause DIVERGIU da hipótese
+A hipótese "onError ausente engole o erro" foi **REFUTADA por spike empírico**: no
+AI SDK 6.0.158, `createUIMessageStream` SEM `onError` emite `{type:"error",errorText:"<msg real>"}`
+do mesmo jeito — não engole. E o `ChatInput` é `disabled={isStreaming}`; o usuário
+SÓ conseguiu digitar "travou?" porque o status já tinha saído de "streaming". Logo o
+turno **fechou 'ok' SEM emitir nenhuma part visível** = agente mudo (não "preso em
+streaming"). Correções aplicadas (3 camadas de defesa):
+1. `streamErrorMessage`: onError uniforme nos 4 streams do route (pedido do card; baixo risco).
+2. `isTurnEmpty` + `EMPTY_TURN_FALLBACK`: **root cause real** — no user-turn, turno que
+   fecha sem nada visível manda um fallback honesto persistido (só no user-turn, NÃO em
+   actions, que têm casos legítimos sem resposta — ex. opt-in/decline silencioso).
+3. `isStreamStuck` + watchdog no provider: stream que morre sem fim/erro (conexão caiu)
+   nunca deixa o useChat preso em "streaming".
+Gap honesto: o turno-vazio específico do print não é reproduzível deterministicamente
+sem o agente real (Anthropic+Bevi); o guard ataca o sintoma de forma genérica e segura.
