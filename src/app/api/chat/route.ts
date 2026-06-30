@@ -45,7 +45,9 @@ import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import {
 	isValidCpf,
@@ -307,6 +309,8 @@ export async function POST(req: NextRequest) {
 				});
 				writer.write({ type: "text-end", id });
 			},
+			// FIX-110: onError uniforme em TODO stream do route (helper único).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1037,8 +1041,8 @@ export async function POST(req: NextRequest) {
 					trace.finalize();
 				}
 			},
-			onError: (error: unknown) =>
-				error instanceof Error ? error.message : "Erro interno no servidor",
+			// FIX-110: onError uniforme via helper único (era inline).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1075,6 +1079,8 @@ export async function POST(req: NextRequest) {
 				writer.write({ type: "text-delta", id, delta: ackText });
 				writer.write({ type: "text-end", id });
 			},
+			// FIX-110: onError uniforme em TODO stream do route (helper único).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1095,13 +1101,28 @@ export async function POST(req: NextRequest) {
 				await withSimulatorClockIfNeeded(conv ?? null, async () => {
 					await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
 				});
-				trace.setFinish("ok");
+				// FIX-110: o turno de texto-livre fechava 'ok' SEM emitir nenhuma part
+				// visível (agente mudo) — o usuário esperava e nada vinha, só destravava
+				// no input seguinte. Se nada foi emitido, manda um fallback honesto
+				// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
+				// action, aqui o agente SEMPRE deveria responder algo.
+				if (isTurnEmpty(trace.toRecord())) {
+					await writeAndSaveText(
+						writer,
+						conversationId,
+						meta.currentPersona ?? null,
+						EMPTY_TURN_FALLBACK,
+					);
+					trace.setFinish("empty-turn-fallback");
+				} else {
+					trace.setFinish("ok");
+				}
 			} finally {
 				trace.finalize();
 			}
 		},
-		onError: (error: unknown) =>
-			error instanceof Error ? error.message : "Erro interno no servidor",
+		// FIX-110: onError uniforme via helper único (era inline).
+		onError: streamErrorMessage,
 	});
 
 	const responseHeaders: Record<string, string> = {
