@@ -37,8 +37,10 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { streamText } from "ai";
+import { createUIMessageStream, streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
@@ -6311,5 +6313,151 @@ describe("FIX-109-SIMULADOR-CONVERSACIONAL — valor por conversa + dial em loop
 		const src = readSource("src/lib/whatsapp/adapter.ts");
 		expect(src).toMatch(/value_picker/);
 		expect(src).toMatch(/FIX-109/);
+	});
+});
+
+// ============================================================================
+// FIX-110 — agente fica mudo (turno preso)
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD, 2026-06-30): agente pergunta sobre lance
+// embutido → usuário "Não, prefiro sem lance embutido" → SILÊNCIO (sem typing,
+// sem resposta) → usuário "travou?" → aí o agente responde + dispara search.
+//
+// Diagnóstico CONFIRMADO no código (diverge da hipótese inicial do card, que
+// culpava o onError ausente): um spike provou que `createUIMessageStream` SEM
+// onError NÃO engole o erro — emite { type:"error", errorText } na mesma. E o
+// ChatInput é `disabled={isStreaming}` (o usuário SÓ conseguiu digitar "travou?"
+// porque o status já tinha saído de "streaming"). Logo o turno FECHOU com
+// sucesso SEM emitir nenhuma part visível = turno mudo. Defesas:
+//   (a) onError uniforme (streamErrorMessage) em todo stream do route;
+//   (b) guard de turno-vazio no user-turn (isTurnEmpty → fallback honesto);
+//   (c) watchdog no client (stream-watchdog) — fora deste cassette (React).
+// ============================================================================
+
+async function drainUIStream(
+	stream: ReadableStream<unknown>,
+): Promise<Array<{ type?: string; [k: string]: unknown }>> {
+	const reader = stream.getReader();
+	const parts: Array<{ type?: string; [k: string]: unknown }> = [];
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		parts.push(value as { type?: string });
+	}
+	return parts;
+}
+
+describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno vazio)", () => {
+	const ROUTE = "src/app/api/chat/route.ts";
+
+	it("structural: TODO createUIMessageStream do route registra onError", () => {
+		const src = readSource(ROUTE);
+		const streams = (src.match(/createUIMessageStream<AjaUIMessage>\(/g) ?? []).length;
+		const onErrors = (src.match(/onError:/g) ?? []).length;
+		expect(streams).toBeGreaterThanOrEqual(4);
+		expect(
+			onErrors,
+			`route.ts tem ${streams} createUIMessageStream mas só ${onErrors} onError — ` +
+				"todo stream precisa de onError pra fechar o turno com erro tipado (FIX-110).",
+		).toBeGreaterThanOrEqual(streams);
+	});
+
+	it("structural: o onError vem do helper único streamErrorMessage (sem inline divergente)", () => {
+		const src = readSource(ROUTE);
+		expect(src).toMatch(/streamErrorMessage/);
+	});
+
+	it("structural: o user-turn é blindado contra turno mudo (isTurnEmpty)", () => {
+		const src = readSource(ROUTE);
+		expect(src).toMatch(/isTurnEmpty/);
+	});
+
+	it("cassette: stream que erra no meio emite error part tipado (turno fecha, client sai de streaming)", async () => {
+		const stream = createUIMessageStream({
+			execute: () => {
+				throw new Error("a administradora caiu no meio do turno");
+			},
+			onError: streamErrorMessage,
+		});
+		const parts = await drainUIStream(stream as ReadableStream<unknown>);
+		const err = parts.find((p) => p.type === "error");
+		expect(
+			err,
+			"stream que erra DEVE emitir error part — sem isso o client fica mudo",
+		).toBeDefined();
+		expect((err as { errorText?: string }).errorText).toBe(
+			"a administradora caiu no meio do turno",
+		);
+	});
+
+	it("cassette: turno que fecha sem emitir nada visível é detectado como mudo (root cause real)", () => {
+		const recordVazio = {
+			textChars: 0,
+			toolCount: 0,
+			artifactCount: 0,
+			gate: null,
+			handoff: false,
+			transitionedTo: null,
+		};
+		expect(isTurnEmpty(recordVazio)).toBe(true);
+		// Contra-exemplo: turno que disparou search_groups (tool) NÃO é mudo.
+		expect(isTurnEmpty({ ...recordVazio, toolCount: 1 })).toBe(false);
+		// O fallback existe e é uma frase honesta (não-vazia).
+		expect(EMPTY_TURN_FALLBACK.length).toBeGreaterThan(0);
+	});
+});
+
+// ============================================================================
+// FIX-112 — fim da proposta bugado ("bora" lido como recusa)
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
+// perguntou "quer completar?" e o usuário respondeu "bora" / "ok estou pronto"
+// (AVANÇO) → o agente respondeu "Sem problema! Quando quiser retomar..." (leu
+// como recusa) → beco sem saída de texto, nenhum card de upload.
+//
+// O código já gateava o documento certo (confirmOffer ordena choose→links; card
+// só vem via offer-confirm; ver fulfillment.test.ts). O gap é comportamento de
+// LLM — defendido por 2 REGRAS DURAS no SPECIALIST_BASE_PROMPT. Este cassette
+// trava a FRASE de adiamento como regressão e prova que um afirmativo de avanço
+// NÃO casa com ela.
+// ============================================================================
+
+describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
+	const REFUSAL_DETECTORS = [
+		/sem problema!?\s*quando quiser/i,
+		/quando quiser retomar/i,
+		/sem pressa[\s\S]{0,30}quando quiser/i,
+	];
+
+	it("cassette: a frase de adiamento do bug é reproduzida fielmente (fixture do detector)", async () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar. 😊";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector pega a frase de adiamento indevida (regressão se voltar)", () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar.";
+		const hits = REFUSAL_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length, "a frase de adiamento DEVE ser detectável").toBeGreaterThanOrEqual(1);
+	});
+
+	it("um afirmativo de AVANÇO nunca casa com os detectores de recusa", () => {
+		for (const advance of ["bora", "ok estou pronto", "vamos", "pode ser", "tô pronto"]) {
+			const anyHit = REFUSAL_DETECTORS.some((rx) => rx.test(advance));
+			expect(anyHit, `"${advance}" é avanço, não pode disparar adiamento`).toBe(false);
+		}
+	});
+
+	it("structural: o prompt fixa 'bora'/'estou pronto' como avanço e gateia o documento", () => {
+		const src = readSource("src/lib/agent/system-prompt.ts");
+		expect(src).toMatch(/FIX-112/);
+		expect(src.toLowerCase()).toMatch(/bora/);
+		// gate: documento só depois de confirmar a oferta
+		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
 	});
 });

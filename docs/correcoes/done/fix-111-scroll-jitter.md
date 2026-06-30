@@ -1,7 +1,9 @@
 ---
 id: FIX-111
 titulo: "Scroll do chat oscila (jitter) — briga auto-scroll x intent / reflow durante o stream"
-status: todo
+status: done
+commit: 0e550132
+executado_em: 2026-06-30
 bloco: bloco-streaming-chat-layer
 arquivos:
   - src/components/chat/message-list.tsx
