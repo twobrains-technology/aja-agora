@@ -6406,3 +6406,58 @@ describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno 
 		expect(EMPTY_TURN_FALLBACK.length).toBeGreaterThan(0);
 	});
 });
+
+// ============================================================================
+// FIX-112 — fim da proposta bugado ("bora" lido como recusa)
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
+// perguntou "quer completar?" e o usuário respondeu "bora" / "ok estou pronto"
+// (AVANÇO) → o agente respondeu "Sem problema! Quando quiser retomar..." (leu
+// como recusa) → beco sem saída de texto, nenhum card de upload.
+//
+// O código já gateava o documento certo (confirmOffer ordena choose→links; card
+// só vem via offer-confirm; ver fulfillment.test.ts). O gap é comportamento de
+// LLM — defendido por 2 REGRAS DURAS no SPECIALIST_BASE_PROMPT. Este cassette
+// trava a FRASE de adiamento como regressão e prova que um afirmativo de avanço
+// NÃO casa com ela.
+// ============================================================================
+
+describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
+	const REFUSAL_DETECTORS = [
+		/sem problema!?\s*quando quiser/i,
+		/quando quiser retomar/i,
+		/sem pressa[\s\S]{0,30}quando quiser/i,
+	];
+
+	it("cassette: a frase de adiamento do bug é reproduzida fielmente (fixture do detector)", async () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar. 😊";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+	});
+
+	it("detector pega a frase de adiamento indevida (regressão se voltar)", () => {
+		const cassette = "Sem problema! Quando quiser retomar, é só me chamar.";
+		const hits = REFUSAL_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(hits.length, "a frase de adiamento DEVE ser detectável").toBeGreaterThanOrEqual(1);
+	});
+
+	it("um afirmativo de AVANÇO nunca casa com os detectores de recusa", () => {
+		for (const advance of ["bora", "ok estou pronto", "vamos", "pode ser", "tô pronto"]) {
+			const anyHit = REFUSAL_DETECTORS.some((rx) => rx.test(advance));
+			expect(anyHit, `"${advance}" é avanço, não pode disparar adiamento`).toBe(false);
+		}
+	});
+
+	it("structural: o prompt fixa 'bora'/'estou pronto' como avanço e gateia o documento", () => {
+		const src = readSource("src/lib/agent/system-prompt.ts");
+		expect(src).toMatch(/FIX-112/);
+		expect(src.toLowerCase()).toMatch(/bora/);
+		// gate: documento só depois de confirmar a oferta
+		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
+	});
+});
