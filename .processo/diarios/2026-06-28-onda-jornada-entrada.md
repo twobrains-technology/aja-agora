@@ -28,14 +28,20 @@ nível 4 — mesmos arquivos). Terreno livre confirmado (develop em `f433d3e7`, 
 Web e whatsapp são nível 3 (dependem do contrato do bloco-jornada via stub). Arquivos disjuntos
 (`src/lib/agent/**` × `src/components/chat/**` × `src/lib/whatsapp/**`) → merge limpo esperado.
 
-## Próximo passo (orquestrador — notch re-invoca; escopar SEMPRE aos 3)
+## Próximo passo (orquestrador — notch re-invoca)
+`merge-wave --block` aceita só 1 filtro e `poll --wave` inclui os blocos antigos
+(a/b/c/e/f/g/h herdados no todo/) → use **poll por TAG** (como a onda rev fez):
 ```
 cd /Users/kairo/.superset/worktrees/ac2f26b2-a2ba-4148-96b8-47b55f0dd5ad/integ/jornada-entrada
-merge-wave.sh poll  --wave 1 --block bloco-jornada-entrada --block bloco-web-valor-agulha --block bloco-whatsapp-apresentacao   # repetir até all_terminal
-merge-wave.sh merge --wave 1 --target integ/jornada-entrada   # gate test:unit por bloco; quarentena o que reprovar
-finish-wave.sh jornada-entrada --to-develop   # leva integ/jornada-entrada → develop (gate test:unit) + apaga base e workspaces
-# DEPOIS do merge na develop: rodar qa-autonomo na develop (skill qa-autonomo). Decisão Kairo 2026-06-29.
+# 1) esperar as 3 tags (3 = pronto):
+git ls-remote --tags origin | grep -E "block-done/feat-(jornada-entrada-conversacional|web-valor-agulha-simples|whatsapp-entrada-simulador)"
+# 2) integrar cada bloco na base (1 --block por vez; gate test:unit; quarentena o que reprovar):
+merge-wave.sh merge --wave 1 --block bloco-jornada-entrada    --target integ/jornada-entrada
+merge-wave.sh merge --wave 1 --block bloco-web-valor-agulha   --target integ/jornada-entrada
+merge-wave.sh merge --wave 1 --block bloco-whatsapp-apresentacao --target integ/jornada-entrada
+# 3) levar a base pra develop (gate) + apagar base e workspaces:
+finish-wave.sh jornada-entrada --to-develop
+# 4) DEPOIS do merge na develop: rodar qa-autonomo na develop (skill qa-autonomo). Decisão Kairo 2026-06-29.
 ```
-⚠️ Escopar poll/merge aos 3 (`--block`) — o `todo/` da base herdou blocos antigos (a/b/c/e/f/g/h) que NÃO são desta onda; sem filtro o `all_terminal` nunca vira true.
 ⚠️ Gate é `pnpm test:unit` (NÃO typecheck — develop já tem dívida de tsc). Estes 3 blocos NÃO tocam schema/DB.
 ⚠️ Bloco em quarentena (reprovou no gate) NÃO segura os bons nem vai pra develop — marca PENDENTE-KAIRO e leva só os aprovados.
