@@ -4,7 +4,36 @@
 > fomos nós que mudamos as chamadas?** Validado por curl ao vivo contra homologação +
 > comparação com a doc oficial atual (Postman) e com as capturas de 2026-05-27.
 
-## TL;DR — VEREDITO: é a BEVI/AGX, não nós
+## ✅ ATUALIZAÇÃO 2026-06-30 — RESOLVIDO (Trilho A voltou)
+
+> Re-validado ao vivo contra homologação em **2026-06-30 11:10**. **O bloqueio acabou.**
+
+A Bevi/AGX **corrigiu o vínculo** productId `6986245b…` ↔ produto "Consórcio" na conta
+do token `rp3rmx…`. O `calculate_simulation_bevi_consorcio` voltou a devolver **200**:
+
+| Passo | 26/06 | 30/06 |
+|---|---|---|
+| `insert_proposal` | 201 ✅ | 201 ✅ |
+| `list_segments` | 200 ✅ | 200 ✅ |
+| **`calculate_simulation`** | **400 "não pertence"** ❌ | **200 ✅ (23 ofertas AUTOS / 21 IMÓVEL)** |
+| `consult_proposal_status` | 400 ❌ | 200 ✅ (status → "Simulação Consórcio") |
+| `choose_offer` | bloqueado | 200 ✅ (`consortiumProposalLink` gerado) |
+
+**O PENDENTE-KAIRO abaixo (contatar Bevi/AGX) está RESOLVIDO** — não precisa mais
+enviar a cobrança. Achados secundários da re-validação (todos doc, não código):
+1. **`temEmbutido` agora é OBRIGATÓRIO** em `contemplacao_rapida` — o app já manda
+   (BUG-TEM-EMBUTIDO 2026-06-12); a **collection oficial no repo está incompleta**
+   (não tem o campo → 400 "temEmbutido é obrigatório...").
+2. **Shape da oferta cresceu 8→10 campos** (`parcela` virou STRING pt-BR, `prazo` e
+   `lanceMedio` novos) — o `partner-offer-mapper.ts` **já trata** (FIX-39/40,
+   BUG-PARCELA-STRING). A spec §7 é que está atrás (atualizada nesta data).
+3. **CELULAR de 13 díg (com 55) → 400 "CELULAR inválido"** — produção é segura (11 díg).
+
+Passo a passo completo das chamadas: `~/Downloads/validacao-trilho-a-2026-06-30.txt`.
+
+---
+
+## TL;DR (2026-06-26, histórico) — VEREDITO ERA: é a BEVI/AGX, não nós
 
 O `calculate_simulation_bevi_consorcio` rejeita **toda** proposta com **400 "Proposta não
 pertence ao Bevi Consórcio"** — mesmo a proposta que o próprio `insert_proposal` acabou de

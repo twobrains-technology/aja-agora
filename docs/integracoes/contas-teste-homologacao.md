@@ -20,8 +20,13 @@
 Chaves no `.env` decriptado: `CONTA1_NOME` / `CONTA1_CPF` / `CONTA1_CELULAR` /
 `CONTA1_NASCIMENTO` e `CONTA2_NOME` / `CONTA2_CPF` / `CONTA2_CELULAR`.
 
-Formato do celular: E.164-sem-`+` (`55` + DDD + número). O client normaliza com
-`onlyDigits`, então a forma sem `55` também é aceita.
+Formato do celular: o valor no vault está em E.164-sem-`+` (`55` + DDD + número =
+**13 dígitos**). ⚠️ **A API de Parceiro (Trilho A) REJEITA 13 dígitos** com
+`400 "CELULAR inválido."` — ela espera **11 dígitos** (DDD + número, sem o `55`).
+Em produção isso é seguro: o WhatsApp normaliza via `waIdToCelular` e o form web via
+`onlyDigits` do campo local, ambos entregando 11 dígitos. Mas para **teste direto
+contra a API** (curl), tire o `55` inicial. (Validado ao vivo 2026-06-30 — a nota
+antiga "a forma sem 55 também é aceita" estava errada.)
 
 ## Notas operacionais (Trilho B / self-contract)
 
