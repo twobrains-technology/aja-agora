@@ -18,10 +18,11 @@
  * (gatePartData) e o conteúdo dos cards — não só "[artifact: x]".
  *
  *   ┌─ passo 1  Entender a necessidade  → acolhe o sonho + pergunta o nome
- *   ├─ passo 2  Entender o cliente      → experience → consent → credit →
- *   │                                      lance → lance-value →
- *   │                                      lance-embutido → identify (D1)
- *   │                                      (FIX-103: gate de prazo removido)
+ *   ├─ passo 2  Entender o cliente      → experience → consent → identify (D1) →
+ *   │                                      credit → lance → lance-value →
+ *   │                                      lance-embutido (reveal no fim)
+ *   │                                      (FIX-53: identidade cedo, logo após o
+ *   │                                      consent; FIX-103: gate de prazo removido)
  *   ├─ passo 3  Buscar alternativas     → "encontramos boas opções" (3 reais)
  *   ├─ passo 4  Avaliar/simular/definir  → recomendado → simulador (Bernardo)
  *   │                                      → outras opções → decisão
@@ -374,26 +375,19 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 			return { turns: [userReplyTurn("passo2:lance-value", label)] };
 		}
 		case "lance-embutido": {
-			// route: persiste opt-in + pipeSearchSummaryTurn → TRIPWIRE D1 → identify.
+			// route: persiste opt-in + SEMPRE dispara pipeSearchSummaryTurn (reveal) —
+			// a identidade já foi coletada CEDO (gate identify, logo após consent),
+			// então a tripwire de identidade sempre passa aqui (fim da qualificação).
 			const label = "Sim, quero considerar lance embutido";
 			await persistMeta(conversationId, {
 				...meta,
 				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30 },
 			});
 			await saveMessage(conversationId, "user", label, "web");
-			return { turns: [userReplyTurn("passo2:lance-embutido", label)] };
-		}
-		case "identify": {
-			// route: valida + storeIdentity + saveContactWhatsapp + pipeSearchSummaryTurn.
-			// Identidade SINTÉTICA (DV válido) — só alcança o adapter de fixtures.
-			// SÓ AGORA a identidade existe → a tripwire libera a descoberta (igual prod).
-			const label = "Enviei meus dados pra buscar as ofertas";
-			await storeIdentity(conversationId, FIXTURE_IDENTITY);
-			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-			await saveContactWhatsapp(conversationId, FIXTURE_IDENTITY.celular).catch(() => {});
-			await saveMessage(conversationId, "user", label, "web");
 			const refreshed = await reloadMeta(conversationId);
-			if (refreshed.searchDispatched || !refreshed.currentCategory) return null;
+			if (refreshed.searchDispatched || !refreshed.currentCategory) {
+				return { turns: [userReplyTurn("passo2:lance-embutido", label)] };
+			}
 			await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 			const t = await consumeTurn(
 				conversationId,
@@ -403,6 +397,32 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 				label,
 			);
 			return { turns: [t] };
+		}
+		case "identify": {
+			// route (D1): valida + storeIdentity + saveContactWhatsapp; dispara o
+			// PRÓXIMO gate da qualificação (credit) com "Perfeito, recebido!" — NÃO
+			// revela aqui. FIX-53: identidade sobe pra logo após o consent (antes do
+			// credit); o reveal fica pro FIM da cadeia (gate lance-embutido), quando
+			// a tripwire de identidade (pipeSearchSummaryTurn) já passa sempre.
+			// Identidade SINTÉTICA (DV válido) — só alcança o adapter de fixtures.
+			const label = "Enviei meus dados pra buscar as ofertas";
+			await storeIdentity(conversationId, FIXTURE_IDENTITY);
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			await saveContactWhatsapp(conversationId, FIXTURE_IDENTITY.celular).catch(() => {});
+			await saveMessage(conversationId, "user", label, "web");
+			return {
+				turns: [
+					{
+						label: "passo2:identify",
+						userLine: label,
+						content: "Perfeito, recebido!",
+						toolCalls: [],
+						artifacts: [],
+						gates: [],
+						events: [],
+					},
+				],
+			};
 		}
 		case "simulator-offer": {
 			// route: persiste simulatorOfferDispatched + directive do dial (Bernardo).
@@ -521,16 +541,20 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		// A FIDELIDADE vem de renderGate (pergunta + botões reais que o usuário vê)
 		// + a reação real do modelo capturada em cada turno; o judge avalia
 		// tom/didática/conteúdo, não o encadeamento (isso é Camada 1).
+		// FIX-53 (2026-06-19): identify sobe pra logo após o consent (antes do
+		// credit) — "pedir os dados, antes do valor". O reveal (busca real) fica
+		// pro FIM da cadeia, disparado no gate lance-embutido (tripwire da
+		// identidade, já coletada cedo, sempre passa nesse ponto).
 		// FIX-103 (2026-06-28): o gate de prazo (timeframe) saiu da qualificação —
 		// a sequência pula de credit (valor) direto pra lance.
 		const GATE_SEQUENCE: Gate[] = [
 			"experience",
 			"consent",
+			"identify",
 			"credit",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"identify",
 		];
 		for (const gate of GATE_SEQUENCE) {
 			// 1. O usuário VÊ a pergunta + botões/card do gate (fidelidade + determinismo
@@ -739,19 +763,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	});
 
 	it("passo 2 — a CADEIA REAL de gates aconteceu na ordem do docx (zero pré-seed)", () => {
-		// FIX-103: experience → consent → credit → lance → lance-value →
-		// lance-embutido → identify (o gate de prazo/timeframe saiu). O harness só
-		// responde o que o produto emite — se um gate não aparecer aqui, o PRODUTO
-		// pulou um passo.
+		// FIX-53: experience → consent → identify (D1, cedo) → credit → lance →
+		// lance-value → lance-embutido (reveal no fim). FIX-103: o gate de
+		// prazo/timeframe saiu. O harness só responde o que o produto emite — se um
+		// gate não aparecer aqui, o PRODUTO pulou um passo.
 		const seq = allGates(turns);
 		const expected: Gate[] = [
 			"experience",
 			"consent",
+			"identify",
 			"credit",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"identify",
 		];
 		let cursor = 0;
 		for (const g of seq) {
@@ -766,9 +790,12 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	});
 
 	it("passo 2 — as perguntas dos gates aparecem no transcript (o que o usuário viu)", () => {
+		// FIX-103 (2026-06-28): o gate "timeframe" ("Em quanto tempo...") saiu da
+		// qualificação — nextGate nunca mais o emite. Assert de "/quanto tempo/"
+		// removido (stale desde então; passava despercebido porque este eval é
+		// Camada 3 nightly, não roda em todo PR).
 		const t = allText(turns);
 		expect(t).toMatch(/já fez consórcio|ja fez consorcio/);
-		expect(t).toMatch(/quanto tempo/);
 		expect(t).toMatch(/reserva/);
 		expect(t).toMatch(/valor aproximado/);
 		expect(t).toMatch(/lance embutido/);

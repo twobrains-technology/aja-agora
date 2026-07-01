@@ -1,12 +1,39 @@
 ---
 id: FIX-99
 titulo: "Eval da jornada com GATE_SEQUENCE pré-FIX-53 (identify no fim) — reordenar + ajustar harness"
-status: todo
+status: done
 bloco: bloco-g-infra-teste
 arquivos:
   - tests/eval/jornada-aja-agora.eval.test.ts
 rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+commit: 4661a6ec
+executado_em: 2026-06-28
 ---
+
+## Resolução (2026-06-28)
+
+- **`GATE_SEQUENCE` reordenado**: `experience, consent, identify, credit, lance,
+  lance-value, lance-embutido` (identify sobe pra logo após consent, igual
+  produção pós-FIX-53).
+- **Harness reescrito**: o reveal (searchDispatched + buildSearchSummaryDirective)
+  saiu do case `identify` (que agora só persiste storeIdentity/saveContactWhatsapp
+  e avança com "Perfeito, recebido!", espelhando `route.ts`) e foi pro case
+  `lance-embutido` (fim da cadeia — a tripwire de identidade, coletada cedo,
+  sempre passa ali, igual produção).
+- **Diagrama/comentários atualizados** (topo do arquivo + comentário do
+  `GATE_SEQUENCE` + teste de ordem).
+- **Achado lateral corrigido**: assert `/quanto tempo/` (pergunta do gate
+  `timeframe`, removido pelo FIX-103) estava stale — removido, com nota
+  explicando a origem.
+- **Validado rodando o eval LLM real completo** (não só Camada 1):
+  `pnpm exec vitest run --config vitest.eval.config.ts
+  tests/eval/jornada-aja-agora.eval.test.ts` → **31/31 passed**,
+  `fluxoScore=0.89` (piso 0.85). Gates observados no log:
+  `name → experience → consent → identify → credit → lance → lance-value →
+  lance-embutido → simulator-offer` — ordem correta confirmada.
+- **Decisão de design registrada** em
+  `docs/correcoes/decisions/2026-06-28-bloco-g.md` (sem trade-off real —
+  ordem 100% determinada pelo código de produção já existente).
 
 # Bug (Camada 3) — Eval da jornada percorre gates na ordem PRÉ-FIX-53 (identify no fim)
 
