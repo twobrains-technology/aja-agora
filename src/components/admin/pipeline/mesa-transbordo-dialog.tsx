@@ -10,24 +10,10 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 
-// Transbordo manual do kanban → atendente de mesa (FIX-64). Lista os atendentes de
-// mesa ativos e dispara POST /api/admin/leads/[id]/transbordo.
-interface MesaAttendant {
-	id: string;
-	nome: string;
-	whatsapp: string;
-	isActive: boolean;
-}
-
+// Transbordo do kanban → MESA (FIX-64 + FIX-124). Não é mais single-select: o caso vai por
+// BROADCAST a TODOS os atendentes de mesa ativos com botão "Vou atender"; o primeiro que
+// clica ASSUME (claim/lock). O admin só confirma o transbordo — não escolhe atendente.
 export function MesaTransbordoDialog({
 	leadId,
 	leadName,
@@ -41,55 +27,23 @@ export function MesaTransbordoDialog({
 	onOpenChange: (open: boolean) => void;
 	onSuccess?: () => void;
 }) {
-	const [attendants, setAttendants] = useState<MesaAttendant[]>([]);
-	const [selectedId, setSelectedId] = useState("");
-	const [loading, setLoading] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!open) return;
 		setSubmitError(null);
-		setSelectedId("");
-		setLoading(true);
-		// TODO(bloco-a): contrato de runtime — GET /api/admin/mesa-attendants devolve
-		// { attendants: MesaAttendant[] } (ou array). O endpoint é do bloco A
-		// (escopo: src/app/api/admin/mesa-attendants/**). Tolerante a ambos os shapes.
-		fetch("/api/admin/mesa-attendants")
-			.then(async (res) => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				return res.json();
-			})
-			.then(
-				(
-					data:
-						| MesaAttendant[]
-						| { mesaAttendants?: MesaAttendant[]; attendants?: MesaAttendant[] },
-				) => {
-					// Contrato real do endpoint (bloco A): { mesaAttendants: [...] }. Tolera
-					// { attendants } e array cru por robustez.
-					const list = Array.isArray(data)
-						? data
-						: (data.mesaAttendants ?? data.attendants ?? []);
-					setAttendants(list.filter((a) => a.isActive));
-				},
-			)
-			.catch(() => setAttendants([]))
-			.finally(() => setLoading(false));
 	}, [open]);
 
 	async function onSubmit() {
-		if (!selectedId) {
-			setSubmitError("Escolha um atendente de mesa.");
-			return;
-		}
 		setSubmitting(true);
 		setSubmitError(null);
 		try {
+			// Body vazio: o broadcast decide o dono (sem mesaAttendantId).
 			const res = await fetch(`/api/admin/leads/${leadId}/transbordo`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ mesaAttendantId: selectedId }),
+				body: JSON.stringify({}),
 			});
 			if (!res.ok) {
 				let message = `HTTP ${res.status}`;
@@ -106,6 +60,7 @@ export function MesaTransbordoDialog({
 				setSubmitError(message);
 				return;
 			}
+			// Sucesso: mesmo com outboundError (broadcast parcial), o handoff está registrado.
 			onOpenChange(false);
 			onSuccess?.();
 		} catch {
@@ -121,43 +76,17 @@ export function MesaTransbordoDialog({
 				<DialogHeader>
 					<DialogTitle>Transbordar para a mesa</DialogTitle>
 					<DialogDescription>
-						Envia o caso {leadName ? `de ${leadName} ` : ""}para um atendente de mesa, que formaliza
-						o contrato na administradora pelo WhatsApp.
+						Envia o caso {leadName ? `de ${leadName} ` : ""}para todos os atendentes de mesa. O
+						primeiro que tocar em "Vou atender" no WhatsApp assume o cliente e formaliza o contrato
+						na administradora.
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="space-y-4">
-					<div className="space-y-1.5">
-						<Label htmlFor="mesa-attendant">Atendente de mesa</Label>
-						<Select
-							value={selectedId}
-							onValueChange={(v) => setSelectedId(v ?? "")}
-							disabled={loading || submitting}
-						>
-							<SelectTrigger id="mesa-attendant">
-								<SelectValue placeholder={loading ? "Carregando…" : "Selecione um atendente"} />
-							</SelectTrigger>
-							<SelectContent>
-								{attendants.map((a) => (
-									<SelectItem key={a.id} value={a.id}>
-										{a.nome}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						{!loading && attendants.length === 0 && (
-							<p className="text-sm text-muted-foreground">
-								Nenhum atendente de mesa ativo cadastrado.
-							</p>
-						)}
+				{submitError && (
+					<div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+						{submitError}
 					</div>
-
-					{submitError && (
-						<div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-							{submitError}
-						</div>
-					)}
-				</div>
+				)}
 
 				<DialogFooter>
 					<Button
@@ -168,8 +97,8 @@ export function MesaTransbordoDialog({
 					>
 						Cancelar
 					</Button>
-					<Button type="button" onClick={onSubmit} disabled={submitting || !selectedId}>
-						{submitting ? "Transbordando…" : "Transbordar"}
+					<Button type="button" onClick={onSubmit} disabled={submitting}>
+						{submitting ? "Transbordando…" : "Transbordar para a mesa"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

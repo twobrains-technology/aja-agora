@@ -7,12 +7,9 @@
 //
 // Reusável pela automação (sem `createdBy` de admin). Apoiado na idempotência de
 // `createMesaHandoff` (handoff_ativo_existe): re-polls do mesmo lead não duplicam o caso.
-//
-// TODO(FIX-124): após criar o handoff sem dono, fazer o broadcast a TODOS os atendentes com
-// botão interativo "Vou atender" (broadcastCaseToAttendants) — best-effort, isolado num
-// try/catch pra que falha de WhatsApp não desfaça o registro do caso.
 
 import { createMesaHandoff } from "./handoff";
+import { broadcastCaseToAttendants } from "@/lib/whatsapp/mesa/outbound";
 
 export interface DispatchAutoTransbordoResult {
 	created: boolean;
@@ -21,8 +18,12 @@ export interface DispatchAutoTransbordoResult {
 }
 
 /**
- * Dispara o transbordo automático de um lead: cria o handoff sem dono. Idempotente — se já
- * existe handoff ativo pro lead, não cria segundo (retorna `created:false`).
+ * Dispara o transbordo automático de um lead: cria o handoff sem dono (FIX-125) e faz o
+ * broadcast a TODOS os atendentes com botão "Vou atender" (FIX-124). Idempotente — se já
+ * existe handoff ativo pro lead, não cria segundo (retorna `created:false`, sem broadcast).
+ *
+ * O broadcast é isolado num try/catch: falha do WhatsApp NÃO desfaz o registro do caso
+ * (fonte de verdade). Espelha o handoffToAgents do chat de vendas (proxy.ts).
  */
 export async function dispatchAutoTransbordo(
 	leadId: string,
@@ -32,5 +33,23 @@ export async function dispatchAutoTransbordo(
 		// handoff_ativo_existe é o caso normal em re-poll — não é erro.
 		return { created: false, reason: result.reason };
 	}
+
+	try {
+		await broadcastCaseToAttendants(result.handoff.id, {
+			lead: result.lead,
+			proposal: result.proposal,
+		});
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-auto-transbordo",
+				handoff_id: result.handoff.id,
+				error: err instanceof Error ? err.message : String(err),
+				note: "broadcast do transbordo automático falhou (handoff registrado mesmo assim)",
+			}),
+		);
+	}
+
 	return { created: true, handoffId: result.handoff.id };
 }

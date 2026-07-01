@@ -6,8 +6,15 @@
 // Skip se DATABASE_URL ausente.
 
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProposalGateway, ProposalStatus } from "@/lib/adapters/proposal-gateway";
+
+// FIX-123: o worker agora dispara o transbordo automático (dispatch → broadcast). Mocka a
+// borda externa (WhatsApp) pra o broadcast não bater na Meta durante o teste de integração.
+vi.mock("@/lib/whatsapp/api", () => ({
+	sendReplyButtons: vi.fn(async () => ({ messageId: "sim-1" })),
+	sendTextMessage: vi.fn(async () => ({ messageId: "sim-1" })),
+}));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
