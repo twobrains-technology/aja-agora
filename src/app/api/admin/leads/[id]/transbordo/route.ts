@@ -45,8 +45,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		if (result.reason === "lead_not_found") {
 			return Response.json({ error: "Lead not found" }, { status: 404 });
 		}
+		if (result.reason === "attendant_not_found") {
+			// Não ocorre neste caminho (sem mesaAttendantId no input) — guarda defensiva.
+			return Response.json({ error: "attendant_not_found" }, { status: 500 });
+		}
 		// handoff_ativo_existe — idempotência: não cria segundo registro nem reenvia.
-		// (attendant_not_found não ocorre mais — sem mesaAttendantId no input.)
 		return Response.json(
 			{ error: "handoff_ativo_existe", handoffId: result.handoffId },
 			{ status: 409 },
