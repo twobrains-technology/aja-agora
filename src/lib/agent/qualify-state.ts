@@ -18,6 +18,11 @@ export type Gate =
 
 export type UserIntent =
 	| "ready_to_proceed"
+	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
+	// usuário quer AMPLIAR o conjunto já mostrado, NÃO avançar/decidir. Sem essa
+	// categoria caía em ready_to_proceed e empurrava o funil pra decisão sobre um
+	// grupo não-escolhido (confabulação de entidade). Roteado em decideShowGate.
+	| "wants_more_options"
 	| "asking_question"
 	| "providing_info"
 	| "expressing_doubt"
@@ -126,6 +131,16 @@ export function decideShowGate(args: {
 	// Server-authored turns (button click, transition) are always followed by a gate
 	// — that's the whole point of the directive flow.
 	if (!isUserTurn) return true;
+
+	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais
+	// opções" NUNCA abre gate estruturado nem empurra o funil (decisão/simulador/
+	// busca). O usuário quer AMPLIAR o que já viu, não avançar sobre um grupo
+	// não-escolhido — sem essa trava, o intent (antes ready_to_proceed) disparava
+	// o card de decisão sobre "Embracon" (grupo nunca exibido). Default de produto
+	// (AskUserQuestion 2026-07-01, ver docs/correcoes/decisions/): o agente
+	// re-apresenta o comparativo conversacionalmente quando o gate NÃO dispara.
+	// Governança determinística (allowlist de avanço), não regra-no-prompt (Lei 4).
+	if (intent === "wants_more_options") return false;
 
 	// "decision" — fim do passo 4 (card "Esse plano faz sentido?"). Pós-reveal,
 	// dispara em sinal de avanço do usuário (ready_to_proceed: "bora", "vamos")

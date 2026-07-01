@@ -21,7 +21,9 @@ import { buildConsorcioTools } from "./ai-sdk";
 beforeAll(() => __setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter()));
 afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
 
-const tools = buildConsorcioTools({ conversationId: "fix-23-token-diet" });
+// UUID válido (não string arbitrária): FIX-179 faz um SELECT real (join
+// artifacts×messages) pra carregar o que já foi exibido.
+const tools = buildConsorcioTools({ conversationId: "00000000-0000-4000-8000-000000000002" });
 // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool ctx não é exportado
 const ctx = { toolCallId: "t", messages: [] } as any;
 
@@ -120,11 +122,15 @@ describe("FIX-23 — dieta dos tool-results de descoberta (shape enxuto pro mode
 	it("simulate_quota: output enxuto e sem campos crus (mas mantém o breakdown que o card coage)", async () => {
 		const search = tools.search_groups.execute;
 		const sim = tools.simulate_quota.execute;
-		if (!search || !sim) throw new Error("tools undefined");
+		const presentCard = tools.present_group_card.execute;
+		if (!search || !sim || !presentCard) throw new Error("tools undefined");
 		const groups = (await search({ category: "auto", creditMax: 60_000 }, ctx)) as {
-			groups: Array<{ id: string; creditValue: number }>;
+			groups: Array<Record<string, unknown> & { id: string; creditValue: number }>;
 		};
 		const g = groups.groups[0];
+		// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+		// biome-ignore lint/suspicious/noExplicitAny: tool ctx não é exportado
+		await presentCard(g as any, ctx);
 		const out = (await sim({ groupId: g.id, creditValue: g.creditValue }, ctx)) as Record<
 			string,
 			unknown
@@ -155,11 +161,17 @@ describe("FIX-23 — dieta dos tool-results de descoberta (shape enxuto pro mode
 	it("payload do CARD continua RICO após coerção — diet não esfomeia o simulation_result", async () => {
 		const search = tools.search_groups.execute;
 		const sim = tools.simulate_quota.execute;
-		if (!search || !sim) throw new Error("tools undefined");
+		const presentCard = tools.present_group_card.execute;
+		if (!search || !sim || !presentCard) throw new Error("tools undefined");
 		const groups = (await search({ category: "auto", creditMax: 60_000 }, ctx)) as {
-			groups: Array<{ id: string; creditValue: number; administradora: string }>;
+			groups: Array<
+				Record<string, unknown> & { id: string; creditValue: number; administradora: string }
+			>;
 		};
 		const g = groups.groups[0];
+		// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+		// biome-ignore lint/suspicious/noExplicitAny: tool ctx não é exportado
+		await presentCard(g as any, ctx);
 		const quota = await sim({ groupId: g.id, creditValue: g.creditValue }, ctx);
 		// Card como o modelo o chamaria (só administradora/actions na mão; números
 		// vêm da coerção). O breakdown rico TEM que sobreviver.

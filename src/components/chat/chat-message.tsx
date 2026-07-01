@@ -108,16 +108,40 @@ type RenderableSegment =
 	| { kind: "text-group"; id: string; text: string }
 	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" }>;
 
+/** FIX-184 — colapsa eco/degeneração da LLM ("Prazer, Mirella!Prazer, Mirella!")
+ * no RENDER do cliente. O runner já aplica a MESMA guarda (`collapseEchoedSegments`)
+ * na PERSISTÊNCIA, mas só DEPOIS do streaming — o texto AO VIVO chega ao cliente
+ * com o eco cru (o DB fica limpo, a tela não). Este espelho client-side faz a tela
+ * bater com o DB. É self-contained de propósito: NÃO importa do runner (server-only,
+ * e a função do runner é mexida em paralelo pelo bloco-a/FIX-182). Mesma semântica:
+ * só colapsa segmentos [.!?] 100% idênticos consecutivos (compara com trim, então
+ * pega tanto o eco concatenado quanto o separado por "\n\n" do join de parts). */
+function collapseEchoedText(text: string): string {
+	if (!text) return text;
+	const segments = text.split(/(?<=[.!?])/);
+	if (segments.length < 2) return text;
+	const out: string[] = [];
+	for (const segment of segments) {
+		const previous = out[out.length - 1];
+		if (previous !== undefined && segment.trim().length > 0 && previous.trim() === segment.trim()) {
+			continue;
+		}
+		out.push(segment);
+	}
+	return out.join("");
+}
+
 function groupAdjacentText(parts: RenderablePart[]): RenderableSegment[] {
 	const out: RenderableSegment[] = [];
 	let buffer: { id: string; text: string }[] = [];
 
 	const flush = () => {
 		if (buffer.length === 0) return;
-		const text = buffer
+		const joined = buffer
 			.map((b) => b.text)
 			.filter(Boolean)
 			.join("\n\n");
+		const text = collapseEchoedText(joined);
 		if (text.length > 0) {
 			out.push({ kind: "text-group", id: buffer[0].id, text });
 		}

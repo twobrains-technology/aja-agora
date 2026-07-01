@@ -21,6 +21,7 @@ import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import { coerceSimulationPayload } from "./simulation-payload";
+import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -82,6 +83,33 @@ export function collapseEchoedSegments(text: string): string {
 		out.push(segment);
 	}
 	return out.join("");
+}
+
+/**
+ * FIX-182 (Mirella, 2026-07-01) — irmão do FIX-102. Em turnos multi-tool-call,
+ * cada step gera sua própria narração de transição num BLOCO de texto separado
+ * (id distinto no fullStream). O `fullResponse += part.text` colava esses blocos
+ * numa sopa ilegível ("...na sua faixa:Deixa eu buscar...:Preciso...:Mirella,
+ * tive um problema...") — 4 frases sem separador, num único registro no DB.
+ *
+ * Esta função decide, POR DELTA, se um separador `\n\n` entra ANTES do delta:
+ * só quando começa um bloco NOVO (id diferente do anterior) e já há texto que
+ * não termina em espaço/quebra. Deltas do MESMO bloco (streaming) nunca ganham
+ * separador — a decisão é 100% pelo id do bloco, ZERO heurística de conteúdo
+ * (sem falso-positivo em texto legítimo). A CURA determinística (governar a
+ * fase, FIX-180) reduz a superfície na origem; este `\n\n` é a rede enquanto a
+ * governança não cobre tudo. Card: docs/correcoes/done/fix-182-*.md.
+ */
+export function textBlockSeparator(
+	prevBlockId: string | undefined,
+	newBlockId: string | undefined,
+	accumulated: string,
+): string {
+	if (newBlockId === undefined || prevBlockId === undefined) return "";
+	if (newBlockId === prevBlockId) return "";
+	if (accumulated.length === 0) return "";
+	if (/\s$/.test(accumulated)) return "";
+	return "\n\n";
 }
 
 export async function* runAgentTurn(args: {
@@ -175,14 +203,46 @@ export async function* runAgentTurn(args: {
 		extraSystemBlocks,
 	});
 
-	const result = await agent.stream({ messages });
+	// FIX-181: observabilidade de tool I/O (Lei 5) — o primitivo NATIVO do AI SDK 6
+	// `onStepFinish` entrega toolCalls (args) + toolResults (output) por step. Sem
+	// isto, "a IA inventou ou pegou de dado real?" fica indeterminável (o buraco que
+	// tornou o 'Embracon' impossível de provar na conv 69a38af1). PII mascarada em
+	// tool-io-log.ts; log server-side (console.log estruturado), nunca vaza pro cliente.
+	let toolIoStep = 0;
+	const result = await agent.stream({
+		messages,
+		onStepFinish: (step: {
+			toolCalls?: ToolCallRecord[];
+			toolResults?: ToolResultRecord[];
+		}) => {
+			logToolIO({
+				conversationId,
+				stepNumber: toolIoStep++,
+				toolCalls: step.toolCalls ?? [],
+				toolResults: step.toolResults ?? [],
+			});
+		},
+	});
 
+	// FIX-182: id do bloco de texto corrente. Blocos diferentes (steps diferentes
+	// de um turno multi-tool) ganham `\n\n` entre si; deltas do mesmo bloco colam.
+	let lastTextBlockId: string | undefined;
 	for await (const part of result.fullStream) {
 		switch (part.type) {
-			case "text-delta":
+			case "text-delta": {
+				const blockId = (part as { id?: string }).id;
+				// FIX-182: separa narrações de steps diferentes ANTES de acumular/emitir
+				// (o separador entra no stream e no persistido — a bolha renderiza limpo).
+				const separator = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
+				if (separator) {
+					fullResponse += separator;
+					yield { type: "text-delta", text: separator };
+				}
+				lastTextBlockId = blockId;
 				fullResponse += part.text;
 				yield { type: "text-delta", text: part.text };
 				break;
+			}
 			case "tool-result": {
 				// FIX-7: conta as opções retornadas pela descoberta (single-option
 				// guard). Tools fora da descoberta retornam null e não interferem.
