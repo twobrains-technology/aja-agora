@@ -20,6 +20,7 @@ import type { LeadStage } from "@/lib/admin/lead-stages";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { updateBeviProposal } from "@/lib/bevi/proposal-repo";
 import { stageForProposalStatus } from "@/lib/bevi/proposal-status";
+import { dispatchAutoTransbordo } from "@/lib/mesa/dispatch";
 
 /** N de dias sem avanço que marca a proposta abandonada como `perdido` (a API não
  * expira proposta — o timeout é nosso). Decisão Kairo via /to-saindo: 14 dias. */
@@ -59,6 +60,28 @@ export async function reconcileProposalStage(
 	const before = await db.query.leads.findFirst({ where: eq(leads.id, row.leadId) });
 	const result = await transitionLeadStage(row.leadId, stage, { type: "system" });
 	const applied = Boolean(result && before && result.stage !== before.stage);
+
+	// FIX-123 (D14): ao o lead ENTRAR em na_administradora (raia-gatilho — Decisão 1 do
+	// bloco), transborda automaticamente pra mesa (cria handoff sem dono + broadcast
+	// FIX-124). Guardado por `applied` (só quando a raia REALMENTE mudou nesta
+	// reconciliação → não re-dispara a cada poll do mesmo status). Best-effort: falha do
+	// transbordo NÃO derruba a transição de raia nem o ciclo de polling.
+	if (applied && stage === "na_administradora") {
+		try {
+			await dispatchAutoTransbordo(row.leadId);
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "proposal-status-poll",
+					proposal_id: row.proposalId,
+					error: err instanceof Error ? err.message : String(err),
+					note: "auto-transbordo falhou (raia aplicada mesmo assim)",
+				}),
+			);
+		}
+	}
+
 	return { stage, applied };
 }
 
