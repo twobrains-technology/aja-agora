@@ -37,6 +37,8 @@ import { Client } from "pg";
 
 const DATABASE_URL =
 	process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/aja_agora";
+const BASE_URL =
+	process.env.PLAYWRIGHT_TEST_BASE_URL || "http://aja-improving-web-conversation.orb.local";
 
 type SeedResult = { conversationId: string; webCookie: string };
 
@@ -84,7 +86,7 @@ function chatDialog(page: Page) {
 
 async function openTheaterAndResume(page: Page, webCookie: string): Promise<void> {
 	await page.context().addCookies([
-		{ name: "aja_uid", value: webCookie, url: page.context()._options.baseURL as string },
+		{ name: "aja_uid", value: webCookie, url: BASE_URL },
 	]);
 	await page.goto("/", { waitUntil: "domcontentloaded" });
 	const start = page.getByRole("button", { name: "Começar", exact: true }).first();
@@ -181,29 +183,19 @@ test.describe("FRENTE 2 — Passo 5-7 (web, E2E de tela real)", () => {
 				console.log("=== D10 (Trilho A) OK ao vivo — proposta real criada, seguindo pro fechamento ===");
 				await realOffer.click();
 
-				// Passo 6: upload de documentos (opcional) — assert que o card aparece.
-				const docUpload = dialog.getByTestId("doc-upload-identidade_frente");
+				// closingPresentation bundla signature_handoff + document_upload +
+				// "Parabéns" no MESMO turno (docx passo 5) — espera o desfecho final
+				// (Parabéns) direto; doc-upload pode chegar sealado (turno anterior)
+				// se render junto, não é ação necessária neste cenário (é opcional).
 				const congrats = dialog.getByText(/Parabéns/i);
-				await expect(docUpload.or(congrats)).toBeVisible({ timeout: 45_000 });
-
-				if (await docUpload.isVisible().catch(() => false)) {
-					// "Pular por agora" — documento é opcional (D12/D13); fecha o fluxo
-					// sem depender de upload de arquivo real neste cenário.
-					const skip = dialog.getByTestId("doc-skip");
-					if (await skip.isVisible().catch(() => false)) {
-						await skip.click();
-					}
-				}
+				await expect(congrats).toBeVisible({ timeout: 45_000 });
 
 				// Passo 6 DES-1: NUNCA promete "assinatura" — só "Ver minha proposta" (PDF).
 				await expect(dialog.getByText(/assinatura|assinar/i)).toHaveCount(0);
-				const signatureLink = dialog.getByTestId("signature-link");
-				if (await signatureLink.isVisible({ timeout: 20_000 }).catch(() => false)) {
+				const signatureLink = dialog.getByTestId("signature-link").first();
+				if (await signatureLink.isVisible().catch(() => false)) {
 					await expect(signatureLink).toContainText(/proposta/i);
 				}
-
-				// Passo 7 — confirmação + resumo.
-				await expect(dialog.getByText(/Parabéns/i)).toBeVisible({ timeout: 30_000 });
 
 				await page.screenshot({
 					path: "test-results/frente2-05-passo7-confirmacao.png",
