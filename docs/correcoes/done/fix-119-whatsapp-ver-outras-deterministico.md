@@ -1,7 +1,9 @@
 ---
 id: FIX-119
 titulo: "WhatsApp: \"Ver outras opções\" do card de decisão = determinístico (buildOtherOptions)"
-status: todo
+status: done
+commit: f82a4014
+executado_em: 2026-07-01
 severidade: media
 bloco: bloco-whatsapp-funil-paridade
 arquivos: [src/lib/whatsapp/interactive-handlers.ts, src/lib/whatsapp/formatter.ts]
