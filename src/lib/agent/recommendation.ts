@@ -90,13 +90,18 @@ export interface ScoredGroup {
 }
 
 /**
- * Score and rank groups by weighted multi-factor analysis.
- * Returns top N groups sorted by score descending.
+ * Score and rank ALL groups by weighted multi-factor analysis — sem teto, nunca
+ * descarta grupo (Kairo, 2026-07-01: "não pode limitar"). `topN`, se passado,
+ * é só um corte de exibição opcional — o comportamento default é devolver tudo.
  *
  * DETERMINISTIC: Same inputs always produce same output.
  * No randomness, no LLM involvement.
  */
-export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3): ScoredGroup[] {
+export function rankGroups(
+	groups: GroupSummary[],
+	input: ScoringInput,
+	topN = Number.POSITIVE_INFINITY,
+): ScoredGroup[] {
 	const scored: ScoredGroup[] = groups.map((group) => {
 		const factors = {
 			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
