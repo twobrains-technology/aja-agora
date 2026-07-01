@@ -46,9 +46,21 @@ consecutivos — nunca pega frases **diferentes** coladas sem separador, porque 
 estreita de propósito (evita falso-positivo em nomes/siglas).
 
 Este caso é EXATAMENTE esse padrão irmão, mas com uma variável nova: aconteceu porque o turno teve
-**múltiplas etapas de tool-call** (recomendação → tentativa de re-busca → erro → decisão), cada uma
+**múltiplas etapas de tool-call** (recomendação → tentativa de simulação → erro → decisão), cada uma
 gerando seu próprio texto de transição, e o acúmulo em `fullResponse += part.text` (`runner.ts`) não
 insere nenhuma quebra entre as etapas. Precisa confirmar exatamente onde no loop de steps do runner
 isso concatena sem separador, e desenhar uma correção que não invente heurística arriscada (falso
 positivo em texto legítimo) — provavelmente inserir `\n\n` entre textos de steps DIFERENTES do
 multi-tool-call, não entre chars/deltas do MESMO step (que precisam ficar colados pro streaming).
+
+## 🔬 É sintoma da mesma doença do card-âncora (não um bug isolado)
+
+Mecanicamente é concatenação sem separador — mas a RAIZ é a mesma do card
+`analyzer-intent-ver-mais-opcoes.md`: **free-running ReAct (Lei 1 de `~/.claude/reference/arquitetura-agentes-ia.md`).**
+O agente só emitiu 4 narrações de transição soltas num turno porque estava **dirigindo o fluxo
+livremente** — tentando várias ações num loop aberto. Num controlador determinístico, cada passo do
+fluxo gera sua fala no próprio frame, e "quantas narrações num turno" deixa de ser decisão do LLM.
+Ou seja: o fix determinístico da cura (governar a fase) **reduz a superfície** deste bug na origem;
+o colapso de texto (`\n\n` entre steps / estender `collapseEchoedSegments`) é a rede de segurança
+enquanto a governança não cobre tudo. Registrar como **P2 dependente da spec**, não fix isolado às
+cegas.

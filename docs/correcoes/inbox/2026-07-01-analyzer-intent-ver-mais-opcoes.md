@@ -45,7 +45,7 @@ mexe_em:
   o comparativo e perguntar de novo, nunca pular pra decisão sobre um plano nunca visto.
 - **Atual:** o `userIntent` classificado foi `ready_to_proceed` (avançar/decidir), o que empurrou o
   agente pra `simulate_quota → get_rates → get_group_details → present_decision_prompt` sobre um
-  grupo (Embracon) que só existia no discovery cache da Bevi, nunca em tela.
+  grupo ("Embracon") que **nunca foi exibido** e cuja origem é **indeterminável** (ver "Causa raiz").
 
 ## Causa raiz — INVESTIGADA A FUNDO (não é pista, é achado provado)
 
@@ -66,20 +66,60 @@ mexe_em:
    campo `examples` jsonb) cujo `whenIntent` bate. Isso injeta few-shot no system prompt que
    VIESA o modelo pra "agir" (avançar) em vez de re-perguntar/re-listar.
 
-3. **Sem groupId escolhido pelo usuário**, o modelo, empurrado a "agir", pegou um grupo que só ELE
-   tinha visto no tool-result cru de `recommend_groups` (que agora — desde o fix de hoje removendo
-   o teto de 3 recomendações, commit `faa81b6c` — retorna MAIS grupos do que o `present_comparison_table`
-   escolhe exibir) e foi direto simular/decidir sobre ele, sem NUNCA reapresentar.
+3. **Sem groupId escolhido pelo usuário**, o modelo, empurrado a "agir", tentou simular/detalhar um
+   grupo que NÃO estava em cena e caiu num erro de tool — e mesmo assim carimbou "Embracon" no card
+   de decisão. Provado no banco/CloudWatch de prod (conv 69a38af1): (a) `simulate_quota` foi chamado
+   mas **nenhum `simulation_result` foi emitido** → a tool voltou `{error}`; (b) **nenhuma
+   `bevi_proposal` criada** → nada real fechou; (c) "Embracon" aparece em **um único lugar** da
+   conversa inteira — a string do `decision_prompt`; (d) **zero args/resultado de tool logados** no
+   turno → o erro foi um retorno `{error}` que não lança exceção (fast-path de id não-ancorado).
 
-4. **Já existe uma trava (implementada hoje, commit `5b8d76a`, FIX-179)** que BLOQUEIA
-   `simulate_quota/get_group_details/present_decision_prompt` sobre grupo não-exibido — isso já
-   fecha o sintoma mais grave (card de decisão sobre plano fantasma). Mas a CAUSA RAIZ (analyzer sem
-   categoria pra "ver mais") continua aberta: o usuário ainda vai receber uma diretiva de erro em
-   vez de uma resposta útil quando pedir "ver mais" hoje.
+4. **CORREÇÃO de um overclaim meu (regra epistêmica):** eu havia afirmado que "Embracon era um grupo
+   real da Bevi, só não mostrado". **Não dá pra provar isso.** O `present_decision_prompt` carrega só
+   o NOME (string), não um id validado; e a tool que o antecedeu deu erro. Então "Embracon" pode ter
+   sido **(a)** um grupo real do `recommend_groups` nunca exibido cujo id o LLM não conseguiu
+   reproduzir, **ou (b)** um nome **confabulado** (Embracon é administradora famosa — o modelo conhece
+   de treino). **Indistinguível, porque o resultado bruto do `recommend_groups` não é logado.** Essa
+   indistinguibilidade É o problema: num produto de confiança, não poder responder "a IA inventou ou
+   não?" é inaceitável.
 
-## ⚠️ Ponto de discussão de ARQUITETURA (Kairo pediu discutir antes de implementar)
+5. **Já existe uma trava (commit `5b8d76a`, FIX-179)** que bloqueia
+   `simulate_quota/get_group_details/present_decision_prompt` sobre grupo não-exibido — fecha o
+   sintoma mais grave. Mas a CAUSA RAIZ continua aberta, e é maior que "falta um intent".
 
-Duas perguntas em aberto que precisam de decisão, não só código:
+## 🔬 Modos de falha nomeados (estado da arte — ver `~/.claude/reference/arquitetura-agentes-ia.md`)
+
+Este é o **card-âncora da doença**: os outros dois erros da mesma conversa são sintomas do mesmo
+fundo. Cada peça tem nome na literatura:
+
+- **Free-running ReAct off-script (Lei 1).** O LLM decide o fluxo da metade de trás da jornada
+  (busca→recomendação→decisão→contrato) via prompt, não via controlador determinístico. O consenso
+  do campo (Rasa CALM, 12-Factor Agents, OpenAI/Google ADK, Salesforce Agent Script) é o oposto:
+  **lógica de processo é código determinístico; o LLM só faz NLU + copy.** A metade DA FRENTE (gates
+  de qualificação, `qualify-state.ts`) já faz isso — a de trás não. Todo susto nasce aí.
+- **Instruction-following degradation (Lei 4).** O `ready_to_proceed` errado é (a) classificação
+  forçada num conjunto fechado sem a categoria certa + (b) prompt gigante. Pesquisa (arXiv 2507.11538):
+  Claude Sonnet decai linearmente com o nº de instruções; sob carga o modelo **OMITE regras inteiras**.
+  Isso explica por que a regra FIX-36 ("não afirme achado antes do tool") existe **e mesmo assim** foi
+  violada ("esse plano encaixa!" sobre plano fantasma) — a regra sumiu sob carga. **Cada guard/regra que
+  adicionamos no prompt degrada a aderência a todas as outras.**
+- **Confabulação de entidade / Tool-Calling Hallucination (Lei 3).** "Embracon" na tool de decisão sem
+  grounding contra dado real em cena = *parameter fabrication* clássico. Mitigação documentada:
+  entidade tem que resolver contra o que foi buscado/exibido (schema/lookup), nunca texto livre. FIX-179
+  é isso em versão primitiva/reativa.
+- **Blocklist incompleta (Lei 2).** `artifact-guard.ts` (6 regras) + `shown-groups.ts` = negar coisa ruim
+  uma a uma, depois de cada bug. Incompleto por construção. A cura é **allowlist de transições válidas**.
+
+## ⚠️ Direção da cura + decisões de produto (vai virar SPEC — Kairo pediu discutir antes de codar)
+
+**Direção da cura (a decidir na spec, não cravada):** estender o controlador determinístico que já
+roda os gates da frente pra governar a jornada inteira — LLM vira NLU (com "ver mais" como intent de
+primeira classe) + copy dentro do estado; ações viram **allowlist de transições válidas por estado**
+(FIX-179 deixa de ser caso especial e vira princípio); toda tool de decisão/apresentação recebe id que
+resolve contra dado real. A tensão a resolver: estados **grossos o bastante** pra a conversa fluir,
+**estritos o bastante** pra ação inválida ser impossível. Fundamento: `~/.claude/reference/arquitetura-agentes-ia.md`.
+
+Duas perguntas de PRODUTO que a spec precisa fechar (não só código):
 
 1. **Nova categoria de intent** (`wants_more_options` ou similar) no schema do analyzer — isso é
    uma decisão técnica direta (adicionar enum value + regra), mas o ROTEAMENTO do que fazer com

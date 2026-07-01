@@ -47,3 +47,14 @@ Suspeitas a confirmar (nenhuma provada):
 
 Precisa de investigação de verdade (não é 1 grep barato) — provavelmente reproduzir localmente com
 DevTools React aberto observando o array de mensagens do `useChat` turno a turno.
+
+## 🔬 NÃO é a doença arquitetural — é bug independente de cliente
+
+Importante não conflar: os outros dois cards da conversa da Mirella
+(`analyzer-intent-ver-mais-opcoes.md` e `texto-colado-multi-tool-turn.md`) são sintomas de UMA doença
+— a fase pós-busca dirigida pelo LLM sem governança determinística (ver as 6 leis em
+`~/.claude/reference/arquitetura-agentes-ia.md`). **Este aqui não.** É rendering React no cliente,
+zero relação com o agente/arquitetura de IA — o backend salvou 1x, provado no banco. Fica no mesmo
+inbox por ter aparecido na mesma tela, mas é **P3 isolado**, corrige por conta própria (não entra no
+escopo da spec de governança da jornada). Não deixar o medo do bug grande contaminar a leitura deste:
+é chato, é visual, é pequeno.
