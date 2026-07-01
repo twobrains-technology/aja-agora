@@ -56,3 +56,36 @@ benigna em piloto/baixa concorrência; a janela `setSegment→simulate` é de ms
 `offerCache` mitiga). Vira problema ao escalar multi-usuário. Mitigação real
 depende de isolamento por device (fingerprint sintético) — não investigado;
 fora do escopo desta decisão.
+
+---
+
+## Evolução (2026-06-28/07-01) — fechamento-via-B deixa de ser descartado
+
+> `bloco-c-fechamento-trilho-b` (FIX-88/FIX-89). Design completo:
+> `docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md`.
+
+**A premissa que sustentava a Decisão 1 (item 1 acima) mudou:**
+
+1. **O Trilho A está travado sem prazo.** A pendência AGX/`productId` (item
+   "Consequências" acima) não tem ETA — reconfirmado ao vivo em 28/06. Esperar
+   o A destravar pra fechar a jornada não é mais uma opção viável pro piloto.
+2. **O piloto é single-user (ou baixíssima concorrência).** O risco
+   "catastrófico no fechamento" (KYC/finalização de um usuário escrevendo na
+   proposta de outro, por causa do hash único por device) é real em escala,
+   mas **tolerável no piloto atual** — mesma lógica que já tolera o risco na
+   descoberta (ver seção acima).
+
+**Decisão revisada:** o Trilho B **também fecha** agora (não só descobre).
+Descoberta e fechamento passam a ser a **MESMA proposta** (reuso automático —
+o self-contract é stateful por hash: não criar proposta nova = continuar na
+proposta ativa). O handoff B→A (`pickClosestOffer` + re-simular no A) **deixa
+de ser o caminho principal** enquanto o A estiver travado — o `PROPOSAL_GATEWAY`
+plugável (env `selfcontract` vs `bevi`) mantém os dois caminhos disponíveis: o
+dia que o A destravar (`PENDENTE-KAIRO` original), volta a ser uma troca de
+env, não um retrabalho de código.
+
+**A dívida de concorrência multi-usuário (seção acima) permanece NÃO
+resolvida** — segue valendo integralmente pro fechamento também (antes só
+valia pra descoberta). Mitigação real (isolamento por device/fingerprint
+sintético) continua fora do escopo; vira bloqueador de verdade quando o
+piloto sair de single-user.
