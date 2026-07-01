@@ -22,6 +22,7 @@ import type {
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
@@ -172,17 +173,13 @@ export async function pipeGatePrompt(args: {
 	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
 }
 
-// FIX-121 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto. Moto
-// SUBSTITUIU "serviços"/"Outros" nos chips (decisão Bv2-01 / Bruna v1 #20), em
-// paridade com o WhatsApp (welcomeButtonsToWhatsApp) e a landing (CHIPS). A
-// categoria `servicos` continua VIVA no domínio (Category/CATEGORY_META/
-// turn-analyzer) — só deixou de ser opção CLICÁVEL de entrada; quem digita
-// "quero fazer uma reforma" segue caindo em `servicos` por texto livre.
-export const WELCOME_OPTIONS: GatePartOption[] = [
-	{ value: "imovel", label: "Imóvel" },
-	{ value: "auto", label: "Automóvel" },
-	{ value: "moto", label: "Moto" },
-];
+// FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
+// FONTE ÚNICA client-safe. O evento `welcome-categories` (backend) e o
+// `EmptyState` do chat (`message-list.tsx`) importam a MESMA lista, pra não
+// voltarem a divergir (o FIX-121 corrigiu só esta cópia e a do message-list
+// ficou com a 4ª categoria "Outros"). Importada no topo; re-exportada aqui
+// pra manter a superfície pública do adapter (consumida por adapter.test.ts).
+export { WELCOME_OPTIONS };
 
 export async function pipeOrchestratorToWriter(
 	events: AsyncIterable<TurnEvent>,

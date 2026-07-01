@@ -13,7 +13,8 @@ import {
 	useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import type { AjaUIMessage, GatePartOption, TransitionPartData } from "@/lib/chat/ui-message";
+import type { AjaUIMessage, TransitionPartData } from "@/lib/chat/ui-message";
+import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 import { nextStickState } from "./scroll-intent";
@@ -207,14 +208,7 @@ function ResumeAnchor() {
 	);
 }
 
-const WELCOME_OPTIONS: GatePartOption[] = [
-	{ value: "imovel", label: "Imóvel" },
-	{ value: "auto", label: "Automóvel" },
-	{ value: "moto", label: "Moto" },
-	{ value: "servicos", label: "Outros" },
-];
-
-function EmptyState() {
+export function EmptyState() {
 	return (
 		<motion.div
 			initial={{ opacity: 0, y: 12 }}
