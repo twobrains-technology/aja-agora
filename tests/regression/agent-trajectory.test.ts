@@ -66,7 +66,11 @@ import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tool
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
-import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
+import {
+	type DocumentInboundDeps,
+	handleDocumentInbound,
+} from "@/lib/whatsapp/document-inbound";
+import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -6651,5 +6655,79 @@ describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
 		expect(src.toLowerCase()).toMatch(/bora/);
 		// gate: documento só depois de confirmar a oferta
 		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
+	});
+});
+
+// ============================================================================
+// FIX-122 (D13) — upload de documento inbound no WhatsApp
+// ----------------------------------------------------------------------------
+// Real (auditoria 2026-07-01): no Passo 6 (KYC) a copy convida "me manda a foto
+// do RG/CNH aqui mesmo", mas o webhook ignorava a imagem — caía no `default` do
+// switch com "[whatsapp] Unhandled type: image". A foto era dropada em silêncio,
+// e o cliente ficava esperando uma resposta que nunca vinha.
+//
+// A REGRA de aceite é PARIDADE com o web: a foto vai pro MESMO destino
+// (uploadContractDocument), sem redirect. O fluxo é determinístico (sem LLM), então
+// o "cassette" aqui é a trajetória do handler: copy convida → imagem recebida
+// dispara o upload (não o drop) → resposta confirma/pede o próximo slot.
+// Detalhe completo em src/lib/whatsapp/document-inbound.test.ts.
+// ============================================================================
+
+describe("FIX-122-DOC-INBOUND-WHATSAPP — foto de documento dispara upload (não cai no drop silencioso)", () => {
+	function stubDeps(over: Partial<DocumentInboundDeps> = {}): {
+		deps: DocumentInboundDeps;
+		uploads: string[];
+		replies: string[];
+	} {
+		const uploads: string[] = [];
+		const replies: string[] = [];
+		const deps: DocumentInboundDeps = {
+			loadConversation: async () => ({ id: "conv-1", meta: {} }),
+			persist: async () => {},
+			download: async () => ({ bytes: new Uint8Array([1, 2, 3]), mimeType: "image/jpeg" }),
+			upload: async (_c, input) => {
+				uploads.push(input.slot);
+				return { ok: true };
+			},
+			reply: async (_to, text) => {
+				replies.push(text);
+			},
+			...over,
+		};
+		return { deps, uploads, replies };
+	}
+
+	it("cassette: Passo 6 WhatsApp — a copy convida a foto e a imagem recebida dispara uploadContractDocument", async () => {
+		// 1) A copy que precede a foto (documentUploadToWhatsApp) convida "aqui mesmo".
+		const copy = documentUploadToWhatsApp({}).text ?? "";
+		expect(copy.toLowerCase()).toContain("aqui mesmo");
+
+		// 2) Cliente responde com imagem → o handler DISPARA o upload (não o drop).
+		const { deps, uploads, replies } = stubDeps();
+		await handleDocumentInbound({ from: "5562988887777", mediaId: "MEDIA-1" }, deps);
+
+		expect(uploads).toEqual(["identidade_frente"]); // mesmo destino do web
+		expect(replies).toHaveLength(1);
+		expect(replies[0].toLowerCase()).toContain("verso"); // pede o próximo slot
+	});
+
+	it("regressão: mídia inbound NUNCA fica sem resposta (o drop silencioso é o bug)", async () => {
+		// Mesmo no pior caso (upload falha porque a proposta não chegou em
+		// 'documentos'), o cliente recebe uma resposta — nunca silêncio.
+		const { deps, replies } = stubDeps({
+			upload: async () => {
+				throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
+			},
+		});
+		await handleDocumentInbound({ from: "5562988887777", mediaId: "MEDIA-2" }, deps);
+		expect(replies).toHaveLength(1);
+		expect(replies[0].length).toBeGreaterThan(0);
+	});
+
+	it("structural: o webhook trata image e document (não caem no default 'Unhandled type')", () => {
+		const src = readSource("src/app/api/webhook/whatsapp/route.ts");
+		expect(src).toContain('case "image"');
+		expect(src).toContain('case "document"');
+		expect(src).toContain("handleDocumentInbound");
 	});
 });
