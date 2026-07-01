@@ -53,6 +53,19 @@ export async function getMessages(conversationId: string) {
 	return result.rows as Array<{ role: string; content: string; created_at: Date }>;
 }
 
+export async function getArtifactsForConversation(conversationId: string) {
+	const db = await getDbClient();
+	const result = await db.query(
+		`SELECT a.type, a.payload, a.created_at
+		 FROM artifacts a
+		 JOIN messages m ON m.id = a.message_id
+		 WHERE m.conversation_id = $1
+		 ORDER BY a.created_at ASC`,
+		[conversationId],
+	);
+	return result.rows as Array<{ type: string; payload: unknown; created_at: Date }>;
+}
+
 export async function getLeadEvents(leadId: string) {
 	const db = await getDbClient();
 	const result = await db.query(
