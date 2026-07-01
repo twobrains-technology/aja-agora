@@ -136,16 +136,16 @@ chegar na fase de atendimento, o caso é **oferecido a todos os atendentes** e q
 atender" assume**; o atendente entra manualmente na administradora **guiado pelo copiloto**.
 
 ### Kanban (raias)
-`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado (`db/schema.ts:38-48`; ⚠️ **não existe raia "em atendimento"** citada no transbordo-d).
+`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → em_atendimento → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado (`lib/admin/lead-stages.ts:8-18`). A raia `em_atendimento` (FIX-126) existe no enum, tem label/cor no Kanban (`kanban-column.tsx`) e é alcançada de verdade via claim — validado por E2E de tela em 2026-07-01 (ver Cobertura QA).
 
-### Transbordo auto-broadcast + claim (FEATURE NOVA)
+### Transbordo auto-broadcast + claim (FECHADO — FIX-123..126, D14-D17)
 | Cenário de aceitação | Fase |
 |---|---|
-| Ao o lead **entrar na fase**, o sistema **transborda automaticamente** (sem clique) | 🔴 hoje **manual** (botão, `transbordo/route.ts:6`). A entrada automática na raia **já existe** (worker FIX-44) mas está **desacoplada** do transbordo. Ver D14. |
-| O caso é **enviado a TODOS os atendentes** (broadcast) com botão **"Vou atender"** | 🔴 feature nova — `getMesaAttendantList` já existe (`routing.ts:32`), mas o dialog é single-select e o outbound manda pra 1 (`outbound.ts:112`). Padrão broadcast+claim **já implementado em `proxy.ts`** (chat de vendas) — reaproveitar. Ver D15. |
-| O **primeiro que clica "Vou atender" ASSUME** (claim/lock); os demais "já foi assumido" | 🔴 feature nova — `mesa_attendant_id` é **NOT NULL** (`schema.ts:671-673`), sem estado "sem dono" pra competir. Lock atômico (`UPDATE ... WHERE dono IS NULL`) já existe no `proxy.ts`. Ver D16. |
-| Ao assumir, o lead **muda de fase** | 🔴 feature nova — `createMesaHandoff` **não move a raia** (`handoff.ts:105-147`); a fase "em atendimento" **não existe no enum**. Ver D17. |
-| Dados sensíveis (CPF, documentos) **não** trafegam no WhatsApp — ficam no painel | 🟢 |
+| Ao o lead **entrar na fase**, o sistema **transborda automaticamente** (sem clique) | 🟢 worker FIX-44 dispara o transbordo automático em `na_administradora` (integration + isolamento de falha, FIX-170). Botão manual (`transbordo/route.ts`) continua disponível como caminho alternativo (idempotente). |
+| O caso é **enviado a TODOS os atendentes** (broadcast) com botão **"Vou atender"** | 🟢 `broadcastCaseToAttendants` (`outbound.ts`) manda `sendReplyButtons` a todos os atendentes de mesa ativos — validado por E2E de tela (2 sessões reais, 2026-07-01). |
+| O **primeiro que clica "Vou atender" ASSUME** (claim/lock); os demais "já foi assumido" | 🟢 `mesa_attendant_id` nullable + claim atômico (`UPDATE ... WHERE mesa_attendant_id IS NULL`) em `claimMesaHandoff`. Depth gate: 200 claims concorrentes (8×25) sempre 1 vencedor. E2E de tela (corrida real, 2 browser contexts) confirma visualmente vencedor×perdedor sem erro. |
+| Ao assumir, o lead **muda de fase** | 🟢 `claimMesaHandoff` move `na_administradora → em_atendimento` (forward-only, `lead_events`). |
+| Dados sensíveis (CPF, documentos) **não** trafegam no WhatsApp — ficam no painel | 🟢 confirmado por E2E de tela 2026-07-01: painel controlado (`ContactDetailPanel`) mostra o CPF **mascarado** (`***.***.NNN-NN`); dossiê/copiloto da mesa nunca mostram o CPF (cru ou mascarado). |
 
 ### Copiloto da mesa (guia o atendente)
 | Cenário de aceitação | Fase |
