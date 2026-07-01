@@ -1,9 +1,12 @@
 ---
-slug: texto-colado-multi-tool-turn
+id: FIX-182
 titulo: "Narrações de passos internos se colam numa mensagem só sem separador em turnos multi-tool (irmão do FIX-102)"
-status: inbox
+status: todo
+bloco: bloco-a-governanca-agente
 severidade: media
 projeto: aja-agora
+arquivos:
+  - src/lib/agent/orchestrator/runner.ts
 rodada: 2026-07-01 — conversa real da Mirella (automóvel, produção), reportada pelo Kairo
 evidencia:
   - conversationId 69a38af1-567f-4f33-adbc-e8a9ce5ef83e, message id b408ddf4-e176-49e8-ad2e-af9dfb5dfc2e

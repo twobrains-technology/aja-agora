@@ -1,9 +1,13 @@
 ---
-slug: saudacao-duplicada-frontend
+id: FIX-184
 titulo: "'Prazer, Mirella!' aparece duplicado na tela — bug é só no frontend, backend salvou 1x"
-status: inbox
+status: todo
+bloco: bloco-c-frontend-e-flaky
 severidade: baixa
 projeto: aja-agora
+arquivos:
+  - src/components/chat/chat-message.tsx
+  - src/components/chat/message-list.tsx
 rodada: 2026-07-01 — conversa real da Mirella (automóvel, produção), reportada pelo Kairo
 evidencia:
   - conversationId 69a38af1-567f-4f33-adbc-e8a9ce5ef83e, message id e509a33e-7c00-46b3-9780-7514d0b2e588 (única, no banco)

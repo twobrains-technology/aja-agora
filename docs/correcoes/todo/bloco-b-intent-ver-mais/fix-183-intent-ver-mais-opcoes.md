@@ -1,19 +1,26 @@
 ---
-slug: analyzer-intent-ver-mais-opcoes
-titulo: "Analyzer não tem categoria de intent pra 'quero ver mais do que já foi mostrado' — cai em ready_to_proceed e desvia o fluxo pra simulação/decisão"
-status: inbox
+id: FIX-183
+titulo: "Categoria de intent 'quer ver mais opções' no analyzer + roteamento (mata o desvio ready_to_proceed → simulação/decisão)"
+status: todo
+bloco: bloco-b-intent-ver-mais
 severidade: alta
 projeto: aja-agora
+arquivos:
+  - src/lib/agent/turn-analyzer.ts
+  - src/lib/agent/qualify-state.ts
+  - src/lib/agent/example-selector.ts
+  - src/lib/agent/orchestrator/analyze.ts
 rodada: 2026-07-01 — conversa real da Mirella (automóvel, produção), reportada pelo Kairo
 evidencia:
   - conversationId 69a38af1-567f-4f33-adbc-e8a9ce5ef83e (Postgres prod, mensagens/artifacts)
   - CloudWatch /ecs/tb/prod, log stream aja-agora/aja-agora/a80e778a32544935a51f81d8387cad1f, 18:48:00–18:49:10 UTC
 mexe_em:
   - src/lib/agent/turn-analyzer.ts
-  - src/lib/agent/orchestrator/index.ts
-  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/qualify-state.ts
   - src/lib/agent/example-selector.ts
+  - src/lib/agent/orchestrator/analyze.ts
   - docs/correcoes/todo/bloco-f-artifacts-produto/ (FIX-96, SEGURADO — aguarda aval do Bernardo)
+nota: "Este card carrega a análise-âncora COMPLETA da doença (lida também pelo bloco-a). O ESCOPO do bloco-b é só o intent + roteamento; a cura arquitetural (allowlist estado→ação→precondição) é o bloco-a/FIX-180. runner.ts é do bloco-a — bloco-b NÃO toca runner.ts."
 ---
 
 ## Palavras do operador
