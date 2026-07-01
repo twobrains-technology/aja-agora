@@ -1,7 +1,9 @@
 ---
 id: FIX-87
 titulo: "Chat do operador no Kanban → WhatsApp oficial (com gate de janela/template)"
-status: todo
+status: done
+commit: 31137987
+executado_em: 2026-07-01 (reconciliado — feature já no código; card estava órfão no todo/)
 bloco: bloco-b-chat-mesa-whatsapp
 arquivos:
   - src/components/admin/pipeline/lead-detail-panel.tsx
