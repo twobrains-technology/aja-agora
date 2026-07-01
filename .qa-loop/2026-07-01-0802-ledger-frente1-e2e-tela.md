@@ -28,7 +28,7 @@
 
 | # | Cenário (fluxo) | Origem | Nível certo | Status | Bug card | Fix | Último resultado |
 |---|-----------------|--------|-------------|--------|----------|-----|------------------|
-| 1 | **Bug bloqueador:** agente mudo ao capturar nome (WhatsApp) — toolChoice forçado sem reverter | cross-frente inbox | cassette + behavioral (builder.ts) | 🔴→corrigindo | `docs/correcoes/inbox/2026-07-01-crossfrente-agente-mudo-captura-nome.md` | **em andamento** | root cause confirmada (D1 do diário): `builder.ts` sem `prepareStep`, toolChoice estático se repete em todos os steps |
+| 1 | **Bug bloqueador:** agente mudo ao capturar nome (WhatsApp) — toolChoice forçado sem reverter | cross-frente inbox | cassette + behavioral (builder.ts) | ✅ fechado | `docs/correcoes/inbox/2026-07-01-crossfrente-agente-mudo-captura-nome.md` | `ccbd5e7` | TDD: reproduzido (4 asserts falhando) → `prepareStep` reverte toolChoice pra 'auto' após step 0 → 7 testes verdes (builder.force-toolchoice-loop.test.ts + cassette BUG-MUTE-LOOP-NAME-CAPTURE) + `pnpm test:unit` 219/219 + `test:integration` 46/46 verdes |
 | 2 | Welcome web: 3 categorias, golden path Passo 1→4 completo até reveal Passo 5 | FIX-130/D21 | E2E browser real | pendente | — | — | — |
 | 3 | Golden path WhatsApp (simulador) Passo 1→4 até reveal Passo 5 | paridade | E2E browser real (simulador admin) | pendente | — | — | bloqueado até corrigir cenário #1 |
 | 4 | Identidade CPF+telefone SEMPRE antes de search_groups (adversarial: tentar pular) | P6/D7 | E2E browser real adversarial | pendente | — | — | — |
