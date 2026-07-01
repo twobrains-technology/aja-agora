@@ -1,11 +1,13 @@
 ---
 id: FIX-121
 titulo: 'Welcome do chat web com 3 categorias (tirar "Outros"/serviços)'
-status: todo
+status: done
+commit: 4c9947c
+executado_em: 2026-07-01
 severidade: baixa
 projeto: aja-agora
 bloco: bloco-entrada-welcome-upload
-arquivos: [src/lib/web/adapter.ts]
+arquivos: [src/lib/web/adapter.ts, src/lib/web/adapter.test.ts]
 rodada: 2026-07-01 — auditoria código×jornada (Mapa em docs/jornada/jornada-canonica.md)
 ---
 

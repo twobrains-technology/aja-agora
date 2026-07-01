@@ -1,3 +1,5 @@
+import type { DocumentSlot } from "@/lib/adapters/proposal-gateway";
+
 // Persona id (free-form slug, e.g. "concierge", "imovel", "helena-premium").
 // Persona row carries role + category that drive routing/agent build.
 export type Persona = string;
@@ -168,6 +170,11 @@ export type ConversationMetadata = {
 	 * Permite E2E inspecionar o hint via SQL sem hacks de stream. Não use em
 	 * produção. */
 	lettaDebugHint?: string | null;
+	/** FIX-122 (D13) — slots de documento (RG/CNH) já recebidos pelo WhatsApp no
+	 * Passo 6 (KYC). Rastreia a progressão frente → verso pra o handler de mídia
+	 * inbound saber qual slot preencher a cada foto (o web controla isso no
+	 * componente client; no WhatsApp não há UI, então mora no meta da conversa). */
+	documentSlotsSent?: DocumentSlot[];
 };
 
 export const ROUTABLE_CATEGORIES = [

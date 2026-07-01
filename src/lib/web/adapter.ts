@@ -172,11 +172,16 @@ export async function pipeGatePrompt(args: {
 	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
 }
 
+// FIX-121 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto. Moto
+// SUBSTITUIU "serviços"/"Outros" nos chips (decisão Bv2-01 / Bruna v1 #20), em
+// paridade com o WhatsApp (welcomeButtonsToWhatsApp) e a landing (CHIPS). A
+// categoria `servicos` continua VIVA no domínio (Category/CATEGORY_META/
+// turn-analyzer) — só deixou de ser opção CLICÁVEL de entrada; quem digita
+// "quero fazer uma reforma" segue caindo em `servicos` por texto livre.
 export const WELCOME_OPTIONS: GatePartOption[] = [
 	{ value: "imovel", label: "Imóvel" },
 	{ value: "auto", label: "Automóvel" },
 	{ value: "moto", label: "Moto" },
-	{ value: "servicos", label: "Outros" },
 ];
 
 export async function pipeOrchestratorToWriter(

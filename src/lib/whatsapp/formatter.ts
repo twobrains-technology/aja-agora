@@ -1077,6 +1077,56 @@ export function documentUploadToWhatsApp(_payload: Record<string, unknown>): Wha
 	};
 }
 
+// FIX-122 (D13) — respostas do handler de mídia INBOUND (par do convite acima).
+// A promessa "me manda aqui mesmo" agora é cumprida: cada foto recebida sobe pro
+// MESMO destino do web (uploadContractDocument) e o cliente recebe confirmação +
+// o próximo slot pedido. Nunca silêncio — mesmo nos caminhos de erro.
+
+/** Confirmação de uma foto recebida no WhatsApp. `allDone` = era o último slot
+ * (ficha completa); senão pede o verso. */
+export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
+	return {
+		type: "text",
+		text: allDone
+			? "Recebi ✅. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			: "Recebi a frente ✅. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
+	};
+}
+
+/** Cliente mandou foto, mas a conversa ainda não chegou no Passo 6 (sem proposta
+ * em 'documentos'). Acolhe sem prometer nada fora de ordem. */
+export function documentNotReadyToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui. 😊",
+	};
+}
+
+/** O upload automatizado falhou (anti-bot/drift do portal) → devolve o link
+ * oficial como fallback, mantendo a jornada viva. */
+export function documentUploadFallbackToWhatsApp(link: string): WhatsAppResponse {
+	return {
+		type: "text",
+		text: `Recebi sua foto, mas não consegui anexar por aqui. Finaliza rapidinho neste link: ${link}`,
+	};
+}
+
+/** Não deu pra baixar a mídia da Graph API (foto corrompida, expirada etc.). */
+export function documentDownloadFailedToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Não consegui abrir sua foto por aqui. Pode mandar de novo, por favor?",
+	};
+}
+
+/** Foto chegou sem conversa em andamento (waId sem registro). Convida a começar. */
+export function documentNoConversationToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto, mas ainda não temos uma conversa em andamento por aqui. Manda um oi que eu começo com você! 😊",
+	};
+}
+
 // FIX-109: o WhatsApp não tem slider — o simulador-agulha vira um LOOP
 // CONVERSACIONAL conduzido pelo agente (bloco-jornada-entrada FIX-106). O
 // usuário diz o mês-alvo, o agente recalcula via computeContemplationDial e
