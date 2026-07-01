@@ -77,6 +77,20 @@ decidida aqui e não exigia nova aprovação de produto — só faltava a implem
   (reload, admin, memória, banco de exemplos) mas não impede 100% do flash visual no
   MESMO turno em que a degeneração acontecer. Opção 2 (reforço de prompt, ataca a causa)
   segue em aberto se o padrão voltar a aparecer com mais frequência.
+
+### ⚠️ Nova evidência (mesma rodada) — padrão IRMÃO, fora do escopo desta guarda
+
+Na MESMA spec E2E (turno de search-summary, resposta ao directive interno
+`buildSearchSummaryDirective`), observado: `"Boa, vou ver o que tem na sua faixa:Encontrei
+3 boas opções na sua faixa, olha só:Atenção: a simulação foi ajustada — o..."` — **3 frases
+DIFERENTES** coladas sem separador (não é auto-duplicação X+X, é ausência de quebra entre
+sentenças distintas). `collapseSelfDuplicatedText` **não pega** esse shape de propósito
+(heurística estreita, evita falso-positivo). Mesma família de degeneração (LLM às vezes
+falha em separar sentenças), sintoma diferente — precisaria de heurística mais ampla
+(ex.: detectar `[.!?:]` seguido de maiúscula sem espaço/quebra) e mais RISCO de falso-positivo
+(nomes próprios, siglas). **Não implementado nesta rodada** (fora do escopo imediato,
+cosmético, exigiria design cuidadoso). Registrado aqui pra próxima sessão decidir: ampliar a
+guarda ou ir pra opção 2 (reforço de prompt).
 - Regressão: Camada 1 (`collapse-self-duplicate.test.ts` — 8 casos incl. anti-falso-positivo
   + `runner.fix-102-collapse-dup.test.ts` — wiring). `pnpm test:unit` verde (221/221 arquivos).
 - Commit: `b4f577d` (`test+fix:`).
