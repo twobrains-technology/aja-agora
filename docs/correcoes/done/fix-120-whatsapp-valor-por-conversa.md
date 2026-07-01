@@ -1,7 +1,9 @@
 ---
 id: FIX-120
 titulo: "WhatsApp: valor do bem por conversa (não lista de faixas)"
-status: todo
+status: done
+commit: 7db49088
+executado_em: 2026-07-01
 severidade: alta
 bloco: bloco-whatsapp-funil-paridade
 arquivos: [src/lib/whatsapp/adapter.ts, src/lib/whatsapp/formatter.ts, src/lib/agent/qualify-config.ts, src/lib/agent/parse-asset-value.ts]
