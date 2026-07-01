@@ -26,6 +26,7 @@ import {
 	searchGroupsInput,
 	simulateQuotaInput,
 } from "./schemas";
+import { emptyShownGroups, extractShownFromPayload, loadShownGroups } from "./shown-groups";
 
 // ---- Presentation tool schemas (reused across definition + route) ----
 
@@ -344,6 +345,35 @@ function rebuscaDirective(groupId: string): { error: string } {
 			"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
 			"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.",
 	};
+}
+
+/**
+ * FIX-179 (Mirella, 2026-07-01) — "quero ver todos" pulou pra simulate_quota/
+ * get_group_details/present_decision_prompt sobre "Embracon", grupo REAL da
+ * Bevi (existia no discovery cache) mas NUNCA renderizado em tela. O usuário
+ * viu um card de decisão pra um plano do qual não tinha NENHUMA informação —
+ * bug de confiança grave, não hallucination de empresa fictícia.
+ *
+ * Diferença pro rebuscaDirective (FIX-72): aquele cobre "id não existe na
+ * Bevi" (fabricado); este cobre "id EXISTE na Bevi mas nunca foi mostrado pro
+ * usuário" — a LLM não pode agir sobre o que só ELA viu no tool-result cru.
+ */
+function naoExibidoDirective(groupId: string): { error: string } {
+	return {
+		error:
+			`O grupo "${groupId}" nao foi exibido em tela pro usuario nesta conversa. ` +
+			"Apresente-o primeiro via present_comparison_table, present_group_card ou present_recommendation_card " +
+			"antes de simular, detalhar ou propor decisao sobre ele. NUNCA pule direto pra simulacao/decisao " +
+			"sobre um grupo que so voce viu no resultado da busca — reapresente o comparativo.",
+	};
+}
+
+function administradoraNaoExibidaDirective(administradora: string): string {
+	return (
+		`[Bloqueado: o plano "${administradora}" ainda nao foi apresentado pro usuario nesta conversa. ` +
+		"Apresente a recomendacao/comparativo (present_comparison_table / present_recommendation_card) " +
+		"ANTES do card de decisao — nunca proponha decisao sobre um plano que o usuario nao viu.]"
+	);
 }
 
 export async function executeSimulateQuota(
@@ -899,6 +929,24 @@ export type ConsorcioToolsContext = {
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	const { conversationId } = ctx;
 
+	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
+	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
+	// os present_* rodam NESTE turno. Lazy: só bate no banco se alguma das
+	// tools guardadas (get_group_details/simulate_quota/present_decision_prompt)
+	// for chamada.
+	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
+	const getShownGroups = () => {
+		if (!conversationId) return Promise.resolve(emptyShownGroups());
+		if (!shownGroupsPromise) shownGroupsPromise = loadShownGroups(conversationId);
+		return shownGroupsPromise;
+	};
+	const markShown = async (type: string, payload: unknown) => {
+		const shown = await getShownGroups();
+		const extracted = extractShownFromPayload(type, payload);
+		for (const id of extracted.ids) shown.ids.add(id);
+		for (const admin of extracted.administradoras) shown.administradoras.add(admin);
+	};
+
 	const save_contact_name = tool({
 		description:
 			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
@@ -947,6 +995,56 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		inputSchema: leadFormSchemaNoCtx,
 		execute: async () => {
 			return "[Formulario de captura de dados do lead apresentado ao usuario]";
+		},
+	});
+
+	// FIX-179 — overrides das tools de apresentação de grupo: mesma descrição/
+	// schema/texto do registry estático, só adicionando o registro de "exibido"
+	// (markShown) ANTES de devolver o feedback pro modelo. É o que alimenta a
+	// trava de get_group_details/simulate_quota/present_decision_prompt abaixo.
+	const present_group_card = tool({
+		description: consorcioTools.present_group_card.description,
+		inputSchema: groupCardSchema,
+		execute: async (args: z.infer<typeof groupCardSchema>) => {
+			await markShown("group_card", args);
+			return `[Card do grupo ${args.administradora} - ${args.category} - R$ ${args.creditValue.toLocaleString("pt-BR")} apresentado ao usuario]`;
+		},
+	});
+
+	const present_comparison_table = tool({
+		description: consorcioTools.present_comparison_table.description,
+		inputSchema: comparisonTableSchema,
+		execute: async (args: z.infer<typeof comparisonTableSchema>) => {
+			await markShown("comparison_table", args);
+			return `[Tabela comparativa com ${args.groups.length} grupos apresentada ao usuario]`;
+		},
+	});
+
+	const present_recommendation_card = tool({
+		description: consorcioTools.present_recommendation_card.description,
+		inputSchema: recommendationSchema,
+		execute: async (args: z.infer<typeof recommendationSchema>) => {
+			await markShown("recommendation_card", args);
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+		},
+	});
+
+	const present_decision_prompt = tool({
+		description: consorcioTools.present_decision_prompt.description,
+		inputSchema: z.object({
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano recomendado (contexto do card)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			if (args.administradora) {
+				const shown = await getShownGroups();
+				if (!shown.administradoras.has(args.administradora)) {
+					return administradoraNaoExibidaDirective(args.administradora);
+				}
+			}
+			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
 		},
 	});
 
@@ -1000,6 +1098,11 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-179: grupo real na Bevi mas nunca exibido em tela → bloqueia ANTES
+			// de tocar o adapter (mesma rede de segurança do rebuscaDirective/FIX-72,
+			// camada "foi exibido" em vez de "existe na Bevi").
+			const shown = await getShownGroups();
+			if (!shown.ids.has(args.groupId)) return naoExibidoDirective(args.groupId);
 			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
 		},
 	});
@@ -1020,6 +1123,9 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-179: mesma trava do simulate_quota acima.
+			const shown = await getShownGroups();
+			if (!shown.ids.has(args.groupId)) return naoExibidoDirective(args.groupId);
 			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
 		},
 	});
@@ -1060,6 +1166,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		get_rates,
 		get_group_details,
 		recommend_groups,
+		// Overrides — FIX-179: registram "exibido" (markShown) e guardam a trava
+		// de get_group_details/simulate_quota/present_decision_prompt acima.
+		present_group_card,
+		present_comparison_table,
+		present_recommendation_card,
+		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,
 	};
