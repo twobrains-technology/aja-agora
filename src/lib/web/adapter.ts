@@ -10,7 +10,6 @@ import {
 	CREDIT_BOUNDS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
-	TERM_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
@@ -32,10 +31,9 @@ const creditSlider = (category: Category): SliderField => {
 	return { id: "credit", label: "Valor do bem", format: "currency", ...b };
 };
 
-const termSlider = (category: Category): SliderField => {
-	const b: Bounds = TERM_BOUNDS[category];
-	return { id: "term", label: "Em quantos meses quer pagar", format: "months", ...b };
-};
+// FIX-115: termSlider removido do adapter — o prazo saiu da entrada (FIX-103) e a
+// agulha simples do valor (kind "slider") não coleta prazo/parcela. O componente
+// por intenção ("Planeje sua conquista") foi aposentado pela jornada canônica.
 
 const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
 	value: t.token,
@@ -80,18 +78,18 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;
-			// "Planeje sua conquista" — re-UX guiada por intenção (handoff): valor
-			// do bem + segmented "o que mais importa" + prazo, com a parcela como
-			// resultado calmo. Aderente à jornada canônica (valor → prioridade/tempo
-			// → lance), substitui os 4 sliders simultâneos.
+			// FIX-115 (Kairo, PROD 2026-06-30): AGULHA SIMPLES do valor do bem — um
+			// único slider de R$ 1.000 em R$ 1.000. Substitui o picker complexo por
+			// intenção ("Planeje sua conquista"), que a jornada canônica aposentou na
+			// revisão FIX-104 ("componente COMPLEXO saiu; na web um slider simples
+			// pode apoiar"). O valor segue por CONVERSA: a agulha, sem onSubmit, manda
+			// o valor como TEXTO no chat (parseAssetValue faz o backstop no funil).
+			// Prazo/parcela saíram da entrada (FIX-103/104) — a agulha não os coleta.
 			return {
-				kind: "plan",
+				kind: "slider",
 				gate: "credit",
 				category,
-				credit: creditSlider(category),
-				term: termSlider(category),
-				intentDefault: "parcela",
-				targetMonthDefault: 6,
+				fields: [creditSlider(category)],
 			};
 		}
 		case "timeframe": {

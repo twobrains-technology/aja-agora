@@ -39,6 +39,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createUIMessageStream, streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { describe, expect, it, vi } from "vitest";
@@ -4100,14 +4101,22 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 // ============================================================================
 
 describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)", () => {
-	it("estrutural: gate credit serve o picker por intenção (term slider + intentDefault, sem monthly)", () => {
+	// FIX-115 (Kairo, PROD 2026-06-30): o gate credit voltou pra AGULHA SIMPLES
+	// (kind "slider", só o valor do bem). A jornada canônica (FIX-104) já havia
+	// aposentado o picker por intenção ("componente complexo saiu; slider simples
+	// apoia"); este bloco fez a troca no adapter. O componente PlanEstimatePicker e
+	// os directives por intenção FICAM (compat de mensagens antigas hidratadas), por
+	// isso os demais testes deste describe seguem válidos.
+	it("estrutural: gate credit serve a AGULHA SIMPLES (kind 'slider', valor do bem), não o picker por intenção", () => {
 		const src = readSource("src/lib/web/adapter.ts");
-		expect(src).toMatch(/kind: "plan"/);
-		expect(src).toMatch(/term: termSlider/);
-		expect(src).toMatch(/intentDefault/);
-		expect(src).toMatch(/targetMonthDefault/);
-		// a forma antiga (slider de parcela como input) não pode voltar
-		expect(src).not.toMatch(/monthly: monthlySlider/);
+		// o gate credit agora monta a agulha (kind "slider" com creditSlider)
+		const creditCase = src.slice(src.indexOf('case "credit":'), src.indexOf('case "timeframe":'));
+		expect(creditCase).toMatch(/kind: "slider"/);
+		expect(creditCase).toMatch(/creditSlider\(category\)/);
+		// a forma por intenção NÃO pode mais sair do gate credit
+		expect(creditCase).not.toMatch(/kind: "plan"/);
+		expect(creditCase).not.toMatch(/intentDefault/);
+		expect(creditCase).not.toMatch(/term: termSlider/);
 	});
 
 	it("estrutural: componente é guiado por intenção (segmented control), não 4 sliders", () => {
@@ -6485,6 +6494,45 @@ describe("FIX-113 — afirmação de continuidade nunca fecha o turno mudo", () 
 		).toBe(false);
 		// E o route continua chamando o guard no user-turn.
 		expect(readSource(ROUTE)).toMatch(/isTurnEmpty/);
+	});
+});
+
+// ============================================================================
+// FIX-115 — componente de valor + RESILIÊNCIA do valor por texto
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD/AWS, 2026-06-30): no passo do valor o agente
+// perguntou por TEXTO e nenhum componente apareceu; o usuário teve que digitar
+// "50k". Requisito literal do Kairo (dois lados): (1) o componente de valor
+// SIMPLES (agulha) deve renderizar; (2) DINÂMICO — se ele não aparecer, o valor
+// por TEXTO tem que ser parseado e AVANÇAR o funil, nunca travar (dead-end).
+//
+// (1) o gate credit passou a servir a agulha simples (kind "slider") — ver o
+// describe PLANEJE-SUA-CONQUISTA e src/lib/web/value-gate.fix115.test.ts.
+// (2) backstop determinístico parseAssetValue no analyzeAndMerge — o funil avança
+// mesmo com o analyzer LLM mudo (timeout). Detalhe em analyze.test.ts /
+// parse-asset-value.test.ts. Aqui travamos o acoplamento source → detector.
+// ============================================================================
+
+describe("FIX-115 — valor por texto sempre avança + agulha manda valor como texto", () => {
+	it("structural: o backstop determinístico do valor está wired no merge do analyzer", () => {
+		const src = readSource("src/lib/agent/orchestrator/analyze.ts");
+		expect(src).toMatch(/parseAssetValue/);
+		// só roda quando o analyzer devolveu null E ainda não há creditMax (coleta inicial)
+		expect(src).toMatch(/analysis\.creditMax === null && q\.creditMax === undefined/);
+	});
+
+	it("structural: a agulha, sem onSubmit, manda o VALOR como texto no chat (valor por conversa)", () => {
+		const src = readSource("src/components/chat/artifacts/value-picker.tsx");
+		// caminho default (gate sem onSubmit): sendUserMessage com o valor formatado
+		expect(src).toMatch(/sendUserMessage\(/);
+		expect(src).toMatch(/value\.toLocaleString\("pt-BR"\)/);
+	});
+
+	it("cassette: o valor digitado que o backstop lê ('50k') é o mesmo texto que a agulha envia", () => {
+		// A agulha envia "Valor do bem: R$ 50.000"; o usuário digita "50k". Ambos
+		// têm que virar 50000 pelo mesmo parser — prova que os dois caminhos convergem.
+		expect(parseAssetValue("50k")).toBe(50_000);
+		expect(parseAssetValue("Valor do bem: R$ 50.000")).toBe(50_000);
 	});
 });
 
