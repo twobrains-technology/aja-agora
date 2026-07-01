@@ -57,6 +57,7 @@ import {
 } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
@@ -966,7 +967,11 @@ export async function POST(req: NextRequest) {
 						// pipeSearchSummaryTurn re-emite este gate (tripwire).
 						if (action.gate === "identify") {
 							const { cpf, celular, lgpd } = action.value;
-							const celularDigits = (celular ?? "").replace(/\D/g, "");
+							// FIX-172: normaliza o DDI ("55" opcional) igual ao canal WhatsApp
+							// (waIdToCelular) — sem isso, um celular digitado COM "55" (formato
+							// plausível, é como o WhatsApp exibe o próprio número) é cifrado
+							// cru e a Bevi rejeita no contract-submit ("CELULAR inválido").
+							const celularDigits = normalizePhoneBR(celular ?? "") ?? "";
 							if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
 								await writeAndSaveText(
 									writer,
