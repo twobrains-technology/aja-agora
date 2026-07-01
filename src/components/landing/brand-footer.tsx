@@ -5,12 +5,16 @@ type FooterLink = { label: string; href?: string; seed?: string };
 
 const COLS: { title: string; links: FooterLink[] }[] = [
 	{
+		// FIX-131 (D21): 3 categorias de ENTRADA — Imóvel, Automóvel, Moto — em
+		// paridade com o hero (CHIPS), o welcome do chat (FIX-130) e o WhatsApp.
+		// Bv2-01 / Bruna v1 #20: moto substituiu "Serviços" nos chips de entrada.
+		// Cada item aqui ABRE o chat (seed), então é porta de entrada da jornada,
+		// não link informativo. servicos segue vivo por texto livre.
 		title: "Consórcio",
 		links: [
 			{ label: "Imóvel", seed: "Quero conquistar um imóvel" },
 			{ label: "Automóvel", seed: "Quero comprar um carro" },
 			{ label: "Moto", seed: "Quero comprar uma moto" },
-			{ label: "Serviços", seed: "Quero contratar serviços" },
 		],
 	},
 	{
