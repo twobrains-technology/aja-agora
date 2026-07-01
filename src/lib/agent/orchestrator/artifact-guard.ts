@@ -12,10 +12,22 @@ import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
  * `(meta, artifactType, contexto do turno) → suprimir|permitir` — é uma
  * tabela de regras, agora explícita.
  *
- * A PRIMEIRA linha de defesa é a tool-policy (FIX-19): tool fora de fase nem
- * entra no request. Estas regras seguram o residual (granularidade de intent,
- * dup intra-conversa) e qualquer furo da policy — disparo de regra cuja tool
- * estava fora da policy gera [tool-policy-violation] no runner.
+ * ── Onde este arquivo fica na governança (FIX-180, 2026-07-01) ──
+ * A GOVERNANÇA PRIMÁRIA é a allowlist POSITIVA (Lei 2), em duas dimensões:
+ *   1. ESTADO → AÇÃO: `tool-policy.ts` (`allowedTools`/`phaseFromMeta`) — tool
+ *      fora de fase nem entra no request (fail-closed) + belt `prepareStep.activeTools`.
+ *   2. AÇÃO → PRECONDIÇÃO (de dado): `action-policy.ts` (`evaluateActionPrecondition`) —
+ *      tool de risco só age sobre grupo/administradora exibido (generaliza FIX-179).
+ *
+ * ESTE arquivo é a DEFESA-EM-PROFUNDIDADE (2ª linha) — NÃO a governança primária.
+ * Segura: (a) o residual das regras de ESTADO que a tool-policy já cobre (é o 2º
+ * cinto de whatsapp-optin/post-closure/premature-contract/value-picker-order); e
+ * (b) o que é GENUINAMENTE PÓS-FATO e não representável como precondição pré-ação:
+ *   - `single-option`: depende do `discoveryCount` (resultado da tool NO turno).
+ *   - `reveal-loop`: parte é estado, parte é heurística de intent (userIntent +
+ *     isUserTurn + revealValueTargetChanged).
+ * Estes DOIS ficam aqui de propósito (não migram pra allowlist). Furo da policy
+ * cuja tool estava fora de fase gera [tool-policy-violation] no runner.
  *
  * A ORDEM do array é semântica (primeira regra que aplica vence e assina o
  * log) e é travada por teste em artifact-guard.test.ts. Os formatos de

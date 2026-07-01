@@ -10,8 +10,13 @@ beforeAll(() => __setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapt
 afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
 
 // Tools de descoberta resolvidas via factory (com conversationId fake — o seam
-// devolve o adapter de fixtures independente do id).
-const discoveryTools = buildConsorcioTools({ conversationId: "test-discovery-conv" });
+// devolve o adapter de fixtures independente do id). UUID válido (não string
+// arbitrária): FIX-179 faz um SELECT real (join artifacts×messages) pra
+// carregar o que já foi exibido — precisa de sintaxe de UUID válida mesmo sem
+// nenhuma linha existir pra esse id.
+const discoveryTools = buildConsorcioTools({
+	conversationId: "00000000-0000-4000-8000-000000000001",
+});
 
 describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	it("tem compute_scenarios (#16)", () => {
@@ -90,6 +95,12 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 			const itau = groups.groups.find((g) => g.administradora === "ITAÚ");
 			if (!itau) throw new Error("grupo ITAÚ não achado na captura real");
 
+			// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+			const presentCard = discoveryTools.present_group_card.execute;
+			if (!presentCard) throw new Error("present_group_card.execute undefined");
+			// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+			await presentCard(itau as any, { toolCallId: "t", messages: [] } as any);
+
 			const adjustedCredit = Math.round(itau.creditValue * 0.85);
 			const result = (await exec(
 				{ groupId: itau.id, creditValue: adjustedCredit },
@@ -120,6 +131,13 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 				{ toolCallId: "t", messages: [] } as any,
 			)) as { groups: Array<{ id: string; creditValue: number }> };
 			const g = groups.groups[0];
+
+			// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+			const presentCard = discoveryTools.present_group_card.execute;
+			if (!presentCard) throw new Error("present_group_card.execute undefined");
+			// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+			await presentCard(g as any, { toolCallId: "t", messages: [] } as any);
+
 			const result = (await exec(
 				{ groupId: g.id, creditValue: g.creditValue },
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported

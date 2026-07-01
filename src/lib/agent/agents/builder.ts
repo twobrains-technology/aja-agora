@@ -241,6 +241,32 @@ export function buildAgent(
 		.map((content) => ({ role: "system" as const, content }));
 	const instructions = [...withMemory, ...extraBlocks];
 
+	// FIX-180 — belt nativo do eixo ESTADO→AÇÃO. `prepareStep.activeTools` é o
+	// primitivo OFICIAL do AI SDK 6 pra restringir o subconjunto de tools por step
+	// (ai-sdk.dev/docs/agents/loop-control). Aqui ele RE-AFIRMA, a cada step, a
+	// allowlist da fase (o `tools` já foi filtrado por `allowedTools(meta)` acima —
+	// 1ª linha fail-closed + chave de cache em agents/index.ts). O belt torna a
+	// governança estado→ação explícita no primitivo nativo e COMPÕE com a reversão
+	// do toolChoice forçado (BUG-MUTE-LOOP). Só entra com `meta` presente (specialist
+	// em produção); preview/admin/testes legados sem meta preservam o comportamento.
+	// ADR: docs/correcoes/decisions/2026-07-01-bloco-a-governanca-agente.md.
+	const beltActiveTools = !isConcierge && opts.meta ? Object.keys(tools) : null;
+	// BUG-MUTE-LOOP-NAME-CAPTURE (2026-07-01): sem prepareStep, a AI SDK reaplica o
+	// MESMO toolChoice em TODOS os steps do loop (stopWhen: stepCountIs(10)) — o
+	// Anthropic fica OBRIGADO a chamar save_contact_name em CADA step e NUNCA produz
+	// texto (tool_choice força tool_use). Sintoma real (WhatsApp): save_contact_name
+	// 10x, textChars:0, agente mudo. Fix: preserva o forcing só no 1º step e reverte
+	// pra 'auto' nos seguintes. Um único prepareStep cobre o belt + a reversão.
+	const prepareStep =
+		opts.toolChoice || beltActiveTools
+			? ({ stepNumber }: { stepNumber: number }) => ({
+					...(beltActiveTools ? { activeTools: beltActiveTools } : {}),
+					...(opts.toolChoice
+						? { toolChoice: stepNumber > 0 ? ("auto" as const) : (opts.toolChoice ?? undefined) }
+						: {}),
+				})
+			: undefined;
+
 	const settings = {
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
 		instructions,
@@ -249,29 +275,12 @@ export function buildAgent(
 		// ones at sampling level (Claude only exposes temperature, no topP/penalty).
 		temperature: row.temperature,
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
-		// Quando o orchestrator detectar "user respondeu nome" (cf.
-		// detect-name-turn.ts), passa toolChoice: { type: 'tool',
-		// toolName: 'save_contact_name' } pra obrigar o modelo a chamar.
-		// Default 'auto' quando undefined. Cast no settings inteiro porque
-		// o ToolLoopAgent generic infere `TOOLS={}` empty no construtor —
-		// não dá pra fixar o type do ToolChoice via inference normal.
-		...(opts.toolChoice
-			? {
-					toolChoice: opts.toolChoice,
-					// BUG-MUTE-LOOP-NAME-CAPTURE (2026-07-01): sem prepareStep, a AI SDK
-					// reaplica o MESMO toolChoice em TODOS os steps do loop (stopWhen:
-					// stepCountIs(10)) — o Anthropic fica OBRIGADO a chamar
-					// save_contact_name em CADA step e NUNCA pode produzir texto
-					// (tool_choice força tool_use, nunca finish_reason=stop). Sintoma
-					// real (WhatsApp): save_contact_name chamado 10x, textChars:0,
-					// agente mudo por 1 turno inteiro. Fix: preserva o forcing só no
-					// 1º step (é o motivo do toolChoice existir) e reverte pra 'auto'
-					// nos seguintes — o modelo persiste o nome e AINDA responde.
-					prepareStep: ({ stepNumber }: { stepNumber: number }) => ({
-						toolChoice: stepNumber > 0 ? ("auto" as const) : (opts.toolChoice ?? undefined),
-					}),
-				}
-			: {}),
+		// toolChoice: quando o orchestrator detecta "user respondeu nome"
+		// (detect-name-turn.ts), força save_contact_name. Default 'auto' quando
+		// undefined. Cast no settings inteiro porque o ToolLoopAgent generic infere
+		// TOOLS={} empty no construtor — não dá pra fixar o type via inference normal.
+		...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+		...(prepareStep ? { prepareStep } : {}),
 	};
 	// biome-ignore lint/suspicious/noExplicitAny: ver comentário acima — generic inference do construtor não fixa o ToolSet.
 	return new ToolLoopAgent(settings as any);

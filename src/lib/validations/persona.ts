@@ -40,6 +40,8 @@ const categoryEnum = z.enum(["imovel", "auto", "moto", "servicos"]);
 const channelEnum = z.enum(["web", "whatsapp"]);
 const userIntentEnum = z.enum([
 	"ready_to_proceed",
+	// FIX-183: "quero ver todos/mais opções" — deve casar com UserIntent (qualify-state.ts).
+	"wants_more_options",
 	"asking_question",
 	"providing_info",
 	"expressing_doubt",

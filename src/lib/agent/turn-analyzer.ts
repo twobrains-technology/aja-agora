@@ -73,6 +73,7 @@ export const turnAnalysisSchema = z.object({
 	userIntent: z
 		.enum([
 			"ready_to_proceed",
+			"wants_more_options",
 			"asking_question",
 			"providing_info",
 			"expressing_doubt",
@@ -81,7 +82,8 @@ export const turnAnalysisSchema = z.object({
 		])
 		.describe(
 			"Intenção da mensagem atual, usada pra decidir se mostra botoes estruturados ou deixa fluir conversa livre. " +
-				"ready_to_proceed = quer avancar ('bora', 'vamos', 'pode ir', 'ok seguir', 'me mostra'). " +
+				"ready_to_proceed = quer AVANÇAR no funil / prosseguir pra próxima etapa ('bora', 'vamos', 'pode ir', 'ok seguir', 'quero começar'). " +
+				"wants_more_options = quer ver MAIS/TODAS/OUTRAS opções ALÉM das que já foram mostradas ('quero ver todos', 'ver todas as opções', 'tem mais opções?', 'mostra as outras', 'quero ver mais', 'só essas?'). NÃO confundir com ready_to_proceed: aqui o usuário NÃO quer decidir/avançar, quer AMPLIAR o que viu. Só use quando já houve uma apresentação de opções antes. " +
 				"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
 				"providing_info = já respondeu/colaborou com dado concreto ('uns 200 mil', '2 anos', 'tenho reserva'). " +
 				"expressing_doubt = hesitando, sem decisão ('não sei', 'to em dúvida', 'depende', 'tenho que pensar'). " +
@@ -144,7 +146,10 @@ Exemplos:
 - "no máximo 700" -> { creditMin: null, creditMax: 700000 }
 - "menos de 80k" -> { creditMin: null, creditMax: 80000 }
 - "uns 80k" -> { creditMin: null, creditMax: 80000 }
-- "bora ver as opções" -> { userIntent: "ready_to_proceed" }
+- "bora ver as opções" -> { userIntent: "ready_to_proceed" }  // avanço no funil (ainda não viu opções)
+- "quero ver todos" -> { userIntent: "wants_more_options" }  // JÁ viu um conjunto, quer ver MAIS/TODAS
+- "tem mais opções?" -> { userIntent: "wants_more_options" }
+- "me mostra as outras dessa faixa" -> { userIntent: "wants_more_options" }
 - "como funciona o lance livre?" -> { userIntent: "asking_question" }
 - "uns 200 mil então" -> { userIntent: "providing_info", creditMax: 200000 }
 - "ainda não sei direito" -> { userIntent: "expressing_doubt" }
