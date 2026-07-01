@@ -668,9 +668,10 @@ export const mesaHandoffs = pgTable(
 		beviProposalId: uuid("bevi_proposal_id").references(() => beviProposals.id, {
 			onDelete: "set null",
 		}),
-		mesaAttendantId: uuid("mesa_attendant_id")
-			.notNull()
-			.references(() => mesaAttendants.id),
+		// FIX-125 (D16): nullable = estado "sem dono". O transbordo nasce sem dono no
+		// broadcast; o 1º atendente que clica "Vou atender" assume via claim atômico
+		// (UPDATE ... WHERE mesa_attendant_id IS NULL). Espelha conversations.handedOffUserId.
+		mesaAttendantId: uuid("mesa_attendant_id").references(() => mesaAttendants.id),
 		administradoraId: uuid("administradora_id").references(() => administradoras.id, {
 			onDelete: "set null",
 		}),

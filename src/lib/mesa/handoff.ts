@@ -2,7 +2,7 @@
 // Spec: docs/visao/mesa-de-operacao.md §4 + DEC-B (gatilho manual).
 // Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md.
 
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { administradoras, beviProposals, leads, mesaAttendants, mesaHandoffs } from "@/db/schema";
 
@@ -16,7 +16,10 @@ type HandoffRow = typeof mesaHandoffs.$inferSelect;
 
 export interface CreateMesaHandoffInput {
 	leadId: string;
-	mesaAttendantId: string;
+	// FIX-125 (D16): OPCIONAL. Omitido/null = handoff nasce "sem dono" (caminho broadcast
+	// FIX-124: o 1º atendente que clica "Vou atender" assume via claimMesaHandoff). Quando
+	// dado, valida o atendente e grava o dono no insert (gatilho manual legado, DEC-B).
+	mesaAttendantId?: string | null;
 	// Cota escolhida explícita; quando omitida resolve a proposta mais recente do lead.
 	beviProposalId?: string | null;
 	// Admin (user) que disparou o transbordo.
@@ -28,12 +31,18 @@ export type CreateMesaHandoffResult =
 			ok: true;
 			handoff: HandoffRow;
 			lead: LeadRow;
-			attendant: AttendantRow;
+			// null no caminho broadcast (handoff sem dono) — o dono chega no claim.
+			attendant: AttendantRow | null;
 			proposal: ProposalRow | null;
 	  }
 	| { ok: false; reason: "lead_not_found" }
 	| { ok: false; reason: "attendant_not_found" }
 	| { ok: false; reason: "handoff_ativo_existe"; handoffId: string };
+
+export type ClaimMesaHandoffResult =
+	| { ok: true; handoff: HandoffRow }
+	| { ok: false; reason: "handoff_not_found" }
+	| { ok: false; reason: "ja_assumido"; ownerAttendantId: string | null };
 
 /**
  * Casa o varchar `bevi_proposals.administradora` (ex.: "CANOPUS") com a entidade
@@ -108,12 +117,19 @@ export async function createMesaHandoff(
 	const [lead] = await db.select().from(leads).where(eq(leads.id, input.leadId)).limit(1);
 	if (!lead) return { ok: false, reason: "lead_not_found" };
 
-	const [attendant] = await db
-		.select()
-		.from(mesaAttendants)
-		.where(eq(mesaAttendants.id, input.mesaAttendantId))
-		.limit(1);
-	if (!attendant || !attendant.isActive) return { ok: false, reason: "attendant_not_found" };
+	// Dono é OPCIONAL (FIX-125). No caminho broadcast (FIX-124) o handoff nasce sem dono;
+	// só resolvemos/validamos o atendente quando um foi explicitamente passado (gatilho
+	// manual legado). O claim (claimMesaHandoff) atribui o dono depois.
+	let attendant: AttendantRow | null = null;
+	if (input.mesaAttendantId) {
+		const [found] = await db
+			.select()
+			.from(mesaAttendants)
+			.where(eq(mesaAttendants.id, input.mesaAttendantId))
+			.limit(1);
+		if (!found || !found.isActive) return { ok: false, reason: "attendant_not_found" };
+		attendant = found;
+	}
 
 	const [existing] = await db
 		.select({ id: mesaHandoffs.id })
@@ -136,7 +152,7 @@ export async function createMesaHandoff(
 			leadId: lead.id,
 			conversationId: lead.conversationId,
 			beviProposalId: proposal?.id ?? null,
-			mesaAttendantId: attendant.id,
+			mesaAttendantId: attendant?.id ?? null,
 			administradoraId,
 			status: "aberto",
 			createdBy: input.createdBy ?? null,
@@ -144,4 +160,37 @@ export async function createMesaHandoff(
 		.returning();
 
 	return { ok: true, handoff, lead, attendant, proposal };
+}
+
+/**
+ * Claim atômico do transbordo (FIX-125, D16). O 1º atendente que clica "Vou atender"
+ * ASSUME o caso; os demais recebem "já foi assumido".
+ *
+ * A GARANTIA de 1 vencedor mora no `UPDATE ... WHERE id = :h AND mesa_attendant_id IS NULL`:
+ * o banco serializa a linha, então só o primeiro UPDATE casa a guarda `IS NULL` — os
+ * concorrentes veem `rowCount === 0` (a coluna já não está nula). Diferente do proxy de
+ * chat de vendas (proxy.ts:511-519, find-then-update SEM guard → TOCTOU latente), a mesa
+ * já nasce com o guard atômico.
+ *
+ * NÃO move a raia — isso é o FIX-126 (transitionLeadStage no claim). Aqui só o lock.
+ */
+export async function claimMesaHandoff(
+	handoffId: string,
+	attendantId: string,
+): Promise<ClaimMesaHandoffResult> {
+	const [claimed] = await db
+		.update(mesaHandoffs)
+		.set({ mesaAttendantId: attendantId, status: "em_andamento" })
+		.where(and(eq(mesaHandoffs.id, handoffId), isNull(mesaHandoffs.mesaAttendantId)))
+		.returning();
+	if (claimed) return { ok: true, handoff: claimed };
+
+	// Perdeu a corrida (ou handoff inexistente). Busca o dono atual pra mensagem "já assumido".
+	const [current] = await db
+		.select({ ownerAttendantId: mesaHandoffs.mesaAttendantId })
+		.from(mesaHandoffs)
+		.where(eq(mesaHandoffs.id, handoffId))
+		.limit(1);
+	if (!current) return { ok: false, reason: "handoff_not_found" };
+	return { ok: false, reason: "ja_assumido", ownerAttendantId: current.ownerAttendantId };
 }

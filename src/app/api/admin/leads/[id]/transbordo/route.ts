@@ -62,13 +62,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 	// derruba o caso nem faz rollback.
 	let outboundError: string | undefined;
 	try {
-		const dossier = toDossier({
-			attendant: result.attendant,
-			lead: result.lead,
-			proposal: result.proposal,
-		});
-		const sent = await sendCaseToAttendant(dossier);
-		if ("error" in sent && sent.error) outboundError = sent.error;
+		// FIX-125: attendant pode ser null (handoff sem dono). Nesta rota manual o dono
+		// é sempre passado, mas o guard mantém o tipo honesto até o FIX-124 reescrever a
+		// rota pro broadcast (que não pré-atribui atendente).
+		if (result.attendant) {
+			const dossier = toDossier({
+				attendant: result.attendant,
+				lead: result.lead,
+				proposal: result.proposal,
+			});
+			const sent = await sendCaseToAttendant(dossier);
+			if ("error" in sent && sent.error) outboundError = sent.error;
+		}
 	} catch (err) {
 		outboundError = String(err);
 	}
