@@ -1,14 +1,26 @@
 ---
 id: FIX-83
 titulo: "Aba 'Documentos' no Kanban (lead-detail) com download seguro pro operador"
-status: todo
+status: done
 bloco: bloco-a-documentos-cliente
 arquivos:
   - src/components/admin/pipeline/lead-detail-panel.tsx
   - src/app/api/admin/documents/[id]/download/route.ts
   - src/lib/documents/client-documents.ts
 rodada: 2026-06-28 — alinhamento da jornada pós-descoberta (documentos como ativo nosso)
+commit: 28f59592
+executado_em: 2026-07-01
 ---
+
+## Resolução (2026-07-01)
+
+Nova aba "Documentos" (`client-documents-tab.tsx`) consumindo
+`GET /api/admin/leads/[id]/documents` (admin/viewer/attendant, DTO sem
+s3Bucket/s3Key). Download via `GET /api/admin/documents/[id]/download`
+(admin only) — presign 5min + audit em `client_document_downloads` (tabela
+nova, mesmo padrão de `lead_events`/`memory_events`). Testes:
+`route.guard.test.ts` + `route.integration.test.ts` (401 sem sessão, 200 com
+presign+audit, 404 doc inexistente, DTO enxuto).
 
 ## Palavras do operador
 > "guardar também dentro da nossa parte ali de Kanban (...) porque o operador na mesa vai
