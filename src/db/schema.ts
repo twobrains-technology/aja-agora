@@ -35,6 +35,10 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
 // FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
 // fechado_ganho) refletindo mesa manual + boleto, alimentado por polling
 // (FIX-44). Ordem = funil forward-only; `perdido` é terminal.
+// FIX-126 (D17): `em_atendimento` = um atendente de mesa ASSUMIU o caso (claim "Vou
+// atender"). Posicionada ENTRE na_administradora e aguardando_pagamento (não antes — senão
+// o claim, que dispara quando o lead já está em na_administradora, regrediria e o
+// forward-only viraria no-op). Ver docs/correcoes/decisions/2026-07-01-bloco-mesa-transbordo-auto.md.
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
 	"engajado",
@@ -42,6 +46,7 @@ export const leadStageEnum = pgEnum("lead_stage", [
 	"em_negociacao",
 	"proposta_enviada",
 	"na_administradora",
+	"em_atendimento",
 	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",

@@ -5,6 +5,7 @@
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { administradoras, beviProposals, leads, mesaAttendants, mesaHandoffs } from "@/db/schema";
+import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 
 // Um lead tem no máximo UM handoff ativo por vez (idempotência — §3 das decisões).
 export const ACTIVE_HANDOFF_STATUSES = ["aberto", "em_andamento"] as const;
@@ -172,7 +173,10 @@ export async function createMesaHandoff(
  * chat de vendas (proxy.ts:511-519, find-then-update SEM guard → TOCTOU latente), a mesa
  * já nasce com o guard atômico.
  *
- * NÃO move a raia — isso é o FIX-126 (transitionLeadStage no claim). Aqui só o lock.
+ * FIX-126 (D17): ao assumir, o lead MUDA de fase → `em_atendimento` (raia própria da
+ * mesa). Forward-only + best-effort: se o lead já está numa raia adiante, é no-op seguro
+ * (não regride); falha da transição não desfaz o claim. Espelha o proxy.ts:312 (claim do
+ * chat de vendas move a raia).
  */
 export async function claimMesaHandoff(
 	handoffId: string,
@@ -183,7 +187,28 @@ export async function claimMesaHandoff(
 		.set({ mesaAttendantId: attendantId, status: "em_andamento" })
 		.where(and(eq(mesaHandoffs.id, handoffId), isNull(mesaHandoffs.mesaAttendantId)))
 		.returning();
-	if (claimed) return { ok: true, handoff: claimed };
+	if (claimed) {
+		// FIX-126: claim = o caso está sendo tocado por um humano → raia em_atendimento.
+		try {
+			await transitionLeadStage(
+				claimed.leadId,
+				"em_atendimento",
+				{ type: "system" },
+				{ onlyAdvance: true },
+			);
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "mesa-claim",
+					handoff_id: claimed.id,
+					error: err instanceof Error ? err.message : String(err),
+					note: "transição de raia pós-claim falhou (claim mantido)",
+				}),
+			);
+		}
+		return { ok: true, handoff: claimed };
+	}
 
 	// Perdeu a corrida (ou handoff inexistente). Busca o dono atual pra mensagem "já assumido".
 	const [current] = await db

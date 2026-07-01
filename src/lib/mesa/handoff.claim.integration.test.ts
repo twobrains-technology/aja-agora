@@ -66,6 +66,24 @@ describeIfDb("FIX-125 — claim atômico do transbordo (integration)", () => {
 		return row.id;
 	}
 
+	// Variante que devolve também o leadId + permite fixar a raia inicial do lead (FIX-126).
+	async function seedOwnerlessHandoffFull(stage: "na_administradora" | "aguardando_pagamento") {
+		const [conv] = await db
+			.insert(schema.conversations)
+			.values({ channel: "web", status: "active", metadata: {} })
+			.returning({ id: schema.conversations.id });
+		convIds.push(conv.id);
+		const [lead] = await db
+			.insert(schema.leads)
+			.values({ conversationId: conv.id, name: "Cliente Raia", stage })
+			.returning({ id: schema.leads.id });
+		const [row] = await db
+			.insert(schema.mesaHandoffs)
+			.values({ leadId: lead.id, conversationId: conv.id, mesaAttendantId: null, status: "aberto" })
+			.returning({ id: schema.mesaHandoffs.id });
+		return { handoffId: row.id, leadId: lead.id };
+	}
+
 	it("corrida: 2 atendentes disputam → EXATAMENTE 1 vence; o outro recebe ja_assumido", async () => {
 		const h = await seedOwnerlessHandoff();
 		const A = await seedAttendant("Claim A", "5562900000101");
@@ -132,6 +150,45 @@ describeIfDb("FIX-125 — claim atômico do transbordo (integration)", () => {
 			.where(eq(schema.mesaHandoffs.id, h));
 		expect(dbRow.mesaAttendantId).toBe(A);
 		expect(dbRow.status).toBe("em_andamento");
+	});
+
+	// ── FIX-126 (D17): ao assumir (claim), o lead muda de fase → em_atendimento ──
+	it("FIX-126: claim move a raia na_administradora → em_atendimento + grava lead_event", async () => {
+		const { handoffId, leadId } = await seedOwnerlessHandoffFull("na_administradora");
+		const A = await seedAttendant("Raia A", "5562900000501");
+
+		const claim = await handoff.claimMesaHandoff(handoffId, A);
+		expect(claim.ok).toBe(true);
+
+		const lead = await db.query.leads.findFirst({ where: eq(schema.leads.id, leadId) });
+		expect(lead?.stage).toBe("em_atendimento");
+
+		const events = await db
+			.select()
+			.from(schema.leadEvents)
+			.where(eq(schema.leadEvents.leadId, leadId));
+		const toAtend = events.filter((e) => e.toStage === "em_atendimento");
+		expect(toAtend.length).toBe(1);
+		expect(toAtend[0].fromStage).toBe("na_administradora");
+		expect(toAtend[0].actorType).toBe("system");
+	});
+
+	it("FIX-126: claim de lead já em raia adiante (aguardando_pagamento) é NO-OP (forward-only)", async () => {
+		const { handoffId, leadId } = await seedOwnerlessHandoffFull("aguardando_pagamento");
+		const A = await seedAttendant("Raia Adiante", "5562900000502");
+
+		const claim = await handoff.claimMesaHandoff(handoffId, A);
+		expect(claim.ok).toBe(true); // o claim em si funciona (dono setado)
+
+		const lead = await db.query.leads.findFirst({ where: eq(schema.leads.id, leadId) });
+		// não regride pra em_atendimento — segue em aguardando_pagamento
+		expect(lead?.stage).toBe("aguardando_pagamento");
+
+		const events = await db
+			.select()
+			.from(schema.leadEvents)
+			.where(eq(schema.leadEvents.leadId, leadId));
+		expect(events.filter((e) => e.toStage === "em_atendimento").length).toBe(0);
 	});
 
 	it("caso sem dono via broadcast coexiste com a dedup por lead e permanece reivindicável", async () => {
