@@ -143,7 +143,12 @@ describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.t
 
 	it("registra o clique do usuário no histórico (recordUserClick)", async () => {
 		await dispatch("decision_outras");
-		expect(mocks.saveMessage).toHaveBeenCalledWith(CONV_ID, "user", "Ver outras opções", "whatsapp");
+		expect(mocks.saveMessage).toHaveBeenCalledWith(
+			CONV_ID,
+			"user",
+			"Ver outras opções",
+			"whatsapp",
+		);
 	});
 
 	it("erro em buildOtherOptions NÃO cai em silêncio nem no modelo — texto de fallback", async () => {
@@ -151,6 +156,9 @@ describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.t
 		const claimed = await dispatch("decision_outras");
 		expect(claimed).toBe(true);
 		expect(mocks.processText).not.toHaveBeenCalled();
-		expect(mocks.sendText).toHaveBeenCalledWith(WA, expect.stringMatching(/refazer a busca|instante/i));
+		expect(mocks.sendText).toHaveBeenCalledWith(
+			WA,
+			expect.stringMatching(/refazer a busca|instante/i),
+		);
 	});
 });

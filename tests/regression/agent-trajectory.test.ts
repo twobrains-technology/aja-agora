@@ -39,9 +39,6 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createUIMessageStream, streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { parseAssetValue } from "@/lib/agent/parse-asset-value";
-import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
-import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
@@ -54,6 +51,7 @@ import {
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import {
 	parseValorDoBem,
@@ -64,6 +62,8 @@ import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
@@ -1999,8 +1999,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
 		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
 		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
-		const ordemDosGates =
-			/experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
 		const proibeValorAntes =
 			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
@@ -2076,12 +2075,10 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			else if (g === "identify") meta = { ...meta, identityCollected: true };
 			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
 			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
-			else if (g === "lance-value")
-				meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
+			else if (g === "lance-value") meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
 			else if (g === "lance-embutido")
 				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
-			else if (g === "search")
-				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+			else if (g === "search") meta = { ...meta, searchDispatched: true, revealCompleted: true };
 			else if (g === "simulator-offer") meta = { ...meta, simulatorOfferDispatched: true };
 			else if (g === "decision") break;
 			else break;
@@ -2122,9 +2119,10 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			"Quando você quer ser contemplado?",
 		];
 		const misses = proibidas.filter((v) => !perguntaPrazo.test(v));
-		expect(misses, `Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`).toEqual(
-			[],
-		);
+		expect(
+			misses,
+			`Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`,
+		).toEqual([]);
 	});
 
 	it("CROSS-REF prompt: nem SYSTEM_PROMPT nem SPECIALIST_BASE_PROMPT instruem pedir prazo na entrada", () => {
@@ -2441,8 +2439,7 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 		// Ordem da revisão 2 (docx + FIX-53) com FIX-103: experience → consent →
 		// identidade → valor → lance. Os DADOS e o VALOR precedem o lance; o prazo
 		// saiu da qualificação.
-		const ordemReal =
-			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
+		const ordemReal = /experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
 		expect(
 			ordemReal.test(hardRules),
 			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → lance (sem prazo)",
@@ -6679,13 +6676,13 @@ describe("FIX-116 — WhatsApp fechamento apresenta PROPOSTA, não 'assinatura' 
 
 	it("cassette: o item signature_handoff do fechamento WhatsApp não vaza 'assinatura'", () => {
 		const items = closingPresentation(confirmRes as never);
-		const sig = items.find(
-			(i) => i.kind === "artifact" && i.type === "signature_handoff",
-		) as { type: string; payload: Record<string, unknown> } | undefined;
-		expect(sig, "o fechamento deve emitir signature_handoff").toBeTruthy();
+		const sig = items.find((i) => i.kind === "artifact" && i.type === "signature_handoff") as
+			| { type: string; payload: Record<string, unknown> }
+			| undefined;
+		if (!sig) throw new Error("o fechamento deve emitir signature_handoff");
 
 		// texto FINAL do canal WhatsApp (mesmo caminho de handleOfferConfirm)
-		const wa = artifactToWhatsApp("signature_handoff", sig!.payload);
+		const wa = artifactToWhatsApp("signature_handoff", sig.payload);
 		expect(wa?.type).toBe("text");
 		const text = wa?.text ?? "";
 		expect(text, "WhatsApp não pode prometer assinatura (é etapa da mesa)").not.toMatch(
@@ -6703,9 +6700,10 @@ describe("FIX-116 — WhatsApp fechamento apresenta PROPOSTA, não 'assinatura' 
 				item.kind === "text"
 					? item.text
 					: (artifactToWhatsApp(item.type, item.payload)?.text ?? "");
-			expect(text, `item ${item.kind}/${"type" in item ? item.type : "text"} vazou assinatura`).not.toMatch(
-				SIGNATURE_WORD,
-			);
+			expect(
+				text,
+				`item ${item.kind}/${"type" in item ? item.type : "text"} vazou assinatura`,
+			).not.toMatch(SIGNATURE_WORD);
 		}
 	});
 

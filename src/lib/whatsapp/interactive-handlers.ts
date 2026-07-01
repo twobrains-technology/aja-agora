@@ -608,9 +608,7 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 	if (!meta.decisionDispatched) {
 		await persistMeta(conversationId, { ...meta, decisionDispatched: true });
 	}
-	const { buildAdvanceToContractDirective } = await import(
-		"@/lib/agent/orchestrator/directives"
-	);
+	const { buildAdvanceToContractDirective } = await import("@/lib/agent/orchestrator/directives");
 	await runAgentDirective(
 		from,
 		conversationId,
