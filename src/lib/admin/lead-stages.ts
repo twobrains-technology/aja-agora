@@ -12,6 +12,9 @@ export const STAGE_ORDER = [
 	"em_negociacao",
 	"proposta_enviada",
 	"na_administradora",
+	// FIX-126: atendente de mesa assumiu o caso (claim "Vou atender"). Entre
+	// na_administradora e aguardando_pagamento pra o claim avançar (forward-only).
+	"em_atendimento",
 	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",

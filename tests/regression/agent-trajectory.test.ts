@@ -6998,5 +6998,45 @@ describe("FIX-122-DOC-INBOUND-WHATSAPP — foto de documento dispara upload (nã
 		expect(src).toContain('case "image"');
 		expect(src).toContain('case "document"');
 		expect(src).toContain("handleDocumentInbound");
+// FIX-124 (D15/D16) — transbordo: broadcast a TODOS + botão "Vou atender" + claim
+// ----------------------------------------------------------------------------
+// O núcleo (broadcast/botão/claim) é código determinístico — a garantia forte mora
+// no integration (corrida). Aqui congelamos os INVARIANTES estruturais que uma
+// regressão de prompt/routing quebraria: (1) o outbound faz broadcast interativo
+// "Vou atender", não single-cast texto plano; (2) o clique de um atendente de mesa é
+// roteado pro CLAIM (nunca pro funil de cliente); (3) o copiloto só responde ao DONO —
+// o broadcast não "vaza" o caso pra quem não assumiu.
+// ============================================================================
+describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", () => {
+	it("o outbound faz broadcast interativo com botão 'Vou atender' (não texto single-cast)", () => {
+		const src = readSource("src/lib/whatsapp/mesa/outbound.ts");
+		expect(src).toContain("broadcastCaseToAttendants");
+		expect(src).toContain("getMesaAttendantList"); // fonte = TODOS os atendentes ativos
+		expect(src).toContain("sendReplyButtons"); // botão interativo
+		expect(src).toContain("CLAIM_BUTTON_TITLE"); // título "Vou atender" (contrato em ./claim)
+		expect(src).toContain("CLAIM_BUTTON_ID_PREFIX"); // id carrega o handoffId pro claim
+		// O contrato do botão vive em ./claim (fonte única, sem ciclo de import).
+		const claim = readSource("src/lib/whatsapp/mesa/claim.ts");
+		expect(claim).toContain("Vou atender");
+		expect(claim).toContain("mesa_claim:");
+	});
+
+	it("o clique de um atendente de mesa vai pro CLAIM, nunca pro funil de cliente", () => {
+		const proc = readSource("src/lib/whatsapp/processor.ts");
+		// precedência de mesa no caminho interativo, espelhando a do caminho de texto
+		expect(proc).toContain("isMesaAttendantPhone");
+		expect(proc).toContain("handleMesaClaim");
+		const routing = readSource("src/lib/whatsapp/mesa/routing.ts");
+		// o claim é atômico (reusa a primitiva do FIX-125)
+		expect(routing).toContain("handleMesaClaim");
+		expect(routing).toContain("claimMesaHandoff");
+	});
+
+	it("o copiloto só responde ao DONO do handoff — não vaza pra quem não assumiu", () => {
+		const routing = readSource("src/lib/whatsapp/mesa/routing.ts");
+		// handleMesaCopilot resolve o handoff pelo mesaAttendantId do próprio atendente;
+		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
+		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
+		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
 	});
 });

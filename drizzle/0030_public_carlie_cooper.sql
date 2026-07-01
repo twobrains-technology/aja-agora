@@ -1,0 +1,1 @@
+ALTER TYPE "public"."lead_stage" ADD VALUE 'em_atendimento' BEFORE 'aguardando_pagamento';

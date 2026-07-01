@@ -9,7 +9,8 @@ import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { dispatchInteractiveReply } from "./interactive-handlers";
-import { handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
+import { isMesaClaimReply } from "./mesa/claim";
+import { handleMesaClaim, handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -200,6 +201,21 @@ export async function processInteractiveReply(
 	contactName?: string,
 	messageId?: string,
 ): Promise<void> {
+	// Mesa de operação (FIX-124): número de um atendente de mesa clicando um botão vai
+	// pra MESA, nunca pro funil de cliente — espelha a precedência do caminho de texto
+	// (isMesaAttendantPhone → handleMesaCopilot). O clique "Vou atender"
+	// (mesa_claim:<handoffId>) dispara o claim atômico; qualquer outro clique cai no
+	// copiloto (acolhe com/sem handoff). Sem isso, o clique de um atendente seria tratado
+	// como cliente pelo dispatchInteractiveReply (gap latente).
+	if (await isMesaAttendantPhone(from)) {
+		if (isMesaClaimReply(replyId)) {
+			await handleMesaClaim(from, replyId);
+		} else {
+			await handleMesaCopilot(from, replyTitle);
+		}
+		return;
+	}
+
 	// Most interactive paths trigger an AI directive (gates, transitions, group
 	// selection). Fire the typing indicator up front; brief flash on the few
 	// non-AI paths (e.g. handoff_decline) is acceptable.

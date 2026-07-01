@@ -5,9 +5,16 @@
 //  - markStaleProposalsLost marca perdido por inatividade (sem tocar terminais).
 // Skip se DATABASE_URL ausente.
 
-import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { and, eq, inArray } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProposalGateway, ProposalStatus } from "@/lib/adapters/proposal-gateway";
+
+// FIX-123: o worker agora dispara o transbordo automático (dispatch → broadcast). Mocka a
+// borda externa (WhatsApp) pra o broadcast não bater na Meta durante o teste de integração.
+vi.mock("@/lib/whatsapp/api", () => ({
+	sendReplyButtons: vi.fn(async () => ({ messageId: "sim-1" })),
+	sendTextMessage: vi.fn(async () => ({ messageId: "sim-1" })),
+}));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -123,6 +130,72 @@ describeIfDb("FIX-44 — automação do desfecho (integration)", () => {
 			.where(eq(schema.leadEvents.leadId, leadId));
 		const toAguardando = events.filter((e) => e.toStage === "aguardando_pagamento");
 		expect(toAguardando.length).toBe(1);
+	});
+
+	// ── FIX-123 (D14): entrar em na_administradora dispara o transbordo automático ──
+	async function activeHandoffsFor(leadId: string) {
+		return db
+			.select({ id: schema.mesaHandoffs.id, status: schema.mesaHandoffs.status })
+			.from(schema.mesaHandoffs)
+			.where(
+				and(
+					eq(schema.mesaHandoffs.leadId, leadId),
+					inArray(schema.mesaHandoffs.status, ["aberto", "em_andamento"]),
+				),
+			);
+	}
+
+	it("FIX-123: reconcile pra na_administradora cria UM handoff ativo sem dono", async () => {
+		const { conversationId, leadId } = await seed("proposta_enviada");
+		const pid = "prop-transbordo-1";
+		const row = await seedProposal(conversationId, leadId, pid);
+		const gw = fakeGateway({ [pid]: statusWith("approveWaitingForUniqueCode") });
+
+		await poll.reconcileProposalStage(
+			{ id: row.id, proposalId: pid, leadId, updatedAt: row.updatedAt },
+			{ gateway: gw },
+		);
+
+		const handoffs = await activeHandoffsFor(leadId);
+		expect(handoffs.length).toBe(1);
+		// nasce sem dono (broadcast/claim decidem depois)
+		const [full] = await db
+			.select()
+			.from(schema.mesaHandoffs)
+			.where(eq(schema.mesaHandoffs.id, handoffs[0].id));
+		expect(full.mesaAttendantId).toBeNull();
+		expect(full.status).toBe("aberto");
+	});
+
+	it("FIX-123: re-poll do mesmo status NÃO cria 2º handoff (applied=false + dedup)", async () => {
+		const { conversationId, leadId } = await seed("proposta_enviada");
+		const pid = "prop-transbordo-idem";
+		const row = await seedProposal(conversationId, leadId, pid);
+		const gw = fakeGateway({ [pid]: statusWith("approveWaitingForUniqueCode") });
+		const args = { id: row.id, proposalId: pid, leadId, updatedAt: row.updatedAt };
+
+		await poll.reconcileProposalStage(args, { gateway: gw });
+		await poll.reconcileProposalStage(args, { gateway: gw }); // re-poll
+
+		const handoffs = await activeHandoffsFor(leadId);
+		expect(handoffs.length).toBe(1);
+	});
+
+	it("FIX-123: transição pra raia que NÃO é gatilho (aguardando_pagamento) não transborda", async () => {
+		const { conversationId, leadId } = await seed("na_administradora");
+		const pid = "prop-transbordo-naotrigger";
+		const row = await seedProposal(conversationId, leadId, pid);
+		const gw = fakeGateway({ [pid]: statusWith("aguard_pag_cliente") });
+
+		const { stage, applied } = await poll.reconcileProposalStage(
+			{ id: row.id, proposalId: pid, leadId, updatedAt: row.updatedAt },
+			{ gateway: gw },
+		);
+		expect(stage).toBe("aguardando_pagamento");
+		expect(applied).toBe(true);
+
+		const handoffs = await activeHandoffsFor(leadId);
+		expect(handoffs.length).toBe(0);
 	});
 
 	it("markStaleProposalsLost: inativo > N dias → perdido; fresco e terminal intactos", async () => {

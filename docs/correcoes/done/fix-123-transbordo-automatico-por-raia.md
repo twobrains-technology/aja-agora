@@ -1,7 +1,9 @@
 ---
 id: FIX-123
 titulo: "Transbordo automático ao lead entrar na fase (acoplar ao worker de raia)"
-status: todo
+status: done
+commit: 61062f3a
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 bloco: bloco-mesa-transbordo-auto
