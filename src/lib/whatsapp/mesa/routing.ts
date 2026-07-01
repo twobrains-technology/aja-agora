@@ -2,7 +2,7 @@
  * Roteamento inbound do COPILOTO DE MESA (FIX-66).
  *
  * Spec: docs/visao/mesa-de-operacao.md §5 + §8 (sem colisão de canal).
- * Decisões: docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+ * Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-c.md.
  *
  * Mensagem vinda do WhatsApp de um ATENDENTE DE MESA cadastrado é roteada para
  * o copiloto (NUNCA para o agente de vendas) pelo hook no `processor.ts`. Aqui:

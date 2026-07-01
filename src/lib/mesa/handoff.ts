@@ -1,6 +1,6 @@
 // Mesa de operação — registro do transbordo (FIX-64).
 // Spec: docs/visao/mesa-de-operacao.md §4 + DEC-B (gatilho manual).
-// Decisões: docs/correcoes/decisions/2026-06-21-bloco-mesa-b.md.
+// Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md.
 
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";

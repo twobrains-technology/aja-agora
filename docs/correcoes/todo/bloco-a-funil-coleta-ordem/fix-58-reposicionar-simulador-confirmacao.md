@@ -42,7 +42,7 @@ A regra inviolável diz: "Simulador do passo 4 = conceito do Bernardo. Proposta 
 | Disparar o simulador de contemplação ANTES de apresentar o melhor grupo no fluxo do agente. | `system-prompt.ts` (ordem), `artifact-guard.ts` (gating) |
 | Adicionar etapa de confirmação de premissas após a qualificação e antes da recomendação: "faz sentido esse valor? essa quantidade de meses? quer simular algo diferente?" | `system-prompt.ts` |
 | Atualizar a jornada canônica e a proposta-simulador com a nova ordem e o passo de confirmação. | `docs/jornada/*` |
-| Registrar a decisão de produto (reposicionamento avalizado pelo Bernardo) em ADR. | `docs/correcoes/decisions/` |
+| Registrar a decisão de produto (reposicionamento avalizado pelo Bernardo) em ADR. | `docs/decisoes/blocos/` |
 
 ## Regressão exigida (3 camadas)
 - **Camada 1:** assert no prompt/ordem que a etapa do simulador precede a `present_recommendation_card`; assert da existência do passo de confirmação de premissas. `src/lib/agent/*.fix58.test.ts`.
