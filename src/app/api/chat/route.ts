@@ -680,7 +680,16 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
-							} catch {
+							} catch (err) {
+								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
+								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
+								// errors sempre logados). Sem isso, "Tive um problema..." aparecia pro
+								// usuário sem NENHUM rastro no servidor pra diagnosticar (D10-like:
+								// Trilho A instável no chooseOffer/getDocumentLinks).
+								console.error(
+									`[offer-confirm] confirmOffer falhou (conv=${conversationId})`,
+									err,
+								);
 								await writeAndSaveText(
 									writer,
 									conversationId,
