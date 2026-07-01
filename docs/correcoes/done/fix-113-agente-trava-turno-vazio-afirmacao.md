@@ -1,7 +1,9 @@
 ---
 id: FIX-113
 titulo: "Agente trava em afirmação de continuidade — gate avança sem emissão visível e o guard não pega"
-status: todo
+status: done
+commit: 313005b7
+executado_em: 2026-06-30
 bloco: bloco-funil-turno-orquestracao
 arquivos:
   - src/lib/chat/empty-turn-guard.ts

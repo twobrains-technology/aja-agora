@@ -1,7 +1,9 @@
 ---
 id: FIX-114
 titulo: "PROD: search_groups dispara antes da identidade (IdentityNotCollectedError) + meta-narrativa"
-status: todo
+status: done
+commit: 97771ffc
+executado_em: 2026-06-30
 bloco: bloco-funil-turno-orquestracao
 arquivos:
   - src/lib/agent/qualify-state.ts

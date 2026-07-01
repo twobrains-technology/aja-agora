@@ -1,7 +1,9 @@
 ---
 id: FIX-115
 titulo: "Componente de valor não aparece — deve renderizar, e o texto tem que funcionar/avançar mesmo se não aparecer (dinâmico)"
-status: todo
+status: done
+commit: 174ec3db
+executado_em: 2026-06-30
 bloco: bloco-funil-turno-orquestracao
 arquivos:
   - src/components/chat/artifacts/value-picker.tsx
