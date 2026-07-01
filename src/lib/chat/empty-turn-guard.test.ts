@@ -34,10 +34,47 @@ describe("FIX-110 — isTurnEmpty (detector de turno mudo)", () => {
 		expect(isTurnEmpty({ ...base, artifactCount: 1 })).toBe(false);
 	});
 
-	it("um gate/transição/handoff => NÃO é vazio", () => {
-		expect(isTurnEmpty({ ...base, gate: "experience" })).toBe(false);
-		expect(isTurnEmpty({ ...base, transitionedTo: "auto" })).toBe(false);
+	// FIX-113: handoff é o ÚNICO sinal-de-card que continua contando como visível.
+	// O card de handoff (data-handoff) renderiza SOZINHO — o system-prompt PROÍBE o
+	// agente de escrever texto no handoff (suggest_handoff → "não escreva NENHUM
+	// texto"). Logo textChars=0 é o normal do handoff; sem esta exceção o fallback
+	// atropelaria o card "Vou te conectar com um consultor".
+	it("um handoff (card silencioso por design) => NÃO é vazio", () => {
 		expect(isTurnEmpty({ ...base, handoff: true })).toBe(false);
+	});
+
+	// FIX-113 (trava em afirmação de continuidade, PROD 2026-06-30): gate e
+	// transitionedTo são ESTADO INTERNO do funil — não são, por si só, resposta
+	// VISÍVEL ao usuário. Numa afirmação curta ("blz"/"ta bom") o funil podia setar
+	// gate/transição sem emitir texto/tool/artifact; o guard antigo lia esse estado
+	// interno e retornava false → fallback NÃO disparava → tela congelava. Agora o
+	// guard só olha emissão visível (texto/tool/artifact), IGNORANDO gate/transição.
+	it("FIX-113: gate setado SEM emissão visível é vazio (estado interno não conta)", () => {
+		expect(isTurnEmpty({ ...base, gate: "value" })).toBe(true);
+		expect(isTurnEmpty({ ...base, gate: "experience" })).toBe(true);
+	});
+
+	it("FIX-113: transição setada SEM emissão visível é vazia (estado interno não conta)", () => {
+		expect(isTurnEmpty({ ...base, transitionedTo: "auto" })).toBe(true);
+	});
+
+	it("FIX-113: assinatura exata do card — gate=value sem nada visível => vazio (true)", () => {
+		expect(
+			isTurnEmpty({
+				textChars: 0,
+				toolCount: 0,
+				artifactCount: 0,
+				gate: "value",
+				transitionedTo: null,
+			}),
+		).toBe(true);
+	});
+
+	// Contraprova: emissão visível legítima NUNCA vira vazio, mesmo com gate setado
+	// (o gate real vem SEMPRE acompanhado da pergunta do gate ou do texto do agente).
+	it("FIX-113: gate COM pergunta/texto visível NÃO é vazio (sem falso fallback)", () => {
+		expect(isTurnEmpty({ ...base, gate: "experience", textChars: 30 })).toBe(false);
+		expect(isTurnEmpty({ ...base, gate: "simulator-offer", artifactCount: 1 })).toBe(false);
 	});
 
 	it("o fallback é uma frase PT-BR honesta, não-vazia e sem cara de IA (sem travessão)", () => {

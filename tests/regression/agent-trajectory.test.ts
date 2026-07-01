@@ -6408,6 +6408,87 @@ describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno 
 });
 
 // ============================================================================
+// FIX-113 — agente TRAVA em afirmação de continuidade ("blz"/"ta bom")
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD/AWS, 2026-06-30): "o agent trava e nao responde,
+// parece que nos casos de perguntas afirmativas ou afirmações que tem uma
+// continuidade". Ex.: agente disse "Beleza, R$ 50.000 então." → usuário "blz" →
+// SILÊNCIO → só destrava quando o usuário manda outra mensagem.
+//
+// Root cause CONFIRMADO no código: numa afirmação curta o funil avança um gate /
+// seta transição internamente SEM emitir texto/tool/artifact. O guard FIX-110
+// antigo (`isTurnEmpty`) TAMBÉM olhava `gate`/`transitionedTo` (estado interno) e,
+// vendo o gate setado, retornava false → o fallback do route (route.ts) NÃO
+// disparava → e como nada visível saiu, a tela CONGELAVA. `gate`/`transitionedTo`
+// não são resposta visível — o fix é o guard olhar SÓ emissão visível.
+// ============================================================================
+
+describe("FIX-113 — afirmação de continuidade nunca fecha o turno mudo", () => {
+	const ROUTE = "src/app/api/chat/route.ts";
+
+	// Matéria-prima do bug: no turno de "blz" o agente fica CALADO (0 texto, 0 tool).
+	// O cassette prova que o stream fecha sem emissão — é o que o guard tem que pegar.
+	it("cassette: 'blz' de continuidade produz turno calado (0 texto, 0 tool) — matéria-prima do mudo", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			FINISH_STOP,
+		]);
+		expect(text).toBe("");
+		expect(toolCalls).toEqual([]);
+	});
+
+	// O CORAÇÃO do fix: o turno calado que AVANÇOU um gate internamente (gate setado,
+	// nada visível) agora é detectado como mudo → o route dispara o fallback. Antes
+	// do FIX-113 isso retornava false (gate bloqueava o fallback) e a tela travava.
+	it("cassette: gate avança SEM emissão visível => detectado como mudo (fallback dispara)", () => {
+		const recordGateMudo = {
+			textChars: 0,
+			toolCount: 0,
+			artifactCount: 0,
+			gate: "value" as string | null,
+			handoff: false,
+			transitionedTo: null as string | null,
+		};
+		// Regressão do bug exato: hoje true; se alguém reintroduzir o gate no guard,
+		// isto volta a false e o cassette QUEBRA — bloqueando o merge.
+		expect(isTurnEmpty(recordGateMudo)).toBe(true);
+		// Uma transição interna sozinha também não é emissão visível.
+		expect(isTurnEmpty({ ...recordGateMudo, gate: null, transitionedTo: "auto" })).toBe(true);
+	});
+
+	// Contraprova (não pode disparar fallback falso): gate LEGÍTIMO vem sempre com a
+	// pergunta do gate (texto) OU, no reveal, com artifacts — emissão visível > 0.
+	it("cassette: gate legítimo (pergunta em texto OU artifact do reveal) NÃO é mudo", () => {
+		const base = { textChars: 0, toolCount: 0, artifactCount: 0, handoff: false };
+		// Gate de chips com a pergunta do gate escrita como texto.
+		expect(isTurnEmpty({ ...base, gate: "experience", textChars: 42 })).toBe(false);
+		// simulator-offer no turno do reveal (allowGateWithArtifacts) — carrega cards.
+		expect(isTurnEmpty({ ...base, gate: "simulator-offer", artifactCount: 1 })).toBe(false);
+		// Handoff: card silencioso por design (agente calado) — segue contando.
+		expect(isTurnEmpty({ ...base, handoff: true })).toBe(false);
+	});
+
+	it("structural: o guard do route olha SÓ emissão visível (sem gate/transitionedTo)", () => {
+		const src = readSource("src/lib/chat/empty-turn-guard.ts");
+		// isTurnEmpty não pode voltar a ler gate/transitionedTo como sinal de emissão.
+		const fnBody = src.slice(src.indexOf("export function isTurnEmpty"));
+		expect(fnBody).toMatch(/textChars === 0/);
+		expect(fnBody).toMatch(/toolCount === 0/);
+		expect(fnBody).toMatch(/artifactCount === 0/);
+		expect(
+			/!rec\.gate|rec\.gate\b/.test(fnBody.slice(0, fnBody.indexOf("}"))),
+			"isTurnEmpty NÃO pode condicionar em rec.gate — gate é estado interno (FIX-113).",
+		).toBe(false);
+		expect(
+			/transitionedTo/.test(fnBody.slice(0, fnBody.indexOf("}"))),
+			"isTurnEmpty NÃO pode condicionar em transitionedTo — é estado interno (FIX-113).",
+		).toBe(false);
+		// E o route continua chamando o guard no user-turn.
+		expect(readSource(ROUTE)).toMatch(/isTurnEmpty/);
+	});
+});
+
+// ============================================================================
 // FIX-112 — fim da proposta bugado ("bora" lido como recusa)
 // ----------------------------------------------------------------------------
 // Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
