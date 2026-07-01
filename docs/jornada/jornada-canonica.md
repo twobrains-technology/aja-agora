@@ -286,3 +286,28 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 | T1 (sweep/trilhos) · T2 (embutido amortiza) | ⚠️ tensão | — | NÃO testado como bug (decisão stakeholder — PENDENTE Kairo/Bernardo) |
 
 **Resultado Frente 1: 10/10 cenários vivos ✅ + 2 bugs residuais achados e corrigidos (FIX-130, FIX-131).**
+
+## Cobertura de QA — Frente 2 (Recomendação + Simulador + Fechamento, Passos 5-7)
+
+> Foto do último teste por cenário. Histórico/detalhe no ledger de run
+> (`.qa-loop/2026-07-01-...-ledger-frente2-recomendacao-fechamento.md`). Última validação: **2026-07-01**.
+
+| Cenário | Passo | Status | Nível |
+|---|---|---|---|
+| Card recomendado + Outras opções (carrossel) | P5 | ✅ PASS | struct (formatter.card-recomendada + other-options) |
+| Resumo por oferta (carta·parcela·prazo·adm·lance·liquidez) | P5 | ✅ PASS | struct (formatter.real-offer) |
+| Simulador contemplação 3/6/12 recalcula | P5 | ✅ PASS | property/component (contemplation-dial) + formatter.simulador |
+| Card de decisão (3 botões) | P5 | ✅ PASS | struct (decision_${intent}; outras=determinístico) |
+| Ressalva CDC "estimativa" | P5 | ✅ PASS | struct (formatter.simulador) |
+| **FIX-117/D18** WhatsApp "Tenho interesse" = avanço direto (paridade FIX-38) | P5 | ✅ PASS | integ+cassette + code-review (dispatch→buildAdvanceToContract) |
+| **FIX-119/D22** WhatsApp "Ver outras" (decision_outras) determinístico | P5 | ✅ PASS | integ+cassette + code-review (→buildOtherOptions, model-free) |
+| Confirma oferta escolhida (re-simula TTL) | P6 | ✅ PASS | integ (contract-capture) |
+| **FIX-122/D13** upload doc inbound WhatsApp | P6 | ✅ PASS | integ+cassette + code-review (webhook image/document→handleDocumentInbound) |
+| **FIX-116/D11** WhatsApp NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS | struct+cassette + code-review (0 copy runtime /assinatura\|assinar/i) |
+| Parabéns + resumo WA/email + opt-in | P7 | ✅ PASS | struct (whatsapp-optin + signature-handoff) |
+| **T2** lance embutido amortiza dívida×crédito | P5 | ⚠️ NÃO TESTADO | tensão — decisão Bernardo (não é bug) |
+
+- Full onda `divergencias-jornada` (216 arquivos / 2194 testes): ✅ verde. Zero regressão introduzida.
+- Validação no nível certo (§5): fixes WhatsApp são determinísticos → unit+cassette+code-review.
+  E2E ao vivo do funil foi **bloqueado upstream** (Passo 1 nome / Passo 3 identidade — FRENTE-1/cross-cutting),
+  não alcançou o reveal; ver ledger + `docs/correcoes/inbox/2026-07-01-crossfrente-agente-mudo-captura-nome.md`.
