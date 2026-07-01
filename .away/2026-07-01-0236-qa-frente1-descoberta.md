@@ -28,3 +28,19 @@ Todos os cenários 🟢/regressão do ledger ∈ {✅} + nenhum bloco pendente +
 - 03:05 — **BUG 2 achado no browser real → FIX-131**: footer da landing tinha "Serviços" como 4ª porta de entrada (botão que abre o chat com seed). Produto/UX ambíguo (chip de entrada × catálogo) → perguntei ao Kairo (AskUserQuestion) → **remover** (paridade D21). TDD render, verde. Build Error do Turbopack (virtiofs stale) ao editar sob HMR → docker restart (memória turbopack-virtiofs-stale), resolveu.
 - 03:10 — **FIX-130 e FIX-131 confirmados no BROWSER REAL**: footer 3 cat (sem Serviços) + welcome do chat "Me conta: o que quer conquistar?" com Imóvel/Automóvel/Moto (sem Outros). Screenshot em tests/e2e/artifacts. Console só 2 warns de perf de imagem da landing (pré-existente, fora de escopo).
 - 03:12 — Todos os 15 cenários ✅. Reverificação final + encerramento.
+
+## Relatório final (encerramento — 2026-07-01 03:15)
+
+**Status: PRONTO.** Frente 1 (Descoberta + Qualificação + Identidade, Passos 1-4) validada de ponta a ponta.
+
+- **15 cenários no ledger, todos ✅.** Nível certo em cada um (não só browser): structural, property (parser 15/15 adversarial), integration Bevi REAL ao vivo, cassettes (agent-trajectory 324 verde), render, browser real.
+- **2 bugs residuais achados e corrigidos (faixa FIX-130..149):**
+  - **FIX-130** — welcome do chat web ainda mostrava 4 categorias ("Outros"): o FIX-121 corrigiu só a cópia do adapter, o `message-list.tsx` (EmptyState = 1ª tela) tinha 2ª cópia. Fonte única. **Falso-verde do FIX-121 desmascarado.**
+  - **FIX-131** — footer da landing tinha "Serviços" como 4ª porta de entrada (abre o chat). Decisão de produto perguntada ao Kairo → remover. Paridade D21.
+- **Prova ao vivo (P7):** descoberta real na Bevi homologação retornou cartas REAIS (auto 80k→24 grupos ÂNCORA; imóvel 250k→22 Banco do Brasil). Gate de identidade enforçado no adapter. Nenhum mock em runtime.
+- **Gate:** `pnpm test:unit` **2201 verde** (era 2194 no baseline; +7 testes de regressão meus), reverificado fresco no fim. Cassettes 324 verde.
+- **Tensões (NÃO mexidas):** T1 (sweep/trilhos) e T2 (embutido amortiza) — decisão de stakeholder, **PENDENTE Kairo/Bernardo**.
+- **Higiene:** PII das contas-teste limpa (contas-teste.env removido, gitignored). Screenshot de evidência em `tests/e2e/artifacts/` (gitignored).
+- **Commits (branch `qa/descoberta-qualificacao`, NÃO promovidos):** `5e1600ac` FIX-130, `938d630a` FIX-131, `4c455914` docs/cobertura.
+
+**PENDENTE-KAIRO:** promover `qa/descoberta-qualificacao` → develop (não faço sozinho — blast radius). Tensões T1/T2 aguardam decisão.
