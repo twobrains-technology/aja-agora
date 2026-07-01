@@ -1,6 +1,7 @@
 import { discoverySessionForConversation } from "@/lib/bevi/discovery-session";
 import { BeviApiAdapter } from "./bevi/bevi-api-adapter";
 import { BeviSelfContractAdapter } from "./bevi/bevi-self-contract-adapter";
+import { BeviSelfContractProposalGateway } from "./bevi/bevi-self-contract-proposal-gateway";
 import { BeviSelfContractClient } from "./bevi/self-contract-client";
 import type { ProposalGateway } from "./proposal-gateway";
 import type { AdministradoraAdapter } from "./types";
@@ -66,6 +67,11 @@ function createGateway(): ProposalGateway {
 	switch (name) {
 		case "bevi":
 			return new BeviApiAdapter();
+		// FIX-89 (2026-06-28/07-01): Trilho A travado sem prazo (productId/AGX) —
+		// fecha via Trilho B (self-contract), que já descobre. Ver
+		// docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md.
+		case "selfcontract":
+			return new BeviSelfContractProposalGateway(new BeviSelfContractClient());
 		case "mock":
 			throw new Error(
 				'PROPOSAL_GATEWAY="mock" foi REMOVIDO (mock em runtime é proibido — ' +
@@ -74,7 +80,7 @@ function createGateway(): ProposalGateway {
 			);
 		default:
 			throw new Error(
-				`Unknown gateway: "${name}". Valid values: bevi. Set PROPOSAL_GATEWAY env var.`,
+				`Unknown gateway: "${name}". Valid values: bevi, selfcontract. Set PROPOSAL_GATEWAY env var.`,
 			);
 	}
 }
