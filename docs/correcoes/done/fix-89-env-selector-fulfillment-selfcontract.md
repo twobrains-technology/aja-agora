@@ -1,13 +1,15 @@
 ---
 id: FIX-89
 titulo: "Selecionar o gateway self-contract por env + fulfillment reusa a proposta de descoberta"
-status: todo
+status: done
 bloco: bloco-c-fechamento-trilho-b
 arquivos:
   - src/lib/adapters/index.ts
   - src/lib/bevi/fulfillment.ts
   - docs/correcoes/decisions/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md
 rodada: 2026-06-28 — fazer a jornada fechar de ponta a ponta (Trilho A travado)
+commit: 1ad9496b
+executado_em: 2026-07-01
 ---
 
 ## Palavras do operador
