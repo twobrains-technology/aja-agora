@@ -1,6 +1,6 @@
 // Mesa de operação — outbound do dossiê do caso pro WhatsApp do atendente (FIX-65).
 // Spec: docs/visao/mesa-de-operacao.md §4-5 + §8 (minimização de PII).
-// Decisões: docs/correcoes/decisions/2026-06-21-bloco-mesa-b.md §1-2.
+// Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md §1-2.
 
 import { sendTextMessage } from "@/lib/whatsapp/api";
 

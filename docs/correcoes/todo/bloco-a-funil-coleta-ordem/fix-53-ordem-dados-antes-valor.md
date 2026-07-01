@@ -37,7 +37,7 @@ rodada: 2026-06-19 — jornada2_revisão.docx (teste manual Bernardo em ajaagora
 | Anti-repetição do valor: reforçar a regra E garantir cobertura no `artifact-guard` (valor já coletado → confirmar em 1 frase e seguir, nunca re-perguntar/re-mostrar o picker). Explicar no prompt que o servidor reforça (enforcement), não só a "boa vontade" do LLM. | `system-prompt.ts` + `artifact-guard.ts` |
 | **Atualizar a jornada canônica** para refletir a nova ordem (dados antes do valor) — divergência docx×código é defeito do código, mas aqui o stakeholder MUDOU a ordem na revisão; registre a mudança. | `docs/jornada/jornada-canonica.md` + `CONTEXT.md` |
 
-> ⚠️ Nota de produto: "dados antes do valor" é mudança de ordem pedida pelo stakeholder na revisão. Como toca a jornada canônica (que é REGRA), o executor DEVE atualizar `jornada-canonica.md`/`CONTEXT.md` junto com o código e registrar a decisão em `docs/correcoes/decisions/`.
+> ⚠️ Nota de produto: "dados antes do valor" é mudança de ordem pedida pelo stakeholder na revisão. Como toca a jornada canônica (que é REGRA), o executor DEVE atualizar `jornada-canonica.md`/`CONTEXT.md` junto com o código e registrar a decisão em `docs/decisoes/blocos/`.
 
 ## Regressão exigida (3 camadas)
 - **Camada 1:** assert na ordem dos gates (`qualify-state.ts`): `identify` precede `present_value`/value-picker; assert no prompt da sequência fixa do passo 2. `src/lib/agent/*.fix53.test.ts`.

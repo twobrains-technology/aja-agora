@@ -6,7 +6,7 @@ Correções da revisão 2 da jornada (`jornada2_revisão.docx`, teste manual do 
 ## Passos
 1. Leia `docs/correcoes/README.md` e a pasta `docs/correcoes/todo/bloco-b-simulador-recomendacao/` inteira: `_bloco.md` + `fix-54`, `fix-55`, `fix-56`, `fix-57` (cada um com arquivo:linha investigado). Leia `CLAUDE.md` (regras de regressão) e `docs/jornada/proposta-simulador.md`.
 
-2. DESIGN: FIX-54 (novo teto de carro), FIX-55 (step vs input livre), FIX-56 (estratégia de dedup), FIX-57 (como sinalizar próximo passo) têm decisões reais. Use o raciocínio de `superpowers:brainstorming` mas DECIDA sozinho — não trave no HARD-GATE. Registre em `docs/correcoes/decisions/2026-06-19-bloco-b-simulador.md`. Commit `docs:`.
+2. DESIGN: FIX-54 (novo teto de carro), FIX-55 (step vs input livre), FIX-56 (estratégia de dedup), FIX-57 (como sinalizar próximo passo) têm decisões reais. Use o raciocínio de `superpowers:brainstorming` mas DECIDA sozinho — não trave no HARD-GATE. Registre em `docs/decisoes/blocos/2026-06-19-bloco-b-simulador.md`. Commit `docs:`.
 
 3. Execute NA ORDEM: **FIX-54 → FIX-55 → FIX-56 → FIX-57** (54 e 55 compartilham `qualify-config.ts`+pickers; sequencial). TDD strict por item: teste falha antes do fix.
 

@@ -1,0 +1,35 @@
+Evidência de PROD — CloudWatch /ecs/tb/prod (app aja-agora)
+Capturado em 2026-06-30 (sessão de avaliação). Timestamps em UTC.
+Conversa: 24be5b9d-8541-4363-a173-f3670bde35a1 (channel=web, persona=imovel)
+
+Fluxo até o erro (turn-trace), tudo OK:
+  01:58  gate name → experience (save_contact_name) → consent → identify → credit
+  01:59  search_groups, recommend_groups, present_recommendation_card,
+         simulate_quota, present_simulation_result  (48s)
+  02:00  present_whatsapp_optin → decision_prompt
+  02:01  present_contract_form  (card "Vamos fechar sua proposta" — Administradora: ÂNCORA)
+  02:01  SUBMIT do contract_form → ERRO ↓
+
+Erro real (console.error de route.ts, stack completo):
+
+  [contract-submit] startContract falhou (conv=24be5b9d-...) Error [BeviApiError]: Dados inválidos.
+      at Object.callService (.next/server/.../src_lib_04s4u7_._.js)
+      at async Object.createProposal (.next/server/.../src_lib_04s4u7_._.js)   ← insert_proposal (1º passo Trilho A)
+      ...
+    errors: [ { field: 'CELULAR', message: 'CELULAR inválido.' } ]
+    data: { errors: [ [Object] ] }
+
+Dado que disparou (card na tela):
+  CPF     092.•••.•••-60
+  Celular (62) 89898-9898   ← 11 dígitos, mas nono dígito NÃO é 9 → não é celular BR válido.
+                              A Bevi (insert_proposal) rejeita corretamente com 400 "CELULAR inválido."
+
+O que o usuário viu na tela (mensagem do agente):
+  "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?"
+  → mensagem ENGANOSA: culpa a administradora por um dado inválido do próprio usuário,
+    e "tentar de novo" com o mesmo celular falha SEMPRE (erro 400 determinístico, não transitório).
+    route.ts ainda seta contractRetryPending:true → loop.
+
+Diagnóstico: NÃO é a Bevi fora do ar nem Trilho A quebrado. O Trilho A funcionou —
+validou e rejeitou. Os defeitos são nossos (validação client fraca + tradução de
+erro de campo como falha transitória genérica).

@@ -3,7 +3,7 @@
  *
  * Spec de negócio: docs/visao/mesa-de-operacao.md §5 (o copiloto) + DEC-C
  * (injeção do PDF full-text + prompt caching, não RAG).
- * Decisões de design: docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+ * Decisões de design: docs/decisoes/blocos/2026-06-21-bloco-mesa-c.md.
  *
  * O copiloto orienta o ATENDENTE DE MESA (operador humano), NÃO o cliente, a
  * formalizar o contrato na administradora — com o manual de procedimento

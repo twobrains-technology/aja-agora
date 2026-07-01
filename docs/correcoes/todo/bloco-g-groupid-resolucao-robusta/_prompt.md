@@ -9,7 +9,7 @@ Você é o executor do bloco `bloco-g-groupid-resolucao-robusta` no worktree iso
    mas DECIDA sozinho (você é o decisor; não trave). Escolha entre (a) erro-estruturado-força-rebusca
    (reusa FIX-68, mais simples) e (b) resolução server-side da intenção (mais robusta). Prefira a que
    fecha a raiz com MENOS superfície e sem regredir a degradação graciosa. Registre em
-   `docs/correcoes/decisions/<data>-bloco-g-groupid-resolucao-robusta.md` (o quê · opções · escolhida
+   `docs/decisoes/blocos/<data>-bloco-g-groupid-resolucao-robusta.md` (o quê · opções · escolhida
    + porquê). Commit `docs:` do ADR.
 
 3. TDD STRICT (3 camadas):

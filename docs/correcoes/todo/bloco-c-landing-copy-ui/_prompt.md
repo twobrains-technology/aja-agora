@@ -6,7 +6,7 @@ Ajustes de copy e identidade visual da landing, vindos dos "Comentários Gerais"
 ## Passos
 1. Leia `docs/correcoes/README.md` e a pasta `docs/correcoes/todo/bloco-c-landing-copy-ui/` inteira: `_bloco.md` + `fix-59` (lote de copy, com tabela arquivo:linha) + `fix-60` (figura do hero + ícone WhatsApp). Leia `CLAUDE.md` (design system shadcn/studio Pro, regra de copy sem overclaim de IA).
 
-2. DESIGN: a maior parte de FIX-59 é troca direta de copy (sem brainstorming). FIX-60 tem decisão real (qual figura "mais brasileira"; interpretação de "ícone WA móvel"). Para esses, use o raciocínio de `superpowers:brainstorming` e DECIDA sozinho. Registre em `docs/correcoes/decisions/2026-06-19-bloco-c-landing.md`. Commit `docs:`.
+2. DESIGN: a maior parte de FIX-59 é troca direta de copy (sem brainstorming). FIX-60 tem decisão real (qual figura "mais brasileira"; interpretação de "ícone WA móvel"). Para esses, use o raciocínio de `superpowers:brainstorming` e DECIDA sozinho. Registre em `docs/decisoes/blocos/2026-06-19-bloco-c-landing.md`. Commit `docs:`.
 
 3. Execute NA ORDEM: **FIX-59 (copy) → FIX-60 (assets/ícone)**.
    - FIX-59: aplique as trocas exatas da tabela do fix (hero.tsx, trust.tsx, process.tsx, demo.tsx, institutional.tsx, brand-footer.tsx). Mantenha o tom da marca.
