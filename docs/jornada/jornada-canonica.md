@@ -263,3 +263,26 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 > coberta por prompt); linha do gate `timeframe` (Passo 2, consistente — o vazamento é o P4);
 > educação de lance embutido no picker web (degradação cosmética, não ausência); handoff Passo 7
 > (opt-in 🟢 deliberado); FIX-113 turno-mudo no web (a cadeia causal do guard não procede no web).
+
+---
+
+## Cobertura de QA — Frente 1 (Descoberta + Qualificação + Identidade, Passos 1-4)
+
+> Foto atual da validação autônoma da onda `divergencias-jornada` (4c8a81c5). Histórico do run:
+> `.qa-loop/2026-07-01-0236-ledger.md`. Última validação: **2026-07-01**.
+
+| Passo / cenário | Fase | Status | Como validado |
+|---|---|---|---|
+| P1 · welcome web = 3 categorias (Imóvel/Carro/Moto), sem "Outros" | 🟢 (era 🔴 D21) | ✅ PASS | **bug residual do FIX-121 achado** (EmptyState/message-list tinha 2ª cópia com 4) → **FIX-130** (fonte única) + confirmado no browser real |
+| P1 · footer landing = 3 categorias de entrada | 🟢 (D21) | ✅ PASS | **bug achado no browser** (footer com "Serviços") → **FIX-131** (removido, decisão Kairo) |
+| P1 · paridade welcome web = WhatsApp = landing | 🟢 | ✅ PASS | structural (welcome-options.test) + browser |
+| P2 · WhatsApp valor por conversa ("uns 80 mil"), sem lista de faixas | 🟢 (era 🔴 D5) | ✅ PASS | FIX-120: código credit→null + cassette + parser 15/15 adversarial |
+| P2 · prazo NÃO perguntado na entrada | 🟢 | ✅ PASS | FIX-103 (cassette + qualify-state) |
+| P2 · educação lance embutido pra Sim/Não/Talvez nos 2 canais | 🟢 (era 🔴 D19) | ✅ PASS | FIX-118: fireGate lance-embutido no ramo no/maybe + cassette |
+| P2 · componente de valor = agulha simples (não multi-slider) | 🟢 (D4/D6) | ✅ PASS | FIX-115: gate-renderer credit→ValuePicker |
+| P3 · identidade (CPF+telefone) antes da busca | 🟢 | ✅ PASS | gate identify precede credit (FIX-114) |
+| P3 · search_groups NUNCA sem identidade (sem "dificuldade técnica") | 🟢 (era 🔴 D7/P6) | ✅ PASS | FIX-114: allowedTools + adapter lança IdentityNotCollectedError; detectores no cassette |
+| P4 · retorna ≥1 carta REAL da Bevi (nunca mock) | 🟢 (P7) | ✅ PASS | **AO VIVO** homologação: auto 80k→24 grupos reais, imóvel 250k→22 |
+| T1 (sweep/trilhos) · T2 (embutido amortiza) | ⚠️ tensão | — | NÃO testado como bug (decisão stakeholder — PENDENTE Kairo/Bernardo) |
+
+**Resultado Frente 1: 10/10 cenários vivos ✅ + 2 bugs residuais achados e corrigidos (FIX-130, FIX-131).**
