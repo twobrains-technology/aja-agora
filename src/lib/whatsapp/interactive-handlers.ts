@@ -17,7 +17,6 @@ import {
 } from "./adapter";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
-	buildCreditReactionDirective,
 	buildDetailDirective,
 	buildExperienceDoubtsDirective,
 	buildExperienceFirstDirective,
@@ -34,7 +33,6 @@ import {
 import {
 	artifactToWhatsApp,
 	documentUploadToWhatsApp,
-	resolveCreditReply,
 	resolveLanceEmbutidoReply,
 	resolveLanceReply,
 	resolveLanceValueReply,
@@ -103,7 +101,6 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 		return handleQualifyStart(ctx);
 	if (replyId.startsWith("category_")) return handleCategory(ctx);
 	if (replyId.startsWith("experience_")) return handleExperience(ctx);
-	if (replyId.startsWith("credit_")) return handleCredit(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
 	if (replyId.startsWith("lanceembutido_")) return handleLanceEmbutido(ctx);
 	if (replyId.startsWith("lancevalue_")) return handleLanceValue(ctx);
@@ -297,23 +294,10 @@ async function handleQualifyStart(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
-async function handleCredit(ctx: Ctx): Promise<boolean> {
-	const { from, replyId, conversationId } = ctx;
-	const resolved = resolveCreditReply(replyId);
-	if (!resolved) return true;
-
-	const meta = await loadMeta(conversationId);
-	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-		...(meta.qualifyAnswers ?? {}),
-		creditMin: resolved.min,
-		creditMax: resolved.max,
-	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-	await recordUserClick(ctx);
-
-	await runAgentDirective(from, conversationId, buildCreditReactionDirective(resolved.title));
-	return true;
-}
+// FIX-120 (paridade FIX-115): o gate credit no WhatsApp virou CONVERSA — não há
+// mais lista de faixas, logo nenhum reply `credit_*` chega. `handleCredit` (que
+// resolvia a faixa e gravava range.max) foi aposentado; o valor é dito por texto
+// livre e capturado pelo analyzer + backstop parseAssetValue (orchestrator).
 
 async function handleTimeframe(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;

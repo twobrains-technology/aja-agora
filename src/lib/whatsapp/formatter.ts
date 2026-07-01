@@ -483,42 +483,18 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 }
 
 import {
-	CREDIT_BUCKETS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAMES,
 } from "@/lib/agent/qualify-config";
 
-const CREDIT_RANGES = CREDIT_BUCKETS;
-
-export function creditRangeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "moto" | "servicos",
-	prefix?: string,
-): WhatsAppResponse {
-	const ranges = CREDIT_RANGES[category];
-	const question = gateQuestion("credit", category) ?? "";
-	const text = prefix ? `${prefix}\n\n${question}` : question;
-	return {
-		type: "interactive",
-		interactive: {
-			type: "list",
-			body: { text },
-			action: {
-				button: "Escolher faixa",
-				sections: [
-					{
-						title: "Faixas de valor do bem",
-						rows: ranges.map((r) => ({
-							id: `credit_${category}_${r.token}`,
-							title: r.title.slice(0, 24),
-							description: (r.desc ?? "").slice(0, 72),
-						})),
-					},
-				],
-			},
-		},
-	};
-}
+// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA no WhatsApp — o
+// gate credit deixou de renderizar a lista de faixas. `creditRangeQuestionToWhatsApp`
+// / `resolveCreditReply` (e o `credit_` roteado) foram aposentados; o adapter
+// pergunta o valor por TEXTO (gateTextPrompt → gateQuestion("credit")) e o
+// backstop parseAssetValue captura a resposta livre. CREDIT_BUCKETS segue vivo
+// em qualify-config (lanceValueOptions/referência de faixa), só não é mais
+// consumido aqui.
 
 export function timeframeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "moto" | "servicos",
@@ -546,24 +522,6 @@ export function timeframeQuestionToWhatsApp(
 			},
 		},
 	};
-}
-
-export function resolveCreditReply(replyId: string): {
-	category: "imovel" | "auto" | "moto" | "servicos";
-	min: number;
-	max: number;
-	title: string;
-} | null {
-	if (!replyId.startsWith("credit_")) return null;
-	const parts = replyId.split("_");
-	if (parts.length < 3) return null;
-	const category = parts[1] as "imovel" | "auto" | "moto" | "servicos";
-	const token = parts[2];
-	const ranges = CREDIT_RANGES[category];
-	if (!ranges) return null;
-	const range = ranges.find((r) => r.token === token);
-	if (!range) return null;
-	return { category, min: range.min, max: range.max, title: range.title };
 }
 
 export function resolveTimeframeReply(replyId: string): {

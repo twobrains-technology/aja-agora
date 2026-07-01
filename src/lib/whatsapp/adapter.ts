@@ -1,6 +1,7 @@
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
@@ -9,7 +10,6 @@ import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
 	artifactToWhatsApp,
-	creditRangeQuestionToWhatsApp,
 	experienceQuestionToWhatsApp,
 	formatTextForWhatsApp,
 	handoffConfirmationToWhatsApp,
@@ -47,11 +47,12 @@ async function gateInteractive(
 				qualifyConsentToWhatsApp(prefix, { firstTime: meta.experiencePrev === "first" })
 					.interactive ?? null
 			);
-		case "credit": {
-			const category = meta.currentCategory;
-			if (!category) return null;
-			return creditRangeQuestionToWhatsApp(category, prefix).interactive ?? null;
-		}
+		case "credit":
+			// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA — o WhatsApp
+			// não manda mais a lista de faixas. A pergunta sai como TEXTO (ver
+			// gateTextPrompt), espelhando o gate `identify`. A resposta livre é
+			// capturada pelo analyzer + backstop parseAssetValue.
+			return null;
 		case "timeframe": {
 			const category = meta.currentCategory;
 			if (!category) return null;
@@ -81,6 +82,25 @@ async function gateInteractive(
 			// manda o prompt como texto; captura em identify-capture.ts).
 			return null;
 	}
+}
+
+// FIX-120 (paridade FIX-115): gates CONVERSACIONAIS (o valor do bem, `credit`)
+// saem como TEXTO no WhatsApp — não como componente de seleção — espelhando o
+// tratamento textual do `identify`. Retorna a pergunta (com prefix embutido) ou
+// null pros gates que não são textuais. A resposta livre do usuário é capturada
+// pelo pipeline conversacional (analyzer + backstop parseAssetValue, FIX-115).
+async function gateTextPrompt(
+	gate: Gate,
+	conversationId: string,
+	prefix: string | undefined,
+): Promise<string | null> {
+	if (gate !== "credit") return null;
+	const meta = await reloadMeta(conversationId);
+	const category = meta.currentCategory;
+	if (!category) return null;
+	const question = gateQuestion("credit", category);
+	if (!question) return null;
+	return prefix ? `${prefix}\n\n${question}` : question;
 }
 
 async function consumeEvents(
@@ -248,6 +268,16 @@ async function consumeEvents(
 					await sendInteractiveMessage(from, interactive);
 					lastWasInteractive = true;
 					hasSent = true;
+				} else {
+					// FIX-120: gates conversacionais (credit) saem como TEXTO — a pergunta
+					// viajava no body da lista; sem a lista, mandamos a pergunta em texto.
+					const textPrompt = await gateTextPrompt(ev.gate, conversationId, ev.prefix);
+					if (textPrompt) {
+						if (hasSent) await pauseBeforeNext();
+						await sendTextMessage(from, textPrompt);
+						lastWasInteractive = false;
+						hasSent = true;
+					}
 				}
 				break;
 			}
@@ -351,6 +381,12 @@ export async function fireGate(
 	if (gate === "identify") {
 		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
 		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		return;
+	}
+	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
+	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);
+	if (textPrompt) {
+		await sendTextMessage(from, textPrompt);
 		return;
 	}
 	const interactive = await gateInteractive(gate, conversationId, prefix);

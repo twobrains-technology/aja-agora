@@ -6878,3 +6878,53 @@ describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.t
 		expect(block).toMatch(/comparison_table/);
 	});
 });
+
+// ============================================================================
+// FIX-120 (D5) — WhatsApp valor do bem por CONVERSA (PARIDADE FIX-115)
+// ----------------------------------------------------------------------------
+// Jornada canônica (Passo 2): "valor do bem — só o valor". No web é a agulha
+// simples (FIX-115) → texto livre → parseAssetValue. No WhatsApp deve PERGUNTAR
+// o valor por texto e OUVIR a resposta livre — sem lista de faixas. O adapter
+// mandava uma lista ("Faixas de valor do bem") e gravava o teto da faixa; agora
+// gateInteractive("credit") retorna null e a pergunta sai como TEXTO
+// (gateTextPrompt → gateQuestion("credit")), espelhando o identify. A resposta
+// livre é capturada pelo analyzer + backstop parseAssetValue.
+// Cross-ref: src/lib/whatsapp/adapter.fix-120.test.ts + qualify-config.fix-120.test.ts
+// ============================================================================
+describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", () => {
+	it("contrato: o gate credit é 'conversation' (não botão/lista) nos dois canais", () => {
+		expect(QUALIFY_GATE_INPUT_KIND.credit).toBe("conversation");
+	});
+
+	it("a lista de faixas foi APOSENTADA do formatter (sem 'Faixas de valor do bem')", () => {
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		expect(formatter).not.toMatch(/Faixas de valor do bem/i);
+		// creditRangeQuestionToWhatsApp / resolveCreditReply removidos (código morto)
+		expect(formatter).not.toMatch(/export function creditRangeQuestionToWhatsApp/);
+		expect(formatter).not.toMatch(/export function resolveCreditReply/);
+	});
+
+	it("o adapter emite o gate credit como TEXTO (gateTextPrompt), não lista", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// gateInteractive não chama mais creditRangeQuestionToWhatsApp
+		expect(adapter).not.toMatch(/creditRangeQuestionToWhatsApp/);
+		// há um caminho textual pro gate credit espelhando o identify
+		expect(adapter).toMatch(/gateTextPrompt/);
+		expect(adapter).toMatch(/gateQuestion\("credit"/);
+	});
+
+	it("o roteamento credit_ e handleCredit foram aposentados no dispatcher", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(handlers).not.toMatch(/startsWith\("credit_"\)/);
+		expect(handlers).not.toMatch(/async function handleCredit\b/);
+	});
+
+	it("pipeline conversacional: 'uns 80 mil' vira creditMax=80000 (backstop parseAssetValue)", () => {
+		// a resposta livre que o WhatsApp agora coleta é capturada pelo mesmo
+		// backstop do web (analyze.ts:87-88 usa parseAssetValue).
+		expect(parseAssetValue("uns 80 mil")).toBe(80_000);
+		expect(parseAssetValue("R$ 240.000")).toBe(240_000);
+		const analyze = readSource("src/lib/agent/orchestrator/analyze.ts");
+		expect(analyze).toMatch(/parseAssetValue\(text\)/);
+	});
+});
