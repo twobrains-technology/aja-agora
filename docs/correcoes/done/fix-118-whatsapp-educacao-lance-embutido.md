@@ -1,7 +1,9 @@
 ---
 id: FIX-118
 titulo: "WhatsApp: educação de lance embutido pra no/maybe (paridade FIX-92)"
-status: todo
+status: done
+commit: 98d8d39d
+executado_em: 2026-07-01
 bloco: bloco-whatsapp-funil-paridade
 arquivos: [src/lib/whatsapp/interactive-handlers.ts]
 rodada: 2026-07-01 — auditoria código×jornada (Mapa em docs/jornada/jornada-canonica.md)
