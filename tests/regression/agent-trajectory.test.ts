@@ -66,11 +66,11 @@ import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
+import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 import {
 	type DocumentInboundDeps,
 	handleDocumentInbound,
 } from "@/lib/whatsapp/document-inbound";
-import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -6928,6 +6928,9 @@ describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", ()
 		expect(parseAssetValue("R$ 240.000")).toBe(240_000);
 		const analyze = readSource("src/lib/agent/orchestrator/analyze.ts");
 		expect(analyze).toMatch(/parseAssetValue\(text\)/);
+	});
+});
+
 // FIX-122 (D13) — upload de documento inbound no WhatsApp
 // ----------------------------------------------------------------------------
 // Real (auditoria 2026-07-01): no Passo 6 (KYC) a copy convida "me manda a foto
@@ -6998,6 +7001,10 @@ describe("FIX-122-DOC-INBOUND-WHATSAPP — foto de documento dispara upload (nã
 		expect(src).toContain('case "image"');
 		expect(src).toContain('case "document"');
 		expect(src).toContain("handleDocumentInbound");
+	});
+});
+
+// ============================================================================
 // FIX-124 (D15/D16) — transbordo: broadcast a TODOS + botão "Vou atender" + claim
 // ----------------------------------------------------------------------------
 // O núcleo (broadcast/botão/claim) é código determinístico — a garantia forte mora
