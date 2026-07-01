@@ -164,6 +164,31 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 > - **Copiloto só ao dono / não vaza:** ✅ integration + cassette FIX-124. **PII (CPF) não trafega:** ✅ (dossiê whitelist).
 > - **Golden path E2E (kanban → broadcast → handoff sem dono no DB):** ✅ browser (FIX-171 — spec reescrita do single-select removido; rodada verde no container).
 
+> **Cobertura QA — Frente 3, rodada 2 (E2E de TELA real), 2026-07-01** (`.qa-loop/2026-07-01-0903-ledger-frente3-mesa-tela-real.md`).
+> A rodada acima só tinha 1 cenário com E2E de tela real (golden path); corrida de claim e
+> copiloto eram integration/cassette. Esta rodada fechou o gap — todos os fluxos críticos de
+> tela agora têm spec Playwright rodando de verdade (não só determinístico):
+> - **Golden path (reconfirmação):** ✅ browser, rodada fresca, verde.
+> - **Corrida do "Vou atender" na TELA:** ✅ browser — 2 sessões de atendente reais (2 browser
+>   contexts), clique quase simultâneo, vencedor×perdedor confirmados visualmente, sem erro
+>   (`claim-race.spec.ts`).
+> - **Copiloto passo a passo na TELA + isolamento entre atendentes:** ✅ browser, LLM real sem
+>   mock — 2 casos com manuais de administradora distintos, resposta do copiloto de A nunca
+>   menciona o termo exclusivo do manual de B, e vice-versa (`copilot-isolation.spec.ts`).
+> - **PII (CPF) nunca na tela de WhatsApp/mesa:** ✅ browser, CPF real de conta de teste
+>   canônica — painel controlado mostra o CPF **mascarado**, mesa/WhatsApp nunca mostram nada
+>   (`pii-nao-vaza.spec.ts`).
+> - **Gate de negócio (raia `em_atendimento`):** ✅ raia real e funcional (não é stub) —
+>   confirmado pelos E2E acima; achado tangencial corrigido: 2 painéis mostravam o enum cru em
+>   vez do label (FIX-176).
+> - **5 bugs reais achados no caminho, todos corrigidos com TDD** (FIX-172..176) — destaque:
+>   FIX-175 (cache de atendentes de mesa nunca invalidado no CRUD — atendente desativado
+>   continuava elegível pro broadcast por até 60s, um vazamento de dado de negócio real).
+> - **1 achado tangencial reportado, não corrigido** (fora do escopo desta frente): criar um
+>   atendente via `POST /api/admin/attendants` sequestra a sessão do admin que chama (better-auth
+>   `signUpEmail` + plugin `nextCookies`) — fix correto é adotar o plugin `admin()` do
+>   better-auth, mudança de arquitetura de auth. PENDENTE-KAIRO.
+
 ---
 
 ## Tensões abertas — NÃO é fix cego
