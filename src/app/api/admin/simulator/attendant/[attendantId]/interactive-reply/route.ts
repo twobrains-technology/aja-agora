@@ -1,13 +1,11 @@
 /**
- * Reply endpoint for the dev attendant simulator.
- * Treats the simulator input as if the attendant had replied via WhatsApp,
- * routing through the SAME processTextMessage the real webhook calls (mirrors
- * /api/admin/simulator/whatsapp/[conversationId]/send). Isso garante a mesma
- * precedência de canal do processor.ts (FIX-172): atendente de MESA cai no
- * copiloto (handleMesaCopilot), NUNCA no chat de vendas (handleAgentMessage) —
- * chamar handleAgentMessage direto (como antes) pulava essa checagem.
+ * Interactive-reply endpoint for the dev attendant simulator (FIX-174).
+ * Simula o clique num botão interativo (ex.: "Vou atender" da mesa) vindo do
+ * atendente, roteando pelo MESMO processInteractiveReply que o webhook real chama
+ * — mesma precedência mesa-primeiro (processor.ts), mesmo claim atômico (D16).
+ * Mirrors /api/admin/simulator/whatsapp/[conversationId]/send (kind=interactive).
  *
- * POST /api/admin/simulator/<attendantId>/reply  { text }
+ * POST /api/admin/simulator/attendant/<attendantId>/interactive-reply  { replyId, replyTitle }
  *
  * Dev-only: returns 404 in production.
  */
@@ -18,10 +16,11 @@ import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isSimulatorEnabled } from "@/lib/utils/env";
-import { processTextMessage } from "@/lib/whatsapp/processor";
+import { processInteractiveReply } from "@/lib/whatsapp/processor";
 
-const replySchema = z.object({
-	text: z.string().min(1).max(4096),
+const interactiveReplySchema = z.object({
+	replyId: z.string().min(1),
+	replyTitle: z.string().min(1).max(4096),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ attendantId: string }> }) {
@@ -41,7 +40,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ attenda
 		return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
 	}
 
-	const parsed = replySchema.safeParse(body);
+	const parsed = interactiveReplySchema.safeParse(body);
 	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: "Dados inválidos", details: parsed.error.flatten() },
@@ -58,6 +57,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ attenda
 		return NextResponse.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
-	await processTextMessage(attendant.phone, parsed.data.text);
+	await processInteractiveReply(attendant.phone, parsed.data.replyId, parsed.data.replyTitle);
 	return NextResponse.json({ ok: true });
 }

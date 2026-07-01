@@ -17,8 +17,13 @@ const mocks = vi.hoisted(() => ({
 	copilotReplyMock: vi.fn().mockResolvedValue("Beleza! Passo 1: acesse o portal do parceiro."),
 }));
 
-vi.mock("../api", () => ({
+// FIX-173: mocka via o alias (@/lib/whatsapp/api), não o caminho relativo — desde
+// que handleMesaCopilot passou a notificar via ./notify (que importa a api pelo
+// alias), um vi.mock("../api", ...) não intercepta mais (Vitest não dedupa alias
+// × relativo pro mesmo arquivo neste projeto — módulos diferentes no grafo).
+vi.mock("@/lib/whatsapp/api", () => ({
 	sendTextMessage: mocks.sendTextMock,
+	sendReplyButtons: vi.fn().mockResolvedValue({ messageId: "sim-1" }),
 	sendTypingIndicator: vi.fn().mockResolvedValue(undefined),
 }));
 

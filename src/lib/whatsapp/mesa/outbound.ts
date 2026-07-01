@@ -2,8 +2,8 @@
 // Spec: docs/visao/mesa-de-operacao.md §4-5 + §8 (minimização de PII).
 // Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md §1-2.
 
-import { sendReplyButtons, sendTextMessage } from "@/lib/whatsapp/api";
 import { CLAIM_BUTTON_ID_PREFIX, CLAIM_BUTTON_TITLE } from "./claim";
+import { notifyMesaAttendant, notifyMesaAttendantButtons } from "./notify";
 import { getMesaAttendantList } from "./routing";
 
 // Re-export do contrato do botão "Vou atender" (definido em ./claim) pra ergonomia dos
@@ -117,7 +117,7 @@ export function buildDossierMessage(d: MesaCaseDossier): string {
  */
 export async function sendCaseToAttendant(dossier: MesaCaseDossier) {
 	const text = buildDossierMessage(dossier);
-	return sendTextMessage(dossier.attendantWhatsapp, text);
+	await notifyMesaAttendant(dossier.attendantWhatsapp, text);
 }
 
 // Fonte do dossiê no BROADCAST (sem atendente específico — o caso é o mesmo pra todos).
@@ -144,7 +144,11 @@ export async function broadcastCaseToAttendants(
 	// Corpo do dossiê é atendente-agnóstico (buildDossierMessage não usa os campos do
 	// atendente) — monta uma vez e reusa pra todos.
 	const body = buildDossierMessage(
-		toDossier({ attendant: { nome: "", whatsapp: "" }, lead: source.lead, proposal: source.proposal }),
+		toDossier({
+			attendant: { nome: "", whatsapp: "" },
+			lead: source.lead,
+			proposal: source.proposal,
+		}),
 	);
 	const buttons = [{ id: `${CLAIM_BUTTON_ID_PREFIX}${handoffId}`, title: CLAIM_BUTTON_TITLE }];
 
@@ -152,7 +156,7 @@ export async function broadcastCaseToAttendants(
 	let failed = 0;
 	for (const attendant of attendants) {
 		try {
-			const res = await sendReplyButtons(attendant.whatsapp, body, buttons);
+			const res = await notifyMesaAttendantButtons(attendant.whatsapp, body, buttons);
 			if ("error" in res && res.error) failed += 1;
 			else sent += 1;
 		} catch {

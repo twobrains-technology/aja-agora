@@ -67,11 +67,8 @@ import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
+import { type DocumentInboundDeps, handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
-import {
-	type DocumentInboundDeps,
-	handleDocumentInbound,
-} from "@/lib/whatsapp/document-inbound";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -7168,9 +7165,15 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		const src = readSource("src/lib/whatsapp/mesa/outbound.ts");
 		expect(src).toContain("broadcastCaseToAttendants");
 		expect(src).toContain("getMesaAttendantList"); // fonte = TODOS os atendentes ativos
-		expect(src).toContain("sendReplyButtons"); // botão interativo
+		// FIX-173: o envio de botão passou a ir por notifyMesaAttendantButtons (espelha
+		// pro simulador dev + só pula a Meta real quando o telefone é sintético) — a
+		// primitiva "botão interativo, nunca texto plano" continua garantida, só que
+		// dentro de ./notify agora, não mais chamando sendReplyButtons direto aqui.
+		expect(src).toContain("notifyMesaAttendantButtons"); // botão interativo (via ./notify)
 		expect(src).toContain("CLAIM_BUTTON_TITLE"); // título "Vou atender" (contrato em ./claim)
 		expect(src).toContain("CLAIM_BUTTON_ID_PREFIX"); // id carrega o handoffId pro claim
+		const notify = readSource("src/lib/whatsapp/mesa/notify.ts");
+		expect(notify).toContain("sendReplyButtons"); // fronteira real com a Meta API
 		// O contrato do botão vive em ./claim (fonte única, sem ciclo de import).
 		const claim = readSource("src/lib/whatsapp/mesa/claim.ts");
 		expect(claim).toContain("Vou atender");
