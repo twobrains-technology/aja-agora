@@ -215,7 +215,11 @@ export async function uploadContractDocument(
 	gateway: ProposalGateway = getProposalGateway(),
 ): Promise<{ ok: boolean; fallbackLink?: string }> {
 	const row = await getLatestBeviProposal(conversationId);
-	if (!row) throw new Error("Sem proposta em andamento — finalize a escolha da oferta antes.");
+	// proposalStatus só vira "documentos" dentro de confirmOffer — é o sinal de
+	// "oferta confirmada", independente de trilho (FIX-112: sem isso, dava pra
+	// subir documento com a proposta ainda em "simulacao").
+	if (!row || row.proposalStatus !== "documentos")
+		throw new Error("Sem oferta confirmada — finalize a escolha da oferta antes.");
 	// D2 — Trilho B (self-contract) não produz link (fecha inline, sem
 	// uselink.me): documentsLink fica "" e o gateway ignora/delega ao despacho
 	// desacoplado (bloco-a). O Trilho A sempre tem link truthy aqui (comportamento
