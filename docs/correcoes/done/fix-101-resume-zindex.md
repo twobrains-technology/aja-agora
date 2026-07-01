@@ -1,3 +1,17 @@
+---
+id: FIX-101
+titulo: "Modal de resume coberto pelo chat-theater (z-index) — elevar DialogContent acima do theater (z-90)"
+status: done
+bloco: bloco-h-chat-render
+arquivos:
+  - src/components/chat/theater/resume-prompt.tsx
+  - src/components/chat/theater/resume-prompt.test.tsx
+rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+commit: bae59378
+executado_em: 2026-06-28
+nota_execucao: "Card chegou no bloco já resolvido — fix + teste estrutural + commit test+fix já existiam na branch desde 2026-06-21 (sessão anterior de QA noturno). Verificado nesta rodada: z-[110] presente em resume-prompt.tsx, resume-prompt.test.tsx com a asserção z-index>90, pnpm vitest run verde. Card apenas arquivado, sem novo commit de código."
+---
+
 # Bug — modal de resume fica coberto pelo chat-theater (z-index), usuário de retorno trava
 
 - **Data:** 2026-06-21 · **Achado em:** QA noturno E2E browser (rodada 2026-06-21-0812) · **Superfície:** chat web (fluxo de retorno same-device, FIX-51)

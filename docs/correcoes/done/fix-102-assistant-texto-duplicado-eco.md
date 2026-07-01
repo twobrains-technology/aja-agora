@@ -3,7 +3,7 @@ id: FIX-102
 bloco: bloco-h-chat-render
 slug: assistant-texto-duplicado-eco
 titulo: "Eliminar texto duplicado/eco nas respostas do assistant (degeneração da LLM)"
-status: todo
+status: done
 severidade: baixa
 projeto: aja-agora
 rodada: 2026-06-28 — validação E2E da jornada web (descoberta Trilho B, imóvel)
@@ -13,6 +13,8 @@ mexe_em:
   - src/lib/agent/orchestrator/runner.ts
   - src/components/chat/chat-message.tsx
   - src/lib/agent/personas.ts
+commit: 3f3a14b
+executado_em: 2026-06-28
 ---
 
 ## Palavras do operador
@@ -52,3 +54,16 @@ mexe_em:
 3. **Aceitar** como ruído raro (1 em todo o DB de homologação).
 
 Severidade baixa: cosmético, raro, não quebra o fluxo (descoberta e fechamento funcionaram).
+
+## Resolução (2026-06-28)
+
+Implementada a **mitigação 1** (guarda defensiva determinística), conforme decidido no card.
+`collapseEchoedSegments()` adicionada a `src/lib/agent/orchestrator/runner.ts`, aplicada em
+`fullResponse` logo após o fim do streaming — antes de qualquer uso (persistência do `content`,
+prefixo do próximo gate, `RunAgentResult` retornado). Não mexe em prompt/persona, então não exige
+cassette de Camada 2 (a mitigação é 100% determinística, sem componente de comportamento da LLM).
+
+Regressão: Camada 1 estrutural em
+`src/lib/agent/orchestrator/runner.assistant-texto-duplicado-eco.test.ts` — 6 casos (frase colada
+repetida, parágrafo repetido com quebra de linha, repetição tripla, texto normal intacto, eco de
+quick-reply intacto — fora do escopo por decisão de produto, string vazia).
