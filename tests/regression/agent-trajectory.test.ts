@@ -51,6 +51,7 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
@@ -3554,6 +3555,78 @@ describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exib
 		expect(src).toMatch(/markShown/);
 		// e a precondicao agora passa pela tabela declarativa (nao mais if inline).
 		expect(src).toMatch(/evaluateActionPrecondition/);
+	});
+});
+
+// ============================================================================
+// FIX-182 — narrações de steps diferentes NAO colam numa sopa (turno multi-tool)
+// ----------------------------------------------------------------------------
+// Conv 69a38af1, msg b408ddf4: 4 frases de transição pré-tool coladas sem
+// separador ("...na sua faixa:Deixa eu buscar...:Preciso...:Mirella, tive um
+// problema..."). Cada narração é um BLOCO de texto de um step diferente do turno
+// multi-tool (id distinto no fullStream). textBlockSeparator insere \n\n entre
+// blocos diferentes; deltas do mesmo bloco colam (streaming). Irmão do FIX-102.
+// ============================================================================
+
+describe("FIX-182 — narracoes de steps diferentes nao colam (turno multi-tool)", () => {
+	it("cassette: fullStream emite blocos com ids distintos por step; textBlockSeparator separa (fim do bug da sopa)", async () => {
+		let call = 0;
+		const model = new MockLanguageModelV3({
+			doStream: async () => {
+				call++;
+				if (call === 1) {
+					return {
+						stream: simulateReadableStream({
+							// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+							chunks: [
+								{ type: "stream-start", warnings: [] },
+								{ type: "text-start", id: "s0" },
+								{ type: "text-delta", id: "s0", delta: "Bora ver o que a gente consegue na sua faixa:" },
+								{ type: "text-end", id: "s0" },
+								toolCallChunk("tc-1", "noop", {}),
+								FINISH_TOOL_CALLS,
+							] as any[],
+						}),
+					};
+				}
+				return {
+					stream: simulateReadableStream({
+						// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							{ type: "text-start", id: "s1" },
+							{ type: "text-delta", id: "s1", delta: "Deixa eu buscar as opcoes reais na sua faixa." },
+							{ type: "text-end", id: "s1" },
+							FINISH_STOP,
+						] as any[],
+					}),
+				};
+			},
+		});
+		const result = streamText({
+			model,
+			prompt: "quero ver todos",
+			tools: { noop: tool({ inputSchema: z.object({}), execute: async () => "ok" }) },
+			stopWhen: stepCountIs(5),
+		});
+
+		// Reproduz o loop do runner: acumula deltas, separando blocos por id.
+		let full = "";
+		let lastId: string | undefined;
+		for await (const part of result.fullStream) {
+			if (part.type === "text-delta") {
+				full += textBlockSeparator(lastId, part.id, full);
+				full += part.text;
+				lastId = part.id;
+			}
+		}
+
+		// PROVA: a SDK emite ids distintos por step (s0/s1) e o separador entra —
+		// as duas narracoes ficam em paragrafos, sem a sopa "faixa:Deixa".
+		expect(full).not.toContain("faixa:Deixa");
+		expect(full.split("\n\n")).toHaveLength(2);
+		expect(full).toContain("Bora ver o que a gente consegue na sua faixa:");
+		expect(full).toContain("Deixa eu buscar as opcoes reais na sua faixa.");
 	});
 });
 
