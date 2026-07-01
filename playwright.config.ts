@@ -2,6 +2,11 @@ import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || "http://aja-improving-web-conversation.orb.local";
 
+// Container Alpine do workspace não tem os browsers bundled do Playwright
+// (musl libc). PW_EXECUTABLE_PATH aponta pro chromium nativo (apk add
+// chromium) — gated/inerte no host/CI, onde a var não existe.
+const executablePath = process.env.PW_EXECUTABLE_PATH;
+
 export default defineConfig({
   testDir: "./tests/e2e/specs",
   fullyParallel: false, // Sequential for clean DB state between tests
@@ -17,10 +22,11 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    // Video exige ffmpeg — ausente no container Alpine (musl). Gateado: off quando rodando
-    // com o chromium do sistema (container); "retain-on-failure" no host/CI. Screenshot +
-    // trace (que não precisam de ffmpeg) seguem como evidência.
-    video: process.env.PW_EXECUTABLE_PATH ? "off" : "retain-on-failure",
+    // Alpine não tem ffmpeg — vídeo quebra a gravação, não a execução do teste.
+    video: executablePath ? "off" : "retain-on-failure",
+    ...(executablePath
+      ? { launchOptions: { executablePath, args: ["--no-sandbox"] } }
+      : {}),
   },
 
   webServer: undefined, // App já tá rodando no container local
@@ -28,20 +34,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: {
-        ...devices["Desktop Chrome"],
-        // Container Alpine (musl) não roda o chromium glibc que o Playwright baixa.
-        // Quando PW_EXECUTABLE_PATH aponta pro chromium do sistema (/usr/bin/chromium-browser),
-        // usa-o + --no-sandbox (chromium como root). Inerte no host/CI (env vazia → browser padrão).
-        ...(process.env.PW_EXECUTABLE_PATH
-          ? {
-              launchOptions: {
-                executablePath: process.env.PW_EXECUTABLE_PATH,
-                args: ["--no-sandbox"],
-              },
-            }
-          : {}),
-      },
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
 });

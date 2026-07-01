@@ -1,14 +1,42 @@
 ---
 id: FIX-98
 titulo: "E2E lead-capture furados + flaky; hardening /api/leads (500→400 em UUID inválido) + helper createConversation"
-status: todo
+status: done
 bloco: bloco-g-infra-teste
 arquivos:
   - tests/e2e/specs/lead-capture-web/ec-names-unicode.spec.ts
   - tests/e2e/utils/db.ts
   - src/app/api/leads/route.ts
 rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+commit: b3954bca
+executado_em: 2026-06-28
 ---
+
+## Resolução (2026-06-28)
+
+- **Hardening `/api/leads` (500→400 em UUID malformado): JÁ estava feito**
+  em commit anterior `15ce748` (`test+fix: /api/leads valida formato UUID do
+  conversationId`), com teste Camada 1 próprio
+  (`src/app/api/leads/route.uuid-validation.test.ts`). Nada a fazer aqui.
+- **Helper `createConversation()`: já existia** em `tests/e2e/utils/db.ts`
+  (linha 56) — não estava sendo usado pelo spec furado.
+- **Spec furado corrigido**: `ec-names-unicode.spec.ts` agora chama
+  `createConversation(conversationId)` antes do `POST /api/leads` (a causa
+  raiz documentada no card — 404 por conversation inexistente). Rodei o spec
+  ANTES da correção (5/5 falharam com o 404 esperado) e DEPOIS (5/5 verdes),
+  no container Playwright do workspace.
+- **`waitForTimeout`/`setTimeout` fixo removido**: adicionado
+  `waitForLead(conversationId)` (polling, 100ms/5s timeout) em `db.ts`,
+  substituindo o `await new Promise((r) => setTimeout(r, 500))` do spec.
+- **Infra de execução**: `playwright.config.ts` ganhou suporte a
+  `PW_EXECUTABLE_PATH`/vídeo condicional (gated, inerte fora do container
+  Alpine) — necessário pra rodar o Playwright de verdade no container do
+  workspace (chromium nativo via `apk add`, sem os browsers bundled que
+  exigem glibc).
+- Escopo LLM-dependente (`p0-01-name-capture`, `p0-02-whatsapp-optin`) e
+  isolamento de specs em projeto separado — **fora do escopo declarado**
+  deste fix (arquivos listados no frontmatter não os incluem); ficam como
+  dívida residual, não bloqueiam este item.
 
 # Bug (dívida de teste) — Suíte E2E de lead-capture/resume com testes furados + flaky
 

@@ -28,7 +28,7 @@
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
 		"test:unit": "vitest run --reporter=dot --silent --bail=10 src/ tests/regression --exclude='src/**/route*.test.ts' --exclude='src/**/*.integration.test.ts' --exclude='src/**/builder*.test.ts'",
-		"test:integration": "vitest run --reporter=verbose route. integration.test builder.",
+		"test:integration": "vitest run --reporter=verbose --no-file-parallelism route. integration.test builder.",
 		"test:e2e": "playwright test",
 		"test:eval": "vitest run --config vitest.eval.config.ts",
 		"test:eval:quick": "vitest run --config vitest.eval.config.ts -t 'EVAL-SAVE-CONTACT-NAME-CIRURGICO|EVAL-ASSISTANT-LESS-FORMAL'",

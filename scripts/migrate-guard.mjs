@@ -16,6 +16,14 @@
 // (1º boot/tabela ausente/DB down), cai no modo conservador: escaneia TODAS —
 // sinal > silêncio. (Fix 2026-06-13: antes escaneava sempre todas.)
 //
+// FIX-100 (2026-06-26): o COUNT sozinho mente se migrations foram aplicadas
+// via `drizzle-kit push`/dump sem registrar no journal (drift) — o guard
+// tentaria reaplicar migrations cujas tabelas JÁ existem, quebrando com
+// "relation already exists" antes de chegar nas pendentes de verdade. Antes de
+// aplicar, cruza o `CREATE TABLE` de cada pendente com `information_schema.
+// tables` do schema real (detectDrift) e ABORTA com diagnóstico claro (sempre,
+// dev e prod — não é risco a ponderar, é uma falha garantida do migrate()).
+//
 // Uso (Drizzle):
 //   1. Copiar este arquivo pra `scripts/migrate-guard.mjs` no repo.
 //   2. package.json: "db:migrate:runtime": "node scripts/migrate-guard.mjs"
@@ -73,6 +81,30 @@ export function selectPendingTags(journalEntries, appliedCount) {
 	return ordered.slice(appliedCount);
 }
 
+/**
+ * FIX-100: `selectPendingTags` confia só no COUNT de __drizzle_migrations —
+ * se migrations já foram aplicadas via `drizzle-kit push`/dump SEM registrar
+ * no journal (drift), uma migration "pendente" pelo count pode já ter sua
+ * tabela criada no schema real. Reaplicá-la quebraria com "relation already
+ * exists" — e pior, ANTES de chegar em migrations pendentes de verdade mais
+ * à frente (aja-pg-develop, 2026-06-26: 0022-0026 já existiam, bloqueando a
+ * 0027 real). Detecta o `CREATE TABLE [IF NOT EXISTS]` de cada migration
+ * pendente e cruza com as tabelas que JÁ existem no schema.
+ */
+export function detectDrift(pendingFiles, existingTables) {
+	const existing = new Set(existingTables.map((t) => t.toLowerCase()));
+	const findings = [];
+	for (const { file, sql } of pendingFiles) {
+		const clean = stripSqlComments(sql);
+		const matches = clean.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/gi);
+		for (const m of matches) {
+			const table = m[1].toLowerCase();
+			if (existing.has(table)) findings.push({ file, table });
+		}
+	}
+	return findings;
+}
+
 // ---------- I/O (não-puro; usado só no main) ----------
 
 function readJournal(folder) {
@@ -89,6 +121,24 @@ async function getAppliedCount(databaseUrl) {
 	try {
 		const r = await pool.query('SELECT count(*)::int AS n FROM drizzle."__drizzle_migrations"');
 		return r.rows?.[0]?.n ?? null;
+	} catch {
+		return null;
+	} finally {
+		await pool.end().catch(() => {});
+	}
+}
+
+/** Nomes de tabelas do schema `public`. `null` em QUALQUER erro (DB down,
+ * schema ausente) → o chamador pula o check de drift (fallback: não bloqueia
+ * o boot por uma consulta auxiliar falhar — o count já cai no conservador). */
+async function getExistingTables(databaseUrl) {
+	const { Pool } = await import("pg");
+	const pool = new Pool({ connectionString: databaseUrl });
+	try {
+		const r = await pool.query(
+			"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+		);
+		return r.rows.map((row) => row.table_name);
 	} catch {
 		return null;
 	} finally {
@@ -164,6 +214,36 @@ async function main() {
 	}
 	const pendingTags = selectPendingTags(journal, appliedCount);
 	const pendingFiles = loadPendingFiles(MIGRATIONS_FOLDER, pendingTags);
+
+	// FIX-100: antes de tentar aplicar, verifica se alguma "pendente" (pelo
+	// count) já tem sua tabela no schema real — sinal de drift (push/dump sem
+	// registrar no journal). Reaplicar quebraria com "relation already exists"
+	// no meio da fila, escondendo a causa raiz atrás de um erro genérico do
+	// Postgres. Aborta SEMPRE (dev e prod) — não é um risco a ponderar, é uma
+	// falha garantida do migrate() a seguir.
+	const existingTables = await getExistingTables(DATABASE_URL);
+	if (existingTables != null) {
+		const driftFindings = detectDrift(pendingFiles, existingTables);
+		if (driftFindings.length > 0) {
+			console.error("");
+			console.error("✗ [migrate-guard] DRIFT DETECTADO — __drizzle_migrations desatualizado");
+			console.error("─".repeat(60));
+			for (const f of driftFindings) {
+				console.error(
+					`  • ${f.file}: tabela "${f.table}" JÁ EXISTE no schema, mas a migration está marcada PENDENTE`,
+				);
+			}
+			console.error("─".repeat(60));
+			console.error("");
+			console.error("  Isso indica migrations aplicadas via `drizzle-kit push`/dump SEM");
+			console.error("  registrar em drizzle.__drizzle_migrations. Reaplicar quebraria com");
+			console.error('  "relation already exists". Reconcilie __drizzle_migrations ANTES de');
+			console.error("  redeployar (NUNCA DDL solto na mão — vide CLAUDE.md § Migrations).");
+			console.error("");
+			process.exit(1);
+		}
+	}
+
 	const findings = detect(pendingFiles);
 
 	if (findings.length > 0) {
