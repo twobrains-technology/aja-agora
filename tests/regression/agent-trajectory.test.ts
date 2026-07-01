@@ -50,6 +50,7 @@ import {
 	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
@@ -62,6 +63,7 @@ import {
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { emptyShownGroups } from "@/lib/agent/tools/shown-groups";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
@@ -1717,12 +1719,20 @@ describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name 
 	it("builder.ts repassa opts.toolChoice pro construtor do ToolLoopAgent", () => {
 		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
 		expect(
-			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*,/.test(builderSrc),
+			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*}\s*:\s*{}/.test(builderSrc),
 			"builder.ts precisa fazer spread condicional `...(opts.toolChoice ? " +
-				"{ toolChoice: opts.toolChoice, ... } : {})` no settings do new ToolLoopAgent. " +
-				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic. (BUG-MUTE-" +
-				"LOOP-NAME-CAPTURE, 2026-07-01: o spread agora também carrega `prepareStep` — " +
-				"ver describe dedicado — daí a vírgula em vez do fechamento imediato do objeto.)",
+				"{ toolChoice: opts.toolChoice } : {})` no settings do new ToolLoopAgent. " +
+				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic. (FIX-180, " +
+				"2026-07-01: o prepareStep foi extraído pra uma const e virou spread SEPARADO " +
+				"`...(prepareStep ? { prepareStep } : {})` — porque agora compõe o belt " +
+				"activeTools da fase COM a reversão do toolChoice forçado; ver o describe " +
+				"BUG-MUTE-LOOP-NAME-CAPTURE em builder.force-toolchoice-loop.test.ts.)",
+		).toBe(true);
+		// FIX-180: o prepareStep segue ligado (belt activeTools + reversão do forcing).
+		expect(
+			/\.\.\.\(prepareStep\s*\?\s*{\s*prepareStep\s*}\s*:\s*{}\)/.test(builderSrc),
+			"builder.ts precisa fazer spread do prepareStep (const que compõe activeTools da " +
+				"fase + reversão do toolChoice forçado).",
 		).toBe(true);
 	});
 
@@ -3468,6 +3478,82 @@ describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/FIX-72/);
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/auto-180k/);
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/get_group_details/);
+	});
+});
+
+// ============================================================================
+// FIX-180 — allowlist estado→ação→precondição (a CURA da doença da Mirella)
+// ----------------------------------------------------------------------------
+// Conv 69a38af1: após o comparativo, Mirella disse "quero ver todos" e o agente
+// pulou pra simulate_quota → get_group_details → present_decision_prompt sobre
+// "Embracon" — grupo/administradora que NUNCA apareceu em tela. A cura formaliza
+// a precondição de DADO (FIX-179, antes ad-hoc) numa tabela declarativa
+// (action-policy.ts): tool de risco só age sobre grupo/administradora exibido.
+// Leis 2 e 3 de ~/.claude/reference/arquitetura-agentes-ia.md.
+// ============================================================================
+
+describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exibido (allowlist estado→acao→precondicao)", () => {
+	const NAO_EXIBIDO =
+		/nao foi exibid|não foi exibid|apresente.*antes|reapresent|nao foi apresentad|não foi apresentad/i;
+
+	it("cassette: stream do bug — simulate_quota + get_group_details + present_decision_prompt sobre 'Embracon' nao-exibido, TODAS bloqueadas", async () => {
+		// Reproducao fiel do turno: "quero ver todos" -> o agente free-rodou 3
+		// acoes de risco sobre um grupo/plano que so ELE viu (ou confabulou).
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Bora ver o que a gente consegue na sua faixa:"),
+			toolCallChunk("tc-sim", "simulate_quota", { groupId: "embracon-auto-106k", creditValue: 106000 }),
+			toolCallChunk("tc-det", "get_group_details", { groupId: "embracon-auto-106k" }),
+			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "Embracon" }),
+			FINISH_TOOL_CALLS,
+		]);
+
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("simulate_quota");
+		expect(names).toContain("get_group_details");
+		expect(names).toContain("present_decision_prompt");
+
+		// A CURA: nada exibido nesta conversa -> a allowlist declarativa bloqueia
+		// CADA acao com diretiva de re-ancoragem. O agente NAO consegue decidir/
+		// simular/detalhar sobre grupo nao-exibido. Deterministico, sem DB.
+		const shown = emptyShownGroups();
+		for (const tc of toolCalls) {
+			const verdict = evaluateActionPrecondition(tc.toolName, {
+				shown,
+				args: tc.input as Record<string, unknown>,
+			});
+			expect(verdict.allow, `${tc.toolName} deveria ser BLOQUEADA (grupo nao-exibido)`).toBe(false);
+			if (!verdict.allow) expect(verdict.directive).toMatch(NAO_EXIBIDO);
+		}
+	});
+
+	it("trajetoria correta: com o grupo/administradora JA exibido, as 3 acoes sao permitidas", () => {
+		const shown = emptyShownGroups();
+		shown.ids.add("6a0ca9c73e68cce9b61d30fd");
+		shown.administradoras.add("Itaú");
+		expect(
+			evaluateActionPrecondition("simulate_quota", {
+				shown,
+				args: { groupId: "6a0ca9c73e68cce9b61d30fd", creditValue: 106000 },
+			}).allow,
+		).toBe(true);
+		expect(
+			evaluateActionPrecondition("get_group_details", {
+				shown,
+				args: { groupId: "6a0ca9c73e68cce9b61d30fd" },
+			}).allow,
+		).toBe(true);
+		expect(
+			evaluateActionPrecondition("present_decision_prompt", { shown, args: { administradora: "Itaú" } }).allow,
+		).toBe(true);
+	});
+
+	it("acoplamento: FIX-179 (shown-groups) permanece a fonte do 'exibido' — nao regride", () => {
+		const src = readSource("src/lib/agent/tools/ai-sdk.ts");
+		expect(src).toMatch(/getShownGroups/);
+		expect(src).toMatch(/markShown/);
+		// e a precondicao agora passa pela tabela declarativa (nao mais if inline).
+		expect(src).toMatch(/evaluateActionPrecondition/);
 	});
 });
 
