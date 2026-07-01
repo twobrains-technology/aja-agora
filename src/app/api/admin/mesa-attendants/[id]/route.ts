@@ -4,6 +4,7 @@ import { mesaAttendants, mesaHandoffs } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isUniqueViolation } from "@/lib/mesa/pg-error";
 import { updateMesaAttendantSchema } from "@/lib/validations/mesa";
+import { invalidateMesaAttendantCache } from "@/lib/whatsapp/mesa/routing";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { error } = await requireRole("admin");
@@ -35,6 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		if (!row) {
 			return Response.json({ error: "Atendente de mesa não encontrado" }, { status: 404 });
 		}
+		invalidateMesaAttendantCache();
 		return Response.json(row);
 	} catch (err) {
 		if (isUniqueViolation(err)) {
@@ -80,5 +82,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 		return Response.json({ error: "Atendente de mesa não encontrado" }, { status: 404 });
 	}
 
+	invalidateMesaAttendantCache();
 	return Response.json({ id: deleted.id, deleted: true });
 }

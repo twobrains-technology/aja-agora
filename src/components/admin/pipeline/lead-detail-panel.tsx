@@ -27,6 +27,7 @@ const STAGE_LABELS: Record<string, string> = {
 	em_negociacao: "Em Negociação",
 	proposta_enviada: "Proposta Enviada",
 	na_administradora: "Na Administradora",
+	em_atendimento: "Em Atendimento",
 	aguardando_pagamento: "Aguardando Pagamento",
 	fechado_ganho: "Fechado Ganho",
 	perdido: "Perdido",

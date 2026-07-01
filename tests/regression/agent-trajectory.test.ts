@@ -37,9 +37,10 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createUIMessageStream, streamText } from "ai";
+import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -66,11 +67,8 @@ import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
+import { type DocumentInboundDeps, handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
-import {
-	type DocumentInboundDeps,
-	handleDocumentInbound,
-} from "@/lib/whatsapp/document-inbound";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -1719,10 +1717,12 @@ describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name 
 	it("builder.ts repassa opts.toolChoice pro construtor do ToolLoopAgent", () => {
 		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
 		expect(
-			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*}/.test(builderSrc),
+			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*,/.test(builderSrc),
 			"builder.ts precisa fazer spread condicional `...(opts.toolChoice ? " +
-				"{ toolChoice: opts.toolChoice } : {})` no settings do new ToolLoopAgent. " +
-				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic.",
+				"{ toolChoice: opts.toolChoice, ... } : {})` no settings do new ToolLoopAgent. " +
+				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic. (BUG-MUTE-" +
+				"LOOP-NAME-CAPTURE, 2026-07-01: o spread agora também carrega `prepareStep` — " +
+				"ver describe dedicado — daí a vírgula em vez do fechamento imediato do objeto.)",
 		).toBe(true);
 	});
 
@@ -1740,6 +1740,152 @@ describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name 
 		expect(toolCalls).toHaveLength(1);
 		expect(toolCalls[0]?.toolName).toBe("save_contact_name");
 		expect(toolCalls[0]?.input).toMatchObject({ name: "Paulo" });
+	});
+});
+
+// ============================================================================
+// BUG-MUTE-LOOP-NAME-CAPTURE — achado cross-frente 2026-07-01
+// ----------------------------------------------------------------------------
+// Real (WhatsApp, simulador /admin/simulator/whatsapp): agente pergunta "como
+// posso te chamar?" -> usuario responde "Kairo" -> agente fica MUDO por 1
+// turno inteiro. Turn-trace real: toolsCalled=[save_contact_name x10],
+// toolCount:10, textChars:0.
+//
+// Causa raiz: builder.ts passava opts.toolChoice (forcado pelo orchestrator
+// via detect-name-turn.ts) como setting ESTATICO do ToolLoopAgent, sem
+// prepareStep. A AI SDK reaplica o MESMO toolChoice em TODOS os steps do
+// loop (stopWhen: stepCountIs(10)) — o Anthropic fica OBRIGADO a chamar
+// save_contact_name em CADA step, nunca podendo produzir texto (tool_choice
+// forcado nunca permite finish_reason=stop). O loop esgota o teto mudo.
+//
+// Este cassette reproduz o padrao end-to-end via streamText+tools (nao
+// builder.ts direto, que usa o provider Anthropic real) — mesmo shape do
+// bug: toolChoice estatico + stopWhen stepCountIs(10) sem prepareStep vs.
+// COM prepareStep revertendo pra 'auto' apos o 1o step.
+// ============================================================================
+
+describe("BUG-MUTE-LOOP-NAME-CAPTURE — toolChoice forcado sem prepareStep trava o agent mudo", () => {
+	function saveContactNameTool() {
+		return tool({
+			inputSchema: z.object({ name: z.string() }),
+			execute: async () => "[Nome salvo]",
+		});
+	}
+
+	it("SEM prepareStep: toolChoice estatico se repete em TODO step -> 10 tool-calls, ZERO texto (bug real)", async () => {
+		let calls = 0;
+		const model = new MockLanguageModelV3({
+			doStream: async () => {
+				calls++;
+				return {
+					stream: simulateReadableStream({
+						// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							toolCallChunk(`tc-${calls}`, "save_contact_name", { name: "Kairo" }),
+							FINISH_TOOL_CALLS,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const result = streamText({
+			model,
+			prompt: "Kairo",
+			tools: { save_contact_name: saveContactNameTool() },
+			toolChoice: { type: "tool", toolName: "save_contact_name" },
+			stopWhen: stepCountIs(10),
+		});
+
+		let acc = "";
+		for await (const chunk of result.textStream) acc += chunk;
+		const steps = await result.steps;
+
+		// Reproducao FIEL do turn-trace real: toolCount=10, textChars=0.
+		expect(acc, "textChars deveria ser 0 — reproduz o agente mudo").toBe("");
+		expect(steps.length, "esgota os 10 steps do stopWhen sem nunca parar por texto").toBe(10);
+		expect(calls).toBe(10);
+
+		// PROVA da causa raiz: o modelo recebeu toolChoice FORCADO em TODOS os
+		// 10 steps (nao so no 1o) — e essa persistencia que impede o modelo de
+		// responder com texto e trava o loop mudo ate o teto.
+		expect(
+			model.doStreamCalls.every((c) => c.toolChoice?.type === "tool"),
+			"toolChoice deveria estar forcado em todo step nesse cenario SEM prepareStep",
+		).toBe(true);
+	});
+
+	it("COM prepareStep (fix builder.ts): toolChoice forca so no step 0, reverte a 'auto' -> modelo fala no step 2", async () => {
+		let calls = 0;
+		const model = new MockLanguageModelV3({
+			doStream: async ({ toolChoice }) => {
+				calls++;
+				if (toolChoice?.type === "tool") {
+					return {
+						stream: simulateReadableStream({
+							// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+							chunks: [
+								{ type: "stream-start", warnings: [] },
+								toolCallChunk(`tc-${calls}`, "save_contact_name", { name: "Kairo" }),
+								FINISH_TOOL_CALLS,
+							] as any[],
+						}),
+					};
+				}
+				// toolChoice revertido pra 'auto' — modelo consegue responder com
+				// texto (comportamento saudavel: persiste o nome E fala em seguida).
+				return {
+					stream: simulateReadableStream({
+						// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							...textChunks("t1", "Prazer, Kairo! O que voce quer conquistar?"),
+							FINISH_STOP,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const result = streamText({
+			model,
+			prompt: "Kairo",
+			tools: { save_contact_name: saveContactNameTool() },
+			toolChoice: { type: "tool", toolName: "save_contact_name" },
+			stopWhen: stepCountIs(10),
+			// IMPORTANTE: 'auto' é STRING aqui (ToolChoice<T> de alto nível), não
+			// { type: 'auto' } — um objeto cai no branch errado da conversão
+			// interna da SDK (prepareToolsAndToolChoice) e vira
+			// { type: 'tool', toolName: undefined }, reproduzindo o MESMO bug mudo.
+			prepareStep: ({ stepNumber }) => (stepNumber > 0 ? { toolChoice: "auto" as const } : {}),
+		});
+
+		let acc = "";
+		for await (const chunk of result.textStream) acc += chunk;
+		const steps = await result.steps;
+
+		expect(acc, "com o fix, o agent DEVE produzir texto (nao fica mudo)").toContain(
+			"Prazer, Kairo",
+		);
+		expect(steps.length, "1 step forcado (tool) + 1 step falado -> sai do loop cedo").toBe(2);
+		expect(calls).toBe(2);
+	});
+
+	it("builder.ts: prepareStep so existe quando opts.toolChoice e passado (fix nao regride o caminho sem forcing)", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(
+			/prepareStep/.test(builderSrc),
+			"builder.ts precisa declarar `prepareStep` no settings do ToolLoopAgent quando " +
+				"opts.toolChoice e passado — sem isso, o toolChoice forcado fica estatico em " +
+				"TODOS os steps do loop e trava o agent mudo (bug real: 10x save_contact_name, " +
+				"textChars:0, WhatsApp, 2026-07-01).",
+		).toBe(true);
+		expect(
+			/stepNumber\s*>\s*0/.test(builderSrc),
+			"prepareStep precisa checar stepNumber > 0 pra reverter o toolChoice forcado " +
+				"pra 'auto' apos o 1o step (o forcing so faz sentido pro tool-call inicial).",
+		).toBe(true);
 	});
 });
 
@@ -7027,9 +7173,15 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		const src = readSource("src/lib/whatsapp/mesa/outbound.ts");
 		expect(src).toContain("broadcastCaseToAttendants");
 		expect(src).toContain("getMesaAttendantList"); // fonte = TODOS os atendentes ativos
-		expect(src).toContain("sendReplyButtons"); // botão interativo
+		// FIX-173: o envio de botão passou a ir por notifyMesaAttendantButtons (espelha
+		// pro simulador dev + só pula a Meta real quando o telefone é sintético) — a
+		// primitiva "botão interativo, nunca texto plano" continua garantida, só que
+		// dentro de ./notify agora, não mais chamando sendReplyButtons direto aqui.
+		expect(src).toContain("notifyMesaAttendantButtons"); // botão interativo (via ./notify)
 		expect(src).toContain("CLAIM_BUTTON_TITLE"); // título "Vou atender" (contrato em ./claim)
 		expect(src).toContain("CLAIM_BUTTON_ID_PREFIX"); // id carrega o handoffId pro claim
+		const notify = readSource("src/lib/whatsapp/mesa/notify.ts");
+		expect(notify).toContain("sendReplyButtons"); // fronteira real com a Meta API
 		// O contrato do botão vive em ./claim (fonte única, sem ciclo de import).
 		const claim = readSource("src/lib/whatsapp/mesa/claim.ts");
 		expect(claim).toContain("Vou atender");

@@ -93,3 +93,18 @@ describe("FIX-50 — ContactDetailPanel hierarquiza o presente", () => {
 		expect(superada.textContent).not.toContain("Atual");
 	});
 });
+
+describe("QA autônomo Frente 3 (2026-07-01) — FIX-176: raia em_atendimento sem label legível", () => {
+	it("badge do estágio mostra 'Em Atendimento', nunca o enum cru 'em_atendimento'", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ ...DETAIL, currentStage: "em_atendimento" }),
+			}),
+		);
+		render(<ContactDetailPanel contactId="ct1" open onClose={() => {}} />);
+		await waitFor(() => expect(screen.getByText("Em Atendimento")).toBeDefined());
+		expect(screen.queryByText("em_atendimento")).toBeNull();
+	});
+});

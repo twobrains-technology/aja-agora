@@ -9,6 +9,7 @@ projeto: aja-agora
 rodada: 2026-06-28 — validação E2E da jornada web (descoberta Trilho B, imóvel)
 evidencia:
   - "DB homolog: conversa c89bec1f-4f6c-4284-acf0-248f26b8e9f3, msg d0bab508-835f-4b47-b22b-73dde7062d84"
+  - "2ª ocorrência (QA autônomo Frente 1, E2E de tela real): conversa 5d8ab51f-6a06-46fd-8ac5-44c48cc5d792 — \"Boa, então já sabe como funciona!Boa, então já sabe como funciona!\" (mesmo shape exato: zero separador)"
 mexe_em:
   - src/lib/agent/orchestrator/runner.ts
   - src/components/chat/chat-message.tsx
@@ -67,3 +68,25 @@ Regressão: Camada 1 estrutural em
 `src/lib/agent/orchestrator/runner.assistant-texto-duplicado-eco.test.ts` — 6 casos (frase colada
 repetida, parágrafo repetido com quebra de linha, repetição tripla, texto normal intacto, eco de
 quick-reply intacto — fora do escopo por decisão de produto, string vazia).
+
+### 2ª ocorrência confirmada ao vivo (2026-07-01, QA autônomo Frente 1 — E2E de tela real)
+
+Reproduzido AO VIVO uma 2ª vez (mesmo shape exato, gate `experience=returning`, zero separador)
+durante a spec E2E do golden path web — a 2ª ocorrência descarta de vez a hipótese "acidente
+isolado" sem virar sistemático (ainda raro, mas recorrente o suficiente pra confirmar que a guarda
+já implementada (`collapseEchoedSegments`) segue necessária). Nenhuma implementação nova exigida
+— a guarda já cobre esse shape exato (ver testes acima).
+
+### ⚠️ Achado da mesma rodada — padrão IRMÃO, fora do escopo desta guarda
+
+Na MESMA spec E2E (turno de search-summary, resposta ao directive interno
+`buildSearchSummaryDirective`), observado: `"Boa, vou ver o que tem na sua faixa:Encontrei
+3 boas opções na sua faixa, olha só:Atenção: a simulação foi ajustada — o..."` — **3 frases
+DIFERENTES** coladas sem separador (não é auto-duplicação X+X, é ausência de quebra entre
+sentenças distintas). `collapseEchoedSegments` **não pega** esse shape de propósito (só colapsa
+segmentos IDÊNTICOS consecutivos, nunca frases diferentes — evita falso-positivo). Mesma família
+de degeneração (LLM às vezes falha em separar sentenças), sintoma diferente — precisaria de
+heurística mais ampla (ex.: detectar `[.!?:]` seguido de maiúscula sem espaço/quebra) e mais RISCO
+de falso-positivo (nomes próprios, siglas). **Não implementado** (fora do escopo imediato,
+cosmético, exigiria design cuidadoso). Registrado aqui pra próxima sessão decidir: ampliar a
+guarda ou ir pra opção 2 (reforço de prompt, ver acima).

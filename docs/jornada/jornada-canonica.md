@@ -136,16 +136,16 @@ chegar na fase de atendimento, o caso é **oferecido a todos os atendentes** e q
 atender" assume**; o atendente entra manualmente na administradora **guiado pelo copiloto**.
 
 ### Kanban (raias)
-`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado (`db/schema.ts:38-48`; ⚠️ **não existe raia "em atendimento"** citada no transbordo-d).
+`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → em_atendimento → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado (`lib/admin/lead-stages.ts:8-18`). A raia `em_atendimento` (FIX-126) existe no enum, tem label/cor no Kanban (`kanban-column.tsx`) e é alcançada de verdade via claim — validado por E2E de tela em 2026-07-01 (ver Cobertura QA).
 
-### Transbordo auto-broadcast + claim (FEATURE NOVA)
+### Transbordo auto-broadcast + claim (FECHADO — FIX-123..126, D14-D17)
 | Cenário de aceitação | Fase |
 |---|---|
-| Ao o lead **entrar na fase**, o sistema **transborda automaticamente** (sem clique) | 🔴 hoje **manual** (botão, `transbordo/route.ts:6`). A entrada automática na raia **já existe** (worker FIX-44) mas está **desacoplada** do transbordo. Ver D14. |
-| O caso é **enviado a TODOS os atendentes** (broadcast) com botão **"Vou atender"** | 🔴 feature nova — `getMesaAttendantList` já existe (`routing.ts:32`), mas o dialog é single-select e o outbound manda pra 1 (`outbound.ts:112`). Padrão broadcast+claim **já implementado em `proxy.ts`** (chat de vendas) — reaproveitar. Ver D15. |
-| O **primeiro que clica "Vou atender" ASSUME** (claim/lock); os demais "já foi assumido" | 🔴 feature nova — `mesa_attendant_id` é **NOT NULL** (`schema.ts:671-673`), sem estado "sem dono" pra competir. Lock atômico (`UPDATE ... WHERE dono IS NULL`) já existe no `proxy.ts`. Ver D16. |
-| Ao assumir, o lead **muda de fase** | 🔴 feature nova — `createMesaHandoff` **não move a raia** (`handoff.ts:105-147`); a fase "em atendimento" **não existe no enum**. Ver D17. |
-| Dados sensíveis (CPF, documentos) **não** trafegam no WhatsApp — ficam no painel | 🟢 |
+| Ao o lead **entrar na fase**, o sistema **transborda automaticamente** (sem clique) | 🟢 worker FIX-44 dispara o transbordo automático em `na_administradora` (integration + isolamento de falha, FIX-170). Botão manual (`transbordo/route.ts`) continua disponível como caminho alternativo (idempotente). |
+| O caso é **enviado a TODOS os atendentes** (broadcast) com botão **"Vou atender"** | 🟢 `broadcastCaseToAttendants` (`outbound.ts`) manda `sendReplyButtons` a todos os atendentes de mesa ativos — validado por E2E de tela (2 sessões reais, 2026-07-01). |
+| O **primeiro que clica "Vou atender" ASSUME** (claim/lock); os demais "já foi assumido" | 🟢 `mesa_attendant_id` nullable + claim atômico (`UPDATE ... WHERE mesa_attendant_id IS NULL`) em `claimMesaHandoff`. Depth gate: 200 claims concorrentes (8×25) sempre 1 vencedor. E2E de tela (corrida real, 2 browser contexts) confirma visualmente vencedor×perdedor sem erro. |
+| Ao assumir, o lead **muda de fase** | 🟢 `claimMesaHandoff` move `na_administradora → em_atendimento` (forward-only, `lead_events`). |
+| Dados sensíveis (CPF, documentos) **não** trafegam no WhatsApp — ficam no painel | 🟢 confirmado por E2E de tela 2026-07-01: painel controlado (`ContactDetailPanel`) mostra o CPF **mascarado** (`***.***.NNN-NN`); dossiê/copiloto da mesa nunca mostram o CPF (cru ou mascarado). |
 
 ### Copiloto da mesa (guia o atendente)
 | Cenário de aceitação | Fase |
@@ -163,6 +163,31 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 > - **D17 (claim move a raia `na_administradora → em_atendimento`):** ✅ integration (forward-only + lead_events).
 > - **Copiloto só ao dono / não vaza:** ✅ integration + cassette FIX-124. **PII (CPF) não trafega:** ✅ (dossiê whitelist).
 > - **Golden path E2E (kanban → broadcast → handoff sem dono no DB):** ✅ browser (FIX-171 — spec reescrita do single-select removido; rodada verde no container).
+
+> **Cobertura QA — Frente 3, rodada 2 (E2E de TELA real), 2026-07-01** (`.qa-loop/2026-07-01-0903-ledger-frente3-mesa-tela-real.md`).
+> A rodada acima só tinha 1 cenário com E2E de tela real (golden path); corrida de claim e
+> copiloto eram integration/cassette. Esta rodada fechou o gap — todos os fluxos críticos de
+> tela agora têm spec Playwright rodando de verdade (não só determinístico):
+> - **Golden path (reconfirmação):** ✅ browser, rodada fresca, verde.
+> - **Corrida do "Vou atender" na TELA:** ✅ browser — 2 sessões de atendente reais (2 browser
+>   contexts), clique quase simultâneo, vencedor×perdedor confirmados visualmente, sem erro
+>   (`claim-race.spec.ts`).
+> - **Copiloto passo a passo na TELA + isolamento entre atendentes:** ✅ browser, LLM real sem
+>   mock — 2 casos com manuais de administradora distintos, resposta do copiloto de A nunca
+>   menciona o termo exclusivo do manual de B, e vice-versa (`copilot-isolation.spec.ts`).
+> - **PII (CPF) nunca na tela de WhatsApp/mesa:** ✅ browser, CPF real de conta de teste
+>   canônica — painel controlado mostra o CPF **mascarado**, mesa/WhatsApp nunca mostram nada
+>   (`pii-nao-vaza.spec.ts`).
+> - **Gate de negócio (raia `em_atendimento`):** ✅ raia real e funcional (não é stub) —
+>   confirmado pelos E2E acima; achado tangencial corrigido: 2 painéis mostravam o enum cru em
+>   vez do label (FIX-176).
+> - **5 bugs reais achados no caminho, todos corrigidos com TDD** (FIX-172..176) — destaque:
+>   FIX-175 (cache de atendentes de mesa nunca invalidado no CRUD — atendente desativado
+>   continuava elegível pro broadcast por até 60s, um vazamento de dado de negócio real).
+> - **1 achado tangencial reportado, não corrigido** (fora do escopo desta frente): criar um
+>   atendente via `POST /api/admin/attendants` sequestra a sessão do admin que chama (better-auth
+>   `signUpEmail` + plugin `nextCookies`) — fix correto é adotar o plugin `admin()` do
+>   better-auth, mudança de arquitetura de auth. PENDENTE-KAIRO.
 
 ---
 
@@ -268,46 +293,76 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 
 ## Cobertura de QA — Frente 1 (Descoberta + Qualificação + Identidade, Passos 1-4)
 
-> Foto atual da validação autônoma da onda `divergencias-jornada` (4c8a81c5). Histórico do run:
-> `.qa-loop/2026-07-01-0236-ledger.md`. Última validação: **2026-07-01**.
+> Foto atual. Rodada `2026-07-01 08:02` (E2E de TELA real — régua nova da skill `qa-autonomo`:
+> determinístico é piso, spec Playwright real é teto obrigatório nos fluxos críticos). Histórico
+> dos runs: `.qa-loop/2026-07-01-0236-ledger-frente1-descoberta.md` (determinístico) e
+> `.qa-loop/2026-07-01-0802-ledger-frente1-e2e-tela.md` (E2E de tela real). Última validação:
+> **2026-07-01**.
 
 | Passo / cenário | Fase | Status | Como validado |
 |---|---|---|---|
-| P1 · welcome web = 3 categorias (Imóvel/Carro/Moto), sem "Outros" | 🟢 (era 🔴 D21) | ✅ PASS | **bug residual do FIX-121 achado** (EmptyState/message-list tinha 2ª cópia com 4) → **FIX-130** (fonte única) + confirmado no browser real |
-| P1 · footer landing = 3 categorias de entrada | 🟢 (D21) | ✅ PASS | **bug achado no browser** (footer com "Serviços") → **FIX-131** (removido, decisão Kairo) |
+| P1 · welcome web = 3 categorias (Imóvel/Carro/Moto), sem "Outros" | 🟢 (era 🔴 D21) | ✅ **pleno** | FIX-130 (fonte única) + **spec E2E real** `golden-path-web.spec.ts` reconfirma no golden path |
+| P1 · footer landing = 3 categorias de entrada | 🟢 (D21) | ✅ PASS | FIX-131 (removido, decisão Kairo) — nível determinístico + browser manual |
 | P1 · paridade welcome web = WhatsApp = landing | 🟢 | ✅ PASS | structural (welcome-options.test) + browser |
+| P1 · nome capturado em 1 turno, SEM ficar mudo (WhatsApp) | 🟢 | ✅ **pleno** | **bug bloqueador achado cross-frente** (toolChoice forçado sem `prepareStep` travava o loop mudo, 10x `save_contact_name`, textChars:0) → **fix `ccbd5e7`** + confirmado AO VIVO no simulador WhatsApp (resposta imediata, sem silêncio) |
 | P2 · WhatsApp valor por conversa ("uns 80 mil"), sem lista de faixas | 🟢 (era 🔴 D5) | ✅ PASS | FIX-120: código credit→null + cassette + parser 15/15 adversarial |
 | P2 · prazo NÃO perguntado na entrada | 🟢 | ✅ PASS | FIX-103 (cassette + qualify-state) |
-| P2 · educação lance embutido pra Sim/Não/Talvez nos 2 canais | 🟢 (era 🔴 D19) | ✅ PASS | FIX-118: fireGate lance-embutido no ramo no/maybe + cassette |
-| P2 · componente de valor = agulha simples (não multi-slider) | 🟢 (D4/D6) | ✅ PASS | FIX-115: gate-renderer credit→ValuePicker |
-| P3 · identidade (CPF+telefone) antes da busca | 🟢 | ✅ PASS | gate identify precede credit (FIX-114) |
-| P3 · search_groups NUNCA sem identidade (sem "dificuldade técnica") | 🟢 (era 🔴 D7/P6) | ✅ PASS | FIX-114: allowedTools + adapter lança IdentityNotCollectedError; detectores no cassette |
-| P4 · retorna ≥1 carta REAL da Bevi (nunca mock) | 🟢 (P7) | ✅ PASS | **AO VIVO** homologação: auto 80k→24 grupos reais, imóvel 250k→22 |
+| P2 · educação lance embutido pra Sim/Não/Talvez (web) | 🟢 (era 🔴 D19) | ✅ **pleno** | FIX-118 + **spec E2E real** confirma o ramo "no" no golden path web |
+| P2 · educação lance embutido pra Sim/Não/Talvez (WhatsApp) | 🟢 (era 🔴 D19) | ⚠️ **TELA-NÃO-VALIDADA** | achado ao vivo: gate **pulado** quando a resposta ao lance vem por TEXTO LIVRE (não clique de botão) — ver achado abaixo |
+| P2 · componente de valor = agulha simples (não multi-slider) | 🟢 (D4/D6) | ✅ **pleno** | FIX-115 + **spec E2E real** (`value-input-credit`, R$ 95.000) |
+| P3 · identidade (CPF+telefone) antes da busca (web) | 🟢 | ✅ **pleno** | gate identify precede credit (FIX-53/FIX-114) + **spec E2E real** confirma a ordem no golden path |
+| P3 · search_groups NUNCA sem identidade, adversarial (web) | 🟢 (era 🔴 D7/P6) | ✅ **pleno** | FIX-114 + **spec E2E adversarial real** (`identidade-adversarial.spec.ts`): 3 tentativas de jailbreak via texto livre, zero vazamento, zero "dificuldade técnica" |
+| P3 · identidade ANTES do credit (WhatsApp) — ordem | 🔴 ordem (P6, já auditado) | ⚠️ **TELA-NÃO-VALIDADA** | achado ao vivo: no WhatsApp, `credit`/`lance` foram respondidos ANTES de `identityCollected` virar true (sem card determinístico como o web); a invariante DURA (nunca chama a tool sem identidade) **segue intacta** — confirmado via DB (`searchDispatched` null) + logs (zero `tool-policy-violation`) |
+| P4 · retorna ≥1 carta REAL da Bevi (nunca mock) | 🟢 (P7) | ✅ **pleno** | **AO VIVO** homologação (rodada anterior: auto 80k→24 grupos reais, imóvel 250k→22) + **reconfirmado nesta rodada** via spec E2E real: reveal ITAÚ R$1.397,47/mês, BB e RODOBENS reais |
+| P4 · agente não narra o mecanismo (meta-narrativa) | 🔴 (D23, já catalogado) | ⚠️ **achado novo (WhatsApp)** | confirmado no golden path web (spec real: zero leak) mas achado AO VIVO no WhatsApp ("Bora ver o que encaixa na sua faixa" antes de ter identidade) — evidência nova pro D23, card aberto |
 | T1 (sweep/trilhos) · T2 (embutido amortiza) | ⚠️ tensão | — | NÃO testado como bug (decisão stakeholder — PENDENTE Kairo/Bernardo) |
 
-**Resultado Frente 1: 10/10 cenários vivos ✅ + 2 bugs residuais achados e corrigidos (FIX-130, FIX-131).**
+**Resultado Frente 1 (rodada E2E de tela real, 2026-07-01):** golden path web + adversarial de
+identidade fecharam **✅ pleno** com spec Playwright real (não MCP manual), incluindo reveal AO
+VIVO da Bevi. 1 bug bloqueador corrigido (`ccbd5e7`, toolChoice/loop mudo) + 1 bug de duplicação de
+texto corrigido (`b4f577d`, FIX-102). WhatsApp: golden path parcial — **1 achado novo aberto**
+(gate lance-embutido pulado + meta-narrativa quando a resposta vem por texto livre;
+`docs/correcoes/inbox/2026-07-01-whatsapp-identify-gate-nao-pede-cpf-narra-busca.md`) impediu
+fechar o reveal nessa conversa, mas a invariante crítica P6 (nunca busca sem identidade) foi
+CONFIRMADA intacta.
 
 ## Cobertura de QA — Frente 2 (Recomendação + Simulador + Fechamento, Passos 5-7)
 
 > Foto do último teste por cenário. Histórico/detalhe no ledger de run
-> (`.qa-loop/2026-07-01-...-ledger-frente2-recomendacao-fechamento.md`). Última validação: **2026-07-01**.
+> (`.qa-loop/2026-07-01-0233-ledger-frente2-recomendacao-fechamento.md`). Última validação: **2026-07-01**
+> (rodada 2 — E2E de TELA real via Playwright contra Bevi/Anthropic reais de homologação).
 
 | Cenário | Passo | Status | Nível |
 |---|---|---|---|
-| Card recomendado + Outras opções (carrossel) | P5 | ✅ PASS | struct (formatter.card-recomendada + other-options) |
-| Resumo por oferta (carta·parcela·prazo·adm·lance·liquidez) | P5 | ✅ PASS | struct (formatter.real-offer) |
-| Simulador contemplação 3/6/12 recalcula | P5 | ✅ PASS | property/component (contemplation-dial) + formatter.simulador |
-| Card de decisão (3 botões) | P5 | ✅ PASS | struct (decision_${intent}; outras=determinístico) |
-| Ressalva CDC "estimativa" | P5 | ✅ PASS | struct (formatter.simulador) |
-| **FIX-117/D18** WhatsApp "Tenho interesse" = avanço direto (paridade FIX-38) | P5 | ✅ PASS | integ+cassette + code-review (dispatch→buildAdvanceToContract) |
-| **FIX-119/D22** WhatsApp "Ver outras" (decision_outras) determinístico | P5 | ✅ PASS | integ+cassette + code-review (→buildOtherOptions, model-free) |
-| Confirma oferta escolhida (re-simula TTL) | P6 | ✅ PASS | integ (contract-capture) |
-| **FIX-122/D13** upload doc inbound WhatsApp | P6 | ✅ PASS | integ+cassette + code-review (webhook image/document→handleDocumentInbound) |
-| **FIX-116/D11** WhatsApp NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS | struct+cassette + code-review (0 copy runtime /assinatura\|assinar/i) |
-| Parabéns + resumo WA/email + opt-in | P7 | ✅ PASS | struct (whatsapp-optin + signature-handoff) |
+| Card recomendado + Outras opções (valores REAIS da Bevi) | P5 | ✅ PASS | **E2E browser real** (`passo5-7-golden-path.spec.ts`) |
+| Resumo por oferta (carta·parcela·prazo·adm·lance·liquidez) | P5 | ✅ PASS | **E2E browser real** |
+| Simulador contemplação 3/6/12 recalcula ao vivo (arraste real) | P5 | ✅ PASS | **E2E browser real** (assertion de valor: texto do lance muda com o mês) |
+| "Tenho interesse" → avanço DIRETO ao fechamento (paridade D18/FIX-38, web) | P5→P6 | ✅ PASS | **E2E browser real** — zero card de decisão extra confirmado |
+| Ressalva CDC "estimativa" | P5 | ✅ PASS | **E2E browser real** (`dial-disclaimer`) |
+| Confirma oferta escolhida (contract-submit → real_offer → offer-confirm) | P6 | ✅ PASS | **E2E browser real** — proposta REAL criada na Bevi (Trilho A) |
+| **FIX-116/D11** web NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS | **E2E browser real** — zero ocorrência de /assinatura\|assinar/i na tela inteira |
+| Parabéns + DES-1 confirmado | P7 | ✅ PASS | **E2E browser real** |
+| **FIX-117/D18** WhatsApp "Tenho interesse" = avanço direto (paridade FIX-38) | P5 | ✅ PASS (determinístico) / ⚠️ TELA-NÃO-VALIDADA (WhatsApp) | integ+cassette+code-review; spec `whatsapp-paridade.spec.ts` escrita, execução pendente |
+| **FIX-119/D22** WhatsApp "Ver outras" (decision_outras) determinístico | P5 | ✅ PASS (determinístico) | integ+cassette + code-review (→buildOtherOptions, model-free) |
+| **FIX-122/D13** upload doc inbound WhatsApp | P6 | ✅ PASS (determinístico) / ⚠️ SEM AFORDANCE DE UI | integ+cassette + code-review; simulador (`whatsapp-stage.tsx`) não tem input de arquivo — E2E de tela desta ação específica não é possível hoje sem adicionar a afordance |
+| **FIX-116/D11** WhatsApp NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS (determinístico) | struct+cassette + code-review; reconfirmação de tela pendente (ver acima) |
 | **T2** lance embutido amortiza dívida×crédito | P5 | ⚠️ NÃO TESTADO | tensão — decisão Bernardo (não é bug) |
 
-- Full onda `divergencias-jornada` (216 arquivos / 2194 testes): ✅ verde. Zero regressão introduzida.
-- Validação no nível certo (§5): fixes WhatsApp são determinísticos → unit+cassette+code-review.
-  E2E ao vivo do funil foi **bloqueado upstream** (Passo 1 nome / Passo 3 identidade — FRENTE-1/cross-cutting),
-  não alcançou o reveal; ver ledger + `docs/correcoes/inbox/2026-07-01-crossfrente-agente-mudo-captura-nome.md`.
+- Full onda `divergencias-jornada` (216 arquivos / 2194 testes): ✅ verde. Zero regressão introduzida
+  (reconfirmado após FIX-172, 2201/2201).
+- **Bug achado + corrigido via TDD nesta rodada — FIX-172**: gate `identify` (web) cifrava o
+  celular sem normalizar o DDI ("55"), diferente do WhatsApp (`waIdToCelular` já tirava). A
+  Bevi rejeitava o contract-submit (`CELULAR inválido`). Fix: `normalizePhoneBR` antes de
+  `storeIdentity` — paridade web×WhatsApp restaurada. Ver ledger para detalhe + nota honesta
+  sobre a máscara client-side (`gate-identity-form.tsx`) ainda truncar em vez de stripar o
+  DDI (dívida de UX menor, não corrigida nesta rodada — PENDENTE-KAIRO).
+- **D10 (Trilho A instável) CONFIRMADO ao vivo com causa-raiz exata**: `TimeoutError` no
+  `BeviApiAdapter.chooseOffer` (API de Parceiro), intermitente (2 de 3 tentativas falharam
+  nesta rodada, 1 sucedeu). Produto degrada graciosamente (mensagem amigável, retry funciona).
+  Gap de observabilidade corrigido (catch engolia o erro sem logar — agora loga).
+- Web: E2E de tela real fechado ponta-a-ponta, Passo 5→6→7 (o funil upstream bloqueado
+  — Passo 1/3, território FRENTE 1 — foi contornado semeando o estado direto no ponto crítico,
+  técnica documentada na skill `qa-autonomo` §4.2.2).
+- WhatsApp: paridade dos fixes determinística segue coberta (unit+cassette+code-review);
+  E2E de tela ao vivo via `/admin/simulator/whatsapp` tem spec escrita mas execução pendente
+  (orçamento da sessão) — ver ledger §Pendências.

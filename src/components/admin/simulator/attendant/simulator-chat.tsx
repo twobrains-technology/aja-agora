@@ -2,6 +2,10 @@
 
 import { Send } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type InteractivePayload,
+	WhatsAppInteractive,
+} from "@/components/admin/simulator/whatsapp/whatsapp-interactive";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +35,8 @@ type Message = {
 	createdAt: string;
 	/** True quando a mensagem original veio de uma conversa simulada (cliente do simulador). */
 	simulated?: boolean;
+	/** Botões interativos (ex.: "Vou atender" da mesa) — clicáveis quando inbound. */
+	interactive?: InteractivePayload;
 };
 
 type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
@@ -91,6 +97,7 @@ export function SimulatorChat() {
 								text: string;
 								createdAt: string;
 								simulated?: boolean;
+								interactive?: InteractivePayload;
 							};
 					  };
 
@@ -108,6 +115,7 @@ export function SimulatorChat() {
 							text: data.message.text,
 							createdAt: data.message.createdAt,
 							simulated: data.message.simulated,
+							interactive: data.message.interactive,
 						},
 					]);
 				}
@@ -168,6 +176,45 @@ export function SimulatorChat() {
 		}
 	}, [input, selectedId, sending]);
 
+	const sendInteractiveReply = useCallback(
+		async (replyId: string, replyTitle: string) => {
+			if (!selectedId || sending) return;
+			setSending(true);
+			const optimistic: Message = {
+				id: `local-${generateId()}`,
+				direction: "outbound",
+				text: replyTitle,
+				createdAt: new Date().toISOString(),
+			};
+			setMessages((prev) => [...prev, optimistic]);
+			try {
+				const res = await fetch(`/api/admin/simulator/attendant/${selectedId}/interactive-reply`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ replyId, replyTitle }),
+				});
+				if (!res.ok) {
+					const data = (await res.json().catch(() => ({}))) as { error?: string };
+					throw new Error(data.error ?? `HTTP ${res.status}`);
+				}
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				setMessages((prev) => [
+					...prev,
+					{
+						id: `err-${generateId()}`,
+						direction: "inbound",
+						text: `[erro ao enviar: ${message}]`,
+						createdAt: new Date().toISOString(),
+					},
+				]);
+			} finally {
+				setSending(false);
+			}
+		},
+		[selectedId, sending],
+	);
+
 	const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
@@ -227,9 +274,20 @@ export function SimulatorChat() {
 						</div>
 					) : (
 						<div className="space-y-3">
-							{messages.map((m) => (
-								<MessageBubble key={m.id} message={m} />
-							))}
+							{messages.map((m) =>
+								m.direction === "inbound" && m.interactive ? (
+									<WhatsAppInteractive
+										key={m.id}
+										payload={m.interactive}
+										disabled={sending}
+										onReply={(replyId, replyTitle) =>
+											void sendInteractiveReply(replyId, replyTitle)
+										}
+									/>
+								) : (
+									<MessageBubble key={m.id} message={m} />
+								),
+							)}
 							<div ref={messagesEndRef} />
 						</div>
 					)}
