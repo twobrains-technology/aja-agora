@@ -1,0 +1,19 @@
+{
+	"status": "OK",
+	"code": 200,
+	"success": true,
+	"message": "Proposta em processamento.",
+	"data": {
+		"selfContract": {
+			"waitingForUniqueCode": { "finished": true, "order": 10 }
+		},
+		"currentStep": {
+			"_id": "step-waitingforuniquecode",
+			"slug": "waitingForUniqueCode",
+			"name": "Aguardando código único",
+			"order": 10
+		},
+		"situation": "pending",
+		"systemicValue": "waitingForUniqueCode"
+	}
+}
