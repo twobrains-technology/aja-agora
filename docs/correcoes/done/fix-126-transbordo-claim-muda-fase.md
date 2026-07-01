@@ -1,7 +1,9 @@
 ---
 id: FIX-126
 titulo: "Transbordo: ao assumir (claim), o lead muda de fase"
-status: todo
+status: done
+commit: 78998d64
+executado_em: 2026-07-01
 bloco: bloco-mesa-transbordo-auto
 arquivos: [src/lib/mesa/handoff.ts, src/db/schema.ts]
 rodada: 2026-07-01 — auditoria código×jornada (Mapa em docs/jornada/jornada-canonica.md)
