@@ -155,6 +155,15 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 | Responde "como faço X na tela da administradora?" com **passo a passo** | 🟢 |
 | Não expõe mecanismo/erro técnico; não fala com o cliente final | 🟢 |
 
+> **Cobertura QA — Frente 3 (mesa de operação), 2026-07-01** (`.qa-loop/2026-07-01-0236-ledger.md`).
+> A onda `divergencias-jornada` (FIX-123..126) fechou D14-D17 — todos validados ✅ no nível certo:
+> - **D14 (transbordo automático):** ✅ integration (worker `na_administradora` → cria handoff sem dono) + idempotência + não-gatilho + **isolamento de falha behavioral** (FIX-170, mutation-verified).
+> - **D15 (broadcast a todos + "Vou atender"):** ✅ structural + integration (`sendReplyButtons` a todos ativos, id `mesa_claim:<handoffId>`).
+> - **D16 (claim atômico, 1º assume):** ✅ integration de corrida + **depth gate stress 8 atendentes × 25 rodadas = 200 claims → sempre 1 vencedor**.
+> - **D17 (claim move a raia `na_administradora → em_atendimento`):** ✅ integration (forward-only + lead_events).
+> - **Copiloto só ao dono / não vaza:** ✅ integration + cassette FIX-124. **PII (CPF) não trafega:** ✅ (dossiê whitelist).
+> - **Golden path E2E (kanban → broadcast → handoff sem dono no DB):** ✅ browser (FIX-171 — spec reescrita do single-select removido; rodada verde no container).
+
 ---
 
 ## Tensões abertas — NÃO é fix cego
