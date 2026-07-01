@@ -9,8 +9,11 @@ import { storeClientDocument } from "@/lib/documents/client-documents";
 //
 // FIX-82: o documento do cliente é um ATIVO NOSSO — grava no NOSSO S3
 // (bucket dedicado, SSE-KMS) PRIMEIRO e responde de imediato. O envio à Bevi
-// saiu do caminho crítico: virou despacho best-effort (dispatch.ts, FIX-84),
-// que falha sem nunca perder o documento já guardado aqui.
+// saiu do caminho crítico: virou despacho best-effort (dispatchClientDocument,
+// FIX-84), que NÃO é disparado automaticamente daqui — ver decisão registrada
+// em docs/correcoes/decisions/2026-06-28-bloco-a-documentos.md (Trilho A
+// confirmado travado hoje; disparo fica pra quando houver um trigger real:
+// ação do operador, cron ou o fechamento via Trilho B do bloco-c).
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8MB (base64 ~10.6MB)
 
