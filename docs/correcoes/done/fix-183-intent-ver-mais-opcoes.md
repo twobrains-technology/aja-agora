@@ -1,7 +1,9 @@
 ---
 id: FIX-183
 titulo: "Categoria de intent 'quer ver mais opções' no analyzer + roteamento (mata o desvio ready_to_proceed → simulação/decisão)"
-status: todo
+status: done
+commit: 100a6d48
+executado_em: 2026-07-01
 bloco: bloco-b-intent-ver-mais
 severidade: alta
 projeto: aja-agora
