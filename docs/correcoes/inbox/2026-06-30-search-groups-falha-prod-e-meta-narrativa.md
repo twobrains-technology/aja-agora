@@ -44,13 +44,28 @@ mexe_em:
      pra isso" — narração do funcionamento interno (anti-padrão de agente, viola a
      regra de não expor o mecanismo; devia ser 1 frase natural ou nenhuma).
 
-## Pista de causa (A CONFIRMAR — não investigado a fundo)
-- **search_groups falhou em prod:** a descoberta usa o **Trilho B self-contract**
-  (`self-contract-client.ts` → `core-production-selfcontract-atsb7.ondigitalocean.app`).
-  Pode ser: env de prod sem `BEVI_SELFCONTRACT_HASH`/base URL, timeout de rede do
-  pod ECS pro DigitalOcean, ou o adapter lançando. **VERIFICAR nos logs do pod
-  `aja-agora-prod` (CloudWatch/ECS) o erro real do search_groups.** ⚠️ Só o Trilho A
-  (parceiro) foi validado hoje; o Trilho B (descoberta) NÃO foi testado em prod.
+## Pista de causa (EVIDENCIADA ao vivo 2026-06-30 — confirmar com log de prod)
+A descoberta usa o **Trilho B self-contract** (`self-contract-client.ts` →
+`core-production-selfcontract-atsb7.ondigitalocean.app`). Reproduzido ao vivo:
+1. **Host de pé:** `GET segment-resource` → **200** (0.58s). NÃO é host caído.
+2. **`create-proposal` → 400 "Duplicated Hash: 6a1756d4…"** — a **loja é ÚNICA e
+   compartilhada** (homologação) e só admite **1 proposta ativa por vez**; o create
+   falha **mesmo com `ignoreOngoingProposals:true`**.
+3. **`simulate` na proposta CORRENTE → 200, 23 ofertas** — a busca FUNCIONA quando
+   opera sobre a proposta já ativa.
+
+➡️ **Causa provável do P0:** em prod, cada conversa nova tenta `create-proposal` na
+**mesma loja compartilhada** → colide com a proposta ativa de outra conversa/usuário
+(ou de um teste) → **Duplicated Hash** → `search_groups` lança → "dificuldade técnica
+pra acessar os grupos". O `BeviSelfContractAdapter` mantém "1 proposta por conversa"
+mas a **loja física é uma só** → multi-usuário/multi-conversa colide.
+
+**Caminhos de fix (a decidir):** (a) o adapter **reusar a proposta corrente** da loja
+(`get-multi-proposal`/`/system`) em vez de sempre `create-proposal`; (b) tratar o
+`Duplicated Hash` como "retoma a corrente" em vez de erro; (c) rever se prod deveria
+ter loja própria (não a homologação única compartilhada). **Confirmar com o log do
+pod `aja-agora-prod` (CloudWatch)** que o erro real é o Duplicated Hash.
+⚠️ Só o Trilho A (fechamento) foi validado hoje; o Trilho B (descoberta) é este.
 - **Meta-narrativa:** o agente narrou o mecanismo em vez de agir. Provável degradação
   quando a tool falha (o fallback vira texto de "vou buscar / dificuldade técnica").
   Olhar `directives.ts`/`system-prompt.ts` (frases de degradação) + o handler de erro
