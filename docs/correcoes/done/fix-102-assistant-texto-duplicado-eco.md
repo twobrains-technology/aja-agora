@@ -3,12 +3,15 @@ id: FIX-102
 bloco: bloco-h-chat-render
 slug: assistant-texto-duplicado-eco
 titulo: "Eliminar texto duplicado/eco nas respostas do assistant (degeneração da LLM)"
-status: todo
+status: done
+commit: b4f577d
+executado_em: 2026-07-01
 severidade: baixa
 projeto: aja-agora
 rodada: 2026-06-28 — validação E2E da jornada web (descoberta Trilho B, imóvel)
 evidencia:
   - "DB homolog: conversa c89bec1f-4f6c-4284-acf0-248f26b8e9f3, msg d0bab508-835f-4b47-b22b-73dde7062d84"
+  - "2ª ocorrência (QA autônomo Frente 1, E2E de tela real): conversa 5d8ab51f-6a06-46fd-8ac5-44c48cc5d792 — \"Boa, então já sabe como funciona!Boa, então já sabe como funciona!\" (mesmo shape exato: zero separador)"
 mexe_em:
   - src/lib/agent/orchestrator/runner.ts
   - src/components/chat/chat-message.tsx
@@ -52,3 +55,28 @@ mexe_em:
 3. **Aceitar** como ruído raro (1 em todo o DB de homologação).
 
 Severidade baixa: cosmético, raro, não quebra o fluxo (descoberta e fechamento funcionaram).
+
+## Resolução (2026-07-01, QA autônomo Frente 1 — E2E de tela real)
+
+Reproduzido AO VIVO uma 2ª vez (mesmo shape exato, gate `experience=returning`,
+zero separador) durante a spec E2E do golden path web — a 2ª ocorrência descarta
+de vez a hipótese "acidente isolado" sem virar sistemático (ainda raro, mas
+recorrente o suficiente pra justificar a mitigação já decidida no card).
+
+Implementada a **opção 1** (guarda defensiva determinística), que já estava
+decidida aqui e não exigia nova aprovação de produto — só faltava a implementação:
+
+- `src/lib/agent/orchestrator/collapse-self-duplicate.ts` — `collapseSelfDuplicatedText(text)`:
+  colapsa quando o texto INTEIRO é exatamente 2 metades idênticas coladas (heurística
+  estreita — não pega repetição curta legítima nem metades meramente parecidas, então
+  não pega o `"Bora!Beleza"` do eco de quick-reply, como o card já previa).
+- Aplicada em `runner.ts`, sobre `fullResponse`, ANTES do `saveMessage` — colapsa o que
+  vai pro banco/histórico/prefixForNextGate.
+- **Caveat conhecido:** o stream ao vivo (SSE) já encaminha os `text-delta` pro cliente
+  progressivamente ANTES desse ponto — então a guarda evita a duplicação PERSISTIDA
+  (reload, admin, memória, banco de exemplos) mas não impede 100% do flash visual no
+  MESMO turno em que a degeneração acontecer. Opção 2 (reforço de prompt, ataca a causa)
+  segue em aberto se o padrão voltar a aparecer com mais frequência.
+- Regressão: Camada 1 (`collapse-self-duplicate.test.ts` — 8 casos incl. anti-falso-positivo
+  + `runner.fix-102-collapse-dup.test.ts` — wiring). `pnpm test:unit` verde (221/221 arquivos).
+- Commit: `b4f577d` (`test+fix:`).
