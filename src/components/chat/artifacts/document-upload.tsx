@@ -15,6 +15,12 @@ import { cn } from "@/lib/utils";
 // documents-done) ou automática quando frente E verso completam. Antes, subir
 // só a frente já disparava a mensagem e o bot respondia "ficha completa" sem
 // dar tempo do verso. Documentos são opcionais → oferece "pular".
+//
+// FIX-82: `ok` agora reflete a gravação no NOSSO S3 (fonte da verdade), não
+// mais o envio síncrono à Bevi — isso virou despacho best-effort, desacoplado
+// da resposta (dispatch.ts). Por isso não há mais link de fallback aqui: o
+// documento guardado é sempre acessível pelo operador no Kanban, mesmo se a
+// Bevi estiver travada.
 
 type Slot = "identidade_frente" | "identidade_verso";
 
@@ -35,7 +41,7 @@ function fileToBase64(file: File): Promise<string> {
 	});
 }
 
-type SlotState = { ok: boolean; fallbackLink?: string | null };
+type SlotState = { ok: boolean };
 
 export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) {
 	const { conversationId, sendAction, status } = useChatContext();
@@ -74,14 +80,11 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 					mimeType: file.type || "image/jpeg",
 				}),
 			});
-			const data = (await res.json().catch(() => ({ ok: false }))) as {
-				ok?: boolean;
-				fallbackLink?: string | null;
-			};
+			const data = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
 			setSent((s) => {
 				const next: Record<string, SlotState> = {
 					...s,
-					[slot]: { ok: data.ok === true, fallbackLink: data.fallbackLink ?? null },
+					[slot]: { ok: data.ok === true },
 				};
 				// Frente E verso completos → conclusão automática (uma mensagem só).
 				if (SLOTS.every(({ slot: sl }) => next[sl]?.ok)) finish(next);
@@ -93,9 +96,6 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 	};
 
 	const anySent = SLOTS.some(({ slot }) => sent[slot]?.ok);
-	const fallbackLinks = SLOTS.map(({ slot }) => sent[slot]?.fallbackLink).filter(
-		(l): l is string => typeof l === "string" && l.length > 0,
-	);
 
 	return (
 		<div className="w-full max-w-sm rounded-[18px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
@@ -147,20 +147,6 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 					</div>
 				))}
 			</div>
-
-			{fallbackLinks.length > 0 ? (
-				<p className="text-xs text-muted-foreground">
-					Não consegui anexar por aqui — finalize neste link:{" "}
-					<a
-						href={fallbackLinks[0]}
-						target="_blank"
-						rel="noreferrer"
-						className="underline underline-offset-2"
-					>
-						{fallbackLinks[0]}
-					</a>
-				</p>
-			) : null}
 
 			{anySent && !finished ? (
 				<Button

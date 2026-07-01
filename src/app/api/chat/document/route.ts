@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { uploadContractDocument } from "@/lib/bevi/fulfillment";
+import { storeClientDocument } from "@/lib/documents/client-documents";
 
 // FIX-10 (teste manual Kairo 2026-06-05): upload de documento SILENCIOSO —
 // fora do turno de chat. Antes, cada slot subia via action de chat e postava
 // "Enviei meu documento" + resposta do bot ANTES do verso. Agora o arquivo
 // sobe aqui (sem mensagem); a conclusão é a action documents-done no chat.
+//
+// FIX-82: o documento do cliente é um ATIVO NOSSO — grava no NOSSO S3
+// (bucket dedicado, SSE-KMS) PRIMEIRO e responde de imediato. O envio à Bevi
+// saiu do caminho crítico: virou despacho best-effort (dispatch.ts, FIX-84),
+// que falha sem nunca perder o documento já guardado aqui.
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8MB (base64 ~10.6MB)
 
@@ -34,16 +39,17 @@ export async function POST(req: Request): Promise<NextResponse> {
 	}
 
 	try {
-		const { ok, fallbackLink } = await uploadContractDocument(parsed.conversationId, {
+		const { documentId } = await storeClientDocument({
+			conversationId: parsed.conversationId,
 			slot: parsed.slot,
 			file,
 			filename: parsed.filename,
 			mimeType: parsed.mimeType,
 		});
-		return NextResponse.json({ ok, fallbackLink: fallbackLink ?? null });
+		return NextResponse.json({ ok: true, documentId });
 	} catch (err) {
-		// Sem proposta/links (fluxo fora de ordem) ou erro do portal — o
-		// componente mostra a falha no slot; nada de mensagem fantasma no chat.
+		// Falha ao gravar no NOSSO S3 — o componente mostra a falha no slot;
+		// nada de mensagem fantasma no chat.
 		const message = err instanceof Error ? err.message : "falha no upload";
 		return NextResponse.json({ ok: false, error: message }, { status: 422 });
 	}
