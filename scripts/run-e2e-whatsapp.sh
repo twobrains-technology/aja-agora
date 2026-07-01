@@ -40,8 +40,12 @@ fi
 echo "[e2e] conversationId=$CONV_ID tag=$TAG"
 echo "[e2e] rodando Playwright dentro do container..."
 
+# Login admin (Better Auth) exige o Origin bater com BETTER_AUTH_URL — ao
+# contrário do teatro web (cookie de app, sem CSRF), o simulador precisa do
+# domínio .orb.local de verdade (resolve dentro do container via OrbStack DNS).
+WORKSPACE_DNS="aja-${APP_CONTAINER#aja-app-}.orb.local"
 docker exec \
-  -e PLAYWRIGHT_TEST_BASE_URL="http://localhost:3000" \
+  -e PLAYWRIGHT_TEST_BASE_URL="http://${WORKSPACE_DNS}" \
   -e PW_EXECUTABLE_PATH="/usr/bin/chromium-browser" \
   -e SEED_WA_CONVERSATION_ID="$CONV_ID" \
   -e ADMIN_EMAIL="${ADMIN_EMAIL:-admin@ajaagora.com.br}" \

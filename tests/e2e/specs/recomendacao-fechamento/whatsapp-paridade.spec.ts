@@ -64,7 +64,9 @@ async function loginAdmin(page: Page): Promise<void> {
 	await page.getByLabel("Email*").fill(ADMIN_EMAIL);
 	await page.getByLabel("Senha*").fill(ADMIN_PASSWORD);
 	await page.getByRole("button", { name: "Entrar" }).click();
-	await page.waitForURL(/\/admin(\/|$)/, { timeout: 20_000 });
+	// Regex ANTERIOR (/\/admin(\/|$)/) casava com a PRÓPRIA /admin/login — o
+	// waitForURL resolvia na hora, sem esperar o redirect pós-login de verdade.
+	await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 20_000 });
 }
 
 test.describe("FRENTE 2 — paridade WhatsApp (E2E de tela real via simulador)", () => {
