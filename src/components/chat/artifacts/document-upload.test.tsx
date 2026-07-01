@@ -99,19 +99,20 @@ describe("FIX-10 — upload de slot é silencioso; conclusão é explícita", ()
 		expect(sendAction.mock.calls[0][0].kind).toBe("document-skip");
 	});
 
-	it("falha no upload mostra o link de fallback no card (sem quebrar o fluxo)", async () => {
+	it("falha ao gravar no nosso S3: slot NÃO fica marcado como enviado (sem quebrar o fluxo)", async () => {
+		// FIX-82: `ok` agora reflete storeClientDocument (nosso S3), não mais o
+		// envio síncrono à Bevi — não há mais link de fallback no card.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => ({
 				ok: true,
-				json: async () => ({ ok: false, fallbackLink: "https://conexia.example/up/abc" }),
+				json: async () => ({ ok: false, error: "falha no upload" }),
 			})),
 		);
 		render(<DocumentUpload payload={payload} />);
 		pickFile("doc-input-identidade_frente");
-		await waitFor(() => {
-			expect(document.body.textContent).toContain("conexia.example");
-		});
+		await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+		expect(screen.queryByTestId("doc-done")).toBeNull();
 		expect(sendAction).not.toHaveBeenCalled();
 	});
 });

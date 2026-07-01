@@ -2,7 +2,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Headset, Smartphone, Send } from "lucide-react";
+import { Globe, Headset, Send, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClientDocumentsTab } from "./client-documents-tab";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
 import type { Lead } from "./lead-card";
@@ -53,6 +54,7 @@ export function LeadDetailPanel({
 	const [sending, setSending] = useState(false);
 	const [windowError, setWindowError] = useState<string | null>(null);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: lead?.id change is the trigger to reset
 	useEffect(() => {
 		setInsightsLoaded(false);
 		setActiveTab("conversa");
@@ -94,8 +96,7 @@ export function LeadDetailPanel({
 			setMessage("");
 			onClose();
 		} catch (err) {
-			const errorMsg =
-				err instanceof Error ? err.message : "Erro desconhecido";
+			const errorMsg = err instanceof Error ? err.message : "Erro desconhecido";
 			setWindowError(errorMsg);
 			alert(`Erro ao enviar mensagem:\n${errorMsg}`);
 		} finally {
@@ -150,11 +151,10 @@ export function LeadDetailPanel({
 							<TabsList className="mx-4 mt-2">
 								<TabsTrigger value="conversa">Conversa</TabsTrigger>
 								<TabsTrigger value="insights">Insights</TabsTrigger>
+								<TabsTrigger value="documentos">Documentos</TabsTrigger>
 							</TabsList>
 							<TabsContent value="conversa" className="flex-1 min-h-0">
-								<ConversationTimeline
-									endpoint={`/api/admin/leads/${lead.id}/conversation`}
-								/>
+								<ConversationTimeline endpoint={`/api/admin/leads/${lead.id}/conversation`} />
 							</TabsContent>
 							<TabsContent value="insights" className="p-4">
 								{insightsLoaded ? (
@@ -166,6 +166,9 @@ export function LeadDetailPanel({
 										</p>
 									</div>
 								)}
+							</TabsContent>
+							<TabsContent value="documentos" className="flex-1 min-h-0 overflow-y-auto">
+								<ClientDocumentsTab leadId={lead.id} />
 							</TabsContent>
 						</Tabs>
 

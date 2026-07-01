@@ -6,6 +6,7 @@ import {
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Storage S3-compatível (MinIO local / S3 prod). Interface fina por cima do
 // AWS SDK — config por env (ADR bloco-mesa-a, Decisão 2). S3_ENDPOINT vazio =
@@ -20,6 +21,9 @@ export interface StorageConfig {
 	accessKeyId?: string;
 	secretAccessKey?: string;
 	forcePathStyle: boolean;
+	// SSE-KMS (FIX-82, bucket de documentos de cliente): quando setado, put usa
+	// aws:kms com esta key. MinIO local não tem KMS — dev fica sem (undefined).
+	kmsKeyId?: string;
 }
 
 export function getStorageConfig(
@@ -44,6 +48,22 @@ export function getStorageConfig(
 	};
 }
 
+// FIX-82: bucket DEDICADO de documentos de cliente (PII de identidade) — nunca
+// o de administradora-docs. Reusa endpoint/region/credenciais (mesmo S3/MinIO),
+// só o bucket + a KMS key mudam. Bucket+KMS de PROD são provisionamento IaC
+// (PENDENTE-KAIRO); em dev/MinIO local `kmsKeyId` fica indefinido (MinIO não
+// tem KMS configurado) — putObject cai pro upload sem SSE explícito.
+export function getClientDocsStorageConfig(
+	env: Record<string, string | undefined> = process.env,
+): StorageConfig {
+	const base = getStorageConfig(env);
+	return {
+		...base,
+		bucket: env.S3_CLIENT_DOCS_BUCKET || "aja-client-docs",
+		kmsKeyId: env.S3_CLIENT_DOCS_KMS_KEY_ID || undefined,
+	};
+}
+
 let cachedClient: S3Client | null = null;
 
 function getClient(cfg: StorageConfig): S3Client {
@@ -63,8 +83,7 @@ function getClient(cfg: StorageConfig): S3Client {
 }
 
 /** Garante que o bucket existe (cria on-demand). Idempotente. */
-export async function ensureBucket(): Promise<void> {
-	const cfg = getStorageConfig();
+export async function ensureBucket(cfg: StorageConfig = getStorageConfig()): Promise<void> {
 	const client = getClient(cfg);
 	try {
 		await client.send(new HeadBucketCommand({ Bucket: cfg.bucket }));
@@ -89,18 +108,32 @@ export async function ensureBucket(): Promise<void> {
 	}
 }
 
-/** Sobe um objeto. Cria o bucket se preciso. */
-export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
-	const cfg = getStorageConfig();
-	await ensureBucket();
+/** Sobe um objeto. Cria o bucket se preciso. SSE-KMS quando `cfg.kmsKeyId` setado. */
+export async function putObject(
+	key: string,
+	body: Uint8Array,
+	contentType: string,
+	cfg: StorageConfig = getStorageConfig(),
+): Promise<void> {
+	await ensureBucket(cfg);
 	await getClient(cfg).send(
-		new PutObjectCommand({ Bucket: cfg.bucket, Key: key, Body: body, ContentType: contentType }),
+		new PutObjectCommand({
+			Bucket: cfg.bucket,
+			Key: key,
+			Body: body,
+			ContentType: contentType,
+			...(cfg.kmsKeyId
+				? { ServerSideEncryption: "aws:kms" as const, SSEKMSKeyId: cfg.kmsKeyId }
+				: {}),
+		}),
 	);
 }
 
 /** Lê um objeto inteiro em memória. */
-export async function getObject(key: string): Promise<Uint8Array> {
-	const cfg = getStorageConfig();
+export async function getObject(
+	key: string,
+	cfg: StorageConfig = getStorageConfig(),
+): Promise<Uint8Array> {
 	const res = await getClient(cfg).send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }));
 	const bytes = await res.Body?.transformToByteArray();
 	if (!bytes) throw new Error(`Objeto vazio ou inexistente: ${key}`);
@@ -108,7 +141,22 @@ export async function getObject(key: string): Promise<Uint8Array> {
 }
 
 /** Remove um objeto. Best-effort (chamador decide como tratar falha). */
-export async function deleteObject(key: string): Promise<void> {
-	const cfg = getStorageConfig();
+export async function deleteObject(
+	key: string,
+	cfg: StorageConfig = getStorageConfig(),
+): Promise<void> {
 	await getClient(cfg).send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }));
+}
+
+const DEFAULT_DOWNLOAD_EXPIRES_SECONDS = 300; // 5 min — regra dura de PII (FIX-83)
+
+/** URL pré-assinada de curta expiração pra download (nunca expõe key/bucket
+ * direto — só a URL temporária). Usado pelo endpoint admin de download. */
+export async function getSignedDownloadUrl(
+	key: string,
+	cfg: StorageConfig = getStorageConfig(),
+	expiresInSeconds: number = DEFAULT_DOWNLOAD_EXPIRES_SECONDS,
+): Promise<string> {
+	const command = new GetObjectCommand({ Bucket: cfg.bucket, Key: key });
+	return getSignedUrl(getClient(cfg), command, { expiresIn: expiresInSeconds });
 }

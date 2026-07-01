@@ -4036,9 +4036,13 @@ describe("FIX-10-UPLOAD-SEM-AUTO-SEND — estrutura do fluxo de documentos", () 
 		expect(src).toMatch(/verso/i);
 	});
 
-	it("endpoint dedicado de upload existe e usa uploadContractDocument", () => {
+	it("endpoint dedicado de upload existe e grava no NOSSO S3 (storeClientDocument)", () => {
+		// FIX-82: o documento do cliente é um ativo nosso — a rota grava no nosso
+		// S3 PRIMEIRO (storeClientDocument); o envio à Bevi saiu do caminho
+		// crítico (virou despacho best-effort em dispatchClientDocument, FIX-84).
 		const src = readSource("src/app/api/chat/document/route.ts");
-		expect(src).toMatch(/uploadContractDocument/);
+		expect(src).toMatch(/storeClientDocument/);
+		expect(src).not.toMatch(/uploadContractDocument/);
 	});
 });
 

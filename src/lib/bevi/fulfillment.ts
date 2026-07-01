@@ -134,6 +134,11 @@ export interface ConfirmOfferResult {
 	consortiumProposalLink: string;
 	documentsLinkPersonal: string;
 	documentsLinkAddress: string;
+	/** Trilho B (self-contract): nº gerado pela administradora após o finalize
+	 * (inserção assíncrona). undefined no Trilho A (chooseOffer já basta) ou se
+	 * a inserção do self-contract ainda não resolveu (D11 — nunca chutado). Ver
+	 * docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md D3/D4. */
+	proposalNumber?: number;
 }
 
 /** Passo 5.2 — usuário confirmou a oferta real: escolhe + gera link de assinatura
@@ -173,6 +178,10 @@ export async function confirmOffer(
 
 	const choose = await gateway.chooseOffer({ proposalId: row.proposalId, ofertaId });
 	const links = await gateway.getDocumentLinks(row.proposalId);
+	// D3 — passo extra que só o Trilho B tem (inserção assíncrona na
+	// administradora). Opcional/duck-typed: o Trilho A não implementa
+	// `finalize`, então `gateway.finalize?.()` é um no-op transparente pra ele.
+	const finalized = await gateway.finalize?.(row.proposalId);
 
 	await updateBeviProposal(row.id, {
 		consortiumProposalLink: choose.consortiumProposalLink,
@@ -187,6 +196,7 @@ export async function confirmOffer(
 		consortiumProposalLink: choose.consortiumProposalLink,
 		documentsLinkPersonal: links.linkDocumentosPessoais,
 		documentsLinkAddress: links.linkComprovanteEndereco,
+		proposalNumber: finalized?.proposalNumber,
 	};
 }
 
@@ -205,10 +215,19 @@ export async function uploadContractDocument(
 	gateway: ProposalGateway = getProposalGateway(),
 ): Promise<{ ok: boolean; fallbackLink?: string }> {
 	const row = await getLatestBeviProposal(conversationId);
+	// proposalStatus só vira "documentos" dentro de confirmOffer — é o sinal de
+	// "oferta confirmada", independente de trilho (FIX-112: sem isso, dava pra
+	// subir documento com a proposta ainda em "simulacao").
+	if (!row || row.proposalStatus !== "documentos")
+		throw new Error("Sem oferta confirmada — finalize a escolha da oferta antes.");
+	// D2 — Trilho B (self-contract) não produz link (fecha inline, sem
+	// uselink.me): documentsLink fica "" e o gateway ignora/delega ao despacho
+	// desacoplado (bloco-a). O Trilho A sempre tem link truthy aqui (comportamento
+	// inalterado).
 	const link =
-		input.slot === "comprovante_endereco" ? row?.documentsLinkAddress : row?.documentsLinkPersonal;
-	if (!row || !link)
-		throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
+		(input.slot === "comprovante_endereco"
+			? row.documentsLinkAddress
+			: row.documentsLinkPersonal) ?? "";
 
 	try {
 		await gateway.uploadDocument({

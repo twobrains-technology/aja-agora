@@ -38,6 +38,24 @@ export async function getLeadByConversationId(conversationId: string) {
 	return result.rows[0] || null;
 }
 
+/**
+ * Faz polling em getLeadByConversationId até o lead existir (substitui
+ * waitForTimeout fixo — anti-padrão proibido: assíncrono no servidor não tem
+ * duração fixa confiável entre runs/CI).
+ */
+export async function waitForLead(
+	conversationId: string,
+	{ timeoutMs = 5000, intervalMs = 100 } = {},
+) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const lead = await getLeadByConversationId(conversationId);
+		if (lead) return lead;
+		await new Promise((r) => setTimeout(r, intervalMs));
+	}
+	throw new Error(`waitForLead: timeout (${timeoutMs}ms) esperando lead da conversation ${conversationId}`);
+}
+
 export async function getConversation(conversationId: string) {
 	const db = await getDbClient();
 	const result = await db.query("SELECT * FROM conversations WHERE id = $1", [conversationId]);

@@ -1,13 +1,60 @@
 ---
 id: FIX-100
 titulo: "Endurecer migrate-guard pra detectar drift (count vs presença real da tabela)"
-status: todo
+status: done
 bloco: bloco-g-infra-teste
 arquivos:
   - scripts/migrate-guard.mjs
-  - scripts/migrate-guard.test.ts
+  - tests/regression/migrate-guard.test.ts
 rodada: 2026-06-28 — mutirão inbox (qa-noturno 21/06 + infra 24-26/06 + jornada 28/06)
+commit: a0c671f4
+executado_em: 2026-06-28
 ---
+
+## Resolução (2026-06-28)
+
+**Escopo executado (código):** endurecer o `migrate-guard.mjs` pra detectar
+drift, conforme item 3 de "Ação" no card. **NÃO executado** (blast radius de
+infra, PENDENTE-KAIRO — ver abaixo): itens 1-2 (verificar/reconciliar
+`__drizzle_migrations` de PROD). Nenhuma migration rodou contra banco nenhum
+nesta sessão (só contra o Postgres efêmero do meu próprio workspace de dev).
+
+- **`detectDrift(pendingFiles, existingTables)` nova** em
+  `scripts/migrate-guard.mjs`: cruza o `CREATE TABLE [IF NOT EXISTS]` de cada
+  migration "pendente" (pelo count) com `information_schema.tables` do schema
+  real. Se a tabela já existe → drift confirmado (aplicada via push/dump sem
+  registro no journal) — reaplicar quebraria com `relation already exists`.
+- **`main()` chama o check ANTES de tentar `migrate()`**: acha drift → aborta
+  com diagnóstico claro (arquivo + tabela + explicação), **sempre** (dev e
+  prod — não é risco a ponderar como as heurísticas destrutivas existentes,
+  é uma falha garantida do `migrate()` a seguir). `getExistingTables()` falha
+  (DB down) → `null` → pula o check (não bloqueia o boot por uma consulta
+  auxiliar).
+- **TDD**: 5 testes novos em `tests/regression/migrate-guard.test.ts`
+  (`describe("migrate-guard — detectDrift...")`) cobrindo o cenário exato do
+  card (0022 "pendente" com tabela já existente), case-insensitivity,
+  `IF NOT EXISTS`, e não-falso-positivo em `ALTER TABLE`. Vistos falhar
+  (`detectDrift is not a function`) antes da implementação. 13/13 verde
+  depois. Smoke real: `node scripts/migrate-guard.mjs` contra o Postgres do
+  meu workspace (schema já migrado, sem drift) → `OK — schema atualizado`,
+  sem falso-positivo.
+- **Nota de path**: o frontmatter original apontava
+  `scripts/migrate-guard.test.ts` — o arquivo real é
+  `tests/regression/migrate-guard.test.ts` (já existia, com os testes do fix
+  de 2026-06-13); os novos testes foram ao lado dos existentes ali.
+
+## PENDENTE-KAIRO (não-código, blast radius de infra — NÃO executado)
+
+1. Verificar `select count(*) from drizzle.__drizzle_migrations` no **RDS de
+   PROD** vs o idx esperado (27, antes da 0027) — item 1 do card original.
+2. Se divergir, reconciliar `__drizzle_migrations` de prod ANTES de deployar
+   o FIX-81 (inserir os registros faltantes das migrations já aplicadas, de
+   forma idempotente/auditada — **nunca DDL solto na mão**, regra global de
+   migrations).
+3. Com o `detectDrift` agora ativo, se prod estiver inconsistente o deploy do
+   FIX-81 vai **abortar no boot com o diagnóstico claro** (em vez do
+   `relation already exists` genérico) — o que já é uma melhoria de sinal,
+   mas a reconciliação em si continua exigindo ação humana no RDS de prod.
 
 # Risco de DEPLOY (INFRA/MIGRATION — não é bug de runtime do app) — `__drizzle_migrations` inconsistente com o schema: migrate-guard por count pode quebrar o deploy da migration 0027 (FIX-81)
 

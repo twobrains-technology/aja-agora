@@ -1,13 +1,30 @@
 ---
 id: FIX-84
 titulo: "Despacho desacoplado do documento (dispatchClientDocument) — Bevi/mesa como consumidor"
-status: todo
+status: done
 bloco: bloco-a-documentos-cliente
 arquivos:
   - src/lib/documents/dispatch.ts
   - src/lib/adapters/bevi/conexia-docs-client.ts
 rodada: 2026-06-28 — alinhamento da jornada pós-descoberta (documentos como ativo nosso)
+commit: d6eaf27f
+executado_em: 2026-07-01
 ---
+
+## Resolução (2026-07-01)
+
+`dispatchClientDocument(documentId, target)` implementado em
+`src/lib/documents/dispatch.ts`. `bevi_a` reusa `uploadContractDocument`
+(fulfillment.ts, que já delega pro `ConexiaDocsClient` via
+`BeviApiAdapter.uploadDocument` — `conexia-docs-client.ts` não precisou de
+alteração). `mesa` é no-op manual. `bevi_b` fica STUB (`TODO(bevi_b)`,
+PENDENTE-KAIRO). Documento inexistente propaga erro (fail-fast, não é o
+caminho best-effort). **Gap aberto:** nenhum chamador automático foi
+wireado ainda (decisão registrada em
+`docs/correcoes/decisions/2026-06-28-bloco-a-documentos.md` §8) — o contrato
+está pronto pro bloco-c consumir com `target="bevi_b"`. Testes:
+`dispatch.integration.test.ts` (6 cenários: mesa/bevi_b-stub/bevi_a
+sucesso+falha+exceção/documento inexistente).
 
 ## Palavras do operador
 > "antes mesmo de pensar em enviar para quem a gente tem que enviar (...) seja no trilho A ou
