@@ -3472,6 +3472,119 @@ describe("FIX-72 — pedir outras opcoes/detalhar usa id REAL, nao fabrica auto-
 });
 
 // ============================================================================
+// FIX-183 — "quero ver todos" re-apresenta opções, não decide sobre grupo
+//           não-escolhido (Mirella, PROD conv 69a38af1, 2026-07-01)
+// ----------------------------------------------------------------------------
+// Real (Mirella, auto, produção): pós comparison_table de 5 grupos (Itaú,
+// Rodobens, Canopus×2, Âncora), ela disse "quero ver todos". O analyzer
+// classificou `ready_to_proceed` (não havia categoria pra "ver MAIS do que já
+// mostraram") → o agente foi pra present_decision_prompt sobre "Embracon",
+// grupo NUNCA exibido (confabulação de entidade — Lei 3). Fix: categoria
+// `wants_more_options` no NLU (turn-analyzer) + decideShowGate NÃO empurra o
+// funil + default de produto = re-apresentar o comparativo (AskUserQuestion,
+// 2026-07-01 — docs/correcoes/decisions/2026-07-01-bloco-b-intent-ver-mais.md).
+// Defesa estrutural detalhada: src/lib/agent/turn-analyzer.fix-183.test.ts +
+// src/lib/agent/qualify-state.fix-183.test.ts.
+// ============================================================================
+
+describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre grupo não-escolhido", () => {
+	const SHOWN = ["Itaú", "Rodobens", "Canopus", "Âncora"];
+
+	function postComparisonMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "rafael-auto",
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: {
+				creditMax: 106_000,
+				prazoMeses: 0,
+				objetivo: "contemplacao_rapida",
+				hasLance: "no",
+				lanceEmbutido: false,
+			},
+			searchDispatched: true,
+			revealCompleted: true,
+			simulatorOfferDispatched: true,
+			...over,
+		};
+	}
+
+	it("acoplamento: o schema do analyzer tem a categoria wants_more_options + few-shot que a separa", async () => {
+		const { turnAnalysisSchema, BASE_SYSTEM_INSTRUCTION } = await import(
+			"@/lib/agent/turn-analyzer"
+		);
+		expect(turnAnalysisSchema.shape.userIntent.options).toContain("wants_more_options");
+		expect(BASE_SYSTEM_INSTRUCTION).toMatch(/ver (todos|mais)[\s\S]{0,80}wants_more_options/i);
+	});
+
+	it("fix funcional: 'ver todos' (wants_more_options) NÃO dispara decisão nem simulador — funil não avança sobre grupo não-escolhido", () => {
+		const meta = postComparisonMeta();
+		expect(
+			decideShowGate({ gate: "decision", intent: "wants_more_options", meta, isUserTurn: true }),
+		).toBe(false);
+		expect(
+			decideShowGate({
+				gate: "simulator-offer",
+				intent: "wants_more_options",
+				meta: postComparisonMeta({ simulatorOfferDispatched: false }),
+				isUserTurn: true,
+			}),
+		).toBe(false);
+		// Contraste com o desvio REAL: classificado como ready_to_proceed, o MESMO
+		// estado empurrava pra decisão (o bug da Mirella).
+		expect(
+			decideShowGate({ gate: "decision", intent: "ready_to_proceed", meta, isUserTurn: true }),
+		).toBe(true);
+	});
+
+	it("cassette: stream do BUG — agent decide sobre 'Embracon' (grupo nunca exibido)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Boa, esse plano encaixa bem no que você pediu!"),
+			toolCallChunk("tc-1", "present_decision_prompt", { administradora: "Embracon" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const decided = toolCalls.find((tc) => tc.toolName === "present_decision_prompt");
+		const admin =
+			(decided?.input as { administradora?: string } | undefined)?.administradora ?? "";
+		// A assinatura do bug: decisão sobre um grupo FORA do conjunto exibido.
+		expect(decided).toBeDefined();
+		expect(SHOWN).not.toContain(admin);
+		expect(admin).toBe("Embracon");
+	});
+
+	it("trajetória correta: 'quero ver todos' re-apresenta o comparativo dos grupos JÁ mostrados, sem decidir", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Essas são todas as opções que encontrei na sua faixa — qual delas quer que eu detalhe?",
+			),
+			toolCallChunk("tc-cmp", "present_comparison_table", {
+				groups: SHOWN.map((administradora) => ({ administradora })),
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		// Re-apresenta o comparativo (default de produto), NUNCA decide.
+		expect(toolCalls.some((tc) => tc.toolName === "present_comparison_table")).toBe(true);
+		expect(toolCalls.some((tc) => tc.toolName === "present_decision_prompt")).toBe(false);
+		const presented = (
+			(
+				toolCalls.find((tc) => tc.toolName === "present_comparison_table")?.input as
+					| { groups?: Array<{ administradora?: string }> }
+					| undefined
+			)?.groups ?? []
+		).map((g) => g.administradora);
+		// Só os grupos realmente mostrados — nada de Embracon fantasma.
+		expect(presented).not.toContain("Embracon");
+		expect(presented).toEqual(SHOWN);
+		expect(text.toLowerCase()).toMatch(/todas as op|op[çc][õo]es|faixa/);
+	});
+});
+
+// ============================================================================
 // GATE-IDENTIFY (D1, docs/jornada/CONTEXT.md) — CPF antecipado antes da busca
 // ----------------------------------------------------------------------------
 // A Bevi exige CPF+celular+LGPD ANTES de simular (Trilho B é proposta-first).
