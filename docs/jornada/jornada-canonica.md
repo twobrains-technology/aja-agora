@@ -290,24 +290,40 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 ## Cobertura de QA — Frente 2 (Recomendação + Simulador + Fechamento, Passos 5-7)
 
 > Foto do último teste por cenário. Histórico/detalhe no ledger de run
-> (`.qa-loop/2026-07-01-...-ledger-frente2-recomendacao-fechamento.md`). Última validação: **2026-07-01**.
+> (`.qa-loop/2026-07-01-0233-ledger-frente2-recomendacao-fechamento.md`). Última validação: **2026-07-01**
+> (rodada 2 — E2E de TELA real via Playwright contra Bevi/Anthropic reais de homologação).
 
 | Cenário | Passo | Status | Nível |
 |---|---|---|---|
-| Card recomendado + Outras opções (carrossel) | P5 | ✅ PASS | struct (formatter.card-recomendada + other-options) |
-| Resumo por oferta (carta·parcela·prazo·adm·lance·liquidez) | P5 | ✅ PASS | struct (formatter.real-offer) |
-| Simulador contemplação 3/6/12 recalcula | P5 | ✅ PASS | property/component (contemplation-dial) + formatter.simulador |
-| Card de decisão (3 botões) | P5 | ✅ PASS | struct (decision_${intent}; outras=determinístico) |
-| Ressalva CDC "estimativa" | P5 | ✅ PASS | struct (formatter.simulador) |
-| **FIX-117/D18** WhatsApp "Tenho interesse" = avanço direto (paridade FIX-38) | P5 | ✅ PASS | integ+cassette + code-review (dispatch→buildAdvanceToContract) |
-| **FIX-119/D22** WhatsApp "Ver outras" (decision_outras) determinístico | P5 | ✅ PASS | integ+cassette + code-review (→buildOtherOptions, model-free) |
-| Confirma oferta escolhida (re-simula TTL) | P6 | ✅ PASS | integ (contract-capture) |
-| **FIX-122/D13** upload doc inbound WhatsApp | P6 | ✅ PASS | integ+cassette + code-review (webhook image/document→handleDocumentInbound) |
-| **FIX-116/D11** WhatsApp NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS | struct+cassette + code-review (0 copy runtime /assinatura\|assinar/i) |
-| Parabéns + resumo WA/email + opt-in | P7 | ✅ PASS | struct (whatsapp-optin + signature-handoff) |
+| Card recomendado + Outras opções (valores REAIS da Bevi) | P5 | ✅ PASS | **E2E browser real** (`passo5-7-golden-path.spec.ts`) |
+| Resumo por oferta (carta·parcela·prazo·adm·lance·liquidez) | P5 | ✅ PASS | **E2E browser real** |
+| Simulador contemplação 3/6/12 recalcula ao vivo (arraste real) | P5 | ✅ PASS | **E2E browser real** (assertion de valor: texto do lance muda com o mês) |
+| "Tenho interesse" → avanço DIRETO ao fechamento (paridade D18/FIX-38, web) | P5→P6 | ✅ PASS | **E2E browser real** — zero card de decisão extra confirmado |
+| Ressalva CDC "estimativa" | P5 | ✅ PASS | **E2E browser real** (`dial-disclaimer`) |
+| Confirma oferta escolhida (contract-submit → real_offer → offer-confirm) | P6 | ✅ PASS | **E2E browser real** — proposta REAL criada na Bevi (Trilho A) |
+| **FIX-116/D11** web NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS | **E2E browser real** — zero ocorrência de /assinatura\|assinar/i na tela inteira |
+| Parabéns + DES-1 confirmado | P7 | ✅ PASS | **E2E browser real** |
+| **FIX-117/D18** WhatsApp "Tenho interesse" = avanço direto (paridade FIX-38) | P5 | ✅ PASS (determinístico) / ⚠️ TELA-NÃO-VALIDADA (WhatsApp) | integ+cassette+code-review; spec `whatsapp-paridade.spec.ts` escrita, execução pendente |
+| **FIX-119/D22** WhatsApp "Ver outras" (decision_outras) determinístico | P5 | ✅ PASS (determinístico) | integ+cassette + code-review (→buildOtherOptions, model-free) |
+| **FIX-122/D13** upload doc inbound WhatsApp | P6 | ✅ PASS (determinístico) / ⚠️ SEM AFORDANCE DE UI | integ+cassette + code-review; simulador (`whatsapp-stage.tsx`) não tem input de arquivo — E2E de tela desta ação específica não é possível hoje sem adicionar a afordance |
+| **FIX-116/D11** WhatsApp NÃO promete "assinatura" (DES-1) | P6 | ✅ PASS (determinístico) | struct+cassette + code-review; reconfirmação de tela pendente (ver acima) |
 | **T2** lance embutido amortiza dívida×crédito | P5 | ⚠️ NÃO TESTADO | tensão — decisão Bernardo (não é bug) |
 
-- Full onda `divergencias-jornada` (216 arquivos / 2194 testes): ✅ verde. Zero regressão introduzida.
-- Validação no nível certo (§5): fixes WhatsApp são determinísticos → unit+cassette+code-review.
-  E2E ao vivo do funil foi **bloqueado upstream** (Passo 1 nome / Passo 3 identidade — FRENTE-1/cross-cutting),
-  não alcançou o reveal; ver ledger + `docs/correcoes/inbox/2026-07-01-crossfrente-agente-mudo-captura-nome.md`.
+- Full onda `divergencias-jornada` (216 arquivos / 2194 testes): ✅ verde. Zero regressão introduzida
+  (reconfirmado após FIX-172, 2201/2201).
+- **Bug achado + corrigido via TDD nesta rodada — FIX-172**: gate `identify` (web) cifrava o
+  celular sem normalizar o DDI ("55"), diferente do WhatsApp (`waIdToCelular` já tirava). A
+  Bevi rejeitava o contract-submit (`CELULAR inválido`). Fix: `normalizePhoneBR` antes de
+  `storeIdentity` — paridade web×WhatsApp restaurada. Ver ledger para detalhe + nota honesta
+  sobre a máscara client-side (`gate-identity-form.tsx`) ainda truncar em vez de stripar o
+  DDI (dívida de UX menor, não corrigida nesta rodada — PENDENTE-KAIRO).
+- **D10 (Trilho A instável) CONFIRMADO ao vivo com causa-raiz exata**: `TimeoutError` no
+  `BeviApiAdapter.chooseOffer` (API de Parceiro), intermitente (2 de 3 tentativas falharam
+  nesta rodada, 1 sucedeu). Produto degrada graciosamente (mensagem amigável, retry funciona).
+  Gap de observabilidade corrigido (catch engolia o erro sem logar — agora loga).
+- Web: E2E de tela real fechado ponta-a-ponta, Passo 5→6→7 (o funil upstream bloqueado
+  — Passo 1/3, território FRENTE 1 — foi contornado semeando o estado direto no ponto crítico,
+  técnica documentada na skill `qa-autonomo` §4.2.2).
+- WhatsApp: paridade dos fixes determinística segue coberta (unit+cassette+code-review);
+  E2E de tela ao vivo via `/admin/simulator/whatsapp` tem spec escrita mas execução pendente
+  (orçamento da sessão) — ver ledger §Pendências.
