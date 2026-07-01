@@ -21,6 +21,7 @@ import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import { coerceSimulationPayload } from "./simulation-payload";
+import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -175,7 +176,26 @@ export async function* runAgentTurn(args: {
 		extraSystemBlocks,
 	});
 
-	const result = await agent.stream({ messages });
+	// FIX-181: observabilidade de tool I/O (Lei 5) — o primitivo NATIVO do AI SDK 6
+	// `onStepFinish` entrega toolCalls (args) + toolResults (output) por step. Sem
+	// isto, "a IA inventou ou pegou de dado real?" fica indeterminável (o buraco que
+	// tornou o 'Embracon' impossível de provar na conv 69a38af1). PII mascarada em
+	// tool-io-log.ts; log server-side (console.log estruturado), nunca vaza pro cliente.
+	let toolIoStep = 0;
+	const result = await agent.stream({
+		messages,
+		onStepFinish: (step: {
+			toolCalls?: ToolCallRecord[];
+			toolResults?: ToolResultRecord[];
+		}) => {
+			logToolIO({
+				conversationId,
+				stepNumber: toolIoStep++,
+				toolCalls: step.toolCalls ?? [],
+				toolResults: step.toolResults ?? [],
+			});
+		},
+	});
 
 	for await (const part of result.fullStream) {
 		switch (part.type) {
