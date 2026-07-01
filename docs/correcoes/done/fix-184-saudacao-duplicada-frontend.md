@@ -1,7 +1,9 @@
 ---
 id: FIX-184
 titulo: "'Prazer, Mirella!' aparece duplicado na tela — bug é só no frontend, backend salvou 1x"
-status: todo
+status: done
+commit: 72f3bd7c
+executado_em: 2026-07-01
 bloco: bloco-c-frontend-e-flaky
 severidade: baixa
 projeto: aja-agora
@@ -62,3 +64,27 @@ zero relação com o agente/arquitetura de IA — o backend salvou 1x, provado n
 inbox por ter aparecido na mesma tela, mas é **P3 isolado**, corrige por conta própria (não entra no
 escopo da spec de governança da jornada). Não deixar o medo do bug grande contaminar a leitura deste:
 é chato, é visual, é pequeno.
+
+## Resolução (2026-07-01, commit 72f3bd7c) — causa PROVADA
+
+Causa cravada por leitura de código (não hipótese): o `runner.ts` acumula os
+`text-delta` da LLM em `fullResponse` e só aplica `collapseEchoedSegments` (a
+guarda do eco/degeneração do FIX-102) na **persistência**, DEPOIS do streaming
+(runner.ts:308). O stream **ao vivo**, porém, já emitiu os deltas crus pro cliente
+(adapter `pipeOrchestratorToWriter` → `useChat`), que renderiza o eco. Por isso o
+DB fica limpo (1 registro) e a tela mostra 2x — exatamente o que a evidência dizia.
+
+Dois shapes do eco chegam ao cliente: (a) concatenado num único text part
+("Prazer, Mirella!Prazer, Mirella!", quando o texto stremia contíguo após o
+`forceToolChoice`); (b) em text parts adjacentes separados por um `data-tool` (que
+`classifyParts` dropa) e depois juntados com "\n\n" no `groupAdjacentText`.
+
+Fix client-side (sem tocar runner — server-only e mexido em paralelo pelo
+bloco-a/FIX-182): `collapseEchoedText` em `chat-message.tsx`, espelho exato do
+guard do server, colapsa segmentos `[.!?]` 100% idênticos consecutivos no texto
+renderizado de cada `text-group`. Compara com `trim()`, então pega os dois shapes
+(o "\n\n" do join some junto com o eco). A tela passa a bater com o DB.
+
+Regressão (Camada 1 / render): `src/components/chat/chat-message.fix-184.test.tsx`
+renderiza o `ChatMessage` REAL com os 2 shapes + 1 caso de não-regressão. Bug
+não-agêntico (render puro) → sem cassette de Camada 2 (regra do CLAUDE.md).
