@@ -6537,6 +6537,69 @@ describe("FIX-115 — valor por texto sempre avança + agulha manda valor como t
 });
 
 // ============================================================================
+// FIX-114 — search_groups disparou ANTES da identidade (IdentityNotCollectedError)
+// ----------------------------------------------------------------------------
+// Real (PROD/AWS, log /ecs/tb/prod conv bc5fa852, 2026-06-30, persona Maria):
+// "Deixa eu buscar / Preciso primeiro buscar os grupos / Deixa eu usar a ferramenta
+// certa pra isso" + "tô com uma dificuldade técnica pontual pra acessar os grupos".
+// O agente free-rodou search_groups antes do CPF → a Bevi lançou
+// IdentityNotCollectedError (tripwire proposital, D1) → o agente narrou a falha.
+//
+// Fix de ORQUESTRAÇÃO: a descoberta só entra no toolset da fase qualify quando
+// identityCollected=true (o gate identify precede o credit). Sem a tool no request,
+// o modelo NEM CONSEGUE chamá-la cedo. A meta-narrativa e a invenção de "dificuldade"
+// já eram vetadas no prompt (FIX-36 / Maria 2026-06-25) — aqui travamos as duas.
+// ============================================================================
+
+describe("FIX-114 — descoberta gateada na identidade + sem meta-narrativa de busca", () => {
+	const QUALIFY_NO_ID: ConversationMetadata = {
+		currentPersona: "moto",
+		currentCategory: "moto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		// identityCollected ausente — passo 2 antes do gate identify.
+	};
+	const QUALIFY_WITH_ID: ConversationMetadata = { ...QUALIFY_NO_ID, identityCollected: true };
+
+	it("cassette: sem identidade a policy NÃO expõe search_groups; com identidade, expõe", () => {
+		expect(allowedTools(QUALIFY_NO_ID)).not.toContain("search_groups");
+		expect(allowedTools(QUALIFY_NO_ID)).not.toContain("recommend_groups");
+		expect(allowedTools(QUALIFY_WITH_ID)).toContain("search_groups");
+	});
+
+	it("structural: a policy gateia a descoberta em identityCollected (fonte de produção)", () => {
+		const src = readSource("src/lib/agent/orchestrator/tool-policy.ts");
+		const qualifyCase = src.slice(src.indexOf('case "qualify":'), src.indexOf('case "reveal":'));
+		expect(qualifyCase).toMatch(/identityCollected === true \? DISCOVERY_AND_REVEAL_CARDS/);
+	});
+
+	it("structural: o prompt VETA a meta-narrativa de busca e a invenção de 'dificuldade'", () => {
+		// não narrar mecânica ("vou buscar"/"deixa eu procurar") — FIX-36.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/narrar mec[âa]nica/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/vou buscar/i);
+		// não inventar falha de busca sem ter chamado a tool — Maria 2026-06-25.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/dificuldade em acessar os grupos/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/instabilidade nas buscas/i);
+		// não anunciar o que vai fazer — chamar a tool direto.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/anunciam o que voc[êe] vai fazer/i);
+	});
+
+	// Detector do vazamento exato do bug — se o prompt afrouxar e a frase voltar,
+	// este regex casa e o cassette denuncia a regressão.
+	it("detector: as frases de meta-narrativa/falha do bug real são pegáveis", () => {
+		const vazamento =
+			"Deixa eu buscar os grupos. Preciso primeiro buscar os grupos. Tô com uma " +
+			"dificuldade técnica pontual pra acessar os grupos nessa faixa agora.";
+		const detectors = [
+			/deixa eu buscar/i,
+			/preciso.{0,20}buscar os grupos/i,
+			/dificuldade t[ée]cnica.{0,30}grupos/i,
+		];
+		expect(detectors.some((rx) => rx.test(vazamento))).toBe(true);
+	});
+});
+
+// ============================================================================
 // FIX-112 — fim da proposta bugado ("bora" lido como recusa)
 // ----------------------------------------------------------------------------
 // Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
