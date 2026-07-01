@@ -6,7 +6,7 @@ Correções vindas da revisão 2 da jornada (`jornada2_revisão.docx`, teste man
 ## Passos
 1. Leia `docs/correcoes/README.md` (regras do fluxo) e a pasta `docs/correcoes/todo/bloco-a-funil-coleta-ordem/` inteira: `_bloco.md` + `fix-52`, `fix-53`, `fix-58` (root cause, cenário, correção, regressão exigida — cada um já tem arquivo:linha investigado). Leia também `CLAUDE.md` do projeto (regras de agente e regressão de 3 camadas) e `docs/jornada/jornada-canonica.md`.
 
-2. DESIGN (FIX-58 tem decisão de produto/ordem; FIX-52/53 já vêm com root cause fechado): para o que tiver alternativa real, use o raciocínio da skill `superpowers:brainstorming` (explore contexto, 2-3 abordagens, trade-offs, YAGNI) mas DECIDA sozinho — não trave no HARD-GATE. Registre cada decisão em `docs/correcoes/decisions/2026-06-19-bloco-a-funil.md` (o que decidiu · opções · escolhida + porquê). Commit `docs:` desse ADR.
+2. DESIGN (FIX-58 tem decisão de produto/ordem; FIX-52/53 já vêm com root cause fechado): para o que tiver alternativa real, use o raciocínio da skill `superpowers:brainstorming` (explore contexto, 2-3 abordagens, trade-offs, YAGNI) mas DECIDA sozinho — não trave no HARD-GATE. Registre cada decisão em `docs/decisoes/blocos/2026-06-19-bloco-a-funil.md` (o que decidiu · opções · escolhida + porquê). Commit `docs:` desse ADR.
 
 3. Execute os itens NA ORDEM: **FIX-53 → FIX-52 → FIX-58** (os três convergem no `system-prompt.ts`; sequencial evita reescrever a mesma seção 3x). TDD strict por item.
 

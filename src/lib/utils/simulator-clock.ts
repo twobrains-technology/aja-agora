@@ -5,7 +5,7 @@
 // dentro do scope retorna `new Date(Date.now() + ctx.offsetMs)`. Fora do scope,
 // retorna `new Date()` puro (comportamento idêntico ao caminho real).
 //
-// Ver `docs/specs/2026-05-17-simulator-time-travel-design.md`.
+// Ver `docs/design/specs/2026-05-17-simulator-time-travel-design.md`.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 

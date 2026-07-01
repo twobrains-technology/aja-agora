@@ -5175,7 +5175,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 // o hook do processor.ts + a consulta de routing.ts.
 //
 // Spec: docs/visao/mesa-de-operacao.md §5 + DEC-C. Decisões:
-// docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+// docs/decisoes/blocos/2026-06-21-bloco-mesa-c.md.
 // ============================================================================
 
 describe("BUG-MESA-COPILOT — copiloto injeta o PDF da administradora e não vaza mecanismo", () => {

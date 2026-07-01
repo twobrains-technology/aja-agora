@@ -8,7 +8,7 @@ import {
 // FIX-54 (jornada2_revisão.docx, Bernardo): "Carro - está indo só até 300k".
 // O teto de `auto` em CREDIT_BOUNDS (fonte única dos sliders web + clamp
 // server-side) estava em R$ 300.000 — carros novos/premium passam disso.
-// Decisão (docs/correcoes/decisions/2026-06-19-bloco-b-simulador.md): elevar
+// Decisão (docs/decisoes/blocos/2026-06-19-bloco-b-simulador.md): elevar
 // para R$ 500.000 (alinha com `servicos`, cobre premium sem virar irreal).
 describe("FIX-54 — teto de carro elevado em CREDIT_BOUNDS", () => {
 	const NOVO_TETO_AUTO = 500_000;
@@ -51,7 +51,7 @@ describe("FIX-54 — teto de carro elevado em CREDIT_BOUNDS", () => {
 // FIX-55 (jornada2_revisão.docx, Bernardo): "O simulador não está sensível a
 // números quebrados, é isso mesmo?". O `step` de 10.000 no slider de valor do
 // bem (auto) forçava múltiplos redondos (80k, 90k, 100k…). Decisão
-// (docs/correcoes/decisions/2026-06-19-bloco-b-simulador.md): step fino (1.000)
+// (docs/decisoes/blocos/2026-06-19-bloco-b-simulador.md): step fino (1.000)
 // no slider + input numérico livre nos componentes (precisão exata). O clamp
 // server-side NÃO re-quantiza — um valor digitado livre sobrevive ponta a ponta.
 describe("FIX-55 — números quebrados (step fino + clamp sem re-quantizar)", () => {
