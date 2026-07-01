@@ -126,9 +126,17 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// BUG-OPTIN-ENGOLE-GATES: present_whatsapp_optin FORA pré-reveal.
 			// FIX-34: present_lead_form SÓ aqui (captura de lead pré-reveal) — some
 			// das fases pós-reveal, onde o avanço é decision → contract_form.
+			//
+			// FIX-114 (PROD 2026-06-30, log conv bc5fa852): a descoberta (search_groups
+			// + cards do reveal) SÓ entra no toolset DEPOIS da identidade coletada. A
+			// Bevi exige CPF+celular pra simular (D1) e lança IdentityNotCollectedError
+			// se buscar sem eles — o agente free-rodava search_groups antes do gate
+			// identify e cuspia "dificuldade técnica". Com a tool fora do request, o
+			// modelo nem consegue chamá-la cedo; o funil coleta a identidade primeiro
+			// (nextGate: identify precede credit) e só então libera a busca.
 			return [
 				...BASE,
-				...DISCOVERY_AND_REVEAL_CARDS,
+				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_lead_form",

@@ -3,10 +3,19 @@
 // effect forçava o fundo a cada token mesmo com o usuário rolando pra cima
 // ("buga tudo"). Regra de produto (palavras do operador): o GESTO do usuário
 // SEMPRE vence; sticky-to-bottom só quando ele não interage; pill religa.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { MessageList } from "./message-list";
+
+// FIX-111: o auto-scroll agora é coalescido num requestAnimationFrame (1 scroll
+// por frame em vez de 1 por token). Os asserts de "acompanhou o fundo" precisam
+// liberar o frame pendente antes de checar o scrollIntoView.
+async function flushFrame(): Promise<void> {
+	await act(async () => {
+		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+	});
+}
 
 // Stubs de apresentação — o SUT é a lógica de scroll/intenção do MessageList,
 // não o render das bolhas (que puxa motion/artifacts pesados).
@@ -53,10 +62,12 @@ describe("FIX-32 — scroll inteligente (gesto do usuário vence)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("no fundo + mensagem nova → acompanha (scrollIntoView chamado)", () => {
+	it("no fundo + mensagem nova → acompanha (scrollIntoView chamado)", async () => {
 		const { rerender } = render(<MessageList messages={[msg("a", "oi")]} isStreaming={false} />);
+		await flushFrame();
 		scrollSpy.mockClear();
 		rerender(<MessageList messages={[msg("a", "oi"), msg("b", "resposta")]} isStreaming={false} />);
+		await flushFrame();
 		expect(scrollSpy).toHaveBeenCalled();
 	});
 
@@ -98,17 +109,18 @@ describe("FIX-32 — scroll inteligente (gesto do usuário vence)", () => {
 		expect(screen.queryByText("Novas mensagens")).toBeNull();
 	});
 
-	it("pill 'Novas mensagens' aparece após subir e religa o stick ao clicar", () => {
+	it("pill 'Novas mensagens' aparece após subir e religa o stick ao clicar", async () => {
 		const { rerender } = render(
 			<MessageList messages={[msg("a", "oi"), msg("b", "x")]} isStreaming={false} />,
 		);
+		await flushFrame();
 		fireEvent.wheel(container(), { deltaY: -40 });
 		const pill = screen.getByText("Novas mensagens");
 		expect(pill).toBeDefined();
 
 		scrollSpy.mockClear();
 		fireEvent.click(pill);
-		expect(scrollSpy).toHaveBeenCalled(); // religou → rolou pro fundo
+		expect(scrollSpy).toHaveBeenCalled(); // religou → rolou pro fundo (chamada direta, síncrona)
 
 		// e volta a acompanhar mensagens novas
 		scrollSpy.mockClear();
@@ -118,6 +130,7 @@ describe("FIX-32 — scroll inteligente (gesto do usuário vence)", () => {
 				isStreaming={false}
 			/>,
 		);
+		await flushFrame();
 		expect(scrollSpy).toHaveBeenCalled();
 	});
 });

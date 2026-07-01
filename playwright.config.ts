@@ -17,7 +17,10 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    // Video exige ffmpeg — ausente no container Alpine (musl). Gateado: off quando rodando
+    // com o chromium do sistema (container); "retain-on-failure" no host/CI. Screenshot +
+    // trace (que não precisam de ffmpeg) seguem como evidência.
+    video: process.env.PW_EXECUTABLE_PATH ? "off" : "retain-on-failure",
   },
 
   webServer: undefined, // App já tá rodando no container local
@@ -25,7 +28,20 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Container Alpine (musl) não roda o chromium glibc que o Playwright baixa.
+        // Quando PW_EXECUTABLE_PATH aponta pro chromium do sistema (/usr/bin/chromium-browser),
+        // usa-o + --no-sandbox (chromium como root). Inerte no host/CI (env vazia → browser padrão).
+        ...(process.env.PW_EXECUTABLE_PATH
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_EXECUTABLE_PATH,
+                args: ["--no-sandbox"],
+              },
+            }
+          : {}),
+      },
     },
   ],
 });

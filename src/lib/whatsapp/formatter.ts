@@ -483,42 +483,18 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 }
 
 import {
-	CREDIT_BUCKETS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAMES,
 } from "@/lib/agent/qualify-config";
 
-const CREDIT_RANGES = CREDIT_BUCKETS;
-
-export function creditRangeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "moto" | "servicos",
-	prefix?: string,
-): WhatsAppResponse {
-	const ranges = CREDIT_RANGES[category];
-	const question = gateQuestion("credit", category) ?? "";
-	const text = prefix ? `${prefix}\n\n${question}` : question;
-	return {
-		type: "interactive",
-		interactive: {
-			type: "list",
-			body: { text },
-			action: {
-				button: "Escolher faixa",
-				sections: [
-					{
-						title: "Faixas de valor do bem",
-						rows: ranges.map((r) => ({
-							id: `credit_${category}_${r.token}`,
-							title: r.title.slice(0, 24),
-							description: (r.desc ?? "").slice(0, 72),
-						})),
-					},
-				],
-			},
-		},
-	};
-}
+// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA no WhatsApp — o
+// gate credit deixou de renderizar a lista de faixas. `creditRangeQuestionToWhatsApp`
+// / `resolveCreditReply` (e o `credit_` roteado) foram aposentados; o adapter
+// pergunta o valor por TEXTO (gateTextPrompt → gateQuestion("credit")) e o
+// backstop parseAssetValue captura a resposta livre. CREDIT_BUCKETS segue vivo
+// em qualify-config (lanceValueOptions/referência de faixa), só não é mais
+// consumido aqui.
 
 export function timeframeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "moto" | "servicos",
@@ -546,24 +522,6 @@ export function timeframeQuestionToWhatsApp(
 			},
 		},
 	};
-}
-
-export function resolveCreditReply(replyId: string): {
-	category: "imovel" | "auto" | "moto" | "servicos";
-	min: number;
-	max: number;
-	title: string;
-} | null {
-	if (!replyId.startsWith("credit_")) return null;
-	const parts = replyId.split("_");
-	if (parts.length < 3) return null;
-	const category = parts[1] as "imovel" | "auto" | "moto" | "servicos";
-	const token = parts[2];
-	const ranges = CREDIT_RANGES[category];
-	if (!ranges) return null;
-	const range = ranges.find((r) => r.token === token);
-	if (!range) return null;
-	return { category, min: range.min, max: range.max, title: range.title };
 }
 
 export function resolveTimeframeReply(replyId: string): {
@@ -1097,13 +1055,17 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	};
 }
 
-/** Encaminhamento pra assinatura (link). */
+/** Encaminhamento da proposta pronta (link). PARIDADE DES-1 (FIX-116): o
+ * `consortiumProposalLink` é o PDF da PROPOSTA de consórcio, não um portal de
+ * assinatura — a assinatura/efetivação é etapa posterior da mesa. Espelha o web
+ * (signature-handoff.tsx: "Sua proposta está pronta" / "Ver minha proposta") e
+ * compartilha a proibição de /assinatura|assinar/i com o canal web. */
 export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = (payload.administradora as string) ?? "administradora";
 	const link = payload.consortiumProposalLink as string;
 	return {
 		type: "text",
-		text: `Perfeito! Você está contratando um consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil — e a gente segue com você até a contemplação.\n\nÉ só finalizar a assinatura aqui:\n${link}`,
+		text: `Sua proposta está pronta! 🎉 Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
 	};
 }
 
@@ -1112,6 +1074,56 @@ export function documentUploadToWhatsApp(_payload: Record<string, unknown>): Wha
 	return {
 		type: "text",
 		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*. 📄",
+	};
+}
+
+// FIX-122 (D13) — respostas do handler de mídia INBOUND (par do convite acima).
+// A promessa "me manda aqui mesmo" agora é cumprida: cada foto recebida sobe pro
+// MESMO destino do web (uploadContractDocument) e o cliente recebe confirmação +
+// o próximo slot pedido. Nunca silêncio — mesmo nos caminhos de erro.
+
+/** Confirmação de uma foto recebida no WhatsApp. `allDone` = era o último slot
+ * (ficha completa); senão pede o verso. */
+export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
+	return {
+		type: "text",
+		text: allDone
+			? "Recebi ✅. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			: "Recebi a frente ✅. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
+	};
+}
+
+/** Cliente mandou foto, mas a conversa ainda não chegou no Passo 6 (sem proposta
+ * em 'documentos'). Acolhe sem prometer nada fora de ordem. */
+export function documentNotReadyToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui. 😊",
+	};
+}
+
+/** O upload automatizado falhou (anti-bot/drift do portal) → devolve o link
+ * oficial como fallback, mantendo a jornada viva. */
+export function documentUploadFallbackToWhatsApp(link: string): WhatsAppResponse {
+	return {
+		type: "text",
+		text: `Recebi sua foto, mas não consegui anexar por aqui. Finaliza rapidinho neste link: ${link}`,
+	};
+}
+
+/** Não deu pra baixar a mídia da Graph API (foto corrompida, expirada etc.). */
+export function documentDownloadFailedToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Não consegui abrir sua foto por aqui. Pode mandar de novo, por favor?",
+	};
+}
+
+/** Foto chegou sem conversa em andamento (waId sem registro). Convida a começar. */
+export function documentNoConversationToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto, mas ainda não temos uma conversa em andamento por aqui. Manda um oi que eu começo com você! 😊",
 	};
 }
 
@@ -1238,9 +1250,12 @@ export function artifactToWhatsApp(
 	}
 }
 
-/** Card de decisão (jornada do .docx etapa 4). 3 botões; os títulos (≤20 chars)
- * caem no processamento de texto (sem handler dedicado) e os fluxos existentes
- * interpretam (contratar → lead form, especialista → handoff). */
+/** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
+ * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
+ * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
+ * irmãos "Contratar agora"/"Falar c/ consultor" (decision_contratar/
+ * decision_especialista) ainda caem no processamento de texto (contratar →
+ * fechamento, especialista → handoff) — fora do escopo da D22. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

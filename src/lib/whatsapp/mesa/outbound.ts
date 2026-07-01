@@ -1,8 +1,14 @@
 // Mesa de operação — outbound do dossiê do caso pro WhatsApp do atendente (FIX-65).
 // Spec: docs/visao/mesa-de-operacao.md §4-5 + §8 (minimização de PII).
-// Decisões: docs/correcoes/decisions/2026-06-21-bloco-mesa-b.md §1-2.
+// Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md §1-2.
 
-import { sendTextMessage } from "@/lib/whatsapp/api";
+import { sendReplyButtons, sendTextMessage } from "@/lib/whatsapp/api";
+import { CLAIM_BUTTON_ID_PREFIX, CLAIM_BUTTON_TITLE } from "./claim";
+import { getMesaAttendantList } from "./routing";
+
+// Re-export do contrato do botão "Vou atender" (definido em ./claim) pra ergonomia dos
+// callers do broadcast. Fonte única do prefixo/título é ./claim (evita ciclo de import).
+export { CLAIM_BUTTON_ID_PREFIX, CLAIM_BUTTON_TITLE } from "./claim";
 
 // Projeção do caso que VAI pro WhatsApp do atendente. Whitelist deliberada — só o
 // necessário pra contratar. NÃO tem campo `cpf` por construção (§8 LGPD): dados
@@ -112,4 +118,46 @@ export function buildDossierMessage(d: MesaCaseDossier): string {
 export async function sendCaseToAttendant(dossier: MesaCaseDossier) {
 	const text = buildDossierMessage(dossier);
 	return sendTextMessage(dossier.attendantWhatsapp, text);
+}
+
+// Fonte do dossiê no BROADCAST (sem atendente específico — o caso é o mesmo pra todos).
+export interface MesaBroadcastSource {
+	lead: { name: string | null; phone: string | null };
+	proposal: DossierSource["proposal"];
+}
+
+/**
+ * BROADCAST do transbordo (FIX-124, D15): envia o dossiê do caso a TODOS os atendentes de
+ * mesa ativos, cada um com um botão interativo "Vou atender". O id do botão carrega o
+ * `handoffId` (`mesa_claim:<handoffId>`) — o 1º atendente que clica ASSUME via claim
+ * atômico (FIX-125). Espelha o `handoffToAgents` do chat de vendas (proxy.ts): notifica
+ * todos, primeiro a responder fica com o caso.
+ *
+ * Best-effort POR destinatário: falha de um envio (WhatsApp fora, número inválido) NÃO
+ * derruba os demais — o handoff já está registrado (fonte de verdade). Retorna a contagem.
+ */
+export async function broadcastCaseToAttendants(
+	handoffId: string,
+	source: MesaBroadcastSource,
+): Promise<{ sent: number; failed: number }> {
+	const attendants = await getMesaAttendantList();
+	// Corpo do dossiê é atendente-agnóstico (buildDossierMessage não usa os campos do
+	// atendente) — monta uma vez e reusa pra todos.
+	const body = buildDossierMessage(
+		toDossier({ attendant: { nome: "", whatsapp: "" }, lead: source.lead, proposal: source.proposal }),
+	);
+	const buttons = [{ id: `${CLAIM_BUTTON_ID_PREFIX}${handoffId}`, title: CLAIM_BUTTON_TITLE }];
+
+	let sent = 0;
+	let failed = 0;
+	for (const attendant of attendants) {
+		try {
+			const res = await sendReplyButtons(attendant.whatsapp, body, buttons);
+			if ("error" in res && res.error) failed += 1;
+			else sent += 1;
+		} catch {
+			failed += 1;
+		}
+	}
+	return { sent, failed };
 }

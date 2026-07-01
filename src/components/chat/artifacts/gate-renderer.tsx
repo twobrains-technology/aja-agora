@@ -35,7 +35,9 @@ export function GateRenderer({
 		return <GateQuickReply payload={payload} active={active} />;
 	}
 
-	// FIX-3: gate credit virou o componente "Planeje sua conquista".
+	// FIX-3: componente "Planeje sua conquista" (por intenção). Aposentado pela
+	// jornada canônica (FIX-104) e não é mais emitido no gate credit (FIX-115) — o
+	// branch fica pra compat de mensagens antigas hidratadas com kind "plan".
 	if (payload.kind === "plan") {
 		return <PlanEstimatePicker payload={payload} active={active} />;
 	}
@@ -44,11 +46,10 @@ export function GateRenderer({
 		return <GateIdentityForm prefilledPhone={payload.prefilledPhone} active={active} />;
 	}
 
-	// FIX-107: gate "slider" legado → AGULHA SIMPLES de valor do bem (1k em 1k). Sem
-	// `onSubmit`, a agulha manda o valor como TEXTO no chat (valor por conversa), sem
-	// estimar parcela. TODO(bloco-jornada-entrada): este gate deixa de ser emitido na
-	// entrada (o agente coleta o valor por conversa, FIX-104); quando o contrato de
-	// `credit` estabilizar sem `monthlyBudget`/prazo, ajustar o submit aqui.
+	// FIX-115: gate credit = AGULHA SIMPLES do valor do bem (kind "slider", 1k em 1k).
+	// Sem `onSubmit`, a agulha manda o valor como TEXTO no chat (valor por conversa,
+	// FIX-104); o backstop `parseAssetValue` garante o avanço do funil. Prazo/parcela
+	// saíram da entrada (FIX-103/104), então a agulha carrega só o campo de valor.
 	return (
 		<ValuePicker
 			payload={{

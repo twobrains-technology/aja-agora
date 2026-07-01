@@ -1,3 +1,4 @@
+import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
@@ -76,21 +77,31 @@ export async function analyzeAndMerge(
 		analysis.userIntent === "providing_info" &&
 		analysis.creditMax !== null &&
 		analysis.creditMax !== lastRequested;
-	if (analysis.creditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
+	// FIX-115 (PROD 2026-06-30): backstop DETERMINÍSTICO do valor do bem. O valor é
+	// coletado por conversa (FIX-104) e depende do analyzer LLM extrair o creditMax
+	// — que cai em NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem
+	// backstop, "50k" digitado não vira número, o gate `credit` re-dispara e o funil
+	// TRAVA (requisito do Kairo: "se o componente nao aparecer tem que se resolver
+	// mesmo assim"). Só na coleta INICIAL (creditMax ainda ausente); o refit
+	// pós-reveal segue guiado pelo analyzer — trocar de faixa é decisão do LLM.
+	const parsedCreditMax =
+		analysis.creditMax === null && q.creditMax === undefined ? parseAssetValue(text) : null;
+	const sourceCreditMax = analysis.creditMax ?? parsedCreditMax;
+	if (sourceCreditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
 		// FIX-33: o valor de texto livre não passa pelos sliders — clampa na faixa
 		// da categoria (quando conhecida) antes de gravar. Sem categoria ainda
 		// (concierge), grava o valor cru — não há faixa de referência.
 		const clamp = meta.currentCategory
-			? clampCreditToCategory(analysis.creditMax, meta.currentCategory)
+			? clampCreditToCategory(sourceCreditMax, meta.currentCategory)
 			: null;
-		const creditMax = clamp ? clamp.value : analysis.creditMax;
+		const creditMax = clamp ? clamp.value : sourceCreditMax;
 		const rawMin = analysis.creditMin ?? Math.round(creditMax * 0.9);
 		// creditMin derivado herda o clamp — nunca acima do teto da faixa.
 		q.creditMin = clamp ? Math.min(Math.max(rawMin, clamp.min), clamp.max) : rawMin;
 		q.creditMax = creditMax;
 		if (clamp?.clamped) {
 			// Preserva o valor original pedido pro agente confrontar a faixa.
-			q.creditClampedFrom = analysis.creditMax;
+			q.creditClampedFrom = sourceCreditMax;
 		} else {
 			// FIX-68: num refit (troca de faixa) sem clamp, o creditClampedFrom do
 			// pedido anterior ficaria stale e poderia mascarar a próxima troca.

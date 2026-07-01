@@ -2,7 +2,7 @@
  * Roteamento inbound do COPILOTO DE MESA (FIX-66).
  *
  * Spec: docs/visao/mesa-de-operacao.md §5 + §8 (sem colisão de canal).
- * Decisões: docs/correcoes/decisions/2026-06-21-bloco-mesa-c.md.
+ * Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-c.md.
  *
  * Mensagem vinda do WhatsApp de um ATENDENTE DE MESA cadastrado é roteada para
  * o copiloto (NUNCA para o agente de vendas) pelo hook no `processor.ts`. Aqui:
@@ -14,10 +14,18 @@
  */
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { administradoraDocs, mesaAttendants, mesaCopilotMessages, mesaHandoffs } from "@/db/schema";
+import {
+	administradoraDocs,
+	leads,
+	mesaAttendants,
+	mesaCopilotMessages,
+	mesaHandoffs,
+} from "@/db/schema";
 import { generateMesaCopilotReply, type MesaCopilotCaso } from "@/lib/agent/mesa-copilot";
+import { claimMesaHandoff } from "@/lib/mesa/handoff";
 import { sendTextMessage } from "../api";
 import { formatTextForWhatsApp, splitMessage } from "../formatter";
+import { handoffIdFromClaimReply } from "./claim";
 
 interface MesaAttendant {
 	id: string;
@@ -115,6 +123,69 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 	for (const chunk of splitMessage(formatTextForWhatsApp(reply))) {
 		await sendTextMessage(from, chunk);
 	}
+}
+
+// ── Claim do transbordo (FIX-124/125, D15/D16) ───────────────────────────────
+const CLAIM_NOT_FOUND_REPLY =
+	"🤔 Não encontrei esse caso — ele pode ter sido encerrado. Assim que chegar um novo, te aviso por aqui.";
+
+/**
+ * Dispatch do clique "Vou atender" de um atendente de mesa. Reivindica o handoff via claim
+ * atômico (FIX-125): o 1º que clica ASSUME; os demais recebem "já assumido". Espelha o
+ * handleAgentMessage do chat de vendas (proxy.ts) — mesma mecânica, canal WhatsApp da mesa.
+ *
+ * Best-effort no canal: só chega aqui quando isMesaAttendantPhone já deu true (processor).
+ */
+export async function handleMesaClaim(from: string, replyId: string): Promise<void> {
+	const list = await getMesaAttendantList();
+	const attendant = list.find((a) => a.whatsapp === from);
+	if (!attendant) return; // defensivo — precedência já garantiu que é atendente de mesa
+
+	const handoffId = handoffIdFromClaimReply(replyId);
+	const result = await claimMesaHandoff(handoffId, attendant.id);
+
+	if (result.ok) {
+		const clienteNome = await clientNameForHandoff(result.handoff.leadId);
+		await sendTextMessage(
+			from,
+			`✅ Você assumiu o caso${clienteNome ? ` de *${clienteNome}*` : ""}. ` +
+				"Pode seguir — me manda suas dúvidas que eu te guio na tela da administradora.",
+		);
+		// Avisa os demais atendentes que o caso já foi assumido (espelha proxy.ts:527-537).
+		for (const other of list) {
+			if (other.id !== attendant.id) {
+				await sendTextMessage(
+					other.whatsapp,
+					`ℹ️ *${attendant.nome}* já assumiu o caso${clienteNome ? ` de *${clienteNome}*` : ""}.`,
+				);
+			}
+		}
+		return;
+	}
+
+	if (result.reason === "ja_assumido") {
+		const owner = result.ownerAttendantId
+			? list.find((a) => a.id === result.ownerAttendantId)
+			: undefined;
+		await sendTextMessage(
+			from,
+			`⏳ Esse caso já foi assumido${owner ? ` por *${owner.nome}*` : ""}. Fica de olho que já já cai outro. 🤝`,
+		);
+		return;
+	}
+
+	// handoff_not_found
+	await sendTextMessage(from, CLAIM_NOT_FOUND_REPLY);
+}
+
+/** Nome do cliente de um handoff (pra mensagem do claim). Best-effort — null se não achar. */
+async function clientNameForHandoff(leadId: string): Promise<string | null> {
+	const [lead] = await db
+		.select({ name: leads.name })
+		.from(leads)
+		.where(eq(leads.id, leadId))
+		.limit(1);
+	return lead?.name ?? null;
 }
 
 type HandoffWithRelations = NonNullable<

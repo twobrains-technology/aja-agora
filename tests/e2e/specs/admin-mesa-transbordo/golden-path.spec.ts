@@ -1,17 +1,22 @@
 /**
- * E2E golden path — TRANSBORDO do kanban pra mesa de operação (QA noturno 2026-06-22).
- * Fluxo real (sem mock): login admin → kanban (pipeline) → abre o card do lead →
- * "Transbordar para a mesa" → escolhe um atendente de mesa ativo → "Transbordar" →
- * assertion de VALOR no DB (mesa_handoffs criado, administradora resolvida pela cota,
- * atendente certo, status 'aberto').
+ * E2E golden path — TRANSBORDO do kanban pra mesa de operação.
  *
- * Cobre o elo "via kanban" que faltava — e que estava QUEBRADO: o dialog lia a chave
- * errada da resposta da API (`attendants` em vez de `mesaAttendants`) e nunca listava
- * atendentes (regressão fina coberta também por mesa-transbordo-dialog.test.tsx).
+ * Fluxo real (sem mock), pós-FIX-124/125 (broadcast + claim): login admin → kanban
+ * (pipeline) → abre o card do lead em "Na Administradora" → "Transbordar para a mesa" →
+ * confirma (SEM escolher atendente — o broadcast decide) → assertion de VALOR no DB:
+ * mesa_handoffs criado SEM dono (`mesa_attendant_id IS NULL`, status 'aberto'), com a
+ * administradora resolvida pela cota. O 1º atendente que clicar "Vou atender" no WhatsApp
+ * é quem assume (claim atômico — coberto por integration, não pelo browser).
+ *
+ * ⚠️ ATUALIZADO na onda divergencias-jornada (QA F3, FIX-171): a versão anterior desta spec
+ * testava o SINGLE-SELECT de atendente (combobox "Atendente de mesa") que o FIX-124 REMOVEU
+ * — ficou stale e iria vermelha. O transbordo agora é broadcast a TODOS; o handoff nasce sem
+ * dono. Contrato dialog↔API também coberto por mesa-transbordo-dialog.test.tsx (component) e
+ * pela integration da rota.
  *
  * Pré-requisito: container da branch UP em PLAYWRIGHT_TEST_BASE_URL (HTTP .orb.local pra
- * casar trustedOrigins do better-auth) + admin seedado (ADMIN_EMAIL/ADMIN_PASSWORD) +
- * DATABASE_URL apontando pro Postgres do workspace.
+ * casar trustedOrigins do better-auth) + admin seedado (ADMIN_EMAIL/ADMIN_PASSWORD, role
+ * admin) + DATABASE_URL apontando pro Postgres do workspace.
  */
 import { expect, test } from "@playwright/test";
 import { Client } from "pg";
@@ -61,7 +66,8 @@ test.beforeAll(async ({ request }) => {
 		await db.query(`DELETE FROM mesa_attendants WHERE nome=$1`, [ATT_NOME]);
 		await db.query(`DELETE FROM administradoras WHERE nome=$1`, [ADM_NOME]);
 
-		// seed: administradora + atendente + lead(kanban) + proposta apontando pra administradora
+		// seed: administradora + atendente ativo (destinatário do broadcast) + lead(kanban em
+		// na_administradora) + proposta apontando pra administradora (pra resolver adm pela cota)
 		await db.query(`INSERT INTO administradoras (nome, slug) VALUES ($1,$2)`, [ADM_NOME, ADM_SLUG]);
 		await db.query(`INSERT INTO mesa_attendants (nome, whatsapp, is_active) VALUES ($1,$2,true)`, [
 			ATT_NOME,
@@ -111,7 +117,7 @@ async function loginAdmin(page: import("@playwright/test").Page) {
 	await page.waitForURL("**/admin", { timeout: 15_000 });
 }
 
-test("transborda um lead do kanban pra um atendente de mesa (handoff no DB com administradora resolvida)", async ({
+test("transborda um lead do kanban pra a mesa por BROADCAST (handoff SEM dono no DB, administradora resolvida)", async ({
 	page,
 }) => {
 	test.skip(!ADMIN_PASSWORD, "ADMIN_PASSWORD não setada no ambiente de teste.");
@@ -122,33 +128,32 @@ test("transborda um lead do kanban pra um atendente de mesa (handoff no DB com a
 	// abre o card do lead (a coluna "Na Administradora")
 	await page.getByRole("button", { name: new RegExp(LEAD_NOME) }).click();
 
-	// painel do lead → ação de transbordo
+	// painel do lead → ação de transbordo (abre o dialog)
 	await page.getByRole("button", { name: "Transbordar para a mesa" }).click();
 
-	// dialog: escolhe o atendente de mesa ativo (Radix Select)
-	await expect(page.getByRole("heading", { name: "Transbordar para a mesa" })).toBeVisible();
-	// o atendente DEVE aparecer (regressão do bug de chave da API)
-	await expect(page.getByText("Nenhum atendente de mesa ativo cadastrado")).toHaveCount(0);
-	await page.getByRole("combobox", { name: "Atendente de mesa" }).click();
-	await page.getByRole("option", { name: ATT_NOME }).click();
+	// dialog do broadcast: NÃO há mais single-select de atendente (FIX-124). Escopado pelo
+	// nome acessível — o painel do lead também é role=dialog (evita strict-mode violation).
+	const dialog = page.getByRole("dialog", { name: "Transbordar para a mesa" });
+	await expect(dialog.getByRole("heading", { name: "Transbordar para a mesa" })).toBeVisible();
+	await expect(dialog.getByText("todos os atendentes de mesa")).toBeVisible();
+	// regressão: NÃO deve existir combobox de escolha de atendente (broadcast decide o dono)
+	await expect(dialog.getByRole("combobox")).toHaveCount(0);
 
-	// confirma o transbordo
-	await page.getByRole("button", { name: "Transbordar", exact: true }).click();
+	// confirma o transbordo (botão do rodapé, escopado ao dialog)
+	await dialog.getByRole("button", { name: "Transbordar para a mesa" }).click();
 
 	// dialog fecha no sucesso
-	await expect(page.getByRole("heading", { name: "Transbordar para a mesa" })).toBeHidden({
-		timeout: 15_000,
-	});
+	await expect(dialog).toBeHidden({ timeout: 15_000 });
 
-	// assertion de VALOR no DB: handoff aberto, atendente certo, administradora resolvida pela cota
+	// assertion de VALOR no DB: handoff aberto, SEM dono (broadcast decide via claim),
+	// administradora resolvida pela cota.
 	await expect
 		.poll(
 			async () =>
 				withDb(async (db) => {
 					const { rows } = await db.query(
-						`SELECT h.status, a.nome AS att_nome, adm.nome AS adm_nome
+						`SELECT h.status, h.mesa_attendant_id, adm.nome AS adm_nome
 						 FROM mesa_handoffs h
-						 JOIN mesa_attendants a ON a.id = h.mesa_attendant_id
 						 LEFT JOIN administradoras adm ON adm.id = h.administradora_id
 						 JOIN leads l ON l.id = h.lead_id
 						 WHERE l.name = $1`,
@@ -158,5 +163,5 @@ test("transborda um lead do kanban pra um atendente de mesa (handoff no DB com a
 				}),
 			{ timeout: 10_000 },
 		)
-		.toEqual({ status: "aberto", att_nome: ATT_NOME, adm_nome: ADM_NOME });
+		.toEqual({ status: "aberto", mesa_attendant_id: null, adm_nome: ADM_NOME });
 });

@@ -18,6 +18,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const mocks = vi.hoisted(() => ({
 	sendTextMock: vi.fn().mockResolvedValue({ messageId: "wamid.TEST" }),
+	// FIX-124: o broadcast do transbordo usa botão interativo "Vou atender".
+	sendButtonsMock: vi.fn().mockResolvedValue({ messageId: "wamid.BTN" }),
 	copilotReplyMock: vi.fn().mockResolvedValue("Passo 1: acesse o portal do parceiro."),
 }));
 
@@ -29,9 +31,11 @@ vi.mock("@/lib/admin/require-role", () => ({
 		session: { user: { id: "qa-transbordo-admin" } },
 	})),
 }));
-// outbound.ts importa sendTextMessage de @/lib/whatsapp/api — é a borda externa (Meta).
+// outbound.ts importa sendTextMessage + sendReplyButtons de @/lib/whatsapp/api — borda
+// externa (Meta). O broadcast (FIX-124) usa sendReplyButtons; o claim/copiloto usam sendText.
 vi.mock("@/lib/whatsapp/api", () => ({
 	sendTextMessage: mocks.sendTextMock,
+	sendReplyButtons: mocks.sendButtonsMock,
 	sendTypingIndicator: vi.fn().mockResolvedValue(undefined),
 }));
 // O LLM do copiloto — capturamos o `caso` pra provar a coerência do manual injetado.
@@ -55,7 +59,12 @@ import {
 	user,
 } from "@/db/schema";
 import { POST } from "./route";
-import { handleMesaCopilot, invalidateMesaAttendantCache } from "@/lib/whatsapp/mesa/routing";
+import { CLAIM_BUTTON_ID_PREFIX } from "@/lib/whatsapp/mesa/claim";
+import {
+	handleMesaClaim,
+	handleMesaCopilot,
+	invalidateMesaAttendantCache,
+} from "@/lib/whatsapp/mesa/routing";
 
 const MANUAL_X = "MANUAL CANOPUS-X — 1) portal Canopus; 2) informe o grupo; 3) gere a carta.";
 const MANUAL_Z = "MANUAL EMBRACON-Z — procedimento COMPLETAMENTE diferente da Embracon.";
@@ -213,10 +222,11 @@ describeIfDb("T9 — coerência E2E do transbordo (rota + anti-leak de PDF)", ()
 		invalidateMesaAttendantCache();
 	});
 
-	it("ROTA POST /transbordo: cria handoff coerente (administradora CERTA) + envia dossiê pro WhatsApp do ATENDENTE (não do cliente), sem CPF", async () => {
+	it("ROTA POST /transbordo (FIX-124): handoff SEM dono + BROADCAST (botão 'Vou atender') pro WhatsApp do ATENDENTE, sem CPF", async () => {
 		const s = await seedCoerencia();
 
-		const res = await POST(transbordoReq(s.leadId, { mesaAttendantId: s.attendantId }), {
+		// Sem mesaAttendantId no body — o broadcast decide o dono.
+		const res = await POST(transbordoReq(s.leadId, {}), {
 			params: Promise.resolve({ id: s.leadId }),
 		});
 
@@ -224,20 +234,32 @@ describeIfDb("T9 — coerência E2E do transbordo (rota + anti-leak de PDF)", ()
 		const json = (await res.json()) as { handoff: { id: string }; outboundError?: string };
 		expect(json.outboundError).toBeUndefined();
 
-		// Handoff coerente no DB: administradora resolvida pela cota = X (não Z).
+		// Handoff coerente no DB: administradora resolvida pela cota = X (não Z), SEM dono.
 		const [h] = await db.select().from(mesaHandoffs).where(eq(mesaHandoffs.id, json.handoff.id));
 		expect(h.leadId).toBe(s.leadId);
 		expect(h.beviProposalId).toBe(s.beviProposalId);
-		expect(h.mesaAttendantId).toBe(s.attendantId);
+		expect(h.mesaAttendantId).toBeNull(); // FIX-125: nasce sem dono
 		expect(h.administradoraId).toBe(s.admXId);
 		expect(h.administradoraId).not.toBe(s.admZId);
 		expect(h.status).toBe("aberto");
 
-		// Outbound: foi pro WhatsApp do ATENDENTE, nunca pro telefone do cliente.
-		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
-		const [toNumber, text] = mocks.sendTextMock.mock.calls[0] as [string, string];
-		expect(toNumber).toBe(s.attendantPhone);
+		// Broadcast: botão interativo foi pro WhatsApp do ATENDENTE, nunca pro cliente.
+		// Filtra pela call do NOSSO atendente (o DB compartilhado pode ter outros ativos).
+		const myCall = mocks.sendButtonsMock.mock.calls.find((c) => c[0] === s.attendantPhone) as
+			| [string, string, Array<{ id: string; title: string }>]
+			| undefined;
+		expect(myCall).toBeDefined();
+		if (!myCall) return;
+		const [toNumber, text, buttons] = myCall;
 		expect(toNumber).not.toBe(CLIENTE_FONE);
+		// Nunca mandou dossiê como TEXTO plano pro atendente (é botão interativo).
+		const textCallsToAttendant = mocks.sendTextMock.mock.calls.filter(
+			(c) => c[0] === s.attendantPhone,
+		);
+		expect(textCallsToAttendant).toHaveLength(0);
+		// Botão "Vou atender" com id carregando o handoffId (pro claim).
+		expect(buttons[0].title).toBe("Vou atender");
+		expect(buttons[0].id).toBe(`${CLAIM_BUTTON_ID_PREFIX}${json.handoff.id}`);
 
 		// Dossiê coerente: cliente + cota (grupo/crédito/parcela) + administradora X + link.
 		expect(text).toContain(CLIENTE_NOME);
@@ -253,13 +275,23 @@ describeIfDb("T9 — coerência E2E do transbordo (rota + anti-leak de PDF)", ()
 	it("COPILOTO orienta o operador com o manual da administradora DA COTA (X) e NUNCA vaza o da outra (Z) — anti-leak", async () => {
 		const s = await seedCoerencia();
 
-		// 1) Transborda (abre o handoff via a rota real).
-		const res = await POST(transbordoReq(s.leadId, { mesaAttendantId: s.attendantId }), {
+		// 1) Transborda via rota real (handoff sem dono + broadcast).
+		const res = await POST(transbordoReq(s.leadId, {}), {
 			params: Promise.resolve({ id: s.leadId }),
 		});
 		expect(res.status).toBe(201);
+		const json = (await res.json()) as { handoff: { id: string } };
 
-		// 2) Atendente responde no WhatsApp → roteia pro copiloto.
+		// 2) Atendente clica "Vou atender" → assume o caso (claim atômico).
+		await handleMesaClaim(s.attendantPhone, `${CLAIM_BUTTON_ID_PREFIX}${json.handoff.id}`);
+		const [claimed] = await db
+			.select()
+			.from(mesaHandoffs)
+			.where(eq(mesaHandoffs.id, json.handoff.id));
+		expect(claimed.mesaAttendantId).toBe(s.attendantId);
+		expect(claimed.status).toBe("em_andamento");
+
+		// 3) Atendente (agora dono) responde no WhatsApp → roteia pro copiloto.
 		await handleMesaCopilot(s.attendantPhone, "como faço o contrato desse cliente?");
 
 		// 3) O copiloto foi montado com o manual da administradora CERTA (X), não da Z.

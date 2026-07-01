@@ -768,7 +768,8 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	it("passo 2 — as perguntas dos gates aparecem no transcript (o que o usuário viu)", () => {
 		const t = allText(turns);
 		expect(t).toMatch(/já fez consórcio|ja fez consorcio/);
-		expect(t).toMatch(/quanto tempo/);
+		// FIX-103: gate de prazo (timeframe) removido da qualificação — o agente
+		// não pergunta mais "quanto tempo" na entrada (decisão Kairo 2026-06-28).
 		expect(t).toMatch(/reserva/);
 		expect(t).toMatch(/valor aproximado/);
 		expect(t).toMatch(/lance embutido/);

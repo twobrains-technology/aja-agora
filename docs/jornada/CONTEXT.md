@@ -52,6 +52,32 @@
   não construir, não prometer e não assumir assinatura embutida; quando/se a parceria
   destravar um fluxo automatizado (+ webhook de conclusão — Q10 da aderência), reavaliar.
 
+### DES-2 — "Trilho A primário na descoberta" (docx P1) é um desvio (auditoria 2026-07-01)
+
+- **O docx/jornada diz** (P1): Trilho A (API de Parceiro) é o PRIMÁRIO da descoberta; B é
+  fallback — "inverter" o que existe.
+- **A realidade técnica contradiz:** existe uma **ADR formal**
+  (`docs/decisoes/blocos/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md`) que decide o
+  OPOSTO — **B descobre, A fecha** — por dois motivos verificados no código:
+  (1) o Trilho A é **pobre** (8 campos, sem prazo/taxas/correção — `partner-offer-mapper.ts`),
+  enquanto o B traz os **~68 campos ricos** que a descoberta precisa (`offer-mapper.ts`);
+  (2) o Trilho A está **travado ao vivo**: `simulate` retorna 400 "Proposta não pertence ao
+  Bevi Consórcio" por productId/AGX desvinculado (`bevi-api-adapter.ts:143-152`, PENDENTE-KAIRO).
+- **Decisão de produto:** NÃO inverter às cegas. Tratar o P1 como **premissa a recalibrar com o
+  cliente**. Se ainda assim se quiser A primário, primeiro destravar o productId/AGX e mapear os
+  8 campos do A pros 68 que a UI consome. É a **tensão T1** da jornada-canonica.
+
+### DES-3 / TENSÃO T2 — Lance embutido: amortiza a dívida OU reduz o crédito?
+
+- **O docx/jornada (Passo 5, P5) diz:** o lance embutido **amortiza o saldo devedor** → a parcela
+  pós-contemplação CAI. Pede incluir `embeddedBidValue` na conta.
+- **A decisão D18/C4 (abaixo) + o código dizem o OPOSTO:** o embutido **reduz o crédito líquido
+  recebido, não a dívida** — `contemplation-dial.ts:116` abate só `ownCashValue`, `system-prompt.ts:222`
+  instrui separar embutido de dinheiro, travado por 3 testes.
+- **Contradição não resolvida entre dois documentos canônicos** (jornada × este CONTEXT). É uma
+  questão de **modelagem financeira do produto** — só o **Bernardo** decide qual está certo.
+  Enquanto aberta, qualquer sessão que "corrigir" um lado reabre o outro. É a **tensão T2**.
+
 ## O que a auditoria de 2026-06-03/04 encontrou (resumo)
 
 | Achado | Evidência |

@@ -13,10 +13,11 @@ import {
 	useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import type { AjaUIMessage, GatePartOption, TransitionPartData } from "@/lib/chat/ui-message";
+import type { AjaUIMessage, TransitionPartData } from "@/lib/chat/ui-message";
+import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
-import { isNearBottom } from "./scroll-intent";
+import { nextStickState } from "./scroll-intent";
 
 type Category = "imovel" | "auto" | "moto" | "servicos";
 
@@ -42,6 +43,8 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 	// Distingue scroll PROGRAMÁTICO (nosso) de gesto do usuário, pra o onScroll
 	// não religar/soltar o stick por causa do auto-scroll.
 	const programmaticRef = useRef(false);
+	// FIX-111: coalesce o auto-scroll numa única chamada por frame (rajada de tokens).
+	const scrollRafRef = useRef<number | null>(null);
 	const touchStartY = useRef<number | null>(null);
 	// FIX-49: âncora de retomada — índice da última mensagem hidratada (histórico).
 	// O divisor "Você voltou" entra logo depois dela (antes do 1º turno novo).
@@ -66,18 +69,33 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 
 	// Auto-scroll SÓ quando colado. Sem `|| isStreaming` (FIX-32 Defeito 1): se o
 	// usuário soltou o stick durante o streaming, o conteúdo cresce mas a posição
-	// dele é preservada — o scroll não disputa com o gesto.
+	// dele é preservada — o scroll não disputa com o gesto. FIX-111: coalesce numa
+	// chamada por frame (rAF) — sem isso era 1 scroll por token, que somado ao
+	// flip-flop do threshold causava o "indo e voltando".
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `messages` é TRIGGER de novo conteúdo (cada token/card), não dependência lida no corpo
 	useEffect(() => {
 		if (!stick) return;
-		scrollToBottom(isStreaming ? "auto" : "smooth");
+		if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current);
+		scrollRafRef.current = requestAnimationFrame(() => {
+			scrollRafRef.current = null;
+			scrollToBottom(isStreaming ? "auto" : "smooth");
+		});
+		return () => {
+			if (scrollRafRef.current != null) {
+				cancelAnimationFrame(scrollRafRef.current);
+				scrollRafRef.current = null;
+			}
+		};
 	}, [messages, isStreaming, stick, scrollToBottom]);
 
 	// Posição real do scroll governa a intenção (substitui o IntersectionObserver
 	// do sentinel — FIX-32 Defeito 2). Ignora o nosso próprio scroll programático.
+	// FIX-111: histerese (nextStickState) em vez de um único threshold — o stick
+	// não alterna a cada px perto do fim, matando a oscilação.
 	const handleScroll = useCallback(() => {
 		const el = scrollContainerRef.current;
 		if (!el || programmaticRef.current) return;
-		setStick(isNearBottom(el));
+		setStick((prev) => nextStickState(prev, el));
 	}, []);
 
 	// Gesto explícito de subir solta o stick na hora — antes mesmo do scroll
@@ -190,14 +208,7 @@ function ResumeAnchor() {
 	);
 }
 
-const WELCOME_OPTIONS: GatePartOption[] = [
-	{ value: "imovel", label: "Imóvel" },
-	{ value: "auto", label: "Automóvel" },
-	{ value: "moto", label: "Moto" },
-	{ value: "servicos", label: "Outros" },
-];
-
-function EmptyState() {
+export function EmptyState() {
 	return (
 		<motion.div
 			initial={{ opacity: 0, y: 12 }}

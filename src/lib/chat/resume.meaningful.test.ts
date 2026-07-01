@@ -1,7 +1,7 @@
 // FIX-51 (Camada 1) — limiar de "progresso significativo" que decide se o popup
 // de retomada aparece. Conversa de 1-2 falas → ruído (hidrata direto, sem
 // perguntar). ≥4 mensagens OU passou da qualificação → popup. Ver ADR
-// docs/correcoes/decisions/2026-06-15-bloco-a-polir-funil-retorno.md (Decisão 1).
+// docs/decisoes/blocos/2026-06-15-bloco-a-polir-funil-retorno.md (Decisão 1).
 
 import { describe, expect, it } from "vitest";
 import { hasMeaningfulProgress, RESUME_MIN_MESSAGES } from "./resume";
