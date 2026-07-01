@@ -255,7 +255,23 @@ export function buildAgent(
 		// Default 'auto' quando undefined. Cast no settings inteiro porque
 		// o ToolLoopAgent generic infere `TOOLS={}` empty no construtor —
 		// não dá pra fixar o type do ToolChoice via inference normal.
-		...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+		...(opts.toolChoice
+			? {
+					toolChoice: opts.toolChoice,
+					// BUG-MUTE-LOOP-NAME-CAPTURE (2026-07-01): sem prepareStep, a AI SDK
+					// reaplica o MESMO toolChoice em TODOS os steps do loop (stopWhen:
+					// stepCountIs(10)) — o Anthropic fica OBRIGADO a chamar
+					// save_contact_name em CADA step e NUNCA pode produzir texto
+					// (tool_choice força tool_use, nunca finish_reason=stop). Sintoma
+					// real (WhatsApp): save_contact_name chamado 10x, textChars:0,
+					// agente mudo por 1 turno inteiro. Fix: preserva o forcing só no
+					// 1º step (é o motivo do toolChoice existir) e reverte pra 'auto'
+					// nos seguintes — o modelo persiste o nome e AINDA responde.
+					prepareStep: ({ stepNumber }: { stepNumber: number }) => ({
+						toolChoice: stepNumber > 0 ? ("auto" as const) : (opts.toolChoice ?? undefined),
+					}),
+				}
+			: {}),
 	};
 	// biome-ignore lint/suspicious/noExplicitAny: ver comentário acima — generic inference do construtor não fixa o ToolSet.
 	return new ToolLoopAgent(settings as any);
