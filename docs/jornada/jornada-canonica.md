@@ -4,6 +4,14 @@
 > Toda divergência entre código e este fluxo é **defeito do código**, não interpretação.
 > Contexto/decisões: [`CONTEXT.md`](./CONTEXT.md). Original: [`jornada.docx`](./jornada.docx).
 > **Lema:** *"Seu objetivo primeiro. O melhor consórcio depois."*
+>
+> **📍 Enriquecido pela auditoria código×jornada de 2026-07-01** (evidência `file:line` no
+> [Mapa de divergências](#mapa-de-divergências--auditoria-2026-07-01) no fim). A auditoria
+> confirmou 24 divergências, refutou 5 falsos-positivos e abriu 2 **tensões** (ver seção
+> [Tensões abertas](#tensões-abertas--não-é-fix-cego)). ⚠️ **Ressalva ao dogma "divergência =
+> defeito do código":** vale para bug de implementação; NÃO vale para P1 e P5, onde a jornada
+> conflita com uma decisão técnica/ADR e a correção é **recalibrar com o stakeholder**, não
+> mudar o código no escuro.
 
 ## Como ler (Fase de cada cenário)
 
@@ -12,12 +20,14 @@
 | 🟢 **vivo** | comportamento canônico que DEVE funcionar hoje | **testa** — falha se quebrar |
 | ⚪ **futuro** | planejado, ainda não é MVP | **não testa** (pendente, não falha) |
 | 🔴 **diverge** | o código faz DIFERENTE do canônico hoje — **precisa editar** | testa como regressão **após** o fix; é a lista de edições da próxima sessão |
+| ⚠️ **tensão** | a jornada contradiz uma ADR/decisão técnica — **recalibrar com o stakeholder**, não "corrigir o código" cego | não testa como bug; é decisão de produto |
 
 **Paridade Web ↔ WhatsApp (regra-mãe):** a jornada é **a mesma** nos dois canais — mesmos
 passos, mesma ordem, mesmas regras. Só muda a **dinâmica de interface**: a web tem componentes
 interativos (agulha arrastável, botões, cards); o WhatsApp usa **botões nativos + conversa +
 marcos textuais** (ex.: a agulha vira "3 / 6 / 12 meses" por texto). Nenhum passo existe num
-canal e não no outro.
+canal e não no outro. **⚠️ A auditoria achou 6 quebras de paridade silenciosas** (fix aplicado
+só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 
 ---
 
@@ -25,13 +35,13 @@ canal e não no outro.
 
 | # | Regra | Estado |
 |---|---|---|
-| P1 | **Trilho A é o PRIMÁRIO** (API de Parceiro Bevi/UXVision — padrão oficial, estável, 6 administradoras). **Trilho B (self-contract) é FALLBACK** — usado só quando A cai, mas **tem que funcionar**. | 🔴 hoje a **descoberta roda no B** (não há A→B); inverter |
-| P2 | **Tradução de contrato A↔B:** A fala **PT** (`objetivo: contemplacao_rapida`, `tipoSimulacao: valor_total`, `lanceEmbutido`); B fala **EN** (`objective: FAST_APPROVAL`, `simulationType: TOTAL_VALUE`, `embeddedPercentage`). O fallback precisa **traduzir params + shape da oferta** (A ~10 campos × B ~68). *(É o "tipo em inglês que não existe no B" que dava pau.)* | 🔴 criar camada de tradução |
-| P3 | **Sweep de busca (maximizar cartas):** manda **2 objetivos (`contemplacao_rapida` + `investimento`) × com/sem lance embutido** (~4 buscas) → **une + dedup** → a IA recomenda pelo objetivo real do usuário. | 🔴 hoje manda **1 objetivo** derivado; o sweep varre só faixas de valor |
-| P4 | **Componente de valor = só a AGULHA do valor do bem.** O componente antigo de 3 sliders (valor/parcela/prazo + quantidade) **deve ser DELETADO** — o usuário só informa o **valor do bem**. | 🔴 `value-picker.tsx` (3 sliders, FIX-16) ainda existe — deletar |
-| P5 | **Lance embutido DERRUBA a parcela pós-contemplação.** O embutido amortiza o saldo → parcela cai (é o diferencial). Sempre mostrar **parcela atual + parcela pós-contemplação** quando a cota tem lance. | 🔴 `contemplation-dial.ts` (FIX-C4) faz o contrário (só dinheiro abate) — **corrigir** |
-| P6 | **Identidade (CPF+telefone) coletada ANTES da busca.** Sem identidade não há descoberta real (mock é proibido). | 🔴 hoje a busca às vezes dispara antes → `IdentityNotCollectedError` em prod |
-| P7 | **PROIBIDO dado mockado em runtime** — toda oferta/número vem da Bevi (A ou B). | 🟢 |
+| P1 | **Trilho A é o PRIMÁRIO** (API de Parceiro Bevi/UXVision). **Trilho B (self-contract) é FALLBACK.** | ⚠️ **TENSÃO (T1)** — a descoberta roda 100% no B (`adapters/index.ts:26-33`) e uma **ADR** (`2026-06-28`) decide EXPLICITAMENTE o oposto (B descobre, A fecha), porque o A é pobre (8 campos) e está **travado ao vivo** (400 productId/AGX). Não "inverter" cego → recalibrar. Ver D1. |
+| P2 | **Tradução de contrato A↔B:** A fala **PT** (`objetivo`, `tipoSimulacao`, `lanceEmbutido`); B fala **EN** (`objective`, `simulationType`, `embeddedPercentage`). O fallback precisa **traduzir params + shape** (A ~10 × B ~68 campos). | 🔴 a divergência de dialeto é real (`self-contract-client.ts:76-84` EN × `proposal-gateway.ts:16-22` PT), mas a camada de tradução **não existe** porque não há fallback (depende de T1). Ponto de partida: `discovery-session.ts:15-23` (`prefsFromMeta`, só params). Ver D2. |
+| P3 | **Sweep de busca:** **2 objetivos (`contemplacao_rapida` + `investimento`) × com/sem lance embutido** (~4 buscas) → une+dedup → IA recomenda pelo objetivo real. | 🔴 o sweep atual varre **faixa de VALOR** (`bevi-self-contract-adapter.ts:83-97,280-340`, spread `[0.7,1,1.3]`), objetivo/embutido **únicos** (`discovery-session.ts:21`), e é **opt-in** (default off, `ai-sdk.ts:291-302`). `recommend_groups` nem usa o sweep. Ver D3. |
+| P4 | **Componente de valor = só a AGULHA do valor do bem.** O componente antigo (múltiplos sliders: valor/prazo/intenção/lance) **deve ser DELETADO** — o usuário só informa o **valor do bem**. | 🔴 **alvo correto = `plan-estimate-picker.tsx`** (`kind:'plan'`, gate credit, `web/adapter.ts:87`). ⚠️ **NÃO** deletar `value-picker.tsx` — esse já É a agulha simples (FIX-107), hoje código-morto no gate (`kind:'slider'` nunca emitido). FIX-104/107 mataram só o path da LLM. Ver D4/D6. |
+| P5 | **Lance embutido DERRUBA a parcela pós-contemplação** (amortiza o saldo). Sempre mostrar **parcela atual + parcela pós**. | ⚠️ **TENSÃO (T2)** — `contemplation-dial.ts:116` usa só `− ownCashValue` (não inclui `embeddedBidValue`), travado por 3 testes + `CONTEXT` D18/C4 + `system-prompt.ts:222`, que decidem o OPOSTO ("embutido reduz crédito, não dívida"). Contradição jornada×CONTEXT não resolvida → aval do stakeholder. Ver D9. |
+| P6 | **Identidade (CPF+telefone) coletada ANTES da busca.** Sem identidade não há descoberta real. | 🔴 furo é o **LLM free-run**: `tool-policy.ts:129-135` expõe `search_groups` na fase `qualify` sem checar `identityCollected` → `IdentityNotCollectedError` em prod. O caminho determinístico (gates) já é seguro. Coberto por FIX-114 (`todo`). Ver D7/D8. |
+| P7 | **PROIBIDO dado mockado em runtime** — toda oferta/número vem da Bevi (A ou B). | 🟢 confirmado (mock deletado; sem caminho de runtime servindo fictício). |
 
 ---
 
@@ -45,6 +55,7 @@ canal e não no outro.
 | Pergunta o bem: **Imóvel / Carro / Moto** por botão | botões | botões nativos | 🟢 |
 | Pergunta o **nome** ("Como posso te chamar?") e captura em 1 turno | texto | texto | 🟢 |
 | Ecoa o objetivo ("…um [carro/imóvel] de cerca de X") | texto | texto | 🟢 |
+| **Só 3 categorias** (moto substitui "serviços") — mesma decisão da landing | 3 chips | 3 botões | 🔴 **web tem 4** (`web/adapter.ts:177` expõe "Outros"/serviços) × WhatsApp 3 (`formatter.ts:806`) × landing 3 (`hero.tsx:19`). Ver D21. |
 
 ### Passo 2 · Entender o cliente
 **Narrativa:** descobre experiência prévia, educa se preciso, coleta o **valor do bem** (só o valor) e a intenção de lance.
@@ -52,30 +63,30 @@ canal e não no outro.
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
 | "Já participou de consórcio?" (first/returning/doubts) | botão | botão | 🟢 |
-| Se não/tem dúvida → **educação** (consórcio sem juros, taxa de adm, sorteio/lance) + "Entendi, pode continuar" | texto+botão | texto+botão | 🟢 |
-| **Valor do bem** coletado pela **AGULHA** (web) / por conversa+marcos (WhatsApp) — **só o valor**, sem prazo, sem parcela, sem intents | **agulha simples** | conversa ("uns 80 mil") | 🔴 (P4) |
-| **NÃO** aparece o componente de 3 sliders | — | — | 🔴 deletar |
-| Prazo de contemplação **não** é perguntado na entrada (FIX-103) | — | — | 🟢 |
-| Lance: "Pretende dar um lance?" **Sim/Não/Talvez** (o VALOR do lance, se houver, é conversa) | botão | botão | 🟢 |
-| **Educação de lance embutido** aparece pra QUALQUER resposta (Sim/Não/Talvez) | texto | texto | 🟢 |
+| Se não/tem dúvida → **educação** (sem juros, taxa de adm, sorteio/lance) + "pode continuar" | texto+botão | texto+botão | 🟢 |
+| **Valor do bem** — **só o valor**, sem prazo, sem parcela, sem intents | **agulha simples** | conversa ("uns 80 mil") | 🔴 (P4) — web usa `plan-estimate-picker` (valor+prazo+intenção+lance, `web/adapter.ts:87`); WhatsApp usa **lista de faixas** (`formatter.ts:494`), não conversa. Ver D4/D5. |
+| **NÃO** aparece o componente multi-slider | — | — | 🔴 deletar `plan-estimate-picker.tsx` (não o `value-picker`). Ver D6. |
+| Prazo de contemplação **não** é perguntado na entrada (FIX-103) | — | — | 🟢 **o GATE `timeframe` foi removido** (provado por `qualify-state.fix-103.test.ts`). ⚠️ O prazo ainda vaza pelo `plan-estimate-picker` (slider `targetMonth`), mas isso É o 🔴 P4 acima — a linha do gate está correta. |
+| Lance: "Pretende dar um lance?" **Sim/Não/Talvez** | botão | botão | 🟢 |
+| **Educação de lance embutido** pra QUALQUER resposta (Sim/Não/Talvez) | texto | texto | 🟢 web (`route.ts:917`) / 🔴 **WhatsApp pula** pra no/maybe (`interactive-handlers.ts:357`). FIX-92 corrigiu só web. Ver D19. |
 
 ### Passo 3 · Identidade (gate antes da busca)
 **Narrativa:** pra buscar de verdade na Bevi, precisa de **CPF + telefone**. Coletado aqui, antes da descoberta.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
-| Coleta **CPF + telefone** antes de qualquer `search_groups` | card de identidade | conversa (telefone = o próprio WhatsApp; pede CPF) | 🟢 estrutura / 🔴 ordem (P6) |
-| Nunca dispara a busca sem identidade (sem "dificuldade técnica") | — | — | 🔴 (P6) |
+| Coleta **CPF + telefone** antes de qualquer `search_groups` | card de identidade | conversa (telefone = o WhatsApp; pede CPF) | 🟢 estrutura / 🔴 ordem (P6) |
+| Nunca dispara a busca sem identidade (sem "dificuldade técnica") | — | — | 🔴 (P6) — furo estrutural em `tool-policy.ts:129-135` (LLM free-run) + falta handler de recuperação do `IdentityNotCollectedError` (`ai-sdk.ts:967-983` re-lança sem recuperar). Coberto por FIX-114. Ver D7/D8. |
 
 ### Passo 4 · Buscar alternativas
-**Narrativa:** com identidade + valor + lance, o sistema faz o **sweep** (Trilho A primário, B fallback) e traz o máximo de cartas.
+**Narrativa:** com identidade + valor + lance, o sistema faz o **sweep** e traz o máximo de cartas.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
-| Busca via **Trilho A**; se A cair, **fallback Trilho B** (traduzido) | igual | igual | 🔴 (P1/P2) |
-| **Sweep**: 2 objetivos × com/sem embutido → une+dedup → **vários registros** | igual | igual | 🔴 (P3) |
-| Retorna **≥ 1 carta real** (nunca mock); se faixa vazia, busca a mais próxima | igual | igual | 🟢 (parte) |
-| Agente **não narra o mecanismo** ("deixa eu buscar / usar a ferramenta") | 1 frase natural | 1 frase | 🔴 (meta-narrativa) |
+| Busca via **Trilho A**; se A cair, **fallback Trilho B** (traduzido) | igual | igual | ⚠️ T1 / 🔴 P2 (ver regras) |
+| **Sweep**: 2 objetivos × com/sem embutido → une+dedup → **vários registros** | igual | igual | 🔴 (P3) — hoje sweep por valor. Ver D3. |
+| Retorna **≥ 1 carta real** (nunca mock); se faixa vazia, busca a mais próxima | igual | igual | 🟢 (parte) — a busca da mais próxima é **via prompt** (`system-prompt.ts:26,486`), não determinística. É hardening, não bug (auditoria refutou como divergência). |
+| Agente **não narra o mecanismo** ("deixa eu buscar / usar a ferramenta") | 1 frase natural | 1 frase | 🔴 (meta-narrativa) — só prompt+regressão, **sem filtro runtime** (`assistant-tools.validate_against_rules` é do admin, não do agente). Um leak esporádico é possível. Ver D23. |
 
 ### Passo 5 · Avaliar, simular e definir
 **Narrativa:** mostra a **recomendada primeiro** + outras 2; o simulador de contemplação deixa o
@@ -84,35 +95,37 @@ pós-contemplação** — o diferencial da nossa inteligência.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
-| Card **"Plano recomendado"** em destaque + **"Outras opções"** (2) | cards | card + "ver outras" | 🟢 |
+| Card **"Plano recomendado"** em destaque + **"Outras opções"** (2, carrossel) | cards | card + "ver outras" | 🟢 |
 | Resumo por oferta: carta · parcela · prazo · administradora · lance/embutido · liquidez | card | texto | 🟢 |
 | **Simulador de contemplação** (3/6/12 meses): recalcula ao vivo | **agulha arrastável** | marcos por conversa (loop what-if) | 🟢 |
-| **Lance embutido → parcela PÓS-contemplação CAI** (o embutido amortiza o saldo) — mostra **parcela atual + parcela pós** | card | texto | 🔴 (P5 — corrigir FIX-C4) |
-| Ex.: carta 200 c/ 100 embutido → recebido líquido ~100 (= o bem do usuário) + parcela pós despenca | card | texto | 🔴 (P5) |
-| Ressalva discreta de "estimativa" (CDC art. 30/37), sem repetir em cada número | texto | texto | 🟢 |
+| **Lance embutido → parcela PÓS-contemplação CAI** — mostra **parcela atual + parcela pós** | card | texto | ⚠️ **T2** — `contemplation-dial.ts:116` só o dinheiro (`ownCashValue`) abate; o embutido não amortiza. **CONTRADIZ** `CONTEXT` D18/C4. Ex. BB: código mostra R$ 9.828,92 onde a jornada quer ~R$ 5.238. Ver D9. |
+| Ressalva discreta de "estimativa" (CDC art. 30/37) | texto | texto | 🟢 |
 | **Card de decisão**: "Contratar agora" · "Ver outras opções" · "Falar com especialista" | botões | botões | 🟢 |
+| "Tenho interesse" pós-reveal = **avanço direto** ao contract (sem card de decisão extra, FIX-38) | 🟢 (`route.ts:485`) | 🔴 **WhatsApp intercala** card de decisão no 1º interesse (`interactive-handlers.ts:580`) | Ver D18. |
+| "Ver outras opções" = comparativo **determinístico** das ofertas reais | 🟢 (`buildOtherOptions`, `route.ts:521`) | 🔴 **WhatsApp** `decision_outras` sem handler → texto livre (`interactive-handlers.ts:99-124`) | Ver D22. |
 
-> **Cálculo pós-contemplação (P5, modelo corrigido):** no mês-alvo `N`, o lance **total
-> (embutido + dinheiro)** amortiza o saldo → `saldoApós = parcela × mesesRestantes − lanceTotal`;
-> `parcelaPós = saldoApós / mesesRestantes`. *(Hoje o FIX-C4 usa só `ownCashValue` — passar a
-> incluir o `embeddedBidValue`. Guardar a ressalva de estimativa; não prometer contemplação.)*
+> **Cálculo pós-contemplação (P5, modelo da jornada — EM TENSÃO):** no mês-alvo `N`, o lance
+> **total (embutido + dinheiro)** amortizaria o saldo → `saldoApós = parcela × mesesRestantes −
+> lanceTotal`; `parcelaPós = saldoApós / mesesRestantes`. **⚠️ O `CONTEXT` D18/C4 decide o
+> oposto** ("embutido reduz o crédito líquido, não a dívida") e o código segue o CONTEXT. Qual
+> modelo é financeiramente correto é **decisão do stakeholder** (T2) — não corrigir cego.
 
 ### Passo 6 · Contratar
-**Narrativa:** coleta dados + documentos, salva do nosso lado e aciona a Bevi (Trilho A) pro fluxo de documentos e finalização da proposta.
+**Narrativa:** coleta dados + documentos, salva do nosso lado e aciona a Bevi pro fluxo de documentos e finalização da proposta.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
 | Confirma a oferta escolhida (oferta REAL, re-simula se TTL venceu) | card | texto | 🟢 |
-| Coleta/upload de **documentos** → **salva do nosso lado** | upload no chat | upload/redirect | 🟢 (parte) |
-| Envia à Bevi **Trilho A**: fluxo de documentos + finalização + **PDF da proposta** (`consortiumProposalLink`) | — | — | 🟢 |
-| ⚠️ Assinatura digital self-service **NÃO** é entregue aqui (DES-1) — proposta pronta + docs; assinatura é etapa da mesa | — | — | ⚪ futuro |
+| Coleta/upload de **documentos** → **salva do nosso lado** | upload no chat | upload/redirect | 🔴 hoje é **pass-through pra CONEXIA** (`conexia-docs-client.ts`), sem persistência nossa. Coberto por bloco-a. No WhatsApp o upload inbound está **quebrado** (webhook ignora imagem, `route.ts:124-125`). Ver D12/D13. |
+| Envia à Bevi **Trilho A**: fluxo de documentos + finalização + **PDF da proposta** | — | — | 🔴 **Trilho A travado** ao vivo (400 productId/AGX, `bevi-api-adapter.ts:143-152`) → nenhum fechamento completa. Contornado pelo bloco-c (fechar via Trilho B). Ver D10. |
+| ⚠️ Assinatura self-service **NÃO** aqui (DES-1) — proposta pronta; assinatura é da mesa | — | — | ⚪ web cumpre (`signature-handoff.tsx`) / 🔴 **WhatsApp ainda promete "assinatura"** (`formatter.ts:1106`, `contract-summary.ts:46`). Ver D11. |
 
 ### Passo 7 · Confirmação + handoff pro WhatsApp oficial
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
 | "Parabéns! Mais perto da sua conquista" | texto | texto | 🟢 |
-| Resumo da contratação por **WhatsApp/e-mail** | — | — | 🟢 |
-| "A gente te chama no **WhatsApp oficial** (número X); te mando um 'oi', você adiciona nosso número" | opt-in | opt-in | 🟢 (opt-in existe) |
+| Resumo da contratação por **WhatsApp/e-mail** | — | — | 🟢 (WhatsApp only, D5 do CONTEXT) |
+| Opt-in de continuidade pós-reveal | opt-in | opt-in | 🟢 (opt-in existe) — auditoria **confirmou OK**; o "número oficial / adiciona nosso número" é sabor descritivo, o verde escopa ao opt-in que existe. |
 
 ---
 
@@ -120,19 +133,18 @@ pós-contemplação** — o diferencial da nossa inteligência.
 
 **Narrativa:** o cliente contratou; a partir daqui a **mesa** assume. O lead anda no Kanban; ao
 chegar na fase de atendimento, o caso é **oferecido a todos os atendentes** e quem **clicar "vou
-atender" assume**; o atendente entra manualmente na administradora **guiado pelo copiloto**, que
-lê o **PDF/manual da administradora**.
+atender" assume**; o atendente entra manualmente na administradora **guiado pelo copiloto**.
 
 ### Kanban (raias)
-`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado.
+`novo → engajado → qualificado → em_negociacao → proposta_enviada → na_administradora → aguardando_pagamento → fechado_ganho / perdido` — 🟢 implementado (`db/schema.ts:38-48`; ⚠️ **não existe raia "em atendimento"** citada no transbordo-d).
 
 ### Transbordo auto-broadcast + claim (FEATURE NOVA)
 | Cenário de aceitação | Fase |
 |---|---|
-| Ao o lead **entrar na fase** (ex.: `na_administradora`/`em_negociacao`), o sistema **transborda automaticamente** (sem clique) | 🔴 hoje é **manual** (botão) |
-| O caso é **enviado a TODOS os atendentes** (broadcast) no WhatsApp deles, com botão **"Vou atender"** | 🔴 feature nova |
-| O **primeiro que clica "Vou atender" ASSUME** o caso; os demais recebem "já foi assumido" | 🔴 feature nova (claim/lock) |
-| Ao assumir, o lead **muda de fase** (negociação → em atendimento / na administradora) | 🔴 feature nova |
+| Ao o lead **entrar na fase**, o sistema **transborda automaticamente** (sem clique) | 🔴 hoje **manual** (botão, `transbordo/route.ts:6`). A entrada automática na raia **já existe** (worker FIX-44) mas está **desacoplada** do transbordo. Ver D14. |
+| O caso é **enviado a TODOS os atendentes** (broadcast) com botão **"Vou atender"** | 🔴 feature nova — `getMesaAttendantList` já existe (`routing.ts:32`), mas o dialog é single-select e o outbound manda pra 1 (`outbound.ts:112`). Padrão broadcast+claim **já implementado em `proxy.ts`** (chat de vendas) — reaproveitar. Ver D15. |
+| O **primeiro que clica "Vou atender" ASSUME** (claim/lock); os demais "já foi assumido" | 🔴 feature nova — `mesa_attendant_id` é **NOT NULL** (`schema.ts:671-673`), sem estado "sem dono" pra competir. Lock atômico (`UPDATE ... WHERE dono IS NULL`) já existe no `proxy.ts`. Ver D16. |
+| Ao assumir, o lead **muda de fase** | 🔴 feature nova — `createMesaHandoff` **não move a raia** (`handoff.ts:105-147`); a fase "em atendimento" **não existe no enum**. Ver D17. |
 | Dados sensíveis (CPF, documentos) **não** trafegam no WhatsApp — ficam no painel | 🟢 |
 
 ### Copiloto da mesa (guia o atendente)
@@ -140,21 +152,100 @@ lê o **PDF/manual da administradora**.
 |---|---|
 | Mensagem do atendente (WhatsApp) cai no **mesa-copilot**, nunca no agente de vendas | 🟢 |
 | O copiloto carrega o **PDF/manual da administradora** (do cadastro) como fonte da verdade | 🟢 |
-| Responde "como faço X na tela da [BB/administradora]?" com **passo a passo** | 🟢 |
+| Responde "como faço X na tela da administradora?" com **passo a passo** | 🟢 |
 | Não expõe mecanismo/erro técnico; não fala com o cliente final | 🟢 |
+
+---
+
+## Tensões abertas — NÃO é fix cego
+
+> A auditoria de 2026-07-01 achou 2 casos onde a jornada contradiz uma decisão técnica/ADR
+> vigente. Aqui a regra "divergência = defeito do código" **não se aplica** — é decisão de
+> produto/stakeholder. **PENDENTE-KAIRO/Bernardo** antes de qualquer implementação.
+
+- **T1 — Trilho A primário na descoberta (P1).** A jornada pede A primário + B fallback. A **ADR
+  `docs/decisoes/blocos/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md`** decide o oposto (B
+  descobre porque tem os ~68 campos ricos; A fecha), e o **Trilho A está travado ao vivo** (400
+  "Proposta não pertence ao Bevi Consórcio", productId/AGX desvinculado — PENDENTE-KAIRO). Provável
+  **desvio de entendimento do stakeholder**: registrar nos "Desvios" do `CONTEXT.md` e recalibrar.
+  Inverter cego = quebrar a descoberta rica por um trilho pobre e bloqueado.
+- **T2 — Lance embutido amortiza dívida OU reduz crédito? (P5).** A jornada (linhas do Passo 5)
+  pede que o embutido **amortize o saldo** (parcela pós cai). O `CONTEXT` D18/C4 + o código
+  (`contemplation-dial.ts`) + `system-prompt.ts:222` dizem o oposto: o embutido **reduz o crédito
+  líquido, não a dívida**. É uma questão de **modelagem financeira do produto** — só o stakeholder
+  (Bernardo) decide qual está certo. Enquanto aberto, os dois docs se contradizem; qualquer sessão
+  que "corrigir" um lado reabre o outro.
+- **(Hipótese não confirmada)** O 2º root-cause do FIX-114 ("`identityCollected=true` mas
+  `getIdentity=null`") **não é reproduzível por código** (`conversation/identity.ts:113-126` é
+  atômico). O furo confirmado do P6 é o LLM free-run (D7). Não cravar o 2º como fato.
 
 ---
 
 ## Lista consolidada de EDIÇÕES (o que diverge do código — para a próxima sessão)
 
-> Cada item 🔴 acima. Esta é a lista de trabalho de implementação.
+> Priorizada por severidade. `file:line` e detalhe no [Mapa de divergências](#mapa-de-divergências--auditoria-2026-07-01).
+> Coluna "cobertura" = bloco/inbox que já ataca (ou "novo" = precisa card).
 
-1. **P1/P2 — Trilho A primário + B fallback** com camada de tradução PT↔EN + adaptação de shape (10↔68 campos).
-2. **P3 — Sweep de busca:** 2 objetivos × com/sem embutido → une+dedup.
-3. **P4 — Deletar** `value-picker.tsx` (3 sliders) → só a agulha do valor do bem.
-4. **P5 — Corrigir FIX-C4** em `contemplation-dial.ts`: embutido passa a amortizar o saldo → parcela pós-contemplação cai. Mostrar parcela atual + pós.
-5. **P6 — Identidade antes da busca** (mata o `IdentityNotCollectedError` de prod) + matar meta-narrativa.
-6. **Transbordo auto-broadcast + claim** (feature nova na mesa).
-7. *(Já em voo no bloco `fix-funil-turno-orquestracao`: agente-trava em afirmação, componente de valor resiliente, search antes de identidade.)*
+| Sev | Edição | Cobertura |
+|---|---|---|
+| **P0** | **P4 web** — religar a agulha simples ao gate credit e aposentar `plan-estimate-picker.tsx` (D4/D6) | bloco-f (FIX-95, **bloqueado por Bernardo**) + FIX-115 |
+| **P0** | **P6** — gatear `search_groups` estruturalmente na identidade + handler de recuperação (D7/D8) | FIX-114 (`todo`) |
+| **P0** | **Passo 6** — Trilho A travado; fechar via Trilho B (D10) | bloco-c (FIX-88/89) |
+| **⚠️** | **T2/P5** — decisão do stakeholder sobre o modelo do lance embutido (D9) | **PENDENTE-Bernardo** |
+| **P1** | **D5** — WhatsApp valor por conversa (não lista de faixas) | novo (WhatsApp) |
+| **P1** | **D11** — WhatsApp para de prometer "assinatura" (paridade DES-1) | novo |
+| **P1** | **D12** — persistir documentos do nosso lado (não só pass-through) | bloco-a (FIX-82) |
+| **P1** | **D13** — upload de documento inbound no WhatsApp (webhook ignora mídia) | novo (WhatsApp) |
+| **P1** | **D14-16** — transbordo automático + broadcast + claim/lock (reaproveitar `proxy.ts`) | novo (mesa) |
+| **P1** | **D18** — WhatsApp "Tenho interesse" = avanço direto (FIX-38) | novo (WhatsApp) |
+| **P1** | **D19** — WhatsApp educação de lance embutido pra no/maybe (FIX-92 só web) | novo (WhatsApp) |
+| **⚠️** | **T1/P1/P2/D1-D3** — sweep 2 objetivos + Trilho A primário + tradução A↔B | **PENDENTE-Kairo (recalibrar)** |
+| **P2** | **D17** — claim move a raia (+ decidir raia "em atendimento") | novo (mesa) |
+| **P2** | **D21** — welcome do chat web com 3 categorias (tirar "Outros") | novo |
+| **P2** | **D22** — WhatsApp "Ver outras opções" determinístico | novo (WhatsApp) |
+| **P2** | **D23** — (opcional) filtro runtime de meta-narrativa/frases proibidas | novo |
+| **P2** | **D24** — corrigir cross-ref morta de teste (`meta-narrative.test.ts` → `behavior-guards.test.ts`) | trivial |
 
-> Cada 🔴 vira **cenário de regressão** depois de corrigido; o QA autônomo persegue os 🟢 (e os 🔴 já corrigidos) até o verde.
+> Cada 🔴 vira **cenário de regressão** depois de corrigido; o QA autônomo persegue os 🟢 (e os
+> 🔴 já corrigidos) até o verde. As **tensões (T1/T2)** não são bug — não entram no QA como falha.
+
+---
+
+## Mapa de divergências — auditoria 2026-07-01
+
+> 24 confirmadas (verificadas adversarialmente) + 2 tensões. `Sev` P0>P1>P2. `Cobertura` = onde
+> já é atacado. Este é o insumo direto para montar a onda de correção (fonte da Fase C).
+
+| ID | Regra/Passo | Sev | O que diverge (gap) | Evidência `file:line` | Cobertura |
+|---|---|---|---|---|---|
+| D1 | P1 descoberta | ⚠️T1 | descoberta 100% Trilho B; sem A→B. Conflita com ADR 2026-06-28 | `adapters/index.ts:26-33,64-85`; `ai-sdk.ts:958-961`; ADR `2026-06-28:28` | recalibrar |
+| D2 | P2 tradução | P1 | sem camada de tradução de shape A↔B (só params em `prefsFromMeta`) | `self-contract-client.ts:76-84`; `proposal-gateway.ts:16-22`; `discovery-session.ts:15-23` | depende T1 |
+| D3 | P3 sweep | P1 | sweep varre VALOR, não objetivo×embutido; opt-in; `recommend` não usa | `bevi-self-contract-adapter.ts:83-97,280-340`; `ai-sdk.ts:291-302`; `recommendation.ts:179,194` | recalibrar |
+| D4 | P4 web | **P0** | gate credit ainda entrega `PlanEstimatePicker` (dispatch determinístico); FIX-107 incompleto | `web/adapter.ts:87-95`; `gate-renderer.tsx:38-41`; `route.ts:1005`; `gate-questions.ts:22-24` | FIX-95(bloq)/FIX-115 |
+| D5 | P4 WhatsApp | P1 | gate credit no WhatsApp manda lista de faixas, não conversa | `whatsapp/adapter.ts:50-53`; `formatter.ts:494`; `qualify-config.ts:8-11` | novo |
+| D6 | P4 alvo | P2 | jornada apontava arquivo errado: `value-picker.tsx` é a agulha (código-morto), alvo é `plan-estimate-picker.tsx` | `value-picker.tsx:15-33`; `gate-renderer.tsx:47-60`; `ui-message.ts:65-72` | FIX-95/115 |
+| D7 | P6 gate | **P0** | `search_groups` exposto na fase `qualify` sem checar `identityCollected` (LLM free-run) | `tool-policy.ts:56-62,120,129-135`; `bevi-self-contract-adapter.ts:238-240` | FIX-114 |
+| D8 | P6 recuperação | P1 | `IdentityNotCollectedError` vira tool-error ("dificuldade técnica"); sem re-emitir gate | `ai-sdk.ts:967-983,990-995` | FIX-114 |
+| D9 | P5 embutido | ⚠️T2 | `contemplation-dial.ts:116` só `− ownCashValue`; contradiz jornada. CONTRADIZ CONTEXT D18/C4 | `contemplation-dial.ts:113-118`; `.oferta-real.test.ts:71-75`; `CONTEXT.md:186-188` | PENDENTE-Bernardo |
+| D10 | Passo 6 Trilho A | **P0** | Trilho A travado (400 productId/AGX) → fechamento não completa; jornada marcava 🟢 | `bevi-api-adapter.ts:143-152`; `fulfillment.ts:90-97` | bloco-c |
+| D11 | Passo 6 DES-1 | P1 | WhatsApp ainda promete "assinatura" (só web cumpre DES-1) | `formatter.ts:1101-1108`; `contract-summary.ts:46`; `signature-handoff.tsx:18-34` | novo |
+| D12 | Passo 6 upload | P1 | upload é pass-through pra CONEXIA, sem persistência nossa | `fulfillment.ts:202-227`; `conexia-docs-client.ts:112-136`; `chat/document/route.ts:36-43` | bloco-a |
+| D13 | Passo 6 upload WA | P1 | webhook WhatsApp ignora imagem/documento; copy promete "manda aqui" | `webhook/whatsapp/route.ts:94-126`; `formatter.ts:1111-1116` | novo |
+| D14 | Mesa transbordo (a) | P1 | entrada automática na raia existe (worker) mas desacoplada do transbordo (manual) | `transbordo/route.ts:6`; `handoff.ts:1-2`; `proposal-status-poll.integration.test.ts:92` | novo |
+| D15 | Mesa transbordo (b) | P1 | sem broadcast a todos; `getMesaAttendantList` existe; padrão em `proxy.ts` | `mesa-transbordo-dialog.tsx`; `mesa/outbound.ts:112-115`; `mesa/routing.ts:32-42`; `proxy.ts:234-263` | novo |
+| D16 | Mesa transbordo (c) | P1 | sem claim/lock atômico; `mesa_attendant_id` NOT NULL | `handoff.ts:118-128`; `schema.ts:671-673`; `proxy.ts:343` | novo |
+| D17 | Mesa transbordo (d) | P2 | claim não move raia; raia "em atendimento" inexistente | `handoff.ts:105-147`; `transbordo/route.ts:36-76`; `schema.ts:38-48` | novo |
+| D18 | Passo 5 paridade | P1 | WhatsApp intercala card de decisão no 1º "Tenho interesse" (não acompanhou FIX-38) | `interactive-handlers.ts:580-595`; `route.ts:485-499` | novo |
+| D19 | Passo 2 paridade | P1 | WhatsApp pula educação de lance embutido p/ no/maybe (FIX-92 só web) | `interactive-handlers.ts:353-358`; `route.ts:917-928`; `qualify-state.ts:71-77` | novo |
+| D20 | Passo 2 canal | P1 | assimetria coleta de valor web×WhatsApp (superset de D4/D5) | `web/adapter.ts:80-90`; `formatter.ts:494-521`; `qualify-state.ts:57-65` | FIX-115(web) |
+| D21 | Passo 1 welcome | P2 | chat web tem 4ª categoria ("Outros"); WhatsApp/landing/jornada têm 3 | `web/adapter.ts:177-181`; `formatter.ts:806-826`; `hero.tsx:19-23` | novo |
+| D22 | Passo 5 paridade | P2 | WhatsApp `decision_outras` sem handler determinístico → texto livre | `decision-prompt.tsx:28-35`; `route.ts:521-548`; `interactive-handlers.ts:99-124` | novo |
+| D23 | Passo 4 meta-narrativa | P2 | sem filtro runtime de frases proibidas; só prompt+regressão | `agent-trajectory.test.ts:216-247`; sem sanitizer em `lib/agent`/`lib/chat`/`api/chat` | novo (opcional) |
+| D24 | Cross (teste) | P2 | cross-ref morta: `system-prompt.meta-narrative.test.ts` não existe | `agent-trajectory.test.ts` (comentário); `behavior-guards.test.ts:48-96` | trivial |
+| T1 | P1/P2/P3 | ⚠️ | jornada×ADR: A primário vs B descobre. **recalibrar** | ver D1-D3 | PENDENTE-Kairo |
+| T2 | P5 | ⚠️ | jornada×CONTEXT: embutido amortiza dívida vs reduz crédito. **decisão Bernardo** | ver D9 | PENDENTE-Bernardo |
+
+> **Refutadas na auditoria (NÃO mexer — a jornada está certa):** "busca a mais próxima" (Passo 4,
+> coberta por prompt); linha do gate `timeframe` (Passo 2, consistente — o vazamento é o P4);
+> educação de lance embutido no picker web (degradação cosmética, não ausência); handoff Passo 7
+> (opt-in 🟢 deliberado); FIX-113 turno-mudo no web (a cadeia causal do guard não procede no web).
