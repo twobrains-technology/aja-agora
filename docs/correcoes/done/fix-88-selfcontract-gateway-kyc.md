@@ -1,12 +1,14 @@
 ---
 id: FIX-88
 titulo: "BeviSelfContractProposalGateway (ProposalGateway via self-contract) + KYC/finalização no client"
-status: todo
+status: done
 bloco: bloco-c-fechamento-trilho-b
 arquivos:
   - src/lib/adapters/bevi/self-contract-client.ts
   - src/lib/adapters/bevi/bevi-self-contract-proposal-gateway.ts
 rodada: 2026-06-28 — fazer a jornada fechar de ponta a ponta (Trilho A travado)
+commit: ea451960
+executado_em: 2026-07-01
 ---
 
 ## Palavras do operador

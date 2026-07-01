@@ -152,6 +152,14 @@ export interface ProposalStatus {
 /** Categoria de domínio (4) a partir do segmento Bevi (6). PESADOS→auto, OUTROS BENS→servicos. */
 export type { ConsorcioCategory };
 
+export interface FinalizeResult {
+	proposalId: string;
+	/** Nº gerado pela administradora — só o Trilho B (self-contract) tem esse
+	 * passo explícito (inserção assíncrona via waitingForUniqueCode); pode vir
+	 * undefined mesmo lá se a inserção ainda não resolveu (D11: nunca chutar). */
+	proposalNumber?: number;
+}
+
 /** Contrato de fechamento. Implementado por BeviApiAdapter (real); testes injetam dublê (tests/helpers/mock-proposal-gateway). */
 export interface ProposalGateway {
 	createProposal(input: CreateProposalInput): Promise<CreateProposalResult>;
@@ -164,4 +172,12 @@ export interface ProposalGateway {
 	uploadDocument(input: UploadDocumentInput): Promise<void>;
 	insertAdditionalData(input: InsertAdditionalDataInput): Promise<void>;
 	getStatus(proposalId: string): Promise<ProposalStatus>;
+	/** Passo extra que só o Trilho B (self-contract) precisa: depois de
+	 * `chooseOffer` (finished:true), finaliza a inserção na administradora
+	 * (PATCH waitingForUniqueCode) e devolve o proposalNumber. OPCIONAL —
+	 * o Trilho A não implementa (a inserção lá acontece do lado da Bevi após
+	 * a assinatura via `consortiumProposalLink`, sem passo nosso). Chamadores
+	 * usam `gateway.finalize?.(...)` (duck typing, sem checar o tipo concreto —
+	 * ver docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md D3). */
+	finalize?(proposalId: string): Promise<FinalizeResult>;
 }
