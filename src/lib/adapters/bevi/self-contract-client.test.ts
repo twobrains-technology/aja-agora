@@ -242,7 +242,14 @@ describe("BeviSelfContractClient — contract contra capturas reais", () => {
 
 	it("chooseOffer faz PATCH no step simulation com finished:true + a oferta escolhida", async () => {
 		mockFetchSequence(okChoose);
-		const offer = { quotaId: "quota-1", bank: "ITAU", group: "540", term: 80, finalValue: 80000 };
+		const offer = {
+			quotaId: "quota-1",
+			bank: "ITAU",
+			group: "540",
+			term: 80,
+			finalValue: 80000,
+			adminFee: 0.29,
+		};
 		await client.chooseOffer({
 			simulationValue: 50000,
 			embeddedPercentage: "30",
