@@ -6772,3 +6772,56 @@ describe("FIX-117 — WhatsApp interest = avanço direto ao contract (paridade F
 		expect(interestBlock).not.toContain("buildDecisionPromptDirective");
 	});
 });
+
+// ============================================================================
+// FIX-118 (D19) — WhatsApp educa lance embutido pra no/maybe (PARIDADE FIX-92)
+// ----------------------------------------------------------------------------
+// A educação de lance embutido vale pra QUALQUER resposta (Sim/Não/Talvez) — o
+// texto mira quem NÃO tem o valor do lance hoje. O web já obedece (FIX-92,
+// route.ts:917-928: no/maybe → gate lance-embutido antes da busca). O WhatsApp
+// pulava a educação pro no/maybe (handleLance caía direto em search summary) —
+// regressão do FIX-4 (o nextGate passava por todos; o handler curto-circuitava).
+// Cross-ref: cassette FIX-4-LANCE-EMBUTIDO-PRA-TODOS (state machine) + handler
+// web route.ts:917-928 + src/lib/whatsapp/interactive-handlers.lance-embutido-no-maybe.test.ts
+// ============================================================================
+describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () => {
+	function handleLanceBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleLance\b[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: o no/maybe de handleLance dispara o gate lance-embutido, não a busca direta", () => {
+		const body = handleLanceBody();
+		expect(body.length, "handleLance não isolado").toBeGreaterThan(0);
+		// só o CÓDIGO executável — comentários (que citam o histórico) não contam
+		const code = body.replace(/\/\/[^\n]*/g, "");
+		// o ramo yes reage; o resto (no/maybe) cai no fireGate lance-embutido
+		expect(code).toMatch(/fireGate\([^)]*"lance-embutido"/);
+		// no/maybe NÃO pode mais chamar a busca direto (pulava a educação)
+		expect(
+			code.includes("runSearchSummaryWithOrchestrator"),
+			"FIX-118: handleLance no/maybe não pode chamar a busca direto (pula lance-embutido).",
+		).toBe(false);
+	});
+
+	it("paridade web: route.ts do gate lance manda no/maybe pro gate lance-embutido antes da busca", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const start = route.indexOf('if (action.gate === "lance")');
+		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
+		const lanceBlock = route.slice(start, start + 1800);
+		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
+		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
+		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);
+	});
+
+	it("cross-ref state machine: nextGate FORÇA lance-embutido pra todos (FIX-4 intocado)", () => {
+		// o funil determinístico é canal-agnóstico — o handler WhatsApp não pode
+		// curto-circuitar o gate que o state machine insere pra qualquer hasLance.
+		const stateSrc = readSource("src/lib/agent/qualify-state.ts");
+		expect(stateSrc).toMatch(/lanceEmbutido === undefined\) return "lance-embutido"/);
+	});
+});

@@ -343,18 +343,25 @@ async function handleLance(ctx: Ctx): Promise<boolean> {
 		...(meta.qualifyAnswers ?? {}),
 		hasLance: resolved.value,
 	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+	const updated = { ...meta, qualifyAnswers: merged };
+	await persistMeta(conversationId, updated);
 	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
-	// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance embutido
-	// (educa + opt-in) antes da busca. O directive dispara o gate em seguida.
+	// Jornada do doc (Passo 2, FIX-4): a educação de lance embutido vale pra
+	// QUALQUER resposta (Sim/Não/Talvez) — o próprio texto mira quem NÃO tem o
+	// valor do lance hoje. "yes" reage primeiro (buildLanceReactionDirective →
+	// gate lance-value → lance-embutido). FIX-118 (paridade FIX-92, route.ts:917-928):
+	// "no"/"maybe" vão direto pro gate `lance-embutido` (educa + opt-in) ANTES da
+	// busca. Antes caíam em runSearchSummaryWithOrchestrator, pulando a educação
+	// (regressão do FIX-4 que o FIX-92 corrigiu só no web). A busca só roda depois
+	// do clique em lanceembutido_* (handleLanceEmbutido → runSearchSummary...).
 	if (resolved.value === "yes") {
 		await runAgentDirective(from, conversationId, buildLanceReactionDirective(resolved.title));
 		return true;
 	}
-	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	await fireGate(from, conversationId, "lance-embutido", updated);
 	return true;
 }
 
