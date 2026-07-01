@@ -15,6 +15,7 @@ import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters"
 import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
@@ -347,34 +348,16 @@ function rebuscaDirective(groupId: string): { error: string } {
 	};
 }
 
-/**
- * FIX-179 (Mirella, 2026-07-01) — "quero ver todos" pulou pra simulate_quota/
- * get_group_details/present_decision_prompt sobre "Embracon", grupo REAL da
- * Bevi (existia no discovery cache) mas NUNCA renderizado em tela. O usuário
- * viu um card de decisão pra um plano do qual não tinha NENHUMA informação —
- * bug de confiança grave, não hallucination de empresa fictícia.
- *
- * Diferença pro rebuscaDirective (FIX-72): aquele cobre "id não existe na
- * Bevi" (fabricado); este cobre "id EXISTE na Bevi mas nunca foi mostrado pro
- * usuário" — a LLM não pode agir sobre o que só ELA viu no tool-result cru.
- */
-function naoExibidoDirective(groupId: string): { error: string } {
-	return {
-		error:
-			`O grupo "${groupId}" nao foi exibido em tela pro usuario nesta conversa. ` +
-			"Apresente-o primeiro via present_comparison_table, present_group_card ou present_recommendation_card " +
-			"antes de simular, detalhar ou propor decisao sobre ele. NUNCA pule direto pra simulacao/decisao " +
-			"sobre um grupo que so voce viu no resultado da busca — reapresente o comparativo.",
-	};
-}
-
-function administradoraNaoExibidaDirective(administradora: string): string {
-	return (
-		`[Bloqueado: o plano "${administradora}" ainda nao foi apresentado pro usuario nesta conversa. ` +
-		"Apresente a recomendacao/comparativo (present_comparison_table / present_recommendation_card) " +
-		"ANTES do card de decisao — nunca proponha decisao sobre um plano que o usuario nao viu.]"
-	);
-}
+// FIX-179 (Mirella, 2026-07-01) — "quero ver todos" pulou pra simulate_quota/
+// get_group_details/present_decision_prompt sobre "Embracon", grupo REAL da Bevi
+// (existia no discovery cache) mas NUNCA renderizado em tela. FIX-180 generalizou
+// essa precondição de DADO (antes um `if` ad-hoc aqui) para a tabela declarativa
+// `action-policy.ts` (`evaluateActionPrecondition`) — as diretivas
+// `naoExibidoDirective`/`administradoraNaoExibidaDirective` moraram pra lá (fonte
+// única). Diferença pro rebuscaDirective (FIX-72, abaixo): aquele cobre "id não
+// existe na Bevi" (fabricado); a precondição de dado cobre "id EXISTE mas nunca
+// foi mostrado pro usuário" — a LLM não age sobre o que só ELA viu no tool-result.
+// Ordem: action-policy (foi exibido?) roda ANTES do adapter (existe na Bevi?).
 
 export async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
@@ -1038,11 +1021,15 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				.describe("Administradora do plano recomendado (contexto do card)"),
 		}),
 		execute: async (args: { administradora?: string }) => {
+			// FIX-180: precondição de dado via tabela declarativa (action-policy).
+			// Lazy: só bate no DB (getShownGroups) quando há administradora a validar.
 			if (args.administradora) {
 				const shown = await getShownGroups();
-				if (!shown.administradoras.has(args.administradora)) {
-					return administradoraNaoExibidaDirective(args.administradora);
-				}
+				const verdict = evaluateActionPrecondition("present_decision_prompt", {
+					shown,
+					args: args as Record<string, unknown>,
+				});
+				if (!verdict.allow) return verdict.directive;
 			}
 			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
 		},
@@ -1098,11 +1085,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			// FIX-179: grupo real na Bevi mas nunca exibido em tela → bloqueia ANTES
-			// de tocar o adapter (mesma rede de segurança do rebuscaDirective/FIX-72,
-			// camada "foi exibido" em vez de "existe na Bevi").
+			// FIX-180: precondição de dado via tabela declarativa (action-policy) —
+			// grupo real na Bevi mas nunca exibido em tela → bloqueia ANTES de tocar o
+			// adapter (camada "foi exibido", roda antes do rebuscaDirective/FIX-72
+			// "existe na Bevi"). Generaliza o FIX-179 (antes um if inline aqui).
 			const shown = await getShownGroups();
-			if (!shown.ids.has(args.groupId)) return naoExibidoDirective(args.groupId);
+			const verdict = evaluateActionPrecondition("simulate_quota", {
+				shown,
+				args: args as Record<string, unknown>,
+			});
+			if (!verdict.allow) return { error: verdict.directive };
 			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
 		},
 	});
@@ -1123,9 +1115,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			// FIX-179: mesma trava do simulate_quota acima.
+			// FIX-180: mesma precondição de dado (action-policy) do simulate_quota.
 			const shown = await getShownGroups();
-			if (!shown.ids.has(args.groupId)) return naoExibidoDirective(args.groupId);
+			const verdict = evaluateActionPrecondition("get_group_details", {
+				shown,
+				args: args as Record<string, unknown>,
+			});
+			if (!verdict.allow) return { error: verdict.directive };
 			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
 		},
 	});

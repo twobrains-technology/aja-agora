@@ -1,11 +1,24 @@
 ---
 id: FIX-181
 titulo: "Observabilidade de tool I/O (args + resultado por chamada) via onStepFinish — fecha o gap que tornou o 'Embracon' indeterminável"
-status: todo
+status: done
+executado_em: 2026-07-01
+commit: "test+fix: observabilidade de tool I/O via onStepFinish (FIX-181)"
 bloco: bloco-a-governanca-agente
 arquivos:
   - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/orchestrator/tool-io-log.ts
+  - src/lib/agent/orchestrator/tool-io-log.test.ts
 rodada: 2026-07-01 — investigação da jornada da Mirella (conv 69a38af1, prod)
+---
+
+## Resolução (2026-07-01)
+Módulo `tool-io-log.ts` (masker de PII recursivo por chave+padrão + `buildToolIoLogLines`/`logToolIO`)
+ligado ao `agent.stream({ onStepFinish })` no runner — o primitivo NATIVO do AI SDK 6 (confirmado na
+doc oficial: `onStepFinish` é opção de chamada de `.stream()`/`.generate()` do `ToolLoopAgent`, entrega
+`toolCalls`+`toolResults` por step). Loga JSON estruturado (`source:tool-io`) ligado ao conversationId,
+com CPF/celular/e-mail/documentos mascarados (LGPD). Camada 1 structural + unit do masker + prova de que
+o RESULTADO cru do recommend_groups agora fica logado (a cura da indeterminabilidade do 'Embracon').
 ---
 
 ## Palavras do operador

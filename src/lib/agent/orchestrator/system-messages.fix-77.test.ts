@@ -45,8 +45,10 @@ describe("FIX-77 — nenhum role:'system' vai pra `messages` do agent.stream", (
 
 	it("runner.ts thread examplesBlock + systemContext pro builder via extraSystemBlocks", () => {
 		expect(runnerSrc).toMatch(/extraSystemBlocks/);
-		// agent.stream recebe `messages` cru (sem prepend de system).
-		expect(runnerSrc).toMatch(/agent\.stream\(\{\s*messages\s*\}\)/);
+		// agent.stream recebe `messages` cru (sem prepend de system). FIX-181 (2026-07-01)
+		// adicionou `onStepFinish` como chave IRMÃ (observabilidade de tool I/O) — `messages`
+		// segue sendo o 1º campo, cru, sem wrap/prepend; o regex tolera a vírgula/irmã.
+		expect(runnerSrc).toMatch(/agent\.stream\(\{\s*messages\s*[},]/);
 	});
 
 	it("index.ts NÃO inclui systemContext nem memoryPrefix no array de `messages`", () => {

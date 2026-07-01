@@ -1,12 +1,26 @@
 ---
 id: FIX-182
 titulo: "Narrações de passos internos se colam numa mensagem só sem separador em turnos multi-tool (irmão do FIX-102)"
-status: todo
+status: done
+executado_em: 2026-07-01
+commit: "test+fix: separa narrações de steps diferentes no turno multi-tool (FIX-182)"
 bloco: bloco-a-governanca-agente
 severidade: media
 projeto: aja-agora
 arquivos:
   - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/orchestrator/runner.fix-182-multi-tool-text.test.ts
+  - tests/regression/agent-trajectory.test.ts
+resolucao: |
+  `textBlockSeparator(prevBlockId, newBlockId, accumulated)` (runner.ts) insere `\n\n` só
+  quando começa um BLOCO de texto novo (id distinto no fullStream — steps diferentes do
+  turno multi-tool) e já há texto que não termina em espaço/quebra. Deltas do MESMO bloco
+  (streaming) nunca ganham separador — decisão 100% pelo id do bloco, ZERO heurística de
+  conteúdo (sem falso-positivo em texto legítimo). Confirmado nos tipos do AI SDK 6:
+  text-delta do fullStream carrega { id, text } e blocos de steps diferentes têm ids
+  distintos. O separador entra no stream E no persistido. A CURA determinística (FIX-180)
+  reduz a superfície na origem; este `\n\n` é a rede. Camada 1 (unit + structural) +
+  Camada 2 (cassette multi-step com MockLanguageModelV3). NÃO regride o FIX-102.
 rodada: 2026-07-01 — conversa real da Mirella (automóvel, produção), reportada pelo Kairo
 evidencia:
   - conversationId 69a38af1-567f-4f33-adbc-e8a9ce5ef83e, message id b408ddf4-e176-49e8-ad2e-af9dfb5dfc2e
