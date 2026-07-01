@@ -63,7 +63,7 @@ import {
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
@@ -6651,5 +6651,69 @@ describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
 		expect(src.toLowerCase()).toMatch(/bora/);
 		// gate: documento só depois de confirmar a oferta
 		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
+	});
+});
+
+// ============================================================================
+// FIX-116 (D11) — WhatsApp NÃO promete "assinatura" (PARIDADE DES-1)
+// ----------------------------------------------------------------------------
+// O fechamento no WhatsApp (handleOfferConfirm → closingPresentation) emite o
+// artifact `signature_handoff`, cujo texto de canal (artifactToWhatsApp →
+// signatureHandoffToWhatsApp) prometia "finalizar a assinatura". O
+// `consortiumProposalLink` é o PDF da PROPOSTA — a assinatura é etapa da MESA.
+// O web já cumpre (signature-handoff.test.tsx proíbe /assinatura|assinar/i);
+// este cassette trava a MESMA proibição no canal WhatsApp (paridade de detector).
+// Copy determinística em função pura → o cassette fecha o loop ponta-a-ponta.
+// ============================================================================
+describe("FIX-116 — WhatsApp fechamento apresenta PROPOSTA, não 'assinatura' (paridade DES-1)", () => {
+	// Detector de paridade — o MESMO que protege o web em
+	// src/components/chat/artifacts/signature-handoff.test.tsx:25.
+	const SIGNATURE_WORD = /assinatura|assinar/i;
+
+	const confirmRes = {
+		administradora: "ÂNCORA",
+		consortiumProposalLink: "https://www.uselink.me/abc123",
+		proposalId: "prop-116",
+		documentsLinkPersonal: "https://docs.example/abc",
+	};
+
+	it("cassette: o item signature_handoff do fechamento WhatsApp não vaza 'assinatura'", () => {
+		const items = closingPresentation(confirmRes as never);
+		const sig = items.find(
+			(i) => i.kind === "artifact" && i.type === "signature_handoff",
+		) as { type: string; payload: Record<string, unknown> } | undefined;
+		expect(sig, "o fechamento deve emitir signature_handoff").toBeTruthy();
+
+		// texto FINAL do canal WhatsApp (mesmo caminho de handleOfferConfirm)
+		const wa = artifactToWhatsApp("signature_handoff", sig!.payload);
+		expect(wa?.type).toBe("text");
+		const text = wa?.text ?? "";
+		expect(text, "WhatsApp não pode prometer assinatura (é etapa da mesa)").not.toMatch(
+			SIGNATURE_WORD,
+		);
+		expect(text).toMatch(/proposta/i);
+		expect(text).toContain(confirmRes.consortiumProposalLink);
+		expect(text).toContain("Aja Agora");
+	});
+
+	it("paridade: NENHUM texto do closingPresentation (canal WhatsApp) menciona assinatura", () => {
+		const items = closingPresentation(confirmRes as never);
+		for (const item of items) {
+			const text =
+				item.kind === "text"
+					? item.text
+					: (artifactToWhatsApp(item.type, item.payload)?.text ?? "");
+			expect(text, `item ${item.kind}/${"type" in item ? item.type : "text"} vazou assinatura`).not.toMatch(
+				SIGNATURE_WORD,
+			);
+		}
+	});
+
+	it("structural: a copy de assinatura foi removida do formatter e do resumo de contratação", () => {
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		// a função de handoff não pode mais conter a palavra proibida na copy
+		expect(formatter).not.toMatch(/finalizar a assinatura/i);
+		const summary = readSource("src/lib/bevi/contract-summary.ts");
+		expect(summary).not.toMatch(/Assinatura digital/i);
 	});
 });

@@ -43,7 +43,7 @@ export function buildContractSummaryText(args: {
 			? [`Carta de crédito (valor do bem): ${brl(args.creditValue)}`]
 			: []),
 		...(hasMoney(args.monthlyPayment) ? [`Parcela mensal: ${brl2(args.monthlyPayment)}`] : []),
-		...(args.signatureLink ? ["", `Assinatura digital: ${args.signatureLink}`] : []),
+		...(args.signatureLink ? ["", `Sua proposta: ${args.signatureLink}`] : []),
 		"",
 		"A Aja Agora segue com você até a contemplação — e depois dela.",
 	];

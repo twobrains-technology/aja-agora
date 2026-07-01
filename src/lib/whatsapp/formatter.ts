@@ -1097,13 +1097,17 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	};
 }
 
-/** Encaminhamento pra assinatura (link). */
+/** Encaminhamento da proposta pronta (link). PARIDADE DES-1 (FIX-116): o
+ * `consortiumProposalLink` é o PDF da PROPOSTA de consórcio, não um portal de
+ * assinatura — a assinatura/efetivação é etapa posterior da mesa. Espelha o web
+ * (signature-handoff.tsx: "Sua proposta está pronta" / "Ver minha proposta") e
+ * compartilha a proibição de /assinatura|assinar/i com o canal web. */
 export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = (payload.administradora as string) ?? "administradora";
 	const link = payload.consortiumProposalLink as string;
 	return {
 		type: "text",
-		text: `Perfeito! Você está contratando um consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil — e a gente segue com você até a contemplação.\n\nÉ só finalizar a assinatura aqui:\n${link}`,
+		text: `Sua proposta está pronta! 🎉 Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
 	};
 }
 
