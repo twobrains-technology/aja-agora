@@ -1242,9 +1242,12 @@ export function artifactToWhatsApp(
 	}
 }
 
-/** Card de decisão (jornada do .docx etapa 4). 3 botões; os títulos (≤20 chars)
- * caem no processamento de texto (sem handler dedicado) e os fluxos existentes
- * interpretam (contratar → lead form, especialista → handoff). */
+/** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
+ * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
+ * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
+ * irmãos "Contratar agora"/"Falar c/ consultor" (decision_contratar/
+ * decision_especialista) ainda caem no processamento de texto (contratar →
+ * fechamento, especialista → handoff) — fora do escopo da D22. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

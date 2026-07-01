@@ -15,7 +15,7 @@ import {
 	runSearchSummaryWithOrchestrator,
 	runTransitionWithOrchestrator,
 } from "./adapter";
-import { sendTextMessage } from "./api";
+import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
 	buildCreditReactionDirective,
 	buildDetailDirective,
@@ -32,6 +32,7 @@ import {
 	buildWhatIfDirective,
 } from "./directives";
 import {
+	artifactToWhatsApp,
 	documentUploadToWhatsApp,
 	resolveCreditReply,
 	resolveLanceEmbutidoReply,
@@ -115,6 +116,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("whatif_")) return handleWhatIf(ctx);
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId === "show_others") return handleShowOthers(ctx);
+	if (replyId === "decision_outras") return handleDecisionOutras(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
 	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
 	if (replyId === "contract_cancel") return handleContractCancel(ctx);
@@ -564,6 +566,39 @@ async function handleDetail(ctx: Ctx): Promise<boolean> {
 async function handleShowOthers(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
 	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
+	return true;
+}
+
+// FIX-119 (D22): "Ver outras opções" do CARD DE DECISÃO (decision_outras). O
+// comparativo é DETERMINÍSTICO — surfaça as outras ofertas REAIS da descoberta
+// (buildOtherOptions: cache do adapter, dedupe, exclui a recomendada), ESPELHANDO
+// o web (route.ts:521-548). Zero free-run do modelo, zero dado inventado
+// (docstring de other-options.ts). NÃO confundir com handleShowOthers (card da
+// recomendada, FIX-108) que delega ao modelo — a D22 é sobre o card de decisão e
+// exige o caminho model-free pra não arriscar fabricar/omitir números.
+async function handleDecisionOutras(ctx: Ctx): Promise<boolean> {
+	const { from, conversationId } = ctx;
+	await recordUserClick(ctx);
+	try {
+		const meta = await loadMeta(conversationId);
+		const { buildOtherOptions } = await import("@/lib/bevi/other-options");
+		const others = await buildOtherOptions(conversationId, meta);
+		await sendTextMessage(from, others.text);
+		await saveMessage(conversationId, "assistant", others.text, "whatsapp");
+		const wa = artifactToWhatsApp("comparison_table", { groups: others.groups });
+		if (wa?.type === "interactive" && wa.interactive) {
+			await sendInteractiveMessage(from, wa.interactive);
+		} else if (wa?.type === "text" && wa.text) {
+			await sendTextMessage(from, wa.text);
+		}
+	} catch {
+		// Espelha o fallback do web (route.ts:539-546): nunca deixa o clique em
+		// silêncio nem cai no modelo.
+		await sendTextMessage(
+			from,
+			"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+		);
+	}
 	return true;
 }
 

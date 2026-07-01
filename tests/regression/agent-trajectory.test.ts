@@ -6825,3 +6825,56 @@ describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () 
 		expect(stateSrc).toMatch(/lanceEmbutido === undefined\) return "lance-embutido"/);
 	});
 });
+
+// ============================================================================
+// FIX-119 (D22) — WhatsApp decision_outras DETERMINÍSTICO (paridade web)
+// ----------------------------------------------------------------------------
+// "Ver outras opções" do card de decisão é o comparativo model-free das ofertas
+// REAIS da descoberta (buildOtherOptions). O web já obedece (route.ts:521-548).
+// No WhatsApp o botão decision_outras não tinha handler → o clique virava texto
+// livre pro modelo (risco de alucinar/omitir números). O defeito era JUSTAMENTE
+// escorregar pro modelo — então o cassette guarda a FRONTEIRA: o clique é
+// model-free (nunca chama processWithOrchestrator/streamText) e surfaça o
+// comparison_table com os grupos reais. A prova comportamental (buildOtherOptions
+// chamado, comparison_table emitido, processTextMessage NÃO) vive em
+// src/lib/whatsapp/interactive-handlers.decision-outras.test.ts.
+// ============================================================================
+describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.ts:521-548)", () => {
+	function handleDecisionOutrasBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleDecisionOutras\b[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("routing: dispatchInteractiveReply tem branch dedicado pra decision_outras", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(handlers).toMatch(/replyId === "decision_outras"\)\s*return handleDecisionOutras/);
+	});
+
+	it("model-free: o handler chama buildOtherOptions e NÃO escorrega pro modelo", () => {
+		const body = handleDecisionOutrasBody();
+		expect(body.length, "handleDecisionOutras não isolado").toBeGreaterThan(0);
+		const code = body.replace(/\/\/[^\n]*/g, "");
+		// caminho determinístico compartilhado com o web
+		expect(code).toMatch(/buildOtherOptions\(/);
+		// emite o comparison_table com os grupos reais
+		expect(code).toMatch(/artifactToWhatsApp\("comparison_table"/);
+		// FRONTEIRA: NUNCA delega ao modelo (processTextMessage / processWithOrchestrator)
+		expect(
+			code.includes("processTextMessage") || code.includes("processWithOrchestrator"),
+			"FIX-119: decision_outras não pode cair no turno livre do modelo.",
+		).toBe(false);
+	});
+
+	it("paridade web: route.ts show-other-options usa o MESMO buildOtherOptions + comparison_table", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const start = route.indexOf('body.action?.kind === "show-other-options"');
+		expect(start, "bloco show-other-options não encontrado no route").toBeGreaterThan(-1);
+		const block = route.slice(start, start + 900);
+		expect(block).toMatch(/buildOtherOptions\(/);
+		expect(block).toMatch(/comparison_table/);
+	});
+});
