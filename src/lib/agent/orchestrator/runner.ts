@@ -60,6 +60,30 @@ function artifactTypeFor(toolName: string): ArtifactType {
 	return short as ArtifactType;
 }
 
+/** FIX-102: eco/degeneração NÃO-determinística da LLM (raro — 1 ocorrência em
+ * todo o DB de homologação, ex.: "Boa, então a gente vai direto ao
+ * ponto.Boa, então a gente vai direto ao ponto."). Causa cravada como
+ * geração da LLM, não bug de append (ver card). Guarda defensiva
+ * DETERMINÍSTICA: colapsa segmentos/parágrafos 100% idênticos consecutivos
+ * antes de persistir/renderizar. Trata o sintoma, não a causa — não pega eco
+ * de quick-reply (texto diferente, ex.: "Bora!Beleza"), fora de escopo desta
+ * guarda por decisão de produto.
+ * Card: docs/correcoes/todo/bloco-h-chat-render/fix-102-assistant-texto-duplicado-eco.md */
+export function collapseEchoedSegments(text: string): string {
+	if (!text) return text;
+	const segments = text.split(/(?<=[.!?])/);
+	if (segments.length < 2) return text;
+	const out: string[] = [];
+	for (const segment of segments) {
+		const previous = out[out.length - 1];
+		if (previous !== undefined && segment.trim().length > 0 && previous.trim() === segment.trim()) {
+			continue;
+		}
+		out.push(segment);
+	}
+	return out.join("");
+}
+
 export async function* runAgentTurn(args: {
 	conversationId: string;
 	channel: Channel;
@@ -277,6 +301,11 @@ export async function* runAgentTurn(args: {
 			}
 		}
 	}
+
+	// FIX-102: colapsa eco/degeneração da LLM ANTES de qualquer uso do texto
+	// completo — persistência (content), prefixo do próximo gate e o
+	// RunAgentResult retornado ao orchestrator ficam todos livres do sintoma.
+	fullResponse = collapseEchoedSegments(fullResponse);
 
 	try {
 		const finishReason = await result.finishReason;
