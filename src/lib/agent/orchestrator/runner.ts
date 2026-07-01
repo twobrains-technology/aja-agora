@@ -16,6 +16,7 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
+import { collapseSelfDuplicatedText } from "./collapse-self-duplicate";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
@@ -277,6 +278,13 @@ export async function* runAgentTurn(args: {
 			}
 		}
 	}
+
+	// FIX-102: degeneração NÃO-determinística da LLM às vezes cola a resposta
+	// inteira consigo mesma ("Boa, então já sabe como funciona!Boa, então já
+	// sabe como funciona!", zero separador). Colapsa ANTES de qualquer uso
+	// posterior (persistência, prefixForNextGate) — guarda determinística
+	// decidida no card fix-102-assistant-texto-duplicado-eco.md.
+	fullResponse = collapseSelfDuplicatedText(fullResponse);
 
 	try {
 		const finishReason = await result.finishReason;
