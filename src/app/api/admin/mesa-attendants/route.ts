@@ -4,6 +4,7 @@ import { mesaAttendants } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isUniqueViolation } from "@/lib/mesa/pg-error";
 import { createMesaAttendantSchema } from "@/lib/validations/mesa";
+import { invalidateMesaAttendantCache } from "@/lib/whatsapp/mesa/routing";
 
 export async function GET() {
 	const { error } = await requireRole("admin");
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
 
 	try {
 		const [row] = await db.insert(mesaAttendants).values(parsed.data).returning();
+		invalidateMesaAttendantCache();
 		return Response.json(row, { status: 201 });
 	} catch (err) {
 		if (isUniqueViolation(err)) {

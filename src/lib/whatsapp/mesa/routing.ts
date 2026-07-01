@@ -23,9 +23,9 @@ import {
 } from "@/db/schema";
 import { generateMesaCopilotReply, type MesaCopilotCaso } from "@/lib/agent/mesa-copilot";
 import { claimMesaHandoff } from "@/lib/mesa/handoff";
-import { sendTextMessage } from "../api";
 import { formatTextForWhatsApp, splitMessage } from "../formatter";
 import { handoffIdFromClaimReply } from "./claim";
+import { notifyMesaAttendant } from "./notify";
 
 interface MesaAttendant {
 	id: string;
@@ -90,7 +90,7 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 	});
 
 	if (!handoff) {
-		await sendTextMessage(from, NO_OPEN_HANDOFF_REPLY);
+		await notifyMesaAttendant(from, NO_OPEN_HANDOFF_REPLY);
 		return;
 	}
 
@@ -121,7 +121,7 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 		.values({ mesaHandoffId: handoff.id, role: "assistant", content: reply });
 
 	for (const chunk of splitMessage(formatTextForWhatsApp(reply))) {
-		await sendTextMessage(from, chunk);
+		await notifyMesaAttendant(from, chunk);
 	}
 }
 
@@ -146,7 +146,7 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 
 	if (result.ok) {
 		const clienteNome = await clientNameForHandoff(result.handoff.leadId);
-		await sendTextMessage(
+		await notifyMesaAttendant(
 			from,
 			`✅ Você assumiu o caso${clienteNome ? ` de *${clienteNome}*` : ""}. ` +
 				"Pode seguir — me manda suas dúvidas que eu te guio na tela da administradora.",
@@ -154,7 +154,7 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 		// Avisa os demais atendentes que o caso já foi assumido (espelha proxy.ts:527-537).
 		for (const other of list) {
 			if (other.id !== attendant.id) {
-				await sendTextMessage(
+				await notifyMesaAttendant(
 					other.whatsapp,
 					`ℹ️ *${attendant.nome}* já assumiu o caso${clienteNome ? ` de *${clienteNome}*` : ""}.`,
 				);
@@ -167,7 +167,7 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 		const owner = result.ownerAttendantId
 			? list.find((a) => a.id === result.ownerAttendantId)
 			: undefined;
-		await sendTextMessage(
+		await notifyMesaAttendant(
 			from,
 			`⏳ Esse caso já foi assumido${owner ? ` por *${owner.nome}*` : ""}. Fica de olho que já já cai outro. 🤝`,
 		);
@@ -175,7 +175,7 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 	}
 
 	// handoff_not_found
-	await sendTextMessage(from, CLAIM_NOT_FOUND_REPLY);
+	await notifyMesaAttendant(from, CLAIM_NOT_FOUND_REPLY);
 }
 
 /** Nome do cliente de um handoff (pra mensagem do claim). Best-effort — null se não achar. */

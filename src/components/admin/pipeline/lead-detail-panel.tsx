@@ -2,7 +2,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Headset, Smartphone, Send } from "lucide-react";
+import { Globe, Headset, Send, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ const STAGE_LABELS: Record<string, string> = {
 	em_negociacao: "Em Negociação",
 	proposta_enviada: "Proposta Enviada",
 	na_administradora: "Na Administradora",
+	em_atendimento: "Em Atendimento",
 	aguardando_pagamento: "Aguardando Pagamento",
 	fechado_ganho: "Fechado Ganho",
 	perdido: "Perdido",
@@ -94,8 +95,7 @@ export function LeadDetailPanel({
 			setMessage("");
 			onClose();
 		} catch (err) {
-			const errorMsg =
-				err instanceof Error ? err.message : "Erro desconhecido";
+			const errorMsg = err instanceof Error ? err.message : "Erro desconhecido";
 			setWindowError(errorMsg);
 			alert(`Erro ao enviar mensagem:\n${errorMsg}`);
 		} finally {
@@ -152,9 +152,7 @@ export function LeadDetailPanel({
 								<TabsTrigger value="insights">Insights</TabsTrigger>
 							</TabsList>
 							<TabsContent value="conversa" className="flex-1 min-h-0">
-								<ConversationTimeline
-									endpoint={`/api/admin/leads/${lead.id}/conversation`}
-								/>
+								<ConversationTimeline endpoint={`/api/admin/leads/${lead.id}/conversation`} />
 							</TabsContent>
 							<TabsContent value="insights" className="p-4">
 								{insightsLoaded ? (
