@@ -22,13 +22,16 @@ resto da onda. Pacote pequeno pra um dev.
 > do inbox). Ver ata `docs/correcoes/2026-07-01-faxina-todo-zumbis-worktree-auditoria.md`.
 
 ## Item
-1. **FIX-102** — eco/duplicação de texto do assistant (`"Boa...Boa..."`, `"Bora!Beleza"`).
-   Causa cravada: degeneração NÃO-determinística da LLM (1 ocorrência em todo o DB de
-   homologação), não bug de append. Mitigação decidida no card = **guarda defensiva
-   determinística** colapsando segmentos/parágrafos 100% idênticos consecutivos antes de
-   persistir/renderizar (`runner.ts` ou `groupAdjacentText` em `chat-message.tsx`). Trata o
-   sintoma `"Boa...Boa..."`; é testável (Camada 1). **Baixa severidade** (cosmético, raro).
+1. **FIX-102** ✅ **done** (`b4f577d`, 2026-07-01, QA autônomo Frente 1) — eco/duplicação
+   de texto do assistant (`"Boa...Boa..."`, `"Bora!Beleza"`). Causa cravada: degeneração
+   NÃO-determinística da LLM (2ª ocorrência confirmada em homologação — mesmo shape exato),
+   não bug de append. Mitigação implementada = **guarda defensiva determinística**
+   (`collapse-self-duplicate.ts`) colapsando o texto quando é EXATAMENTE 2 metades idênticas
+   coladas, aplicada em `runner.ts` antes do `saveMessage`. Trata o sintoma `"Boa...Boa..."`;
+   NÃO pega `"Bora!Beleza"` (shape diferente, eco de quick-reply — segue em aberto se
+   reincidir). Ver `docs/correcoes/done/fix-102-assistant-texto-duplicado-eco.md`.
 
 ## Regressão
-FIX-102: Camada 1 estrutural — a guarda colapsa segmento duplicado consecutivo. NÃO é
-comportamento de prompt (a mitigação é determinística) → cassette opcional.
+FIX-102: Camada 1 estrutural — `collapse-self-duplicate.test.ts` (8 casos, incl.
+anti-falso-positivo) + `runner.fix-102-collapse-dup.test.ts` (wiring). NÃO é
+comportamento de prompt (a mitigação é determinística) → sem cassette.

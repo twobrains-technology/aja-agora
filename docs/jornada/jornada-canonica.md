@@ -268,24 +268,38 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 
 ## Cobertura de QA — Frente 1 (Descoberta + Qualificação + Identidade, Passos 1-4)
 
-> Foto atual da validação autônoma da onda `divergencias-jornada` (4c8a81c5). Histórico do run:
-> `.qa-loop/2026-07-01-0236-ledger.md`. Última validação: **2026-07-01**.
+> Foto atual. Rodada `2026-07-01 08:02` (E2E de TELA real — régua nova da skill `qa-autonomo`:
+> determinístico é piso, spec Playwright real é teto obrigatório nos fluxos críticos). Histórico
+> dos runs: `.qa-loop/2026-07-01-0236-ledger-frente1-descoberta.md` (determinístico) e
+> `.qa-loop/2026-07-01-0802-ledger-frente1-e2e-tela.md` (E2E de tela real). Última validação:
+> **2026-07-01**.
 
 | Passo / cenário | Fase | Status | Como validado |
 |---|---|---|---|
-| P1 · welcome web = 3 categorias (Imóvel/Carro/Moto), sem "Outros" | 🟢 (era 🔴 D21) | ✅ PASS | **bug residual do FIX-121 achado** (EmptyState/message-list tinha 2ª cópia com 4) → **FIX-130** (fonte única) + confirmado no browser real |
-| P1 · footer landing = 3 categorias de entrada | 🟢 (D21) | ✅ PASS | **bug achado no browser** (footer com "Serviços") → **FIX-131** (removido, decisão Kairo) |
+| P1 · welcome web = 3 categorias (Imóvel/Carro/Moto), sem "Outros" | 🟢 (era 🔴 D21) | ✅ **pleno** | FIX-130 (fonte única) + **spec E2E real** `golden-path-web.spec.ts` reconfirma no golden path |
+| P1 · footer landing = 3 categorias de entrada | 🟢 (D21) | ✅ PASS | FIX-131 (removido, decisão Kairo) — nível determinístico + browser manual |
 | P1 · paridade welcome web = WhatsApp = landing | 🟢 | ✅ PASS | structural (welcome-options.test) + browser |
+| P1 · nome capturado em 1 turno, SEM ficar mudo (WhatsApp) | 🟢 | ✅ **pleno** | **bug bloqueador achado cross-frente** (toolChoice forçado sem `prepareStep` travava o loop mudo, 10x `save_contact_name`, textChars:0) → **fix `ccbd5e7`** + confirmado AO VIVO no simulador WhatsApp (resposta imediata, sem silêncio) |
 | P2 · WhatsApp valor por conversa ("uns 80 mil"), sem lista de faixas | 🟢 (era 🔴 D5) | ✅ PASS | FIX-120: código credit→null + cassette + parser 15/15 adversarial |
 | P2 · prazo NÃO perguntado na entrada | 🟢 | ✅ PASS | FIX-103 (cassette + qualify-state) |
-| P2 · educação lance embutido pra Sim/Não/Talvez nos 2 canais | 🟢 (era 🔴 D19) | ✅ PASS | FIX-118: fireGate lance-embutido no ramo no/maybe + cassette |
-| P2 · componente de valor = agulha simples (não multi-slider) | 🟢 (D4/D6) | ✅ PASS | FIX-115: gate-renderer credit→ValuePicker |
-| P3 · identidade (CPF+telefone) antes da busca | 🟢 | ✅ PASS | gate identify precede credit (FIX-114) |
-| P3 · search_groups NUNCA sem identidade (sem "dificuldade técnica") | 🟢 (era 🔴 D7/P6) | ✅ PASS | FIX-114: allowedTools + adapter lança IdentityNotCollectedError; detectores no cassette |
-| P4 · retorna ≥1 carta REAL da Bevi (nunca mock) | 🟢 (P7) | ✅ PASS | **AO VIVO** homologação: auto 80k→24 grupos reais, imóvel 250k→22 |
+| P2 · educação lance embutido pra Sim/Não/Talvez (web) | 🟢 (era 🔴 D19) | ✅ **pleno** | FIX-118 + **spec E2E real** confirma o ramo "no" no golden path web |
+| P2 · educação lance embutido pra Sim/Não/Talvez (WhatsApp) | 🟢 (era 🔴 D19) | ⚠️ **TELA-NÃO-VALIDADA** | achado ao vivo: gate **pulado** quando a resposta ao lance vem por TEXTO LIVRE (não clique de botão) — ver achado abaixo |
+| P2 · componente de valor = agulha simples (não multi-slider) | 🟢 (D4/D6) | ✅ **pleno** | FIX-115 + **spec E2E real** (`value-input-credit`, R$ 95.000) |
+| P3 · identidade (CPF+telefone) antes da busca (web) | 🟢 | ✅ **pleno** | gate identify precede credit (FIX-53/FIX-114) + **spec E2E real** confirma a ordem no golden path |
+| P3 · search_groups NUNCA sem identidade, adversarial (web) | 🟢 (era 🔴 D7/P6) | ✅ **pleno** | FIX-114 + **spec E2E adversarial real** (`identidade-adversarial.spec.ts`): 3 tentativas de jailbreak via texto livre, zero vazamento, zero "dificuldade técnica" |
+| P3 · identidade ANTES do credit (WhatsApp) — ordem | 🔴 ordem (P6, já auditado) | ⚠️ **TELA-NÃO-VALIDADA** | achado ao vivo: no WhatsApp, `credit`/`lance` foram respondidos ANTES de `identityCollected` virar true (sem card determinístico como o web); a invariante DURA (nunca chama a tool sem identidade) **segue intacta** — confirmado via DB (`searchDispatched` null) + logs (zero `tool-policy-violation`) |
+| P4 · retorna ≥1 carta REAL da Bevi (nunca mock) | 🟢 (P7) | ✅ **pleno** | **AO VIVO** homologação (rodada anterior: auto 80k→24 grupos reais, imóvel 250k→22) + **reconfirmado nesta rodada** via spec E2E real: reveal ITAÚ R$1.397,47/mês, BB e RODOBENS reais |
+| P4 · agente não narra o mecanismo (meta-narrativa) | 🔴 (D23, já catalogado) | ⚠️ **achado novo (WhatsApp)** | confirmado no golden path web (spec real: zero leak) mas achado AO VIVO no WhatsApp ("Bora ver o que encaixa na sua faixa" antes de ter identidade) — evidência nova pro D23, card aberto |
 | T1 (sweep/trilhos) · T2 (embutido amortiza) | ⚠️ tensão | — | NÃO testado como bug (decisão stakeholder — PENDENTE Kairo/Bernardo) |
 
-**Resultado Frente 1: 10/10 cenários vivos ✅ + 2 bugs residuais achados e corrigidos (FIX-130, FIX-131).**
+**Resultado Frente 1 (rodada E2E de tela real, 2026-07-01):** golden path web + adversarial de
+identidade fecharam **✅ pleno** com spec Playwright real (não MCP manual), incluindo reveal AO
+VIVO da Bevi. 1 bug bloqueador corrigido (`ccbd5e7`, toolChoice/loop mudo) + 1 bug de duplicação de
+texto corrigido (`b4f577d`, FIX-102). WhatsApp: golden path parcial — **1 achado novo aberto**
+(gate lance-embutido pulado + meta-narrativa quando a resposta vem por texto livre;
+`docs/correcoes/inbox/2026-07-01-whatsapp-identify-gate-nao-pede-cpf-narra-busca.md`) impediu
+fechar o reveal nessa conversa, mas a invariante crítica P6 (nunca busca sem identidade) foi
+CONFIRMADA intacta.
 
 ## Cobertura de QA — Frente 2 (Recomendação + Simulador + Fechamento, Passos 5-7)
 
