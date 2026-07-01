@@ -3,7 +3,9 @@ id: FIX-116
 bloco: bloco-whatsapp-funil-paridade
 slug: whatsapp-nao-promete-assinatura
 titulo: 'WhatsApp para de prometer "assinatura" (paridade DES-1)'
-status: todo
+status: done
+commit: e63511f5
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/whatsapp/formatter.ts, src/lib/bevi/contract-summary.ts]
