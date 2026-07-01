@@ -1,7 +1,9 @@
 ---
 id: FIX-117
 titulo: "WhatsApp: \"Tenho interesse\" pós-reveal = avanço direto ao contract (paridade FIX-38)"
-status: todo
+status: done
+commit: 50eb9af7
+executado_em: 2026-07-01
 severidade: alta
 bloco: bloco-whatsapp-funil-paridade
 arquivos: [src/lib/whatsapp/interactive-handlers.ts]
