@@ -38,9 +38,9 @@ só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 | P1 | **Trilho A é o PRIMÁRIO** (API de Parceiro Bevi/UXVision). **Trilho B (self-contract) é FALLBACK.** | ⚠️ **TENSÃO (T1)** — a descoberta roda 100% no B (`adapters/index.ts:26-33`) e uma **ADR** (`2026-06-28`) decide EXPLICITAMENTE o oposto (B descobre, A fecha), porque o A é pobre (8 campos) e está **travado ao vivo** (400 productId/AGX). Não "inverter" cego → recalibrar. Ver D1. |
 | P2 | **Tradução de contrato A↔B:** A fala **PT** (`objetivo`, `tipoSimulacao`, `lanceEmbutido`); B fala **EN** (`objective`, `simulationType`, `embeddedPercentage`). O fallback precisa **traduzir params + shape** (A ~10 × B ~68 campos). | 🔴 a divergência de dialeto é real (`self-contract-client.ts:76-84` EN × `proposal-gateway.ts:16-22` PT), mas a camada de tradução **não existe** porque não há fallback (depende de T1). Ponto de partida: `discovery-session.ts:15-23` (`prefsFromMeta`, só params). Ver D2. |
 | P3 | **Sweep de busca:** **2 objetivos (`contemplacao_rapida` + `investimento`) × com/sem lance embutido** (~4 buscas) → une+dedup → IA recomenda pelo objetivo real. | 🔴 o sweep atual varre **faixa de VALOR** (`bevi-self-contract-adapter.ts:83-97,280-340`, spread `[0.7,1,1.3]`), objetivo/embutido **únicos** (`discovery-session.ts:21`), e é **opt-in** (default off, `ai-sdk.ts:291-302`). `recommend_groups` nem usa o sweep. Ver D3. |
-| P4 | **Componente de valor = só a AGULHA do valor do bem.** O componente antigo (múltiplos sliders: valor/prazo/intenção/lance) **deve ser DELETADO** — o usuário só informa o **valor do bem**. | 🔴 **alvo correto = `plan-estimate-picker.tsx`** (`kind:'plan'`, gate credit, `web/adapter.ts:87`). ⚠️ **NÃO** deletar `value-picker.tsx` — esse já É a agulha simples (FIX-107), hoje código-morto no gate (`kind:'slider'` nunca emitido). FIX-104/107 mataram só o path da LLM. Ver D4/D6. |
+| P4 | **Componente de valor = só a AGULHA do valor do bem.** | ✅ **RESOLVIDO no web (FIX-115)**: o gate credit emite `kind:'slider'` → a agulha simples (`value-picker.tsx`); `plan-estimate-picker` virou compat de msgs antigas. 🔴 **falta o WhatsApp** (ainda manda faixas em lista, D5). Ver D4/D6. |
 | P5 | **Lance embutido DERRUBA a parcela pós-contemplação** (amortiza o saldo). Sempre mostrar **parcela atual + parcela pós**. | ⚠️ **TENSÃO (T2)** — `contemplation-dial.ts:116` usa só `− ownCashValue` (não inclui `embeddedBidValue`), travado por 3 testes + `CONTEXT` D18/C4 + `system-prompt.ts:222`, que decidem o OPOSTO ("embutido reduz crédito, não dívida"). Contradição jornada×CONTEXT não resolvida → aval do stakeholder. Ver D9. |
-| P6 | **Identidade (CPF+telefone) coletada ANTES da busca.** Sem identidade não há descoberta real. | 🔴 furo é o **LLM free-run**: `tool-policy.ts:129-135` expõe `search_groups` na fase `qualify` sem checar `identityCollected` → `IdentityNotCollectedError` em prod. O caminho determinístico (gates) já é seguro. Coberto por FIX-114 (`todo`). Ver D7/D8. |
+| P6 | **Identidade (CPF+telefone) coletada ANTES da busca.** Sem identidade não há descoberta real. | ✅ **RESOLVIDO (FIX-114)**: `tool-policy.ts:30` só expõe `search_groups`/discovery se `identityCollected===true`. Recuperação defensiva do erro é hardening opcional (D8). Ver D7. |
 | P7 | **PROIBIDO dado mockado em runtime** — toda oferta/número vem da Bevi (A ou B). | 🟢 confirmado (mock deletado; sem caminho de runtime servindo fictício). |
 
 ---
@@ -188,8 +188,8 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 
 | Sev | Edição | Cobertura |
 |---|---|---|
-| **P0** | **P4 web** — religar a agulha simples ao gate credit e aposentar `plan-estimate-picker.tsx` (D4/D6) | bloco-f (FIX-95, **bloqueado por Bernardo**) + FIX-115 |
-| **P0** | **P6** — gatear `search_groups` estruturalmente na identidade + handler de recuperação (D7/D8) | FIX-114 (`todo`) |
+| ✅ | ~~P4 web (D4/D6)~~ — **RESOLVIDO** por FIX-115 (agulha no gate credit) | done |
+| ✅ | ~~P6 gate (D7)~~ — **RESOLVIDO** por FIX-114 (`search_groups` gateado na identidade) | done |
 | **P0** | **Passo 6** — Trilho A travado; fechar via Trilho B (D10) | bloco-c (FIX-88/89) |
 | **⚠️** | **T2/P5** — decisão do stakeholder sobre o modelo do lance embutido (D9) | **PENDENTE-Bernardo** |
 | **P1** | **D5** — WhatsApp valor por conversa (não lista de faixas) | novo (WhatsApp) |
@@ -215,17 +215,22 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
 
 > 24 confirmadas (verificadas adversarialmente) + 2 tensões. `Sev` P0>P1>P2. `Cobertura` = onde
 > já é atacado. Este é o insumo direto para montar a onda de correção (fonte da Fase C).
+>
+> **⚠️ Atualização 2026-07-01 (pós-integração de FIX-113/114/115 na develop — a auditoria rodou
+> no código ANTES deles):** **D4, D6, D7 RESOLVIDOS** (FIX-115 pôs a agulha simples no gate
+> credit; FIX-114 gateou `search_groups` na identidade). **D8 MITIGADO** (a causa foi tapada; só
+> resta hardening defensivo). As demais 21 persistem — verificadas no código atual (`6c2967d4`).
 
 | ID | Regra/Passo | Sev | O que diverge (gap) | Evidência `file:line` | Cobertura |
 |---|---|---|---|---|---|
 | D1 | P1 descoberta | ⚠️T1 | descoberta 100% Trilho B; sem A→B. Conflita com ADR 2026-06-28 | `adapters/index.ts:26-33,64-85`; `ai-sdk.ts:958-961`; ADR `2026-06-28:28` | recalibrar |
 | D2 | P2 tradução | P1 | sem camada de tradução de shape A↔B (só params em `prefsFromMeta`) | `self-contract-client.ts:76-84`; `proposal-gateway.ts:16-22`; `discovery-session.ts:15-23` | depende T1 |
 | D3 | P3 sweep | P1 | sweep varre VALOR, não objetivo×embutido; opt-in; `recommend` não usa | `bevi-self-contract-adapter.ts:83-97,280-340`; `ai-sdk.ts:291-302`; `recommendation.ts:179,194` | recalibrar |
-| D4 | P4 web | **P0** | gate credit ainda entrega `PlanEstimatePicker` (dispatch determinístico); FIX-107 incompleto | `web/adapter.ts:87-95`; `gate-renderer.tsx:38-41`; `route.ts:1005`; `gate-questions.ts:22-24` | FIX-95(bloq)/FIX-115 |
-| D5 | P4 WhatsApp | P1 | gate credit no WhatsApp manda lista de faixas, não conversa | `whatsapp/adapter.ts:50-53`; `formatter.ts:494`; `qualify-config.ts:8-11` | novo |
-| D6 | P4 alvo | P2 | jornada apontava arquivo errado: `value-picker.tsx` é a agulha (código-morto), alvo é `plan-estimate-picker.tsx` | `value-picker.tsx:15-33`; `gate-renderer.tsx:47-60`; `ui-message.ts:65-72` | FIX-95/115 |
-| D7 | P6 gate | **P0** | `search_groups` exposto na fase `qualify` sem checar `identityCollected` (LLM free-run) | `tool-policy.ts:56-62,120,129-135`; `bevi-self-contract-adapter.ts:238-240` | FIX-114 |
-| D8 | P6 recuperação | P1 | `IdentityNotCollectedError` vira tool-error ("dificuldade técnica"); sem re-emitir gate | `ai-sdk.ts:967-983,990-995` | FIX-114 |
+| D4 | P4 web | ✅ | **RESOLVIDO (FIX-115)**: gate credit emite `kind:"slider"` (agulha simples) | `web/adapter.ts:89`; `gate-renderer.tsx:49` | FIX-115 (done) |
+| D5 | P4 WhatsApp | P1 | gate credit no WhatsApp manda lista de faixas, não conversa | `whatsapp/adapter.ts:50-53`; `formatter.ts:494`; `qualify-config.ts:8-11` | **novo** |
+| D6 | P4 alvo | ✅ | **RESOLVIDO (FIX-115)**: `value-picker.tsx` (agulha) é o componente vivo do gate; `plan-estimate-picker` virou compat de msgs antigas | `gate-renderer.tsx:41,49` | FIX-115 (done) |
+| D7 | P6 gate | ✅ | **RESOLVIDO (FIX-114)**: `tool-policy.ts:30` só expõe DISCOVERY se `identityCollected===true` | `tool-policy.ts:14-30` | FIX-114 (done) |
+| D8 | P6 recuperação | P2↓ | **MITIGADO (FIX-114)**: D7 tapou o gatilho — a tool não é exposta sem identidade. Recuperação defensiva (catch→re-emitir gate) ainda ausente | `ai-sdk.ts:967-983` | hardening opcional |
 | D9 | P5 embutido | ⚠️T2 | `contemplation-dial.ts:116` só `− ownCashValue`; contradiz jornada. CONTRADIZ CONTEXT D18/C4 | `contemplation-dial.ts:113-118`; `.oferta-real.test.ts:71-75`; `CONTEXT.md:186-188` | PENDENTE-Bernardo |
 | D10 | Passo 6 Trilho A | **P0** | Trilho A travado (400 productId/AGX) → fechamento não completa; jornada marcava 🟢 | `bevi-api-adapter.ts:143-152`; `fulfillment.ts:90-97` | bloco-c |
 | D11 | Passo 6 DES-1 | P1 | WhatsApp ainda promete "assinatura" (só web cumpre DES-1) | `formatter.ts:1101-1108`; `contract-summary.ts:46`; `signature-handoff.tsx:18-34` | novo |
