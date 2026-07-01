@@ -1,7 +1,9 @@
 ---
 id: FIX-124
 titulo: "Transbordo: broadcast a TODOS os atendentes com botão 'Vou atender'"
-status: todo
+status: done
+commit: faf18a79
+executado_em: 2026-07-01
 severidade: alta
 bloco: bloco-mesa-transbordo-auto
 depends_on: [FIX-125]
