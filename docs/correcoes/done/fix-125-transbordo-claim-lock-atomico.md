@@ -1,7 +1,9 @@
 ---
 id: FIX-125
 titulo: 'Transbordo: claim/lock atômico (primeiro que clica "Vou atender" assume)'
-status: todo
+status: done
+commit: 7cf209a4
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 bloco: bloco-mesa-transbordo-auto
