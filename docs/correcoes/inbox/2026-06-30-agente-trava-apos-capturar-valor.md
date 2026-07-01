@@ -18,6 +18,18 @@ mexe_em:
 ## Palavras do operador
 > "o agente ta morrendo no meio da jornada, tendo que enviar uma mensagem pra ele.
 > precisamos resolver isso."
+> "o agent trava e nao responde, parece que nos casos de perguntas afirmativas. ou
+> afirmacoes que tem uma continuidade."
+
+## 🔑 PISTA-CHAVE do operador (padrão de reprodução)
+O trava acontece em **afirmações de CONTINUIDADE** — mensagens curtas do usuário que
+só confirmam/seguem, sem trazer info nova: **"ta bom", "blz", "bora continuar",
+"bora", "ta bom"**. Ex. observados: após "Beleza, R$ 50.000 então." o user manda
+"blz" → trava; no print #6, após a simulação o agente pergunta "Quer ajustar... ou já
+está pronta pra avançar?" e a sequência de afirmações trava. → O agente provavelmente
+gera um **turno VAZIO** (nada novo a dizer numa mera confirmação) e o stream fecha sem
+texto → parece morto. É EXATAMENTE o cenário do `empty-turn-guard` (FIX-110) — que ou
+NÃO está cobrindo o caso da afirmação-de-continuidade, ou o gate não avança nela.
 
 ## Cenário
 - **Ambiente:** PROD (AWS prod).

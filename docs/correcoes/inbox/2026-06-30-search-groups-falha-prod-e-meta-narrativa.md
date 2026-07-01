@@ -44,7 +44,27 @@ mexe_em:
      pra isso" — narração do funcionamento interno (anti-padrão de agente, viola a
      regra de não expor o mecanismo; devia ser 1 frase natural ou nenhuma).
 
-## Pista de causa (EVIDENCIADA ao vivo 2026-06-30 — confirmar com log de prod)
+## ⚠️ CAUSA REAL (log de prod — CONFIRMADA 2026-06-30)
+O log do pod `aja-agora-prod` (`/ecs/tb/prod`, conv `bc5fa852-…`) mostra o erro real:
+```json
+{"level":"error","source":"discovery","tool":"search_groups",
+ "error_name":"IdentityNotCollectedError",
+ "error_message":"Descoberta real exige CPF+celular coletados (gate identify do passo 2)..."}
+```
+**`search_groups` disparou ANTES da identidade (CPF+celular) ser coletada.** O
+`IdentityNotCollectedError` é uma **tripwire PROPOSITAL** do adapter (impede cair em
+mock) — o adapter está CERTO. O bug é de **ORQUESTRAÇÃO**: o funil chegou na
+descoberta/lance sem a identidade coletada (gate identify pulado OU a identidade
+coletada não está visível pro `session.getIdentity()` do adapter). NÃO é Duplicated
+Hash (esse caminho já é tratado em `bevi-self-contract-adapter.ts:243-246`).
+➡️ Fix é no **funil/gate-sequence** (garantir identity antes de discovery) e/ou no
+**tratamento do erro** (disparar o gate de identidade em vez de cuspir "dificuldade
+técnica"). Conecta com `funil-pula-experience-consent`. Comportamento de agente →
+3 camadas de regressão.
+mexe_em (revisado): src/lib/agent/qualify-state.ts, orchestrator/navigation.ts,
+orchestrator/tool-policy.ts, orchestrator/directives.ts.
+
+## Pista original (Duplicated Hash — DESCARTADA, já tratado no código)
 A descoberta usa o **Trilho B self-contract** (`self-contract-client.ts` →
 `core-production-selfcontract-atsb7.ondigitalocean.app`). Reproduzido ao vivo:
 1. **Host de pé:** `GET segment-resource` → **200** (0.58s). NÃO é host caído.
