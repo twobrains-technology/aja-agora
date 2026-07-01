@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { markAsRead } from "@/lib/whatsapp/api";
+import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 import { updateLastInboundAt } from "@/app/actions/whatsapp";
 
@@ -117,6 +118,27 @@ export async function POST(req: NextRequest) {
 						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch(
 							(err) => console.error("[whatsapp] Interactive processor error:", err),
 						);
+					}
+					break;
+				}
+
+				// FIX-122 (D13): mídia inbound (Passo 6 KYC). A copy convida "me manda
+				// a foto do RG/CNH aqui mesmo" — antes a imagem caía no default e era
+				// dropada em silêncio. Agora baixa da Graph API e sobe pro MESMO destino
+				// do web (uploadContractDocument). Async best-effort, mantém o 200
+				// imediato como todo o resto do webhook.
+				case "image":
+				case "document": {
+					const media = msgType === "image" ? message.image : message.document;
+					const mediaId = media?.id;
+					if (mediaId) {
+						handleDocumentInbound({
+							from,
+							mediaId,
+							filename: message.document?.filename,
+						}).catch((err) => console.error("[whatsapp] Document inbound error:", err));
+					} else {
+						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
 					}
 					break;
 				}

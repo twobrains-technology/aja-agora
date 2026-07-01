@@ -25,6 +25,8 @@ export interface SimulatorMessage {
 	createdAt: string;
 	/** True when origem é conversa simulada — atendente vê badge 🧪 SIMULAÇÃO. */
 	simulated?: boolean;
+	/** Botões/lista interativos (ex.: "Vou atender" da mesa) — mesmo shape do canal client. */
+	interactive?: Record<string, unknown>;
 }
 
 /** Variantes de evento que publishToClient aceita (sem id/createdAt — gerados aqui). */
@@ -56,7 +58,7 @@ if (!globalForBus.__simulatorBus) {
 export function publishToAttendant(
 	phone: string,
 	text: string,
-	options: { simulated?: boolean } = {},
+	options: { simulated?: boolean; interactive?: Record<string, unknown> } = {},
 ): void {
 	const event = `sim:attendant:${phone}`;
 	const listenerCount = bus.listenerCount(event);
@@ -65,6 +67,7 @@ export function publishToAttendant(
 		text,
 		createdAt: simulatorNow().toISOString(),
 		simulated: options.simulated,
+		interactive: options.interactive,
 	};
 	console.log(
 		`[simulator-bus] publish attendant phone=${phone} listeners=${listenerCount} simulated=${options.simulated ?? false} text="${text.slice(0, 60)}"`,

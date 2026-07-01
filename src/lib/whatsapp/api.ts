@@ -162,6 +162,35 @@ export async function sendInteractiveMessage(
 	});
 }
 
+/**
+ * FIX-122 (D13) — baixa uma mídia INBOUND do WhatsApp (Graph API, 2 passos):
+ *   1) `GET /{media-id}`  → `{ url, mime_type }` (com Bearer)
+ *   2) `GET url`          → binário (com Bearer)
+ * Retorna os bytes + o mimeType reportado pela Graph. Lança se qualquer passo
+ * falhar — o chamador (handleDocumentInbound) responde com erro amigável, nunca
+ * silêncio. Mídia inbound só chega de WhatsApp real; o simulador não a produz.
+ */
+export async function downloadMedia(
+	mediaId: string,
+): Promise<{ bytes: Uint8Array; mimeType: string }> {
+	const { accessToken } = getConfig();
+	const authHeaders = { Authorization: `Bearer ${accessToken}` };
+
+	const metaRes = await fetch(`${GRAPH_API}/${mediaId}`, { headers: authHeaders });
+	if (!metaRes.ok) {
+		throw new Error(`[whatsapp-api] downloadMedia meta failed (${metaRes.status})`);
+	}
+	const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+	if (!meta.url) throw new Error("[whatsapp-api] downloadMedia: resposta sem url");
+
+	const binRes = await fetch(meta.url, { headers: authHeaders });
+	if (!binRes.ok) {
+		throw new Error(`[whatsapp-api] downloadMedia binary failed (${binRes.status})`);
+	}
+	const bytes = new Uint8Array(await binRes.arrayBuffer());
+	return { bytes, mimeType: meta.mime_type ?? "application/octet-stream" };
+}
+
 export async function markAsRead(messageId: string) {
 	// `messageId` é do Meta — pra conversa simulada não temos esse id (no-op).
 	if (messageId.startsWith("sim-")) return simulatedAck();

@@ -1,0 +1,35 @@
+{
+	"status": "OK",
+	"code": 200,
+	"success": true,
+	"data": {
+		"proposal": {
+			"_id": "6a1f9a2ecf5174e43aa4b201",
+			"corporationId": "6a1756d4bef180c41e909c07",
+			"currentStep": {
+				"_id": "step-simulation",
+				"slug": "simulation",
+				"name": "Simulação",
+				"order": 5,
+				"state": "init",
+				"stepType": { "slug": "simulation", "label": "Simulação", "stepTypeCode": 80, "unique": true },
+				"fields": []
+			},
+			"selfContract": {
+				"dadosIniciais": { "cpf": "12345678900", "celular": "62999887766" }
+			},
+			"situation": "pending",
+			"status": null,
+			"comesFrom": null
+		},
+		"code": 200,
+		"steps": [],
+		"autoFill": true,
+		"canStartNewProposal": true,
+		"isGroupProposal": false,
+		"isReviewFirst": false,
+		"isAPIDeParceiro": false,
+		"waitingFinishFillProposalSelfContract": false,
+		"slugLanguage": "pt"
+	}
+}

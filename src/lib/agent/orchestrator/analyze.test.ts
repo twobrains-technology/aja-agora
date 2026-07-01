@@ -165,3 +165,83 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		expect(meta.experiencePrev).toBe("returning");
 	});
 });
+
+// FIX-115 (PROD 2026-06-30) — resiliência do valor por texto.
+// Requisito literal do Kairo: "se o componente nao aparecer tem que se resolver
+// mesmo assim". O valor por conversa depende do analyzer LLM, que cai em
+// NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem backstop, "50k"
+// não vira número, o gate `credit` re-dispara e o funil TRAVA. O backstop
+// determinístico (parseAssetValue) garante o AVANÇO mesmo com o analyzer mudo.
+describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (backstop)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	// meta no passo do valor: nome/experiência/consent/identidade já feitos → o
+	// ÚNICO gate pendente é `credit` (o valor). Reproduz o print do bug.
+	const atValueStep = (): ConversationMetadata => ({
+		currentCategory: "auto",
+		experiencePrev: "returning",
+		qualifyConsented: true,
+		identityCollected: true,
+	});
+
+	it("analyzer devolve creditMax=null (timeout) + user 'R$ 50.000' → backstop crava 50000", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: null });
+		const meta = atValueStep();
+		// Antes do merge: o funil ESTÁ preso no gate do valor.
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		await analyzeAndMerge("R$ 50.000", "auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(50_000);
+		// Depois do merge: o funil AVANÇA (passa do `credit` pro `lance`), não trava.
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+	});
+
+	it("'50k' e '50 mil' (analyzer mudo) também avançam o funil", async () => {
+		for (const text of ["50k", "uns 50 mil então"]) {
+			vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: null });
+			const meta = atValueStep();
+			await analyzeAndMerge(text, "auto", meta);
+			expect(meta.qualifyAnswers?.creditMax, `texto="${text}"`).toBe(50_000);
+			expect(nextGate(meta, { hasContactName: true }), `texto="${text}"`).toBe("lance");
+		}
+	});
+
+	it("o backstop NÃO inventa valor quando não há um (texto sem valor NÃO destrava o gate)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: null });
+		const meta = atValueStep();
+		await analyzeAndMerge("bora continuar", "auto", meta);
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+		// Segue no gate do valor (não pula pra frente sem o dado) — nunca crava lixo.
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+	});
+
+	it("o analyzer LLM tem prioridade: quando ELE extrai, o backstop não sobrescreve", async () => {
+		// '80 mil' — o analyzer acertou 80000; o parseAssetValue leria o mesmo, mas o
+		// caminho do analyzer é a fonte primária (não deve haver dupla-escrita).
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
+		const meta = atValueStep();
+		await analyzeAndMerge("uns 80 mil", "auto", meta);
+		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
+	});
+
+	// Backstop é SÓ coleta inicial: pós-reveal a troca de faixa é decisão do LLM
+	// (analyzer providing_info), nunca do regex — senão um número solto reabriria
+	// busca à toa (anti BUG-REVEAL-LOOP).
+	it("pós-reveal NÃO deixa o regex trocar a faixa (só o analyzer refita)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: null });
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 80_000 },
+		};
+		await analyzeAndMerge("R$ 130.000", "auto", meta);
+		// creditMax preservado — o backstop não roda com creditMax já setado.
+		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
+	});
+});

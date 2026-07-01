@@ -116,4 +116,22 @@ describe("publishToAttendant — retrocompat + flag simulated", () => {
 
 		unsub();
 	});
+
+	it("entrega payload interactive (botões 'Vou atender' da mesa) junto com o texto", () => {
+		const phone = "5511000000002";
+		const received: SimulatorMessage[] = [];
+		const unsub = subscribeToAttendant(phone, (m) => received.push(m));
+
+		const interactive = {
+			type: "button" as const,
+			body: { text: "Novo caso na mesa" },
+			action: { buttons: [{ type: "reply", reply: { id: "mesa_claim:abc", title: "Vou atender" } }] },
+		};
+		publishToAttendant(phone, "Novo caso na mesa", { interactive });
+
+		expect(received).toHaveLength(1);
+		expect(received[0].interactive).toEqual(interactive);
+
+		unsub();
+	});
 });

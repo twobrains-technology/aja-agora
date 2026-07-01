@@ -7,8 +7,9 @@ import type { Category, Objetivo } from "@/lib/agent/personas";
 //
 //  1. O agente PARA de emitir `present_value_picker` NA ENTRADA — o valor do bem
 //     vira CONVERSA (texto livre, normalizado). A tool segue existindo; a WEB a
-//     troca por um slider simples (1k em 1k), o WhatsApp não manda mais a lista
-//     de faixas. (FIX-104)
+//     troca por um slider simples (1k em 1k, FIX-115), o WhatsApp não manda mais a
+//     lista de faixas — pergunta o valor por TEXTO (FIX-120, wiring do adapter
+//     feito). (FIX-104)
 //  2. O gate `timeframe` (prazo de contemplação) SAIU da qualificação —
 //     `nextGate` (qualify-state.ts) nunca mais o emite. "timeframe" segue no
 //     union `Gate` e `TIMEFRAME_OPTIONS`/`objetivoForPrazo`/`prazoMesesForIntent`
@@ -33,8 +34,9 @@ import type { Category, Objetivo } from "@/lib/agent/personas";
  * 2026-06-28). Perguntas BINÁRIAS (resposta clara e rápida) mantêm o BOTÃO;
  * a pergunta ABERTA de valor vira CONVERSA (texto livre — FIX-104). Contrato
  * consumido pelos blocos de canal (web/whatsapp) pra escolher o tipo de input
- * de cada gate: TODO(bloco-web-valor-agulha)/TODO(bloco-whatsapp-apresentacao)
- * — renderizar `conversation` como texto, não como componente de seleção.
+ * de cada gate: renderizar `conversation` como texto, não como componente de
+ * seleção. Wiring feito nos dois canais: web-valor-agulha (FIX-115, agulha →
+ * texto livre) e whatsapp (FIX-120, adapter pergunta o valor por texto).
  *
  * Observação (FIX-103): o gate `timeframe` (prazo) saiu da qualificação — não
  * é classificado aqui. `name`/`identify`/`search`/`simulator-offer`/`decision`

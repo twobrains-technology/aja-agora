@@ -35,6 +35,10 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
 // FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
 // fechado_ganho) refletindo mesa manual + boleto, alimentado por polling
 // (FIX-44). Ordem = funil forward-only; `perdido` é terminal.
+// FIX-126 (D17): `em_atendimento` = um atendente de mesa ASSUMIU o caso (claim "Vou
+// atender"). Posicionada ENTRE na_administradora e aguardando_pagamento (não antes — senão
+// o claim, que dispara quando o lead já está em na_administradora, regrediria e o
+// forward-only viraria no-op). Ver docs/correcoes/decisions/2026-07-01-bloco-mesa-transbordo-auto.md.
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
 	"engajado",
@@ -42,6 +46,7 @@ export const leadStageEnum = pgEnum("lead_stage", [
 	"em_negociacao",
 	"proposta_enviada",
 	"na_administradora",
+	"em_atendimento",
 	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",
@@ -82,6 +87,34 @@ export const mesaHandoffStatusEnum = pgEnum("mesa_handoff_status", [
 ]);
 
 export const mesaCopilotRoleEnum = pgEnum("mesa_copilot_role", ["assistant", "attendant"]);
+
+// ─── Documentos do cliente (S3 nosso = fonte da verdade) ─────────────────────
+// Design: docs/superpowers/specs/2026-06-28-gestao-documentos-cliente-design.md.
+// Mesmos slots do KYC já usados no fechamento Bevi (DocumentSlot em
+// src/lib/adapters/proposal-gateway.ts) — reaproveita o vocabulário do domínio.
+export const clientDocumentSlotEnum = pgEnum("client_document_slot", [
+	"identidade_frente",
+	"identidade_verso",
+	"comprovante_endereco",
+]);
+
+// Só "stored" por hora (o ativo nosso nunca é removido/expirado nesta feature —
+// ver §7 Fora de escopo do design). Enum em vez de texto livre pra bater com o
+// padrão do repo (leadStageEnum, mesaHandoffStatusEnum etc).
+export const clientDocumentStatusEnum = pgEnum("client_document_status", ["stored"]);
+
+export const clientDocumentDispatchStatusEnum = pgEnum("client_document_dispatch_status", [
+	"pending",
+	"sent",
+	"failed",
+	"manual",
+]);
+
+export const clientDocumentDispatchTargetEnum = pgEnum("client_document_dispatch_target", [
+	"bevi_a",
+	"bevi_b",
+	"mesa",
+]);
 
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
@@ -668,9 +701,10 @@ export const mesaHandoffs = pgTable(
 		beviProposalId: uuid("bevi_proposal_id").references(() => beviProposals.id, {
 			onDelete: "set null",
 		}),
-		mesaAttendantId: uuid("mesa_attendant_id")
-			.notNull()
-			.references(() => mesaAttendants.id),
+		// FIX-125 (D16): nullable = estado "sem dono". O transbordo nasce sem dono no
+		// broadcast; o 1º atendente que clica "Vou atender" assume via claim atômico
+		// (UPDATE ... WHERE mesa_attendant_id IS NULL). Espelha conversations.handedOffUserId.
+		mesaAttendantId: uuid("mesa_attendant_id").references(() => mesaAttendants.id),
 		administradoraId: uuid("administradora_id").references(() => administradoras.id, {
 			onDelete: "set null",
 		}),
@@ -700,6 +734,65 @@ export const mesaCopilotMessages = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("mesa_copilot_messages_handoff_id_idx").on(table.mesaHandoffId)],
+);
+
+// ─── Documentos do cliente (S3 nosso = fonte da verdade) ─────────────────────
+// FIX-82: o documento do cliente (RG/CNH/comprovante) é um ATIVO NOSSO,
+// independente do destino (Bevi Trilho A/B ou mesa manual) — bucket dedicado
+// (SSE-KMS), nunca o de administradora-docs. `status` descreve o ativo guardado;
+// `dispatchStatus`/`dispatchTarget` descrevem o envio best-effort ao destino
+// (FIX-84) — falha de despacho NUNCA apaga/perde o documento guardado.
+export const clientDocuments = pgTable(
+	"client_documents",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		// Nullable: o lead/contato pode ainda não existir no momento da coleta.
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+		slot: clientDocumentSlotEnum("slot").notNull(),
+		s3Bucket: text("s3_bucket").notNull(),
+		s3Key: text("s3_key").notNull(),
+		filename: text("filename").notNull(),
+		mimeType: text("mime_type").notNull(),
+		sizeBytes: integer("size_bytes").notNull(),
+		status: clientDocumentStatusEnum("status").default("stored").notNull(),
+		dispatchStatus: clientDocumentDispatchStatusEnum("dispatch_status")
+			.default("pending")
+			.notNull(),
+		dispatchTarget: clientDocumentDispatchTargetEnum("dispatch_target"),
+		dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+		// sectionId/documentId da Bevi quando efetivamente enviado (bevi_a/b).
+		beviRef: jsonb("bevi_ref").$type<Record<string, unknown>>(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("client_documents_lead_id_idx").on(table.leadId),
+		index("client_documents_conversation_id_idx").on(table.conversationId),
+	],
+);
+
+// Audit trail de acesso (FIX-83) — PII de identidade exige log de quem baixou e
+// quando, na mesma linha de leadEvents/memoryEvents (append-only, nunca editado).
+export const clientDocumentDownloads = pgTable(
+	"client_document_downloads",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		clientDocumentId: uuid("client_document_id")
+			.notNull()
+			.references(() => clientDocuments.id, { onDelete: "cascade" }),
+		downloadedBy: text("downloaded_by")
+			.notNull()
+			.references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("client_document_downloads_client_document_id_idx").on(table.clientDocumentId)],
 );
 
 // ─── Relations ───────────────────────────────────────────────────────────────
@@ -883,5 +976,32 @@ export const mesaCopilotMessagesRelations = relations(mesaCopilotMessages, ({ on
 	handoff: one(mesaHandoffs, {
 		fields: [mesaCopilotMessages.mesaHandoffId],
 		references: [mesaHandoffs.id],
+	}),
+}));
+
+export const clientDocumentsRelations = relations(clientDocuments, ({ one, many }) => ({
+	conversation: one(conversations, {
+		fields: [clientDocuments.conversationId],
+		references: [conversations.id],
+	}),
+	lead: one(leads, {
+		fields: [clientDocuments.leadId],
+		references: [leads.id],
+	}),
+	contact: one(contacts, {
+		fields: [clientDocuments.contactId],
+		references: [contacts.id],
+	}),
+	downloads: many(clientDocumentDownloads),
+}));
+
+export const clientDocumentDownloadsRelations = relations(clientDocumentDownloads, ({ one }) => ({
+	document: one(clientDocuments, {
+		fields: [clientDocumentDownloads.clientDocumentId],
+		references: [clientDocuments.id],
+	}),
+	downloadedByUser: one(user, {
+		fields: [clientDocumentDownloads.downloadedBy],
+		references: [user.id],
 	}),
 }));

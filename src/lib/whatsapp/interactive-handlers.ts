@@ -15,9 +15,8 @@ import {
 	runSearchSummaryWithOrchestrator,
 	runTransitionWithOrchestrator,
 } from "./adapter";
-import { sendTextMessage } from "./api";
+import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
-	buildCreditReactionDirective,
 	buildDetailDirective,
 	buildExperienceDoubtsDirective,
 	buildExperienceFirstDirective,
@@ -32,8 +31,8 @@ import {
 	buildWhatIfDirective,
 } from "./directives";
 import {
+	artifactToWhatsApp,
 	documentUploadToWhatsApp,
-	resolveCreditReply,
 	resolveLanceEmbutidoReply,
 	resolveLanceReply,
 	resolveLanceValueReply,
@@ -102,7 +101,6 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 		return handleQualifyStart(ctx);
 	if (replyId.startsWith("category_")) return handleCategory(ctx);
 	if (replyId.startsWith("experience_")) return handleExperience(ctx);
-	if (replyId.startsWith("credit_")) return handleCredit(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
 	if (replyId.startsWith("lanceembutido_")) return handleLanceEmbutido(ctx);
 	if (replyId.startsWith("lancevalue_")) return handleLanceValue(ctx);
@@ -115,6 +113,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("whatif_")) return handleWhatIf(ctx);
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId === "show_others") return handleShowOthers(ctx);
+	if (replyId === "decision_outras") return handleDecisionOutras(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
 	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
 	if (replyId === "contract_cancel") return handleContractCancel(ctx);
@@ -295,23 +294,10 @@ async function handleQualifyStart(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
-async function handleCredit(ctx: Ctx): Promise<boolean> {
-	const { from, replyId, conversationId } = ctx;
-	const resolved = resolveCreditReply(replyId);
-	if (!resolved) return true;
-
-	const meta = await loadMeta(conversationId);
-	const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-		...(meta.qualifyAnswers ?? {}),
-		creditMin: resolved.min,
-		creditMax: resolved.max,
-	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-	await recordUserClick(ctx);
-
-	await runAgentDirective(from, conversationId, buildCreditReactionDirective(resolved.title));
-	return true;
-}
+// FIX-120 (paridade FIX-115): o gate credit no WhatsApp virou CONVERSA — não há
+// mais lista de faixas, logo nenhum reply `credit_*` chega. `handleCredit` (que
+// resolvia a faixa e gravava range.max) foi aposentado; o valor é dito por texto
+// livre e capturado pelo analyzer + backstop parseAssetValue (orchestrator).
 
 async function handleTimeframe(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
@@ -343,18 +329,25 @@ async function handleLance(ctx: Ctx): Promise<boolean> {
 		...(meta.qualifyAnswers ?? {}),
 		hasLance: resolved.value,
 	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+	const updated = { ...meta, qualifyAnswers: merged };
+	await persistMeta(conversationId, updated);
 	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
-	// Jornada do doc: quem TEM reserva ("yes") passa pelo gate de lance embutido
-	// (educa + opt-in) antes da busca. O directive dispara o gate em seguida.
+	// Jornada do doc (Passo 2, FIX-4): a educação de lance embutido vale pra
+	// QUALQUER resposta (Sim/Não/Talvez) — o próprio texto mira quem NÃO tem o
+	// valor do lance hoje. "yes" reage primeiro (buildLanceReactionDirective →
+	// gate lance-value → lance-embutido). FIX-118 (paridade FIX-92, route.ts:917-928):
+	// "no"/"maybe" vão direto pro gate `lance-embutido` (educa + opt-in) ANTES da
+	// busca. Antes caíam em runSearchSummaryWithOrchestrator, pulando a educação
+	// (regressão do FIX-4 que o FIX-92 corrigiu só no web). A busca só roda depois
+	// do clique em lanceembutido_* (handleLanceEmbutido → runSearchSummary...).
 	if (resolved.value === "yes") {
 		await runAgentDirective(from, conversationId, buildLanceReactionDirective(resolved.title));
 		return true;
 	}
-	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	await fireGate(from, conversationId, "lance-embutido", updated);
 	return true;
 }
 
@@ -560,33 +553,62 @@ async function handleShowOthers(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
+// FIX-119 (D22): "Ver outras opções" do CARD DE DECISÃO (decision_outras). O
+// comparativo é DETERMINÍSTICO — surfaça as outras ofertas REAIS da descoberta
+// (buildOtherOptions: cache do adapter, dedupe, exclui a recomendada), ESPELHANDO
+// o web (route.ts:521-548). Zero free-run do modelo, zero dado inventado
+// (docstring de other-options.ts). NÃO confundir com handleShowOthers (card da
+// recomendada, FIX-108) que delega ao modelo — a D22 é sobre o card de decisão e
+// exige o caminho model-free pra não arriscar fabricar/omitir números.
+async function handleDecisionOutras(ctx: Ctx): Promise<boolean> {
+	const { from, conversationId } = ctx;
+	await recordUserClick(ctx);
+	try {
+		const meta = await loadMeta(conversationId);
+		const { buildOtherOptions } = await import("@/lib/bevi/other-options");
+		const others = await buildOtherOptions(conversationId, meta);
+		await sendTextMessage(from, others.text);
+		await saveMessage(conversationId, "assistant", others.text, "whatsapp");
+		const wa = artifactToWhatsApp("comparison_table", { groups: others.groups });
+		if (wa?.type === "interactive" && wa.interactive) {
+			await sendInteractiveMessage(from, wa.interactive);
+		} else if (wa?.type === "text" && wa.text) {
+			await sendTextMessage(from, wa.text);
+		}
+	} catch {
+		// Espelha o fallback do web (route.ts:539-546): nunca deixa o clique em
+		// silêncio nem cai no modelo.
+		await sendTextMessage(
+			from,
+			"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+		);
+	}
+	return true;
+}
+
 async function handleInterest(ctx: Ctx): Promise<boolean> {
 	const { from, conversationId } = ctx;
 	// Conversa já com atendente humano: não dispara o funil — o relay cuida.
 	const handoff = await getHandoffState(from);
 	if (handoff?.isHandedOff) return false;
 
-	// FIX-WA (Kairo 2026-06-12: "whatsapp precisa ser exatamente igual a web"):
-	// "Tenho interesse" pós-reveal é AVANÇO no funil canônico self-service
-	// (decisão → contratação), espelhando o handler web (FIX-29/FIX-34). NUNCA
-	// handoff pra consultor por sinal de interesse — o handoff humano fica SÓ no
-	// pedido explícito (suggest_handoff → handoff_confirm) e nos triggers de
-	// erro/valor da persona. O clique segue persistido (recordUserClick, GAP #2).
+	// FIX-117 (paridade FIX-38, route.ts:485-499 — "whatsapp precisa ser
+	// exatamente igual a web"): "Tenho interesse" pós-reveal é AVANÇO DIRETO ao
+	// passo 5 (present_contract_form). O clique JÁ é a decisão — sem intercalar o
+	// card "Esse plano faz sentido?" (dupla confirmação que o FIX-38 removeu no
+	// web: "ta pedindo confirmacao demais"). Marca decisionDispatched ANTES de
+	// dirigir o avanço: a tool-policy só libera present_contract_form na fase
+	// "closing" (decisionDispatched===true) — sem a marca o avanço cairia na fase
+	// "reveal" e a tool seria filtrada. NUNCA handoff pra consultor por sinal de
+	// interesse — o handoff humano fica SÓ no pedido explícito. O card de decisão
+	// fica pros caminhos AMBÍGUOS (handleSimulatorOffer "Agora não"), intocado
+	// aqui. O clique segue persistido (recordUserClick).
 	const meta = await loadMeta(conversationId);
 	await recordUserClick(ctx);
-	const { buildAdvanceToContractDirective, buildDecisionPromptDirective } = await import(
-		"@/lib/agent/orchestrator/directives"
-	);
 	if (!meta.decisionDispatched) {
 		await persistMeta(conversationId, { ...meta, decisionDispatched: true });
-		await runAgentDirective(
-			from,
-			conversationId,
-			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
-		);
-		return true;
 	}
-	// Decisão já apresentada — reafirmar interesse avança pro passo 5.
+	const { buildAdvanceToContractDirective } = await import("@/lib/agent/orchestrator/directives");
 	await runAgentDirective(
 		from,
 		conversationId,

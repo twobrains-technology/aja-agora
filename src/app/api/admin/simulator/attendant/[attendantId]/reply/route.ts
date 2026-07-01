@@ -1,7 +1,11 @@
 /**
  * Reply endpoint for the dev attendant simulator.
  * Treats the simulator input as if the attendant had replied via WhatsApp,
- * routing through the same handleAgentMessage as the webhook in processor.ts.
+ * routing through the SAME processTextMessage the real webhook calls (mirrors
+ * /api/admin/simulator/whatsapp/[conversationId]/send). Isso garante a mesma
+ * precedência de canal do processor.ts (FIX-172): atendente de MESA cai no
+ * copiloto (handleMesaCopilot), NUNCA no chat de vendas (handleAgentMessage) —
+ * chamar handleAgentMessage direto (como antes) pulava essa checagem.
  *
  * POST /api/admin/simulator/<attendantId>/reply  { text }
  *
@@ -14,7 +18,7 @@ import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isSimulatorEnabled } from "@/lib/utils/env";
-import { handleAgentMessage } from "@/lib/whatsapp/proxy";
+import { processTextMessage } from "@/lib/whatsapp/processor";
 
 const replySchema = z.object({
 	text: z.string().min(1).max(4096),
@@ -54,6 +58,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ attenda
 		return NextResponse.json({ error: "Atendente não encontrado" }, { status: 404 });
 	}
 
-	const handled = await handleAgentMessage(attendant.phone, parsed.data.text);
-	return NextResponse.json({ ok: true, handled });
+	await processTextMessage(attendant.phone, parsed.data.text);
+	return NextResponse.json({ ok: true });
 }

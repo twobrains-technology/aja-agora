@@ -37,11 +37,10 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createUIMessageStream, streamText } from "ai";
+import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
-import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -53,6 +52,7 @@ import {
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import {
 	parseValorDoBem,
@@ -62,10 +62,13 @@ import {
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
-import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
+import { type DocumentInboundDeps, handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
+import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -1714,10 +1717,12 @@ describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name 
 	it("builder.ts repassa opts.toolChoice pro construtor do ToolLoopAgent", () => {
 		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
 		expect(
-			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*}/.test(builderSrc),
+			/opts\.toolChoice\s*\?\s*{\s*toolChoice:\s*opts\.toolChoice\s*,/.test(builderSrc),
 			"builder.ts precisa fazer spread condicional `...(opts.toolChoice ? " +
-				"{ toolChoice: opts.toolChoice } : {})` no settings do new ToolLoopAgent. " +
-				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic.",
+				"{ toolChoice: opts.toolChoice, ... } : {})` no settings do new ToolLoopAgent. " +
+				"Sem isso, toolChoice chega no builder mas não vai pro Anthropic. (BUG-MUTE-" +
+				"LOOP-NAME-CAPTURE, 2026-07-01: o spread agora também carrega `prepareStep` — " +
+				"ver describe dedicado — daí a vírgula em vez do fechamento imediato do objeto.)",
 		).toBe(true);
 	});
 
@@ -1735,6 +1740,152 @@ describe("BUG-FORCE-SAVE-CONTACT-NAME — orchestrator força save_contact_name 
 		expect(toolCalls).toHaveLength(1);
 		expect(toolCalls[0]?.toolName).toBe("save_contact_name");
 		expect(toolCalls[0]?.input).toMatchObject({ name: "Paulo" });
+	});
+});
+
+// ============================================================================
+// BUG-MUTE-LOOP-NAME-CAPTURE — achado cross-frente 2026-07-01
+// ----------------------------------------------------------------------------
+// Real (WhatsApp, simulador /admin/simulator/whatsapp): agente pergunta "como
+// posso te chamar?" -> usuario responde "Kairo" -> agente fica MUDO por 1
+// turno inteiro. Turn-trace real: toolsCalled=[save_contact_name x10],
+// toolCount:10, textChars:0.
+//
+// Causa raiz: builder.ts passava opts.toolChoice (forcado pelo orchestrator
+// via detect-name-turn.ts) como setting ESTATICO do ToolLoopAgent, sem
+// prepareStep. A AI SDK reaplica o MESMO toolChoice em TODOS os steps do
+// loop (stopWhen: stepCountIs(10)) — o Anthropic fica OBRIGADO a chamar
+// save_contact_name em CADA step, nunca podendo produzir texto (tool_choice
+// forcado nunca permite finish_reason=stop). O loop esgota o teto mudo.
+//
+// Este cassette reproduz o padrao end-to-end via streamText+tools (nao
+// builder.ts direto, que usa o provider Anthropic real) — mesmo shape do
+// bug: toolChoice estatico + stopWhen stepCountIs(10) sem prepareStep vs.
+// COM prepareStep revertendo pra 'auto' apos o 1o step.
+// ============================================================================
+
+describe("BUG-MUTE-LOOP-NAME-CAPTURE — toolChoice forcado sem prepareStep trava o agent mudo", () => {
+	function saveContactNameTool() {
+		return tool({
+			inputSchema: z.object({ name: z.string() }),
+			execute: async () => "[Nome salvo]",
+		});
+	}
+
+	it("SEM prepareStep: toolChoice estatico se repete em TODO step -> 10 tool-calls, ZERO texto (bug real)", async () => {
+		let calls = 0;
+		const model = new MockLanguageModelV3({
+			doStream: async () => {
+				calls++;
+				return {
+					stream: simulateReadableStream({
+						// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							toolCallChunk(`tc-${calls}`, "save_contact_name", { name: "Kairo" }),
+							FINISH_TOOL_CALLS,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const result = streamText({
+			model,
+			prompt: "Kairo",
+			tools: { save_contact_name: saveContactNameTool() },
+			toolChoice: { type: "tool", toolName: "save_contact_name" },
+			stopWhen: stepCountIs(10),
+		});
+
+		let acc = "";
+		for await (const chunk of result.textStream) acc += chunk;
+		const steps = await result.steps;
+
+		// Reproducao FIEL do turn-trace real: toolCount=10, textChars=0.
+		expect(acc, "textChars deveria ser 0 — reproduz o agente mudo").toBe("");
+		expect(steps.length, "esgota os 10 steps do stopWhen sem nunca parar por texto").toBe(10);
+		expect(calls).toBe(10);
+
+		// PROVA da causa raiz: o modelo recebeu toolChoice FORCADO em TODOS os
+		// 10 steps (nao so no 1o) — e essa persistencia que impede o modelo de
+		// responder com texto e trava o loop mudo ate o teto.
+		expect(
+			model.doStreamCalls.every((c) => c.toolChoice?.type === "tool"),
+			"toolChoice deveria estar forcado em todo step nesse cenario SEM prepareStep",
+		).toBe(true);
+	});
+
+	it("COM prepareStep (fix builder.ts): toolChoice forca so no step 0, reverte a 'auto' -> modelo fala no step 2", async () => {
+		let calls = 0;
+		const model = new MockLanguageModelV3({
+			doStream: async ({ toolChoice }) => {
+				calls++;
+				if (toolChoice?.type === "tool") {
+					return {
+						stream: simulateReadableStream({
+							// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+							chunks: [
+								{ type: "stream-start", warnings: [] },
+								toolCallChunk(`tc-${calls}`, "save_contact_name", { name: "Kairo" }),
+								FINISH_TOOL_CALLS,
+							] as any[],
+						}),
+					};
+				}
+				// toolChoice revertido pra 'auto' — modelo consegue responder com
+				// texto (comportamento saudavel: persiste o nome E fala em seguida).
+				return {
+					stream: simulateReadableStream({
+						// biome-ignore lint/suspicious/noExplicitAny: SDK v3 typing accepts loosely
+						chunks: [
+							{ type: "stream-start", warnings: [] },
+							...textChunks("t1", "Prazer, Kairo! O que voce quer conquistar?"),
+							FINISH_STOP,
+						] as any[],
+					}),
+				};
+			},
+		});
+
+		const result = streamText({
+			model,
+			prompt: "Kairo",
+			tools: { save_contact_name: saveContactNameTool() },
+			toolChoice: { type: "tool", toolName: "save_contact_name" },
+			stopWhen: stepCountIs(10),
+			// IMPORTANTE: 'auto' é STRING aqui (ToolChoice<T> de alto nível), não
+			// { type: 'auto' } — um objeto cai no branch errado da conversão
+			// interna da SDK (prepareToolsAndToolChoice) e vira
+			// { type: 'tool', toolName: undefined }, reproduzindo o MESMO bug mudo.
+			prepareStep: ({ stepNumber }) => (stepNumber > 0 ? { toolChoice: "auto" as const } : {}),
+		});
+
+		let acc = "";
+		for await (const chunk of result.textStream) acc += chunk;
+		const steps = await result.steps;
+
+		expect(acc, "com o fix, o agent DEVE produzir texto (nao fica mudo)").toContain(
+			"Prazer, Kairo",
+		);
+		expect(steps.length, "1 step forcado (tool) + 1 step falado -> sai do loop cedo").toBe(2);
+		expect(calls).toBe(2);
+	});
+
+	it("builder.ts: prepareStep so existe quando opts.toolChoice e passado (fix nao regride o caminho sem forcing)", () => {
+		const builderSrc = readSource("src/lib/agent/agents/builder.ts");
+		expect(
+			/prepareStep/.test(builderSrc),
+			"builder.ts precisa declarar `prepareStep` no settings do ToolLoopAgent quando " +
+				"opts.toolChoice e passado — sem isso, o toolChoice forcado fica estatico em " +
+				"TODOS os steps do loop e trava o agent mudo (bug real: 10x save_contact_name, " +
+				"textChars:0, WhatsApp, 2026-07-01).",
+		).toBe(true);
+		expect(
+			/stepNumber\s*>\s*0/.test(builderSrc),
+			"prepareStep precisa checar stepNumber > 0 pra reverter o toolChoice forcado " +
+				"pra 'auto' apos o 1o step (o forcing so faz sentido pro tool-call inicial).",
+		).toBe(true);
 	});
 });
 
@@ -1998,8 +2149,7 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
 		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
 		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
-		const ordemDosGates =
-			/experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
 		const proibeValorAntes =
 			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
@@ -2075,12 +2225,10 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			else if (g === "identify") meta = { ...meta, identityCollected: true };
 			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
 			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
-			else if (g === "lance-value")
-				meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
+			else if (g === "lance-value") meta = { ...meta, qualifyAnswers: { ...q, lanceValue: 8_000 } };
 			else if (g === "lance-embutido")
 				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
-			else if (g === "search")
-				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+			else if (g === "search") meta = { ...meta, searchDispatched: true, revealCompleted: true };
 			else if (g === "simulator-offer") meta = { ...meta, simulatorOfferDispatched: true };
 			else if (g === "decision") break;
 			else break;
@@ -2121,9 +2269,10 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			"Quando você quer ser contemplado?",
 		];
 		const misses = proibidas.filter((v) => !perguntaPrazo.test(v));
-		expect(misses, `Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`).toEqual(
-			[],
-		);
+		expect(
+			misses,
+			`Detector não pegou variantes de pergunta de prazo: ${JSON.stringify(misses)}`,
+		).toEqual([]);
 	});
 
 	it("CROSS-REF prompt: nem SYSTEM_PROMPT nem SPECIALIST_BASE_PROMPT instruem pedir prazo na entrada", () => {
@@ -2440,8 +2589,7 @@ describe("BUG-ASSISTANT-RESPECT-3-GATES — example.add que mostra agent pulando
 		// Ordem da revisão 2 (docx + FIX-53) com FIX-103: experience → consent →
 		// identidade → valor → lance. Os DADOS e o VALOR precedem o lance; o prazo
 		// saiu da qualificação.
-		const ordemReal =
-			/experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
+		const ordemReal = /experience[\s\S]{0,300}identidade[\s\S]{0,200}valor[\s\S]{0,200}lance/i;
 		expect(
 			ordemReal.test(hardRules),
 			"HARD_RULES.md sec 2.2 precisa listar a ordem experience → identidade → valor → lance (sem prazo)",
@@ -4034,9 +4182,13 @@ describe("FIX-10-UPLOAD-SEM-AUTO-SEND — estrutura do fluxo de documentos", () 
 		expect(src).toMatch(/verso/i);
 	});
 
-	it("endpoint dedicado de upload existe e usa uploadContractDocument", () => {
+	it("endpoint dedicado de upload existe e grava no NOSSO S3 (storeClientDocument)", () => {
+		// FIX-82: o documento do cliente é um ativo nosso — a rota grava no nosso
+		// S3 PRIMEIRO (storeClientDocument); o envio à Bevi saiu do caminho
+		// crítico (virou despacho best-effort em dispatchClientDocument, FIX-84).
 		const src = readSource("src/app/api/chat/document/route.ts");
-		expect(src).toMatch(/uploadContractDocument/);
+		expect(src).toMatch(/storeClientDocument/);
+		expect(src).not.toMatch(/uploadContractDocument/);
 	});
 });
 
@@ -4100,14 +4252,22 @@ describe("FIX-7-REVEAL-1-OPCAO — sem card duplicado nem plural enganoso", () =
 // ============================================================================
 
 describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)", () => {
-	it("estrutural: gate credit serve o picker por intenção (term slider + intentDefault, sem monthly)", () => {
+	// FIX-115 (Kairo, PROD 2026-06-30): o gate credit voltou pra AGULHA SIMPLES
+	// (kind "slider", só o valor do bem). A jornada canônica (FIX-104) já havia
+	// aposentado o picker por intenção ("componente complexo saiu; slider simples
+	// apoia"); este bloco fez a troca no adapter. O componente PlanEstimatePicker e
+	// os directives por intenção FICAM (compat de mensagens antigas hidratadas), por
+	// isso os demais testes deste describe seguem válidos.
+	it("estrutural: gate credit serve a AGULHA SIMPLES (kind 'slider', valor do bem), não o picker por intenção", () => {
 		const src = readSource("src/lib/web/adapter.ts");
-		expect(src).toMatch(/kind: "plan"/);
-		expect(src).toMatch(/term: termSlider/);
-		expect(src).toMatch(/intentDefault/);
-		expect(src).toMatch(/targetMonthDefault/);
-		// a forma antiga (slider de parcela como input) não pode voltar
-		expect(src).not.toMatch(/monthly: monthlySlider/);
+		// o gate credit agora monta a agulha (kind "slider" com creditSlider)
+		const creditCase = src.slice(src.indexOf('case "credit":'), src.indexOf('case "timeframe":'));
+		expect(creditCase).toMatch(/kind: "slider"/);
+		expect(creditCase).toMatch(/creditSlider\(category\)/);
+		// a forma por intenção NÃO pode mais sair do gate credit
+		expect(creditCase).not.toMatch(/kind: "plan"/);
+		expect(creditCase).not.toMatch(/intentDefault/);
+		expect(creditCase).not.toMatch(/term: termSlider/);
 	});
 
 	it("estrutural: componente é guiado por intenção (segmented control), não 4 sliders", () => {
@@ -6408,6 +6568,193 @@ describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno 
 });
 
 // ============================================================================
+// FIX-113 — agente TRAVA em afirmação de continuidade ("blz"/"ta bom")
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD/AWS, 2026-06-30): "o agent trava e nao responde,
+// parece que nos casos de perguntas afirmativas ou afirmações que tem uma
+// continuidade". Ex.: agente disse "Beleza, R$ 50.000 então." → usuário "blz" →
+// SILÊNCIO → só destrava quando o usuário manda outra mensagem.
+//
+// Root cause CONFIRMADO no código: numa afirmação curta o funil avança um gate /
+// seta transição internamente SEM emitir texto/tool/artifact. O guard FIX-110
+// antigo (`isTurnEmpty`) TAMBÉM olhava `gate`/`transitionedTo` (estado interno) e,
+// vendo o gate setado, retornava false → o fallback do route (route.ts) NÃO
+// disparava → e como nada visível saiu, a tela CONGELAVA. `gate`/`transitionedTo`
+// não são resposta visível — o fix é o guard olhar SÓ emissão visível.
+// ============================================================================
+
+describe("FIX-113 — afirmação de continuidade nunca fecha o turno mudo", () => {
+	const ROUTE = "src/app/api/chat/route.ts";
+
+	// Matéria-prima do bug: no turno de "blz" o agente fica CALADO (0 texto, 0 tool).
+	// O cassette prova que o stream fecha sem emissão — é o que o guard tem que pegar.
+	it("cassette: 'blz' de continuidade produz turno calado (0 texto, 0 tool) — matéria-prima do mudo", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			FINISH_STOP,
+		]);
+		expect(text).toBe("");
+		expect(toolCalls).toEqual([]);
+	});
+
+	// O CORAÇÃO do fix: o turno calado que AVANÇOU um gate internamente (gate setado,
+	// nada visível) agora é detectado como mudo → o route dispara o fallback. Antes
+	// do FIX-113 isso retornava false (gate bloqueava o fallback) e a tela travava.
+	it("cassette: gate avança SEM emissão visível => detectado como mudo (fallback dispara)", () => {
+		const recordGateMudo = {
+			textChars: 0,
+			toolCount: 0,
+			artifactCount: 0,
+			gate: "value" as string | null,
+			handoff: false,
+			transitionedTo: null as string | null,
+		};
+		// Regressão do bug exato: hoje true; se alguém reintroduzir o gate no guard,
+		// isto volta a false e o cassette QUEBRA — bloqueando o merge.
+		expect(isTurnEmpty(recordGateMudo)).toBe(true);
+		// Uma transição interna sozinha também não é emissão visível.
+		expect(isTurnEmpty({ ...recordGateMudo, gate: null, transitionedTo: "auto" })).toBe(true);
+	});
+
+	// Contraprova (não pode disparar fallback falso): gate LEGÍTIMO vem sempre com a
+	// pergunta do gate (texto) OU, no reveal, com artifacts — emissão visível > 0.
+	it("cassette: gate legítimo (pergunta em texto OU artifact do reveal) NÃO é mudo", () => {
+		const base = { textChars: 0, toolCount: 0, artifactCount: 0, handoff: false };
+		// Gate de chips com a pergunta do gate escrita como texto.
+		expect(isTurnEmpty({ ...base, gate: "experience", textChars: 42 })).toBe(false);
+		// simulator-offer no turno do reveal (allowGateWithArtifacts) — carrega cards.
+		expect(isTurnEmpty({ ...base, gate: "simulator-offer", artifactCount: 1 })).toBe(false);
+		// Handoff: card silencioso por design (agente calado) — segue contando.
+		expect(isTurnEmpty({ ...base, handoff: true })).toBe(false);
+	});
+
+	it("structural: o guard do route olha SÓ emissão visível (sem gate/transitionedTo)", () => {
+		const src = readSource("src/lib/chat/empty-turn-guard.ts");
+		// isTurnEmpty não pode voltar a ler gate/transitionedTo como sinal de emissão.
+		const fnBody = src.slice(src.indexOf("export function isTurnEmpty"));
+		expect(fnBody).toMatch(/textChars === 0/);
+		// FIX-172: o guard considera tool por VISIBILIDADE (acionável conta como resposta;
+		// silenciosa save_* NÃO) — evoluiu de `toolCount === 0` cru pra `hasVisibleTool`,
+		// porque o loop de tools mudas (save_contact_name 10x) fechava o turno mudo e passava.
+		// A invariante do FIX-113 (não ler gate/transitionedTo) segue travada abaixo.
+		expect(fnBody).toMatch(/hasVisibleTool|toolsCalled/);
+		expect(fnBody).toMatch(/artifactCount === 0/);
+		expect(
+			/!rec\.gate|rec\.gate\b/.test(fnBody.slice(0, fnBody.indexOf("}"))),
+			"isTurnEmpty NÃO pode condicionar em rec.gate — gate é estado interno (FIX-113).",
+		).toBe(false);
+		expect(
+			/transitionedTo/.test(fnBody.slice(0, fnBody.indexOf("}"))),
+			"isTurnEmpty NÃO pode condicionar em transitionedTo — é estado interno (FIX-113).",
+		).toBe(false);
+		// E o route continua chamando o guard no user-turn.
+		expect(readSource(ROUTE)).toMatch(/isTurnEmpty/);
+	});
+});
+
+// ============================================================================
+// FIX-115 — componente de valor + RESILIÊNCIA do valor por texto
+// ----------------------------------------------------------------------------
+// Real (uso manual Kairo, PROD/AWS, 2026-06-30): no passo do valor o agente
+// perguntou por TEXTO e nenhum componente apareceu; o usuário teve que digitar
+// "50k". Requisito literal do Kairo (dois lados): (1) o componente de valor
+// SIMPLES (agulha) deve renderizar; (2) DINÂMICO — se ele não aparecer, o valor
+// por TEXTO tem que ser parseado e AVANÇAR o funil, nunca travar (dead-end).
+//
+// (1) o gate credit passou a servir a agulha simples (kind "slider") — ver o
+// describe PLANEJE-SUA-CONQUISTA e src/lib/web/value-gate.fix115.test.ts.
+// (2) backstop determinístico parseAssetValue no analyzeAndMerge — o funil avança
+// mesmo com o analyzer LLM mudo (timeout). Detalhe em analyze.test.ts /
+// parse-asset-value.test.ts. Aqui travamos o acoplamento source → detector.
+// ============================================================================
+
+describe("FIX-115 — valor por texto sempre avança + agulha manda valor como texto", () => {
+	it("structural: o backstop determinístico do valor está wired no merge do analyzer", () => {
+		const src = readSource("src/lib/agent/orchestrator/analyze.ts");
+		expect(src).toMatch(/parseAssetValue/);
+		// só roda quando o analyzer devolveu null E ainda não há creditMax (coleta inicial)
+		expect(src).toMatch(/analysis\.creditMax === null && q\.creditMax === undefined/);
+	});
+
+	it("structural: a agulha, sem onSubmit, manda o VALOR como texto no chat (valor por conversa)", () => {
+		const src = readSource("src/components/chat/artifacts/value-picker.tsx");
+		// caminho default (gate sem onSubmit): sendUserMessage com o valor formatado
+		expect(src).toMatch(/sendUserMessage\(/);
+		expect(src).toMatch(/value\.toLocaleString\("pt-BR"\)/);
+	});
+
+	it("cassette: o valor digitado que o backstop lê ('50k') é o mesmo texto que a agulha envia", () => {
+		// A agulha envia "Valor do bem: R$ 50.000"; o usuário digita "50k". Ambos
+		// têm que virar 50000 pelo mesmo parser — prova que os dois caminhos convergem.
+		expect(parseAssetValue("50k")).toBe(50_000);
+		expect(parseAssetValue("Valor do bem: R$ 50.000")).toBe(50_000);
+	});
+});
+
+// ============================================================================
+// FIX-114 — search_groups disparou ANTES da identidade (IdentityNotCollectedError)
+// ----------------------------------------------------------------------------
+// Real (PROD/AWS, log /ecs/tb/prod conv bc5fa852, 2026-06-30, persona Maria):
+// "Deixa eu buscar / Preciso primeiro buscar os grupos / Deixa eu usar a ferramenta
+// certa pra isso" + "tô com uma dificuldade técnica pontual pra acessar os grupos".
+// O agente free-rodou search_groups antes do CPF → a Bevi lançou
+// IdentityNotCollectedError (tripwire proposital, D1) → o agente narrou a falha.
+//
+// Fix de ORQUESTRAÇÃO: a descoberta só entra no toolset da fase qualify quando
+// identityCollected=true (o gate identify precede o credit). Sem a tool no request,
+// o modelo NEM CONSEGUE chamá-la cedo. A meta-narrativa e a invenção de "dificuldade"
+// já eram vetadas no prompt (FIX-36 / Maria 2026-06-25) — aqui travamos as duas.
+// ============================================================================
+
+describe("FIX-114 — descoberta gateada na identidade + sem meta-narrativa de busca", () => {
+	const QUALIFY_NO_ID: ConversationMetadata = {
+		currentPersona: "moto",
+		currentCategory: "moto",
+		experiencePrev: "first",
+		qualifyConsented: true,
+		// identityCollected ausente — passo 2 antes do gate identify.
+	};
+	const QUALIFY_WITH_ID: ConversationMetadata = { ...QUALIFY_NO_ID, identityCollected: true };
+
+	it("cassette: sem identidade a policy NÃO expõe search_groups; com identidade, expõe", () => {
+		expect(allowedTools(QUALIFY_NO_ID)).not.toContain("search_groups");
+		expect(allowedTools(QUALIFY_NO_ID)).not.toContain("recommend_groups");
+		expect(allowedTools(QUALIFY_WITH_ID)).toContain("search_groups");
+	});
+
+	it("structural: a policy gateia a descoberta em identityCollected (fonte de produção)", () => {
+		const src = readSource("src/lib/agent/orchestrator/tool-policy.ts");
+		const qualifyCase = src.slice(src.indexOf('case "qualify":'), src.indexOf('case "reveal":'));
+		expect(qualifyCase).toMatch(/identityCollected === true \? DISCOVERY_AND_REVEAL_CARDS/);
+	});
+
+	it("structural: o prompt VETA a meta-narrativa de busca e a invenção de 'dificuldade'", () => {
+		// não narrar mecânica ("vou buscar"/"deixa eu procurar") — FIX-36.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/narrar mec[âa]nica/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/vou buscar/i);
+		// não inventar falha de busca sem ter chamado a tool — Maria 2026-06-25.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/dificuldade em acessar os grupos/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/instabilidade nas buscas/i);
+		// não anunciar o que vai fazer — chamar a tool direto.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/anunciam o que voc[êe] vai fazer/i);
+	});
+
+	// Detector do vazamento exato do bug — se o prompt afrouxar e a frase voltar,
+	// este regex casa e o cassette denuncia a regressão.
+	it("detector: as frases de meta-narrativa/falha do bug real são pegáveis", () => {
+		const vazamento =
+			"Deixa eu buscar os grupos. Preciso primeiro buscar os grupos. Tô com uma " +
+			"dificuldade técnica pontual pra acessar os grupos nessa faixa agora.";
+		const detectors = [
+			/deixa eu buscar/i,
+			/preciso.{0,20}buscar os grupos/i,
+			/dificuldade t[ée]cnica.{0,30}grupos/i,
+		];
+		expect(detectors.some((rx) => rx.test(vazamento))).toBe(true);
+	});
+});
+
+// ============================================================================
 // FIX-112 — fim da proposta bugado ("bora" lido como recusa)
 // ----------------------------------------------------------------------------
 // Real (uso manual Kairo, PROD, 2026-06-30): a oferta apareceu, o agente
@@ -6459,5 +6806,404 @@ describe("FIX-112 — 'bora' no fechamento é avanço, nunca recusa", () => {
 		expect(src.toLowerCase()).toMatch(/bora/);
 		// gate: documento só depois de confirmar a oferta
 		expect(src.toLowerCase()).toMatch(/documento[\s\S]{0,600}confirma/i);
+	});
+});
+
+// ============================================================================
+// FIX-116 (D11) — WhatsApp NÃO promete "assinatura" (PARIDADE DES-1)
+// ----------------------------------------------------------------------------
+// O fechamento no WhatsApp (handleOfferConfirm → closingPresentation) emite o
+// artifact `signature_handoff`, cujo texto de canal (artifactToWhatsApp →
+// signatureHandoffToWhatsApp) prometia "finalizar a assinatura". O
+// `consortiumProposalLink` é o PDF da PROPOSTA — a assinatura é etapa da MESA.
+// O web já cumpre (signature-handoff.test.tsx proíbe /assinatura|assinar/i);
+// este cassette trava a MESMA proibição no canal WhatsApp (paridade de detector).
+// Copy determinística em função pura → o cassette fecha o loop ponta-a-ponta.
+// ============================================================================
+describe("FIX-116 — WhatsApp fechamento apresenta PROPOSTA, não 'assinatura' (paridade DES-1)", () => {
+	// Detector de paridade — o MESMO que protege o web em
+	// src/components/chat/artifacts/signature-handoff.test.tsx:25.
+	const SIGNATURE_WORD = /assinatura|assinar/i;
+
+	const confirmRes = {
+		administradora: "ÂNCORA",
+		consortiumProposalLink: "https://www.uselink.me/abc123",
+		proposalId: "prop-116",
+		documentsLinkPersonal: "https://docs.example/abc",
+	};
+
+	it("cassette: o item signature_handoff do fechamento WhatsApp não vaza 'assinatura'", () => {
+		const items = closingPresentation(confirmRes as never);
+		const sig = items.find((i) => i.kind === "artifact" && i.type === "signature_handoff") as
+			| { type: string; payload: Record<string, unknown> }
+			| undefined;
+		if (!sig) throw new Error("o fechamento deve emitir signature_handoff");
+
+		// texto FINAL do canal WhatsApp (mesmo caminho de handleOfferConfirm)
+		const wa = artifactToWhatsApp("signature_handoff", sig.payload);
+		expect(wa?.type).toBe("text");
+		const text = wa?.text ?? "";
+		expect(text, "WhatsApp não pode prometer assinatura (é etapa da mesa)").not.toMatch(
+			SIGNATURE_WORD,
+		);
+		expect(text).toMatch(/proposta/i);
+		expect(text).toContain(confirmRes.consortiumProposalLink);
+		expect(text).toContain("Aja Agora");
+	});
+
+	it("paridade: NENHUM texto do closingPresentation (canal WhatsApp) menciona assinatura", () => {
+		const items = closingPresentation(confirmRes as never);
+		for (const item of items) {
+			const text =
+				item.kind === "text"
+					? item.text
+					: (artifactToWhatsApp(item.type, item.payload)?.text ?? "");
+			expect(
+				text,
+				`item ${item.kind}/${"type" in item ? item.type : "text"} vazou assinatura`,
+			).not.toMatch(SIGNATURE_WORD);
+		}
+	});
+
+	it("structural: a copy de assinatura foi removida do formatter e do resumo de contratação", () => {
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		// a função de handoff não pode mais conter a palavra proibida na copy
+		expect(formatter).not.toMatch(/finalizar a assinatura/i);
+		const summary = readSource("src/lib/bevi/contract-summary.ts");
+		expect(summary).not.toMatch(/Assinatura digital/i);
+	});
+});
+
+// ============================================================================
+// FIX-117 (D18) — WhatsApp "Tenho interesse" = avanço DIRETO (PARIDADE FIX-38)
+// ----------------------------------------------------------------------------
+// O FIX-38 removeu a dupla confirmação no web (route.ts:485-499): "Tenho
+// interesse" pós-reveal marca decisionDispatched e SEMPRE dispara
+// buildAdvanceToContractDirective (fechamento direto), sem intercalar o card
+// "Esse plano faz sentido?". O WhatsApp reproduzia o comportamento pré-FIX-38
+// (handleInterest emitia buildDecisionPromptDirective no 1º clique). Este
+// cassette trava a paridade: o handler avança DIRETO e o card de decisão fica
+// só nos caminhos ambíguos (handleSimulatorOffer "Agora não").
+// Cross-ref: src/lib/whatsapp/interactive-handlers.interest-avanco-direto.test.ts
+// ============================================================================
+describe("FIX-117 — WhatsApp interest = avanço direto ao contract (paridade FIX-38)", () => {
+	function handleInterestBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: handleInterest NÃO intercala o card de decisão no interesse", () => {
+		const body = handleInterestBody();
+		expect(body.length, "handleInterest não isolado").toBeGreaterThan(0);
+		// removeu a dupla confirmação: o card de decisão saiu deste handler
+		expect(
+			body.includes("buildDecisionPromptDirective"),
+			"FIX-117: o card de decisão não pode mais aparecer em handleInterest (paridade FIX-38).",
+		).toBe(false);
+		// avança DIRETO ao contract
+		expect(body.includes("buildAdvanceToContractDirective")).toBe(true);
+		// tool-policy: marca decisionDispatched pra liberar present_contract_form na fase closing
+		expect(body).toMatch(/decisionDispatched:\s*true/);
+	});
+
+	it("directive-level: o avanço do interesse dirige present_contract_form, não o card", () => {
+		// buildAdvanceToContractDirective (o que o interesse dispara) → passo 5
+		const advance = buildAdvanceToContractDirective({ administradora: "ANCORA" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_decision_prompt");
+		// contraprova: o card de decisão continua existindo — só nos caminhos ambíguos
+		const decision = buildDecisionPromptDirective({ administradora: "ANCORA" });
+		expect(decision).toContain("present_decision_prompt");
+	});
+
+	it("paridade web: route.ts do interesse SEMPRE avança (sem intercalar decisão)", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const interestBlock =
+			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,600}/)?.[0] ?? "";
+		expect(interestBlock).toContain("buildAdvanceToContractDirective");
+		expect(interestBlock).not.toContain("buildDecisionPromptDirective");
+	});
+});
+
+// ============================================================================
+// FIX-118 (D19) — WhatsApp educa lance embutido pra no/maybe (PARIDADE FIX-92)
+// ----------------------------------------------------------------------------
+// A educação de lance embutido vale pra QUALQUER resposta (Sim/Não/Talvez) — o
+// texto mira quem NÃO tem o valor do lance hoje. O web já obedece (FIX-92,
+// route.ts:917-928: no/maybe → gate lance-embutido antes da busca). O WhatsApp
+// pulava a educação pro no/maybe (handleLance caía direto em search summary) —
+// regressão do FIX-4 (o nextGate passava por todos; o handler curto-circuitava).
+// Cross-ref: cassette FIX-4-LANCE-EMBUTIDO-PRA-TODOS (state machine) + handler
+// web route.ts:917-928 + src/lib/whatsapp/interactive-handlers.lance-embutido-no-maybe.test.ts
+// ============================================================================
+describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () => {
+	function handleLanceBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleLance\b[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: o no/maybe de handleLance dispara o gate lance-embutido, não a busca direta", () => {
+		const body = handleLanceBody();
+		expect(body.length, "handleLance não isolado").toBeGreaterThan(0);
+		// só o CÓDIGO executável — comentários (que citam o histórico) não contam
+		const code = body.replace(/\/\/[^\n]*/g, "");
+		// o ramo yes reage; o resto (no/maybe) cai no fireGate lance-embutido
+		expect(code).toMatch(/fireGate\([^)]*"lance-embutido"/);
+		// no/maybe NÃO pode mais chamar a busca direto (pulava a educação)
+		expect(
+			code.includes("runSearchSummaryWithOrchestrator"),
+			"FIX-118: handleLance no/maybe não pode chamar a busca direto (pula lance-embutido).",
+		).toBe(false);
+	});
+
+	it("paridade web: route.ts do gate lance manda no/maybe pro gate lance-embutido antes da busca", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const start = route.indexOf('if (action.gate === "lance")');
+		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
+		const lanceBlock = route.slice(start, start + 1800);
+		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
+		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
+		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);
+	});
+
+	it("cross-ref state machine: nextGate FORÇA lance-embutido pra todos (FIX-4 intocado)", () => {
+		// o funil determinístico é canal-agnóstico — o handler WhatsApp não pode
+		// curto-circuitar o gate que o state machine insere pra qualquer hasLance.
+		const stateSrc = readSource("src/lib/agent/qualify-state.ts");
+		expect(stateSrc).toMatch(/lanceEmbutido === undefined\) return "lance-embutido"/);
+	});
+});
+
+// ============================================================================
+// FIX-119 (D22) — WhatsApp decision_outras DETERMINÍSTICO (paridade web)
+// ----------------------------------------------------------------------------
+// "Ver outras opções" do card de decisão é o comparativo model-free das ofertas
+// REAIS da descoberta (buildOtherOptions). O web já obedece (route.ts:521-548).
+// No WhatsApp o botão decision_outras não tinha handler → o clique virava texto
+// livre pro modelo (risco de alucinar/omitir números). O defeito era JUSTAMENTE
+// escorregar pro modelo — então o cassette guarda a FRONTEIRA: o clique é
+// model-free (nunca chama processWithOrchestrator/streamText) e surfaça o
+// comparison_table com os grupos reais. A prova comportamental (buildOtherOptions
+// chamado, comparison_table emitido, processTextMessage NÃO) vive em
+// src/lib/whatsapp/interactive-handlers.decision-outras.test.ts.
+// ============================================================================
+describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.ts:521-548)", () => {
+	function handleDecisionOutrasBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleDecisionOutras\b[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("routing: dispatchInteractiveReply tem branch dedicado pra decision_outras", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(handlers).toMatch(/replyId === "decision_outras"\)\s*return handleDecisionOutras/);
+	});
+
+	it("model-free: o handler chama buildOtherOptions e NÃO escorrega pro modelo", () => {
+		const body = handleDecisionOutrasBody();
+		expect(body.length, "handleDecisionOutras não isolado").toBeGreaterThan(0);
+		const code = body.replace(/\/\/[^\n]*/g, "");
+		// caminho determinístico compartilhado com o web
+		expect(code).toMatch(/buildOtherOptions\(/);
+		// emite o comparison_table com os grupos reais
+		expect(code).toMatch(/artifactToWhatsApp\("comparison_table"/);
+		// FRONTEIRA: NUNCA delega ao modelo (processTextMessage / processWithOrchestrator)
+		expect(
+			code.includes("processTextMessage") || code.includes("processWithOrchestrator"),
+			"FIX-119: decision_outras não pode cair no turno livre do modelo.",
+		).toBe(false);
+	});
+
+	it("paridade web: route.ts show-other-options usa o MESMO buildOtherOptions + comparison_table", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const start = route.indexOf('body.action?.kind === "show-other-options"');
+		expect(start, "bloco show-other-options não encontrado no route").toBeGreaterThan(-1);
+		const block = route.slice(start, start + 900);
+		expect(block).toMatch(/buildOtherOptions\(/);
+		expect(block).toMatch(/comparison_table/);
+	});
+});
+
+// ============================================================================
+// FIX-120 (D5) — WhatsApp valor do bem por CONVERSA (PARIDADE FIX-115)
+// ----------------------------------------------------------------------------
+// Jornada canônica (Passo 2): "valor do bem — só o valor". No web é a agulha
+// simples (FIX-115) → texto livre → parseAssetValue. No WhatsApp deve PERGUNTAR
+// o valor por texto e OUVIR a resposta livre — sem lista de faixas. O adapter
+// mandava uma lista ("Faixas de valor do bem") e gravava o teto da faixa; agora
+// gateInteractive("credit") retorna null e a pergunta sai como TEXTO
+// (gateTextPrompt → gateQuestion("credit")), espelhando o identify. A resposta
+// livre é capturada pelo analyzer + backstop parseAssetValue.
+// Cross-ref: src/lib/whatsapp/adapter.fix-120.test.ts + qualify-config.fix-120.test.ts
+// ============================================================================
+describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", () => {
+	it("contrato: o gate credit é 'conversation' (não botão/lista) nos dois canais", () => {
+		expect(QUALIFY_GATE_INPUT_KIND.credit).toBe("conversation");
+	});
+
+	it("a lista de faixas foi APOSENTADA do formatter (sem 'Faixas de valor do bem')", () => {
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		expect(formatter).not.toMatch(/Faixas de valor do bem/i);
+		// creditRangeQuestionToWhatsApp / resolveCreditReply removidos (código morto)
+		expect(formatter).not.toMatch(/export function creditRangeQuestionToWhatsApp/);
+		expect(formatter).not.toMatch(/export function resolveCreditReply/);
+	});
+
+	it("o adapter emite o gate credit como TEXTO (gateTextPrompt), não lista", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// gateInteractive não chama mais creditRangeQuestionToWhatsApp
+		expect(adapter).not.toMatch(/creditRangeQuestionToWhatsApp/);
+		// há um caminho textual pro gate credit espelhando o identify
+		expect(adapter).toMatch(/gateTextPrompt/);
+		expect(adapter).toMatch(/gateQuestion\("credit"/);
+	});
+
+	it("o roteamento credit_ e handleCredit foram aposentados no dispatcher", () => {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		expect(handlers).not.toMatch(/startsWith\("credit_"\)/);
+		expect(handlers).not.toMatch(/async function handleCredit\b/);
+	});
+
+	it("pipeline conversacional: 'uns 80 mil' vira creditMax=80000 (backstop parseAssetValue)", () => {
+		// a resposta livre que o WhatsApp agora coleta é capturada pelo mesmo
+		// backstop do web (analyze.ts:87-88 usa parseAssetValue).
+		expect(parseAssetValue("uns 80 mil")).toBe(80_000);
+		expect(parseAssetValue("R$ 240.000")).toBe(240_000);
+		const analyze = readSource("src/lib/agent/orchestrator/analyze.ts");
+		expect(analyze).toMatch(/parseAssetValue\(text\)/);
+	});
+});
+
+// FIX-122 (D13) — upload de documento inbound no WhatsApp
+// ----------------------------------------------------------------------------
+// Real (auditoria 2026-07-01): no Passo 6 (KYC) a copy convida "me manda a foto
+// do RG/CNH aqui mesmo", mas o webhook ignorava a imagem — caía no `default` do
+// switch com "[whatsapp] Unhandled type: image". A foto era dropada em silêncio,
+// e o cliente ficava esperando uma resposta que nunca vinha.
+//
+// A REGRA de aceite é PARIDADE com o web: a foto vai pro MESMO destino
+// (uploadContractDocument), sem redirect. O fluxo é determinístico (sem LLM), então
+// o "cassette" aqui é a trajetória do handler: copy convida → imagem recebida
+// dispara o upload (não o drop) → resposta confirma/pede o próximo slot.
+// Detalhe completo em src/lib/whatsapp/document-inbound.test.ts.
+// ============================================================================
+
+describe("FIX-122-DOC-INBOUND-WHATSAPP — foto de documento dispara upload (não cai no drop silencioso)", () => {
+	function stubDeps(over: Partial<DocumentInboundDeps> = {}): {
+		deps: DocumentInboundDeps;
+		uploads: string[];
+		replies: string[];
+	} {
+		const uploads: string[] = [];
+		const replies: string[] = [];
+		const deps: DocumentInboundDeps = {
+			loadConversation: async () => ({ id: "conv-1", meta: {} }),
+			persist: async () => {},
+			download: async () => ({ bytes: new Uint8Array([1, 2, 3]), mimeType: "image/jpeg" }),
+			upload: async (_c, input) => {
+				uploads.push(input.slot);
+				return { ok: true };
+			},
+			reply: async (_to, text) => {
+				replies.push(text);
+			},
+			...over,
+		};
+		return { deps, uploads, replies };
+	}
+
+	it("cassette: Passo 6 WhatsApp — a copy convida a foto e a imagem recebida dispara uploadContractDocument", async () => {
+		// 1) A copy que precede a foto (documentUploadToWhatsApp) convida "aqui mesmo".
+		const copy = documentUploadToWhatsApp({}).text ?? "";
+		expect(copy.toLowerCase()).toContain("aqui mesmo");
+
+		// 2) Cliente responde com imagem → o handler DISPARA o upload (não o drop).
+		const { deps, uploads, replies } = stubDeps();
+		await handleDocumentInbound({ from: "5562988887777", mediaId: "MEDIA-1" }, deps);
+
+		expect(uploads).toEqual(["identidade_frente"]); // mesmo destino do web
+		expect(replies).toHaveLength(1);
+		expect(replies[0].toLowerCase()).toContain("verso"); // pede o próximo slot
+	});
+
+	it("regressão: mídia inbound NUNCA fica sem resposta (o drop silencioso é o bug)", async () => {
+		// Mesmo no pior caso (upload falha porque a proposta não chegou em
+		// 'documentos'), o cliente recebe uma resposta — nunca silêncio.
+		const { deps, replies } = stubDeps({
+			upload: async () => {
+				throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
+			},
+		});
+		await handleDocumentInbound({ from: "5562988887777", mediaId: "MEDIA-2" }, deps);
+		expect(replies).toHaveLength(1);
+		expect(replies[0].length).toBeGreaterThan(0);
+	});
+
+	it("structural: o webhook trata image e document (não caem no default 'Unhandled type')", () => {
+		const src = readSource("src/app/api/webhook/whatsapp/route.ts");
+		expect(src).toContain('case "image"');
+		expect(src).toContain('case "document"');
+		expect(src).toContain("handleDocumentInbound");
+	});
+});
+
+// ============================================================================
+// FIX-124 (D15/D16) — transbordo: broadcast a TODOS + botão "Vou atender" + claim
+// ----------------------------------------------------------------------------
+// O núcleo (broadcast/botão/claim) é código determinístico — a garantia forte mora
+// no integration (corrida). Aqui congelamos os INVARIANTES estruturais que uma
+// regressão de prompt/routing quebraria: (1) o outbound faz broadcast interativo
+// "Vou atender", não single-cast texto plano; (2) o clique de um atendente de mesa é
+// roteado pro CLAIM (nunca pro funil de cliente); (3) o copiloto só responde ao DONO —
+// o broadcast não "vaza" o caso pra quem não assumiu.
+// ============================================================================
+describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", () => {
+	it("o outbound faz broadcast interativo com botão 'Vou atender' (não texto single-cast)", () => {
+		const src = readSource("src/lib/whatsapp/mesa/outbound.ts");
+		expect(src).toContain("broadcastCaseToAttendants");
+		expect(src).toContain("getMesaAttendantList"); // fonte = TODOS os atendentes ativos
+		// FIX-173: o envio de botão passou a ir por notifyMesaAttendantButtons (espelha
+		// pro simulador dev + só pula a Meta real quando o telefone é sintético) — a
+		// primitiva "botão interativo, nunca texto plano" continua garantida, só que
+		// dentro de ./notify agora, não mais chamando sendReplyButtons direto aqui.
+		expect(src).toContain("notifyMesaAttendantButtons"); // botão interativo (via ./notify)
+		expect(src).toContain("CLAIM_BUTTON_TITLE"); // título "Vou atender" (contrato em ./claim)
+		expect(src).toContain("CLAIM_BUTTON_ID_PREFIX"); // id carrega o handoffId pro claim
+		const notify = readSource("src/lib/whatsapp/mesa/notify.ts");
+		expect(notify).toContain("sendReplyButtons"); // fronteira real com a Meta API
+		// O contrato do botão vive em ./claim (fonte única, sem ciclo de import).
+		const claim = readSource("src/lib/whatsapp/mesa/claim.ts");
+		expect(claim).toContain("Vou atender");
+		expect(claim).toContain("mesa_claim:");
+	});
+
+	it("o clique de um atendente de mesa vai pro CLAIM, nunca pro funil de cliente", () => {
+		const proc = readSource("src/lib/whatsapp/processor.ts");
+		// precedência de mesa no caminho interativo, espelhando a do caminho de texto
+		expect(proc).toContain("isMesaAttendantPhone");
+		expect(proc).toContain("handleMesaClaim");
+		const routing = readSource("src/lib/whatsapp/mesa/routing.ts");
+		// o claim é atômico (reusa a primitiva do FIX-125)
+		expect(routing).toContain("handleMesaClaim");
+		expect(routing).toContain("claimMesaHandoff");
+	});
+
+	it("o copiloto só responde ao DONO do handoff — não vaza pra quem não assumiu", () => {
+		const routing = readSource("src/lib/whatsapp/mesa/routing.ts");
+		// handleMesaCopilot resolve o handoff pelo mesaAttendantId do próprio atendente;
+		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
+		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
+		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
 	});
 });

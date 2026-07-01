@@ -204,6 +204,27 @@
       "when": 1782680767943,
       "tag": "0028_chat_mesa_last_inbound_at",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782879901751,
+      "tag": "0029_plain_supreme_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782881259005,
+      "tag": "0030_public_carlie_cooper",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1782913650975,
+      "tag": "0031_late_human_fly",
+      "breakpoints": true
     }
   ]
 }

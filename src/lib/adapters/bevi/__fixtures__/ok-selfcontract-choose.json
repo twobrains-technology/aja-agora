@@ -1,0 +1,24 @@
+{
+	"status": "OK",
+	"code": 200,
+	"success": true,
+	"message": "Proposta atualizada com sucesso!",
+	"data": {
+		"selfContract": {
+			"simulation": {
+				"simulationType": "TOTAL_VALUE",
+				"simulationValue": 50000,
+				"objective": "FAST_APPROVAL",
+				"finished": true
+			}
+		},
+		"currentStep": {
+			"_id": "step-documentopessoal",
+			"slug": "documentoPessoal",
+			"name": "Documento Pessoal",
+			"order": 6
+		},
+		"situation": "pending",
+		"systemicValue": "simulation"
+	}
+}
