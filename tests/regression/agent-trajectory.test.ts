@@ -6483,7 +6483,11 @@ describe("FIX-113 — afirmação de continuidade nunca fecha o turno mudo", () 
 		// isTurnEmpty não pode voltar a ler gate/transitionedTo como sinal de emissão.
 		const fnBody = src.slice(src.indexOf("export function isTurnEmpty"));
 		expect(fnBody).toMatch(/textChars === 0/);
-		expect(fnBody).toMatch(/toolCount === 0/);
+		// FIX-172: o guard considera tool por VISIBILIDADE (acionável conta como resposta;
+		// silenciosa save_* NÃO) — evoluiu de `toolCount === 0` cru pra `hasVisibleTool`,
+		// porque o loop de tools mudas (save_contact_name 10x) fechava o turno mudo e passava.
+		// A invariante do FIX-113 (não ler gate/transitionedTo) segue travada abaixo.
+		expect(fnBody).toMatch(/hasVisibleTool|toolsCalled/);
 		expect(fnBody).toMatch(/artifactCount === 0/);
 		expect(
 			/!rec\.gate|rec\.gate\b/.test(fnBody.slice(0, fnBody.indexOf("}"))),

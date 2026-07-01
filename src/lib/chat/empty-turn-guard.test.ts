@@ -82,3 +82,37 @@ describe("FIX-110 — isTurnEmpty (detector de turno mudo)", () => {
 		expect(EMPTY_TURN_FALLBACK).not.toMatch(/[—–]/);
 	});
 });
+
+describe("FIX-172 — loop de tools SILENCIOSAS deixa o turno mudo (agente mudo ao receber o nome)", () => {
+	// Bug REAL (WhatsApp, QA autônomo 2026-07-01): usuário responde "Kairo" → o
+	// modelo entra em loop de save_contact_name (10x, até bater stepCountIs) SEM
+	// gerar texto → o turno fecha com textChars=0. save_contact_name só GRAVA no DB
+	// (tool SILENCIOSA): o usuário não vê NADA. O guard antigo lia toolCount>0 e
+	// achava "não vazio" → nenhum fallback → 27s de silêncio. Agora distingue tool
+	// ACIONÁVEL (search_groups: produz artifact/texto) de SILENCIOSA (save_*).
+	it("save_contact_name em loop (10x) sem texto/artifact => MUDO", () => {
+		expect(
+			isTurnEmpty({ ...base, toolCount: 10, toolsCalled: Array(10).fill("save_contact_name") }),
+		).toBe(true);
+	});
+
+	it("save_contact_whatsapp silenciosa sozinha sem emissão => MUDO", () => {
+		expect(isTurnEmpty({ ...base, toolCount: 1, toolsCalled: ["save_contact_whatsapp"] })).toBe(
+			true,
+		);
+	});
+
+	it("tool ACIONÁVEL (search_groups) => NÃO vazio (o resultado vira artifact/texto)", () => {
+		expect(isTurnEmpty({ ...base, toolCount: 1, toolsCalled: ["search_groups"] })).toBe(false);
+	});
+
+	it("mix silenciosa + acionável => NÃO vazio (a acionável emite)", () => {
+		expect(
+			isTurnEmpty({ ...base, toolCount: 2, toolsCalled: ["save_contact_name", "search_groups"] }),
+		).toBe(false);
+	});
+
+	it("retrocompat: sem toolsCalled, toolCount>0 segue não-vazio (FIX-110 preservado)", () => {
+		expect(isTurnEmpty({ ...base, toolCount: 1 })).toBe(false);
+	});
+});

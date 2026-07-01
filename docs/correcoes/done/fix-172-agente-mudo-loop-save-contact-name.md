@@ -55,3 +55,32 @@ Regra da rodada: numero FIX só na minha faixa (FIX-150..169, Passos 5-7) e não
 outra frente rodando em paralelo. Estes 2 achados são de entrada/identidade. Deixo documentado
 com evidência para o dono decidir (severidade/fix). O ambiente já está saudável (corrigi as
 secrets truncadas do `.env.local` que deixavam o agente mudo por `invalid x-api-key` — ver ledger).
+
+---
+## PENDENTE-KAIRO (infra de notificação, sem contorno programático — 2026-07-01)
+Envio de relatório pro WhatsApp do Kairo requer AÇÃO DELE (não automatizável):
+1. Adicionar o número dele à **allowlist do WhatsApp Business** (Meta Business Manager) — a API
+   retorna `#131030 Recipient phone number not in allowed list` (Business em modo dev).
+2. **Ativar o Remote Control do notch** (toggle no telefone) — PushNotification hoje volta
+   "Remote Control inactive", então o push não chega no celular.
+Feito qualquer um dos dois, relatórios futuros chegam sozinhos.
+
+---
+## Resolução (FIX-172, 2026-07-01) — TDD direto na sessão (não bloco)
+**Root cause:** turno fecha MUDO quando o modelo loopa uma tool SILENCIOSA
+(`save_contact_name` só grava no DB, não emite nada) até bater `stepCountIs(10)` sem gerar
+texto. Dois furos: (1) `isTurnEmpty` contava `toolCount>0` como "não vazio" → não pegava o
+loop; (2) o `consumeEvents` do WhatsApp nem tinha o guard de turno-vazio (só o web tinha,
+`route.ts:1109`).
+
+**Fix:**
+- `src/lib/chat/empty-turn-guard.ts`: `isTurnEmpty` passa a distinguir tool ACIONÁVEL
+  (search_groups → emite artifact) de SILENCIOSA (`save_contact_name`/`save_contact_whatsapp`)
+  via `toolsCalled` (do TurnTrace). Turno só com silenciosas + 0 texto/artifact = mudo →
+  fallback. Retrocompat: records sem `toolsCalled` mantêm o comportamento antigo.
+- `src/lib/whatsapp/adapter.ts`: `consumeEvents` ganha `opts.guardEmptyTurn`;
+  `processWithOrchestrator` (user-turn) emite `EMPTY_TURN_FALLBACK` se o turno fechar sem
+  `hasSent` (paridade com o web).
+
+**Regressão (viu falhar antes):** `empty-turn-guard.test.ts` (FIX-172, 5 casos) +
+`adapter.fix-172.test.ts` (Camada 2 — turno mudo no WhatsApp → fallback). 17 testes verdes.

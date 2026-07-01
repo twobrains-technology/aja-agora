@@ -5,6 +5,7 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
@@ -107,6 +108,7 @@ async function consumeEvents(
 	from: string,
 	conversationId: string,
 	events: AsyncIterable<TurnEvent>,
+	opts?: { guardEmptyTurn?: boolean },
 ): Promise<void> {
 	// FIX-21: este é o funil único de consumo de TurnEvents do canal WhatsApp
 	// (todos os run*WithOrchestrator passam por aqui). Tap passthrough fecha 1
@@ -287,6 +289,14 @@ async function consumeEvents(
 				break;
 		}
 	}
+
+	// FIX-172: guard de turno-mudo (paridade com o web, route.ts:1109). Se o turno
+	// do usuário fecha SEM emitir nada visível (ex.: loop de save_contact_name até
+	// stepCountIs, textChars=0), o usuário ficaria sem resposta — 27s de silêncio.
+	// Emite o fallback honesto. `dropped` (handoff) tem seu card silencioso próprio.
+	if (opts?.guardEmptyTurn && !hasSent && !dropped) {
+		await sendTextMessage(from, EMPTY_TURN_FALLBACK);
+	}
 }
 
 export async function processWithOrchestrator(
@@ -304,7 +314,10 @@ export async function processWithOrchestrator(
 		contactName,
 	});
 
-	await consumeEvents(from, conversationId, events);
+	// guardEmptyTurn: SÓ no user-turn (paridade com o web) — o agente SEMPRE deve
+	// responder algo ao usuário. Directives (runDirective/Transition) podem ser
+	// silenciosos por design, então NÃO recebem o guard. FIX-172.
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn: true });
 }
 
 export async function runDirectiveWithOrchestrator(args: {

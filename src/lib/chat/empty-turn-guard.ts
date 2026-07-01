@@ -16,6 +16,10 @@
 export type TurnEmissionRecord = {
 	textChars: number;
 	toolCount: number;
+	// Nomes das tools chamadas no turno (do TurnTrace). Distingue tool ACIONÁVEL
+	// (search_groups → emite artifact) de SILENCIOSA (save_* → só grava no DB).
+	// Opcional: records legados sem a lista caem no comportamento antigo. FIX-172.
+	toolsCalled?: string[];
 	artifactCount: number;
 	// gate/transitionedTo são ESTADO INTERNO do funil (FIX-113) — opcionais e
 	// IGNORADOS por isTurnEmpty. Um gate real vem sempre acompanhado da pergunta do
@@ -45,8 +49,18 @@ export const EMPTY_TURN_FALLBACK = "Acho que me perdi por aqui. Pode mandar de n
  * design). Gates legítimos não regridem: a pergunta do gate é texto (textChars>0)
  * e o simulator-offer no reveal carrega artifacts (artifactCount>0).
  */
+// Tools SILENCIOSAS: só gravam no DB, não emitem NADA visível ao usuário. Um
+// turno que só as chamou fecha MUDO (FIX-172 — loop de save_contact_name até
+// stepCountIs sem gerar texto, observado no WhatsApp).
+const SILENT_TOOLS = new Set(["save_contact_name", "save_contact_whatsapp"]);
+
 export function isTurnEmpty(rec: TurnEmissionRecord): boolean {
-	return (
-		rec.textChars === 0 && rec.toolCount === 0 && rec.artifactCount === 0 && !rec.handoff
-	);
+	// Tool ACIONÁVEL (search_groups, present_*) produz emissão visível (o resultado
+	// vira artifact/texto no MESMO turno) → conta como resposta. Tool SILENCIOSA
+	// (save_*) não emite nada; um turno que só as chamou é mudo. Sem a lista de
+	// nomes (record legado), mantém o comportamento antigo (toolCount>0). FIX-172.
+	const hasVisibleTool = rec.toolsCalled
+		? rec.toolsCalled.some((t) => !SILENT_TOOLS.has(t))
+		: rec.toolCount > 0;
+	return rec.textChars === 0 && !hasVisibleTool && rec.artifactCount === 0 && !rec.handoff;
 }
