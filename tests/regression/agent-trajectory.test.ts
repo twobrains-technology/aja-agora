@@ -6717,3 +6717,58 @@ describe("FIX-116 — WhatsApp fechamento apresenta PROPOSTA, não 'assinatura' 
 		expect(summary).not.toMatch(/Assinatura digital/i);
 	});
 });
+
+// ============================================================================
+// FIX-117 (D18) — WhatsApp "Tenho interesse" = avanço DIRETO (PARIDADE FIX-38)
+// ----------------------------------------------------------------------------
+// O FIX-38 removeu a dupla confirmação no web (route.ts:485-499): "Tenho
+// interesse" pós-reveal marca decisionDispatched e SEMPRE dispara
+// buildAdvanceToContractDirective (fechamento direto), sem intercalar o card
+// "Esse plano faz sentido?". O WhatsApp reproduzia o comportamento pré-FIX-38
+// (handleInterest emitia buildDecisionPromptDirective no 1º clique). Este
+// cassette trava a paridade: o handler avança DIRETO e o card de decisão fica
+// só nos caminhos ambíguos (handleSimulatorOffer "Agora não").
+// Cross-ref: src/lib/whatsapp/interactive-handlers.interest-avanco-direto.test.ts
+// ============================================================================
+describe("FIX-117 — WhatsApp interest = avanço direto ao contract (paridade FIX-38)", () => {
+	function handleInterestBody(): string {
+		const handlers = readSource("src/lib/whatsapp/interactive-handlers.ts");
+		return (
+			handlers.match(
+				/async\s+function\s+handleInterest[\s\S]*?(?=\n(?:async\s+function|function|\/\/ ----|export)|$)/,
+			)?.[0] ?? ""
+		);
+	}
+
+	it("source-level: handleInterest NÃO intercala o card de decisão no interesse", () => {
+		const body = handleInterestBody();
+		expect(body.length, "handleInterest não isolado").toBeGreaterThan(0);
+		// removeu a dupla confirmação: o card de decisão saiu deste handler
+		expect(
+			body.includes("buildDecisionPromptDirective"),
+			"FIX-117: o card de decisão não pode mais aparecer em handleInterest (paridade FIX-38).",
+		).toBe(false);
+		// avança DIRETO ao contract
+		expect(body.includes("buildAdvanceToContractDirective")).toBe(true);
+		// tool-policy: marca decisionDispatched pra liberar present_contract_form na fase closing
+		expect(body).toMatch(/decisionDispatched:\s*true/);
+	});
+
+	it("directive-level: o avanço do interesse dirige present_contract_form, não o card", () => {
+		// buildAdvanceToContractDirective (o que o interesse dispara) → passo 5
+		const advance = buildAdvanceToContractDirective({ administradora: "ANCORA" });
+		expect(advance).toContain("present_contract_form");
+		expect(advance).not.toContain("present_decision_prompt");
+		// contraprova: o card de decisão continua existindo — só nos caminhos ambíguos
+		const decision = buildDecisionPromptDirective({ administradora: "ANCORA" });
+		expect(decision).toContain("present_decision_prompt");
+	});
+
+	it("paridade web: route.ts do interesse SEMPRE avança (sem intercalar decisão)", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const interestBlock =
+			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,600}/)?.[0] ?? "";
+		expect(interestBlock).toContain("buildAdvanceToContractDirective");
+		expect(interestBlock).not.toContain("buildDecisionPromptDirective");
+	});
+});

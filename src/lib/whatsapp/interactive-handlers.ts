@@ -566,27 +566,25 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 	const handoff = await getHandoffState(from);
 	if (handoff?.isHandedOff) return false;
 
-	// FIX-WA (Kairo 2026-06-12: "whatsapp precisa ser exatamente igual a web"):
-	// "Tenho interesse" pós-reveal é AVANÇO no funil canônico self-service
-	// (decisão → contratação), espelhando o handler web (FIX-29/FIX-34). NUNCA
-	// handoff pra consultor por sinal de interesse — o handoff humano fica SÓ no
-	// pedido explícito (suggest_handoff → handoff_confirm) e nos triggers de
-	// erro/valor da persona. O clique segue persistido (recordUserClick, GAP #2).
+	// FIX-117 (paridade FIX-38, route.ts:485-499 — "whatsapp precisa ser
+	// exatamente igual a web"): "Tenho interesse" pós-reveal é AVANÇO DIRETO ao
+	// passo 5 (present_contract_form). O clique JÁ é a decisão — sem intercalar o
+	// card "Esse plano faz sentido?" (dupla confirmação que o FIX-38 removeu no
+	// web: "ta pedindo confirmacao demais"). Marca decisionDispatched ANTES de
+	// dirigir o avanço: a tool-policy só libera present_contract_form na fase
+	// "closing" (decisionDispatched===true) — sem a marca o avanço cairia na fase
+	// "reveal" e a tool seria filtrada. NUNCA handoff pra consultor por sinal de
+	// interesse — o handoff humano fica SÓ no pedido explícito. O card de decisão
+	// fica pros caminhos AMBÍGUOS (handleSimulatorOffer "Agora não"), intocado
+	// aqui. O clique segue persistido (recordUserClick).
 	const meta = await loadMeta(conversationId);
 	await recordUserClick(ctx);
-	const { buildAdvanceToContractDirective, buildDecisionPromptDirective } = await import(
-		"@/lib/agent/orchestrator/directives"
-	);
 	if (!meta.decisionDispatched) {
 		await persistMeta(conversationId, { ...meta, decisionDispatched: true });
-		await runAgentDirective(
-			from,
-			conversationId,
-			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
-		);
-		return true;
 	}
-	// Decisão já apresentada — reafirmar interesse avança pro passo 5.
+	const { buildAdvanceToContractDirective } = await import(
+		"@/lib/agent/orchestrator/directives"
+	);
 	await runAgentDirective(
 		from,
 		conversationId,
