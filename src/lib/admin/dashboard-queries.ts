@@ -188,7 +188,7 @@ export async function computeFunnelStages(fromDate: Date, toDate: Date): Promise
 		const dropOffRate =
 			i === 0 || prevCount === 0
 				? 0
-				: Math.round(((prevCount - stageCount) / prevCount) * 1000) / 10;
+				: Math.max(0, Math.round(((prevCount - stageCount) / prevCount) * 1000) / 10);
 
 		stages.push({ stage, label, count: stageCount, percentOfTotal, dropOffRate });
 		prevCount = stageCount;

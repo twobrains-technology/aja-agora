@@ -12,6 +12,13 @@ const STAGE_COLORS = [
 	"bg-chart-1",
 ];
 
+function formatDeltaRate(rate: number): string {
+	// Não renderizar sinal negativo se for zero
+	if (Math.abs(rate) < 0.01) return "0%";
+	// Garantir um único sinal (tira valores negativos)
+	return `-${Math.abs(rate).toFixed(1)}%`;
+}
+
 export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
 	const allEmpty = stages.every((s) => s.count === 0);
 	const firstCount = stages[0]?.count ?? 0;
@@ -64,7 +71,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
 										key={stage.stage}
 										className="flex-1 text-center text-xs text-muted-foreground"
 									>
-										<span className="text-destructive">-{stage.dropOffRate.toFixed(0)}%</span>
+										<span className="text-destructive">{formatDeltaRate(stage.dropOffRate)}</span>
 									</div>
 								);
 							})}
@@ -89,7 +96,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
 											{stage.percentOfTotal.toFixed(0)}%
 											{i > 0 && (
 												<span className="text-destructive ml-1">
-													(-{stage.dropOffRate.toFixed(0)}%)
+													({formatDeltaRate(stage.dropOffRate)})
 												</span>
 											)}
 										</span>

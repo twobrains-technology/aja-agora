@@ -52,7 +52,7 @@ function KpiCard({
 					}`}
 				>
 					<TrendIcon className="size-3.5" />
-					<span>{Math.abs(trend)}% vs periodo anterior</span>
+					<span>{Math.abs(trend)}% vs período anterior</span>
 				</div>
 			</CardContent>
 		</Card>
@@ -75,7 +75,7 @@ export function KpiCards({ kpis }: { kpis: KpiData }) {
 				icon={UserPlus}
 			/>
 			<KpiCard
-				title="Tempo Medio no Funil"
+				title="Tempo Médio no Funil"
 				value={kpis.avgFunnelDays}
 				suffix=" dias"
 				trend={kpis.trends.avgFunnelDays}
