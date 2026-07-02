@@ -1,12 +1,14 @@
 ---
 id: FIX-205
 titulo: "Tela admin /admin/whatsapp/templates (shadcn/studio Pro)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
   - src/app/admin/whatsapp/templates/page.tsx
   - src/app/admin/whatsapp/templates/
+executado_em: 2026-07-02
+commit: a636360c
 rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ---
 ## Palavras do operador
