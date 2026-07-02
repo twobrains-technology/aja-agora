@@ -111,6 +111,8 @@ Quando algo trava (gate não dispara, erro de tool, estado inesperado), o agent 
 
 Origem: FIX-52 (jornada2_revisão.docx, Bernardo) — ao não disparar o card de dados, o agent improvisava "atualiza a página e tenta de novo". A causa foi corrigida (card identify dispara cedo); esta regra é a defesa-em-profundidade contra a frase. Quem conserta qualquer problema é o produto, nunca o usuário — o agent reage com naturalidade em 1 frase e segue o fluxo.
 
+**Barreira em CÓDIGO (FIX-190, Lei 4):** além da regra no prompt, o sanitizer runtime (`orchestrator/sanitizer.ts`, `isTechnicalFallback`) DROPA em tempo de execução qualquer segmento com "atualiza/recarregue a página" / "dá um refresh" — se o modelo emitir mesmo assim, não chega ao usuário. Se o turno ficar mudo após o drop, o guard de turno-vazio (FIX-189) entrega a recuperação honesta.
+
 ### 1.8. Preâmbulo de processo é EFÊMERO — nunca vira bolha (BUG-EPHEMERAL-PREAMBLE / FIX-188)
 
 Texto que **narra o processo** antes de chamar uma ferramenta é **efêmero**: NUNCA é persistido nem enviado ao usuário. O status real da busca é o chip determinístico do sistema ("Buscando grupos"), não uma fala do agente. Frases proibidas (e paráfrases):

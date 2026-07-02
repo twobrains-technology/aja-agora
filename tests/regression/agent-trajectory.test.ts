@@ -7841,3 +7841,49 @@ describe("FIX-189 — falas coladas ganham separador + descoberta muda não pend
 		expect(src).toMatch(/normalizeGluedSentences/);
 	});
 });
+
+// ============================================================================
+// FIX-190 — fallback técnico ('atualiza a página') dropado em RUNTIME (código)
+// ----------------------------------------------------------------------------
+// Promoção do card inbox agente-fallback-refresh (origem FIX-52/Bernardo). O
+// FIX-52 já vetou a frase no prompt + HARD_RULES + cassette de DETECÇÃO (describe
+// BUG-FALLBACK-REFRESH acima). O que faltava era a BARREIRA EM CÓDIGO (Lei 4): se
+// o modelo emitir "atualiza a página" mesmo assim, o sanitizer runtime dropa o
+// segmento e ele nunca chega ao usuário. Gêmeo do FIX-186 (na falha o fallback é
+// determinístico + ação, nunca refresh). Se o turno ficar mudo após o drop, o
+// guard de turno-vazio (FIX-189) entrega a recuperação honesta.
+// ============================================================================
+
+describe("FIX-190 — sanitizer runtime dropa o fallback técnico (barreira em código)", () => {
+	it("cassette: stream com 'Atualiza a página' é reproduzido cru (o bug)", async () => {
+		const cassette = "Ops, deu um probleminha. Atualiza a página e tenta de novo, por favor.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text.toLowerCase()).toContain("atualiza a página");
+	});
+
+	it("sanitizer runtime: o MESMO texto, filtrado, sai SEM a frase de refresh", () => {
+		const cru = "Ops, deu um probleminha. Atualiza a página e tenta de novo, por favor.";
+		const filter = new EphemeralTextFilter();
+		let out = filter.push(cru);
+		out += filter.flush();
+		expect(out.toLowerCase()).not.toContain("atualiza a página");
+		// mas o resto (naturalidade) sobrevive.
+		expect(out).toContain("Ops, deu um probleminha.");
+		// e stripProcessPreamble (rede de persistência) idem.
+		expect(stripProcessPreamble(cru).toLowerCase()).not.toContain("atualiza a página");
+	});
+
+	it("structural: o sanitizer tem a barreira anti-refresh e o prompt/HARD_RULES seguem vetando", () => {
+		const sanitizer = readSource("src/lib/agent/orchestrator/sanitizer.ts");
+		expect(sanitizer).toMatch(/isTechnicalFallback/);
+		expect(sanitizer).toMatch(/refresh/i);
+		// camadas do FIX-52 preservadas (defesa-em-profundidade).
+		const rule = /N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+		expect(rule.test(SPECIALIST_BASE_PROMPT)).toBe(true);
+		expect(readSource("src/lib/agent/HARD_RULES.md")).toMatch(/atualiza a p[áa]gina/i);
+	});
+});

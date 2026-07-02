@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
 	EphemeralTextFilter,
 	isProcessPreamble,
+	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
 	stripProcessPreamble,
@@ -138,6 +139,41 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+describe("FIX-190 — fallback técnico ('atualiza a página') é dropado em runtime (barreira em código)", () => {
+	const REFRESH_SEGMENTS = [
+		"Atualiza a página e tenta de novo.",
+		"Recarregue a página, por favor.",
+		"Dá um refresh aí que resolve.",
+		"Tenta de novo recarregando a tela.",
+	];
+
+	it("isTechnicalFallback pega as frases de refresh", () => {
+		for (const s of REFRESH_SEGMENTS) {
+			expect(isTechnicalFallback(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima que fala de 'página'/'atualizar' sem instruir refresh", () => {
+		expect(isTechnicalFallback("Vou atualizar o valor da simulação pra você.")).toBe(false);
+		expect(isTechnicalFallback("Essa página da simulação mostra tudo.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de refresh", () => {
+		const input = "Ops, deu um probleminha. Atualiza a página e tenta de novo. Beleza?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("atualiza a página");
+		// o resto sobrevive
+		expect(out).toContain("Ops, deu um probleminha.");
+	});
+
+	it("EphemeralTextFilter NÃO emite a frase de refresh ao vivo", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Atualiza a página e tenta de novo.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("atualiza a página");
 	});
 });
 

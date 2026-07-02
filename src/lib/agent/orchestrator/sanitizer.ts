@@ -46,6 +46,35 @@ export function isProcessPreamble(segment: string): boolean {
 	return PROCESS_PREAMBLE_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-190 — fallback técnico ("atualiza/recarregue a página", "dá um refresh"):
+// solução manual preguiçosa que empurra trabalho pro usuário. O FIX-52 já vetou a
+// frase no prompt + HARD_RULES + cassette; ESTA é a barreira em CÓDIGO (Lei 4): se
+// o modelo emitir mesmo assim, o segmento é dropado e nunca chega ao usuário. O
+// gêmeo do FIX-186 (na falha, o fallback é a mensagem determinística + ação, nunca
+// "atualiza a página"). Requer "página/tela" perto do verbo pra NÃO pegar copy
+// legítima ("vou atualizar o valor da simulação").
+const TECHNICAL_FALLBACK_PATTERNS: RegExp[] = [
+	/\batualiz[ae]\s+a?\s*(p[áa]gina|tela)\b/i,
+	/\brecarregu?e?\s+a?\s*(p[áa]gina|tela)\b/i,
+	/\brecarregar\s+a?\s*(p[áa]gina|tela)\b/i,
+	/\bd[áê]\s+um\s+refresh\b/i,
+	/\brecarregando\s+a?\s*(p[áa]gina|tela)\b/i,
+];
+
+/** Um segmento instrui o usuário a atualizar/recarregar a página (fallback técnico
+ * proibido) — não pode virar bolha. FIX-190. */
+export function isTechnicalFallback(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return TECHNICAL_FALLBACK_PATTERNS.some((rx) => rx.test(s));
+}
+
+/** Segmento EFÊMERO: preâmbulo de processo (FIX-188) OU fallback técnico (FIX-190).
+ * Ambos são dropados antes de virar mensagem. */
+function isEphemeralSegment(segment: string): boolean {
+	return isProcessPreamble(segment) || isTechnicalFallback(segment);
+}
+
 /** Quebra o texto em segmentos (frases) mantendo o delimitador (. ! ? : \n) à
  * esquerda. Usado pelo sanitizer e pela normalização anti-colagem (FIX-189). */
 export function splitSegments(text: string): string[] {
@@ -60,7 +89,7 @@ export function splitSegments(text: string): string[] {
 export function stripProcessPreamble(text: string): string {
 	if (!text) return text;
 	const segments = splitSegments(text);
-	const kept = segments.filter((seg) => !isProcessPreamble(seg));
+	const kept = segments.filter((seg) => !isEphemeralSegment(seg));
 	return kept.join("");
 }
 

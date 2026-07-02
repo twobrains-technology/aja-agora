@@ -1540,6 +1540,16 @@ Se o agente disser que não conseguiu buscar as opções agora, apenas responda 
 			);
 		}
 	});
+
+	it("[FIX-190] o agente NUNCA sugere atualizar/recarregar a página (fallback técnico proibido)", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).not.toMatch(
+			/atualiz[ae]\s+a?\s*p[áa]gina|recarregu?e?\s+a?\s*p[áa]gina|d[áê]\s+um\s+refresh/i,
+		);
+	});
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
