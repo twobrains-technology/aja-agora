@@ -87,6 +87,15 @@ import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trac
 import { type DocumentInboundDeps, handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 
+// FIX-74: cassette determinístico do analyzer — mocka SÓ analyzeTurn (via
+// importOriginal) pra controlar o TurnAnalysis extraído sem chamar Anthropic
+// real, preservando os demais exports do módulo (turnAnalysisSchema,
+// BASE_SYSTEM_INSTRUCTION) usados por outros cassettes deste arquivo.
+vi.mock("@/lib/agent/turn-analyzer", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/lib/agent/turn-analyzer")>();
+	return { ...actual, analyzeTurn: vi.fn() };
+});
+
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
 }
@@ -8237,21 +8246,22 @@ describe("FIX-195-CHOOSE-OFFER-P0 — cota escolhida vai ao contrato sem re-busc
 // Aqui: detector regex que trava a frase proibida; cassette esperado.
 // ============================================================================
 
-describe("FIX-INTEGRIDADE — recomendação: 'teto declarado' SÓ se cliente declarou", () => {
-	// Frases PROIBIDAS quando cliente NÃO declarou orçamento:
-	// - "% do seu teto declarado"
-	// - "% do seu orçamento"
-	// - "cabe no seu orçamento"
-	// - "do seu teto de R$ {valor}"
-	// Indicador: message NÃO deve conter NENHUMA dessas se monthlyBudget era undefined.
-	const TETO_FABRICADO_DETECTORS = [
-		/\d+[.,]\d+\s*%\s+do seu teto/i,
-		/\d+[.,]\d+\s*%\s+do seu or[çc]amento/i,
-		/do seu teto de R\$/i,
-		/do seu or[çc]amento de R\$/i,
-		/teto (declarado|seu)/i,
-	];
+// Frases PROIBIDAS quando cliente NÃO declarou orçamento:
+// - "% do seu teto declarado"
+// - "% do seu orçamento"
+// - "cabe no seu orçamento"
+// - "do seu teto de R$ {valor}"
+// Indicador: message NÃO deve conter NENHUMA dessas se monthlyBudget era undefined.
+// Escopo de MÓDULO (não de describe) — usado pelos dois describes FIX-INTEGRIDADE abaixo.
+const TETO_FABRICADO_DETECTORS = [
+	/\d+[.,]\d+\s*%\s+do seu teto/i,
+	/\d+[.,]\d+\s*%\s+do seu or[çc]amento/i,
+	/do seu teto de R\$/i,
+	/do seu or[çc]amento de R\$/i,
+	/teto (declarado|seu)/i,
+];
 
+describe("FIX-INTEGRIDADE — recomendação: 'teto declarado' SÓ se cliente declarou", () => {
 	it("detector regex: frase fabricada 'do seu teto' sem cliente declarar", () => {
 		// Cassette real observado (QA 2026-07-02 imóvel/web/prod):
 		const cassette = "A parcela de R$ 1.863,32/mês representa 93,17% do seu teto declarado";
