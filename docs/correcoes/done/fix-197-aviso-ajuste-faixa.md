@@ -1,7 +1,9 @@
 ---
 id: FIX-197
 titulo: "Aviso discreto de ajuste de faixa quando valorCarta bruto ≠ faixa pedida"
-status: todo
+status: done
+commit: 14275c32
+executado_em: "2026-07-02"
 bloco: bloco-b-reveal-ui
 arquivos:
   - src/components/chat/artifacts/recommendation-card.tsx

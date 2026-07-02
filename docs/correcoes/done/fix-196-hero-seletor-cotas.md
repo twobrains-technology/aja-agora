@@ -1,7 +1,9 @@
 ---
 id: FIX-196
 titulo: "Hero fixo + seletor de cotas (Opção 1): tocar chip promove a cota e emite choose_offer"
-status: todo
+status: done
+commit: f6536b85
+executado_em: "2026-07-02"
 bloco: bloco-b-reveal-ui
 arquivos:
   - src/components/chat/artifacts/recommendation-card.tsx

@@ -1,7 +1,9 @@
 ---
 id: FIX-198
 titulo: "Slider do contemplation_dial operável por teclado (a11y/WCAG)"
-status: todo
+status: done
+commit: 947476eb
+executado_em: "2026-07-02"
 bloco: bloco-b-reveal-ui
 arquivos:
   - src/components/chat/artifacts/contemplation-dial.tsx
