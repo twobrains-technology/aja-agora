@@ -41,6 +41,7 @@ export type QualifyAnswers = {
 };
 
 import type { NavState } from "./orchestrator/navigation";
+import type { Gate } from "./qualify-state";
 
 export type ConversationMetadata = {
 	currentPersona?: Persona;
@@ -63,6 +64,18 @@ export type ConversationMetadata = {
 	doubtsAddressed?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
+	/** FIX-207 (watchdog de inatividade) — epoch ms de quando um turno de usuário
+	 * terminou com um gate REAL do funil pendente porém SUPRIMIDO (nenhum card
+	 * disparado): o funil ficaria parado até o usuário voltar a falar. O worker
+	 * gate-reengage-poll varre conversas com este marcador além do teto
+	 * (GATE_REENGAGE_TIMEOUT_MS) e dispara o gate. Limpo quando o gate dispara, o
+	 * funil avança ou a conversa entra em estado terminal. Number (epoch ms) —
+	 * serializa trivialmente no jsonb (nunca Date, pra não repetir o quebra-meta). */
+	pendingGateSince?: number;
+	/** FIX-207 — rótulo do gate que ficou pendente quando pendingGateSince foi
+	 * marcado. O worker RE-CALCULA nextGate no disparo (frescor); este é só o
+	 * indicador do que estava aberto. */
+	pendingGate?: Gate;
 	/** Identidade (CPF+celular+LGPD) coletada no gate "identify" — fim do passo 2
 	 * (D1, docs/jornada/CONTEXT.md). A Bevi exige antes de simular; a busca real
 	 * (passo 3) só libera com isto true. */

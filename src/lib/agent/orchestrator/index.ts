@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -22,8 +23,8 @@ import {
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
-import { revealValueTargetChanged } from "./tool-policy";
 import { buildSystemContext } from "./system-context";
+import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { ChatMessage, TurnEvent, TurnInput } from "./types";
 
@@ -337,6 +338,36 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			gate: result.nextGateToFire,
 			prefix: result.prefixForNextGate ?? undefined,
 		};
+	}
+
+	// FIX-207 (watchdog): marca/limpa o gate pendente do funil. Se este turno de
+	// USUÁRIO terminou com um gate real suprimido (nenhum card disparado), grava
+	// pendingGateSince — o worker gate-reengage-poll reabre o funil se o usuário
+	// sumir (a cauda não-determinística que o FIX-206 não cobre). Qualquer avanço
+	// (gate disparado, turno server-authored, estado terminal) LIMPA o marcador.
+	// Governança determinística em código (Lei 4), não regra-no-prompt.
+	{
+		const watchMeta = await reloadMeta(conversationId);
+		const pendingGate = pendingGateAfterTurn({
+			meta: watchMeta,
+			gateFired: Boolean(result.nextGateToFire),
+			isUserTurn,
+			hasContactName: Boolean(knownName),
+		});
+		if (pendingGate) {
+			// Reseta o relógio de inatividade a cada turno de usuário que deixa o
+			// funil pendente (só turno de usuário chega aqui — server retorna null).
+			await persistMeta(conversationId, {
+				...watchMeta,
+				pendingGateSince: simulatorNow().getTime(),
+				pendingGate,
+			});
+		} else if (watchMeta.pendingGateSince !== undefined) {
+			const cleared = { ...watchMeta };
+			delete cleared.pendingGateSince;
+			delete cleared.pendingGate;
+			await persistMeta(conversationId, cleared);
+		}
 	}
 
 	yield { type: "finish", reason: "ok" };

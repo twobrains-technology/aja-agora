@@ -4,6 +4,7 @@
 //
 //   npm run worker:proposal
 
+import { startGateReengageWorker } from "@/lib/workers/gate-reengage-poll";
 import { startProposalStatusWorker } from "@/lib/workers/proposal-status-poll";
 
 async function main() {
@@ -12,6 +13,9 @@ async function main() {
 		process.exit(1);
 	}
 	await startProposalStatusWorker();
+	// FIX-207: watchdog de re-engajamento do funil no MESMO processo/container.
+	// Degrada com log se REDIS_URL ausente (não derruba o worker de proposta).
+	await startGateReengageWorker();
 	// mantém o processo vivo
 }
 

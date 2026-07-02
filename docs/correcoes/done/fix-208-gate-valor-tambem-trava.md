@@ -1,7 +1,7 @@
 ---
 id: FIX-208
 titulo: "O gate de VALOR também trava: 'Acho que me perdi por aqui' quando o usuário responde o valor do bem — a suposição 'já coberto' (FIX-115/172/189) está errada"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 arquivos:
