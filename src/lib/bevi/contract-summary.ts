@@ -10,7 +10,11 @@ import type { SelfContractIdentity } from "@/lib/adapters/bevi/bevi-self-contrac
 import { loadIdentity } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { sendTextMessage } from "@/lib/whatsapp/api";
+import { resolveAndSend } from "@/lib/whatsapp/template-dispatch";
 import { getLatestBeviProposal } from "./proposal-repo";
+
+/** Chave lógica do template do resumo de contratação (FIX-203). */
+export const RESUMO_CONTRATACAO_USAGE_KEY = "resumo_contratacao";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -56,6 +60,8 @@ export interface ContractSummaryDeps {
 	sendTextImpl?: (to: string, text: string) => Promise<unknown>;
 	whatsappConfigured?: () => boolean;
 	persistMetaImpl?: (conversationId: string, patch: Record<string, unknown>) => Promise<unknown>;
+	/** FIX-203: camada que decide texto livre (janela aberta) × template (fechada). */
+	resolveAndSendImpl?: typeof resolveAndSend;
 }
 
 const defaultConfigured = () =>
@@ -132,7 +138,21 @@ export async function sendContractSummary(
 	try {
 		// celular vem só-dígitos do identify (DDD+numero) — Cloud API exige DDI.
 		const to = `55${identity.celular.replace(/\D/g, "")}`;
-		await sendTextImpl(to, text);
+		// FIX-203: dentro da janela de 24h manda o texto rico atual (freeTextFallback);
+		// fora dela, o template `resumo_contratacao` (ou enfileira até aprovar). A copy
+		// do texto livre é a MESMA — só virou o fallback da janela.
+		const resolveAndSendImpl = deps.resolveAndSendImpl ?? resolveAndSend;
+		await resolveAndSendImpl({
+			to,
+			conversationId,
+			usageKey: RESUMO_CONTRATACAO_USAGE_KEY,
+			params: {
+				body: [row.administradora, row.grupo ?? "", row.consortiumProposalLink ?? ""],
+			},
+			freeTextFallback: () => {
+				return sendTextImpl(to, text).then(() => undefined);
+			},
+		});
 		return { sent: true };
 	} catch (err) {
 		console.error(

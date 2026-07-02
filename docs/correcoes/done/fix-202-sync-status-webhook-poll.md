@@ -1,7 +1,9 @@
 ---
 id: FIX-202
 titulo: "Sync de status: webhook message_template_status_update + reconcileTemplateStatuses"
-status: todo
+status: done
+commit: 2b36ff45
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:
