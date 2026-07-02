@@ -89,6 +89,32 @@ export class BeviConfigError extends Error {
 	}
 }
 
+/**
+ * FIX-186 (Kairo 2026-07-01) — classifica um erro de DESCOBERTA (Trilho B) como
+ * TRANSITÓRIO (retry silencioso pode curar) ou DURO (nunca cura no retry). É a
+ * base da decisão de retry do `runDiscovery` (tools/ai-sdk.ts): transitório →
+ * 1 retry; duro → vai direto ao fallback humano determinístico. Regra em CÓDIGO,
+ * não regra-no-prompt (Lei 4 de ~/.claude/reference/arquitetura-agentes-ia.md).
+ *
+ * Transitório: rede/timeout, `BeviApiError` 5xx/408/429, e erro desconhecido
+ * (default — 1 retry barato não machuca). Duro: `BeviConfigError` (403/credencial),
+ * `BeviApiError` 4xx (400/404/409/410 — inclui Min/Duplicated/Ownership/Ongoing/
+ * OfferExpired, todos 4xx de domínio).
+ */
+export function isTransientDiscoveryError(err: unknown): boolean {
+	// Config/credencial (403) — nunca cura no retry (BUG-BEVI-EMPTY-ENV).
+	if (err instanceof BeviConfigError) return false;
+	if (err instanceof BeviApiError) {
+		// 5xx = servidor soluçou; 408 timeout; 429 rate-limit → retry pode curar.
+		if (err.code >= 500 || err.code === 408 || err.code === 429) return true;
+		// Demais códigos tipados (4xx de domínio: 400/404/409/410) = duro.
+		return false;
+	}
+	// Erro de rede/timeout ou desconhecido (fetch failed, ECONN*, AbortError) —
+	// transitório por default: 1 retry barato é seguro.
+	return true;
+}
+
 /** Mapeia o envelope de erro pra erro tipado de domínio (spec §10). */
 export function toBeviError(
 	code: number,

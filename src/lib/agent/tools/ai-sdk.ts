@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { isTransientDiscoveryError } from "@/lib/adapters/bevi/bevi-errors";
 import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
@@ -139,13 +140,10 @@ export const recommendationSchema = z.object({
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
-	contempladosMes: z
-		.number()
-		.int()
-		.optional()
-		.describe(
-			"Quantidade de contemplados por MES do grupo (docx passo 4) — use o availableSlots retornado por recommend_groups/search_groups. Dado REAL da oferta; omita se nao veio da busca.",
-		),
+	// FIX-191: `contempladosMes` DEIXOU de ser input da LLM (era a origem do "36/mês"
+	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
+	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
+	// real (>0). A LLM não digita mais número de contemplação — Lei 3/4.
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
 	scoreBreakdown: z
 		.object({
@@ -290,6 +288,37 @@ const STATUS_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+// FIX-186 (Kairo 2026-07-01) — marcador do tool-result quando a descoberta na
+// Bevi falha (após retry silencioso, ou erro duro). O `runDiscovery` retorna
+// ISTO em vez de re-lançar (que viraria tool-error narrado pelo modelo). O
+// runner detecta via `isDiscoveryFailedResult`, suprime a narração e conduz o
+// fallback humano determinístico (Lei 1: código dispõe). O campo `error` é a
+// diretiva pro modelo caso ele processe o step — mas a garantia está no código.
+export function isDiscoveryFailedResult(output: unknown): boolean {
+	return (
+		typeof output === "object" &&
+		output !== null &&
+		(output as Record<string, unknown>).__discoveryFailed === true
+	);
+}
+
+function discoveryFailedResult(toolName: string): { __discoveryFailed: true; error: string } {
+	return {
+		__discoveryFailed: true,
+		error:
+			`A descoberta na Bevi falhou neste turno (tool ${toolName}) apos retry. ` +
+			"NAO narre erro tecnico, NAO invente numeros, NAO proponha/recomende/simule nada. " +
+			"O sistema ja conduz a mensagem ao usuario de forma deterministica — encerre o turno.",
+	};
+}
+
+// FIX-186: backoff curto do retry silencioso (alinhado ao "< 3s" do CLAUDE.md).
+// Test seam zera o delay pra não esperar de verdade nos testes.
+let discoveryRetryDelayMs = 300;
+export function __setDiscoveryRetryDelayForTests(ms: number | null): void {
+	discoveryRetryDelayMs = ms ?? 300;
+}
+
 // FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
 // multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
 // faixa de valor (sem objetivo×lance). O adapter Bevi varre o alvo + vizinhas e
@@ -376,8 +405,7 @@ export async function executeSimulateQuota(
 		const delta = Math.abs(args.creditValue - details.creditValue);
 		const relativeDelta = delta / details.creditValue;
 		if (delta > 1 && relativeDelta > 0.01) {
-			const fmt = (n: number) =>
-				n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 			return {
 				...simulation,
 				creditAdjustmentNotice: {
@@ -425,12 +453,16 @@ export async function executeGetGroupDetails(
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
+	opts: { hasLance?: boolean } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
 	const fallbackResult = await recommendWithFallback(adapter, searchParams);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
+		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
+		hasLance: opts.hasLance,
 	});
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
@@ -694,8 +726,15 @@ export const consorcioTools = {
 		description:
 			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
 		inputSchema: z.object({
-			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais — do plano recomendado"),
-			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses — do plano recomendado"),
+			creditValue: z
+				.number()
+				.positive()
+				.describe("Valor da carta (crédito) em reais — do plano recomendado"),
+			termMonths: z
+				.number()
+				.int()
+				.positive()
+				.describe("Prazo nominal do grupo em meses — do plano recomendado"),
 			targetMonth: z
 				.number()
 				.int()
@@ -901,6 +940,10 @@ export type ConsorcioToolsContext = {
 	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
 	conversationId?: string;
 	channel?: "web" | "whatsapp";
+	/** FIX-193: perfil de lance do usuário (meta.qualifyAnswers.hasLance==="yes").
+	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
+	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
+	hasLance?: boolean;
 };
 
 /**
@@ -910,13 +953,20 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId } = ctx;
+	const { conversationId, hasLance } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
 	// os present_* rodam NESTE turno. Lazy: só bate no banco se alguma das
 	// tools guardadas (get_group_details/simulate_quota/present_decision_prompt)
 	// for chamada.
+	// FIX-186: a descoberta deste turno falhou (após retry ou erro duro)? Flag de
+	// closure — fresco por turno (specialist+conversationId bypassa o cache de
+	// agents, cada turno reconstrói buildConsorcioTools). Setado por runDiscovery;
+	// lido pelas tools de descoberta (curto-circuito) e de apresentação (FIX-187,
+	// não propor sobre dado que não carregou).
+	let discoveryFailed = false;
+
 	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
 	const getShownGroups = () => {
 		if (!conversationId) return Promise.resolve(emptyShownGroups());
@@ -1007,8 +1057,32 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		description: consorcioTools.present_recommendation_card.description,
 		inputSchema: recommendationSchema,
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
+			// FIX-187: proposta só sobre descoberta bem-sucedida no turno (action-policy
+			// requireFreshDiscovery). Não usa shown-groups — o recommendation_card É a
+			// exibição. Bloqueado → diretiva; o artifact-guard (2ª linha) dropa o card.
+			const verdict = evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
 			await markShown("recommendation_card", args);
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+		},
+	});
+
+	const present_simulation_result = tool({
+		description: consorcioTools.present_simulation_result.description,
+		inputSchema: simulationResultSchema,
+		execute: async (args: z.infer<typeof simulationResultSchema>) => {
+			// FIX-187: os números da simulação só de descoberta bem-sucedida no turno.
+			const verdict = evaluateActionPrecondition("present_simulation_result", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
+			return `[Simulacao apresentada: parcela R$ ${args.monthlyPayment.toFixed(2)}/mes por ${args.termMonths} meses]`;
 		},
 	});
 
@@ -1021,16 +1095,17 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				.describe("Administradora do plano recomendado (contexto do card)"),
 		}),
 		execute: async (args: { administradora?: string }) => {
-			// FIX-180: precondição de dado via tabela declarativa (action-policy).
+			// FIX-180 (administradora exibida) + FIX-187 (descoberta fresca) via
+			// tabela declarativa (action-policy). Agora avalia SEMPRE — mesmo sem
+			// administradora, o gate de descoberta falhada (FIX-187) precisa rodar.
 			// Lazy: só bate no DB (getShownGroups) quando há administradora a validar.
-			if (args.administradora) {
-				const shown = await getShownGroups();
-				const verdict = evaluateActionPrecondition("present_decision_prompt", {
-					shown,
-					args: args as Record<string, unknown>,
-				});
-				if (!verdict.allow) return verdict.directive;
-			}
+			const shown = args.administradora ? await getShownGroups() : emptyShownGroups();
+			const verdict = evaluateActionPrecondition("present_decision_prompt", {
+				shown,
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
 			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
 		},
 	});
@@ -1048,22 +1123,54 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// BUG-BEVI-EMPTY-ENV (2026-06-04): o AI SDK converte o throw da tool em
 	// tool-error pro MODELO ("instabilidade") sem deixar rastro no servidor — um
 	// Invalid URL de config levou horas pra diagnosticar. Todo erro de descoberta
-	// é logado estruturado ANTES de subir.
-	const runDiscovery = async <T>(toolName: string, fn: () => Promise<T>): Promise<T> => {
+	// é logado estruturado.
+	//
+	// FIX-186 (Kairo 2026-07-01): runDiscovery NÃO re-lança mais. Um throw numa
+	// tool do AI SDK vira tool-error que o modelo NARRA ("dificuldade técnica
+	// pontual" + preâmbulos "vou buscar" empilhados). Em vez disso: 1 retry
+	// silencioso DETERMINÍSTICO em erro transitório (rede/timeout/5xx — não o
+	// modelo "tentando de novo" em texto) e, na falha (ou erro duro), retorna o
+	// marcador `discoveryFailedResult`. O runner materializa o fallback humano
+	// (Lei 1). Seta `discoveryFailed` pro turno curto-circuitar as próximas tools.
+	const logDiscoveryError = (toolName: string, phase: "first" | "retry", err: unknown) => {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "discovery",
+				tool: toolName,
+				phase,
+				conversation_id: conversationId,
+				error_name: err instanceof Error ? err.name : "unknown",
+				error_message: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	};
+	const runDiscovery = async <T>(
+		toolName: string,
+		fn: () => Promise<T>,
+	): Promise<T | { __discoveryFailed: true; error: string }> => {
+		// Curto-circuito: a descoberta já falhou neste turno → não martela a Bevi.
+		if (discoveryFailed) return discoveryFailedResult(toolName);
 		try {
 			return await fn();
 		} catch (err) {
-			console.error(
-				JSON.stringify({
-					level: "error",
-					source: "discovery",
-					tool: toolName,
-					conversation_id: conversationId,
-					error_name: err instanceof Error ? err.name : "unknown",
-					error_message: err instanceof Error ? err.message : String(err),
-				}),
-			);
-			throw err;
+			logDiscoveryError(toolName, "first", err);
+			// Erro transitório → 1 retry silencioso (determinístico, não o modelo).
+			if (isTransientDiscoveryError(err)) {
+				if (discoveryRetryDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, discoveryRetryDelayMs));
+				}
+				try {
+					return await fn();
+				} catch (retryErr) {
+					logDiscoveryError(toolName, "retry", retryErr);
+					discoveryFailed = true;
+					return discoveryFailedResult(toolName);
+				}
+			}
+			// Erro duro (config/4xx): nunca cura no retry → fallback direto.
+			discoveryFailed = true;
+			return discoveryFailedResult(toolName);
 		}
 	};
 
@@ -1132,7 +1239,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
+			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
+			return runDiscovery("recommend_groups", () =>
+				executeRecommendGroups(adapter, args, { hasLance }),
+			);
 		},
 	});
 
@@ -1164,9 +1274,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		recommend_groups,
 		// Overrides — FIX-179: registram "exibido" (markShown) e guardam a trava
 		// de get_group_details/simulate_quota/present_decision_prompt acima.
+		// FIX-187: present_recommendation_card/present_simulation_result/
+		// present_decision_prompt recusam quando a descoberta do turno falhou.
 		present_group_card,
 		present_comparison_table,
 		present_recommendation_card,
+		present_simulation_result,
 		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,

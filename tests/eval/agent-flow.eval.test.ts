@@ -1462,3 +1462,153 @@ describeIfKey("EVAL-FIX-14-STATUS-VIA-TOOL — status real via tool, zero re-des
 		);
 	}, 240_000);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENÁRIO FIX-186/187 — Bevi forçada a FALHAR na descoberta
+// -----------------------------------------------------------------------------
+// A persona chega ao ponto da busca real com a Bevi (Trilho B) forçada a lançar
+// erro (adapter que throwa). Invariantes: (186) o agente NUNCA narra erro técnico
+// cru nem empilha preâmbulos "vou buscar" — entrega o fallback humano
+// determinístico; (187) NENHUM card de proposta/recomendação/simulação com
+// números é emitido sobre dado que não carregou. Nightly (gated pela API real).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Adapter de descoberta que SEMPRE falha (simula soluço da Bevi em homologação). */
+function failingDiscoveryAdapter() {
+	const boom = () => {
+		throw new Error("bevi homolog indisponivel (eval FIX-186)");
+	};
+	return {
+		searchGroups: async () => boom(),
+		simulateQuota: async () => boom(),
+		getRates: async () => boom(),
+		getGroupDetails: async () => boom(),
+		// biome-ignore lint/suspicious/noExplicitAny: adapter mínimo pro eval
+	} as any;
+}
+
+describeIfKey("Eval FIX-186/187 — descoberta da Bevi falha → fallback humano, nunca proposta fantasma", () => {
+	let result: Awaited<ReturnType<typeof runConversation>> | null = null;
+
+	beforeAll(async () => {
+		__setDiscoveryAdapterFactoryForTests(() => failingDiscoveryAdapter());
+		result = await runConversation({
+			name: "descoberta-falha-auto",
+			firstUserMessage: "Quero um carro, me ajuda a achar o melhor consórcio",
+			userBotSystemPrompt: `Você é Maria, leiga em consórcio, quer um carro de cerca de R$ 100 mil, pode pagar até R$ 2 mil/mês, prazo até 72 meses, e NÃO tem valor pra lance.
+Responda SEMPRE curto e siga o passo que o agente propõe; não invente perguntas novas.
+Quando perguntarem seu nome, diga apenas "Maria".
+Se o agente disser que não conseguiu buscar as opções agora, apenas responda "ok, sem problema".`,
+			maxTurns: 16,
+		});
+	}, 300_000);
+
+	afterAll(async () => {
+		if (result) await cleanup(result.conversationId);
+		// restaura o adapter de fixtures pro resto da suíte (top-level afterAll põe null).
+		__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
+	});
+
+	it("[FIX-186] nenhum turno do agente narra erro técnico cru", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).not.toMatch(/dificuldade t[ée]cnica|tive um problema|\bproblema\b|instabilidade|inst[áa]vel/i);
+	});
+
+	it("[FIX-186] o fallback humano determinístico aparece (não consegui carregar as opções + especialista)", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).toMatch(/não consegui carregar as opções/i);
+		expect(agentText.toLowerCase()).toContain("especialista");
+	});
+
+	it("[FIX-187] NENHUM card de proposta/recomendação/simulação foi emitido sobre dado que não carregou", () => {
+		const artifactTypes = allArtifactTypes(result?.turns ?? []);
+		for (const forbidden of [
+			"recommendation_card",
+			"simulation_result",
+			"comparison_table",
+			"decision_prompt",
+			"contemplation_dial",
+		]) {
+			expect(artifactTypes, `${forbidden} não pode sair após descoberta falhada`).not.toContain(
+				forbidden,
+			);
+		}
+	});
+
+	it("[FIX-190] o agente NUNCA sugere atualizar/recarregar a página (fallback técnico proibido)", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).not.toMatch(
+			/atualiz[ae]\s+a?\s*p[áa]gina|recarregu?e?\s+a?\s*p[áa]gina|d[áê]\s+um\s+refresh/i,
+		);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENÁRIO FIX-188/189 — descoberta BEM-SUCEDIDA: sem preâmbulo de processo, sem
+// falas coladas, e a resposta chega (reveal presente).
+// -----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): em turno multi-step o agente empilhava preâmbulos
+// ("deixa eu buscar", "vou buscar", "um segundo") e colava falas ("corretos.Show").
+// Com o sanitizer runtime (FIX-188) + normalizeGluedSentences (FIX-189), nenhum
+// preâmbulo aparece e nenhuma fala fica colada; o reveal chega no mesmo fluxo.
+// Nightly (gated pela API real). Usa o adapter de fixtures (descoberta OK).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("Eval FIX-188/189 — descoberta OK sem preâmbulo de processo nem fala colada", () => {
+	let result: Awaited<ReturnType<typeof runConversation>> | null = null;
+
+	beforeAll(async () => {
+		result = await runConversation({
+			name: "fix188-189-auto-sem-preambulo",
+			firstUserMessage: "Quero um carro, me ajuda a achar o melhor consórcio",
+			userBotSystemPrompt: `Você é Rafael, leigo em consórcio, quer um carro de cerca de R$ 100 mil, pode pagar até R$ 2 mil/mês, prazo até 72 meses, e tem uma reserva pra lance.
+Responda SEMPRE curto e siga o passo que o agente propõe; não invente perguntas novas.
+Quando perguntarem seu nome, diga apenas "Rafael".
+Quando perguntarem se tem valor pra lance, diga que sim.
+Quando uma simulação ou recomendação aparecer, demonstre interesse: "Tenho interesse".`,
+			maxTurns: 16,
+		});
+	}, 300_000);
+
+	afterAll(async () => {
+		if (result) await cleanup(result.conversationId);
+	});
+
+	it("[FIX-188] nenhum turno do agente vaza preâmbulo de processo", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).not.toMatch(
+			/deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b/i,
+		);
+	});
+
+	it("[FIX-189] nenhuma fala fica colada sem separador (minúscula.MAIÚSCULA)", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		// gluing de frases distintas ("corretos.Show") — ponto final entre minúscula
+		// e maiúscula sem espaço. (Valor monetário R$ 1.000 não casa: dígito antes.)
+		expect(agentText).not.toMatch(/\p{Ll}[.!?]\p{Lu}/u);
+	});
+
+	it("[FIX-189] a descoberta REVELA algo (a resposta chega, não pendura)", () => {
+		const types = allArtifactTypes(result?.turns ?? []);
+		const revealed = ["comparison_table", "group_card", "recommendation_card", "simulation_result"];
+		expect(
+			revealed.some((t) => types.includes(t)),
+			`Esperado um reveal (${revealed.join("/")}). Artifacts: [${types.join(", ")}].`,
+		).toBe(true);
+	});
+});

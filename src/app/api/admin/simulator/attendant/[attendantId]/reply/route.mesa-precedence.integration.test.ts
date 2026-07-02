@@ -12,8 +12,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-const sendTextMessage = vi.fn(async () => ({ messageId: "sim-1" }));
-const generateMesaCopilotReply = vi.fn(async () => "orientação do copiloto (mock)");
+const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
+const generateMesaCopilotReply = vi.fn(async (..._args: unknown[]) => "orientação do copiloto (mock)");
 
 vi.mock("@/lib/whatsapp/api", () => ({
 	sendTextMessage: (...a: unknown[]) => sendTextMessage(...a),

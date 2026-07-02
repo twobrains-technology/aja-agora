@@ -102,17 +102,51 @@ describe("FIX-172 — loop de tools SILENCIOSAS deixa o turno mudo (agente mudo 
 		);
 	});
 
-	it("tool ACIONÁVEL (search_groups) => NÃO vazio (o resultado vira artifact/texto)", () => {
-		expect(isTurnEmpty({ ...base, toolCount: 1, toolsCalled: ["search_groups"] })).toBe(false);
+	it("retrocompat: sem toolsCalled, toolCount>0 segue não-vazio (FIX-110 preservado)", () => {
+		expect(isTurnEmpty({ ...base, toolCount: 1 })).toBe(false);
+	});
+});
+
+describe("FIX-189 — descoberta NÃO é emissão visível por si (a pendura 'Buscando grupos')", () => {
+	// Root cause da pendura (print agente-nao-responde-ate-novo-input): a descoberta
+	// (search_groups/recommend_groups/get_rates/get_group_details/simulate_quota)
+	// NÃO produz artifact por si só — só o chip transitório "Buscando grupos". O
+	// VISÍVEL é o artifact/texto que ela LEVA a produzir (já contado em
+	// artifactCount/textChars). O FIX-172 tratava search_groups como "acionável =
+	// visível" — falso-negativo: um turno que só buscou (sem present_*, sem texto)
+	// fechava NÃO-vazio → nenhum fallback → o reveal nunca chegava e o usuário
+	// tinha de cutucar ("travou?"). Corrigido: descoberta sozinha = MUDO.
+
+	it("só descoberta (search_groups) sem artifact/texto => MUDO", () => {
+		expect(isTurnEmpty({ ...base, toolCount: 1, toolsCalled: ["search_groups"] })).toBe(true);
 	});
 
-	it("mix silenciosa + acionável => NÃO vazio (a acionável emite)", () => {
+	it("outras tools de descoberta sozinhas também => MUDO", () => {
+		for (const t of ["recommend_groups", "get_rates", "get_group_details", "simulate_quota"]) {
+			expect(isTurnEmpty({ ...base, toolCount: 1, toolsCalled: [t] }), t).toBe(true);
+		}
+	});
+
+	it("descoberta que PRODUZIU artifact (present_*) => NÃO vazio", () => {
 		expect(
-			isTurnEmpty({ ...base, toolCount: 2, toolsCalled: ["save_contact_name", "search_groups"] }),
+			isTurnEmpty({
+				...base,
+				toolCount: 2,
+				artifactCount: 1,
+				toolsCalled: ["search_groups", "present_comparison_table"],
+			}),
 		).toBe(false);
 	});
 
-	it("retrocompat: sem toolsCalled, toolCount>0 segue não-vazio (FIX-110 preservado)", () => {
-		expect(isTurnEmpty({ ...base, toolCount: 1 })).toBe(false);
+	it("descoberta com texto de resultado => NÃO vazio", () => {
+		expect(
+			isTurnEmpty({ ...base, toolCount: 1, textChars: 40, toolsCalled: ["recommend_groups"] }),
+		).toBe(false);
+	});
+
+	it("mix silenciosa + descoberta, sem present/texto => MUDO", () => {
+		expect(
+			isTurnEmpty({ ...base, toolCount: 2, toolsCalled: ["save_contact_name", "search_groups"] }),
+		).toBe(true);
 	});
 });

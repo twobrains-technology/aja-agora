@@ -8,9 +8,9 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-const sendReplyButtons = vi.fn(async () => ({ messageId: "sim-1" }));
-const sendTextMessage = vi.fn(async () => ({ messageId: "sim-1" }));
-const generateMesaCopilotReply = vi.fn(async () => "orientação do copiloto");
+const sendReplyButtons = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
+const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
+const generateMesaCopilotReply = vi.fn(async (..._args: unknown[]) => "orientação do copiloto");
 
 vi.mock("@/lib/whatsapp/api", () => ({
 	sendReplyButtons: (...a: unknown[]) => sendReplyButtons(...a),

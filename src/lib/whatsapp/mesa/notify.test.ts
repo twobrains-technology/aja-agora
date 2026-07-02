@@ -8,8 +8,8 @@
 // telefone é sintético (SIM-, convenção de teste — isSimulatedWaId).
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const sendTextMessage = vi.fn(async () => ({ messageId: "meta-1" }));
-const sendReplyButtons = vi.fn(async () => ({ messageId: "meta-1" }));
+const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "meta-1" }));
+const sendReplyButtons = vi.fn(async (..._args: unknown[]) => ({ messageId: "meta-1" }));
 // Mocka pelo alias (@/lib/whatsapp/api) — é assim que notify.ts importa a api real,
 // e é a convenção que a maioria dos testes da mesa já usa (ver FIX-173).
 vi.mock("@/lib/whatsapp/api", () => ({

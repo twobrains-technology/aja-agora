@@ -31,6 +31,8 @@ const CANONICAL_FORBIDDEN_PHRASES = [
 	"da uma olhada nas opcoes",
 	// BUG-FALLBACK-REFRESH — solução manual proibida (FIX-52)
 	"atualiza a pagina",
+	// BUG-EPHEMERAL-PREAMBLE — preâmbulo de processo efêmero (FIX-188)
+	"deixa eu buscar",
 ] as const;
 
 const REQUIRED_HARD_RULES_SECTIONS = [

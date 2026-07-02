@@ -325,8 +325,12 @@ export async function runDirectiveWithOrchestrator(args: {
 	conversationId: string;
 	directive: string;
 	contactName?: string | null;
+	/** FIX-189: liga o guard de turno-mudo do consumeEvents. Directives em geral
+	 * podem ser silenciosos por design (não guardam), MAS a descoberta SEMPRE deve
+	 * revelar algo — o dispatch de busca passa true pra não pendurar no chip. */
+	guardEmptyTurn?: boolean;
 }): Promise<void> {
-	const { from, conversationId, directive, contactName } = args;
+	const { from, conversationId, directive, contactName, guardEmptyTurn } = args;
 
 	const events = runTurn({
 		channel: "whatsapp",
@@ -338,7 +342,7 @@ export async function runDirectiveWithOrchestrator(args: {
 		skipLeadCollection: true,
 	});
 
-	await consumeEvents(from, conversationId, events);
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn });
 }
 
 export async function runTransitionWithOrchestrator(args: {
@@ -377,7 +381,10 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-	await runDirectiveWithOrchestrator({ from, conversationId, directive });
+	// FIX-189 (pendura): a descoberta SEMPRE deve revelar algo — se o turno fechar
+	// só com o chip (0 texto, 0 artifact), o guardEmptyTurn emite o fallback em vez
+	// de deixar o usuário no silêncio até cutucar.
+	await runDirectiveWithOrchestrator({ from, conversationId, directive, guardEmptyTurn: true });
 }
 
 export async function fireGate(

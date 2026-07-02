@@ -125,7 +125,9 @@ describeIfDb("FIX-125 — claim atômico do transbordo (integration)", () => {
 		expect(third.ok).toBe(false);
 		if (!third.ok) {
 			expect(third.reason).toBe("ja_assumido");
-			expect(third.ownerAttendantId).toBe(A);
+			if (third.reason === "ja_assumido") {
+				expect(third.ownerAttendantId).toBe(A);
+			}
 		}
 
 		const [dbRow] = await db

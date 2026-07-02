@@ -8,7 +8,7 @@ import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { getPersona } from "@/lib/agent/personas-repo";
 import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -20,6 +20,18 @@ import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
+import {
+	EphemeralTextFilter,
+	joinSeparator,
+	normalizeGluedSentences,
+	stripProcessPreamble,
+} from "./sanitizer";
+import {
+	coerceComparisonPayload,
+	coerceRecommendationPayload,
+	indexRevealGroups,
+	type RevealGroupIndex,
+} from "./recommendation-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -31,6 +43,10 @@ export type RunAgentResult = {
 	isConcierge: boolean;
 	nextGateToFire: Gate | null;
 	prefixForNextGate: string | null;
+	/** FIX-186: a descoberta na Bevi falhou neste turno (após retry). O
+	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
+	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
+	discoveryFailedThisTurn?: boolean;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
@@ -160,6 +176,16 @@ export async function* runAgentTurn(args: {
 	// números do simulation_result (o modelo digitava o payload na mão e
 	// alucinou receivedCredit = carta cheia na jornada BB de 2026-06-11).
 	let lastQuotaSimulation: unknown = null;
+	// FIX-186: a descoberta na Bevi falhou neste turno (marcador vindo do
+	// runDiscovery no tool-result). Ao detectar: suprime a narração do modelo
+	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
+	// pro artifact-guard (FIX-187) dropar qualquer proposta.
+	let discoveryFailedThisTurn = false;
+	// FIX-191: grupos REAIS do recommend_groups/search_groups deste turno,
+	// indexados por id — fonte única dos números do recommendation_card (hero) e
+	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
+	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
+	const revealGroupsById: RevealGroupIndex = new Map();
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -187,8 +213,8 @@ export async function* runAgentTurn(args: {
 	// `messages` — system dentro de `messages` dispara o warning de prompt-injection
 	// da AI SDK 6 a cada turno e duplicava a memória Letta. Ordem: systemContext
 	// antes do examplesBlock (examples mais perto da fala do usuário, recency bias).
-	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter(
-		(b): b is string => Boolean(b),
+	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter((b): b is string =>
+		Boolean(b),
 	);
 
 	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
@@ -211,10 +237,7 @@ export async function* runAgentTurn(args: {
 	let toolIoStep = 0;
 	const result = await agent.stream({
 		messages,
-		onStepFinish: (step: {
-			toolCalls?: ToolCallRecord[];
-			toolResults?: ToolResultRecord[];
-		}) => {
+		onStepFinish: (step: { toolCalls?: ToolCallRecord[]; toolResults?: ToolResultRecord[] }) => {
 			logToolIO({
 				conversationId,
 				stepNumber: toolIoStep++,
@@ -227,31 +250,64 @@ export async function* runAgentTurn(args: {
 	// FIX-182: id do bloco de texto corrente. Blocos diferentes (steps diferentes
 	// de um turno multi-tool) ganham `\n\n` entre si; deltas do mesmo bloco colam.
 	let lastTextBlockId: string | undefined;
+	// FIX-188: filtro de stream por frase — preâmbulo de processo ("deixa eu
+	// buscar", "vou buscar", "um segundo", "deixa eu usar a ferramenta") é EFÊMERO
+	// e NUNCA vira bolha (nem enviado ao vivo, nem persistido). Barreira em código
+	// (Lei 1/4), a regra soft no prompt é só reforço. Pós-onda-1: erro já é
+	// diretiva, então o filtro só cuida de preâmbulo de SUCESSO.
+	const ephemeralFilter = new EphemeralTextFilter();
+	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
+	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
+	const composeClean = (raw: string, blockSep = ""): string => {
+		// FIX-189: desgruda falas que o modelo colou no MESMO chunk ("corretos.Show").
+		const clean = normalizeGluedSentences(raw);
+		if (!clean) return "";
+		const sep = blockSep || joinSeparator(fullResponse, clean);
+		const out = sep + clean;
+		fullResponse += out;
+		return out;
+	};
 	for await (const part of result.fullStream) {
 		switch (part.type) {
 			case "text-delta": {
+				// FIX-186: após a descoberta falhar no turno, SUPRIME todo texto do
+				// modelo daqui pra frente — mata a narração de erro cru ("dificuldade
+				// técnica pontual") e o empilhamento de preâmbulos "vou buscar". O
+				// fallback humano é materializado deterministicamente pelo orchestrator.
+				if (discoveryFailedThisTurn) break;
 				const blockId = (part as { id?: string }).id;
-				// FIX-182: separa narrações de steps diferentes ANTES de acumular/emitir
-				// (o separador entra no stream e no persistido — a bolha renderiza limpo).
-				const separator = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
-				if (separator) {
-					fullResponse += separator;
-					yield { type: "text-delta", text: separator };
+				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
+				// fecha a frase pendente do bloco anterior, com separador entre blocos.
+				if (blockId !== lastTextBlockId && lastTextBlockId !== undefined) {
+					const blockSep = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
+					const flushed = composeClean(ephemeralFilter.flush(), blockSep);
+					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = blockId;
-				fullResponse += part.text;
-				yield { type: "text-delta", text: part.text };
+				// FIX-188: só a frase COMPLETA e não-preâmbulo é liberada (por frase).
+				const emitted = composeClean(ephemeralFilter.push(part.text));
+				if (emitted) yield { type: "text-delta", text: emitted };
 				break;
 			}
 			case "tool-result": {
+				const output = (part as { output?: unknown }).output;
+				// FIX-186: marcador de descoberta falhada (runDiscovery não re-lança
+				// mais). Liga o sinal do turno — a partir daqui a narração é suprimida
+				// e a proposta é bloqueada (FIX-187).
+				if (isDiscoveryFailedResult(output)) discoveryFailedThisTurn = true;
 				// FIX-7: conta as opções retornadas pela descoberta (single-option
 				// guard). Tools fora da descoberta retornam null e não interferem.
-				const count = extractDiscoveryCount(part.toolName, (part as { output?: unknown }).output);
+				const count = extractDiscoveryCount(part.toolName, output);
 				if (count !== null) discoveryCount = count;
 				// FIX-C3: guarda o retorno real do simulate_quota pra coagir o
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
-					lastQuotaSimulation = (part as { output?: unknown }).output ?? null;
+					lastQuotaSimulation = output ?? null;
+				}
+				// FIX-191: indexa os grupos reais da descoberta deste turno pra coagir
+				// o hero (recommendation_card) e o seletor (comparison_table).
+				if (part.toolName === "recommend_groups" || part.toolName === "search_groups") {
+					indexRevealGroups(revealGroupsById, part.toolName, (part as { output?: unknown }).output);
 				}
 				break;
 			}
@@ -260,6 +316,15 @@ export async function* runAgentTurn(args: {
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
 				executedToolNames.push(toolName);
+				// FIX-188: fecha o texto pré-tool (preâmbulo de processo é DROPADO aqui)
+				// ANTES de emitir o tool-call/artifact — o status real é o chip
+				// determinístico, não uma fala do modelo. Exceção: handoff (agente
+				// calado por design; o texto pendente some com o turno).
+				if (toolName !== "suggest_handoff") {
+					const flushed = composeClean(ephemeralFilter.flush());
+					if (flushed) yield { type: "text-delta", text: flushed };
+				}
+				lastTextBlockId = undefined;
 				// FIX-19: com o gating a montante (builder filtra o toolset pela
 				// tool-policy da fase), uma chamada de tool FORA da policy significa
 				// que a tool entrou no request indevidamente — bug da policy/builder,
@@ -293,6 +358,9 @@ export async function* runAgentTurn(args: {
 						userIntent,
 						isUserTurn,
 						discoveryCount,
+						// FIX-187: turno com descoberta falhada → guard dropa a família de
+						// proposta (o tool-result da busca falhada já passou neste ponto).
+						discoveryFailedThisTurn,
 						conversationId,
 						turnArtifactTypes: artifacts.map((a) => a.type),
 					});
@@ -331,6 +399,16 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "simulation_result") {
 							payload = coerceSimulationPayload(input, lastQuotaSimulation);
 						}
+						// FIX-191: o hero e o seletor deixam de ser digitados pela LLM —
+						// cada cota é reescrita a partir do grupo REAL do turno (mata o
+						// "36/mês"). Emite groupId/ofertaId/quotaId + availableSlots real
+						// (CONTRATO com bloco-b); tipoOferta NUNCA vaza (crítério interno).
+						if (artifactType === "recommendation_card") {
+							payload = coerceRecommendationPayload(input, revealGroupsById);
+						}
+						if (artifactType === "comparison_table") {
+							payload = coerceComparisonPayload(input, revealGroupsById);
+						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
 								artifacts.find((a) => a.type === "simulation_result") ??
@@ -362,10 +440,39 @@ export async function* runAgentTurn(args: {
 		}
 	}
 
-	// FIX-102: colapsa eco/degeneração da LLM ANTES de qualquer uso do texto
-	// completo — persistência (content), prefixo do próximo gate e o
-	// RunAgentResult retornado ao orchestrator ficam todos livres do sintoma.
-	fullResponse = collapseEchoedSegments(fullResponse);
+	// FIX-186: a descoberta falhou neste turno → NÃO persiste o texto do modelo
+	// (a narração foi suprimida; o preâmbulo pré-falha ficou EFÊMERO no filtro e é
+	// descartado aqui — nem vaza no stream, FIX-188), NÃO avalia reveal/gates. O
+	// orchestrator materializa a mensagem amigável FIXA e finaliza o turno (Lei 1).
+	if (discoveryFailedThisTurn) {
+		console.log(
+			`[discovery-failed] guard: descoberta falhou no turno — fallback determinístico (conv=${conversationId})`,
+		);
+		return {
+			fullResponse: "",
+			artifacts: [],
+			handoffSignaled: false,
+			isConcierge,
+			nextGateToFire: null,
+			prefixForNextGate: null,
+			discoveryFailedThisTurn: true,
+		};
+	}
+
+	// FIX-188: libera a última frase pendente do stream (sucesso), também filtrada
+	// — a cauda sem pontuação final ("...Vou buscar os grupos agora") é avaliada
+	// antes de virar bolha.
+	{
+		const tail = composeClean(ephemeralFilter.flush());
+		if (tail) yield { type: "text-delta", text: tail };
+	}
+
+	// FIX-102 + FIX-188 + FIX-189: colapsa eco/degeneração da LLM, garante (belt-and-
+	// suspenders) que nenhum preâmbulo persista e desgruda falas coladas — o filtro
+	// já limpou ao vivo, esta é a rede final antes de persistência/prefixo do gate.
+	fullResponse = normalizeGluedSentences(
+		stripProcessPreamble(collapseEchoedSegments(fullResponse)),
+	).replace(/^\s+/, "");
 
 	try {
 		const finishReason = await result.finishReason;
@@ -561,8 +668,7 @@ export async function* runAgentTurn(args: {
 			await persistMeta(conversationId, {
 				...refreshed,
 				recommendedOffer: snap,
-				recommendedAdministradora:
-					snap.administradora ?? refreshed.recommendedAdministradora,
+				recommendedAdministradora: snap.administradora ?? refreshed.recommendedAdministradora,
 			});
 		}
 	}

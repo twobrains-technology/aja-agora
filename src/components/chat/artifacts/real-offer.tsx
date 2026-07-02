@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, Check } from "lucide-react";
+import { BadgeCheck, Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
@@ -48,6 +48,25 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 					)}
 					<Row label="Administradora" value={payload.administradora} />
 				</div>
+
+				{/* FIX-197 (§3.6) — aviso de ajuste de faixa: a carta é da denominação do
+				    grupo (rawCreditValue); a re-simulação ajustou à faixa pedida
+				    (creditValue). Exibe só quando os dois números diferem; ambos reais. */}
+				{payload.rawCreditValue != null &&
+					Number.isFinite(payload.rawCreditValue) &&
+					Number.isFinite(payload.creditValue) &&
+					Math.round(payload.rawCreditValue) !== Math.round(payload.creditValue) && (
+						<p
+							data-testid="credit-adjustment-notice"
+							className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground"
+						>
+							<Info className="mt-0.5 size-3 shrink-0 text-primary" />
+							<span>
+								Ajustamos essa carta de {brl(payload.rawCreditValue)} pra sua faixa de ~
+								{brl(payload.creditValue)}.
+							</span>
+						</p>
+					)}
 
 				{/* FIX-13/FIX-39: com prazo da API, a copy fala só das DEMAIS condições;
 				    sem prazo (shape antigo / API volta atrás), mantém o fallback honesto

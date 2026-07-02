@@ -30,13 +30,24 @@ export interface BeviOffer {
 	insuranceTotalAmount?: number; // R$
 	reserveFundAmount?: number; // R$
 	adjustmentType?: string; // INCC | IPCA | IGPM | ...
-	monthlyAwardedQuotas?: number; // contemplados/mês
+	monthlyAwardedQuotas?: number; // contemplados/mês (CONTAGEM real — fonte do availableSlots)
+	// FIX-192: taxaContemplacao (fração 0..1, semântica TBD com a AGX) vem no retorno
+	// ENXUTO real (2026-07-01) mas NÃO é contagem — NUNCA vira availableSlots nem % de
+	// contemplação. Declarado só pra travar o não-uso; a contemplação exibida só sai
+	// de monthlyAwardedQuotas real (spec §1.1/§3.1).
+	taxaContemplacao?: number; // NÃO usar como contemplados/mês nem como %
 	probContemplacaoMeses?: string; // estimativa de meses até contemplar
 	embeddedBid?: number; // R$ usado como lance embutido
 	embeddedBidAcceptancePercentage?: string | number; // teto REAL de embutido aceito ("30,00" / 0.3)
 	bidPercentage?: number; // fração (0.3 = 30%) — lance TOTAL necessário, NÃO o embutido
 	necessaryBidToContemplate?: number; // R$
 	quotaId: string;
+	// FIX-193: campos do retorno ENXUTO real (2026-07-01) — critério interno de
+	// ranking/dedup. `tipoOferta` (SPECIAL_OFFER|FREE_BID) e `grupo` (nº do grupo).
+	// `ofertaId` (UUID de sessão) alimenta o CONTRATO do reveal (FIX-191).
+	tipoOferta?: string;
+	grupo?: string;
+	ofertaId?: string;
 	productType?: string; // IMOVEL | AUTOS | MOTOS | SERVICOS | PESADOS | OUTROS BENS
 	proximaAssembleia?: string; // ISO date — próxima assembleia do grupo
 	validityStart?: string; // ISO date — início de vigência da oferta
@@ -104,8 +115,18 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		// A oferta não traz total/disponíveis de cotas; usamos contemplados/mês
 		// como proxy de liquidez do grupo até a API expor os campos.
 		totalParticipants: 0,
+		// FIX-192: contemplação SÓ de dado REAL ancorado — o monthlyAwardedQuotas
+		// (contagem). Ausente (retorno enxuto real) → 0; NUNCA derivado de
+		// taxaContemplacao (fração ≠ contagem). O runner coage o hero com este valor.
 		availableSlots: offer.monthlyAwardedQuotas ?? 0,
 		contemplationRate: offer.monthlyAwardedQuotas ?? 0,
+		// FIX-193: critério interno de ranking/dedup — leitura defensiva pros dois
+		// shapes (enxuto `grupo` × rico `group`). NUNCA sai pra UI (toModelGroupSummary
+		// os strippa; a coerção do card também os descarta).
+		...(offer.tipoOferta ? { tipoOferta: offer.tipoOferta } : {}),
+		...((offer.grupo ?? offer.group) ? { grupo: offer.grupo ?? offer.group } : {}),
+		// FIX-191 (CONTRATO): ofertaId real quando a fonte o traz.
+		...(offer.ofertaId ? { ofertaId: offer.ofertaId } : {}),
 	};
 }
 
@@ -113,11 +134,17 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
  * de search/recommend é re-enviado a cada turno (multi-turn); `totalParticipants`
  * é constante 0 no Trilho B (a oferta self-contract não traz total de cotas) —
  * peso morto que o modelo nunca usa e nenhum schema de card referencia. Os números
- * ricos do card vêm da coerção server-side (runner), não deste resumo. */
-export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants">;
+ * ricos do card vêm da coerção server-side (runner), não deste resumo.
+ *
+ * FIX-193: `tipoOferta`/`grupo` são critério INTERNO de ranking/dedup — ficam FORA
+ * do contexto do modelo e do payload (nunca "vazam" pra UI). `ofertaId` PERMANECE:
+ * é campo do CONTRATO do reveal (FIX-191), coagido no card pra o seletor. */
+export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants" | "tipoOferta" | "grupo">;
 
 export function toModelGroupSummary({
 	totalParticipants: _drop,
+	tipoOferta: _dropTipo,
+	grupo: _dropGrupo,
 	...rest
 }: GroupSummary): ModelGroupSummary {
 	return rest;

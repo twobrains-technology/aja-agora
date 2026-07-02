@@ -28,6 +28,10 @@ export type ActionPreconditionContext = {
 	shown: ShownGroups;
 	/** Input validado da tool (schema Zod já passou). */
 	args: Record<string, unknown>;
+	/** FIX-187: a descoberta na Bevi DESTE turno falhou (sinal do FIX-186). Quando
+	 * true, nenhuma proposta/recomendação/simulação pode ancorar em dado que não
+	 * carregou — regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única). */
+	discoveryFailedThisTurn?: boolean;
 };
 
 export type PreconditionVerdict =
@@ -54,6 +58,44 @@ export function administradoraNaoExibidaDirective(administradora: string): strin
 		"Apresente a recomendacao/comparativo (present_comparison_table / present_recommendation_card) " +
 		"ANTES do card de decisao — nunca proponha decisao sobre um plano que o usuario nao viu.]"
 	);
+}
+
+/**
+ * FIX-187 — a descoberta do turno falhou (sinal do FIX-186). Diretiva ACIONÁVEL
+ * pro modelo: não proponha/recomende/simule sobre dado que não carregou; o
+ * sistema já conduz o fallback ao usuário.
+ */
+export function discoveryFailedDirective(): string {
+	return (
+		"A descoberta na Bevi deste turno falhou — nao carregou nenhuma oferta real. " +
+		"NAO proponha, recomende ou simule nada agora: qualquer numero seria ancorado em dado " +
+		"que nao existe neste turno (proibido pela regra de dado real). O sistema ja conduz a " +
+		"mensagem ao usuario de forma deterministica — encerre o turno."
+	);
+}
+
+/**
+ * FIX-187 — precondição: a descoberta do turno NÃO pode ter falhado. As tools de
+ * proposta (recommendation/simulation/decision) só agem sobre dado fresco real.
+ */
+function requireFreshDiscovery(ctx: ActionPreconditionContext): PreconditionVerdict {
+	if (ctx.discoveryFailedThisTurn === true) {
+		return { allow: false, directive: discoveryFailedDirective() };
+	}
+	return { allow: true };
+}
+
+/** Compõe precondições: a PRIMEIRA que reprovar vence (fail-closed). */
+function compose(
+	...rules: Array<(ctx: ActionPreconditionContext) => PreconditionVerdict>
+): (ctx: ActionPreconditionContext) => PreconditionVerdict {
+	return (ctx) => {
+		for (const rule of rules) {
+			const verdict = rule(ctx);
+			if (!verdict.allow) return verdict;
+		}
+		return { allow: true };
+	};
 }
 
 /** Precondição: o `groupId` do input já foi exibido em tela. */
@@ -92,7 +134,12 @@ export const ACTION_PRECONDITIONS: Record<
 > = {
 	simulate_quota: requireShownGroupId,
 	get_group_details: requireShownGroupId,
-	present_decision_prompt: requireShownAdministradora,
+	// FIX-187: as 3 tools de PROPOSTA exigem descoberta bem-sucedida no turno. O
+	// decision_prompt compõe com a checagem de administradora exibida (FIX-179);
+	// recommendation/simulation SÃO a exibição, então só a descoberta fresca importa.
+	present_decision_prompt: compose(requireFreshDiscovery, requireShownAdministradora),
+	present_recommendation_card: requireFreshDiscovery,
+	present_simulation_result: requireFreshDiscovery,
 };
 
 /**

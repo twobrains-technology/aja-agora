@@ -1,5 +1,5 @@
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
 import { allowedTools } from "../orchestrator/tool-policy";
@@ -148,6 +148,9 @@ export function buildAgent(
 	const registry = buildConsorcioTools({
 		conversationId: opts.conversationId,
 		channel: opts.channel,
+		// FIX-193: perfil de lance → desempate de tipoOferta no recommend_groups
+		// (critério interno). Vem do meta, nunca da LLM.
+		hasLance: opts.meta?.qualifyAnswers?.hasLance === "yes",
 	});
 
 	// Specialists always have suggest_handoff + as ferramentas de captura

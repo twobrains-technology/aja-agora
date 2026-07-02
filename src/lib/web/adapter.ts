@@ -22,6 +22,8 @@ import type {
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { saveMessage } from "@/lib/conversation/messages";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
@@ -185,8 +187,12 @@ export async function pipeOrchestratorToWriter(
 	events: AsyncIterable<TurnEvent>,
 	writer: Writer,
 	conversationId: string,
-): Promise<void> {
+): Promise<{ emittedVisible: boolean }> {
 	let textId: string | null = null;
+	// FIX-189: o turno emitiu ALGO visível e persistente (texto/artifact/gate/
+	// transição/welcome/handoff)? O tool-call é chip transitório — NÃO conta. Usado
+	// pelo dispatch de descoberta pra detectar a pendura (turno só-chip) e recuperar.
+	let emittedVisible = false;
 
 	const ensureTextStarted = (): string => {
 		if (!textId) {
@@ -206,6 +212,7 @@ export async function pipeOrchestratorToWriter(
 	for await (const ev of events) {
 		switch (ev.type) {
 			case "text-delta":
+				if (ev.text) emittedVisible = true;
 				writer.write({ type: "text-delta", id: ensureTextStarted(), delta: ev.text });
 				break;
 
@@ -214,6 +221,7 @@ export async function pipeOrchestratorToWriter(
 				// delta e fecha. (Antes: um text-start órfão com id aleatório + outro
 				// id do ensureTextStarted pro delta → 2 starts, 1 end no stream.)
 				closeTextIfOpen();
+				emittedVisible = true;
 				const id = crypto.randomUUID();
 				writer.write({ type: "text-start", id });
 				writer.write({ type: "text-delta", id, delta: ev.text });
@@ -223,6 +231,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "artifact":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-artifact",
 					id: ev.toolCallId,
@@ -235,6 +244,7 @@ export async function pipeOrchestratorToWriter(
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
 				if (data) {
+					emittedVisible = true;
 					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();
@@ -253,6 +263,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "transition": {
 				closeTextIfOpen();
+				emittedVisible = true;
 				const data: TransitionPartData = {
 					toPersona: ev.toPersona,
 					toPersonaName: ev.toPersonaName,
@@ -269,6 +280,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "welcome-categories":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-welcome",
 					id: crypto.randomUUID(),
@@ -278,6 +290,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "handoff":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-handoff",
 					id: crypto.randomUUID(),
@@ -309,6 +322,7 @@ export async function pipeOrchestratorToWriter(
 	}
 
 	closeTextIfOpen();
+	return { emittedVisible };
 }
 
 export async function pipeUserTurn(args: {
@@ -337,7 +351,7 @@ export async function pipeDirectiveTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
-}): Promise<void> {
+}): Promise<{ emittedVisible: boolean }> {
 	const { conversationId, directive, contactName, writer, userKey } = args;
 	const events = runTurn({
 		channel: "web",
@@ -349,7 +363,7 @@ export async function pipeDirectiveTurn(args: {
 		skipLeadCollection: true,
 		userKey,
 	});
-	await pipeOrchestratorToWriter(events, writer, conversationId);
+	return pipeOrchestratorToWriter(events, writer, conversationId);
 }
 
 export async function pipeTransitionTurn(args: {
@@ -414,5 +428,27 @@ export async function pipeSearchSummaryTurn(args: {
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-	await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
+	const { emittedVisible } = await pipeDirectiveTurn({
+		conversationId,
+		directive,
+		contactName,
+		writer,
+		userKey,
+	});
+	// FIX-189 (pendura): a descoberta é disparada pelo caminho de AÇÃO (resposta a
+	// gate), que NÃO roda o guard de turno-mudo do route (só o turno de texto-livre
+	// roda). Se o turno de descoberta fechou sem nada visível (só o chip "Buscando
+	// grupos"), o reveal nunca chegaria e o usuário teria de cutucar. Emite o
+	// fallback determinístico — nunca frase de refresh técnico (respeita FIX-190).
+	if (!emittedVisible) {
+		const persona = refreshed.currentPersona ?? null;
+		console.log(
+			`[discovery-mute] guard: descoberta fechou sem reveal — fallback determinístico (conv=${conversationId})`,
+		);
+		const id = crypto.randomUUID();
+		writer.write({ type: "text-start", id });
+		writer.write({ type: "text-delta", id, delta: EMPTY_TURN_FALLBACK });
+		writer.write({ type: "text-end", id });
+		await saveMessage(conversationId, "assistant", EMPTY_TURN_FALLBACK, "web", persona);
+	}
 }

@@ -41,17 +41,27 @@ import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import {
 	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildDecisionPromptDirective,
+	buildDiscoveryFailedFallback,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
+import {
+	EphemeralTextFilter,
+	isProcessPreamble,
+	joinSeparator,
+	normalizeGluedSentences,
+	stripProcessPreamble,
+} from "@/lib/agent/orchestrator/sanitizer";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
@@ -63,7 +73,11 @@ import {
 } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import {
+	isDiscoveryFailedResult,
+	looksLikeFabricatedGroupId,
+	PRESENTATION_TOOLS,
+} from "@/lib/agent/tools/ai-sdk";
 import { emptyShownGroups } from "@/lib/agent/tools/shown-groups";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
@@ -3503,7 +3517,10 @@ describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exib
 		const { toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", "Bora ver o que a gente consegue na sua faixa:"),
-			toolCallChunk("tc-sim", "simulate_quota", { groupId: "embracon-auto-106k", creditValue: 106000 }),
+			toolCallChunk("tc-sim", "simulate_quota", {
+				groupId: "embracon-auto-106k",
+				creditValue: 106000,
+			}),
 			toolCallChunk("tc-det", "get_group_details", { groupId: "embracon-auto-106k" }),
 			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "Embracon" }),
 			FINISH_TOOL_CALLS,
@@ -3545,7 +3562,10 @@ describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exib
 			}).allow,
 		).toBe(true);
 		expect(
-			evaluateActionPrecondition("present_decision_prompt", { shown, args: { administradora: "Itaú" } }).allow,
+			evaluateActionPrecondition("present_decision_prompt", {
+				shown,
+				args: { administradora: "Itaú" },
+			}).allow,
 		).toBe(true);
 	});
 
@@ -3581,7 +3601,11 @@ describe("FIX-182 — narracoes de steps diferentes nao colam (turno multi-tool)
 							chunks: [
 								{ type: "stream-start", warnings: [] },
 								{ type: "text-start", id: "s0" },
-								{ type: "text-delta", id: "s0", delta: "Bora ver o que a gente consegue na sua faixa:" },
+								{
+									type: "text-delta",
+									id: "s0",
+									delta: "Bora ver o que a gente consegue na sua faixa:",
+								},
 								{ type: "text-end", id: "s0" },
 								toolCallChunk("tc-1", "noop", {}),
 								FINISH_TOOL_CALLS,
@@ -3595,7 +3619,11 @@ describe("FIX-182 — narracoes de steps diferentes nao colam (turno multi-tool)
 						chunks: [
 							{ type: "stream-start", warnings: [] },
 							{ type: "text-start", id: "s1" },
-							{ type: "text-delta", id: "s1", delta: "Deixa eu buscar as opcoes reais na sua faixa." },
+							{
+								type: "text-delta",
+								id: "s1",
+								delta: "Deixa eu buscar as opcoes reais na sua faixa.",
+							},
 							{ type: "text-end", id: "s1" },
 							FINISH_STOP,
 						] as any[],
@@ -3706,8 +3734,7 @@ describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre
 			FINISH_TOOL_CALLS,
 		]);
 		const decided = toolCalls.find((tc) => tc.toolName === "present_decision_prompt");
-		const admin =
-			(decided?.input as { administradora?: string } | undefined)?.administradora ?? "";
+		const admin = (decided?.input as { administradora?: string } | undefined)?.administradora ?? "";
 		// A assinatura do bug: decisão sobre um grupo FORA do conjunto exibido.
 		expect(decided).toBeDefined();
 		expect(SHOWN).not.toContain(admin);
@@ -7477,5 +7504,573 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
 		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
 		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
+	});
+});
+
+// ============================================================================
+// FIX-186 — erro de descoberta NÃO vira narração crua + preâmbulos empilhados
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): após o gate de lance, a busca real na Bevi falhou
+// e o agente NARROU o erro ("tô com uma dificuldade técnica pontual pra acessar
+// os grupos") junto de VÁRIOS preâmbulos "vou buscar" empilhados numa bolha só.
+// Root cause: runDiscovery re-lançava o erro → o AI SDK vira tool-error que o
+// modelo narra. Cura (Lei 1): runDiscovery faz 1 retry silencioso e, na falha,
+// retorna o marcador `__discoveryFailed` (NÃO throw); o runner suprime a narração
+// e o orchestrator materializa a mensagem amigável FIXA (buildDiscoveryFailedFallback).
+// Pipeline end-to-end provado em runner.discovery-failed.integration.test.ts.
+// ============================================================================
+
+describe("FIX-186 — descoberta falhada vira fallback humano, nunca narração de erro cru", () => {
+	// As frases-narração que NUNCA podem chegar ao usuário (o modelo geraria ao
+	// ver o tool-error). Se qualquer uma casar no output final = regressão.
+	const ERRO_TECNICO_CRU = [
+		/dificuldade t[ée]cnica/i,
+		/tive um problema/i,
+		/\bproblema\b/i,
+		/instabilidade/i,
+		/inst[áa]vel/i,
+		/tent[ea]\s+de\s+novo/i,
+	];
+	// Empilhamento de preâmbulos "vou buscar" (mecânica narrada, meta-narrativa).
+	const PREAMBULO_BUSCA = /(deixa eu (buscar|usar)|vou buscar|preciso primeiro buscar)/i;
+
+	it("cassette: stream da narração crua do print (reproduzido fielmente) casa o detector", async () => {
+		const cassette =
+			"Vou trazer as melhores opções pra você agora, Maria. Só um instante — tô com uma dificuldade técnica pontual pra acessar os grupos nessa faixa agora.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		const hits = ERRO_TECNICO_CRU.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			"a narração crua do print DEVE casar >=1 detector — se zero, alguém afrouxou o detector",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("cassette: empilhamento de preâmbulos 'vou buscar' numa bolha (print) é detectável", async () => {
+		const empilhado =
+			"Deixa eu buscar as melhores opções na sua faixa: Vou buscar as opções certas pra você: Preciso primeiro buscar os grupos disponíveis. Um segundo: Deixa eu usar a ferramenta certa pra isso:";
+		expect(PREAMBULO_BUSCA.test(empilhado)).toBe(true);
+		// múltiplos "buscar" numa bolha = empilhamento (o sintoma do print).
+		const buscas = empilhado.match(/buscar/gi) ?? [];
+		expect(buscas.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("a mensagem determinística de fallback passa LIMPA por todos os detectores", () => {
+		const fallback = buildDiscoveryFailedFallback({ name: "Maria" });
+		for (const rx of ERRO_TECNICO_CRU) {
+			expect(rx.test(fallback), `fallback não pode casar ${rx}`).toBe(false);
+		}
+		expect(PREAMBULO_BUSCA.test(fallback)).toBe(false);
+		// mas OFERECE saída acionável (especialista) e é PT-BR correto.
+		expect(fallback.toLowerCase()).toContain("especialista");
+		expect(fallback).toContain("opções");
+	});
+
+	it("marcador: isDiscoveryFailedResult reconhece o tool-result de falha e ignora o normal", () => {
+		expect(isDiscoveryFailedResult({ __discoveryFailed: true, error: "x" })).toBe(true);
+		expect(isDiscoveryFailedResult({ groups: [], total: 0 })).toBe(false);
+		expect(isDiscoveryFailedResult(null)).toBe(false);
+		expect(isDiscoveryFailedResult("erro solto")).toBe(false);
+	});
+
+	it("structural: o source de produção fecha o buraco (runDiscovery não re-lança; runner+orchestrator conduzem)", () => {
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// runDiscovery retorna o marcador em vez de `throw err` no erro de descoberta.
+		expect(toolsSrc).toMatch(/discoveryFailedResult/);
+		expect(toolsSrc).toMatch(/isTransientDiscoveryError/);
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/isDiscoveryFailedResult/);
+		expect(runnerSrc).toMatch(/discoveryFailedThisTurn/);
+		const orchSrc = readSource("src/lib/agent/orchestrator/index.ts");
+		expect(orchSrc).toMatch(/buildDiscoveryFailedFallback/);
+		expect(orchSrc).toMatch(/discovery-failed/);
+	});
+});
+
+// ============================================================================
+// FIX-187 — proposta/recomendação/simulação NÃO é emitida após a busca falhar
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): depois de "tive um problema aqui agora — deixa eu
+// buscar as opções reais", o chat MESMO ASSIM mostrou o card "Esse plano faz
+// sentido? (BANCO DO BRASIL)" com Valor R$ 131.042, Parcela R$ 2.365,57, Grupo
+// 1797 — números ancorados em dado que NÃO carregou neste turno. Cura: o gate de
+// proposta exige descoberta bem-sucedida no turno (discoveryFailedThisTurn do
+// FIX-186). 1ª linha: action-policy reprova as 3 tools; 2ª linha: artifact-guard
+// dropa a família de proposta. Regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única).
+// ============================================================================
+
+describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simulação", () => {
+	it("cassette: stream do bug — modelo tenta present_recommendation_card + present_decision_prompt após a busca falhar", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu buscar as opções reais…"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 131042,
+				monthlyPayment: 2365.57,
+				termMonths: 72,
+				score: 0.9,
+			}),
+			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_decision_prompt");
+
+		// 1ª linha (precondição): com a descoberta do turno falhada, as 3 tools de
+		// proposta são reprovadas — o número fiscal NUNCA vem de dado que não carregou.
+		for (const tc of toolCalls) {
+			const verdict = evaluateActionPrecondition(tc.toolName, {
+				shown: emptyShownGroups(),
+				args: tc.input as Record<string, unknown>,
+				discoveryFailedThisTurn: true,
+			});
+			expect(
+				verdict.allow,
+				`${tc.toolName} deveria ser BLOQUEADA (descoberta do turno falhou)`,
+			).toBe(false);
+		}
+	});
+
+	it("2ª linha: o artifact-guard DROPA a família de proposta quando a descoberta do turno falhou", () => {
+		for (const artifactType of [
+			"recommendation_card",
+			"simulation_result",
+			"comparison_table",
+			"decision_prompt",
+		] as const) {
+			const verdict = evaluateArtifactGuards({
+				meta: {},
+				artifactType,
+				userIntent: "neutral",
+				isUserTurn: false,
+				discoveryCount: null,
+				discoveryFailedThisTurn: true,
+				conversationId: "conv-187",
+				turnArtifactTypes: [],
+			});
+			expect(verdict.allow, `${artifactType} devia ser dropado`).toBe(false);
+			if (!verdict.allow) expect(verdict.rule).toBe("discovery-failed");
+		}
+	});
+
+	it("fluxo normal não regride: sem falha de descoberta, a proposta passa", () => {
+		expect(
+			evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: { administradora: "ITAÚ" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+		const guard = evaluateArtifactGuards({
+			meta: { revealCompleted: false },
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount: 3,
+			discoveryFailedThisTurn: false,
+			conversationId: "conv-187",
+			turnArtifactTypes: [],
+		});
+		expect(guard.allow).toBe(true);
+	});
+
+	it("structural: as 3 tools de proposta constam em ACTION_PRECONDITIONS e o guard tem a regra", () => {
+		const policySrc = readSource("src/lib/agent/orchestrator/action-policy.ts");
+		expect(policySrc).toMatch(/present_recommendation_card/);
+		expect(policySrc).toMatch(/present_simulation_result/);
+		expect(policySrc).toMatch(/requireFreshDiscovery/);
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/discovery-failed/);
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// os overrides passam o sinal discoveryFailed pras precondições.
+		expect(toolsSrc).toMatch(/discoveryFailedThisTurn:\s*discoveryFailed/);
+	});
+});
+
+// ============================================================================
+// FIX-188 — preâmbulo de processo EFÊMERO nunca vira bolha (sanitizer runtime)
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): em turno multi-step o modelo escreveu, numa bolha
+// só, vários preâmbulos de PROCESSO antes das tools ("deixa eu puxar os números
+// reais", "vou buscar as opções certas", "preciso primeiro buscar os grupos",
+// "um segundo", "deixa eu usar a ferramenta certa") — todos persistidos/enviados
+// como mensagem final. Cura (Lei 1/4): sanitizer determinístico no runner filtra
+// o texto ANTES de emitir/persistir — só a resposta de RESULTADO vira bolha. A
+// regra soft no prompt é defesa-em-profundidade, não a barreira.
+// Pós-onda-1: o erro já vira diretiva (FIX-186) → sanitizer só cuida de SUCESSO.
+// ============================================================================
+
+describe("FIX-188 — preâmbulo de processo é EFÊMERO (nunca persistido nem enviado)", () => {
+	// Detector do bug: preâmbulos de processo na mensagem final.
+	const PREAMBULO = /(deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b)/i;
+
+	it("cassette: stream do print com preâmbulos empilhados é reproduzido cru (o bug)", async () => {
+		// Reprodução fiel do print — o modelo despejou 4 preâmbulos numa bolha só.
+		const cassette =
+			"Deixa eu buscar as melhores opções na sua faixa: " +
+			"Vou buscar as opções certas pra você: " +
+			"Preciso primeiro buscar os grupos disponíveis. Um segundo: " +
+			"Deixa eu usar a ferramenta certa pra isso:";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		// Sem sanitizer, o texto cru CASA o detector (é exatamente o vazamento).
+		expect(PREAMBULO.test(text)).toBe(true);
+	});
+
+	it("sanitizer runtime: o mesmo stream, filtrado frase-a-frase, sai SEM preâmbulo (só o resultado)", () => {
+		// Simula o loop do runner: alimenta o EphemeralTextFilter com os deltas e
+		// acumula só o texto LIMPO emitido. Preâmbulo NUNCA entra em fullResponse.
+		const deltas = [
+			"Deixa eu buscar as melhores opções na sua faixa: ",
+			"Vou buscar as opções certas pra você: ",
+			"Preciso primeiro buscar os grupos disponíveis. Um segundo: ",
+			"Deixa eu usar a ferramenta certa pra isso: ",
+			"Olha só o que a gente encontrou na sua faixa:",
+		];
+		const filter = new EphemeralTextFilter();
+		let fullResponse = "";
+		for (const d of deltas) {
+			const clean = filter.push(d);
+			if (clean) fullResponse += joinSeparator(fullResponse, clean) + clean;
+		}
+		const tail = filter.flush();
+		if (tail) fullResponse += joinSeparator(fullResponse, tail) + tail;
+
+		// NENHUM preâmbulo sobrevive; só a frase de RESULTADO.
+		expect(PREAMBULO.test(fullResponse)).toBe(false);
+		expect(fullResponse).toContain("Olha só o que a gente encontrou na sua faixa:");
+	});
+
+	it("sanitizer preserva transição honesta legítima (FIX-36) — não é falso-positivo", () => {
+		const filter = new EphemeralTextFilter();
+		let out = filter.push("Bora ver o que encaixa na sua faixa:");
+		out += filter.flush();
+		expect(out).toContain("Bora ver o que encaixa na sua faixa:");
+		expect(isProcessPreamble("Bora ver o que encaixa na sua faixa:")).toBe(false);
+		// E a copy de resultado do docx também sobrevive.
+		expect(stripProcessPreamble("Olha só o que a gente encontrou na sua faixa:")).toBe(
+			"Olha só o que a gente encontrou na sua faixa:",
+		);
+	});
+
+	it("structural: o runner filtra o texto pelo sanitizer no case text-delta (barreira em código)", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc, "runner precisa usar EphemeralTextFilter no stream").toMatch(
+			/EphemeralTextFilter/,
+		);
+		expect(runnerSrc, "runner precisa aplicar stripProcessPreamble na composição").toMatch(
+			/stripProcessPreamble/,
+		);
+	});
+
+	it("structural: system-prompt + HARD_RULES reforçam a proibição (defesa-em-profundidade)", () => {
+		// A barreira REAL é o sanitizer; o prompt é reforço. Ambos presentes.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/Deixa eu buscar/i);
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/efêmero|preâmbulo de processo/i);
+	});
+});
+
+// ============================================================================
+// FIX-189 — segmentação de bolha + a resposta da descoberta chega SEM cutucar
+// ----------------------------------------------------------------------------
+// Print do Kairo (agente-nao-responde-ate-novo-input): (a) falas do turno saíam
+// coladas sem separador ("...com os dados corretos.Show, esse plano encaixa"); e
+// (b) o agente travava em "Buscando grupos ⋯" e só respondia depois que o usuário
+// mandava "travou?". Causa cravada (systematic-debugging):
+//   - isTurnEmpty tratava search_groups como "tool visível" (falso-negativo) → um
+//     turno só-descoberta fechava não-vazio → sem fallback → pendura;
+//   - o caminho de AÇÃO (dispatch de descoberta) não rodava guard de turno-mudo.
+// Fix: descoberta NÃO é emissão visível por si (empty-turn-guard); os dispatches
+// de busca (web pipeSearchSummaryTurn / whatsapp runSearchSummaryWithOrchestrator)
+// recuperam com fallback determinístico; normalizeGluedSentences desgruda as falas.
+// ============================================================================
+
+describe("FIX-189 — falas coladas ganham separador + descoberta muda não pendura", () => {
+	it("segmentação: 'corretos.Show' vira parágrafos distintos (não bolha colada)", () => {
+		const bug = "Simulei com os dados corretos.Show, esse plano encaixa bem no seu orçamento.";
+		const fixed = normalizeGluedSentences(bug);
+		expect(fixed).not.toContain("corretos.Show");
+		expect(fixed).toContain("corretos.\n\nShow");
+	});
+
+	it("segmentação NÃO quebra valor monetário nem número com ponto", () => {
+		expect(normalizeGluedSentences("A parcela fica em R$ 2.365,57 por mês.")).toBe(
+			"A parcela fica em R$ 2.365,57 por mês.",
+		);
+	});
+
+	it("pendura: um turno de descoberta só com o chip (0 texto, 0 artifact) é MUDO", () => {
+		// A raiz da pendura: search_groups NÃO é emissão visível por si.
+		expect(
+			isTurnEmpty({
+				textChars: 0,
+				toolCount: 1,
+				artifactCount: 0,
+				toolsCalled: ["search_groups"],
+				handoff: false,
+			}),
+		).toBe(true);
+		// mas a descoberta que revelou (artifact) NÃO é muda.
+		expect(
+			isTurnEmpty({
+				textChars: 0,
+				toolCount: 2,
+				artifactCount: 1,
+				toolsCalled: ["search_groups", "present_comparison_table"],
+				handoff: false,
+			}),
+		).toBe(false);
+	});
+
+	it("structural: empty-turn-guard trata descoberta como NÃO-visível", () => {
+		const src = readSource("src/lib/chat/empty-turn-guard.ts");
+		expect(src).toMatch(/NON_VISIBLE_TOOLS/);
+		expect(src).toMatch(/search_groups/);
+		expect(src).toMatch(/recommend_groups/);
+	});
+
+	it("structural: os dispatches de descoberta recuperam turno mudo (web + whatsapp)", () => {
+		const web = readSource("src/lib/web/adapter.ts");
+		// pipeSearchSummaryTurn checa emissão e emite o fallback, nunca refresh.
+		expect(web).toMatch(/emittedVisible/);
+		expect(web).toMatch(/EMPTY_TURN_FALLBACK/);
+		const wa = readSource("src/lib/whatsapp/adapter.ts");
+		expect(wa).toMatch(/guardEmptyTurn:\s*true/);
+	});
+
+	it("structural: o runner desgruda falas coladas na composição", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toMatch(/normalizeGluedSentences/);
+	});
+});
+
+// ============================================================================
+// FIX-190 — fallback técnico ('atualiza a página') dropado em RUNTIME (código)
+// ----------------------------------------------------------------------------
+// Promoção do card inbox agente-fallback-refresh (origem FIX-52/Bernardo). O
+// FIX-52 já vetou a frase no prompt + HARD_RULES + cassette de DETECÇÃO (describe
+// BUG-FALLBACK-REFRESH acima). O que faltava era a BARREIRA EM CÓDIGO (Lei 4): se
+// o modelo emitir "atualiza a página" mesmo assim, o sanitizer runtime dropa o
+// segmento e ele nunca chega ao usuário. Gêmeo do FIX-186 (na falha o fallback é
+// determinístico + ação, nunca refresh). Se o turno ficar mudo após o drop, o
+// guard de turno-vazio (FIX-189) entrega a recuperação honesta.
+// ============================================================================
+
+describe("FIX-190 — sanitizer runtime dropa o fallback técnico (barreira em código)", () => {
+	it("cassette: stream com 'Atualiza a página' é reproduzido cru (o bug)", async () => {
+		const cassette = "Ops, deu um probleminha. Atualiza a página e tenta de novo, por favor.";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text.toLowerCase()).toContain("atualiza a página");
+	});
+
+	it("sanitizer runtime: o MESMO texto, filtrado, sai SEM a frase de refresh", () => {
+		const cru = "Ops, deu um probleminha. Atualiza a página e tenta de novo, por favor.";
+		const filter = new EphemeralTextFilter();
+		let out = filter.push(cru);
+		out += filter.flush();
+		expect(out.toLowerCase()).not.toContain("atualiza a página");
+		// mas o resto (naturalidade) sobrevive.
+		expect(out).toContain("Ops, deu um probleminha.");
+		// e stripProcessPreamble (rede de persistência) idem.
+		expect(stripProcessPreamble(cru).toLowerCase()).not.toContain("atualiza a página");
+	});
+
+	it("structural: o sanitizer tem a barreira anti-refresh e o prompt/HARD_RULES seguem vetando", () => {
+		const sanitizer = readSource("src/lib/agent/orchestrator/sanitizer.ts");
+		expect(sanitizer).toMatch(/isTechnicalFallback/);
+		expect(sanitizer).toMatch(/refresh/i);
+		// camadas do FIX-52 preservadas (defesa-em-profundidade).
+		const rule = /N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
+		expect(rule.test(SPECIALIST_BASE_PROMPT)).toBe(true);
+		expect(readSource("src/lib/agent/HARD_RULES.md")).toMatch(/atualiza a p[áa]gina/i);
+	});
+});
+
+// ============================================================================
+// FIX-191 — recommendation_card (hero) coagido server-side (mata o "36/mês")
+// ----------------------------------------------------------------------------
+// Real (Kairo, qa-dono-produto carro web, conv fe2e8a09, 2026-07-01): o hero
+// exibiu "36 por mês" — número NÃO-ancorado. Prova (spec §2): o runner só coagia
+// simulation_result e contemplation_dial; o recommendation_card era empurrado
+// as-is (payload = args da LLM), e `contempladosMes` era input livre da tool
+// (ai-sdk.ts) instruído por "copie de availableSlots" (directives.ts) — Lei 3/4
+// violadas. Fix: a LLM não digita mais número do hero; o runner reescreve cada
+// cota do reveal (hero + seletor) a partir do grupo REAL do turno
+// (coerceRecommendationPayload/coerceComparisonPayload). Cenários de aceite:
+// spec §7.1/§7.2/§7.3. Camada 1 detalhada: recommendation-payload.test.ts.
+// ============================================================================
+
+describe("FIX-191-HERO-COERCAO — recommendation_card não pode carregar número fabricado", () => {
+	it("cassette: a LLM emite present_recommendation_card com contempladosMes:36 (o bug reproduzido fielmente)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Essa é a opção mais aderente pro seu perfil:"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				id: "6a3e6ceb419653c0a99932af",
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 300000,
+				monthlyPayment: 5404.2,
+				adminFeePercent: 24.9,
+				termMonths: 71,
+				contemplationRate: 8,
+				contempladosMes: 36, // ← o número fabricado (não vem da Bevi)
+				score: 0.7237,
+				scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const rec = toolCalls.find((t) => t.toolName === "present_recommendation_card");
+		expect((rec?.input as Record<string, unknown>)?.contempladosMes).toBe(36);
+	});
+
+	it("cassette+coerção (§7.2): o card RENDERIZADO ignora o 36 e usa o availableSlots REAL (0 → oculto)", async () => {
+		const { indexRevealGroups, coerceRecommendationPayload } = await import(
+			"@/lib/agent/orchestrator/recommendation-payload"
+		);
+		// Grupo REAL do recommend_groups do turno — retorno enxuto sem
+		// monthlyAwardedQuotas → availableSlots coagido = 0 (FIX-192).
+		const index = new Map();
+		indexRevealGroups(index, "recommend_groups", {
+			recommendations: [
+				{
+					id: "6a3e6ceb419653c0a99932af",
+					administradora: "BANCO DO BRASIL",
+					category: "auto",
+					creditValue: 300000,
+					monthlyPayment: 5404.2,
+					adminFeePercent: 24.9,
+					termMonths: 71,
+					availableSlots: 0,
+					contemplationRate: 0,
+					ofertaId: "49c2b15f-6f4a-42bc-b01e-f680cf7d553e",
+					score: 0.7237,
+					scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+				},
+			],
+		});
+		// O que a LLM digitou (o stream do cassette acima): 36 + números fabricados.
+		const llmInput = {
+			id: "6a3e6ceb419653c0a99932af",
+			contempladosMes: 36,
+			creditValue: 999999,
+			monthlyPayment: 1.23,
+			termMonths: 12,
+		};
+		const coerced = coerceRecommendationPayload(llmInput, index);
+		// O "36" morre e NENHUMA contagem de contemplação aparece (availableSlots real=0).
+		expect(coerced.contempladosMes).toBeUndefined();
+		expect(coerced.availableSlots).toBe(0);
+		// Números reais coagidos (não os fabricados da LLM).
+		expect(coerced.creditValue).toBe(300000);
+		expect(coerced.monthlyPayment).toBe(5404.2);
+		expect(coerced.termMonths).toBe(71);
+		// CONTRATO com bloco-b: identificadores reais pra o seletor emitir choose_offer.
+		expect(coerced.groupId).toBe("6a3e6ceb419653c0a99932af");
+		expect(coerced.ofertaId).toBe("49c2b15f-6f4a-42bc-b01e-f680cf7d553e");
+	});
+
+	it("estrutural: o runner coage recommendation_card E comparison_table (não empurra payload=input)", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toContain("indexRevealGroups");
+		expect(src).toMatch(/artifactType === "recommendation_card"/);
+		expect(src).toContain("coerceRecommendationPayload");
+		expect(src).toMatch(/artifactType === "comparison_table"/);
+		expect(src).toContain("coerceComparisonPayload");
+	});
+});
+
+// ============================================================================
+// FIX-195 — P0: escolher cota (choose_offer) segue ao contrato SEM loop
+// ----------------------------------------------------------------------------
+// Real (qa-dono-produto, conv fe2e8a09, 2026-07-01): reveal do carro → usuário
+// digita "Gostei do Banco do Brasil, quero seguir". O agente tentou re-resolver o
+// grupo/ID e falhou → 3 turnos de meta-narrativa admitindo falha técnica ao
+// cliente ("esse grupo deu um problema", "preciso trazer os IDs reais") +
+// value_picker selado → LOOP; só saiu com confirmação manual. Casa com o padrão
+// proibido §8 do roteiro. Raiz: o hero não é ancorado server-side (FIX-191) e não
+// existe caminho estruturado de "escolher esta cota" que carregue o groupId real.
+//
+// Cura (adendo B8): o seletor (bloco-b) emite {kind:"choose_offer", groupId}; o
+// handler server-side (route.ts) resolve o grupo (choose-offer.ts), re-ancora o
+// fechamento e dirige present_contract_form via buildChooseOfferDirective — SEM
+// search_groups, SEM re-resolução, SEM meta-narrativa. Camada 1 detalhada:
+// choose-offer.test.ts. Cassette do P0 (trava o retorno do loop):
+// ============================================================================
+
+describe("FIX-195-CHOOSE-OFFER-P0 — cota escolhida vai ao contrato sem re-busca nem meta-narrativa", () => {
+	// O padrão proibido §8 do roteiro (adendo B8 / CONTRATO).
+	const PADRAO_PROIBIDO = /vou (buscar|usar a ferramenta)|(deu|tive) um problema|IDs? reais/i;
+
+	it("cassette: o BUG reproduzido — meta-narrativa de falha técnica no loop (o detector pega)", async () => {
+		const cassette =
+			"Opa, tive um problema com esse grupo do Banco do Brasil aqui. " +
+			"Preciso trazer os IDs reais pra seguir — vou buscar de novo, tá?";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		// Reprodução fiel: fabricou a falha e não avançou (zero tool).
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(
+			PADRAO_PROIBIDO.test(cassette),
+			"Detector do §8 tem que pegar a meta-narrativa do P0. Se não pega, atualize o regex.",
+		).toBe(true);
+	});
+
+	it("cassette: trajetória CORRETA — escolher cota dirige present_contract_form, SEM search e SEM frase proibida", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa! Vamos seguir com o Banco do Brasil então. Pra fechar, só preciso de uns dados rápidos:",
+			),
+			toolCallChunk("tc-cf", "present_contract_form", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// (b) do CONTRATO: chega ao contrato SEM re-busca…
+		expect(
+			toolCalls.some((t) => t.toolName === "search_groups" || t.toolName === "recommend_groups"),
+		).toBe(false);
+		// …e SEM nenhuma frase do padrão proibido §8.
+		expect(PADRAO_PROIBIDO.test(text)).toBe(false);
+	});
+
+	it("directive: buildChooseOfferDirective dirige o contrato e PROÍBE re-busca/meta-narrativa", () => {
+		const d = buildChooseOfferDirective({ administradora: "BANCO DO BRASIL" });
+		expect(d).toContain("present_contract_form");
+		expect(d).toContain("BANCO DO BRASIL");
+		expect(d).toMatch(/PROIBIDO[\s\S]*search_groups/);
+		expect(d).not.toContain("present_lead_form");
+	});
+
+	it("estrutural: o handler do route resolve a cota server-side e NÃO re-dispara a busca", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const block = route.match(/body\.action\?\.kind === "choose_offer"[\s\S]{0,2500}/)?.[0] ?? "";
+		expect(block.length, "branch choose_offer não isolado").toBeGreaterThan(0);
+		expect(block).toContain("resolveChosenOffer");
+		expect(block).toContain("buildChooseOfferDirective");
+		expect(block).toContain("decisionDispatched");
+		expect(block).not.toContain("pipeSearchSummaryTurn");
 	});
 });

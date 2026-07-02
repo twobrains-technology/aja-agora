@@ -874,8 +874,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		const rec = turns.flatMap((t) => t.artifacts).find((a) => a.type === "recommendation_card");
 		expect(rec, "recommendation_card ausente").toBeTruthy();
 		const p = rec?.payload as { contempladosMes?: number };
-		// Fixture da recomendada (ITAÚ) tem monthlyAwardedQuotas=3 — o modelo
-		// DEVE copiar availableSlots → contempladosMes (directive obriga).
+		// FIX-191/192: contempladosMes NÃO vem mais do modelo — o runner o COAGE do
+		// availableSlots REAL do grupo (>0 → mostra; 0/ausente → oculto). A fixture
+		// da recomendada (ITAÚ) tem monthlyAwardedQuotas=3, então o card coagido
+		// exibe 3 contemplados/mês (dado real ancorado, não digitado pela LLM).
 		expect(p?.contempladosMes, "contempladosMes ausente no card recomendado").toBeGreaterThan(0);
 	});
 
