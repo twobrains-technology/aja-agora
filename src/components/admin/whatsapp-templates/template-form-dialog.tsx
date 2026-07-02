@@ -188,7 +188,7 @@ export function TemplateFormDialog({ mode, template, open, onOpenChange, onSucce
 							<Label htmlFor="category">Categoria</Label>
 							<Select
 								value={values.category}
-								onValueChange={(v) => set("category", v)}
+								onValueChange={(v) => { if (v) set("category", v); }}
 								disabled={submitting || contentLocked}
 							>
 								<SelectTrigger id="category">

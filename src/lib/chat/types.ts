@@ -99,17 +99,9 @@ export interface RecommendationCardPayload {
 		adminFee: number;
 		termMatch: number;
 	};
-	// FIX-196 CONTRATO(bloco-a) — o hero fixo do reveal. bloco-a coage estes campos
-	// server-side (o `recommendation_card` deixa de receber `payload=input` cru).
-	// Opcionais = stub até o merge; a UI CONSOME, nunca fabrica.
-	/** ID REAL do grupo recomendado (quotaId opaco). Fallback: `id`. */
-	groupId?: string;
-	ofertaId?: string;
-	quotaId?: string;
-	/** Contemplados/mês COAGIDO (monthlyAwardedQuotas real, 0 quando ausente).
-	 * FIX-196/§3.1: a contagem por cota vem daqui — nunca de `contempladosMes`
-	 * (fabricável pela LLM) nem de `contemplationRate` como %. */
-	availableSlots?: number;
+	// FIX-196/197 CONTRATO(bloco-a) — hero fixo do reveal (campos coagidos
+	// server-side). groupId/ofertaId/quotaId/availableSlots já estão declarados
+	// acima (bloco FIX-191/192) — não redeclarar; aqui só o adendo do FIX-197.
 	/** FIX-197: valorCarta BRUTO (denominação, ex. 300k) vs a faixa exibida
 	 * (`creditValue`). Alimenta o aviso de ajuste de faixa. */
 	rawCreditValue?: number;
