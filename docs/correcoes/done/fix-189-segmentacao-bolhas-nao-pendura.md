@@ -1,7 +1,9 @@
 ---
 id: FIX-189
 titulo: "Turno multi-step vira UMA bolha gigante (FIX-182 só cola \\n\\n, é cosmético) + streaming pendura em 'Buscando grupos' até o usuário mandar novo input"
-status: todo
+status: done
+commit: 8a0db893
+executado_em: 2026-07-01
 severidade: media-alta
 projeto: aja-agora
 bloco: bloco-streaming-chat-layer

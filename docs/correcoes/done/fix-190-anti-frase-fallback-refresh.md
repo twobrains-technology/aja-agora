@@ -1,7 +1,9 @@
 ---
 id: FIX-190
 titulo: "Agente pode sugerir 'atualiza a página / recarregue / dá um refresh' como fallback — nenhuma camada veta a frase (defesa-em-profundidade)"
-status: todo
+status: done
+commit: b8a23a28
+executado_em: 2026-07-01
 severidade: media
 projeto: aja-agora
 bloco: bloco-streaming-chat-layer

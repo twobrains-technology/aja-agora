@@ -1,7 +1,9 @@
 ---
 id: FIX-188
 titulo: "Preâmbulo de processo ('deixa eu buscar…') é persistido como mensagem final — falta noção de texto EFÊMERO vs FINAL + sanitizer runtime + status determinístico durante a busca"
-status: todo
+status: done
+commit: e3545421
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 bloco: bloco-streaming-chat-layer
