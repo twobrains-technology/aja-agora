@@ -421,12 +421,16 @@ export async function executeGetGroupDetails(
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
+	opts: { hasLance?: boolean } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
 	const fallbackResult = await recommendWithFallback(adapter, searchParams);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
+		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
+		hasLance: opts.hasLance,
 	});
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
@@ -904,6 +908,10 @@ export type ConsorcioToolsContext = {
 	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
 	conversationId?: string;
 	channel?: "web" | "whatsapp";
+	/** FIX-193: perfil de lance do usuário (meta.qualifyAnswers.hasLance==="yes").
+	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
+	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
+	hasLance?: boolean;
 };
 
 /**
@@ -913,7 +921,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId } = ctx;
+	const { conversationId, hasLance } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1135,7 +1143,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
+			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
+			return runDiscovery("recommend_groups", () =>
+				executeRecommendGroups(adapter, args, { hasLance }),
+			);
 		},
 	});
 

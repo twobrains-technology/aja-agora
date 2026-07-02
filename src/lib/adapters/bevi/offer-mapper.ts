@@ -42,6 +42,12 @@ export interface BeviOffer {
 	bidPercentage?: number; // fração (0.3 = 30%) — lance TOTAL necessário, NÃO o embutido
 	necessaryBidToContemplate?: number; // R$
 	quotaId: string;
+	// FIX-193: campos do retorno ENXUTO real (2026-07-01) — critério interno de
+	// ranking/dedup. `tipoOferta` (SPECIAL_OFFER|FREE_BID) e `grupo` (nº do grupo).
+	// `ofertaId` (UUID de sessão) alimenta o CONTRATO do reveal (FIX-191).
+	tipoOferta?: string;
+	grupo?: string;
+	ofertaId?: string;
 	productType?: string; // IMOVEL | AUTOS | MOTOS | SERVICOS | PESADOS | OUTROS BENS
 	proximaAssembleia?: string; // ISO date — próxima assembleia do grupo
 	validityStart?: string; // ISO date — início de vigência da oferta
@@ -114,6 +120,13 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		// taxaContemplacao (fração ≠ contagem). O runner coage o hero com este valor.
 		availableSlots: offer.monthlyAwardedQuotas ?? 0,
 		contemplationRate: offer.monthlyAwardedQuotas ?? 0,
+		// FIX-193: critério interno de ranking/dedup — leitura defensiva pros dois
+		// shapes (enxuto `grupo` × rico `group`). NUNCA sai pra UI (toModelGroupSummary
+		// os strippa; a coerção do card também os descarta).
+		...(offer.tipoOferta ? { tipoOferta: offer.tipoOferta } : {}),
+		...((offer.grupo ?? offer.group) ? { grupo: offer.grupo ?? offer.group } : {}),
+		// FIX-191 (CONTRATO): ofertaId real quando a fonte o traz.
+		...(offer.ofertaId ? { ofertaId: offer.ofertaId } : {}),
 	};
 }
 
@@ -121,11 +134,17 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
  * de search/recommend é re-enviado a cada turno (multi-turn); `totalParticipants`
  * é constante 0 no Trilho B (a oferta self-contract não traz total de cotas) —
  * peso morto que o modelo nunca usa e nenhum schema de card referencia. Os números
- * ricos do card vêm da coerção server-side (runner), não deste resumo. */
-export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants">;
+ * ricos do card vêm da coerção server-side (runner), não deste resumo.
+ *
+ * FIX-193: `tipoOferta`/`grupo` são critério INTERNO de ranking/dedup — ficam FORA
+ * do contexto do modelo e do payload (nunca "vazam" pra UI). `ofertaId` PERMANECE:
+ * é campo do CONTRATO do reveal (FIX-191), coagido no card pra o seletor. */
+export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants" | "tipoOferta" | "grupo">;
 
 export function toModelGroupSummary({
 	totalParticipants: _drop,
+	tipoOferta: _dropTipo,
+	grupo: _dropGrupo,
 	...rest
 }: GroupSummary): ModelGroupSummary {
 	return rest;
