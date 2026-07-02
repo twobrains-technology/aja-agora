@@ -44,6 +44,7 @@ import { z } from "zod";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
+	buildDiscoveryFailedFallback,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 	buildSimulationInterestDirective,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -63,7 +65,11 @@ import {
 } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import {
+	isDiscoveryFailedResult,
+	looksLikeFabricatedGroupId,
+	PRESENTATION_TOOLS,
+} from "@/lib/agent/tools/ai-sdk";
 import { emptyShownGroups } from "@/lib/agent/tools/shown-groups";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
@@ -7477,5 +7483,193 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
 		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
 		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
+	});
+});
+
+// ============================================================================
+// FIX-186 — erro de descoberta NÃO vira narração crua + preâmbulos empilhados
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): após o gate de lance, a busca real na Bevi falhou
+// e o agente NARROU o erro ("tô com uma dificuldade técnica pontual pra acessar
+// os grupos") junto de VÁRIOS preâmbulos "vou buscar" empilhados numa bolha só.
+// Root cause: runDiscovery re-lançava o erro → o AI SDK vira tool-error que o
+// modelo narra. Cura (Lei 1): runDiscovery faz 1 retry silencioso e, na falha,
+// retorna o marcador `__discoveryFailed` (NÃO throw); o runner suprime a narração
+// e o orchestrator materializa a mensagem amigável FIXA (buildDiscoveryFailedFallback).
+// Pipeline end-to-end provado em runner.discovery-failed.integration.test.ts.
+// ============================================================================
+
+describe("FIX-186 — descoberta falhada vira fallback humano, nunca narração de erro cru", () => {
+	// As frases-narração que NUNCA podem chegar ao usuário (o modelo geraria ao
+	// ver o tool-error). Se qualquer uma casar no output final = regressão.
+	const ERRO_TECNICO_CRU = [
+		/dificuldade t[ée]cnica/i,
+		/tive um problema/i,
+		/\bproblema\b/i,
+		/instabilidade/i,
+		/inst[áa]vel/i,
+		/tent[ea]\s+de\s+novo/i,
+	];
+	// Empilhamento de preâmbulos "vou buscar" (mecânica narrada, meta-narrativa).
+	const PREAMBULO_BUSCA = /(deixa eu (buscar|usar)|vou buscar|preciso primeiro buscar)/i;
+
+	it("cassette: stream da narração crua do print (reproduzido fielmente) casa o detector", async () => {
+		const cassette =
+			"Vou trazer as melhores opções pra você agora, Maria. Só um instante — tô com uma dificuldade técnica pontual pra acessar os grupos nessa faixa agora.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		const hits = ERRO_TECNICO_CRU.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			"a narração crua do print DEVE casar >=1 detector — se zero, alguém afrouxou o detector",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("cassette: empilhamento de preâmbulos 'vou buscar' numa bolha (print) é detectável", async () => {
+		const empilhado =
+			"Deixa eu buscar as melhores opções na sua faixa: Vou buscar as opções certas pra você: Preciso primeiro buscar os grupos disponíveis. Um segundo: Deixa eu usar a ferramenta certa pra isso:";
+		expect(PREAMBULO_BUSCA.test(empilhado)).toBe(true);
+		// múltiplos "buscar" numa bolha = empilhamento (o sintoma do print).
+		const buscas = empilhado.match(/buscar/gi) ?? [];
+		expect(buscas.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("a mensagem determinística de fallback passa LIMPA por todos os detectores", () => {
+		const fallback = buildDiscoveryFailedFallback({ name: "Maria" });
+		for (const rx of ERRO_TECNICO_CRU) {
+			expect(rx.test(fallback), `fallback não pode casar ${rx}`).toBe(false);
+		}
+		expect(PREAMBULO_BUSCA.test(fallback)).toBe(false);
+		// mas OFERECE saída acionável (especialista) e é PT-BR correto.
+		expect(fallback.toLowerCase()).toContain("especialista");
+		expect(fallback).toContain("opções");
+	});
+
+	it("marcador: isDiscoveryFailedResult reconhece o tool-result de falha e ignora o normal", () => {
+		expect(isDiscoveryFailedResult({ __discoveryFailed: true, error: "x" })).toBe(true);
+		expect(isDiscoveryFailedResult({ groups: [], total: 0 })).toBe(false);
+		expect(isDiscoveryFailedResult(null)).toBe(false);
+		expect(isDiscoveryFailedResult("erro solto")).toBe(false);
+	});
+
+	it("structural: o source de produção fecha o buraco (runDiscovery não re-lança; runner+orchestrator conduzem)", () => {
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// runDiscovery retorna o marcador em vez de `throw err` no erro de descoberta.
+		expect(toolsSrc).toMatch(/discoveryFailedResult/);
+		expect(toolsSrc).toMatch(/isTransientDiscoveryError/);
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/isDiscoveryFailedResult/);
+		expect(runnerSrc).toMatch(/discoveryFailedThisTurn/);
+		const orchSrc = readSource("src/lib/agent/orchestrator/index.ts");
+		expect(orchSrc).toMatch(/buildDiscoveryFailedFallback/);
+		expect(orchSrc).toMatch(/discovery-failed/);
+	});
+});
+
+// ============================================================================
+// FIX-187 — proposta/recomendação/simulação NÃO é emitida após a busca falhar
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): depois de "tive um problema aqui agora — deixa eu
+// buscar as opções reais", o chat MESMO ASSIM mostrou o card "Esse plano faz
+// sentido? (BANCO DO BRASIL)" com Valor R$ 131.042, Parcela R$ 2.365,57, Grupo
+// 1797 — números ancorados em dado que NÃO carregou neste turno. Cura: o gate de
+// proposta exige descoberta bem-sucedida no turno (discoveryFailedThisTurn do
+// FIX-186). 1ª linha: action-policy reprova as 3 tools; 2ª linha: artifact-guard
+// dropa a família de proposta. Regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única).
+// ============================================================================
+
+describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simulação", () => {
+	it("cassette: stream do bug — modelo tenta present_recommendation_card + present_decision_prompt após a busca falhar", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu buscar as opções reais…"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 131042,
+				monthlyPayment: 2365.57,
+				termMonths: 72,
+				score: 0.9,
+			}),
+			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_decision_prompt");
+
+		// 1ª linha (precondição): com a descoberta do turno falhada, as 3 tools de
+		// proposta são reprovadas — o número fiscal NUNCA vem de dado que não carregou.
+		for (const tc of toolCalls) {
+			const verdict = evaluateActionPrecondition(tc.toolName, {
+				shown: emptyShownGroups(),
+				args: tc.input as Record<string, unknown>,
+				discoveryFailedThisTurn: true,
+			});
+			expect(
+				verdict.allow,
+				`${tc.toolName} deveria ser BLOQUEADA (descoberta do turno falhou)`,
+			).toBe(false);
+		}
+	});
+
+	it("2ª linha: o artifact-guard DROPA a família de proposta quando a descoberta do turno falhou", () => {
+		for (const artifactType of [
+			"recommendation_card",
+			"simulation_result",
+			"comparison_table",
+			"decision_prompt",
+		] as const) {
+			const verdict = evaluateArtifactGuards({
+				meta: {},
+				artifactType,
+				userIntent: "neutral",
+				isUserTurn: false,
+				discoveryCount: null,
+				discoveryFailedThisTurn: true,
+				conversationId: "conv-187",
+				turnArtifactTypes: [],
+			});
+			expect(verdict.allow, `${artifactType} devia ser dropado`).toBe(false);
+			if (!verdict.allow) expect(verdict.rule).toBe("discovery-failed");
+		}
+	});
+
+	it("fluxo normal não regride: sem falha de descoberta, a proposta passa", () => {
+		expect(
+			evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: { administradora: "ITAÚ" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+		const guard = evaluateArtifactGuards({
+			meta: { revealCompleted: false },
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount: 3,
+			discoveryFailedThisTurn: false,
+			conversationId: "conv-187",
+			turnArtifactTypes: [],
+		});
+		expect(guard.allow).toBe(true);
+	});
+
+	it("structural: as 3 tools de proposta constam em ACTION_PRECONDITIONS e o guard tem a regra", () => {
+		const policySrc = readSource("src/lib/agent/orchestrator/action-policy.ts");
+		expect(policySrc).toMatch(/present_recommendation_card/);
+		expect(policySrc).toMatch(/present_simulation_result/);
+		expect(policySrc).toMatch(/requireFreshDiscovery/);
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/discovery-failed/);
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// os overrides passam o sinal discoveryFailed pras precondições.
+		expect(toolsSrc).toMatch(/discoveryFailedThisTurn:\s*discoveryFailed/);
 	});
 });

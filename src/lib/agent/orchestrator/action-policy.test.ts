@@ -87,10 +87,92 @@ describe("FIX-180 — evaluateActionPrecondition (precondição de DADO por aç�
 		expect(evaluateActionPrecondition("recommend_groups", { shown: emptyShownGroups(), args: {} }).allow).toBe(true);
 	});
 
-	it("a tabela cobre exatamente as 3 tools de risco do FIX-179 (não regride, não expande às cegas)", () => {
+	it("a tabela cobre as tools de risco (FIX-179 + as 3 de proposta do FIX-187)", () => {
+		// FIX-187 acrescentou present_recommendation_card + present_simulation_result
+		// (antes ausentes) à tabela — as 3 tools de proposta exigem descoberta fresca.
 		expect(Object.keys(ACTION_PRECONDITIONS).sort()).toEqual(
-			["get_group_details", "present_decision_prompt", "simulate_quota"].sort(),
+			[
+				"get_group_details",
+				"present_decision_prompt",
+				"present_recommendation_card",
+				"present_simulation_result",
+				"simulate_quota",
+			].sort(),
 		);
+	});
+});
+
+// FIX-187 (Kairo 2026-07-01) — o gate de proposta exige descoberta BEM-SUCEDIDA
+// NO TURNO. O print: a busca do turno falhou (FIX-186) e MESMO ASSIM saiu um card
+// "Esse plano faz sentido?" com números (Valor R$ 131.042, Parcela R$ 2.365...)
+// ancorado em dado que não carregou. As 3 tools de proposta reprovam quando
+// discoveryFailedThisTurn. Regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única).
+describe("FIX-187 — proposta exige descoberta bem-sucedida no turno", () => {
+	const DISCOVERY_FAILED = /descoberta.*falhou|nao proponha|não proponha|nao carregou|não carregou/i;
+
+	it("present_recommendation_card BLOQUEIA quando a descoberta do turno falhou", () => {
+		const v = evaluateActionPrecondition("present_recommendation_card", {
+			shown: emptyShownGroups(),
+			args: { administradora: "BANCO DO BRASIL", creditValue: 131042 },
+			discoveryFailedThisTurn: true,
+		});
+		expect(v.allow).toBe(false);
+		if (!v.allow) expect(v.directive).toMatch(DISCOVERY_FAILED);
+	});
+
+	it("present_simulation_result BLOQUEIA quando a descoberta do turno falhou", () => {
+		const v = evaluateActionPrecondition("present_simulation_result", {
+			shown: emptyShownGroups(),
+			args: { groupId: "x", monthlyPayment: 2365 },
+			discoveryFailedThisTurn: true,
+		});
+		expect(v.allow).toBe(false);
+		if (!v.allow) expect(v.directive).toMatch(DISCOVERY_FAILED);
+	});
+
+	it("present_decision_prompt BLOQUEIA quando a descoberta do turno falhou (mesmo com administradora exibida)", () => {
+		const v = evaluateActionPrecondition("present_decision_prompt", {
+			shown: shownWith([], ["BANCO DO BRASIL"]),
+			args: { administradora: "BANCO DO BRASIL" },
+			discoveryFailedThisTurn: true,
+		});
+		expect(v.allow).toBe(false);
+		if (!v.allow) expect(v.directive).toMatch(DISCOVERY_FAILED);
+	});
+
+	it("as 3 tools PERMITEM quando a descoberta do turno NÃO falhou (fluxo normal não regride)", () => {
+		expect(
+			evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: { administradora: "ITAÚ" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+		expect(
+			evaluateActionPrecondition("present_simulation_result", {
+				shown: emptyShownGroups(),
+				args: { groupId: "x" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+		// present_decision_prompt: sem falha e com administradora exibida → permite.
+		expect(
+			evaluateActionPrecondition("present_decision_prompt", {
+				shown: shownWith([], ["ITAÚ"]),
+				args: { administradora: "ITAÚ" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+	});
+
+	it("discoveryFailedThisTurn omitido (contexto legado) = não bloqueia por descoberta (só shown-groups)", () => {
+		// FIX-179/180 não regride: sem o sinal, a precondição de shown segue valendo.
+		expect(
+			evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: { administradora: "ITAÚ" },
+			}).allow,
+		).toBe(true);
 	});
 });
 

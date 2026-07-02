@@ -1,7 +1,9 @@
 ---
 id: FIX-187
 titulo: "Card de proposta/recomendação/simulação é emitido mesmo após a busca do turno falhar — gate precisa exigir descoberta bem-sucedida NO TURNO ATUAL, não 'exibido alguma vez'"
-status: todo
+status: done
+commit: c8979eaa
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 bloco: bloco-funil-turno-orquestracao

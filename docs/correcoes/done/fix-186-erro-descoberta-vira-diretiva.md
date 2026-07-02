@@ -1,7 +1,9 @@
 ---
 id: FIX-186
 titulo: "Erro de descoberta na Bevi (search_groups/recommend_groups/get_rates) vira narração crua + preâmbulos empilhados — deve virar diretiva determinística (retry + fallback humano)"
-status: todo
+status: done
+commit: cf8b2b89
+executado_em: 2026-07-01
 severidade: alta
 projeto: aja-agora
 bloco: bloco-funil-turno-orquestracao

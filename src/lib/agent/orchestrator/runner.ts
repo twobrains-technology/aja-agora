@@ -8,7 +8,7 @@ import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { getPersona } from "@/lib/agent/personas-repo";
 import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -31,6 +31,10 @@ export type RunAgentResult = {
 	isConcierge: boolean;
 	nextGateToFire: Gate | null;
 	prefixForNextGate: string | null;
+	/** FIX-186: a descoberta na Bevi falhou neste turno (após retry). O
+	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
+	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
+	discoveryFailedThisTurn?: boolean;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
@@ -160,6 +164,11 @@ export async function* runAgentTurn(args: {
 	// números do simulation_result (o modelo digitava o payload na mão e
 	// alucinou receivedCredit = carta cheia na jornada BB de 2026-06-11).
 	let lastQuotaSimulation: unknown = null;
+	// FIX-186: a descoberta na Bevi falhou neste turno (marcador vindo do
+	// runDiscovery no tool-result). Ao detectar: suprime a narração do modelo
+	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
+	// pro artifact-guard (FIX-187) dropar qualquer proposta.
+	let discoveryFailedThisTurn = false;
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -230,6 +239,11 @@ export async function* runAgentTurn(args: {
 	for await (const part of result.fullStream) {
 		switch (part.type) {
 			case "text-delta": {
+				// FIX-186: após a descoberta falhar no turno, SUPRIME todo texto do
+				// modelo daqui pra frente — mata a narração de erro cru ("dificuldade
+				// técnica pontual") e o empilhamento de preâmbulos "vou buscar". O
+				// fallback humano é materializado deterministicamente pelo orchestrator.
+				if (discoveryFailedThisTurn) break;
 				const blockId = (part as { id?: string }).id;
 				// FIX-182: separa narrações de steps diferentes ANTES de acumular/emitir
 				// (o separador entra no stream e no persistido — a bolha renderiza limpo).
@@ -244,14 +258,19 @@ export async function* runAgentTurn(args: {
 				break;
 			}
 			case "tool-result": {
+				const output = (part as { output?: unknown }).output;
+				// FIX-186: marcador de descoberta falhada (runDiscovery não re-lança
+				// mais). Liga o sinal do turno — a partir daqui a narração é suprimida
+				// e a proposta é bloqueada (FIX-187).
+				if (isDiscoveryFailedResult(output)) discoveryFailedThisTurn = true;
 				// FIX-7: conta as opções retornadas pela descoberta (single-option
 				// guard). Tools fora da descoberta retornam null e não interferem.
-				const count = extractDiscoveryCount(part.toolName, (part as { output?: unknown }).output);
+				const count = extractDiscoveryCount(part.toolName, output);
 				if (count !== null) discoveryCount = count;
 				// FIX-C3: guarda o retorno real do simulate_quota pra coagir o
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
-					lastQuotaSimulation = (part as { output?: unknown }).output ?? null;
+					lastQuotaSimulation = output ?? null;
 				}
 				break;
 			}
@@ -293,6 +312,9 @@ export async function* runAgentTurn(args: {
 						userIntent,
 						isUserTurn,
 						discoveryCount,
+						// FIX-187: turno com descoberta falhada → guard dropa a família de
+						// proposta (o tool-result da busca falhada já passou neste ponto).
+						discoveryFailedThisTurn,
 						conversationId,
 						turnArtifactTypes: artifacts.map((a) => a.type),
 					});
@@ -366,6 +388,25 @@ export async function* runAgentTurn(args: {
 	// completo — persistência (content), prefixo do próximo gate e o
 	// RunAgentResult retornado ao orchestrator ficam todos livres do sintoma.
 	fullResponse = collapseEchoedSegments(fullResponse);
+
+	// FIX-186: a descoberta falhou neste turno → NÃO persiste o texto do modelo
+	// (a narração foi suprimida; só o preâmbulo pré-falha vazou no stream), NÃO
+	// avalia reveal/gates. O orchestrator materializa a mensagem amigável FIXA e
+	// finaliza o turno (Lei 1: o LLM não decide o que falar no erro).
+	if (discoveryFailedThisTurn) {
+		console.log(
+			`[discovery-failed] guard: descoberta falhou no turno — fallback determinístico (conv=${conversationId})`,
+		);
+		return {
+			fullResponse: "",
+			artifacts: [],
+			handoffSignaled: false,
+			isConcierge,
+			nextGateToFire: null,
+			prefixForNextGate: null,
+			discoveryFailedThisTurn: true,
+		};
+	}
 
 	try {
 		const finishReason = await result.finishReason;

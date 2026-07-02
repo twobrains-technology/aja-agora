@@ -14,7 +14,11 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
-import { buildDecisionPromptDirective, buildSearchSummaryDirective } from "./directives";
+import {
+	buildDecisionPromptDirective,
+	buildDiscoveryFailedFallback,
+	buildSearchSummaryDirective,
+} from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
@@ -221,6 +225,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		forceToolChoice,
 		systemContextBlocks,
 	});
+
+	// FIX-186 (Kairo 2026-07-01): a descoberta na Bevi falhou neste turno (após
+	// retry silencioso). O runner suprimiu a narração crua do modelo; AQUI o
+	// orchestrator materializa a mensagem amigável FIXA + convite a ação e fecha
+	// o turno — determinístico (Lei 1), no padrão do yieldTransitionAbort. Nunca
+	// deixa o LLM decidir o que falar no erro; nunca emite proposta (FIX-187).
+	if (result.discoveryFailedThisTurn) {
+		const fallback = buildDiscoveryFailedFallback({ name: knownName });
+		yield { type: "text-delta", text: fallback };
+		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
+		yield { type: "finish", reason: "discovery-failed" };
+		return;
+	}
 
 	// Fire-and-forget — extrai fatos do turno e persiste no Letta.
 	// Não awaitamos: turno responde mais rápido; se store falhar, próximo turno
