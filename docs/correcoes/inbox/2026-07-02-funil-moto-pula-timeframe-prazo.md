@@ -1,8 +1,16 @@
-# Bug — funil moto (web/prod) pula o gate de PRAZO (timeframe) depois do valor
+# RECLASSIFICADO — "pulo do gate de prazo" é POR DESIGN; a raiz é moto sem orçamento mensal
 
-- **Data:** 2026-07-02 · **Achado em:** QA dono-de-produto, jornada MOTO, canal WEB, PRODUÇÃO · **Superfície:** funil de qualificação (orchestrator/`nextGate` × ValuePicker) — passo 2 da jornada
-- **Severidade:** ALTA (a-confirmar causa) — sem prazo declarado a recomendação sai sem âncora de horizonte e recomenda a opção de MAIOR parcela (prazo mais curto); alimenta o card [[2026-07-02-recomendacao-usa-lance-como-teto-orcamento]].
-- **Relacionado:** [[2026-06-21-prompt-ordem-gates-pre-valor]] (documenta a ordem canônica `credit(VALOR) → timeframe → lance`), [[2026-06-21-analyzer-infere-prazo-de-orcamento]].
+> **Triagem contra o código (2026-07-02):** o que parecia "pulo do gate de prazo" é
+> **comportamento intencional** — `qualify-config.ts:279` diz que o ValuePicker preenche
+> `prazoMeses` (via intent) justamente pra o funil PULAR o gate `timeframe`. **NÃO é bug.**
+> A consequência ruim que observei (recomendação sem âncora de orçamento → maior parcela →
+> comparada com o lance como "teto") tem raiz REAL em: **MOTO não coleta "Orçamento mensal"
+> no ValuePicker** (`system-prompt.ts:15-17` só tem imóvel/auto/serviços). Essa é a correção,
+> tratada em [[2026-07-02-recomendacao-usa-lance-como-teto-orcamento]]. Este card fica como
+> registro da investigação — **não gera bloco próprio.**
+
+- **Data:** 2026-07-02 · **Achado em:** QA dono-de-produto, jornada MOTO, canal WEB, PRODUÇÃO
+- **Status:** NÃO-BUG (comportamento por design) + raiz real absorvida pelo card do teto.
 
 ## Cenário (reproduzível)
 Jornada moto, primeira vez. Sequência REAL observada em prod:

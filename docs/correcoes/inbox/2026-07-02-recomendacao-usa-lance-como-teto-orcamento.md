@@ -18,8 +18,19 @@ Jornada moto, primeira vez, valor do bem R$ 25.000, lance "Uns R$ 5 mil", consid
 - Texto capturado dos `<p>` do diálogo (Playwright): `"...R$ 2.140,65 representa 42,8% do seu teto de R$ 5.000,00. Cabe no orçamento, mas é uma fatia considerável."`
 - **Contraste que isola o bug:** no MESMO fluxo, o simulador (dial) usa o R$ 5.000 CORRETAMENTE como lance — "✓ Seu lance declarado (R$ 5.000) cobre a parte em dinheiro." Ou seja, o dado está certo no state; só a copy da apresentação o rotula como orçamento.
 
-## Causa raiz (hipótese — a confirmar no código)
-O usuário nunca informou orçamento mensal (o gate de prazo/parcela não foi apresentado — ver card relacionado). A lógica de "parcela × % do teto / cabe no orçamento" provavelmente cai num fallback que usa o único campo monetário do perfil (`lanceValue`) como teto. Verificar de onde a apresentação lê o "teto" (ex.: `qualifyAnswers.parcelaMax` vs `lanceValue`).
+## Causa raiz (CONFIRMADA no código, 2026-07-02)
+**MOTO não coleta "Orçamento mensal" no ValuePicker.** O `system-prompt.ts:15-17` define o
+campo "Orçamento mensal" apenas para **Imóvel, Auto e Serviços** — **não há linha para MOTO**.
+Por isso o picker de moto exibe só "Valor do bem" (um slider). Mas o template obrigatório da
+apresentação (`system-prompt.ts:37, 555-557`) é `"R$ {parcela}/mês — {percentual}% do seu teto
+de R$ {teto}"`, onde `{teto}` = orçamento mensal declarado. Sem orçamento coletado para moto, o
+`{teto}` **caiu no valor do lance (R$ 5.000)**.
+
+**Correção:** (1) adicionar o campo "Orçamento mensal" ao picker de MOTO (linha faltante em
+`system-prompt.ts`), com min/max/step próprios de moto; (2) guardar o template: quando não houver
+orçamento mensal real, **omitir** a frase "% do seu teto" (D11) — nunca cair no lance.
+NB: o "pulo do gate de prazo" observado é POR DESIGN (`qualify-config.ts:279` — o picker preenche
+`prazoMeses` via intent pra pular o gate); NÃO é bug. Ver card do funil (reclassificado).
 
 ## Tratamento sugerido
 TDD (structural + cassette). Corrigir a origem do "teto": só emitir a frase de %-do-orçamento quando houver parcela-máxima REAL declarada; caso contrário, omitir (regra D11 "nenhum número sem fonte real" aplicada ao orçamento). Adicionar cassette em `agent-trajectory.test.ts` que reproduz a apresentação sem parcela declarada e asserta que a frase "% do seu teto" NÃO usa o lance.
