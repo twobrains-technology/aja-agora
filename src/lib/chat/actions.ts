@@ -62,6 +62,12 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "interest"; administradora: string; label: string }
+	// FIX-195 (CONTRATO bloco-b, adendo B8): o seletor de cotas do reveal emite a
+	// escolha ESTRUTURADA — o handler server-side (route.ts) resolve o grupo pelo
+	// groupId, ancora o fechamento nele e avança ao contrato SEM re-busca/re-resolução
+	// e SEM meta-narrativa (raiz do P0). `ofertaId` é opcional (o fechamento
+	// re-simula na faixa e gera oferta fresca).
+	| { kind: "choose_offer"; groupId: string; ofertaId?: string; label?: string }
 	// FIX-29: "Ajustar valor"/"Nova simulação" do card de simulação — reabre o
 	// what-if (perguntar novo valor), NUNCA inicia fechamento. Kind próprio pra
 	// não cair no handler de avanço (interest). creditValue = valor atual do card.

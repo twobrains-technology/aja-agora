@@ -10,9 +10,11 @@ import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
+import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
 	buildExperienceDoubtsDirective,
@@ -499,6 +501,53 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
+						// FIX-195 (P0): o seletor de cotas do reveal emitiu a escolha
+						// ESTRUTURADA. Resolve o grupo pelo groupId (choose-offer.ts, a partir
+						// dos artifacts REAIS já exibidos), RE-ANCORA o fechamento nele
+						// (administradora + prazo → administradoraPreferida/prazoPreferido do
+						// buildStartContractInput) e avança direto ao contrato — SEM re-busca,
+						// SEM re-resolução pelo agente, SEM meta-narrativa (raiz do loop do P0).
+						if (body.action?.kind === "choose_offer") {
+							const { groupId } = body.action;
+							const fresh = await reloadMeta(conversationId);
+							const chosen = await resolveChosenOffer(conversationId, groupId);
+							const administradora = chosen?.administradora ?? fresh.recommendedAdministradora;
+							// Re-ancora no grupo ESCOLHIDO (não no hero) — só grava a oferta
+							// quando os 3 números estão presentes (RecommendedOfferSnapshot).
+							const prev = fresh.recommendedOffer;
+							const creditValue = chosen?.creditValue ?? prev?.creditValue;
+							const termMonths = chosen?.termMonths ?? prev?.termMonths;
+							const monthlyPayment = chosen?.monthlyPayment ?? prev?.monthlyPayment;
+							const recommendedOffer =
+								typeof creditValue === "number" &&
+								typeof termMonths === "number" &&
+								typeof monthlyPayment === "number"
+									? {
+											...prev,
+											administradora: administradora ?? prev?.administradora,
+											creditValue,
+											termMonths,
+											monthlyPayment,
+										}
+									: prev;
+							await persistMeta(conversationId, {
+								...fresh,
+								...(administradora ? { recommendedAdministradora: administradora } : {}),
+								...(recommendedOffer ? { recommendedOffer } : {}),
+								// Libera present_contract_form na fase closing da tool-policy
+								// (mesma marca do clique "Tenho interesse", FIX-38).
+								decisionDispatched: true,
+							});
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildChooseOfferDirective({ administradora }),
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
+
 						// FIX-29: "Ajustar valor"/"Nova simulação" reabre o what-if (perguntar
 						// o novo valor) — NUNCA inicia fechamento. O directive proíbe lead_form/
 						// contract_form/decision neste turno.
@@ -686,10 +735,7 @@ export async function POST(req: NextRequest) {
 								// errors sempre logados). Sem isso, "Tive um problema..." aparecia pro
 								// usuário sem NENHUM rastro no servidor pra diagnosticar (D10-like:
 								// Trilho A instável no chooseOffer/getDocumentLinks).
-								console.error(
-									`[offer-confirm] confirmOffer falhou (conv=${conversationId})`,
-									err,
-								);
+								console.error(`[offer-confirm] confirmOffer falhou (conv=${conversationId})`, err);
 								await writeAndSaveText(
 									writer,
 									conversationId,

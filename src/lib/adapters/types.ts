@@ -15,6 +15,14 @@ export interface GroupSummary {
 	totalParticipants: number;
 	availableSlots: number;
 	contemplationRate: number; // % historically contemplated per month
+	// FIX-193: critérios INTERNOS de ranking/dedup — NUNCA vão pra UI. `tipoOferta`
+	// (SPECIAL_OFFER|FREE_BID) desempata por afinidade de lance; `grupo` (nº do
+	// grupo) dedupa o mesmo grupo vindo em 2 modalidades. Stripados no
+	// toModelGroupSummary (fora do contexto do modelo e do payload de card).
+	tipoOferta?: string;
+	grupo?: string;
+	// FIX-191 (CONTRATO bloco-b): UUID de sessão da oferta (quando a fonte o traz).
+	ofertaId?: string;
 }
 
 export interface QuotaSimulation {

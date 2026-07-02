@@ -59,7 +59,12 @@ export function buildExperienceDoubtsDirective(replyTitle: string): string {
 // ---- Qualify reactions ----
 
 export function buildQualifyStartYesDirective(): string {
-	return `[usuário aceitou começar a qualificação]`;
+	// FIX-194 (qa-dono-produto, defeito E): o próximo passo é a IDENTIDADE (CPF +
+	// celular + LGPD) — o sistema mostra esse card em seguida. O valor do bem tem o
+	// PRÓPRIO passo, DEPOIS da identidade (FIX-53). Sem esta trava, o agente puxava
+	// "Quanto custa o carro?" no MESMO balão do gate de CPF (uma pergunta que o
+	// usuário nem pode responder ali). Uma coisa por vez: reage curto e PARA.
+	return `Usuário aceitou começar a qualificação. FLUXO: escreva UMA frase curta e calorosa de transição no SEU TOM (ex.: "Perfeito, bora lá!" / "Show, vamos nessa."). NÃO pergunte o valor nem o preço do bem, NÃO peça nenhum dado, NÃO chame tools — o sistema conduz o próximo passo (a identidade) logo em seguida. O valor do bem vem DEPOIS, no passo dele.`;
 }
 
 export function buildQualifyStartMoreDirective(): string {
@@ -150,6 +155,18 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
 	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — a contratação e self-service na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
+/** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
+ * "Seguir com <cota>". O groupId JÁ foi resolvido server-side (choose-offer.ts +
+ * re-âncora do meta) — o agente só fecha. PROÍBE re-busca/re-resolução e QUALQUER
+ * meta-narrativa de falha técnica (a raiz do loop do P0: "esse grupo deu um
+ * problema", "preciso trazer os IDs reais"). CONTRATO com bloco-b (adendo B8). */
+export function buildChooseOfferDirective(args: { administradora?: string }): string {
+	const { administradora } = args;
+	const adminCtx = administradora ? ` da "${administradora}"` : "";
+	const adminFrase = administradora ? ` com a ${administradora}` : "";
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — a contratação é self-service na plataforma.`;
+}
+
 export function buildSimulationInterestDirective(administradora: string): string {
 	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção ou atendente humano (a contratação é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
 }
@@ -233,7 +250,7 @@ FLUXO OBRIGATÓRIO neste turno (ordem do docx — recomendado PRIMEIRO, em desta
    - 2 grupos: anuncie "2 boas opções" (número real).
    - apenas 1 grupo: anuncie que encontrou UMA opção forte pra ele — NÃO anuncie "3 boas opções", NÃO use plural ("boas opções") nem prometa comparação/curadoria que não existe.
    Em 1-2 frases curtas NO SEU TOM. NÃO use bullets/checkboxes (✅), NÃO use template, NÃO descreva números específicos dos grupos.
-3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opção retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score, scoreBreakdown E contempladosMes (copie de availableSlots do grupo — campo do resumo por opção do docx) exatos. SE retornou apenas 1 grupo: NÃO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card único do reveal e a simulação abaixo); seu texto faz o papel da recomendação.
+3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opção retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score, scoreBreakdown. NÃO digite número de contemplação: o sistema coage os números do card (parcela, valor, prazo, contemplados/mês) a partir do grupo REAL da busca — você só ancora pelo id (FIX-191). SE retornou apenas 1 grupo: NÃO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card único do reveal e a simulação abaixo); seu texto faz o papel da recomendação.
 4. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups (o carrossel de opções que o usuário anunciado pode comparar), com highlightBestIndex=0 pra DESTACAR a recomendada. Isso mostra as opções anunciadas ("3 boas opções") lado a lado no próprio reveal — NÃO esconda as outras atrás de um botao. SE retornou apenas 1 grupo: NÃO chame present_comparison_table (só ha uma opção).
 5. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — o detalhamento do docx. OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variação com/sem lance e com lance embutido — exigência literal do docx); omiti-los é defeito.
 6. SE recommend_groups retornar insufficientOptions=true: diga com transparência, em UMA frase, que as opções na faixa dele estao limitadas hoje e que você expandiu a busca pra trazer o que ha de melhor — NUNCA esconda a escassez nem invente abundância.${confrontoBudget}${confrontoFaixa}
