@@ -10,6 +10,13 @@
 //   TB_ENV=production  → BLOQUEADO
 //   TB_ENV=prod        → BLOQUEADO (abreviação aceita)
 export function isSimulatorEnabled(): boolean {
+	// Override QA estreito: habilita o simulador em PROD sob demanda SEM flipar
+	// TB_ENV. Flipar TB_ENV degradaria segurança (vazaria o devCode do OTP em
+	// recovery.ts e afrouxaria rate-limit) — este flag afeta só esta função.
+	// Default off: prod segue bloqueado a menos que o flag seja setado explícito.
+	const force = (process.env.SIMULATOR_FORCE_ENABLE ?? "").toLowerCase().trim();
+	if (force === "true" || force === "1") return true;
+
 	const tbEnv = (process.env.TB_ENV ?? "").toLowerCase().trim();
 	if (tbEnv === "production" || tbEnv === "prod") return false;
 	return true;
