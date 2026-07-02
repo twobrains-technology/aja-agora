@@ -26,6 +26,11 @@ const CHANNEL_OPTIONS = [
 
 type ChannelFilter = "all" | "web" | "whatsapp";
 
+function getChannelLabel(value: string): string {
+	const option = CHANNEL_OPTIONS.find((opt) => opt.value === value);
+	return option?.label ?? value;
+}
+
 export function useLeadFilters() {
 	const [channel, setChannel] = useQueryState("channel", parseAsString.withDefault("all"));
 	const [search, setSearch] = useQueryState("q", parseAsString.withDefault(""));
@@ -116,7 +121,7 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 			{/* Channel filter */}
 			<Select value={channel} onValueChange={(val) => setChannel(val === "all" ? null : val)}>
 				<SelectTrigger size="sm">
-					<SelectValue />
+					<SelectValue placeholder={getChannelLabel(channel)} />
 				</SelectTrigger>
 				<SelectContent>
 					{CHANNEL_OPTIONS.map((opt) => (
