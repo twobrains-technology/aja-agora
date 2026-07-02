@@ -7479,3 +7479,97 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
 	});
 });
+
+// ============================================================================
+// FIX-191 — recommendation_card (hero) coagido server-side (mata o "36/mês")
+// ----------------------------------------------------------------------------
+// Real (Kairo, qa-dono-produto carro web, conv fe2e8a09, 2026-07-01): o hero
+// exibiu "36 por mês" — número NÃO-ancorado. Prova (spec §2): o runner só coagia
+// simulation_result e contemplation_dial; o recommendation_card era empurrado
+// as-is (payload = args da LLM), e `contempladosMes` era input livre da tool
+// (ai-sdk.ts) instruído por "copie de availableSlots" (directives.ts) — Lei 3/4
+// violadas. Fix: a LLM não digita mais número do hero; o runner reescreve cada
+// cota do reveal (hero + seletor) a partir do grupo REAL do turno
+// (coerceRecommendationPayload/coerceComparisonPayload). Cenários de aceite:
+// spec §7.1/§7.2/§7.3. Camada 1 detalhada: recommendation-payload.test.ts.
+// ============================================================================
+
+describe("FIX-191-HERO-COERCAO — recommendation_card não pode carregar número fabricado", () => {
+	it("cassette: a LLM emite present_recommendation_card com contempladosMes:36 (o bug reproduzido fielmente)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Essa é a opção mais aderente pro seu perfil:"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				id: "6a3e6ceb419653c0a99932af",
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 300000,
+				monthlyPayment: 5404.2,
+				adminFeePercent: 24.9,
+				termMonths: 71,
+				contemplationRate: 8,
+				contempladosMes: 36, // ← o número fabricado (não vem da Bevi)
+				score: 0.7237,
+				scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const rec = toolCalls.find((t) => t.toolName === "present_recommendation_card");
+		expect((rec?.input as Record<string, unknown>)?.contempladosMes).toBe(36);
+	});
+
+	it("cassette+coerção (§7.2): o card RENDERIZADO ignora o 36 e usa o availableSlots REAL (0 → oculto)", async () => {
+		const { indexRevealGroups, coerceRecommendationPayload } = await import(
+			"@/lib/agent/orchestrator/recommendation-payload"
+		);
+		// Grupo REAL do recommend_groups do turno — retorno enxuto sem
+		// monthlyAwardedQuotas → availableSlots coagido = 0 (FIX-192).
+		const index = new Map();
+		indexRevealGroups(index, "recommend_groups", {
+			recommendations: [
+				{
+					id: "6a3e6ceb419653c0a99932af",
+					administradora: "BANCO DO BRASIL",
+					category: "auto",
+					creditValue: 300000,
+					monthlyPayment: 5404.2,
+					adminFeePercent: 24.9,
+					termMonths: 71,
+					availableSlots: 0,
+					contemplationRate: 0,
+					ofertaId: "49c2b15f-6f4a-42bc-b01e-f680cf7d553e",
+					score: 0.7237,
+					scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+				},
+			],
+		});
+		// O que a LLM digitou (o stream do cassette acima): 36 + números fabricados.
+		const llmInput = {
+			id: "6a3e6ceb419653c0a99932af",
+			contempladosMes: 36,
+			creditValue: 999999,
+			monthlyPayment: 1.23,
+			termMonths: 12,
+		};
+		const coerced = coerceRecommendationPayload(llmInput, index);
+		// O "36" morre e NENHUMA contagem de contemplação aparece (availableSlots real=0).
+		expect(coerced.contempladosMes).toBeUndefined();
+		expect(coerced.availableSlots).toBe(0);
+		// Números reais coagidos (não os fabricados da LLM).
+		expect(coerced.creditValue).toBe(300000);
+		expect(coerced.monthlyPayment).toBe(5404.2);
+		expect(coerced.termMonths).toBe(71);
+		// CONTRATO com bloco-b: identificadores reais pra o seletor emitir choose_offer.
+		expect(coerced.groupId).toBe("6a3e6ceb419653c0a99932af");
+		expect(coerced.ofertaId).toBe("49c2b15f-6f4a-42bc-b01e-f680cf7d553e");
+	});
+
+	it("estrutural: o runner coage recommendation_card E comparison_table (não empurra payload=input)", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toContain("indexRevealGroups");
+		expect(src).toMatch(/artifactType === "recommendation_card"/);
+		expect(src).toContain("coerceRecommendationPayload");
+		expect(src).toMatch(/artifactType === "comparison_table"/);
+		expect(src).toContain("coerceComparisonPayload");
+	});
+});
