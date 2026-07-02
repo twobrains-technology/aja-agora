@@ -11,6 +11,15 @@ import { isSimulatedWaId, publishToClient } from "./simulator-bus";
 
 const GRAPH_API = "https://graph.facebook.com/v21.0";
 
+// FIX-207: teto de tempo pro fetch de templates à Meta. Sem isso, egress lento
+// do VPS prendia o worker até o gateway (Cloudflare) cortar com 502 html ~30s+.
+const TEMPLATE_FETCH_TIMEOUT_MS = 15_000;
+
+/** Traduz um AbortError (timeout do AbortSignal) num Error de timeout claro. */
+function isAbortError(err: unknown): boolean {
+	return err instanceof Error && err.name === "AbortError";
+}
+
 function getConfig() {
 	const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
 	const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -320,19 +329,28 @@ export async function createTemplate(
 ): Promise<CreateTemplateResult> {
 	const { accessToken, wabaId } = getWabaConfig();
 	const url = `${GRAPH_API}/${wabaId}/message_templates`;
-	const res = await fetch(url, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${accessToken}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			name: input.name,
-			language: input.language,
-			category: input.category,
-			components: input.components,
-		}),
-	});
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				name: input.name,
+				language: input.language,
+				category: input.category,
+				components: input.components,
+			}),
+			signal: AbortSignal.timeout(TEMPLATE_FETCH_TIMEOUT_MS),
+		});
+	} catch (err) {
+		if (isAbortError(err)) {
+			throw new Error(`timeout ao falar com a Meta (${TEMPLATE_FETCH_TIMEOUT_MS}ms) em createTemplate`);
+		}
+		throw err;
+	}
 	if (!res.ok) {
 		const error = await res.text();
 		console.error(`[whatsapp-api] createTemplate failed (${res.status}):`, error);
@@ -361,9 +379,18 @@ export async function listTemplates(): Promise<MetaTemplate[]> {
 	let url: string | undefined = `${GRAPH_API}/${wabaId}/message_templates?fields=${fields}`;
 	const templates: MetaTemplate[] = [];
 	while (url) {
-		const res: Response = await fetch(url, {
-			headers: { Authorization: `Bearer ${accessToken}` },
-		});
+		let res: Response;
+		try {
+			res = await fetch(url, {
+				headers: { Authorization: `Bearer ${accessToken}` },
+				signal: AbortSignal.timeout(TEMPLATE_FETCH_TIMEOUT_MS),
+			});
+		} catch (err) {
+			if (isAbortError(err)) {
+				throw new Error(`timeout ao falar com a Meta (${TEMPLATE_FETCH_TIMEOUT_MS}ms) em listTemplates`);
+			}
+			throw err;
+		}
 		if (!res.ok) {
 			const error = await res.text();
 			console.error(`[whatsapp-api] listTemplates failed (${res.status}):`, error);
