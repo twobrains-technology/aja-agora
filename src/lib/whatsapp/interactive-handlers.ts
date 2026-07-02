@@ -157,18 +157,44 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		await persistMeta(conversationId, { ...meta, contractClosed: true });
 
 		const { closingPresentation } = await import("@/lib/bevi/closing-presentation");
+		// FIX-203: cada mensagem da confirmação passa por resolveAndSend com sua chave
+		// lógica. Janela ABERTA → cada `freeTextFallback` roda e manda a copy atual, na
+		// MESMA ordem (comportamento idêntico ao de hoje). Janela FECHADA → sai como
+		// template Meta (confirmacao_contratacao / proposta_pronta) OU enfileira até
+		// aprovar. `templatedKeys` evita reenviar o mesmo template por chave (os vários
+		// textos de `confirmacao_contratacao` viram UM template fora da janela).
+		const { resolveAndSend } = await import("./template-dispatch");
+		const admin = res.administradora ?? "";
 		const sentTexts: string[] = [];
+		const templatedKeys = new Set<string>();
 		for (const item of closingPresentation(res)) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
+			let usageKey = "confirmacao_contratacao";
 			if (item.kind === "text") wa = { type: "text", text: item.text };
-			else if (item.type === "signature_handoff") wa = signatureHandoffToWhatsApp(item.payload);
-			else if (item.type === "document_upload") wa = documentUploadToWhatsApp(item.payload);
+			else if (item.type === "signature_handoff") {
+				wa = signatureHandoffToWhatsApp(item.payload);
+				usageKey = "proposta_pronta";
+			} else if (item.type === "document_upload") wa = documentUploadToWhatsApp(item.payload);
 			if (wa?.type === "text" && wa.text) {
-				await sendTextMessage(from, wa.text);
-				sentTexts.push(wa.text);
+				if (templatedKeys.has(usageKey)) continue;
+				const text = wa.text;
+				const link = (item.kind === "artifact" && (item.payload.consortiumProposalLink as string)) || "";
+				const result = await resolveAndSend({
+					to: from,
+					conversationId,
+					usageKey,
+					params: { body: usageKey === "proposta_pronta" ? [admin, link] : [admin] },
+					freeTextFallback: async () => {
+						await sendTextMessage(from, text);
+						sentTexts.push(text);
+					},
+				});
+				if (result.channel !== "free_text") templatedKeys.add(usageKey);
 			}
 		}
-		await saveMessage(conversationId, "assistant", sentTexts.join("\n\n"), "whatsapp");
+		if (sentTexts.length > 0) {
+			await saveMessage(conversationId, "assistant", sentTexts.join("\n\n"), "whatsapp");
+		}
 
 		// docx passo 5 (linha 52): resumo da contratação por WhatsApp. Nunca quebra
 		// o fechamento — falha vira contractSummaryPending.

@@ -42,6 +42,16 @@ vi.mock("@/lib/bevi/fulfillment", () => ({
 	startContract: vi.fn(),
 }));
 vi.mock("@/lib/bevi/contract-summary", () => ({ sendContractSummary: mocks.sendContractSummary }));
+// FIX-203: a confirmação agora roteia por resolveAndSend. Aqui simulamos JANELA
+// ABERTA — resolveAndSend só executa o freeTextFallback (manda a copy atual), então
+// as asserções de texto (reforço/Parabéns/link) seguem valendo. Roteamento por
+// template/fila é coberto em template-dispatch.test.ts.
+vi.mock("./template-dispatch", () => ({
+	resolveAndSend: vi.fn(async (a: { freeTextFallback: () => Promise<void> | void }) => {
+		await a.freeTextFallback();
+		return { channel: "free_text" as const };
+	}),
+}));
 vi.mock("./contract-capture", () => ({
 	fireContract: mocks.fireContract,
 	CONTRACT_CANCELLED_REPLY: "Tranquilo! Vou te mostrar outras opções então.",
