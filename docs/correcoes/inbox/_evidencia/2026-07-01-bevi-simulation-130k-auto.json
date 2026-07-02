@@ -1,0 +1,25 @@
+{
+  "status": "OK",
+  "code": 200,
+  "success": true,
+  "message": "Simulação realizada com sucesso.",
+  "_nota": "Captura REAL da Bevi (Trilho B self-contract) — conversa Kairo, auto, faixa R$130.000, 2026-07-01. Fonte de verdade dos campos disponíveis pra tela de recomendação/simulação. NÃO é fixture de teto; é o retorno bruto de exemplo pro refino.",
+  "data": {
+    "simulationSessionId": "b53267b9-8708-4cbe-832c-059084559fb5",
+    "expiresAt": "2026-07-01T18:44:48.408Z",
+    "errors": [],
+    "offers": [
+      { "ofertaId": "81b6eca6-9fdb-4b02-be83-a87345a2aa67", "administradora": "RODOBENS", "tipoOferta": "SPECIAL_OFFER", "grupo": "10801", "valorCarta": 300000, "parcela": "2.925,85", "prazo": 96, "taxaContemplacao": 0, "quotaId": "6a3e6ced419653c0a9993b76" },
+      { "ofertaId": "32c1d1ee-5f06-4a75-b098-488f63c973a8", "administradora": "CANOPUS", "tipoOferta": "SPECIAL_OFFER", "grupo": "8120", "valorCarta": 300000, "parcela": "3.221,81", "prazo": 116, "lanceMedio": 233670, "taxaContemplacao": 0.7789, "quotaId": "6a3e6ceb419653c0a9993347" },
+      { "ofertaId": "b2f187fc-cbbf-4dfc-92d9-25869a6ab911", "administradora": "ANCORA", "tipoOferta": "SPECIAL_OFFER", "grupo": "529", "valorCarta": 300000, "parcela": "3.578,10", "prazo": 117, "lanceMedio": 223290, "taxaContemplacao": 0.7443, "quotaId": "6a3e6ceb419653c0a99931d9" },
+      { "ofertaId": "10028da0-e3d5-4985-8ddd-a7baa59c8e66", "administradora": "ITAU", "tipoOferta": "SPECIAL_OFFER", "grupo": "50130", "valorCarta": 300000, "parcela": "4.192,41", "prazo": 91, "lanceMedio": 225000, "taxaContemplacao": 0.75, "quotaId": "6a3e6cec419653c0a99937cc" },
+      { "ofertaId": "5c9a15d3-e313-45b9-b33f-eba55bf2318d", "administradora": "TRADICAO", "tipoOferta": "SPECIAL_OFFER", "grupo": "1038", "valorCarta": 300000, "parcela": "5.282,74", "prazo": 73, "lanceMedio": 191460, "taxaContemplacao": 0.6382, "quotaId": "6a3e6ced419653c0a99940e2" },
+      { "ofertaId": "49c2b15f-6f4a-42bc-b01e-f680cf7d553e", "administradora": "BANCO DO BRASIL", "tipoOferta": "SPECIAL_OFFER", "grupo": "1797", "valorCarta": 300000, "parcela": "5.404,20", "prazo": 71, "lanceMedio": 181500, "taxaContemplacao": 0.605, "quotaId": "6a3e6ceb419653c0a99932af" },
+      { "ofertaId": "73b53a27-bf1d-4e9e-85b1-fd1d411e3b47", "administradora": "CANOPUS", "tipoOferta": "FREE_BID", "grupo": "8320", "valorCarta": 220000, "parcela": "1.414,39", "prazo": 116, "lanceMedio": 174482, "taxaContemplacao": 0.7931, "quotaId": "6a3e6cec419653c0a99936d0" },
+      { "ofertaId": "3e03d0ca-fea5-44b5-b8c9-93a07a00516d", "administradora": "CANOPUS", "tipoOferta": "FREE_BID", "grupo": "8120", "valorCarta": 310000, "parcela": "3.329,21", "prazo": 116, "lanceMedio": 241459, "taxaContemplacao": 0.7789, "quotaId": "6a3e6ceb419653c0a9993347" },
+      { "ofertaId": "d4c55b59-9a0c-4a53-a689-7a07edecbbaf", "administradora": "RODOBENS", "tipoOferta": "FREE_BID", "grupo": "70026", "valorCarta": 300000, "parcela": "4.046,17", "prazo": 96, "lanceMedio": 179640, "taxaContemplacao": 0.5988, "quotaId": "6a3e6ced419653c0a9993c10" },
+      { "ofertaId": "bfe780a1-57aa-44e9-9c95-9bc9f8dfaf1b", "administradora": "BANCO DO BRASIL", "tipoOferta": "FREE_BID", "grupo": "1797", "valorCarta": 300100.61, "parcela": "6.636,03", "prazo": 72, "lanceMedio": 181560.87, "taxaContemplacao": 0.605, "quotaId": "6a3e6ceb419653c0a99932af" }
+    ],
+    "_nota_offers": "Truncado pra brevidade: o retorno real tinha 24 offers (SPECIAL_OFFER + FREE_BID, várias administradoras/grupos). O JSON COMPLETO está na mensagem original do Kairo (2026-07-01). Campos por oferta: ofertaId, administradora, tipoOferta (SPECIAL_OFFER|FREE_BID), grupo, valorCarta, parcela (string BRL), prazo (meses), lanceMedio (opcional), taxaContemplacao (0..1), quotaId."
+  }
+}
