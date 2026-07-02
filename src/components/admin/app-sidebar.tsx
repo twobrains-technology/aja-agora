@@ -8,6 +8,7 @@ import {
 	HeadsetIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
+	MessagesSquareIcon,
 	SettingsIcon,
 	UserIcon,
 	UsersIcon,
@@ -44,6 +45,7 @@ export function AppSidebar() {
 		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
+		{ title: "Templates WhatsApp", href: "/admin/whatsapp/templates", icon: MessagesSquareIcon },
 		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
 	];
 

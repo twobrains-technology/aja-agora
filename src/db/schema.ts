@@ -116,6 +116,35 @@ export const clientDocumentDispatchTargetEnum = pgEnum("client_document_dispatch
 	"mesa",
 ]);
 
+// ─── WhatsApp Message Templates (Meta oficial) ───────────────────────────────
+// Design: docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
+// Ciclo de vida de um template na Cloud API da Meta: DRAFT (local, ainda não
+// submetido) → PENDING (submetido, aguardando revisão) → APPROVED/REJECTED, e
+// depois DISABLED/PAUSED (a Meta pode desabilitar/pausar um template aprovado).
+export const whatsappTemplateStatusEnum = pgEnum("whatsapp_template_status", [
+	"DRAFT",
+	"PENDING",
+	"APPROVED",
+	"REJECTED",
+	"DISABLED",
+	"PAUSED",
+]);
+
+// Categorias oficiais da Meta (a submissão declara uma; a Meta pode recategorizar).
+export const whatsappTemplateCategoryEnum = pgEnum("whatsapp_template_category", [
+	"UTILITY",
+	"MARKETING",
+	"AUTHENTICATION",
+]);
+
+// Estado de uma mensagem business-initiated enfileirada à espera de template
+// aprovado (fallback anti-manual — ver FIX-201/spec §Resolução de envio).
+export const whatsappOutboundStatusEnum = pgEnum("whatsapp_outbound_status", [
+	"pending",
+	"sent",
+	"failed",
+]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -793,6 +822,90 @@ export const clientDocumentDownloads = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("client_document_downloads_client_document_id_idx").on(table.clientDocumentId)],
+);
+
+// ─── WhatsApp Message Templates (Meta oficial) ───────────────────────────────
+// Design: docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
+
+// Um componente de template no vocabulário da Cloud API da Meta (o array que a
+// Meta espera em `components` tanto na CRIAÇÃO quanto no ENVIO). Tipado frouxo
+// de propósito: HEADER/BODY/FOOTER/BUTTONS têm formas distintas (texto,
+// exemplos de placeholder, botões) e a Meta evolui o shape — travar cada
+// variante aqui seria fricção sem ganho (não há consumer SQL que valide).
+export type WhatsappTemplateComponent = {
+	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+	format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+	text?: string;
+	example?: Record<string, unknown>;
+	buttons?: Array<Record<string, unknown>>;
+};
+
+// Template registrado na Meta, com status acompanhável até APPROVED e vínculo
+// de USO por chave lógica (`usageKey`, ex: `confirmacao_contratacao`). O código
+// dispara pela chave; o admin liga a chave ao template Meta aprovado — copy e
+// aprovação ficam desacopladas de deploy (spec §Abordagens consideradas).
+export const whatsappTemplates = pgTable(
+	"whatsapp_templates",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Chave lógica do ponto de disparo. Nullable: um template pode existir
+		// (cadastrado/aprovado) sem estar vinculado a um uso ainda. UNIQUE quando
+		// setado (unique index — o Postgres trata NULLs como distintos, então
+		// vários templates sem chave coexistem, mas cada chave aponta pra um só).
+		usageKey: text("usage_key"),
+		// Nome do template na Meta (ex `aja_confirmacao_v1`) — obrigatório.
+		metaName: text("meta_name").notNull(),
+		language: text("language").default("pt_BR").notNull(),
+		category: whatsappTemplateCategoryEnum("category"),
+		// Componentes HEADER/BODY/FOOTER/BUTTONS com placeholders (shape da Meta).
+		components: jsonb().$type<WhatsappTemplateComponent[]>(),
+		// Corpo denormalizado pra preview rápido no admin sem parsear components.
+		bodyPreview: text("body_preview"),
+		status: whatsappTemplateStatusEnum("status").default("DRAFT").notNull(),
+		// ID do template retornado pela Meta na submissão (chave de reconciliação
+		// no webhook message_template_status_update).
+		metaTemplateId: text("meta_template_id"),
+		rejectionReason: text("rejection_reason"),
+		submittedAt: timestamp("submitted_at", { withTimezone: true }),
+		approvedAt: timestamp("approved_at", { withTimezone: true }),
+		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		// UNIQUE parcial-por-natureza: NULLs distintos ⇒ "único quando setado".
+		uniqueIndex("whatsapp_templates_usage_key_idx").on(table.usageKey),
+		index("whatsapp_templates_meta_template_id_idx").on(table.metaTemplateId),
+		index("whatsapp_templates_status_idx").on(table.status),
+	],
+);
+
+// Fila de mensagens business-initiated (janela de 24h FECHADA) pendentes de um
+// template aprovado. Ao template do `usageKey` virar APPROVED (webhook/poll), o
+// dispatcher esvazia a fila. Garante que nenhuma confirmação se perca (spec §6).
+export const whatsappOutboundQueue = pgTable(
+	"whatsapp_outbound_queue",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Destino E.164 sem '+' (ex.: 5562999998888), mesmo formato do restante do canal.
+		to: text("to").notNull(),
+		usageKey: text("usage_key").notNull(),
+		// Valores dos placeholders do template (mapeados em componentsFromParams no
+		// envio). Frouxo de propósito — cada uso tem seu conjunto de variáveis.
+		params: jsonb().$type<Record<string, unknown>>(),
+		status: whatsappOutboundStatusEnum("status").default("pending").notNull(),
+		attempts: integer("attempts").default(0).notNull(),
+		lastError: text("last_error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		sentAt: timestamp("sent_at", { withTimezone: true }),
+	},
+	(table) => [
+		index("whatsapp_outbound_queue_usage_key_idx").on(table.usageKey),
+		index("whatsapp_outbound_queue_status_idx").on(table.status),
+	],
 );
 
 // ─── Relations ───────────────────────────────────────────────────────────────
