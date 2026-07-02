@@ -13,8 +13,13 @@ vi.mock("@/lib/admin/require-role", () => ({
 }));
 
 // Cliente Meta mockado — controlamos sucesso/erro por teste.
+// listTemplates/sendTemplate: usados por reconcileTemplateStatuses/flushOutboundQueue
+// (seam nível-3 resolvido no merge da onda). [] = sem templates remotos → reconciliação
+// não altera nada e não flusha.
 vi.mock("@/lib/whatsapp/api", () => ({
 	createTemplate: vi.fn(),
+	listTemplates: vi.fn(async () => []),
+	sendTemplate: vi.fn(),
 }));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
@@ -197,7 +202,7 @@ describeIfDb("FIX-204 — rotas de templates (integration)", () => {
 		expect(res.status).toBe(409);
 	});
 
-	it("sync chama a reconciliação (stub) e responde ok", async () => {
+	it("sync chama a reconciliação real (listTemplates vazio → nada a atualizar)", async () => {
 		const res = await SYNC();
 		expect(res.status).toBe(200);
 		const data = (await res.json()) as { ok: boolean; updated: number };
