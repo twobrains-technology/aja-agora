@@ -1,7 +1,9 @@
 ---
 id: FIX-195
 titulo: "Handler server-side de choose_offer (raiz do P0): avança ao contrato com groupId, sem re-busca"
-status: todo
+status: done
+commit: 1c47bf56
+executado_em: 2026-07-02
 bloco: bloco-a-reveal-dados
 arquivos:
   - src/lib/agent/orchestrator/runner.ts

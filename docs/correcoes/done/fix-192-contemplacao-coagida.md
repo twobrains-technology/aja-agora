@@ -1,7 +1,9 @@
 ---
 id: FIX-192
 titulo: "Contemplação coagida a dado real (availableSlots real ou 0; nunca taxaContemplacao como %)"
-status: todo
+status: done
+commit: 0abca1a7
+executado_em: 2026-07-02
 bloco: bloco-a-reveal-dados
 arquivos:
   - src/lib/adapters/bevi/offer-mapper.ts

@@ -1,7 +1,9 @@
 ---
 id: FIX-193
 titulo: "tipoOferta como critério invisível de ranking + dedup por administradora+grupo"
-status: todo
+status: done
+commit: d9b670e7
+executado_em: 2026-07-02
 bloco: bloco-a-reveal-dados
 arquivos:
   - src/lib/agent/recommendation.ts

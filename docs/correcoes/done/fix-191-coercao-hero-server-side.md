@@ -1,7 +1,9 @@
 ---
 id: FIX-191
 titulo: "Coagir o recommendation_card server-side (a LLM não digita mais número no hero)"
-status: todo
+status: done
+commit: 815df36a
+executado_em: 2026-07-02
 bloco: bloco-a-reveal-dados
 arquivos:
   - src/lib/agent/orchestrator/runner.ts

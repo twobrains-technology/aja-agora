@@ -1,7 +1,9 @@
 ---
 id: FIX-194
 titulo: "Tirar 'Quanto custa o carro?' do balão do gate que só coleta CPF/celular"
-status: todo
+status: done
+commit: 1cf24c75
+executado_em: 2026-07-02
 bloco: bloco-a-reveal-dados
 arquivos:
   - src/lib/agent/orchestrator/directives.ts
