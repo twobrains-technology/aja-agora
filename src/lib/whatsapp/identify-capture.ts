@@ -47,7 +47,16 @@ export function extractCpf(text: string): string | null {
 /** waId vem com DDI (ex: 5562999887766) — a Bevi espera DDD+número (62999887766). */
 export function waIdToCelular(waId: string): string {
 	const digits = (waId ?? "").replace(/\D/g, "");
-	return digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+	// Remove o código do país (55) — a Bevi espera DDD + número, sem +55.
+	const withoutCC = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+	// 9º dígito (bug de prod 2026-07-02, "CELULAR inválido" no fechamento): o waId
+	// do WhatsApp DERRUBA o 9 inicial dos móveis BR → chega DDD + 8 dígitos (10). A
+	// Bevi (Trilho A/fechamento) exige DDD + 9 + 8 (11) e rejeita 10. Todo waId de
+	// WhatsApp é MÓVEL (não existe WhatsApp em fixo), então 10 dígitos = 9 faltando:
+	// reinsere o 9 após o DDD. Assim descoberta (Trilho B) e fechamento (Trilho A)
+	// recebem o mesmo celular de 11 dígitos válido.
+	if (withoutCC.length === 10) return `${withoutCC.slice(0, 2)}9${withoutCC.slice(2)}`;
+	return withoutCC;
 }
 
 /** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
