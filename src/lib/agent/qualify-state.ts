@@ -16,6 +16,21 @@ export type Gate =
 	| "simulator-offer"
 	| "decision";
 
+/**
+ * FIX-208: gates de COLETA ativa da qualificação — quem responde direto a um
+ * destes está fornecendo o dado pedido (valor do bem, lance), então o gate
+ * dispara mesmo em intent `neutral` (o analyzer é não-confiável em timeout de
+ * cold-start). NÃO inclui experience/consent (binárias com card próprio que já
+ * são dirigidas por clique) nem name/search/decision (fora da coleta de dados).
+ * Exportado pra o guard rede-final (gate-reengage) re-emitir a MESMA classe.
+ */
+export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
+	"credit",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+]);
+
 export type UserIntent =
 	| "ready_to_proceed"
 	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
@@ -112,6 +127,32 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 }
 
 /**
+ * FIX-206 — o clique "🤔 Tenho dúvidas" dispara `buildExperienceDoubtsDirective`
+ * como turno de SERVIDOR (isUserTurn=false). Esse turno JÁ é a explicação que
+ * endereça as dúvidas — exatamente como quando o usuário responde por texto no
+ * caminho livre. Marcar `doubtsAddressed` nos DOIS casos faz `nextGate` convergir
+ * pro `consent` (que já oferece "Entendi, continuar" / "Entender mais antes") no
+ * MESMO turno, matando o beco sem saída onde o funil parava em `doubts-wait` mudo
+ * e o usuário tinha de digitar "continua/vai".
+ *
+ * Independe de `isUserTurn` — é justamente o ponto do fix (o servidor também
+ * endereça). Função PURA (Camada 1 prova o invariante sem DB); o runner a consome
+ * no fim do turno. Auto-avançar ≠ pular etapa: o gate de consent segue APARECENDO.
+ */
+export function shouldMarkDoubtsAddressed(args: {
+	meta: Pick<ConversationMetadata, "experiencePrev" | "doubtsAddressed">;
+	producedArtifact: boolean;
+	userReplied: boolean;
+}): boolean {
+	return (
+		!args.producedArtifact &&
+		args.meta.experiencePrev === "doubts" &&
+		!args.meta.doubtsAddressed &&
+		args.userReplied
+	);
+}
+
+/**
  * Decides whether to dispatch the next qualify gate (button) at the end of a turn.
  * The state machine still tracks WHICH gate is next; this function only decides
  * if NOW is the right moment to interrupt the conversation with structured UI.
@@ -127,9 +168,16 @@ export function decideShowGate(args: {
 	isUserTurn: boolean;
 }): boolean {
 	const { gate, intent, meta, isUserTurn } = args;
+	// FIX-206: `doubts-wait` não tem card (é um "aguarde") — nunca vira gate. Um
+	// turno server-authored que legitimamente resolve nele (ex.: "Entender mais
+	// antes", que PERGUNTA e espera a resposta livre) já deu ao usuário um gancho:
+	// não é trava. O clique "Tenho dúvidas" NÃO cai mais aqui — o runner marca
+	// doubtsAddressed (shouldMarkDoubtsAddressed) e nextGate converge pro consent.
 	if (gate === "doubts-wait") return false;
-	// Server-authored turns (button click, transition) are always followed by a gate
-	// — that's the whole point of the directive flow.
+	// Server-authored turns (button click, transition) are always followed by the
+	// next gate — that's the whole point of the directive flow. Por isso qualquer
+	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o
+	// próximo passo no mesmo turno, sem exigir "continua/vai" do usuário (FIX-206).
 	if (!isUserTurn) return true;
 
 	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais
@@ -156,6 +204,23 @@ export function decideShowGate(args: {
 	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
 	if (gate === "simulator-offer") {
 		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// FIX-208 (Kairo, WhatsApp PROD 2026-07-02): responder DIRETO um gate de COLETA
+	// (valor/lance) dispara o gate mesmo em intent `neutral`. O bug: "Quanto custa o
+	// carro?" → usuário responde "200" → o analyzer cai em NEUTRAL_FALLBACK (timeout
+	// cold-start) → o heurístico "neutral → conversacional" (abaixo) SUPRIME o gate e
+	// a LLM fica muda → EMPTY_TURN_FALLBACK ("me perdi"). Mesma CLASSE do FIX-206, mas
+	// no gate de valor em turno de USUÁRIO. Durante a coleta ativa o "neutral →
+	// conversacional" NÃO vale — ele é pra PÓS-reveal. Perguntas/dúvidas/off-topic/
+	// wants_more_options seguem deixando o agente conversar (o usuário desviou; o
+	// watchdog FIX-207 re-engaja se ele sumir). Invariante em CÓDIGO (Lei 4), não
+	// regra-no-prompt. Server-authored já retornou true acima (FIX-206) — não colide.
+	if (COLLECTION_GATES.has(gate)) {
+		if (intent === "asking_question" || intent === "expressing_doubt" || intent === "off_topic") {
+			return false;
+		}
+		return true;
 	}
 
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.

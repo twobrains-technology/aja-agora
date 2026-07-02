@@ -65,3 +65,58 @@ describe("FIX-115 — parseAssetValue (backstop determinístico do valor do bem)
 		expect(parseAssetValue("acho que 3")).toBeNull();
 	});
 });
+
+// ============================================================================
+// FIX-208 (PROD 2026-07-02) — número NU no contexto do gate `credit`.
+// ----------------------------------------------------------------------------
+// Bug (Kairo, WhatsApp): "Quanto custa o carro?" → usuário responde "200" e o
+// agente cai em "Acho que me perdi por aqui. Pode mandar de novo, por favor?".
+// parseAssetValue("200")=null POR DESIGN (número nu pequeno é ambíguo fora de
+// contexto). MAS respondendo o gate de VALOR, um número nu É o valor: quem diz
+// "200" pra um carro quer R$ 200 mil. Com o contexto do gate `credit` + a
+// categoria, o parser escala pra milhares quando o literal fica abaixo do piso
+// da faixa e clampa na categoria. FORA desse contexto o comportamento NÃO muda
+// (segue null — a suíte acima é a prova de não-regressão).
+// ============================================================================
+describe("FIX-208 — número nu no contexto do gate `credit` vira valor do bem", () => {
+	it("o caso EXATO do bug: '200' com gate credit + categoria auto => 200000", () => {
+		expect(parseAssetValue("200", { gate: "credit", category: "auto" })).toBe(200_000);
+	});
+
+	it("número nu com ruído de fala ('uns 200', 'acho que 200') => 200000 no contexto credit", () => {
+		expect(parseAssetValue("uns 200", { gate: "credit", category: "auto" })).toBe(200_000);
+		expect(parseAssetValue("acho que 200", { gate: "credit", category: "auto" })).toBe(200_000);
+		expect(parseAssetValue("uns 80", { gate: "credit", category: "auto" })).toBe(80_000);
+	});
+
+	it("número já em reais crus (>= piso da faixa) é tomado literal, sem escalar", () => {
+		expect(parseAssetValue("200000", { gate: "credit", category: "auto" })).toBe(200_000);
+		expect(parseAssetValue("80000", { gate: "credit", category: "auto" })).toBe(80_000);
+	});
+
+	it("clampa na faixa da categoria (moto: 200 => teto 80000)", () => {
+		expect(parseAssetValue("200", { gate: "credit", category: "moto" })).toBe(80_000);
+	});
+
+	it("SEM contexto de gate credit, número nu segue null (não regride FIX-115)", () => {
+		expect(parseAssetValue("200")).toBeNull();
+		expect(parseAssetValue("200", { gate: "lance", category: "auto" })).toBeNull();
+		expect(parseAssetValue("200", { gate: "credit" })).toBeNull(); // sem categoria, sem faixa
+	});
+
+	it("conservador: NÃO crava valor de uma pergunta solta com número (muitas palavras)", () => {
+		// "e a taxa de 2%?" no meio da coleta NÃO pode virar creditMax — o número
+		// não está ancorado no valor do bem (Lei 4). Só a msg essencialmente-número passa.
+		expect(parseAssetValue("e a taxa de 2%?", { gate: "credit", category: "auto" })).toBeNull();
+		expect(
+			parseAssetValue("quanto fica se eu financiar em 60 vezes", {
+				gate: "credit",
+				category: "auto",
+			}),
+		).toBeNull();
+	});
+
+	it("orçamento mensal segue rejeitado mesmo no contexto credit (não é valor do bem)", () => {
+		expect(parseAssetValue("200 por mês", { gate: "credit", category: "auto" })).toBeNull();
+	});
+});

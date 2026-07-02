@@ -1,10 +1,11 @@
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
+import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
-import type { Gate } from "@/lib/agent/qualify-state";
+import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
@@ -295,7 +296,15 @@ async function consumeEvents(
 	// stepCountIs, textChars=0), o usuário ficaria sem resposta — 27s de silêncio.
 	// Emite o fallback honesto. `dropped` (handoff) tem seu card silencioso próprio.
 	if (opts?.guardEmptyTurn && !hasSent && !dropped) {
-		await sendTextMessage(from, EMPTY_TURN_FALLBACK);
+		// FIX-208 (rede final): se o turno fecharia mudo com um gate de COLETA
+		// PENDENTE (ex.: o gate de VALOR — usuário respondeu "200" e nada foi emitido),
+		// re-emite a PERGUNTA do gate em vez do "me perdi". Nunca deixa a coleta muda.
+		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
+		// não força o gate "name"; ver processor.ts). reengageQuestionForGate só
+		// retorna texto pros gates de coleta — os demais caem no fallback honesto.
+		const guardMeta = await reloadMeta(conversationId);
+		const reengage = reengageQuestionForGate(nextGate(guardMeta), guardMeta.currentCategory);
+		await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
 	}
 }
 

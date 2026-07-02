@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
+import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildAdjustValueDirective,
@@ -1167,13 +1168,20 @@ export async function POST(req: NextRequest) {
 				// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
 				// action, aqui o agente SEMPRE deveria responder algo.
 				if (isTurnEmpty(trace.toRecord())) {
+					// FIX-208 (rede final): se o turno de texto fecharia mudo com um gate de
+					// qualify PENDENTE (ex.: o gate de VALOR — usuário digitou "200" e nada
+					// visível saiu), re-emite a PERGUNTA do gate em vez do "me perdi". Nunca
+					// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
+					const freshMeta = await reloadMeta(conversationId);
+					const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
+					const reengage = reengageQuestionForGate(gate, freshMeta.currentCategory);
 					await writeAndSaveText(
 						writer,
 						conversationId,
 						meta.currentPersona ?? null,
-						EMPTY_TURN_FALLBACK,
+						reengage ?? EMPTY_TURN_FALLBACK,
 					);
-					trace.setFinish("empty-turn-fallback");
+					trace.setFinish(reengage ? "empty-turn-reengage" : "empty-turn-fallback");
 				} else {
 					trace.setFinish("ok");
 				}
