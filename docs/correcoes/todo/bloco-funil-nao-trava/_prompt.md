@@ -11,7 +11,9 @@ está fechado, com TDD. Leia, nesta ordem:
 1. `docs/correcoes/todo/bloco-funil-nao-trava/_bloco.md` — o manifesto e a decisão.
 2. `docs/correcoes/todo/bloco-funil-nao-trava/fix-206-*.md` — root cause provado + correção
    proposta da **estratégia 1** (auto-avanço determinístico).
-3. `docs/correcoes/todo/bloco-funil-nao-trava/fix-207-*.md` — **estratégia 3** (watchdog).
+3. `docs/correcoes/todo/bloco-funil-nao-trava/fix-208-*.md` — **gate de VALOR também trava**
+   (corrige a suposição "já coberto" deste bloco; mesma classe, gate `credit` em turno de usuário).
+4. `docs/correcoes/todo/bloco-funil-nao-trava/fix-207-*.md` — **estratégia 3** (watchdog).
 4. `CLAUDE.md` do projeto — em especial **"Regressão de agent — 3 camadas OBRIGATÓRIAS"** e
    as **REGRAS DE PRODUTO INVIOLÁVEIS** (Bevi fonte única, nada mockado em runtime).
 5. `docs/jornada/jornada-canonica.md` (se existir) — a jornada é REGRA; o funil deve CONDUZIR.
@@ -46,7 +48,11 @@ Detalhe da regressão por item está nos cards. Um bug de agent SEM cassette na 
 1. **FIX-206** (estratégia 1) primeiro — é o caminho determinístico e o do print. Cobre:
    beco sem saída do `doubts-wait` via clique + varredura das reações server-authored +
    paridade web↔WhatsApp.
-2. **FIX-207** (estratégia 3) depois — o watchdog. Ancore no molde `proposal-status-poll.ts`
+2. **FIX-208** (gate de valor) depois — MESMA função `decideShowGate`/`qualify-state.ts` do
+   206, então edite em sequência (sem merge). Estende o auto-avanço ao gate `credit` em turno
+   de USUÁRIO + guard que re-pergunta o valor em vez de "me perdi" + captura de número nu.
+   Defense-in-depth (as 3 camadas do card — decisão do Kairo). Cobre WhatsApp **e** web.
+3. **FIX-207** (estratégia 3) por último — o watchdog. Ancore no molde `proposal-status-poll.ts`
    (WhatsApp) e `stream-watchdog.ts` (web). Priorize o WhatsApp; se o push web for custoso
    demais, entregue o WhatsApp completo e deixe o web como **PENDENTE-KAIRO** documentado no
    `.done/` (NÃO finja cobertura que não existe).

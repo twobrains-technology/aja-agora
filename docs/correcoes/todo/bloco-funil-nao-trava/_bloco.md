@@ -8,7 +8,7 @@ tipo: hotfix
 elevacao: develop + prod (--allow-prod — pedido explícito do Kairo 2026-07-02)
 depends_on: []
 paralelo_com: []
-itens: [FIX-206, FIX-207]
+itens: [FIX-206, FIX-208, FIX-207]   # 208 logo após 206 (mesma camada qualify-state; edição sequencial)
 escopo_arquivos:
   # Estratégia 1 — auto-avanço determinístico (FIX-206)
   - src/lib/agent/qualify-state.ts
@@ -17,6 +17,12 @@ escopo_arquivos:
   - src/lib/whatsapp/interactive-handlers.ts
   - src/lib/whatsapp/adapter.ts
   - src/app/api/chat/route.ts
+  # Gate de VALOR também trava (FIX-208 — corrige a suposição "já coberto")
+  - src/lib/chat/empty-turn-guard.ts
+  - src/lib/web/adapter.ts
+  - src/lib/agent/orchestrator/analyze.ts
+  - src/lib/agent/parse-asset-value.ts
+  - src/lib/agent/parse-asset-value.test.ts
   # Estratégia 3 — watchdog de inatividade (FIX-207)
   - src/lib/agent/personas.ts            # tipo ConversationMetadata (+ pendingGate*)
   - src/lib/conversation/meta.ts
@@ -55,14 +61,23 @@ cobrem faces diferentes do mesmo bug — por isso 1 agente faz os dois em sequê
   legitimamente suprimido (dúvida real classificada pelo LLM e consent já ofertado antes),
   um watchdog re-engaja se o usuário ficar parado. Rede de segurança pra qualquer trava futura.
 
-Juntos = cobertura 100% (determinístico via 206, cauda via 207).
+- **FIX-208 (gate de valor)** — cobre a MESMA classe no gate `credit` em turno de USUÁRIO:
+  o usuário responde o valor ("200"/"200 mil reais"), o intent cai em `neutral` (timeout do
+  analyzer ou número nu) e o gate é suprimido → turno-mudo → "me perdi". Mesmo `qualify-state`
+  do 206; por isso o mesmo agent faz os dois (edição sequencial, sem merge).
 
-## Já coberto por ondas anteriores (NÃO refazer)
+Juntos = cobertura 100% (server-authored via 206, gate de valor via 208, cauda por inatividade via 207).
 
-- **Trava no gate de VALOR** (`credit`): FIX-115 (backstop determinístico do valor em
-  `analyze.ts:99-131`) + FIX-172/189 (guard de turno-mudo). Já na develop. Este bloco
-  NÃO mexe no backstop de valor — ataca os gates **anteriores** (experiência/consent/dúvidas)
-  e o mecanismo GERAL de re-engajamento.
+## ⚠️ Correção de premissa (2026-07-02): o gate de VALOR NÃO estava coberto
+
+A versão anterior deste bloco afirmava que a trava no gate `credit` estava resolvida por
+FIX-115 (backstop) + FIX-172/189 (guard de turno-mudo). **O print novo do Kairo derruba
+isso** — o valor ainda cai em "Acho que me perdi por aqui" (ver `fix-208`). FIX-115 salva o
+valor quando dá pra parsear mas não conserta o intent (fica `neutral` no timeout) nem o
+número nu ("200"→null); FIX-172/189 é justamente quem DISPARA o "me perdi" (sintoma, não
+cura). Por isso o FIX-208 entrou neste bloco. (FIX-206 segue focado em experiência/consent/
+dúvidas; não refazer isso.)
 
 Detalhe completo (root cause provado arquivo:linha, correção proposta, regressão) nos cards
-`fix-206` e `fix-207`. O refinamento de execução (invariantes, ordem, 3 camadas) está no `_prompt.md`.
+`fix-206`, `fix-208` e `fix-207`. O refinamento de execução (invariantes, ordem, 3 camadas)
+está no `_prompt.md`.
