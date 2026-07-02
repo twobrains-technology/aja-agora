@@ -8074,3 +8074,84 @@ describe("FIX-195-CHOOSE-OFFER-P0 — cota escolhida vai ao contrato sem re-busc
 		expect(block).not.toContain("pipeSearchSummaryTurn");
 	});
 });
+
+// ============================================================================
+// FIX-INTEGRIDADE (2026-07-02) — teto fabricado + MOTO
+// ============================================================================
+// QA encontrou em PROD: "93,17% do seu teto declarado" emitido sem cliente ter
+// declarado orçamento mensal. Bug afeta IMOVEL/AUTO/SERVICOS. MOTO não coleta
+// orçamento nem deve emitir "% do seu teto".
+//
+// Cassettes estruturais complementares em src/lib/agent/orchestrator/directives
+// .recomendacao-integridade.test.ts (verificação que budget NÃO é passado).
+// Aqui: detector regex que trava a frase proibida; cassette esperado.
+// ============================================================================
+
+describe("FIX-INTEGRIDADE — recomendação: 'teto declarado' SÓ se cliente declarou", () => {
+	// Frases PROIBIDAS quando cliente NÃO declarou orçamento:
+	// - "% do seu teto declarado"
+	// - "% do seu orçamento"
+	// - "cabe no seu orçamento"
+	// - "do seu teto de R$ {valor}"
+	// Indicador: message NÃO deve conter NENHUMA dessas se monthlyBudget era undefined.
+	const TETO_FABRICADO_DETECTORS = [
+		/\d+[.,]\d+\s*%\s+do seu teto/i,
+		/\d+[.,]\d+\s*%\s+do seu or[çc]amento/i,
+		/do seu teto de R\$/i,
+		/do seu or[çc]amento de R\$/i,
+		/teto (declarado|seu)/i,
+	];
+
+	it("detector regex: frase fabricada 'do seu teto' sem cliente declarar", () => {
+		// Cassette real observado (QA 2026-07-02 imóvel/web/prod):
+		const cassette = "A parcela de R$ 1.863,32/mês representa 93,17% do seu teto declarado";
+		const hits = TETO_FABRICADO_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			`Cassette do bug deve casar com >=1 detector. Cassette: "${cassette}". ` +
+				"Se ZERO casarem, alguem afrouxou o detector.",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: system-prompt PROÍBE citar teto quando cliente NÃO declarou", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// Deve haver guardrail que diz: teto é DECLARADO pelo cliente, não default.
+		expect(combined).toMatch(
+			/(FIX-INTEGRIDADE|cliente NÃO declarou|MOTO não coleta or[çc]amento)/i,
+		);
+	});
+
+	it("structural: directives NÃO passa `budget` pra MOTO ou quando monthlyBudget undefined", () => {
+		const source = readSource("src/lib/agent/orchestrator/directives.ts");
+		// Verificar que há condition: hasBudget = category !== "moto" && ...
+		// Ou similar que cima budget pra MOTO.
+		expect(source).toMatch(/category\s*!==\s*"moto"/);
+		// E que confrontoBudget só aparece se hasBudget === true.
+		expect(source).toMatch(/confrontoBudget\s*=\s*hasBudget\s*\?/);
+	});
+});
+
+describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista", () => {
+	it("structural: system-prompt menciona MOTO especificamente no contexto de orçamento", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// MOTO deve ser explicitamente chamado como não-coletor de orçamento.
+		expect(combined).toMatch(/MOTO[\s\S]{0,200}(?:não coleta|sem|orçamento)/i);
+	});
+
+	it("detector regex: recomendação de MOTO NÃO menciona teto/orçamento", () => {
+		// Se um texto de recomendação MOTO disser "% do seu teto", ele falha.
+		// Cassette esperado: "A parcela fica em R$ 500/mês"
+		//                   "Essa opção encaixa bem pro seu perfil"
+		// Cassette proibido: "... 45% do seu teto..." (MOTO não tem teto)
+		const cassetteMotoOK =
+			"A parcela fica em R$ 500/mês. Essa opção encaixa bem pro seu perfil.";
+		const cassetteMotoNOK = "A parcela de R$ 500/mês — 60% do seu teto de R$ 833.";
+		expect(
+			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoOK)),
+		).toBe(false);
+		expect(
+			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoNOK)),
+		).toBe(true);
+	});
+});
+
