@@ -25,22 +25,26 @@ describe("FIX-204 — guard estrutural das rotas de templates", () => {
 	}
 });
 
-describe("FIX-204 — SEAM nível 3: rota /sync contra STUB do bloco-backend", () => {
+describe("FIX-204 — SEAM nível 3: rota /sync usa a impl real de template-sync", () => {
+	// Seam resolvido no merge da onda: o STUB local virou a implementação real
+	// (`reconcileTemplateStatuses` em @/lib/whatsapp/template-sync). Este guard
+	// reflete o estado pós-merge (antes cravava o stub/TODO, que já não existem).
 	const src = read(`${BASE}/sync/route.ts`);
 
 	it("chama reconcileTemplateStatuses()", () => {
 		expect(src).toContain("reconcileTemplateStatuses(");
 	});
 
-	it("marca o TODO(bloco-backend) para troca do stub no merge", () => {
-		expect(src).toContain("TODO(bloco-backend)");
+	it("importa a impl real de template-sync (stub resolvido no merge)", () => {
+		expect(src).toMatch(/^import[^\n]*template-sync/m);
+		// e NÃO carrega mais um stub local nem o TODO de troca.
+		expect(src).not.toMatch(/async function reconcileTemplateStatuses/);
+		expect(src).not.toContain("TODO(bloco-backend)");
 	});
 
-	it("usa STUB LOCAL, não importa template-sync (arquivo é do bloco-backend)", () => {
-		// A função vive local no arquivo (stub)…
-		expect(src).toMatch(/async function reconcileTemplateStatuses/);
-		// …e NÃO há import real de template-sync (só a menção no comentário do seam).
-		expect(src).not.toMatch(/^import[^\n]*template-sync/m);
+	it("FIX-206: envolve a reconciliação em try/catch (502 acionável, não 500 mudo)", () => {
+		expect(src).toMatch(/try\s*{[\s\S]*reconcileTemplateStatuses\(\)[\s\S]*catch/);
+		expect(src).toMatch(/status:\s*502/);
 	});
 });
 
