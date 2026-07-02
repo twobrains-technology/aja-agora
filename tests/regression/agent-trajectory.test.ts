@@ -39,7 +39,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { streamText } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -58,6 +58,11 @@ import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { artifactToWhatsApp } from "@/lib/whatsapp/formatter";
+
+// FIX-74: cassette determinístico do analyzer — mocka turn-analyzer pra
+// controlar o TurnAnalysis extraído sem chamar Anthropic real (zero
+// não-determinismo, 100% cassette).
+vi.mock("@/lib/agent/turn-analyzer", () => ({ analyzeTurn: vi.fn() }));
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -5343,5 +5348,88 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 		// O copiloto é um canal separado — routing.ts não pode importar/chamar
 		// o orchestrator de vendas (evita a colisão de canal da spec §8).
 		expect(routingSrc).not.toMatch(/processWithOrchestrator|runTurn|orchestrator/);
+	});
+});
+
+// ============================================================================
+// FIX-74 — orçamento mensal nunca vira prazo (QA dono-de-produto 2026-07-02)
+// ----------------------------------------------------------------------------
+// Bug real em prod: "Quero um carro de uns R$ 70 mil, gastando perto de R$
+// 900 por mês." — o gate "timeframe" (jornada §2) NUNCA disparou; a jornada
+// foi direto pra CPF/lance/resultados com prazoMeses=117 (não confirmado pelo
+// usuário). Root cause: o analyzer LLM classificou "R$ 900/mês" como
+// prazoMeses não-nulo (mesma classe do bug de 2026-06-21). O gate na sequência
+// (qualify-state.ts) e a guarda contra null (analyze.ts) já existiam — o fix é
+// o guard DETERMINÍSTICO em analyze.ts (isMonthlyBudgetOnlyMention) que
+// descarta prazoMeses quando só há cadência mensal sem menção de duração.
+// ============================================================================
+describe("FIX-74 — turno com valor+orçamento-mensal → nextGate volta a emitir timeframe", () => {
+	it("cassette: analyzer classifica prazoMeses errado a partir de 'R$ 900 por mês' → guard descarta → gate timeframe dispara", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			// Reproduz o bug: o analyzer (LLM real em prod) classificou o
+			// orçamento mensal como prazoMeses.
+			prazoMeses: 117,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge(
+			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
+			"auto",
+			meta,
+		);
+
+		// O valor é preservado — não se re-pergunta.
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
+		// O prazo alucinado pelo classifier é DESCARTADO pelo guard determinístico.
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+		// O gate de prazo (docx §2: "Em quanto tempo você gostaria de estar
+		// com seu bem?") volta a disparar — a jornada não pula pra CPF/lance.
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+	});
+
+	it("controle: mesmo cassette com menção temporal explícita ('em 2 anos') preserva prazoMeses e NÃO reabre o gate", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74 controle",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			prazoMeses: 24,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge("Quero um carro de uns R$ 70 mil, em 2 anos.", "auto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(24);
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
 	});
 });
