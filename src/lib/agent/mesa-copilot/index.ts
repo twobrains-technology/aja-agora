@@ -55,11 +55,15 @@ export async function generateMesaCopilotReply(input: {
 	}));
 
 	const result = streamText({
-		model: input.model ?? anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
+		model: input.model ?? anthropic(process.env.AI_MODEL ?? "claude-sonnet-5"),
 		system,
 		messages,
-		// Orientação operacional: precisão > criatividade.
-		temperature: 0.3,
+		// FIX-209 — Sonnet 5 liga adaptive thinking por default; desligamos explícito
+		// (Q&A operacional não precisa de reasoning e o <3s importa). Também não
+		// passamos mais sampling param — Sonnet 5 rejeita valor não-default (400). A
+		// precisão operacional (antes um sampling baixo) passa a ser guiada pelo
+		// system prompt do copiloto.
+		providerOptions: { anthropic: { thinking: { type: "disabled" } } },
 	});
 
 	let text = "";
