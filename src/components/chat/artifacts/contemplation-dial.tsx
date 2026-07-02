@@ -52,6 +52,9 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 
 	// Mês efetivo clampado contra o prazo EFETIVO (o rebind pode mudar o teto).
 	const activeMonth = clamp(month, MIN, MAX);
+	// FIX-198 (a11y/WCAG slider) — passo grande do PageUp/PageDown: ~10% do
+	// intervalo, mínimo 3 meses (setas movem ±1).
+	const bigStep = Math.max(3, Math.round((MAX - MIN) / 10));
 
 	const r = useMemo(
 		() =>
@@ -137,13 +140,35 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 						draggingRef.current = false;
 					}}
 					onKeyDown={(e) => {
-						if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-							setMonth(clamp(activeMonth - 1, MIN, MAX));
-							e.preventDefault();
-						} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-							setMonth(clamp(activeMonth + 1, MIN, MAX));
-							e.preventDefault();
+						// FIX-198 — slider operável por teclado (WCAG): setas ±1, PageUp/Down
+						// passo grande, Home/End nos extremos do prazo.
+						let next: number | null = null;
+						switch (e.key) {
+							case "ArrowLeft":
+							case "ArrowDown":
+								next = activeMonth - 1;
+								break;
+							case "ArrowRight":
+							case "ArrowUp":
+								next = activeMonth + 1;
+								break;
+							case "PageDown":
+								next = activeMonth - bigStep;
+								break;
+							case "PageUp":
+								next = activeMonth + bigStep;
+								break;
+							case "Home":
+								next = MIN;
+								break;
+							case "End":
+								next = MAX;
+								break;
+							default:
+								return;
 						}
+						setMonth(clamp(next, MIN, MAX));
+						e.preventDefault();
 					}}
 					className="relative mx-auto w-[230px] cursor-grab touch-none select-none rounded-md outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
 				>
