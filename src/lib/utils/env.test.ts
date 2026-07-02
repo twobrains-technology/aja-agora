@@ -50,4 +50,34 @@ describe("isSimulatorEnabled (Bug B-01)", () => {
 		vi.stubEnv("NODE_ENV", "production");
 		expect(isSimulatorEnabled()).toBe(false);
 	});
+
+	// Override QA (auto-whatsapp): escape hatch estreito pra habilitar o
+	// simulador em PROD sob demanda, SEM flipar TB_ENV (que degradaria OTP em
+	// recovery.ts:116 e o rate-limit). Afeta APENAS isSimulatorEnabled().
+	describe("SIMULATOR_FORCE_ENABLE (override QA em prod)", () => {
+		it("habilita em PROD quando SIMULATOR_FORCE_ENABLE=true", () => {
+			vi.stubEnv("TB_ENV", "production");
+			vi.stubEnv("NODE_ENV", "production");
+			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "true");
+			expect(isSimulatorEnabled()).toBe(true);
+		});
+
+		it("aceita '1' como truthy", () => {
+			vi.stubEnv("TB_ENV", "prod");
+			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "1");
+			expect(isSimulatorEnabled()).toBe(true);
+		});
+
+		it("segue BLOQUEADO em PROD com override ausente", () => {
+			vi.stubEnv("TB_ENV", "production");
+			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "");
+			expect(isSimulatorEnabled()).toBe(false);
+		});
+
+		it("segue BLOQUEADO em PROD com override falsy (false)", () => {
+			vi.stubEnv("TB_ENV", "production");
+			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "false");
+			expect(isSimulatorEnabled()).toBe(false);
+		});
+	});
 });

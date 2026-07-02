@@ -15,12 +15,10 @@ Plataforma B2C de consórcio AI-first onde o usuário conversa com um agente int
 - **Mobile-first:** Consórcio é produto de massa, maioria acessa por celular
 - **Performance:** Chat precisa responder em < 3s para manter engajamento
 
-### REGRAS DE PRODUTO — jornada canônica e dados reais (INVIOLÁVEIS, 2026-06-04)
+### REGRAS DE PRODUTO (INVIOLÁVEIS, 2026-06-04)
 
-1. **`docs/jornada/jornada-canonica.md` é a REGRA do fluxo** — é a visão do cliente (origem: `jornada.docx`), não inspiração. Toda feature/ajuste da jornada se valida contra ela. Divergência código×docx = defeito do código. Contexto e decisões: `docs/jornada/CONTEXT.md`.
-2. **PROIBIDO dado mockado em runtime.** A plataforma nasceu como piloto com mock de descoberta (`adapters/mock/`) — isso foi sentenciado à destruição. Nenhum grupo, oferta, simulação ou número exibido ao usuário pode vir de JSON fictício. **Bevi é a fonte única** (Trilho B self-contract pra descoberta/simulação; API de Parceiro pro fechamento). Fixtures de teste = capturas de respostas REAIS da Bevi (cassettes) — permitidas APENAS em testes, nunca em caminho de runtime.
-3. **QA e evals validam contra o docx**, não contra critérios derivados da implementação. O plano de teste de qualquer mudança na jornada referencia os passos da jornada canônica.
-4. **Simulador do passo 4** = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele.
+1. **PROIBIDO dado mockado em runtime.** A plataforma nasceu como piloto com mock de descoberta (`adapters/mock/`) — isso foi sentenciado à destruição. Nenhum grupo, oferta, simulação ou número exibido ao usuário pode vir de JSON fictício. **Bevi é a fonte única** (Trilho B self-contract pra descoberta/simulação; API de Parceiro pro fechamento). Fixtures de teste = capturas de respostas REAIS da Bevi (cassettes) — permitidas APENAS em testes, nunca em caminho de runtime.
+2. **Simulador do passo 4** = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele.
 
 ### ⚠️ AMBIENTE BEVI/CONEXIA = HOMOLOGAÇÃO (INVIOLÁVEL — não tratar como produção)
 

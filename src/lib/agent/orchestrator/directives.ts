@@ -202,7 +202,13 @@ export function buildSearchSummaryDirective(args: {
 	}
 	const filters = filterParts.length > 0 ? `, ${filterParts.join(", ")}` : "";
 
-	const hasBudget = typeof q.monthlyBudget === "number" && q.monthlyBudget > 0;
+	// FIX-INTEGRIDADE (2026-07-02): frase "% do seu teto" NÃO pode aparecer quando:
+	// 1. Cliente NÃO declarou orçamento mensal (monthlyBudget undefined)
+	// 2. Categoria é MOTO (não coleta orçamento mensal — system-prompt FIX-104 passo 15-17)
+	const hasBudget =
+		category !== "moto" &&
+		typeof q.monthlyBudget === "number" &&
+		q.monthlyBudget > 0;
 	const budgetArgs = hasBudget
 		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
 		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;

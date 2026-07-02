@@ -87,6 +87,15 @@ import { type TurnTraceRecord, traceTurnEvents } from "@/lib/telemetry/turn-trac
 import { type DocumentInboundDeps, handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { artifactToWhatsApp, documentUploadToWhatsApp } from "@/lib/whatsapp/formatter";
 
+// FIX-74: cassette determinístico do analyzer — mocka SÓ analyzeTurn (via
+// importOriginal) pra controlar o TurnAnalysis extraído sem chamar Anthropic
+// real, preservando os demais exports do módulo (turnAnalysisSchema,
+// BASE_SYSTEM_INSTRUCTION) usados por outros cassettes deste arquivo.
+vi.mock("@/lib/agent/turn-analyzer", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/lib/agent/turn-analyzer")>();
+	return { ...actual, analyzeTurn: vi.fn() };
+});
+
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
 }
@@ -6199,6 +6208,11 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 // ----------------------------------------------------------------------------
 // Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
 // simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
+// ============================================================================
+// FIX-76 — agente alucina falha de busca + ressuscita valor STALE como dado real
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
+// simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
 // "estou com dificuldade em acessar os grupos" / "instabilidade nas buscas"
 // (turn-trace: toolsCalled=[] — search_groups NUNCA foi chamada, ZERO erro de
 // tool) e ofereceu "a faixa de R$ 256.000 que já temos dados reais disponíveis"
@@ -6863,6 +6877,151 @@ describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno 
 		expect(isTurnEmpty({ ...recordVazio, toolCount: 1 })).toBe(false);
 		// O fallback existe e é uma frase honesta (não-vazia).
 		expect(EMPTY_TURN_FALLBACK.length).toBeGreaterThan(0);
+	});
+});
+
+// ============================================================================
+// FIX-74 — orçamento mensal nunca vira prazo (QA dono-de-produto 2026-07-02)
+// ----------------------------------------------------------------------------
+// Bug real em prod: "Quero um carro de uns R$ 70 mil, gastando perto de R$
+// 900 por mês." — o analyzer LLM classificou "R$ 900/mês" como prazoMeses
+// não-nulo (mesma classe do bug de 2026-06-21), persistindo um dado FABRICADO
+// no perfil sem o usuário ter dito o prazo. Guard DETERMINÍSTICO em analyze.ts
+// (isMonthlyBudgetOnlyMention) descarta prazoMeses quando só há cadência
+// mensal sem menção de duração.
+//
+// NOTA (reconciliado no merge pra develop, 2026-07-02): a rodada de QA que
+// originou este card assumiu que o gate "timeframe" deveria voltar a
+// disparar. Mas o FIX-103 (Kairo, 2026-06-28 — JÁ em develop) removeu esse
+// gate da qualificação de propósito ("usuário só fala o valor agora, prazo
+// não" — qualify-state.ts NUNCA mais emite "timeframe"). O guard determinístico
+// deste fix continua válido por si só (não persiste dado fabricado); a
+// asserção de gate foi ajustada pra refletir a política atual — o funil
+// segue seu curso normal (não trava) mesmo com o guard rejeitando o dado.
+// ============================================================================
+describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue seu curso (FIX-103)", () => {
+	it("cassette: analyzer classifica prazoMeses errado a partir de 'R$ 900 por mês' → guard descarta; funil não trava (sem gate timeframe, FIX-103)", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			// Reproduz o bug: o analyzer (LLM real em prod) classificou o
+			// orçamento mensal como prazoMeses.
+			prazoMeses: 117,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge(
+			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
+			"auto",
+			meta,
+		);
+
+		// O valor é preservado — não se re-pergunta.
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
+		// O prazo alucinado pelo classifier é DESCARTADO pelo guard determinístico
+		// — não persiste dado fabricado no perfil.
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+		// FIX-103: nextGate NUNCA emite "timeframe" (gate removido da
+		// qualificação) — o funil segue pro próximo gate real (lance).
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+	});
+
+	it("controle: mesmo cassette com menção temporal explícita ('em 2 anos') preserva prazoMeses e NÃO reabre o gate", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74 controle",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			prazoMeses: 24,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge("Quero um carro de uns R$ 70 mil, em 2 anos.", "auto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(24);
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+	});
+});
+
+// ============================================================================
+// FIX-73 — fechamento reusa o crédito da oferta REAL recomendada (QA
+// dono-de-produto 2026-07-02, jornada AUTO web em prod contra ajaagora.com.br)
+// ----------------------------------------------------------------------------
+// Bug real: pedi carro R$ 70 mil / ~R$ 900/mês. O recommendation_card
+// anunciou "R$ 70.000 / parcela R$ 892,48 (99,2% do teto)". A proposta REAL
+// contratada (carta + PDF) saiu "R$ 100.000 / parcela R$ 1.438,28" (Grupo
+// 533) — bait-and-switch. A coerção server-side do recommendation_card em si
+// já é coberta pelo FIX-191 (recommendation-payload.ts/indexRevealGroups).
+// Esta parte cobre a OUTRA metade do bug: o fechamento re-derivava o valor de
+// q.creditMax em vez de reusar a oferta REAL que o card mostrou. Decisão de
+// produto (Kairo): recomendar a COTA REAL — o número decisório é o mesmo
+// número contratado.
+// ============================================================================
+describe("FIX-73 — fechamento reusa o creditValue da oferta REAL recomendada", () => {
+	it("descoberta→fechamento mantém crédito/parcela: buildStartContractInput reusa o recommendedOffer persistido no reveal", async () => {
+		const { buildStartContractInput } = await import("@/lib/bevi/contract-input");
+
+		// O reveal (runner.ts) persiste meta.recommendedOffer a partir do
+		// snapshot REAL (offerSnapshotFromArtifact) — o mesmo crédito que o
+		// card coagido (FIX-191) mostrou ao usuário.
+		const metaAposReveal: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ÂNCORA",
+			// q.creditMax é o TETO pedido (100k) — re-derivar daqui reproduzia o
+			// bug (proposta saía 100k mesmo o card tendo anunciado 70k).
+			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
+			recommendedOffer: {
+				administradora: "ÂNCORA",
+				category: "auto",
+				creditValue: 70_000,
+				termMonths: 80,
+				monthlyPayment: 892.48,
+			},
+		} as ConversationMetadata;
+
+		const contractInput = buildStartContractInput(metaAposReveal, {
+			cpf: "52998224725",
+			celular: "62999887766",
+			lgpd: true,
+		});
+
+		// O fechamento contrata a MESMA cota que a recomendação anunciou —
+		// não o teto de crédito solicitado.
+		expect(contractInput.valor).toBe(70_000);
+	});
+
+	it("acoplamento: contract-input.ts prefere recommendedOffer.creditValue sobre q.creditMax re-derivado", () => {
+		const contractInputSrc = readSource("src/lib/bevi/contract-input.ts");
+		expect(contractInputSrc).toMatch(/recommendedOffer\?\.\s*creditValue/);
 	});
 });
 
@@ -8074,3 +8233,85 @@ describe("FIX-195-CHOOSE-OFFER-P0 — cota escolhida vai ao contrato sem re-busc
 		expect(block).not.toContain("pipeSearchSummaryTurn");
 	});
 });
+
+// ============================================================================
+// FIX-INTEGRIDADE (2026-07-02) — teto fabricado + MOTO
+// ============================================================================
+// QA encontrou em PROD: "93,17% do seu teto declarado" emitido sem cliente ter
+// declarado orçamento mensal. Bug afeta IMOVEL/AUTO/SERVICOS. MOTO não coleta
+// orçamento nem deve emitir "% do seu teto".
+//
+// Cassettes estruturais complementares em src/lib/agent/orchestrator/directives
+// .recomendacao-integridade.test.ts (verificação que budget NÃO é passado).
+// Aqui: detector regex que trava a frase proibida; cassette esperado.
+// ============================================================================
+
+// Frases PROIBIDAS quando cliente NÃO declarou orçamento:
+// - "% do seu teto declarado"
+// - "% do seu orçamento"
+// - "cabe no seu orçamento"
+// - "do seu teto de R$ {valor}"
+// Indicador: message NÃO deve conter NENHUMA dessas se monthlyBudget era undefined.
+// Escopo de MÓDULO (não de describe) — usado pelos dois describes FIX-INTEGRIDADE abaixo.
+const TETO_FABRICADO_DETECTORS = [
+	/\d+[.,]\d+\s*%\s+do seu teto/i,
+	/\d+[.,]\d+\s*%\s+do seu or[çc]amento/i,
+	/do seu teto de R\$/i,
+	/do seu or[çc]amento de R\$/i,
+	/teto (declarado|seu)/i,
+];
+
+describe("FIX-INTEGRIDADE — recomendação: 'teto declarado' SÓ se cliente declarou", () => {
+	it("detector regex: frase fabricada 'do seu teto' sem cliente declarar", () => {
+		// Cassette real observado (QA 2026-07-02 imóvel/web/prod):
+		const cassette = "A parcela de R$ 1.863,32/mês representa 93,17% do seu teto declarado";
+		const hits = TETO_FABRICADO_DETECTORS.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			`Cassette do bug deve casar com >=1 detector. Cassette: "${cassette}". ` +
+				"Se ZERO casarem, alguem afrouxou o detector.",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("structural: system-prompt PROÍBE citar teto quando cliente NÃO declarou", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// Deve haver guardrail que diz: teto é DECLARADO pelo cliente, não default.
+		expect(combined).toMatch(
+			/(FIX-INTEGRIDADE|cliente NÃO declarou|MOTO não coleta or[çc]amento)/i,
+		);
+	});
+
+	it("structural: directives NÃO passa `budget` pra MOTO ou quando monthlyBudget undefined", () => {
+		const source = readSource("src/lib/agent/orchestrator/directives.ts");
+		// Verificar que há condition: hasBudget = category !== "moto" && ...
+		// Ou similar que cima budget pra MOTO.
+		expect(source).toMatch(/category\s*!==\s*"moto"/);
+		// E que confrontoBudget só aparece se hasBudget === true.
+		expect(source).toMatch(/confrontoBudget\s*=\s*hasBudget\s*\?/);
+	});
+});
+
+describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista", () => {
+	it("structural: system-prompt menciona MOTO especificamente no contexto de orçamento", () => {
+		const combined = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`;
+		// MOTO deve ser explicitamente chamado como não-coletor de orçamento.
+		expect(combined).toMatch(/MOTO[\s\S]{0,200}(?:não coleta|sem|orçamento)/i);
+	});
+
+	it("detector regex: recomendação de MOTO NÃO menciona teto/orçamento", () => {
+		// Se um texto de recomendação MOTO disser "% do seu teto", ele falha.
+		// Cassette esperado: "A parcela fica em R$ 500/mês"
+		//                   "Essa opção encaixa bem pro seu perfil"
+		// Cassette proibido: "... 45% do seu teto..." (MOTO não tem teto)
+		const cassetteMotoOK =
+			"A parcela fica em R$ 500/mês. Essa opção encaixa bem pro seu perfil.";
+		const cassetteMotoNOK = "A parcela de R$ 500/mês — 60% do seu teto de R$ 833.";
+		expect(
+			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoOK)),
+		).toBe(false);
+		expect(
+			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoNOK)),
+		).toBe(true);
+	});
+});
+

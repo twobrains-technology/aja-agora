@@ -245,3 +245,110 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
 	});
 });
+
+// FIX-74 (QA dono-de-produto 2026-07-02): "…R$ 70 mil, gastando perto de R$
+// 900 por mês" (valor + orçamento mensal, SEM menção temporal) — em produção o
+// analyzer LLM classificou "R$ 900/mês" como prazoMeses não-nulo, pulando o
+// gate "timeframe" (jornada §2: "Em quanto tempo você gostaria de estar com
+// seu bem?"). O gate em si (qualify-state.ts) e a guarda contra null
+// (analyze.ts:102-105 original) já existiam — o defeito é confiabilidade do
+// analyzer, não ausência de gate. Guard DETERMINÍSTICO: rejeita
+// analysis.prazoMeses quando a mensagem só traz sinal de orçamento/parcela
+// mensal e nenhuma menção temporal explícita (não confia só no prompt).
+describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("'R$ 900 por mês' sem menção temporal → prazoMeses REJEITADO mesmo se o analyzer classificar errado", async () => {
+		// Reproduz o bug real: o analyzer (LLM) classificou por engano.
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 70_000,
+			prazoMeses: 117,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge(
+			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
+			"auto",
+			meta,
+		);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+	});
+
+	it("'R$ 400/mês' (barra) também é bloqueado — mesma classe de menção mensal", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 40_000,
+			prazoMeses: 48,
+		});
+		const meta: ConversationMetadata = { currentCategory: "moto" };
+		await analyzeAndMerge("Trocar de moto gastando R$ 400/mês.", "moto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+	});
+
+	it("'em 2 anos' — menção temporal explícita → prazoMeses PRESERVADO", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 70_000,
+			prazoMeses: 24,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("Quero um carro de 70 mil em 2 anos.", "auto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(24);
+	});
+
+	it("orçamento mensal + menção temporal explícita no MESMO turno → prazoMeses PRESERVADO", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 40_000,
+			prazoMeses: 36,
+		});
+		const meta: ConversationMetadata = { currentCategory: "moto" };
+		await analyzeAndMerge(
+			"Trocar de moto gastando R$ 400/mês, contemplando em 36 meses.",
+			"moto",
+			meta,
+		);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(36);
+	});
+
+	// FIX-103 (Kairo, 2026-06-28, já em develop): o gate "timeframe" SAIU da
+	// qualificação — "usuário só fala o valor agora, prazo não" (qualify-state.ts,
+	// nextGate NUNCA mais o emite). Isso veio DEPOIS da rodada de QA que gerou
+	// este card (2026-07-02), então o gate em si não existe mais pra "voltar a
+	// disparar". A guarda determinística continua válida por outro motivo: evita
+	// persistir um prazoMeses FABRICADO (que poderia vazar pra outros
+	// consumidores do campo, ex. relatórios) e garante que o funil segue seu
+	// curso normal (não trava) mesmo com o guard rejeitando o dado.
+	it("prazo rejeitado pelo guard não trava o funil — nextGate segue o fluxo normal (sem gate de timeframe, FIX-103)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			creditMax: 70_000,
+			prazoMeses: 117,
+			experiencePrev: "returning",
+		});
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge(
+			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
+			"auto",
+			meta,
+		);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+		// nextGate NUNCA emite "timeframe" (FIX-103) — o funil segue pro
+		// próximo gate real (lance), sem travar por causa do guard.
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+	});
+});

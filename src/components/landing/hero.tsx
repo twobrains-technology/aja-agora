@@ -194,7 +194,10 @@ export function Hero({ onOpenChat }: HeroProps) {
 										<button
 											key={chip.label}
 											type="button"
-											onClick={(e) => onOpenChat(chip.fill, e.currentTarget)}
+											// FIX-75: texto digitado VENCE — o chip só usa o canned
+											// quando o textbox está vazio; senão descartava o
+											// orçamento que o usuário já tinha escrito.
+											onClick={(e) => onOpenChat(value.trim() || chip.fill, e.currentTarget)}
 											className="inline-flex h-[34px] items-center gap-1.5 rounded-full border border-border bg-[#fbfbf9] px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-[#bcd3ff] hover:text-primary"
 										>
 											<chip.icon className="size-3.5" strokeWidth={1.8} />

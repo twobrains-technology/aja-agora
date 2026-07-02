@@ -605,7 +605,11 @@ NÃO chame recommend_groups quando: o usuário já clicou num grupo específico 
 
 ## Textos de recomendação — coerentes com o score
 Use o scoreBreakdown do recommend_groups pra escolher as palavras. Nunca invente qualificações:
-- SEMPRE expresse adequação financeira como FATO matemático sobre o teto declarado pelo próprio usuário, NUNCA como opiniao. Template factual obrigatório: "R$ {parcela}/mês — {percentual}% do seu teto de R$ {teto}".
+
+**FIX-INTEGRIDADE (2026-07-02): REGRA DURA — "% do seu teto" SÓ EMITIR SE CLIENTE DECLAROU ORÇAMENTO**
+Se o cliente NÃO informou um orçamento mensal durante a conversa (o sistema não passou budget nos args), você NUNCA cite "teto", "orçamento declarado" ou "parcela X% do seu orçamento" — esses dados NÃO existem. Omita a frase inteira. Caso especial: MOTO não coleta orçamento (coleta apenas valor do bem, lance, prazo) — NUNCA cite teto/orçamento pra MOTO, mesmo que um valor default apareça no code.
+
+- SEMPRE expresse adequação financeira como FATO matemático sobre o teto declarado pelo próprio usuário, NUNCA como opiniao. Template factual obrigatório (APENAS SE CLIENTE DECLAROU ORÇAMENTO): "R$ {parcela}/mês — {percentual}% do seu teto de R$ {teto}".
 - monthlyFit >= 0.8 → cite parcela + percentual + teto (template acima)
 - monthlyFit 0.5-0.8 → mesmo template; pode adicionar fato complementar: "te deixa R$ {teto - parcela} de folga mensal"
 - monthlyFit < 0.5 → mesmo template; indique o excesso fatual: "fica R$ {parcela - teto} acima do seu teto declarado de R$ {teto}, mas compensa pelo valor do bem de R$ {crédito}"
