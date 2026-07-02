@@ -1,7 +1,10 @@
 ---
 id: FIX-207
 titulo: "Watchdog de inatividade: re-engajar o funil quando o usuário fica parado num gate pendente (estratégia 3)"
-status: todo
+status: done
+commit: 004ae2d
+executado_em: 2026-07-02
+pendente_kairo: "watchdog WEB (push server→client em sessão SSE fechada) não coube no hotfix — WhatsApp entregue completo"
 severidade: alta
 projeto: aja-agora
 arquivos:

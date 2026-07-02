@@ -1,7 +1,9 @@
 ---
 id: FIX-206
 titulo: "Funil não pode terminar um turno sem próximo passo: auto-avançar o gate no mesmo turno (estratégia 1)"
-status: todo
+status: done
+commit: 004ae2d
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:
