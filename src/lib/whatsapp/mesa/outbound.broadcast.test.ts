@@ -4,8 +4,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sendReplyButtons = vi.fn(async () => ({ messageId: "sim-1" }));
-const sendTextMessage = vi.fn(async () => ({ messageId: "sim-1" }));
+const sendReplyButtons = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
+const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
 const getMesaAttendantList = vi.fn();
 
 vi.mock("@/lib/whatsapp/api", () => ({
