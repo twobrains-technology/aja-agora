@@ -84,7 +84,11 @@ export function reengageQuestionForGate(
 	gate: Gate,
 	category: Category | null | undefined,
 ): string | null {
-	if (!COLLECTION_GATES.has(gate)) return null;
+	// COLLECTION_GATES (credit/lance/...) + `identify`: gates de ENTREGA OBRIGATÓRIA
+	// no WhatsApp — o guard re-pergunta a pergunta do gate em vez do "me perdi".
+	// identify não é "collection" mas é entrega obrigatória (FIX-53); sem ele aqui o
+	// consent→identify caía no fallback honesto (bug de prod 2026-07-02).
+	if (!COLLECTION_GATES.has(gate) && gate !== "identify") return null;
 	return gateQuestion(gate, category ?? null);
 }
 

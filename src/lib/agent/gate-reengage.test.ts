@@ -243,6 +243,14 @@ describe("FIX-208 reengageQuestionForGate — a re-pergunta do gate pendente, n�
 		}
 	});
 
+	it("gate identify → re-emite a pergunta de CPF/celular (bug consent→identify no WhatsApp, 2026-07-02)", () => {
+		// O bug: clicar "Bora!" (consent) levava o funil pro identify, que NÃO tinha
+		// entrega no WhatsApp → turno mudo → silêncio (clique) ou "me perdi" (texto).
+		// identify é entrega OBRIGATÓRIA: o guard re-pergunta o CPF, nunca "me perdi".
+		expect(reengageQuestionForGate("identify", "auto")).toBe(gateQuestion("identify", "auto"));
+		expect(reengageQuestionForGate("identify", "auto")).toMatch(/CPF/i);
+	});
+
 	it("gates FORA da coleta (experience/consent/name/search/decision/doubts-wait) → null (fallback honesto)", () => {
 		// Restrito à mesma classe do decideShowGate (COLLECTION_GATES). experience/
 		// consent têm card próprio dirigido por clique; name/search/decision não são
