@@ -9,7 +9,7 @@ A **fundação** da feature de Message Templates da Meta oficial — a base de q
 os blocos `backend` e `admin` (onda 2) dependem. Dois itens, ambos com Camada 1
 (structural), TDD strict (teste falhou antes do código).
 
-### FIX-191 — schema `whatsappTemplates` + `whatsappOutboundQueue` + enums
+### FIX-199 — schema `whatsappTemplates` + `whatsappOutboundQueue` + enums
 - `whatsapp_templates`: ciclo de vida do template na Meta
   (`DRAFT→PENDING→APPROVED/REJECTED/DISABLED/PAUSED`), vínculo de uso por
   `usageKey` (**único quando setado** via unique index — NULLs distintos no PG),
@@ -27,7 +27,7 @@ os blocos `backend` e `admin` (onda 2) dependem. Dois itens, ambos com Camada 1
 - Teste: `src/db/schema.whatsapp-templates.test.ts` (10 asserts estruturais).
 - Commit: `82347cc1`.
 
-### FIX-192 — cliente Meta `createTemplate`/`listTemplates` + env `WHATSAPP_WABA_ID`
+### FIX-200 — cliente Meta `createTemplate`/`listTemplates` + env `WHATSAPP_WABA_ID`
 - `createTemplate({name,language,category,components})` → `POST
   /{WABA_ID}/message_templates` (Bearer). Retorna `{id,status,category}`. Erro
   da Meta (4xx/5xx) **propaga** — nunca finge sucesso (não persiste PENDING falso).
@@ -64,7 +64,7 @@ os blocos `backend` e `admin` (onda 2) dependem. Dois itens, ambos com Camada 1
 
 ## Testes
 
-- `src/db/` → 21 passed (inclui os 10 novos do FIX-191 + meta-integrity).
+- `src/db/` → 21 passed (inclui os 10 novos do FIX-199 + meta-integrity).
 - `src/lib/whatsapp/api.templates.test.ts` + `api.test.ts` → 14 passed.
 - `pnpm typecheck` → sem erros nos arquivos tocados (schema.ts, api.ts, testes).
 

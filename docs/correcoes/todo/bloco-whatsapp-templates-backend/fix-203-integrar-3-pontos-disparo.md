@@ -1,5 +1,5 @@
 ---
-id: FIX-195
+id: FIX-203
 titulo: "Rotear os 3 pontos de disparo da confirmação por resolveAndSend (usageKey)"
 status: todo
 severidade: alta

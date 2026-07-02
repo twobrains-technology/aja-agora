@@ -5,7 +5,7 @@ workspace: feat-whatsapp-templates-admin
 onda: 2
 depends_on: [bloco-whatsapp-templates-schema]
 paralelo_com: [bloco-whatsapp-templates-backend]
-itens: [FIX-196, FIX-197]
+itens: [FIX-204, FIX-205]
 escopo_arquivos:
   - src/app/api/admin/whatsapp/templates/route.ts            # NOVO (GET list, POST create)
   - src/app/api/admin/whatsapp/templates/[id]/submit/route.ts # NOVO
@@ -23,7 +23,7 @@ com `bloco-backend` (arquivos disjuntos). **Usa blocos shadcn/studio Pro via MCP
 criar UI do zero** (regra do CLAUDE.md).
 
 ## Itens (ordem)
-1. **FIX-196** — rotas admin: GET/POST `/api/admin/whatsapp/templates`, POST `.../[id]/submit` (usa `createTemplate`), POST `.../sync` (chama `reconcileTemplateStatuses` — stub nível 3).
-2. **FIX-197** — tela `/admin/whatsapp/templates` (shadcn/studio Pro): lista com badge de status, form de criação (usageKey/categoria/corpo com variáveis), ações submeter/sincronizar, exibe `rejectionReason`.
+1. **FIX-204** — rotas admin: GET/POST `/api/admin/whatsapp/templates`, POST `.../[id]/submit` (usa `createTemplate`), POST `.../sync` (chama `reconcileTemplateStatuses` — stub nível 3).
+2. **FIX-205** — tela `/admin/whatsapp/templates` (shadcn/studio Pro): lista com badge de status, form de criação (usageKey/categoria/corpo com variáveis), ações submeter/sincronizar, exibe `rejectionReason`.
 
 Spec: `docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md`.

@@ -20,8 +20,8 @@ Este branch forkou da base que JÁ TEM o schema da onda 1: tabela `whatsappTempl
    **NÃO crie `src/lib/whatsapp/template-sync.ts`** (evita conflito de arquivo com o backend). O orquestrador troca o stub pelo import no merge.
 
 4. Execute NA ORDEM, TDD strict:
-   - **FIX-196** rotas admin (protegidas por role admin, mesmo guard das demais): GET (lista de `whatsappTemplates`), POST (cria draft), `[id]/submit` (chama `createTemplate` → persiste `metaTemplateId`+`PENDING`; falha da Meta → mantém `DRAFT` com erro, não `PENDING` falso), `sync` (stub acima). Teste de integração das rotas.
-   - **FIX-197** tela `/admin/whatsapp/templates` (shadcn Pro): lista com badge de status por template + `rejectionReason` visível; form de criação (usageKey, metaName, category, language, corpo com variáveis); botões submeter/sincronizar. Teste de render/comportamento onde couber.
+   - **FIX-204** rotas admin (protegidas por role admin, mesmo guard das demais): GET (lista de `whatsappTemplates`), POST (cria draft), `[id]/submit` (chama `createTemplate` → persiste `metaTemplateId`+`PENDING`; falha da Meta → mantém `DRAFT` com erro, não `PENDING` falso), `sync` (stub acima). Teste de integração das rotas.
+   - **FIX-205** tela `/admin/whatsapp/templates` (shadcn Pro): lista com badge de status por template + `rejectionReason` visível; form de criação (usageKey, metaName, category, language, corpo com variáveis); botões submeter/sincronizar. Teste de render/comportamento onde couber.
 
 5. **1 commit Conventional (PT-BR) por item** (`feat:` / `test+feat:`).
 

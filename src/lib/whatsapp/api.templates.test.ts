@@ -1,4 +1,4 @@
-// Camada 1 (structural) — FIX-192: cliente Meta para CRIAR/LISTAR templates.
+// Camada 1 (structural) — FIX-200: cliente Meta para CRIAR/LISTAR templates.
 //
 // Bug-alvo: existe sendTemplate() (envio), mas NÃO há como criar/submeter um
 // template à Meta nem listá-los (necessário pro poll de reconciliação). Criar
@@ -23,7 +23,7 @@ afterEach(() => {
 	delete process.env.WHATSAPP_WABA_ID;
 });
 
-describe("FIX-192 — createTemplate", () => {
+describe("FIX-200 — createTemplate", () => {
 	it("faz POST no WABA /message_templates com Bearer e corpo correto", async () => {
 		global.fetch = vi.fn(async () => {
 			return new Response(
@@ -76,7 +76,7 @@ describe("FIX-192 — createTemplate", () => {
 	});
 });
 
-describe("FIX-192 — listTemplates", () => {
+describe("FIX-200 — listTemplates", () => {
 	it("faz GET no WABA /message_templates com fields e Bearer", async () => {
 		global.fetch = vi.fn(async () => {
 			return new Response(

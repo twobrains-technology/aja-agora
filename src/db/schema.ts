@@ -138,7 +138,7 @@ export const whatsappTemplateCategoryEnum = pgEnum("whatsapp_template_category",
 ]);
 
 // Estado de uma mensagem business-initiated enfileirada à espera de template
-// aprovado (fallback anti-manual — ver FIX-193/spec §Resolução de envio).
+// aprovado (fallback anti-manual — ver FIX-201/spec §Resolução de envio).
 export const whatsappOutboundStatusEnum = pgEnum("whatsapp_outbound_status", [
 	"pending",
 	"sent",

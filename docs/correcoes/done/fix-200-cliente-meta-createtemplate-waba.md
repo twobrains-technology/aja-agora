@@ -1,5 +1,5 @@
 ---
-id: FIX-192
+id: FIX-200
 titulo: "Cliente Meta: createTemplate/listTemplates + env WHATSAPP_WABA_ID + .env.example"
 status: done
 executado_em: 2026-07-02
@@ -18,7 +18,7 @@ rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ## Cenário exato
 - **Contexto:** o envio já usa a Cloud API oficial (Graph v21.0, `src/lib/whatsapp/api.ts`).
   `sendTemplate()` existe (`api.ts:256`), mas **não há função para CRIAR/SUBMETER** um template
-  à Meta, nem para LISTAR templates (necessário pro poll de reconciliação — ver FIX-194).
+  à Meta, nem para LISTAR templates (necessário pro poll de reconciliação — ver FIX-202).
 - **Detalhe crítico:** criar/submeter template é no **WABA (WhatsApp Business Account ID)**,
   não no `PHONE_NUMBER_ID`. Hoje só temos `WHATSAPP_PHONE_NUMBER_ID` em env.
 

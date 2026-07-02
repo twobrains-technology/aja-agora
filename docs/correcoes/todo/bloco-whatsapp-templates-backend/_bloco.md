@@ -5,7 +5,7 @@ workspace: feat-whatsapp-templates-backend
 onda: 2
 depends_on: [bloco-whatsapp-templates-schema]
 paralelo_com: [bloco-whatsapp-templates-admin]
-itens: [FIX-193, FIX-194, FIX-195]
+itens: [FIX-201, FIX-202, FIX-203]
 escopo_arquivos:
   - src/lib/whatsapp/template-dispatch.ts    # NOVO
   - src/lib/whatsapp/template-sync.ts         # NOVO
@@ -21,9 +21,9 @@ Toda a lógica de ENVIO via template e de SINCRONIZAÇÃO de status. Forka da ba
 com o schema (onda 1) integrado. Roda em paralelo com `bloco-admin` (arquivos
 disjuntos; único seam é o contrato `reconcileTemplateStatuses`, exportado daqui).
 
-## Itens (ordem — FIX-193 cria o que FIX-194/195 usam)
-1. **FIX-193** — `template-dispatch.ts`: `resolveAndSend` (janela aberta=texto livre; fechada+APPROVED=template; fechada+não-aprovado=enfileira) + `flushOutboundQueue`.
-2. **FIX-194** — `template-sync.ts` + webhook `message_template_status_update` + `reconcileTemplateStatuses`; ao virar APPROVED chama `flushOutboundQueue` (mesmo bloco, sem stub).
-3. **FIX-195** — integrar os 3 pontos de disparo da confirmação (closingPresentation, sendContractSummary, signatureHandoff) pra rotearem por `resolveAndSend`.
+## Itens (ordem — FIX-201 cria o que FIX-202/195 usam)
+1. **FIX-201** — `template-dispatch.ts`: `resolveAndSend` (janela aberta=texto livre; fechada+APPROVED=template; fechada+não-aprovado=enfileira) + `flushOutboundQueue`.
+2. **FIX-202** — `template-sync.ts` + webhook `message_template_status_update` + `reconcileTemplateStatuses`; ao virar APPROVED chama `flushOutboundQueue` (mesmo bloco, sem stub).
+3. **FIX-203** — integrar os 3 pontos de disparo da confirmação (closingPresentation, sendContractSummary, signatureHandoff) pra rotearem por `resolveAndSend`.
 
 Spec: `docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md`.

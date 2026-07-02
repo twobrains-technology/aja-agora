@@ -1,5 +1,5 @@
 ---
-id: FIX-194
+id: FIX-202
 titulo: "Sync de status: webhook message_template_status_update + reconcileTemplateStatuses"
 status: todo
 severidade: alta
@@ -15,7 +15,7 @@ rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ## Cenário exato
 - **Passos:** 1) template submetido fica `PENDING`; 2) Meta aprova/rejeita (minutos a 24h);
   3) manda um webhook `message_template_status_update`; 4) o status local tem que refletir isso
-  **sem refresh manual** e, ao aprovar, disparar a fila (FIX-193).
+  **sem refresh manual** e, ao aprovar, disparar a fila (FIX-201).
 - **Dados usados:** payload do webhook + `GET /{WABA_ID}/message_templates` (poll de reconciliação).
 
 ## Esperado × Atual
@@ -25,7 +25,7 @@ rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ## Root cause (INVESTIGADO)
 `src/app/api/webhook/whatsapp/route.ts:50-69` navega `body.entry[0].changes[0].value` e trata
 `statuses` (entrega de mensagem) e `messages` (inbound) — **não trata** o field
-`message_template_status_update`. Como não há tabela de template (até FIX-191), não havia onde
+`message_template_status_update`. Como não há tabela de template (até FIX-199), não havia onde
 gravar. Regra global "nunca solução manual/refresh" → precisa das duas vias (webhook + poll).
 
 ## Correção proposta (o quê × onde)

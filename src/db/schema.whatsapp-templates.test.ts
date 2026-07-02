@@ -1,4 +1,4 @@
-// Camada 1 (structural) — FIX-191: schema de Message Templates da Meta.
+// Camada 1 (structural) — FIX-199: schema de Message Templates da Meta.
 //
 // Bug-alvo: NÃO existe entidade de template no schema. Os status updates que a
 // Meta manda pelo webhook são só logados; não há como cadastrar um template,
@@ -21,7 +21,7 @@ import {
 	whatsappTemplateStatusEnum,
 } from "./schema";
 
-describe("FIX-191 — enums de templates", () => {
+describe("FIX-199 — enums de templates", () => {
 	it("whatsappTemplateStatusEnum tem os 6 estados do ciclo Meta", () => {
 		expect(whatsappTemplateStatusEnum.enumValues).toEqual([
 			"DRAFT",
@@ -46,7 +46,7 @@ describe("FIX-191 — enums de templates", () => {
 	});
 });
 
-describe("FIX-191 — tabela whatsapp_templates", () => {
+describe("FIX-199 — tabela whatsapp_templates", () => {
 	const cfg = getTableConfig(whatsappTemplates);
 	const cols = new Map(cfg.columns.map((c) => [c.name, c]));
 
@@ -92,7 +92,7 @@ describe("FIX-191 — tabela whatsapp_templates", () => {
 	});
 });
 
-describe("FIX-191 — tabela whatsapp_outbound_queue", () => {
+describe("FIX-199 — tabela whatsapp_outbound_queue", () => {
 	const cfg = getTableConfig(whatsappOutboundQueue);
 	const cols = new Map(cfg.columns.map((c) => [c.name, c]));
 

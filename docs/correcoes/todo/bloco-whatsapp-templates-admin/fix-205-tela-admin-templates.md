@@ -1,5 +1,5 @@
 ---
-id: FIX-197
+id: FIX-205
 titulo: "Tela admin /admin/whatsapp/templates (shadcn/studio Pro)"
 status: todo
 severidade: media
@@ -38,5 +38,5 @@ Não há tela de templates (mapa do Explore, 2026-07-02). A gestão do vínculo 
 ## Regressão exigida
 Camada 1 onde couber (render/estado): a lista renderiza status como badge; o form valida campos
 obrigatórios (usageKey, metaName, category, corpo); ações chamam as rotas certas. Prioridade nos
-testes de rota (FIX-196); teste de UI leve o suficiente pra pegar regressão de comportamento.
+testes de rota (FIX-204); teste de UI leve o suficiente pra pegar regressão de comportamento.
 Sem cassette.

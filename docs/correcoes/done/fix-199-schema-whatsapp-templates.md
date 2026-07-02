@@ -1,5 +1,5 @@
 ---
-id: FIX-191
+id: FIX-199
 titulo: "Criar schema whatsappTemplates + whatsappOutboundQueue + enums + migration"
 status: done
 executado_em: 2026-07-02
@@ -22,7 +22,7 @@ rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
   não persistidos. Não há como cadastrar um template, saber seu status, nem mapear onde é usado.
 - **Necessário:** uma tabela que represente o template registrado na Meta (com status
   acompanhável até `APPROVED`) e uma fila de mensagens business-initiated pendentes de
-  template aprovado (o fallback anti-manual — ver FIX-193).
+  template aprovado (o fallback anti-manual — ver FIX-201).
 
 ## Esperado × Atual
 - **Esperado:** tabelas `whatsappTemplates` e `whatsappOutboundQueue` no schema, com migration versionada.

@@ -1,5 +1,5 @@
 ---
-id: FIX-193
+id: FIX-201
 titulo: "template-dispatch.ts: resolveAndSend (janela) + fila + flushOutboundQueue"
 status: todo
 severidade: alta
