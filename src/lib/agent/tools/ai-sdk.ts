@@ -140,13 +140,10 @@ export const recommendationSchema = z.object({
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
-	contempladosMes: z
-		.number()
-		.int()
-		.optional()
-		.describe(
-			"Quantidade de contemplados por MES do grupo (docx passo 4) — use o availableSlots retornado por recommend_groups/search_groups. Dado REAL da oferta; omita se nao veio da busca.",
-		),
+	// FIX-191: `contempladosMes` DEIXOU de ser input da LLM (era a origem do "36/mês"
+	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
+	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
+	// real (>0). A LLM não digita mais número de contemplação — Lei 3/4.
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
 	scoreBreakdown: z
 		.object({
@@ -408,8 +405,7 @@ export async function executeSimulateQuota(
 		const delta = Math.abs(args.creditValue - details.creditValue);
 		const relativeDelta = delta / details.creditValue;
 		if (delta > 1 && relativeDelta > 0.01) {
-			const fmt = (n: number) =>
-				n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 			return {
 				...simulation,
 				creditAdjustmentNotice: {
@@ -457,12 +453,16 @@ export async function executeGetGroupDetails(
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
+	opts: { hasLance?: boolean } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
 	const fallbackResult = await recommendWithFallback(adapter, searchParams);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
+		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
+		hasLance: opts.hasLance,
 	});
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
@@ -726,8 +726,15 @@ export const consorcioTools = {
 		description:
 			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
 		inputSchema: z.object({
-			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais — do plano recomendado"),
-			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses — do plano recomendado"),
+			creditValue: z
+				.number()
+				.positive()
+				.describe("Valor da carta (crédito) em reais — do plano recomendado"),
+			termMonths: z
+				.number()
+				.int()
+				.positive()
+				.describe("Prazo nominal do grupo em meses — do plano recomendado"),
 			targetMonth: z
 				.number()
 				.int()
@@ -933,6 +940,10 @@ export type ConsorcioToolsContext = {
 	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
 	conversationId?: string;
 	channel?: "web" | "whatsapp";
+	/** FIX-193: perfil de lance do usuário (meta.qualifyAnswers.hasLance==="yes").
+	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
+	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
+	hasLance?: boolean;
 };
 
 /**
@@ -942,7 +953,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId } = ctx;
+	const { conversationId, hasLance } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1228,7 +1239,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
+			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
+			return runDiscovery("recommend_groups", () =>
+				executeRecommendGroups(adapter, args, { hasLance }),
+			);
 		},
 	});
 

@@ -26,6 +26,12 @@ import {
 	normalizeGluedSentences,
 	stripProcessPreamble,
 } from "./sanitizer";
+import {
+	coerceComparisonPayload,
+	coerceRecommendationPayload,
+	indexRevealGroups,
+	type RevealGroupIndex,
+} from "./recommendation-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -175,6 +181,11 @@ export async function* runAgentTurn(args: {
 	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
 	// pro artifact-guard (FIX-187) dropar qualquer proposta.
 	let discoveryFailedThisTurn = false;
+	// FIX-191: grupos REAIS do recommend_groups/search_groups deste turno,
+	// indexados por id — fonte única dos números do recommendation_card (hero) e
+	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
+	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
+	const revealGroupsById: RevealGroupIndex = new Map();
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -202,8 +213,8 @@ export async function* runAgentTurn(args: {
 	// `messages` — system dentro de `messages` dispara o warning de prompt-injection
 	// da AI SDK 6 a cada turno e duplicava a memória Letta. Ordem: systemContext
 	// antes do examplesBlock (examples mais perto da fala do usuário, recency bias).
-	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter(
-		(b): b is string => Boolean(b),
+	const extraSystemBlocks = [...systemContextBlocks, examplesBlock].filter((b): b is string =>
+		Boolean(b),
 	);
 
 	// BUG-CONVERSATION-ID-HALLUCINATION: conversationId/channel são passados ao
@@ -226,10 +237,7 @@ export async function* runAgentTurn(args: {
 	let toolIoStep = 0;
 	const result = await agent.stream({
 		messages,
-		onStepFinish: (step: {
-			toolCalls?: ToolCallRecord[];
-			toolResults?: ToolResultRecord[];
-		}) => {
+		onStepFinish: (step: { toolCalls?: ToolCallRecord[]; toolResults?: ToolResultRecord[] }) => {
 			logToolIO({
 				conversationId,
 				stepNumber: toolIoStep++,
@@ -295,6 +303,11 @@ export async function* runAgentTurn(args: {
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
 					lastQuotaSimulation = output ?? null;
+				}
+				// FIX-191: indexa os grupos reais da descoberta deste turno pra coagir
+				// o hero (recommendation_card) e o seletor (comparison_table).
+				if (part.toolName === "recommend_groups" || part.toolName === "search_groups") {
+					indexRevealGroups(revealGroupsById, part.toolName, (part as { output?: unknown }).output);
 				}
 				break;
 			}
@@ -385,6 +398,16 @@ export async function* runAgentTurn(args: {
 						// carta cheia com embutido de 49%).
 						if (artifactType === "simulation_result") {
 							payload = coerceSimulationPayload(input, lastQuotaSimulation);
+						}
+						// FIX-191: o hero e o seletor deixam de ser digitados pela LLM —
+						// cada cota é reescrita a partir do grupo REAL do turno (mata o
+						// "36/mês"). Emite groupId/ofertaId/quotaId + availableSlots real
+						// (CONTRATO com bloco-b); tipoOferta NUNCA vaza (crítério interno).
+						if (artifactType === "recommendation_card") {
+							payload = coerceRecommendationPayload(input, revealGroupsById);
+						}
+						if (artifactType === "comparison_table") {
+							payload = coerceComparisonPayload(input, revealGroupsById);
 						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
@@ -645,8 +668,7 @@ export async function* runAgentTurn(args: {
 			await persistMeta(conversationId, {
 				...refreshed,
 				recommendedOffer: snap,
-				recommendedAdministradora:
-					snap.administradora ?? refreshed.recommendedAdministradora,
+				recommendedAdministradora: snap.administradora ?? refreshed.recommendedAdministradora,
 			});
 		}
 	}

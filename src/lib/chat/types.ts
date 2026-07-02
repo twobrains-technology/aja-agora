@@ -12,6 +12,18 @@ export interface GroupCardPayload {
 	termMonths: number;
 	availableSlots: number;
 	contemplationRate: number;
+	/** FIX-191 (CONTRATO bloco-b, adendo B8): identificadores REAIS coagidos
+	 * server-side pra o seletor emitir `choose_offer` com o grupo já resolvido.
+	 * `groupId`/`quotaId` == `id` (quotaId opaco da Bevi); `ofertaId` é o UUID de
+	 * sessão da oferta (quando propagado). `tipoOferta` é interno — nunca aqui.
+	 * A UI (bloco-b/reveal hero+seletor) apenas CONSOME; nunca fabrica. */
+	groupId?: string;
+	ofertaId?: string;
+	quotaId?: string;
+	/** FIX-197: valorCarta BRUTO (denominação da carta, ex. 300k) — distinto de
+	 * `creditValue` (faixa re-simulada exibida). Alimenta o aviso de ajuste de
+	 * faixa. Ausente → aviso não aparece (degradação graciosa). */
+	rawCreditValue?: number;
 }
 
 export interface ComparisonTablePayload {
@@ -67,8 +79,19 @@ export interface RecommendationCardPayload {
 	termMonths: number;
 	contemplationRate: number;
 	/** docx passo 4 (resumo por opção): qtde de contemplados por MÊS — dado REAL
-	 * da oferta Bevi (monthlyAwardedQuotas/availableSlots). Contagem, não %. */
+	 * da oferta Bevi (monthlyAwardedQuotas/availableSlots). Contagem, não %.
+	 * FIX-191: coagido server-side a partir do availableSlots real (>0); nunca
+	 * digitado pela LLM (era a origem do "36/mês" fabricado). */
 	contempladosMes?: number;
+	/** FIX-191/192: contagem REAL de contemplados/mês coagida (0 quando ausente →
+	 * bloco-b oculta a linha de contemplação). */
+	availableSlots?: number;
+	/** FIX-191 (CONTRATO bloco-b, adendo B8): identificadores REAIS coagidos pra o
+	 * seletor emitir `choose_offer`. `groupId`/`quotaId` == `id`; `ofertaId` = UUID
+	 * de sessão da oferta (quando propagado). `tipoOferta` é interno — nunca aqui. */
+	groupId?: string;
+	ofertaId?: string;
+	quotaId?: string;
 	score: number; // 0-1 composite score from rankGroups()
 	scoreBreakdown: {
 		monthlyFit: number;
@@ -76,6 +99,20 @@ export interface RecommendationCardPayload {
 		adminFee: number;
 		termMatch: number;
 	};
+	// FIX-196 CONTRATO(bloco-a) — o hero fixo do reveal. bloco-a coage estes campos
+	// server-side (o `recommendation_card` deixa de receber `payload=input` cru).
+	// Opcionais = stub até o merge; a UI CONSOME, nunca fabrica.
+	/** ID REAL do grupo recomendado (quotaId opaco). Fallback: `id`. */
+	groupId?: string;
+	ofertaId?: string;
+	quotaId?: string;
+	/** Contemplados/mês COAGIDO (monthlyAwardedQuotas real, 0 quando ausente).
+	 * FIX-196/§3.1: a contagem por cota vem daqui — nunca de `contempladosMes`
+	 * (fabricável pela LLM) nem de `contemplationRate` como %. */
+	availableSlots?: number;
+	/** FIX-197: valorCarta BRUTO (denominação, ex. 300k) vs a faixa exibida
+	 * (`creditValue`). Alimenta o aviso de ajuste de faixa. */
+	rawCreditValue?: number;
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----
@@ -241,6 +278,10 @@ export interface RealOfferPayload {
 	 * API nova. Opcional; exibido só com fonte (D11). NUNCA prometer contemplação a
 	 * partir dele (semântica não confirmada — só comparação factual de posição). */
 	avgBidValue?: number;
+	/** FIX-197 CONTRATO(bloco-a): valorCarta BRUTO (denominação da carta, ex. 300k)
+	 * — distinto de `creditValue` (faixa re-simulada exibida). Presente e ≠ da faixa
+	 * → aviso "ajustamos essa carta pra sua faixa de ~R$ X". Ausente → sem aviso. */
+	rawCreditValue?: number;
 }
 
 /** Encaminhamento pra assinatura digital da administradora (sem "trocar de

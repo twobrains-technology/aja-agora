@@ -41,8 +41,10 @@ import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import {
 	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
 	buildRangePickerDirective,
@@ -51,7 +53,6 @@ import {
 	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
 import {
@@ -3516,7 +3517,10 @@ describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exib
 		const { toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", "Bora ver o que a gente consegue na sua faixa:"),
-			toolCallChunk("tc-sim", "simulate_quota", { groupId: "embracon-auto-106k", creditValue: 106000 }),
+			toolCallChunk("tc-sim", "simulate_quota", {
+				groupId: "embracon-auto-106k",
+				creditValue: 106000,
+			}),
 			toolCallChunk("tc-det", "get_group_details", { groupId: "embracon-auto-106k" }),
 			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "Embracon" }),
 			FINISH_TOOL_CALLS,
@@ -3558,7 +3562,10 @@ describe("FIX-180 — 'quero ver todos' NAO permite decidir sobre grupo nao-exib
 			}).allow,
 		).toBe(true);
 		expect(
-			evaluateActionPrecondition("present_decision_prompt", { shown, args: { administradora: "Itaú" } }).allow,
+			evaluateActionPrecondition("present_decision_prompt", {
+				shown,
+				args: { administradora: "Itaú" },
+			}).allow,
 		).toBe(true);
 	});
 
@@ -3594,7 +3601,11 @@ describe("FIX-182 — narracoes de steps diferentes nao colam (turno multi-tool)
 							chunks: [
 								{ type: "stream-start", warnings: [] },
 								{ type: "text-start", id: "s0" },
-								{ type: "text-delta", id: "s0", delta: "Bora ver o que a gente consegue na sua faixa:" },
+								{
+									type: "text-delta",
+									id: "s0",
+									delta: "Bora ver o que a gente consegue na sua faixa:",
+								},
 								{ type: "text-end", id: "s0" },
 								toolCallChunk("tc-1", "noop", {}),
 								FINISH_TOOL_CALLS,
@@ -3608,7 +3619,11 @@ describe("FIX-182 — narracoes de steps diferentes nao colam (turno multi-tool)
 						chunks: [
 							{ type: "stream-start", warnings: [] },
 							{ type: "text-start", id: "s1" },
-							{ type: "text-delta", id: "s1", delta: "Deixa eu buscar as opcoes reais na sua faixa." },
+							{
+								type: "text-delta",
+								id: "s1",
+								delta: "Deixa eu buscar as opcoes reais na sua faixa.",
+							},
 							{ type: "text-end", id: "s1" },
 							FINISH_STOP,
 						] as any[],
@@ -3719,8 +3734,7 @@ describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre
 			FINISH_TOOL_CALLS,
 		]);
 		const decided = toolCalls.find((tc) => tc.toolName === "present_decision_prompt");
-		const admin =
-			(decided?.input as { administradora?: string } | undefined)?.administradora ?? "";
+		const admin = (decided?.input as { administradora?: string } | undefined)?.administradora ?? "";
 		// A assinatura do bug: decisão sobre um grupo FORA do conjunto exibido.
 		expect(decided).toBeDefined();
 		expect(SHOWN).not.toContain(admin);
@@ -7885,5 +7899,178 @@ describe("FIX-190 — sanitizer runtime dropa o fallback técnico (barreira em c
 		const rule = /N(Ã|A)O.{0,200}(atualiz|recarregu?e|recarregar|refresh)[\s\S]{0,40}p[áa]gina/i;
 		expect(rule.test(SPECIALIST_BASE_PROMPT)).toBe(true);
 		expect(readSource("src/lib/agent/HARD_RULES.md")).toMatch(/atualiza a p[áa]gina/i);
+	});
+});
+
+// ============================================================================
+// FIX-191 — recommendation_card (hero) coagido server-side (mata o "36/mês")
+// ----------------------------------------------------------------------------
+// Real (Kairo, qa-dono-produto carro web, conv fe2e8a09, 2026-07-01): o hero
+// exibiu "36 por mês" — número NÃO-ancorado. Prova (spec §2): o runner só coagia
+// simulation_result e contemplation_dial; o recommendation_card era empurrado
+// as-is (payload = args da LLM), e `contempladosMes` era input livre da tool
+// (ai-sdk.ts) instruído por "copie de availableSlots" (directives.ts) — Lei 3/4
+// violadas. Fix: a LLM não digita mais número do hero; o runner reescreve cada
+// cota do reveal (hero + seletor) a partir do grupo REAL do turno
+// (coerceRecommendationPayload/coerceComparisonPayload). Cenários de aceite:
+// spec §7.1/§7.2/§7.3. Camada 1 detalhada: recommendation-payload.test.ts.
+// ============================================================================
+
+describe("FIX-191-HERO-COERCAO — recommendation_card não pode carregar número fabricado", () => {
+	it("cassette: a LLM emite present_recommendation_card com contempladosMes:36 (o bug reproduzido fielmente)", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Essa é a opção mais aderente pro seu perfil:"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				id: "6a3e6ceb419653c0a99932af",
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 300000,
+				monthlyPayment: 5404.2,
+				adminFeePercent: 24.9,
+				termMonths: 71,
+				contemplationRate: 8,
+				contempladosMes: 36, // ← o número fabricado (não vem da Bevi)
+				score: 0.7237,
+				scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+			}),
+			FINISH_TOOL_CALLS,
+		]);
+		const rec = toolCalls.find((t) => t.toolName === "present_recommendation_card");
+		expect((rec?.input as Record<string, unknown>)?.contempladosMes).toBe(36);
+	});
+
+	it("cassette+coerção (§7.2): o card RENDERIZADO ignora o 36 e usa o availableSlots REAL (0 → oculto)", async () => {
+		const { indexRevealGroups, coerceRecommendationPayload } = await import(
+			"@/lib/agent/orchestrator/recommendation-payload"
+		);
+		// Grupo REAL do recommend_groups do turno — retorno enxuto sem
+		// monthlyAwardedQuotas → availableSlots coagido = 0 (FIX-192).
+		const index = new Map();
+		indexRevealGroups(index, "recommend_groups", {
+			recommendations: [
+				{
+					id: "6a3e6ceb419653c0a99932af",
+					administradora: "BANCO DO BRASIL",
+					category: "auto",
+					creditValue: 300000,
+					monthlyPayment: 5404.2,
+					adminFeePercent: 24.9,
+					termMonths: 71,
+					availableSlots: 0,
+					contemplationRate: 0,
+					ofertaId: "49c2b15f-6f4a-42bc-b01e-f680cf7d553e",
+					score: 0.7237,
+					scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+				},
+			],
+		});
+		// O que a LLM digitou (o stream do cassette acima): 36 + números fabricados.
+		const llmInput = {
+			id: "6a3e6ceb419653c0a99932af",
+			contempladosMes: 36,
+			creditValue: 999999,
+			monthlyPayment: 1.23,
+			termMonths: 12,
+		};
+		const coerced = coerceRecommendationPayload(llmInput, index);
+		// O "36" morre e NENHUMA contagem de contemplação aparece (availableSlots real=0).
+		expect(coerced.contempladosMes).toBeUndefined();
+		expect(coerced.availableSlots).toBe(0);
+		// Números reais coagidos (não os fabricados da LLM).
+		expect(coerced.creditValue).toBe(300000);
+		expect(coerced.monthlyPayment).toBe(5404.2);
+		expect(coerced.termMonths).toBe(71);
+		// CONTRATO com bloco-b: identificadores reais pra o seletor emitir choose_offer.
+		expect(coerced.groupId).toBe("6a3e6ceb419653c0a99932af");
+		expect(coerced.ofertaId).toBe("49c2b15f-6f4a-42bc-b01e-f680cf7d553e");
+	});
+
+	it("estrutural: o runner coage recommendation_card E comparison_table (não empurra payload=input)", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toContain("indexRevealGroups");
+		expect(src).toMatch(/artifactType === "recommendation_card"/);
+		expect(src).toContain("coerceRecommendationPayload");
+		expect(src).toMatch(/artifactType === "comparison_table"/);
+		expect(src).toContain("coerceComparisonPayload");
+	});
+});
+
+// ============================================================================
+// FIX-195 — P0: escolher cota (choose_offer) segue ao contrato SEM loop
+// ----------------------------------------------------------------------------
+// Real (qa-dono-produto, conv fe2e8a09, 2026-07-01): reveal do carro → usuário
+// digita "Gostei do Banco do Brasil, quero seguir". O agente tentou re-resolver o
+// grupo/ID e falhou → 3 turnos de meta-narrativa admitindo falha técnica ao
+// cliente ("esse grupo deu um problema", "preciso trazer os IDs reais") +
+// value_picker selado → LOOP; só saiu com confirmação manual. Casa com o padrão
+// proibido §8 do roteiro. Raiz: o hero não é ancorado server-side (FIX-191) e não
+// existe caminho estruturado de "escolher esta cota" que carregue o groupId real.
+//
+// Cura (adendo B8): o seletor (bloco-b) emite {kind:"choose_offer", groupId}; o
+// handler server-side (route.ts) resolve o grupo (choose-offer.ts), re-ancora o
+// fechamento e dirige present_contract_form via buildChooseOfferDirective — SEM
+// search_groups, SEM re-resolução, SEM meta-narrativa. Camada 1 detalhada:
+// choose-offer.test.ts. Cassette do P0 (trava o retorno do loop):
+// ============================================================================
+
+describe("FIX-195-CHOOSE-OFFER-P0 — cota escolhida vai ao contrato sem re-busca nem meta-narrativa", () => {
+	// O padrão proibido §8 do roteiro (adendo B8 / CONTRATO).
+	const PADRAO_PROIBIDO = /vou (buscar|usar a ferramenta)|(deu|tive) um problema|IDs? reais/i;
+
+	it("cassette: o BUG reproduzido — meta-narrativa de falha técnica no loop (o detector pega)", async () => {
+		const cassette =
+			"Opa, tive um problema com esse grupo do Banco do Brasil aqui. " +
+			"Preciso trazer os IDs reais pra seguir — vou buscar de novo, tá?";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		// Reprodução fiel: fabricou a falha e não avançou (zero tool).
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		expect(
+			PADRAO_PROIBIDO.test(cassette),
+			"Detector do §8 tem que pegar a meta-narrativa do P0. Se não pega, atualize o regex.",
+		).toBe(true);
+	});
+
+	it("cassette: trajetória CORRETA — escolher cota dirige present_contract_form, SEM search e SEM frase proibida", async () => {
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Boa! Vamos seguir com o Banco do Brasil então. Pra fechar, só preciso de uns dados rápidos:",
+			),
+			toolCallChunk("tc-cf", "present_contract_form", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]?.toolName).toBe("present_contract_form");
+		// (b) do CONTRATO: chega ao contrato SEM re-busca…
+		expect(
+			toolCalls.some((t) => t.toolName === "search_groups" || t.toolName === "recommend_groups"),
+		).toBe(false);
+		// …e SEM nenhuma frase do padrão proibido §8.
+		expect(PADRAO_PROIBIDO.test(text)).toBe(false);
+	});
+
+	it("directive: buildChooseOfferDirective dirige o contrato e PROÍBE re-busca/meta-narrativa", () => {
+		const d = buildChooseOfferDirective({ administradora: "BANCO DO BRASIL" });
+		expect(d).toContain("present_contract_form");
+		expect(d).toContain("BANCO DO BRASIL");
+		expect(d).toMatch(/PROIBIDO[\s\S]*search_groups/);
+		expect(d).not.toContain("present_lead_form");
+	});
+
+	it("estrutural: o handler do route resolve a cota server-side e NÃO re-dispara a busca", () => {
+		const route = readSource("src/app/api/chat/route.ts");
+		const block = route.match(/body\.action\?\.kind === "choose_offer"[\s\S]{0,2500}/)?.[0] ?? "";
+		expect(block.length, "branch choose_offer não isolado").toBeGreaterThan(0);
+		expect(block).toContain("resolveChosenOffer");
+		expect(block).toContain("buildChooseOfferDirective");
+		expect(block).toContain("decisionDispatched");
+		expect(block).not.toContain("pipeSearchSummaryTurn");
 	});
 });

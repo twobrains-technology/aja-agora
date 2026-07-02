@@ -3,6 +3,7 @@ import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
 	buildDiscoveryFailedFallback,
+	buildQualifyStartYesDirective,
 	buildTransitionFirstContactDirective,
 } from "./directives";
 
@@ -99,5 +100,25 @@ describe("buildAdvanceToContractDirective — reafirmou interesse pós-decisão 
 		expect(d).toContain("present_contract_form");
 		expect(d).not.toContain("present_lead_form");
 		expect(d.toLowerCase()).not.toContain("consultor");
+	});
+});
+
+// FIX-194 (qa-dono-produto carro web, defeito E): o agente perguntava "Quanto
+// custa o carro?" no MESMO balão do gate que só coleta CPF/celular — o usuário
+// não pode responder ali (o valor tem seu próprio passo DEPOIS da identidade,
+// FIX-53). O turno consent→identify roda buildQualifyStartYesDirective: ele
+// precisa reagir curto e NÃO puxar a pergunta de valor. "Uma coisa por vez."
+describe("FIX-194 — turno consent→identify não pergunta o valor/preço do bem", () => {
+	it("o directive PROÍBE perguntar o valor/preço (identidade vem antes; o sistema conduz)", () => {
+		const d = buildQualifyStartYesDirective();
+		// forbid explícito da pergunta de valor.
+		expect(d).toMatch(/N[ÃA]O\s+pergunt\w+[^.]*(valor|pre[çc]o)/i);
+	});
+
+	it("o directive NÃO contém a pergunta de preço em si (uma coisa por vez)", () => {
+		const d = buildQualifyStartYesDirective();
+		expect(d.toLowerCase()).not.toMatch(/quanto custa/);
+		// não instrui a chamar tool nem a coletar o valor neste turno.
+		expect(d).not.toContain("present_value_picker");
 	});
 });
