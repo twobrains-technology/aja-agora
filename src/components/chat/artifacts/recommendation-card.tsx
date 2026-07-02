@@ -181,7 +181,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				{/* Hero monthly payment */}
 				<div>
 					<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
+					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap">
 						{formatBRL(monthlyPayment)}
 						<span className="text-base font-normal text-muted-foreground">/mês</span>
 					</p>
@@ -191,7 +191,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				<div className="grid grid-cols-2 gap-x-4 gap-y-3">
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(creditValue)}</p>
+						<p className="aja-num text-sm font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{formatBRL(creditValue)}</p>
 					</div>
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Prazo</p>
@@ -221,9 +221,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						className="flex items-start gap-1.5 -mt-1 text-[11px] leading-snug text-muted-foreground"
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
-						<span>
-							Ajustamos essa carta de {formatBRL0(rawCreditValue)} pra sua faixa de ~
-							{formatBRL0(creditValue)}.
+						<span className="whitespace-normal break-words">
+							Ajustamos essa carta de <span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> pra sua faixa de ~
+							<span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
 						</span>
 					</p>
 				)}
