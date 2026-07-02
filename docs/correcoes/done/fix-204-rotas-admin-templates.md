@@ -1,13 +1,15 @@
 ---
 id: FIX-204
 titulo: "Rotas admin de templates: listar/criar/submeter/sincronizar"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 arquivos:
   - src/app/api/admin/whatsapp/templates/route.ts
   - src/app/api/admin/whatsapp/templates/[id]/submit/route.ts
   - src/app/api/admin/whatsapp/templates/sync/route.ts
+executado_em: 2026-07-02
+commit: d0be7d20
 rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ---
 ## Palavras do operador
