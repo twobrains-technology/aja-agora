@@ -17,6 +17,18 @@ conflitos_esperados: []
 ---
 # Bloco B — Reveal: hero + seletor de cotas (UI) + aviso de ajuste + a11y
 
+> ✅ **CONCLUÍDO** (FIX-196/197/198 em `done/`; commits f6536b85, 14275c32,
+> 947476eb; `pnpm test:unit` verde 2329/2329; branch + tag `block-done` no origin).
+>
+> ⚠️ **PENDÊNCIA DE MERGE — D6 (LER ANTES DE INTEGRAR):** o **FIX-197** (aviso de
+> ajuste de faixa) depende do bloco-a **coagir `rawCreditValue`** (valorCarta BRUTO,
+> ex. R$ 300k) no payload do reveal e do `real_offer` — campo **além do adendo B8**.
+> Sem ele o aviso fica **DORMENTE** (não quebra nada, degrada gracioso), mas o
+> FIX-197 fica capado. Ao integrar, garanta que o bloco-a preenche `rawCreditValue`.
+> Contexto completo: `docs/correcoes/decisions/2026-07-01-bloco-b-reveal-ui.md` (D6).
+> Demais dependências do contrato (choose_offer + coerção groupId/ofertaId/quotaId/
+> availableSlots) idem no ADR (D3/D5/D6).
+
 Frontend do refino da tela de recomendação. Implementa a **Opção 1** decidida pelo Kairo (hero
 fixo + seletor de cotas): tocar um chip promove a cota ao hero e recalcula o simulador no lugar
 (client-side); "Seguir com <cota>" emite a ação estruturada `{kind:"choose_offer", groupId,
