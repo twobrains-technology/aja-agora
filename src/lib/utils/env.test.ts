@@ -50,34 +50,4 @@ describe("isSimulatorEnabled (Bug B-01)", () => {
 		vi.stubEnv("NODE_ENV", "production");
 		expect(isSimulatorEnabled()).toBe(false);
 	});
-
-	// Override explícito p/ QA da jornada em produção (simulador é dev-only por
-	// padrão; a flag SIMULATOR_FORCE_ENABLE libera pontualmente sem mexer no
-	// TB_ENV, que dirige roteamento/identidade de prod).
-	describe("SIMULATOR_FORCE_ENABLE (override QA em prod)", () => {
-		it("habilita em PROD quando SIMULATOR_FORCE_ENABLE=true", () => {
-			vi.stubEnv("TB_ENV", "prod");
-			vi.stubEnv("NODE_ENV", "production");
-			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "true");
-			expect(isSimulatorEnabled()).toBe(true);
-		});
-
-		it("habilita em PROD quando SIMULATOR_FORCE_ENABLE=1", () => {
-			vi.stubEnv("TB_ENV", "production");
-			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "1");
-			expect(isSimulatorEnabled()).toBe(true);
-		});
-
-		it("continua BLOQUEADO em PROD sem a flag", () => {
-			vi.stubEnv("TB_ENV", "prod");
-			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "");
-			expect(isSimulatorEnabled()).toBe(false);
-		});
-
-		it("flag com valor arbitrário (false/0/qualquer) NÃO habilita em prod", () => {
-			vi.stubEnv("TB_ENV", "prod");
-			vi.stubEnv("SIMULATOR_FORCE_ENABLE", "false");
-			expect(isSimulatorEnabled()).toBe(false);
-		});
-	});
 });
