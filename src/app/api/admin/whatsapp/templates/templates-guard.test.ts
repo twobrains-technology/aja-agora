@@ -25,22 +25,25 @@ describe("FIX-204 — guard estrutural das rotas de templates", () => {
 	}
 });
 
-describe("FIX-204 — SEAM nível 3: rota /sync contra STUB do bloco-backend", () => {
+describe("FIX-204 — SEAM nível 3 resolvido: rota /sync usa a reconciliação real", () => {
+	// O seam foi RESOLVIDO no merge da onda: o stub local deu lugar ao import
+	// real de template-sync (bloco-backend). Estes asserts travam a realidade
+	// resolvida — não a fase de stub.
 	const src = read(`${BASE}/sync/route.ts`);
 
 	it("chama reconcileTemplateStatuses()", () => {
 		expect(src).toContain("reconcileTemplateStatuses(");
 	});
 
-	it("marca o TODO(bloco-backend) para troca do stub no merge", () => {
-		expect(src).toContain("TODO(bloco-backend)");
+	it("importa a implementação real de template-sync (não stub local)", () => {
+		expect(src).toMatch(/^import[^\n]*template-sync/m);
+		// e NÃO redefine a função localmente (o stub morreu no merge)
+		expect(src).not.toMatch(/async function reconcileTemplateStatuses/);
 	});
 
-	it("usa STUB LOCAL, não importa template-sync (arquivo é do bloco-backend)", () => {
-		// A função vive local no arquivo (stub)…
-		expect(src).toMatch(/async function reconcileTemplateStatuses/);
-		// …e NÃO há import real de template-sync (só a menção no comentário do seam).
-		expect(src).not.toMatch(/^import[^\n]*template-sync/m);
+	it("envolve a reconciliação em try/catch → 502 JSON (resiliência, não 500 mudo)", () => {
+		expect(src).toMatch(/try\s*{[\s\S]*reconcileTemplateStatuses\(/);
+		expect(src).toMatch(/catch[\s\S]*status:\s*502/);
 	});
 });
 

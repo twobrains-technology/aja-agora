@@ -11,6 +11,20 @@ import { isSimulatedWaId, publishToClient } from "./simulator-bus";
 
 const GRAPH_API = "https://graph.facebook.com/v21.0";
 
+// Timeout dos fetches à Graph API (ms). Egress lento pendura a request ~30s e
+// vira 502 do gateway — cortamos em 15s e traduzimos o abort num erro claro.
+const GRAPH_TIMEOUT_MS = 15_000;
+
+/**
+ * `true` quando o erro veio do AbortSignal.timeout estourar (o navegador/Node
+ * lança um DOMException `TimeoutError`; alguns runtimes usam `AbortError`).
+ */
+function isTimeoutError(err: unknown): boolean {
+	return (
+		err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")
+	);
+}
+
 function getConfig() {
 	const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
 	const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -49,6 +63,7 @@ async function callApi(
 				messaging_product: "whatsapp",
 				...payload,
 			}),
+			signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
 		});
 
 		if (!res.ok) {
@@ -62,6 +77,10 @@ async function callApi(
 		if (messageId) console.log("[whatsapp-api] Sent:", messageId);
 		return { messageId };
 	} catch (err) {
+		if (isTimeoutError(err)) {
+			console.error("[whatsapp-api] Send timeout (>15s) ao falar com a Meta");
+			return { error: "timeout ao falar com a Meta (>15s)" };
+		}
 		console.error("[whatsapp-api] Send error:", err);
 		return { error: String(err) };
 	}
@@ -188,14 +207,20 @@ export async function downloadMedia(
 	const { accessToken } = getConfig();
 	const authHeaders = { Authorization: `Bearer ${accessToken}` };
 
-	const metaRes = await fetch(`${GRAPH_API}/${mediaId}`, { headers: authHeaders });
+	const metaRes = await fetch(`${GRAPH_API}/${mediaId}`, {
+		headers: authHeaders,
+		signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+	});
 	if (!metaRes.ok) {
 		throw new Error(`[whatsapp-api] downloadMedia meta failed (${metaRes.status})`);
 	}
 	const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
 	if (!meta.url) throw new Error("[whatsapp-api] downloadMedia: resposta sem url");
 
-	const binRes = await fetch(meta.url, { headers: authHeaders });
+	const binRes = await fetch(meta.url, {
+		headers: authHeaders,
+		signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+	});
 	if (!binRes.ok) {
 		throw new Error(`[whatsapp-api] downloadMedia binary failed (${binRes.status})`);
 	}
@@ -320,19 +345,29 @@ export async function createTemplate(
 ): Promise<CreateTemplateResult> {
 	const { accessToken, wabaId } = getWabaConfig();
 	const url = `${GRAPH_API}/${wabaId}/message_templates`;
-	const res = await fetch(url, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${accessToken}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			name: input.name,
-			language: input.language,
-			category: input.category,
-			components: input.components,
-		}),
-	});
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				name: input.name,
+				language: input.language,
+				category: input.category,
+				components: input.components,
+			}),
+			signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+		});
+	} catch (err) {
+		if (isTimeoutError(err)) {
+			console.error("[whatsapp-api] createTemplate timeout (>15s)");
+			throw new Error("timeout ao falar com a Meta (>15s) ao criar o template");
+		}
+		throw err;
+	}
 	if (!res.ok) {
 		const error = await res.text();
 		console.error(`[whatsapp-api] createTemplate failed (${res.status}):`, error);
@@ -361,9 +396,19 @@ export async function listTemplates(): Promise<MetaTemplate[]> {
 	let url: string | undefined = `${GRAPH_API}/${wabaId}/message_templates?fields=${fields}`;
 	const templates: MetaTemplate[] = [];
 	while (url) {
-		const res: Response = await fetch(url, {
-			headers: { Authorization: `Bearer ${accessToken}` },
-		});
+		let res: Response;
+		try {
+			res = await fetch(url, {
+				headers: { Authorization: `Bearer ${accessToken}` },
+				signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+			});
+		} catch (err) {
+			if (isTimeoutError(err)) {
+				console.error("[whatsapp-api] listTemplates timeout (>15s)");
+				throw new Error("timeout ao falar com a Meta (>15s) ao listar templates");
+			}
+			throw err;
+		}
 		if (!res.ok) {
 			const error = await res.text();
 			console.error(`[whatsapp-api] listTemplates failed (${res.status}):`, error);

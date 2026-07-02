@@ -17,6 +17,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { errorMessageFromResponse } from "./error-copy";
 import type { WhatsappTemplate } from "./templates-table";
 
 interface Props {
@@ -40,8 +41,7 @@ export function TemplateRowActions({ template, onEdit, onRefresh }: Props) {
 				method: "POST",
 			});
 			if (!res.ok) {
-				const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-				throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
+				throw new Error(await errorMessageFromResponse(res));
 			}
 			setSubmitOpen(false);
 			onRefresh();
