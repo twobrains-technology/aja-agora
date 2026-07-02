@@ -19,6 +19,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { WhatsappTemplate } from "./templates-table";
 
+/** FIX-208: cópia amigável quando o erro é de gateway/indisponibilidade (não da app). */
+export const GATEWAY_ERROR_COPY =
+	"Serviço temporariamente indisponível ao falar com a Meta. Tente novamente em instantes.";
+
+/**
+ * FIX-208 — deriva a mensagem de erro do submit.
+ * - Erro de negócio da app (JSON com message/error) → preserva a mensagem.
+ * - 5xx de gateway ou resposta não-JSON (ex.: 502 html do Cloudflare) → cópia amigável.
+ * - Resto → fallback "HTTP <status>".
+ */
+export function deriveSubmitErrorMessage(input: {
+	status: number;
+	contentType: string | null;
+	jsonBody: { message?: string; error?: string } | null;
+}): string {
+	const appMessage = input.jsonBody?.message ?? input.jsonBody?.error;
+	if (appMessage) return appMessage;
+
+	// Gateway/indisponibilidade (502 html do Cloudflare etc.): resposta 5xx sem
+	// JSON de negócio → cópia amigável em vez de "HTTP 5xx" cru.
+	if (input.status >= 500) return GATEWAY_ERROR_COPY;
+
+	return `HTTP ${input.status}`;
+}
+
 interface Props {
 	template: WhatsappTemplate;
 	onEdit: () => void;
@@ -40,8 +65,16 @@ export function TemplateRowActions({ template, onEdit, onRefresh }: Props) {
 				method: "POST",
 			});
 			if (!res.ok) {
-				const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-				throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
+				const jsonBody = (await res.json().catch(() => null)) as
+					| { message?: string; error?: string }
+					| null;
+				throw new Error(
+					deriveSubmitErrorMessage({
+						status: res.status,
+						contentType: res.headers.get("content-type"),
+						jsonBody,
+					}),
+				);
 			}
 			setSubmitOpen(false);
 			onRefresh();
