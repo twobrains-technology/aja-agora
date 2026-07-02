@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
@@ -17,6 +17,23 @@ const formatBRL = (value: number): string =>
 		style: "currency",
 		currency: "BRL",
 	}).format(value);
+
+const formatBRL0 = (value: number): string =>
+	new Intl.NumberFormat("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+		maximumFractionDigits: 0,
+	}).format(value);
+
+// FIX-197 (§3.6) — a Bevi devolve cartas na denominação do grupo (ex. R$ 300k) e
+// a tela mostra a faixa re-simulada (ex. ~R$ 131k). Sem aviso, o ajuste fica
+// implícito. Exibe SÓ quando o valorCarta bruto (rawCreditValue) difere da faixa
+// exibida — ancorado nos dois números reais, nunca fabricado.
+const hasCreditAdjustment = (rawCreditValue: number | undefined, creditValue: number): boolean =>
+	rawCreditValue != null &&
+	Number.isFinite(rawCreditValue) &&
+	Number.isFinite(creditValue) &&
+	Math.round(rawCreditValue) !== Math.round(creditValue);
 
 // docx passo 4: "tipo de grupo" no resumo por opção.
 const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
@@ -74,6 +91,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const creditValue = cota?.creditValue ?? payload.creditValue;
 	const termMonths = cota?.termMonths ?? payload.termMonths;
 	const category = cota?.category ?? payload.category;
+
+	// FIX-197 — aviso de ajuste de faixa (valorCarta bruto ≠ faixa exibida).
+	const rawCreditValue = cota?.rawCreditValue ?? payload.rawCreditValue;
+	const showAdjustNotice = hasCreditAdjustment(rawCreditValue, creditValue);
 
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
 	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
@@ -190,6 +211,22 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[category]}</p>
 					</div>
 				</div>
+
+				{/* FIX-197 (§3.6) — aviso discreto de ajuste de faixa: a carta é da
+				    denominação do grupo (rawCreditValue); ajustamos à faixa pedida
+				    (creditValue). Ancorado nos dois números reais; some quando iguais. */}
+				{showAdjustNotice && rawCreditValue != null && (
+					<p
+						data-testid="credit-adjustment-notice"
+						className="flex items-start gap-1.5 -mt-1 text-[11px] leading-snug text-muted-foreground"
+					>
+						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
+						<span>
+							Ajustamos essa carta de {formatBRL0(rawCreditValue)} pra sua faixa de ~
+							{formatBRL0(creditValue)}.
+						</span>
+					</p>
+				)}
 
 				{/* Expandable score breakdown — só na cota recomendada (score ancorado) */}
 				{showScoreBreakdown && scoreBreakdown != null && (
