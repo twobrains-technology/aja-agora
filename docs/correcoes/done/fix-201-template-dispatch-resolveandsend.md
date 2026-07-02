@@ -1,7 +1,9 @@
 ---
 id: FIX-201
 titulo: "template-dispatch.ts: resolveAndSend (janela) + fila + flushOutboundQueue"
-status: todo
+status: done
+commit: 3c39e1cd
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:

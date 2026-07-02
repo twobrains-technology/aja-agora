@@ -1,7 +1,9 @@
 ---
 id: FIX-203
 titulo: "Rotear os 3 pontos de disparo da confirmação por resolveAndSend (usageKey)"
-status: todo
+status: done
+commit: 889d7380
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:
