@@ -103,8 +103,25 @@ export async function analyzeAndMerge(
 	// TRAVA (requisito do Kairo: "se o componente nao aparecer tem que se resolver
 	// mesmo assim"). Só na coleta INICIAL (creditMax ainda ausente); o refit
 	// pós-reveal segue guiado pelo analyzer — trocar de faixa é decisão do LLM.
+	//
+	// FIX-208 (PROD 2026-07-02): quando o gate de VALOR está pendente (toda a
+	// pré-qualificação feita, só falta o creditMax), o backstop recebe o contexto do
+	// gate `credit` — aí um número NU ("200") vira valor (200 mil, clampado). Sem
+	// isso, parseAssetValue("200")=null por design e o funil fechava mudo no gate de
+	// valor. O contexto só é passado quando o gate credit está DE FATO pendente.
+	const creditGatePending =
+		q.creditMax === undefined &&
+		Boolean(meta.currentCategory) &&
+		Boolean(meta.qualifyConsented) &&
+		Boolean(meta.identityCollected) &&
+		!meta.pendingFollowUp;
 	const parsedCreditMax =
-		analysis.creditMax === null && q.creditMax === undefined ? parseAssetValue(text) : null;
+		analysis.creditMax === null && q.creditMax === undefined
+			? parseAssetValue(
+					text,
+					creditGatePending ? { gate: "credit", category: meta.currentCategory } : undefined,
+				)
+			: null;
 	const sourceCreditMax = analysis.creditMax ?? parsedCreditMax;
 	if (sourceCreditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
 		// FIX-33: o valor de texto livre não passa pelos sliders — clampa na faixa

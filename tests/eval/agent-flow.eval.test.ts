@@ -1669,3 +1669,54 @@ describeIfKey("EVAL-FIX-206 — persona leiga com dúvidas não fica presa no fu
 		expect((doubtsTurn?.content ?? "").length).toBeGreaterThan(0);
 	});
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENÁRIO FIX-208 — responder o VALOR com número nu não trava o funil
+// ----------------------------------------------------------------------------
+// Bug (Kairo, WhatsApp PROD 2026-07-02): "Quanto custa o carro?" → usuário
+// responde "200" → o agente cai em "Acho que me perdi por aqui...". A persona
+// abaixo responde o valor SEMPRE como número nu curto ("200"), o gatilho exato.
+// Assert comportamental: o agente NUNCA emite o fallback "me perdi" e o funil
+// avança (o valor vira creditMax e a coleta segue). Nightly, não bloqueia PR.
+// ─────────────────────────────────────────────────────────────────────────────
+describeIfKey("Eval FIX-208 — valor por número nu ('200') não trava no 'me perdi'", () => {
+	let result: Awaited<ReturnType<typeof runConversation>> | null = null;
+
+	beforeAll(async () => {
+		result = await runConversation({
+			name: "valor-numero-nu-auto",
+			firstUserMessage: "Quero um carro por consórcio",
+			userBotSystemPrompt: `Você é Rafael, brasileiro, quer um carro por consórcio.
+Você TEM PRESSA e responde SEMPRE muito curto, com o mínimo de palavras.
+REGRA IMPORTANTE: quando o agente perguntar o valor do bem / quanto custa o carro / qual valor da carta, responda APENAS o número nu "200" (só isso, sem "mil", sem "R$", sem "reais"). Se ele reperguntar o valor, responda "200 mil".
+Quando perguntarem seu nome, diga apenas "Rafael".
+Quando perguntarem se você já fez consórcio, diga "primeira vez".
+Quando pedirem CPF e celular, diga "52998224725" e "11999998888".
+Quando perguntarem sobre reserva/lance, diga "não".
+Siga o passo que o agente propõe; não invente perguntas novas nem peça pra recomeçar.`,
+			maxTurns: 14,
+		});
+	}, 300_000);
+
+	afterAll(async () => {
+		if (result) await cleanup(result.conversationId);
+	});
+
+	it("[FIX-208] o agente NUNCA emite o fallback 'me perdi' ao receber o valor por número nu", () => {
+		const text = fullAgentText(result?.turns ?? []).toLowerCase();
+		expect(
+			/me perdi/.test(text),
+			`O agente não pode cair no EMPTY_TURN_FALLBACK ("Acho que me perdi...") ao receber "200" ` +
+				`como valor. Texto do agente: "${text.slice(0, 400)}..."`,
+		).toBe(false);
+	});
+
+	it("[FIX-208] o funil AVANÇA: o valor do bem é capturado (creditMax) e a coleta segue", async () => {
+		const finalMeta = result ? await reloadMeta(result.conversationId) : null;
+		expect(
+			finalMeta?.qualifyAnswers?.creditMax,
+			`O número nu "200" deveria virar creditMax (200 mil, clampado na faixa auto), ` +
+				`destravando o funil. qualifyAnswers=${JSON.stringify(finalMeta?.qualifyAnswers)}`,
+		).toBeGreaterThan(0);
+	});
+});

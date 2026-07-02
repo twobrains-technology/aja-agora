@@ -11,6 +11,19 @@
 // Conservador de propósito: número NU pequeno sem marcador (mil/k/R$/milhão) é
 // ambíguo demais pra cravar como valor de bem — deixa pro analyzer. E NUNCA lê
 // orçamento mensal ("850 por mês") como valor do bem.
+//
+// FIX-208 (PROD 2026-07-02): EXCEÇÃO conservadora — quando o gate `credit` está
+// pendente (o usuário está respondendo "Qual valor do bem?") e a categoria é
+// conhecida, um número NU vira valor: quem responde "200" pra um carro quer
+// R$ 200 mil. Só nesse contexto; fora dele o número nu segue null.
+
+import type { Category } from "@/lib/agent/personas";
+import { CREDIT_BOUNDS, clampCreditToCategory } from "@/lib/agent/qualify-config";
+import type { Gate } from "@/lib/agent/qualify-state";
+
+/** Contexto do funil pra desambiguar número nu (FIX-208). Só o gate `credit`
+ * com categoria conhecida habilita a leitura de número nu como valor do bem. */
+export type AssetValueContext = { gate?: Gate | null; category?: Category | null };
 
 /** Marca orçamento/parcela mensal — quando presente, o número é parcela, não o
  * valor do bem. Espelha a separação que o turn-analyzer faz (850/mês = orçamento). */
@@ -41,12 +54,40 @@ function magnitudeCount(raw: string): number | null {
 	return brNumber(cleaned);
 }
 
+/** FIX-208: a mensagem é ESSENCIALMENTE um número (1 grupo de dígitos, ≤ 4
+ * palavras)? Só então um número nu no gate `credit` é lido como valor — evita
+ * cravar valor de uma pergunta solta com número ("e a taxa de 2%?"). Lei 4:
+ * não age sobre número não-ancorado no valor do bem. Retorna o número ou null. */
+function bareNumberAsValue(t: string): number | null {
+	const digitGroups = t.match(/\d+/g) ?? [];
+	const words = t.trim().split(/\s+/).filter(Boolean);
+	if (digitGroups.length !== 1 || words.length > 4) return null;
+	const m = t.match(/(\d+)(?:[.,](\d{1,2}))?/);
+	if (!m) return null;
+	const n = Number.parseFloat(m[2] ? `${m[1]}.${m[2]}` : m[1]);
+	return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Um número nu no gate de valor é dado em MILHARES quando abaixo do piso da
+ * faixa do bem ("200" pra carro = R$ 200 mil); no piso ou acima já é reais crus. */
+function scaleBareToAssetValue(n: number, category: Category): number {
+	const { min } = CREDIT_BOUNDS[category];
+	return n >= min ? Math.round(n) : Math.round(n * 1000);
+}
+
 /**
  * Extrai o VALOR DO BEM (em reais) de um texto livre, de forma determinística.
  * Retorna `null` quando não há um valor claramente de bem (número ambíguo,
  * orçamento mensal, ou texto sem número).
+ *
+ * FIX-208: `ctx` habilita a leitura de número NU quando o gate `credit` está
+ * pendente com categoria conhecida (o usuário está respondendo o valor). Sem
+ * `ctx` (ou fora do gate credit), o comportamento é o de sempre — número nu = null.
  */
-export function parseAssetValue(text: string | null | undefined): number | null {
+export function parseAssetValue(
+	text: string | null | undefined,
+	ctx?: AssetValueContext,
+): number | null {
 	if (!text) return null;
 	const t = text.toLowerCase();
 	if (MONTHLY_MARKER.test(t)) return null;
@@ -78,6 +119,17 @@ export function parseAssetValue(text: string | null | undefined): number | null 
 	if (bare) {
 		const n = brNumber(bare[1]);
 		if (n !== null) return Math.round(n);
+	}
+
+	// 5) FIX-208 — número NU sem marcador ("200"), SÓ no contexto do gate `credit`
+	// com categoria conhecida (o usuário respondendo o valor do bem). Escala pra
+	// milhares quando abaixo do piso da faixa e clampa na categoria. Fora desse
+	// contexto o número nu segue ambíguo (retorna null logo abaixo).
+	if (ctx?.gate === "credit" && ctx.category) {
+		const n = bareNumberAsValue(t);
+		if (n !== null) {
+			return clampCreditToCategory(scaleBareToAssetValue(n, ctx.category), ctx.category).value;
+		}
 	}
 
 	return null;

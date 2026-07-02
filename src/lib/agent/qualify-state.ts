@@ -16,6 +16,21 @@ export type Gate =
 	| "simulator-offer"
 	| "decision";
 
+/**
+ * FIX-208: gates de COLETA ativa da qualificação — quem responde direto a um
+ * destes está fornecendo o dado pedido (valor do bem, lance), então o gate
+ * dispara mesmo em intent `neutral` (o analyzer é não-confiável em timeout de
+ * cold-start). NÃO inclui experience/consent (binárias com card próprio que já
+ * são dirigidas por clique) nem name/search/decision (fora da coleta de dados).
+ * Exportado pra o guard rede-final (gate-reengage) re-emitir a MESMA classe.
+ */
+export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
+	"credit",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+]);
+
 export type UserIntent =
 	| "ready_to_proceed"
 	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
@@ -189,6 +204,23 @@ export function decideShowGate(args: {
 	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
 	if (gate === "simulator-offer") {
 		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// FIX-208 (Kairo, WhatsApp PROD 2026-07-02): responder DIRETO um gate de COLETA
+	// (valor/lance) dispara o gate mesmo em intent `neutral`. O bug: "Quanto custa o
+	// carro?" → usuário responde "200" → o analyzer cai em NEUTRAL_FALLBACK (timeout
+	// cold-start) → o heurístico "neutral → conversacional" (abaixo) SUPRIME o gate e
+	// a LLM fica muda → EMPTY_TURN_FALLBACK ("me perdi"). Mesma CLASSE do FIX-206, mas
+	// no gate de valor em turno de USUÁRIO. Durante a coleta ativa o "neutral →
+	// conversacional" NÃO vale — ele é pra PÓS-reveal. Perguntas/dúvidas/off-topic/
+	// wants_more_options seguem deixando o agente conversar (o usuário desviou; o
+	// watchdog FIX-207 re-engaja se ele sumir). Invariante em CÓDIGO (Lei 4), não
+	// regra-no-prompt. Server-authored já retornou true acima (FIX-206) — não colide.
+	if (COLLECTION_GATES.has(gate)) {
+		if (intent === "asking_question" || intent === "expressing_doubt" || intent === "off_topic") {
+			return false;
+		}
+		return true;
 	}
 
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.

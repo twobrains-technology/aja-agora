@@ -41,7 +41,11 @@ import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { pendingGateAfterTurn, shouldReengageGate } from "@/lib/agent/gate-reengage";
+import {
+	pendingGateAfterTurn,
+	reengageQuestionForGate,
+	shouldReengageGate,
+} from "@/lib/agent/gate-reengage";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import {
@@ -7541,7 +7545,9 @@ describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", ()
 		expect(parseAssetValue("uns 80 mil")).toBe(80_000);
 		expect(parseAssetValue("R$ 240.000")).toBe(240_000);
 		const analyze = readSource("src/lib/agent/orchestrator/analyze.ts");
-		expect(analyze).toMatch(/parseAssetValue\(text\)/);
+		// FIX-208: o backstop agora recebe o contexto do gate credit (número nu) —
+		// segue sendo parseAssetValue(text, …), não mais o literal parseAssetValue(text).
+		expect(analyze).toMatch(/parseAssetValue\(\s*text/);
 	});
 });
 
@@ -8494,5 +8500,138 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 		expect(worker).toMatch(/runReengageCycle/);
 		expect(worker).toMatch(/shouldReengageGate/);
 		expect(worker).toMatch(/GATE_REENGAGE_TIMEOUT_MS|timeoutMs/);
+	});
+});
+
+// ============================================================================
+// FIX-208 — o gate de VALOR não fecha o turno mudo (número nu / analyzer neutral)
+// ----------------------------------------------------------------------------
+// Bug (Kairo, WhatsApp PROD 2026-07-02): "Quanto custa o carro?" → usuário
+// responde "200" (e depois "200 mil reais") → o agente cai no EMPTY_TURN_FALLBACK
+// ("Acho que me perdi por aqui. Pode mandar de novo, por favor?"). Mesma CLASSE
+// do FIX-206, mas no gate de VALOR (credit) em turno de USUÁRIO.
+//
+// Cadeia do bug (confirmada no código):
+//  1. Captura frágil: parseAssetValue("200")=null POR DESIGN (número nu pequeno é
+//     ambíguo fora de contexto); o analyzer cai em NEUTRAL_FALLBACK (creditMax=null,
+//     intent=neutral) no timeout de cold-start → creditMax NÃO é salvo.
+//  2. Gate pulado: com a qualificação já iniciada, decideShowGate(credit, neutral,
+//     isUserTurn) = false (hasNoQualifyData=false → "fica conversacional").
+//  3. LLM muda (system-prompt manda ser reativa na coleta) → turno mudo → fallback.
+//
+// Fix defense-in-depth (as 3 camadas juntas, decisão do Kairo):
+//  (a) captura: parseAssetValue reconhece número nu no contexto do gate credit;
+//  (b) decideShowGate: gate de coleta respondido dispara mesmo em neutral;
+//  (c) guard rede-final: turno-mudo com gate de coleta pendente re-emite a pergunta.
+// ============================================================================
+describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => {
+	/** Estado no gate de VALOR pendente: pré-qualificação feita, creditMax ausente. */
+	function creditGateMeta(): ConversationMetadata {
+		return {
+			currentPersona: "helena-auto",
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+	}
+
+	it("root cause: SEM contexto, parseAssetValue('200')=null → o valor não era capturado", () => {
+		// A prova de por que travava: o número nu não virava creditMax.
+		expect(parseAssetValue("200")).toBeNull();
+		// E o gate era suprimido em neutral (o segundo elo da cadeia).
+		expect(
+			decideShowGate({
+				gate: "credit",
+				intent: "neutral",
+				meta: creditGateMeta(),
+				isUserTurn: true,
+			}),
+		).toBe(true); // com o fix (c) do decideShowGate: dispara — antes do fix era false.
+	});
+
+	it("cassette: analyzer cai em neutral + '200' → o valor É capturado e o funil avança pra lance", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		// Reproduz o timeout de cold-start: NEUTRAL_FALLBACK (creditMax=null, neutral).
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-208 (neutral fallback)",
+			detectedCategory: null,
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: null,
+			creditMin: null,
+			creditMax: null,
+			prazoMeses: null,
+			hasLance: null,
+			userIntent: "neutral",
+		});
+
+		const meta = creditGateMeta();
+		await analyzeAndMerge("200", "helena-auto", meta);
+
+		// (a) captura: o número nu no contexto credit virou 200 mil (clampado na faixa auto).
+		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
+		// O funil avança: com o valor salvo, o próximo gate é lance (não re-pergunta credit).
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// (b) e o gate seguinte dispara mesmo em neutral — turno não fecha mudo.
+		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+	});
+
+	it("cassette: '200 mil reais' com analyzer neutral → capturado; avança pra lance", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-208 (200 mil reais / neutral)",
+			detectedCategory: null,
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: null,
+			creditMin: null,
+			creditMax: null,
+			prazoMeses: null,
+			hasLance: null,
+			userIntent: "neutral",
+		});
+
+		const meta = creditGateMeta();
+		await analyzeAndMerge("200 mil reais", "helena-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// O elo que travava mesmo com o valor JÁ capturado: o gate seguinte (lance)
+		// era suprimido em `neutral` → turno mudo. Com o fix (b), dispara.
+		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+	});
+
+	it("guard rede-final: turno-mudo no gate credit re-emite a pergunta do valor, NÃO o fallback", () => {
+		// Se ainda assim um turno fechasse mudo com o gate credit pendente, o guard
+		// dos 2 canais re-pergunta o valor em vez de "Acho que me perdi...".
+		const recordVazio = {
+			textChars: 0,
+			toolCount: 0,
+			toolsCalled: [],
+			artifactCount: 0,
+			gate: null,
+			handoff: false,
+			transitionedTo: null,
+		};
+		expect(isTurnEmpty(recordVazio)).toBe(true);
+		const reengage = reengageQuestionForGate("credit", "auto");
+		expect(reengage).toMatch(/valor do bem/i);
+		expect(reengage).not.toBe(EMPTY_TURN_FALLBACK);
+	});
+
+	it("acoplamento: os guards dos 2 canais consomem reengageQuestionForGate (não mandam fallback cru)", () => {
+		expect(readSource("src/lib/whatsapp/adapter.ts")).toMatch(/reengageQuestionForGate/);
+		expect(readSource("src/app/api/chat/route.ts")).toMatch(/reengageQuestionForGate/);
+	});
+
+	it("acoplamento: analyze.ts passa o contexto do gate credit pra parseAssetValue", () => {
+		expect(readSource("src/lib/agent/orchestrator/analyze.ts")).toMatch(
+			/parseAssetValue\([^)]*gate[\s\S]{0,40}credit/,
+		);
 	});
 });

@@ -3,8 +3,10 @@ import {
 	GATE_REENGAGE_TIMEOUT_MS,
 	isConversationPausedOrTerminal,
 	pendingGateAfterTurn,
+	reengageQuestionForGate,
 	shouldReengageGate,
 } from "./gate-reengage";
+import { gateQuestion } from "./orchestrator/gate-questions";
 import type { ConversationMetadata } from "./personas";
 import { nextGate } from "./qualify-state";
 
@@ -219,5 +221,41 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 		expect(
 			pendingGateAfterTurn({ meta, gateFired: false, isUserTurn: true, hasContactName: true }),
 		).toBeNull();
+	});
+});
+
+// ============================================================================
+// FIX-208 — Camada 1 (guard rede-final): quando o turno de usuário fecharia
+// MUDO com um gate de qualify pendente, re-emite a PERGUNTA daquele gate em vez
+// do EMPTY_TURN_FALLBACK ("Acho que me perdi..."). Cobre os 2 canais (o helper
+// é puro; route.ts e whatsapp/adapter.ts o consomem no bloco guardEmptyTurn).
+// ============================================================================
+describe("FIX-208 reengageQuestionForGate — a re-pergunta do gate pendente, não 'me perdi'", () => {
+	it("gate credit → re-emite a pergunta do valor do bem (o caso do bug)", () => {
+		expect(reengageQuestionForGate("credit", "auto")).toBe(gateQuestion("credit", "auto"));
+		expect(reengageQuestionForGate("credit", "auto")).toMatch(/valor do bem/i);
+	});
+
+	it("gates de COLETA (lance/lance-value/lance-embutido) têm re-pergunta", () => {
+		for (const gate of ["lance", "lance-value", "lance-embutido"] as const) {
+			expect(reengageQuestionForGate(gate, "auto")).toBe(gateQuestion(gate, "auto"));
+			expect(reengageQuestionForGate(gate, "auto")).toBeTruthy();
+		}
+	});
+
+	it("gates FORA da coleta (experience/consent/name/search/decision/doubts-wait) → null (fallback honesto)", () => {
+		// Restrito à mesma classe do decideShowGate (COLLECTION_GATES). experience/
+		// consent têm card próprio dirigido por clique; name/search/decision não são
+		// coleta de dado. Preserva o EMPTY_TURN_FALLBACK do FIX-172 nesses casos.
+		for (const gate of [
+			"experience",
+			"consent",
+			"name",
+			"search",
+			"decision",
+			"doubts-wait",
+		] as const) {
+			expect(reengageQuestionForGate(gate, "auto")).toBeNull();
+		}
 	});
 });

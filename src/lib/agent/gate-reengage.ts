@@ -8,8 +8,9 @@
 // re-engajar. Espelha `isStreamStuck` (chat/stream-watchdog.ts). O worker
 // (workers/gate-reengage-poll.ts) só arma o ciclo recorrente.
 
-import type { ConversationMetadata } from "./personas";
-import { type Gate, nextGate } from "./qualify-state";
+import { gateQuestion } from "./orchestrator/gate-questions";
+import type { Category, ConversationMetadata } from "./personas";
+import { COLLECTION_GATES, type Gate, nextGate } from "./qualify-state";
 
 /**
  * Teto de inatividade antes de re-engajar o funil parado num gate pendente.
@@ -67,6 +68,24 @@ export function pendingGateAfterTurn(args: {
 	const gate = nextGate(meta, { hasContactName });
 	if (NON_REENGAGE_GATES.has(gate)) return null;
 	return gate;
+}
+
+/**
+ * FIX-208 — guard de turno-mudo (rede final). Quando um turno de USUÁRIO fecharia
+ * MUDO (nenhuma emissão visível) com um gate de COLETA pendente (o usuário
+ * respondeu o valor/lance e nada saiu), os adapters (route.ts web +
+ * whatsapp/adapter.ts) re-emitem a PERGUNTA daquele gate em vez do
+ * EMPTY_TURN_FALLBACK ("Acho que me perdi..."). Retorna a pergunta re-emitível, ou
+ * null (→ cai no fallback honesto). Restrito à MESMA classe do decideShowGate
+ * (COLLECTION_GATES: credit/lance/lance-value/lance-embutido) — os demais gates
+ * (experience/consent/identify/name/search/decision) mantêm o fallback honesto.
+ */
+export function reengageQuestionForGate(
+	gate: Gate,
+	category: Category | null | undefined,
+): string | null {
+	if (!COLLECTION_GATES.has(gate)) return null;
+	return gateQuestion(gate, category ?? null);
 }
 
 /**
