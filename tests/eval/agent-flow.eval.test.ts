@@ -1541,3 +1541,64 @@ Se o agente disser que não conseguiu buscar as opções agora, apenas responda 
 		}
 	});
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENÁRIO FIX-188/189 — descoberta BEM-SUCEDIDA: sem preâmbulo de processo, sem
+// falas coladas, e a resposta chega (reveal presente).
+// -----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): em turno multi-step o agente empilhava preâmbulos
+// ("deixa eu buscar", "vou buscar", "um segundo") e colava falas ("corretos.Show").
+// Com o sanitizer runtime (FIX-188) + normalizeGluedSentences (FIX-189), nenhum
+// preâmbulo aparece e nenhuma fala fica colada; o reveal chega no mesmo fluxo.
+// Nightly (gated pela API real). Usa o adapter de fixtures (descoberta OK).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describeIfKey("Eval FIX-188/189 — descoberta OK sem preâmbulo de processo nem fala colada", () => {
+	let result: Awaited<ReturnType<typeof runConversation>> | null = null;
+
+	beforeAll(async () => {
+		result = await runConversation({
+			name: "fix188-189-auto-sem-preambulo",
+			firstUserMessage: "Quero um carro, me ajuda a achar o melhor consórcio",
+			userBotSystemPrompt: `Você é Rafael, leigo em consórcio, quer um carro de cerca de R$ 100 mil, pode pagar até R$ 2 mil/mês, prazo até 72 meses, e tem uma reserva pra lance.
+Responda SEMPRE curto e siga o passo que o agente propõe; não invente perguntas novas.
+Quando perguntarem seu nome, diga apenas "Rafael".
+Quando perguntarem se tem valor pra lance, diga que sim.
+Quando uma simulação ou recomendação aparecer, demonstre interesse: "Tenho interesse".`,
+			maxTurns: 16,
+		});
+	}, 300_000);
+
+	afterAll(async () => {
+		if (result) await cleanup(result.conversationId);
+	});
+
+	it("[FIX-188] nenhum turno do agente vaza preâmbulo de processo", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		expect(agentText).not.toMatch(
+			/deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b/i,
+		);
+	});
+
+	it("[FIX-189] nenhuma fala fica colada sem separador (minúscula.MAIÚSCULA)", () => {
+		const agentText = (result?.turns ?? [])
+			.filter((t) => t.role === "agent")
+			.map((t) => t.content)
+			.join("\n");
+		// gluing de frases distintas ("corretos.Show") — ponto final entre minúscula
+		// e maiúscula sem espaço. (Valor monetário R$ 1.000 não casa: dígito antes.)
+		expect(agentText).not.toMatch(/\p{Ll}[.!?]\p{Lu}/u);
+	});
+
+	it("[FIX-189] a descoberta REVELA algo (a resposta chega, não pendura)", () => {
+		const types = allArtifactTypes(result?.turns ?? []);
+		const revealed = ["comparison_table", "group_card", "recommendation_card", "simulation_result"];
+		expect(
+			revealed.some((t) => types.includes(t)),
+			`Esperado um reveal (${revealed.join("/")}). Artifacts: [${types.join(", ")}].`,
+		).toBe(true);
+	});
+});

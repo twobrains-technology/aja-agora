@@ -105,6 +105,19 @@ export class EphemeralTextFilter {
 }
 
 /**
+ * FIX-189 — separa falas que o MODELO colou no mesmo bloco sem espaço
+ * ("...com os dados corretos.Show, esse plano encaixa"). Insere `\n\n` entre uma
+ * pontuação de fim de frase precedida por letra MINÚSCULA e seguida por letra
+ * MAIÚSCULA — padrão conservador que NÃO pega valor monetário (`R$ 1.000`),
+ * número com ponto (`72.000`) nem sigla (`U.S.A.`, maiúscula antes do ponto).
+ * Complementa o `textBlockSeparator` (cross-block) e o `joinSeparator` (emit).
+ */
+export function normalizeGluedSentences(text: string): string {
+	if (!text) return text;
+	return text.replace(/(\p{Ll})([.!?])(\p{Lu})/gu, "$1$2\n\n$3");
+}
+
+/**
  * Separador de CONTEÚDO entre a fala acumulada e a próxima a emitir (FIX-189
  * anti-colagem): só insere `\n\n` quando há colagem real — o acumulado termina
  * SEM espaço e o próximo começa SEM espaço. Complementa o `textBlockSeparator`

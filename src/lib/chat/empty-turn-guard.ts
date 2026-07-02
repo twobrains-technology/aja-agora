@@ -49,18 +49,34 @@ export const EMPTY_TURN_FALLBACK = "Acho que me perdi por aqui. Pode mandar de n
  * design). Gates legítimos não regridem: a pergunta do gate é texto (textChars>0)
  * e o simulator-offer no reveal carrega artifacts (artifactCount>0).
  */
-// Tools SILENCIOSAS: só gravam no DB, não emitem NADA visível ao usuário. Um
-// turno que só as chamou fecha MUDO (FIX-172 — loop de save_contact_name até
-// stepCountIs sem gerar texto, observado no WhatsApp).
-const SILENT_TOOLS = new Set(["save_contact_name", "save_contact_whatsapp"]);
+// Tools que NÃO são emissão VISÍVEL por si só — um turno que só as chamou fecha
+// MUDO. Duas famílias:
+//  - SILENCIOSAS (save_*): só gravam no DB, o usuário não vê nada (FIX-172 — loop
+//    de save_contact_name até stepCountIs sem gerar texto, observado no WhatsApp).
+//  - DESCOBERTA/DADOS (search/recommend/rates/details/simulate): o RESULTADO é
+//    interno (dado pro modelo); o que o usuário vê é o chip transitório "Buscando
+//    grupos" + o artifact/texto que a descoberta LEVA a produzir — já contado em
+//    artifactCount/textChars. Tratar a descoberta como "visível" era o falso-
+//    negativo da PENDURA (FIX-189): turno que só buscou (sem present_*, sem texto)
+//    fechava não-vazio → nenhum fallback → o reveal não chegava e o usuário tinha
+//    de cutucar ("travou?"). Só present_* e texto/artifact contam como visível.
+const NON_VISIBLE_TOOLS = new Set([
+	"save_contact_name",
+	"save_contact_whatsapp",
+	"search_groups",
+	"recommend_groups",
+	"get_rates",
+	"get_group_details",
+	"simulate_quota",
+]);
 
 export function isTurnEmpty(rec: TurnEmissionRecord): boolean {
-	// Tool ACIONÁVEL (search_groups, present_*) produz emissão visível (o resultado
-	// vira artifact/texto no MESMO turno) → conta como resposta. Tool SILENCIOSA
-	// (save_*) não emite nada; um turno que só as chamou é mudo. Sem a lista de
-	// nomes (record legado), mantém o comportamento antigo (toolCount>0). FIX-172.
+	// Uma tool conta como emissão visível só se NÃO for interna (save_*/descoberta).
+	// O visível da descoberta é o artifact/texto que ela leva a produzir (contado
+	// à parte). Sem a lista de nomes (record legado), mantém o comportamento antigo
+	// (toolCount>0 → não-vazio). FIX-172 + FIX-189.
 	const hasVisibleTool = rec.toolsCalled
-		? rec.toolsCalled.some((t) => !SILENT_TOOLS.has(t))
+		? rec.toolsCalled.some((t) => !NON_VISIBLE_TOOLS.has(t))
 		: rec.toolCount > 0;
 	return rec.textChars === 0 && !hasVisibleTool && rec.artifactCount === 0 && !rec.handoff;
 }

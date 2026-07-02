@@ -58,6 +58,7 @@ import {
 	EphemeralTextFilter,
 	isProcessPreamble,
 	joinSeparator,
+	normalizeGluedSentences,
 	stripProcessPreamble,
 } from "@/lib/agent/orchestrator/sanitizer";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
@@ -7764,5 +7765,79 @@ describe("FIX-188 — preâmbulo de processo é EFÊMERO (nunca persistido nem e
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/Deixa eu buscar/i);
 		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
 		expect(hardRules).toMatch(/efêmero|preâmbulo de processo/i);
+	});
+});
+
+// ============================================================================
+// FIX-189 — segmentação de bolha + a resposta da descoberta chega SEM cutucar
+// ----------------------------------------------------------------------------
+// Print do Kairo (agente-nao-responde-ate-novo-input): (a) falas do turno saíam
+// coladas sem separador ("...com os dados corretos.Show, esse plano encaixa"); e
+// (b) o agente travava em "Buscando grupos ⋯" e só respondia depois que o usuário
+// mandava "travou?". Causa cravada (systematic-debugging):
+//   - isTurnEmpty tratava search_groups como "tool visível" (falso-negativo) → um
+//     turno só-descoberta fechava não-vazio → sem fallback → pendura;
+//   - o caminho de AÇÃO (dispatch de descoberta) não rodava guard de turno-mudo.
+// Fix: descoberta NÃO é emissão visível por si (empty-turn-guard); os dispatches
+// de busca (web pipeSearchSummaryTurn / whatsapp runSearchSummaryWithOrchestrator)
+// recuperam com fallback determinístico; normalizeGluedSentences desgruda as falas.
+// ============================================================================
+
+describe("FIX-189 — falas coladas ganham separador + descoberta muda não pendura", () => {
+	it("segmentação: 'corretos.Show' vira parágrafos distintos (não bolha colada)", () => {
+		const bug = "Simulei com os dados corretos.Show, esse plano encaixa bem no seu orçamento.";
+		const fixed = normalizeGluedSentences(bug);
+		expect(fixed).not.toContain("corretos.Show");
+		expect(fixed).toContain("corretos.\n\nShow");
+	});
+
+	it("segmentação NÃO quebra valor monetário nem número com ponto", () => {
+		expect(normalizeGluedSentences("A parcela fica em R$ 2.365,57 por mês.")).toBe(
+			"A parcela fica em R$ 2.365,57 por mês.",
+		);
+	});
+
+	it("pendura: um turno de descoberta só com o chip (0 texto, 0 artifact) é MUDO", () => {
+		// A raiz da pendura: search_groups NÃO é emissão visível por si.
+		expect(
+			isTurnEmpty({
+				textChars: 0,
+				toolCount: 1,
+				artifactCount: 0,
+				toolsCalled: ["search_groups"],
+				handoff: false,
+			}),
+		).toBe(true);
+		// mas a descoberta que revelou (artifact) NÃO é muda.
+		expect(
+			isTurnEmpty({
+				textChars: 0,
+				toolCount: 2,
+				artifactCount: 1,
+				toolsCalled: ["search_groups", "present_comparison_table"],
+				handoff: false,
+			}),
+		).toBe(false);
+	});
+
+	it("structural: empty-turn-guard trata descoberta como NÃO-visível", () => {
+		const src = readSource("src/lib/chat/empty-turn-guard.ts");
+		expect(src).toMatch(/NON_VISIBLE_TOOLS/);
+		expect(src).toMatch(/search_groups/);
+		expect(src).toMatch(/recommend_groups/);
+	});
+
+	it("structural: os dispatches de descoberta recuperam turno mudo (web + whatsapp)", () => {
+		const web = readSource("src/lib/web/adapter.ts");
+		// pipeSearchSummaryTurn checa emissão e emite o fallback, nunca refresh.
+		expect(web).toMatch(/emittedVisible/);
+		expect(web).toMatch(/EMPTY_TURN_FALLBACK/);
+		const wa = readSource("src/lib/whatsapp/adapter.ts");
+		expect(wa).toMatch(/guardEmptyTurn:\s*true/);
+	});
+
+	it("structural: o runner desgruda falas coladas na composição", () => {
+		const src = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(src).toMatch(/normalizeGluedSentences/);
 	});
 });

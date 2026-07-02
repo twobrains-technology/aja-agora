@@ -17,6 +17,7 @@ import {
 	EphemeralTextFilter,
 	isProcessPreamble,
 	joinSeparator,
+	normalizeGluedSentences,
 	stripProcessPreamble,
 } from "./sanitizer";
 
@@ -137,6 +138,33 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+describe("FIX-189 — normalizeGluedSentences separa falas coladas pelo modelo", () => {
+	it("separa 'corretos.Show' (frase colada sem espaço) em parágrafos", () => {
+		const input = "com os dados corretos.Show, esse plano encaixa bem.";
+		const out = normalizeGluedSentences(input);
+		expect(out).not.toContain("corretos.Show");
+		expect(out).toContain("corretos.\n\nShow");
+	});
+
+	it("NÃO mexe em valores monetários (R$ 1.000,00) nem em números com ponto", () => {
+		expect(normalizeGluedSentences("O valor é R$ 1.000,00 hoje.")).toBe("O valor é R$ 1.000,00 hoje.");
+		expect(normalizeGluedSentences("são 72.000 no total")).toBe("são 72.000 no total");
+	});
+
+	it("NÃO mexe em sigla com pontos (maiúscula antes do ponto)", () => {
+		expect(normalizeGluedSentences("U.S.A. é longe")).toBe("U.S.A. é longe");
+	});
+
+	it("NÃO mexe em frase já espaçada corretamente", () => {
+		const ok = "Tudo certo. Show, esse plano encaixa.";
+		expect(normalizeGluedSentences(ok)).toBe(ok);
+	});
+
+	it("string vazia passa incólume", () => {
+		expect(normalizeGluedSentences("")).toBe("");
 	});
 });
 

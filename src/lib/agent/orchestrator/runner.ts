@@ -20,7 +20,12 @@ import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
-import { EphemeralTextFilter, joinSeparator, stripProcessPreamble } from "./sanitizer";
+import {
+	EphemeralTextFilter,
+	joinSeparator,
+	normalizeGluedSentences,
+	stripProcessPreamble,
+} from "./sanitizer";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -245,7 +250,9 @@ export async function* runAgentTurn(args: {
 	const ephemeralFilter = new EphemeralTextFilter();
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
-	const composeClean = (clean: string, blockSep = ""): string => {
+	const composeClean = (raw: string, blockSep = ""): string => {
+		// FIX-189: desgruda falas que o modelo colou no MESMO chunk ("corretos.Show").
+		const clean = normalizeGluedSentences(raw);
 		if (!clean) return "";
 		const sep = blockSep || joinSeparator(fullResponse, clean);
 		const out = sep + clean;
@@ -437,10 +444,12 @@ export async function* runAgentTurn(args: {
 		if (tail) yield { type: "text-delta", text: tail };
 	}
 
-	// FIX-102 + FIX-188: colapsa eco/degeneração da LLM e garante (belt-and-
-	// suspenders) que nenhum preâmbulo persista — o filtro já limpou ao vivo, este
-	// strip é a rede final antes de persistência/prefixo do próximo gate.
-	fullResponse = stripProcessPreamble(collapseEchoedSegments(fullResponse)).replace(/^\s+/, "");
+	// FIX-102 + FIX-188 + FIX-189: colapsa eco/degeneração da LLM, garante (belt-and-
+	// suspenders) que nenhum preâmbulo persista e desgruda falas coladas — o filtro
+	// já limpou ao vivo, esta é a rede final antes de persistência/prefixo do gate.
+	fullResponse = normalizeGluedSentences(
+		stripProcessPreamble(collapseEchoedSegments(fullResponse)),
+	).replace(/^\s+/, "");
 
 	try {
 		const finishReason = await result.finishReason;
