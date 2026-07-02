@@ -44,6 +44,7 @@ import { z } from "zod";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
+	buildDiscoveryFailedFallback,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 	buildSimulationInterestDirective,
@@ -63,7 +64,11 @@ import {
 } from "@/lib/agent/qualify-config";
 import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { looksLikeFabricatedGroupId, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import {
+	isDiscoveryFailedResult,
+	looksLikeFabricatedGroupId,
+	PRESENTATION_TOOLS,
+} from "@/lib/agent/tools/ai-sdk";
 import { emptyShownGroups } from "@/lib/agent/tools/shown-groups";
 import { closingPresentation, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
@@ -7477,5 +7482,90 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
 		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
 		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
+	});
+});
+
+// ============================================================================
+// FIX-186 — erro de descoberta NÃO vira narração crua + preâmbulos empilhados
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): após o gate de lance, a busca real na Bevi falhou
+// e o agente NARROU o erro ("tô com uma dificuldade técnica pontual pra acessar
+// os grupos") junto de VÁRIOS preâmbulos "vou buscar" empilhados numa bolha só.
+// Root cause: runDiscovery re-lançava o erro → o AI SDK vira tool-error que o
+// modelo narra. Cura (Lei 1): runDiscovery faz 1 retry silencioso e, na falha,
+// retorna o marcador `__discoveryFailed` (NÃO throw); o runner suprime a narração
+// e o orchestrator materializa a mensagem amigável FIXA (buildDiscoveryFailedFallback).
+// Pipeline end-to-end provado em runner.discovery-failed.integration.test.ts.
+// ============================================================================
+
+describe("FIX-186 — descoberta falhada vira fallback humano, nunca narração de erro cru", () => {
+	// As frases-narração que NUNCA podem chegar ao usuário (o modelo geraria ao
+	// ver o tool-error). Se qualquer uma casar no output final = regressão.
+	const ERRO_TECNICO_CRU = [
+		/dificuldade t[ée]cnica/i,
+		/tive um problema/i,
+		/\bproblema\b/i,
+		/instabilidade/i,
+		/inst[áa]vel/i,
+		/tent[ea]\s+de\s+novo/i,
+	];
+	// Empilhamento de preâmbulos "vou buscar" (mecânica narrada, meta-narrativa).
+	const PREAMBULO_BUSCA = /(deixa eu (buscar|usar)|vou buscar|preciso primeiro buscar)/i;
+
+	it("cassette: stream da narração crua do print (reproduzido fielmente) casa o detector", async () => {
+		const cassette =
+			"Vou trazer as melhores opções pra você agora, Maria. Só um instante — tô com uma dificuldade técnica pontual pra acessar os grupos nessa faixa agora.";
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		expect(text).toBe(cassette);
+		expect(toolCalls).toEqual([]);
+		const hits = ERRO_TECNICO_CRU.filter((rx) => rx.test(cassette));
+		expect(
+			hits.length,
+			"a narração crua do print DEVE casar >=1 detector — se zero, alguém afrouxou o detector",
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("cassette: empilhamento de preâmbulos 'vou buscar' numa bolha (print) é detectável", async () => {
+		const empilhado =
+			"Deixa eu buscar as melhores opções na sua faixa: Vou buscar as opções certas pra você: Preciso primeiro buscar os grupos disponíveis. Um segundo: Deixa eu usar a ferramenta certa pra isso:";
+		expect(PREAMBULO_BUSCA.test(empilhado)).toBe(true);
+		// múltiplos "buscar" numa bolha = empilhamento (o sintoma do print).
+		const buscas = empilhado.match(/buscar/gi) ?? [];
+		expect(buscas.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("a mensagem determinística de fallback passa LIMPA por todos os detectores", () => {
+		const fallback = buildDiscoveryFailedFallback({ name: "Maria" });
+		for (const rx of ERRO_TECNICO_CRU) {
+			expect(rx.test(fallback), `fallback não pode casar ${rx}`).toBe(false);
+		}
+		expect(PREAMBULO_BUSCA.test(fallback)).toBe(false);
+		// mas OFERECE saída acionável (especialista) e é PT-BR correto.
+		expect(fallback.toLowerCase()).toContain("especialista");
+		expect(fallback).toContain("opções");
+	});
+
+	it("marcador: isDiscoveryFailedResult reconhece o tool-result de falha e ignora o normal", () => {
+		expect(isDiscoveryFailedResult({ __discoveryFailed: true, error: "x" })).toBe(true);
+		expect(isDiscoveryFailedResult({ groups: [], total: 0 })).toBe(false);
+		expect(isDiscoveryFailedResult(null)).toBe(false);
+		expect(isDiscoveryFailedResult("erro solto")).toBe(false);
+	});
+
+	it("structural: o source de produção fecha o buraco (runDiscovery não re-lança; runner+orchestrator conduzem)", () => {
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// runDiscovery retorna o marcador em vez de `throw err` no erro de descoberta.
+		expect(toolsSrc).toMatch(/discoveryFailedResult/);
+		expect(toolsSrc).toMatch(/isTransientDiscoveryError/);
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/isDiscoveryFailedResult/);
+		expect(runnerSrc).toMatch(/discoveryFailedThisTurn/);
+		const orchSrc = readSource("src/lib/agent/orchestrator/index.ts");
+		expect(orchSrc).toMatch(/buildDiscoveryFailedFallback/);
+		expect(orchSrc).toMatch(/discovery-failed/);
 	});
 });

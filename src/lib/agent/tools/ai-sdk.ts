@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { isTransientDiscoveryError } from "@/lib/adapters/bevi/bevi-errors";
 import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
@@ -289,6 +290,37 @@ const STATUS_NO_CONTEXT = {
 		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
+
+// FIX-186 (Kairo 2026-07-01) — marcador do tool-result quando a descoberta na
+// Bevi falha (após retry silencioso, ou erro duro). O `runDiscovery` retorna
+// ISTO em vez de re-lançar (que viraria tool-error narrado pelo modelo). O
+// runner detecta via `isDiscoveryFailedResult`, suprime a narração e conduz o
+// fallback humano determinístico (Lei 1: código dispõe). O campo `error` é a
+// diretiva pro modelo caso ele processe o step — mas a garantia está no código.
+export function isDiscoveryFailedResult(output: unknown): boolean {
+	return (
+		typeof output === "object" &&
+		output !== null &&
+		(output as Record<string, unknown>).__discoveryFailed === true
+	);
+}
+
+function discoveryFailedResult(toolName: string): { __discoveryFailed: true; error: string } {
+	return {
+		__discoveryFailed: true,
+		error:
+			`A descoberta na Bevi falhou neste turno (tool ${toolName}) apos retry. ` +
+			"NAO narre erro tecnico, NAO invente numeros, NAO proponha/recomende/simule nada. " +
+			"O sistema ja conduz a mensagem ao usuario de forma deterministica — encerre o turno.",
+	};
+}
+
+// FIX-186: backoff curto do retry silencioso (alinhado ao "< 3s" do CLAUDE.md).
+// Test seam zera o delay pra não esperar de verdade nos testes.
+let discoveryRetryDelayMs = 300;
+export function __setDiscoveryRetryDelayForTests(ms: number | null): void {
+	discoveryRetryDelayMs = ms ?? 300;
+}
 
 // FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
 // multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
@@ -917,6 +949,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// os present_* rodam NESTE turno. Lazy: só bate no banco se alguma das
 	// tools guardadas (get_group_details/simulate_quota/present_decision_prompt)
 	// for chamada.
+	// FIX-186: a descoberta deste turno falhou (após retry ou erro duro)? Flag de
+	// closure — fresco por turno (specialist+conversationId bypassa o cache de
+	// agents, cada turno reconstrói buildConsorcioTools). Setado por runDiscovery;
+	// lido pelas tools de descoberta (curto-circuito) e de apresentação (FIX-187,
+	// não propor sobre dado que não carregou).
+	let discoveryFailed = false;
+
 	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
 	const getShownGroups = () => {
 		if (!conversationId) return Promise.resolve(emptyShownGroups());
@@ -1048,22 +1087,54 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// BUG-BEVI-EMPTY-ENV (2026-06-04): o AI SDK converte o throw da tool em
 	// tool-error pro MODELO ("instabilidade") sem deixar rastro no servidor — um
 	// Invalid URL de config levou horas pra diagnosticar. Todo erro de descoberta
-	// é logado estruturado ANTES de subir.
-	const runDiscovery = async <T>(toolName: string, fn: () => Promise<T>): Promise<T> => {
+	// é logado estruturado.
+	//
+	// FIX-186 (Kairo 2026-07-01): runDiscovery NÃO re-lança mais. Um throw numa
+	// tool do AI SDK vira tool-error que o modelo NARRA ("dificuldade técnica
+	// pontual" + preâmbulos "vou buscar" empilhados). Em vez disso: 1 retry
+	// silencioso DETERMINÍSTICO em erro transitório (rede/timeout/5xx — não o
+	// modelo "tentando de novo" em texto) e, na falha (ou erro duro), retorna o
+	// marcador `discoveryFailedResult`. O runner materializa o fallback humano
+	// (Lei 1). Seta `discoveryFailed` pro turno curto-circuitar as próximas tools.
+	const logDiscoveryError = (toolName: string, phase: "first" | "retry", err: unknown) => {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "discovery",
+				tool: toolName,
+				phase,
+				conversation_id: conversationId,
+				error_name: err instanceof Error ? err.name : "unknown",
+				error_message: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	};
+	const runDiscovery = async <T>(
+		toolName: string,
+		fn: () => Promise<T>,
+	): Promise<T | { __discoveryFailed: true; error: string }> => {
+		// Curto-circuito: a descoberta já falhou neste turno → não martela a Bevi.
+		if (discoveryFailed) return discoveryFailedResult(toolName);
 		try {
 			return await fn();
 		} catch (err) {
-			console.error(
-				JSON.stringify({
-					level: "error",
-					source: "discovery",
-					tool: toolName,
-					conversation_id: conversationId,
-					error_name: err instanceof Error ? err.name : "unknown",
-					error_message: err instanceof Error ? err.message : String(err),
-				}),
-			);
-			throw err;
+			logDiscoveryError(toolName, "first", err);
+			// Erro transitório → 1 retry silencioso (determinístico, não o modelo).
+			if (isTransientDiscoveryError(err)) {
+				if (discoveryRetryDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, discoveryRetryDelayMs));
+				}
+				try {
+					return await fn();
+				} catch (retryErr) {
+					logDiscoveryError(toolName, "retry", retryErr);
+					discoveryFailed = true;
+					return discoveryFailedResult(toolName);
+				}
+			}
+			// Erro duro (config/4xx): nunca cura no retry → fallback direto.
+			discoveryFailed = true;
+			return discoveryFailedResult(toolName);
 		}
 	};
 

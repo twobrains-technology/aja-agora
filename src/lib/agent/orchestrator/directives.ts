@@ -262,6 +262,32 @@ export function buildSimulatorDialDirective(args: { administradora?: string }): 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;
 }
 
+// ---- Descoberta falhada (FIX-186) — fallback humano determinístico ----
+
+/**
+ * FIX-186 (Kairo 2026-07-01) — mensagem FIXA exibida ao usuário quando a
+ * descoberta na Bevi falha após o retry silencioso. Substitui a narração crua
+ * do modelo ("dificuldade técnica pontual" + preâmbulos "vou buscar"
+ * empilhados). É o código dispondo (Lei 1): NÃO é directive pro modelo, é o
+ * texto que chega DIRETO ao usuário (o orchestrator emite via text-delta, no
+ * padrão do `yieldTransitionAbort`).
+ *
+ * Copy PT-BR correta (acentos/cedilha). ZERO palavra de erro técnico cru
+ * ("problema"/"dificuldade técnica"/"instabilidade"/"erro"/"tente de novo") — o
+ * detector do cassette (Camada 2) reprova exatamente essas. Enquadra a falha
+ * como da BUSCA (não do perfil do usuário) e oferece as duas saídas: re-tentar
+ * em instantes ou falar com um especialista da Aja.
+ */
+export function buildDiscoveryFailedFallback(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return (
+		`${saudacao}não consegui carregar as opções agora — foi coisa da nossa busca aqui, ` +
+		"não do seu perfil. Me manda uma mensagem daqui a pouco que eu já trago as opções " +
+		"certas pra você. Se preferir, também posso te conectar com um especialista da Aja " +
+		"pra seguir com você."
+	);
+}
+
 // ---- Decision prompt (passo 4 close → passo 5 da jornada) ----
 
 export function buildDecisionPromptDirective(args: { administradora?: string }): string {
