@@ -30,7 +30,12 @@ export interface BeviOffer {
 	insuranceTotalAmount?: number; // R$
 	reserveFundAmount?: number; // R$
 	adjustmentType?: string; // INCC | IPCA | IGPM | ...
-	monthlyAwardedQuotas?: number; // contemplados/mês
+	monthlyAwardedQuotas?: number; // contemplados/mês (CONTAGEM real — fonte do availableSlots)
+	// FIX-192: taxaContemplacao (fração 0..1, semântica TBD com a AGX) vem no retorno
+	// ENXUTO real (2026-07-01) mas NÃO é contagem — NUNCA vira availableSlots nem % de
+	// contemplação. Declarado só pra travar o não-uso; a contemplação exibida só sai
+	// de monthlyAwardedQuotas real (spec §1.1/§3.1).
+	taxaContemplacao?: number; // NÃO usar como contemplados/mês nem como %
 	probContemplacaoMeses?: string; // estimativa de meses até contemplar
 	embeddedBid?: number; // R$ usado como lance embutido
 	embeddedBidAcceptancePercentage?: string | number; // teto REAL de embutido aceito ("30,00" / 0.3)
@@ -104,6 +109,9 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		// A oferta não traz total/disponíveis de cotas; usamos contemplados/mês
 		// como proxy de liquidez do grupo até a API expor os campos.
 		totalParticipants: 0,
+		// FIX-192: contemplação SÓ de dado REAL ancorado — o monthlyAwardedQuotas
+		// (contagem). Ausente (retorno enxuto real) → 0; NUNCA derivado de
+		// taxaContemplacao (fração ≠ contagem). O runner coage o hero com este valor.
 		availableSlots: offer.monthlyAwardedQuotas ?? 0,
 		contemplationRate: offer.monthlyAwardedQuotas ?? 0,
 	};

@@ -154,3 +154,41 @@ describe("FIX-30 — lance total (bidPercentage) NUNCA vira % embutido", () => {
 		expect(s.embeddedBid.necessaryBidToContemplate).toBe(34520);
 	});
 });
+
+// FIX-192 (refino tela recomendação, 2026-07-01): a contemplação exibida só pode
+// vir de dado REAL ancorado. O availableSlots (contagem de contemplados/mês) =
+// monthlyAwardedQuotas coagido (0 quando ausente — o retorno enxuto de 2026-07-01
+// NÃO traz o campo, spec §1.1). A `taxaContemplacao` (fração 0..1, semântica TBD
+// com a AGX) NÃO é contagem e NUNCA vira availableSlots/contemplationRate nem %.
+// Converge com a coerção server-side do runner (FIX-191): o hero usa o availableSlots
+// real, nunca o número da LLM.
+describe("FIX-192 — availableSlots é o monthlyAwardedQuotas real (0 quando ausente); nunca taxaContemplacao", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("§7.1 — oferta SEM monthlyAwardedQuotas → availableSlots=0 e contemplationRate=0", () => {
+		const offer = { ...base, monthlyAwardedQuotas: undefined };
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(0);
+		expect(g.contemplationRate).toBe(0);
+	});
+
+	it("§7.3 — oferta com monthlyAwardedQuotas:2 → availableSlots=2 (dado real preservado)", () => {
+		const offer = { ...base, monthlyAwardedQuotas: 2 };
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(2);
+	});
+
+	it("taxaContemplacao (fração 0,605) NÃO vira availableSlots/contemplationRate (nem 0,605 nem 60,5)", () => {
+		// Retorno enxuto real: taxaContemplacao presente, monthlyAwardedQuotas ausente.
+		const offer = {
+			...base,
+			monthlyAwardedQuotas: undefined,
+			taxaContemplacao: 0.605,
+		} as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(0);
+		expect(g.contemplationRate).toBe(0);
+		expect(g.availableSlots).not.toBe(0.605);
+		expect(g.contemplationRate).not.toBe(60.5);
+	});
+});
