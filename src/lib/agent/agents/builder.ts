@@ -270,13 +270,26 @@ export function buildAgent(
 				})
 			: undefined;
 
+	// FIX-209 — Claude Sonnet 5: adaptive thinking LIGA por default quando o campo
+	// `thinking` é omitido (no Sonnet 4.6 era off por omissão). Isso adiciona
+	// latência e uma pausa antes do 1º token, quebrando o constraint de <3s do
+	// chat. Desligamos explicitamente (decisão do Kairo, 2026-07-02). É config de
+	// nível-request do @ai-sdk/anthropic (não tem relação com o cacheControl dos
+	// blocos de system) — por isso mora numa const própria, aplicada via
+	// `providerOptions` das settings.
+	const anthropicProviderOptions = {
+		anthropic: { thinking: { type: "disabled" as const } },
+	};
+
 	const settings = {
-		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
+		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-5"),
 		instructions,
 		tools,
-		// Per-persona temperature lets warm/playful personas differ from precise/technical
-		// ones at sampling level (Claude only exposes temperature, no topP/penalty).
-		temperature: row.temperature,
+		// FIX-209 — Sonnet 5 rejeita `temperature` não-default (400), então NÃO
+		// passamos mais sampling params. O tom por persona passa a ser guiado pelo
+		// system prompt/traits (as personas já têm prompts distintos); se alguma
+		// regredir de tom, reforça-se no prompt — não no sampling.
+		providerOptions: anthropicProviderOptions,
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
 		// toolChoice: quando o orchestrator detecta "user respondeu nome"
 		// (detect-name-turn.ts), força save_contact_name. Default 'auto' quando
