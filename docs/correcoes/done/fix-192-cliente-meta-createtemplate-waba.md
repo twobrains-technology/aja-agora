@@ -1,7 +1,9 @@
 ---
 id: FIX-192
 titulo: "Cliente Meta: createTemplate/listTemplates + env WHATSAPP_WABA_ID + .env.example"
-status: todo
+status: done
+executado_em: 2026-07-02
+commit: 4a100f37
 severidade: alta
 projeto: aja-agora
 arquivos:
