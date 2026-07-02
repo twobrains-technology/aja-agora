@@ -20,6 +20,18 @@ function getConfig() {
 	return { accessToken, phoneNumberId };
 }
 
+// Criar/listar templates é no WABA (WhatsApp Business Account ID), não no
+// phone number id — endpoint /{WABA_ID}/message_templates. Mesmo padrão de
+// falha-alto do getConfig() quando a env não está setada.
+function getWabaConfig() {
+	const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+	const wabaId = process.env.WHATSAPP_WABA_ID;
+	if (!accessToken || !wabaId) {
+		throw new Error("WHATSAPP_ACCESS_TOKEN and WHATSAPP_WABA_ID must be set");
+	}
+	return { accessToken, wabaId };
+}
+
 async function callApi(
 	phoneNumberId: string,
 	accessToken: string,
@@ -275,4 +287,94 @@ export async function sendTemplate(
 			...(components ? { components } : {}),
 		},
 	});
+}
+
+// ─── Gestão de templates (WABA) ──────────────────────────────────────────────
+// Ver docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
+
+export type CreateTemplateInput = {
+	/** Nome do template na Meta (snake_case, ex `aja_confirmacao_v1`). */
+	name: string;
+	/** Código de idioma (ex `pt_BR`). */
+	language: string;
+	/** Categoria declarada (a Meta pode recategorizar). */
+	category: "UTILITY" | "MARKETING" | "AUTHENTICATION";
+	/** Componentes HEADER/BODY/FOOTER/BUTTONS no shape da Cloud API. */
+	components: unknown[];
+};
+
+export type CreateTemplateResult = {
+	id: string;
+	status: string;
+	category?: string;
+};
+
+/**
+ * Cria/submete um template à Meta: `POST /{WABA_ID}/message_templates`.
+ * Diferente do envio (que é no phone number id), a criação é no WABA. Lança se
+ * a Meta responder erro (4xx/5xx) — NUNCA persiste um PENDING falso. Não tem
+ * branch de waId simulado: criar template não é por-destinatário.
+ */
+export async function createTemplate(
+	input: CreateTemplateInput,
+): Promise<CreateTemplateResult> {
+	const { accessToken, wabaId } = getWabaConfig();
+	const url = `${GRAPH_API}/${wabaId}/message_templates`;
+	const res = await fetch(url, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			name: input.name,
+			language: input.language,
+			category: input.category,
+			components: input.components,
+		}),
+	});
+	if (!res.ok) {
+		const error = await res.text();
+		console.error(`[whatsapp-api] createTemplate failed (${res.status}):`, error);
+		throw new Error(`createTemplate failed (${res.status}): ${error}`);
+	}
+	const data = (await res.json()) as CreateTemplateResult;
+	return { id: data.id, status: data.status, category: data.category };
+}
+
+export type MetaTemplate = {
+	id: string;
+	name: string;
+	status: string;
+	category?: string;
+	language?: string;
+};
+
+/**
+ * Lista os templates do WABA (para o poll de reconciliação de status):
+ * `GET /{WABA_ID}/message_templates?fields=name,status,category,language,id`.
+ * Segue `paging.next` (cursor) e concatena as páginas. Lança em erro da Meta.
+ */
+export async function listTemplates(): Promise<MetaTemplate[]> {
+	const { accessToken, wabaId } = getWabaConfig();
+	const fields = "name,status,category,language,id";
+	let url: string | undefined = `${GRAPH_API}/${wabaId}/message_templates?fields=${fields}`;
+	const templates: MetaTemplate[] = [];
+	while (url) {
+		const res: Response = await fetch(url, {
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
+		if (!res.ok) {
+			const error = await res.text();
+			console.error(`[whatsapp-api] listTemplates failed (${res.status}):`, error);
+			throw new Error(`listTemplates failed (${res.status}): ${error}`);
+		}
+		const page = (await res.json()) as {
+			data?: MetaTemplate[];
+			paging?: { next?: string };
+		};
+		if (page.data) templates.push(...page.data);
+		url = page.paging?.next;
+	}
+	return templates;
 }

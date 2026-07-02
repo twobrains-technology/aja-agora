@@ -1,7 +1,9 @@
 ---
 id: FIX-191
 titulo: "Criar schema whatsappTemplates + whatsappOutboundQueue + enums + migration"
-status: todo
+status: done
+executado_em: 2026-07-02
+commit: 82347cc1
 severidade: alta
 projeto: aja-agora
 arquivos:
