@@ -233,6 +233,15 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
 
 ## 9. Histórico de rodadas
 
+- **2026-07-02 — Imóvel × WhatsApp (PROD), branch `qa/imovel-whatsapp`. 🚫 BLOQUEADO.** O
+  simulador `/admin/simulator/*` é **404 em produção por design** (`isSimulatorEnabled()` →
+  `false` quando `TB_ENV=production`, `src/lib/utils/env.ts:12-16`). Login admin prod OK, mas
+  GET/POST `/api/admin/simulator/sessions` deram 404; jornada não pôde ser dirigida. DEV AWS
+  (`tb-dev-aja-agora…`) está de pé com simulador habilitado, mas as credenciais de admin do
+  prod não valem lá. QA de canal precisa de DEV (com creds próprias) ou local. Único achado:
+  MELHORIA de UX (inbox mostra "HTTP 404" cru em vez de "simulador indisponível neste
+  ambiente"). Ledger: `.processo/qa/2026-07-02-imovel-whatsapp-ledger.md`. Consistente com a
+  sessão irmã `qa/moto-whatsapp` (mesmo bloqueio).
 - **2026-07-01** — Roteiro criado (semente) pela skill `qa-dono-produto` a partir do mapa da
   jornada canônica. Estado do repo: inbox com 15 cards (vários já resolvidos — triar antes de
   montar bloco), `docs/correcoes/done/` com 133 fixes, 3 blocos em `todo/`.
