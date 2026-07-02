@@ -9,7 +9,14 @@
 //   TB_ENV indefinido  → habilitado (fallback seguro pra ambientes não-prod)
 //   TB_ENV=production  → BLOQUEADO
 //   TB_ENV=prod        → BLOQUEADO (abreviação aceita)
+//
+// Override explícito (QA da jornada em produção): SIMULATOR_FORCE_ENABLE=true|1
+// libera o simulador MESMO em prod, sem mexer em TB_ENV (que dirige roteamento
+// LiteLLM/identidade/logging de prod). Default ausente/qualquer-outro-valor →
+// mantém o bloqueio de prod. Usar pontualmente e reverter após o QA.
 export function isSimulatorEnabled(): boolean {
+	const forceEnable = (process.env.SIMULATOR_FORCE_ENABLE ?? "").toLowerCase().trim();
+	if (forceEnable === "true" || forceEnable === "1") return true;
 	const tbEnv = (process.env.TB_ENV ?? "").toLowerCase().trim();
 	if (tbEnv === "production" || tbEnv === "prod") return false;
 	return true;
