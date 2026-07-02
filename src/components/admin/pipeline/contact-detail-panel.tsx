@@ -31,6 +31,30 @@ const STAGE_LABELS: Record<string, string> = {
 	perdido: "Perdido",
 };
 
+const PROPOSAL_STATUS_LABELS: Record<string, string> = {
+	simulacao: "Simulação",
+	documentos: "Aguardando documentos",
+	proposta_enviada: "Proposta enviada",
+	em_assinatura: "Em assinatura",
+	assinada: "Assinada",
+	recusada: "Recusada",
+};
+
+function formatCurrency(value: string | null): string {
+	if (!value) return "—";
+	const num = Number.parseFloat(value);
+	if (!Number.isFinite(num)) return value;
+	return new Intl.NumberFormat("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+	}).format(num);
+}
+
+function getProposalStatusLabel(status: string | null): string {
+	if (!status) return "—";
+	return PROPOSAL_STATUS_LABELS[status] || status;
+}
+
 interface TimelineMsg {
 	id: string;
 	conversationId: string;
@@ -206,8 +230,8 @@ export function ContactDetailPanel({
 										)}
 									</div>
 									<div className="text-xs text-muted-foreground">
-										Crédito {p.creditValue ?? "—"} · Parcela {p.monthlyPayment ?? "—"} · Status{" "}
-										{p.proposalStatus ?? "—"}
+										Crédito {formatCurrency(p.creditValue)} · Parcela {formatCurrency(p.monthlyPayment)} · Status{" "}
+										{getProposalStatusLabel(p.proposalStatus)}
 									</div>
 									{p.consortiumProposalLink && (
 										<a
