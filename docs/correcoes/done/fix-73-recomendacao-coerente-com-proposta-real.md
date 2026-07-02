@@ -1,7 +1,9 @@
 ---
 id: FIX-73
 titulo: "Recomendação/simulador exibem a MESMA cota que será contratada (coerção server-side + carregar oferta no fechamento)"
-status: todo
+status: done
+commit: 799a75a
+executado_em: 2026-07-02
 bloco: bloco-h-jornada-auto-fidelidade
 arquivos:
   - src/lib/agent/orchestrator/runner.ts

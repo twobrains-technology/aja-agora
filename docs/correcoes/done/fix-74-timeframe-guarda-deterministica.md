@@ -1,7 +1,9 @@
 ---
 id: FIX-74
 titulo: "Guarda determinística: orçamento mensal nunca vira prazo — timeframe volta a disparar na jornada AUTO"
-status: todo
+status: done
+commit: f35379b
+executado_em: 2026-07-02
 bloco: bloco-h-jornada-auto-fidelidade
 arquivos:
   - src/lib/agent/orchestrator/analyze.ts

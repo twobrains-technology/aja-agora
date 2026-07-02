@@ -1,7 +1,9 @@
 ---
 id: FIX-75
 titulo: "Chip de categoria na landing preserva o texto digitado (compõe em vez de descartar o orçamento)"
-status: todo
+status: done
+commit: 661cbb9
+executado_em: 2026-07-02
 bloco: bloco-h-jornada-auto-fidelidade
 arquivos:
   - src/components/landing/hero.tsx
