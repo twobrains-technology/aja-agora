@@ -5433,3 +5433,112 @@ describe("FIX-74 — turno com valor+orçamento-mensal → nextGate volta a emit
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
 	});
 });
+
+// ============================================================================
+// FIX-73 — recomendação coerente com a proposta real (QA dono-de-produto
+// 2026-07-02, jornada AUTO web em prod contra ajaagora.com.br)
+// ----------------------------------------------------------------------------
+// Bug real: pedi carro R$ 70 mil / ~R$ 900/mês. O recommendation_card
+// anunciou "R$ 70.000 / parcela R$ 892,48 (99,2% do teto)". A proposta REAL
+// contratada (carta + PDF) saiu "R$ 100.000 / parcela R$ 1.438,28" (Grupo
+// 533) — bait-and-switch. Root cause composto: (1) recommendation_card não
+// passava por coerção server-side (runner.ts caía em `payload = input` cru,
+// diferente de simulation_result/contemplation_dial); (2) o fechamento
+// re-derivava o valor de q.creditMax em vez de reusar a oferta REAL
+// recomendada. Decisão de produto (Kairo): recomendar a COTA REAL — o número
+// decisório é o mesmo número contratado.
+// ============================================================================
+describe("FIX-73 — recommendation_card coage contra o recommend_groups REAL; fechamento reusa a oferta", () => {
+	it("cassette: LLM emite recommendation_card fabricado (R$70k/R$892,48) → após coerção reflete a cota REAL do recommend_groups (R$100k/R$1438,28)", async () => {
+		const { coerceRecommendationPayload } = await import(
+			"@/lib/agent/orchestrator/recommendation-payload"
+		);
+
+		// Retorno REAL do recommend_groups deste turno (capturado pelo runner
+		// via tool-result, igual ao FIX-C3 com simulate_quota).
+		const recommendGroupsOutput = {
+			recommendations: [
+				{
+					id: "6a0ca9ca1b2c3d4e5f607182",
+					administradora: "ÂNCORA",
+					category: "auto",
+					creditValue: 100_000,
+					monthlyPayment: 1_438.28,
+					adminFeePercent: 18,
+					termMonths: 80,
+					availableSlots: 4,
+					contemplationRate: 4,
+					score: 0.82,
+					scoreBreakdown: { monthlyFit: 0.7, contemplation: 0.9, adminFee: 0.8, termMatch: 0.85 },
+					alternativa: false,
+				},
+			],
+			total: 1,
+		};
+
+		// Payload como o modelo emitiu no bug real (âncora fabricada — 99,2%
+		// "do teto" que não é a cota que existe de fato).
+		const fabricatedCard = {
+			id: "6a0ca9ca1b2c3d4e5f607182",
+			administradora: "ÂNCORA",
+			category: "auto",
+			creditValue: 70_000,
+			monthlyPayment: 892.48,
+			adminFeePercent: 18,
+			termMonths: 80,
+			contemplationRate: 4,
+			score: 0.99,
+			scoreBreakdown: { monthlyFit: 0.99, contemplation: 0.9, adminFee: 0.8, termMatch: 0.85 },
+		};
+
+		const coerced = coerceRecommendationPayload(fabricatedCard, recommendGroupsOutput);
+
+		expect(coerced.creditValue).toBe(100_000);
+		expect(coerced.monthlyPayment).toBe(1_438.28);
+		expect(coerced.termMonths).toBe(80);
+	});
+
+	it("descoberta→fechamento mantém crédito/parcela: buildStartContractInput reusa o recommendedOffer persistido no reveal", async () => {
+		const { buildStartContractInput } = await import("@/lib/bevi/contract-input");
+
+		// O reveal (runner.ts) persiste meta.recommendedOffer a partir do
+		// snapshot REAL (offerSnapshotFromArtifact) — o mesmo crédito que o
+		// card coagido (acima) mostrou ao usuário.
+		const metaAposReveal: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ÂNCORA",
+			// q.creditMax é o TETO pedido (100k) — re-derivar daqui reproduzia o
+			// bug (proposta saía 100k mesmo o card tendo anunciado 70k).
+			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
+			recommendedOffer: {
+				administradora: "ÂNCORA",
+				category: "auto",
+				creditValue: 70_000,
+				termMonths: 80,
+				monthlyPayment: 892.48,
+			},
+		} as ConversationMetadata;
+
+		const contractInput = buildStartContractInput(metaAposReveal, {
+			cpf: "52998224725",
+			celular: "62999887766",
+			lgpd: true,
+		});
+
+		// O fechamento contrata a MESMA cota que a recomendação anunciou —
+		// não o teto de crédito solicitado.
+		expect(contractInput.valor).toBe(70_000);
+	});
+
+	it("acoplamento: runner.ts captura o retorno de recommend_groups e coage o recommendation_card (não cai em payload=input cru)", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc).toMatch(/recommend_groups/);
+		expect(runnerSrc).toMatch(/coerceRecommendationPayload/);
+		expect(runnerSrc).toMatch(/lastRecommendations/);
+	});
+
+	it("acoplamento: contract-input.ts prefere recommendedOffer.creditValue sobre q.creditMax re-derivado", () => {
+		const contractInputSrc = readSource("src/lib/bevi/contract-input.ts");
+		expect(contractInputSrc).toMatch(/recommendedOffer\?\.\s*creditValue/);
+	});
+});

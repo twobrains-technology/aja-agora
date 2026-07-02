@@ -71,4 +71,43 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 		expect(input.leadId).toBeNull();
 	});
+
+	// FIX-73 (QA dono-de-produto 2026-07-02, jornada AUTO web prod): o
+	// fechamento re-derivava o valor de q.creditMax (teto pedido pelo usuário,
+	// ex.: 100000) em vez de reusar a oferta REAL que o card de recomendação
+	// mostrou (ex.: 70000 — a que ele "assinaria"). A Bevi devolvia uma cota
+	// NOVA baseada no creditMax, divergindo do que foi anunciado
+	// (bait-and-switch). Decisão de produto (Kairo): a proposta contratada
+	// usa o MESMO crédito da oferta recomendada persistida em
+	// meta.recommendedOffer (snapshot real, FIX-6/FIX-C2) — creditMax só é
+	// fallback quando ainda não há oferta (ex.: fechamento sem reveal, embora
+	// isso já seja bloqueado a montante pelo guard revealCompleted).
+	it("FIX-73: fechamento usa o creditValue da oferta REAL persistida (recommendedOffer), NÃO o creditMax re-derivado", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ÂNCORA",
+			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
+			recommendedOffer: {
+				administradora: "ÂNCORA",
+				category: "auto",
+				creditValue: 70_000,
+				termMonths: 80,
+				monthlyPayment: 892.48,
+			},
+		} as ConversationMetadata;
+
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+		expect(input.valor).toBe(70_000);
+	});
+
+	it("FIX-73: sem recommendedOffer (defensivo), cai de volta no creditMax/creditMin (comportamento anterior)", () => {
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			qualifyAnswers: { creditMax: 100_000 },
+		} as ConversationMetadata;
+
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+		expect(input.valor).toBe(100_000);
+	});
 });

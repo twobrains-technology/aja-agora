@@ -33,7 +33,14 @@ export function buildStartContractInput(
 ): StartContractInput {
 	const q = meta.qualifyAnswers ?? {};
 	const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
-	const valor = q.creditMax ?? q.creditMin ?? 50000;
+	// FIX-73: o fechamento reusa o crédito da oferta REAL recomendada
+	// (snapshot persistido no reveal — FIX-6/FIX-C2), NUNCA re-deriva de
+	// creditMax (teto que o usuário pediu, não a oferta que ele viu). Sem
+	// isso a Bevi devolvia uma cota nova baseada no teto, divergindo do
+	// número que o card de recomendação anunciou (bait-and-switch, jornada
+	// AUTO 2026-07-02). creditMax/creditMin seguem como fallback defensivo
+	// (fechamento sem reveal já é bloqueado a montante pelo guard revealCompleted).
+	const valor = meta.recommendedOffer?.creditValue ?? q.creditMax ?? q.creditMin ?? 50000;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {

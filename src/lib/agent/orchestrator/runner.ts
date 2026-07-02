@@ -20,6 +20,7 @@ import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
+import { coerceRecommendationPayload } from "./recommendation-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -100,6 +101,11 @@ export async function* runAgentTurn(args: {
 	// números do simulation_result (o modelo digitava o payload na mão e
 	// alucinou receivedCredit = carta cheia na jornada BB de 2026-06-11).
 	let lastQuotaSimulation: unknown = null;
+	// FIX-73: retorno REAL do recommend_groups deste turno — fonte única dos
+	// números do recommendation_card (o modelo digitava o payload na mão e
+	// anunciou uma cota que divergiu da proposta contratada, jornada AUTO
+	// 2026-07-02).
+	let lastRecommendations: unknown = null;
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -152,6 +158,11 @@ export async function* runAgentTurn(args: {
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
 					lastQuotaSimulation = (part as { output?: unknown }).output ?? null;
+				}
+				// FIX-73: guarda o retorno real do recommend_groups pra coagir o
+				// payload do recommendation_card emitido neste mesmo turno.
+				if (part.toolName === "recommend_groups") {
+					lastRecommendations = (part as { output?: unknown }).output ?? null;
 				}
 				break;
 			}
@@ -230,6 +241,12 @@ export async function* runAgentTurn(args: {
 						// carta cheia com embutido de 49%).
 						if (artifactType === "simulation_result") {
 							payload = coerceSimulationPayload(input, lastQuotaSimulation);
+						}
+						// FIX-73: números do card de recomendação SEMPRE do retorno real
+						// do recommend_groups — o modelo anunciou "R$70k/R$892" e a
+						// proposta contratada saiu "R$100k/R$1438" (bait-and-switch).
+						if (artifactType === "recommendation_card") {
+							payload = coerceRecommendationPayload(input, lastRecommendations);
 						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
