@@ -1,0 +1,118 @@
+/**
+ * FIX-188 — Camada de composição: texto EFÊMERO (preâmbulo de processo) × FINAL.
+ *
+ * Print do Kairo (2026-07-01): em turno multi-step o modelo escreve preâmbulos de
+ * PROCESSO antes de cada tool-call ("deixa eu puxar os números reais", "vou buscar
+ * as opções certas", "preciso primeiro buscar os grupos", "um segundo", "deixa eu
+ * usar a ferramenta certa") e TODOS eram persistidos/enviados como mensagem final.
+ *
+ * A defesa soft no `system-prompt.ts` não segura sob carga (Lei 4 —
+ * instruction-following degrada). A BARREIRA REAL é este sanitizer determinístico
+ * (Lei 1: o LLM não decide o que vira bolha; só a resposta de RESULTADO vira). É
+ * DETECÇÃO de meta-narrativa de processo (mesma natureza dos detectores de
+ * meta-narrativa/refresh que já existem) — a governança de FLUXO segue allowlist.
+ *
+ * Pós-onda-1 (FIX-186): o erro de descoberta já vira diretiva e o runner suprime
+ * TODA a narração após uma falha → este sanitizer só cuida de preâmbulo de
+ * SUCESSO, nunca de narração de erro.
+ */
+
+// Ações de processo ("deixa eu buscar", "vou puxar", "preciso primeiro buscar",
+// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" — o prompt endossa
+// narrações legítimas com conteúdo ("Vou simular a Rodobens com R$ 900k:") e
+// dropá-las seria falso-positivo. Conservador de propósito.
+const PROCESS_ACTION_PATTERNS: RegExp[] = [
+	/\bdeixa\s+eu\s+(buscar|puxar|procurar|pegar|consultar|usar)\b/i,
+	/\bvou\s+(buscar|puxar|procurar|consultar)\b/i,
+	/\bvou\s+usar\s+a\s+ferramenta\b/i,
+	/\bpreciso\s+(primeiro\s+)?(buscar|puxar|procurar|consultar)\b/i,
+];
+
+// Fillers de processo puros ("um segundo", "só um instante"). Ancorados no
+// segmento inteiro pra NÃO pegar "tem um segundo grupo" (falso-positivo).
+const PROCESS_FILLER_PATTERNS: RegExp[] = [
+	/^\s*(um\s+segundo|s[óo]\s+um\s+(instante|segundo|minuto))\s*[:.!…]*\s*$/i,
+];
+
+export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
+	...PROCESS_ACTION_PATTERNS,
+	...PROCESS_FILLER_PATTERNS,
+];
+
+/** Um segmento (frase) é preâmbulo de processo (efêmero) — não pode virar bolha. */
+export function isProcessPreamble(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PROCESS_PREAMBLE_PATTERNS.some((rx) => rx.test(s));
+}
+
+/** Quebra o texto em segmentos (frases) mantendo o delimitador (. ! ? : \n) à
+ * esquerda. Usado pelo sanitizer e pela normalização anti-colagem (FIX-189). */
+export function splitSegments(text: string): string[] {
+	return text.split(/(?<=[.!?:\n])/).filter((p) => p.length > 0);
+}
+
+/**
+ * Remove os segmentos de preâmbulo de processo, preservando o espaçamento
+ * original entre os segmentos mantidos (a separação de frases legítimas não é
+ * tocada — a granularidade de streaming garante que nada seja emitido colado).
+ */
+export function stripProcessPreamble(text: string): string {
+	if (!text) return text;
+	const segments = splitSegments(text);
+	const kept = segments.filter((seg) => !isProcessPreamble(seg));
+	return kept.join("");
+}
+
+function lastBoundaryIndex(s: string): number {
+	let idx = -1;
+	for (const ch of [".", "!", "?", ":", "\n"]) {
+		const i = s.lastIndexOf(ch);
+		if (i > idx) idx = i;
+	}
+	return idx;
+}
+
+/**
+ * Filtro de stream por FRASE (DR1). Segura só a frase INCOMPLETA corrente; cada
+ * frase COMPLETA (fechada por . ! ? : ou \n) é checada contra o blocklist ANTES
+ * de emitir — preâmbulo de processo é DROPADO (nunca vira delta nem entra em
+ * `fullResponse`); frase legítima é liberada. Garante o invariante "preâmbulo
+ * nunca é enviado" (não só "não persistido"), sem matar o streaming (aparece
+ * frase-a-frase; o chip determinístico cobre a latência da tool).
+ */
+export class EphemeralTextFilter {
+	private pending = "";
+
+	/** Alimenta um delta; devolve o texto LIMPO pronto pra emitir agora. */
+	push(delta: string): string {
+		this.pending += delta;
+		const idx = lastBoundaryIndex(this.pending);
+		if (idx < 0) return "";
+		const complete = this.pending.slice(0, idx + 1);
+		this.pending = this.pending.slice(idx + 1);
+		return stripProcessPreamble(complete);
+	}
+
+	/** Fim do bloco/stream: libera a cauda (última frase sem delimitador), também
+	 * filtrada. */
+	flush(): string {
+		const rest = this.pending;
+		this.pending = "";
+		if (!rest) return "";
+		return stripProcessPreamble(rest);
+	}
+}
+
+/**
+ * Separador de CONTEÚDO entre a fala acumulada e a próxima a emitir (FIX-189
+ * anti-colagem): só insere `\n\n` quando há colagem real — o acumulado termina
+ * SEM espaço e o próximo começa SEM espaço. Complementa o `textBlockSeparator`
+ * (FIX-182, por id de bloco) no ponto de emissão por frase.
+ */
+export function joinSeparator(accumulated: string, next: string): string {
+	if (!accumulated || !next) return "";
+	if (/\s$/.test(accumulated)) return "";
+	if (/^\s/.test(next)) return "";
+	return "\n\n";
+}

@@ -20,6 +20,7 @@ import { enrichContractFormPayload } from "./contract-form-prefill";
 import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
+import { EphemeralTextFilter, joinSeparator, stripProcessPreamble } from "./sanitizer";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -236,6 +237,21 @@ export async function* runAgentTurn(args: {
 	// FIX-182: id do bloco de texto corrente. Blocos diferentes (steps diferentes
 	// de um turno multi-tool) ganham `\n\n` entre si; deltas do mesmo bloco colam.
 	let lastTextBlockId: string | undefined;
+	// FIX-188: filtro de stream por frase — preâmbulo de processo ("deixa eu
+	// buscar", "vou buscar", "um segundo", "deixa eu usar a ferramenta") é EFÊMERO
+	// e NUNCA vira bolha (nem enviado ao vivo, nem persistido). Barreira em código
+	// (Lei 1/4), a regra soft no prompt é só reforço. Pós-onda-1: erro já é
+	// diretiva, então o filtro só cuida de preâmbulo de SUCESSO.
+	const ephemeralFilter = new EphemeralTextFilter();
+	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
+	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
+	const composeClean = (clean: string, blockSep = ""): string => {
+		if (!clean) return "";
+		const sep = blockSep || joinSeparator(fullResponse, clean);
+		const out = sep + clean;
+		fullResponse += out;
+		return out;
+	};
 	for await (const part of result.fullStream) {
 		switch (part.type) {
 			case "text-delta": {
@@ -245,16 +261,17 @@ export async function* runAgentTurn(args: {
 				// fallback humano é materializado deterministicamente pelo orchestrator.
 				if (discoveryFailedThisTurn) break;
 				const blockId = (part as { id?: string }).id;
-				// FIX-182: separa narrações de steps diferentes ANTES de acumular/emitir
-				// (o separador entra no stream e no persistido — a bolha renderiza limpo).
-				const separator = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
-				if (separator) {
-					fullResponse += separator;
-					yield { type: "text-delta", text: separator };
+				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
+				// fecha a frase pendente do bloco anterior, com separador entre blocos.
+				if (blockId !== lastTextBlockId && lastTextBlockId !== undefined) {
+					const blockSep = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
+					const flushed = composeClean(ephemeralFilter.flush(), blockSep);
+					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = blockId;
-				fullResponse += part.text;
-				yield { type: "text-delta", text: part.text };
+				// FIX-188: só a frase COMPLETA e não-preâmbulo é liberada (por frase).
+				const emitted = composeClean(ephemeralFilter.push(part.text));
+				if (emitted) yield { type: "text-delta", text: emitted };
 				break;
 			}
 			case "tool-result": {
@@ -279,6 +296,15 @@ export async function* runAgentTurn(args: {
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
 				executedToolNames.push(toolName);
+				// FIX-188: fecha o texto pré-tool (preâmbulo de processo é DROPADO aqui)
+				// ANTES de emitir o tool-call/artifact — o status real é o chip
+				// determinístico, não uma fala do modelo. Exceção: handoff (agente
+				// calado por design; o texto pendente some com o turno).
+				if (toolName !== "suggest_handoff") {
+					const flushed = composeClean(ephemeralFilter.flush());
+					if (flushed) yield { type: "text-delta", text: flushed };
+				}
+				lastTextBlockId = undefined;
 				// FIX-19: com o gating a montante (builder filtra o toolset pela
 				// tool-policy da fase), uma chamada de tool FORA da policy significa
 				// que a tool entrou no request indevidamente — bug da policy/builder,
@@ -384,15 +410,10 @@ export async function* runAgentTurn(args: {
 		}
 	}
 
-	// FIX-102: colapsa eco/degeneração da LLM ANTES de qualquer uso do texto
-	// completo — persistência (content), prefixo do próximo gate e o
-	// RunAgentResult retornado ao orchestrator ficam todos livres do sintoma.
-	fullResponse = collapseEchoedSegments(fullResponse);
-
 	// FIX-186: a descoberta falhou neste turno → NÃO persiste o texto do modelo
-	// (a narração foi suprimida; só o preâmbulo pré-falha vazou no stream), NÃO
-	// avalia reveal/gates. O orchestrator materializa a mensagem amigável FIXA e
-	// finaliza o turno (Lei 1: o LLM não decide o que falar no erro).
+	// (a narração foi suprimida; o preâmbulo pré-falha ficou EFÊMERO no filtro e é
+	// descartado aqui — nem vaza no stream, FIX-188), NÃO avalia reveal/gates. O
+	// orchestrator materializa a mensagem amigável FIXA e finaliza o turno (Lei 1).
 	if (discoveryFailedThisTurn) {
 		console.log(
 			`[discovery-failed] guard: descoberta falhou no turno — fallback determinístico (conv=${conversationId})`,
@@ -407,6 +428,19 @@ export async function* runAgentTurn(args: {
 			discoveryFailedThisTurn: true,
 		};
 	}
+
+	// FIX-188: libera a última frase pendente do stream (sucesso), também filtrada
+	// — a cauda sem pontuação final ("...Vou buscar os grupos agora") é avaliada
+	// antes de virar bolha.
+	{
+		const tail = composeClean(ephemeralFilter.flush());
+		if (tail) yield { type: "text-delta", text: tail };
+	}
+
+	// FIX-102 + FIX-188: colapsa eco/degeneração da LLM e garante (belt-and-
+	// suspenders) que nenhum preâmbulo persista — o filtro já limpou ao vivo, este
+	// strip é a rede final antes de persistência/prefixo do próximo gate.
+	fullResponse = stripProcessPreamble(collapseEchoedSegments(fullResponse)).replace(/^\s+/, "");
 
 	try {
 		const finishReason = await result.finishReason;

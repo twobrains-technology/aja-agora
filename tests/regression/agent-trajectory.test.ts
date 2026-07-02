@@ -54,6 +54,12 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
+import {
+	EphemeralTextFilter,
+	isProcessPreamble,
+	joinSeparator,
+	stripProcessPreamble,
+} from "@/lib/agent/orchestrator/sanitizer";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
@@ -7671,5 +7677,92 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
 		// os overrides passam o sinal discoveryFailed pras precondições.
 		expect(toolsSrc).toMatch(/discoveryFailedThisTurn:\s*discoveryFailed/);
+	});
+});
+
+// ============================================================================
+// FIX-188 — preâmbulo de processo EFÊMERO nunca vira bolha (sanitizer runtime)
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): em turno multi-step o modelo escreveu, numa bolha
+// só, vários preâmbulos de PROCESSO antes das tools ("deixa eu puxar os números
+// reais", "vou buscar as opções certas", "preciso primeiro buscar os grupos",
+// "um segundo", "deixa eu usar a ferramenta certa") — todos persistidos/enviados
+// como mensagem final. Cura (Lei 1/4): sanitizer determinístico no runner filtra
+// o texto ANTES de emitir/persistir — só a resposta de RESULTADO vira bolha. A
+// regra soft no prompt é defesa-em-profundidade, não a barreira.
+// Pós-onda-1: o erro já vira diretiva (FIX-186) → sanitizer só cuida de SUCESSO.
+// ============================================================================
+
+describe("FIX-188 — preâmbulo de processo é EFÊMERO (nunca persistido nem enviado)", () => {
+	// Detector do bug: preâmbulos de processo na mensagem final.
+	const PREAMBULO = /(deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b)/i;
+
+	it("cassette: stream do print com preâmbulos empilhados é reproduzido cru (o bug)", async () => {
+		// Reprodução fiel do print — o modelo despejou 4 preâmbulos numa bolha só.
+		const cassette =
+			"Deixa eu buscar as melhores opções na sua faixa: " +
+			"Vou buscar as opções certas pra você: " +
+			"Preciso primeiro buscar os grupos disponíveis. Um segundo: " +
+			"Deixa eu usar a ferramenta certa pra isso:";
+		const { text } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", cassette),
+			FINISH_STOP,
+		]);
+		// Sem sanitizer, o texto cru CASA o detector (é exatamente o vazamento).
+		expect(PREAMBULO.test(text)).toBe(true);
+	});
+
+	it("sanitizer runtime: o mesmo stream, filtrado frase-a-frase, sai SEM preâmbulo (só o resultado)", () => {
+		// Simula o loop do runner: alimenta o EphemeralTextFilter com os deltas e
+		// acumula só o texto LIMPO emitido. Preâmbulo NUNCA entra em fullResponse.
+		const deltas = [
+			"Deixa eu buscar as melhores opções na sua faixa: ",
+			"Vou buscar as opções certas pra você: ",
+			"Preciso primeiro buscar os grupos disponíveis. Um segundo: ",
+			"Deixa eu usar a ferramenta certa pra isso: ",
+			"Olha só o que a gente encontrou na sua faixa:",
+		];
+		const filter = new EphemeralTextFilter();
+		let fullResponse = "";
+		for (const d of deltas) {
+			const clean = filter.push(d);
+			if (clean) fullResponse += joinSeparator(fullResponse, clean) + clean;
+		}
+		const tail = filter.flush();
+		if (tail) fullResponse += joinSeparator(fullResponse, tail) + tail;
+
+		// NENHUM preâmbulo sobrevive; só a frase de RESULTADO.
+		expect(PREAMBULO.test(fullResponse)).toBe(false);
+		expect(fullResponse).toContain("Olha só o que a gente encontrou na sua faixa:");
+	});
+
+	it("sanitizer preserva transição honesta legítima (FIX-36) — não é falso-positivo", () => {
+		const filter = new EphemeralTextFilter();
+		let out = filter.push("Bora ver o que encaixa na sua faixa:");
+		out += filter.flush();
+		expect(out).toContain("Bora ver o que encaixa na sua faixa:");
+		expect(isProcessPreamble("Bora ver o que encaixa na sua faixa:")).toBe(false);
+		// E a copy de resultado do docx também sobrevive.
+		expect(stripProcessPreamble("Olha só o que a gente encontrou na sua faixa:")).toBe(
+			"Olha só o que a gente encontrou na sua faixa:",
+		);
+	});
+
+	it("structural: o runner filtra o texto pelo sanitizer no case text-delta (barreira em código)", () => {
+		const runnerSrc = readSource("src/lib/agent/orchestrator/runner.ts");
+		expect(runnerSrc, "runner precisa usar EphemeralTextFilter no stream").toMatch(
+			/EphemeralTextFilter/,
+		);
+		expect(runnerSrc, "runner precisa aplicar stripProcessPreamble na composição").toMatch(
+			/stripProcessPreamble/,
+		);
+	});
+
+	it("structural: system-prompt + HARD_RULES reforçam a proibição (defesa-em-profundidade)", () => {
+		// A barreira REAL é o sanitizer; o prompt é reforço. Ambos presentes.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/Deixa eu buscar/i);
+		const hardRules = readSource("src/lib/agent/HARD_RULES.md");
+		expect(hardRules).toMatch(/efêmero|preâmbulo de processo/i);
 	});
 });

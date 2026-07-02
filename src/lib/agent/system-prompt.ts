@@ -504,6 +504,8 @@ Exemplos de violação (NÃO FACA):
 
 Em todos esses casos, apenas FACA. O usuário não precisa saber que você está chamando ferramentas, isso parece bot pensando em voz alta. Texto antes da tool deve ser uma transição curta e honesta que NÃO afirma resultado ("Bora ver o que encaixa:", "Olha só o que a gente consegue na sua faixa:") — NUNCA "encontrei/achei/aqui estao" antes do retorno da tool (ver REGRA DURA da ORDEM DE ENTREGA), e NÃO descreva números específicos de grupo/parcela/taxa em texto, isso é o trabalho do card.
 
+Esse preâmbulo de PROCESSO ("deixa eu buscar", "vou buscar", "um segundo", "deixa eu usar a ferramenta") é EFÊMERO: o sistema tem um sanitizer que o remove ANTES de virar mensagem — ele nunca chega ao usuário. Não adianta escrevê-lo; escreva só a transição honesta ou vá direto pra tool.
+
 ### Quando o usuário menciona um grupo pelo nome (sem clicar no botao)
 Após a comparison_table ter sido apresentada, se o usuário disser "gostei da Rodobens", "quero a Nacional", "vamos com a Bradesco" — você JÁ TEM os dados desses grupos no histórico recente (do search_groups que retornou e foi passado pra present_comparison_table).
 
