@@ -1,6 +1,6 @@
 // src/lib/memory/identity.ts
 //
-// Resolução de identidade do usuário pra mapear pessoa ↔ agent Letta.
+// Resolução de identidade do usuário pra mapear pessoa ↔ linha de memória.
 // Convenção: phone E.164 normalizado é a chave primária estável. Cookie
 // `AJA_UID` é fallback pra web anônimo (lazy create após N=3 turnos).
 
@@ -10,14 +10,18 @@ import type { UserIdentity } from "./types";
 
 export const COOKIE_NAME = "aja_uid";
 export const COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60; // 90 dias
-export const ENGAGEMENT_THRESHOLD = 3; // turnos antes de criar agent web anônimo
+export const ENGAGEMENT_THRESHOLD = 3; // turnos antes de criar memória web anônima
 
 /**
- * Retorna o namespace Letta a usar. Lê `LETTA_NAMESPACE` do env. Default
- * pra dev local sem env var configurada: `aja-agora-local-default`.
+ * Retorna o namespace de memória a usar (separa ambientes: prod/dev/
+ * local-<workspace>). Lê `MEMORY_NAMESPACE`, com fallback pra `LETTA_NAMESPACE`
+ * — o ambiente ainda carrega `LETTA_NAMESPACE` durante a transição (FIX-81), e
+ * preservar o valor evita trocar a chave de identidade no cutover. Default pra
+ * dev local sem env var: `aja-agora-local-default`.
  */
 export function getNamespace(): string {
-	return process.env.LETTA_NAMESPACE ?? "aja-agora-local-default";
+	const ns = process.env.MEMORY_NAMESPACE ?? process.env.LETTA_NAMESPACE;
+	return ns && ns.length > 0 ? ns : "aja-agora-local-default";
 }
 
 /**
@@ -36,8 +40,12 @@ export function normalizePhoneBR(input: string | null | undefined): string | nul
 	const digits = input.replace(/\D/g, "");
 	if (!digits) return null;
 
-	// Se já vier com 55 na frente
-	const withoutCC = digits.startsWith("55") ? digits.slice(2) : digits;
+	// "55" inicial só é código de país quando o total tem 12-13 dígitos (CC +
+	// DDD + 8/9). Em 10-11 dígitos o "55" é o DDD (ex.: móvel de Santa Maria-RS),
+	// não o CC — removê-lo mutilava o número e rejeitava o usuário. Mesmo guard
+	// de lead-collection.ts (normalizePhone).
+	const withoutCC =
+		digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 
 	// BR: DDD (2) + 9 + 8 dígitos (móvel) = 11. Fixo: DDD + 8 = 10.
 	if (withoutCC.length < 10 || withoutCC.length > 11) return null;

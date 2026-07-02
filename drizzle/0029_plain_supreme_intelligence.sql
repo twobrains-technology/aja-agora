@@ -1,0 +1,1 @@
+ALTER TABLE "mesa_handoffs" ALTER COLUMN "mesa_attendant_id" DROP NOT NULL;

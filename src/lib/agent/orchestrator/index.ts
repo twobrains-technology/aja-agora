@@ -14,10 +14,15 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
-import { buildDecisionPromptDirective, buildSearchSummaryDirective } from "./directives";
+import {
+	buildDecisionPromptDirective,
+	buildDiscoveryFailedFallback,
+	buildSearchSummaryDirective,
+} from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
+import { revealValueTargetChanged } from "./tool-policy";
 import { buildSystemContext } from "./system-context";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { ChatMessage, TurnEvent, TurnInput } from "./types";
@@ -153,8 +158,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const memoryContext = await loadMemoryContextForTurn({ identity, userText });
 	const memorySystemMessage = memorySystemMessageFromContext(memoryContext);
 
-	const memoryPrefix: ChatMessage[] = memorySystemMessage ? [memorySystemMessage] : [];
-
 	// Debug hook (R9 do QA plan): quando AJA_DEBUG_MEMORY=1, persiste o hint
 	// injetado no meta pra E2E inspecionar via SQL. Nunca em produção.
 	if (process.env.AJA_DEBUG_MEMORY === "1") {
@@ -164,16 +167,23 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			lettaDebugHint: memorySystemMessage?.content ?? null,
 		});
 	}
+
+	// FIX-77: os blocos de system dinâmicos (systemContext + a memória Letta) NÃO
+	// vão mais em `messages` — system dentro de `messages` dispara o warning de
+	// prompt-injection da AI SDK a cada turno. systemContext vai pro builder via
+	// `instructions` (systemContextBlocks → runner → resolveAgent). A memória já
+	// chega ao prompt via memoryContext → buildAgent (memoryText): prependá-la
+	// aqui ALÉM disso duplicava a Letta no mesmo request. Em turno de sistema
+	// (directive) só o knownName entra — espelha o comportamento anterior, sem o
+	// bloco de experience/doubts (que só faz sentido respondendo o usuário).
+	const systemContextBlocks: string[] = isUserTurn
+		? systemContext.map((m) => m.content)
+		: knownName
+			? [`Nome do usuario: "${knownName}"`]
+			: [];
 	const messagesForAgent: ChatMessage[] = isUserTurn
-		? [...memoryPrefix, ...systemContext, ...history]
-		: [
-				...memoryPrefix,
-				...(knownName
-					? [{ role: "system" as const, content: `Nome do usuario: "${knownName}"` }]
-					: []),
-				...history,
-				{ role: "user", content: userText },
-			];
+		? [...history]
+		: [...history, { role: "user", content: userText }];
 
 	// NÍVEL 1 do fix BUG-SHORT-GREETING-AFTER-NAME: quando o turn atual é
 	// "user respondeu nome" (turno anterior do agent perguntou nome E user
@@ -213,7 +223,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		userIntent: analyzedIntent,
 		memoryContext,
 		forceToolChoice,
+		systemContextBlocks,
 	});
+
+	// FIX-186 (Kairo 2026-07-01): a descoberta na Bevi falhou neste turno (após
+	// retry silencioso). O runner suprimiu a narração crua do modelo; AQUI o
+	// orchestrator materializa a mensagem amigável FIXA + convite a ação e fecha
+	// o turno — determinístico (Lei 1), no padrão do yieldTransitionAbort. Nunca
+	// deixa o LLM decidir o que falar no erro; nunca emite proposta (FIX-187).
+	if (result.discoveryFailedThisTurn) {
+		const fallback = buildDiscoveryFailedFallback({ name: knownName });
+		yield { type: "text-delta", text: fallback };
+		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
+		yield { type: "finish", reason: "discovery-failed" };
+		return;
+	}
 
 	// Fire-and-forget — extrai fatos do turno e persiste no Letta.
 	// Não awaitamos: turno responde mais rápido; se store falhar, próximo turno
@@ -238,7 +262,12 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 
 	if (result.nextGateToFire === "search") {
 		const refreshed = await reloadMeta(conversationId);
-		if (refreshed.searchDispatched) {
+		// FIX-76: na troca de faixa (revealValueTargetChanged) a busca é uma
+		// re-descoberta LEGÍTIMA da faixa nova — não pode ser barrada pelo guard de
+		// idempotência do reveal original. Sem essa exceção, a retomada com
+		// valor-alvo novo abortava em "search-already-dispatched" e o modelo
+		// preenchia o vácuo com alucinação de "instabilidade" + valor stale.
+		if (refreshed.searchDispatched && !revealValueTargetChanged(refreshed)) {
 			yield { type: "finish", reason: "search-already-dispatched" };
 			return;
 		}

@@ -18,9 +18,11 @@
  * (gatePartData) e o conteúdo dos cards — não só "[artifact: x]".
  *
  *   ┌─ passo 1  Entender a necessidade  → acolhe o sonho + pergunta o nome
- *   ├─ passo 2  Entender o cliente      → experience → consent → credit →
- *   │                                      timeframe → lance → lance-value →
- *   │                                      lance-embutido → identify (D1)
+ *   ├─ passo 2  Entender o cliente      → experience → consent → identify (D1) →
+ *   │                                      credit → lance → lance-value →
+ *   │                                      lance-embutido (reveal no fim)
+ *   │                                      (FIX-53: identidade cedo, logo após o
+ *   │                                      consent; FIX-103: gate de prazo removido)
  *   ├─ passo 3  Buscar alternativas     → "encontramos boas opções" (3 reais)
  *   ├─ passo 4  Avaliar/simular/definir  → recomendado → simulador (Bernardo)
  *   │                                      → outras opções → decisão
@@ -373,26 +375,19 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 			return { turns: [userReplyTurn("passo2:lance-value", label)] };
 		}
 		case "lance-embutido": {
-			// route: persiste opt-in + pipeSearchSummaryTurn → TRIPWIRE D1 → identify.
+			// route: persiste opt-in + SEMPRE dispara pipeSearchSummaryTurn (reveal) —
+			// a identidade já foi coletada CEDO (gate identify, logo após consent),
+			// então a tripwire de identidade sempre passa aqui (fim da qualificação).
 			const label = "Sim, quero considerar lance embutido";
 			await persistMeta(conversationId, {
 				...meta,
 				qualifyAnswers: { ...q, lanceEmbutido: true, lanceEmbutidoPercent: 30 },
 			});
 			await saveMessage(conversationId, "user", label, "web");
-			return { turns: [userReplyTurn("passo2:lance-embutido", label)] };
-		}
-		case "identify": {
-			// route: valida + storeIdentity + saveContactWhatsapp + pipeSearchSummaryTurn.
-			// Identidade SINTÉTICA (DV válido) — só alcança o adapter de fixtures.
-			// SÓ AGORA a identidade existe → a tripwire libera a descoberta (igual prod).
-			const label = "Enviei meus dados pra buscar as ofertas";
-			await storeIdentity(conversationId, FIXTURE_IDENTITY);
-			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-			await saveContactWhatsapp(conversationId, FIXTURE_IDENTITY.celular).catch(() => {});
-			await saveMessage(conversationId, "user", label, "web");
 			const refreshed = await reloadMeta(conversationId);
-			if (refreshed.searchDispatched || !refreshed.currentCategory) return null;
+			if (refreshed.searchDispatched || !refreshed.currentCategory) {
+				return { turns: [userReplyTurn("passo2:lance-embutido", label)] };
+			}
 			await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 			const t = await consumeTurn(
 				conversationId,
@@ -402,6 +397,32 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 				label,
 			);
 			return { turns: [t] };
+		}
+		case "identify": {
+			// route (D1): valida + storeIdentity + saveContactWhatsapp; dispara o
+			// PRÓXIMO gate da qualificação (credit) com "Perfeito, recebido!" — NÃO
+			// revela aqui. FIX-53: identidade sobe pra logo após o consent (antes do
+			// credit); o reveal fica pro FIM da cadeia (gate lance-embutido), quando
+			// a tripwire de identidade (pipeSearchSummaryTurn) já passa sempre.
+			// Identidade SINTÉTICA (DV válido) — só alcança o adapter de fixtures.
+			const label = "Enviei meus dados pra buscar as ofertas";
+			await storeIdentity(conversationId, FIXTURE_IDENTITY);
+			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+			await saveContactWhatsapp(conversationId, FIXTURE_IDENTITY.celular).catch(() => {});
+			await saveMessage(conversationId, "user", label, "web");
+			return {
+				turns: [
+					{
+						label: "passo2:identify",
+						userLine: label,
+						content: "Perfeito, recebido!",
+						toolCalls: [],
+						artifacts: [],
+						gates: [],
+						events: [],
+					},
+				],
+			};
 		}
 		case "simulator-offer": {
 			// route: persiste simulatorOfferDispatched + directive do dial (Bernardo).
@@ -455,6 +476,7 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		explica?: Turn;
 		reveal?: Turn;
 		simulador?: Turn;
+		simuladorWhatIf?: Turn;
 		decisao?: Turn;
 		outras?: Turn;
 		contrato?: Turn;
@@ -519,15 +541,20 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		// A FIDELIDADE vem de renderGate (pergunta + botões reais que o usuário vê)
 		// + a reação real do modelo capturada em cada turno; o judge avalia
 		// tom/didática/conteúdo, não o encadeamento (isso é Camada 1).
+		// FIX-53 (2026-06-19): identify sobe pra logo após o consent (antes do
+		// credit) — "pedir os dados, antes do valor". O reveal (busca real) fica
+		// pro FIM da cadeia, disparado no gate lance-embutido (tripwire da
+		// identidade, já coletada cedo, sempre passa nesse ponto).
+		// FIX-103 (2026-06-28): o gate de prazo (timeframe) saiu da qualificação —
+		// a sequência pula de credit (valor) direto pra lance.
 		const GATE_SEQUENCE: Gate[] = [
 			"experience",
 			"consent",
+			"identify",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"identify",
 		];
 		for (const gate of GATE_SEQUENCE) {
 			// 1. O usuário VÊ a pergunta + botões/card do gate (fidelidade + determinismo
@@ -564,6 +591,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 				turns.push(...r.turns);
 				cap.simulador = r.turns[r.turns.length - 1];
 			}
+			// FIX-106: LOOP conversacional — o usuário pergunta um mês-alvo por TEXTO
+			// e o agente recalcula via simulate_contemplation (não re-renderiza a
+			// agulha). É o caminho do WhatsApp e o what-if de mês em qualquer canal.
+			const whatIf = "e se eu quiser ser contemplado em 6 meses, como ficam as parcelas?";
+			const whatIfTurn = await consumeTurn(
+				conv.id,
+				whatIf,
+				true,
+				"passo4:simulador-whatif",
+				whatIf,
+			);
+			turns.push(whatIfTurn);
+			cap.simuladorWhatIf = whatIfTurn;
 		}
 
 		// ── passo 4 close — avança com afirmativos até o card de decisão ──
@@ -723,19 +763,19 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	});
 
 	it("passo 2 — a CADEIA REAL de gates aconteceu na ordem do docx (zero pré-seed)", () => {
-		// experience → consent → credit → timeframe → lance → lance-value →
-		// lance-embutido → identify. O harness só responde o que o produto emite —
-		// se um gate não aparecer aqui, o PRODUTO pulou um passo do docx.
+		// FIX-53: experience → consent → identify (D1, cedo) → credit → lance →
+		// lance-value → lance-embutido (reveal no fim). FIX-103: o gate de
+		// prazo/timeframe saiu. O harness só responde o que o produto emite — se um
+		// gate não aparecer aqui, o PRODUTO pulou um passo.
 		const seq = allGates(turns);
 		const expected: Gate[] = [
 			"experience",
 			"consent",
+			"identify",
 			"credit",
-			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"identify",
 		];
 		let cursor = 0;
 		for (const g of seq) {
@@ -750,9 +790,12 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 	});
 
 	it("passo 2 — as perguntas dos gates aparecem no transcript (o que o usuário viu)", () => {
+		// FIX-103 (2026-06-28): o gate "timeframe" ("Em quanto tempo...") saiu da
+		// qualificação — nextGate nunca mais o emite. Assert de "/quanto tempo/"
+		// removido (stale desde então; passava despercebido porque este eval é
+		// Camada 3 nightly, não roda em todo PR).
 		const t = allText(turns);
 		expect(t).toMatch(/já fez consórcio|ja fez consorcio/);
-		expect(t).toMatch(/quanto tempo/);
 		expect(t).toMatch(/reserva/);
 		expect(t).toMatch(/valor aproximado/);
 		expect(t).toMatch(/lance embutido/);
@@ -767,10 +810,8 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 			"valor do lance veio do gate lance-value (opção ~30% da carta)",
 		).toBe(Number(lanceValueOptions(55_000)[2].token));
 		expect(meta.qualifyAnswers?.lanceEmbutido, "opt-in de lance embutido gravado").toBe(true);
-		expect(
-			meta.qualifyAnswers?.objetivo,
-			"objetivo derivado do prazo (rápido → contemplação)",
-		).toBe("contemplacao_rapida");
+		// FIX-103: o gate de prazo saiu — o `objetivo` não é mais derivado de um
+		// prazo declarado na qualificação (calibrado pelo tom da conversa, se houver).
 		expect(meta.identityCollected, "identidade coletada no gate identify (D1)").toBe(true);
 	});
 
@@ -833,8 +874,10 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		const rec = turns.flatMap((t) => t.artifacts).find((a) => a.type === "recommendation_card");
 		expect(rec, "recommendation_card ausente").toBeTruthy();
 		const p = rec?.payload as { contempladosMes?: number };
-		// Fixture da recomendada (ITAÚ) tem monthlyAwardedQuotas=3 — o modelo
-		// DEVE copiar availableSlots → contempladosMes (directive obriga).
+		// FIX-191/192: contempladosMes NÃO vem mais do modelo — o runner o COAGE do
+		// availableSlots REAL do grupo (>0 → mostra; 0/ausente → oculto). A fixture
+		// da recomendada (ITAÚ) tem monthlyAwardedQuotas=3, então o card coagido
+		// exibe 3 contemplados/mês (dado real ancorado, não digitado pela LLM).
 		expect(p?.contempladosMes, "contempladosMes ausente no card recomendado").toBeGreaterThan(0);
 	});
 
@@ -854,6 +897,20 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		expect(p?.creditValue ?? 0, "carta real no dial").toBeGreaterThan(0);
 		expect(p?.termMonths ?? 0, "prazo real no dial").toBeGreaterThan(0);
 		expect(p?.monthlyPayment ?? 0, "parcela real no dial").toBeGreaterThan(0);
+	});
+
+	it("passo 4 — LOOP conversacional: what-if de mês recalcula via simulate_contemplation (FIX-106)", () => {
+		// O usuário perguntou "e em 6 meses?" por TEXTO — o agente deve recalcular
+		// com a tool de CÁLCULO (simulate_contemplation), não re-renderizar a agulha.
+		const t = cap.simuladorWhatIf;
+		expect(t, "turno de what-if do simulador não capturado").toBeTruthy();
+		const tools = (t?.events ?? [])
+			.filter((e) => e.type === "tool-call")
+			.map((e) => (e as { toolName: string }).toolName);
+		expect(
+			tools.includes("simulate_contemplation"),
+			`Esperado simulate_contemplation no what-if de mês. Tools: [${tools.join(", ")}]`,
+		).toBe(true);
 	});
 
 	it("passo 4 — a oferta do simulador foi EMITIDA pela máquina de estado (sem fallback)", () => {

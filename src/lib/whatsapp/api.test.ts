@@ -12,6 +12,7 @@ import {
 	sendInteractiveMessage,
 	sendListMessage,
 	sendReplyButtons,
+	sendTemplate,
 	sendTextMessage,
 	sendTypingIndicator,
 } from "./api";
@@ -114,6 +115,13 @@ describe("api.ts — branch isSimulatedWaId NÃO chama Meta", () => {
 		expect(global.fetch).not.toHaveBeenCalled();
 		expect(res.messageId).toMatch(/^sim-/);
 	});
+
+	it("sendTemplate pra waId simulado NÃO bate Meta (retorna ack sintético)", async () => {
+		const waId = `SIM-${crypto.randomUUID()}`;
+		const res = await sendTemplate(waId, "aja_reabrir_conversa", "pt_BR");
+		expect(global.fetch).not.toHaveBeenCalled();
+		expect(res.messageId).toMatch(/^sim-/);
+	});
 });
 
 describe("api.ts — número real continua chamando Meta", () => {
@@ -135,5 +143,34 @@ describe("api.ts — número real continua chamando Meta", () => {
 		expect(url).toContain("graph.facebook.com");
 		expect((init.headers as Record<string, string>).Authorization).toContain("test-token");
 		expect(res.messageId).toBe("wamid.real-123");
+	});
+
+	// REGRESSÃO (bloco-rev-d): sendTemplate tinha `return simulatedAck()` no TOPO
+	// da função (código morto depois). Resultado: o template HSM — único jeito de
+	// reabrir a janela de 24h quando ela fecha (admin/conversations/[id]/message) —
+	// NUNCA chegava à Meta em produção; o atendente recebia um ack `sim-*` falso e
+	// o cliente não recebia nada.
+	it("sendTemplate pra número real chama fetch da Meta com payload de template", async () => {
+		global.fetch = vi.fn(async () => {
+			return new Response(JSON.stringify({ messages: [{ id: "wamid.tmpl-1" }] }), {
+				status: 200,
+			});
+		}) as unknown as typeof global.fetch;
+
+		const res = await sendTemplate("5511999990000", "aja_reabrir_conversa", "pt_BR");
+
+		expect(global.fetch).toHaveBeenCalledTimes(1);
+		const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+			string,
+			RequestInit,
+		];
+		expect(url).toContain("graph.facebook.com");
+		const body = JSON.parse(init.body as string);
+		expect(body.messaging_product).toBe("whatsapp");
+		expect(body.to).toBe("5511999990000");
+		expect(body.type).toBe("template");
+		expect(body.template.name).toBe("aja_reabrir_conversa");
+		expect(body.template.language.code).toBe("pt_BR");
+		expect(res.messageId).toBe("wamid.tmpl-1");
 	});
 });

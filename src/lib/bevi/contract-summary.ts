@@ -10,12 +10,22 @@ import type { SelfContractIdentity } from "@/lib/adapters/bevi/bevi-self-contrac
 import { loadIdentity } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { sendTextMessage } from "@/lib/whatsapp/api";
+import { resolveAndSend } from "@/lib/whatsapp/template-dispatch";
 import { getLatestBeviProposal } from "./proposal-repo";
+
+/** Chave lógica do template do resumo de contratação (FIX-203). */
+export const RESUMO_CONTRATACAO_USAGE_KEY = "resumo_contratacao";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 // Parcela mantém os centavos — arredondar mentiria o valor mensal real.
 const brl2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// BUG-RESUMO-ZERO (auditoria Opus 2026-06-28): só exibe valor monetário com fonte
+// real (> 0 e finito). Sem isso, carta/parcela ausentes (null no DB → Number(null
+// ?? 0) === 0) imprimiam "R$ 0,00" — número falso, mesma classe que `termMonths`
+// já omite. D11/FIX-8: nenhum número sem fonte.
+const hasMoney = (n: number | null | undefined): n is number =>
+	typeof n === "number" && Number.isFinite(n) && n > 0;
 
 export function buildContractSummaryText(args: {
 	administradora: string;
@@ -33,9 +43,11 @@ export function buildContractSummaryText(args: {
 		`Administradora: ${args.administradora}`,
 		...(args.grupo ? [`Grupo: ${args.grupo}`] : []),
 		...(Number.isFinite(args.termMonths) ? [`Prazo: ${args.termMonths} meses`] : []),
-		`Carta de crédito (valor do bem): ${brl(args.creditValue)}`,
-		`Parcela mensal: ${brl2(args.monthlyPayment)}`,
-		...(args.signatureLink ? ["", `Assinatura digital: ${args.signatureLink}`] : []),
+		...(hasMoney(args.creditValue)
+			? [`Carta de crédito (valor do bem): ${brl(args.creditValue)}`]
+			: []),
+		...(hasMoney(args.monthlyPayment) ? [`Parcela mensal: ${brl2(args.monthlyPayment)}`] : []),
+		...(args.signatureLink ? ["", `Sua proposta: ${args.signatureLink}`] : []),
 		"",
 		"A Aja Agora segue com você até a contemplação — e depois dela.",
 	];
@@ -48,6 +60,8 @@ export interface ContractSummaryDeps {
 	sendTextImpl?: (to: string, text: string) => Promise<unknown>;
 	whatsappConfigured?: () => boolean;
 	persistMetaImpl?: (conversationId: string, patch: Record<string, unknown>) => Promise<unknown>;
+	/** FIX-203: camada que decide texto livre (janela aberta) × template (fechada). */
+	resolveAndSendImpl?: typeof resolveAndSend;
 }
 
 const defaultConfigured = () =>
@@ -124,7 +138,21 @@ export async function sendContractSummary(
 	try {
 		// celular vem só-dígitos do identify (DDD+numero) — Cloud API exige DDI.
 		const to = `55${identity.celular.replace(/\D/g, "")}`;
-		await sendTextImpl(to, text);
+		// FIX-203: dentro da janela de 24h manda o texto rico atual (freeTextFallback);
+		// fora dela, o template `resumo_contratacao` (ou enfileira até aprovar). A copy
+		// do texto livre é a MESMA — só virou o fallback da janela.
+		const resolveAndSendImpl = deps.resolveAndSendImpl ?? resolveAndSend;
+		await resolveAndSendImpl({
+			to,
+			conversationId,
+			usageKey: RESUMO_CONTRATACAO_USAGE_KEY,
+			params: {
+				body: [row.administradora, row.grupo ?? "", row.consortiumProposalLink ?? ""],
+			},
+			freeTextFallback: () => {
+				return sendTextImpl(to, text).then(() => undefined);
+			},
+		});
 		return { sent: true };
 	} catch (err) {
 		console.error(

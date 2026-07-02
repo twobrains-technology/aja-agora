@@ -10,7 +10,6 @@ import {
 	CREDIT_BOUNDS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
-	TERM_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
@@ -23,6 +22,9 @@ import type {
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { saveMessage } from "@/lib/conversation/messages";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
+import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
@@ -32,10 +34,9 @@ const creditSlider = (category: Category): SliderField => {
 	return { id: "credit", label: "Valor do bem", format: "currency", ...b };
 };
 
-const termSlider = (category: Category): SliderField => {
-	const b: Bounds = TERM_BOUNDS[category];
-	return { id: "term", label: "Em quantos meses quer pagar", format: "months", ...b };
-};
+// FIX-115: termSlider removido do adapter — o prazo saiu da entrada (FIX-103) e a
+// agulha simples do valor (kind "slider") não coleta prazo/parcela. O componente
+// por intenção ("Planeje sua conquista") foi aposentado pela jornada canônica.
 
 const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
 	value: t.token,
@@ -80,18 +81,18 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;
-			// "Planeje sua conquista" — re-UX guiada por intenção (handoff): valor
-			// do bem + segmented "o que mais importa" + prazo, com a parcela como
-			// resultado calmo. Aderente à jornada canônica (valor → prioridade/tempo
-			// → lance), substitui os 4 sliders simultâneos.
+			// FIX-115 (Kairo, PROD 2026-06-30): AGULHA SIMPLES do valor do bem — um
+			// único slider de R$ 1.000 em R$ 1.000. Substitui o picker complexo por
+			// intenção ("Planeje sua conquista"), que a jornada canônica aposentou na
+			// revisão FIX-104 ("componente COMPLEXO saiu; na web um slider simples
+			// pode apoiar"). O valor segue por CONVERSA: a agulha, sem onSubmit, manda
+			// o valor como TEXTO no chat (parseAssetValue faz o backstop no funil).
+			// Prazo/parcela saíram da entrada (FIX-103/104) — a agulha não os coleta.
 			return {
-				kind: "plan",
+				kind: "slider",
 				gate: "credit",
 				category,
-				credit: creditSlider(category),
-				term: termSlider(category),
-				intentDefault: "parcela",
-				targetMonthDefault: 6,
+				fields: [creditSlider(category)],
 			};
 		}
 		case "timeframe": {
@@ -174,19 +175,24 @@ export async function pipeGatePrompt(args: {
 	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
 }
 
-export const WELCOME_OPTIONS: GatePartOption[] = [
-	{ value: "imovel", label: "Imóvel" },
-	{ value: "auto", label: "Automóvel" },
-	{ value: "moto", label: "Moto" },
-	{ value: "servicos", label: "Outros" },
-];
+// FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
+// FONTE ÚNICA client-safe. O evento `welcome-categories` (backend) e o
+// `EmptyState` do chat (`message-list.tsx`) importam a MESMA lista, pra não
+// voltarem a divergir (o FIX-121 corrigiu só esta cópia e a do message-list
+// ficou com a 4ª categoria "Outros"). Importada no topo; re-exportada aqui
+// pra manter a superfície pública do adapter (consumida por adapter.test.ts).
+export { WELCOME_OPTIONS };
 
 export async function pipeOrchestratorToWriter(
 	events: AsyncIterable<TurnEvent>,
 	writer: Writer,
 	conversationId: string,
-): Promise<void> {
+): Promise<{ emittedVisible: boolean }> {
 	let textId: string | null = null;
+	// FIX-189: o turno emitiu ALGO visível e persistente (texto/artifact/gate/
+	// transição/welcome/handoff)? O tool-call é chip transitório — NÃO conta. Usado
+	// pelo dispatch de descoberta pra detectar a pendura (turno só-chip) e recuperar.
+	let emittedVisible = false;
 
 	const ensureTextStarted = (): string => {
 		if (!textId) {
@@ -206,22 +212,26 @@ export async function pipeOrchestratorToWriter(
 	for await (const ev of events) {
 		switch (ev.type) {
 			case "text-delta":
+				if (ev.text) emittedVisible = true;
 				writer.write({ type: "text-delta", id: ensureTextStarted(), delta: ev.text });
 				break;
 
-			case "lead-collection-prompt":
+			case "lead-collection-prompt": {
+				// Bloco de texto isolado e FECHADO — um único id que abre, recebe o
+				// delta e fecha. (Antes: um text-start órfão com id aleatório + outro
+				// id do ensureTextStarted pro delta → 2 starts, 1 end no stream.)
 				closeTextIfOpen();
-				writer.write({ type: "text-start", id: crypto.randomUUID() });
-				writer.write({
-					type: "text-delta",
-					id: ensureTextStarted(),
-					delta: ev.text,
-				});
-				closeTextIfOpen();
+				emittedVisible = true;
+				const id = crypto.randomUUID();
+				writer.write({ type: "text-start", id });
+				writer.write({ type: "text-delta", id, delta: ev.text });
+				writer.write({ type: "text-end", id });
 				break;
+			}
 
 			case "artifact":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-artifact",
 					id: ev.toolCallId,
@@ -234,6 +244,7 @@ export async function pipeOrchestratorToWriter(
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
 				if (data) {
+					emittedVisible = true;
 					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();
@@ -252,6 +263,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "transition": {
 				closeTextIfOpen();
+				emittedVisible = true;
 				const data: TransitionPartData = {
 					toPersona: ev.toPersona,
 					toPersonaName: ev.toPersonaName,
@@ -268,6 +280,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "welcome-categories":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-welcome",
 					id: crypto.randomUUID(),
@@ -277,6 +290,7 @@ export async function pipeOrchestratorToWriter(
 
 			case "handoff":
 				closeTextIfOpen();
+				emittedVisible = true;
 				writer.write({
 					type: "data-handoff",
 					id: crypto.randomUUID(),
@@ -308,6 +322,7 @@ export async function pipeOrchestratorToWriter(
 	}
 
 	closeTextIfOpen();
+	return { emittedVisible };
 }
 
 export async function pipeUserTurn(args: {
@@ -336,7 +351,7 @@ export async function pipeDirectiveTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
-}): Promise<void> {
+}): Promise<{ emittedVisible: boolean }> {
 	const { conversationId, directive, contactName, writer, userKey } = args;
 	const events = runTurn({
 		channel: "web",
@@ -348,7 +363,7 @@ export async function pipeDirectiveTurn(args: {
 		skipLeadCollection: true,
 		userKey,
 	});
-	await pipeOrchestratorToWriter(events, writer, conversationId);
+	return pipeOrchestratorToWriter(events, writer, conversationId);
 }
 
 export async function pipeTransitionTurn(args: {
@@ -413,5 +428,27 @@ export async function pipeSearchSummaryTurn(args: {
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-	await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
+	const { emittedVisible } = await pipeDirectiveTurn({
+		conversationId,
+		directive,
+		contactName,
+		writer,
+		userKey,
+	});
+	// FIX-189 (pendura): a descoberta é disparada pelo caminho de AÇÃO (resposta a
+	// gate), que NÃO roda o guard de turno-mudo do route (só o turno de texto-livre
+	// roda). Se o turno de descoberta fechou sem nada visível (só o chip "Buscando
+	// grupos"), o reveal nunca chegaria e o usuário teria de cutucar. Emite o
+	// fallback determinístico — nunca frase de refresh técnico (respeita FIX-190).
+	if (!emittedVisible) {
+		const persona = refreshed.currentPersona ?? null;
+		console.log(
+			`[discovery-mute] guard: descoberta fechou sem reveal — fallback determinístico (conv=${conversationId})`,
+		);
+		const id = crypto.randomUUID();
+		writer.write({ type: "text-start", id });
+		writer.write({ type: "text-delta", id, delta: EMPTY_TURN_FALLBACK });
+		writer.write({ type: "text-end", id });
+		await saveMessage(conversationId, "assistant", EMPTY_TURN_FALLBACK, "web", persona);
+	}
 }

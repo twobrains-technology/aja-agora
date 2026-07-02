@@ -124,4 +124,43 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		await startContract("conv-ec7b", input, gw); // recontratar → nova proposta
 		expect(createSpy, "reuso só vale enquanto status='simulacao'").toHaveBeenCalledTimes(2);
 	});
+
+	// FIX-112 (uso manual Kairo, PROD, 2026-06-30): o passo documento atingia o
+	// usuário SEM links (a oferta não fora confirmada). A API da Bevi dá 400 em
+	// getDocumentLinks ANTES do chooseOffer ("disponível após a escolha"). Estes
+	// locks garantem a ordem e o gate de links — quebrar a ordem reintroduz o 400.
+	it("FIX-112: confirmOffer chama chooseOffer ANTES de getDocumentLinks (ordem é o gate)", async () => {
+		const gw = new MockProposalGateway();
+		await startContract("conv-order", input, gw);
+		const calls: string[] = [];
+		const origChoose = gw.chooseOffer.bind(gw);
+		const origLinks = gw.getDocumentLinks.bind(gw);
+		vi.spyOn(gw, "chooseOffer").mockImplementation(async (a) => {
+			calls.push("choose");
+			return origChoose(a);
+		});
+		vi.spyOn(gw, "getDocumentLinks").mockImplementation(async (a) => {
+			calls.push("links");
+			return origLinks(a);
+		});
+		await confirmOffer("conv-order", gw);
+		expect(calls).toEqual(["choose", "links"]);
+	});
+
+	it("FIX-112: uploadContractDocument SEM oferta confirmada (sem links) lança gate", async () => {
+		const gw = new MockProposalGateway();
+		await startContract("conv-nolinks", input, gw); // proposta criada, NÃO confirmada → sem links
+		await expect(
+			uploadContractDocument(
+				"conv-nolinks",
+				{
+					slot: "identidade_frente",
+					file: new Uint8Array([1]),
+					filename: "rg.jpg",
+					mimeType: "image/jpeg",
+				},
+				gw,
+			),
+		).rejects.toThrow(/Sem links|finalize a escolha/i);
+	});
 });

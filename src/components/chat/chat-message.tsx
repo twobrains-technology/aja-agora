@@ -11,7 +11,7 @@ import {
 	RotateCcw,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { useSmoothText } from "@/lib/hooks/use-smooth-text";
 import { ArtifactRenderer } from "./artifact-renderer";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
+import { RevealSelectionProvider } from "./reveal-selection";
 import { StreamingDots } from "./streaming-dots";
 
 type Category = "imovel" | "auto" | "moto" | "servicos";
@@ -108,16 +109,40 @@ type RenderableSegment =
 	| { kind: "text-group"; id: string; text: string }
 	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" }>;
 
+/** FIX-184 — colapsa eco/degeneração da LLM ("Prazer, Mirella!Prazer, Mirella!")
+ * no RENDER do cliente. O runner já aplica a MESMA guarda (`collapseEchoedSegments`)
+ * na PERSISTÊNCIA, mas só DEPOIS do streaming — o texto AO VIVO chega ao cliente
+ * com o eco cru (o DB fica limpo, a tela não). Este espelho client-side faz a tela
+ * bater com o DB. É self-contained de propósito: NÃO importa do runner (server-only,
+ * e a função do runner é mexida em paralelo pelo bloco-a/FIX-182). Mesma semântica:
+ * só colapsa segmentos [.!?] 100% idênticos consecutivos (compara com trim, então
+ * pega tanto o eco concatenado quanto o separado por "\n\n" do join de parts). */
+function collapseEchoedText(text: string): string {
+	if (!text) return text;
+	const segments = text.split(/(?<=[.!?])/);
+	if (segments.length < 2) return text;
+	const out: string[] = [];
+	for (const segment of segments) {
+		const previous = out[out.length - 1];
+		if (previous !== undefined && segment.trim().length > 0 && previous.trim() === segment.trim()) {
+			continue;
+		}
+		out.push(segment);
+	}
+	return out.join("");
+}
+
 function groupAdjacentText(parts: RenderablePart[]): RenderableSegment[] {
 	const out: RenderableSegment[] = [];
 	let buffer: { id: string; text: string }[] = [];
 
 	const flush = () => {
 		if (buffer.length === 0) return;
-		const text = buffer
+		const joined = buffer
 			.map((b) => b.text)
 			.filter(Boolean)
 			.join("\n\n");
+		const text = collapseEchoedText(joined);
 		if (text.length > 0) {
 			out.push({ kind: "text-group", id: buffer[0].id, text });
 		}
@@ -149,6 +174,17 @@ export function ChatMessage({
 	const isUser = message.role === "user";
 	const prefersReduced = useReducedMotion();
 	const parts = classifyParts(message);
+	// FIX-196 — cotas do reveal (recommendation_card + comparison_table desta
+	// mensagem) alimentam o contexto de seleção compartilhado (hero + seletor +
+	// dial rebindam à cota escolhida). Fora de um reveal, o provider fica inerte.
+	const revealArtifacts = useMemo(
+		() =>
+			parts
+				.filter((p): p is Extract<RenderablePart, { kind: "artifact" }> => p.kind === "artifact")
+				.map((p) => p.artifact),
+		// biome-ignore lint/correctness/useExhaustiveDependencies: `parts` deriva de `message` (recomputado a cada render); a message é a fonte estável
+		[message],
+	);
 	// FIX-49: interativo só no TURNO ATIVO. Mensagem hidratada da retomada
 	// (`metadata.resumed`) é histórico — artifacts/gates selados, mesmo sendo a
 	// última (até o usuário mandar a próxima mensagem). Fecha a duplicação (FIX-48).
@@ -239,6 +275,7 @@ export function ChatMessage({
 						</div>
 					)}
 
+					<RevealSelectionProvider artifacts={revealArtifacts}>
 					<AnimatePresence mode="popLayout" initial={false}>
 						{(() => {
 							const segments = groupAdjacentText(inlineSegments);
@@ -336,6 +373,7 @@ export function ChatMessage({
 							});
 						})()}
 					</AnimatePresence>
+					</RevealSelectionProvider>
 
 					{showInflightDots && (
 						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

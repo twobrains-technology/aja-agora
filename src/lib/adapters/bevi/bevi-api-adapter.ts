@@ -140,6 +140,16 @@ export class BeviApiAdapter implements ProposalGateway {
 		const data = await this.callService<SimulationResult>("calculate_simulation_bevi_consorcio", {
 			retryOn404: true,
 			body: {
+				// FIX-79 REVERTIDO (2026-06-28): o FIX-79 (QA Kairo 2026-06-25) mandava
+				// `productId` aqui pra tentar resolver o 400 "Proposta não pertence ao
+				// Bevi Consórcio". O dossiê 2026-06-26 + re-validação ao vivo provaram que
+				// o erro é EXTERNO (Bevi/AGX: o productId aceito pelo insert está
+				// desvinculado do produto "Consórcio" na conta do token) e independe deste
+				// campo — a doc oficial (collection + spec §4.3) NÃO tem productId no
+				// simulate; mandá-lo só nos desalinha do contrato. O vínculo correto é
+				// responsabilidade do insert_proposal + da conta do token. PENDENTE-KAIRO:
+				// acionar Bevi/AGX (causa-raiz externa). Ver
+				// docs/integracoes/2026-06-26-dossie-validacao-endpoints-bevi.md.
 				propostaId: input.proposalId, // camelCase! "proposta", não "proposal"
 				segmento: input.segmento,
 				tipoSimulacao: input.tipoSimulacao,

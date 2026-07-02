@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildContractSummaryText, sendContractSummary } from "./contract-summary";
 
+// FIX-203: sendContractSummary passou a rotear por resolveAndSend (janela aberta =
+// texto livre; fechada = template). Aqui simulamos JANELA ABERTA — o shim só executa
+// o freeTextFallback (propagando exceção), preservando o que estes testes validam:
+// a copy do resumo e o comportamento de falha/pending. O roteamento por template é
+// coberto em template-dispatch.test.ts (DB real) e no teste de roteamento do FIX-203.
+// biome-ignore lint/suspicious/noExplicitAny: shim de teste
+const windowOpenResolve = (async (a: any) => {
+	await a.freeTextFallback();
+	return { channel: "free_text" };
+}) as never;
+
 // ============================================================================
 // docx passo 5 (linha 52): "Mandar por WhatsApp/e-mail o resumo da contratação."
 // O lead da jornada tem celular (gate identify, D1) — o resumo vai por WhatsApp
@@ -56,6 +67,39 @@ describe("buildContractSummaryText — resumo da contratação", () => {
 		expect(text).not.toMatch(/Prazo:/i);
 		expect(text).not.toMatch(/\d+\s*meses/i);
 	});
+
+	// BUG-RESUMO-ZERO (auditoria adversarial Opus 2026-06-28): carta/parcela ausentes
+	// (oferta sem parcela → null no DB → Number(null ?? 0) === 0) imprimiam
+	// "R$ 0,00" no resumo — número FALSO sem fonte, enquanto `termMonths` no mesmo
+	// arquivo JÁ é omitido quando não há fonte. Aplica D11/FIX-8 de forma consistente:
+	// valor ≤ 0 / não-finito → linha omitida, NUNCA "R$ 0,00".
+	it("BUG-RESUMO-ZERO: parcela 0/ausente NÃO vira 'R$ 0,00' (linha omitida)", () => {
+		const semParcela = buildContractSummaryText({
+			administradora: "ÂNCORA",
+			grupo: "1234",
+			creditValue: 60_000,
+			monthlyPayment: 0,
+			signatureLink: null,
+		});
+		expect(semParcela).not.toMatch(/R\$\s*0,00/);
+		expect(semParcela).not.toMatch(/Parcela mensal/i);
+		// a carta válida continua aparecendo
+		expect(semParcela).toMatch(/60\.000/);
+	});
+
+	it("BUG-RESUMO-ZERO: carta 0/ausente NÃO vira 'R$ 0,00' (linha omitida)", () => {
+		const semCarta = buildContractSummaryText({
+			administradora: "ÂNCORA",
+			grupo: "1234",
+			creditValue: 0,
+			monthlyPayment: 980.5,
+			signatureLink: null,
+		});
+		expect(semCarta).not.toMatch(/R\$\s*0,00/);
+		expect(semCarta).not.toMatch(/Carta de crédito/i);
+		// a parcela válida continua aparecendo
+		expect(semCarta).toMatch(/980/);
+	});
 });
 
 describe("sendContractSummary — envio via WhatsApp", () => {
@@ -67,6 +111,7 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 			sendTextImpl: sendText,
 			whatsappConfigured: () => true,
 			persistMetaImpl: vi.fn(),
+			resolveAndSendImpl: windowOpenResolve,
 		});
 		expect(result.sent).toBe(true);
 		expect(sendText).toHaveBeenCalledTimes(1);
@@ -84,6 +129,7 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 			sendTextImpl: sendText,
 			whatsappConfigured: () => true,
 			persistMetaImpl: vi.fn(),
+			resolveAndSendImpl: windowOpenResolve,
 		});
 		const [, text] = sendText.mock.calls[0];
 		expect(text).toMatch(/Prazo:\s*72\s*meses/i);
@@ -98,6 +144,7 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 			sendTextImpl: sendText,
 			whatsappConfigured: () => false,
 			persistMetaImpl: persist,
+			resolveAndSendImpl: windowOpenResolve,
 		});
 		expect(result.sent).toBe(false);
 		expect(sendText).not.toHaveBeenCalled();
@@ -112,6 +159,7 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 			sendTextImpl: vi.fn().mockRejectedValue(new Error("rate limited")),
 			whatsappConfigured: () => true,
 			persistMetaImpl: persist,
+			resolveAndSendImpl: windowOpenResolve,
 		});
 		expect(result.sent).toBe(false);
 		expect(persist).toHaveBeenCalledWith("conv-3", { contractSummaryPending: true });
@@ -124,6 +172,7 @@ describe("sendContractSummary — envio via WhatsApp", () => {
 			sendTextImpl: vi.fn(),
 			whatsappConfigured: () => true,
 			persistMetaImpl: vi.fn(),
+			resolveAndSendImpl: windowOpenResolve,
 		});
 		expect(result.sent).toBe(false);
 	});
@@ -162,6 +211,7 @@ describe("markPending preserva o metadata (integração com persistMeta REAL)", 
 				getProposalImpl: async () => ROW,
 				sendTextImpl: vi.fn().mockRejectedValue(new Error("(#131030) not in allowed list")),
 				whatsappConfigured: () => true,
+				resolveAndSendImpl: windowOpenResolve,
 				// persistMetaImpl/loadIdentityImpl/reloadMeta REAIS — é o ponto do teste.
 			});
 			expect(result.sent).toBe(false);

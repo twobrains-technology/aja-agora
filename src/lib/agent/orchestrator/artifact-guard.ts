@@ -12,10 +12,22 @@ import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
  * `(meta, artifactType, contexto do turno) → suprimir|permitir` — é uma
  * tabela de regras, agora explícita.
  *
- * A PRIMEIRA linha de defesa é a tool-policy (FIX-19): tool fora de fase nem
- * entra no request. Estas regras seguram o residual (granularidade de intent,
- * dup intra-conversa) e qualquer furo da policy — disparo de regra cuja tool
- * estava fora da policy gera [tool-policy-violation] no runner.
+ * ── Onde este arquivo fica na governança (FIX-180, 2026-07-01) ──
+ * A GOVERNANÇA PRIMÁRIA é a allowlist POSITIVA (Lei 2), em duas dimensões:
+ *   1. ESTADO → AÇÃO: `tool-policy.ts` (`allowedTools`/`phaseFromMeta`) — tool
+ *      fora de fase nem entra no request (fail-closed) + belt `prepareStep.activeTools`.
+ *   2. AÇÃO → PRECONDIÇÃO (de dado): `action-policy.ts` (`evaluateActionPrecondition`) —
+ *      tool de risco só age sobre grupo/administradora exibido (generaliza FIX-179).
+ *
+ * ESTE arquivo é a DEFESA-EM-PROFUNDIDADE (2ª linha) — NÃO a governança primária.
+ * Segura: (a) o residual das regras de ESTADO que a tool-policy já cobre (é o 2º
+ * cinto de whatsapp-optin/post-closure/premature-contract/value-picker-order); e
+ * (b) o que é GENUINAMENTE PÓS-FATO e não representável como precondição pré-ação:
+ *   - `single-option`: depende do `discoveryCount` (resultado da tool NO turno).
+ *   - `reveal-loop`: parte é estado, parte é heurística de intent (userIntent +
+ *     isUserTurn + revealValueTargetChanged).
+ * Estes DOIS ficam aqui de propósito (não migram pra allowlist). Furo da policy
+ * cuja tool estava fora de fase gera [tool-policy-violation] no runner.
  *
  * A ORDEM do array é semântica (primeira regra que aplica vence e assina o
  * log) e é travada por teste em artifact-guard.test.ts. Os formatos de
@@ -29,6 +41,9 @@ export type ArtifactGuardInput = {
 	/** Tamanho da descoberta DESTE turno (tool-results de search/recommend);
 	 * null = nenhuma descoberta rodou no turno. */
 	discoveryCount: number | null;
+	/** FIX-187: a descoberta na Bevi DESTE turno falhou (sinal do FIX-186). Quando
+	 * true, nenhum artifact da família de descoberta/proposta pode sair. */
+	discoveryFailedThisTurn?: boolean;
 	conversationId: string;
 	/** Types dos artifacts já emitidos NESTE turno (reservado pra regras
 	 * futuras de duplicação intra-turno — nenhuma regra atual consome). */
@@ -58,6 +73,19 @@ const POST_CLOSURE_FAMILY = new Set<ArtifactType>([
 ]);
 
 export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
+	// FIX-187 (Kairo 2026-07-01): a descoberta do turno falhou (sinal do FIX-186)
+	// → NENHUM artifact da família de descoberta/proposta pode sair (o print: card
+	// "Esse plano faz sentido?" com números sobre dado que não carregou). É a regra
+	// mais FORTE (1ª da lista) — vence qualquer outra. 2ª linha da defesa: a 1ª é a
+	// precondição em action-policy (execute), mas o artifact é emitido do INPUT no
+	// tool-call (antes do tool-result), então este guard reativo é quem barra o card.
+	{
+		name: "discovery-failed",
+		applies: ({ artifactType, discoveryFailedThisTurn }) =>
+			discoveryFailedThisTurn === true && POST_CLOSURE_FAMILY.has(artifactType),
+		logLine: ({ artifactType, conversationId }) =>
+			`[discovery-failed] guard: suprimindo ${artifactType} — descoberta do turno falhou, sem dado real pra propor (conv=${conversationId})`,
+	},
 	// PF-07: modelo pode chamar o optin 2x em conversa longa apesar do prompt.
 	// BUG-OPTIN-ENGOLE-GATES (2026-06-04): optin no MEIO da qualificação
 	// suprimia os gates lance-value/lance-embutido/identify. Pré-reveal ou

@@ -12,10 +12,14 @@ import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters";
+import { isTransientDiscoveryError } from "@/lib/adapters/bevi/bevi-errors";
+import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
 import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -24,6 +28,7 @@ import {
 	searchGroupsInput,
 	simulateQuotaInput,
 } from "./schemas";
+import { emptyShownGroups, extractShownFromPayload, loadShownGroups } from "./shown-groups";
 
 // ---- Presentation tool schemas (reused across definition + route) ----
 
@@ -58,7 +63,7 @@ export const comparisonTableSchema = z.object({
 	highlightBestIndex: z.number().int().optional().describe("Indice (0-based) do grupo recomendado"),
 });
 
-const simulationResultSchema = z.object({
+export const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	category: z
@@ -135,13 +140,10 @@ export const recommendationSchema = z.object({
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
-	contempladosMes: z
-		.number()
-		.int()
-		.optional()
-		.describe(
-			"Quantidade de contemplados por MES do grupo (docx passo 4) — use o availableSlots retornado por recommend_groups/search_groups. Dado REAL da oferta; omita se nao veio da busca.",
-		),
+	// FIX-191: `contempladosMes` DEIXOU de ser input da LLM (era a origem do "36/mês"
+	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
+	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
+	// real (>0). A LLM não digita mais número de contemplação — Lei 3/4.
 	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
 	scoreBreakdown: z
 		.object({
@@ -250,12 +252,20 @@ const recommendGroupsSchema = z.object({
 	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
 	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
+	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
+	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
+	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
+	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
+	// explicito num what-if pos-reveal.
 	desiredTermMonths: z
 		.number()
 		.int()
 		.min(0)
 		.default(0)
-		.describe("Prazo desejado em meses (0 = sem preferencia)"),
+		.describe(
+			"Prazo desejado em meses. 0 = sem preferencia (PADRAO — o prazo nao e coletado na entrada, FIX-103). So passe > 0 se o usuario pedir um prazo explicito num what-if.",
+		),
 });
 
 // ---- Domain tools (data fetching) ----
@@ -277,6 +287,37 @@ const STATUS_NO_CONTEXT = {
 		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
+
+// FIX-186 (Kairo 2026-07-01) — marcador do tool-result quando a descoberta na
+// Bevi falha (após retry silencioso, ou erro duro). O `runDiscovery` retorna
+// ISTO em vez de re-lançar (que viraria tool-error narrado pelo modelo). O
+// runner detecta via `isDiscoveryFailedResult`, suprime a narração e conduz o
+// fallback humano determinístico (Lei 1: código dispõe). O campo `error` é a
+// diretiva pro modelo caso ele processe o step — mas a garantia está no código.
+export function isDiscoveryFailedResult(output: unknown): boolean {
+	return (
+		typeof output === "object" &&
+		output !== null &&
+		(output as Record<string, unknown>).__discoveryFailed === true
+	);
+}
+
+function discoveryFailedResult(toolName: string): { __discoveryFailed: true; error: string } {
+	return {
+		__discoveryFailed: true,
+		error:
+			`A descoberta na Bevi falhou neste turno (tool ${toolName}) apos retry. ` +
+			"NAO narre erro tecnico, NAO invente numeros, NAO proponha/recomende/simule nada. " +
+			"O sistema ja conduz a mensagem ao usuario de forma deterministica — encerre o turno.",
+	};
+}
+
+// FIX-186: backoff curto do retry silencioso (alinhado ao "< 3s" do CLAUDE.md).
+// Test seam zera o delay pra não esperar de verdade nos testes.
+let discoveryRetryDelayMs = 300;
+export function __setDiscoveryRetryDelayForTests(ms: number | null): void {
+	discoveryRetryDelayMs = ms ?? 300;
+}
 
 // FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
 // multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
@@ -302,51 +343,85 @@ async function executeSearchGroups(
 }
 
 /**
- * FIX-71/FIX-68 — detecta um groupId FABRICADO pela LLM. Os ids reais da
- * descoberta (Bevi quotaId) sao hashes opacos; o id alucinado segue o padrao
- * `[banco-]categoria-valor-prazo` e SEMPRE termina em "-NNNk-NNm"
- * (ex.: "bb-auto-200k-72m", "auto-130k-60m"). Pega ambos sem falso-positivo no
- * hash (que nunca tem esse sufixo). Usado pra curto-circuitar com guidance
- * acionavel em vez de gastar round-trip na Bevi e o erro virar "instabilidade".
+ * FIX-72/FIX-71/FIX-68 — fast-path que reconhece um groupId FABRICADO pela LLM.
+ * Os ids reais da descoberta (Bevi quotaId) sao hashes opacos (Mongo ObjectId,
+ * 24 hex) — e hex NUNCA contem a letra `k`. O id alucinado segue o padrao slug
+ * `[banco-]categoria-valorK[-prazoM|-nome]` e SEMPRE carrega um valor em milhares
+ * (`-180k`, `-200k`, `-130k`). Detectamos esse marcador: pega `auto-180k`,
+ * `auto-180k-kairo` (FIX-72, com o NOME do usuario no id), `bb-auto-200k-72m`
+ * (FIX-71), `auto-130k-60m` (FIX-68) — e NUNCA o hash (sem `k`).
+ *
+ * O regex antigo (`/-\d+k-\d+m$/`) so pegava o sufixo `-NNNk-NNm`, deixando passar
+ * `auto-180k` e `auto-180k-kairo` (a raiz do FIX-72). E so um ATALHO de latencia
+ * (<3s): a rede de seguranca real e o `GroupNotInDiscoveryError` capturado abaixo,
+ * que cobre QUALQUER id fora do conjunto real — inclusive slug sem valor-k.
  */
 export function looksLikeFabricatedGroupId(groupId: string): boolean {
-	return /-\d+k-\d+m$/i.test((groupId ?? "").trim());
+	return /(?:^|-)\d+k(?:-|$)/i.test((groupId ?? "").trim());
 }
 
-async function executeSimulateQuota(
+/**
+ * FIX-72 — diretiva ACIONAVEL (mesmo shape de erro de tool) que devolve o controle
+ * pro modelo se auto-corrigir com o id LITERAL ou re-buscar, em vez de propagar
+ * erro cru (que o AI SDK converte em "instabilidade" e trava o usuario). Reusada
+ * pelos dois caminhos (fast-path de slug + rede do GroupNotInDiscoveryError) e
+ * pelas duas tools (simulate_quota / get_group_details). Degradacao graciosa
+ * preservada — guidance pra retomar, nunca loop.
+ */
+function rebuscaDirective(groupId: string): { error: string } {
+	return {
+		error:
+			`O groupId "${groupId}" nao existe na descoberta atual (nao e um id real retornado por search_groups/recommend_groups). ` +
+			"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
+			"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.",
+	};
+}
+
+// FIX-179 (Mirella, 2026-07-01) — "quero ver todos" pulou pra simulate_quota/
+// get_group_details/present_decision_prompt sobre "Embracon", grupo REAL da Bevi
+// (existia no discovery cache) mas NUNCA renderizado em tela. FIX-180 generalizou
+// essa precondição de DADO (antes um `if` ad-hoc aqui) para a tabela declarativa
+// `action-policy.ts` (`evaluateActionPrecondition`) — as diretivas
+// `naoExibidoDirective`/`administradoraNaoExibidaDirective` moraram pra lá (fonte
+// única). Diferença pro rebuscaDirective (FIX-72, abaixo): aquele cobre "id não
+// existe na Bevi" (fabricado); a precondição de dado cobre "id EXISTE mas nunca
+// foi mostrado pro usuário" — a LLM não age sobre o que só ELA viu no tool-result.
+// Ordem: action-policy (foi exibido?) roda ANTES do adapter (existe na Bevi?).
+
+export async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof simulateQuotaInput>,
 ) {
-	// FIX-71: id fabricado (banco-categoria-valor-prazo) NUNCA existe na descoberta
-	// — nem chama a Bevi. Devolve guidance acionavel (mesmo shape de erro de tool)
-	// pro modelo se auto-corrigir com o id LITERAL ou re-buscar. Degradacao
-	// graciosa preservada (sem loop de "instabilidade").
+	// FIX-72 (fast-path): id com cara de slug fabricado (marcador de valor-em-k)
+	// NUNCA existe na descoberta — nem chama a Bevi, devolve guidance acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return {
-			error:
-				`O groupId "${args.groupId}" parece fabricado (padrao banco-categoria-valor-prazo) e nao existe na descoberta. ` +
-				"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
-				"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive o id de banco/categoria/valor/prazo.",
-		};
+		return rebuscaDirective(args.groupId);
 	}
-	const [details, simulation] = await Promise.all([
-		adapter.getGroupDetails({ groupId: args.groupId }),
-		adapter.simulateQuota(args),
-	]);
-	const delta = Math.abs(args.creditValue - details.creditValue);
-	const relativeDelta = delta / details.creditValue;
-	if (delta > 1 && relativeDelta > 0.01) {
-		const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-		return {
-			...simulation,
-			creditAdjustmentNotice: {
-				requestedCreditValue: args.creditValue,
-				groupNominalCreditValue: details.creditValue,
-				message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
-			},
-		};
+	try {
+		const [details, simulation] = await Promise.all([
+			adapter.getGroupDetails({ groupId: args.groupId }),
+			adapter.simulateQuota(args),
+		]);
+		const delta = Math.abs(args.creditValue - details.creditValue);
+		const relativeDelta = delta / details.creditValue;
+		if (delta > 1 && relativeDelta > 0.01) {
+			const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			return {
+				...simulation,
+				creditAdjustmentNotice: {
+					requestedCreditValue: args.creditValue,
+					groupNominalCreditValue: details.creditValue,
+					message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+				},
+			};
+		}
+		return simulation;
+	} catch (err) {
+		// FIX-72 (rede de seguranca): id fora do conjunto real (qualquer formato —
+		// hex inventado, oferta expirada) → diretiva de re-busca, nunca erro cru.
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		throw err;
 	}
-	return simulation;
 }
 
 async function executeGetRates(
@@ -357,22 +432,37 @@ async function executeGetRates(
 	return { rates, total: rates.length };
 }
 
-async function executeGetGroupDetails(
+export async function executeGetGroupDetails(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof getGroupDetailsInput>,
 ) {
-	return await adapter.getGroupDetails(args);
+	// FIX-72: mesma resolucao robusta de simulate_quota — o get_group_details
+	// recebia id fabricado (`auto-180k-kairo` no log) e devolvia erro cru. Fast-path
+	// pro slug + rede do GroupNotInDiscoveryError → diretiva de re-busca acionavel.
+	if (looksLikeFabricatedGroupId(args.groupId)) {
+		return rebuscaDirective(args.groupId);
+	}
+	try {
+		return await adapter.getGroupDetails(args);
+	} catch (err) {
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		throw err;
+	}
 }
 
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
+	opts: { hasLance?: boolean } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
 	const fallbackResult = await recommendWithFallback(adapter, searchParams);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
+		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
+		hasLance: opts.hasLance,
 	});
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
@@ -495,7 +585,7 @@ export const consorcioTools = {
 
 	present_value_picker: tool({
 		description:
-			"Apresenta um seletor interativo de valores. No web chat aparece como sliders, no WhatsApp aparece como lista de botoes com faixas pre-definidas. Use em vez de perguntar valores por texto. NUNCA escreva 'arrasta o slider' nem mencione UI especifica em volta da chamada — diga apenas 'escolhe uma faixa abaixo' ou 'me diz qual faz mais sentido'. SEMPRE use isso quando precisar que o usuario informe valores numericos.",
+			"[LEGADO/WEB — FIX-104] Seletor interativo de valores (sliders). NAO use na ENTRADA da jornada: o valor do bem agora e coletado por CONVERSA (o usuario FALA o valor; o analyzer extrai). Esta tool segue disponivel apenas como apoio de UI da WEB (slider simples) renderizado pelo sistema — o agente NUNCA a dispara na entrada pra pedir o valor do bem. Se chamar, NUNCA escreva 'arrasta o slider' nem mencione UI especifica.",
 		inputSchema: valuePickerSchema,
 		execute: async (args: z.infer<typeof valuePickerSchema>) => {
 			return `[Seletor de valores apresentado para ${args.category}]`;
@@ -624,6 +714,62 @@ export const consorcioTools = {
 			initialTargetMonth: number;
 		}) => {
 			return `[Simulador-agulha apresentado: ${args.administradora ?? ""} carta R$ ${args.creditValue.toLocaleString("pt-BR")} — agulha em ${args.initialTargetMonth}m]`;
+		},
+	}),
+
+	// FIX-106 — simulador de contemplação CONVERSACIONAL (loop). Versão de CÁLCULO
+	// (paralela a compute_scenarios): RECALCULA o cenário pra um mês-alvo e DEVOLVE
+	// os números pro agente NARRAR (WhatsApp + what-if de mês em qualquer canal).
+	// A WEB mantém a agulha arrastável (present_contemplation_dial). Reusa o MESMO
+	// motor puro (computeContemplationDial) — dial e conversa batem número a número.
+	simulate_contemplation: tool({
+		description:
+			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
+		inputSchema: z.object({
+			creditValue: z
+				.number()
+				.positive()
+				.describe("Valor da carta (crédito) em reais — do plano recomendado"),
+			termMonths: z
+				.number()
+				.int()
+				.positive()
+				.describe("Prazo nominal do grupo em meses — do plano recomendado"),
+			targetMonth: z
+				.number()
+				.int()
+				.positive()
+				.describe("Mês-alvo de contemplação que o usuário quer simular (a 'agulha')"),
+			monthlyPayment: z
+				.number()
+				.positive()
+				.describe("Parcela base do grupo em reais — do plano recomendado"),
+			historicalWinningBidPct: z
+				.number()
+				.optional()
+				.describe("Lance vencedor típico do grupo (% da carta), da oferta real, se conhecido"),
+			referenceMonth: z
+				.number()
+				.int()
+				.optional()
+				.describe("Mês em que o lance de referência vence (da oferta real), se conhecido"),
+			maxEmbutidoPct: z
+				.number()
+				.optional()
+				.describe("Teto do lance embutido aceito pelo grupo (default 30)"),
+		}),
+		execute: async (args: {
+			creditValue: number;
+			termMonths: number;
+			targetMonth: number;
+			monthlyPayment: number;
+			historicalWinningBidPct?: number;
+			referenceMonth?: number;
+			maxEmbutidoPct?: number;
+		}) => {
+			// Reuso obrigatório do motor puro (regra 6 do bloco) — dial e conversa
+			// usam exatamente o mesmo cálculo, então os números nunca divergem.
+			return computeContemplationDial(args);
 		},
 	}),
 
@@ -794,6 +940,10 @@ export type ConsorcioToolsContext = {
 	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
 	conversationId?: string;
 	channel?: "web" | "whatsapp";
+	/** FIX-193: perfil de lance do usuário (meta.qualifyAnswers.hasLance==="yes").
+	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
+	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
+	hasLance?: boolean;
 };
 
 /**
@@ -803,7 +953,32 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId } = ctx;
+	const { conversationId, hasLance } = ctx;
+
+	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
+	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
+	// os present_* rodam NESTE turno. Lazy: só bate no banco se alguma das
+	// tools guardadas (get_group_details/simulate_quota/present_decision_prompt)
+	// for chamada.
+	// FIX-186: a descoberta deste turno falhou (após retry ou erro duro)? Flag de
+	// closure — fresco por turno (specialist+conversationId bypassa o cache de
+	// agents, cada turno reconstrói buildConsorcioTools). Setado por runDiscovery;
+	// lido pelas tools de descoberta (curto-circuito) e de apresentação (FIX-187,
+	// não propor sobre dado que não carregou).
+	let discoveryFailed = false;
+
+	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
+	const getShownGroups = () => {
+		if (!conversationId) return Promise.resolve(emptyShownGroups());
+		if (!shownGroupsPromise) shownGroupsPromise = loadShownGroups(conversationId);
+		return shownGroupsPromise;
+	};
+	const markShown = async (type: string, payload: unknown) => {
+		const shown = await getShownGroups();
+		const extracted = extractShownFromPayload(type, payload);
+		for (const id of extracted.ids) shown.ids.add(id);
+		for (const admin of extracted.administradoras) shown.administradoras.add(admin);
+	};
 
 	const save_contact_name = tool({
 		description:
@@ -856,6 +1031,85 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		},
 	});
 
+	// FIX-179 — overrides das tools de apresentação de grupo: mesma descrição/
+	// schema/texto do registry estático, só adicionando o registro de "exibido"
+	// (markShown) ANTES de devolver o feedback pro modelo. É o que alimenta a
+	// trava de get_group_details/simulate_quota/present_decision_prompt abaixo.
+	const present_group_card = tool({
+		description: consorcioTools.present_group_card.description,
+		inputSchema: groupCardSchema,
+		execute: async (args: z.infer<typeof groupCardSchema>) => {
+			await markShown("group_card", args);
+			return `[Card do grupo ${args.administradora} - ${args.category} - R$ ${args.creditValue.toLocaleString("pt-BR")} apresentado ao usuario]`;
+		},
+	});
+
+	const present_comparison_table = tool({
+		description: consorcioTools.present_comparison_table.description,
+		inputSchema: comparisonTableSchema,
+		execute: async (args: z.infer<typeof comparisonTableSchema>) => {
+			await markShown("comparison_table", args);
+			return `[Tabela comparativa com ${args.groups.length} grupos apresentada ao usuario]`;
+		},
+	});
+
+	const present_recommendation_card = tool({
+		description: consorcioTools.present_recommendation_card.description,
+		inputSchema: recommendationSchema,
+		execute: async (args: z.infer<typeof recommendationSchema>) => {
+			// FIX-187: proposta só sobre descoberta bem-sucedida no turno (action-policy
+			// requireFreshDiscovery). Não usa shown-groups — o recommendation_card É a
+			// exibição. Bloqueado → diretiva; o artifact-guard (2ª linha) dropa o card.
+			const verdict = evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
+			await markShown("recommendation_card", args);
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+		},
+	});
+
+	const present_simulation_result = tool({
+		description: consorcioTools.present_simulation_result.description,
+		inputSchema: simulationResultSchema,
+		execute: async (args: z.infer<typeof simulationResultSchema>) => {
+			// FIX-187: os números da simulação só de descoberta bem-sucedida no turno.
+			const verdict = evaluateActionPrecondition("present_simulation_result", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
+			return `[Simulacao apresentada: parcela R$ ${args.monthlyPayment.toFixed(2)}/mes por ${args.termMonths} meses]`;
+		},
+	});
+
+	const present_decision_prompt = tool({
+		description: consorcioTools.present_decision_prompt.description,
+		inputSchema: z.object({
+			administradora: z
+				.string()
+				.optional()
+				.describe("Administradora do plano recomendado (contexto do card)"),
+		}),
+		execute: async (args: { administradora?: string }) => {
+			// FIX-180 (administradora exibida) + FIX-187 (descoberta fresca) via
+			// tabela declarativa (action-policy). Agora avalia SEMPRE — mesmo sem
+			// administradora, o gate de descoberta falhada (FIX-187) precisa rodar.
+			// Lazy: só bate no DB (getShownGroups) quando há administradora a validar.
+			const shown = args.administradora ? await getShownGroups() : emptyShownGroups();
+			const verdict = evaluateActionPrecondition("present_decision_prompt", {
+				shown,
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
+			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
+		},
+	});
+
 	// ── Descoberta REAL por conversa (MOCK-RUNTIME-MORTO, 2026-06-04) ──
 	// O adapter Bevi (Trilho B) é resolvido via closure do conversationId; o
 	// registry estático responde erro informativo. Sem identidade (gate identify,
@@ -869,22 +1123,54 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// BUG-BEVI-EMPTY-ENV (2026-06-04): o AI SDK converte o throw da tool em
 	// tool-error pro MODELO ("instabilidade") sem deixar rastro no servidor — um
 	// Invalid URL de config levou horas pra diagnosticar. Todo erro de descoberta
-	// é logado estruturado ANTES de subir.
-	const runDiscovery = async <T>(toolName: string, fn: () => Promise<T>): Promise<T> => {
+	// é logado estruturado.
+	//
+	// FIX-186 (Kairo 2026-07-01): runDiscovery NÃO re-lança mais. Um throw numa
+	// tool do AI SDK vira tool-error que o modelo NARRA ("dificuldade técnica
+	// pontual" + preâmbulos "vou buscar" empilhados). Em vez disso: 1 retry
+	// silencioso DETERMINÍSTICO em erro transitório (rede/timeout/5xx — não o
+	// modelo "tentando de novo" em texto) e, na falha (ou erro duro), retorna o
+	// marcador `discoveryFailedResult`. O runner materializa o fallback humano
+	// (Lei 1). Seta `discoveryFailed` pro turno curto-circuitar as próximas tools.
+	const logDiscoveryError = (toolName: string, phase: "first" | "retry", err: unknown) => {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "discovery",
+				tool: toolName,
+				phase,
+				conversation_id: conversationId,
+				error_name: err instanceof Error ? err.name : "unknown",
+				error_message: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	};
+	const runDiscovery = async <T>(
+		toolName: string,
+		fn: () => Promise<T>,
+	): Promise<T | { __discoveryFailed: true; error: string }> => {
+		// Curto-circuito: a descoberta já falhou neste turno → não martela a Bevi.
+		if (discoveryFailed) return discoveryFailedResult(toolName);
 		try {
 			return await fn();
 		} catch (err) {
-			console.error(
-				JSON.stringify({
-					level: "error",
-					source: "discovery",
-					tool: toolName,
-					conversation_id: conversationId,
-					error_name: err instanceof Error ? err.name : "unknown",
-					error_message: err instanceof Error ? err.message : String(err),
-				}),
-			);
-			throw err;
+			logDiscoveryError(toolName, "first", err);
+			// Erro transitório → 1 retry silencioso (determinístico, não o modelo).
+			if (isTransientDiscoveryError(err)) {
+				if (discoveryRetryDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, discoveryRetryDelayMs));
+				}
+				try {
+					return await fn();
+				} catch (retryErr) {
+					logDiscoveryError(toolName, "retry", retryErr);
+					discoveryFailed = true;
+					return discoveryFailedResult(toolName);
+				}
+			}
+			// Erro duro (config/4xx): nunca cura no retry → fallback direto.
+			discoveryFailed = true;
+			return discoveryFailedResult(toolName);
 		}
 	};
 
@@ -906,6 +1192,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof simulateQuotaInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-180: precondição de dado via tabela declarativa (action-policy) —
+			// grupo real na Bevi mas nunca exibido em tela → bloqueia ANTES de tocar o
+			// adapter (camada "foi exibido", roda antes do rebuscaDirective/FIX-72
+			// "existe na Bevi"). Generaliza o FIX-179 (antes um if inline aqui).
+			const shown = await getShownGroups();
+			const verdict = evaluateActionPrecondition("simulate_quota", {
+				shown,
+				args: args as Record<string, unknown>,
+			});
+			if (!verdict.allow) return { error: verdict.directive };
 			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
 		},
 	});
@@ -926,6 +1222,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof getGroupDetailsInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-180: mesma precondição de dado (action-policy) do simulate_quota.
+			const shown = await getShownGroups();
+			const verdict = evaluateActionPrecondition("get_group_details", {
+				shown,
+				args: args as Record<string, unknown>,
+			});
+			if (!verdict.allow) return { error: verdict.directive };
 			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
 		},
 	});
@@ -936,7 +1239,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("recommend_groups", () => executeRecommendGroups(adapter, args));
+			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
+			return runDiscovery("recommend_groups", () =>
+				executeRecommendGroups(adapter, args, { hasLance }),
+			);
 		},
 	});
 
@@ -966,6 +1272,15 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		get_rates,
 		get_group_details,
 		recommend_groups,
+		// Overrides — FIX-179: registram "exibido" (markShown) e guardam a trava
+		// de get_group_details/simulate_quota/present_decision_prompt acima.
+		// FIX-187: present_recommendation_card/present_simulation_result/
+		// present_decision_prompt recusam quando a descoberta do turno falhou.
+		present_group_card,
+		present_comparison_table,
+		present_recommendation_card,
+		present_simulation_result,
+		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,
 	};

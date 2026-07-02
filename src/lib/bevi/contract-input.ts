@@ -47,6 +47,9 @@ export function buildStartContractInput(
 		// Fechamento prefere a MESMA administradora que o usuário decidiu
 		// (BUG-ADMIN-TROCADA-NO-FECHAMENTO).
 		administradoraPreferida: meta.recommendedAdministradora ?? null,
+		// E o MESMO prazo que ele viu — desempata o matching dentro da admin
+		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o prazo.
+		prazoPreferido: meta.recommendedOffer?.termMonths ?? null,
 		// FIX-48: vincula a proposta ao lead já existente da conversa pra a raia
 		// avançar (qualificado→proposta_enviada). null explícito (nunca undefined).
 		leadId: links.leadId ?? null,

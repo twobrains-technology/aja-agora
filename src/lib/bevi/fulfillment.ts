@@ -44,6 +44,10 @@ export interface StartContractInput {
 	/** Administradora recomendada na Descoberta — o fechamento prefere a MESMA
 	 * marca que o usuário decidiu (BUG-ADMIN-TROCADA-NO-FECHAMENTO). */
 	administradoraPreferida?: string | null;
+	/** Prazo (meses) da oferta que o usuário viu na Descoberta. Desempata o
+	 * matching dentro da admin preferida pra o fechamento não trocar por outro
+	 * prazo (matching preparatório 2026-06-28). Vem de meta.recommendedOffer. */
+	prazoPreferido?: number | null;
 }
 
 export interface StartContractResult {
@@ -92,7 +96,12 @@ export async function startContract(
 		lanceEmbutido: input.lanceEmbutido ?? "nenhum",
 	});
 
-	const chosen = pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida);
+	const chosen = pickClosestOffer(
+		sim.offers,
+		input.valor,
+		input.administradoraPreferida,
+		input.prazoPreferido,
+	);
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
 	const snapshot = {
@@ -125,6 +134,11 @@ export interface ConfirmOfferResult {
 	consortiumProposalLink: string;
 	documentsLinkPersonal: string;
 	documentsLinkAddress: string;
+	/** Trilho B (self-contract): nº gerado pela administradora após o finalize
+	 * (inserção assíncrona). undefined no Trilho A (chooseOffer já basta) ou se
+	 * a inserção do self-contract ainda não resolveu (D11 — nunca chutado). Ver
+	 * docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md D3/D4. */
+	proposalNumber?: number;
 }
 
 /** Passo 5.2 — usuário confirmou a oferta real: escolhe + gera link de assinatura
@@ -146,8 +160,13 @@ export async function confirmOffer(
 			valor: Number(row.creditValue ?? 0) || 0,
 			objetivo: "contemplacao_rapida",
 		});
-		// Re-sim por TTL mantém a MESMA marca que o usuário confirmou.
-		const fresh = pickClosestOffer(sim.offers, Number(row.creditValue ?? 0), row.administradora);
+		// Re-sim por TTL mantém a MESMA marca E o MESMO prazo que o usuário confirmou.
+		const fresh = pickClosestOffer(
+			sim.offers,
+			Number(row.creditValue ?? 0),
+			row.administradora,
+			Number(row.termMonths) || null,
+		);
 		ofertaId = fresh?.ofertaId ?? ofertaId;
 		await updateBeviProposal(row.id, {
 			simulationSessionId: sim.simulationSessionId,
@@ -159,6 +178,10 @@ export async function confirmOffer(
 
 	const choose = await gateway.chooseOffer({ proposalId: row.proposalId, ofertaId });
 	const links = await gateway.getDocumentLinks(row.proposalId);
+	// D3 — passo extra que só o Trilho B tem (inserção assíncrona na
+	// administradora). Opcional/duck-typed: o Trilho A não implementa
+	// `finalize`, então `gateway.finalize?.()` é um no-op transparente pra ele.
+	const finalized = await gateway.finalize?.(row.proposalId);
 
 	await updateBeviProposal(row.id, {
 		consortiumProposalLink: choose.consortiumProposalLink,
@@ -173,6 +196,7 @@ export async function confirmOffer(
 		consortiumProposalLink: choose.consortiumProposalLink,
 		documentsLinkPersonal: links.linkDocumentosPessoais,
 		documentsLinkAddress: links.linkComprovanteEndereco,
+		proposalNumber: finalized?.proposalNumber,
 	};
 }
 
@@ -191,10 +215,19 @@ export async function uploadContractDocument(
 	gateway: ProposalGateway = getProposalGateway(),
 ): Promise<{ ok: boolean; fallbackLink?: string }> {
 	const row = await getLatestBeviProposal(conversationId);
+	// proposalStatus só vira "documentos" dentro de confirmOffer — é o sinal de
+	// "oferta confirmada", independente de trilho (FIX-112: sem isso, dava pra
+	// subir documento com a proposta ainda em "simulacao").
+	if (!row || row.proposalStatus !== "documentos")
+		throw new Error("Sem oferta confirmada — finalize a escolha da oferta antes.");
+	// D2 — Trilho B (self-contract) não produz link (fecha inline, sem
+	// uselink.me): documentsLink fica "" e o gateway ignora/delega ao despacho
+	// desacoplado (bloco-a). O Trilho A sempre tem link truthy aqui (comportamento
+	// inalterado).
 	const link =
-		input.slot === "comprovante_endereco" ? row?.documentsLinkAddress : row?.documentsLinkPersonal;
-	if (!row || !link)
-		throw new Error("Sem links de documento — finalize a escolha da oferta antes.");
+		(input.slot === "comprovante_endereco"
+			? row.documentsLinkAddress
+			: row.documentsLinkPersonal) ?? "";
 
 	try {
 		await gateway.uploadDocument({

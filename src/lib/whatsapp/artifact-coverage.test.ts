@@ -99,7 +99,7 @@ describe("BUG WhatsApp: artifacts orfaos no canal WhatsApp (apresentacao 13h)", 
 
 		vi.spyOn(session, "getOrCreateConversation").mockResolvedValue({
 			id: FAKE_CONV_ID,
-			waId: FAKE_FROM,
+			isNew: false,
 		} as Awaited<ReturnType<typeof session.getOrCreateConversation>>);
 	});
 

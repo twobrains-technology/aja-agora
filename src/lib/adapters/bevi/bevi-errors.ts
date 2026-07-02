@@ -58,6 +58,19 @@ export class DuplicatedProposalError extends BeviApiError {
 	}
 }
 
+/** 400 "Proposta não pertence ao Bevi Consórcio." — a proposta foi criada sob um
+ * `productId`/conta que o token não reconhece como "Bevi Consórcio" no `simulate`
+ * (FIX-79). NÃO é transitório: nasce de `BEVI_PRODUCT_ID` errado na criação e NUNCA
+ * cura no retry — a correção é setar o `productId` correto no env (PENDENTE-KAIRO,
+ * dado externo da Bevi/AGX). Tipado pra ops greparem a classe exata e o teste
+ * asseverar; o route já degrada gracioso no catch genérico. */
+export class ProposalOwnershipError extends BeviApiError {
+	constructor(message: string, errors: BeviFieldError[] = [], data: unknown = null) {
+		super(400, message, errors, data);
+		this.name = "ProposalOwnershipError";
+	}
+}
+
 /** ofertaId expirado (TTL 30min) — re-simular antes do chooseOffer. */
 export class OfferExpiredError extends BeviApiError {
 	constructor(message = "Oferta expirada — re-simule antes de escolher.", data: unknown = null) {
@@ -74,6 +87,32 @@ export class BeviConfigError extends Error {
 		this.name = "BeviConfigError";
 		this.code = code;
 	}
+}
+
+/**
+ * FIX-186 (Kairo 2026-07-01) — classifica um erro de DESCOBERTA (Trilho B) como
+ * TRANSITÓRIO (retry silencioso pode curar) ou DURO (nunca cura no retry). É a
+ * base da decisão de retry do `runDiscovery` (tools/ai-sdk.ts): transitório →
+ * 1 retry; duro → vai direto ao fallback humano determinístico. Regra em CÓDIGO,
+ * não regra-no-prompt (Lei 4 de ~/.claude/reference/arquitetura-agentes-ia.md).
+ *
+ * Transitório: rede/timeout, `BeviApiError` 5xx/408/429, e erro desconhecido
+ * (default — 1 retry barato não machuca). Duro: `BeviConfigError` (403/credencial),
+ * `BeviApiError` 4xx (400/404/409/410 — inclui Min/Duplicated/Ownership/Ongoing/
+ * OfferExpired, todos 4xx de domínio).
+ */
+export function isTransientDiscoveryError(err: unknown): boolean {
+	// Config/credencial (403) — nunca cura no retry (BUG-BEVI-EMPTY-ENV).
+	if (err instanceof BeviConfigError) return false;
+	if (err instanceof BeviApiError) {
+		// 5xx = servidor soluçou; 408 timeout; 429 rate-limit → retry pode curar.
+		if (err.code >= 500 || err.code === 408 || err.code === 429) return true;
+		// Demais códigos tipados (4xx de domínio: 400/404/409/410) = duro.
+		return false;
+	}
+	// Erro de rede/timeout ou desconhecido (fetch failed, ECONN*, AbortError) —
+	// transitório por default: 1 retry barato é seguro.
+	return true;
 }
 
 /** Mapeia o envelope de erro pra erro tipado de domínio (spec §10). */
@@ -99,6 +138,11 @@ export function toBeviError(
 			const m = valorErr.message.match(/R\$\s*([\d.]+)/);
 			const min = m ? Number(m[1].replace(/\./g, "")) : 15000;
 			return new MinCreditError(valorErr.message, min, errors, data);
+		}
+		// FIX-79: ownership da proposta ("não pertence ao Bevi Consórcio") — product
+		// mismatch na criação. Tipado pra diagnóstico (PENDENTE-KAIRO: BEVI_PRODUCT_ID).
+		if (errors.some((e) => e.field === "propostaId")) {
+			return new ProposalOwnershipError(message, errors, data);
 		}
 	}
 	return new BeviApiError(code, message, errors, data);

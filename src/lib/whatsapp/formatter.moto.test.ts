@@ -2,30 +2,22 @@ import { describe, expect, it } from "vitest";
 import { resolveRange, valuePickerToWhatsApp, welcomeButtonsToWhatsApp } from "./formatter";
 
 describe("WhatsApp formatter — categoria moto (bug #02)", () => {
-	it("valuePickerToWhatsApp aceita category='moto' e retorna lista com faixas reais (não cai no fallback auto)", () => {
-		const auto = valuePickerToWhatsApp({ category: "auto" });
+	// FIX-109: o valor virou CONVERSA — value_picker não renderiza mais lista de
+	// faixas (vira texto). O rótulo da categoria segue presente na fala.
+	it("valuePickerToWhatsApp vira conversa (texto), sem lista de faixas", () => {
 		const moto = valuePickerToWhatsApp({ category: "moto" });
-
-		expect(moto.type).toBe("interactive");
-		// rows do auto e moto devem ser distintos (provar que moto tem faixas próprias)
-		const autoIds = auto.interactive?.action?.sections?.[0]?.rows?.map((r) => r.id) ?? [];
-		const motoIds = moto.interactive?.action?.sections?.[0]?.rows?.map((r) => r.id) ?? [];
-		expect(motoIds.length).toBeGreaterThan(0);
-		expect(motoIds).not.toEqual(autoIds);
+		expect(moto.type).toBe("text");
+		expect(moto.interactive?.action?.sections).toBeUndefined();
 	});
 
-	it("rangeId de moto resolve via resolveRange e retorna category='moto'", () => {
-		const moto = valuePickerToWhatsApp({ category: "moto" });
-		const firstId = moto.interactive?.action?.sections?.[0]?.rows?.[0]?.id;
-		expect(firstId).toBeTruthy();
-		const resolved = resolveRange(firstId as string);
+	it("resolveRange segue resolvendo um rangeId de moto (RANGES preservado)", () => {
+		const resolved = resolveRange("range_moto_25");
 		expect(resolved?.category).toBe("moto");
 	});
 
-	it("rótulo da categoria moto é 'Moto' (não cai em 'bem' genérico)", () => {
-		const moto = valuePickerToWhatsApp({ category: "moto" });
-		const body = moto.interactive?.body?.text ?? "";
-		expect(body).toMatch(/Moto/i);
+	it("rótulo da categoria moto aparece na conversa (não cai em 'bem' genérico)", () => {
+		const body = valuePickerToWhatsApp({ category: "moto" }).text ?? "";
+		expect(body).toMatch(/moto/i);
 		expect(body).not.toMatch(/\bbem\b/);
 	});
 

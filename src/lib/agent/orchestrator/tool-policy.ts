@@ -69,6 +69,10 @@ const WHAT_IF_AND_DETAIL = [
 	"get_group_details",
 	"compare_with_financing",
 	"compute_scenarios",
+	// FIX-106: simulador de contemplação CONVERSACIONAL (cálculo p/ loop por texto).
+	// É what-if de mês — legítimo no reveal/closing (e qualify não faz mal: o prompt
+	// só o aciona pós-reveal). A WEB segue usando a agulha (present_contemplation_dial).
+	"simulate_contemplation",
 	"present_simulation_result",
 	"present_scenarios",
 	"present_financing_comparison",
@@ -122,9 +126,17 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// BUG-OPTIN-ENGOLE-GATES: present_whatsapp_optin FORA pré-reveal.
 			// FIX-34: present_lead_form SÓ aqui (captura de lead pré-reveal) — some
 			// das fases pós-reveal, onde o avanço é decision → contract_form.
+			//
+			// FIX-114 (PROD 2026-06-30, log conv bc5fa852): a descoberta (search_groups
+			// + cards do reveal) SÓ entra no toolset DEPOIS da identidade coletada. A
+			// Bevi exige CPF+celular pra simular (D1) e lança IdentityNotCollectedError
+			// se buscar sem eles — o agente free-rodava search_groups antes do gate
+			// identify e cuspia "dificuldade técnica". Com a tool fora do request, o
+			// modelo nem consegue chamá-la cedo; o funil coleta a identidade primeiro
+			// (nextGate: identify precede credit) e só então libera a busca.
 			return [
 				...BASE,
-				...DISCOVERY_AND_REVEAL_CARDS,
+				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_lead_form",

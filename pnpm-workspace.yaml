@@ -18,3 +18,12 @@ allowBuilds:
   sharp: true
   msgpackr-extract: true
   msw: false
+
+# FIX-82: client-s3 e s3-request-presigner (ambos ^3.974.22) resolvem
+# @aws-sdk/core em 2 versões via diamante transitivo (middleware-sdk-s3 etc.) —
+# gera "types have separate declarations of a private property 'handlers'" no
+# tsc (S3Client de um lado, Client<...> esperado pelo getSignedUrl de outro).
+# Força 1 versão só pra tsc enxergar o mesmo tipo.
+overrides:
+  "@aws-sdk/core": 3.974.24
+  "@smithy/core": 3.28.0

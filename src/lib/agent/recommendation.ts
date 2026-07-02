@@ -75,6 +75,18 @@ export interface ScoringInput {
 	budget: number;
 	/** User's desired timeline in months (0 = no preference) */
 	desiredTermMonths: number;
+	/** FIX-193: usuário tem apetite de lance (qualifyAnswers.hasLance==="yes").
+	 * Desempata modalidades do MESMO grupo (SPECIAL_OFFER × FREE_BID) quando o
+	 * score empata — prioriza a coerente com lance (FREE_BID). Critério INVISÍVEL
+	 * (tipoOferta nunca vai pra UI). Ausente/false = desempate estável por ordem. */
+	hasLance?: boolean;
+}
+
+/** FIX-193: a oferta é da modalidade de lance livre? (case-insensitive, tolerante
+ * a variações do enum). Usado só como critério interno de desempate/dedup. */
+function isLanceCoherent(group: GroupSummary): boolean {
+	const t = (group.tipoOferta ?? "").toUpperCase();
+	return t.includes("FREE_BID") || t.includes("EMBEDDED");
 }
 
 export interface ScoredGroup {
@@ -90,13 +102,18 @@ export interface ScoredGroup {
 }
 
 /**
- * Score and rank groups by weighted multi-factor analysis.
- * Returns top N groups sorted by score descending.
+ * Score and rank ALL groups by weighted multi-factor analysis — sem teto, nunca
+ * descarta grupo (Kairo, 2026-07-01: "não pode limitar"). `topN`, se passado,
+ * é só um corte de exibição opcional — o comportamento default é devolver tudo.
  *
  * DETERMINISTIC: Same inputs always produce same output.
  * No randomness, no LLM involvement.
  */
-export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3): ScoredGroup[] {
+export function rankGroups(
+	groups: GroupSummary[],
+	input: ScoringInput,
+	topN = Number.POSITIVE_INFINITY,
+): ScoredGroup[] {
 	const scored: ScoredGroup[] = groups.map((group) => {
 		const factors = {
 			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
@@ -118,7 +135,38 @@ export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3
 		};
 	});
 
-	const sorted = scored.sort((a, b) => b.score - a.score);
+	const sorted = scored.sort((a, b) => {
+		if (b.score !== a.score) return b.score - a.score;
+		// FIX-193: desempate por afinidade de lance — só quando o usuário tem
+		// apetite de lance, a modalidade coerente (FREE_BID) vem antes. Assim a
+		// dedup abaixo (que mantém o 1º por administradora+grupo) preserva a
+		// modalidade certa quando o mesmo grupo vem em SPECIAL_OFFER e FREE_BID.
+		if (input.hasLance) {
+			const af = isLanceCoherent(a.group) ? 0 : 1;
+			const bf = isLanceCoherent(b.group) ? 0 : 1;
+			if (af !== bf) return af - bf;
+		}
+		return 0;
+	});
+
+	// FIX-193: dedup por (administradora + grupo) — o MESMO grupo pode vir em duas
+	// modalidades (SPECIAL_OFFER + FREE_BID) e não pode aparecer 2x. Roda SEMPRE
+	// (independe de topN), sobre a lista já ordenada → o 1º por chave é o
+	// sobrevivente (melhor score; empate → FREE_BID quando hasLance). Só dedupa
+	// quando `grupo` está presente — shapes sem o nº do grupo (fixtures/legado)
+	// seguem tratados como únicos (preserva o FIX-56).
+	const seenGroupKeys = new Set<string>();
+	const deduped: ScoredGroup[] = [];
+	for (const s of sorted) {
+		const grupo = s.group.grupo;
+		const admin = s.group.administradora;
+		if (typeof grupo === "string" && grupo.length > 0 && admin) {
+			const key = `${admin}::${grupo}`;
+			if (seenGroupKeys.has(key)) continue;
+			seenGroupKeys.add(key);
+		}
+		deduped.push(s);
+	}
 
 	// FIX-56 (jornada2 revisão 2): diversifica por administradora. Em vez de só
 	// fatiar o top N por score (que deixava 2 grupos da mesma adm entrarem
@@ -128,7 +176,7 @@ export function rankGroups(groups: GroupSummary[], input: ScoringInput, topN = 3
 	const seenAdmins = new Set<string>();
 	const picked: ScoredGroup[] = [];
 	const leftovers: ScoredGroup[] = [];
-	for (const s of sorted) {
+	for (const s of deduped) {
 		const admin = s.group.administradora;
 		if (picked.length < topN && admin && !seenAdmins.has(admin)) {
 			seenAdmins.add(admin);

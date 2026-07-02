@@ -77,6 +77,22 @@ describe("normalizePhoneBR", () => {
 		expect(normalizePhoneBR("55")).toBeNull();
 	});
 
+	// REV-A: "55" inicial só é código de país quando o total tem 12-13 dígitos.
+	// Antes, qualquer "55…" tinha os 2 primeiros removidos, então um móvel do DDD
+	// 55 (Santa Maria-RS) sem CC virava 9 dígitos e era REJEITADO — e como o phone
+	// é a chave de identidade da memória, esse usuário nunca casava histórico.
+	it("aceita móvel do DDD 55 sem CC (11 dígitos começando com 55)", () => {
+		expect(normalizePhoneBR("55999998888")).toBe("+5555999998888");
+	});
+
+	it("aceita móvel do DDD 55 COM CC (13 dígitos)", () => {
+		expect(normalizePhoneBR("5555999998888")).toBe("+5555999998888");
+	});
+
+	it("aceita fixo do DDD 55 sem CC (10 dígitos começando com 55)", () => {
+		expect(normalizePhoneBR("5533334444")).toBe("+555533334444");
+	});
+
 	it("retorna null pra phone US (não BR)", () => {
 		// "+1 415 555 0000" → digits "14155550000" → starts with "1" not "55", length 11 → "+5514155550000"
 		// Esse caso é intencionalmente uma limitação: a normalização não valida o DDD.
@@ -211,33 +227,32 @@ describe("shouldCreateAnonAgent", () => {
 });
 
 describe("getNamespace", () => {
-	const originalEnv = process.env.LETTA_NAMESPACE;
-
 	beforeEach(() => {
-		vi.stubEnv("LETTA_NAMESPACE", "");
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
+		// eslint-disable-next-line no-process-env
+		delete process.env.LETTA_NAMESPACE;
 	});
 
 	afterEach(() => {
-		if (originalEnv === undefined) {
-			vi.unstubAllEnvs();
-		} else {
-			vi.stubEnv("LETTA_NAMESPACE", originalEnv);
-		}
 		vi.unstubAllEnvs();
 	});
 
-	it("retorna LETTA_NAMESPACE quando setado", () => {
-		vi.stubEnv("LETTA_NAMESPACE", "aja-agora-prod");
+	it("retorna MEMORY_NAMESPACE quando setado", () => {
+		vi.stubEnv("MEMORY_NAMESPACE", "aja-agora-prod");
 		expect(getNamespace()).toBe("aja-agora-prod");
 	});
 
-	it("retorna default quando env ausente", () => {
-		vi.stubEnv("LETTA_NAMESPACE", "");
-		// stubEnv com string vazia ainda define a var como "" — getNamespace usa
-		// `??` que só pega `null`/`undefined`. Aceitamos o comportamento atual:
-		// se LETTA_NAMESPACE="" o getNamespace retorna "". Esse teste verifica
-		// SOMENTE o caso de var efetivamente undefined.
-		// Hack: temos que de fato remover a var.
+	it("cai pra LETTA_NAMESPACE quando MEMORY_NAMESPACE ausente (transição FIX-81)", () => {
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
+		vi.stubEnv("LETTA_NAMESPACE", "aja-agora-legacy");
+		expect(getNamespace()).toBe("aja-agora-legacy");
+	});
+
+	it("retorna default quando ambas as envs ausentes ou vazias", () => {
+		// eslint-disable-next-line no-process-env
+		delete process.env.MEMORY_NAMESPACE;
 		// eslint-disable-next-line no-process-env
 		delete process.env.LETTA_NAMESPACE;
 		expect(getNamespace()).toBe("aja-agora-local-default");

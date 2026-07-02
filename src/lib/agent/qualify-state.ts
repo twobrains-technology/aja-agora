@@ -1,3 +1,4 @@
+import { revealValueTargetChanged } from "./orchestrator/tool-policy";
 import type { ConversationMetadata } from "./personas";
 
 export type Gate =
@@ -17,6 +18,11 @@ export type Gate =
 
 export type UserIntent =
 	| "ready_to_proceed"
+	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
+	// usuário quer AMPLIAR o conjunto já mostrado, NÃO avançar/decidir. Sem essa
+	// categoria caía em ready_to_proceed e empurrava o funil pra decisão sobre um
+	// grupo não-escolhido (confabulação de entidade). Roteado em decideShowGate.
+	| "wants_more_options"
 	| "asking_question"
 	| "providing_info"
 	| "expressing_doubt"
@@ -53,7 +59,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
-	if (q.prazoMeses === undefined) return "timeframe";
+	// FIX-103 (revisão da jornada de entrada — Kairo 2026-06-28): o gate
+	// `timeframe` (prazo desejado de contemplação) SAIU da qualificação
+	// ("usuario so vai falar o valor agora, prazo nao"). O funil pula direto de
+	// `credit` (valor) pra `lance`. "timeframe" segue no union `Gate` e o campo
+	// `prazoMeses` segue opcional no meta — por compat com consumidores fora do
+	// escopo deste bloco (web/whatsapp/orchestrator), que os blocos irmãos
+	// (web-valor-agulha, whatsapp-apresentacao) limpam. `nextGate` NUNCA mais o
+	// emite (prova: qualify-state.fix-103.test.ts). O prazo deixa de pesar na
+	// recomendação (desiredTermMonths=0 → fator neutro, ver tools/ai-sdk.ts).
 	if (!q.hasLance) return "lance";
 	// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
 	// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
@@ -78,6 +92,17 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// agent re-disparava o reveal em loop e nunca cruzava pro passo 5
 	// (BUG-REVEAL-LOOP, 2026-06-02).
 	if (!meta.searchDispatched) return "search";
+	// FIX-76 (Maria, retomada 2026-06-25): o usuário pediu um valor-alvo NOVO
+	// sobre um reveal antigo (256k → 130k). A tool-policy (FIX-68) já reabria
+	// search_groups no toolset via revealValueTargetChanged, mas sem reabrir o
+	// GATE o orquestrador não FORÇAVA o reveal — o modelo ficava livre pra
+	// alucinar "instabilidade" e ressuscitar o valor antigo como dado real
+	// (viola Bevi fonte única). Reabrir aqui faz o orquestrador re-disparar a
+	// busca determinística na faixa nova. Converge: o runner re-snapshota
+	// discoveredCreditTarget ao produzir os cards da nova faixa →
+	// revealValueTargetChanged volta a false → sem loop. Anti BUG-REVEAL-LOOP:
+	// afirmativo curto na MESMA faixa (valor == descoberto) NÃO cai aqui.
+	if (revealValueTargetChanged(meta)) return "search";
 	// docx passo 4 (linha 34-36): após apresentar o plano, OFERECER o simulador
 	// ("contemplado em 3, 6 ou 12 meses — que tal?") ANTES do card de decisão.
 	// Conceito do Bernardo (simulador-agulha) no caminho padrão da jornada.
@@ -107,6 +132,16 @@ export function decideShowGate(args: {
 	// — that's the whole point of the directive flow.
 	if (!isUserTurn) return true;
 
+	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais
+	// opções" NUNCA abre gate estruturado nem empurra o funil (decisão/simulador/
+	// busca). O usuário quer AMPLIAR o que já viu, não avançar sobre um grupo
+	// não-escolhido — sem essa trava, o intent (antes ready_to_proceed) disparava
+	// o card de decisão sobre "Embracon" (grupo nunca exibido). Default de produto
+	// (AskUserQuestion 2026-07-01, ver docs/correcoes/decisions/): o agente
+	// re-apresenta o comparativo conversacionalmente quando o gate NÃO dispara.
+	// Governança determinística (allowlist de avanço), não regra-no-prompt (Lei 4).
+	if (intent === "wants_more_options") return false;
+
 	// "decision" — fim do passo 4 (card "Esse plano faz sentido?"). Pós-reveal,
 	// dispara em sinal de avanço do usuário (ready_to_proceed: "bora", "vamos")
 	// OU afirmativo neutro de acolhimento (neutral: "ta otimo", "show", "legal").
@@ -126,6 +161,11 @@ export function decideShowGate(args: {
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.
 	// Exige sinal EXPLICITO do usuario. Nunca dispara em neutral/asking/doubt/off-topic.
 	if (gate === "search") {
+		// FIX-76: numa retomada com valor-alvo TROCADO (revealValueTargetChanged),
+		// o próprio sinal de troca de faixa já justifica re-buscar — o analyzer
+		// costuma marcar a mensagem da retomada como conversacional (neutral),
+		// e cair em conversacional deixava o modelo alucinar "instabilidade".
+		if (revealValueTargetChanged(meta)) return true;
 		return intent === "ready_to_proceed" || intent === "providing_info";
 	}
 

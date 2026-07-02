@@ -1,15 +1,16 @@
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
 	artifactToWhatsApp,
-	creditRangeQuestionToWhatsApp,
 	experienceQuestionToWhatsApp,
 	formatTextForWhatsApp,
 	handoffConfirmationToWhatsApp,
@@ -47,11 +48,12 @@ async function gateInteractive(
 				qualifyConsentToWhatsApp(prefix, { firstTime: meta.experiencePrev === "first" })
 					.interactive ?? null
 			);
-		case "credit": {
-			const category = meta.currentCategory;
-			if (!category) return null;
-			return creditRangeQuestionToWhatsApp(category, prefix).interactive ?? null;
-		}
+		case "credit":
+			// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA — o WhatsApp
+			// não manda mais a lista de faixas. A pergunta sai como TEXTO (ver
+			// gateTextPrompt), espelhando o gate `identify`. A resposta livre é
+			// capturada pelo analyzer + backstop parseAssetValue.
+			return null;
 		case "timeframe": {
 			const category = meta.currentCategory;
 			if (!category) return null;
@@ -83,10 +85,30 @@ async function gateInteractive(
 	}
 }
 
+// FIX-120 (paridade FIX-115): gates CONVERSACIONAIS (o valor do bem, `credit`)
+// saem como TEXTO no WhatsApp — não como componente de seleção — espelhando o
+// tratamento textual do `identify`. Retorna a pergunta (com prefix embutido) ou
+// null pros gates que não são textuais. A resposta livre do usuário é capturada
+// pelo pipeline conversacional (analyzer + backstop parseAssetValue, FIX-115).
+async function gateTextPrompt(
+	gate: Gate,
+	conversationId: string,
+	prefix: string | undefined,
+): Promise<string | null> {
+	if (gate !== "credit") return null;
+	const meta = await reloadMeta(conversationId);
+	const category = meta.currentCategory;
+	if (!category) return null;
+	const question = gateQuestion("credit", category);
+	if (!question) return null;
+	return prefix ? `${prefix}\n\n${question}` : question;
+}
+
 async function consumeEvents(
 	from: string,
 	conversationId: string,
 	events: AsyncIterable<TurnEvent>,
+	opts?: { guardEmptyTurn?: boolean },
 ): Promise<void> {
 	// FIX-21: este é o funil único de consumo de TurnEvents do canal WhatsApp
 	// (todos os run*WithOrchestrator passam por aqui). Tap passthrough fecha 1
@@ -132,6 +154,16 @@ async function consumeEvents(
 		const artifacts = pendingArtifacts;
 		pendingArtifacts = [];
 		for (const artifact of artifacts) {
+			// FIX-109: o valor do bem virou CONVERSA — o agente (bloco-jornada-entrada)
+			// parou de emitir value_picker. Se ainda chegar um, NÃO renderizamos a
+			// lista de faixas: o formatter degrada pra um pedido conversacional. O warn
+			// flagra em produção se a emissão não tiver sido removida no agente.
+			// TODO(bloco-jornada-entrada): confirmar a parada de emissão do value_picker.
+			if (artifact.type === "value_picker") {
+				console.warn(
+					"[whatsapp/adapter] value_picker chegou no WhatsApp — valor agora é conversa (FIX-109); degradando pra pedido conversacional",
+				);
+			}
 			// FIX-25: passo 5 no WhatsApp — ao renderizar o contract_form, abre a
 			// máquina de estado do fechamento (confirm/cpf). O turno seguinte do
 			// usuário cai em captureContractText (processor) e os botões em
@@ -238,6 +270,16 @@ async function consumeEvents(
 					await sendInteractiveMessage(from, interactive);
 					lastWasInteractive = true;
 					hasSent = true;
+				} else {
+					// FIX-120: gates conversacionais (credit) saem como TEXTO — a pergunta
+					// viajava no body da lista; sem a lista, mandamos a pergunta em texto.
+					const textPrompt = await gateTextPrompt(ev.gate, conversationId, ev.prefix);
+					if (textPrompt) {
+						if (hasSent) await pauseBeforeNext();
+						await sendTextMessage(from, textPrompt);
+						lastWasInteractive = false;
+						hasSent = true;
+					}
 				}
 				break;
 			}
@@ -246,6 +288,14 @@ async function consumeEvents(
 				await flushArtifacts();
 				break;
 		}
+	}
+
+	// FIX-172: guard de turno-mudo (paridade com o web, route.ts:1109). Se o turno
+	// do usuário fecha SEM emitir nada visível (ex.: loop de save_contact_name até
+	// stepCountIs, textChars=0), o usuário ficaria sem resposta — 27s de silêncio.
+	// Emite o fallback honesto. `dropped` (handoff) tem seu card silencioso próprio.
+	if (opts?.guardEmptyTurn && !hasSent && !dropped) {
+		await sendTextMessage(from, EMPTY_TURN_FALLBACK);
 	}
 }
 
@@ -264,7 +314,10 @@ export async function processWithOrchestrator(
 		contactName,
 	});
 
-	await consumeEvents(from, conversationId, events);
+	// guardEmptyTurn: SÓ no user-turn (paridade com o web) — o agente SEMPRE deve
+	// responder algo ao usuário. Directives (runDirective/Transition) podem ser
+	// silenciosos por design, então NÃO recebem o guard. FIX-172.
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn: true });
 }
 
 export async function runDirectiveWithOrchestrator(args: {
@@ -272,8 +325,12 @@ export async function runDirectiveWithOrchestrator(args: {
 	conversationId: string;
 	directive: string;
 	contactName?: string | null;
+	/** FIX-189: liga o guard de turno-mudo do consumeEvents. Directives em geral
+	 * podem ser silenciosos por design (não guardam), MAS a descoberta SEMPRE deve
+	 * revelar algo — o dispatch de busca passa true pra não pendurar no chip. */
+	guardEmptyTurn?: boolean;
 }): Promise<void> {
-	const { from, conversationId, directive, contactName } = args;
+	const { from, conversationId, directive, contactName, guardEmptyTurn } = args;
 
 	const events = runTurn({
 		channel: "whatsapp",
@@ -285,7 +342,7 @@ export async function runDirectiveWithOrchestrator(args: {
 		skipLeadCollection: true,
 	});
 
-	await consumeEvents(from, conversationId, events);
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn });
 }
 
 export async function runTransitionWithOrchestrator(args: {
@@ -324,7 +381,10 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	if (!category) return;
 	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-	await runDirectiveWithOrchestrator({ from, conversationId, directive });
+	// FIX-189 (pendura): a descoberta SEMPRE deve revelar algo — se o turno fechar
+	// só com o chip (0 texto, 0 artifact), o guardEmptyTurn emite o fallback em vez
+	// de deixar o usuário no silêncio até cutucar.
+	await runDirectiveWithOrchestrator({ from, conversationId, directive, guardEmptyTurn: true });
 }
 
 export async function fireGate(
@@ -341,6 +401,12 @@ export async function fireGate(
 	if (gate === "identify") {
 		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
 		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		return;
+	}
+	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
+	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);
+	if (textPrompt) {
+		await sendTextMessage(from, textPrompt);
 		return;
 	}
 	const interactive = await gateInteractive(gate, conversationId, prefix);

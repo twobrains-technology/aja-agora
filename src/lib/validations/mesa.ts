@@ -2,7 +2,7 @@ import { z } from "zod";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 
 // Schemas Zod da mesa de operação (backoffice de cadastros).
-// Spec: docs/visao/mesa-de-operacao.md §3. ADR: docs/correcoes/decisions/2026-06-21-bloco-mesa-a.md.
+// Spec: docs/visao/mesa-de-operacao.md §3. ADR: docs/decisoes/blocos/2026-06-21-bloco-mesa-a.md.
 
 // ── FIX-61: Administradora ───────────────────────────────────────────────────
 // Entidade interna (dossiê de operação). NÃO é fonte de oferta/grupo (Bevi fonte

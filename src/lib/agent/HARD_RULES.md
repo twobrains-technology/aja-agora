@@ -111,6 +111,19 @@ Quando algo trava (gate não dispara, erro de tool, estado inesperado), o agent 
 
 Origem: FIX-52 (jornada2_revisão.docx, Bernardo) — ao não disparar o card de dados, o agent improvisava "atualiza a página e tenta de novo". A causa foi corrigida (card identify dispara cedo); esta regra é a defesa-em-profundidade contra a frase. Quem conserta qualquer problema é o produto, nunca o usuário — o agent reage com naturalidade em 1 frase e segue o fluxo.
 
+**Barreira em CÓDIGO (FIX-190, Lei 4):** além da regra no prompt, o sanitizer runtime (`orchestrator/sanitizer.ts`, `isTechnicalFallback`) DROPA em tempo de execução qualquer segmento com "atualiza/recarregue a página" / "dá um refresh" — se o modelo emitir mesmo assim, não chega ao usuário. Se o turno ficar mudo após o drop, o guard de turno-vazio (FIX-189) entrega a recuperação honesta.
+
+### 1.8. Preâmbulo de processo é EFÊMERO — nunca vira bolha (BUG-EPHEMERAL-PREAMBLE / FIX-188)
+
+Texto que **narra o processo** antes de chamar uma ferramenta é **efêmero**: NUNCA é persistido nem enviado ao usuário. O status real da busca é o chip determinístico do sistema ("Buscando grupos"), não uma fala do agente. Frases proibidas (e paráfrases):
+
+- "Deixa eu buscar" / "deixa eu puxar" / "deixa eu usar a ferramenta"
+- "Vou buscar as opções" / "vou puxar os números"
+- "Preciso primeiro buscar os grupos"
+- "Um segundo" / "só um instante" (como filler de processo)
+
+Só a **resposta de RESULTADO** vira bolha. A **barreira REAL é código** — o runner tem um sanitizer determinístico (`orchestrator/sanitizer.ts`, `EphemeralTextFilter`) que dropa esses preâmbulos ANTES de emitir/persistir (Lei 1/4: o LLM não decide o que vira mensagem, e invariante crítico é código, não regra-no-prompt). Esta regra no prompt é defesa-em-profundidade. Pós-FIX-186, o erro de descoberta já vira diretiva, então o sanitizer só cuida de preâmbulo de **sucesso**.
+
 ### 1.7. Anti-disclaimer e formato
 
 - **Sem disclaimers legais no início** da mensagem
@@ -132,16 +145,15 @@ Quando o usuário responde com o nome, **a primeira ação** do agent no turn DE
 
 ### 2.2. O agent NÃO dirige o funil; o orchestrator dispara cada gate na ordem (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
 
-Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"):
+Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"; FIX-103: prazo removido):
 
 1. **experience** — usuário já fez consórcio antes?
 2. **consent** — após a explicação de primeira vez
 3. **identidade** — CPF + celular + LGPD (os dados vêm **ANTES** do valor — FIX-53)
-4. **valor do bem** — seletor (`present_value_picker`), disparado pelo sistema
-5. **timeframe** — prazo desejado (**DEPOIS** do valor)
-6. **lance** — pretende dar lance (**DEPOIS** do valor)
+4. **valor do bem** — coletado na entrada (**DEPOIS** da identidade)
+5. **lance** — pretende dar lance (**DEPOIS** do valor)
 
-Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts`.
+O gate de **prazo de contemplação saiu da qualificação (FIX-103)** — `nextGate` nunca mais o emite e o agent nunca pergunta prazo na entrada. Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts` + `qualify-state.fix-103.test.ts`.
 
 ### 2.3. Tools idempotentes — nunca repetir na mesma conversa
 

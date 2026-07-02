@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
 import { fixtureDiscoveryAdapter } from "../../../../tests/helpers/fixture-discovery-adapter";
-import { buildConsorcioTools, consorcioTools, PRESENTATION_TOOLS } from "./ai-sdk";
+import {
+	__setDiscoveryRetryDelayForTests,
+	buildConsorcioTools,
+	consorcioTools,
+	isDiscoveryFailedResult,
+	PRESENTATION_TOOLS,
+} from "./ai-sdk";
 
 // MOCK-RUNTIME-MORTO: descoberta vem do adapter por conversa (factory). Testes
 // instalam o adapter de FIXTURES REAIS (capturas da loja-piloto) via seam.
@@ -10,8 +16,13 @@ beforeAll(() => __setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapt
 afterAll(() => __setDiscoveryAdapterFactoryForTests(null));
 
 // Tools de descoberta resolvidas via factory (com conversationId fake — o seam
-// devolve o adapter de fixtures independente do id).
-const discoveryTools = buildConsorcioTools({ conversationId: "test-discovery-conv" });
+// devolve o adapter de fixtures independente do id). UUID válido (não string
+// arbitrária): FIX-179 faz um SELECT real (join artifacts×messages) pra
+// carregar o que já foi exibido — precisa de sintaxe de UUID válida mesmo sem
+// nenhuma linha existir pra esse id.
+const discoveryTools = buildConsorcioTools({
+	conversationId: "00000000-0000-4000-8000-000000000001",
+});
 
 describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 	it("tem compute_scenarios (#16)", () => {
@@ -90,6 +101,12 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 			const itau = groups.groups.find((g) => g.administradora === "ITAÚ");
 			if (!itau) throw new Error("grupo ITAÚ não achado na captura real");
 
+			// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+			const presentCard = discoveryTools.present_group_card.execute;
+			if (!presentCard) throw new Error("present_group_card.execute undefined");
+			// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+			await presentCard(itau as any, { toolCallId: "t", messages: [] } as any);
+
 			const adjustedCredit = Math.round(itau.creditValue * 0.85);
 			const result = (await exec(
 				{ groupId: itau.id, creditValue: adjustedCredit },
@@ -120,6 +137,13 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 				{ toolCallId: "t", messages: [] } as any,
 			)) as { groups: Array<{ id: string; creditValue: number }> };
 			const g = groups.groups[0];
+
+			// FIX-179: simulate_quota só opera sobre grupo já exibido em tela.
+			const presentCard = discoveryTools.present_group_card.execute;
+			if (!presentCard) throw new Error("present_group_card.execute undefined");
+			// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+			await presentCard(g as any, { toolCallId: "t", messages: [] } as any);
+
 			const result = (await exec(
 				{ groupId: g.id, creditValue: g.creditValue },
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
@@ -241,9 +265,15 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 // container ("Tô com uma instabilidade") e NENHUM log saía — o throw do adapter
 // era engolido pelo AI SDK (vira tool-error pro modelo) sem rastro no servidor.
 // Levou horas pra diagnosticar um Invalid URL trivial. Regra: erro de discovery
-// tool é LOGADO estruturado (tool, conversationId, erro) antes de subir.
-describe("observabilidade — erro de descoberta não morre em silêncio", () => {
-	it("search_groups loga erro estruturado (tool + conversationId + mensagem) e relança", async () => {
+// tool é LOGADO estruturado (tool, conversationId, erro).
+//
+// FIX-186 (2026-07-01): a observabilidade continua, mas o comportamento mudou —
+// runDiscovery NÃO re-lança mais (o throw virava tool-error narrado pelo modelo).
+// Agora faz 1 retry silencioso e, na falha, retorna o marcador `__discoveryFailed`
+// (o orchestrator materializa o fallback humano). O log estruturado — o coração
+// deste anti-regressão — permanece, agora nas duas fases (first + retry).
+describe("observabilidade — erro de descoberta não morre em silêncio (FIX-186)", () => {
+	it("search_groups loga erro estruturado e retorna diretiva (NÃO re-lança — não narra erro cru)", async () => {
 		const boom = new TypeError(
 			"Failed to parse URL from /unauth/product-self-contract/create-proposal/x",
 		);
@@ -255,21 +285,28 @@ describe("observabilidade — erro de descoberta não morre em silêncio", () =>
 					},
 				}) as never,
 		);
+		__setDiscoveryRetryDelayForTests(0); // erro de rede é transitório → 1 retry (sem esperar)
 		const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
 			const tools = buildConsorcioTools({ conversationId: "conv-discovery-err" });
 			const exec = tools.search_groups.execute;
 			if (!exec) throw new Error("search_groups.execute undefined");
-			await expect(
+			// FIX-186: retorna o marcador determinístico em vez de re-lançar.
+			const out = await exec(
 				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
-				exec({ category: "auto", creditMax: 60_000 }, { toolCallId: "t", messages: [] } as any),
-			).rejects.toThrow(/parse URL/);
+				{ category: "auto", creditMax: 60_000 },
+				// biome-ignore lint/suspicious/noExplicitAny: tool ctx not exported
+				{ toolCallId: "t", messages: [] } as any,
+			);
+			expect(isDiscoveryFailedResult(out), "deve retornar marcador, não lançar").toBe(true);
+			// A observabilidade (BUG-BEVI-EMPTY-ENV) permanece: o erro é logado.
 			const logged = spy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
 			expect(logged, "deve logar a tool que falhou").toContain("search_groups");
 			expect(logged, "deve logar a conversa").toContain("conv-discovery-err");
 			expect(logged, "deve logar a mensagem real do erro").toContain("parse URL");
 		} finally {
 			spy.mockRestore();
+			__setDiscoveryRetryDelayForTests(null);
 			__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
 		}
 	});

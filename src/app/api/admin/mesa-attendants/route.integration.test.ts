@@ -92,6 +92,44 @@ describeIfDb("FIX-63 — mesa-attendants CRUD (integration)", () => {
 		expect(inDb[0].isActive).toBe(false);
 	});
 
+	it("FIX-175: desativar via PATCH invalida o cache imediatamente (broadcast não vaza pra ex-atendente)", async () => {
+		// QA autônomo Frente 3 (2026-07-01) achou isto testando E2E de tela: o
+		// broadcast do transbordo foi pro atendente do RUN ANTERIOR porque
+		// getMesaAttendantList() cacheia por 60s e o CRUD nunca chamava
+		// invalidateMesaAttendantCache() — um atendente DESATIVADO continuava
+		// elegível pro broadcast (recebendo dossiê de caso com dados do cliente)
+		// por até 60s depois de sair da mesa. Sem invalidação síncrona, isto é
+		// vazamento de dado de negócio pra quem não deveria mais receber.
+		const { getMesaAttendantList, invalidateMesaAttendantCache } = await import(
+			"@/lib/whatsapp/mesa/routing"
+		);
+		invalidateMesaAttendantCache();
+
+		const [created] = await db
+			.insert(schema.mesaAttendants)
+			.values({ nome: "Cache Fix-175", whatsapp: "5562977776666", isActive: true })
+			.returning();
+		createdIds.push(created.id);
+
+		// Aquece o cache com o atendente ATIVO (mesma leitura que o broadcast faz).
+		const before = await getMesaAttendantList();
+		expect(before.some((a) => a.id === created.id)).toBe(true);
+
+		// Desativa via CRUD — em produção, é o próprio requireRole+PATCH que dispara isto.
+		await PATCH(
+			new Request(`http://test/api/admin/mesa-attendants/${created.id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ isActive: false }),
+			}),
+			{ params: Promise.resolve({ id: created.id }) },
+		);
+
+		// Sem esperar o TTL de 60s: a lista já não pode incluir o ex-atendente.
+		const after = await getMesaAttendantList();
+		expect(after.some((a) => a.id === created.id)).toBe(false);
+	});
+
 	it("rejeita criação com whatsapp inválido (400)", async () => {
 		const res = await POST(jsonReq({ nome: "Inválido", whatsapp: "123" }));
 		expect(res.status).toBe(400);

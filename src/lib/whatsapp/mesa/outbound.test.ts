@@ -122,13 +122,19 @@ describe("FIX-65 — sendCaseToAttendant (fronteira Meta)", () => {
 	});
 });
 
-describe("FIX-65 — wiring na rota de transbordo (structural)", () => {
+describe("FIX-124 — wiring na rota de transbordo (structural)", () => {
 	const routeSrc = readFileSync(
 		join(process.cwd(), "src/app/api/admin/leads/[id]/transbordo/route.ts"),
 		"utf8",
 	);
 
-	it("a rota POST dispara o outbound (sendCaseToAttendant)", () => {
-		expect(routeSrc).toContain("sendCaseToAttendant");
+	it("a rota POST dispara o BROADCAST do transbordo (broadcastCaseToAttendants)", () => {
+		// FIX-124: single-cast (sendCaseToAttendant) deu lugar ao broadcast a todos os
+		// atendentes com botão "Vou atender".
+		expect(routeSrc).toContain("broadcastCaseToAttendants");
+	});
+
+	it("a rota NÃO exige mais um atendente único (sem mesaAttendantId no schema)", () => {
+		expect(routeSrc).not.toContain("mesaAttendantId: z");
 	});
 });

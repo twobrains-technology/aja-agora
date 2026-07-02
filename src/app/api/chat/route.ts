@@ -10,9 +10,11 @@ import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
+import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
 	buildExperienceDoubtsDirective,
@@ -45,7 +47,9 @@ import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
+import { streamErrorMessage } from "@/lib/chat/stream-error";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import {
 	isValidCpf,
@@ -55,6 +59,7 @@ import {
 } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
@@ -307,6 +312,8 @@ export async function POST(req: NextRequest) {
 				});
 				writer.write({ type: "text-end", id });
 			},
+			// FIX-110: onError uniforme em TODO stream do route (helper único).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -487,6 +494,53 @@ export async function POST(req: NextRequest) {
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildAdvanceToContractDirective({ administradora }),
+								contactName,
+								writer,
+								userKey,
+							});
+							return;
+						}
+
+						// FIX-195 (P0): o seletor de cotas do reveal emitiu a escolha
+						// ESTRUTURADA. Resolve o grupo pelo groupId (choose-offer.ts, a partir
+						// dos artifacts REAIS já exibidos), RE-ANCORA o fechamento nele
+						// (administradora + prazo → administradoraPreferida/prazoPreferido do
+						// buildStartContractInput) e avança direto ao contrato — SEM re-busca,
+						// SEM re-resolução pelo agente, SEM meta-narrativa (raiz do loop do P0).
+						if (body.action?.kind === "choose_offer") {
+							const { groupId } = body.action;
+							const fresh = await reloadMeta(conversationId);
+							const chosen = await resolveChosenOffer(conversationId, groupId);
+							const administradora = chosen?.administradora ?? fresh.recommendedAdministradora;
+							// Re-ancora no grupo ESCOLHIDO (não no hero) — só grava a oferta
+							// quando os 3 números estão presentes (RecommendedOfferSnapshot).
+							const prev = fresh.recommendedOffer;
+							const creditValue = chosen?.creditValue ?? prev?.creditValue;
+							const termMonths = chosen?.termMonths ?? prev?.termMonths;
+							const monthlyPayment = chosen?.monthlyPayment ?? prev?.monthlyPayment;
+							const recommendedOffer =
+								typeof creditValue === "number" &&
+								typeof termMonths === "number" &&
+								typeof monthlyPayment === "number"
+									? {
+											...prev,
+											administradora: administradora ?? prev?.administradora,
+											creditValue,
+											termMonths,
+											monthlyPayment,
+										}
+									: prev;
+							await persistMeta(conversationId, {
+								...fresh,
+								...(administradora ? { recommendedAdministradora: administradora } : {}),
+								...(recommendedOffer ? { recommendedOffer } : {}),
+								// Libera present_contract_form na fase closing da tool-policy
+								// (mesma marca do clique "Tenho interesse", FIX-38).
+								decisionDispatched: true,
+							});
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildChooseOfferDirective({ administradora }),
 								contactName,
 								writer,
 								userKey,
@@ -675,7 +729,13 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
-							} catch {
+							} catch (err) {
+								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
+								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
+								// errors sempre logados). Sem isso, "Tive um problema..." aparecia pro
+								// usuário sem NENHUM rastro no servidor pra diagnosticar (D10-like:
+								// Trilho A instável no chooseOffer/getDocumentLinks).
+								console.error(`[offer-confirm] confirmOffer falhou (conv=${conversationId})`, err);
 								await writeAndSaveText(
 									writer,
 									conversationId,
@@ -962,7 +1022,11 @@ export async function POST(req: NextRequest) {
 						// pipeSearchSummaryTurn re-emite este gate (tripwire).
 						if (action.gate === "identify") {
 							const { cpf, celular, lgpd } = action.value;
-							const celularDigits = (celular ?? "").replace(/\D/g, "");
+							// FIX-172: normaliza o DDI ("55" opcional) igual ao canal WhatsApp
+							// (waIdToCelular) — sem isso, um celular digitado COM "55" (formato
+							// plausível, é como o WhatsApp exibe o próprio número) é cifrado
+							// cru e a Bevi rejeita no contract-submit ("CELULAR inválido").
+							const celularDigits = normalizePhoneBR(celular ?? "") ?? "";
 							if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
 								await writeAndSaveText(
 									writer,
@@ -1037,8 +1101,8 @@ export async function POST(req: NextRequest) {
 					trace.finalize();
 				}
 			},
-			onError: (error: unknown) =>
-				error instanceof Error ? error.message : "Erro interno no servidor",
+			// FIX-110: onError uniforme via helper único (era inline).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1075,6 +1139,8 @@ export async function POST(req: NextRequest) {
 				writer.write({ type: "text-delta", id, delta: ackText });
 				writer.write({ type: "text-end", id });
 			},
+			// FIX-110: onError uniforme em TODO stream do route (helper único).
+			onError: streamErrorMessage,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1095,13 +1161,28 @@ export async function POST(req: NextRequest) {
 				await withSimulatorClockIfNeeded(conv ?? null, async () => {
 					await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
 				});
-				trace.setFinish("ok");
+				// FIX-110: o turno de texto-livre fechava 'ok' SEM emitir nenhuma part
+				// visível (agente mudo) — o usuário esperava e nada vinha, só destravava
+				// no input seguinte. Se nada foi emitido, manda um fallback honesto
+				// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
+				// action, aqui o agente SEMPRE deveria responder algo.
+				if (isTurnEmpty(trace.toRecord())) {
+					await writeAndSaveText(
+						writer,
+						conversationId,
+						meta.currentPersona ?? null,
+						EMPTY_TURN_FALLBACK,
+					);
+					trace.setFinish("empty-turn-fallback");
+				} else {
+					trace.setFinish("ok");
+				}
 			} finally {
 				trace.finalize();
 			}
 		},
-		onError: (error: unknown) =>
-			error instanceof Error ? error.message : "Erro interno no servidor",
+		// FIX-110: onError uniforme via helper único (era inline).
+		onError: streamErrorMessage,
 	});
 
 	const responseHeaders: Record<string, string> = {

@@ -6,6 +6,7 @@ import {
 	beviOfferToGroupSummary,
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
+	toModelGroupSummary,
 } from "./offer-mapper";
 
 // Camada 1 (estrutural) — mapeamento Bevi → domínio contra as fixtures REAIS
@@ -152,5 +153,85 @@ describe("FIX-30 — lance total (bidPercentage) NUNCA vira % embutido", () => {
 	it("oferta com dado real (> 0) → valor literal preservado", () => {
 		const s = beviOfferToQuotaSimulation(base);
 		expect(s.embeddedBid.necessaryBidToContemplate).toBe(34520);
+	});
+});
+
+// FIX-192 (refino tela recomendação, 2026-07-01): a contemplação exibida só pode
+// vir de dado REAL ancorado. O availableSlots (contagem de contemplados/mês) =
+// monthlyAwardedQuotas coagido (0 quando ausente — o retorno enxuto de 2026-07-01
+// NÃO traz o campo, spec §1.1). A `taxaContemplacao` (fração 0..1, semântica TBD
+// com a AGX) NÃO é contagem e NUNCA vira availableSlots/contemplationRate nem %.
+// Converge com a coerção server-side do runner (FIX-191): o hero usa o availableSlots
+// real, nunca o número da LLM.
+describe("FIX-192 — availableSlots é o monthlyAwardedQuotas real (0 quando ausente); nunca taxaContemplacao", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("§7.1 — oferta SEM monthlyAwardedQuotas → availableSlots=0 e contemplationRate=0", () => {
+		const offer = { ...base, monthlyAwardedQuotas: undefined };
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(0);
+		expect(g.contemplationRate).toBe(0);
+	});
+
+	it("§7.3 — oferta com monthlyAwardedQuotas:2 → availableSlots=2 (dado real preservado)", () => {
+		const offer = { ...base, monthlyAwardedQuotas: 2 };
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(2);
+	});
+
+	it("taxaContemplacao (fração 0,605) NÃO vira availableSlots/contemplationRate (nem 0,605 nem 60,5)", () => {
+		// Retorno enxuto real: taxaContemplacao presente, monthlyAwardedQuotas ausente.
+		const offer = {
+			...base,
+			monthlyAwardedQuotas: undefined,
+			taxaContemplacao: 0.605,
+		} as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.availableSlots).toBe(0);
+		expect(g.contemplationRate).toBe(0);
+		expect(g.availableSlots).not.toBe(0.605);
+		expect(g.contemplationRate).not.toBe(60.5);
+	});
+});
+
+// FIX-193 (spec §3.2): tipoOferta/grupo propagados ao GroupSummary como critério
+// INTERNO de ranking/dedup — mas STRIPADOS no toModelGroupSummary (nunca vão pro
+// contexto do modelo nem pro payload de UI). ofertaId (CONTRATO, FIX-191) fica.
+describe("FIX-193 — tipoOferta/grupo/ofertaId no GroupSummary; stripados do model-facing", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("beviOfferToGroupSummary propaga tipoOferta, grupo (enxuto ou rico) e ofertaId", () => {
+		const offer = {
+			...base,
+			tipoOferta: "FREE_BID",
+			grupo: "8120",
+			ofertaId: "73b53a27-bf1d-4e9e-85b1-fd1d411e3b47",
+		} as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.tipoOferta).toBe("FREE_BID");
+		expect(g.grupo).toBe("8120");
+		expect(g.ofertaId).toBe("73b53a27-bf1d-4e9e-85b1-fd1d411e3b47");
+	});
+
+	it("grupo cai pro campo rico `group` quando o enxuto `grupo` não vem", () => {
+		const offer = { ...base, group: "2119" } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.grupo).toBe("2119");
+	});
+
+	it("toModelGroupSummary REMOVE tipoOferta e grupo (critério interno); mantém ofertaId", () => {
+		const offer = {
+			...base,
+			tipoOferta: "FREE_BID",
+			grupo: "8120",
+			ofertaId: "of-123",
+		} as unknown as BeviOffer;
+		const model = toModelGroupSummary(beviOfferToGroupSummary(offer)) as Record<string, unknown>;
+		expect(model.tipoOferta).toBeUndefined();
+		expect(model.grupo).toBeUndefined();
+		expect(model.ofertaId).toBe("of-123");
+		// não some o essencial:
+		expect(model.id).toBeDefined();
+		expect(model.administradora).toBeDefined();
 	});
 });

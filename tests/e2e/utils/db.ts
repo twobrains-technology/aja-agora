@@ -38,10 +38,50 @@ export async function getLeadByConversationId(conversationId: string) {
 	return result.rows[0] || null;
 }
 
+/**
+ * Faz polling em getLeadByConversationId até o lead existir (substitui
+ * waitForTimeout fixo — anti-padrão proibido: assíncrono no servidor não tem
+ * duração fixa confiável entre runs/CI).
+ */
+export async function waitForLead(
+	conversationId: string,
+	{ timeoutMs = 5000, intervalMs = 100 } = {},
+) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const lead = await getLeadByConversationId(conversationId);
+		if (lead) return lead;
+		await new Promise((r) => setTimeout(r, intervalMs));
+	}
+	throw new Error(`waitForLead: timeout (${timeoutMs}ms) esperando lead da conversation ${conversationId}`);
+}
+
 export async function getConversation(conversationId: string) {
 	const db = await getDbClient();
 	const result = await db.query("SELECT * FROM conversations WHERE id = $1", [conversationId]);
 	return result.rows[0] || null;
+}
+
+export async function getMessages(conversationId: string) {
+	const db = await getDbClient();
+	const result = await db.query(
+		"SELECT role, content, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+		[conversationId],
+	);
+	return result.rows as Array<{ role: string; content: string; created_at: Date }>;
+}
+
+export async function getArtifactsForConversation(conversationId: string) {
+	const db = await getDbClient();
+	const result = await db.query(
+		`SELECT a.type, a.payload, a.created_at
+		 FROM artifacts a
+		 JOIN messages m ON m.id = a.message_id
+		 WHERE m.conversation_id = $1
+		 ORDER BY a.created_at ASC`,
+		[conversationId],
+	);
+	return result.rows as Array<{ type: string; payload: unknown; created_at: Date }>;
 }
 
 export async function getLeadEvents(leadId: string) {

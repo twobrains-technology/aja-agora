@@ -1,8 +1,9 @@
 # aja-agora — local dev por workspace
 #
 # Convenção TwoBrains: cada branch/worktree é um workspace isolado com
-# seu Postgres + App em containers nomeados por WORKSPACE_NAME. Só o
-# Letta é compartilhado (~/.tb-local/_shared/, network tb-local-net).
+# seu Postgres + App em containers nomeados por WORKSPACE_NAME. A memória
+# cross-channel vive no próprio Postgres do workspace (FIX-81 — Letta removido).
+# A rede tb-local-net segue compartilhada (outros serviços _shared/).
 #
 # DNS local via OrbStack (label dev.orbstack.domains):
 #   - aja-${WORKSPACE_NAME}.orb.local       → app
@@ -123,11 +124,16 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      # FIX-82: bucket DEDICADO de documentos de cliente (PII de identidade) —
+      # mesmo MinIO/endpoint acima, bucket separado. KMS vazio em dev (MinIO
+      # local não tem KMS configurado; prod é PENDENTE-KAIRO).
+      S3_CLIENT_DOCS_BUCKET: ${S3_CLIENT_DOCS_BUCKET:-aja-client-docs}
+      S3_CLIENT_DOCS_KMS_KEY_ID: ${S3_CLIENT_DOCS_KMS_KEY_ID:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
-      LETTA_BASE_URL: http://letta:8283
-      LETTA_API_KEY: ${LETTA_API_KEY:?LETTA_API_KEY required (= LETTA_SERVER_PASS from ~/.tb-local/_shared/.env.shared)}
-      LETTA_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
-      LETTA_EMBEDDING: ${LETTA_EMBEDDING:-openai/text-embedding-3-small}
+      # Memória cross-channel re-homeada pro Postgres (FIX-81). O Letta foi
+      # removido — a memória vive na tabela memory_identities do próprio DB.
+      MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
+      MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
       BETTER_AUTH_URL: http://aja-${WORKSPACE_NAME}.orb.local
       APP_URL: http://aja-${WORKSPACE_NAME}.orb.local

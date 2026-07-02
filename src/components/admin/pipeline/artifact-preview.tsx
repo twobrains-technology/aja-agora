@@ -12,9 +12,9 @@ const ARTIFACT_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 
 const ARTIFACT_LABELS: Record<string, string> = {
 	group_card: "Grupo",
-	simulation_result: "Simulacao",
-	recommendation_card: "Recomendacao",
-	comparison_table: "Comparacao",
+	simulation_result: "Simulação",
+	recommendation_card: "Recomendação",
+	comparison_table: "Comparação",
 };
 
 const brlFormatter = new Intl.NumberFormat("pt-BR", {
@@ -33,7 +33,7 @@ function getArtifactSummary(type: string, payload: Record<string, unknown>): str
 		case "group_card":
 			return `${payload.administradora} - ${formatBRL(payload.creditValue)} (${payload.termMonths} meses)`;
 		case "simulation_result":
-			return `${formatBRL(payload.monthlyPayment)}/mes, ${payload.termMonths} meses`;
+			return `${formatBRL(payload.monthlyPayment)}/mês, ${payload.termMonths} meses`;
 		case "recommendation_card":
 			return `${payload.administradora} - Score ${Math.round((payload.score as number) * 100)}%`;
 		case "comparison_table": {

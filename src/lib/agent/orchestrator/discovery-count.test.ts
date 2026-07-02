@@ -29,14 +29,28 @@ describe("FIX-7 — extractDiscoveryCount", () => {
 		).toBe(3);
 	});
 
-	it("search_groups: conta o array de grupos", () => {
-		expect(extractDiscoveryCount("search_groups", [{ id: "a" }])).toBe(1);
-		expect(extractDiscoveryCount("search_groups", [{ id: "a" }, { id: "b" }])).toBe(2);
+	// REV-A (modelo errado): o teste antigo passava um ARRAY cru
+	// (`[{id}]`), mas `executeSearchGroups` NUNCA devolve array — devolve
+	// `{ groups, total }` (ai-sdk.ts:302). O branch `Array.isArray(output)`
+	// era código MORTO: com o shape real, retornava sempre null → o
+	// single-option guard (FIX-7) nunca disparava no caminho search_groups
+	// e o recommendation_card duplicava o grupo. Teste agora usa o shape
+	// REAL de produção.
+	it("search_groups: conta groups no shape real {groups,total}", () => {
+		expect(extractDiscoveryCount("search_groups", { groups: [{ id: "a" }], total: 1 })).toBe(1);
+		expect(
+			extractDiscoveryCount("search_groups", {
+				groups: [{ id: "a" }, { id: "b" }],
+				total: 2,
+			}),
+		).toBe(2);
 	});
 
 	it("outras tools / shapes desconhecidos → null (não interfere)", () => {
 		expect(extractDiscoveryCount("simulate_quota", { groupId: "x" })).toBeNull();
 		expect(extractDiscoveryCount("search_groups", { weird: true })).toBeNull();
+		// DISCOVERY_NO_CONTEXT (sem adapter) tem shape {error} → não conta.
+		expect(extractDiscoveryCount("search_groups", { error: "no ctx" })).toBeNull();
 		expect(extractDiscoveryCount("recommend_groups", null)).toBeNull();
 	});
 });

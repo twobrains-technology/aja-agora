@@ -1,6 +1,5 @@
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
-import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 
 export function formatTextForWhatsApp(text: string): string {
 	return (
@@ -81,10 +80,32 @@ function formatBRLCompact(value: number): string {
 	return `R$ ${value}`;
 }
 
+// Shape navegável do payload interactive do WhatsApp. Tipa o que os testes/
+// consumidores acessam (body.text, action.button/buttons/sections.rows) e mantém
+// índice [k]: unknown em cada nível pra os ~20 builders não baterem em
+// excess-property (campos extras como header/footer são absorvidos).
+export interface WhatsAppInteractive {
+	type?: string;
+	body?: { text?: string; [k: string]: unknown };
+	action?: {
+		button?: string;
+		buttons?: Array<{
+			reply: { id: string; title?: string; [k: string]: unknown };
+			[k: string]: unknown;
+		}>;
+		sections?: Array<{
+			rows?: Array<{ id: string; title?: string; description?: string; [k: string]: unknown }>;
+			[k: string]: unknown;
+		}>;
+		[k: string]: unknown;
+	};
+	[k: string]: unknown;
+}
+
 export interface WhatsAppResponse {
 	type: "text" | "interactive";
 	text?: string;
-	interactive?: Record<string, unknown>;
+	interactive?: WhatsAppInteractive;
 }
 
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
@@ -214,9 +235,14 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 			type: "button",
 			body: { text: body },
 			action: {
+				// FIX-108 (decisão Kairo 2026-06-28): a recomendada vem em DESTAQUE
+				// (este card) com os CTAs de ação + "Ver outras opções", que abre a
+				// comparação das alternativas (handleShowOthers). Não é mais lista
+				// plana. WhatsApp limita a 3 botões — cabe certo.
 				buttons: [
 					{ type: "reply", reply: { id: `interest_${p.id}`, title: "Tenho interesse!" } },
 					{ type: "reply", reply: { id: `simulate_${p.id}`, title: "Simular valores" } },
+					{ type: "reply", reply: { id: "show_others", title: "Ver outras opções" } },
 				],
 			},
 		},
@@ -427,38 +453,25 @@ export function resolveRange(
 	return null;
 }
 
+// FIX-109 (decisão Kairo 2026-06-28): o valor do bem agora é CONVERSA — o
+// usuário fala quanto custa o que quer ("uns 80 mil"), sem o componente de
+// faixas. O agente (bloco-jornada-entrada FIX-104) parou de emitir value_picker;
+// este mapper degrada pra um pedido conversacional caso o artifact ainda chegue
+// — anti-drop preservado (nunca retorna null), mas NÃO renderiza mais a lista.
+// TODO(bloco-jornada-entrada): confirmar a parada de emissão do value_picker.
 export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const category = payload.category as string;
-	const ranges = RANGES[category] ?? RANGES.auto;
-
-	const categoryLabel: Record<string, string> = {
-		imovel: "Imóvel",
-		auto: "Carro",
-		moto: "Moto",
-		servicos: "Serviço",
+	const category = payload.category as string | undefined;
+	const bemLabel: Record<string, string> = {
+		imovel: "imóvel",
+		auto: "carro",
+		moto: "moto",
+		servicos: "serviço",
 	};
-
-	const body = `Escolha a faixa de valor do seu *${categoryLabel[category] ?? "bem"}*:`;
+	const bem = (category && bemLabel[category]) || "bem";
 
 	return {
-		type: "interactive",
-		interactive: {
-			type: "list",
-			body: { text: body },
-			action: {
-				button: "Ver faixas de valor",
-				sections: [
-					{
-						title: `Faixas — ${categoryLabel[category] ?? "Consórcio"}`,
-						rows: ranges.map((r) => ({
-							id: r.id,
-							title: r.title.slice(0, 24),
-							description: r.desc.slice(0, 72),
-						})),
-					},
-				],
-			},
-		},
+		type: "text",
+		text: `Quanto custa o ${bem} que você tem em mente? Pode me dizer o valor aproximado, tipo "uns 80 mil". 💰`,
 	};
 }
 
@@ -470,42 +483,18 @@ export function transitionBridgeText(specialist: { name: string; categoryLabel: 
 }
 
 import {
-	CREDIT_BUCKETS,
 	LANCE_EMBUTIDO_OPTIONS,
 	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAMES,
 } from "@/lib/agent/qualify-config";
 
-const CREDIT_RANGES = CREDIT_BUCKETS;
-
-export function creditRangeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "moto" | "servicos",
-	prefix?: string,
-): WhatsAppResponse {
-	const ranges = CREDIT_RANGES[category];
-	const question = gateQuestion("credit", category) ?? "";
-	const text = prefix ? `${prefix}\n\n${question}` : question;
-	return {
-		type: "interactive",
-		interactive: {
-			type: "list",
-			body: { text },
-			action: {
-				button: "Escolher faixa",
-				sections: [
-					{
-						title: "Faixas de valor do bem",
-						rows: ranges.map((r) => ({
-							id: `credit_${category}_${r.token}`,
-							title: r.title.slice(0, 24),
-							description: (r.desc ?? "").slice(0, 72),
-						})),
-					},
-				],
-			},
-		},
-	};
-}
+// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA no WhatsApp — o
+// gate credit deixou de renderizar a lista de faixas. `creditRangeQuestionToWhatsApp`
+// / `resolveCreditReply` (e o `credit_` roteado) foram aposentados; o adapter
+// pergunta o valor por TEXTO (gateTextPrompt → gateQuestion("credit")) e o
+// backstop parseAssetValue captura a resposta livre. CREDIT_BUCKETS segue vivo
+// em qualify-config (lanceValueOptions/referência de faixa), só não é mais
+// consumido aqui.
 
 export function timeframeQuestionToWhatsApp(
 	category: "imovel" | "auto" | "moto" | "servicos",
@@ -533,24 +522,6 @@ export function timeframeQuestionToWhatsApp(
 			},
 		},
 	};
-}
-
-export function resolveCreditReply(replyId: string): {
-	category: "imovel" | "auto" | "moto" | "servicos";
-	min: number;
-	max: number;
-	title: string;
-} | null {
-	if (!replyId.startsWith("credit_")) return null;
-	const parts = replyId.split("_");
-	if (parts.length < 3) return null;
-	const category = parts[1] as "imovel" | "auto" | "moto" | "servicos";
-	const token = parts[2];
-	const ranges = CREDIT_RANGES[category];
-	if (!ranges) return null;
-	const range = ranges.find((r) => r.token === token);
-	if (!range) return null;
-	return { category, min: range.min, max: range.max, title: range.title };
 }
 
 export function resolveTimeframeReply(replyId: string): {
@@ -1084,13 +1055,17 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	};
 }
 
-/** Encaminhamento pra assinatura (link). */
+/** Encaminhamento da proposta pronta (link). PARIDADE DES-1 (FIX-116): o
+ * `consortiumProposalLink` é o PDF da PROPOSTA de consórcio, não um portal de
+ * assinatura — a assinatura/efetivação é etapa posterior da mesa. Espelha o web
+ * (signature-handoff.tsx: "Sua proposta está pronta" / "Ver minha proposta") e
+ * compartilha a proibição de /assinatura|assinar/i com o canal web. */
 export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = (payload.administradora as string) ?? "administradora";
 	const link = payload.consortiumProposalLink as string;
 	return {
 		type: "text",
-		text: `Perfeito! Você está contratando um consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil — e a gente segue com você até a contemplação.\n\nÉ só finalizar a assinatura aqui:\n${link}`,
+		text: `Sua proposta está pronta! 🎉 Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
 	};
 }
 
@@ -1102,34 +1077,134 @@ export function documentUploadToWhatsApp(_payload: Record<string, unknown>): Wha
 	};
 }
 
-/** Simulador-agulha estático (WhatsApp não tem slider) — marcos 3/6/12/24 meses. */
-export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
-	const creditValue = Number(payload.creditValue ?? 0);
-	const termMonths = Number(payload.termMonths ?? 0);
-	if (!creditValue || !termMonths) {
-		return {
-			type: "text",
-			text: "Em quantos meses você quer ser contemplado? Me diz que eu te mostro o lance necessário e o valor que você recebe.",
-		};
-	}
-	const marks = contemplationDialMarks({
-		creditValue,
-		termMonths,
-		monthlyPayment: Number(payload.monthlyPayment ?? 0),
-		historicalWinningBidPct: payload.historicalWinningBidPct as number | undefined,
-		// FIX-C1: calibra no par real da oferta — WhatsApp mostra os mesmos
-		// números do card, igual ao dial web.
-		referenceMonth: payload.referenceMonth as number | undefined,
-		maxEmbutidoPct: payload.maxEmbutidoPct as number | undefined,
-	});
-	const lines = marks.map((m) => {
-		if (m.mode === "sorteio")
-			return `*${m.targetMonth}m:* mais pelo sorteio — lance opcional, parcela menor`;
-		return `*${m.targetMonth}m:* lance ~${m.requiredLancePct}% · recebe ${brlWa(m.receivedCredit)}`;
-	});
+// FIX-122 (D13) — respostas do handler de mídia INBOUND (par do convite acima).
+// A promessa "me manda aqui mesmo" agora é cumprida: cada foto recebida sobe pro
+// MESMO destino do web (uploadContractDocument) e o cliente recebe confirmação +
+// o próximo slot pedido. Nunca silêncio — mesmo nos caminhos de erro.
+
+/** Confirmação de uma foto recebida no WhatsApp. `allDone` = era o último slot
+ * (ficha completa); senão pede o verso. */
+export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 	return {
 		type: "text",
-		text: `Quando você quer ser contemplado? Olha as opções:\n\n${lines.join("\n")}\n\n_Estimativa a partir dos dados da oferta — contemplação não é garantida._`,
+		text: allDone
+			? "Recebi ✅. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			: "Recebi a frente ✅. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
+	};
+}
+
+/** Cliente mandou foto, mas a conversa ainda não chegou no Passo 6 (sem proposta
+ * em 'documentos'). Acolhe sem prometer nada fora de ordem. */
+export function documentNotReadyToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui. 😊",
+	};
+}
+
+/** O upload automatizado falhou (anti-bot/drift do portal) → devolve o link
+ * oficial como fallback, mantendo a jornada viva. */
+export function documentUploadFallbackToWhatsApp(link: string): WhatsAppResponse {
+	return {
+		type: "text",
+		text: `Recebi sua foto, mas não consegui anexar por aqui. Finaliza rapidinho neste link: ${link}`,
+	};
+}
+
+/** Não deu pra baixar a mídia da Graph API (foto corrompida, expirada etc.). */
+export function documentDownloadFailedToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Não consegui abrir sua foto por aqui. Pode mandar de novo, por favor?",
+	};
+}
+
+/** Foto chegou sem conversa em andamento (waId sem registro). Convida a começar. */
+export function documentNoConversationToWhatsApp(): WhatsAppResponse {
+	return {
+		type: "text",
+		text: "Recebi sua foto, mas ainda não temos uma conversa em andamento por aqui. Manda um oi que eu começo com você! 😊",
+	};
+}
+
+// FIX-109: o WhatsApp não tem slider — o simulador-agulha vira um LOOP
+// CONVERSACIONAL conduzido pelo agente (bloco-jornada-entrada FIX-106). O
+// usuário diz o mês-alvo, o agente recalcula via computeContemplationDial e
+// devolve o CENÁRIO. Aqui só FORMATAMOS o cenário — nunca recalculamos.
+const SIMULATOR_DISCLAIMER =
+	"_Estimativa a partir dos dados da oferta — contemplação não é garantida._";
+
+/** Visão mínima do cenário calculado (ContemplationDialResult) que o agente
+ * devolve por iteração. Lido defensivamente do payload (não recalcula). */
+interface DialScenarioView {
+	targetMonth: number;
+	mode?: "lance" | "sorteio";
+	requiredLancePct?: number;
+	requiredLanceValue?: number;
+	receivedCredit?: number;
+	paymentAfterContemplation?: number;
+}
+
+/** Extrai o cenário JÁ calculado pelo agente. Aceita tanto `payload.scenario`
+ * (objeto aninhado) quanto os campos do ContemplationDialResult no topo do
+ * payload. Retorna null quando o payload traz só os inputs do plano (abertura
+ * do simulador) — aí a apresentação é o convite ao loop.
+ * TODO(bloco-jornada-entrada): confirmar o shape final do cenário no payload. */
+function readDialScenario(payload: Record<string, unknown>): DialScenarioView | null {
+	const raw = (payload.scenario as Record<string, unknown> | undefined) ?? payload;
+	const targetMonth = Number(raw.targetMonth);
+	// "cenário calculado" exige o RESULTADO (mês-alvo + lance/modo), não só os
+	// inputs (initialTargetMonth/creditValue do ContemplationDialPayload).
+	const hasResult = raw.requiredLancePct !== undefined || raw.mode !== undefined;
+	if (!Number.isFinite(targetMonth) || !hasResult) return null;
+	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+	return {
+		targetMonth,
+		mode: raw.mode === "sorteio" || raw.mode === "lance" ? raw.mode : undefined,
+		requiredLancePct: num(raw.requiredLancePct),
+		requiredLanceValue: num(raw.requiredLanceValue),
+		receivedCredit: num(raw.receivedCredit),
+		paymentAfterContemplation: num(raw.paymentAfterContemplation),
+	};
+}
+
+/** Formata UMA iteração do simulador conversacional (o cenário recalculado pelo
+ * agente). Só apresentação — o cálculo vem de computeContemplationDial. */
+function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
+	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
+	const lines: string[] = [`*Contemplação em ${monthLabel}* 🎯`, ""];
+
+	const isSorteio = s.mode === "sorteio" || (s.requiredLancePct ?? 0) <= 0;
+	if (isSorteio) {
+		lines.push("Nesse prazo dá pra contar mais com o sorteio — lance opcional e parcela menor.");
+	} else {
+		const lanceStr =
+			s.requiredLanceValue !== undefined
+				? `*${s.requiredLancePct}%* (${brlWa(s.requiredLanceValue)})`
+				: `*${s.requiredLancePct}%*`;
+		lines.push(`Pra antecipar pra esse mês, o lance fica em torno de ${lanceStr}.`);
+		if (s.receivedCredit !== undefined) {
+			lines.push(`Você recebe ${brlWa(s.receivedCredit)} de crédito.`);
+		}
+		if (s.paymentAfterContemplation !== undefined) {
+			lines.push(
+				`Depois da contemplação, a parcela fica em ~${brlWa(s.paymentAfterContemplation)}/mês.`,
+			);
+		}
+	}
+	lines.push("", SIMULATOR_DISCLAIMER);
+	return { type: "text", text: lines.join("\n") };
+}
+
+export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	// Iteração do loop: o agente já calculou o cenário do mês-alvo → formata.
+	const scenario = readDialScenario(payload);
+	if (scenario) return simulatorScenarioToWhatsApp(scenario);
+	// Abertura do simulador (só inputs do plano): sem slider, convidamos o loop —
+	// o usuário diz o mês-alvo e o agente itera (recalcula a cada resposta).
+	return {
+		type: "text",
+		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe. 🎯",
 	};
 }
 
@@ -1175,9 +1250,12 @@ export function artifactToWhatsApp(
 	}
 }
 
-/** Card de decisão (jornada do .docx etapa 4). 3 botões; os títulos (≤20 chars)
- * caem no processamento de texto (sem handler dedicado) e os fluxos existentes
- * interpretam (contratar → lead form, especialista → handoff). */
+/** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
+ * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
+ * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
+ * irmãos "Contratar agora"/"Falar c/ consultor" (decision_contratar/
+ * decision_especialista) ainda caem no processamento de texto (contratar →
+ * fechamento, especialista → handoff) — fora do escopo da D22. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

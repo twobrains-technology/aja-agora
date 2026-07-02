@@ -16,13 +16,16 @@ const EXPECTED_ORDER = [
 	"em_negociacao",
 	"proposta_enviada",
 	"na_administradora",
+	// FIX-126 (D17): atendente de mesa assumiu o caso (claim "Vou atender"), entre
+	// na_administradora e aguardando_pagamento (forward-only não regride no claim).
+	"em_atendimento",
 	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",
 ] as const;
 
 describe("FIX-43 — STAGE_ORDER", () => {
-	it("contém todas as 8 raias + perdido, na ordem da proposta", () => {
+	it("contém todas as 9 raias + perdido, na ordem da proposta", () => {
 		expect([...STAGE_ORDER]).toEqual([...EXPECTED_ORDER]);
 	});
 

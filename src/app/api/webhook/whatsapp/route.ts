@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { markAsRead } from "@/lib/whatsapp/api";
+import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
+import { updateLastInboundAt } from "@/app/actions/whatsapp";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
@@ -50,6 +52,21 @@ export async function POST(req: NextRequest) {
 	const changes = entry?.changes?.[0];
 	const value = changes?.value;
 
+	// ---- Template status updates (message_template_status_update) ----
+	// FIX-202: a Meta notifica aprovação/rejeição/pausa dos Message Templates por
+	// aqui (não em `statuses`, que é entrega de mensagem). Reflete no
+	// whatsappTemplates e, ao aprovar, esvazia a fila de confirmações (FIX-201).
+	// Template desconhecido localmente é logado e ignorado (sem linha órfã).
+	if (changes?.field === "message_template_status_update" && value) {
+		const { applyTemplateStatusUpdate, parseTemplateStatusChange } = await import(
+			"@/lib/whatsapp/template-sync"
+		);
+		applyTemplateStatusUpdate(parseTemplateStatusChange(value)).catch((err) =>
+			console.error("[whatsapp] template status update failed:", err),
+		);
+		return NextResponse.json({ status: "ok" });
+	}
+
 	// ---- Status updates (sent, delivered, read) ----
 	if (value?.statuses) {
 		for (const status of value.statuses) {
@@ -84,6 +101,12 @@ export async function POST(req: NextRequest) {
 			// is fired later in the processor only on the AI path.
 			markAsRead(message.id).catch(() => {});
 
+			// FIX-86: Atualiza lastInboundAt ao receber mensagem do cliente.
+			// Isso abre/reabre a janela de 24h para texto livre.
+			updateLastInboundAt(from, message.id).catch((err) =>
+				console.error("[whatsapp] Update lastInboundAt failed:", err),
+			);
+
 			switch (msgType) {
 				case "text": {
 					const text = message.text?.body;
@@ -110,6 +133,27 @@ export async function POST(req: NextRequest) {
 						processInteractiveReply(from, reply.id, reply.title, contactName, message.id).catch(
 							(err) => console.error("[whatsapp] Interactive processor error:", err),
 						);
+					}
+					break;
+				}
+
+				// FIX-122 (D13): mídia inbound (Passo 6 KYC). A copy convida "me manda
+				// a foto do RG/CNH aqui mesmo" — antes a imagem caía no default e era
+				// dropada em silêncio. Agora baixa da Graph API e sobe pro MESMO destino
+				// do web (uploadContractDocument). Async best-effort, mantém o 200
+				// imediato como todo o resto do webhook.
+				case "image":
+				case "document": {
+					const media = msgType === "image" ? message.image : message.document;
+					const mediaId = media?.id;
+					if (mediaId) {
+						handleDocumentInbound({
+							from,
+							mediaId,
+							filename: message.document?.filename,
+						}).catch((err) => console.error("[whatsapp] Document inbound error:", err));
+					} else {
+						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
 					}
 					break;
 				}

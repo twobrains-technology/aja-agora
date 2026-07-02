@@ -69,7 +69,7 @@ describe("FIX-36-PRE-TOOL-HONESTY — frases-modelo pré-tool não afirmam achad
 
 	it("system-prompt: tensão de design preservada — NÃO troca 'encontrei' por meta-narrativa ('vou buscar')", () => {
 		// A proibição de meta-narrativa segue (a solução não vira "vou buscar").
-		expect(SPECIALIST_BASE_PROMPT).toMatch(/proibido tambem narrar mecanica|"vou buscar"/i);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/proibido tamb[ée]m narrar mec[âa]nica|"vou buscar"/i);
 	});
 
 	it("ANÚNCIO pós-tool PRESERVADO: o docx 'Encontramos 3 boas opções' segue no step pós-search (não foi over-corrigido)", () => {
@@ -82,7 +82,7 @@ describe("FIX-36-PRE-TOOL-HONESTY — frases-modelo pré-tool não afirmam achad
 		};
 		const d = buildSearchSummaryDirective({ category: "auto", meta });
 		// A copy do docx (afirmação PÓS-tool) NÃO foi removida por engano.
-		expect(d).toContain("Encontramos 3 boas opcoes");
+		expect(d).toContain("Encontramos 3 boas opções");
 		// E a ordem honesta está garantida: tool ANTES de anunciar.
 		expect(d).toMatch(/Chame search_groups[\s\S]*?ANTES de anunciar/i);
 	});

@@ -84,3 +84,43 @@ describe("FIX-56 — rankGroups diversifica por administradora", () => {
 		expect(top.map((s) => s.group.id)).toEqual(["porto-1", "porto-2", "porto-3"]);
 	});
 });
+
+// ============================================================================
+// FIX-96-lite (Kairo, 2026-07-01 — "não pode limitar"): rankGroups() SEM topN
+// explícito não pode mais cortar em 3. Descartar ofertas reais da Bevi sem que
+// o usuário peça é o próprio bug — o teto era um valor arbitrário, não uma
+// regra de negócio real.
+// ============================================================================
+describe("FIX-96-lite — rankGroups sem teto por default", () => {
+	it("devolve TODOS os grupos quando topN não é passado, mesmo com mais de 3", () => {
+		const groups = [
+			g("porto-1", "Porto", 8),
+			g("itau-1", "Itaú", 7),
+			g("brad-1", "Bradesco", 6),
+			g("santander-1", "Santander", 5),
+			g("caixa-1", "Caixa", 4),
+			g("bb-1", "BB", 3),
+		];
+		const top = rankGroups(groups, input);
+		expect(top).toHaveLength(6);
+	});
+
+	it("universo grande (10 administradoras distintas) não é truncado", () => {
+		const groups = Array.from({ length: 10 }, (_, i) => g(`g-${i}`, `Adm${i}`, 8 - i * 0.5));
+		const top = rankGroups(groups, input);
+		expect(top).toHaveLength(10);
+		// mantém ordem por score (todas admin distintas, sem dedup a fazer)
+		expect(top.map((s) => s.group.id)).toEqual(groups.map((g) => g.id));
+	});
+
+	it("continua diversificando por administradora mesmo sem teto (mesma adm repetida vai pro final)", () => {
+		const groups = [
+			g("porto-1", "Porto", 9),
+			g("porto-2", "Porto", 8), // repete admin — deve ceder lugar às distintas primeiro
+			g("itau-1", "Itaú", 7),
+		];
+		const top = rankGroups(groups, input);
+		expect(top).toHaveLength(3);
+		expect(top.map((s) => s.group.id)).toEqual(["porto-1", "itau-1", "porto-2"]);
+	});
+});

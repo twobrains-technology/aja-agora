@@ -8,6 +8,7 @@ import {
 	HeadsetIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
+	MessagesSquareIcon,
 	SettingsIcon,
 	UserIcon,
 	UsersIcon,
@@ -30,7 +31,7 @@ import {
 
 const settingsItems = [
 	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },
-	{ title: "Configuracoes", href: "/admin/settings", icon: SettingsIcon },
+	{ title: "Configurações", href: "/admin/settings", icon: SettingsIcon },
 ];
 
 export function AppSidebar() {
@@ -44,6 +45,7 @@ export function AppSidebar() {
 		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },
 		{ title: "Agentes", href: "/admin/personas", icon: BotIcon },
+		{ title: "Templates WhatsApp", href: "/admin/whatsapp/templates", icon: MessagesSquareIcon },
 		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
 	];
 
@@ -98,7 +100,7 @@ export function AppSidebar() {
 				)}
 
 				<SidebarGroup>
-					<SidebarGroupLabel>Aplicacoes</SidebarGroupLabel>
+					<SidebarGroupLabel>Aplicações</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{applicationItems.map((item) => (
@@ -118,7 +120,7 @@ export function AppSidebar() {
 				</SidebarGroup>
 
 				<SidebarGroup>
-					<SidebarGroupLabel>Configuracoes</SidebarGroupLabel>
+					<SidebarGroupLabel>Configurações</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{settingsItems.map((item) => (

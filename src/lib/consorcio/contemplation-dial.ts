@@ -64,12 +64,20 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 export function computeContemplationDial(input: ContemplationDialInput): ContemplationDialResult {
-	const carta = Math.max(0, input.creditValue);
-	const term = Math.max(1, Math.round(input.termMonths));
-	const targetMonth = clamp(Math.round(input.targetMonth), 1, term);
-	const maxEmbutido = clamp(input.maxEmbutidoPct ?? DEFAULT_MAX_EMBUTIDO_PCT, 0, MAX_BID_PCT);
+	// BUG-DIAL-NAN (auditoria Opus 2026-06-28): blinda a fronteira contra input fora
+	// de contrato (NaN/não-finito — ex.: Math.max(0, NaN) === NaN a montante). Sem
+	// isso, requiredLanceValue/embeddedBidValue vazavam NaN → "R$ NaN" na tela.
+	const finite = (n: number, fallback: number) => (Number.isFinite(n) ? n : fallback);
+	const carta = Math.max(0, finite(input.creditValue, 0));
+	const term = Math.max(1, Math.round(finite(input.termMonths, 1)));
+	const targetMonth = clamp(Math.round(finite(input.targetMonth, 1)), 1, term);
+	const maxEmbutido = clamp(
+		finite(input.maxEmbutidoPct ?? DEFAULT_MAX_EMBUTIDO_PCT, DEFAULT_MAX_EMBUTIDO_PCT),
+		0,
+		MAX_BID_PCT,
+	);
 	const winningBid = clamp(
-		input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT,
+		finite(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, DEFAULT_WINNING_BID_PCT),
 		5,
 		MAX_BID_PCT,
 	);
@@ -78,7 +86,7 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	// oferta REAL informa o par (lance%, mês) — probContemplacaoMeses da Bevi —
 	// a curva é calibrada nele e dial == card. Sem dado real, âncora heurística
 	// de 25% do prazo. Antes do mês de referência exige mais lance; depois, menos.
-	const refRaw = Math.round(input.referenceMonth ?? 0);
+	const refRaw = Math.round(finite(input.referenceMonth ?? 0, 0));
 	const anchorMonth =
 		refRaw >= 1 ? clamp(refRaw, 1, term) : clamp(Math.round(term * 0.25), 4, term);
 	const raw = winningBid * (anchorMonth / targetMonth);

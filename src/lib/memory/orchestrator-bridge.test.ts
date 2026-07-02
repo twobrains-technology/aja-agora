@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
-import { resetLettaCircuit } from "./circuit-state";
 import {
 	loadMemoryContextForTurn,
 	memorySystemMessageFromContext,
@@ -15,10 +14,6 @@ import {
 } from "./orchestrator-bridge";
 import type { MemoryContext, UserIdentity } from "./types";
 
-beforeEach(() => {
-	resetLettaCircuit();
-});
-
 afterEach(() => {
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
@@ -26,7 +21,7 @@ afterEach(() => {
 
 describe("resolveIdentityForTurn", () => {
 	beforeEach(() => {
-		vi.stubEnv("LETTA_NAMESPACE", "test-ns");
+		vi.stubEnv("MEMORY_NAMESPACE", "test-ns");
 	});
 
 	it("whatsapp com waId válido → phone identity E.164", () => {

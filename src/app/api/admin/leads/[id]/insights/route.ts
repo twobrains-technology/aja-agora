@@ -84,7 +84,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
 	try {
 		const { text } = await generateText({
-			model: anthropic("claude-haiku-4-5-20251001"),
+			model: anthropic("claude-haiku-4-5"),
 			system: INSIGHTS_SYSTEM_PROMPT,
 			prompt: buildInsightPrompt(lead.conversation.messages),
 		});
@@ -106,7 +106,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	await db.delete(leadInsights).where(eq(leadInsights.leadId, leadId));
 
 	const now = new Date();
-	const modelName = "claude-haiku-4-5-20251001";
+	const modelName = "claude-haiku-4-5";
 
 	await db.insert(leadInsights).values([
 		{

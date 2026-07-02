@@ -40,6 +40,9 @@ const POST_REVEAL: ConversationMetadata = {
 describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos else-ifs)", () => {
 	it("a ordem é exatamente a do if-chain original do runner", () => {
 		expect(ARTIFACT_GUARD_RULES.map((r) => r.name)).toEqual([
+			// FIX-187: turno com erro de descoberta → nenhuma proposta, é a regra
+			// mais forte (1ª da lista, vence qualquer outra).
+			"discovery-failed",
 			"whatsapp-optin",
 			"post-closure",
 			"premature-contract",
@@ -307,5 +310,60 @@ describe("FIX-20 — wiring: runner consome a tabela (zero if-chain inline)", ()
 				`${inlineGuard} ainda inline no runner — o FIX-20 extraiu pra tabela`,
 			).not.toMatch(new RegExp(`const ${inlineGuard}`));
 		}
+	});
+});
+
+// FIX-187 (Kairo 2026-07-01) — 2ª linha: quando a descoberta do turno falhou
+// (sinal discoveryFailedThisTurn do FIX-186), NENHUM artifact da família de
+// descoberta/proposta pode ser emitido — mesmo que o modelo tente. Complementa a
+// 1ª linha (action-policy no execute); o artifact é emitido do INPUT no tool-call
+// (antes do tool-result), então o guard reativo é a rede que realmente barra o card.
+describe("FIX-187 — discovery-failed dropa a família de proposta quando a descoberta falhou", () => {
+	const PROPOSAL_FAMILY = [
+		"recommendation_card",
+		"simulation_result",
+		"comparison_table",
+		"group_card",
+		"decision_prompt",
+		"contemplation_dial",
+	] as const;
+
+	for (const artifactType of PROPOSAL_FAMILY) {
+		it(`suprime ${artifactType} quando discoveryFailedThisTurn=true`, () => {
+			const v = evaluateArtifactGuards(
+				makeInput({ artifactType: artifactType as never, discoveryFailedThisTurn: true }),
+			);
+			expect(v.allow).toBe(false);
+			if (!v.allow) {
+				expect(v.rule).toBe("discovery-failed");
+				expect(v.logLine).toMatch(/discovery-failed/);
+			}
+		});
+	}
+
+	it("NÃO suprime a família quando discoveryFailedThisTurn=false (fluxo normal não regride)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "simulation_result",
+				userIntent: "providing_info",
+				discoveryFailedThisTurn: false,
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+
+	it("precedência: discovery-failed vence as demais (é a 1ª regra)", () => {
+		// recommendation_card pós-fechamento E descoberta falhada → discovery-failed
+		// assina o log (vem antes de post-closure no array).
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: { ...POST_REVEAL, contractClosed: true },
+				artifactType: "recommendation_card",
+				discoveryFailedThisTurn: true,
+			}),
+		);
+		expect(v.allow).toBe(false);
+		if (!v.allow) expect(v.rule).toBe("discovery-failed");
 	});
 });

@@ -19,7 +19,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
 	return (
 		<Card className="shadow-sm">
 			<CardHeader>
-				<CardTitle>Funil de Conversao</CardTitle>
+				<CardTitle>Funil de Conversão</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{allEmpty ? (

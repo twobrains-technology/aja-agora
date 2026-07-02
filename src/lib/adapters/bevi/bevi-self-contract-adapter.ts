@@ -128,6 +128,24 @@ export class IdentityNotCollectedError extends Error {
 	}
 }
 
+/** FIX-72 — o groupId pedido NÃO está no `offerIndex` da descoberta atual: id
+ * fabricado pela LLM (`auto-180k`, `auto-180k-kairo`), oferta expirada (TTL Bevi)
+ * ou busca ainda não feita. NÃO é falha de dados nem de rede — é sinal pra
+ * RE-BUSCAR. Tipado de propósito: a tool captura por `instanceof` e devolve uma
+ * diretiva acionável (re-busca / id literal) em vez de propagar erro cru, que o
+ * AI SDK converteria em tool-error "instabilidade" travando o usuário. É a FONTE
+ * DA VERDADE do conjunto (o adapter sabe o que existe), desacoplada do formato do
+ * id — funciona pra qualquer administradora atrás do adapter pattern. */
+export class GroupNotInDiscoveryError extends Error {
+	constructor(public readonly groupId: string) {
+		super(
+			`Oferta/grupo "${groupId}" não encontrado na descoberta atual — ` +
+				"refaça a busca antes de simular/detalhar (ofertas Bevi expiram; o id vem literal da busca).",
+		);
+		this.name = "GroupNotInDiscoveryError";
+	}
+}
+
 export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	private proposalReady = false;
 	private currentSegment: string | null = null;
@@ -161,20 +179,15 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 
 	async simulateQuota(params: SimulateQuotaParams): Promise<QuotaSimulation> {
 		const offer = this.offerIndex.get(params.groupId);
-		if (!offer) {
-			throw new Error(
-				`Oferta/grupo "${params.groupId}" não encontrado na descoberta atual — ` +
-					"refaça a busca antes de simular (ofertas Bevi expiram).",
-			);
-		}
+		// FIX-72: id fora do conjunto real → erro TIPADO (re-busca), nunca Error cru.
+		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return beviOfferToQuotaSimulation(offer);
 	}
 
 	async getGroupDetails(params: GetGroupDetailsParams): Promise<GroupDetails> {
 		const offer = this.offerIndex.get(params.groupId);
-		if (!offer) {
-			throw new Error(`Oferta/grupo "${params.groupId}" não encontrado na descoberta atual.`);
-		}
+		// FIX-72: detalhar id fora do conjunto também sinaliza re-busca (era Error cru).
+		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return {
 			id: offer.quotaId,
 			administradora: offer.bankLabel ?? offer.bank,

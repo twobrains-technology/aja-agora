@@ -267,9 +267,9 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 				currentCategory: "imovel",
 				experiencePrev: "first",
 				qualifyConsented: true,
-				// FIX-53: o gate `identify` subiu para antes de `credit`. Com a
-				// identidade já coletada, o próximo gate pendente após o valor é o
-				// prazo (timeframe) — que é o que este teste valida.
+				// FIX-53: o gate `identify` subiu para antes de `credit`. FIX-103: o
+				// gate de prazo (timeframe) SAIU da qualificação — com identidade e
+				// valor já coletados, o próximo gate pendente é o `lance`.
 				identityCollected: true,
 				qualifyAnswers: { creditMax: 200000 },
 			},
@@ -278,7 +278,7 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 			artifacts: [],
 			lead: null,
 		});
-		expect(r.dropOffGate).toBe("timeframe");
+		expect(r.dropOffGate).toBe("lance");
 	});
 
 	it("retorna null sem categoria (sem fluxo de gates)", () => {

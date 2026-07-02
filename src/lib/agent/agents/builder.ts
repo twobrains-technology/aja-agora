@@ -1,5 +1,5 @@
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
 import { allowedTools } from "../orchestrator/tool-policy";
@@ -116,6 +116,17 @@ export function buildAgent(
 		 * só 1 vez por conversa, ok).
 		 */
 		toolChoice?: ToolChoice<ConsorcioToolSet>;
+		/**
+		 * FIX-77: blocos de system DINÂMICOS por turno (systemContext —
+		 * knownName/experience/doubts — + examplesBlock filtrados) que ANTES o
+		 * orchestrator prependava DENTRO do array `messages` de agent.stream(...),
+		 * disparando o warning de prompt-injection da AI SDK a cada turno e
+		 * injetando a memória Letta em dobro. Agora chegam aqui e são anexados ao
+		 * fim do `instructions` (mapeado pro campo `system` pela SDK — sem warning),
+		 * DEPOIS de stable/dynamic/memory e SEM `cacheControl` — o prefixo cacheado
+		 * (stable, 1º item, único com ephemeral) fica intacto.
+		 */
+		extraSystemBlocks?: string[];
 	} = {},
 ): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
@@ -137,6 +148,9 @@ export function buildAgent(
 	const registry = buildConsorcioTools({
 		conversationId: opts.conversationId,
 		channel: opts.channel,
+		// FIX-193: perfil de lance → desempate de tipoOferta no recommend_groups
+		// (critério interno). Vem do meta, nunca da LLM.
+		hasLance: opts.meta?.qualifyAnswers?.hasLance === "yes",
 	});
 
 	// Specialists always have suggest_handoff + as ferramentas de captura
@@ -171,6 +185,9 @@ export function buildAgent(
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,
 				present_contemplation_dial: registry.present_contemplation_dial,
+				// FIX-106: simulador de contemplação CONVERSACIONAL (cálculo p/ loop por
+				// texto/WhatsApp) — primitivo do sistema, sempre exposto (como a agulha).
+				simulate_contemplation: registry.simulate_contemplation,
 				// Status REAL da proposta (FIX-14) — primitivo do sistema: pergunta de
 				// status tem que funcionar mesmo se o admin nao listar em activeTools.
 				check_proposal_status: registry.check_proposal_status,
@@ -214,9 +231,44 @@ export function buildAgent(
 				},
 			];
 
-	const instructions = memoryText
+	const withMemory = memoryText
 		? [...baseInstructions, { role: "system" as const, content: memoryText }]
 		: baseInstructions;
+
+	// FIX-77: os blocos dinâmicos por turno (systemContext + examplesBlock) entram
+	// no FIM do instructions, SEM cacheControl — preserva o prefixo cacheado
+	// (stable continua 1º item, byte-idêntico, único com ephemeral). Vinham em
+	// `messages` (warning de prompt-injection + memória Letta duplicada).
+	const extraBlocks = (opts.extraSystemBlocks ?? [])
+		.filter((b): b is string => Boolean(b))
+		.map((content) => ({ role: "system" as const, content }));
+	const instructions = [...withMemory, ...extraBlocks];
+
+	// FIX-180 — belt nativo do eixo ESTADO→AÇÃO. `prepareStep.activeTools` é o
+	// primitivo OFICIAL do AI SDK 6 pra restringir o subconjunto de tools por step
+	// (ai-sdk.dev/docs/agents/loop-control). Aqui ele RE-AFIRMA, a cada step, a
+	// allowlist da fase (o `tools` já foi filtrado por `allowedTools(meta)` acima —
+	// 1ª linha fail-closed + chave de cache em agents/index.ts). O belt torna a
+	// governança estado→ação explícita no primitivo nativo e COMPÕE com a reversão
+	// do toolChoice forçado (BUG-MUTE-LOOP). Só entra com `meta` presente (specialist
+	// em produção); preview/admin/testes legados sem meta preservam o comportamento.
+	// ADR: docs/correcoes/decisions/2026-07-01-bloco-a-governanca-agente.md.
+	const beltActiveTools = !isConcierge && opts.meta ? Object.keys(tools) : null;
+	// BUG-MUTE-LOOP-NAME-CAPTURE (2026-07-01): sem prepareStep, a AI SDK reaplica o
+	// MESMO toolChoice em TODOS os steps do loop (stopWhen: stepCountIs(10)) — o
+	// Anthropic fica OBRIGADO a chamar save_contact_name em CADA step e NUNCA produz
+	// texto (tool_choice força tool_use). Sintoma real (WhatsApp): save_contact_name
+	// 10x, textChars:0, agente mudo. Fix: preserva o forcing só no 1º step e reverte
+	// pra 'auto' nos seguintes. Um único prepareStep cobre o belt + a reversão.
+	const prepareStep =
+		opts.toolChoice || beltActiveTools
+			? ({ stepNumber }: { stepNumber: number }) => ({
+					...(beltActiveTools ? { activeTools: beltActiveTools } : {}),
+					...(opts.toolChoice
+						? { toolChoice: stepNumber > 0 ? ("auto" as const) : (opts.toolChoice ?? undefined) }
+						: {}),
+				})
+			: undefined;
 
 	const settings = {
 		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-4-6"),
@@ -226,13 +278,12 @@ export function buildAgent(
 		// ones at sampling level (Claude only exposes temperature, no topP/penalty).
 		temperature: row.temperature,
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
-		// Quando o orchestrator detectar "user respondeu nome" (cf.
-		// detect-name-turn.ts), passa toolChoice: { type: 'tool',
-		// toolName: 'save_contact_name' } pra obrigar o modelo a chamar.
-		// Default 'auto' quando undefined. Cast no settings inteiro porque
-		// o ToolLoopAgent generic infere `TOOLS={}` empty no construtor —
-		// não dá pra fixar o type do ToolChoice via inference normal.
+		// toolChoice: quando o orchestrator detecta "user respondeu nome"
+		// (detect-name-turn.ts), força save_contact_name. Default 'auto' quando
+		// undefined. Cast no settings inteiro porque o ToolLoopAgent generic infere
+		// TOOLS={} empty no construtor — não dá pra fixar o type via inference normal.
 		...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+		...(prepareStep ? { prepareStep } : {}),
 	};
 	// biome-ignore lint/suspicious/noExplicitAny: ver comentário acima — generic inference do construtor não fixa o ToolSet.
 	return new ToolLoopAgent(settings as any);

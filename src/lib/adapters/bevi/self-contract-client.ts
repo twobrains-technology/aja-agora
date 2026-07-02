@@ -83,6 +83,49 @@ export interface SelfContractSimulationInput {
 	embeddedPercentage?: "30" | "50";
 }
 
+/** Estado corrente da proposta pro hash desta loja — só o `/system` devolve o
+ * proposalId REAL (`data.proposal._id`). O create-proposal não devolve id
+ * nenhum (só `selfContract.hashId`, que é o storeHash da loja, não da
+ * proposta) — ver docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md D1. */
+export interface SelfContractSystemState {
+	proposalId: string;
+	currentStepSlug: string;
+	situation: string;
+}
+
+/** FIX-88 — "escolher" no self-contract não é um endpoint separado: reenvia os
+ * mesmos parâmetros da simulação + `finished:true` + a oferta escolhida
+ * (bevi-api-discovery.md §4). ⚠️ O shape exato do campo que carrega "a oferta"
+ * não tem captura ao vivo (PENDENTE-KAIRO — ver decisão D5/nota final) —
+ * `offer` é o melhor palpite a partir da descrição textual do cookbook. */
+export interface SelfContractChooseOfferInput extends SelfContractSimulationInput {
+	offer: BeviOffer;
+}
+
+export interface SelfContractFinalizeResult {
+	/** Nº gerado pela administradora — a inserção é ASSÍNCRONA (cookbook §7:
+	 * "pode levar minutos"), então pode vir undefined mesmo em sucesso. */
+	proposalNumber?: number;
+}
+
+/** Step `dadosDoDocumentoDeIdentidade` (KYC, opcional — payload-study §5 step 7). */
+export interface SelfContractIdentityDocInput {
+	rg: string;
+	orgaoEmissor: string;
+	ufEmissor: string;
+	dataEmissao: string;
+}
+
+/** Step `endereco` (KYC, opcional — payload-study §5 step 8). */
+export interface SelfContractEnderecoInput {
+	cep: string;
+	estado: string;
+	cidade: string;
+	bairro: string;
+	logradouro: string;
+	numero: string;
+}
+
 const TIMEOUT_MS = 15_000;
 // A simulação é a chamada pesada (offers de ~68 campos; IMÓVEL tem muitos grupos)
 // e o app de descoberta (DigitalOcean) tem cold-start. 15s estourava (bug
@@ -96,9 +139,7 @@ const onlyDigits = (s: string) => (s ?? "").replace(/\D/g, "");
 
 /** Erro de timeout (AbortSignal.timeout → DOMException TimeoutError) ou abort. */
 function isTimeoutError(err: unknown): boolean {
-	return (
-		err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")
-	);
+	return err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
 export class BeviSelfContractClient {
@@ -223,5 +264,62 @@ export class BeviSelfContractClient {
 			},
 		);
 		return data?.data?.offers ?? [];
+	}
+
+	/** GET /system — estado corrente da proposta pro hash (config completa da
+	 * loja + a proposta ativa). É a ÚNICA rota que devolve o proposalId REAL
+	 * (`data.proposal._id`) — create-proposal só devolve o hash da loja. */
+	async getSystemState(): Promise<SelfContractSystemState> {
+		const data = await this.call<{
+			proposal: { _id: string; currentStep?: { slug?: string }; situation?: string };
+		}>(`${this.config.storeHash}/system`);
+		return {
+			proposalId: data.proposal._id,
+			currentStepSlug: data.proposal.currentStep?.slug ?? "",
+			situation: data.proposal.situation ?? "",
+		};
+	}
+
+	/** PATCH step simulation com `finished:true` — "escolher a oferta" no
+	 * self-contract (não há endpoint separado, cookbook/discovery §4). */
+	async chooseOffer(input: SelfContractChooseOfferInput): Promise<void> {
+		await this.call<unknown>(`update-step/${this.config.storeHash}/step/simulation`, {
+			method: "PATCH",
+			body: {
+				simulationType: input.simulationType ?? "TOTAL_VALUE",
+				simulationValue: input.simulationValue,
+				objective: input.objective ?? "FAST_APPROVAL",
+				...(input.embeddedPercentage ? { embeddedPercentage: input.embeddedPercentage } : {}),
+				finished: true,
+				offer: input.offer,
+			},
+		});
+	}
+
+	/** PATCH step dadosDoDocumentoDeIdentidade — KYC opcional (payload-study §5). */
+	async setIdentityDoc(input: SelfContractIdentityDocInput): Promise<void> {
+		await this.call<unknown>(
+			`update-step/${this.config.storeHash}/step/dadosDoDocumentoDeIdentidade`,
+			{ method: "PATCH", body: { ...input } },
+		);
+	}
+
+	/** PATCH step endereco — KYC opcional (payload-study §5). */
+	async setEndereco(input: SelfContractEnderecoInput): Promise<void> {
+		await this.call<unknown>(`update-step/${this.config.storeHash}/step/endereco`, {
+			method: "PATCH",
+			body: { ...input },
+		});
+	}
+
+	/** PATCH step waitingForUniqueCode — finaliza (inserção ASSÍNCRONA na
+	 * administradora, cookbook §7: "pode levar minutos"). proposalNumber pode
+	 * não vir ainda nesta resposta — nunca inventado (D11). */
+	async finalize(): Promise<SelfContractFinalizeResult> {
+		const data = await this.call<{ proposalNumber?: number }>(
+			`update-step/${this.config.storeHash}/step/waitingForUniqueCode`,
+			{ method: "PATCH", body: {} },
+		);
+		return { proposalNumber: data?.proposalNumber };
 	}
 }

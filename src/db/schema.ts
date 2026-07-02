@@ -12,11 +12,13 @@ import {
 	real,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
 import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
+import type { HumanMemoryBlock } from "@/lib/memory/types";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,10 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
 // FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
 // fechado_ganho) refletindo mesa manual + boleto, alimentado por polling
 // (FIX-44). Ordem = funil forward-only; `perdido` é terminal.
+// FIX-126 (D17): `em_atendimento` = um atendente de mesa ASSUMIU o caso (claim "Vou
+// atender"). Posicionada ENTRE na_administradora e aguardando_pagamento (não antes — senão
+// o claim, que dispara quando o lead já está em na_administradora, regrediria e o
+// forward-only viraria no-op). Ver docs/correcoes/decisions/2026-07-01-bloco-mesa-transbordo-auto.md.
 export const leadStageEnum = pgEnum("lead_stage", [
 	"novo",
 	"engajado",
@@ -40,6 +46,7 @@ export const leadStageEnum = pgEnum("lead_stage", [
 	"em_negociacao",
 	"proposta_enviada",
 	"na_administradora",
+	"em_atendimento",
 	"aguardando_pagamento",
 	"fechado_ganho",
 	"perdido",
@@ -80,6 +87,63 @@ export const mesaHandoffStatusEnum = pgEnum("mesa_handoff_status", [
 ]);
 
 export const mesaCopilotRoleEnum = pgEnum("mesa_copilot_role", ["assistant", "attendant"]);
+
+// ─── Documentos do cliente (S3 nosso = fonte da verdade) ─────────────────────
+// Design: docs/superpowers/specs/2026-06-28-gestao-documentos-cliente-design.md.
+// Mesmos slots do KYC já usados no fechamento Bevi (DocumentSlot em
+// src/lib/adapters/proposal-gateway.ts) — reaproveita o vocabulário do domínio.
+export const clientDocumentSlotEnum = pgEnum("client_document_slot", [
+	"identidade_frente",
+	"identidade_verso",
+	"comprovante_endereco",
+]);
+
+// Só "stored" por hora (o ativo nosso nunca é removido/expirado nesta feature —
+// ver §7 Fora de escopo do design). Enum em vez de texto livre pra bater com o
+// padrão do repo (leadStageEnum, mesaHandoffStatusEnum etc).
+export const clientDocumentStatusEnum = pgEnum("client_document_status", ["stored"]);
+
+export const clientDocumentDispatchStatusEnum = pgEnum("client_document_dispatch_status", [
+	"pending",
+	"sent",
+	"failed",
+	"manual",
+]);
+
+export const clientDocumentDispatchTargetEnum = pgEnum("client_document_dispatch_target", [
+	"bevi_a",
+	"bevi_b",
+	"mesa",
+]);
+
+// ─── WhatsApp Message Templates (Meta oficial) ───────────────────────────────
+// Design: docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
+// Ciclo de vida de um template na Cloud API da Meta: DRAFT (local, ainda não
+// submetido) → PENDING (submetido, aguardando revisão) → APPROVED/REJECTED, e
+// depois DISABLED/PAUSED (a Meta pode desabilitar/pausar um template aprovado).
+export const whatsappTemplateStatusEnum = pgEnum("whatsapp_template_status", [
+	"DRAFT",
+	"PENDING",
+	"APPROVED",
+	"REJECTED",
+	"DISABLED",
+	"PAUSED",
+]);
+
+// Categorias oficiais da Meta (a submissão declara uma; a Meta pode recategorizar).
+export const whatsappTemplateCategoryEnum = pgEnum("whatsapp_template_category", [
+	"UTILITY",
+	"MARKETING",
+	"AUTHENTICATION",
+]);
+
+// Estado de uma mensagem business-initiated enfileirada à espera de template
+// aprovado (fallback anti-manual — ver FIX-201/spec §Resolução de envio).
+export const whatsappOutboundStatusEnum = pgEnum("whatsapp_outbound_status", [
+	"pending",
+	"sent",
+	"failed",
+]);
 
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
@@ -215,12 +279,17 @@ export const conversations = pgTable(
 		contactName: varchar("contact_name", { length: 100 }),
 		metadata: jsonb().$type<Record<string, unknown>>(),
 		isSimulated: boolean("is_simulated").default(false).notNull(),
+		// FIX-86: lastInboundAt rastreia o último inbound do cliente no WhatsApp.
+		// Essencial para controlar a janela de 24h da Meta Cloud API — texto livre
+		// só é permitido se o último inbound foi há menos de 24h.
+		lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
 		index("conversations_wa_id_idx").on(table.waId),
 		index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
+		index("conversations_last_inbound_at_idx").on(table.lastInboundAt),
 	],
 );
 
@@ -548,6 +617,33 @@ export const memoryEvents = pgTable(
 	],
 );
 
+// Memory Identities — re-home da memória cross-channel do Letta pro Postgres
+// (FIX-81 / ADR 2026-06-25-remocao-letta-postgres, Opção B).
+//
+// 1 linha por identidade (web anon-cookie / phone / email). O `block` jsonb é o
+// `HumanMemoryBlock` que antes vivia serializado num memory_block do Letta —
+// agora nativo no banco que o app já opera. Chave de negócio: (namespace, kind,
+// value), espelhando `UserIdentity`. `reconciled_from` guarda a chave canônica
+// da identidade de origem quando um cookie web é reconciliado num phone
+// (continuidade web → WhatsApp). Archival semântico (pgvector) é fase 2 do ADR.
+export const memoryIdentities = pgTable(
+	"memory_identities",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		namespace: varchar("namespace", { length: 120 }).notNull(),
+		kind: varchar("kind", { length: 20 }).notNull(), // phone | email | anon-cookie
+		value: varchar("value", { length: 200 }).notNull(),
+		block: jsonb().$type<HumanMemoryBlock>().notNull(),
+		reconciledFrom: text("reconciled_from"),
+		lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("memory_identities_key_idx").on(table.namespace, table.kind, table.value),
+	],
+);
+
 // ─── Mesa de operação (transbordo humano + agente copiloto) ──────────────────
 // Spec de negócio: docs/visao/mesa-de-operacao.md. A "mesa" é fornecida pela Bevi
 // hoje, mas é da administradora (Q-K5) — modelo faseado, fonte abstraída.
@@ -634,9 +730,10 @@ export const mesaHandoffs = pgTable(
 		beviProposalId: uuid("bevi_proposal_id").references(() => beviProposals.id, {
 			onDelete: "set null",
 		}),
-		mesaAttendantId: uuid("mesa_attendant_id")
-			.notNull()
-			.references(() => mesaAttendants.id),
+		// FIX-125 (D16): nullable = estado "sem dono". O transbordo nasce sem dono no
+		// broadcast; o 1º atendente que clica "Vou atender" assume via claim atômico
+		// (UPDATE ... WHERE mesa_attendant_id IS NULL). Espelha conversations.handedOffUserId.
+		mesaAttendantId: uuid("mesa_attendant_id").references(() => mesaAttendants.id),
 		administradoraId: uuid("administradora_id").references(() => administradoras.id, {
 			onDelete: "set null",
 		}),
@@ -666,6 +763,149 @@ export const mesaCopilotMessages = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("mesa_copilot_messages_handoff_id_idx").on(table.mesaHandoffId)],
+);
+
+// ─── Documentos do cliente (S3 nosso = fonte da verdade) ─────────────────────
+// FIX-82: o documento do cliente (RG/CNH/comprovante) é um ATIVO NOSSO,
+// independente do destino (Bevi Trilho A/B ou mesa manual) — bucket dedicado
+// (SSE-KMS), nunca o de administradora-docs. `status` descreve o ativo guardado;
+// `dispatchStatus`/`dispatchTarget` descrevem o envio best-effort ao destino
+// (FIX-84) — falha de despacho NUNCA apaga/perde o documento guardado.
+export const clientDocuments = pgTable(
+	"client_documents",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		// Nullable: o lead/contato pode ainda não existir no momento da coleta.
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+		slot: clientDocumentSlotEnum("slot").notNull(),
+		s3Bucket: text("s3_bucket").notNull(),
+		s3Key: text("s3_key").notNull(),
+		filename: text("filename").notNull(),
+		mimeType: text("mime_type").notNull(),
+		sizeBytes: integer("size_bytes").notNull(),
+		status: clientDocumentStatusEnum("status").default("stored").notNull(),
+		dispatchStatus: clientDocumentDispatchStatusEnum("dispatch_status")
+			.default("pending")
+			.notNull(),
+		dispatchTarget: clientDocumentDispatchTargetEnum("dispatch_target"),
+		dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+		// sectionId/documentId da Bevi quando efetivamente enviado (bevi_a/b).
+		beviRef: jsonb("bevi_ref").$type<Record<string, unknown>>(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("client_documents_lead_id_idx").on(table.leadId),
+		index("client_documents_conversation_id_idx").on(table.conversationId),
+	],
+);
+
+// Audit trail de acesso (FIX-83) — PII de identidade exige log de quem baixou e
+// quando, na mesma linha de leadEvents/memoryEvents (append-only, nunca editado).
+export const clientDocumentDownloads = pgTable(
+	"client_document_downloads",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		clientDocumentId: uuid("client_document_id")
+			.notNull()
+			.references(() => clientDocuments.id, { onDelete: "cascade" }),
+		downloadedBy: text("downloaded_by")
+			.notNull()
+			.references(() => user.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("client_document_downloads_client_document_id_idx").on(table.clientDocumentId)],
+);
+
+// ─── WhatsApp Message Templates (Meta oficial) ───────────────────────────────
+// Design: docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
+
+// Um componente de template no vocabulário da Cloud API da Meta (o array que a
+// Meta espera em `components` tanto na CRIAÇÃO quanto no ENVIO). Tipado frouxo
+// de propósito: HEADER/BODY/FOOTER/BUTTONS têm formas distintas (texto,
+// exemplos de placeholder, botões) e a Meta evolui o shape — travar cada
+// variante aqui seria fricção sem ganho (não há consumer SQL que valide).
+export type WhatsappTemplateComponent = {
+	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+	format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+	text?: string;
+	example?: Record<string, unknown>;
+	buttons?: Array<Record<string, unknown>>;
+};
+
+// Template registrado na Meta, com status acompanhável até APPROVED e vínculo
+// de USO por chave lógica (`usageKey`, ex: `confirmacao_contratacao`). O código
+// dispara pela chave; o admin liga a chave ao template Meta aprovado — copy e
+// aprovação ficam desacopladas de deploy (spec §Abordagens consideradas).
+export const whatsappTemplates = pgTable(
+	"whatsapp_templates",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Chave lógica do ponto de disparo. Nullable: um template pode existir
+		// (cadastrado/aprovado) sem estar vinculado a um uso ainda. UNIQUE quando
+		// setado (unique index — o Postgres trata NULLs como distintos, então
+		// vários templates sem chave coexistem, mas cada chave aponta pra um só).
+		usageKey: text("usage_key"),
+		// Nome do template na Meta (ex `aja_confirmacao_v1`) — obrigatório.
+		metaName: text("meta_name").notNull(),
+		language: text("language").default("pt_BR").notNull(),
+		category: whatsappTemplateCategoryEnum("category"),
+		// Componentes HEADER/BODY/FOOTER/BUTTONS com placeholders (shape da Meta).
+		components: jsonb().$type<WhatsappTemplateComponent[]>(),
+		// Corpo denormalizado pra preview rápido no admin sem parsear components.
+		bodyPreview: text("body_preview"),
+		status: whatsappTemplateStatusEnum("status").default("DRAFT").notNull(),
+		// ID do template retornado pela Meta na submissão (chave de reconciliação
+		// no webhook message_template_status_update).
+		metaTemplateId: text("meta_template_id"),
+		rejectionReason: text("rejection_reason"),
+		submittedAt: timestamp("submitted_at", { withTimezone: true }),
+		approvedAt: timestamp("approved_at", { withTimezone: true }),
+		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		// UNIQUE parcial-por-natureza: NULLs distintos ⇒ "único quando setado".
+		uniqueIndex("whatsapp_templates_usage_key_idx").on(table.usageKey),
+		index("whatsapp_templates_meta_template_id_idx").on(table.metaTemplateId),
+		index("whatsapp_templates_status_idx").on(table.status),
+	],
+);
+
+// Fila de mensagens business-initiated (janela de 24h FECHADA) pendentes de um
+// template aprovado. Ao template do `usageKey` virar APPROVED (webhook/poll), o
+// dispatcher esvazia a fila. Garante que nenhuma confirmação se perca (spec §6).
+export const whatsappOutboundQueue = pgTable(
+	"whatsapp_outbound_queue",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Destino E.164 sem '+' (ex.: 5562999998888), mesmo formato do restante do canal.
+		to: text("to").notNull(),
+		usageKey: text("usage_key").notNull(),
+		// Valores dos placeholders do template (mapeados em componentsFromParams no
+		// envio). Frouxo de propósito — cada uso tem seu conjunto de variáveis.
+		params: jsonb().$type<Record<string, unknown>>(),
+		status: whatsappOutboundStatusEnum("status").default("pending").notNull(),
+		attempts: integer("attempts").default(0).notNull(),
+		lastError: text("last_error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		sentAt: timestamp("sent_at", { withTimezone: true }),
+	},
+	(table) => [
+		index("whatsapp_outbound_queue_usage_key_idx").on(table.usageKey),
+		index("whatsapp_outbound_queue_status_idx").on(table.status),
+	],
 );
 
 // ─── Relations ───────────────────────────────────────────────────────────────
@@ -849,5 +1089,32 @@ export const mesaCopilotMessagesRelations = relations(mesaCopilotMessages, ({ on
 	handoff: one(mesaHandoffs, {
 		fields: [mesaCopilotMessages.mesaHandoffId],
 		references: [mesaHandoffs.id],
+	}),
+}));
+
+export const clientDocumentsRelations = relations(clientDocuments, ({ one, many }) => ({
+	conversation: one(conversations, {
+		fields: [clientDocuments.conversationId],
+		references: [conversations.id],
+	}),
+	lead: one(leads, {
+		fields: [clientDocuments.leadId],
+		references: [leads.id],
+	}),
+	contact: one(contacts, {
+		fields: [clientDocuments.contactId],
+		references: [contacts.id],
+	}),
+	downloads: many(clientDocumentDownloads),
+}));
+
+export const clientDocumentDownloadsRelations = relations(clientDocumentDownloads, ({ one }) => ({
+	document: one(clientDocuments, {
+		fields: [clientDocumentDownloads.clientDocumentId],
+		references: [clientDocuments.id],
+	}),
+	downloadedByUser: one(user, {
+		fields: [clientDocumentDownloads.downloadedBy],
+		references: [user.id],
 	}),
 }));

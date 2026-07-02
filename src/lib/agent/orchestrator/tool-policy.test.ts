@@ -19,12 +19,15 @@ import { allowedTools, phaseFromMeta, revealValueTargetChanged } from "./tool-po
 // Metas canônicas por fase (mesmos estados dos bugs reais)
 // ============================================================================
 
-/** Fim do passo 2 (gate identify) — estado exato do FIX-12. */
+/** Fim do passo 2, DEPOIS do gate identify — a identidade já foi coletada (D1 /
+ * FIX-53: identify precede o credit, então um estado com creditMax preenchido
+ * pressupõe identityCollected=true). É o estado em que a descoberta é liberada. */
 const QUALIFY_META: ConversationMetadata = {
 	currentPersona: "moto",
 	currentCategory: "moto",
 	experiencePrev: "first",
 	qualifyConsented: true,
+	identityCollected: true,
 	qualifyAnswers: {
 		creditMin: 35_000,
 		creditMax: 40_000,
@@ -33,6 +36,18 @@ const QUALIFY_META: ConversationMetadata = {
 		hasLance: "no",
 		lanceEmbutido: false,
 	},
+};
+
+/** FIX-114 (PROD 2026-06-30): passo 2 ANTES do gate identify — identidade NÃO
+ * coletada. A descoberta (search_groups) NÃO pode entrar no toolset aqui: sem
+ * CPF+celular a Bevi lança IdentityNotCollectedError e o agente cospe "dificuldade
+ * técnica". Estado real do log de prod (conv bc5fa852). */
+const QUALIFY_NO_IDENTITY_META: ConversationMetadata = {
+	currentPersona: "moto",
+	currentCategory: "moto",
+	experiencePrev: "first",
+	qualifyConsented: true,
+	// identityCollected ausente — gate identify ainda pendente (precede o credit).
 };
 
 /** Pós-reveal (passo 4) — estado do BUG-REVEAL-LOOP. */
@@ -91,6 +106,7 @@ const QUALIFY_EXPECTED = [
 	"present_value_picker",
 	"recommend_groups",
 	"search_groups",
+	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
 
@@ -111,6 +127,7 @@ const REVEAL_EXPECTED = [
 	"present_simulation_result",
 	"present_value_picker",
 	"present_whatsapp_optin",
+	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
 
@@ -221,6 +238,39 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 });
 
 // ============================================================================
+// FIX-114 (PROD 2026-06-30, log /ecs/tb/prod conv bc5fa852) — search_groups
+// disparou ANTES da identidade → IdentityNotCollectedError → o agente cuspiu
+// "dificuldade técnica pontual pra acessar os grupos". Root cause de ORQUESTRAÇÃO:
+// a descoberta estava no toolset da fase qualify SEM checar identityCollected, e o
+// agente free-rodou search_groups antes do CPF. Fix: gatear a descoberta na
+// identidade (a Bevi exige CPF+celular pra simular — D1).
+// ============================================================================
+describe("FIX-114 — descoberta só entra no toolset com identidade coletada", () => {
+	it("qualify SEM identidade: search_groups e os cards de reveal FICAM FORA", () => {
+		const allowed = allowedTools(QUALIFY_NO_IDENTITY_META);
+		expect(allowed).not.toContain("search_groups");
+		expect(allowed).not.toContain("recommend_groups");
+		expect(allowed).not.toContain("present_group_card");
+		expect(allowed).not.toContain("present_comparison_table");
+		expect(allowed).not.toContain("present_recommendation_card");
+	});
+
+	it("qualify COM identidade: a descoberta é liberada (o gate identify já passou)", () => {
+		const allowed = allowedTools(QUALIFY_META);
+		expect(allowed).toContain("search_groups");
+		expect(allowed).toContain("recommend_groups");
+	});
+
+	it("primitivos de conversa seguem disponíveis mesmo sem identidade (não trava o funil)", () => {
+		const allowed = allowedTools(QUALIFY_NO_IDENTITY_META);
+		// o funil continua: nome, experiência, consent, o próprio valor por texto.
+		expect(allowed).toContain("save_contact_name");
+		expect(allowed).toContain("present_value_picker");
+		expect(allowed).toContain("suggest_handoff");
+	});
+});
+
+// ============================================================================
 // Wiring — builder aplica a policy ao montar o ToolLoopAgent
 // ============================================================================
 
@@ -285,6 +335,18 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		const universe = exposedTools(legacyAgent);
 		const allowed = new Set(allowedTools(QUALIFY_META));
 		expect(exposedTools(agent)).toEqual(universe.filter((t) => allowed.has(t)).sort());
+	});
+
+	it("FIX-114 — qualify SEM identidade: o agente NÃO recebe search_groups (não free-roda a busca)", () => {
+		// A prova de que o bug de prod não volta: com o toolset filtrado a montante,
+		// o modelo nem enxerga search_groups antes do CPF — impossível chamar cru.
+		const agent = buildAgent(makePersonaRow(), "neutro", { meta: QUALIFY_NO_IDENTITY_META });
+		const tools = exposedTools(agent);
+		expect(tools).not.toContain("search_groups");
+		expect(tools).not.toContain("recommend_groups");
+		// os primitivos do funil seguem (nome/valor) — a coleta não trava.
+		expect(tools).toContain("save_contact_name");
+		expect(tools).toContain("present_value_picker");
 	});
 
 	it("reveal: dial/decision/optin entram, re-descoberta e contract_form ficam fora", () => {

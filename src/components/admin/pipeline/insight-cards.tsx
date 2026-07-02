@@ -117,8 +117,8 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 						<Target className="size-5 text-blue-600" />
 					</div>
 					<div className="min-w-0 flex-1">
-						<p className="text-sm font-semibold">Intencao</p>
-						<p className="text-sm text-muted-foreground">{insights.intent || "Nao identificada"}</p>
+						<p className="text-sm font-semibold">Intenção</p>
+						<p className="text-sm text-muted-foreground">{insights.intent || "Não identificada"}</p>
 					</div>
 				</CardContent>
 			</Card>
@@ -133,7 +133,7 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 						<p className="text-sm font-semibold">Orçamento</p>
 						<div className="text-sm text-muted-foreground space-y-0.5">
 							{insights.budget.monthly != null && (
-								<p>{currencyFmt.format(insights.budget.monthly)}/mes</p>
+								<p>{currencyFmt.format(insights.budget.monthly)}/mês</p>
 							)}
 							{insights.budget.total != null && (
 								<p>Total: {currencyFmt.format(insights.budget.total)}</p>
@@ -141,7 +141,7 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 							{insights.budget.notes && <p>{insights.budget.notes}</p>}
 							{insights.budget.monthly == null &&
 								insights.budget.total == null &&
-								!insights.budget.notes && <p>Nao informado</p>}
+								!insights.budget.notes && <p>Não informado</p>}
 						</div>
 					</div>
 				</CardContent>
@@ -154,9 +154,9 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 						<AlertTriangle className="size-5 text-amber-600" />
 					</div>
 					<div className="min-w-0 flex-1">
-						<p className="text-sm font-semibold">Objecoes</p>
+						<p className="text-sm font-semibold">Objeções</p>
 						{insights.objections.length === 0 ? (
-							<p className="text-sm text-muted-foreground italic">Nenhuma objecao identificada</p>
+							<p className="text-sm text-muted-foreground italic">Nenhuma objeção identificada</p>
 						) : (
 							<ul className="text-sm text-muted-foreground list-disc list-inside space-y-0.5">
 								{insights.objections.map((obj, i) => (
@@ -176,9 +176,9 @@ export function InsightCards({ source, id, messageCount }: InsightCardsProps) {
 						<ArrowRight className="size-5 text-purple-600" />
 					</div>
 					<div className="min-w-0 flex-1">
-						<p className="text-sm font-semibold">Proxima Acao</p>
+						<p className="text-sm font-semibold">Próxima Ação</p>
 						<p className="text-sm text-muted-foreground">
-							{insights.next_action || "Nao definida"}
+							{insights.next_action || "Não definida"}
 						</p>
 					</div>
 				</CardContent>
