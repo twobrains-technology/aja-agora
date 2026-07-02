@@ -155,6 +155,18 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
 	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — a contratação e self-service na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
+/** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
+ * "Seguir com <cota>". O groupId JÁ foi resolvido server-side (choose-offer.ts +
+ * re-âncora do meta) — o agente só fecha. PROÍBE re-busca/re-resolução e QUALQUER
+ * meta-narrativa de falha técnica (a raiz do loop do P0: "esse grupo deu um
+ * problema", "preciso trazer os IDs reais"). CONTRATO com bloco-b (adendo B8). */
+export function buildChooseOfferDirective(args: { administradora?: string }): string {
+	const { administradora } = args;
+	const adminCtx = administradora ? ` da "${administradora}"` : "";
+	const adminFrase = administradora ? ` com a ${administradora}` : "";
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — a contratação é self-service na plataforma.`;
+}
+
 export function buildSimulationInterestDirective(administradora: string): string {
 	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção ou atendente humano (a contratação é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
 }
