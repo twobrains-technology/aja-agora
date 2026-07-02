@@ -41,6 +41,9 @@ export type ArtifactGuardInput = {
 	/** Tamanho da descoberta DESTE turno (tool-results de search/recommend);
 	 * null = nenhuma descoberta rodou no turno. */
 	discoveryCount: number | null;
+	/** FIX-187: a descoberta na Bevi DESTE turno falhou (sinal do FIX-186). Quando
+	 * true, nenhum artifact da família de descoberta/proposta pode sair. */
+	discoveryFailedThisTurn?: boolean;
 	conversationId: string;
 	/** Types dos artifacts já emitidos NESTE turno (reservado pra regras
 	 * futuras de duplicação intra-turno — nenhuma regra atual consome). */
@@ -70,6 +73,19 @@ const POST_CLOSURE_FAMILY = new Set<ArtifactType>([
 ]);
 
 export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
+	// FIX-187 (Kairo 2026-07-01): a descoberta do turno falhou (sinal do FIX-186)
+	// → NENHUM artifact da família de descoberta/proposta pode sair (o print: card
+	// "Esse plano faz sentido?" com números sobre dado que não carregou). É a regra
+	// mais FORTE (1ª da lista) — vence qualquer outra. 2ª linha da defesa: a 1ª é a
+	// precondição em action-policy (execute), mas o artifact é emitido do INPUT no
+	// tool-call (antes do tool-result), então este guard reativo é quem barra o card.
+	{
+		name: "discovery-failed",
+		applies: ({ artifactType, discoveryFailedThisTurn }) =>
+			discoveryFailedThisTurn === true && POST_CLOSURE_FAMILY.has(artifactType),
+		logLine: ({ artifactType, conversationId }) =>
+			`[discovery-failed] guard: suprimindo ${artifactType} — descoberta do turno falhou, sem dado real pra propor (conv=${conversationId})`,
+	},
 	// PF-07: modelo pode chamar o optin 2x em conversa longa apesar do prompt.
 	// BUG-OPTIN-ENGOLE-GATES (2026-06-04): optin no MEIO da qualificação
 	// suprimia os gates lance-value/lance-embutido/identify. Pré-reveal ou

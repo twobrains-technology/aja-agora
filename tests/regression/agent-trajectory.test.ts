@@ -52,6 +52,7 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
 import { allowedTools } from "@/lib/agent/orchestrator/tool-policy";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -7567,5 +7568,108 @@ describe("FIX-186 — descoberta falhada vira fallback humano, nunca narração 
 		const orchSrc = readSource("src/lib/agent/orchestrator/index.ts");
 		expect(orchSrc).toMatch(/buildDiscoveryFailedFallback/);
 		expect(orchSrc).toMatch(/discovery-failed/);
+	});
+});
+
+// ============================================================================
+// FIX-187 — proposta/recomendação/simulação NÃO é emitida após a busca falhar
+// ----------------------------------------------------------------------------
+// Print do Kairo (2026-07-01): depois de "tive um problema aqui agora — deixa eu
+// buscar as opções reais", o chat MESMO ASSIM mostrou o card "Esse plano faz
+// sentido? (BANCO DO BRASIL)" com Valor R$ 131.042, Parcela R$ 2.365,57, Grupo
+// 1797 — números ancorados em dado que NÃO carregou neste turno. Cura: o gate de
+// proposta exige descoberta bem-sucedida no turno (discoveryFailedThisTurn do
+// FIX-186). 1ª linha: action-policy reprova as 3 tools; 2ª linha: artifact-guard
+// dropa a família de proposta. Regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única).
+// ============================================================================
+
+describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simulação", () => {
+	it("cassette: stream do bug — modelo tenta present_recommendation_card + present_decision_prompt após a busca falhar", async () => {
+		const { toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks("t1", "Deixa eu buscar as opções reais…"),
+			toolCallChunk("tc-rec", "present_recommendation_card", {
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 131042,
+				monthlyPayment: 2365.57,
+				termMonths: 72,
+				score: 0.9,
+			}),
+			toolCallChunk("tc-dec", "present_decision_prompt", { administradora: "BANCO DO BRASIL" }),
+			FINISH_TOOL_CALLS,
+		]);
+		const names = toolCalls.map((tc) => tc.toolName);
+		expect(names).toContain("present_recommendation_card");
+		expect(names).toContain("present_decision_prompt");
+
+		// 1ª linha (precondição): com a descoberta do turno falhada, as 3 tools de
+		// proposta são reprovadas — o número fiscal NUNCA vem de dado que não carregou.
+		for (const tc of toolCalls) {
+			const verdict = evaluateActionPrecondition(tc.toolName, {
+				shown: emptyShownGroups(),
+				args: tc.input as Record<string, unknown>,
+				discoveryFailedThisTurn: true,
+			});
+			expect(
+				verdict.allow,
+				`${tc.toolName} deveria ser BLOQUEADA (descoberta do turno falhou)`,
+			).toBe(false);
+		}
+	});
+
+	it("2ª linha: o artifact-guard DROPA a família de proposta quando a descoberta do turno falhou", () => {
+		for (const artifactType of [
+			"recommendation_card",
+			"simulation_result",
+			"comparison_table",
+			"decision_prompt",
+		] as const) {
+			const verdict = evaluateArtifactGuards({
+				meta: {},
+				artifactType,
+				userIntent: "neutral",
+				isUserTurn: false,
+				discoveryCount: null,
+				discoveryFailedThisTurn: true,
+				conversationId: "conv-187",
+				turnArtifactTypes: [],
+			});
+			expect(verdict.allow, `${artifactType} devia ser dropado`).toBe(false);
+			if (!verdict.allow) expect(verdict.rule).toBe("discovery-failed");
+		}
+	});
+
+	it("fluxo normal não regride: sem falha de descoberta, a proposta passa", () => {
+		expect(
+			evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: { administradora: "ITAÚ" },
+				discoveryFailedThisTurn: false,
+			}).allow,
+		).toBe(true);
+		const guard = evaluateArtifactGuards({
+			meta: { revealCompleted: false },
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount: 3,
+			discoveryFailedThisTurn: false,
+			conversationId: "conv-187",
+			turnArtifactTypes: [],
+		});
+		expect(guard.allow).toBe(true);
+	});
+
+	it("structural: as 3 tools de proposta constam em ACTION_PRECONDITIONS e o guard tem a regra", () => {
+		const policySrc = readSource("src/lib/agent/orchestrator/action-policy.ts");
+		expect(policySrc).toMatch(/present_recommendation_card/);
+		expect(policySrc).toMatch(/present_simulation_result/);
+		expect(policySrc).toMatch(/requireFreshDiscovery/);
+		const guardSrc = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
+		expect(guardSrc).toMatch(/discovery-failed/);
+		const toolsSrc = readSource("src/lib/agent/tools/ai-sdk.ts");
+		// os overrides passam o sinal discoveryFailed pras precondições.
+		expect(toolsSrc).toMatch(/discoveryFailedThisTurn:\s*discoveryFailed/);
 	});
 });

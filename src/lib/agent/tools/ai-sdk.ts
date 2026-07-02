@@ -1046,8 +1046,32 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		description: consorcioTools.present_recommendation_card.description,
 		inputSchema: recommendationSchema,
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
+			// FIX-187: proposta só sobre descoberta bem-sucedida no turno (action-policy
+			// requireFreshDiscovery). Não usa shown-groups — o recommendation_card É a
+			// exibição. Bloqueado → diretiva; o artifact-guard (2ª linha) dropa o card.
+			const verdict = evaluateActionPrecondition("present_recommendation_card", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
 			await markShown("recommendation_card", args);
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+		},
+	});
+
+	const present_simulation_result = tool({
+		description: consorcioTools.present_simulation_result.description,
+		inputSchema: simulationResultSchema,
+		execute: async (args: z.infer<typeof simulationResultSchema>) => {
+			// FIX-187: os números da simulação só de descoberta bem-sucedida no turno.
+			const verdict = evaluateActionPrecondition("present_simulation_result", {
+				shown: emptyShownGroups(),
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
+			return `[Simulacao apresentada: parcela R$ ${args.monthlyPayment.toFixed(2)}/mes por ${args.termMonths} meses]`;
 		},
 	});
 
@@ -1060,16 +1084,17 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				.describe("Administradora do plano recomendado (contexto do card)"),
 		}),
 		execute: async (args: { administradora?: string }) => {
-			// FIX-180: precondição de dado via tabela declarativa (action-policy).
+			// FIX-180 (administradora exibida) + FIX-187 (descoberta fresca) via
+			// tabela declarativa (action-policy). Agora avalia SEMPRE — mesmo sem
+			// administradora, o gate de descoberta falhada (FIX-187) precisa rodar.
 			// Lazy: só bate no DB (getShownGroups) quando há administradora a validar.
-			if (args.administradora) {
-				const shown = await getShownGroups();
-				const verdict = evaluateActionPrecondition("present_decision_prompt", {
-					shown,
-					args: args as Record<string, unknown>,
-				});
-				if (!verdict.allow) return verdict.directive;
-			}
+			const shown = args.administradora ? await getShownGroups() : emptyShownGroups();
+			const verdict = evaluateActionPrecondition("present_decision_prompt", {
+				shown,
+				args: args as Record<string, unknown>,
+				discoveryFailedThisTurn: discoveryFailed,
+			});
+			if (!verdict.allow) return verdict.directive;
 			return `[Card de decisão apresentado${args.administradora ? ` para o plano ${args.administradora}` : ""}]`;
 		},
 	});
@@ -1235,9 +1260,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		recommend_groups,
 		// Overrides — FIX-179: registram "exibido" (markShown) e guardam a trava
 		// de get_group_details/simulate_quota/present_decision_prompt acima.
+		// FIX-187: present_recommendation_card/present_simulation_result/
+		// present_decision_prompt recusam quando a descoberta do turno falhou.
 		present_group_card,
 		present_comparison_table,
 		present_recommendation_card,
+		present_simulation_result,
 		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,

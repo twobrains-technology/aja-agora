@@ -42,6 +42,28 @@ vi.mock("@/lib/agent/agents", () => {
 						id: "s1",
 						text: "Ihh, tive um problema aqui agora — uma dificuldade técnica pontual pra acessar os grupos. Deixa eu buscar de novo.",
 					};
+					// FIX-187: e MESMO ASSIM o modelo tenta emitir a PROPOSTA FANTASMA
+					// (o card "Esse plano faz sentido?" do print, com números). O guard
+					// tem que DROPAR — nada ancorado em dado que não carregou.
+					yield {
+						type: "tool-call",
+						toolName: "present_recommendation_card",
+						input: {
+							administradora: "BANCO DO BRASIL",
+							category: "auto",
+							creditValue: 131042,
+							monthlyPayment: 2365.57,
+							termMonths: 72,
+							score: 0.9,
+						},
+						toolCallId: "tc-rec",
+					};
+					yield {
+						type: "tool-call",
+						toolName: "present_decision_prompt",
+						input: { administradora: "BANCO DO BRASIL" },
+						toolCallId: "tc-dec",
+					};
 				})(),
 				finishReason: Promise.resolve("tool-calls" as const),
 				providerMetadata: Promise.resolve({}),
@@ -145,6 +167,21 @@ describeIfDb("FIX-186 — descoberta falhada NÃO vira narração de erro (fallb
 
 		// O turno fechou pelo caminho de descoberta falhada.
 		expect(finishReasons).toContain("discovery-failed");
+	});
+
+	it("[FIX-187] NENHUM card de proposta é emitido após a busca falhar (guard dropa)", async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({ contactName: "Kairo", metadata: REVEAL_READY_META })
+			.returning();
+		convId = c.id;
+
+		const { artifactTypes } = await drainDirectiveTurn(convId);
+
+		// A proposta fantasma do print (recommendation_card + decision_prompt) NÃO
+		// pode chegar — ancorada em dado que não carregou (CLAUDE.md #2).
+		expect(artifactTypes).not.toContain("recommendation_card");
+		expect(artifactTypes).not.toContain("decision_prompt");
 	});
 
 	it("persiste APENAS a mensagem determinística no histórico (não a narração do modelo)", async () => {
