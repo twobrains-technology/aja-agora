@@ -45,7 +45,10 @@ import { getHandoffState, startInterestHandoff } from "./proxy";
 import { getOrCreateConversation } from "./session";
 
 const runAgentDirective = (from: string, conversationId: string, directive: string) =>
-	runDirectiveWithOrchestrator({ from, conversationId, directive });
+	// Clique de botão NUNCA pode fechar mudo (bug consent→identify 2026-07-02, "Bora!"
+	// sem resposta): liga o guard de turno-mudo — se o directive não emitir nada, o
+	// consumeEvents re-pergunta o gate pendente em vez do silêncio.
+	runDirectiveWithOrchestrator({ from, conversationId, directive, guardEmptyTurn: true });
 
 type DispatchInput = {
 	from: string;

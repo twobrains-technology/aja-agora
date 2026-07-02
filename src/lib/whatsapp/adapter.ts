@@ -91,16 +91,22 @@ async function gateInteractive(
 // tratamento textual do `identify`. Retorna a pergunta (com prefix embutido) ou
 // null pros gates que não são textuais. A resposta livre do usuário é capturada
 // pelo pipeline conversacional (analyzer + backstop parseAssetValue, FIX-115).
+// Gates que saem como TEXTO no WhatsApp (nenhum tem componente interativo):
+// `credit` (valor do bem, FIX-120) E `identify` (CPF+celular, FIX-53). BUG DE PROD
+// (2026-07-02): o identify NÃO estava aqui — ao clicar "Bora!" (consent) o funil ia
+// pro gate identify, o gate disparava mas NADA era enviado no WhatsApp (gateInteractive
+// e gateTextPrompt = null), fechando o turno MUDO: por clique = silêncio, por texto
+// ("continua") = "me perdi". Agora o identify entrega a pergunta do CPF como texto.
+const WHATSAPP_TEXT_GATES = new Set<Gate>(["credit", "identify"]);
 async function gateTextPrompt(
 	gate: Gate,
 	conversationId: string,
 	prefix: string | undefined,
 ): Promise<string | null> {
-	if (gate !== "credit") return null;
+	if (!WHATSAPP_TEXT_GATES.has(gate)) return null;
 	const meta = await reloadMeta(conversationId);
-	const category = meta.currentCategory;
-	if (!category) return null;
-	const question = gateQuestion("credit", category);
+	// `credit` usa a categoria no texto; `identify` é fixo — gateQuestion aceita null.
+	const question = gateQuestion(gate, meta.currentCategory ?? null);
 	if (!question) return null;
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
@@ -271,15 +277,24 @@ async function consumeEvents(
 					await sendInteractiveMessage(from, interactive);
 					lastWasInteractive = true;
 					hasSent = true;
+					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
 				} else {
-					// FIX-120: gates conversacionais (credit) saem como TEXTO — a pergunta
-					// viajava no body da lista; sem a lista, mandamos a pergunta em texto.
+					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
+					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
 					const textPrompt = await gateTextPrompt(ev.gate, conversationId, ev.prefix);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);
 						lastWasInteractive = false;
 						hasSent = true;
+						console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=text`);
+					} else {
+						// Nenhuma entrega pro gate no WhatsApp → o turno pode fechar MUDO.
+						// Alerta ALTO pra caçar buracos de entrega de gate (o do identify,
+						// 2026-07-02). Se você vê isto, um gate disparou sem forma de enviar.
+						console.error(
+							`[gate-undelivered] conv=${conversationId} gate=${ev.gate} — SEM entrega no WhatsApp (nem interactive nem texto); turno pode fechar mudo`,
+						);
 					}
 				}
 				break;
@@ -303,7 +318,11 @@ async function consumeEvents(
 		// não força o gate "name"; ver processor.ts). reengageQuestionForGate só
 		// retorna texto pros gates de coleta — os demais caem no fallback honesto.
 		const guardMeta = await reloadMeta(conversationId);
-		const reengage = reengageQuestionForGate(nextGate(guardMeta), guardMeta.currentCategory);
+		const ng = nextGate(guardMeta);
+		const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory);
+		console.warn(
+			`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
+		);
 		await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
 	}
 }

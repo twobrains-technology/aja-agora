@@ -91,6 +91,13 @@ function simulatedAck(): { messageId: string } {
 }
 
 export async function sendTextMessage(to: string, text: string) {
+	// Visibilidade de saída (LGPD: telefone mascarado, texto truncado). Sem isto o
+	// log só mostrava "Sent: wamid…" e era impossível saber O QUE o bot enviou —
+	// inclusive se foi o "me perdi" (bug de prod 2026-07-02).
+	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
+	console.log(
+		`[whatsapp-out:text] to=${maskedTo} chars=${text.length} text=${JSON.stringify(text.slice(0, 140))}`,
+	);
 	if (isSimulatedWaId(to)) {
 		publishToClient(to, { type: "text", text });
 		return simulatedAck();
