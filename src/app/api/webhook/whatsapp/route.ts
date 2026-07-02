@@ -52,6 +52,21 @@ export async function POST(req: NextRequest) {
 	const changes = entry?.changes?.[0];
 	const value = changes?.value;
 
+	// ---- Template status updates (message_template_status_update) ----
+	// FIX-202: a Meta notifica aprovação/rejeição/pausa dos Message Templates por
+	// aqui (não em `statuses`, que é entrega de mensagem). Reflete no
+	// whatsappTemplates e, ao aprovar, esvazia a fila de confirmações (FIX-201).
+	// Template desconhecido localmente é logado e ignorado (sem linha órfã).
+	if (changes?.field === "message_template_status_update" && value) {
+		const { applyTemplateStatusUpdate, parseTemplateStatusChange } = await import(
+			"@/lib/whatsapp/template-sync"
+		);
+		applyTemplateStatusUpdate(parseTemplateStatusChange(value)).catch((err) =>
+			console.error("[whatsapp] template status update failed:", err),
+		);
+		return NextResponse.json({ status: "ok" });
+	}
+
 	// ---- Status updates (sent, delivered, read) ----
 	if (value?.statuses) {
 		for (const status of value.statuses) {
