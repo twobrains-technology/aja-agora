@@ -9,7 +9,7 @@ arquivos:
   - src/app/api/admin/whatsapp/templates/[id]/submit/route.ts
   - src/app/api/admin/whatsapp/templates/sync/route.ts
 executado_em: 2026-07-02
-commit: d0be7d20
+commit: 0a34b244
 rodada: 2026-07-02 — feature cadastro/envio de Message Templates Meta oficial
 ---
 ## Palavras do operador
