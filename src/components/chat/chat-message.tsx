@@ -11,7 +11,7 @@ import {
 	RotateCcw,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { useSmoothText } from "@/lib/hooks/use-smooth-text";
 import { ArtifactRenderer } from "./artifact-renderer";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
+import { RevealSelectionProvider } from "./reveal-selection";
 import { StreamingDots } from "./streaming-dots";
 
 type Category = "imovel" | "auto" | "moto" | "servicos";
@@ -173,6 +174,17 @@ export function ChatMessage({
 	const isUser = message.role === "user";
 	const prefersReduced = useReducedMotion();
 	const parts = classifyParts(message);
+	// FIX-196 — cotas do reveal (recommendation_card + comparison_table desta
+	// mensagem) alimentam o contexto de seleção compartilhado (hero + seletor +
+	// dial rebindam à cota escolhida). Fora de um reveal, o provider fica inerte.
+	const revealArtifacts = useMemo(
+		() =>
+			parts
+				.filter((p): p is Extract<RenderablePart, { kind: "artifact" }> => p.kind === "artifact")
+				.map((p) => p.artifact),
+		// biome-ignore lint/correctness/useExhaustiveDependencies: `parts` deriva de `message` (recomputado a cada render); a message é a fonte estável
+		[message],
+	);
 	// FIX-49: interativo só no TURNO ATIVO. Mensagem hidratada da retomada
 	// (`metadata.resumed`) é histórico — artifacts/gates selados, mesmo sendo a
 	// última (até o usuário mandar a próxima mensagem). Fecha a duplicação (FIX-48).
@@ -263,6 +275,7 @@ export function ChatMessage({
 						</div>
 					)}
 
+					<RevealSelectionProvider artifacts={revealArtifacts}>
 					<AnimatePresence mode="popLayout" initial={false}>
 						{(() => {
 							const segments = groupAdjacentText(inlineSegments);
@@ -360,6 +373,7 @@ export function ChatMessage({
 							});
 						})()}
 					</AnimatePresence>
+					</RevealSelectionProvider>
 
 					{showInflightDots && (
 						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

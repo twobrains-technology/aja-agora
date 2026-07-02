@@ -10,14 +10,13 @@ import type { RecommendationCardPayload } from "@/lib/chat/types";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
+import { useRevealSelection } from "../reveal-selection";
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
 		style: "currency",
 		currency: "BRL",
 	}).format(value);
-
-const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
 // docx passo 4: "tipo de grupo" no resumo por opção.
 const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
@@ -62,10 +61,49 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
-	const handleCTA = () => {
+	// FIX-196 — hero fixo do reveal. Quando há contexto de reveal, o hero REBINDA
+	// à cota selecionada no seletor (comparison_table); fora dele (card isolado /
+	// fluxo legado), usa o próprio payload. A cota selecionada pode NÃO ser a
+	// recomendada — nesse caso o hero não afirma "recomendação" nem exibe score
+	// (as alternativas não carregam score ancorado — Lei 3, não fabricar).
+	const reveal = useRevealSelection();
+	const cota = reveal.isReveal ? reveal.selectedCota : null;
+
+	const administradora = cota?.administradora ?? payload.administradora;
+	const monthlyPayment = cota?.monthlyPayment ?? payload.monthlyPayment;
+	const creditValue = cota?.creditValue ?? payload.creditValue;
+	const termMonths = cota?.termMonths ?? payload.termMonths;
+	const category = cota?.category ?? payload.category;
+
+	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
+	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
+	const contempladosMes = cota
+		? cota.availableSlots
+		: (payload.availableSlots ?? payload.contempladosMes ?? 0);
+
+	// Cota recomendada (selo + score ancorado) × alternativa selecionada (neutra).
+	// Sem reveal, o card É a recomendação (comportamento legado preservado).
+	const isRecommended = cota ? cota.isRecommended : true;
+	const score = cota ? cota.score : payload.score;
+	const scoreBreakdown = cota ? cota.scoreBreakdown : payload.scoreBreakdown;
+	const showScoreBreakdown = isRecommended && scoreBreakdown != null;
+
+	const handleFollow = () => {
+		if (isStreaming || !cota) return;
+		// FIX-196: escolha estruturada — carrega o groupId REAL resolvido → contrato
+		// sem re-resolução (fim do P0). Handler server-side: bloco-a (TODO abaixo).
+		const label = `Seguir com ${cota.administradora}`;
+		// TODO(bloco-a): `choose_offer` é tratado no route pelo bloco-a-reveal-dados.
+		void sendAction(
+			{ kind: "choose_offer", groupId: cota.groupId, ofertaId: cota.ofertaId, label },
+			label,
+		);
+	};
+
+	const handleInterest = () => {
 		if (isStreaming) return;
 		const label = "Tenho interesse";
-		void sendAction({ kind: "interest", administradora: payload.administradora, label }, label);
+		void sendAction({ kind: "interest", administradora, label }, label);
 	};
 
 	return (
@@ -80,27 +118,41 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 		>
 			{/* Header */}
 			<div className="px-[18px] pt-4 pb-0 flex flex-col gap-[7px]">
-				{/* Selo "Recomendação" com marca-sol + rótulo qualitativo */}
+				{/* Selo + rótulo qualitativo. Recomendada → marca-sol + fit label; cota
+				    alternativa selecionada no seletor → selo neutro, sem afirmar score. */}
 				<div className="flex items-center justify-between gap-2">
-					<span
-						className={cn(
-							"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
-							"bg-primary/10 text-primary border-primary/28",
-						)}
-					>
-						{/* Marca-sol colorida — assinatura da Aja Agora na recomendação */}
-						<SunMark variant="color" className="size-4" />
-						Recomendação
-					</span>
+					{isRecommended ? (
+						<span
+							className={cn(
+								"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
+								"bg-primary/10 text-primary border-primary/28",
+							)}
+						>
+							{/* Marca-sol colorida — assinatura da Aja Agora na recomendação */}
+							<SunMark variant="color" className="size-4" />
+							Recomendação
+						</span>
+					) : (
+						<span
+							className={cn(
+								"inline-flex items-center h-6 px-[11px] rounded-full text-[11px] font-semibold border",
+								"bg-muted text-muted-foreground border-border",
+							)}
+						>
+							Cota selecionada
+						</span>
+					)}
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
 					    (comparison-table); breakdown segue no expansível.
 					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
 					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
-					<span className="text-sm font-semibold text-primary">
-						{recommendationFitLabel(payload.score, payload.scoreBreakdown.monthlyFit)}
-					</span>
+					{isRecommended && score != null && scoreBreakdown != null && (
+						<span className="text-sm font-semibold text-primary">
+							{recommendationFitLabel(score, scoreBreakdown.monthlyFit)}
+						</span>
+					)}
 				</div>
-				<p className="text-xs text-muted-foreground m-0 truncate">{payload.administradora}</p>
+				<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
 			</div>
 
 			{/* Body */}
@@ -109,7 +161,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				<div>
 					<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
 					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
-						{formatBRL(payload.monthlyPayment)}
+						{formatBRL(monthlyPayment)}
 						<span className="text-base font-normal text-muted-foreground">/mês</span>
 					</p>
 				</div>
@@ -118,78 +170,72 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				<div className="grid grid-cols-2 gap-x-4 gap-y-3">
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(payload.creditValue)}</p>
+						<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(creditValue)}</p>
 					</div>
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Prazo</p>
-						<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
+						<p className="aja-num text-sm font-semibold mt-0.5">{termMonths} meses</p>
 					</div>
-					{/* docx passo 4: qtde de contemplados/mês (contagem REAL da oferta).
-					    contemplationRate da Bevi é contagem, não % — só mostra o rótulo
-					    de percentual quando contempladosMes não veio. */}
-					{payload.contempladosMes !== undefined ? (
+					{/* docx passo 4: qtde de contemplados/mês (contagem REAL coagida).
+					    FIX-196/§3.1: só exibe com dado real ancorado (>0); nunca % de
+					    contemplação (taxaContemplacao é fração, não contagem). */}
+					{contempladosMes > 0 && (
 						<div>
 							<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">
-								{payload.contempladosMes} por mês
-							</p>
-						</div>
-					) : (
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">
-								{formatPercent(payload.contemplationRate)}
-							</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{contempladosMes} por mês</p>
 						</div>
 					)}
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Tipo de grupo</p>
-						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[payload.category]}</p>
+						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[category]}</p>
 					</div>
 				</div>
 
-				{/* Expandable score breakdown */}
-				<div>
-					<button
-						type="button"
-						onClick={() => setExpanded(!expanded)}
-						className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
-						aria-expanded={expanded}
-						aria-controls={`score-breakdown-${payload.id}`}
-					>
-						<span>Por que esta recomendação?</span>
-						<ChevronDown
-							className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
-						/>
-					</button>
-					<AnimatePresence>
-						{expanded && (
-							<motion.div
-								id={`score-breakdown-${payload.id}`}
-								initial={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-								animate={prefersReduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
-								exit={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-								transition={{ duration: 0.2 }}
-								className="overflow-hidden"
-							>
-								<div className="flex flex-col gap-[11px] pt-3">
-									{(
-										Object.entries(FACTOR_LABELS) as Array<
-											[keyof RecommendationCardPayload["scoreBreakdown"], string]
-										>
-									).map(([key, label]) => (
-										<ScoreBar key={key} label={label} value={payload.scoreBreakdown[key]} />
-									))}
-								</div>
-							</motion.div>
-						)}
-					</AnimatePresence>
-				</div>
+				{/* Expandable score breakdown — só na cota recomendada (score ancorado) */}
+				{showScoreBreakdown && scoreBreakdown != null && (
+					<div>
+						<button
+							type="button"
+							onClick={() => setExpanded(!expanded)}
+							className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+							aria-expanded={expanded}
+							aria-controls={`score-breakdown-${payload.id}`}
+						>
+							<span>Por que esta recomendação?</span>
+							<ChevronDown
+								className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
+							/>
+						</button>
+						<AnimatePresence>
+							{expanded && (
+								<motion.div
+									id={`score-breakdown-${payload.id}`}
+									initial={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+									animate={prefersReduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+									exit={prefersReduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+									transition={{ duration: 0.2 }}
+									className="overflow-hidden"
+								>
+									<div className="flex flex-col gap-[11px] pt-3">
+										{(
+											Object.entries(FACTOR_LABELS) as Array<
+												[keyof RecommendationCardPayload["scoreBreakdown"], string]
+											>
+										).map(([key, label]) => (
+											<ScoreBar key={key} label={label} value={scoreBreakdown[key]} />
+										))}
+									</div>
+								</motion.div>
+							)}
+						</AnimatePresence>
+					</div>
+				)}
 
 				{/* Divider */}
 				<div className="h-px bg-border" />
 
-				{/* CTA primary */}
+				{/* CTA primary — reveal: "Seguir com <cota>" (choose_offer, groupId real);
+				    legado (card isolado): "Tenho interesse" (avanço no funil). */}
 				<Button
 					className={cn(
 						"w-full min-h-[46px] rounded-[13px] font-semibold text-sm gap-2",
@@ -197,10 +243,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						"hover:brightness-[1.06] transition-filter",
 					)}
 					size="lg"
-					onClick={handleCTA}
+					onClick={cota ? handleFollow : handleInterest}
 					disabled={isStreaming}
 				>
-					Tenho interesse
+					{cota ? `Seguir com ${cota.administradora}` : "Tenho interesse"}
 				</Button>
 			</div>
 		</div>

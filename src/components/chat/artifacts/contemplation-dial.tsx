@@ -8,6 +8,7 @@ import type { ContemplationDialPayload } from "@/lib/chat/types";
 import { computeContemplationDial, type DialLikelihood } from "@/lib/consorcio/contemplation-dial";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
+import { useRevealSelection } from "../reveal-selection";
 
 // Mostrador de contemplação — re-UX arrastável (handoff componentes-aja). O
 // ponteiro semicircular navega o mês-alvo (Pointer Events + teclado, role=slider);
@@ -30,26 +31,41 @@ const LIKELIHOOD: Record<DialLikelihood, { label: string; cls: string; pos: numb
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
 	const reduce = useReducedMotion();
-	const maxMonth = Math.max(3, payload.termMonths);
+
+	// FIX-196 — quando o dial faz parte de um reveal com seletor, REBINDA à cota
+	// selecionada (recalcula no lugar). Os parâmetros de lance
+	// (historicalWinningBidPct/referenceMonth/maxEmbutidoPct) só existem pra cota
+	// recomendada — numa alternativa caem na heurística do motor. Sem contexto de
+	// reveal (turno separado do simulador, o caso comum), usa o próprio payload.
+	const reveal = useRevealSelection();
+	const selCota = reveal.isReveal ? reveal.selectedCota : null;
+	const usesRichParams = selCota == null || selCota.isRecommended;
+	const creditValue = selCota?.creditValue ?? payload.creditValue;
+	const termMonths = selCota?.termMonths ?? payload.termMonths;
+	const monthlyPayment = selCota?.monthlyPayment ?? payload.monthlyPayment;
+
 	const MIN = 1;
-	const MAX = maxMonth;
-	const [month, setMonth] = useState(clamp(payload.initialTargetMonth, MIN, MAX));
+	const MAX = Math.max(3, termMonths);
+	const [month, setMonth] = useState(() => clamp(payload.initialTargetMonth, MIN, MAX));
 	const gaugeRef = useRef<HTMLDivElement>(null);
 	const draggingRef = useRef(false);
+
+	// Mês efetivo clampado contra o prazo EFETIVO (o rebind pode mudar o teto).
+	const activeMonth = clamp(month, MIN, MAX);
 
 	const r = useMemo(
 		() =>
 			computeContemplationDial({
-				creditValue: payload.creditValue,
-				termMonths: payload.termMonths,
-				targetMonth: month,
-				historicalWinningBidPct: payload.historicalWinningBidPct,
+				creditValue,
+				termMonths,
+				targetMonth: activeMonth,
 				// FIX-C1: calibra a curva no par real da oferta (lance% · mês).
-				referenceMonth: payload.referenceMonth,
-				monthlyPayment: payload.monthlyPayment,
-				maxEmbutidoPct: payload.maxEmbutidoPct,
+				historicalWinningBidPct: usesRichParams ? payload.historicalWinningBidPct : undefined,
+				referenceMonth: usesRichParams ? payload.referenceMonth : undefined,
+				monthlyPayment,
+				maxEmbutidoPct: usesRichParams ? payload.maxEmbutidoPct : undefined,
 			}),
-		[month, payload],
+		[activeMonth, creditValue, termMonths, monthlyPayment, usesRichParams, payload],
 	);
 
 	// FIX-C5: confronto do lance declarado na qualificação com a parte em DINHEIRO.
@@ -58,7 +74,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 			? payload.declaredLanceValue >= r.ownCashValue
 			: null;
 
-	const fraction = (month - MIN) / Math.max(1, MAX - MIN);
+	const fraction = (activeMonth - MIN) / Math.max(1, MAX - MIN);
 	const angle = Math.PI * (1 - fraction); // mês 1 → π (esquerda) · fim → 0 (direita)
 	const tipX = 100 + 72 * Math.cos(angle);
 	const tipY = 100 - 72 * Math.sin(angle);
@@ -93,7 +109,8 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 					aria-label="Mês alvo de contemplação"
 					aria-valuemin={MIN}
 					aria-valuemax={MAX}
-					aria-valuenow={month}
+					aria-valuenow={activeMonth}
+					aria-valuetext={`${activeMonth} ${activeMonth === 1 ? "mês" : "meses"} até contemplar`}
 					tabIndex={0}
 					onPointerDown={(e) => {
 						draggingRef.current = true;
@@ -121,10 +138,10 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 					}}
 					onKeyDown={(e) => {
 						if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-							setMonth((m) => clamp(m - 1, MIN, MAX));
+							setMonth(clamp(activeMonth - 1, MIN, MAX));
 							e.preventDefault();
 						} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-							setMonth((m) => clamp(m + 1, MIN, MAX));
+							setMonth(clamp(activeMonth + 1, MIN, MAX));
 							e.preventDefault();
 						}
 					}}
@@ -174,9 +191,9 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				</div>
 
 				<div className="-mt-1 text-center">
-					<span className="text-[1.9rem] font-bold leading-none tabular-nums">{month}</span>
+					<span className="text-[1.9rem] font-bold leading-none tabular-nums">{activeMonth}</span>
 					<span className="ml-1.5 text-xs text-muted-foreground">
-						{month === 1 ? "mês" : "meses"} até contemplar
+						{activeMonth === 1 ? "mês" : "meses"} até contemplar
 					</span>
 				</div>
 				<div className="-mt-1 flex justify-between px-1 text-[11px] text-muted-foreground">
@@ -214,9 +231,9 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
 							Até contemplar
 						</span>
-						<b className="text-[1.18rem] font-bold tabular-nums">{brl(payload.monthlyPayment)}</b>
+						<b className="text-[1.18rem] font-bold tabular-nums">{brl(monthlyPayment)}</b>
 						<small className="text-[10px] text-muted-foreground">
-							por ~{month} {month === 1 ? "mês" : "meses"}
+							por ~{activeMonth} {activeMonth === 1 ? "mês" : "meses"}
 						</small>
 					</div>
 					<div className="flex items-center text-primary">
@@ -236,7 +253,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				{/* Receita */}
 				<div className="space-y-1.5 rounded-xl border border-border bg-card px-3.5 py-2.5">
 					<div className="flex items-baseline justify-between gap-3 text-xs">
-						<span className="text-muted-foreground">Lance pra contemplar no mês {month}</span>
+						<span className="text-muted-foreground">Lance pra contemplar no mês {activeMonth}</span>
 						<b className="tabular-nums">
 							{r.mode === "sorteio"
 								? "sem lance (sorteio)"
