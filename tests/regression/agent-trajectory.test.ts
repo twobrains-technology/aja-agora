@@ -41,19 +41,21 @@ import { createUIMessageStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { pendingGateAfterTurn, shouldReengageGate } from "@/lib/agent/gate-reengage";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import {
 	buildAdvanceToContractDirective,
 	buildChooseOfferDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildExperienceDoubtsDirective,
 	buildRangePickerDirective,
 	buildSearchSummaryDirective,
 	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
 import { textBlockSeparator } from "@/lib/agent/orchestrator/runner";
 import {
 	EphemeralTextFilter,
@@ -71,7 +73,7 @@ import {
 	prazoMesesForIntent,
 	QUALIFY_GATE_INPUT_KIND,
 } from "@/lib/agent/qualify-config";
-import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
+import { decideShowGate, nextGate, shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
 import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import {
 	isDiscoveryFailedResult,
@@ -7869,7 +7871,8 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 
 describe("FIX-188 — preâmbulo de processo é EFÊMERO (nunca persistido nem enviado)", () => {
 	// Detector do bug: preâmbulos de processo na mensagem final.
-	const PREAMBULO = /(deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b)/i;
+	const PREAMBULO =
+		/(deixa eu (buscar|puxar|usar)|vou buscar|preciso primeiro buscar|\bum segundo\b)/i;
 
 	it("cassette: stream do print com preâmbulos empilhados é reproduzido cru (o bug)", async () => {
 		// Reprodução fiel do print — o modelo despejou 4 preâmbulos numa bolha só.
@@ -8303,15 +8306,193 @@ describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista",
 		// Cassette esperado: "A parcela fica em R$ 500/mês"
 		//                   "Essa opção encaixa bem pro seu perfil"
 		// Cassette proibido: "... 45% do seu teto..." (MOTO não tem teto)
-		const cassetteMotoOK =
-			"A parcela fica em R$ 500/mês. Essa opção encaixa bem pro seu perfil.";
+		const cassetteMotoOK = "A parcela fica em R$ 500/mês. Essa opção encaixa bem pro seu perfil.";
 		const cassetteMotoNOK = "A parcela de R$ 500/mês — 60% do seu teto de R$ 833.";
-		expect(
-			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoOK)),
-		).toBe(false);
-		expect(
-			TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoNOK)),
-		).toBe(true);
+		expect(TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoOK))).toBe(false);
+		expect(TETO_FABRICADO_DETECTORS.some((rx) => rx.test(cassetteMotoNOK))).toBe(true);
 	});
 });
 
+// ============================================================================
+// CENARIO — FIX-206 — Funil TRAVA após explicação (BUG-EXPERIENCE-EXPLICA-E-TRAVA)
+// ----------------------------------------------------------------------------
+// Real (Kairo, WhatsApp 2026-07-02, print): o usuário clicou "🤔 Tenho dúvidas",
+// o agente explicou consórcio (4-5 frases, SEM pergunta — o directive proíbe) e o
+// funil TRAVOU ~5min. Só destravou quando o usuário digitou "continua/vai".
+//
+// Root cause: o clique dispara buildExperienceDoubtsDirective como turno de
+// SERVIDOR (isUserTurn=false); doubtsAddressed (que LIBERA o próximo gate) só era
+// marcado em `if (isUserTurn ...)` no runner → nunca em turno de servidor →
+// nextGate preso em doubts-wait → decideShowGate("doubts-wait")=false → silêncio.
+//
+// Fix (estratégia 1): a explicação server-authored É o endereçamento das dúvidas.
+// shouldMarkDoubtsAddressed cobre server E user → nextGate converge pro `consent`
+// (que já oferece "Entendi, continuar" / "Entender mais antes") no MESMO turno.
+//
+// Defesa estrutural detalhada:
+//   - src/lib/agent/qualify-state.funil-nao-trava.test.ts (função pura + varredura)
+//   - src/lib/agent/orchestrator/runner.funil-nao-trava.integration.test.ts (E2E DB)
+// Aqui: cassette do texto observado + acoplamento à decisão/gate.
+// ============================================================================
+describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem próximo passo", () => {
+	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print).
+	function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "helena-imovel",
+			currentCategory: "imovel",
+			experiencePrev: "doubts",
+			doubtsAddressed: false,
+			...over,
+		};
+	}
+
+	it("cassette: a explicação de consórcio é FECHADA (sem pergunta) — o texto não conduz sozinho", async () => {
+		// Reprodução fiel: a explicação que o agente deu no print. O directive de
+		// dúvidas PROÍBE pergunta no final — por isso o funil PRECISA oferecer o
+		// próximo passo (o gate), senão morre em silêncio.
+		const { text, toolCalls } = await runMockStream([
+			{ type: "stream-start", warnings: [] },
+			...textChunks(
+				"t1",
+				"Consórcio é um grupo de pessoas que juntas formam uma poupança coletiva, " +
+					"sem juros. Todo mês uma parte do grupo é contemplada, por sorteio ou por " +
+					"lance, e recebe a carta de crédito pra comprar o bem. É diferente de " +
+					"financiamento justamente por não ter juros. Nosso papel na Aja Agora é " +
+					"encontrar o grupo com maior chance de te atender no prazo que você deseja.",
+			),
+			FINISH_STOP,
+		]);
+		// Explicação fechada: nenhuma tool, e o texto NÃO termina perguntando.
+		expect(toolCalls.length).toBe(0);
+		expect(text.trimEnd().endsWith("?")).toBe(false);
+	});
+
+	it("o BECO (sem o fix): server-authored preso em doubts-wait = silêncio", () => {
+		const meta = doubtsClickMeta();
+		expect(nextGate(meta, { hasContactName: true })).toBe("doubts-wait");
+		// doubts-wait não tem card → o turno server-authored fecharia mudo.
+		expect(
+			decideShowGate({ gate: "doubts-wait", intent: "neutral", meta, isUserTurn: false }),
+		).toBe(false);
+	});
+
+	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro consent", () => {
+		// shouldMarkDoubtsAddressed reconhece o turno de servidor como endereçamento.
+		expect(
+			shouldMarkDoubtsAddressed({
+				meta: { experiencePrev: "doubts", doubtsAddressed: false },
+				producedArtifact: false,
+				userReplied: true,
+			}),
+		).toBe(true);
+		// Aplicado o marcador, o funil oferece o consent NO MESMO turno server-authored.
+		const marked = doubtsClickMeta({ doubtsAddressed: true });
+		expect(nextGate(marked, { hasContactName: true })).toBe("consent");
+		expect(
+			decideShowGate({ gate: "consent", intent: "neutral", meta: marked, isUserTurn: false }),
+		).toBe(true);
+	});
+
+	it("acoplamento: o runner marca doubtsAddressed via shouldMarkDoubtsAddressed", () => {
+		expect(readSource("src/lib/agent/orchestrator/runner.ts")).toMatch(/shouldMarkDoubtsAddressed/);
+	});
+
+	it("acoplamento: o directive de dúvidas segue proibindo pergunta (o gate é quem conduz)", () => {
+		const d = buildExperienceDoubtsDirective("Tenho dúvidas");
+		expect(d).toMatch(/NÃO chame tools/);
+		// O texto explica; a condução determinística é do funil (consent), não do prompt.
+	});
+});
+
+// ============================================================================
+// CENARIO — FIX-207 — Watchdog de inatividade re-abre o funil parado
+// ----------------------------------------------------------------------------
+// Complementa o FIX-206: quando um turno de TEXTO é classificado como dúvida e
+// decideShowGate suprime o gate LEGITIMAMENTE, se o usuário some o funil fica
+// parado. O watchdog (workers/gate-reengage-poll) re-engaja após o teto de
+// inatividade. Decisão pura (shouldReengageGate/pendingGateAfterTurn) espelha
+// isStreamStuck — 100% determinística (clock injetado).
+//
+// Defesa detalhada: src/lib/agent/gate-reengage.test.ts (limites) +
+//   src/lib/workers/gate-reengage-poll.integration.test.ts (ciclo com DB).
+// Aqui: acoplamento do invariante ao orquestrador.
+// ============================================================================
+describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inatividade", () => {
+	function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+		return {
+			currentPersona: "helena-imovel",
+			currentCategory: "imovel",
+			experiencePrev: "first",
+			...over,
+		};
+	}
+	const NOW = 1_800_000_000_000;
+
+	it("o orquestrador MARCA a pendência quando o gate real é suprimido num turno de usuário", () => {
+		expect(
+			pendingGateAfterTurn({
+				meta: pendingMeta(),
+				gateFired: false,
+				isUserTurn: true,
+				hasContactName: true,
+			}),
+		).toBe("consent");
+	});
+
+	it("nunca marca em turno server-authored (FIX-206 já avança) nem quando o gate disparou", () => {
+		expect(
+			pendingGateAfterTurn({
+				meta: pendingMeta(),
+				gateFired: false,
+				isUserTurn: false,
+				hasContactName: true,
+			}),
+		).toBeNull();
+		expect(
+			pendingGateAfterTurn({
+				meta: pendingMeta(),
+				gateFired: true,
+				isUserTurn: true,
+				hasContactName: true,
+			}),
+		).toBeNull();
+	});
+
+	it("re-engaja só ALÉM do teto de inatividade, nunca em handoff/fechado", () => {
+		expect(
+			shouldReengageGate({
+				meta: pendingMeta(),
+				pendingGateSince: NOW,
+				now: NOW + 5_000,
+				timeoutMs: 90_000,
+			}),
+		).toBe(false);
+		expect(
+			shouldReengageGate({
+				meta: pendingMeta(),
+				pendingGateSince: NOW,
+				now: NOW + 90_000,
+				timeoutMs: 90_000,
+			}),
+		).toBe(true);
+		expect(
+			shouldReengageGate({
+				meta: pendingMeta({ handoffSuggested: true }),
+				pendingGateSince: NOW,
+				now: NOW + 90_000,
+				timeoutMs: 90_000,
+			}),
+		).toBe(false);
+	});
+
+	it("acoplamento: o orquestrador consome pendingGateAfterTurn (marca/limpa em código, Lei 4)", () => {
+		expect(readSource("src/lib/agent/orchestrator/index.ts")).toMatch(/pendingGateAfterTurn/);
+	});
+
+	it("acoplamento: o worker de re-engajamento existe e usa o teto configurável", () => {
+		const worker = readSource("src/lib/workers/gate-reengage-poll.ts");
+		expect(worker).toMatch(/runReengageCycle/);
+		expect(worker).toMatch(/shouldReengageGate/);
+		expect(worker).toMatch(/GATE_REENGAGE_TIMEOUT_MS|timeoutMs/);
+	});
+});

@@ -112,6 +112,32 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 }
 
 /**
+ * FIX-206 — o clique "🤔 Tenho dúvidas" dispara `buildExperienceDoubtsDirective`
+ * como turno de SERVIDOR (isUserTurn=false). Esse turno JÁ é a explicação que
+ * endereça as dúvidas — exatamente como quando o usuário responde por texto no
+ * caminho livre. Marcar `doubtsAddressed` nos DOIS casos faz `nextGate` convergir
+ * pro `consent` (que já oferece "Entendi, continuar" / "Entender mais antes") no
+ * MESMO turno, matando o beco sem saída onde o funil parava em `doubts-wait` mudo
+ * e o usuário tinha de digitar "continua/vai".
+ *
+ * Independe de `isUserTurn` — é justamente o ponto do fix (o servidor também
+ * endereça). Função PURA (Camada 1 prova o invariante sem DB); o runner a consome
+ * no fim do turno. Auto-avançar ≠ pular etapa: o gate de consent segue APARECENDO.
+ */
+export function shouldMarkDoubtsAddressed(args: {
+	meta: Pick<ConversationMetadata, "experiencePrev" | "doubtsAddressed">;
+	producedArtifact: boolean;
+	userReplied: boolean;
+}): boolean {
+	return (
+		!args.producedArtifact &&
+		args.meta.experiencePrev === "doubts" &&
+		!args.meta.doubtsAddressed &&
+		args.userReplied
+	);
+}
+
+/**
  * Decides whether to dispatch the next qualify gate (button) at the end of a turn.
  * The state machine still tracks WHICH gate is next; this function only decides
  * if NOW is the right moment to interrupt the conversation with structured UI.
@@ -127,9 +153,16 @@ export function decideShowGate(args: {
 	isUserTurn: boolean;
 }): boolean {
 	const { gate, intent, meta, isUserTurn } = args;
+	// FIX-206: `doubts-wait` não tem card (é um "aguarde") — nunca vira gate. Um
+	// turno server-authored que legitimamente resolve nele (ex.: "Entender mais
+	// antes", que PERGUNTA e espera a resposta livre) já deu ao usuário um gancho:
+	// não é trava. O clique "Tenho dúvidas" NÃO cai mais aqui — o runner marca
+	// doubtsAddressed (shouldMarkDoubtsAddressed) e nextGate converge pro consent.
 	if (gate === "doubts-wait") return false;
-	// Server-authored turns (button click, transition) are always followed by a gate
-	// — that's the whole point of the directive flow.
+	// Server-authored turns (button click, transition) are always followed by the
+	// next gate — that's the whole point of the directive flow. Por isso qualquer
+	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o
+	// próximo passo no mesmo turno, sem exigir "continua/vai" do usuário (FIX-206).
 	if (!isUserTurn) return true;
 
 	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais

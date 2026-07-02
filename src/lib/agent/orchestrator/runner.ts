@@ -6,7 +6,13 @@ import { selectExamplesForTurn } from "@/lib/agent/example-selector";
 import { allowedTools, phaseFromMeta } from "@/lib/agent/orchestrator/tool-policy";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { getPersona } from "@/lib/agent/personas-repo";
-import { decideShowGate, type Gate, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import {
+	decideShowGate,
+	type Gate,
+	nextGate,
+	shouldMarkDoubtsAddressed,
+	type UserIntent,
+} from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
@@ -21,17 +27,17 @@ import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
-	EphemeralTextFilter,
-	joinSeparator,
-	normalizeGluedSentences,
-	stripProcessPreamble,
-} from "./sanitizer";
-import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
 	type RevealGroupIndex,
 } from "./recommendation-payload";
+import {
+	EphemeralTextFilter,
+	joinSeparator,
+	normalizeGluedSentences,
+	stripProcessPreamble,
+} from "./sanitizer";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
@@ -691,16 +697,22 @@ export async function* runAgentTurn(args: {
 	const mayEvaluateGates =
 		!producedArtifact || turnArtifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
 	if (!isConcierge && mayEvaluateGates) {
-		if (isUserTurn && !producedArtifact) {
-			const userReplied = fullResponse.length > 0;
-			if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed && userReplied) {
-				meta.doubtsAddressed = true;
-				await persistMeta(conversationId, meta);
-			}
-			if (meta.pendingFollowUp && userReplied) {
-				meta.pendingFollowUp = false;
-				await persistMeta(conversationId, meta);
-			}
+		const userReplied = fullResponse.length > 0;
+		// FIX-206: o clique "Tenho dúvidas" roda a explicação como turno de SERVIDOR
+		// (isUserTurn=false) — e ESSE turno já endereça as dúvidas, igual à resposta do
+		// usuário no caminho de texto. shouldMarkDoubtsAddressed cobre os DOIS casos,
+		// fazendo nextGate convergir pro consent no MESMO turno (mata o beco sem saída
+		// onde o funil parava em doubts-wait mudo e o usuário tinha de digitar "vai").
+		if (shouldMarkDoubtsAddressed({ meta, producedArtifact, userReplied })) {
+			meta.doubtsAddressed = true;
+			await persistMeta(conversationId, meta);
+		}
+		// pendingFollowUp ("Entender mais antes") só é limpo quando o USUÁRIO responde
+		// a dúvida por texto — o directive que PERGUNTA é server-authored e mantém o
+		// gate suprimido de propósito (o agente perguntou, tem gancho, não trava).
+		if (isUserTurn && !producedArtifact && meta.pendingFollowUp && userReplied) {
+			meta.pendingFollowUp = false;
+			await persistMeta(conversationId, meta);
 		}
 
 		const refreshed = await reloadMeta(conversationId);
