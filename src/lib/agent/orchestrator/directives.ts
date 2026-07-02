@@ -59,7 +59,12 @@ export function buildExperienceDoubtsDirective(replyTitle: string): string {
 // ---- Qualify reactions ----
 
 export function buildQualifyStartYesDirective(): string {
-	return `[usuário aceitou começar a qualificação]`;
+	// FIX-194 (qa-dono-produto, defeito E): o próximo passo é a IDENTIDADE (CPF +
+	// celular + LGPD) — o sistema mostra esse card em seguida. O valor do bem tem o
+	// PRÓPRIO passo, DEPOIS da identidade (FIX-53). Sem esta trava, o agente puxava
+	// "Quanto custa o carro?" no MESMO balão do gate de CPF (uma pergunta que o
+	// usuário nem pode responder ali). Uma coisa por vez: reage curto e PARA.
+	return `Usuário aceitou começar a qualificação. FLUXO: escreva UMA frase curta e calorosa de transição no SEU TOM (ex.: "Perfeito, bora lá!" / "Show, vamos nessa."). NÃO pergunte o valor nem o preço do bem, NÃO peça nenhum dado, NÃO chame tools — o sistema conduz o próximo passo (a identidade) logo em seguida. O valor do bem vem DEPOIS, no passo dele.`;
 }
 
 export function buildQualifyStartMoreDirective(): string {
