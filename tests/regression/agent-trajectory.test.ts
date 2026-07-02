@@ -6199,6 +6199,11 @@ describe("BUG-MESA-COPILOT-ROUTING — número de mesa roteia pro copiloto, não
 // ----------------------------------------------------------------------------
 // Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
 // simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
+// ============================================================================
+// FIX-76 — agente alucina falha de busca + ressuscita valor STALE como dado real
+// ----------------------------------------------------------------------------
+// Real (Kairo 2026-06-25, persona Maria, conversa retomada de 3 dias): pediu
+// simular R$ 130.000 sobre um reveal antigo de R$ 256.000. O agente respondeu
 // "estou com dificuldade em acessar os grupos" / "instabilidade nas buscas"
 // (turn-trace: toolsCalled=[] — search_groups NUNCA foi chamada, ZERO erro de
 // tool) e ofereceu "a faixa de R$ 256.000 que já temos dados reais disponíveis"
@@ -6863,6 +6868,151 @@ describe("FIX-110 — stream do chat nunca deixa o agente mudo (onError + turno 
 		expect(isTurnEmpty({ ...recordVazio, toolCount: 1 })).toBe(false);
 		// O fallback existe e é uma frase honesta (não-vazia).
 		expect(EMPTY_TURN_FALLBACK.length).toBeGreaterThan(0);
+	});
+});
+
+// ============================================================================
+// FIX-74 — orçamento mensal nunca vira prazo (QA dono-de-produto 2026-07-02)
+// ----------------------------------------------------------------------------
+// Bug real em prod: "Quero um carro de uns R$ 70 mil, gastando perto de R$
+// 900 por mês." — o analyzer LLM classificou "R$ 900/mês" como prazoMeses
+// não-nulo (mesma classe do bug de 2026-06-21), persistindo um dado FABRICADO
+// no perfil sem o usuário ter dito o prazo. Guard DETERMINÍSTICO em analyze.ts
+// (isMonthlyBudgetOnlyMention) descarta prazoMeses quando só há cadência
+// mensal sem menção de duração.
+//
+// NOTA (reconciliado no merge pra develop, 2026-07-02): a rodada de QA que
+// originou este card assumiu que o gate "timeframe" deveria voltar a
+// disparar. Mas o FIX-103 (Kairo, 2026-06-28 — JÁ em develop) removeu esse
+// gate da qualificação de propósito ("usuário só fala o valor agora, prazo
+// não" — qualify-state.ts NUNCA mais emite "timeframe"). O guard determinístico
+// deste fix continua válido por si só (não persiste dado fabricado); a
+// asserção de gate foi ajustada pra refletir a política atual — o funil
+// segue seu curso normal (não trava) mesmo com o guard rejeitando o dado.
+// ============================================================================
+describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue seu curso (FIX-103)", () => {
+	it("cassette: analyzer classifica prazoMeses errado a partir de 'R$ 900 por mês' → guard descarta; funil não trava (sem gate timeframe, FIX-103)", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			// Reproduz o bug: o analyzer (LLM real em prod) classificou o
+			// orçamento mensal como prazoMeses.
+			prazoMeses: 117,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge(
+			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
+			"auto",
+			meta,
+		);
+
+		// O valor é preservado — não se re-pergunta.
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
+		// O prazo alucinado pelo classifier é DESCARTADO pelo guard determinístico
+		// — não persiste dado fabricado no perfil.
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+		// FIX-103: nextGate NUNCA emite "timeframe" (gate removido da
+		// qualificação) — o funil segue pro próximo gate real (lance).
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+	});
+
+	it("controle: mesmo cassette com menção temporal explícita ('em 2 anos') preserva prazoMeses e NÃO reabre o gate", async () => {
+		const { analyzeAndMerge } = await import("@/lib/agent/orchestrator/analyze");
+		const { analyzeTurn } = await import("@/lib/agent/turn-analyzer");
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			reasoning: "cassette FIX-74 controle",
+			detectedCategory: "auto",
+			detectedSubTopic: null,
+			isExplicitSwitch: false,
+			expertiseLevel: "neutro",
+			experiencePrev: "returning",
+			creditMin: null,
+			creditMax: 70_000,
+			prazoMeses: 24,
+			hasLance: null,
+			userIntent: "providing_info",
+		});
+
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			experiencePrev: "returning",
+			qualifyConsented: true,
+			identityCollected: true,
+		};
+		await analyzeAndMerge("Quero um carro de uns R$ 70 mil, em 2 anos.", "auto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(24);
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
+	});
+});
+
+// ============================================================================
+// FIX-73 — fechamento reusa o crédito da oferta REAL recomendada (QA
+// dono-de-produto 2026-07-02, jornada AUTO web em prod contra ajaagora.com.br)
+// ----------------------------------------------------------------------------
+// Bug real: pedi carro R$ 70 mil / ~R$ 900/mês. O recommendation_card
+// anunciou "R$ 70.000 / parcela R$ 892,48 (99,2% do teto)". A proposta REAL
+// contratada (carta + PDF) saiu "R$ 100.000 / parcela R$ 1.438,28" (Grupo
+// 533) — bait-and-switch. A coerção server-side do recommendation_card em si
+// já é coberta pelo FIX-191 (recommendation-payload.ts/indexRevealGroups).
+// Esta parte cobre a OUTRA metade do bug: o fechamento re-derivava o valor de
+// q.creditMax em vez de reusar a oferta REAL que o card mostrou. Decisão de
+// produto (Kairo): recomendar a COTA REAL — o número decisório é o mesmo
+// número contratado.
+// ============================================================================
+describe("FIX-73 — fechamento reusa o creditValue da oferta REAL recomendada", () => {
+	it("descoberta→fechamento mantém crédito/parcela: buildStartContractInput reusa o recommendedOffer persistido no reveal", async () => {
+		const { buildStartContractInput } = await import("@/lib/bevi/contract-input");
+
+		// O reveal (runner.ts) persiste meta.recommendedOffer a partir do
+		// snapshot REAL (offerSnapshotFromArtifact) — o mesmo crédito que o
+		// card coagido (FIX-191) mostrou ao usuário.
+		const metaAposReveal: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ÂNCORA",
+			// q.creditMax é o TETO pedido (100k) — re-derivar daqui reproduzia o
+			// bug (proposta saía 100k mesmo o card tendo anunciado 70k).
+			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
+			recommendedOffer: {
+				administradora: "ÂNCORA",
+				category: "auto",
+				creditValue: 70_000,
+				termMonths: 80,
+				monthlyPayment: 892.48,
+			},
+		} as ConversationMetadata;
+
+		const contractInput = buildStartContractInput(metaAposReveal, {
+			cpf: "52998224725",
+			celular: "62999887766",
+			lgpd: true,
+		});
+
+		// O fechamento contrata a MESMA cota que a recomendação anunciou —
+		// não o teto de crédito solicitado.
+		expect(contractInput.valor).toBe(70_000);
+	});
+
+	it("acoplamento: contract-input.ts prefere recommendedOffer.creditValue sobre q.creditMax re-derivado", () => {
+		const contractInputSrc = readSource("src/lib/bevi/contract-input.ts");
+		expect(contractInputSrc).toMatch(/recommendedOffer\?\.\s*creditValue/);
 	});
 });
 

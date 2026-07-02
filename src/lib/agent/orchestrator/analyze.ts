@@ -42,6 +42,25 @@ function isShortAffirmative(text: string): boolean {
 	return AFFIRMATIVE_REPLIES.has(trimmed);
 }
 
+// FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
+// gate "timeframe" — o usuário disse só "…R$ 70 mil, gastando perto de R$ 900
+// por mês" (valor + orçamento MENSAL, sem menção de prazo) e o analyzer LLM
+// classificou "R$ 900/mês" como prazoMeses não-nulo. O gate e a guarda contra
+// null já existiam (qualify-state.ts / analyze.ts); o defeito é confiabilidade
+// do classificador, que o prompt sozinho não elimina 100%. Guard
+// DETERMINÍSTICO: quando a mensagem só traz cadência mensal ("por mês",
+// "/mês", "mensal") e NENHUMA menção explícita de duração (dígito + "anos"/
+// "meses", ex.: "24 meses", "2 anos"), o prazoMeses extraído é descartado —
+// não confia só no prompt do analyzer.
+const MONTHLY_CADENCE_MARKER = /(por|ao|a\s+cada)\s*m[êe]s|\/\s*m[êe]s|\bmensal(mente)?\b/i;
+const EXPLICIT_DURATION_MENTION = /\b\d+\s*(anos?|meses?)\b/i;
+
+/** Rejeita prazoMeses extraído quando a mensagem só sinaliza orçamento/parcela
+ * MENSAL, sem nenhuma menção explícita de duração (dígito + anos/meses). */
+function isMonthlyBudgetOnlyMention(text: string): boolean {
+	return MONTHLY_CADENCE_MARKER.test(text) && !EXPLICIT_DURATION_MENTION.test(text);
+}
+
 export type AnalyzeResult = {
 	analysis: TurnAnalysis;
 	metaChanged: boolean;
@@ -110,7 +129,11 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	if (analysis.prazoMeses !== null && q.prazoMeses === undefined) {
+	if (
+		analysis.prazoMeses !== null &&
+		q.prazoMeses === undefined &&
+		!isMonthlyBudgetOnlyMention(text)
+	) {
 		q.prazoMeses = analysis.prazoMeses;
 		q.objetivo = objetivoForPrazo(analysis.prazoMeses);
 		meta.qualifyAnswers = q;
