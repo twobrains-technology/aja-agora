@@ -29,6 +29,7 @@ vi.mock("@/lib/whatsapp/api", () => ({
 
 vi.mock("@/lib/agent/mesa-copilot", () => ({
 	generateMesaCopilotReply: mocks.copilotReplyMock,
+	generateMesaCopilotOpening: vi.fn(async () => "orientação inicial (mock)"),
 }));
 
 import { db } from "@/db";
@@ -42,6 +43,7 @@ import {
 	mesaCopilotMessages,
 	mesaHandoffs,
 } from "@/db/schema";
+import { clearAvulsoSessions } from "./avulso";
 import {
 	getMesaAttendantList,
 	handleMesaCopilot,
@@ -53,6 +55,7 @@ const MANUAL = "MANUAL CANOPUS-TEST — 1) portal; 2) grupo; 3) CPF; 4) carta; 5
 
 type Seed = {
 	administradoraId: string;
+	administradoraNome: string;
 	conversationId: string;
 	leadId: string;
 	beviProposalId: string;
@@ -116,6 +119,7 @@ async function seedCase(opts: { withOpenHandoff: boolean }): Promise<Seed> {
 
 	const seed: Seed = {
 		administradoraId: adm.id,
+		administradoraNome: adm.nome,
 		conversationId: conv.id,
 		leadId: lead.id,
 		beviProposalId: prop.id,
@@ -145,6 +149,7 @@ beforeEach(() => {
 	mocks.sendTextMock.mockClear();
 	mocks.copilotReplyMock.mockClear();
 	invalidateMesaAttendantCache();
+	clearAvulsoSessions();
 });
 
 afterEach(async () => {
@@ -295,21 +300,72 @@ describe("FIX-66 handleMesaCopilot — handoff aberto: persiste e responde", () 
 	});
 });
 
-describe("FIX-66 handleMesaCopilot — SEM handoff aberto: ack, não chama o LLM, não cai em vendas", () => {
-	it("número de mesa sem caso aberto recebe ack e o copiloto NÃO é chamado", async () => {
+describe("handleMesaCopilot — SEM caso aberto: consulta AVULSA de manual (nunca cai em vendas)", () => {
+	it("sem administradora citada → oferece consultar manual (copiloto NÃO chamado, nada persistido)", async () => {
 		const seed = await seedCase({ withOpenHandoff: false });
 
 		await handleMesaCopilot(seed.attendantPhone, "oi, tem algo pra mim?");
 
 		expect(mocks.copilotReplyMock).not.toHaveBeenCalled();
 		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
-		expect(mocks.sendTextMock.mock.calls[0][1].toLowerCase()).toMatch(/nenhum caso|sua mesa/);
+		const reply = String(mocks.sendTextMock.mock.calls[0][1]).toLowerCase();
+		expect(reply).toMatch(/nenhum caso|sua mesa/);
+		expect(reply).toMatch(/manual de uma administradora/);
 
-		// Nada persistido (não há handoff aberto pra anexar).
+		// Nada persistido (consulta de referência, sem caso).
 		const msgs = await db
 			.select()
 			.from(mesaCopilotMessages)
 			.where(eq(mesaCopilotMessages.mesaHandoffId, seed.mesaHandoffId));
 		expect(msgs).toHaveLength(0);
+	});
+
+	it("citando a administradora pelo NOME → copiloto responde em modo avulso com o manual dela (sem persistir)", async () => {
+		const seed = await seedCase({ withOpenHandoff: false });
+
+		await handleMesaCopilot(
+			seed.attendantPhone,
+			`como faço o boleto na ${seed.administradoraNome}?`,
+		);
+
+		expect(mocks.copilotReplyMock).toHaveBeenCalledTimes(1);
+		const arg = mocks.copilotReplyMock.mock.calls[0][0];
+		expect(arg.caso.modo).toBe("avulso");
+		expect(arg.caso.administradoraNome).toBe(seed.administradoraNome);
+		expect(arg.caso.docs.some((d: { textoExtraido: string }) => d.textoExtraido === MANUAL)).toBe(
+			true,
+		);
+		// Modo avulso não tem cliente/cota vinculados.
+		expect(arg.caso.clienteNome ?? null).toBeNull();
+
+		expect(mocks.sendTextMock).toHaveBeenCalledWith(
+			seed.attendantPhone,
+			"Beleza! Passo 1: acesse o portal do parceiro.",
+		);
+
+		// NÃO persiste no DB — é referência, não caso.
+		const msgs = await db
+			.select()
+			.from(mesaCopilotMessages)
+			.where(eq(mesaCopilotMessages.mesaHandoffId, seed.mesaHandoffId));
+		expect(msgs).toHaveLength(0);
+	});
+
+	it("follow-up SEM citar o nome de novo usa a administradora da sessão + acumula histórico", async () => {
+		const seed = await seedCase({ withOpenHandoff: false });
+
+		await handleMesaCopilot(seed.attendantPhone, `dúvida na ${seed.administradoraNome}`);
+		mocks.copilotReplyMock.mockResolvedValueOnce("segunda resposta");
+		await handleMesaCopilot(seed.attendantPhone, "e a segunda via do boleto?");
+
+		expect(mocks.copilotReplyMock).toHaveBeenCalledTimes(2);
+		const secondArg = mocks.copilotReplyMock.mock.calls[1][0];
+		expect(secondArg.caso.administradoraNome).toBe(seed.administradoraNome);
+		const contents = secondArg.history.map((h: { content: string }) => h.content);
+		expect(contents).toEqual([
+			`dúvida na ${seed.administradoraNome}`,
+			"Beleza! Passo 1: acesse o portal do parceiro.",
+			"e a segunda via do boleto?",
+		]);
 	});
 });

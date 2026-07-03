@@ -42,6 +42,12 @@ export interface MesaCopilotCaso {
 	clienteContato?: string | null;
 	/** Data corrente (default: agora) — day-precision no prompt. */
 	currentDate?: Date;
+	/**
+	 * `caso` (default): orientação de contratação de um cliente transbordado.
+	 * `avulso`: consulta de manual sem caso/cliente vinculado — o atendente só quer tirar
+	 * dúvida sobre o procedimento de uma administradora específica (fora de um atendimento).
+	 */
+	modo?: "caso" | "avulso";
 }
 
 export type MesaCopilotPromptBlocks = { stable: string; dynamic: string };
@@ -132,13 +138,21 @@ function renderCaso(caso: MesaCopilotCaso): string {
 
 	if (caso.proposalLink) lines.push(`Proposta Bevi: ${caso.proposalLink}`);
 
+	const lembrete =
+		caso.modo === "avulso"
+			? "CONSULTA AVULSA: o atendente está tirando dúvida sobre o manual desta administradora, " +
+				"SEM um caso/cliente vinculado. Responda objetivo, com base no manual. Se ele perguntar " +
+				"sobre um cliente específico, lembre que o atendimento é aberto quando um cliente é " +
+				"transbordado pra mesa."
+			: "Oriente o atendente a executar ESTE caso na administradora acima, seguindo o manual.";
+
 	return `<caso>
 ${lines.join("\n")}
 Data de hoje: ${currentDateISO}
 </caso>
 
 <lembrete>
-Oriente o atendente a executar ESTE caso na administradora acima, seguindo o manual.
+${lembrete}
 </lembrete>`;
 }
 

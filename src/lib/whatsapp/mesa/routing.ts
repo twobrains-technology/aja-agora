@@ -12,18 +12,30 @@
  *     em `mesa_copilot_messages`, chama o copiloto com o dossiê do caso (manual
  *     da administradora + cota + cliente) e devolve a orientação por WhatsApp.
  */
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
 	administradoraDocs,
+	administradoras,
 	leads,
 	mesaAttendants,
 	mesaCopilotMessages,
 	mesaHandoffs,
 } from "@/db/schema";
-import { generateMesaCopilotReply, type MesaCopilotCaso } from "@/lib/agent/mesa-copilot";
+import {
+	generateMesaCopilotOpening,
+	generateMesaCopilotReply,
+	type MesaCopilotCaso,
+} from "@/lib/agent/mesa-copilot";
 import { claimMesaHandoff } from "@/lib/mesa/handoff";
 import { formatTextForWhatsApp, splitMessage } from "../formatter";
+import {
+	type AdministradoraRef,
+	type AvulsoSession,
+	getAvulsoSession,
+	resolveAdministradora,
+	setAvulsoSession,
+} from "./avulso";
 import { handoffIdFromClaimReply } from "./claim";
 import { notifyMesaAttendant } from "./notify";
 
@@ -62,10 +74,6 @@ export async function isMesaAttendantPhone(phone: string): Promise<boolean> {
 
 const OPEN_STATUSES = ["aberto", "em_andamento"] as const;
 
-const NO_OPEN_HANDOFF_REPLY =
-	"👋 Nenhum caso aberto na sua mesa agora. Assim que um cliente for transbordado pra você, " +
-	"te mando o resumo do caso por aqui.";
-
 /**
  * Trata uma mensagem do WhatsApp de um atendente de mesa: resolve o handoff
  * aberto mais recente, persiste a fala, chama o copiloto com o dossiê e envia
@@ -90,7 +98,9 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 	});
 
 	if (!handoff) {
-		await notifyMesaAttendant(from, NO_OPEN_HANDOFF_REPLY);
+		// Sem caso ativo → modo CONSULTA AVULSA de manual (o atendente pode tirar dúvida sobre
+		// uma administradora específica citando o nome). NUNCA cai em vendas (roteado por número).
+		await handleMesaManualConsulta(from, text);
 		return;
 	}
 
@@ -125,6 +135,97 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 	}
 }
 
+// ── Consulta AVULSA de manual (sem caso ativo) ───────────────────────────────
+
+/**
+ * CONSULTA AVULSA de manual (Kairo, 2026-07-03): sem caso ativo, o atendente pode tirar dúvida
+ * sobre uma administradora ESPECÍFICA citando o nome (casado com o cadastro). Resolve a
+ * administradora no allowlist, carrega o manual dela e responde pelo copiloto em modo `avulso`.
+ * Continuidade via sessão in-memory por telefone (./avulso): follow-ups sem citar o nome de novo
+ * usam a última administradora. Sem nome e sem sessão viva → oferece a escolha (lista as que têm
+ * manual). NÃO persiste no DB — é consulta de referência, não um caso.
+ */
+async function handleMesaManualConsulta(from: string, text: string): Promise<void> {
+	const admins: AdministradoraRef[] = await db
+		.select({ id: administradoras.id, nome: administradoras.nome, slug: administradoras.slug })
+		.from(administradoras);
+
+	const resolved = resolveAdministradora(text, admins);
+	// Working session sem updatedAt (o carimbo é do setAvulsoSession); getAvulsoSession devolve
+	// a sessão completa, compatível com este tipo mais frouxo.
+	let session: Omit<AvulsoSession, "updatedAt"> | null = getAvulsoSession(from);
+
+	// Nome citado (primeira consulta ou troca de administradora) → zera o histórico do tópico.
+	if (resolved && (!session || session.administradoraId !== resolved.id)) {
+		session = { administradoraId: resolved.id, administradoraNome: resolved.nome, history: [] };
+	}
+
+	if (!session) {
+		// Sem administradora citada e sem sessão viva → oferece a escolha.
+		await notifyMesaAttendant(from, await buildConsultaPrompt());
+		return;
+	}
+
+	const docs = await db
+		.select({
+			titulo: administradoraDocs.titulo,
+			tipo: administradoraDocs.tipo,
+			textoExtraido: administradoraDocs.textoExtraido,
+		})
+		.from(administradoraDocs)
+		.where(
+			and(
+				eq(administradoraDocs.administradoraId, session.administradoraId),
+				eq(administradoraDocs.isActive, true),
+			),
+		);
+
+	const historyForCopilot = [...session.history, { role: "attendant" as const, content: text }];
+	const caso: MesaCopilotCaso = {
+		modo: "avulso",
+		administradoraNome: session.administradoraNome,
+		docs,
+	};
+
+	const reply = await generateMesaCopilotReply({ caso, history: historyForCopilot });
+
+	// Continuidade dos follow-ups: guarda o turno completo na sessão in-memory (não no DB).
+	setAvulsoSession(from, {
+		administradoraId: session.administradoraId,
+		administradoraNome: session.administradoraNome,
+		history: [...historyForCopilot, { role: "assistant", content: reply }],
+	});
+
+	for (const chunk of splitMessage(formatTextForWhatsApp(reply))) {
+		await notifyMesaAttendant(from, chunk);
+	}
+}
+
+/**
+ * Mensagem de "escolha a administradora" quando o atendente está sem caso e não citou nenhuma.
+ * Lista (limitado a 12) as administradoras que TÊM manual processado; sem nenhuma, orienta o admin.
+ */
+async function buildConsultaPrompt(): Promise<string> {
+	const comManual = await db
+		.selectDistinct({ nome: administradoras.nome })
+		.from(administradoras)
+		.innerJoin(administradoraDocs, eq(administradoraDocs.administradoraId, administradoras.id))
+		.where(and(eq(administradoraDocs.isActive, true), isNotNull(administradoraDocs.textoExtraido)));
+
+	const prefix = "👋 Nenhum caso aberto na sua mesa agora.";
+	const nomes = comManual.map((c) => c.nome).filter(Boolean);
+	if (nomes.length === 0) {
+		return `${prefix} Quando um cliente for transbordado pra você, te mando o resumo do caso por aqui. (Ainda não há manual de administradora cadastrado pra consulta.)`;
+	}
+	const MAX = 12;
+	const shown = nomes.slice(0, MAX).join(", ");
+	const extra = nomes.length > MAX ? ", entre outras" : "";
+	return (
+		`${prefix} Se quiser, posso te ajudar com o manual de uma administradora — é só me dizer de qual ` +
+		`(ex.: "como faço o boleto na ${nomes[0]}?"). Tenho manual de: ${shown}${extra}.`
+	);
+}
+
 // ── Claim do transbordo (FIX-124/125, D15/D16) ───────────────────────────────
 const CLAIM_NOT_FOUND_REPLY =
 	"🤔 Não encontrei esse caso — ele pode ter sido encerrado. Assim que chegar um novo, te aviso por aqui.";
@@ -149,7 +250,7 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 		await notifyMesaAttendant(
 			from,
 			`✅ Você assumiu o caso${clienteNome ? ` de *${clienteNome}*` : ""}. ` +
-				"Pode seguir — me manda suas dúvidas que eu te guio na tela da administradora.",
+				"Já começo a te guiar na contratação por aqui — é só me chamar com qualquer dúvida.",
 		);
 		// Avisa os demais atendentes que o caso já foi assumido (espelha proxy.ts:527-537).
 		for (const other of list) {
@@ -160,6 +261,9 @@ export async function handleMesaClaim(from: string, replyId: string): Promise<vo
 				);
 			}
 		}
+		// Empurra a orientação INICIAL do copiloto (passo a passo de cadastro na administradora,
+		// manual injetado) sem o atendente precisar perguntar — o "empurrão proativo".
+		await pushOpeningOrientation(result.handoff.id, from);
 		return;
 	}
 
@@ -186,6 +290,48 @@ async function clientNameForHandoff(leadId: string): Promise<string | null> {
 		.where(eq(leads.id, leadId))
 		.limit(1);
 	return lead?.name ?? null;
+}
+
+/**
+ * Empurra a orientação INICIAL do copiloto no WhatsApp do atendente que ACABOU de assumir o
+ * caso — sem ele precisar perguntar (o "empurrão proativo"). Gera o passo a passo de cadastro
+ * na administradora (manual injetado no copiloto), persiste como `assistant` (contexto pro
+ * copiloto não repetir no 1º turno real) e envia formatado/chunkado, mesmo pipeline de saída
+ * do Q&A (formatTextForWhatsApp + splitMessage ≤ 4096).
+ *
+ * BEST-EFFORT: o claim já venceu (fonte de verdade). Falha de LLM/WhatsApp aqui NÃO desfaz o
+ * caso — loga e segue; o copiloto continua disponível de forma reativa (handleMesaCopilot).
+ */
+async function pushOpeningOrientation(handoffId: string, attendantPhone: string): Promise<void> {
+	try {
+		const handoff = await db.query.mesaHandoffs.findFirst({
+			where: eq(mesaHandoffs.id, handoffId),
+			with: { administradora: true, beviProposal: true, lead: true },
+		});
+		if (!handoff) return;
+
+		const caso = await buildCaso(handoff);
+		const opening = await generateMesaCopilotOpening({ caso });
+		if (!opening?.trim()) return;
+
+		await db
+			.insert(mesaCopilotMessages)
+			.values({ mesaHandoffId: handoffId, role: "assistant", content: opening });
+
+		for (const chunk of splitMessage(formatTextForWhatsApp(opening))) {
+			await notifyMesaAttendant(attendantPhone, chunk);
+		}
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-claim-opening",
+				handoff_id: handoffId,
+				error: err instanceof Error ? err.message : String(err),
+				note: "orientação inicial do copiloto falhou (claim mantido; copiloto segue reativo)",
+			}),
+		);
+	}
 }
 
 type HandoffWithRelations = NonNullable<

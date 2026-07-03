@@ -14,9 +14,10 @@
 Quando um lead chega na fase **"Na administradora"** (`na_administradora`), o sistema **transborda**
 o caso pra **mesa de operação**: cria um handoff **sem dono**, faz **broadcast** por WhatsApp pra
 **todos** os atendentes de mesa cadastrados, e o **primeiro que clica "Vou atender"** (claim atômico)
-**assume** — o caso **some** (shadow) pros outros. Um **copiloto** (agente) orienta o atendente no
-WhatsApp injetando o **PDF/dossiê da administradora** da cota. O admin também pode, do **Kanban**,
-transbordar manualmente e **mandar mensagem pro cliente** (aba "Atendimento").
+**assume** — o caso **some** (shadow) pros outros. **No próprio claim**, um **copiloto** (agente)
+já empurra a **orientação inicial de cadastro** na administradora (passo a passo com o **manual**
+injetado) no WhatsApp do atendente — que segue tirando dúvidas ali mesmo. O admin também pode, do
+**Kanban**, transbordar manualmente e **mandar mensagem pro cliente** (aba "Atendimento").
 
 ```
 lead → funil → [na_administradora]
@@ -112,7 +113,15 @@ lead → funil → [na_administradora]
   parâmetros (evolução).
 - A chave é o **id da CONVERSA** (≠ id do lead/contato) — é o que a rota usa pra janela + persistência.
 
-## 7. Copiloto no WhatsApp do atendente
+## 7. Copiloto no WhatsApp do atendente — a orientação de contratação passo a passo
+
+**O que o copiloto FAZ (o cenário do atendente).** Depois que o atendente assume o caso, o copiloto
+existe pra **guiá-lo a formalizar o contrato do cliente na administradora**: entrar no sistema da
+administradora, consultar o **manual de procedimento** dela e seguir o **passo a passo** de cadastro
+do cliente que escolheu aquela cota. O manual é a **fonte da verdade** do procedimento — quais
+telas, campos, ordem das etapas, regras e documentos exigidos pra contratar naquela administradora
+(persona em `src/lib/agent/mesa-copilot/system-prompt.ts`: *"orienta o ATENDENTE DE MESA a formalizar
+o contrato de consórcio na administradora, passo a passo, com base no MANUAL"*).
 
 - **Roteamento por número** (`src/lib/whatsapp/processor.ts`): mensagem de um WhatsApp de atendente
   de mesa cadastrado (`isMesaAttendantPhone`, cache 60s) → **copiloto** (`handleMesaCopilot`), **antes**
@@ -121,6 +130,33 @@ lead → funil → [na_administradora]
   `administradora_docs.texto_extraido` (docs ativos da administradora do caso) e o copiloto
   (`src/lib/agent/mesa-copilot/`) injeta o full-text num bloco **estável/cacheável**
   (`<manual_administradora>`) — full-text + prompt caching, **não** RAG (DEC-C).
+- **Sem manual cadastrado:** o copiloto avisa que não há manual processado e orienta pelo
+  **procedimento geral de consórcio**, pedindo ao admin que suba o manual daquela administradora
+  (fallback em `renderManual`).
+
+> **🔑 Um número só — o atendente NUNCA vira comprador.** O roteamento é **por número**: o WhatsApp
+> cadastrado do atendente cai no **fluxo de atendente (copiloto)**, decidido **antes** do agente de
+> vendas (`processor.ts:65`, `isMesaAttendantPhone` tem precedência). Isso significa que o **mesmo
+> número** do WhatsApp Business atende comprador (agente de vendas) e atendente (copiloto) sem colisão
+> — **não precisa de um segundo número** para a mesa. O atendente conversa apenas no fluxo de
+> atendente, que é onde ele fala dos manuais das administradoras.
+
+### 7.1 Orientação PROATIVA no claim (as-built — empurrão inicial)
+
+Ao clicar **"Vou atender"** e assumir o caso, o atendente recebe **na hora**, sem precisar perguntar,
+a **orientação inicial de cadastro** daquele cliente naquela administradora — o passo a passo montado
+pelo copiloto **com o manual injetado**. Implementação: `handleMesaClaim` → `pushOpeningOrientation`
+(`src/lib/whatsapp/mesa/routing.ts`) chama `generateMesaCopilotOpening`
+(`src/lib/agent/mesa-copilot/`), que semeia um turno interno (`MESA_COPILOT_KICKOFF`, **não**
+persistido) e devolve o 1º bloco de etapas. A orientação é **persistida como `assistant`** em
+`mesa_copilot_messages` (contexto pro copiloto não repetir no 1º turno real) e enviada
+formatada/chunkada (≤ 4096). É **best-effort**: o claim já venceu (fonte de verdade) — falha de
+LLM/WhatsApp aqui só loga (`source:"mesa-claim-opening"`), o caso não é desfeito.
+
+Depois do empurrão inicial, segue o **Q&A reativo** normal: qualquer dúvida do atendente
+(`handleMesaCopilot`) é respondida pelo copiloto com o mesmo manual/caso. Como a 1ª fala persistida é
+do copiloto (a orientação proativa), o gerador garante o contrato da Anthropic (1ª msg = `user`) via
+`ensureLeadingUserTurn`.
 
 ## 8. Como validar localmente (DEV)
 

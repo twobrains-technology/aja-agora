@@ -41,6 +41,7 @@ vi.mock("@/lib/whatsapp/api", () => ({
 // O LLM do copiloto — capturamos o `caso` pra provar a coerência do manual injetado.
 vi.mock("@/lib/agent/mesa-copilot", () => ({
 	generateMesaCopilotReply: mocks.copilotReplyMock,
+	generateMesaCopilotOpening: vi.fn(async () => "orientação inicial (mock)"),
 }));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
@@ -58,13 +59,13 @@ import {
 	mesaHandoffs,
 	user,
 } from "@/db/schema";
-import { POST } from "./route";
 import { CLAIM_BUTTON_ID_PREFIX } from "@/lib/whatsapp/mesa/claim";
 import {
 	handleMesaClaim,
 	handleMesaCopilot,
 	invalidateMesaAttendantCache,
 } from "@/lib/whatsapp/mesa/routing";
+import { POST } from "./route";
 
 const MANUAL_X = "MANUAL CANOPUS-X — 1) portal Canopus; 2) informe o grupo; 3) gere a carta.";
 const MANUAL_Z = "MANUAL EMBRACON-Z — procedimento COMPLETAMENTE diferente da Embracon.";
@@ -306,15 +307,16 @@ describeIfDb("T9 — coerência E2E do transbordo (rota + anti-leak de PDF)", ()
 		expect(caso.administradoraNome).toContain("Canopus");
 		expect(caso.administradoraNome).not.toContain("Embracon");
 
-		// 4) A fala do atendente + a resposta do copiloto ficam registradas no caso.
+		// 4) Registro do caso: a orientação INICIAL proativa (assistant, empurrada no claim) + a
+		//    fala do atendente (attendant) + a resposta do copiloto (assistant) = 2 assistant, 1 attendant.
 		const [h] = await db
 			.select({ id: mesaHandoffs.id })
 			.from(mesaHandoffs)
 			.where(eq(mesaHandoffs.leadId, s.leadId));
-		const msgs = await db
-			.select()
-			.from(mesaCopilotMessages)
-			.where(eq(mesaCopilotMessages.mesaHandoffId, h.id));
-		expect(msgs.map((m) => m.role).sort()).toEqual(["assistant", "attendant"]);
+		const roles = (
+			await db.select().from(mesaCopilotMessages).where(eq(mesaCopilotMessages.mesaHandoffId, h.id))
+		).map((m) => m.role);
+		expect(roles.filter((r) => r === "assistant")).toHaveLength(2);
+		expect(roles.filter((r) => r === "attendant")).toHaveLength(1);
 	});
 });

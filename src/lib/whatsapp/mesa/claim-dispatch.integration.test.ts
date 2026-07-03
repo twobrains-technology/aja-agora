@@ -11,6 +11,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 const sendReplyButtons = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
 const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
 const generateMesaCopilotReply = vi.fn(async (..._args: unknown[]) => "orientação do copiloto");
+const generateMesaCopilotOpening = vi.fn(
+	async (..._args: unknown[]) =>
+		"🧭 Passo a passo inicial: 1) acesse o portal da administradora; 2) informe o grupo.",
+);
 
 vi.mock("@/lib/whatsapp/api", () => ({
 	sendReplyButtons: (...a: unknown[]) => sendReplyButtons(...a),
@@ -18,6 +22,7 @@ vi.mock("@/lib/whatsapp/api", () => ({
 }));
 vi.mock("@/lib/agent/mesa-copilot", () => ({
 	generateMesaCopilotReply: (...a: unknown[]) => generateMesaCopilotReply(...a),
+	generateMesaCopilotOpening: (...a: unknown[]) => generateMesaCopilotOpening(...a),
 }));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
@@ -48,6 +53,7 @@ describeIfDb("FIX-124 — broadcast + claim dispatch (integration)", () => {
 		sendReplyButtons.mockClear();
 		sendTextMessage.mockClear();
 		generateMesaCopilotReply.mockClear();
+		generateMesaCopilotOpening.mockClear();
 	});
 
 	afterAll(async () => {
@@ -105,7 +111,9 @@ describeIfDb("FIX-124 — broadcast + claim dispatch (integration)", () => {
 		});
 
 		// Filtra pelos MEUS fones (o DB compartilhado pode ter outros ativos de testes paralelos).
-		const mine = sendReplyButtons.mock.calls.filter((c) => [a.whatsapp, b.whatsapp].includes(c[0] as string));
+		const mine = sendReplyButtons.mock.calls.filter((c) =>
+			[a.whatsapp, b.whatsapp].includes(c[0] as string),
+		);
 		expect(mine.map((c) => c[0]).sort()).toEqual([a.whatsapp, b.whatsapp].sort());
 		for (const call of mine) {
 			const buttons = call[2] as Array<{ id: string; title: string }>;
@@ -153,5 +161,36 @@ describeIfDb("FIX-124 — broadcast + claim dispatch (integration)", () => {
 		const bReplies = sendTextMessage.mock.calls.filter((c) => c[0] === b.whatsapp);
 		expect(bReplies.length).toBeGreaterThan(0);
 		expect(String(bReplies[0][1])).toContain("Nenhum caso aberto");
+	});
+
+	// Empurrão proativo (fecha o TODO-bloco-c): ao assumir, o copiloto manda o passo a passo
+	// inicial de cadastro na administradora SEM o atendente precisar perguntar — e persiste como
+	// `assistant` pra ter contexto no 1º turno real (não repetir a orientação).
+	it("ao ASSUMIR, empurra a orientação INICIAL do copiloto sem o atendente perguntar", async () => {
+		const a = await seedAttendant("Proativo");
+		const { handoffId } = await seedOwnerlessHandoff();
+
+		await routing.handleMesaClaim(a.whatsapp, `${outbound.CLAIM_BUTTON_ID_PREFIX}${handoffId}`);
+
+		// Gerou a orientação inicial com o caso do handoff recém-assumido.
+		expect(generateMesaCopilotOpening).toHaveBeenCalledTimes(1);
+		const arg = generateMesaCopilotOpening.mock.calls[0][0] as { caso?: unknown };
+		expect(arg?.caso).toBeTruthy();
+
+		// Enviou a orientação pro WhatsApp do atendente (além da confirmação "assumiu").
+		const aTexts = sendTextMessage.mock.calls
+			.filter((c) => c[0] === a.whatsapp)
+			.map((c) => String(c[1]));
+		expect(aTexts.some((t) => t.includes("Passo a passo inicial"))).toBe(true);
+
+		// Persistiu como `assistant` (contexto pro copiloto não repetir no 1º turno real).
+		const assistant = (
+			await db
+				.select()
+				.from(schema.mesaCopilotMessages)
+				.where(eq(schema.mesaCopilotMessages.mesaHandoffId, handoffId))
+		).filter((m) => m.role === "assistant");
+		expect(assistant).toHaveLength(1);
+		expect(assistant[0].content).toContain("Passo a passo inicial");
 	});
 });
