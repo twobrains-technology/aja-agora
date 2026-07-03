@@ -55,6 +55,24 @@ Detalhe e notas operacionais em `docs/integracoes/contas-teste-homologacao.md`.
 Como é homologação, fechar proposta com estes CPFs é seguro e esperado (não "suja
 produção").
 
+## Mesa de operação (atendente de mesa) — fluxo do transbordo
+
+Quando um lead entra na fase **`na_administradora`**, o caso é **transbordado** pra mesa de
+operação: handoff **sem dono** → **broadcast** WhatsApp a **todos** os atendentes → **claim
+atômico** (o primeiro que toca "Vou atender" assume; some — *shadow* — pros outros) → raia
+**`em_atendimento`**. Um **copiloto** orienta o atendente no WhatsApp injetando o PDF da
+administradora. Do Kanban (aba **"Atendimento"**) o admin transborda manualmente e **manda
+mensagem pro cliente** (janela de 24h/template HSM).
+
+- **Referência as-built** (fluxo completo, entidades, arquivos, como validar em DEV):
+  [`docs/referencia/mesa-de-operacao-fluxo.md`](docs/referencia/mesa-de-operacao-fluxo.md).
+- **Visão/plano original:** [`docs/visao/mesa-de-operacao.md`](docs/visao/mesa-de-operacao.md).
+- **⚠️ "Forbidden" ao cadastrar atendente = a conta logada não é `admin`** (`user.role` default
+  `viewer`, `input:false` no better-auth; só `src/scripts/seed-admin.ts` promove). **Não** é bug
+  de env/CSRF/sessão — logue com `admin@ajaagora.com.br`.
+- **Validar o relay em DEV sem Meta real:** atendentes com WhatsApp `SIM-*` rodam
+  broadcast/claim/copiloto pelo **simulador** (`/admin/simulator`) — 404 em prod por design.
+
 ## Package manager — pnpm ÚNICO
 
 **`pnpm` é o único gestor de pacotes permitido. `npm` e `yarn` são PROIBIDOS** —

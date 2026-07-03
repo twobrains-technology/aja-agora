@@ -140,6 +140,9 @@ export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }
 			{selectedLead?.contactId ? (
 				<ContactDetailPanel
 					contactId={selectedLead.contactId}
+					leadId={selectedLead?.id}
+					leadName={selectedLead?.name}
+					conversationId={selectedLead?.conversationId}
 					open={!!selectedLeadId}
 					onClose={() => setSelectedLeadId(null)}
 				/>

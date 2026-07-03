@@ -6,9 +6,10 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Smartphone } from "lucide-react";
+import { Globe, Headset, Send, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Sheet,
 	SheetContent,
@@ -17,6 +18,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
 
 const STAGE_LABELS: Record<string, string> = {
 	novo: "Novo",
@@ -115,13 +117,26 @@ export function ContactDetailPanel({
 	contactId,
 	open,
 	onClose,
+	// FIX-atendimento: o card selecionado (kanban-board) fornece o id do lead e da
+	// conversa — sem eles a visão consolidada não consegue transbordar nem enviar
+	// mensagem. leadId → MesaTransbordoDialog; conversationId → rota de mensagem.
+	leadId,
+	leadName,
+	conversationId,
 }: {
 	contactId: string | null;
 	open: boolean;
 	onClose: () => void;
+	leadId?: string | null;
+	leadName?: string | null;
+	conversationId?: string | null;
 }) {
 	const [detail, setDetail] = useState<ContactDetail | null>(null);
 	const [loading, setLoading] = useState(false);
+	const [transbordoOpen, setTransbordoOpen] = useState(false);
+	const [message, setMessage] = useState("");
+	const [sending, setSending] = useState(false);
+	const [windowError, setWindowError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!contactId || !open) return;
@@ -133,6 +148,45 @@ export function ContactDetailPanel({
 			.catch(() => setDetail(null))
 			.finally(() => setLoading(false));
 	}, [contactId, open]);
+
+	// Reset das ações ao trocar de contato (não vazar rascunho/erro entre cards).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: contactId é o gatilho do reset
+	useEffect(() => {
+		setTransbordoOpen(false);
+		setMessage("");
+		setSending(false);
+		setWindowError(null);
+	}, [contactId]);
+
+	const handleSendMessage = async (text: string) => {
+		if (!conversationId) return;
+		setSending(true);
+		setWindowError(null);
+		try {
+			// O id da CONVERSA (≠ id do lead/contato) é a chave que a rota usa pra
+			// resolver a janela de 24h e persistir a mensagem (paridade com o LeadDetailPanel).
+			const endpoint = `/api/admin/conversations/${conversationId}/message`;
+			const res = await fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ conversationId, text }),
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				// A rota devolve { error, message } — mostrar `message` (motivo legível).
+				throw new Error(data.message || "Falha ao enviar mensagem");
+			}
+			alert(`Mensagem enviada com sucesso!\nId: ${data.messageId}`);
+			setMessage("");
+			onClose();
+		} catch (err) {
+			const errorMsg = err instanceof Error ? err.message : "Erro desconhecido";
+			setWindowError(errorMsg);
+			alert(`Erro ao enviar mensagem:\n${errorMsg}`);
+		} finally {
+			setSending(false);
+		}
+	};
 
 	const c = detail?.contact;
 	const title = c?.name || c?.phone || "Contato";
@@ -172,6 +226,7 @@ export function ContactDetailPanel({
 						<TabsTrigger value="timeline">Timeline</TabsTrigger>
 						<TabsTrigger value="propostas">Propostas</TabsTrigger>
 						<TabsTrigger value="funil">Funil</TabsTrigger>
+						<TabsTrigger value="atendimento">Atendimento</TabsTrigger>
 					</TabsList>
 
 					<TabsContent value="timeline" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
@@ -230,7 +285,8 @@ export function ContactDetailPanel({
 										)}
 									</div>
 									<div className="text-xs text-muted-foreground">
-										Crédito {formatCurrency(p.creditValue)} · Parcela {formatCurrency(p.monthlyPayment)} · Status{" "}
+										Crédito {formatCurrency(p.creditValue)} · Parcela{" "}
+										{formatCurrency(p.monthlyPayment)} · Status{" "}
 										{getProposalStatusLabel(p.proposalStatus)}
 									</div>
 									{p.consortiumProposalLink && (
@@ -267,7 +323,75 @@ export function ContactDetailPanel({
 							</div>
 						))}
 					</TabsContent>
+
+					{/* Atendimento: transbordo manual (broadcast à mesa) + chat do operador
+					    com o cliente. Portado do LeadDetailPanel (FIX-64/FIX-87) pra visão
+					    consolidada — antes essas ações só existiam pro lead anônimo. */}
+					<TabsContent value="atendimento" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+						<div className="space-y-2">
+							<h4 className="text-sm font-semibold">Transbordo para a mesa</h4>
+							<p className="text-xs text-muted-foreground">
+								Envia o caso a todos os atendentes de mesa. O primeiro que tocar em "Vou atender" no
+								WhatsApp assume o cliente e formaliza o contrato na administradora.
+							</p>
+							<Button
+								variant="outline"
+								size="sm"
+								className="w-fit"
+								onClick={() => setTransbordoOpen(true)}
+								disabled={!leadId}
+							>
+								<Headset className="size-3.5" />
+								Transbordar para a mesa
+							</Button>
+						</div>
+
+						{/* FIX-87: Chat do operador no Kanban → WhatsApp oficial (janela 24h/HSM na rota) */}
+						<div className="border-t pt-4 space-y-2">
+							<h4 className="text-sm font-semibold">Chat com o cliente</h4>
+							{windowError && (
+								<div className="p-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded">
+									{windowError}
+								</div>
+							)}
+							{conversationId ? (
+								<div className="space-y-2">
+									<textarea
+										placeholder="Digite sua mensagem para o cliente..."
+										value={message}
+										onChange={(e) => setMessage(e.target.value)}
+										rows={3}
+										className="w-full resize-none rounded border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+										disabled={sending}
+									/>
+									<div className="flex justify-end">
+										<Button
+											size="sm"
+											onClick={() => handleSendMessage(message)}
+											disabled={!message.trim() || sending}
+										>
+											<Send className="size-4 mr-2" />
+											{sending ? "Enviando..." : "Enviar"}
+										</Button>
+									</div>
+								</div>
+							) : (
+								<p className="text-xs text-muted-foreground">
+									Sem conversa ativa para este contato.
+								</p>
+							)}
+						</div>
+					</TabsContent>
 				</Tabs>
+
+				{leadId && (
+					<MesaTransbordoDialog
+						leadId={leadId}
+						leadName={leadName}
+						open={transbordoOpen}
+						onOpenChange={setTransbordoOpen}
+					/>
+				)}
 			</SheetContent>
 		</Sheet>
 	);
