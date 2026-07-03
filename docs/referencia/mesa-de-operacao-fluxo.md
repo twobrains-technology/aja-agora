@@ -97,12 +97,19 @@ lead → funil → [na_administradora]
 
 - **Existe desde o FIX-87**, mas até 2026-07-02 só no `LeadDetailPanel` (lead anônimo). Agora a
   visão consolidada (`ContactDetailPanel`) tem a aba **"Atendimento"** com **Transbordar** + **Chat
-  com o cliente** (`src/components/admin/pipeline/contact-detail-panel.tsx`). O `kanban-board.tsx`
+  com o cliente**. A caixa de chat é o componente compartilhado **`ClientChatBox`**
+  (`src/components/admin/pipeline/client-chat-box.tsx`), usado pelos dois painéis. O `kanban-board.tsx`
   passa `leadId`/`leadName`/`conversationId` do card selecionado.
 - **Rota:** `POST /api/admin/conversations/[id]/message`
   (`src/app/api/admin/conversations/[id]/message/route.ts`). Guard `requireRole("admin","attendant")`.
   Resolve o `waId` do cliente pela conversa. **Janela de 24h:** aberta → texto livre; fechada →
-  **429 `WindowClosed`** (exige template HSM aprovado). A mensagem é persistida como `role:"assistant"`.
+  **429 `WindowClosed`**. A mensagem é persistida como `role:"assistant"`.
+- **Janela fechada → enviar template HSM ali mesmo:** ao receber o 429, o `ClientChatBox` troca pro
+  **modo template** — busca os templates **APPROVED** (`GET /api/admin/whatsapp/templates`), mostra um
+  seletor + preview e envia por `{templateName, languageCode}` (a rota chama `sendTemplate`). O template
+  reabre a janela. Os templates são geridos em Admin → WhatsApp → Templates (FIX-199…205). Hoje o envio
+  é **sem variáveis** (a rota não passa `components`) — templates com `{{n}}` precisariam de UI de
+  parâmetros (evolução).
 - A chave é o **id da CONVERSA** (≠ id do lead/contato) — é o que a rota usa pra janela + persistência.
 
 ## 7. Copiloto no WhatsApp do atendente

@@ -252,6 +252,24 @@ describeIfDb(
 			expect(sendTextMessage).not.toHaveBeenCalled();
 		});
 
+		it("janela fechada + template: POST /message com {templateName, languageCode} → 200 envia HSM e persiste", async () => {
+			const { conversationId, waId } = await seedLead({ administradoraVarchar: null });
+			isWindowOpenMock.mockResolvedValueOnce({ open: false } as { open: boolean });
+			const res = await messagePOST(
+				jsonReq({ templateName: "aja_reengajamento", languageCode: "pt_BR" }),
+				{ params: Promise.resolve({ id: conversationId }) },
+			);
+			expect(res.status).toBe(200);
+			expect((await res.json()).type).toBe("template");
+			// é o caminho que o ClientChatBox dispara quando a janela está fechada
+			expect(sendTemplate).toHaveBeenCalledWith(waId, "aja_reengajamento", "pt_BR");
+			const msgs = await db
+				.select()
+				.from(schema.messages)
+				.where(eq(schema.messages.conversationId, conversationId));
+			expect(msgs.some((m) => m.role === "assistant")).toBe(true);
+		});
+
 		it("lead inexistente: POST /transbordo → 404", async () => {
 			const res = await transbordoPOST(jsonReq({}), {
 				params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
