@@ -251,11 +251,15 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
      `formatTextForWhatsApp`: ponto/vírgula entre dígitos nunca quebra. Commit `1bb416d4`.
   3. **Emoji `Olá 👋` na saudação** — gap do FIX-212 (👋 no `CONCIERGE_PROMPT_BODY`, fora da
      varredura). FIX: removido + varredura anti-emoji estendida (emoji-em-aspas). Commit `21154b86`.
-  - **Observações a confirmar (não corrigidas):** (a) reveal anuncia "3 opções" mas a busca real
-    achou **10 grupos** (curadoria intencional?); (b) card de decisão apareceu no "tenho interesse"
-    por TEXTO livre (avanço direto FIX-38 é pro BOTÃO — provável esperado); (c) no path SEEDADO o
-    card de recomendação com botões não renderizou no WhatsApp, só o texto (a confirmar vs funil
-    completo).
+  - **Observações — decisão de PRODUTO, não bug (Kairo: registrar, ajustar depois, não mexer agora):**
+    - (a) **"3 opções" × 10 grupos achados.** Kairo (2026-07-03): a **curadoria** (recomendada + 2,
+      pra não afogar o cliente em opção) é **proposital e OK**. PORÉM, se a copy afirmar "3 opções"
+      como se fosse o **TOTAL disponível**, é **copy enganosa** → **ajustar TEXTO depois** (dizer que
+      são as 3 mais aderentes, não o total). Não é bug; é copy. PENDENTE-KAIRO (ajuste de texto).
+    - (b) card de decisão apareceu no "tenho interesse" por TEXTO livre (o avanço direto FIX-38 é pro
+      BOTÃO) — provável esperado. PENDENTE-KAIRO.
+    - (c) no path SEEDADO o card de recomendação com botões não renderizou no WhatsApp, só o texto —
+      a confirmar vs funil completo. PENDENTE-KAIRO.
   - **Gap de cobertura:** o simulador usa waId sintético → **não exercita o bug REAL do 9º dígito**
     (esse só num webhook WhatsApp real). Validado por unit + o fechamento real de prod (2026-07-02).
 - **2026-07-02 — Imóvel × WhatsApp (PROD), branch `qa/imovel-whatsapp`. 🚫 BLOQUEADO.** O
