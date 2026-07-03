@@ -17,6 +17,7 @@
 
 import { BeviConfigError, DuplicatedProposalError, toBeviError } from "./bevi-errors";
 import type { BeviOffer } from "./offer-mapper";
+import { logTrilho } from "./trilho-log";
 
 export interface SelfContractConfig {
 	baseUrl: string;
@@ -162,42 +163,69 @@ export class BeviSelfContractClient {
 		const { method = "GET", body, retryOn404 = false, timeoutMs = TIMEOUT_MS } = opts;
 		const maxAttempts = retryOn404 ? SIM_RETRY : 1;
 
+		// Observabilidade de trilho: toda chamada self-contract é TRILHO B.
+		const started = Date.now();
+		logTrilho({ trilho: "B", method, endpoint: path, phase: "request" });
+
 		let lastErr: unknown;
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			let res: Response;
-			try {
-				res = await fetch(this.url(path), {
-					method,
-					headers: body ? { "Content-Type": "application/json" } : {},
-					body: body ? JSON.stringify(body) : undefined,
-					signal: AbortSignal.timeout(timeoutMs),
-				});
-			} catch (err) {
-				// TimeoutError do cold-start: retenta DENTRO do loop que a simulação já
-				// tem (maxAttempts>1). Chamadas leves (maxAttempts=1) sobem o erro direto
-				// — nada de mascarar lentidão crônica num retry silencioso.
-				lastErr = err;
-				if (attempt < maxAttempts && isTimeoutError(err)) {
+		try {
+			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+				let res: Response;
+				try {
+					res = await fetch(this.url(path), {
+						method,
+						headers: body ? { "Content-Type": "application/json" } : {},
+						body: body ? JSON.stringify(body) : undefined,
+						signal: AbortSignal.timeout(timeoutMs),
+					});
+				} catch (err) {
+					// TimeoutError do cold-start: retenta DENTRO do loop que a simulação já
+					// tem (maxAttempts>1). Chamadas leves (maxAttempts=1) sobem o erro direto
+					// — nada de mascarar lentidão crônica num retry silencioso.
+					lastErr = err;
+					if (attempt < maxAttempts && isTimeoutError(err)) {
+						await sleep(SIM_RETRY_DELAY_MS);
+						continue;
+					}
+					throw err;
+				}
+
+				const env = (await res.json()) as SelfContractEnvelope<T>;
+				if (env.success) {
+					logTrilho({
+						trilho: "B",
+						method,
+						endpoint: path,
+						phase: "response",
+						status: env.code,
+						ok: true,
+						ms: Date.now() - started,
+					});
+					return env.data;
+				}
+
+				if (retryOn404 && env.code === 404 && attempt < maxAttempts) {
+					lastErr = toBeviError(env.code, env.message ?? "", env.data);
 					await sleep(SIM_RETRY_DELAY_MS);
 					continue;
 				}
-				throw err;
+				if (env.code === 400 && /duplicated hash/i.test(env.message ?? "")) {
+					throw new DuplicatedProposalError(env.message ?? "Duplicated Hash", env.data);
+				}
+				throw toBeviError(env.code, env.message ?? "", env.data);
 			}
-
-			const env = (await res.json()) as SelfContractEnvelope<T>;
-			if (env.success) return env.data;
-
-			if (retryOn404 && env.code === 404 && attempt < maxAttempts) {
-				lastErr = toBeviError(env.code, env.message ?? "", env.data);
-				await sleep(SIM_RETRY_DELAY_MS);
-				continue;
-			}
-			if (env.code === 400 && /duplicated hash/i.test(env.message ?? "")) {
-				throw new DuplicatedProposalError(env.message ?? "Duplicated Hash", env.data);
-			}
-			throw toBeviError(env.code, env.message ?? "", env.data);
+			throw lastErr;
+		} catch (err) {
+			logTrilho({
+				trilho: "B",
+				method,
+				endpoint: path,
+				phase: "error",
+				ok: false,
+				ms: Date.now() - started,
+			});
+			throw err;
 		}
-		throw lastErr;
 	}
 
 	/** GET /segment-resource — segmentos disponíveis na loja (cookbook §1). */
@@ -211,15 +239,39 @@ export class BeviSelfContractClient {
 	/** GET /get-multi-proposal/{cpf} — propostas em andamento do CPF (cookbook §2).
 	 * Resposta é um ARRAY cru (201), sem envelope. */
 	async getMultiProposal(cpf: string): Promise<SelfContractProposalRef[]> {
-		const res = await fetch(
-			this.url(`${this.config.storeHash}/get-multi-proposal/${onlyDigits(cpf)}`),
-			{
+		// Trilho B (endpoint sem envelope). Endpoint SEM o CPF no log (PII).
+		const started = Date.now();
+		logTrilho({ trilho: "B", method: "GET", endpoint: "get-multi-proposal", phase: "request" });
+		try {
+			const res = await fetch(
+				this.url(`${this.config.storeHash}/get-multi-proposal/${onlyDigits(cpf)}`),
+				{
+					method: "GET",
+					signal: AbortSignal.timeout(TIMEOUT_MS),
+				},
+			);
+			const data = (await res.json()) as SelfContractProposalRef[];
+			logTrilho({
+				trilho: "B",
 				method: "GET",
-				signal: AbortSignal.timeout(TIMEOUT_MS),
-			},
-		);
-		const data = (await res.json()) as SelfContractProposalRef[];
-		return Array.isArray(data) ? data : [];
+				endpoint: "get-multi-proposal",
+				phase: "response",
+				status: res.status,
+				ok: res.ok,
+				ms: Date.now() - started,
+			});
+			return Array.isArray(data) ? data : [];
+		} catch (err) {
+			logTrilho({
+				trilho: "B",
+				method: "GET",
+				endpoint: "get-multi-proposal",
+				phase: "error",
+				ok: false,
+				ms: Date.now() - started,
+			});
+			throw err;
+		}
 	}
 
 	/** POST /create-proposal/{hash} — cria a proposta de descoberta (cookbook §3).
