@@ -28,7 +28,7 @@ Dar ao admin **visibilidade e controle** sobre quem atende cada caso na mesa. Pr
    (dropdown de atendentes ativos); o dono muda no DB, o **antigo é notificado** que saiu e o **novo é
    notificado** com o dossiê do caso.
 3. **Encerramento:** o admin consegue **encerrar** um atendimento — o handoff vai pra `concluido`
-   (`closed_at` setado), o atendente é notificado, e o caso some das ações de "em atendimento".
+   (`closed_at` setado), o atendente é notificado, e o **card do lead vai pra `fechado_ganho`** (ganho).
 4. Cada ação tem regressão (estrutural + componente + E2E route-level) verde.
 
 ## Abordagens consideradas (redistribuição)
@@ -67,8 +67,9 @@ coluna `claimed_at` pra timestamp preciso do claim.
    Notifica antigo (se havia) e novo. Erros: 404 handoff/atendente, 409 handoff já encerrado,
    400 reatribuir pro mesmo dono.
 3. **Encerrar:** `POST /api/admin/mesa/handoffs/[id]/close`, body `{}`. Guard admin.
-   `UPDATE status='concluido', closed_at=now()` (guardado por status ativo). Notifica o dono. Erros:
-   404, 409 já encerrado. (O lead **não** muda de raia aqui — quem move é o fluxo de negócio; fora do MVP.)
+   `UPDATE status='concluido', closed_at=now()` (guardado por status ativo) **e move o lead pra
+   `fechado_ganho`** (ganho — decisão Kairo 2026-07-03; ver Decisões). Notifica o dono. Erros:
+   404, 409 já encerrado.
 
 O dropdown de reatribuição reusa `GET /api/admin/mesa-attendants`.
 
@@ -137,17 +138,21 @@ Reatribuir para: [ Selecione um atendente  ▾ ]
 
 - **Redistribuir = reatribuir a específico** (não re-broadcast) — Kairo, 2026-07-03.
 - **MVP inclui encerrar** (fecha o gap do handoff que nunca termina) — Kairo, 2026-07-03.
+- **Encerrar → lead vai pra `fechado_ganho`** (ganho) — Kairo, 2026-07-03. ⚠️ **Provisório:** as raias do
+  kanban serão azeitadas com o cliente e todo este desenho revisitado — tratar como sujeito a mudança.
 - **Sem migration** — reusa colunas existentes; `claimed_at` preciso fica pra depois.
+
+Registro de negócio durável em [`../../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md`](../../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md).
 
 ## Riscos e gaps honestos
 
 - **PII pro novo atendente:** reatribuir manda dossiê do cliente pro WhatsApp do novo — mesmo cuidado
   (minimização) do broadcast; guard-rail já existente.
 - **"desde ~" aproximado** (usa `updated_at`) até existir `claimed_at`.
-- **Encerrar não move a raia do lead** — decisão de negócio (o que acontece com o lead ao encerrar o
-  atendimento?) fica pra validar com o Kairo; MVP só fecha o handoff.
+- **Raias do kanban provisórias:** encerrar move o lead pra `fechado_ganho` por ora, mas o mapeamento
+  das raias será azeitado com o cliente e revisitado — sujeito a mudança (não cravar em `jornada-canonica`).
 
 ## Fora de escopo (YAGNI)
 
 Re-broadcast; distinção fina concluído×cancelado com motivo; histórico/auditoria de reatribuições;
-SLA/timeout de atendimento inativo; `claimed_at` preciso; mover a raia do lead no encerramento.
+SLA/timeout de atendimento inativo; `claimed_at` preciso.

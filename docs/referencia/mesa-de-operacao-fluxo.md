@@ -155,8 +155,13 @@ lead → funil → [na_administradora]
 | Transbordo manual (UI) | `src/components/admin/pipeline/mesa-transbordo-dialog.tsx` · `lead-detail-panel.tsx` · `contact-detail-panel.tsx` · `kanban-board.tsx` |
 | Chat operador→cliente | `src/app/api/admin/conversations/[id]/message/route.ts` |
 
-## 10. Gaps conhecidos
+## 10. Gaps conhecidos / evolução
 
-- **Sem endpoint admin de cancelar/fechar handoff** por API (handoffs residuais não são removíveis via UI).
+- **Visibilidade do responsável + reatribuir + encerrar** — em construção. Desenho em
+  [`../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md`](../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md);
+  regra de negócio em [`../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md`](../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md).
+  Fecha os dois gaps históricos abaixo:
+  - Front não mostrava **quem assumiu** o caso (os GET de lead/contato não juntavam handoff/atendente).
+  - Não havia endpoint de **reatribuir/encerrar** handoff (o `closeHandoff` de `proxy.ts` é do chat de vendas).
+  - **Encerrar** → handoff `concluido` + lead vai pra `fechado_ganho` (⚠️ raia provisória, a azeitar com o cliente).
 - **Prod despovoado** por default (0 administradoras/docs/atendentes → mesa não-operacional até semear).
-- O `alert()` do "Chat com o cliente" é herança do FIX-87 (feedback simples) — candidato a toast.
