@@ -257,10 +257,17 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
      pra waId simulado (a saída é interceptada, nunca vai pra Meta). Commit `9c38c755`. **Validado
      E2E: Passo 5.2 completo renderiza** (reforço + link real de proposta `uselink.me` + convite
      RG/CNH sem emoji + "Parabéns!"). WhatsApp real intacto (janela atualizada em todo inbound).
-  - **Jornada Passo 1→7 validada ponta-a-ponta no simulador** (busca real → reveal → decisão →
-    contrato → carta real 201 → assinatura/documento/Parabéns). Falta só cobrir o **upload inbound
-    da foto RG/CNH** (bucket `aja-client-docs` provisionado; handler `handleDocumentInbound`
-    unit-testado) — próxima rodada.
+  5. **Upload RG/CNH inbound — COBERTO (PASS).** O simulador só roteia texto/clique
+     (`processTextMessage`/`processInteractiveReply` em `send/route.ts`) — **NÃO trata imagem**, então
+     o upload não é testável pela UI (limitação do backend do simulador; possível melhoria futura:
+     rotear `image` pro `handleDocumentInbound`). Exercitei o path real via `scripts/qa-document-inbound.ts`
+     (download da Graph MOCKADO, upload REAL) contra a conversa fechada: FRENTE → "Recebi a frente.
+     Agora me manda o *verso*"; VERSO → "Recebi. Sua ficha está completa!". **Sem emoji** (o `✅` antigo
+     saiu). **O documento vai pro `gateway.uploadDocument` (link Bevi/Conexia `uselink.me` do Trilho A),
+     NÃO pro nosso S3** — correto (a administradora recebe o RG/CNH). O bucket `aja-client-docs` é do
+     despacho desacoplado (bloco-a), path separado.
+  - **Jornada Passo 1→7 (+ upload) validada 100% ponta-a-ponta no simulador** (busca real → reveal →
+    decisão → contrato → carta real 201 → assinatura/documento/Parabéns → upload frente+verso ok).
   - **Copy menor (não-bug, PENDENTE-KAIRO):** reação pós-interesse repete o nome e emenda frases
     ("Show, Kairo! Então deixa eu confirmar: Fechou, Kairo, esse plano encaixa bem...") — polir depois.
   - **Observações — decisão de PRODUTO, não bug (Kairo: registrar, ajustar depois, não mexer agora):**
