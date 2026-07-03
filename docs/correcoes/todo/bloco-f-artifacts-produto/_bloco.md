@@ -23,8 +23,8 @@ conflitos_esperados:
 # Bloco F — Artifacts de produto (⚠️ SEGURADO — aguarda aval do Bernardo)
 
 🚫 **NÃO LANÇAR sem o aval do Bernardo.** Regra inviolável do `CLAUDE.md`:
-> "Simulador do passo 4 = conceito do Bernardo (stakeholder). Proposta em
-> `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele."
+> "Simulador do passo 4 = conceito do Bernardo (stakeholder). Consolidado no passo 5
+> da `docs/jornada/jornada-canonica.md` — não implementar versão final sem o aval dele."
 
 E o **FIX-96 muda a copy canônica da jornada** ("Encontramos 3 boas opções" →
 "Encontramos N opções…"), que é a visão do cliente (regra inviolável #1: divergência
