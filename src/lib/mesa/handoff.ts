@@ -219,3 +219,199 @@ export async function claimMesaHandoff(
 	if (!current) return { ok: false, reason: "handoff_not_found" };
 	return { ok: false, reason: "ja_assumido", ownerAttendantId: current.ownerAttendantId };
 }
+
+function isActiveHandoffStatus(status: string): boolean {
+	return status === "aberto" || status === "em_andamento";
+}
+
+export type ReassignMesaHandoffResult =
+	| {
+			ok: true;
+			handoff: HandoffRow;
+			oldAttendantId: string | null;
+			newAttendant: AttendantRow;
+			lead: LeadRow | null;
+	  }
+	| { ok: false; reason: "handoff_not_found" }
+	| { ok: false; reason: "handoff_encerrado" }
+	| { ok: false; reason: "attendant_not_found" }
+	| { ok: false; reason: "mesmo_atendente" };
+
+export type CloseMesaHandoffResult =
+	| { ok: true; handoff: HandoffRow; attendantId: string | null; lead: LeadRow | null }
+	| { ok: false; reason: "handoff_not_found" }
+	| { ok: false; reason: "handoff_encerrado" };
+
+export interface ActiveHandoffSummary {
+	id: string;
+	status: (typeof ACTIVE_HANDOFF_STATUSES)[number];
+	attendant: { id: string; nome: string; whatsapp: string } | null;
+	// createdAt do handoff (aproximação de "na mesa desde ~"; claimed_at preciso é evolução).
+	since: string;
+}
+
+/**
+ * Reatribui um handoff ATIVO a OUTRO atendente (decisão Kairo 2026-07-03: reatribuir a um específico,
+ * NÃO re-broadcast — ver docs/decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md). Se o
+ * handoff estava "aberto" (sem dono), reatribuir equivale ao claim: vira `em_andamento` e move a raia
+ * pra `em_atendimento`. Devolve o dono antigo (pode ser null) pra notificação na rota.
+ */
+export async function reassignMesaHandoff(
+	handoffId: string,
+	newAttendantId: string,
+	reassignedBy?: string | null,
+): Promise<ReassignMesaHandoffResult> {
+	const [handoff] = await db
+		.select()
+		.from(mesaHandoffs)
+		.where(eq(mesaHandoffs.id, handoffId))
+		.limit(1);
+	if (!handoff) return { ok: false, reason: "handoff_not_found" };
+	if (!isActiveHandoffStatus(handoff.status)) return { ok: false, reason: "handoff_encerrado" };
+
+	const [attendant] = await db
+		.select()
+		.from(mesaAttendants)
+		.where(eq(mesaAttendants.id, newAttendantId))
+		.limit(1);
+	if (!attendant || !attendant.isActive) return { ok: false, reason: "attendant_not_found" };
+	if (handoff.mesaAttendantId === newAttendantId) return { ok: false, reason: "mesmo_atendente" };
+
+	const oldAttendantId = handoff.mesaAttendantId;
+	const [updated] = await db
+		.update(mesaHandoffs)
+		.set({ mesaAttendantId: newAttendantId, status: "em_andamento" })
+		.where(
+			and(
+				eq(mesaHandoffs.id, handoffId),
+				inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
+			),
+		)
+		.returning();
+	if (!updated) return { ok: false, reason: "handoff_encerrado" }; // corrida: encerrou no meio
+
+	const [lead] = await db.select().from(leads).where(eq(leads.id, updated.leadId)).limit(1);
+
+	// Estava sem dono (aberto) → reatribuir equivale ao claim: o caso passa a estar em atendimento.
+	if (!oldAttendantId) {
+		try {
+			await transitionLeadStage(
+				updated.leadId,
+				"em_atendimento",
+				reassignedBy ? { type: "admin", id: reassignedBy } : { type: "system" },
+			);
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "mesa-reassign",
+					handoff_id: updated.id,
+					error: err instanceof Error ? err.message : String(err),
+					note: "transição de raia pós-reatribuição falhou (reatribuição mantida)",
+				}),
+			);
+		}
+	}
+
+	return {
+		ok: true,
+		handoff: updated,
+		oldAttendantId,
+		newAttendant: attendant,
+		lead: lead ?? null,
+	};
+}
+
+/**
+ * Encerra um handoff ATIVO: `status = concluido`, `closed_at = now()`, E move o lead pra
+ * `fechado_ganho` (decisão Kairo 2026-07-03 — raia provisória, ver docs/decisoes). Atômico via guard
+ * de status; encerrar um já-encerrado → `handoff_encerrado`. Fecha o gap do handoff que nunca terminava.
+ */
+export async function closeMesaHandoff(
+	handoffId: string,
+	closedBy?: string | null,
+): Promise<CloseMesaHandoffResult> {
+	const [handoff] = await db
+		.select()
+		.from(mesaHandoffs)
+		.where(eq(mesaHandoffs.id, handoffId))
+		.limit(1);
+	if (!handoff) return { ok: false, reason: "handoff_not_found" };
+	if (!isActiveHandoffStatus(handoff.status)) return { ok: false, reason: "handoff_encerrado" };
+
+	const [closed] = await db
+		.update(mesaHandoffs)
+		.set({ status: "concluido", closedAt: new Date() })
+		.where(
+			and(
+				eq(mesaHandoffs.id, handoffId),
+				inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
+			),
+		)
+		.returning();
+	if (!closed) return { ok: false, reason: "handoff_encerrado" };
+
+	const [lead] = await db.select().from(leads).where(eq(leads.id, closed.leadId)).limit(1);
+	try {
+		await transitionLeadStage(
+			closed.leadId,
+			"fechado_ganho",
+			closedBy ? { type: "admin", id: closedBy } : { type: "system" },
+		);
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-close",
+				handoff_id: closed.id,
+				error: err instanceof Error ? err.message : String(err),
+				note: "transição de raia pós-encerramento falhou (encerramento mantido)",
+			}),
+		);
+	}
+
+	return { ok: true, handoff: closed, attendantId: closed.mesaAttendantId, lead: lead ?? null };
+}
+
+/**
+ * Visibilidade: mapa `leadId → responsável` do handoff ativo. Uma query com LEFT JOIN em
+ * `mesa_attendants` (`attendant: null` enquanto o handoff está `aberto` — broadcast sem dono).
+ * Base do selo do card e do bloco "Responsável pela mesa".
+ */
+export async function getActiveHandoffsByLead(
+	leadIds: string[],
+): Promise<Map<string, ActiveHandoffSummary>> {
+	const map = new Map<string, ActiveHandoffSummary>();
+	if (leadIds.length === 0) return map;
+	const rows = await db
+		.select({
+			leadId: mesaHandoffs.leadId,
+			id: mesaHandoffs.id,
+			status: mesaHandoffs.status,
+			createdAt: mesaHandoffs.createdAt,
+			attId: mesaAttendants.id,
+			attNome: mesaAttendants.nome,
+			attWhatsapp: mesaAttendants.whatsapp,
+		})
+		.from(mesaHandoffs)
+		.leftJoin(mesaAttendants, eq(mesaHandoffs.mesaAttendantId, mesaAttendants.id))
+		.where(
+			and(
+				inArray(mesaHandoffs.leadId, leadIds),
+				inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
+			),
+		);
+	for (const r of rows) {
+		map.set(r.leadId, {
+			id: r.id,
+			status: r.status as (typeof ACTIVE_HANDOFF_STATUSES)[number],
+			since: r.createdAt.toISOString(),
+			// LEFT JOIN → nome/whatsapp são nulláveis no tipo, mas quando attId existe a linha
+			// casou (colunas notNull). Cast seguro dentro do guard.
+			attendant: r.attId
+				? { id: r.attId, nome: r.attNome as string, whatsapp: r.attWhatsapp as string }
+				: null,
+		});
+	}
+	return map;
+}

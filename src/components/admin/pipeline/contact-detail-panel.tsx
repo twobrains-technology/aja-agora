@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientChatBox } from "./client-chat-box";
+import type { LeadActiveHandoff } from "./lead-card";
+import { MesaResponsavel } from "./mesa-responsavel";
 import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -124,6 +126,10 @@ export function ContactDetailPanel({
 	leadId,
 	leadName,
 	conversationId,
+	// Responsável da mesa (spec 2026-07-03) — vem do card selecionado (leads API). Quando existe,
+	// a aba Atendimento mostra o bloco de gestão (reatribuir/encerrar) no lugar do botão transbordar.
+	activeHandoff,
+	onMesaChanged,
 }: {
 	contactId: string | null;
 	open: boolean;
@@ -131,6 +137,8 @@ export function ContactDetailPanel({
 	leadId?: string | null;
 	leadName?: string | null;
 	conversationId?: string | null;
+	activeHandoff?: LeadActiveHandoff | null;
+	onMesaChanged?: () => void;
 }) {
 	const [detail, setDetail] = useState<ContactDetail | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -293,23 +301,29 @@ export function ContactDetailPanel({
 					    com o cliente. Portado do LeadDetailPanel (FIX-64/FIX-87) pra visão
 					    consolidada — antes essas ações só existiam pro lead anônimo. */}
 					<TabsContent value="atendimento" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-						<div className="space-y-2">
-							<h4 className="text-sm font-semibold">Transbordo para a mesa</h4>
-							<p className="text-xs text-muted-foreground">
-								Envia o caso a todos os atendentes de mesa. O primeiro que tocar em "Vou atender" no
-								WhatsApp assume o cliente e formaliza o contrato na administradora.
-							</p>
-							<Button
-								variant="outline"
-								size="sm"
-								className="w-fit"
-								onClick={() => setTransbordoOpen(true)}
-								disabled={!leadId}
-							>
-								<Headset className="size-3.5" />
-								Transbordar para a mesa
-							</Button>
-						</div>
+						{/* Já transbordado → gestão do responsável (reatribuir/encerrar). Senão →
+						    ação de transbordar. Spec 2026-07-03. */}
+						{activeHandoff ? (
+							<MesaResponsavel activeHandoff={activeHandoff} onChanged={onMesaChanged} />
+						) : (
+							<div className="space-y-2">
+								<h4 className="text-sm font-semibold">Transbordo para a mesa</h4>
+								<p className="text-xs text-muted-foreground">
+									Envia o caso a todos os atendentes de mesa. O primeiro que tocar em "Vou atender"
+									no WhatsApp assume o cliente e formaliza o contrato na administradora.
+								</p>
+								<Button
+									variant="outline"
+									size="sm"
+									className="w-fit"
+									onClick={() => setTransbordoOpen(true)}
+									disabled={!leadId}
+								>
+									<Headset className="size-3.5" />
+									Transbordar para a mesa
+								</Button>
+							</div>
+						)}
 
 						{/* FIX-87 + templates HSM: chat do operador → WhatsApp. Compartilhado com o
 						    LeadDetailPanel via ClientChatBox; janela fechada oferece envio de template. */}

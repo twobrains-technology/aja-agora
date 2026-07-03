@@ -155,13 +155,24 @@ lead → funil → [na_administradora]
 | Transbordo manual (UI) | `src/components/admin/pipeline/mesa-transbordo-dialog.tsx` · `lead-detail-panel.tsx` · `contact-detail-panel.tsx` · `kanban-board.tsx` |
 | Chat operador→cliente | `src/app/api/admin/conversations/[id]/message/route.ts` |
 
-## 10. Gaps conhecidos / evolução
+## 10. Visibilidade do responsável + reatribuição + encerramento (as-built 2026-07-03)
 
-- **Visibilidade do responsável + reatribuir + encerrar** — em construção. Desenho em
-  [`../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md`](../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md);
-  regra de negócio em [`../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md`](../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md).
-  Fecha os dois gaps históricos abaixo:
-  - Front não mostrava **quem assumiu** o caso (os GET de lead/contato não juntavam handoff/atendente).
-  - Não havia endpoint de **reatribuir/encerrar** handoff (o `closeHandoff` de `proxy.ts` é do chat de vendas).
-  - **Encerrar** → handoff `concluido` + lead vai pra `fechado_ganho` (⚠️ raia provisória, a azeitar com o cliente).
+Desenho: [`../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md`](../design/specs/2026-07-03-mesa-visibilidade-reatribuicao-design.md) ·
+regra de negócio: [`../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md`](../decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md).
+
+- **Visibilidade:** `GET /api/admin/leads` anexa `activeHandoff { status, attendant, since }` a cada card
+  (`getActiveHandoffsByLead`). O card mostra o selo do responsável (`lead-card.tsx`); a aba Atendimento
+  mostra o bloco `MesaResponsavel` (`mesa-responsavel.tsx`). `attendant: null` = handoff `aberto` (sem dono).
+- **Reatribuir a um específico** (decisão: NÃO re-broadcast): `POST /api/admin/mesa/handoffs/[id]/reassign`
+  `{mesaAttendantId}` → `reassignMesaHandoff` muda o dono (se estava `aberto`, também claima e move a raia),
+  **notifica o antigo** (liberado) e o **novo** (dossiê, sem CPF). No painel: dropdown de atendentes ativos
+  (exclui o dono atual) + "Reatribuir".
+- **Encerrar:** `POST /api/admin/mesa/handoffs/[id]/close` → `closeMesaHandoff` seta `concluido` + `closed_at`,
+  **move o lead pra `fechado_ganho`** (⚠️ raia provisória, a azeitar com o cliente) e notifica o dono.
+- Quando há handoff ativo, o botão "Transbordar" some e dá lugar ao `MesaResponsavel` — mata o 409 seco.
+
+## 11. Gaps conhecidos
+
 - **Prod despovoado** por default (0 administradoras/docs/atendentes → mesa não-operacional até semear).
+- **"desde ~" aproximado** (usa `created_at` do handoff; `claimed_at` preciso é evolução).
+- Reatribuição/encerramento **sem confirmação** e **sem histórico/auditoria** — evolução.

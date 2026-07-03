@@ -50,6 +50,8 @@ describeIfDb(
 		let schema: typeof import("@/db/schema");
 		let transbordoPOST: typeof import("@/app/api/admin/leads/[id]/transbordo/route").POST;
 		let messagePOST: typeof import("@/app/api/admin/conversations/[id]/message/route").POST;
+		let reassignPOST: typeof import("@/app/api/admin/mesa/handoffs/[id]/reassign/route").POST;
+		let closePOST: typeof import("@/app/api/admin/mesa/handoffs/[id]/close/route").POST;
 		let handleMesaClaim: typeof import("@/lib/whatsapp/mesa/routing").handleMesaClaim;
 		let invalidateMesaAttendantCache: typeof import("@/lib/whatsapp/mesa/routing").invalidateMesaAttendantCache;
 		let CLAIM_PREFIX: string;
@@ -120,6 +122,8 @@ describeIfDb(
 			schema = await import("@/db/schema");
 			({ POST: transbordoPOST } = await import("@/app/api/admin/leads/[id]/transbordo/route"));
 			({ POST: messagePOST } = await import("@/app/api/admin/conversations/[id]/message/route"));
+			({ POST: reassignPOST } = await import("@/app/api/admin/mesa/handoffs/[id]/reassign/route"));
+			({ POST: closePOST } = await import("@/app/api/admin/mesa/handoffs/[id]/close/route"));
 			const routing = await import("@/lib/whatsapp/mesa/routing");
 			handleMesaClaim = routing.handleMesaClaim;
 			invalidateMesaAttendantCache = routing.invalidateMesaAttendantCache;
@@ -275,6 +279,56 @@ describeIfDb(
 				params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
 			});
 			expect(res.status).toBe(404);
+		});
+
+		it("reatribuir: POST /mesa/handoffs/[id]/reassign muda o dono e notifica antigo + novo", async () => {
+			const a = await seedAttendant("Ana RC");
+			const b = await seedAttendant("Bruno RC");
+			const { leadId, conversationId } = await seedLead({ administradoraVarchar: "CANOPUS" });
+			const [h] = await db
+				.insert(schema.mesaHandoffs)
+				.values({ leadId, conversationId, mesaAttendantId: a.id, status: "em_andamento" })
+				.returning({ id: schema.mesaHandoffs.id });
+			sendTextMessage.mockClear();
+
+			const res = await reassignPOST(jsonReq({ mesaAttendantId: b.id }), {
+				params: Promise.resolve({ id: h.id }),
+			});
+			expect(res.status).toBe(200);
+
+			const [row] = await db
+				.select()
+				.from(schema.mesaHandoffs)
+				.where(eq(schema.mesaHandoffs.id, h.id));
+			expect(row.mesaAttendantId).toBe(b.id);
+
+			const recipients = sendTextMessage.mock.calls.map((c) => c[0]);
+			expect(recipients).toContain(a.whatsapp); // antigo dono liberado
+			expect(recipients).toContain(b.whatsapp); // novo dono recebe o dossiê
+		});
+
+		it("encerrar: POST /mesa/handoffs/[id]/close → concluido, lead fechado_ganho, notifica o dono", async () => {
+			const a = await seedAttendant("Carla RC");
+			const { leadId, conversationId } = await seedLead({ administradoraVarchar: null });
+			const [h] = await db
+				.insert(schema.mesaHandoffs)
+				.values({ leadId, conversationId, mesaAttendantId: a.id, status: "em_andamento" })
+				.returning({ id: schema.mesaHandoffs.id });
+			sendTextMessage.mockClear();
+
+			const res = await closePOST(jsonReq({}), { params: Promise.resolve({ id: h.id }) });
+			expect(res.status).toBe(200);
+
+			const [row] = await db
+				.select()
+				.from(schema.mesaHandoffs)
+				.where(eq(schema.mesaHandoffs.id, h.id));
+			expect(row.status).toBe("concluido");
+			expect(row.closedAt).toBeTruthy();
+
+			const [lead] = await db.select().from(schema.leads).where(eq(schema.leads.id, leadId));
+			expect(lead.stage).toBe("fechado_ganho");
+			expect(sendTextMessage.mock.calls.map((c) => c[0])).toContain(a.whatsapp);
 		});
 	},
 );

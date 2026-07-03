@@ -18,7 +18,8 @@ import { ClientChatBox } from "./client-chat-box";
 import { ClientDocumentsTab } from "./client-documents-tab";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
-import type { Lead } from "./lead-card";
+import type { Lead, LeadActiveHandoff } from "./lead-card";
+import { MesaResponsavel } from "./mesa-responsavel";
 import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -44,10 +45,14 @@ export function LeadDetailPanel({
 	lead,
 	open,
 	onClose,
+	activeHandoff,
+	onMesaChanged,
 }: {
 	lead: Lead | null;
 	open: boolean;
 	onClose: () => void;
+	activeHandoff?: LeadActiveHandoff | null;
+	onMesaChanged?: () => void;
 }) {
 	const [activeTab, setActiveTab] = useState("conversa");
 	const [insightsLoaded, setInsightsLoaded] = useState(false);
@@ -88,15 +93,17 @@ export function LeadDetailPanel({
 									})}
 								</span>
 							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								className="mt-2 w-fit"
-								onClick={() => setTransbordoOpen(true)}
-							>
-								<Headset className="size-3.5" />
-								Transbordar para a mesa
-							</Button>
+							{!activeHandoff && (
+								<Button
+									variant="outline"
+									size="sm"
+									className="mt-2 w-fit"
+									onClick={() => setTransbordoOpen(true)}
+								>
+									<Headset className="size-3.5" />
+									Transbordar para a mesa
+								</Button>
+							)}
 						</SheetHeader>
 
 						<Tabs
@@ -127,6 +134,12 @@ export function LeadDetailPanel({
 								<ClientDocumentsTab leadId={lead.id} />
 							</TabsContent>
 						</Tabs>
+
+						{activeHandoff && (
+							<div className="border-t p-4">
+								<MesaResponsavel activeHandoff={activeHandoff} onChanged={onMesaChanged} />
+							</div>
+						)}
 
 						{/* FIX-87 + templates HSM: chat do operador → WhatsApp (janela fechada oferece
 						    template). Compartilhado com o ContactDetailPanel via ClientChatBox. */}

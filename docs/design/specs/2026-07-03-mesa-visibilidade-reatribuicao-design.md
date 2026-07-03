@@ -148,7 +148,8 @@ Registro de negócio durável em [`../../decisoes/2026-07-03-mesa-encerrar-atend
 
 - **PII pro novo atendente:** reatribuir manda dossiê do cliente pro WhatsApp do novo — mesmo cuidado
   (minimização) do broadcast; guard-rail já existente.
-- **"desde ~" aproximado** (usa `updated_at`) até existir `claimed_at`.
+- **"desde ~" aproximado** (usa `created_at` do handoff — `mesa_handoffs` não tem `updated_at`) até
+  existir `claimed_at`.
 - **Raias do kanban provisórias:** encerrar move o lead pra `fechado_ganho` por ora, mas o mapeamento
   das raias será azeitado com o cliente e revisitado — sujeito a mudança (não cravar em `jornada-canonica`).
 

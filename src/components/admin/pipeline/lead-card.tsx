@@ -2,10 +2,19 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Clock, DollarSign, Globe, MessageSquare, Smartphone } from "lucide-react";
+import { Clock, DollarSign, Globe, Headset, MessageSquare, Smartphone } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+
+// Responsável da mesa por um lead (spec 2026-07-03). Shape client-safe do
+// ActiveHandoffSummary do servidor (@/lib/mesa/handoff) — sem puxar o DB pro bundle.
+export interface LeadActiveHandoff {
+	id: string;
+	status: "aberto" | "em_andamento";
+	attendant: { id: string; nome: string; whatsapp: string } | null;
+	since: string;
+}
 
 export interface Lead {
 	id: string;
@@ -20,6 +29,8 @@ export interface Lead {
 	updatedAt: string;
 	// FIX-45: canais usados pelo contato (dedup). Vazio → cai no canal da conversa.
 	channels?: string[];
+	// Responsável da mesa (handoff ativo), quando houver. null = sem transbordo ativo.
+	activeHandoff?: LeadActiveHandoff | null;
 	conversation: {
 		channel: "web" | "whatsapp";
 		createdAt: string;
@@ -112,6 +123,17 @@ export function LeadCard({
 						<MessageSquare className="size-3" />
 						<span>{lastInteraction}</span>
 					</div>
+					{/* Responsável da mesa (spec 2026-07-03): quem assumiu o caso, ou "aguardando". */}
+					{lead.activeHandoff && (
+						<div className="flex items-center gap-1.5" data-testid="lead-responsavel">
+							<Headset className="size-3 text-indigo-600 dark:text-indigo-400" />
+							<span className="text-foreground">
+								{lead.activeHandoff.attendant
+									? lead.activeHandoff.attendant.nome
+									: "Aguardando mesa"}
+							</span>
+						</div>
+					)}
 				</div>
 			</CardContent>
 		</Card>
