@@ -1,7 +1,9 @@
 ---
 id: FIX-211
 titulo: "Escada de cobrança de dado obrigatório (CPF/valor) com variação e saída após 3 tentativas"
-status: todo
+status: done
+commit: 72e5aa6
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:

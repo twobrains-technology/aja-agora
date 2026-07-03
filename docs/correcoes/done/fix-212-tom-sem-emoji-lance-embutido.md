@@ -1,7 +1,9 @@
 ---
 id: FIX-212
 titulo: "Tom curto e ZERO emoji na copy de qualificação + split do card de lance-embutido"
-status: todo
+status: done
+commit: f702a8d
+executado_em: 2026-07-02
 severidade: media
 projeto: aja-agora
 arquivos:

@@ -1,7 +1,9 @@
 ---
 id: FIX-210
 titulo: "Cadenciar entrega de gate no WhatsApp em 2 tempos (contexto → pedido) e aplicar no CPF"
-status: todo
+status: done
+commit: 1845433
+executado_em: 2026-07-02
 severidade: alta
 projeto: aja-agora
 arquivos:
