@@ -15,6 +15,11 @@ export function formatTextForWhatsApp(text: string): string {
 			.replace(/\*\*(.+?)\*\*/g, "*$1*")
 			// Drop blockquote markers.
 			.replace(/^>\s+/gm, "")
+			// Bug QA 2026-07-03: o LLM quebra valores no separador de milhar/decimal
+			// ("R$ 100.\n\n000,00") por causa da regra "1-2 frases por mensagem" — lê o
+			// ponto como fim de frase. Um ponto OU vírgula ENTRE DÍGITOS é sempre
+			// separador numérico, nunca fim de frase: reúne o número (Lei 4, determinístico).
+			.replace(/(\d[.,])\s*\n\s*(\d)/g, "$1$2")
 			// Add missing space in "frase.Outra" → "frase. Outra".
 			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
 			// "frase:Outra" → "frase: Outra" (only when stuck without space).
