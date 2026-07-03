@@ -70,26 +70,43 @@ export function pendingGateAfterTurn(args: {
 	return gate;
 }
 
+/** FIX-211 — oferta de SAÍDA pro especialista após o teto de cobranças. Anti-
+ * armadilha: nunca loop infinito de re-pedido. Só oferece (o handoff real acontece
+ * quando o usuário pede); sem emoji, sem hedge. */
+export const SPECIALIST_EXIT_OFFER =
+	"Se preferir, posso te conectar com um especialista pra te ajudar antes de seguir. É só me pedir.";
+
 /**
- * FIX-208 — guard de turno-mudo (rede final). Quando um turno de USUÁRIO fecharia
- * MUDO (nenhuma emissão visível) com um gate de COLETA pendente (o usuário
- * respondeu o valor/lance e nada saiu), os adapters (route.ts web +
- * whatsapp/adapter.ts) re-emitem a PERGUNTA daquele gate em vez do
- * EMPTY_TURN_FALLBACK ("Acho que me perdi..."). Retorna a pergunta re-emitível, ou
- * null (→ cai no fallback honesto). Restrito à MESMA classe do decideShowGate
- * (COLLECTION_GATES: credit/lance/lance-value/lance-embutido) — os demais gates
- * (experience/consent/identify/name/search/decision) mantêm o fallback honesto.
+ * Gate de ENTREGA OBRIGATÓRIA no WhatsApp: COLLECTION_GATES (credit/lance/...) +
+ * `identify`. É a classe que o guard re-cobra em vez de deixar o funil parado.
+ */
+export function isMandatoryCollectionGate(gate: Gate): boolean {
+	return COLLECTION_GATES.has(gate) || gate === "identify";
+}
+
+/**
+ * FIX-208 (guard de turno-mudo) + FIX-211 (ESCADA de cobrança). Quando um gate de
+ * COLETA obrigatória (credit/lance/.../identify) segue pendente — porque o turno
+ * fechou mudo OU o usuário desviou —, re-cobramos o dado em vez de seguir sem ele.
+ * A cobrança ESCALA por tentativa e, no teto, oferece a saída pro especialista:
+ *   - attempt 1: pedido direto (a pergunta base do gate — compat com o guard mudo);
+ *   - attempt 2: incentivo curto ("só falta isso, é rapidinho");
+ *   - attempt 3: reforço de segurança ("é seguro e sem compromisso");
+ *   - attempt >= 4: SPECIALIST_EXIT_OFFER (saída, não re-pergunta).
+ * Gates fora da coleta obrigatória → null (mantêm o fallback honesto do adapter).
  */
 export function reengageQuestionForGate(
 	gate: Gate,
 	category: Category | null | undefined,
+	attempt = 1,
 ): string | null {
-	// COLLECTION_GATES (credit/lance/...) + `identify`: gates de ENTREGA OBRIGATÓRIA
-	// no WhatsApp — o guard re-pergunta a pergunta do gate em vez do "me perdi".
-	// identify não é "collection" mas é entrega obrigatória (FIX-53); sem ele aqui o
-	// consent→identify caía no fallback honesto (bug de prod 2026-07-02).
-	if (!COLLECTION_GATES.has(gate) && gate !== "identify") return null;
-	return gateQuestion(gate, category ?? null);
+	if (!isMandatoryCollectionGate(gate)) return null;
+	if (attempt >= 4) return SPECIALIST_EXIT_OFFER;
+	const base = gateQuestion(gate, category ?? null);
+	if (!base) return null;
+	if (attempt <= 1) return base;
+	if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;
+	return `${base}\n\nÉ seguro e sem compromisso. Só preciso disso pra continuar.`;
 }
 
 /**

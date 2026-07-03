@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { waIdToCelular } from "./identify-capture";
 
 /**
@@ -37,5 +37,44 @@ describe("waIdToCelular — 9º dígito do móvel BR (bug fechamento CELULAR inv
 
 	it("mascara/formatação não-dígito é ignorada", () => {
 		expect(waIdToCelular("+55 (62) 9249-6793")).toBe("62992496793");
+	});
+});
+
+/**
+ * Bug de QA local (2026-07-03, rodada qa-dono-produto): fechamento no SIMULADOR
+ * (/admin/simulator/whatsapp) rejeitava com o MESMO erro `CELULAR inválido` — mas
+ * a causa é OUTRA. O waId do simulador é sintético (`SIM-<uuid>`, gerado em
+ * src/app/api/admin/simulator/sessions/route.ts, roteado via isSimulatedWaId em
+ * simulator-bus.ts). `waIdToCelular` fazia `replace(/\D/g,"")` no UUID inteiro,
+ * extraindo 24+ dígitos arbitrários — a Bevi rejeitava.
+ *
+ * Fix (feedback do Kairo): a Bevi VALIDA o celular contra o CPF, então um número
+ * sintético não fecha — precisa ser REAL. waId simulado usa SIMULATOR_TEST_CELULAR
+ * (número de teste real, PII no env/vault, nunca hardcoded), pareado com o CPF da
+ * mesma conta. Sem o env, cai num sintético de formato válido (não fecha, mas não
+ * crasha o formato).
+ */
+describe("waIdToCelular — waId sintético do simulador (SIM-<uuid>)", () => {
+	afterEach(() => vi.unstubAllEnvs());
+
+	it("com SIMULATOR_TEST_CELULAR setado → usa o número REAL normalizado (11 díg)", () => {
+		vi.stubEnv("SIMULATOR_TEST_CELULAR", "5562992496793"); // real, 13 díg com DDI
+		expect(waIdToCelular("SIM-b402c940-e80c-42a6-8677-711d3764b55f")).toBe("62992496793");
+	});
+
+	it("SEM o env → fallback sintético de formato VÁLIDO (11 díg, DDD 62, 9º dígito)", () => {
+		vi.stubEnv("SIMULATOR_TEST_CELULAR", "");
+		const celular = waIdToCelular("SIM-b402c940-e80c-42a6-8677-711d3764b55f");
+		expect(celular).toHaveLength(11);
+		expect(celular.startsWith("629")).toBe(true);
+	});
+
+	it("fallback sintético é determinístico e sem colisão óbvia", () => {
+		vi.stubEnv("SIMULATOR_TEST_CELULAR", "");
+		const a1 = waIdToCelular("SIM-11111111-1111-1111-1111-111111111111");
+		const a2 = waIdToCelular("SIM-11111111-1111-1111-1111-111111111111");
+		const b = waIdToCelular("SIM-22222222-2222-2222-2222-222222222222");
+		expect(a1).toBe(a2);
+		expect(a1).not.toBe(b);
 	});
 });

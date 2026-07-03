@@ -23,6 +23,7 @@ import type {
 } from "../proposal-gateway";
 import { BeviConfigError, type BeviFieldError, toBeviError } from "./bevi-errors";
 import { ConexiaDocsClient } from "./conexia-docs-client";
+import { logTrilho } from "./trilho-log";
 
 export interface BeviApiConfig {
 	baseUrl: string;
@@ -85,32 +86,61 @@ export class BeviApiAdapter implements ProposalGateway {
 		const { method = "POST", body, qs = "", retryOn404 = false } = opts;
 		const maxAttempts = retryOn404 ? SIM_RETRY : 1;
 
+		// Observabilidade de trilho: toda chamada de parceiro é TRILHO A. Endpoint =
+		// service_id (roteia o RPC) + qs; sem body no log (pode conter PII).
+		const started = Date.now();
+		const endpoint = qs ? `${serviceId}${qs}` : serviceId;
+		logTrilho({ trilho: "A", method, endpoint, phase: "request" });
+
 		let lastErr: unknown;
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			const res = await fetch(this.config.baseUrl + qs, {
-				method,
-				headers: {
-					Authorization: `Bearer ${this.config.apiToken}`,
-					service_id: serviceId,
-					...(body ? { "Content-Type": "application/json" } : {}),
-				},
-				body: body ? JSON.stringify(body) : undefined,
-				signal: AbortSignal.timeout(TIMEOUT_MS),
-			});
+		try {
+			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+				const res = await fetch(this.config.baseUrl + qs, {
+					method,
+					headers: {
+						Authorization: `Bearer ${this.config.apiToken}`,
+						service_id: serviceId,
+						...(body ? { "Content-Type": "application/json" } : {}),
+					},
+					body: body ? JSON.stringify(body) : undefined,
+					signal: AbortSignal.timeout(TIMEOUT_MS),
+				});
 
-			const env = (await res.json()) as BeviEnvelope<T>;
-			if (env.success) return env.data;
+				const env = (await res.json()) as BeviEnvelope<T>;
+				if (env.success) {
+					logTrilho({
+						trilho: "A",
+						method,
+						endpoint,
+						phase: "response",
+						status: env.code,
+						ok: true,
+						ms: Date.now() - started,
+					});
+					return env.data;
+				}
 
-			// 404 transitório na simulação → retry curto (spec §4.3)
-			if (retryOn404 && env.code === 404 && attempt < maxAttempts) {
-				lastErr = toBeviError(env.code, env.message, env.data);
-				await sleep(SIM_RETRY_DELAY_MS);
-				continue;
+				// 404 transitório na simulação → retry curto (spec §4.3)
+				if (retryOn404 && env.code === 404 && attempt < maxAttempts) {
+					lastErr = toBeviError(env.code, env.message, env.data);
+					await sleep(SIM_RETRY_DELAY_MS);
+					continue;
+				}
+				throw toBeviError(env.code, env.message, env.data);
 			}
-			throw toBeviError(env.code, env.message, env.data);
+			// esgotou retries de 404
+			throw lastErr;
+		} catch (err) {
+			logTrilho({
+				trilho: "A",
+				method,
+				endpoint,
+				phase: "error",
+				ok: false,
+				ms: Date.now() - started,
+			});
+			throw err;
 		}
-		// esgotou retries de 404
-		throw lastErr;
 	}
 
 	async createProposal(input: CreateProposalInput): Promise<CreateProposalResult> {

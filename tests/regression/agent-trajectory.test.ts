@@ -45,6 +45,7 @@ import {
 	pendingGateAfterTurn,
 	reengageQuestionForGate,
 	shouldReengageGate,
+	SPECIALIST_EXIT_OFFER,
 } from "@/lib/agent/gate-reengage";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
@@ -7528,9 +7529,15 @@ describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", ()
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
 		// gateInteractive não chama mais creditRangeQuestionToWhatsApp
 		expect(adapter).not.toMatch(/creditRangeQuestionToWhatsApp/);
-		// há um caminho textual pro gate credit espelhando o identify
+		// há um caminho textual pro gate credit espelhando o identify: credit está
+		// no conjunto WHATSAPP_TEXT_GATES e a pergunta sai via gateTextPrompt →
+		// gateQuestion(gate, ...) (genérico), não uma lista de faixas. (Assert antigo
+		// procurava `gateQuestion("credit"` literal — string que nunca existiu no
+		// adapter, que usa a forma genérica; teste estava vermelho no HEAD, dívida
+		// pré-existente corrigida junto com o FIX-210.)
 		expect(adapter).toMatch(/gateTextPrompt/);
-		expect(adapter).toMatch(/gateQuestion\("credit"/);
+		expect(adapter).toMatch(/WHATSAPP_TEXT_GATES[\s\S]{0,80}"credit"/);
+		expect(adapter).toMatch(/gateQuestion\(gate/);
 	});
 
 	it("o roteamento credit_ e handleCredit foram aposentados no dispatcher", () => {
@@ -8633,5 +8640,147 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 		expect(readSource("src/lib/agent/orchestrator/analyze.ts")).toMatch(
 			/parseAssetValue\([^)]*gate[\s\S]{0,40}credit/,
 		);
+	});
+});
+
+// ============================================================================
+// FIX-210-CADENCIA-2-TEMPOS — cadência de gate + identify unificado (reforma WA)
+// ----------------------------------------------------------------------------
+// Real (Kairo, reforma de conversa WhatsApp 2026-07-02): no consent→identify o
+// funil mandava UMA bolha longa (reação + porquê + LGPD + pedido do CPF), porque
+// o adapter colava o `prefix` (texto do LLM) na pergunta do gate. C1 do spec: o
+// contexto vai num balão, o pedido em outro; e o identify tem UM texto só.
+// Comportamento real (2 balões via consumeEvents) coberto em
+// src/lib/whatsapp/adapter.cadencia-fix210.test.ts. Aqui: cassette determinístico
+// (estrutural do render WA + funções puras da copy unificada).
+// ============================================================================
+
+describe("FIX-210-CADENCIA-2-TEMPOS — contexto e pedido em balões separados no WhatsApp", () => {
+	it("cassette estrutural: o adapter NÃO cola prefix na pergunta e usa gateContextBeat", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// o case gate entrega a pergunta SEM prefix (undefined) — nada de bolha junta
+		expect(adapter).toMatch(/gateInteractive\(ev\.gate, conversationId, undefined\)/);
+		expect(adapter).toMatch(/gateTextPrompt\(ev\.gate, conversationId, undefined\)/);
+		// beat de contexto determinístico (gancho docx + LGPD) pro identify
+		expect(adapter).toMatch(/gateContextBeat/);
+		// fireGate identify emite os DOIS beats (contexto + pedido)
+		expect(adapter).toMatch(/IDENTIFY_CONTEXT_WHATSAPP[\s\S]{0,160}IDENTIFY_WHATSAPP_PROMPT/);
+	});
+
+	it("cassette puro: identify é UM texto só (IDENTIFY_WHATSAPP_PROMPT === gateQuestion('identify'))", async () => {
+		const { IDENTIFY_WHATSAPP_PROMPT } = await import("@/lib/whatsapp/identify-capture");
+		expect(IDENTIFY_WHATSAPP_PROMPT).toBe(gateQuestion("identify"));
+	});
+
+	it("cassette puro: o PEDIDO é curto (≤160), sem 'CPF e celular', sem emoji", () => {
+		const q = gateQuestion("identify") ?? "";
+		expect(q.length).toBeLessThanOrEqual(160);
+		expect(q).not.toMatch(/cpf e celular/i);
+		expect(q).toMatch(/cpf/i);
+		// sem emoji na copy do pedido
+		expect(q).not.toMatch(
+			/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}]/u,
+		);
+	});
+
+	it("cassette puro: o CONTEXTO preserva o gancho docx + LGPD (garantia determinística)", async () => {
+		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("@/lib/whatsapp/identify-capture");
+		const c = IDENTIFY_CONTEXT_WHATSAPP.toLowerCase();
+		expect(c).toMatch(/analisar várias administradoras|analisar varias administradoras/);
+		expect(c).toMatch(/aderentes ao seu perfil/);
+		expect(c).toMatch(/lgpd/);
+	});
+});
+
+// ============================================================================
+// FIX-211-ESCADA-COBRANCA — cobrar o dado obrigatório até informar (reforma WA)
+// ----------------------------------------------------------------------------
+// Real (Kairo, reforma de conversa WhatsApp 2026-07-02): "se o cara nao informar
+// tem que cobrar ele ate informar". C2 do spec: o re-pedido do CPF/valor VARIA por
+// tentativa, cobra também quando o usuário DESVIA (não só quando fecha mudo), e no
+// teto oferece a SAÍDA pro especialista (anti-armadilha). Comportamento real (o
+// desvio re-cobra via consumeEvents) coberto em
+// src/lib/whatsapp/adapter.escada-fix211.test.ts. Aqui: cassette determinístico
+// (escada pura + estrutural do gatilho de desvio no adapter).
+// ============================================================================
+
+describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", () => {
+	it("cassette puro: a escada dá 3 textos distintos e no teto oferece o especialista", () => {
+		const t1 = reengageQuestionForGate("identify", null, 1);
+		const t2 = reengageQuestionForGate("identify", null, 2);
+		const t3 = reengageQuestionForGate("identify", null, 3);
+		const t4 = reengageQuestionForGate("identify", null, 4);
+		expect(new Set([t1, t2, t3]).size).toBe(3); // escala, textos distintos
+		expect(t4).toBe(SPECIALIST_EXIT_OFFER); // saída no teto (não re-pergunta)
+		expect(SPECIALIST_EXIT_OFFER).toMatch(/especialista/i);
+	});
+
+	it("cassette puro: só gates de COLETA obrigatória entram na escada (identify/credit)", () => {
+		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
+		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
+		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
+		expect(reengageQuestionForGate("consent", null, 1)).toBeNull();
+	});
+
+	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// há o gatilho de desvio (turno falou mas gate obrigatório pendente e não disparado)
+		expect(adapter).toMatch(/gateFiredThisTurn/);
+		expect(adapter).toMatch(/isMandatoryCollectionGate/);
+		// incrementa o contador por gate e passa a tentativa pra escada
+		expect(adapter).toMatch(/bumpGateAttempt/);
+		expect(adapter).toMatch(/reengageQuestionForGate\([\s\S]{0,60}attempt/);
+	});
+
+	it("cassette estrutural: o contador é resetado ao capturar o dado (identify-capture)", () => {
+		const capture = readSource("src/lib/whatsapp/identify-capture.ts");
+		expect(capture).toMatch(/gateAttempts/);
+		expect(capture).toMatch(/storeIdentity[\s\S]{0,300}gateAttempts/);
+	});
+});
+
+// ============================================================================
+// FIX-212-SEM-EMOJI-LANCE-SPLIT — tom curto, ZERO emoji, lance-embutido em 2 tempos
+// ----------------------------------------------------------------------------
+// Real (Kairo): "sem emoticons por favor" (regra pra TODA a copy) + "garantir que
+// a ia fale mais naturalmente quanto a qtd de itens no whatsapp". C3/C4 do spec:
+// zero emoji na copy do WhatsApp (fixa e gerada) + lance-embutido split (educação
+// num balão, card só com a pergunta). Varredura completa em
+// src/lib/whatsapp/no-emoji-fix212.test.ts; comportamento do split em
+// src/lib/whatsapp/adapter.lance-split-fix212.test.ts. Aqui: cassette determinístico.
+// ============================================================================
+
+describe("FIX-212-SEM-EMOJI-LANCE-SPLIT — copy sem emoji + card do lance enxuto", () => {
+	const EMOJI =
+		/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}]/u;
+
+	it("cassette estrutural: a copy fixa do WhatsApp não tem emoji", () => {
+		for (const rel of [
+			"src/lib/whatsapp/formatter.ts",
+			"src/lib/agent/orchestrator/gate-questions.ts",
+			"src/lib/whatsapp/identify-capture.ts",
+		]) {
+			expect(readSource(rel)).not.toMatch(EMOJI);
+		}
+	});
+
+	it("cassette estrutural: o system-prompt proíbe emoji (regra dura, sem 'com moderação')", () => {
+		const prompt = readSource("src/lib/agent/system-prompt.ts");
+		expect(prompt).toMatch(/NUNCA use emoji/);
+		expect(prompt).not.toMatch(/emojis com moderação/);
+	});
+
+	it("cassette puro: gateQuestion('lance-embutido') compõe educação + pergunta (web mantém o card)", () => {
+		const q = gateQuestion("lance-embutido") ?? "";
+		expect(q).toMatch(/lance embutido/i); // educação
+		expect(q).toMatch(/R\$ 100 mil/); // âncora docx
+		expect(q).toMatch(/Quer considerar esse tipo de lance/); // pergunta
+	});
+
+	it("cassette estrutural: no WhatsApp a educação vira balão de contexto e o card usa só a pergunta", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		expect(adapter).toMatch(/LANCE_EMBUTIDO_EDU/); // beat de contexto (gateContextBeat)
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		expect(formatter).toMatch(/LANCE_EMBUTIDO_ASK/); // card só com a pergunta
 	});
 });

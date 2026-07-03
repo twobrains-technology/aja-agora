@@ -22,6 +22,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { whatsappOutboundQueue, whatsappTemplates } from "@/db/schema";
 import { sendTemplate } from "./api";
+import { isSimulatedWaId } from "./simulator-bus";
 import { isWindowOpen } from "./window";
 
 export interface ResolveAndSendArgs {
@@ -115,6 +116,16 @@ async function enqueue(
 
 export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveAndSendResult> {
 	const { to, conversationId, usageKey, params, freeTextFallback } = args;
+
+	// Simulador (SIM-<uuid>): a saída é interceptada pelo simulator-bus, NUNCA vai
+	// pra Meta — então a regra de janela 24h / template não se aplica. Sem isto, o
+	// simulador (que não chama updateLastInboundAt → lastInboundAt null → janela
+	// sempre "fechada") enfileirava o Passo 5.2 como template e o QA nunca via o
+	// fechamento (assinatura/documento/Parabéns). Bug QA 2026-07-03.
+	if (isSimulatedWaId(to)) {
+		await freeTextFallback();
+		return { channel: "free_text" };
+	}
 
 	const { open } = await isWindowOpen(conversationId);
 	if (open) {
