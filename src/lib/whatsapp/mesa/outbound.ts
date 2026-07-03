@@ -111,9 +111,9 @@ export function buildDossierMessage(d: MesaCaseDossier): string {
  * Envia o dossiê do caso pro WhatsApp do atendente de mesa. Best-effort: devolve o
  * resultado de sendTextMessage (messageId | error) — a rota decide como sinalizar.
  *
- * TODO(bloco-c): persistir a 1ª mensagem do copiloto em mesa_copilot_messages
- * (role='assistant') e disparar a orientação passo-a-passo com o PDF da administradora
- * injetado. Aqui só vai o dossiê do caso.
+ * Nota: a orientação passo-a-passo PROATIVA (com o manual da administradora injetado,
+ * persistida em mesa_copilot_messages role='assistant') é empurrada no CLAIM, não aqui —
+ * ver `pushOpeningOrientation` em `./routing.ts`. Aqui vai só o dossiê do caso.
  */
 export async function sendCaseToAttendant(dossier: MesaCaseDossier) {
 	const text = buildDossierMessage(dossier);

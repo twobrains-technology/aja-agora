@@ -13,7 +13,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const sendTextMessage = vi.fn(async (..._args: unknown[]) => ({ messageId: "sim-1" }));
-const generateMesaCopilotReply = vi.fn(async (..._args: unknown[]) => "orientação do copiloto (mock)");
+const generateMesaCopilotReply = vi.fn(
+	async (..._args: unknown[]) => "orientação do copiloto (mock)",
+);
 
 vi.mock("@/lib/whatsapp/api", () => ({
 	sendTextMessage: (...a: unknown[]) => sendTextMessage(...a),
@@ -21,6 +23,7 @@ vi.mock("@/lib/whatsapp/api", () => ({
 }));
 vi.mock("@/lib/agent/mesa-copilot", () => ({
 	generateMesaCopilotReply: (...a: unknown[]) => generateMesaCopilotReply(...a),
+	generateMesaCopilotOpening: vi.fn(async () => "orientação inicial (mock)"),
 }));
 vi.mock("@/lib/admin/require-role", () => ({
 	requireRole: vi.fn(async () => ({ error: null, session: { user: { id: "test-admin" } } })),
@@ -37,95 +40,102 @@ function replyReq(text: string) {
 	});
 }
 
-describeIfDb("FIX-172 — simulador de atendente respeita precedência mesa-primeiro (integration)", () => {
-	let db: typeof import("@/db").db;
-	let schema: typeof import("@/db/schema");
-	let POST: typeof import("./route").POST;
-	let routing: typeof import("@/lib/whatsapp/mesa/routing");
+describeIfDb(
+	"FIX-172 — simulador de atendente respeita precedência mesa-primeiro (integration)",
+	() => {
+		let db: typeof import("@/db").db;
+		let schema: typeof import("@/db/schema");
+		let POST: typeof import("./route").POST;
+		let routing: typeof import("@/lib/whatsapp/mesa/routing");
 
-	const SUFFIX = Date.now().toString(36);
-	const PHONE = `5564${Math.floor(900000000 + Math.random() * 90000000)}`;
-	const USER_ID = randomUUID();
+		const SUFFIX = Date.now().toString(36);
+		const PHONE = `5564${Math.floor(900000000 + Math.random() * 90000000)}`;
+		const USER_ID = randomUUID();
 
-	const convIds: string[] = [];
-	const userIds: string[] = [];
-	const mesaAttendantIds: string[] = [];
+		const convIds: string[] = [];
+		const userIds: string[] = [];
+		const mesaAttendantIds: string[] = [];
 
-	beforeAll(async () => {
-		({ db } = await import("@/db"));
-		schema = await import("@/db/schema");
-		({ POST } = await import("./route"));
-		routing = await import("@/lib/whatsapp/mesa/routing");
+		beforeAll(async () => {
+			({ db } = await import("@/db"));
+			schema = await import("@/db/schema");
+			({ POST } = await import("./route"));
+			routing = await import("@/lib/whatsapp/mesa/routing");
 
-		// user (role=attendant) — quem aparece no dropdown do simulador.
-		await db.insert(schema.user).values({
-			id: USER_ID,
-			name: `E2E Mesa Sim ${SUFFIX}`,
-			email: `e2e-mesa-sim-${SUFFIX}@teste.local`,
-			phone: PHONE,
-			role: "attendant",
-			isActive: true,
+			// user (role=attendant) — quem aparece no dropdown do simulador.
+			await db.insert(schema.user).values({
+				id: USER_ID,
+				name: `E2E Mesa Sim ${SUFFIX}`,
+				email: `e2e-mesa-sim-${SUFFIX}@teste.local`,
+				phone: PHONE,
+				role: "attendant",
+				isActive: true,
+			});
+			userIds.push(USER_ID);
+
+			// mesmo telefone cadastrado como atendente de MESA — é isso que dispara a
+			// precedência (isMesaAttendantPhone) em processor.ts.
+			const [mesaAttendant] = await db
+				.insert(schema.mesaAttendants)
+				.values({ nome: `E2E Mesa Sim ${SUFFIX}`, whatsapp: PHONE, isActive: true })
+				.returning({ id: schema.mesaAttendants.id });
+			mesaAttendantIds.push(mesaAttendant.id);
+			routing.invalidateMesaAttendantCache();
+
+			const [conv] = await db
+				.insert(schema.conversations)
+				.values({ channel: "web", status: "active", metadata: {} })
+				.returning({ id: schema.conversations.id });
+			convIds.push(conv.id);
+			const [lead] = await db
+				.insert(schema.leads)
+				.values({ conversationId: conv.id, name: "Cliente Mesa Sim", stage: "em_atendimento" })
+				.returning({ id: schema.leads.id });
+			await db.insert(schema.mesaHandoffs).values({
+				leadId: lead.id,
+				conversationId: conv.id,
+				mesaAttendantId: mesaAttendant.id,
+				status: "em_andamento",
+			});
 		});
-		userIds.push(USER_ID);
 
-		// mesmo telefone cadastrado como atendente de MESA — é isso que dispara a
-		// precedência (isMesaAttendantPhone) em processor.ts.
-		const [mesaAttendant] = await db
-			.insert(schema.mesaAttendants)
-			.values({ nome: `E2E Mesa Sim ${SUFFIX}`, whatsapp: PHONE, isActive: true })
-			.returning({ id: schema.mesaAttendants.id });
-		mesaAttendantIds.push(mesaAttendant.id);
-		routing.invalidateMesaAttendantCache();
-
-		const [conv] = await db
-			.insert(schema.conversations)
-			.values({ channel: "web", status: "active", metadata: {} })
-			.returning({ id: schema.conversations.id });
-		convIds.push(conv.id);
-		const [lead] = await db
-			.insert(schema.leads)
-			.values({ conversationId: conv.id, name: "Cliente Mesa Sim", stage: "em_atendimento" })
-			.returning({ id: schema.leads.id });
-		await db.insert(schema.mesaHandoffs).values({
-			leadId: lead.id,
-			conversationId: conv.id,
-			mesaAttendantId: mesaAttendant.id,
-			status: "em_andamento",
+		afterAll(async () => {
+			for (const id of convIds) {
+				await db.delete(schema.conversations).where(eq(schema.conversations.id, id));
+			}
+			for (const id of mesaAttendantIds) {
+				await db.delete(schema.mesaAttendants).where(eq(schema.mesaAttendants.id, id));
+			}
+			for (const id of userIds) {
+				await db.delete(schema.user).where(eq(schema.user.id, id));
+			}
 		});
-	});
 
-	afterAll(async () => {
-		for (const id of convIds) {
-			await db.delete(schema.conversations).where(eq(schema.conversations.id, id));
-		}
-		for (const id of mesaAttendantIds) {
-			await db.delete(schema.mesaAttendants).where(eq(schema.mesaAttendants.id, id));
-		}
-		for (const id of userIds) {
-			await db.delete(schema.user).where(eq(schema.user.id, id));
-		}
-	});
+		it("texto de um atendente que TAMBÉM é atendente de mesa vai pro COPILOTO, não pro chat de vendas", async () => {
+			const res = await POST(replyReq("como faço pra emitir o boleto na administradora?"), {
+				params: Promise.resolve({ attendantId: USER_ID }),
+			});
+			expect(res.status).toBe(200);
 
-	it("texto de um atendente que TAMBÉM é atendente de mesa vai pro COPILOTO, não pro chat de vendas", async () => {
-		const res = await POST(replyReq("como faço pra emitir o boleto na administradora?"), {
-			params: Promise.resolve({ attendantId: USER_ID }),
+			// A prova de que passou pelo copiloto: generateMesaCopilotReply foi chamado
+			// E a fala do atendente foi persistida em mesa_copilot_messages.
+			expect(generateMesaCopilotReply).toHaveBeenCalledTimes(1);
+
+			const messages = await db
+				.select()
+				.from(schema.mesaCopilotMessages)
+				.innerJoin(
+					schema.mesaHandoffs,
+					eq(schema.mesaCopilotMessages.mesaHandoffId, schema.mesaHandoffs.id),
+				)
+				.where(eq(schema.mesaHandoffs.mesaAttendantId, mesaAttendantIds[0]));
+
+			const attendantTurn = messages.find(
+				(m) =>
+					m.mesa_copilot_messages.role === "attendant" &&
+					m.mesa_copilot_messages.content === "como faço pra emitir o boleto na administradora?",
+			);
+			expect(attendantTurn).toBeTruthy();
 		});
-		expect(res.status).toBe(200);
-
-		// A prova de que passou pelo copiloto: generateMesaCopilotReply foi chamado
-		// E a fala do atendente foi persistida em mesa_copilot_messages.
-		expect(generateMesaCopilotReply).toHaveBeenCalledTimes(1);
-
-		const messages = await db
-			.select()
-			.from(schema.mesaCopilotMessages)
-			.innerJoin(schema.mesaHandoffs, eq(schema.mesaCopilotMessages.mesaHandoffId, schema.mesaHandoffs.id))
-			.where(eq(schema.mesaHandoffs.mesaAttendantId, mesaAttendantIds[0]));
-
-		const attendantTurn = messages.find(
-			(m) => m.mesa_copilot_messages.role === "attendant" &&
-				m.mesa_copilot_messages.content === "como faço pra emitir o boleto na administradora?",
-		);
-		expect(attendantTurn).toBeTruthy();
-	});
-});
+	},
+);
