@@ -35,6 +35,11 @@ de preencher formulário — diz o que quer conquistar ("um carro de uns 80 mil"
   (pasta `agent-chat-ui` → `http://aja-agent-chat-ui.orb.local`). Containers **não publicam porta
   no host**; DB em `aja-pg-<ws>.orb.local:5432`, banco `aja_agora`. Letta compartilhado
   (`tb-letta-shared:8283`).
+- **Simulador WhatsApp + Bevi (2026-07-03):** o simulador gera waId sintético `SIM-<uuid>`, e a
+  **Bevi VALIDA o celular contra o CPF no fechamento** — então o simulador precisa de um celular
+  REAL pareado com o CPF de teste. Setar `SIMULATOR_TEST_CELULAR` no `.env.local` (número real do
+  Kairo/CONTA1, gitignored/vault) e usar o CPF da MESMA conta. Sem isso, `Trilho A → CELULAR
+  inválido`. Placeholder documentado no `.env.example`.
 - **Contas de teste (SEMPRE usar, NUNCA inventar CPF):** `secrets.sh decrypt contas-teste` →
   `CONTA1_*` (Kairo, titular/operador) e `CONTA2_*` (Mirella). PII fica fora do git (vault
   SOPS+age). Nos E2E entram via `.env.test` → `E2E_TEST_CPF`/`E2E_TEST_CELULAR` e
@@ -233,6 +238,26 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
 
 ## 9. Histórico de rodadas
 
+- **2026-07-03 — Carro × WhatsApp (LOCAL, simulador), conta Kairo. Fechamento PASS.** Rodada
+  "garantindo os fixes" (reforma de conversa FIX-210/211/212 + celular). **3 defeitos achados e
+  corrigidos (todos com regressão Camada 1, gate 2708 verde, na develop):**
+  1. **Fechamento `CELULAR inválido` no simulador** — o waId sintético `SIM-<uuid>` fazia
+     `waIdToCelular` extrair 24+ dígitos do UUID; e a **Bevi VALIDA o celular contra o CPF**
+     (não basta formato). FIX: `SIMULATOR_TEST_CELULAR` (número real de teste, env/vault) pareado
+     com o CPF. **Validado E2E: Trilho A `insert_proposal` → 201 ok, proposta REAL criada** (grupo
+     540, ÂNCORA). Commit `1ee533c5`.
+  2. **Valor monetário quebrado** — "R$ 100.000,00" saía "R$ 100.\\n\\n000,00" (LLM lê o ponto de
+     milhar como fim de frase, gatilho da regra "1-2 frases" do FIX-212). FIX determinístico no
+     `formatTextForWhatsApp`: ponto/vírgula entre dígitos nunca quebra. Commit `1bb416d4`.
+  3. **Emoji `Olá 👋` na saudação** — gap do FIX-212 (👋 no `CONCIERGE_PROMPT_BODY`, fora da
+     varredura). FIX: removido + varredura anti-emoji estendida (emoji-em-aspas). Commit `21154b86`.
+  - **Observações a confirmar (não corrigidas):** (a) reveal anuncia "3 opções" mas a busca real
+    achou **10 grupos** (curadoria intencional?); (b) card de decisão apareceu no "tenho interesse"
+    por TEXTO livre (avanço direto FIX-38 é pro BOTÃO — provável esperado); (c) no path SEEDADO o
+    card de recomendação com botões não renderizou no WhatsApp, só o texto (a confirmar vs funil
+    completo).
+  - **Gap de cobertura:** o simulador usa waId sintético → **não exercita o bug REAL do 9º dígito**
+    (esse só num webhook WhatsApp real). Validado por unit + o fechamento real de prod (2026-07-02).
 - **2026-07-02 — Imóvel × WhatsApp (PROD), branch `qa/imovel-whatsapp`. 🚫 BLOQUEADO.** O
   simulador `/admin/simulator/*` é **404 em produção por design** (`isSimulatorEnabled()` →
   `false` quando `TB_ENV=production`, `src/lib/utils/env.ts:12-16`). Login admin prod OK, mas
