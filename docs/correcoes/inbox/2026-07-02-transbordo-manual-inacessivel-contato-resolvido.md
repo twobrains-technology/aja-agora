@@ -2,7 +2,7 @@
 data: 2026-07-02
 origem: QA dono-de-produto (Parte 2 — Mesa de operação, PRODUÇÃO)
 severidade: media
-status: aberto
+status: resolvido (2026-07-02 — aba "Atendimento" no ContactDetailPanel)
 area: admin/pipeline (kanban) — transbordo mesa
 verificado_contra: origin/main (deployado); worktree estava 517 commits atrás
 ---
@@ -64,3 +64,13 @@ Confirmar com o Kairo se o fallback manual ainda é desejado dado o auto-transbo
 
 Teste estrutural: montar `ContactDetailPanel` de um lead com contactId e afirmar que expõe a ação
 de transbordo (ou que o kanban a renderiza). Sem cassette (não é comportamento de LLM).
+
+## Resolução (2026-07-02)
+
+Portadas as ações do `LeadDetailPanel` pro `ContactDetailPanel` numa aba **"Atendimento"** —
+**Transbordar para a mesa** (`MesaTransbordoDialog`) + **Chat com o cliente** (a mesma caixa do
+FIX-87, que sofria do MESMO sombreamento). O `kanban-board.tsx` passa `leadId`/`leadName`/
+`conversationId` do card selecionado. Regressão Camada 1 em
+`src/components/admin/pipeline/contact-detail-panel.atendimento.test.tsx` (5 testes: aba existe,
+botão de transbordo, caixa de chat, POST na conversa certa, wiring do kanban) + assert de source
+que o board fia os ids. Resolve também o "não achei a mensagem via Kanban" (era o mesmo bug).

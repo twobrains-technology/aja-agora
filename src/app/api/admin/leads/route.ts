@@ -4,6 +4,7 @@ import { leads } from "@/db/schema";
 import { dedupLeadsByContact } from "@/lib/admin/kanban-dedup";
 import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-transitions";
 import { requireRole } from "@/lib/admin/require-role";
+import { getActiveHandoffsByLead } from "@/lib/mesa/handoff";
 
 export async function GET() {
 	const { error } = await requireRole("admin", "viewer", "attendant");
@@ -34,12 +35,20 @@ export async function GET() {
 		allLeads.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() })),
 	);
 
+	// Visibilidade (spec 2026-07-03): anexa o responsável da mesa (handoff ativo) a cada card,
+	// pro selo do kanban e o bloco "Responsável". card.id = lead representativo do contato.
+	const handoffs = await getActiveHandoffsByLead(cards.map((c) => c.id));
+	const cardsWithHandoff = cards.map((c) => ({
+		...c,
+		activeHandoff: handoffs.get(c.id) ?? null,
+	}));
+
 	// Agrupa os cards por raia.
-	const groupedLeads: Record<string, typeof cards> = {};
+	const groupedLeads: Record<string, typeof cardsWithHandoff> = {};
 	for (const stage of STAGE_ORDER) {
 		groupedLeads[stage] = [];
 	}
-	for (const card of cards) {
+	for (const card of cardsWithHandoff) {
 		const stage = card.stage as LeadStage;
 		if (groupedLeads[stage]) {
 			groupedLeads[stage].push(card);

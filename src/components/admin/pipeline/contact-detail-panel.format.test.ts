@@ -39,11 +39,11 @@ describe("contact-detail-panel — formatação de propostas", () => {
 });
 
 // Helpers que devem estar no componente
-function formatCurrency(value: number): string {
+function formatCurrency(value: string): string {
 	return new Intl.NumberFormat("pt-BR", {
 		style: "currency",
 		currency: "BRL",
-	}).format(value);
+	}).format(Number(value));
 }
 
 const STATUS_LABELS: Record<string, string> = {
