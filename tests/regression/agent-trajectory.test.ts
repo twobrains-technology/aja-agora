@@ -7528,9 +7528,11 @@ describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", ()
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
 		// gateInteractive não chama mais creditRangeQuestionToWhatsApp
 		expect(adapter).not.toMatch(/creditRangeQuestionToWhatsApp/);
-		// há um caminho textual pro gate credit espelhando o identify
+		// há um caminho textual pro gate credit espelhando o identify: `credit` está
+		// no conjunto de gates textuais e a pergunta sai via gateQuestion(gate, ...)
 		expect(adapter).toMatch(/gateTextPrompt/);
-		expect(adapter).toMatch(/gateQuestion\("credit"/);
+		expect(adapter).toMatch(/WHATSAPP_TEXT_GATES[\s\S]*?"credit"/);
+		expect(adapter).toMatch(/gateQuestion\(gate/);
 	});
 
 	it("o roteamento credit_ e handleCredit foram aposentados no dispatcher", () => {
