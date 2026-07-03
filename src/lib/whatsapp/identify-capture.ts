@@ -8,27 +8,34 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
-import { metaOf } from "@/lib/conversation/meta";
+import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { isSimulatedWaId } from "./simulator-bus";
 
-/** Pergunta do gate identify no WhatsApp — gancho do docx (analisar várias
- * administradoras / aderentes ao perfil) + LGPD. FIX-53: a identidade subiu pra
- * ANTES do valor (logo após o consent), então o gancho é forward-looking ("pra
- * eu analisar e buscar"), não mais "Com essas informações…" (que pressupunha
- * dados já coletados). No WhatsApp o celular já é o waId — só falta o CPF. */
-export const IDENTIFY_WHATSAPP_PROMPT =
-	"Pra eu analisar várias administradoras e buscar as opções mais aderentes " +
-	"ao seu perfil, me envia seu *CPF* (só os números). " +
-	"Seus dados ficam protegidos (LGPD) e, ao enviar, você autoriza a consulta " +
-	"nas administradoras — não é compromisso nenhum, tá? " +
-	"Seu celular eu já tenho daqui do WhatsApp 😉";
+/** Beat 1 (CONTEXTO) da cadência 2-tempos do identify (FIX-210). Carrega o gancho
+ * literal do docx — "analisar várias administradoras" + "aderentes ao seu perfil"
+ * — que JUSTIFICA o pedido do CPF, mais o aviso LGPD (consentimento por conduta:
+ * enviar o CPF autoriza a consulta). Fixo e determinístico: não deixamos o gancho
+ * a cargo do LLM. Curto, sem emoji, sem hedge ("não é compromisso nenhum, tá?"). */
+export const IDENTIFY_CONTEXT_WHATSAPP =
+	"Pra eu analisar várias administradoras e achar as opções mais aderentes ao seu " +
+	"perfil, preciso confirmar quem é você. Seus dados ficam protegidos (LGPD).";
+
+/** Beat 2 (PEDIDO) do identify — FONTE ÚNICA (FIX-210). Antes havia dois textos
+ * concorrentes (este e gateQuestion("identify")), o que gerava inconsistência
+ * ("me envia seu CPF" aqui vs "preciso do CPF e celular" lá). Agora reexporta
+ * gateQuestion("identify") — o pedido curto. O contexto (beat 1,
+ * IDENTIFY_CONTEXT_WHATSAPP) sai como balão próprio antes deste. No WhatsApp o
+ * celular já é o waId — só falta o CPF. */
+export const IDENTIFY_WHATSAPP_PROMPT = gateQuestion("identify") as string;
 
 export const IDENTIFY_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — dá uma olhadinha nos números e me manda de novo?";
 
 /** Confirmação quando a identidade fecha a qualificação e a busca segue logo. */
-export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as melhores opções 🔎";
+export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as melhores opções.";
 
 /** FIX-53: identidade vem ANTES do valor — após o CPF a qualificação CONTINUA
  * (valor/prazo/lance), então a confirmação não promete busca ainda. */
@@ -45,18 +52,42 @@ export function extractCpf(text: string): string | null {
 }
 
 /** waId vem com DDI (ex: 5562999887766) — a Bevi espera DDD+número (62999887766). */
-export function waIdToCelular(waId: string): string {
-	const digits = (waId ?? "").replace(/\D/g, "");
+// Normaliza um número BR pro formato que a Bevi espera: DDD + 9 + 8 = 11 dígitos.
+function normalizeCelularBR(raw: string): string {
+	const digits = (raw ?? "").replace(/\D/g, "");
 	// Remove o código do país (55) — a Bevi espera DDD + número, sem +55.
 	const withoutCC = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 	// 9º dígito (bug de prod 2026-07-02, "CELULAR inválido" no fechamento): o waId
 	// do WhatsApp DERRUBA o 9 inicial dos móveis BR → chega DDD + 8 dígitos (10). A
 	// Bevi (Trilho A/fechamento) exige DDD + 9 + 8 (11) e rejeita 10. Todo waId de
 	// WhatsApp é MÓVEL (não existe WhatsApp em fixo), então 10 dígitos = 9 faltando:
-	// reinsere o 9 após o DDD. Assim descoberta (Trilho B) e fechamento (Trilho A)
-	// recebem o mesmo celular de 11 dígitos válido.
+	// reinsere o 9 após o DDD.
 	if (withoutCC.length === 10) return `${withoutCC.slice(0, 2)}9${withoutCC.slice(2)}`;
 	return withoutCC;
+}
+
+// Fallback sintético (formato VÁLIDO, 11 díg) pro simulador quando
+// SIMULATOR_TEST_CELULAR não está setado — evita a sequência de 24 dígitos que o
+// UUID gerava. NÃO fecha na Bevi (ela valida o celular contra o CPF real), mas não
+// crasha o formato. Determinístico a partir do UUID.
+function syntheticCelularFromSimulatedWaId(waId: string): string {
+	const digits = waId.replace(/\D/g, "");
+	let hash = 0;
+	for (const ch of digits) hash = (hash * 31 + ch.charCodeAt(0)) % 100_000_000;
+	return `629${String(hash).padStart(8, "0")}`;
+}
+
+export function waIdToCelular(waId: string): string {
+	// Simulador (SIM-<uuid>, src/app/api/admin/simulator/sessions/route.ts): a Bevi
+	// VALIDA o celular (contra o CPF), então um número sintético não fecha — precisa
+	// ser um número REAL. Usa o celular de teste do env (PII no vault/.env.local,
+	// NUNCA hardcoded — regra do projeto). Sem o env, cai no sintético só pra não
+	// quebrar o formato. Pareie com o CPF da MESMA conta de teste (ex.: Kairo).
+	if (isSimulatedWaId(waId)) {
+		const testCelular = process.env.SIMULATOR_TEST_CELULAR;
+		return testCelular ? normalizeCelularBR(testCelular) : syntheticCelularFromSimulatedWaId(waId);
+	}
+	return normalizeCelularBR(waId);
 }
 
 /** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
@@ -85,6 +116,13 @@ export async function captureIdentifyText(
 	const cpf = extractCpf(text);
 	if (cpf) {
 		await storeIdentity(conv.id, { cpf, celular: waIdToCelular(from) });
+		// FIX-211: dado capturado → zera o contador de cobranças do identify (sobre o
+		// meta JÁ atualizado por storeIdentity, sem sobrescrever identityCollected).
+		const after = await reloadMeta(conv.id);
+		if (after.gateAttempts?.identify !== undefined) {
+			const { identify: _drop, ...rest } = after.gateAttempts;
+			await persistMeta(conv.id, { ...after, gateAttempts: rest });
+		}
 		return { handled: true, outcome: "captured" };
 	}
 	if (looksLikeCpfAttempt(text)) {

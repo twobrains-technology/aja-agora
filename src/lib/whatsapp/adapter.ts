@@ -1,5 +1,9 @@
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
-import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
+import {
+	isConversationPausedOrTerminal,
+	isMandatoryCollectionGate,
+	reengageQuestionForGate,
+} from "@/lib/agent/gate-reengage";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -111,6 +115,25 @@ async function gateTextPrompt(
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
 
+// FIX-210 — beat de CONTEXTO fixo da cadência 2-tempos. Gates que carregam uma
+// justificativa determinística (identify: gancho docx + LGPD) entregam esse beat
+// como balão próprio ANTES do pedido, em vez de deixar o gancho a cargo do LLM.
+// null = o contexto vem do texto do LLM (buffer). O lance-embutido entra aqui no
+// FIX-212 (educação curta antes do card).
+async function gateContextBeat(gate: Gate): Promise<string | null> {
+	if (gate === "identify") {
+		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
+		return IDENTIFY_CONTEXT_WHATSAPP;
+	}
+	if (gate === "lance-embutido") {
+		// FIX-212 (split 2 tempos): a educação do lance embutido sai como balão de
+		// contexto ANTES do card, que fica só com a pergunta curta + botões.
+		const { LANCE_EMBUTIDO_EDU } = await import("@/lib/agent/orchestrator/gate-questions");
+		return LANCE_EMBUTIDO_EDU;
+	}
+	return null;
+}
+
 async function consumeEvents(
 	from: string,
 	conversationId: string,
@@ -135,6 +158,9 @@ async function consumeEvents(
 	let dropped = false;
 	let hasSent = false;
 	let lastWasInteractive = false;
+	// FIX-211: um gate FOI entregue neste turno? Se sim, o usuário acabou de ver o
+	// pedido — não conta como "desvio" (não re-cobra ao fim do turno).
+	let gateFiredThisTurn = false;
 
 	const pauseBeforeNext = () =>
 		sleep(lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : ARTIFACT_PAUSE_MS);
@@ -265,13 +291,28 @@ async function consumeEvents(
 				break;
 			}
 			case "gate": {
-				if (ev.prefix) {
-					textBuffer = "";
+				// FIX-210 — cadência 2-tempos: contexto num balão, pedido em outro. Antes,
+				// quando o gate carregava prefix, o adapter DESCARTAVA o texto ou o COLAVA
+				// na pergunta → uma bolha só (o atrito que o Kairo viu no consent→identify).
+				// É decisão de RENDER do WhatsApp (channel-aware C5) — não toca a web.
+				//
+				// Gates com CONTEXTO fixo (gateContextBeat: identify tem gancho docx + LGPD,
+				// lance-embutido tem a educação): o beat de contexto é determinístico —
+				// substituímos a reação do LLM pelo contexto fixo (o gancho nunca some).
+				// Demais gates: o contexto vem do texto do LLM (buffer via flushText).
+				const contextBeat = await gateContextBeat(ev.gate);
+				if (contextBeat) {
+					textBuffer = ""; // reação do LLM substituída pelo contexto fixo (gancho garantido)
+					await flushArtifacts();
+					if (hasSent) await pauseBeforeNext();
+					await sendTextMessage(from, contextBeat);
+					lastWasInteractive = false;
+					hasSent = true;
 				} else {
 					await flushText();
+					await flushArtifacts();
 				}
-				await flushArtifacts();
-				const interactive = await gateInteractive(ev.gate, conversationId, ev.prefix);
+				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
 				if (interactive) {
 					if (hasSent) await pauseBeforeNext();
 					await sendInteractiveMessage(from, interactive);
@@ -281,7 +322,7 @@ async function consumeEvents(
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
-					const textPrompt = await gateTextPrompt(ev.gate, conversationId, ev.prefix);
+					const textPrompt = await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);
@@ -297,6 +338,7 @@ async function consumeEvents(
 						);
 					}
 				}
+				gateFiredThisTurn = true; // FIX-211: o gate saiu — não é desvio.
 				break;
 			}
 			case "finish":
@@ -306,25 +348,58 @@ async function consumeEvents(
 		}
 	}
 
-	// FIX-172: guard de turno-mudo (paridade com o web, route.ts:1109). Se o turno
-	// do usuário fecha SEM emitir nada visível (ex.: loop de save_contact_name até
-	// stepCountIs, textChars=0), o usuário ficaria sem resposta — 27s de silêncio.
-	// Emite o fallback honesto. `dropped` (handoff) tem seu card silencioso próprio.
-	if (opts?.guardEmptyTurn && !hasSent && !dropped) {
-		// FIX-208 (rede final): se o turno fecharia mudo com um gate de COLETA
-		// PENDENTE (ex.: o gate de VALOR — usuário respondeu "200" e nada foi emitido),
-		// re-emite a PERGUNTA do gate em vez do "me perdi". Nunca deixa a coleta muda.
-		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
-		// não força o gate "name"; ver processor.ts). reengageQuestionForGate só
-		// retorna texto pros gates de coleta — os demais caem no fallback honesto.
+	// Cobrança de gate ao FIM do turno de usuário (só user-turn: guardEmptyTurn).
+	// `dropped` (handoff) tem seu card silencioso próprio.
+	if (opts?.guardEmptyTurn && !dropped) {
 		const guardMeta = await reloadMeta(conversationId);
+		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
+		// não força o gate "name"; ver processor.ts).
 		const ng = nextGate(guardMeta);
-		const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory);
-		console.warn(
-			`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
-		);
-		await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
+		const mandatory = isMandatoryCollectionGate(ng);
+		const paused = isConversationPausedOrTerminal(guardMeta);
+
+		if (!hasSent) {
+			// FIX-172/208 — turno MUDO: nada visível saiu (ex.: loop de save_contact_name
+			// até stepCountIs, ou o valor respondido e nada emitido). Re-cobra o gate de
+			// coleta pendente (escalado, FIX-211) em vez do "me perdi"; demais gates caem
+			// no fallback honesto. Nunca deixa o usuário no silêncio.
+			const attempt = mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
+			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			console.warn(
+				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
+			);
+			await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
+		} else if (mandatory && !gateFiredThisTurn && !paused) {
+			// FIX-211 — o usuário DESVIOU: o turno FALOU (respondeu uma dúvida, o LLM
+			// reagiu) mas o gate de coleta obrigatória segue pendente e NÃO foi disparado
+			// neste turno. Re-cobra ESCALADO em vez de esperar o watchdog de 90s. Teto de
+			// 3 tentativas + saída pro especialista (anti-armadilha, reengageQuestionForGate).
+			const attempt = await bumpGateAttempt(conversationId, guardMeta, ng);
+			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			if (reengage) {
+				console.warn(
+					`[gate-collect-reengage] conv=${conversationId} DESVIO no gate=${ng} tentativa=${attempt}`,
+				);
+				await pauseBeforeNext();
+				await sendTextMessage(from, reengage);
+			}
+		}
 	}
+}
+
+/** FIX-211 — incrementa o contador de cobranças do gate e persiste. Retorna o novo
+ * valor (1-based). Por-gate no meta (gateAttempts), sem vazar entre gates. */
+async function bumpGateAttempt(
+	conversationId: string,
+	meta: ConversationMetadata,
+	gate: Gate,
+): Promise<number> {
+	const attempt = (meta.gateAttempts?.[gate] ?? 0) + 1;
+	await persistMeta(conversationId, {
+		...meta,
+		gateAttempts: { ...meta.gateAttempts, [gate]: attempt },
+	});
+	return attempt;
 }
 
 export async function processWithOrchestrator(
@@ -425,12 +500,19 @@ export async function fireGate(
 	if (gate === "consent" && !meta.consentOffered) {
 		await persistMeta(conversationId, { ...meta, consentOffered: true });
 	}
-	// "identify" é textual (form não existe no WhatsApp): prompt de CPF + LGPD.
+	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos
+	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro.
 	if (gate === "identify") {
-		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
+		const { IDENTIFY_CONTEXT_WHATSAPP, IDENTIFY_WHATSAPP_PROMPT } =
+			await import("./identify-capture");
+		await sendTextMessage(from, IDENTIFY_CONTEXT_WHATSAPP);
 		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
 		return;
 	}
+	// FIX-212 (split 2 tempos): gates com contexto fixo (lance-embutido: educação)
+	// emitem o beat de contexto ANTES do card, também no caminho de clique/fireGate.
+	const contextBeat = await gateContextBeat(gate);
+	if (contextBeat) await sendTextMessage(from, contextBeat);
 	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
 	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);
 	if (textPrompt) {

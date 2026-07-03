@@ -76,6 +76,13 @@ export type ConversationMetadata = {
 	 * marcado. O worker RE-CALCULA nextGate no disparo (frescor); este é só o
 	 * indicador do que estava aberto. */
 	pendingGate?: Gate;
+	/** FIX-211 — contador de cobranças por gate de COLETA obrigatória (identify/
+	 * credit/lance/...). Incrementado a cada RE-cobrança (turno mudo ou desvio do
+	 * usuário), NÃO na emissão original do gate. Governa a ESCADA de cobrança
+	 * (reengageQuestionForGate): 1→pedido direto, 2/3→incentivo, >=4→saída pro
+	 * especialista. Por-gate (Partial<Record<Gate,number>>) → não vaza entre gates;
+	 * resetado ao capturar o dado. */
+	gateAttempts?: Partial<Record<Gate, number>>;
 	/** Identidade (CPF+celular+LGPD) coletada no gate "identify" — fim do passo 2
 	 * (D1, docs/jornada/CONTEXT.md). A Bevi exige antes de simular; a busca real
 	 * (passo 3) só libera com isto true. */

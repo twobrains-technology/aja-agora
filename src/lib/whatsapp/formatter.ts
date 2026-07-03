@@ -1,4 +1,4 @@
-import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
+import { gateQuestion, LANCE_EMBUTIDO_ASK } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
 
 export function formatTextForWhatsApp(text: string): string {
@@ -15,6 +15,11 @@ export function formatTextForWhatsApp(text: string): string {
 			.replace(/\*\*(.+?)\*\*/g, "*$1*")
 			// Drop blockquote markers.
 			.replace(/^>\s+/gm, "")
+			// Bug QA 2026-07-03: o LLM quebra valores no separador de milhar/decimal
+			// ("R$ 100.\n\n000,00") por causa da regra "1-2 frases por mensagem" — lê o
+			// ponto como fim de frase. Um ponto OU vírgula ENTRE DÍGITOS é sempre
+			// separador numérico, nunca fim de frase: reúne o número (Lei 4, determinístico).
+			.replace(/(\d[.,])\s*\n\s*(\d)/g, "$1$2")
 			// Add missing space in "frase.Outra" → "frase. Outra".
 			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
 			// "frase:Outra" → "frase: Outra" (only when stuck without space).
@@ -112,12 +117,12 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const p = payload;
 	const body = [
 		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
-		`💰 Valor do bem: ${formatBRL(p.creditValue as number)}`,
-		`📅 Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
+		`Valor do bem: ${formatBRL(p.creditValue as number)}`,
+		`Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: sem taxa admin no card (assusta o leigo) — composição
 		// completa na proposta (PDF) pré-assinatura. Ver docs/jornada/CONTEXT.md.
-		`⏱ Prazo: ${p.termMonths} meses`,
-		`🎯 Contemplação: ${(p.contemplationRate as number).toFixed(1)}%/assembleia`,
+		`Prazo: ${p.termMonths} meses`,
+		`Contemplação: ${(p.contemplationRate as number).toFixed(1)}%/assembleia`,
 	].join("\n");
 
 	return {
@@ -173,15 +178,15 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 	const p = payload;
 	const groupId = p.groupId as string;
 	const lines = [
-		"*📋 Simulação de Cota*",
+		"*Simulação de Cota*",
 		"",
-		`💰 *Valor do bem:* ${formatBRL(p.creditValue as number)}`,
-		`📅 *Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
+		`*Valor do bem:* ${formatBRL(p.creditValue as number)}`,
+		`*Parcela:* ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: card DIRETO — taxa admin / fundo reserva / seguro /
 		// custo total / taxa efetiva saem (assustam o leigo). A composição completa
 		// (CMN 4.927/2021 + CDC art. 37) é disclosed no PDF da proposta pré-assinatura.
 		// Ver docs/jornada/CONTEXT.md.
-		`⏱ *Prazo:* ${p.termMonths} meses`,
+		`*Prazo:* ${p.termMonths} meses`,
 	];
 	const eb = p.embeddedBid as
 		| { percent: number; receivedCredit: number; necessaryBidToContemplate?: number | null }
@@ -190,12 +195,12 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 		lines.push(
 			"",
 			`*Com lance embutido (${eb.percent}%):*`,
-			`🎯 Valor que você recebe: ${formatBRL(eb.receivedCredit)}`,
+			`Valor que você recebe: ${formatBRL(eb.receivedCredit)}`,
 		);
 		// FIX-8: só com dado real (> 0) — "R$ 0,00" é enganoso.
 		if ((eb.necessaryBidToContemplate ?? 0) > 0) {
 			lines.push(
-				`📈 Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate as number)}`,
+				`Lance estimado p/ contemplar: ${formatBRL(eb.necessaryBidToContemplate as number)}`,
 			);
 		}
 	}
@@ -220,13 +225,13 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	const p = payload;
 	const score = Math.round((p.score as number) * 100);
 	const body = [
-		`*⭐ Recomendação — ${score}% compatível*`,
+		`*Recomendação — ${score}% compatível*`,
 		"",
 		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
-		`💰 ${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
+		`${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: sem % admin no card (assusta o leigo).
-		`⏱ ${p.termMonths} meses`,
-		`🎯 ${(p.contemplationRate as number).toFixed(1)}% contemplação`,
+		`${p.termMonths} meses`,
+		`${(p.contemplationRate as number).toFixed(1)}% contemplação`,
 	].join("\n");
 
 	return {
@@ -471,7 +476,7 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 
 	return {
 		type: "text",
-		text: `Quanto custa o ${bem} que você tem em mente? Pode me dizer o valor aproximado, tipo "uns 80 mil". 💰`,
+		text: `Quanto custa o ${bem} que você tem em mente? Pode me dizer o valor aproximado, tipo "uns 80 mil".`,
 	};
 }
 
@@ -479,7 +484,7 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 // (system voice, not persona's) — purpose é UX: tell the user they're being
 // connected so the persona-voice change doesn't feel abrupt. Quente mas curto.
 export function transitionBridgeText(specialist: { name: string; categoryLabel: string }): string {
-	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento ⏳`;
+	return `Boa! Te conectando com a ${specialist.name}, nossa especialista em ${specialist.categoryLabel}.\nUm momento.`;
 }
 
 import {
@@ -646,8 +651,9 @@ export function resolveLanceValueReply(replyId: string): { value: number } | nul
 }
 
 export function lanceEmbutidoQuestionToWhatsApp(prefix?: string): WhatsAppResponse {
-	const question = gateQuestion("lance-embutido") ?? "";
-	const text = prefix ? `${prefix}\n\n${question}` : question;
+	// FIX-212 (split 2 tempos): o card carrega SÓ a pergunta curta — a educação
+	// (LANCE_EMBUTIDO_EDU) sai como balão de contexto antes, via gateContextBeat.
+	const text = prefix ? `${prefix}\n\n${LANCE_EMBUTIDO_ASK}` : LANCE_EMBUTIDO_ASK;
 	return {
 		type: "interactive",
 		interactive: {
@@ -729,13 +735,13 @@ export function profileSummaryText(answers: {
 			answers.creditMin && answers.creditMin > 0
 				? `${formatBRLCompact(answers.creditMin)} a ${formatBRLCompact(answers.creditMax)}`
 				: `até ${formatBRLCompact(answers.creditMax)}`;
-		lines.push(`✅ Valor do bem: ${credit}`);
+		lines.push(`Valor do bem: ${credit}`);
 	}
 	if (answers.prazoMeses !== undefined) {
-		lines.push(`✅ Prazo: ${prazoLabel(answers.prazoMeses)}`);
+		lines.push(`Prazo: ${prazoLabel(answers.prazoMeses)}`);
 	}
 	if (answers.hasLance) {
-		lines.push(`✅ Lance: ${lanceLabel(answers.hasLance)}`);
+		lines.push(`Lance: ${lanceLabel(answers.hasLance)}`);
 	}
 
 	lines.push("", "Vou puxar as melhores opções pra você.");
@@ -752,9 +758,9 @@ export function experienceQuestionToWhatsApp(prefix?: string): WhatsAppResponse 
 			body: { text },
 			action: {
 				buttons: [
-					{ type: "reply", reply: { id: "experience_first", title: "🌱 É a primeira vez" } },
-					{ type: "reply", reply: { id: "experience_returning", title: "✅ Já conheço" } },
-					{ type: "reply", reply: { id: "experience_doubts", title: "🤔 Tenho dúvidas" } },
+					{ type: "reply", reply: { id: "experience_first", title: "É a primeira vez" } },
+					{ type: "reply", reply: { id: "experience_returning", title: "Já conheço" } },
+					{ type: "reply", reply: { id: "experience_doubts", title: "Tenho dúvidas" } },
 				],
 			},
 		},
@@ -774,9 +780,9 @@ export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
 				// (3 chips, mesma decisão da landing). WhatsApp limita
 				// interactive button a 3.
 				buttons: [
-					{ type: "reply", reply: { id: "category_imovel", title: "🏠 Imóvel" } },
-					{ type: "reply", reply: { id: "category_auto", title: "🚗 Carro" } },
-					{ type: "reply", reply: { id: "category_moto", title: "🏍 Moto" } },
+					{ type: "reply", reply: { id: "category_imovel", title: "Imóvel" } },
+					{ type: "reply", reply: { id: "category_auto", title: "Carro" } },
+					{ type: "reply", reply: { id: "category_moto", title: "Moto" } },
 				],
 			},
 		},
@@ -865,7 +871,6 @@ export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 			: "*3 cenários de contemplação*";
 
 	const renderBlock = (
-		emoji: string,
 		label: string,
 		s: Record<string, unknown> | undefined,
 	): string | null => {
@@ -876,14 +881,14 @@ export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		const lanceLabel =
 			typeof lancePercent === "number" && lancePercent > 0 ? `${lancePercent}% lance` : "sem lance";
 		const monthsLabel = typeof months === "number" ? `${months}m` : "—";
-		const head = `${emoji} *${label}* — ${lanceLabel}, contempla em ~${monthsLabel}`;
+		const head = `*${label}* — ${lanceLabel}, contempla em ~${monthsLabel}`;
 		return strategy ? `${head}\nEstratégia: ${strategy}` : head;
 	};
 
 	const blocks = [
-		renderBlock("🟢", "Conservador", scenarios.conservador),
-		renderBlock("🟡", "Provável", scenarios.provavel),
-		renderBlock("🔴", "Acelerado", scenarios.acelerado),
+		renderBlock("Conservador", scenarios.conservador),
+		renderBlock("Provável", scenarios.provavel),
+		renderBlock("Acelerado", scenarios.acelerado),
 	].filter((b): b is string => b !== null);
 
 	// Mesmo com cenários parciais/vazios, retorna o header — drop silencioso
@@ -982,7 +987,7 @@ export function financingComparisonToWhatsApp(
 export function whatsappOptinToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Show — como você já está no WhatsApp, vou seguir conversando por aqui mesmo. 👍",
+		text: "Show — como você já está no WhatsApp, vou seguir conversando por aqui mesmo.",
 	};
 }
 
@@ -1002,7 +1007,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 	if (!identityOnFile) {
 		return {
 			type: "text",
-			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD). 🔒`,
+			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD).`,
 		};
 	}
 
@@ -1012,7 +1017,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 		interactive: {
 			type: "button",
 			body: {
-				text: `Boa! Já tenho seus dados${dados} aqui do nosso atendimento. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}? Seus dados seguem protegidos (LGPD). 🔒`,
+				text: `Boa! Já tenho seus dados${dados} aqui do nosso atendimento. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}? Seus dados seguem protegidos (LGPD).`,
 			},
 			action: {
 				buttons: [
@@ -1043,7 +1048,7 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		interactive: {
 			type: "button",
 			body: {
-				text: `✅ Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [
@@ -1065,7 +1070,7 @@ export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): Wh
 	const link = payload.consortiumProposalLink as string;
 	return {
 		type: "text",
-		text: `Sua proposta está pronta! 🎉 Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
+		text: `Sua proposta está pronta! Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
 	};
 }
 
@@ -1073,7 +1078,7 @@ export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): Wh
 export function documentUploadToWhatsApp(_payload: Record<string, unknown>): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*. 📄",
+		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*.",
 	};
 }
 
@@ -1088,8 +1093,8 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 	return {
 		type: "text",
 		text: allDone
-			? "Recebi ✅. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
-			: "Recebi a frente ✅. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
+			? "Recebi. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			: "Recebi a frente. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
 	};
 }
 
@@ -1098,7 +1103,7 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 export function documentNotReadyToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui. 😊",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui.",
 	};
 }
 
@@ -1123,7 +1128,7 @@ export function documentDownloadFailedToWhatsApp(): WhatsAppResponse {
 export function documentNoConversationToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Recebi sua foto, mas ainda não temos uma conversa em andamento por aqui. Manda um oi que eu começo com você! 😊",
+		text: "Recebi sua foto, mas ainda não temos uma conversa em andamento por aqui. Manda um oi que eu começo com você!",
 	};
 }
 
@@ -1172,7 +1177,7 @@ function readDialScenario(payload: Record<string, unknown>): DialScenarioView | 
  * agente). Só apresentação — o cálculo vem de computeContemplationDial. */
 function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
-	const lines: string[] = [`*Contemplação em ${monthLabel}* 🎯`, ""];
+	const lines: string[] = [`*Contemplação em ${monthLabel}*`, ""];
 
 	const isSorteio = s.mode === "sorteio" || (s.requiredLancePct ?? 0) <= 0;
 	if (isSorteio) {
@@ -1204,7 +1209,7 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	// o usuário diz o mês-alvo e o agente itera (recalcula a cada resposta).
 	return {
 		type: "text",
-		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe. 🎯",
+		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe.",
 	};
 }
 

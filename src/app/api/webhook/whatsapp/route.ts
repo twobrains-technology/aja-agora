@@ -6,7 +6,6 @@ import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/proc
 import { updateLastInboundAt } from "@/app/actions/whatsapp";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
-const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
 
 /**
  * GET — Meta webhook verification (hub.challenge handshake).
@@ -32,15 +31,18 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
 	// ---- Signature verification ----
+	// Lido em runtime (não em module-load) pra respeitar overrides de ambiente/teste
+	// depois do import — sem WHATSAPP_APP_SECRET a verificação é pulada (dev/test).
+	const appSecret = process.env.WHATSAPP_APP_SECRET;
 	const rawBody = await req.text();
 
-	if (APP_SECRET) {
+	if (appSecret) {
 		const signature = req.headers.get("x-hub-signature-256");
 		if (!signature) {
 			console.warn("[whatsapp] Missing X-Hub-Signature-256 header");
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
-		const expectedSig = `sha256=${createHmac("sha256", APP_SECRET).update(rawBody).digest("hex")}`;
+		const expectedSig = `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
 		if (signature !== expectedSig) {
 			console.warn("[whatsapp] Invalid signature — request rejected");
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

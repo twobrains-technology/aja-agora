@@ -12,8 +12,8 @@ escopo_padrao: "carro (auto) no web, do sonho à proposta, ponta-a-ponta"
 > testar à mão com olho crítico de dono. **Oráculo** do comportamento esperado:
 > `docs/jornada/jornada-canonica.md` (é REGRA, não referência — divergência código × jornada é
 > defeito, salvo os não-bugs da seção 7 e as tensões T1/T2). Complementos:
-> `docs/jornada/CONTEXT.md` (histórico/decisões D1–D22), `docs/jornada/proposta-simulador.md`
-> (conceito do Bernardo). Mantenha este arquivo atualizado a cada rodada.
+> `docs/jornada/CONTEXT.md` (histórico/decisões D1–D22). O conceito do simulador (Bernardo)
+> está consolidado na jornada canônica (passo 5). Mantenha este arquivo atualizado a cada rodada.
 
 ## 1. O que é o produto
 
@@ -35,6 +35,11 @@ de preencher formulário — diz o que quer conquistar ("um carro de uns 80 mil"
   (pasta `agent-chat-ui` → `http://aja-agent-chat-ui.orb.local`). Containers **não publicam porta
   no host**; DB em `aja-pg-<ws>.orb.local:5432`, banco `aja_agora`. Letta compartilhado
   (`tb-letta-shared:8283`).
+- **Simulador WhatsApp + Bevi (2026-07-03):** o simulador gera waId sintético `SIM-<uuid>`, e a
+  **Bevi VALIDA o celular contra o CPF no fechamento** — então o simulador precisa de um celular
+  REAL pareado com o CPF de teste. Setar `SIMULATOR_TEST_CELULAR` no `.env.local` (número real do
+  Kairo/CONTA1, gitignored/vault) e usar o CPF da MESMA conta. Sem isso, `Trilho A → CELULAR
+  inválido`. Placeholder documentado no `.env.example`.
 - **Contas de teste (SEMPRE usar, NUNCA inventar CPF):** `secrets.sh decrypt contas-teste` →
   `CONTA1_*` (Kairo, titular/operador) e `CONTA2_*` (Mirella). PII fica fora do git (vault
   SOPS+age). Nos E2E entram via `.env.test` → `E2E_TEST_CPF`/`E2E_TEST_CELULAR` e
@@ -212,7 +217,7 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
 - **DES-1** — assinatura self-service **não existe**; a efetivação é da mesa (manual). Card mostra
   "Ver minha proposta", não "assinatura". (No WhatsApp, D11 ainda promete — isso É defeito.)
 - **Simulador do Passo 4/5 = conceito do Bernardo** (stakeholder). Não implementar versão final
-  sem o aval dele (`proposta-simulador.md`).
+  sem o aval dele.
 - **D10 — Trilho A trava ao vivo** (`400` productId/AGX). ⚠️ **2026-07-01: NÃO reproduziu** — a
   rodada fechou **proposta real** (grupo 1797, proposalId `6a45bf1d45fa79d9c4d7ab5f`,
   `proposal_status=documentos`, link `uselink.me`). A homologação está fechando de verdade;
@@ -233,6 +238,49 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
 
 ## 9. Histórico de rodadas
 
+- **2026-07-03 — Carro × WhatsApp (LOCAL, simulador), conta Kairo. Fechamento PASS.** Rodada
+  "garantindo os fixes" (reforma de conversa FIX-210/211/212 + celular). **3 defeitos achados e
+  corrigidos (todos com regressão Camada 1, gate 2708 verde, na develop):**
+  1. **Fechamento `CELULAR inválido` no simulador** — o waId sintético `SIM-<uuid>` fazia
+     `waIdToCelular` extrair 24+ dígitos do UUID; e a **Bevi VALIDA o celular contra o CPF**
+     (não basta formato). FIX: `SIMULATOR_TEST_CELULAR` (número real de teste, env/vault) pareado
+     com o CPF. **Validado E2E: Trilho A `insert_proposal` → 201 ok, proposta REAL criada** (grupo
+     540, ÂNCORA). Commit `1ee533c5`.
+  2. **Valor monetário quebrado** — "R$ 100.000,00" saía "R$ 100.\\n\\n000,00" (LLM lê o ponto de
+     milhar como fim de frase, gatilho da regra "1-2 frases" do FIX-212). FIX determinístico no
+     `formatTextForWhatsApp`: ponto/vírgula entre dígitos nunca quebra. Commit `1bb416d4`.
+  3. **Emoji `Olá 👋` na saudação** — gap do FIX-212 (👋 no `CONCIERGE_PROMPT_BODY`, fora da
+     varredura). FIX: removido + varredura anti-emoji estendida (emoji-em-aspas). Commit `21154b86`.
+  4. **Passo 5.2 não renderizava no simulador** (assinatura + documento + Parabéns sumiam) — o
+     simulador não chama `updateLastInboundAt` → `lastInboundAt` null → `isWindowOpen` sempre
+     fechada → `resolveAndSend` enfileirava como template pendente. FIX: `resolveAndSend` free-texta
+     pra waId simulado (a saída é interceptada, nunca vai pra Meta). Commit `9c38c755`. **Validado
+     E2E: Passo 5.2 completo renderiza** (reforço + link real de proposta `uselink.me` + convite
+     RG/CNH sem emoji + "Parabéns!"). WhatsApp real intacto (janela atualizada em todo inbound).
+  5. **Upload RG/CNH inbound — COBERTO (PASS).** O simulador só roteia texto/clique
+     (`processTextMessage`/`processInteractiveReply` em `send/route.ts`) — **NÃO trata imagem**, então
+     o upload não é testável pela UI (limitação do backend do simulador; possível melhoria futura:
+     rotear `image` pro `handleDocumentInbound`). Exercitei o path real via `scripts/qa-document-inbound.ts`
+     (download da Graph MOCKADO, upload REAL) contra a conversa fechada: FRENTE → "Recebi a frente.
+     Agora me manda o *verso*"; VERSO → "Recebi. Sua ficha está completa!". **Sem emoji** (o `✅` antigo
+     saiu). **O documento vai pro `gateway.uploadDocument` (link Bevi/Conexia `uselink.me` do Trilho A),
+     NÃO pro nosso S3** — correto (a administradora recebe o RG/CNH). O bucket `aja-client-docs` é do
+     despacho desacoplado (bloco-a), path separado.
+  - **Jornada Passo 1→7 (+ upload) validada 100% ponta-a-ponta no simulador** (busca real → reveal →
+    decisão → contrato → carta real 201 → assinatura/documento/Parabéns → upload frente+verso ok).
+  - **Copy menor (não-bug, PENDENTE-KAIRO):** reação pós-interesse repete o nome e emenda frases
+    ("Show, Kairo! Então deixa eu confirmar: Fechou, Kairo, esse plano encaixa bem...") — polir depois.
+  - **Observações — decisão de PRODUTO, não bug (Kairo: registrar, ajustar depois, não mexer agora):**
+    - (a) **"3 opções" × 10 grupos achados.** Kairo (2026-07-03): a **curadoria** (recomendada + 2,
+      pra não afogar o cliente em opção) é **proposital e OK**. PORÉM, se a copy afirmar "3 opções"
+      como se fosse o **TOTAL disponível**, é **copy enganosa** → **ajustar TEXTO depois** (dizer que
+      são as 3 mais aderentes, não o total). Não é bug; é copy. PENDENTE-KAIRO (ajuste de texto).
+    - (b) card de decisão apareceu no "tenho interesse" por TEXTO livre (o avanço direto FIX-38 é pro
+      BOTÃO) — provável esperado. PENDENTE-KAIRO.
+    - (c) no path SEEDADO o card de recomendação com botões não renderizou no WhatsApp, só o texto —
+      a confirmar vs funil completo. PENDENTE-KAIRO.
+  - **Gap de cobertura:** o simulador usa waId sintético → **não exercita o bug REAL do 9º dígito**
+    (esse só num webhook WhatsApp real). Validado por unit + o fechamento real de prod (2026-07-02).
 - **2026-07-02 — Imóvel × WhatsApp (PROD), branch `qa/imovel-whatsapp`. 🚫 BLOQUEADO.** O
   simulador `/admin/simulator/*` é **404 em produção por design** (`isSimulatorEnabled()` →
   `false` quando `TB_ENV=production`, `src/lib/utils/env.ts:12-16`). Login admin prod OK, mas
