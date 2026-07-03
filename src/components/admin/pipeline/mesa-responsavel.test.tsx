@@ -17,7 +17,7 @@ const HANDOFF = {
 };
 
 function installFetch() {
-	const fetchMock = vi.fn(async (url: string) => {
+	const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
 		if (String(url).includes("/mesa-attendants")) {
 			return {
 				ok: true,
