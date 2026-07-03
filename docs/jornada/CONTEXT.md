@@ -1,7 +1,7 @@
 # CONTEXT — Jornada × Bevi: histórico, diretivas e decisões
 
 > Atualizado: 2026-06-04 · Fonte das diretivas: Kairo (verbal, transcrito)
-> Documento canônico do fluxo: [`jornada-canonica.md`](./jornada-canonica.md) ([original .docx](./jornada.docx))
+> Documento canônico do fluxo (fonte soberana): [`jornada-canonica.md`](./jornada-canonica.md)
 
 ## Histórico — como chegamos aqui
 
@@ -14,7 +14,7 @@
 1. **`jornada-canonica.md` é a regra de como o cliente quer.** Não é inspiração — é spec. Divergência = defeito.
 2. **Mock de dados de produto será DESTRUÍDO.** Não pode existir arquivo de mock alimentando a jornada. Deletar `src/lib/adapters/mock/` (adapter + `groups.json`/`rates.json`/`contemplation.json`) e qualquer caminho de runtime que sirva dado fictício ao usuário.
 3. **O fluxo da Bevi tem que ser integrado DENTRO da jornada canônica.** Bevi é a fonte única de grupos, ofertas, simulações e fechamento.
-4. **Simulador (passo 4):** o Bernardo (stakeholder, dono do conceito do "simulador-agulha") ainda **não especificou** como ele deve ser. Nós propomos primeiro → [`proposta-simulador.md`](./proposta-simulador.md).
+4. **Simulador (passo 4):** o Bernardo (stakeholder, dono do conceito do "simulador-agulha") ainda **não especificou** como ele deve ser. Nós propusemos primeiro; o conceito foi consolidado na [`jornada-canonica.md`](./jornada-canonica.md) (passo 5).
 
 ## Desvios de entendimento do stakeholder (docx × realidade da API)
 
@@ -138,7 +138,7 @@
   mercado** (selo obrigatório — a Bevi não simula sem CPF, D1). Os campos preenchem
   `qualifyAnswers` e o funil PULA os gates já respondidos; o agente confirma como
   **vendedor** (híbrido aprovado pelo Kairo), sem re-perguntar. **Estende o conceito do
-  Bernardo** (proposta-simulador) — o aval dele segue pendente. O simulador do passo 4
+  Bernardo** — o aval dele segue pendente. O simulador do passo 4
   PERMANECE, com números 100% da oferta ativa (payload coagido server-side — FIX-6).
 - **D10 — Lance embutido educa TODO MUNDO (FIX-4).** O gate `lance-embutido` dispara pra
   qualquer resposta do lance (Sim/Não/Talvez) — o próprio docx diz que ele "ajuda quem
@@ -213,7 +213,7 @@
   defaults do PERFIL — dial abre no prazo declarado (27, não 6 hardcoded) e
   confronta o lance declarado ("cobre / não cobre"). Disclaimer corrigido
   ("dados da oferta", não "histórico do grupo" — não temos histórico de
-  assembleias; pedido à AGX segue na proposta-simulador.md). Cassette:
+  assembleias; pedido à AGX segue pendente). Cassette:
   BUG-DIAL-DESCALIBRADO em `tests/regression/agent-trajectory.test.ts`.
   **C6 (confronto de viabilidade quando o orçamento declarado não fecha) →
   FIX-18 no todo-blocks, aguardando conversa.**
@@ -272,7 +272,7 @@ G1-G5 listados no doc.
 
 ## Pendências externas
 
-- **Bernardo:** validar/ajustar a [`proposta-simulador.md`](./proposta-simulador.md) (o convite + dial já estão no caminho padrão; refinos e fluxo de caixa aguardam o aval).
+- **Bernardo:** validar/ajustar o conceito do simulador (o convite + dial já estão no caminho padrão; refinos e fluxo de caixa aguardam o aval).
 - **Bevi (D3 — bloqueia E2E real):** o `create-proposal` da descoberta cria proposta REAL com CPF + consulta de bureau (`consultarDados`). Precisamos de **hash/loja de homologação** ou **CPF de teste autorizado** pela Bevi antes de E2E automatizado/manual contra o trilho real. Também pendente: transporte do device fingerprint (mascarado nas capturas) — validar ao vivo se conversas concorrentes colidem no "1 proposta ativa por device".
 
 ## Decisões de arquitetura

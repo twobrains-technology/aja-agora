@@ -2,7 +2,7 @@
 
 > **Status:** PROPOSTA DE DESIGN · 2026-06-14 · **AGUARDA AVAL DO KAIRO**
 > antes de virar implementação. Nada aqui vai pra código sem a revisão dele —
-> mesmo espírito de [`proposta-simulador.md`](./proposta-simulador.md).
+> mesmo espírito das propostas de design que aguardam aval antes de virar código.
 >
 > Cobre duas features grandes que **compartilham um alicerce** (a entidade
 > `contacts`):

@@ -97,8 +97,7 @@ Comunicados automáticos (assembleia chegando, resultado, oportunidade de lance)
 inteligência de lance ("você está perto da faixa histórica de contemplação; aumentar 5%
 muda suas chances"), celebração da contemplação, convite a avaliar e indicar. Ideia em
 aberto do docx: dash do consorciado (posição no grupo, evolução, projeção). Tudo isso
-depende de dados de assembleia que a API atual não fornece — pedido à AGX registrado em
-[`../jornada/proposta-simulador.md`](../jornada/proposta-simulador.md).
+depende de dados de assembleia que a API atual não fornece — pedido à AGX ainda pendente.
 
 ## O contrato de comportamento no RETORNO (resumo; spec completa em [`pos-contratacao-canais.md`](./pos-contratacao-canais.md))
 

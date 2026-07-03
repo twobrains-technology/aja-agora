@@ -33,7 +33,7 @@
 
 | ID | Pergunta | Por que importa | Destrava |
 |---|---|---|---|
-| Q-BE1 | Aval da [`proposta-simulador.md`](../jornada/proposta-simulador.md) (dial + plan-estimate já no caminho padrão) | Regra de produto: não finalizar o simulador sem o aval dele | P2.6 |
+| Q-BE1 | Aval do conceito do simulador (dial + plan-estimate já no caminho padrão) | Regra de produto: não finalizar o simulador sem o aval dele | P2.6 |
 | Q-BE2 | Desenho do **fluxo de caixa mês a mês** (docx passo 4) | Único item do passo 4 ainda não implementado | P2.6 |
 | Q-BE3 | Validação do tom dos cards pós-poda (D14/D15) com tráfego real de campanha | Decisão dele; campanha é o teste de fogo | — |
 
