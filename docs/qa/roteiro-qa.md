@@ -12,8 +12,8 @@ escopo_padrao: "carro (auto) no web, do sonho à proposta, ponta-a-ponta"
 > testar à mão com olho crítico de dono. **Oráculo** do comportamento esperado:
 > `docs/jornada/jornada-canonica.md` (é REGRA, não referência — divergência código × jornada é
 > defeito, salvo os não-bugs da seção 7 e as tensões T1/T2). Complementos:
-> `docs/jornada/CONTEXT.md` (histórico/decisões D1–D22), `docs/jornada/proposta-simulador.md`
-> (conceito do Bernardo). Mantenha este arquivo atualizado a cada rodada.
+> `docs/jornada/CONTEXT.md` (histórico/decisões D1–D22). O conceito do simulador (Bernardo)
+> está consolidado na jornada canônica (passo 5). Mantenha este arquivo atualizado a cada rodada.
 
 ## 1. O que é o produto
 
@@ -212,7 +212,7 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
 - **DES-1** — assinatura self-service **não existe**; a efetivação é da mesa (manual). Card mostra
   "Ver minha proposta", não "assinatura". (No WhatsApp, D11 ainda promete — isso É defeito.)
 - **Simulador do Passo 4/5 = conceito do Bernardo** (stakeholder). Não implementar versão final
-  sem o aval dele (`proposta-simulador.md`).
+  sem o aval dele.
 - **D10 — Trilho A trava ao vivo** (`400` productId/AGX). ⚠️ **2026-07-01: NÃO reproduziu** — a
   rodada fechou **proposta real** (grupo 1797, proposalId `6a45bf1d45fa79d9c4d7ab5f`,
   `proposal_status=documentos`, link `uselink.me`). A homologação está fechando de verdade;

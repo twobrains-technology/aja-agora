@@ -1,8 +1,8 @@
 # Jornada Canônica — Aja Agora
 
-> **REGRA, não referência.** Fonte: `jornada.docx` do cliente + refino do Kairo (2026-06-30).
+> **REGRA, não referência.** Fonte soberana: **este documento** — a visão do cliente destilada + refino do Kairo (2026-06-30).
 > Toda divergência entre código e este fluxo é **defeito do código**, não interpretação.
-> Contexto/decisões: [`CONTEXT.md`](./CONTEXT.md). Original: [`jornada.docx`](./jornada.docx).
+> Contexto/decisões: [`CONTEXT.md`](./CONTEXT.md).
 > **Lema:** *"Seu objetivo primeiro. O melhor consórcio depois."*
 >
 > **📍 Enriquecido pela auditoria código×jornada de 2026-07-01** (evidência `file:line` no

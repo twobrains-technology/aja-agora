@@ -40,4 +40,4 @@ Reescrita do artifact `plan-estimate-picker.tsx` pra versão reduzida (só o sli
 (c) o que o agente passa a coletar/inferir pros campos removidos (prazo/prioridade), já que deixam de ser input do usuário.
 
 ## ⚠️ Dependência de produto (não esquecer ao promover)
-Pelo `CLAUDE.md`: **"Simulador do passo 4 = conceito do Bernardo (stakeholder). Proposta em `docs/jornada/proposta-simulador.md` — não implementar versão final sem o aval dele."** Esta simplificação muda o conceito do simulador → confirmar com o Bernardo / validar contra a proposta antes de promover pra bloco e implementar. Não cravar sozinho.
+Pelo `CLAUDE.md`: **"Simulador do passo 4 = conceito do Bernardo (stakeholder), consolidado no passo 5 da `docs/jornada/jornada-canonica.md` — não implementar versão final sem o aval dele."** Esta simplificação muda o conceito do simulador → confirmar com o Bernardo / validar contra o passo 5 da jornada canônica antes de promover pra bloco e implementar. Não cravar sozinho.
