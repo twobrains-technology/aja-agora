@@ -251,6 +251,18 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
      `formatTextForWhatsApp`: ponto/vírgula entre dígitos nunca quebra. Commit `1bb416d4`.
   3. **Emoji `Olá 👋` na saudação** — gap do FIX-212 (👋 no `CONCIERGE_PROMPT_BODY`, fora da
      varredura). FIX: removido + varredura anti-emoji estendida (emoji-em-aspas). Commit `21154b86`.
+  4. **Passo 5.2 não renderizava no simulador** (assinatura + documento + Parabéns sumiam) — o
+     simulador não chama `updateLastInboundAt` → `lastInboundAt` null → `isWindowOpen` sempre
+     fechada → `resolveAndSend` enfileirava como template pendente. FIX: `resolveAndSend` free-texta
+     pra waId simulado (a saída é interceptada, nunca vai pra Meta). Commit `9c38c755`. **Validado
+     E2E: Passo 5.2 completo renderiza** (reforço + link real de proposta `uselink.me` + convite
+     RG/CNH sem emoji + "Parabéns!"). WhatsApp real intacto (janela atualizada em todo inbound).
+  - **Jornada Passo 1→7 validada ponta-a-ponta no simulador** (busca real → reveal → decisão →
+    contrato → carta real 201 → assinatura/documento/Parabéns). Falta só cobrir o **upload inbound
+    da foto RG/CNH** (bucket `aja-client-docs` provisionado; handler `handleDocumentInbound`
+    unit-testado) — próxima rodada.
+  - **Copy menor (não-bug, PENDENTE-KAIRO):** reação pós-interesse repete o nome e emenda frases
+    ("Show, Kairo! Então deixa eu confirmar: Fechou, Kairo, esse plano encaixa bem...") — polir depois.
   - **Observações — decisão de PRODUTO, não bug (Kairo: registrar, ajustar depois, não mexer agora):**
     - (a) **"3 opções" × 10 grupos achados.** Kairo (2026-07-03): a **curadoria** (recomendada + 2,
       pra não afogar o cliente em opção) é **proposital e OK**. PORÉM, se a copy afirmar "3 opções"
