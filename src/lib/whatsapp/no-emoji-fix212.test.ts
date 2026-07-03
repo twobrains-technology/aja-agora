@@ -1,0 +1,50 @@
+// Camada 1 (FIX-212) — ZERO emoji na copy do WhatsApp.
+//
+// Kairo: "sem emoticons por favor" (regra pra TODA a copy). C3 do spec: nenhum
+// codepoint de emoji na copy fixa do WhatsApp. Esta varredura percorre os módulos
+// de copy (formatter/gate-questions/identify-capture) e FALHA se achar qualquer
+// emoji — a rede que impede o emoji de voltar por um card novo.
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+
+// Ranges de emoji reais. NÃO inclui setas (→ U+2192) nem pontuação (• — …) que
+// são símbolos tipográficos legítimos no source, não emoticons.
+const EMOJI =
+	/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}]/u;
+const EMOJI_G = new RegExp(EMOJI.source, "gu");
+
+function read(rel: string): string {
+	return readFileSync(resolve(process.cwd(), rel), "utf-8");
+}
+
+function emojiHits(src: string): string[] {
+	const hits: string[] = [];
+	src.split("\n").forEach((line, i) => {
+		const m = line.match(EMOJI_G);
+		if (m) hits.push(`L${i + 1}: ${m.join(" ")}  → ${line.trim().slice(0, 80)}`);
+	});
+	return hits;
+}
+
+describe("FIX-212 — varredura anti-emoji na copy do WhatsApp", () => {
+	for (const rel of [
+		"src/lib/whatsapp/formatter.ts",
+		"src/lib/agent/orchestrator/gate-questions.ts",
+		"src/lib/whatsapp/identify-capture.ts",
+	]) {
+		it(`${rel} não contém NENHUM emoji`, () => {
+			const hits = emojiHits(read(rel));
+			expect(hits, `emojis encontrados em ${rel}:\n${hits.join("\n")}`).toEqual([]);
+		});
+	}
+
+	it("o system-prompt tem a regra DURA de não usar emoji", () => {
+		const prompt = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`.toLowerCase();
+		expect(prompt).toMatch(/nunca.*emoji|não use.*emoji|sem emoji/);
+		// e não sobrou o "use emojis com moderação" antigo
+		expect(prompt).not.toMatch(/emojis com moderação/);
+	});
+});

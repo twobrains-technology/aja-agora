@@ -8738,3 +8738,49 @@ describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", 
 		expect(capture).toMatch(/storeIdentity[\s\S]{0,300}gateAttempts/);
 	});
 });
+
+// ============================================================================
+// FIX-212-SEM-EMOJI-LANCE-SPLIT — tom curto, ZERO emoji, lance-embutido em 2 tempos
+// ----------------------------------------------------------------------------
+// Real (Kairo): "sem emoticons por favor" (regra pra TODA a copy) + "garantir que
+// a ia fale mais naturalmente quanto a qtd de itens no whatsapp". C3/C4 do spec:
+// zero emoji na copy do WhatsApp (fixa e gerada) + lance-embutido split (educação
+// num balão, card só com a pergunta). Varredura completa em
+// src/lib/whatsapp/no-emoji-fix212.test.ts; comportamento do split em
+// src/lib/whatsapp/adapter.lance-split-fix212.test.ts. Aqui: cassette determinístico.
+// ============================================================================
+
+describe("FIX-212-SEM-EMOJI-LANCE-SPLIT — copy sem emoji + card do lance enxuto", () => {
+	const EMOJI =
+		/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}]/u;
+
+	it("cassette estrutural: a copy fixa do WhatsApp não tem emoji", () => {
+		for (const rel of [
+			"src/lib/whatsapp/formatter.ts",
+			"src/lib/agent/orchestrator/gate-questions.ts",
+			"src/lib/whatsapp/identify-capture.ts",
+		]) {
+			expect(readSource(rel)).not.toMatch(EMOJI);
+		}
+	});
+
+	it("cassette estrutural: o system-prompt proíbe emoji (regra dura, sem 'com moderação')", () => {
+		const prompt = readSource("src/lib/agent/system-prompt.ts");
+		expect(prompt).toMatch(/NUNCA use emoji/);
+		expect(prompt).not.toMatch(/emojis com moderação/);
+	});
+
+	it("cassette puro: gateQuestion('lance-embutido') compõe educação + pergunta (web mantém o card)", () => {
+		const q = gateQuestion("lance-embutido") ?? "";
+		expect(q).toMatch(/lance embutido/i); // educação
+		expect(q).toMatch(/R\$ 100 mil/); // âncora docx
+		expect(q).toMatch(/Quer considerar esse tipo de lance/); // pergunta
+	});
+
+	it("cassette estrutural: no WhatsApp a educação vira balão de contexto e o card usa só a pergunta", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		expect(adapter).toMatch(/LANCE_EMBUTIDO_EDU/); // beat de contexto (gateContextBeat)
+		const formatter = readSource("src/lib/whatsapp/formatter.ts");
+		expect(formatter).toMatch(/LANCE_EMBUTIDO_ASK/); // card só com a pergunta
+	});
+});

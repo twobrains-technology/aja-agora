@@ -34,7 +34,7 @@ export const IDENTIFY_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — dá uma olhadinha nos números e me manda de novo?";
 
 /** Confirmação quando a identidade fecha a qualificação e a busca segue logo. */
-export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as melhores opções 🔎";
+export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as melhores opções.";
 
 /** FIX-53: identidade vem ANTES do valor — após o CPF a qualificação CONTINUA
  * (valor/prazo/lance), então a confirmação não promete busca ainda. */

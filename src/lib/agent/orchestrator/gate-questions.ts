@@ -1,6 +1,19 @@
 import type { Category } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
 
+/** FIX-212 (split 2 tempos) — a EDUCAÇÃO do lance embutido e a PERGUNTA são
+ * constantes separadas. Preserva as âncoras do docx (própria carta / R$ 100 mil /
+ * chances de contemplação / sem precisar hoje / "a gente te ajuda"). Na WEB o card
+ * mostra as duas juntas (gateQuestion compõe abaixo); no WhatsApp a educação sai
+ * como balão de contexto e o card carrega SÓ a pergunta — channel-aware, o card
+ * deixa de ser 3 parágrafos de aula + a pergunta numa unidade só. */
+export const LANCE_EMBUTIDO_EDU =
+	"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
+	"É usar parte da própria carta de crédito como lance — numa carta de R$ 100 mil, por exemplo, " +
+	"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
+	"sem precisar ter todo o lance em dinheiro hoje.";
+export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
+
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
 	auto: "Em quanto tempo você quer estar com o carro novo?",
@@ -30,14 +43,10 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			// docx passo 2 (linha 21-22): se "sim" → "Qual valor aproximado?"
 			return "Boa! E qual valor aproximado você pensa em dar de lance?";
 		case "lance-embutido":
-			// Educação do doc, em prosa — explica lance embutido sem jargão de engine.
-			return (
-				"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda!\n\n" +
-				"Ele permite usar parte da própria carta de crédito como lance — numa carta de R$ 100 mil, " +
-				"por exemplo, você usa uma fatia desse valor pra aumentar suas chances de contemplação, sem " +
-				"precisar ter todo o lance em dinheiro hoje.\n\n" +
-				"Quer considerar esse tipo de lance nas suas simulações?"
-			);
+			// FIX-212: educação + pergunta compostas (a WEB usa o card completo). No
+			// WhatsApp o adapter usa LANCE_EMBUTIDO_EDU e LANCE_EMBUTIDO_ASK separados
+			// (educação num balão, card só com a pergunta) — split 2 tempos.
+			return `${LANCE_EMBUTIDO_EDU}\n\n${LANCE_EMBUTIDO_ASK}`;
 		case "identify":
 			// FIX-210 (reforma de conversa WhatsApp): a copy do identify foi UNIFICADA
 			// e encurtada — aqui vive só o PEDIDO (beat 2 da cadência 2-tempos). O

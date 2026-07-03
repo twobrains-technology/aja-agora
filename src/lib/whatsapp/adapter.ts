@@ -125,6 +125,12 @@ async function gateContextBeat(gate: Gate): Promise<string | null> {
 		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
 		return IDENTIFY_CONTEXT_WHATSAPP;
 	}
+	if (gate === "lance-embutido") {
+		// FIX-212 (split 2 tempos): a educação do lance embutido sai como balão de
+		// contexto ANTES do card, que fica só com a pergunta curta + botões.
+		const { LANCE_EMBUTIDO_EDU } = await import("@/lib/agent/orchestrator/gate-questions");
+		return LANCE_EMBUTIDO_EDU;
+	}
 	return null;
 }
 
@@ -503,6 +509,10 @@ export async function fireGate(
 		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
 		return;
 	}
+	// FIX-212 (split 2 tempos): gates com contexto fixo (lance-embutido: educação)
+	// emitem o beat de contexto ANTES do card, também no caminho de clique/fireGate.
+	const contextBeat = await gateContextBeat(gate);
+	if (contextBeat) await sendTextMessage(from, contextBeat);
 	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
 	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);
 	if (textPrompt) {
