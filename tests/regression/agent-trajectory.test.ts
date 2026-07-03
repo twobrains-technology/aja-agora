@@ -45,6 +45,7 @@ import {
 	pendingGateAfterTurn,
 	reengageQuestionForGate,
 	shouldReengageGate,
+	SPECIALIST_EXIT_OFFER,
 } from "@/lib/agent/gate-reengage";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { evaluateArtifactGuards } from "@/lib/agent/orchestrator/artifact-guard";
@@ -8688,5 +8689,52 @@ describe("FIX-210-CADENCIA-2-TEMPOS — contexto e pedido em balões separados n
 		expect(c).toMatch(/analisar várias administradoras|analisar varias administradoras/);
 		expect(c).toMatch(/aderentes ao seu perfil/);
 		expect(c).toMatch(/lgpd/);
+	});
+});
+
+// ============================================================================
+// FIX-211-ESCADA-COBRANCA — cobrar o dado obrigatório até informar (reforma WA)
+// ----------------------------------------------------------------------------
+// Real (Kairo, reforma de conversa WhatsApp 2026-07-02): "se o cara nao informar
+// tem que cobrar ele ate informar". C2 do spec: o re-pedido do CPF/valor VARIA por
+// tentativa, cobra também quando o usuário DESVIA (não só quando fecha mudo), e no
+// teto oferece a SAÍDA pro especialista (anti-armadilha). Comportamento real (o
+// desvio re-cobra via consumeEvents) coberto em
+// src/lib/whatsapp/adapter.escada-fix211.test.ts. Aqui: cassette determinístico
+// (escada pura + estrutural do gatilho de desvio no adapter).
+// ============================================================================
+
+describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", () => {
+	it("cassette puro: a escada dá 3 textos distintos e no teto oferece o especialista", () => {
+		const t1 = reengageQuestionForGate("identify", null, 1);
+		const t2 = reengageQuestionForGate("identify", null, 2);
+		const t3 = reengageQuestionForGate("identify", null, 3);
+		const t4 = reengageQuestionForGate("identify", null, 4);
+		expect(new Set([t1, t2, t3]).size).toBe(3); // escala, textos distintos
+		expect(t4).toBe(SPECIALIST_EXIT_OFFER); // saída no teto (não re-pergunta)
+		expect(SPECIALIST_EXIT_OFFER).toMatch(/especialista/i);
+	});
+
+	it("cassette puro: só gates de COLETA obrigatória entram na escada (identify/credit)", () => {
+		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
+		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
+		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
+		expect(reengageQuestionForGate("consent", null, 1)).toBeNull();
+	});
+
+	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// há o gatilho de desvio (turno falou mas gate obrigatório pendente e não disparado)
+		expect(adapter).toMatch(/gateFiredThisTurn/);
+		expect(adapter).toMatch(/isMandatoryCollectionGate/);
+		// incrementa o contador por gate e passa a tentativa pra escada
+		expect(adapter).toMatch(/bumpGateAttempt/);
+		expect(adapter).toMatch(/reengageQuestionForGate\([\s\S]{0,60}attempt/);
+	});
+
+	it("cassette estrutural: o contador é resetado ao capturar o dado (identify-capture)", () => {
+		const capture = readSource("src/lib/whatsapp/identify-capture.ts");
+		expect(capture).toMatch(/gateAttempts/);
+		expect(capture).toMatch(/storeIdentity[\s\S]{0,300}gateAttempts/);
 	});
 });

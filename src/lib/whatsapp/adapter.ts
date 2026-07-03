@@ -1,5 +1,9 @@
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
-import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
+import {
+	isConversationPausedOrTerminal,
+	isMandatoryCollectionGate,
+	reengageQuestionForGate,
+} from "@/lib/agent/gate-reengage";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
@@ -148,6 +152,9 @@ async function consumeEvents(
 	let dropped = false;
 	let hasSent = false;
 	let lastWasInteractive = false;
+	// FIX-211: um gate FOI entregue neste turno? Se sim, o usuário acabou de ver o
+	// pedido — não conta como "desvio" (não re-cobra ao fim do turno).
+	let gateFiredThisTurn = false;
 
 	const pauseBeforeNext = () =>
 		sleep(lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : ARTIFACT_PAUSE_MS);
@@ -325,6 +332,7 @@ async function consumeEvents(
 						);
 					}
 				}
+				gateFiredThisTurn = true; // FIX-211: o gate saiu — não é desvio.
 				break;
 			}
 			case "finish":
@@ -334,25 +342,58 @@ async function consumeEvents(
 		}
 	}
 
-	// FIX-172: guard de turno-mudo (paridade com o web, route.ts:1109). Se o turno
-	// do usuário fecha SEM emitir nada visível (ex.: loop de save_contact_name até
-	// stepCountIs, textChars=0), o usuário ficaria sem resposta — 27s de silêncio.
-	// Emite o fallback honesto. `dropped` (handoff) tem seu card silencioso próprio.
-	if (opts?.guardEmptyTurn && !hasSent && !dropped) {
-		// FIX-208 (rede final): se o turno fecharia mudo com um gate de COLETA
-		// PENDENTE (ex.: o gate de VALOR — usuário respondeu "200" e nada foi emitido),
-		// re-emite a PERGUNTA do gate em vez do "me perdi". Nunca deixa a coleta muda.
-		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
-		// não força o gate "name"; ver processor.ts). reengageQuestionForGate só
-		// retorna texto pros gates de coleta — os demais caem no fallback honesto.
+	// Cobrança de gate ao FIM do turno de usuário (só user-turn: guardEmptyTurn).
+	// `dropped` (handoff) tem seu card silencioso próprio.
+	if (opts?.guardEmptyTurn && !dropped) {
 		const guardMeta = await reloadMeta(conversationId);
+		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
+		// não força o gate "name"; ver processor.ts).
 		const ng = nextGate(guardMeta);
-		const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory);
-		console.warn(
-			`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
-		);
-		await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
+		const mandatory = isMandatoryCollectionGate(ng);
+		const paused = isConversationPausedOrTerminal(guardMeta);
+
+		if (!hasSent) {
+			// FIX-172/208 — turno MUDO: nada visível saiu (ex.: loop de save_contact_name
+			// até stepCountIs, ou o valor respondido e nada emitido). Re-cobra o gate de
+			// coleta pendente (escalado, FIX-211) em vez do "me perdi"; demais gates caem
+			// no fallback honesto. Nunca deixa o usuário no silêncio.
+			const attempt = mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
+			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			console.warn(
+				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
+			);
+			await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
+		} else if (mandatory && !gateFiredThisTurn && !paused) {
+			// FIX-211 — o usuário DESVIOU: o turno FALOU (respondeu uma dúvida, o LLM
+			// reagiu) mas o gate de coleta obrigatória segue pendente e NÃO foi disparado
+			// neste turno. Re-cobra ESCALADO em vez de esperar o watchdog de 90s. Teto de
+			// 3 tentativas + saída pro especialista (anti-armadilha, reengageQuestionForGate).
+			const attempt = await bumpGateAttempt(conversationId, guardMeta, ng);
+			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			if (reengage) {
+				console.warn(
+					`[gate-collect-reengage] conv=${conversationId} DESVIO no gate=${ng} tentativa=${attempt}`,
+				);
+				await pauseBeforeNext();
+				await sendTextMessage(from, reengage);
+			}
+		}
 	}
+}
+
+/** FIX-211 — incrementa o contador de cobranças do gate e persiste. Retorna o novo
+ * valor (1-based). Por-gate no meta (gateAttempts), sem vazar entre gates. */
+async function bumpGateAttempt(
+	conversationId: string,
+	meta: ConversationMetadata,
+	gate: Gate,
+): Promise<number> {
+	const attempt = (meta.gateAttempts?.[gate] ?? 0) + 1;
+	await persistMeta(conversationId, {
+		...meta,
+		gateAttempts: { ...meta.gateAttempts, [gate]: attempt },
+	});
+	return attempt;
 }
 
 export async function processWithOrchestrator(

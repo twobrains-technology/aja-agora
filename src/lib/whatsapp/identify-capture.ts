@@ -11,7 +11,7 @@ import { conversations } from "@/db/schema";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
-import { metaOf } from "@/lib/conversation/meta";
+import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 /** Beat 1 (CONTEXTO) da cadência 2-tempos do identify (FIX-210). Carrega o gancho
  * literal do docx — "analisar várias administradoras" + "aderentes ao seu perfil"
@@ -91,6 +91,13 @@ export async function captureIdentifyText(
 	const cpf = extractCpf(text);
 	if (cpf) {
 		await storeIdentity(conv.id, { cpf, celular: waIdToCelular(from) });
+		// FIX-211: dado capturado → zera o contador de cobranças do identify (sobre o
+		// meta JÁ atualizado por storeIdentity, sem sobrescrever identityCollected).
+		const after = await reloadMeta(conv.id);
+		if (after.gateAttempts?.identify !== undefined) {
+			const { identify: _drop, ...rest } = after.gateAttempts;
+			await persistMeta(conv.id, { ...after, gateAttempts: rest });
+		}
 		return { handled: true, outcome: "captured" };
 	}
 	if (looksLikeCpfAttempt(text)) {
