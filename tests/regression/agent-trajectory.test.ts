@@ -7528,9 +7528,15 @@ describe("FIX-120 — WhatsApp valor do bem por conversa (paridade FIX-115)", ()
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
 		// gateInteractive não chama mais creditRangeQuestionToWhatsApp
 		expect(adapter).not.toMatch(/creditRangeQuestionToWhatsApp/);
-		// há um caminho textual pro gate credit espelhando o identify
+		// há um caminho textual pro gate credit espelhando o identify: credit está
+		// no conjunto WHATSAPP_TEXT_GATES e a pergunta sai via gateTextPrompt →
+		// gateQuestion(gate, ...) (genérico), não uma lista de faixas. (Assert antigo
+		// procurava `gateQuestion("credit"` literal — string que nunca existiu no
+		// adapter, que usa a forma genérica; teste estava vermelho no HEAD, dívida
+		// pré-existente corrigida junto com o FIX-210.)
 		expect(adapter).toMatch(/gateTextPrompt/);
-		expect(adapter).toMatch(/gateQuestion\("credit"/);
+		expect(adapter).toMatch(/WHATSAPP_TEXT_GATES[\s\S]{0,80}"credit"/);
+		expect(adapter).toMatch(/gateQuestion\(gate/);
 	});
 
 	it("o roteamento credit_ e handleCredit foram aposentados no dispatcher", () => {
@@ -8633,5 +8639,54 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 		expect(readSource("src/lib/agent/orchestrator/analyze.ts")).toMatch(
 			/parseAssetValue\([^)]*gate[\s\S]{0,40}credit/,
 		);
+	});
+});
+
+// ============================================================================
+// FIX-210-CADENCIA-2-TEMPOS — cadência de gate + identify unificado (reforma WA)
+// ----------------------------------------------------------------------------
+// Real (Kairo, reforma de conversa WhatsApp 2026-07-02): no consent→identify o
+// funil mandava UMA bolha longa (reação + porquê + LGPD + pedido do CPF), porque
+// o adapter colava o `prefix` (texto do LLM) na pergunta do gate. C1 do spec: o
+// contexto vai num balão, o pedido em outro; e o identify tem UM texto só.
+// Comportamento real (2 balões via consumeEvents) coberto em
+// src/lib/whatsapp/adapter.cadencia-fix210.test.ts. Aqui: cassette determinístico
+// (estrutural do render WA + funções puras da copy unificada).
+// ============================================================================
+
+describe("FIX-210-CADENCIA-2-TEMPOS — contexto e pedido em balões separados no WhatsApp", () => {
+	it("cassette estrutural: o adapter NÃO cola prefix na pergunta e usa gateContextBeat", () => {
+		const adapter = readSource("src/lib/whatsapp/adapter.ts");
+		// o case gate entrega a pergunta SEM prefix (undefined) — nada de bolha junta
+		expect(adapter).toMatch(/gateInteractive\(ev\.gate, conversationId, undefined\)/);
+		expect(adapter).toMatch(/gateTextPrompt\(ev\.gate, conversationId, undefined\)/);
+		// beat de contexto determinístico (gancho docx + LGPD) pro identify
+		expect(adapter).toMatch(/gateContextBeat/);
+		// fireGate identify emite os DOIS beats (contexto + pedido)
+		expect(adapter).toMatch(/IDENTIFY_CONTEXT_WHATSAPP[\s\S]{0,160}IDENTIFY_WHATSAPP_PROMPT/);
+	});
+
+	it("cassette puro: identify é UM texto só (IDENTIFY_WHATSAPP_PROMPT === gateQuestion('identify'))", async () => {
+		const { IDENTIFY_WHATSAPP_PROMPT } = await import("@/lib/whatsapp/identify-capture");
+		expect(IDENTIFY_WHATSAPP_PROMPT).toBe(gateQuestion("identify"));
+	});
+
+	it("cassette puro: o PEDIDO é curto (≤160), sem 'CPF e celular', sem emoji", () => {
+		const q = gateQuestion("identify") ?? "";
+		expect(q.length).toBeLessThanOrEqual(160);
+		expect(q).not.toMatch(/cpf e celular/i);
+		expect(q).toMatch(/cpf/i);
+		// sem emoji na copy do pedido
+		expect(q).not.toMatch(
+			/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}]/u,
+		);
+	});
+
+	it("cassette puro: o CONTEXTO preserva o gancho docx + LGPD (garantia determinística)", async () => {
+		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("@/lib/whatsapp/identify-capture");
+		const c = IDENTIFY_CONTEXT_WHATSAPP.toLowerCase();
+		expect(c).toMatch(/analisar várias administradoras|analisar varias administradoras/);
+		expect(c).toMatch(/aderentes ao seu perfil/);
+		expect(c).toMatch(/lgpd/);
 	});
 });

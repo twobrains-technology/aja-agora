@@ -61,11 +61,20 @@ describe("perguntas de gate — fiéis ao docx", () => {
 		expect(q).toMatch(/lance/);
 	});
 
-	it("identify: gancho literal do docx (analisar várias administradoras) + LGPD", () => {
-		const q = (gateQuestion("identify") ?? "").toLowerCase();
-		expect(q).toMatch(/analisar várias administradoras|analisar varias administradoras/);
-		expect(q).toMatch(/aderentes ao seu perfil/);
-		expect(q).toMatch(/lgpd/);
+	it("identify: gancho literal do docx (analisar várias administradoras) + LGPD", async () => {
+		// FIX-210 (reforma de conversa WhatsApp): o identify virou cadência 2-tempos.
+		// O gancho do docx + LGPD migraram do gateQuestion (que agora é só o PEDIDO
+		// curto) pro beat de CONTEXTO fixo (IDENTIFY_CONTEXT_WHATSAPP). O gancho segue
+		// GARANTIDO e determinístico — só mudou de balão.
+		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("@/lib/whatsapp/identify-capture");
+		const contexto = IDENTIFY_CONTEXT_WHATSAPP.toLowerCase();
+		expect(contexto).toMatch(/analisar várias administradoras|analisar varias administradoras/);
+		expect(contexto).toMatch(/aderentes ao seu perfil/);
+		expect(contexto).toMatch(/lgpd/);
+		// O PEDIDO (beat 2) é curto e não repete o gancho.
+		const pedido = (gateQuestion("identify") ?? "").toLowerCase();
+		expect(pedido).toMatch(/cpf/);
+		expect(pedido).not.toMatch(/administradoras/);
 	});
 
 	it("simulator-offer: oferta literal do simulador (3, 6 ou 12 meses — que tal?)", () => {

@@ -8,21 +8,27 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf } from "@/lib/conversation/meta";
 
-/** Pergunta do gate identify no WhatsApp — gancho do docx (analisar várias
- * administradoras / aderentes ao perfil) + LGPD. FIX-53: a identidade subiu pra
- * ANTES do valor (logo após o consent), então o gancho é forward-looking ("pra
- * eu analisar e buscar"), não mais "Com essas informações…" (que pressupunha
- * dados já coletados). No WhatsApp o celular já é o waId — só falta o CPF. */
-export const IDENTIFY_WHATSAPP_PROMPT =
-	"Pra eu analisar várias administradoras e buscar as opções mais aderentes " +
-	"ao seu perfil, me envia seu *CPF* (só os números). " +
-	"Seus dados ficam protegidos (LGPD) e, ao enviar, você autoriza a consulta " +
-	"nas administradoras — não é compromisso nenhum, tá? " +
-	"Seu celular eu já tenho daqui do WhatsApp 😉";
+/** Beat 1 (CONTEXTO) da cadência 2-tempos do identify (FIX-210). Carrega o gancho
+ * literal do docx — "analisar várias administradoras" + "aderentes ao seu perfil"
+ * — que JUSTIFICA o pedido do CPF, mais o aviso LGPD (consentimento por conduta:
+ * enviar o CPF autoriza a consulta). Fixo e determinístico: não deixamos o gancho
+ * a cargo do LLM. Curto, sem emoji, sem hedge ("não é compromisso nenhum, tá?"). */
+export const IDENTIFY_CONTEXT_WHATSAPP =
+	"Pra eu analisar várias administradoras e achar as opções mais aderentes ao seu " +
+	"perfil, preciso confirmar quem é você. Seus dados ficam protegidos (LGPD).";
+
+/** Beat 2 (PEDIDO) do identify — FONTE ÚNICA (FIX-210). Antes havia dois textos
+ * concorrentes (este e gateQuestion("identify")), o que gerava inconsistência
+ * ("me envia seu CPF" aqui vs "preciso do CPF e celular" lá). Agora reexporta
+ * gateQuestion("identify") — o pedido curto. O contexto (beat 1,
+ * IDENTIFY_CONTEXT_WHATSAPP) sai como balão próprio antes deste. No WhatsApp o
+ * celular já é o waId — só falta o CPF. */
+export const IDENTIFY_WHATSAPP_PROMPT = gateQuestion("identify") as string;
 
 export const IDENTIFY_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — dá uma olhadinha nos números e me manda de novo?";

@@ -39,17 +39,17 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 				"Quer considerar esse tipo de lance nas suas simulações?"
 			);
 		case "identify":
-			// FIX-53 (Bernardo, rev2): a identidade subiu pra ANTES do valor (logo
-			// após o consent). O gancho do docx "Com essas informações…" pressupunha
-			// dados já coletados — incoerente cedo. Reescrito forward-looking ("pra eu
-			// analisar e já buscar"), preservando as âncoras do docx (analisar várias
-			// administradoras / aderentes ao seu perfil) + o porquê do CPF (D1: a Bevi
-			// exige CPF+celular+LGPD antes de simular — sem isso não há oferta real).
-			return (
-				"Pra eu analisar várias administradoras e já buscar as opções mais aderentes " +
-				"ao seu perfil, preciso do seu CPF e celular — seus dados ficam protegidos " +
-				"(LGPD) e isso não é compromisso nenhum, tá?"
-			);
+			// FIX-210 (reforma de conversa WhatsApp): a copy do identify foi UNIFICADA
+			// e encurtada — aqui vive só o PEDIDO (beat 2 da cadência 2-tempos). O
+			// contexto (beat 1: "pra comparar as administradoras e achar sua melhor
+			// opção") vem do LLM como balão próprio, entregue pelo adapter antes deste
+			// pedido. Antes havia DOIS textos concorrentes — este e o
+			// IDENTIFY_WHATSAPP_PROMPT ("me envia seu CPF... celular eu já tenho") —
+			// que agora reexporta ESTA fonte única (identify-capture.ts). No WhatsApp o
+			// celular já é o waId, então só falta o CPF. Sem emoji, sem hedge, sem
+			// "preciso do CPF e celular" (FIX-53 pedia identidade antes do valor; o
+			// gancho forward-looking migrou pro beat de contexto do LLM).
+			return "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
 			return (

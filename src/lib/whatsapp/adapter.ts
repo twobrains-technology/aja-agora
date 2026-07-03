@@ -111,6 +111,19 @@ async function gateTextPrompt(
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
 
+// FIX-210 — beat de CONTEXTO fixo da cadência 2-tempos. Gates que carregam uma
+// justificativa determinística (identify: gancho docx + LGPD) entregam esse beat
+// como balão próprio ANTES do pedido, em vez de deixar o gancho a cargo do LLM.
+// null = o contexto vem do texto do LLM (buffer). O lance-embutido entra aqui no
+// FIX-212 (educação curta antes do card).
+async function gateContextBeat(gate: Gate): Promise<string | null> {
+	if (gate === "identify") {
+		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
+		return IDENTIFY_CONTEXT_WHATSAPP;
+	}
+	return null;
+}
+
 async function consumeEvents(
 	from: string,
 	conversationId: string,
@@ -265,13 +278,28 @@ async function consumeEvents(
 				break;
 			}
 			case "gate": {
-				if (ev.prefix) {
-					textBuffer = "";
+				// FIX-210 — cadência 2-tempos: contexto num balão, pedido em outro. Antes,
+				// quando o gate carregava prefix, o adapter DESCARTAVA o texto ou o COLAVA
+				// na pergunta → uma bolha só (o atrito que o Kairo viu no consent→identify).
+				// É decisão de RENDER do WhatsApp (channel-aware C5) — não toca a web.
+				//
+				// Gates com CONTEXTO fixo (gateContextBeat: identify tem gancho docx + LGPD,
+				// lance-embutido tem a educação): o beat de contexto é determinístico —
+				// substituímos a reação do LLM pelo contexto fixo (o gancho nunca some).
+				// Demais gates: o contexto vem do texto do LLM (buffer via flushText).
+				const contextBeat = await gateContextBeat(ev.gate);
+				if (contextBeat) {
+					textBuffer = ""; // reação do LLM substituída pelo contexto fixo (gancho garantido)
+					await flushArtifacts();
+					if (hasSent) await pauseBeforeNext();
+					await sendTextMessage(from, contextBeat);
+					lastWasInteractive = false;
+					hasSent = true;
 				} else {
 					await flushText();
+					await flushArtifacts();
 				}
-				await flushArtifacts();
-				const interactive = await gateInteractive(ev.gate, conversationId, ev.prefix);
+				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
 				if (interactive) {
 					if (hasSent) await pauseBeforeNext();
 					await sendInteractiveMessage(from, interactive);
@@ -281,7 +309,7 @@ async function consumeEvents(
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
-					const textPrompt = await gateTextPrompt(ev.gate, conversationId, ev.prefix);
+					const textPrompt = await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);
@@ -425,9 +453,12 @@ export async function fireGate(
 	if (gate === "consent" && !meta.consentOffered) {
 		await persistMeta(conversationId, { ...meta, consentOffered: true });
 	}
-	// "identify" é textual (form não existe no WhatsApp): prompt de CPF + LGPD.
+	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos
+	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro.
 	if (gate === "identify") {
-		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
+		const { IDENTIFY_CONTEXT_WHATSAPP, IDENTIFY_WHATSAPP_PROMPT } =
+			await import("./identify-capture");
+		await sendTextMessage(from, IDENTIFY_CONTEXT_WHATSAPP);
 		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
 		return;
 	}
