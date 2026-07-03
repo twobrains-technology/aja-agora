@@ -12,6 +12,7 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { isSimulatedWaId } from "./simulator-bus";
 
 /** Beat 1 (CONTEXTO) da cadência 2-tempos do identify (FIX-210). Carrega o gancho
  * literal do docx — "analisar várias administradoras" + "aderentes ao seu perfil"
@@ -51,18 +52,42 @@ export function extractCpf(text: string): string | null {
 }
 
 /** waId vem com DDI (ex: 5562999887766) — a Bevi espera DDD+número (62999887766). */
-export function waIdToCelular(waId: string): string {
-	const digits = (waId ?? "").replace(/\D/g, "");
+// Normaliza um número BR pro formato que a Bevi espera: DDD + 9 + 8 = 11 dígitos.
+function normalizeCelularBR(raw: string): string {
+	const digits = (raw ?? "").replace(/\D/g, "");
 	// Remove o código do país (55) — a Bevi espera DDD + número, sem +55.
 	const withoutCC = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 	// 9º dígito (bug de prod 2026-07-02, "CELULAR inválido" no fechamento): o waId
 	// do WhatsApp DERRUBA o 9 inicial dos móveis BR → chega DDD + 8 dígitos (10). A
 	// Bevi (Trilho A/fechamento) exige DDD + 9 + 8 (11) e rejeita 10. Todo waId de
 	// WhatsApp é MÓVEL (não existe WhatsApp em fixo), então 10 dígitos = 9 faltando:
-	// reinsere o 9 após o DDD. Assim descoberta (Trilho B) e fechamento (Trilho A)
-	// recebem o mesmo celular de 11 dígitos válido.
+	// reinsere o 9 após o DDD.
 	if (withoutCC.length === 10) return `${withoutCC.slice(0, 2)}9${withoutCC.slice(2)}`;
 	return withoutCC;
+}
+
+// Fallback sintético (formato VÁLIDO, 11 díg) pro simulador quando
+// SIMULATOR_TEST_CELULAR não está setado — evita a sequência de 24 dígitos que o
+// UUID gerava. NÃO fecha na Bevi (ela valida o celular contra o CPF real), mas não
+// crasha o formato. Determinístico a partir do UUID.
+function syntheticCelularFromSimulatedWaId(waId: string): string {
+	const digits = waId.replace(/\D/g, "");
+	let hash = 0;
+	for (const ch of digits) hash = (hash * 31 + ch.charCodeAt(0)) % 100_000_000;
+	return `629${String(hash).padStart(8, "0")}`;
+}
+
+export function waIdToCelular(waId: string): string {
+	// Simulador (SIM-<uuid>, src/app/api/admin/simulator/sessions/route.ts): a Bevi
+	// VALIDA o celular (contra o CPF), então um número sintético não fecha — precisa
+	// ser um número REAL. Usa o celular de teste do env (PII no vault/.env.local,
+	// NUNCA hardcoded — regra do projeto). Sem o env, cai no sintético só pra não
+	// quebrar o formato. Pareie com o CPF da MESMA conta de teste (ex.: Kairo).
+	if (isSimulatedWaId(waId)) {
+		const testCelular = process.env.SIMULATOR_TEST_CELULAR;
+		return testCelular ? normalizeCelularBR(testCelular) : syntheticCelularFromSimulatedWaId(waId);
+	}
+	return normalizeCelularBR(waId);
 }
 
 /** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
