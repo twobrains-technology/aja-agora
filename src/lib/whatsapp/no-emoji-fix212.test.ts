@@ -47,4 +47,22 @@ describe("FIX-212 — varredura anti-emoji na copy do WhatsApp", () => {
 		// e não sobrou o "use emojis com moderação" antigo
 		expect(prompt).not.toMatch(/emojis com moderação/);
 	});
+
+	// Bug QA 2026-07-03: o "Olá 👋" vazou pra saudação porque estava no
+	// CONCIERGE_PROMPT_BODY (fora das constantes varridas). Varrer o system-prompt
+	// inteiro daria falso-positivo nos marcadores ❌/✅ de instrução (não são copy).
+	// A distinção: emoji DENTRO DE ASPAS = exemplo de fala que o LLM COPIA pro cliente
+	// (proibido); emoji solto = marcador de instrução (ok). Esta rede pega o "Olá 👋".
+	it("system-prompt não tem emoji em copy de exemplo (dentro de aspas)", () => {
+		const src = read("src/lib/agent/system-prompt.ts");
+		const quotedEmoji = new RegExp(`"[^"\\n]*${EMOJI.source}[^"\\n]*"`, "u");
+		const hits = src
+			.split("\n")
+			.map((line, i) => ({ line, n: i + 1 }))
+			.filter(({ line }) => quotedEmoji.test(line))
+			.map(({ line, n }) => `L${n}: ${line.trim().slice(0, 80)}`);
+		expect(hits, `emoji em copy de exemplo (o LLM ecoa pro cliente):\n${hits.join("\n")}`).toEqual(
+			[],
+		);
+	});
 });
