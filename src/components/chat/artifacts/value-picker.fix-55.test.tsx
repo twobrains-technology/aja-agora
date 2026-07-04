@@ -60,13 +60,15 @@ describe("FIX-55 — input livre no ValuePicker aceita número quebrado", () => 
 		expect(msg).toContain("347.500");
 	});
 
-	it("input clampa ao teto da categoria quando acima do max", () => {
+	// FIX-218 (Ata 2026-07-04): revertido — o input digitado NÃO capa mais ao
+	// teto da categoria; o slider é só dica visual. Ver value-picker.fix-218.test.tsx.
+	it("input digitado acima do max NÃO capa — propaga o valor livre (FIX-218)", () => {
 		render(<ValuePicker payload={payload} />);
 		const input = screen.getByTestId("value-input-creditValue");
 		fireEvent.change(input, { target: { value: "9999999" } });
 		fireEvent.blur(input);
 		fireEvent.click(screen.getByRole("button"));
 		const msg = sendUserMessage.mock.calls[0][0] as string;
-		expect(msg).toContain("500.000");
+		expect(msg).toContain("9.999.999");
 	});
 });
