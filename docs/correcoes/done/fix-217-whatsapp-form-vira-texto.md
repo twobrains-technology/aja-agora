@@ -1,10 +1,12 @@
 ---
 id: FIX-217
 titulo: "WhatsApp: form de identidade vira texto solto ignorável; forçar gate identify determinístico (pedir só CPF; celular já é auto)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-jornada-conversa
+commit: 105731f
+executado_em: 2026-07-04
 arquivos:
   - src/lib/whatsapp/adapter.ts
   - src/lib/whatsapp/interactive-handlers.ts
