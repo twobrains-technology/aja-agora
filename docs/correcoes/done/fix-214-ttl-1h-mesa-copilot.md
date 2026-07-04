@@ -1,12 +1,22 @@
 ---
 id: FIX-214
 titulo: "Cache Anthropic do mesa-copilot: TTL 5min→1h (mesmo padrão human-paced)"
-status: todo
+status: done
 bloco: bloco-cache-anthropic
 arquivos:
   - src/lib/agent/mesa-copilot/index.ts
+  - src/lib/agent/mesa-copilot/system-prompt.test.ts
 rodada: 2026-07-04 — investigação de custo LiteLLM (mudança de preço WhatsApp Meta)
+commit: d9f50c23
+executado_em: 2026-07-04
 ---
+
+## 6. Execução
+
+1-liner aplicado (`ttl: "1h"` em `mesa-copilot/index.ts:71`), teste estrutural
+existente (`FIX-67 builder — cache do manual`) estendido pra assertar `ttl: "1h"`.
+Herda o mesmo veredito de passthrough do FIX-213 — AI SDK provado, gateway LiteLLM
+em aberto (ver detalhe lá).
 
 ## 1. Palavras do operador
 

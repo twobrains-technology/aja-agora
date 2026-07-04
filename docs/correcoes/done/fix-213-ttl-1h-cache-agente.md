@@ -1,13 +1,41 @@
 ---
 id: FIX-213
 titulo: "Cache Anthropic do agente: TTL 5min→1h (elimina cache-creation em conversa human-paced)"
-status: todo
+status: done
 bloco: bloco-cache-anthropic
 arquivos:
   - src/lib/agent/agents/builder.ts
-  - src/lib/agent/agents/builder.test.ts
+  - src/lib/agent/agents/builder.prompt-cache.test.ts
 rodada: 2026-07-04 — investigação de custo LiteLLM (mudança de preço WhatsApp Meta)
+commit: 52533f3b
+executado_em: 2026-07-04
 ---
+
+## 6. Execução — veredito honesto do passthrough do `ttl`
+
+- **AI SDK (`@ai-sdk/anthropic` ^3.0.78, instalado > ^3.0.69 pedido) — PROVADO**: o
+  schema Zod interno (`dist/index.d.ts`) tipa `cacheControl.ttl` como
+  `z.union([z.literal("5m"), z.literal("1h")])` — aceita e valida `"1h"` explicitamente.
+  No código de transformação (`dist/index.js`), o objeto `cacheControl` inteiro
+  (incluindo `ttl`) é lido via `getCacheControl()` e repassado **verbatim** como
+  `cache_control` no body da request pra Anthropic — sem strip de campos. Passthrough
+  do AI SDK → Anthropic: **confirmado por leitura do código instalado**, não por request
+  real (sem chamada de rede feita).
+- **Gateway LiteLLM (`litellm-srv.tb.local:4000`) — DÚVIDA ABERTA**: consultei a doc
+  oficial (context7 `/websites/litellm_ai` + `/berriai/litellm`) — o passthrough de
+  `cache_control.ttl` está **documentado explicitamente só pra Gemini** (`"3600s"`,
+  formato distinto do Anthropic). Para Anthropic, a doc só mostra `cache_control:
+  {type: "ephemeral"}` sem `ttl` em nenhum exemplo; não achei o transform_request do
+  provider Anthropic no LiteLLM que confirme se o campo `ttl` sobrevive ao proxy (nem
+  que seja descartado). Não tenho acesso a prod nem consegui gerar uma request real
+  via gateway neste worktree pra inspecionar o payload cru.
+  - **Não afirmo que funciona nem que não funciona** — é lacuna de verificação.
+  - **Próximo passo pra fechar**: com `litellm.set_verbose=True` (ou log de request
+    do gateway em homol/prod), disparar 1 chamada real ao agente e inspecionar o
+    JSON enviado pra `api.anthropic.com/v1/messages` — confirmar se `cache_control`
+    chega com `ttl: "1h"` ou só `type: "ephemeral"` (campo dropado). Se dropado,
+    resolver na config do gateway (upgrade de versão LiteLLM ou passthrough explícito),
+    nunca no app.
 
 ## 1. Palavras do operador
 
