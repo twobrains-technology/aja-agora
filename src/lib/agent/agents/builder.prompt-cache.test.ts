@@ -35,4 +35,20 @@ describe("prompt-cache — agente principal cacheia o prefixo estável (anti-reg
 		// E a data vive no bloco stable (cacheável), não fora dele.
 		expect(promptSrc).toMatch(/const stable = `[\s\S]*current_date[\s\S]*`/);
 	});
+
+	it("FIX-213: o breakpoint do bloco stable usa ttl 1h (não o default de 5min)", () => {
+		// Conversa human-paced (WhatsApp/chat) tem gaps > 5min entre turnos — TTL
+		// curto expira o cache do prefixo de ~33k tokens e cada turno paga
+		// cache_creation (1,25x) em vez de cache_read (0,1x). ttl: "1h" cobre a
+		// cadência real e derruba o spend dominante (~$12,5 de $21 no LiteLLM prod).
+		const cacheControlBlocks = builderSrc.match(
+			/cacheControl:\s*\{\s*type:\s*"ephemeral"[^}]*\}/g,
+		);
+		expect(cacheControlBlocks).not.toBeNull();
+		// Ambos os ramos do ternário (com e sem blocks.dynamic) precisam do ttl.
+		expect(cacheControlBlocks?.length).toBeGreaterThanOrEqual(2);
+		for (const block of cacheControlBlocks ?? []) {
+			expect(block).toMatch(/ttl:\s*"1h"/);
+		}
+	});
 });
