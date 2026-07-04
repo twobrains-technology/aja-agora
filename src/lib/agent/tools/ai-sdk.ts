@@ -483,7 +483,8 @@ async function executeRecommendGroups(
 export const consorcioTools = {
 	search_groups: tool({
 		description:
-			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar.",
+			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar. " +
+			"A busca ja cobre automaticamente os cenarios com e sem lance embutido (FIX-219) — nao precisa perguntar sobre lance antes de buscar.",
 		inputSchema: searchGroupsInput,
 		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,
 	}),

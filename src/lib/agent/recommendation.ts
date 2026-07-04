@@ -155,13 +155,18 @@ export function rankGroups(
 	// sobrevivente (melhor score; empate → FREE_BID quando hasLance). Só dedupa
 	// quando `grupo` está presente — shapes sem o nº do grupo (fixtures/legado)
 	// seguem tratados como únicos (preserva o FIX-56).
+	// FIX-219: a chave INCLUI `embeddedVariant` — o mesmo grupo físico agora pode
+	// vir de DUAS buscas (com/sem lance embutido, bevi-self-contract-adapter.ts)
+	// e as modalidades NÃO podem colapsar uma na outra (números diferentes:
+	// crédito líquido menor com embutido). Grupos sem o marcador (legado/mesma
+	// variante) seguem dedupados como antes — o sufixo vazio é estável.
 	const seenGroupKeys = new Set<string>();
 	const deduped: ScoredGroup[] = [];
 	for (const s of sorted) {
 		const grupo = s.group.grupo;
 		const admin = s.group.administradora;
 		if (typeof grupo === "string" && grupo.length > 0 && admin) {
-			const key = `${admin}::${grupo}`;
+			const key = `${admin}::${grupo}::${s.group.embeddedVariant ?? ""}`;
 			if (seenGroupKeys.has(key)) continue;
 			seenGroupKeys.add(key);
 		}

@@ -48,6 +48,12 @@ export interface BeviOffer {
 	tipoOferta?: string;
 	grupo?: string;
 	ofertaId?: string;
+	// FIX-219: marcador SINTÉTICO do adapter — NÃO vem da Bevi. Indica se esta
+	// oferta veio da variante de busca SEM ou COM lance embutido (a Bevi não
+	// devolve essa informação). Critério interno de dedup (recommendation.ts):
+	// impede que o dedup por administradora+grupo colapse as duas modalidades
+	// do MESMO grupo físico. Nunca vai pra UI/contexto do modelo.
+	embeddedVariant?: "sem" | "com";
 	productType?: string; // IMOVEL | AUTOS | MOTOS | SERVICOS | PESADOS | OUTROS BENS
 	proximaAssembleia?: string; // ISO date — próxima assembleia do grupo
 	validityStart?: string; // ISO date — início de vigência da oferta
@@ -127,6 +133,8 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		...((offer.grupo ?? offer.group) ? { grupo: offer.grupo ?? offer.group } : {}),
 		// FIX-191 (CONTRATO): ofertaId real quando a fonte o traz.
 		...(offer.ofertaId ? { ofertaId: offer.ofertaId } : {}),
+		// FIX-219: propaga o marcador sintético de variante (com/sem embutido).
+		...(offer.embeddedVariant ? { embeddedVariant: offer.embeddedVariant } : {}),
 	};
 }
 
@@ -138,13 +146,19 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
  *
  * FIX-193: `tipoOferta`/`grupo` são critério INTERNO de ranking/dedup — ficam FORA
  * do contexto do modelo e do payload (nunca "vazam" pra UI). `ofertaId` PERMANECE:
- * é campo do CONTRATO do reveal (FIX-191), coagido no card pra o seletor. */
-export type ModelGroupSummary = Omit<GroupSummary, "totalParticipants" | "tipoOferta" | "grupo">;
+ * é campo do CONTRATO do reveal (FIX-191), coagido no card pra o seletor.
+ * FIX-219: `embeddedVariant` (marcador sintético com/sem embutido) segue o
+ * mesmo tratamento de `tipoOferta`/`grupo` — critério interno, nunca vaza. */
+export type ModelGroupSummary = Omit<
+	GroupSummary,
+	"totalParticipants" | "tipoOferta" | "grupo" | "embeddedVariant"
+>;
 
 export function toModelGroupSummary({
 	totalParticipants: _drop,
 	tipoOferta: _dropTipo,
 	grupo: _dropGrupo,
+	embeddedVariant: _dropEmbeddedVariant,
 	...rest
 }: GroupSummary): ModelGroupSummary {
 	return rest;

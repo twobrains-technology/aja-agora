@@ -235,3 +235,29 @@ describe("FIX-193 — tipoOferta/grupo/ofertaId no GroupSummary; stripados do mo
 		expect(model.administradora).toBeDefined();
 	});
 });
+
+// FIX-219 (Ata 2026-07-04, item 4): `embeddedVariant` é marcador SINTÉTICO do
+// adapter (não vem da Bevi) pra distinguir a busca com/sem lance embutido —
+// mesmo tratamento de tipoOferta/grupo: propaga no GroupSummary (dedup
+// interno), NUNCA vaza pro model-facing.
+describe("FIX-219 — embeddedVariant no GroupSummary; stripado do model-facing", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("beviOfferToGroupSummary propaga embeddedVariant quando presente", () => {
+		const offer = { ...base, embeddedVariant: "com" } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.embeddedVariant).toBe("com");
+	});
+
+	it("embeddedVariant ausente não aparece no GroupSummary", () => {
+		const g = beviOfferToGroupSummary(base as unknown as BeviOffer);
+		expect(g.embeddedVariant).toBeUndefined();
+	});
+
+	it("toModelGroupSummary REMOVE embeddedVariant (critério interno de dedup)", () => {
+		const offer = { ...base, embeddedVariant: "sem" } as unknown as BeviOffer;
+		const model = toModelGroupSummary(beviOfferToGroupSummary(offer)) as Record<string, unknown>;
+		expect(model.embeddedVariant).toBeUndefined();
+		expect(model.id).toBeDefined();
+	});
+});
