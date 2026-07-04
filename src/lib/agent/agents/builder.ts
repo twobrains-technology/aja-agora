@@ -216,7 +216,7 @@ export function buildAgent(
 					role: "system" as const,
 					content: blocks.stable,
 					providerOptions: {
-						anthropic: { cacheControl: { type: "ephemeral" as const } },
+						anthropic: { cacheControl: { type: "ephemeral" as const, ttl: "1h" as const } },
 					},
 				},
 				{ role: "system" as const, content: blocks.dynamic },
@@ -226,7 +226,7 @@ export function buildAgent(
 					role: "system" as const,
 					content: blocks.stable,
 					providerOptions: {
-						anthropic: { cacheControl: { type: "ephemeral" as const } },
+						anthropic: { cacheControl: { type: "ephemeral" as const, ttl: "1h" as const } },
 					},
 				},
 			];
