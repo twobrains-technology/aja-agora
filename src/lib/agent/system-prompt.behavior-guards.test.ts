@@ -778,3 +778,17 @@ describe("BUG-FALLBACK-REFRESH — prompt proíbe sugerir atualizar/recarregar a
 		expect(REFRESH_RULE.test(SYSTEM_PROMPT)).toBe(true);
 	});
 });
+
+// ============================================================================
+// SLIP-CADENCIA-TENHO-INTERESSE (2026-07-04, bake-off de modelos Haiku×Sonnet)
+// Haiku emitiu "só toca em Tenho interesse!" prematuramente antes do card de
+// decisão — vazou a mecânica (instruir clique de botão) e o judge da jornada
+// baixou o fluxoScore. Guard: o prompt veta instruir o clique / nomear botão.
+// ============================================================================
+
+describe("SLIP-CADENCIA — prompt veda instruir o clique no card de decisão", () => {
+	it("SPECIALIST_BASE_PROMPT proíbe instruir 'tocar/clicar em Tenho interesse' ou nomear botão do card", () => {
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/NUNCA instrua o usuário a "tocar em Tenho interesse"/);
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/nem nomeie qualquer botão do card/);
+	});
+});
