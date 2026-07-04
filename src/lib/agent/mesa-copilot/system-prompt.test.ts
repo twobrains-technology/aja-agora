@@ -135,6 +135,15 @@ describe("FIX-67 builder — cache do manual (anti-regressão de prompt caching)
 		expect(src).toMatch(/content:\s*stable[\s\S]{0,160}cacheControl/);
 	});
 
+	it("FIX-214: o breakpoint do manual usa ttl 1h (mesmo padrão human-paced do FIX-213)", () => {
+		// O atendente volta a pedir ajuda ao copiloto minutos depois — mesma
+		// cadência humana que derruba o cache de 5min do agente principal.
+		const src = readFileSync("src/lib/agent/mesa-copilot/index.ts", "utf-8");
+		const cacheControlBlock = src.match(/cacheControl:\s*\{\s*type:\s*"ephemeral"[^}]*\}/);
+		expect(cacheControlBlock).not.toBeNull();
+		expect(cacheControlBlock?.[0]).toMatch(/ttl:\s*"1h"/);
+	});
+
 	it("o runner NÃO expõe tools ao copiloto (Q&A puro, sem tool calling)", () => {
 		const src = readFileSync("src/lib/agent/mesa-copilot/index.ts", "utf-8");
 		// streamText do copiloto não passa `tools:` — orientação textual pura.

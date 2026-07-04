@@ -7675,9 +7675,10 @@ describe("FIX-124 — broadcast + claim do transbordo (structural cassette)", ()
 	it("o copiloto só responde ao DONO do handoff — não vaza pra quem não assumiu", () => {
 		const routing = readSource("src/lib/whatsapp/mesa/routing.ts");
 		// handleMesaCopilot resolve o handoff pelo mesaAttendantId do próprio atendente;
-		// um não-dono não casa nenhum handoff → recebe o ack "nenhum caso aberto".
+		// um não-dono não casa nenhum handoff → cai no modo consulta avulsa de manual
+		// (handleMesaManualConsulta), não mais no ack estático "nenhum caso aberto".
 		expect(routing).toMatch(/mesaHandoffs\.mesaAttendantId,\s*attendant\.id/);
-		expect(routing).toContain("NO_OPEN_HANDOFF_REPLY");
+		expect(routing).toContain("handleMesaManualConsulta");
 	});
 });
 

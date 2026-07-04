@@ -68,7 +68,7 @@ export async function generateMesaCopilotReply(input: {
 		{
 			role: "system",
 			content: stable,
-			providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+			providerOptions: { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } },
 		},
 		{ role: "system", content: dynamic },
 	];
