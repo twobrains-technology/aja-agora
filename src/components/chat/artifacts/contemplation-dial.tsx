@@ -5,7 +5,11 @@ import { useMemo, useRef, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
-import { computeContemplationDial, type DialLikelihood } from "@/lib/consorcio/contemplation-dial";
+import {
+	computeContemplationDial,
+	type DialLikelihood,
+	paymentAfterLabel,
+} from "@/lib/consorcio/contemplation-dial";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
@@ -271,7 +275,9 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 						<b className="text-[1.18rem] font-bold tabular-nums text-[#8a5e09]">
 							{r.paymentAfterContemplation != null ? brl(r.paymentAfterContemplation) : "—"}
 						</b>
-						<small className="text-[10px] text-muted-foreground">menor, depois do lance</small>
+						<small className="text-[10px] text-muted-foreground">
+							{paymentAfterLabel(r.paymentAfterContemplation, monthlyPayment)}
+						</small>
 					</div>
 				</div>
 

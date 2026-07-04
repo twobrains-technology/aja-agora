@@ -5292,8 +5292,10 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 		});
 		expect(r.requiredLancePct).toBe(49);
 		expect(r.ownCashValue).toBe(0); // embutido real cobre — sem "R$ 115 mil do bolso"
-		// C4: parcela honesta — embutido nao derruba a parcela (nada de R$ 2.556)
-		expect(r.paymentAfterContemplation).toBeCloseTo(9_828.92, 2);
+		// FIX-221 (Ata 2026-07-04, AMORTIZA): o lance TOTAL (embutido) agora abate o
+		// saldo pos-contemplacao — a parcela CAI pra ~R$ 5.238 (jornada-canonica D9),
+		// nao mais fixa em R$ 9.828,92. PENDENTE-Bernardo validar o numero exato.
+		expect(r.paymentAfterContemplation).toBeCloseTo(5_238.5, 0);
 	});
 
 	it("wiring estrutural: runner captura simulate_quota e coage simulation_result + dial com perfil", async () => {

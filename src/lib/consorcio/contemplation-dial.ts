@@ -105,15 +105,19 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	const requiredLanceValue = round2((carta * requiredLancePct) / 100);
 	const receivedCredit = round2(carta - embeddedBidValue);
 
-	// FIX-C4: até a contemplação a parcela é a REAL do grupo. Depois dela, só o
-	// lance em DINHEIRO abate o saldo restante (o embutido sai da carta — reduz
-	// o crédito recebido, não a dívida). Modelo antigo (parcela × (1 − lance%))
-	// era fantasia dupla: contava o embutido como abatimento e aplicava o
-	// desconto desde o mês 1.
+	// FIX-221 (Ata 2026-07-04, AMORTIZA — inverte o FIX-C4/D18 antigo): até a
+	// contemplação a parcela é a REAL do grupo. Depois dela, o lance TOTAL —
+	// dinheiro (ownCashValue) + embutido (embeddedBidValue) — amortiza o saldo
+	// restante. Decisão do stakeholder (ex.: 6.800 → ~800 após o lance);
+	// ⚠️ PENDENTE-Bernardo validar o número exato antes de prod. Modelo antigo
+	// (parcela × (1 − lance%)) era fantasia dupla: contava o embutido como
+	// abatimento e aplicava o desconto desde o mês 1 — este AINDA não é isso,
+	// o desconto só vale a partir da contemplação.
 	let paymentAfterContemplation: number | undefined;
 	if (input.monthlyPayment != null && input.monthlyPayment > 0 && targetMonth < term) {
 		const remainingMonths = term - targetMonth;
-		const remainingBalance = input.monthlyPayment * remainingMonths - ownCashValue;
+		const remainingBalance =
+			input.monthlyPayment * remainingMonths - (ownCashValue + embeddedBidValue);
 		paymentAfterContemplation = round2(Math.max(0, remainingBalance) / remainingMonths);
 	}
 
@@ -144,4 +148,18 @@ export function contemplationDialMarks(
 	return months
 		.filter((m) => m <= base.termMonths)
 		.map((targetMonth) => computeContemplationDial({ ...base, targetMonth }));
+}
+
+/** FIX-221 (inbox 2026-07-02-dial-parcela-apos-lance-identica): o rótulo
+ * "menor, depois do lance" era hardcoded — com lance 100% embutido a parcela
+ * pós-contemplação podia sair IDÊNTICA à de antes, mas o rótulo prometia
+ * "menor" mesmo assim (contradição visível). Fonte única do rótulo — nunca
+ * mente: só diz "menor" quando o número de fato caiu. */
+export function paymentAfterLabel(
+	paymentAfterContemplation: number | undefined,
+	paymentBefore: number,
+): string {
+	if (paymentAfterContemplation == null) return "estimativa após a contemplação";
+	if (paymentAfterContemplation < paymentBefore) return "menor, depois do lance";
+	return "sem alteração — sem lance a abater até aqui";
 }
