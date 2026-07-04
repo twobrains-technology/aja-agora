@@ -13,6 +13,54 @@
 > conflita com uma decisão técnica/ADR e a correção é **recalibrar com o stakeholder**, não
 > mudar o código no escuro.
 
+## Refino Ata 2026-07-04 — reunião de alinhamento com o cliente (SUPERSEDE)
+
+> Decisões da **Ata de 2026-07-04** (Kairo, Romulo × Bruna, Bernardo, Eduardo). Onde conflitar
+> com os Passos abaixo, **esta seção vence** (é a decisão mais nova do stakeholder — regra
+> "palavra nova vence"). Fonte: `~/Downloads/Ata_Mudancas_AJA_AGORA.md` (cópia em
+> [`docs/jornada/atas/2026-07-04-mudancas-cliente.md`](./atas/2026-07-04-mudancas-cliente.md)).
+> Onda de implementação: `integ/ata-mudancas-aja` (FIX-215..224).
+
+1. **Lance sai da entrada (P0 — REVERTE parte do Passo 2).** A pergunta "Pretende dar um lance?"
+   e a educação de lance embutido **NÃO acontecem mais antes da busca**. Novo fluxo: nome →
+   experiência → (educação) → identidade (CPF+telefone) → **valor do bem** → **busca os grupos e
+   mostra as opções** → só DEPOIS a conversa de lance (recurso próprio / embutido). Motivo
+   (Bernardo): todo consórcio tem lance; perguntar na largada não faz sentido e confunde. ⚠️ Isto
+   **move** (não apaga) o conceito de lance do Passo 2 pro Passo 5; reverte a *colocação* de
+   FIX-92/118/212 (a educação de embutido continua existindo, só mais tarde). — FIX-215.
+2. **Terminologia: RESERVA DE COTA (P0).** Não é "consórcio fechado/contratado" — é **reserva de
+   cota**. Botão "confirmar e contratar" → "confirmar e reservar". Evitar "fechar/fechado".
+   Comunicar "Você não paga nada agora — tipo booking. Só quando chegar o boleto." Na reserva
+   concluída, deixar claro que dá pra iniciar um NOVO consórcio (nova jornada). — FIX-216.
+3. **Valor do bem digitável/livre (P1).** Aceitar valor digitado livre (122 mil, 1.012.000) sem
+   capar à faixa do slider. Grupos voltam por **ordem de grandeza**, não valor exato — precisão
+   fina não é essencial. — FIX-218.
+4. **Busca Bevi com E sem lance embutido (P1).** Consultar a Bevi 2× (com/sem embutido), unir e
+   deduplicar. A Bevi **não** retorna info de lance embutido — por ora **assumir que todos podem
+   ter embutido (~30% utilizável, confirmar teto)**; se a cota não permitir, vende-se equivalente.
+   Caso de borda resolvido depois. — FIX-219.
+5. **Cards (P0/P1).** 1ª lista: todos os grupos com **mesmo peso** (sem preferencial — ainda não
+   há dado de lance). Card: **logo da administradora**, **lance médio**, **parcela antes e depois
+   da contemplação** (indispensável, P0), deixar explícito que **embutido = recebe menos** crédito.
+   Reordenar/consolidar os 3 blocos do reveal (lance dentro do card). — FIX-220..224.
+6. **Recomendação em 2 estágios (P1 — ONDA 2).** Estágio 1 = carta exata pedida, com briefing
+   honesto ("não costuma ser a mais atrativa"); estágio 2 = personalizada (pergunta recurso
+   próprio/embutido → carta maior otimizada, "brilha o olho"). *Fica pra onda 2.*
+7. **Modelo do lance embutido na parcela pós-contemplação (T2 — resolvido por ora: AMORTIZA).**
+   Decisão da Ata (ex.: 6.800 → ~800 após o lance): o lance **abate o saldo** → parcela
+   pós-contemplação **cai**. Isto **inverte** o `CONTEXT` D18/C4 + código (`contemplation-dial.ts:116`
+   só `−ownCashValue`) + `system-prompt.ts:222`. Implementado atrás de teste em
+   `integ/ata-mudancas-aja`; ⚠️ **PENDENTE-Bernardo validar o número exato** antes de prod. — FIX-221.
+8. **Form vira texto no WhatsApp (P0 bug).** O gate de identidade (form) vira texto solto
+   ignorável no WhatsApp; forçar gate determinístico — pedir só **CPF** (celular já é auto do
+   WhatsApp, `waIdToCelular`). — FIX-217.
+9. **Proposta/PDF com marca AJA+administradora (P1 — ONDA 2/PENDENTE).** Hoje é pass-through (PDF
+   Bevi + portal Conexia). Gerar PDF próprio depende de destravar o fechamento (Trilho A travado,
+   D10). *Adiado.*
+10. **Fora desta onda (não-dev / backlog):** site Figma do Lucas, **comprar número da mesa na Meta**
+    (PENDENTE-KAIRO), mockup/vídeo pro grupo, demo backoffice; backlog P2: voltar às opções,
+    agente sugerir não fechar quando o lance for desproporcional, pop-up, granularidade por bem.
+
 ## Como ler (Fase de cada cenário)
 
 | Marca | Significado | O QA autônomo faz |
@@ -209,6 +257,10 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
   líquido, não a dívida**. É uma questão de **modelagem financeira do produto** — só o stakeholder
   (Bernardo) decide qual está certo. Enquanto aberto, os dois docs se contradizem; qualquer sessão
   que "corrigir" um lado reabre o outro.
+  → **Atualização 2026-07-04 (Ata):** o stakeholder decidiu por ora o modelo **AMORTIZA** (o lance
+  abate o saldo, parcela pós cai — ex. 6.800 → ~800). Implementado em `integ/ata-mudancas-aja`
+  (FIX-221), invertendo código/CONTEXT. ⚠️ **PENDENTE-Bernardo validar o número exato antes de prod**
+  — deixou de ser tensão de design, mas ainda pende a validação financeira. Ver "Refino Ata 2026-07-04".
 - **(Hipótese não confirmada)** O 2º root-cause do FIX-114 ("`identityCollected=true` mas
   `getIdentity=null`") **não é reproduzível por código** (`conversation/identity.ts:113-126` é
   atômico). O furo confirmado do P6 é o LLM free-run (D7). Não cravar o 2º como fato.
