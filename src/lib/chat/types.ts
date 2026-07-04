@@ -105,6 +105,13 @@ export interface RecommendationCardPayload {
 	/** FIX-197: valorCarta BRUTO (denominação, ex. 300k) vs a faixa exibida
 	 * (`creditValue`). Alimenta o aviso de ajuste de faixa. */
 	rawCreditValue?: number;
+	/** FIX-220 (Ata 2026-07-04): a 1ª lista de reveal é NEUTRA — sem "grupo
+	 * preferencial" (ainda não há dado de lance pra recomendar nada). Server-side
+	 * SEMPRE coage "neutral" hoje (ver recommendation-payload.ts); "personalized"
+	 * é o gancho pro estágio 2 (ONDA 2 — recomendação personalizada com dado de
+	 * lance/recurso próprio, jornada-canonica.md item 6), ainda não implementado.
+	 * Ausente == "neutral" (default seguro). */
+	recommendationStage?: "neutral" | "personalized";
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----

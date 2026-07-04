@@ -56,6 +56,10 @@ type RevealSelectionValue = {
 	selectedGroupId: string | null;
 	select: (groupId: string) => void;
 	selectedCota: RevealCota | null;
+	/** FIX-220 — estágio da recomendação (reveal inteiro, não por cota). "neutral"
+	 * (default): nenhuma cota é branded como preferencial. "personalized": gancho
+	 * pro estágio 2 (ONDA 2, ainda não implementado). */
+	recommendationStage: "neutral" | "personalized";
 };
 
 const INERT: RevealSelectionValue = {
@@ -64,6 +68,7 @@ const INERT: RevealSelectionValue = {
 	selectedGroupId: null,
 	select: () => {},
 	selectedCota: null,
+	recommendationStage: "neutral",
 };
 
 const RevealSelectionContext = createContext<RevealSelectionValue>(INERT);
@@ -82,11 +87,13 @@ const cotaId = (g: { groupId?: string; id: string }): string => g.groupId ?? g.i
 function buildCotas(artifacts: Artifact[]): {
 	cotas: RevealCota[];
 	recommendedId: string | null;
+	recommendationStage: "neutral" | "personalized";
 } {
 	const rec = artifacts.find((a) => a.type === "recommendation_card")?.payload as
 		| RecommendationCardPayload
 		| undefined;
-	if (!rec) return { cotas: [], recommendedId: null };
+	if (!rec) return { cotas: [], recommendedId: null, recommendationStage: "neutral" };
+	const recommendationStage = rec.recommendationStage ?? "neutral";
 
 	const cmp = artifacts.find((a) => a.type === "comparison_table")?.payload as
 		| ComparisonTablePayload
@@ -112,7 +119,7 @@ function buildCotas(artifacts: Artifact[]): {
 	// Reveal de 1 cota só (sem comparison_table): hero é a única cota, sem seletor.
 	if (!cmp?.groups || cmp.groups.length === 0) {
 		const only = recAsCota();
-		return { cotas: [only], recommendedId: only.groupId };
+		return { cotas: [only], recommendedId: only.groupId, recommendationStage };
 	}
 
 	let recIdx = cmp.groups.findIndex((g) => cotaId(g) === recId);
@@ -143,7 +150,7 @@ function buildCotas(artifacts: Artifact[]): {
 		};
 	});
 
-	return { cotas, recommendedId: cotas[recIdx]?.groupId ?? recId };
+	return { cotas, recommendedId: cotas[recIdx]?.groupId ?? recId, recommendationStage };
 }
 
 export function RevealSelectionProvider({
@@ -153,7 +160,10 @@ export function RevealSelectionProvider({
 	artifacts: Artifact[];
 	children: ReactNode;
 }) {
-	const { cotas, recommendedId } = useMemo(() => buildCotas(artifacts), [artifacts]);
+	const { cotas, recommendedId, recommendationStage } = useMemo(
+		() => buildCotas(artifacts),
+		[artifacts],
+	);
 	const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() => recommendedId);
 
 	// Re-ancora no recomendado se o selecionado sumir (defensivo — cada mensagem
@@ -170,8 +180,9 @@ export function RevealSelectionProvider({
 			selectedGroupId: effectiveSelected,
 			select: setSelectedGroupId,
 			selectedCota,
+			recommendationStage,
 		};
-	}, [cotas, effectiveSelected]);
+	}, [cotas, effectiveSelected, recommendationStage]);
 
 	return (
 		<RevealSelectionContext.Provider value={value}>{children}</RevealSelectionContext.Provider>

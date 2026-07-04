@@ -107,7 +107,16 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const isRecommended = cota ? cota.isRecommended : true;
 	const score = cota ? cota.score : payload.score;
 	const scoreBreakdown = cota ? cota.scoreBreakdown : payload.scoreBreakdown;
-	const showScoreBreakdown = isRecommended && scoreBreakdown != null;
+	// FIX-220 (Ata 2026-07-04): dentro do reveal, com 2+ cotas ("1ª lista"), NINGUÉM
+	// é branded como preferencial — ainda não há dado de lance pra recomendar nada
+	// (mesmo peso). Só afirma favoritismo quando (a) não há concorrência visível
+	// (reveal de 1 cota só, ou uso legado fora do reveal) ou (b) o estágio 2
+	// (ONDA 2, ainda não implementado) sinalizar `recommendationStage:"personalized"`.
+	const hasPeers = reveal.cotas.length > 1;
+	const showFavoritism = cota
+		? isRecommended && (reveal.recommendationStage === "personalized" || !hasPeers)
+		: true;
+	const showScoreBreakdown = showFavoritism && scoreBreakdown != null;
 
 	const handleFollow = () => {
 		if (isStreaming || !cota) return;
@@ -142,7 +151,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				{/* Selo + rótulo qualitativo. Recomendada → marca-sol + fit label; cota
 				    alternativa selecionada no seletor → selo neutro, sem afirmar score. */}
 				<div className="flex items-center justify-between gap-2">
-					{isRecommended ? (
+					{showFavoritism ? (
 						<span
 							className={cn(
 								"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
@@ -166,8 +175,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
 					    (comparison-table); breakdown segue no expansível.
 					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
-					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
-					{isRecommended && score != null && scoreBreakdown != null && (
+					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil".
+					    FIX-220: some junto com o selo — mesmo peso na 1ª lista neutra. */}
+					{showFavoritism && score != null && scoreBreakdown != null && (
 						<span className="text-sm font-semibold text-primary">
 							{recommendationFitLabel(score, scoreBreakdown.monthlyFit)}
 						</span>

@@ -5170,7 +5170,7 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		expect(names).toContain("present_recommendation_card");
 	});
 
-	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel com a recomendada destacada", () => {
+	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel neutro (FIX-220 — sem destaque)", () => {
 		const d = buildSearchSummaryDirective({
 			category: "auto",
 			meta: {
@@ -5186,7 +5186,10 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		});
 		expect(d).toMatch(/present_comparison_table/);
 		expect(d).toMatch(/TODOS os grupos/);
-		expect(d).toMatch(/highlightBestIndex=0/);
+		// FIX-220 (Ata 2026-07-04): a 1ª lista é NEUTRA — não instrui mais a
+		// destacar a recomendada (highlightBestIndex saiu da diretiva).
+		expect(d).not.toMatch(/highlightBestIndex\s*=\s*0/);
+		expect(d.toLowerCase()).toMatch(/mesmo peso|sem destacar nenhuma|neutr/);
 		// Garante que a proibicao antiga ("comparacao sob demanda") saiu.
 		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
 	});

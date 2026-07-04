@@ -120,6 +120,12 @@ export function coerceRecommendationPayload(
 			out.scoreBreakdown = group.scoreBreakdown;
 		}
 	}
+	// FIX-220 (Ata 2026-07-04): a 1ª lista é SEMPRE neutra — ainda não existe
+	// nenhum caminho de produto que colete dado de lance/recurso próprio antes do
+	// reveal (isso é o estágio 2, ONDA 2, jornada-canonica.md item 6). Hardcoded
+	// "neutral" em CÓDIGO (Lei 4 — invariante crítico não vira regra-no-prompt):
+	// a LLM NUNCA decide sozinha quando "personalizar" a recomendação.
+	out.recommendationStage = "neutral";
 	return out;
 }
 
