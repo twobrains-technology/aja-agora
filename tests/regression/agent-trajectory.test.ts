@@ -2886,11 +2886,12 @@ describe("FEAT-CONTRACT-FLOW — passo 5 'contratar agora' dispara present_contr
 		expect(text).not.toMatch(/preencha o formul[áa]rio|digite seu cpf no campo/i);
 	});
 
-	it("regra do prompt: 'contratar agora' acoplado a present_contract_form (<400 chars)", () => {
-		const re = /contratar agora[\s\S]{0,400}present_contract_form/i;
+	it("regra do prompt: 'reservar agora' acoplado a present_contract_form (<400 chars)", () => {
+		// FIX-216 (Ata 2026-07-04): terminologia "reservar" substitui "contratar".
+		const re = /reservar agora[\s\S]{0,400}present_contract_form/i;
 		expect(
 			re.test(SPECIALIST_BASE_PROMPT),
-			"'contratar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
+			"'reservar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
 		).toBe(true);
 	});
 });

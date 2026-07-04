@@ -233,7 +233,7 @@ export function TemplateFormDialog({ mode, template, open, onOpenChange, onSucce
 						<Textarea
 							id="body"
 							rows={4}
-							placeholder="Olá {{1}}, sua contratação foi confirmada! 🎉"
+							placeholder="Olá {{1}}, sua reserva de cota foi confirmada! 🎉"
 							value={values.body}
 							onChange={(e) => set("body", e.target.value)}
 							disabled={submitting || contentLocked}

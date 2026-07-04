@@ -1078,7 +1078,7 @@ export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): Wh
 export function documentUploadToWhatsApp(_payload: Record<string, unknown>): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*.",
+		text: "Pra completar sua reserva, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*.",
 	};
 }
 
@@ -1093,7 +1093,7 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 	return {
 		type: "text",
 		text: allDone
-			? "Recebi. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			? "Recebi. Sua reserva está confirmada! Agora é com a administradora, e eu te aviso de cada passo."
 			: "Recebi a frente. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
 	};
 }
@@ -1103,7 +1103,7 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 export function documentNotReadyToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui.",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente confirmar sua reserva, eu te peço o RG ou CNH por aqui.",
 	};
 }
 
@@ -1258,9 +1258,9 @@ export function artifactToWhatsApp(
 /** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
  * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
  * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
- * irmãos "Contratar agora"/"Falar c/ consultor" (decision_contratar/
+ * irmãos "Reservar agora"/"Falar c/ consultor" (decision_contratar/
  * decision_especialista) ainda caem no processamento de texto (contratar →
- * fechamento, especialista → handoff) — fora do escopo da D22. */
+ * reserva, especialista → handoff) — fora do escopo da D22. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

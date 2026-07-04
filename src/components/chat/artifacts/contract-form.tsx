@@ -60,7 +60,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 			useStored
 				? { kind: "contract-submit", useStoredIdentity: true, lgpd: true }
 				: { kind: "contract-submit", cpf: cpfDigits, celular: phoneDigits, lgpd: true },
-			"Enviei meus dados pra contratar",
+			"Enviei meus dados pra reservar",
 		);
 	};
 
@@ -68,7 +68,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 		<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 			{/* header */}
 			<div className="flex flex-col gap-[2px]">
-				<p className="text-sm font-semibold text-foreground">Vamos fechar sua proposta</p>
+				<p className="text-sm font-semibold text-foreground">Vamos confirmar sua reserva</p>
 				{payload.administradora ? (
 					<p className="text-xs text-muted-foreground">Administradora: {payload.administradora}</p>
 				) : null}

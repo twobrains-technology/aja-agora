@@ -225,7 +225,7 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 	label: string;
 	waTitle: string;
 }> = [
-	{ intent: "contratar", label: "Sim, quero contratar agora", waTitle: "Contratar agora" },
+	{ intent: "contratar", label: "Sim, quero reservar agora", waTitle: "Reservar agora" },
 	{ intent: "outras", label: "Quero ver outras opções", waTitle: "Ver outras opções" },
 	{
 		intent: "especialista",

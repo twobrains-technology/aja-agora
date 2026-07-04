@@ -255,8 +255,10 @@ describe("FIX-11 — handlers do fechamento persistem a mensagem assistant", () 
 
 		const assistants = await assistantMessages(convId);
 		expect(assistants.length).toBeGreaterThanOrEqual(1);
+		// FIX-216 (Ata 2026-07-04): terminologia "reserva de cota", nunca "proposta
+		// registrada/contratação" — o usuário nunca vê "fechado/contratado".
 		expect(assistants.map((m) => m.content).join("\n")).toMatch(
-			/proposta j[áa] est[áa] registrada/,
+			/reserva de cota j[áa] est[áa] confirmada/,
 		);
 	});
 });
