@@ -1,7 +1,7 @@
 ---
 id: FIX-221
 titulo: "Parcela antes/depois da contemplação no card + corrigir rótulo mentiroso + 'embutido = recebe menos' explícito (modelo AMORTIZA)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-cards-recomendacao
@@ -10,7 +10,10 @@ arquivos:
   - src/components/chat/artifacts/contemplation-dial.tsx
   - src/components/chat/artifacts/simulation-result.tsx
   - src/components/chat/artifacts/recommendation-card.tsx
+  - src/lib/agent/system-prompt.ts
 rodada: 2026-07-04 — Ata de alinhamento com o cliente (item 4.2, P0) + inbox 2026-07-02-dial-parcela-apos-lance-identica
+commit: 5f84473
+executado_em: 2026-07-04
 ---
 ## Palavras do operador
 > Ata 4.2: *"Mostrar parcela antes e depois da contemplação (ex.: 6.800 até contemplar → cai pra ~800 depois de dar o lance). Indispensável. Deixar claro que usar lance embutido = receber menos dinheiro da carta."*
@@ -55,3 +58,13 @@ A Ata decide (ex. 6.800 → ~800 após o lance) que o **lance abate o saldo** �
 3. Teste do enunciado "recebe menos" presente na opção com embutido.
 4. Teste que o card de recomendação mostra parcela **antes** e **depois**.
 5. ⚠️ Deixar um marcador claro no `.done/` + ADR: **PENDENTE-Bernardo** validar o número do modelo amortização.
+
+## Implementação (2026-07-04)
+
+- `contemplation-dial.ts`: `remainingBalance` agora subtrai `(ownCashValue + embeddedBidValue)` — o lance TOTAL amortiza o saldo pós-contemplação. Nova função `paymentAfterLabel` (fonte única do rótulo — nunca diz "menor" se o número não caiu de fato).
+- `contemplation-dial.tsx`: rótulo "Após receber" usa `paymentAfterLabel` (era hardcoded "menor, depois do lance").
+- `recommendation-card.tsx`: novo bloco "Até contemplar → Após receber" (portado do dial, mesmo motor puro, mês-âncora heurístico quando não há `referenceMonth` real) + enunciado fixo de que o embutido reduz o crédito recebido.
+- `simulation-result.tsx`: enunciado "recebe menos crédito da carta agora" explícito na seção de lance embutido.
+- `system-prompt.ts`: LOOP CONVERSACIONAL do simulador atualizado pra narrar o modelo AMORTIZA (nunca mais "a parcela não muda").
+- Testes do modelo antigo (`contemplation-dial.test.ts`, `contemplation-dial.oferta-real.test.ts` (lib+componente), `tests/regression/agent-trajectory.test.ts`) reescritos pro modelo AMORTIZA — nenhum skip.
+- **Inversão + PENDENTE-Bernardo já registrados** em `docs/decisoes/blocos/2026-07-04-ata-mudancas-aja.md` (seção "Lance embutido AMORTIZA a dívida — T2").
