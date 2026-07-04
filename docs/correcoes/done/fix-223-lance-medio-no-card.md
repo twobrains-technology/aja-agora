@@ -1,19 +1,22 @@
 ---
 id: FIX-223
 titulo: "Lance médio no card de recomendação (propagar do fechamento pro shape de descoberta)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
   - src/lib/adapters/bevi/offer-mapper.ts
-  - src/lib/adapters/bevi/partner-offer-mapper.ts
   - src/lib/agent/orchestrator/recommendation-payload.ts
   - src/lib/adapters/types.ts
   - src/lib/chat/types.ts
+  - src/components/chat/reveal-selection.tsx
   - src/components/chat/artifacts/recommendation-card.tsx
   - src/components/chat/artifacts/group-card.tsx
+  - src/lib/agent/tools/ai-sdk.ts
 bloco: bloco-cards-recomendacao
 rodada: 2026-07-04 — Ata de alinhamento com o cliente (item 4.2, P1)
+commit: e6ffb71
+executado_em: 2026-07-04
 ---
 ## Palavras do operador
 > Ata 4.2: *"Exibir o lance médio no card (hoje falta — info importante)."*
