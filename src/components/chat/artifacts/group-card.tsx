@@ -132,6 +132,15 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 								{formatPercent(payload.contemplationRate)}
 							</p>
 						</div>
+						{/* FIX-223 (Ata 2026-07-04) — lance médio, só com dado real (D11). */}
+						{payload.avgBidValue != null && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">
+									{formatBRL(payload.avgBidValue)}
+								</p>
+							</div>
+						)}
 					</div>
 
 					{/* CTA ghost */}

@@ -100,6 +100,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const rawCreditValue = cota?.rawCreditValue ?? payload.rawCreditValue;
 	const showAdjustNotice = hasCreditAdjustment(rawCreditValue, creditValue);
 
+	// FIX-223 — lance médio do grupo (R$), só quando a fonte real o traz.
+	const avgBidValue = cota?.avgBidValue ?? payload.avgBidValue;
+
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
 	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
 	const contempladosMes = cota
@@ -237,6 +240,14 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						<p className="text-xs text-muted-foreground m-0">Tipo de grupo</p>
 						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[category]}</p>
 					</div>
+					{/* FIX-223 (Ata 2026-07-04) — lance médio do grupo, só com dado real
+					    (D11: nunca fabrica; ausente → linha omitida). */}
+					{avgBidValue != null && (
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(avgBidValue)}</p>
+						</div>
+					)}
 				</div>
 
 				{/* FIX-221 (Ata 2026-07-04, P0) — parcela ATÉ e DEPOIS da contemplação,

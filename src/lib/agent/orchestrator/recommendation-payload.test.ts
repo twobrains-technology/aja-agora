@@ -203,3 +203,36 @@ describe("FIX-191 — anti-regressão estrutural (fonte de produção)", () => {
 		expect(directives).not.toMatch(/contempladosMes \(copie de availableSlots/);
 	});
 });
+
+// FIX-223 (Ata 2026-07-04) — lance médio (avgBidValue) coagido server-side a
+// partir do grupo REAL, igual aos demais números do hero/seletor. A LLM nunca
+// fabrica o valor mesmo se tentar (Lei 3/4).
+describe("FIX-223 — avgBidValue coagido server-side (lance médio)", () => {
+	it("coerceRecommendationPayload propaga avgBidValue do grupo real, ignora o que a LLM mandou", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup({ avgBidValue: 4_200 })] });
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBe(4_200);
+	});
+
+	it("sem avgBidValue no grupo real → omitido (nunca fabrica)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBeUndefined();
+	});
+
+	it("coerceComparisonPayload propaga avgBidValue por cota, cada uma com o seu valor real", () => {
+		const bb = realGroup({ avgBidValue: 4_200 });
+		const canopus = realGroup({ id: "6a3e6cec419653c0a99936d0", avgBidValue: 1_800 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb, canopus] });
+		const out = coerceComparisonPayload(
+			{ groups: [{ id: bb.id, avgBidValue: 1 }, { id: canopus.id, avgBidValue: 1 }] },
+			index,
+		);
+		const groups = out.groups as Array<Record<string, unknown>>;
+		expect(groups[0].avgBidValue).toBe(4_200);
+		expect(groups[1].avgBidValue).toBe(1_800);
+	});
+});

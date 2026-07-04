@@ -23,6 +23,9 @@ export interface GroupSummary {
 	grupo?: string;
 	// FIX-191 (CONTRATO bloco-b): UUID de sessão da oferta (quando a fonte o traz).
 	ofertaId?: string;
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$) — só quando a fonte
+	 * traz o dado real (D11: nunca fabricar). Alimenta "lance médio" no card. */
+	avgBidValue?: number;
 }
 
 export interface QuotaSimulation {

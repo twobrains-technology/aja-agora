@@ -65,12 +65,13 @@ describe("FIX-23 — dieta dos tool-results de descoberta (shape enxuto pro mode
 		expect(out.groups.length).toBeGreaterThan(0);
 		const g = out.groups[0];
 		// Allow-list exato — resumo decisório: administradora, crédito, parcela,
-		// prazo, taxa, ids leves (+ liquidez). NADA além disso.
+		// prazo, taxa, ids leves (+ liquidez + lance médio, FIX-223). NADA além disso.
 		expect(Object.keys(g).sort()).toEqual(
 			[
 				"adminFeePercent",
 				"administradora",
 				"availableSlots",
+				"avgBidValue",
 				"category",
 				"contemplationRate",
 				"creditValue",

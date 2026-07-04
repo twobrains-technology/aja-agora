@@ -52,6 +52,11 @@ export interface BeviOffer {
 	proximaAssembleia?: string; // ISO date — próxima assembleia do grupo
 	validityStart?: string; // ISO date — início de vigência da oferta
 	quantityOfQuotas?: number; // cotas da oferta
+	// FIX-223: lance médio do grupo (R$) — campo `averageBid` da oferta self-contract
+	// (mesma fonte que alimenta `lanceMedio` no trilho de fechamento, ver
+	// bevi-self-contract-proposal-gateway.ts:69). Não fazia parte do shape enxuto
+	// consumido pela descoberta até agora.
+	averageBid?: number;
 }
 
 /** Segmento Bevi → categoria de domínio. Bevi tem 6 segmentos; o domínio Aja
@@ -127,6 +132,10 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		...((offer.grupo ?? offer.group) ? { grupo: offer.grupo ?? offer.group } : {}),
 		// FIX-191 (CONTRATO): ofertaId real quando a fonte o traz.
 		...(offer.ofertaId ? { ofertaId: offer.ofertaId } : {}),
+		// FIX-223: lance médio só com fonte real e positiva (D11 — nunca fabrica).
+		...(typeof offer.averageBid === "number" && offer.averageBid > 0
+			? { avgBidValue: round2(offer.averageBid) }
+			: {}),
 	};
 }
 

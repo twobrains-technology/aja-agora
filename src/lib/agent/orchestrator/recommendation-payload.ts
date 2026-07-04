@@ -31,6 +31,8 @@ export interface RevealGroupLike {
 	ofertaId?: string;
 	score?: number;
 	scoreBreakdown?: Record<string, number>;
+	/** FIX-223: lance médio do grupo (R$), quando a fonte o traz. */
+	avgBidValue?: number;
 }
 
 export type RevealGroupIndex = Map<string, RevealGroupLike>;
@@ -90,6 +92,10 @@ export function coerceRevealCota(
 		out.groupId = id;
 		out.quotaId = id;
 	}
+	// FIX-223: lance médio SEMPRE do grupo real — nunca o que a LLM digitou.
+	// Descarta incondicionalmente aqui (mesmo sem grupo ancorado); só volta
+	// abaixo quando o grupo real usável realmente traz o dado (D11).
+	delete out.avgBidValue;
 	if (!isUsableGroup(group)) return out;
 
 	out.creditValue = group.creditValue;
@@ -102,6 +108,7 @@ export function coerceRevealCota(
 		out.ofertaId = group.ofertaId;
 	// FIX-192: contempladosMes só do dado REAL (>0); 0/ausente → nunca exibido.
 	if (Number(group.availableSlots) > 0) out.contempladosMes = group.availableSlots;
+	if (typeof group.avgBidValue === "number") out.avgBidValue = group.avgBidValue;
 	return out;
 }
 

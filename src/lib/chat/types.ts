@@ -24,6 +24,9 @@ export interface GroupCardPayload {
 	 * `creditValue` (faixa re-simulada exibida). Alimenta o aviso de ajuste de
 	 * faixa. Ausente → aviso não aparece (degradação graciosa). */
 	rawCreditValue?: number;
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
 }
 
 export interface ComparisonTablePayload {
@@ -112,6 +115,9 @@ export interface RecommendationCardPayload {
 	 * lance/recurso próprio, jornada-canonica.md item 6), ainda não implementado.
 	 * Ausente == "neutral" (default seguro). */
 	recommendationStage?: "neutral" | "personalized";
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----

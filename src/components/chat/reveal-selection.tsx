@@ -47,6 +47,8 @@ export type RevealCota = {
 	isRecommended: boolean;
 	score?: number;
 	scoreBreakdown?: RecommendationCardPayload["scoreBreakdown"];
+	/** FIX-223: lance médio do grupo (R$), quando a fonte o traz. */
+	avgBidValue?: number;
 };
 
 type RevealSelectionValue = {
@@ -114,6 +116,7 @@ function buildCotas(artifacts: Artifact[]): {
 		isRecommended: true,
 		score: rec.score,
 		scoreBreakdown: rec.scoreBreakdown,
+		avgBidValue: rec.avgBidValue,
 	});
 
 	// Reveal de 1 cota só (sem comparison_table): hero é a única cota, sem seletor.
@@ -147,6 +150,7 @@ function buildCotas(artifacts: Artifact[]): {
 			isRecommended: isRec,
 			score: isRec ? rec.score : undefined,
 			scoreBreakdown: isRec ? rec.scoreBreakdown : undefined,
+			avgBidValue: isRec ? (g.avgBidValue ?? rec.avgBidValue) : g.avgBidValue,
 		};
 	});
 
