@@ -12,7 +12,7 @@ describe("FIX-204/205 — createTemplateSchema", () => {
 	const valid = {
 		metaName: "aja_confirmacao_v1",
 		category: "UTILITY",
-		body: "Olá {{1}}, sua contratação foi confirmada!",
+		body: "Olá {{1}}, sua reserva de cota foi confirmada!",
 	};
 
 	it("aceita o mínimo obrigatório (metaName, category, corpo) e default de language", () => {

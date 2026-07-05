@@ -85,11 +85,15 @@ describe("BeviSelfContractAdapter — descoberta real via Trilho B", () => {
 		expect(client.createProposal).not.toHaveBeenCalled();
 	});
 
-	it("cache por (segmento, valor): segunda busca igual não re-chama a Bevi", async () => {
+	// FIX-219 (Ata 2026-07-04): cada valor buscado agora dispara 2 simulações
+	// (sem embutido + com ~30%, eixo `offersForValue`) — cache por (segmento,
+	// valor) vira cache por (segmento, valor, embutido); 1 valor = 2 chamadas.
+	it("cache por (segmento, valor, embutido): segunda busca igual não re-chama a Bevi", async () => {
 		const adapter = makeAdapter(client);
 		await adapter.searchGroups({ category: "auto", creditMax: 50000 });
 		await adapter.searchGroups({ category: "auto", creditMax: 50000 });
-		expect(client.simulate).toHaveBeenCalledTimes(1);
+		// 1ª busca: 2 chamadas (sem + com embutido); 2ª busca idêntica: cache hit nas 2.
+		expect(client.simulate).toHaveBeenCalledTimes(2);
 		expect(client.createProposal).toHaveBeenCalledTimes(1);
 	});
 
@@ -97,7 +101,8 @@ describe("BeviSelfContractAdapter — descoberta real via Trilho B", () => {
 		const adapter = makeAdapter(client);
 		await adapter.searchGroups({ category: "auto", creditMax: 50000 });
 		await adapter.searchGroups({ category: "auto", creditMax: 80000 });
-		expect(client.simulate).toHaveBeenCalledTimes(2);
+		// 2 valores × 2 variantes (sem/com embutido) cada = 4 chamadas.
+		expect(client.simulate).toHaveBeenCalledTimes(4);
 		// proposta continua sendo UMA só
 		expect(client.createProposal).toHaveBeenCalledTimes(1);
 	});
@@ -154,6 +159,125 @@ describe("BeviSelfContractAdapter — descoberta real via Trilho B", () => {
 		expect(rates.length).toBeGreaterThan(0);
 		const itau = rates.find((r) => r.administradora === "ITAÚ");
 		expect(itau?.adminFeePercent).toBe(21);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// FIX-219 (Ata 2026-07-04, item 4) — busca Bevi com E sem lance embutido
+// ════════════════════════════════════════════════════════════════════════════
+// A Bevi exige informar um valor de embutido pra simular — tratamos como DUAS
+// queries (sem/com ~30%), unimos e deduplicamos por quotaId. A Bevi não informa
+// se a cota aceita embutido; por ora assume-se que todas podem (~30%, teto
+// histórico) — caso de borda (cota não permite) fica pra depois, sem travar.
+describe("BeviSelfContractAdapter — busca com/sem lance embutido (FIX-219)", () => {
+	function makeEmbeddedClient(
+		byEmbedded: Partial<Record<string, () => Promise<BeviOffer[]>>>,
+	): ClientMock {
+		return {
+			createProposal: vi.fn(async () => ({})),
+			setSegment: vi.fn(async () => undefined),
+			simulate: vi.fn(async ({ embeddedPercentage }: { embeddedPercentage?: "30" | "50" }) => {
+				const key = embeddedPercentage ?? "none";
+				const fn = byEmbedded[key];
+				return fn ? fn() : [];
+			}),
+			getMultiProposal: vi.fn(async () => []),
+			getSegments: vi.fn(async () => ["AUTOS", "IMOVEL"]),
+		};
+	}
+
+	it("searchGroups (sem sweep) consulta a Bevi 2x: uma SEM embutido, outra COM (~30%)", async () => {
+		const client = makeEmbeddedClient({
+			none: async () => [makeOffer("q-sem", "ITAÚ", 100000)],
+			"30": async () => [makeOffer("q-com", "BANCO DO BRASIL", 100000)],
+		});
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+
+		expect(client.simulate).toHaveBeenCalledTimes(2);
+		expect(client.simulate).toHaveBeenCalledWith(
+			expect.objectContaining({ simulationValue: 100000, embeddedPercentage: undefined }),
+		);
+		expect(client.simulate).toHaveBeenCalledWith(
+			expect.objectContaining({ simulationValue: 100000, embeddedPercentage: "30" }),
+		);
+		// união das duas variantes — o MÁXIMO de cartas (Ata)
+		expect(groups.map((g) => g.administradora)).toEqual(
+			expect.arrayContaining(["ITAÚ", "BANCO DO BRASIL"]),
+		);
+		expect(groups).toHaveLength(2);
+	});
+
+	it("dedup por quotaId: mesma oferta (mesmo quotaId) nas duas variantes sobrevive 1x", async () => {
+		const client = makeEmbeddedClient({
+			none: async () => [makeOffer("q-mesma", "ITAÚ", 100000)],
+			"30": async () => [makeOffer("q-mesma", "ITAÚ", 100000)],
+		});
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+
+		expect(client.simulate).toHaveBeenCalledTimes(2);
+		expect(groups).toHaveLength(1);
+	});
+
+	it("cache key inclui o embutido — buscas repetidas não colidem/sobrescrevem entre variantes", async () => {
+		const client = makeEmbeddedClient({
+			none: async () => [makeOffer("q-sem", "ITAÚ", 100000)],
+			"30": async () => [makeOffer("q-com", "BANCO DO BRASIL", 100000)],
+		});
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+		// 2ª busca idêntica: cache hit nas DUAS variantes, sem nova chamada nem colisão.
+		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+
+		expect(client.simulate).toHaveBeenCalledTimes(2);
+		expect(groups.map((g) => g.administradora)).toEqual(
+			expect.arrayContaining(["ITAÚ", "BANCO DO BRASIL"]),
+		);
+	});
+
+	it("SEM lanceEmbutido definido na qualificação (estado da 1ª busca, pós-FIX-215), a busca continua válida e varre as duas", async () => {
+		const client = makeEmbeddedClient({
+			none: async () => [makeOffer("q-sem", "ITAÚ", 100000)],
+			"30": async () => [makeOffer("q-com", "ÂNCORA", 100000)],
+		});
+		// prefs SEM embeddedPercentage explícito na sessão — mesmo assim a busca
+		// tenta a variante "30" (discovery-session.ts assume ~30% por ora).
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+		expect(groups.length).toBeGreaterThanOrEqual(1);
+		expect(groups.map((g) => g.administradora)).toContain("ITAÚ");
+	});
+
+	it("caso de borda: a variante COM embutido falha (cota não aceita) — degrada pro SEM, não trava a busca", async () => {
+		const client = makeEmbeddedClient({
+			none: async () => [makeOffer("q-sem", "ITAÚ", 100000)],
+		});
+		client.simulate = vi.fn(async ({ embeddedPercentage }: { embeddedPercentage?: "30" | "50" }) => {
+			if (embeddedPercentage === "30") throw new Error("cota nao aceita embutido");
+			return [makeOffer("q-sem", "ITAÚ", 100000)];
+		});
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+		expect(groups).toHaveLength(1);
+		expect(groups[0].administradora).toBe("ITAÚ");
+	});
+
+	it("falha na variante SEM embutido (baseline) propaga — é falha real de busca", async () => {
+		const client = makeEmbeddedClient({});
+		client.simulate = vi.fn(async () => {
+			throw new Error("Bevi indisponível");
+		});
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		await expect(
+			adapter.searchGroups({ category: "auto", creditMax: 100000 }),
+		).rejects.toThrow(/indispon/i);
 	});
 });
 
@@ -251,11 +375,13 @@ describe("BeviSelfContractAdapter — sweep multi-faixa (FIX-70)", () => {
 		expect(sim.creditValue).toBe(130000);
 	});
 
-	it("sem sweep mantém comportamento single-faixa (1 simulação)", async () => {
+	// FIX-219: sem `sweep` (faixa de valor), o valor-alvo ainda varre com/sem
+	// embutido (offersForValue) — 2 simulações pro mesmo valor, não 1.
+	it("sem sweep de valor mantém single-faixa, mas varre com/sem embutido (2 simulações)", async () => {
 		const client = makeBandClient();
 		const adapter = makeBandAdapter(client);
 		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
-		expect(client.simulate).toHaveBeenCalledTimes(1);
+		expect(client.simulate).toHaveBeenCalledTimes(2);
 		expect(groups).toHaveLength(1);
 		expect(groups[0].administradora).toBe("ITAÚ");
 	});

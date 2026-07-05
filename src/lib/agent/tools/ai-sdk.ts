@@ -49,6 +49,9 @@ export const groupCardSchema = z.object({
 	termMonths: z.number().int().describe("Prazo em meses"),
 	availableSlots: z.number().int().describe("Vagas disponiveis"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
+	// FIX-223: lance medio (R$) — copie LITERAL de search_groups/recommend_groups
+	// quando presente; omita o campo se a fonte nao trouxer (NUNCA invente).
+	avgBidValue: z.number().optional().describe("Lance medio do grupo em reais, quando a fonte traz"),
 });
 
 export const comparisonTableSchema = z.object({
@@ -483,7 +486,8 @@ async function executeRecommendGroups(
 export const consorcioTools = {
 	search_groups: tool({
 		description:
-			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar.",
+			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar. " +
+			"A busca ja cobre automaticamente os cenarios com e sem lance embutido (FIX-219) — nao precisa perguntar sobre lance antes de buscar.",
 		inputSchema: searchGroupsInput,
 		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,
 	}),
@@ -666,7 +670,7 @@ export const consorcioTools = {
 
 	present_decision_prompt: tool({
 		description:
-			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (contratar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
+			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (reservar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
 		inputSchema: z.object({
 			administradora: z
 				.string()
@@ -680,7 +684,7 @@ export const consorcioTools = {
 
 	present_contract_form: tool({
 		description:
-			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
+			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero reservar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra confirmar sua reserva, só preciso de uns dados rápidos'.",
 		inputSchema: z.object({
 			administradora: z
 				.string()

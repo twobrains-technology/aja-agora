@@ -612,7 +612,7 @@ export async function POST(req: NextRequest) {
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
-									"Calma, a gente tá quase lá! Antes de fechar qualquer coisa eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
+									"Calma, a gente tá quase lá! Antes de confirmar sua reserva eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
 								);
 								await pipeGatePrompt({
 									conversationId,
@@ -758,10 +758,10 @@ export async function POST(req: NextRequest) {
 								conversationId,
 								meta.currentPersona ?? null,
 								hasFrente && hasVerso
-									? "Recebi seus documentos ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									? "Recebi seus documentos ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
 									: hasFrente
-										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua proposta já está registrada e eu te acompanho."
-										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua proposta já está registrada e eu te acompanho.",
+										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho."
+										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho.",
 							);
 							return;
 						}
@@ -780,7 +780,7 @@ export async function POST(req: NextRequest) {
 									mimeType: action.mimeType,
 								});
 								delta = ok
-									? "Recebi seu documento ✅. É isso — sua ficha está completa! Agora é com a administradora; te aviso de cada passo."
+									? "Recebi seu documento ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
 									: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
 							} catch {
 								delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
@@ -794,7 +794,7 @@ export async function POST(req: NextRequest) {
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
-								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua proposta já está registrada! 🎉",
+								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua reserva de cota já está confirmada! 🎉",
 							);
 							return;
 						}
@@ -1093,7 +1093,28 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							// FIX-215 (Ata 2026-07-04): lance agora é PÓS-reveal — a busca JÁ
+							// ocorreu (pré-requisito pra este gate existir, qualify-state.ts).
+							// Despacha o próximo passo REAL (simulator-offer/decision), nunca
+							// re-dispara a busca.
+							const afterLanceEmbutido = await reloadMeta(conversationId);
+							const nextAfterLanceEmbutido = nextGate(afterLanceEmbutido, {
+								hasContactName: Boolean(contactName),
+							});
+							if (nextAfterLanceEmbutido === "search") {
+								await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							} else {
+								// Idempotência (FIX-215): despachando o simulator-offer por AQUI (não via
+								// index.ts), marca o dispatch — senão, se o usuário responder por TEXTO,
+								// nextGate recomputaria simulator-offer com a flag false → card sairia 2×.
+								if (nextAfterLanceEmbutido === "simulator-offer") {
+									await persistMeta(conversationId, {
+										...afterLanceEmbutido,
+										simulatorOfferDispatched: true,
+									});
+								}
+								await pipeGatePrompt({ conversationId, gate: nextAfterLanceEmbutido, writer });
+							}
 							return;
 						}
 					});

@@ -2185,18 +2185,20 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo)", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo; FIX-215: sem lance antes da busca)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
 		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
-		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
-		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		// saiu. FIX-215 (Ata 2026-07-04): o lance também saiu do meio — a ordem
+		// agora é experience → (consent → identidade) → valor → busca (lance é
+		// pós-reveal, ver seção "Lance e lance embutido").
+		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,300}busca/i;
 		const proibeValorAntes =
 			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
 			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → lance) E " +
-				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo NÃO entra mais na ordem.",
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → busca) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo fora; FIX-215: lance fora do meio.",
 		).toBe(true);
 	});
 
@@ -2886,11 +2888,12 @@ describe("FEAT-CONTRACT-FLOW — passo 5 'contratar agora' dispara present_contr
 		expect(text).not.toMatch(/preencha o formul[áa]rio|digite seu cpf no campo/i);
 	});
 
-	it("regra do prompt: 'contratar agora' acoplado a present_contract_form (<400 chars)", () => {
-		const re = /contratar agora[\s\S]{0,400}present_contract_form/i;
+	it("regra do prompt: 'reservar agora' acoplado a present_contract_form (<400 chars)", () => {
+		// FIX-216 (Ata 2026-07-04): terminologia "reservar" substitui "contratar".
+		const re = /reservar agora[\s\S]{0,400}present_contract_form/i;
 		expect(
 			re.test(SPECIALIST_BASE_PROMPT),
-			"'contratar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
+			"'reservar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
 		).toBe(true);
 	});
 });
@@ -4355,6 +4358,10 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
+			// FIX-215 (Ata 2026-07-04): a conversa de lance só entra em jogo
+			// PÓS-reveal — sem isso o funil pularia direto pra "search".
+			searchDispatched: true,
+			revealCompleted: true,
 			qualifyAnswers: {
 				creditMax: 20_000,
 				monthlyBudget: 500,
@@ -4637,10 +4644,13 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
-			// FIX-53: `identify` precede `credit`. Com a identidade já coletada, o
-			// funil chega ao gate educativo de lance embutido — que é o foco deste
-			// teste (plano parcial, falta só decidir o lance embutido).
+			// FIX-53: `identify` precede `credit`. FIX-215 (Ata 2026-07-04): a
+			// conversa de lance só entra em jogo PÓS-reveal — com a identidade e o
+			// reveal já feitos, o funil chega ao gate educativo de lance embutido,
+			// que é o foco deste teste (plano parcial, falta só decidir o lance embutido).
 			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -5170,7 +5180,7 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		expect(names).toContain("present_recommendation_card");
 	});
 
-	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel com a recomendada destacada", () => {
+	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel neutro (FIX-220 — sem destaque)", () => {
 		const d = buildSearchSummaryDirective({
 			category: "auto",
 			meta: {
@@ -5186,7 +5196,10 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		});
 		expect(d).toMatch(/present_comparison_table/);
 		expect(d).toMatch(/TODOS os grupos/);
-		expect(d).toMatch(/highlightBestIndex=0/);
+		// FIX-220 (Ata 2026-07-04): a 1ª lista é NEUTRA — não instrui mais a
+		// destacar a recomendada (highlightBestIndex saiu da diretiva).
+		expect(d).not.toMatch(/highlightBestIndex\s*=\s*0/);
+		expect(d.toLowerCase()).toMatch(/mesmo peso|sem destacar nenhuma|neutr/);
 		// Garante que a proibicao antiga ("comparacao sob demanda") saiu.
 		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
 	});
@@ -5289,8 +5302,10 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 		});
 		expect(r.requiredLancePct).toBe(49);
 		expect(r.ownCashValue).toBe(0); // embutido real cobre — sem "R$ 115 mil do bolso"
-		// C4: parcela honesta — embutido nao derruba a parcela (nada de R$ 2.556)
-		expect(r.paymentAfterContemplation).toBeCloseTo(9_828.92, 2);
+		// FIX-221 (Ata 2026-07-04, AMORTIZA): o lance TOTAL (embutido) agora abate o
+		// saldo pos-contemplacao — a parcela CAI pra ~R$ 5.238 (jornada-canonica D9),
+		// nao mais fixa em R$ 9.828,92. PENDENTE-Bernardo validar o numero exato.
+		expect(r.paymentAfterContemplation).toBeCloseTo(5_238.5, 0);
 	});
 
 	it("wiring estrutural: runner captura simulate_quota e coage simulation_result + dial com perfil", async () => {
@@ -5834,10 +5849,13 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
 	});
 
-	it("clamp server-side: 5M de auto persiste o teto da categoria (500k — FIX-54)", async () => {
+	// FIX-218 (Ata 2026-07-04): o guardrail FIX-33/FIX-54 abaixo foi REVOGADO —
+	// "não há integração com grupos nesse ponto, então qualquer valor é
+	// válido". O valor de 5M sobrevive intacto; ver qualify-config.test.ts.
+	it("clamp server-side REVOGADO: 5M de auto NÃO é mais capado ao teto da categoria (FIX-218)", async () => {
 		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
-		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(500_000);
-		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(5_000_000);
+		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(false);
 	});
 
 	it("directive de busca confronta a faixa quando o credito foi clampado (creditClampedFrom)", () => {
@@ -6944,9 +6962,10 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 		// — não persiste dado fabricado no perfil.
 		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
 		// FIX-103: nextGate NUNCA emite "timeframe" (gate removido da
-		// qualificação) — o funil segue pro próximo gate real (lance).
+		// qualificação) — o funil segue pro próximo gate real (busca/reveal
+		// direto; FIX-215 tirou o lance do meio também).
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
 	it("controle: mesmo cassette com menção temporal explícita ('em 2 anos') preserva prazoMeses e NÃO reabre o gate", async () => {
@@ -8581,10 +8600,15 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 
 		// (a) captura: o número nu no contexto credit virou 200 mil (clampado na faixa auto).
 		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
-		// O funil avança: com o valor salvo, o próximo gate é lance (não re-pergunta credit).
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// O funil avança: com o valor salvo, o próximo gate é search (FIX-215:
+		// lance saiu do meio — busca direto após o valor, não re-pergunta credit).
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 		// (b) e o gate seguinte dispara mesmo em neutral — turno não fecha mudo.
-		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+		// FIX-215: search herdou a tolerância a `neutral` que antes vivia em
+		// `lance` (COLLECTION_GATE) — mesma classe de bug do FIX-208.
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
 	});
 
 	it("cassette: '200 mil reais' com analyzer neutral → capturado; avança pra lance", async () => {
@@ -8608,10 +8632,13 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 		await analyzeAndMerge("200 mil reais", "helena-auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
-		// O elo que travava mesmo com o valor JÁ capturado: o gate seguinte (lance)
+		// FIX-215: lance saiu do meio — busca direto após o valor.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		// O elo que travava mesmo com o valor JÁ capturado: o gate seguinte (search)
 		// era suprimido em `neutral` → turno mudo. Com o fix (b), dispara.
-		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
 	});
 
 	it("guard rede-final: turno-mudo no gate credit re-emite a pergunta do valor, NÃO o fallback", () => {

@@ -29,10 +29,13 @@ describe("FIX-54 — teto de carro elevado em CREDIT_BOUNDS", () => {
 		expect(r.clamped).toBe(false);
 	});
 
-	it("acima do novo teto ainda clampa (guardrail server-side preservado)", () => {
+	// FIX-218 (Ata 2026-07-04): guardrail REVOGADO — o valor digitado/dito é
+	// aceito acima do teto sem capar (a busca traz a ordem de grandeza mais
+	// próxima). Ver value-picker.fix-218.test.tsx e parse-asset-value.test.ts.
+	it("acima do novo teto NÃO clampa mais (guardrail revogado pela Ata 2026-07-04)", () => {
 		const r = clampCreditToCategory(NOVO_TETO_AUTO + 50_000, "auto");
-		expect(r.value).toBe(CREDIT_BOUNDS.auto.max);
-		expect(r.clamped).toBe(true);
+		expect(r.value).toBe(NOVO_TETO_AUTO + 50_000);
+		expect(r.clamped).toBe(false);
 	});
 
 	it("min/default de auto permanecem coerentes (não regrediram)", () => {
@@ -71,5 +74,32 @@ describe("FIX-55 — números quebrados (step fino + clamp sem re-quantizar)", (
 		expect(clampCreditToCategory(137_300, "auto").value).toBe(137_300);
 		expect(clampCreditToCategory(423_750, "imovel").value).toBe(423_750);
 		expect(clampCreditToCategory(27_250, "moto").value).toBe(27_250);
+	});
+});
+
+// FIX-218 (Ata de alinhamento com o cliente, 2026-07-04, item 3): "Permitir
+// valor livre/digitável (ex.: 122 mil, 1.012.000) — sem depender do slider.
+// Não há integração com grupos nesse ponto, então qualquer valor é válido."
+// `clampCreditToCategory` deixa de FORÇAR o valor pra dentro da faixa — o
+// slider (CREDIT_BOUNDS) segue existindo só como dica visual/derivação de
+// creditMin; a busca (FIX-219) traz os grupos pela ordem de grandeza mais
+// próxima em vez do valor exato.
+describe("FIX-218 — clampCreditToCategory não capa mais o valor explícito", () => {
+	it("valor MUITO acima do teto (imóvel: 10 milhões) passa intacto", () => {
+		const r = clampCreditToCategory(10_000_000, "imovel");
+		expect(r.value).toBe(10_000_000);
+		expect(r.clamped).toBe(false);
+	});
+
+	it("valor MUITO abaixo do piso (auto: R$ 500) passa intacto — nem o piso é imposto", () => {
+		const r = clampCreditToCategory(500, "auto");
+		expect(r.value).toBe(500);
+		expect(r.clamped).toBe(false);
+	});
+
+	it("min/max da categoria continuam disponíveis no retorno (dica visual do slider)", () => {
+		const r = clampCreditToCategory(10_000_000, "imovel");
+		expect(r.min).toBe(CREDIT_BOUNDS.imovel.min);
+		expect(r.max).toBe(CREDIT_BOUNDS.imovel.max);
 	});
 });

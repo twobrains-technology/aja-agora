@@ -24,6 +24,12 @@ export interface GroupCardPayload {
 	 * `creditValue` (faixa re-simulada exibida). Alimenta o aviso de ajuste de
 	 * faixa. Ausente → aviso não aparece (degradação graciosa). */
 	rawCreditValue?: number;
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 export interface ComparisonTablePayload {
@@ -105,6 +111,19 @@ export interface RecommendationCardPayload {
 	/** FIX-197: valorCarta BRUTO (denominação, ex. 300k) vs a faixa exibida
 	 * (`creditValue`). Alimenta o aviso de ajuste de faixa. */
 	rawCreditValue?: number;
+	/** FIX-220 (Ata 2026-07-04): a 1ª lista de reveal é NEUTRA — sem "grupo
+	 * preferencial" (ainda não há dado de lance pra recomendar nada). Server-side
+	 * SEMPRE coage "neutral" hoje (ver recommendation-payload.ts); "personalized"
+	 * é o gancho pro estágio 2 (ONDA 2 — recomendação personalizada com dado de
+	 * lance/recurso próprio, jornada-canonica.md item 6), ainda não implementado.
+	 * Ausente == "neutral" (default seguro). */
+	recommendationStage?: "neutral" | "personalized";
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----
@@ -225,7 +244,7 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 	label: string;
 	waTitle: string;
 }> = [
-	{ intent: "contratar", label: "Sim, quero contratar agora", waTitle: "Contratar agora" },
+	{ intent: "contratar", label: "Sim, quero reservar agora", waTitle: "Reservar agora" },
 	{ intent: "outras", label: "Quero ver outras opções", waTitle: "Ver outras opções" },
 	{
 		intent: "especialista",

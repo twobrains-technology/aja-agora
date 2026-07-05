@@ -124,6 +124,9 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 	const reveal = useRevealSelection();
 	if (reveal.cotas.length === 0) return null;
+	// FIX-220: "Top" só quando o estágio 2 (ONDA 2) sinalizar personalização — a
+	// 1ª lista (neutra, mesmo peso) não elege nenhuma cota como melhor no seletor.
+	const showTop = reveal.recommendationStage === "personalized";
 
 	return (
 		<div className="flex w-full flex-col gap-1.5">
@@ -145,6 +148,7 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 						key={cota.groupId}
 						cota={cota}
 						selected={cota.groupId === reveal.selectedGroupId}
+						showTop={showTop}
 						onSelect={() => reveal.select(cota.groupId)}
 					/>
 				))}
@@ -156,10 +160,12 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 function QuotaChip({
 	cota,
 	selected,
+	showTop,
 	onSelect,
 }: {
 	cota: RevealCota;
 	selected: boolean;
+	showTop: boolean;
 	onSelect: () => void;
 }) {
 	return (
@@ -188,7 +194,7 @@ function QuotaChip({
 						<Check className="size-[11px]" />
 						Selecionada
 					</span>
-				) : cota.isRecommended ? (
+				) : cota.isRecommended && showTop ? (
 					<span
 						className="inline-flex items-center gap-[3px] shrink-0 h-5 px-[7px] rounded-full text-[10px] font-semibold"
 						style={{ background: "var(--surface-ink)", color: "#fff" }}

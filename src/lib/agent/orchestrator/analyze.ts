@@ -124,16 +124,18 @@ export async function analyzeAndMerge(
 			: null;
 	const sourceCreditMax = analysis.creditMax ?? parsedCreditMax;
 	if (sourceCreditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
-		// FIX-33: o valor de texto livre não passa pelos sliders — clampa na faixa
-		// da categoria (quando conhecida) antes de gravar. Sem categoria ainda
-		// (concierge), grava o valor cru — não há faixa de referência.
+		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
+		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só
+		// normaliza (nunca ajusta `value`). Sem categoria ainda (concierge), grava
+		// o valor cru — não há faixa de referência.
 		const clamp = meta.currentCategory
 			? clampCreditToCategory(sourceCreditMax, meta.currentCategory)
 			: null;
 		const creditMax = clamp ? clamp.value : sourceCreditMax;
 		const rawMin = analysis.creditMin ?? Math.round(creditMax * 0.9);
-		// creditMin derivado herda o clamp — nunca acima do teto da faixa.
-		q.creditMin = clamp ? Math.min(Math.max(rawMin, clamp.min), clamp.max) : rawMin;
+		// creditMin derivado nunca fica abaixo do piso da faixa nem acima do
+		// creditMax real (que já não é mais capado ao teto da categoria).
+		q.creditMin = clamp ? Math.min(Math.max(rawMin, clamp.min), creditMax) : rawMin;
 		q.creditMax = creditMax;
 		if (clamp?.clamped) {
 			// Preserva o valor original pedido pro agente confrontar a faixa.

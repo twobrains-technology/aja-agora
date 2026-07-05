@@ -38,3 +38,37 @@ describe("BUG-LANCE-EMBUTIDO-PULADO — gate lance roteia TODOS por lance-embuti
 		expect(lanceHandler).not.toContain("await pipeSearchSummaryTurn(");
 	});
 });
+
+// FIX-215 (Ata 2026-07-04) — a conversa de lance inteira (incluindo este 2º
+// passo, o opt-in de lance embutido) só acontece PÓS-reveal agora: quando o
+// gate lance-embutido resolve, a busca JÁ ocorreu (é pré-requisito pra este
+// gate existir, qualify-state.ts). O handler NÃO pode mais chamar
+// pipeSearchSummaryTurn incondicionalmente (re-buscaria à toa) — tem que
+// despachar o PRÓXIMO passo real (simulator-offer/decision) via nextGate.
+describe("FIX-215 — handler do gate lance-embutido despacha o PRÓXIMO gate, nunca re-busca incondicional", () => {
+	const src = readFileSync(join(process.cwd(), "src/app/api/chat/route.ts"), "utf8");
+	const start = src.indexOf('if (action.gate === "lance-embutido") {');
+	// Marca o fim da chain de handlers do gate (não da chamada de objeto mais
+	// próxima — o handler tem objetos literais no meio, ex.: persistMeta({...})).
+	const end = src.indexOf('trace.setFinish("ok")', start);
+	const lanceEmbutidoHandler = src.slice(start, end);
+
+	it("o handler do gate lance-embutido existe e está isolado", () => {
+		expect(start).toBeGreaterThan(-1);
+		expect(end).toBeGreaterThan(start);
+	});
+
+	it("consulta nextGate (não chama pipeSearchSummaryTurn de forma incondicional)", () => {
+		expect(lanceEmbutidoHandler).toContain("nextGate(");
+		expect(lanceEmbutidoHandler).toContain("pipeGatePrompt(");
+	});
+
+	it("só chama pipeSearchSummaryTurn dentro do ramo condicional (nextGate === \"search\")", () => {
+		const searchCallIdx = lanceEmbutidoHandler.indexOf("await pipeSearchSummaryTurn(");
+		const conditionIdx = lanceEmbutidoHandler.indexOf('=== "search"');
+		expect(searchCallIdx).toBeGreaterThan(-1);
+		expect(conditionIdx).toBeGreaterThan(-1);
+		// A condição precisa vir ANTES da chamada — prova que ela está guardada.
+		expect(conditionIdx).toBeLessThan(searchCallIdx);
+	});
+});

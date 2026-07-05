@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeContemplationDial, contemplationDialMarks } from "./contemplation-dial";
+import {
+	computeContemplationDial,
+	contemplationDialMarks,
+	paymentAfterLabel,
+} from "./contemplation-dial";
 
 const base = {
 	creditValue: 100_000,
@@ -32,16 +36,18 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.receivedCredit).toBeLessThanOrEqual(100_000);
 	});
 
-	it("lance em DINHEIRO abate o saldo → parcela pós-contemplação menor que a base (FIX-C4)", () => {
+	it("lance (dinheiro + embutido) abate o saldo → parcela pós-contemplação menor que a base (FIX-221 AMORTIZA)", () => {
 		// Modelo antigo (parcela × (1 − lance%)) era fantasia: contava o EMBUTIDO
 		// como abatimento e aplicava o desconto desde o mês 1. Auditoria 2026-06-11.
+		// FIX-221 (Ata 2026-07-04): o modelo agora É que o lance TOTAL (embutido +
+		// dinheiro) amortiza o saldo pós-contemplação — inverte C4/D18 antigos.
 		const r = computeContemplationDial({ ...base, targetMonth: 6 });
 		// targetMonth 6 num grupo de 80 meses exige lance > teto de embutido →
 		// tem parte em dinheiro, que abate o saldo restante.
 		expect(r.ownCashValue).toBeGreaterThan(0);
 		expect(r.paymentAfterContemplation).toBeLessThan(1500);
-		// e a diluição é exatamente o bolso espalhado nos meses restantes
-		const expected = (1500 * (80 - 6) - r.ownCashValue) / (80 - 6);
+		// e a diluição é o lance TOTAL (embutido + bolso) espalhado nos meses restantes
+		const expected = (1500 * (80 - 6) - r.ownCashValue - r.embeddedBidValue) / (80 - 6);
 		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
 	});
 
@@ -113,5 +119,23 @@ describe("computeContemplationDial — blindagem contra NaN (input fora de contr
 		for (const [k, v] of Object.entries(r)) {
 			if (typeof v === "number") expect(Number.isNaN(v), `campo ${k}`).toBe(false);
 		}
+	});
+});
+
+// FIX-221 (Ata 2026-07-04, inbox 2026-07-02-dial-parcela-apos-lance-identica):
+// bug real — com lance 100% embutido, a parcela "depois" saía IDÊNTICA à de
+// antes mas rotulada "menor, depois do lance" (contradição visível). O rótulo
+// NUNCA pode mentir — só diz "menor" quando o número de fato caiu.
+describe("paymentAfterLabel — rótulo nunca mente (FIX-221)", () => {
+	it("parcela depois MENOR → 'menor, depois do lance'", () => {
+		expect(paymentAfterLabel(800, 6_800)).toBe("menor, depois do lance");
+	});
+
+	it("parcela depois IGUAL (sem lance a abater) → rótulo neutro, NUNCA 'menor'", () => {
+		expect(paymentAfterLabel(6_800, 6_800)).not.toMatch(/menor/i);
+	});
+
+	it("sem estimativa (undefined, ex.: contemplação no último mês) → rótulo neutro", () => {
+		expect(paymentAfterLabel(undefined, 6_800)).not.toMatch(/menor/i);
 	});
 });

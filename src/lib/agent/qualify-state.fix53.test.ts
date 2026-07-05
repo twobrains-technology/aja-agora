@@ -37,13 +37,13 @@ describe("FIX-53 — gate identify ANTES do valor (credit/present_value_picker)"
 		expect(nextGate({ ...base, identityCollected: true }, { hasContactName: true })).toBe("credit");
 	});
 
-	it("valor já coletado NÃO re-dispara credit (segue lance) — anti-repetição (FIX-103: prazo fora)", () => {
+	it("valor já coletado NÃO re-dispara credit (segue search) — anti-repetição (FIX-103/FIX-215)", () => {
 		expect(
 			nextGate(
 				{ ...base, identityCollected: true, qualifyAnswers: { creditMax: 80_000 } },
 				{ hasContactName: true },
 			),
-		).toBe("lance");
+		).toBe("search");
 	});
 
 	it("antes do consent o funil ainda não chega no identify (consent primeiro)", () => {

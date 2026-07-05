@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { parseValorDoBem } from "@/lib/agent/qualify-config";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
 
@@ -32,56 +33,6 @@ function pickAssetField(fields: ValuePickerField[]): ValuePickerField {
 	return fields.find((field) => field.format === "currency") ?? fields[0];
 }
 
-// FIX-55: input numérico livre pra campos `currency` — o usuário digita o valor
-// exato (R$ 347.500) e ele propaga sem snap ao step do slider. Estado de texto
-// próprio (digitação livre), commit (parse + clamp à faixa) no blur/Enter.
-function CurrencyInput({
-	field,
-	value,
-	disabled,
-	onCommit,
-}: {
-	field: ValuePickerField;
-	value: number;
-	disabled: boolean;
-	onCommit: (v: number) => void;
-}) {
-	const [text, setText] = useState(() => value.toLocaleString("pt-BR"));
-	useEffect(() => {
-		setText(value.toLocaleString("pt-BR"));
-	}, [value]);
-
-	const commit = () => {
-		const digits = text.replace(/\D/g, "");
-		const parsed = digits ? Number.parseInt(digits, 10) : field.min;
-		const clamped = Math.min(field.max, Math.max(field.min, parsed));
-		onCommit(clamped);
-		setText(clamped.toLocaleString("pt-BR"));
-	};
-
-	return (
-		<span className="flex shrink-0 items-center gap-1 text-primary">
-			<span className="text-xs font-medium">R$</span>
-			<Input
-				value={text}
-				inputMode="numeric"
-				disabled={disabled}
-				onChange={(e) => setText(e.target.value)}
-				onBlur={commit}
-				onKeyDown={(e) => {
-					if (e.key === "Enter") {
-						e.preventDefault();
-						commit();
-					}
-				}}
-				data-testid={`value-input-${field.id}`}
-				aria-label={field.label}
-				className="h-7 w-28 px-2 text-right text-sm font-bold text-primary tabular-nums"
-			/>
-		</span>
-	);
-}
-
 export function ValuePicker({
 	payload,
 	onSubmit,
@@ -98,20 +49,23 @@ export function ValuePicker({
 	const [value, setValue] = useState(field.default);
 	const [submitted, setSubmitted] = useState(false);
 
-	const clamp = (v: number) => Math.min(field.max, Math.max(field.min, v));
+	// FIX-107/FIX-115: o slider (arraste) segue limitado à faixa da categoria —
+	// é o range real de grupos que o produto costuma oferecer.
+	const clampToSlider = (v: number) => Math.min(field.max, Math.max(field.min, v));
 
 	// FIX-55: input numérico livre ao lado da agulha — o usuário digita o valor
-	// exato (R$ 347.500) sem snap ao step de R$ 1.000. Estado de texto próprio
-	// (digitação livre), commit (parse + clamp à faixa) no blur/Enter.
+	// exato (R$ 347.500), sem snap ao step de R$ 1.000. FIX-218 (Ata 2026-07-04):
+	// o valor digitado NÃO é mais capado à faixa do slider — a faixa é só dica
+	// visual; a busca (FIX-219) traz a ordem de grandeza mais próxima. Estado de
+	// texto próprio (digitação livre), commit (parse via parseValorDoBem) no
+	// blur/Enter.
 	const [text, setText] = useState(() => field.default.toLocaleString("pt-BR"));
 	useEffect(() => {
 		setText(value.toLocaleString("pt-BR"));
 	}, [value]);
 
 	const commitText = () => {
-		const digits = text.replace(/\D/g, "");
-		const parsed = digits ? Number.parseInt(digits, 10) : field.min;
-		setValue(clamp(parsed));
+		setValue(parseValorDoBem(text) ?? field.min);
 	};
 
 	const handleSubmit = () => {
@@ -164,7 +118,7 @@ export function ValuePicker({
 							max={field.max}
 							step={VALUE_STEP}
 							onValueChange={(val) => {
-								if (!submitted) setValue(clamp(Array.isArray(val) ? val[0] : val));
+								if (!submitted) setValue(clampToSlider(Array.isArray(val) ? val[0] : val));
 							}}
 							disabled={submitted}
 						/>

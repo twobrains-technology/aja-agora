@@ -9,7 +9,8 @@ import { type Gate, nextGate } from "./qualify-state";
 // desejado de contemplação) SAI da qualificação. O campo `prazoMeses` e o tipo
 // `Gate` (com "timeframe") seguem existindo por compat com consumidores fora do
 // escopo deste bloco (web/whatsapp/orchestrator), mas `nextGate` NUNCA mais
-// emite o gate — o funil pula direto de `credit` (valor) pra `lance`.
+// emite o gate — o funil pula direto de `credit` (valor) pra `search`
+// (FIX-215, Ata 2026-07-04: lance também saiu da entrada e virou pós-reveal).
 // ============================================================================
 
 /** Percorre o funil do zero até o terminal, respondendo cada gate como o
@@ -74,9 +75,9 @@ describe("FIX-103 — gate de prazo (timeframe) fora da qualificação", () => {
 			"consent",
 			"identify",
 			"credit",
+			"search",
 			"lance",
 			"lance-embutido",
-			"search",
 			"simulator-offer",
 			"decision",
 		]);
@@ -91,16 +92,16 @@ describe("FIX-103 — gate de prazo (timeframe) fora da qualificação", () => {
 			"consent",
 			"identify",
 			"credit",
+			"search",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"search",
 			"simulator-offer",
 			"decision",
 		]);
 	});
 
-	it("valor coletado segue DIRETO pra lance (não re-pede prazo)", () => {
+	it("valor coletado segue DIRETO pra search (não re-pede prazo nem lance; FIX-215)", () => {
 		const meta: ConversationMetadata = {
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -108,8 +109,9 @@ describe("FIX-103 — gate de prazo (timeframe) fora da qualificação", () => {
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 80_000 },
 		};
-		// Antes do FIX-103 isto retornava "timeframe"; agora pula direto pro lance.
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// Antes do FIX-103 isto retornava "timeframe"; o FIX-215 tirou o lance do
+		// meio também — agora pula direto pra busca/reveal.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
 	it("nextGate NUNCA retorna timeframe mesmo com prazoMeses ausente em qualquer combinação de qualifyAnswers", () => {

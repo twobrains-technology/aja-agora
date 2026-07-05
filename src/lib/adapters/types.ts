@@ -23,6 +23,14 @@ export interface GroupSummary {
 	grupo?: string;
 	// FIX-191 (CONTRATO bloco-b): UUID de sessão da oferta (quando a fonte o traz).
 	ofertaId?: string;
+	// FIX-219: marcador INTERNO (sintético, não vem da Bevi) — de qual variante
+	// da busca com/sem lance embutido esta oferta veio. NUNCA vai pra UI
+	// (stripado no toModelGroupSummary); existe só pra o dedup de
+	// recommendation.ts não colapsar as duas modalidades do mesmo grupo.
+	embeddedVariant?: "sem" | "com";
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$) — só quando a fonte
+	 * traz o dado real (D11: nunca fabricar). Alimenta "lance médio" no card. */
+	avgBidValue?: number;
 }
 
 export interface QuotaSimulation {
@@ -106,6 +114,12 @@ export interface SearchGroupsParams {
 	 * comparação. Default/omitido = busca rápida de 1 faixa. Adapters que não
 	 * suportam sweep (ex.: fechamento Trilho A) ignoram o campo. */
 	sweep?: boolean;
+	// FIX-219 (Ata 2026-07-04): não é um campo — comportamento sempre-ligado do
+	// BeviSelfContractAdapter. Toda busca por valor (com ou sem `sweep`) roda a
+	// Bevi 2x pro valor-alvo (sem embutido + ~30% embutido) e une por quotaId —
+	// a Bevi não informa se a cota aceita, e a conversa de lance é pós-reveal
+	// (FIX-215), então não há como perguntar antes. Sem opt-out: não há cenário
+	// hoje em que a descoberta deva ignorar o eixo embutido.
 }
 
 export interface SimulateQuotaParams {

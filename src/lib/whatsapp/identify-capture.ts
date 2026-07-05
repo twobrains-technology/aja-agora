@@ -99,10 +99,20 @@ function looksLikeCpfAttempt(text: string): boolean {
 
 export type IdentifyCaptureResult =
 	| { handled: false }
-	| { handled: true; outcome: "captured" | "invalid" };
+	| { handled: true; outcome: "captured" | "invalid" | "ask-cpf" };
 
 /** Captura textual do CPF quando o funil está no gate identify.
- * Retorna handled=false pra deixar o turno seguir pro agente. */
+ * Retorna handled=false só quando o gate identify NÃO está ativo (conversa
+ * inexistente, identidade já coletada, ou nextGate ainda não chegou aqui) —
+ * nesse caso o turno segue pro agente normalmente.
+ *
+ * FIX-217 (Ata 2026-07-04, item 9): enquanto o gate identify ESTÁ ativo, o
+ * texto do usuário é SEMPRE interceptado — CPF válido (captured), CPF-like
+ * inválido (invalid) ou qualquer outra coisa (ask-cpf, reemite o pedido). Antes,
+ * texto sem cara de CPF (pergunta, tentativa de pular) caía em handled:false e
+ * seguia pro pipeline geral do agente, que podia narrar avanço/busca sem o CPF
+ * coletado — o gate virava sugestão, não trava (Lei 4: invariante crítico vira
+ * código, não regra-no-prompt). Espelha o padrão exaustivo de contract-capture. */
 export async function captureIdentifyText(
 	from: string,
 	text: string,
@@ -128,5 +138,5 @@ export async function captureIdentifyText(
 	if (looksLikeCpfAttempt(text)) {
 		return { handled: true, outcome: "invalid" };
 	}
-	return { handled: false };
+	return { handled: true, outcome: "ask-cpf" };
 }

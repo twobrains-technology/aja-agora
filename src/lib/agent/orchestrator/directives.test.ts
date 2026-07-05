@@ -101,6 +101,16 @@ describe("buildAdvanceToContractDirective — reafirmou interesse pós-decisão 
 		expect(d).not.toContain("present_lead_form");
 		expect(d.toLowerCase()).not.toContain("consultor");
 	});
+
+	// FIX-216 (Ata 2026-07-04, item 5): terminologia "reserva de cota" — nunca
+	// "contratar/fechar" — e a frase de booking ANTES de coletar os dados.
+	it("usa terminologia de reserva (nunca contratar/fechar) e emite a frase de booking", () => {
+		const d = buildAdvanceToContractDirective({ administradora: "Itaú" });
+		expect(d.toLowerCase()).not.toMatch(/contrat|fechar/);
+		expect(d.toLowerCase()).toMatch(/reserva/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
+		expect(d.toLowerCase()).toMatch(/boleto/);
+	});
 });
 
 // FIX-194 (qa-dono-produto carro web, defeito E): o agente perguntava "Quanto

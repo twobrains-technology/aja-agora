@@ -31,19 +31,24 @@ const NEUTRAL: TurnAnalysis = {
 	userIntent: "neutral",
 };
 
-describe("FIX-33 — clampCreditToCategory (função pura)", () => {
-	it("acima do teto clampa no teto (auto: 500k — FIX-54)", () => {
+// FIX-218 (Ata de alinhamento com o cliente, 2026-07-04): o guardrail FIX-33/
+// FIX-54 abaixo foi REVOGADO — "não há integração com grupos nesse ponto,
+// então qualquer valor é válido" (a busca, FIX-219, traz a ordem de grandeza
+// mais próxima em vez do valor exato). `clampCreditToCategory` deixa de forçar
+// o valor pra dentro de CREDIT_BOUNDS; os testes abaixo confirmam o passthrough.
+describe("FIX-33/FIX-218 — clampCreditToCategory (função pura, clamp revogado)", () => {
+	it("acima do teto NÃO clampa mais (auto: 500k é só a faixa do slider)", () => {
 		const r = clampCreditToCategory(5_000_000, "auto");
-		expect(r.value).toBe(500_000);
-		expect(r.clamped).toBe(true);
+		expect(r.value).toBe(5_000_000);
+		expect(r.clamped).toBe(false);
 		expect(r.max).toBe(500_000);
 		expect(r.min).toBe(20_000);
 	});
 
-	it("abaixo do piso clampa no piso (auto: 20k)", () => {
+	it("abaixo do piso NÃO clampa mais (auto: 20k é só a faixa do slider)", () => {
 		const r = clampCreditToCategory(500, "auto");
-		expect(r.value).toBe(20_000);
-		expect(r.clamped).toBe(true);
+		expect(r.value).toBe(500);
+		expect(r.clamped).toBe(false);
 		expect(r.min).toBe(20_000);
 	});
 
@@ -53,34 +58,32 @@ describe("FIX-33 — clampCreditToCategory (função pura)", () => {
 		expect(r.clamped).toBe(false);
 	});
 
-	it.each<[Category, number, number]>([
-		["imovel", 5_000_000, 2_000_000],
-		["imovel", 50_000, 100_000],
-		["auto", 5_000_000, 500_000],
-		["auto", 500, 20_000],
-		["moto", 200_000, 80_000],
-		["moto", 1_000, 8_000],
-		["servicos", 9_000_000, 500_000],
-		["servicos", 100, 10_000],
-	])("matriz %s: %d clampa pra %d", (cat, input, expected) => {
-		expect(clampCreditToCategory(input, cat).value).toBe(expected);
+	it.each<[Category, number]>([
+		["imovel", 5_000_000],
+		["imovel", 50_000],
+		["auto", 5_000_000],
+		["auto", 500],
+		["moto", 200_000],
+		["moto", 1_000],
+		["servicos", 9_000_000],
+		["servicos", 100],
+	])("matriz %s: %d sobrevive intacto (sem clamp)", (cat, input) => {
+		expect(clampCreditToCategory(input, cat).value).toBe(input);
 	});
 });
 
-describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () => {
+describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da categoria", () => {
 	beforeEach(() => {
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("carta de 5 milhões de auto → creditMax clampado (500k — FIX-54), creditClampedFrom=5M", async () => {
+	it("carta de 5 milhões de auto → creditMax preservado (Ata 2026-07-04), sem creditClampedFrom", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("quero uma carta de 5 milhoes de auto", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
-		expect(meta.qualifyAnswers?.creditClampedFrom).toBe(5_000_000);
-		// creditMin derivado respeita a faixa.
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
+		expect(meta.qualifyAnswers?.creditClampedFrom).toBeUndefined();
 		expect(meta.qualifyAnswers?.creditMin ?? 0).toBeGreaterThan(0);
 	});
 
@@ -93,7 +96,7 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		expect(meta.qualifyAnswers?.creditClampedFrom).toBeUndefined();
 	});
 
-	it("creditMin extraído acima do teto também herda o clamp", async () => {
+	it("creditMin extraído acima do teto sobrevive intacto (não é mais forçado pro teto)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({
 			...NEUTRAL,
 			creditMax: 5_000_000,
@@ -102,8 +105,8 @@ describe("FIX-33 — analyzeAndMerge aplica o clamp na faixa da categoria", () =
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("entre 4 e 5 milhoes", "auto", meta);
 
-		expect(meta.qualifyAnswers?.creditMax).toBe(500_000);
-		expect(meta.qualifyAnswers?.creditMin).toBeLessThanOrEqual(500_000);
+		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
+		expect(meta.qualifyAnswers?.creditMin).toBe(4_000_000);
 	});
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {
@@ -195,8 +198,9 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 		await analyzeAndMerge("R$ 50.000", "auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(50_000);
-		// Depois do merge: o funil AVANÇA (passa do `credit` pro `lance`), não trava.
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// Depois do merge: o funil AVANÇA (passa do `credit` pro `search`, FIX-215
+		// tirou o lance do meio), não trava.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
 	it("'50k' e '50 mil' (analyzer mudo) também avançam o funil", async () => {
@@ -205,7 +209,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 			const meta = atValueStep();
 			await analyzeAndMerge(text, "auto", meta);
 			expect(meta.qualifyAnswers?.creditMax, `texto="${text}"`).toBe(50_000);
-			expect(nextGate(meta, { hasContactName: true }), `texto="${text}"`).toBe("lance");
+			expect(nextGate(meta, { hasContactName: true }), `texto="${text}"`).toBe("search");
 		}
 	});
 
@@ -347,8 +351,9 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 
 		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
 		// nextGate NUNCA emite "timeframe" (FIX-103) — o funil segue pro
-		// próximo gate real (lance), sem travar por causa do guard.
+		// próximo gate real (search — FIX-215 tirou o lance do meio também),
+		// sem travar por causa do guard.
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 });

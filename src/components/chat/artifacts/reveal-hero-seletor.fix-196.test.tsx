@@ -13,6 +13,12 @@
  *  - contemplação oculta quando availableSlots ausente/0 (§3.1), nunca % de taxa;
  *  - cota alternativa selecionada não afirma "Recomendação" nem exibe score
  *    (Lei 3 — não fabricar score não-ancorado).
+ *
+ * FIX-220 (Ata 2026-07-04, superSEDE parte do comportamento acima): com 2+
+ * cotas na "1ª lista" (ainda sem dado de lance), NENHUMA é branded como
+ * "Recomendação"/"Top" por padrão — mesmo peso (ver correção abaixo). O selo +
+ * score breakdown só voltam quando `recommendationStage: "personalized"`
+ * (gancho pro estágio 2, ONDA 2 — ver jornada-canonica.md item 6).
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -97,12 +103,18 @@ describe("FIX-196 — hero + seletor de cotas", () => {
 		sendAction.mockClear();
 	});
 
-	it("hero inicia na cota recomendada (selo Recomendação + CTA Seguir com <cota>)", () => {
+	it("FIX-220: hero inicia na cota SEM selo Recomendação (1ª lista neutra, mesmo peso)", () => {
 		renderReveal();
-		expect(screen.getByText("Recomendação")).toBeTruthy();
+		// CTA continua funcional (mecanismo de hero/seleção não muda)
 		expect(screen.getByRole("button", { name: /seguir com banco do brasil/i })).toBeTruthy();
-		// score breakdown ancorado só na recomendada
-		expect(screen.getByText(/por que esta recomenda/i)).toBeTruthy();
+		// mas SEM branding de preferência — ainda não há dado de lance (Ata 2026-07-04)
+		expect(screen.queryByText("Recomendação")).toBeNull();
+		expect(screen.getByText("Cota selecionada")).toBeTruthy();
+		expect(screen.queryByText(/por que esta recomenda/i)).toBeNull();
+		// troca a seleção — a cota recomendada (BB) deixa de estar selecionada no
+		// chip e AINDA ASSIM não ganha o crown "Top" (mesmo peso, sem preferencial)
+		fireEvent.click(screen.getByRole("option", { name: /ITAÚ/i }));
+		expect(screen.queryByText("Top")).toBeNull();
 	});
 
 	it("tocar um chip troca a cota do hero CLIENT-SIDE (sem sendAction)", () => {
@@ -165,5 +177,26 @@ describe("FIX-196 — hero + seletor de cotas", () => {
 		renderReveal(recWithSlots, cmpWithSlots);
 		expect(screen.getByText(/contemplados\/m[êe]s/i)).toBeTruthy();
 		expect(screen.getByText(/3 por m[êe]s/i)).toBeTruthy();
+	});
+});
+
+// FIX-220 — gancho pro estágio 2 (ONDA 2, jornada-canonica.md item 6): quando o
+// payload sinalizar `recommendationStage: "personalized"` (dado de lance já
+// coletado), o selo + score breakdown + "Top" do chip VOLTAM. A lógica de QUANDO
+// setar "personalized" é onda 2 — aqui só prova que o gancho existe e funciona.
+describe("FIX-220 — recommendationStage: personalized reativa o destaque (gancho onda 2)", () => {
+	afterEach(() => {
+		cleanup();
+		sendAction.mockClear();
+	});
+
+	it("com recommendationStage=personalized, o selo Recomendação + score breakdown voltam", () => {
+		renderReveal({ ...rec, recommendationStage: "personalized" });
+		expect(screen.getByText("Recomendação")).toBeTruthy();
+		expect(screen.getByText(/por que esta recomenda/i)).toBeTruthy();
+		// troca a seleção pra ver o crown "Top" na cota recomendada (BB), que deixa
+		// de estar selecionada no chip mas segue marcada como a melhor
+		fireEvent.click(screen.getByRole("option", { name: /ITAÚ/i }));
+		expect(screen.getByText("Top")).toBeTruthy();
 	});
 });

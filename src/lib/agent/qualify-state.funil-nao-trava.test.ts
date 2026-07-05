@@ -170,7 +170,9 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 			gateEsperado: "identify",
 		},
 		{
-			nome: "valor do bem informado → lance",
+			// FIX-215 (Ata 2026-07-04): lance saiu da entrada — valor informado vai
+			// DIRETO pra busca/reveal, nunca pro gate de lance.
+			nome: "valor do bem informado → search",
 			meta: {
 				...base,
 				experiencePrev: "first",
@@ -178,15 +180,18 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 				identityCollected: true,
 				qualifyAnswers: { creditMax: 300_000 },
 			},
-			gateEsperado: "lance",
+			gateEsperado: "search",
 		},
 		{
-			nome: "tem lance → lance-value",
+			// FIX-215: a conversa de lance só entra em jogo PÓS-reveal.
+			nome: "pós-reveal, tem lance → lance-value",
 			meta: {
 				...base,
 				experiencePrev: "first",
 				qualifyConsented: true,
 				identityCollected: true,
+				searchDispatched: true,
+				revealCompleted: true,
 				qualifyAnswers: { creditMax: 300_000, hasLance: "yes" },
 			},
 			gateEsperado: "lance-value",

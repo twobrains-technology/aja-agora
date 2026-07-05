@@ -448,12 +448,29 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 		// lanceValue veio do gate lance-value (resposta do usuário, docx).
 		lanceValue: q.lanceValue,
 	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+	const updated = { ...meta, qualifyAnswers: merged };
+	await persistMeta(conversationId, updated);
 	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
-	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	// FIX-215 (Ata 2026-07-04): lance agora é PÓS-reveal — a busca JÁ ocorreu
+	// (é o pré-requisito pra este gate existir, ver qualify-state.ts). Despacha
+	// o próximo passo REAL (simulator-offer/decision), nunca re-dispara a busca.
+	const gate = nextGate(updated);
+	if (gate === "search") {
+		await runSearchSummaryWithOrchestrator({ from, conversationId });
+	} else if (gate === "simulator-offer") {
+		// Idempotência (FIX-215): despachando o simulator-offer por AQUI (e não via
+		// index.ts), marca o dispatch — senão, se o usuário responder o card por
+		// TEXTO, nextGate recomputaria simulator-offer com a flag ainda false e o
+		// card sairia 2× (o "sim" do usuário não seria honrado).
+		const dispatched = { ...updated, simulatorOfferDispatched: true };
+		await persistMeta(conversationId, dispatched);
+		await fireGate(from, conversationId, gate, dispatched);
+	} else {
+		await fireGate(from, conversationId, gate, updated);
+	}
 	return true;
 }
 

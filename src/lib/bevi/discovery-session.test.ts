@@ -10,9 +10,22 @@ describe("prefsFromMeta — preferências de simulação a partir da qualificaç
 		expect(prefsFromMeta(meta).embeddedPercentage).toBe("30");
 	});
 
-	it("sem opt-in, embeddedPercentage é omitido (sem default escondido)", () => {
+	// FIX-219 (Ata 2026-07-04, item 4): a conversa de lance só acontece PÓS-reveal
+	// (FIX-215) — na 1ª busca `lanceEmbutido` nem foi perguntado ainda. Não dá pra
+	// gatear no opt-in; assume-se o teto histórico (~30%) sempre, e o adapter
+	// varre COM e SEM embutido (sweepEmbedded) pra cobrir os dois cenários.
+	it("SEM opt-in (ainda não perguntado), embeddedPercentage assume ~30% (Ata 2026-07-04)", () => {
+		const meta: ConversationMetadata = { qualifyAnswers: {} };
+		expect(prefsFromMeta(meta).embeddedPercentage).toBe("30");
+	});
+
+	it("mesmo com lanceEmbutido=false explícito, embeddedPercentage assume ~30% (a busca varre os dois)", () => {
 		const meta: ConversationMetadata = { qualifyAnswers: { lanceEmbutido: false } };
-		expect(prefsFromMeta(meta).embeddedPercentage).toBeUndefined();
+		expect(prefsFromMeta(meta).embeddedPercentage).toBe("30");
+	});
+
+	it("meta totalmente vazio também assume ~30% (defensivo, sem qualifyAnswers)", () => {
+		expect(prefsFromMeta({}).embeddedPercentage).toBe("30");
 	});
 
 	it("objetivo investimento (sem pressa) vira INVESTMENT; resto FAST_APPROVAL", () => {

@@ -62,24 +62,34 @@ describe("C1 — referenceMonth calibra a curva no dado real da Bevi", () => {
 	});
 });
 
-describe("C4 — parcela honesta: embutido não abate parcela; desconto só pós-contemplação", () => {
+describe("C4/FIX-221 — parcela honesta: lance TOTAL (embutido + dinheiro) amortiza o saldo pós-contemplação", () => {
 	it("estimatedMonthlyPayment (modelo antigo, fantasia) não existe mais no result", () => {
 		const r = computeContemplationDial({ ...BB, targetMonth: 6 });
 		expect("estimatedMonthlyPayment" in r).toBe(false);
 	});
 
-	it("lance 100% embutido → parcela pós-contemplação NÃO cai (embutido reduz crédito, não dívida)", () => {
+	// FIX-221 (Ata 2026-07-04) INVERTE esta regra: o C4 original ("embutido reduz
+	// crédito, não dívida") foi superSEDIDO pela decisão do stakeholder — o lance
+	// TOTAL (embutido + dinheiro) agora amortiza o saldo. Ex. real (jornada
+	// canônica D9): BB mostrava R$ 9.828,92 fixos; a Ata pede ~R$ 5.238.
+	// PENDENTE-Bernardo validar o número exato antes de prod.
+	it("lance 100% embutido → parcela pós-contemplação CAI (embutido amortiza o saldo, AMORTIZA)", () => {
 		const r = computeContemplationDial({ ...BB, targetMonth: 6 });
 		expect(r.ownCashValue).toBe(0);
-		expect(r.paymentAfterContemplation).toBeCloseTo(9_828.92, 2);
+		expect(r.embeddedBidValue).toBeGreaterThan(0);
+		expect(r.paymentAfterContemplation).toBeLessThan(9_828.92);
+		// saldo restante = parcela × 28 − embutido; diluído nos 28 meses restantes
+		const expected = (9_828.92 * 28 - r.embeddedBidValue) / 28;
+		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
+		expect(r.paymentAfterContemplation).toBeCloseTo(5_238.5, 0);
 	});
 
-	it("lance em dinheiro abate o saldo restante e dilui a parcela DEPOIS da contemplação", () => {
+	it("lance em dinheiro E embutido somam no abatimento — dilui a parcela DEPOIS da contemplação", () => {
 		// embutido capado em 30% → em t=6 sobra bolso (49% − 30% = 19%)
 		const r = computeContemplationDial({ ...BB, maxEmbutidoPct: 30, targetMonth: 6 });
 		expect(r.ownCashValue).toBeGreaterThan(0);
-		// saldo restante = parcela × (34−6) − bolso; diluído nos 28 meses restantes
-		const expected = (9_828.92 * 28 - r.ownCashValue) / 28;
+		// saldo restante = parcela × (34−6) − (bolso + embutido); diluído nos 28 meses restantes
+		const expected = (9_828.92 * 28 - r.ownCashValue - r.embeddedBidValue) / 28;
 		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
 		expect(r.paymentAfterContemplation ?? 0).toBeLessThan(9_828.92);
 	});

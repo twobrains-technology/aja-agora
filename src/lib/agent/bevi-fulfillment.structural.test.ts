@@ -7,8 +7,9 @@ import { PRESENTATION_TOOLS } from "./tools/ai-sdk";
 // + simulador-agulha. Asserts contra a fonte de produção (prompt/tools/formatter).
 
 describe("passo 5 — roteamento no prompt", () => {
-	it("'contratar agora' aponta pra present_contract_form (não mais lead_form puro)", () => {
-		const re = /contratar agora[\s\S]{0,400}present_contract_form/i;
+	it("'reservar agora' aponta pra present_contract_form (não mais lead_form puro)", () => {
+		// FIX-216 (Ata 2026-07-04): terminologia "reservar" substitui "contratar".
+		const re = /reservar agora[\s\S]{0,400}present_contract_form/i;
 		expect(SPECIALIST_BASE_PROMPT).toMatch(re);
 	});
 
