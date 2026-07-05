@@ -1,7 +1,7 @@
 ---
 id: FIX-224
 titulo: "Reordenar os 3 blocos do reveal + consolidar a info de lance dentro do card"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
@@ -9,6 +9,8 @@ arquivos:
   - src/lib/agent/system-prompt.ts
 bloco: bloco-cards-recomendacao
 rodada: 2026-07-04 — Ata de alinhamento com o cliente (item 4.2, P1)
+commit: 066c654
+executado_em: 2026-07-04
 ---
 ## Palavras do operador
 > Ata 4.2: *"Reordenar a sequência dos 3 blocos (recomendado / demais cards / simulação-lance estimado) — hoje está confusa. Avaliar consolidar a info do lance dentro do próprio card."*
@@ -36,3 +38,12 @@ rodada: 2026-07-04 — Ata de alinhamento com o cliente (item 4.2, P1)
 ## Regressão exigida (TDD strict)
 1. Teste da **nova ordem** de emissão dos artifacts do reveal.
 2. Teste que a info de lance/parcela aparece **dentro do card** (consolidada), não só num bloco separado.
+
+## Implementação (2026-07-04)
+
+- **Decisão de UX** tomada via `superpowers:brainstorming` + `AskUserQuestion` (3 opções, recomendada em 1º) — Kairo escolheu a recomendada. ADR completo (contexto · opções · escolhida + porquê) em
+  [`docs/decisoes/blocos/2026-07-04-bloco-cards-recomendacao.md`](../../decisoes/blocos/2026-07-04-bloco-cards-recomendacao.md).
+- **Ordem final**: `recommendation_card` (opção completa) → `simulation_result` (aprofunda: cenário com lance, correção) → `comparison_table` (convite pra comparar, por último — mesmo peso, FIX-220). `directives.ts` (passos 3-5 renumerados + linha "A ORDEM dos cards") e `system-prompt.ts` ("Sequência correta da apresentação") atualizados em sintonia.
+- **Consolidação de lance no card**: já satisfeita pelo FIX-221 (parcela antes/depois + enunciado "recebe menos" dentro do `recommendation_card`) — este item não precisou de trabalho adicional além da reordenação.
+- **Regra de compliance preservada**: Bv2-07 (CMN 4.927/2021 — `simulate_quota`+`present_simulation_result` sempre encadeado após o card) e a inseparabilidade `recommendation_card`↔`comparison_table` (FIX-78) continuam intactas — só a POSIÇÃO de `comparison_table` mudou.
+- Regressão: `directives.fix-224.test.ts` (nova ordem no texto da diretiva + "A ORDEM dos cards" + FIX-78 intacto); item 2 coberto por `recommendation-card.fix-221.test.tsx`.
