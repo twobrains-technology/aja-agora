@@ -7,6 +7,7 @@ import { useChatContext } from "@/lib/chat/provider";
 import type { GroupCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
+import { AdministradoraLogo } from "./administradora-logo";
 
 // Categorias mapeadas à paleta da marca (tokens --cat-*, com variante dark
 // embutida): Imóvel=azul · Automóvel=cyan · Moto=coral · Serviços=navy.
@@ -89,7 +90,16 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 					>
 						{category.label}
 					</span>
-					<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+					<div className="flex items-center gap-1.5">
+						{/* FIX-222 (Ata 2026-07-04) — logo da administradora; fallback
+						    gracioso (iniciais) enquanto os assets reais são PENDENTE. */}
+						<AdministradoraLogo
+							administradora={payload.administradora}
+							logoUrl={payload.logoUrl}
+							className="size-5 shrink-0 text-[9px]"
+						/>
+						<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+					</div>
 				</div>
 
 				{/* Body */}
@@ -132,6 +142,15 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 								{formatPercent(payload.contemplationRate)}
 							</p>
 						</div>
+						{/* FIX-223 (Ata 2026-07-04) — lance médio, só com dado real (D11). */}
+						{payload.avgBidValue != null && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">
+									{formatBRL(payload.avgBidValue)}
+								</p>
+							</div>
+						)}
 					</div>
 
 					{/* CTA ghost */}

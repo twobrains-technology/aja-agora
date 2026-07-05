@@ -1,15 +1,20 @@
 ---
 id: FIX-220
 titulo: "1ª lista: todos os grupos com mesmo peso (sem 'preferencial/recomendado')"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-cards-recomendacao
 arquivos:
   - src/components/chat/artifacts/recommendation-card.tsx
-  - src/components/chat/artifacts/group-card.tsx
+  - src/components/chat/artifacts/comparison-table.tsx
+  - src/components/chat/reveal-selection.tsx
   - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/orchestrator/recommendation-payload.ts
+  - src/lib/chat/types.ts
 rodada: 2026-07-04 — Ata de alinhamento com o cliente (item 4.1, P1)
+commit: 18f1fad
+executado_em: 2026-07-04
 ---
 ## Palavras do operador
 > Ata 4.1: *"Na 1ª lista, mostrar basicamente todos os grupos com mesmo peso — sem 'preferencial', porque ainda não há dado de lance pra recomendar nada."*

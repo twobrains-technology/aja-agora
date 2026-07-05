@@ -2,15 +2,17 @@
 
 import { ChevronDown, Info } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
+import { computeContemplationDial, paymentAfterLabel } from "@/lib/consorcio/contemplation-dial";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
+import { AdministradoraLogo } from "./administradora-logo";
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -24,6 +26,9 @@ const formatBRL0 = (value: number): string =>
 		currency: "BRL",
 		maximumFractionDigits: 0,
 	}).format(value);
+
+const brlNoDecimals = (value: number): string =>
+	value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 // FIX-197 (§3.6) — a Bevi devolve cartas na denominação do grupo (ex. R$ 300k) e
 // a tela mostra a faixa re-simulada (ex. ~R$ 131k). Sem aviso, o ajuste fica
@@ -96,6 +101,11 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const rawCreditValue = cota?.rawCreditValue ?? payload.rawCreditValue;
 	const showAdjustNotice = hasCreditAdjustment(rawCreditValue, creditValue);
 
+	// FIX-223 — lance médio do grupo (R$), só quando a fonte real o traz.
+	const avgBidValue = cota?.avgBidValue ?? payload.avgBidValue;
+	// FIX-222 — logo da administradora, quando cadastrado (fallback: iniciais).
+	const logoUrl = cota?.logoUrl ?? payload.logoUrl;
+
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
 	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
 	const contempladosMes = cota
@@ -107,7 +117,29 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const isRecommended = cota ? cota.isRecommended : true;
 	const score = cota ? cota.score : payload.score;
 	const scoreBreakdown = cota ? cota.scoreBreakdown : payload.scoreBreakdown;
-	const showScoreBreakdown = isRecommended && scoreBreakdown != null;
+	// FIX-220 (Ata 2026-07-04): dentro do reveal, com 2+ cotas ("1ª lista"), NINGUÉM
+	// é branded como preferencial — ainda não há dado de lance pra recomendar nada
+	// (mesmo peso). Só afirma favoritismo quando (a) não há concorrência visível
+	// (reveal de 1 cota só, ou uso legado fora do reveal) ou (b) o estágio 2
+	// (ONDA 2, ainda não implementado) sinalizar `recommendationStage:"personalized"`.
+	const hasPeers = reveal.cotas.length > 1;
+	const showFavoritism = cota
+		? isRecommended && (reveal.recommendationStage === "personalized" || !hasPeers)
+		: true;
+	const showScoreBreakdown = showFavoritism && scoreBreakdown != null;
+
+	// FIX-221 (Ata 2026-07-04, item 4.2, P0): "mostrar parcela antes e depois da
+	// contemplação (indispensável)" — portado do bloco antes/depois do
+	// contemplation-dial.tsx pra dentro do card (consolidação pedida pela Ata).
+	// Sem mês-alvo escolhido pelo usuário aqui (isso é o simulador-agulha), usa
+	// o MESMO mês-âncora heurístico que o motor já assume internamente quando
+	// não há referenceMonth real da oferta — é a mesma estimativa, mesmo motor
+	// puro, rotulada como estimativa (nunca fabrica dado que não tem).
+	const contemplationPreview = useMemo(() => {
+		if (!(creditValue > 0 && termMonths > 1 && monthlyPayment > 0)) return null;
+		const anchorMonth = Math.min(termMonths - 1, Math.max(1, Math.round(termMonths * 0.25)));
+		return computeContemplationDial({ creditValue, termMonths, targetMonth: anchorMonth, monthlyPayment });
+	}, [creditValue, termMonths, monthlyPayment]);
 
 	const handleFollow = () => {
 		if (isStreaming || !cota) return;
@@ -142,7 +174,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				{/* Selo + rótulo qualitativo. Recomendada → marca-sol + fit label; cota
 				    alternativa selecionada no seletor → selo neutro, sem afirmar score. */}
 				<div className="flex items-center justify-between gap-2">
-					{isRecommended ? (
+					{showFavoritism ? (
 						<span
 							className={cn(
 								"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
@@ -166,14 +198,21 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
 					    (comparison-table); breakdown segue no expansível.
 					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
-					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
-					{isRecommended && score != null && scoreBreakdown != null && (
+					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil".
+					    FIX-220: some junto com o selo — mesmo peso na 1ª lista neutra. */}
+					{showFavoritism && score != null && scoreBreakdown != null && (
 						<span className="text-sm font-semibold text-primary">
 							{recommendationFitLabel(score, scoreBreakdown.monthlyFit)}
 						</span>
 					)}
 				</div>
-				<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				<div className="flex items-center gap-1.5">
+					{/* FIX-222 (Ata 2026-07-04) — logo da administradora (confiabilidade +
+					    "o cara sabe pra onde vai"); fallback gracioso (iniciais) enquanto
+					    os assets reais são PENDENTE (sourcing/design). */}
+					<AdministradoraLogo administradora={administradora} logoUrl={logoUrl} className="size-5 shrink-0 text-[9px]" />
+					<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				</div>
 			</div>
 
 			{/* Body */}
@@ -210,7 +249,57 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						<p className="text-xs text-muted-foreground m-0">Tipo de grupo</p>
 						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[category]}</p>
 					</div>
+					{/* FIX-223 (Ata 2026-07-04) — lance médio do grupo, só com dado real
+					    (D11: nunca fabrica; ausente → linha omitida). */}
+					{avgBidValue != null && (
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(avgBidValue)}</p>
+						</div>
+					)}
 				</div>
+
+				{/* FIX-221 (Ata 2026-07-04, P0) — parcela ATÉ e DEPOIS da contemplação,
+				    consolidada dentro do card (portado do contemplation-dial.tsx). O
+				    lance TOTAL (embutido + dinheiro) amortiza o saldo pós-contemplação
+				    (modelo AMORTIZA — PENDENTE-Bernardo validar o número exato). */}
+				{contemplationPreview && (
+					<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+						<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+							<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+								Até contemplar
+							</span>
+							<b className="aja-num text-[1.05rem] font-bold tabular-nums">
+								{brlNoDecimals(monthlyPayment)}
+							</b>
+						</div>
+						<div className="flex items-center text-primary">→</div>
+						<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-warning/25 bg-[var(--aja-cream)] px-3 py-2.5">
+							<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+								Após receber
+							</span>
+							<b className="aja-num text-[1.05rem] font-bold tabular-nums text-[#8a5e09]">
+								{contemplationPreview.paymentAfterContemplation != null
+									? brlNoDecimals(contemplationPreview.paymentAfterContemplation)
+									: "—"}
+							</b>
+							<small className="text-[10px] text-muted-foreground">
+								{paymentAfterLabel(contemplationPreview.paymentAfterContemplation, monthlyPayment)}
+							</small>
+						</div>
+					</div>
+				)}
+
+				{/* Ata 2026-07-04: educação sempre presente — usar o embutido troca
+				    crédito por facilidade no lance (fato do mecanismo, não depende de
+				    dado específico da oferta). */}
+				{contemplationPreview && (
+					<p className="flex items-start gap-1.5 -mt-1 text-[11px] leading-snug text-muted-foreground">
+						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
+						Usar lance embutido significa que você recebe menos crédito da carta agora
+						(estimativa, não garantia).
+					</p>
+				)}
 
 				{/* FIX-197 (§3.6) — aviso discreto de ajuste de faixa: a carta é da
 				    denominação do grupo (rawCreditValue); ajustamos à faixa pedida

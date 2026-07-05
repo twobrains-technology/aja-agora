@@ -49,6 +49,9 @@ export const groupCardSchema = z.object({
 	termMonths: z.number().int().describe("Prazo em meses"),
 	availableSlots: z.number().int().describe("Vagas disponiveis"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
+	// FIX-223: lance medio (R$) — copie LITERAL de search_groups/recommend_groups
+	// quando presente; omita o campo se a fonte nao trouxer (NUNCA invente).
+	avgBidValue: z.number().optional().describe("Lance medio do grupo em reais, quando a fonte traz"),
 });
 
 export const comparisonTableSchema = z.object({

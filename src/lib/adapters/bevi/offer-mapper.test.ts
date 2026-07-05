@@ -261,3 +261,35 @@ describe("FIX-219 — embeddedVariant no GroupSummary; stripado do model-facing"
 		expect(model.id).toBeDefined();
 	});
 });
+
+// FIX-223 (Ata 2026-07-04, item 4.2): o card de recomendação precisa exibir o
+// "lance médio" do grupo — hoje `recommend_groups`/`search_groups` não carrega
+// esse dado (só existe no trilho de fechamento, partner-offer-mapper.ts). A
+// oferta self-contract (rica) traz `averageBid`; propaga como `avgBidValue`.
+describe("FIX-223 — avgBidValue propagado no shape de descoberta (lance médio)", () => {
+	const base = loadFixture("imovel").offers[0];
+
+	it("beviOfferToGroupSummary propaga averageBid como avgBidValue quando > 0", () => {
+		const offer = { ...base, averageBid: 5_000 } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.avgBidValue).toBe(5_000);
+	});
+
+	it("sem averageBid na oferta → avgBidValue ausente (D11: nunca fabrica)", () => {
+		const { averageBid: _omit, ...offer } = base as unknown as Record<string, unknown>;
+		const g = beviOfferToGroupSummary(offer as unknown as BeviOffer);
+		expect(g.avgBidValue).toBeUndefined();
+	});
+
+	it("averageBid <= 0 → avgBidValue ausente (nunca fabrica dado inválido)", () => {
+		const offer = { ...base, averageBid: 0 } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.avgBidValue).toBeUndefined();
+	});
+
+	it("toModelGroupSummary mantém avgBidValue (chega no contexto do modelo)", () => {
+		const offer = { ...base, averageBid: 5_000 } as unknown as BeviOffer;
+		const model = toModelGroupSummary(beviOfferToGroupSummary(offer)) as Record<string, unknown>;
+		expect(model.avgBidValue).toBe(5_000);
+	});
+});

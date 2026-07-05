@@ -28,6 +28,9 @@ export interface GroupSummary {
 	// (stripado no toModelGroupSummary); existe só pra o dedup de
 	// recommendation.ts não colapsar as duas modalidades do mesmo grupo.
 	embeddedVariant?: "sem" | "com";
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$) — só quando a fonte
+	 * traz o dado real (D11: nunca fabricar). Alimenta "lance médio" no card. */
+	avgBidValue?: number;
 }
 
 export interface QuotaSimulation {

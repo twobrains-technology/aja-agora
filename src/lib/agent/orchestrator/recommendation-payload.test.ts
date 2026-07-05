@@ -203,3 +203,76 @@ describe("FIX-191 — anti-regressão estrutural (fonte de produção)", () => {
 		expect(directives).not.toMatch(/contempladosMes \(copie de availableSlots/);
 	});
 });
+
+// FIX-223 (Ata 2026-07-04) — lance médio (avgBidValue) coagido server-side a
+// partir do grupo REAL, igual aos demais números do hero/seletor. A LLM nunca
+// fabrica o valor mesmo se tentar (Lei 3/4).
+describe("FIX-223 — avgBidValue coagido server-side (lance médio)", () => {
+	it("coerceRecommendationPayload propaga avgBidValue do grupo real, ignora o que a LLM mandou", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup({ avgBidValue: 4_200 })] });
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBe(4_200);
+	});
+
+	it("sem avgBidValue no grupo real → omitido (nunca fabrica)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBeUndefined();
+	});
+
+	it("coerceComparisonPayload propaga avgBidValue por cota, cada uma com o seu valor real", () => {
+		const bb = realGroup({ avgBidValue: 4_200 });
+		const canopus = realGroup({ id: "6a3e6cec419653c0a99936d0", avgBidValue: 1_800 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb, canopus] });
+		const out = coerceComparisonPayload(
+			{ groups: [{ id: bb.id, avgBidValue: 1 }, { id: canopus.id, avgBidValue: 1 }] },
+			index,
+		);
+		const groups = out.groups as Array<Record<string, unknown>>;
+		expect(groups[0].avgBidValue).toBe(4_200);
+		expect(groups[1].avgBidValue).toBe(1_800);
+	});
+});
+
+// FIX-222 (Ata 2026-07-04) — logo da administradora coagido server-side a
+// partir do índice de logos (DB, injetado como Map puro — nunca a LLM fabrica
+// uma URL). Ausente do cadastro → card cai no fallback (sem quebrar).
+describe("FIX-222 — logoUrl coagido server-side (logo da administradora)", () => {
+	it("coerceRecommendationPayload casa logoUrl por administradora (tolerante a acento/caixa)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const logos = new Map([["BANCO DO BRASIL", "https://cdn/bb.png"]]);
+		const out = coerceRecommendationPayload(
+			{ id: realGroup().id, logoUrl: "https://fabricado.com/x.png" },
+			index,
+			logos,
+		);
+		expect(out.logoUrl).toBe("https://cdn/bb.png");
+	});
+
+	it("sem match no índice de logos → logoUrl ausente (fallback do card, nunca fabrica)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload(
+			{ id: realGroup().id, logoUrl: "https://fabricado.com/x.png" },
+			index,
+			new Map(),
+		);
+		expect(out.logoUrl).toBeUndefined();
+	});
+
+	it("coerceComparisonPayload casa logoUrl por cota", () => {
+		const bb = realGroup();
+		const canopus = realGroup({ id: "6a3e6cec419653c0a99936d0", administradora: "CANOPUS" });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb, canopus] });
+		const logos = new Map([["CANOPUS", "https://cdn/canopus.png"]]);
+		const out = coerceComparisonPayload({ groups: [{ id: bb.id }, { id: canopus.id }] }, index, logos);
+		const groups = out.groups as Array<Record<string, unknown>>;
+		expect(groups[0].logoUrl).toBeUndefined();
+		expect(groups[1].logoUrl).toBe("https://cdn/canopus.png");
+	});
+});

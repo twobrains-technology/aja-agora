@@ -16,6 +16,7 @@ import {
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
+import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -192,6 +193,20 @@ export async function* runAgentTurn(args: {
 	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
 	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
 	const revealGroupsById: RevealGroupIndex = new Map();
+	// FIX-222: logo da administradora (cadastro `administradoras.logo_url`) —
+	// carregado sob demanda (só quando o turno realmente emite recommendation_card
+	// /comparison_table) e memoizado no turno. Falha de DB nunca derruba o turno:
+	// cai no fallback gracioso do card (Map vazio).
+	let administradoraLogosPromise: Promise<Map<string, string>> | null = null;
+	const getAdministradoraLogos = (): Promise<Map<string, string>> => {
+		if (!administradoraLogosPromise) {
+			administradoraLogosPromise = loadAdministradoraLogoMap().catch((err) => {
+				console.error("[administradora-logo] falha ao carregar logos, usando fallback", err);
+				return new Map<string, string>();
+			});
+		}
+		return administradoraLogosPromise;
+	};
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
@@ -410,10 +425,18 @@ export async function* runAgentTurn(args: {
 						// "36/mês"). Emite groupId/ofertaId/quotaId + availableSlots real
 						// (CONTRATO com bloco-b); tipoOferta NUNCA vaza (crítério interno).
 						if (artifactType === "recommendation_card") {
-							payload = coerceRecommendationPayload(input, revealGroupsById);
+							payload = coerceRecommendationPayload(
+								input,
+								revealGroupsById,
+								await getAdministradoraLogos(),
+							);
 						}
 						if (artifactType === "comparison_table") {
-							payload = coerceComparisonPayload(input, revealGroupsById);
+							payload = coerceComparisonPayload(
+								input,
+								revealGroupsById,
+								await getAdministradoraLogos(),
+							);
 						}
 						if (artifactType === "contemplation_dial") {
 							const turnAnchor =
