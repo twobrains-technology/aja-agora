@@ -195,8 +195,9 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 		await analyzeAndMerge("R$ 50.000", "auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(50_000);
-		// Depois do merge: o funil AVANÇA (passa do `credit` pro `lance`), não trava.
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// Depois do merge: o funil AVANÇA (passa do `credit` pro `search`, FIX-215
+		// tirou o lance do meio), não trava.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
 	it("'50k' e '50 mil' (analyzer mudo) também avançam o funil", async () => {
@@ -205,7 +206,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 			const meta = atValueStep();
 			await analyzeAndMerge(text, "auto", meta);
 			expect(meta.qualifyAnswers?.creditMax, `texto="${text}"`).toBe(50_000);
-			expect(nextGate(meta, { hasContactName: true }), `texto="${text}"`).toBe("lance");
+			expect(nextGate(meta, { hasContactName: true }), `texto="${text}"`).toBe("search");
 		}
 	});
 
@@ -347,8 +348,9 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 
 		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
 		// nextGate NUNCA emite "timeframe" (FIX-103) — o funil segue pro
-		// próximo gate real (lance), sem travar por causa do guard.
+		// próximo gate real (search — FIX-215 tirou o lance do meio também),
+		// sem travar por causa do guard.
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 });

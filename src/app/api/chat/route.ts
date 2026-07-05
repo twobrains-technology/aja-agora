@@ -1093,7 +1093,19 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
-							await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							// FIX-215 (Ata 2026-07-04): lance agora é PÓS-reveal — a busca JÁ
+							// ocorreu (pré-requisito pra este gate existir, qualify-state.ts).
+							// Despacha o próximo passo REAL (simulator-offer/decision), nunca
+							// re-dispara a busca.
+							const afterLanceEmbutido = await reloadMeta(conversationId);
+							const nextAfterLanceEmbutido = nextGate(afterLanceEmbutido, {
+								hasContactName: Boolean(contactName),
+							});
+							if (nextAfterLanceEmbutido === "search") {
+								await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
+							} else {
+								await pipeGatePrompt({ conversationId, gate: nextAfterLanceEmbutido, writer });
+							}
 							return;
 						}
 					});

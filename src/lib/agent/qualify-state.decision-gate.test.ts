@@ -70,12 +70,22 @@ describe("nextGate — avanço pro card de decisão pós-reveal", () => {
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("decision");
 	});
 
-	it("não interfere na coleta: enquanto faltar qualify, nunca retorna 'decision'", () => {
-		// FIX-103: prazo saiu do funil. Com valor + hasLance="yes" mas sem o valor
-		// do lance respondido → ainda está coletando, gate é "lance-value".
+	it("não interfere na coleta: enquanto faltar busca/reveal, nunca retorna 'decision'", () => {
+		// FIX-215 (Ata 2026-07-04): lance saiu da entrada — sem revealCompleted,
+		// o gate é "search" (busca direto após o valor), mesmo com hasLance já
+		// respondido (dado que só importa DEPOIS do reveal).
 		const meta = postRevealMeta({
 			searchDispatched: false,
 			revealCompleted: false,
+			qualifyAnswers: { creditMax: 100_000, hasLance: "yes" },
+		});
+		const g = nextGate(meta, { hasContactName: true });
+		expect(g).not.toBe("decision");
+		expect(g).toBe("search");
+	});
+
+	it("FIX-215: pós-reveal com hasLance='yes' sem valor → 'lance-value', nunca 'decision'", () => {
+		const meta = postRevealMeta({
 			qualifyAnswers: { creditMax: 100_000, hasLance: "yes" },
 		});
 		const g = nextGate(meta, { hasContactName: true });
