@@ -1,10 +1,12 @@
 ---
 id: FIX-215
 titulo: "Remover a pergunta de lance do início; buscar grupos direto após valor+identidade; mover a conversa de lance pra pós-reveal"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-jornada-conversa
+commit: 729bf8a
+executado_em: 2026-07-04
 arquivos:
   - src/lib/agent/qualify-state.ts
   - src/lib/agent/qualify-config.ts
