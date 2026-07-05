@@ -56,9 +56,14 @@ describe("FIX-215.1 — sequência de gates: credit → search DIRETO, nunca lan
 });
 
 describe("FIX-215.2 — busca funciona SEM os campos de lance (prefsFromMeta)", () => {
-	it("prefsFromMeta com qualifyAnswers sem hasLance/lanceEmbutido produz prefs válidas (sem embutido)", () => {
+	it("prefsFromMeta com qualifyAnswers sem hasLance/lanceEmbutido produz prefs válidas (assume ~30%; adapter varre com/sem — FIX-219)", () => {
 		const prefs = prefsFromMeta(IDENTITY_AND_VALUE_READY);
-		expect(prefs.embeddedPercentage).toBeUndefined();
+		// FIX-219 (Ata item 4) superou a suposição original deste teste: a 1ª busca
+		// NÃO fica "sem embutido" — assume-se o teto histórico (~30%, a Bevi não
+		// informa se a cota aceita) e o adapter (offersForValue) varre COM e SEM
+		// embutido. O ponto do FIX-215 (a busca não QUEBRA sem os campos de lance,
+		// que só chegam pós-reveal) segue válido: prefs continua produzida sem eles.
+		expect(prefs.embeddedPercentage).toBe("30");
 		expect(prefs.objective).toBeDefined();
 	});
 });

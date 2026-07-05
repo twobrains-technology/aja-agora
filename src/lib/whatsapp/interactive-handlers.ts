@@ -460,6 +460,14 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 	const gate = nextGate(updated);
 	if (gate === "search") {
 		await runSearchSummaryWithOrchestrator({ from, conversationId });
+	} else if (gate === "simulator-offer") {
+		// Idempotência (FIX-215): despachando o simulator-offer por AQUI (e não via
+		// index.ts), marca o dispatch — senão, se o usuário responder o card por
+		// TEXTO, nextGate recomputaria simulator-offer com a flag ainda false e o
+		// card sairia 2× (o "sim" do usuário não seria honrado).
+		const dispatched = { ...updated, simulatorOfferDispatched: true };
+		await persistMeta(conversationId, dispatched);
+		await fireGate(from, conversationId, gate, dispatched);
 	} else {
 		await fireGate(from, conversationId, gate, updated);
 	}

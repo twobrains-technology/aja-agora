@@ -1104,6 +1104,15 @@ export async function POST(req: NextRequest) {
 							if (nextAfterLanceEmbutido === "search") {
 								await pipeSearchSummaryTurn({ conversationId, contactName, writer, userKey });
 							} else {
+								// Idempotência (FIX-215): despachando o simulator-offer por AQUI (não via
+								// index.ts), marca o dispatch — senão, se o usuário responder por TEXTO,
+								// nextGate recomputaria simulator-offer com a flag false → card sairia 2×.
+								if (nextAfterLanceEmbutido === "simulator-offer") {
+									await persistMeta(conversationId, {
+										...afterLanceEmbutido,
+										simulatorOfferDispatched: true,
+									});
+								}
 								await pipeGatePrompt({ conversationId, gate: nextAfterLanceEmbutido, writer });
 							}
 							return;
