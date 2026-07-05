@@ -659,6 +659,10 @@ export const administradoras = pgTable(
 		slug: varchar("slug", { length: 80 }).notNull().unique(),
 		// match opcional com o identificador da administradora vindo da Bevi
 		codigoBevi: varchar("codigo_bevi", { length: 60 }),
+		// FIX-222 (Ata 2026-07-04): logo da administradora pro card de recomendação
+		// (confiabilidade + "o cara sabe pra onde vai"). Nullable — assets reais são
+		// PENDENTE (sourcing/design); ausente → o card cai no fallback (iniciais).
+		logoUrl: text("logo_url"),
 		isActive: boolean("is_active").default(true).notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })

@@ -12,6 +12,7 @@ import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
+import { AdministradoraLogo } from "./administradora-logo";
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -102,6 +103,8 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 
 	// FIX-223 — lance médio do grupo (R$), só quando a fonte real o traz.
 	const avgBidValue = cota?.avgBidValue ?? payload.avgBidValue;
+	// FIX-222 — logo da administradora, quando cadastrado (fallback: iniciais).
+	const logoUrl = cota?.logoUrl ?? payload.logoUrl;
 
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
 	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
@@ -203,7 +206,13 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						</span>
 					)}
 				</div>
-				<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				<div className="flex items-center gap-1.5">
+					{/* FIX-222 (Ata 2026-07-04) — logo da administradora (confiabilidade +
+					    "o cara sabe pra onde vai"); fallback gracioso (iniciais) enquanto
+					    os assets reais são PENDENTE (sourcing/design). */}
+					<AdministradoraLogo administradora={administradora} logoUrl={logoUrl} className="size-5 shrink-0 text-[9px]" />
+					<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				</div>
 			</div>
 
 			{/* Body */}

@@ -27,6 +27,9 @@ export interface GroupCardPayload {
 	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
 	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
 	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 export interface ComparisonTablePayload {
@@ -118,6 +121,9 @@ export interface RecommendationCardPayload {
 	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
 	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
 	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----

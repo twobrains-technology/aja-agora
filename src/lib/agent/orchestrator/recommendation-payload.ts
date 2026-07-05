@@ -15,6 +15,8 @@
 // o seletor emitir `choose_offer` com o grupo já resolvido. `tipoOferta` é
 // critério INTERNO de ranking/dedup (FIX-193): NUNCA entra no payload de UI.
 
+import { matchAdministradoraLogo } from "@/lib/consorcio/administradora-logo";
+
 /** Grupo real (model-facing) capturado do tool-result de recommend/search. É o
  * `toModelGroupSummary` (+ score/scoreBreakdown no recommend). */
 export interface RevealGroupLike {
@@ -80,6 +82,7 @@ function isUsableGroup(g: RevealGroupLike | undefined): g is RevealGroupLike {
 export function coerceRevealCota(
 	input: Record<string, unknown>,
 	group: RevealGroupLike | undefined,
+	logosByAdministradora?: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
 	// Descarta o contempladosMes do modelo SEMPRE (fonte única = availableSlots
 	// real) e tipoOferta/grupo (critério INTERNO de ranking/dedup — FIX-193;
@@ -93,9 +96,19 @@ export function coerceRevealCota(
 		out.quotaId = id;
 	}
 	// FIX-223: lance médio SEMPRE do grupo real — nunca o que a LLM digitou.
-	// Descarta incondicionalmente aqui (mesmo sem grupo ancorado); só volta
-	// abaixo quando o grupo real usável realmente traz o dado (D11).
+	// FIX-222: idem pro logoUrl — casado por administradora contra o cadastro
+	// (nunca uma URL que a LLM inventou). Descarta incondicionalmente aqui
+	// (mesmo sem grupo ancorado); só volta abaixo com dado real (D11). O nome
+	// da administradora em si já não é coagido nesta função (a LLM copia do
+	// resultado real da busca) — casar o logo por ele é o mesmo nível de
+	// confiança já aceito pro resto do payload.
 	delete out.avgBidValue;
+	delete out.logoUrl;
+	const administradoraName =
+		(isUsableGroup(group) ? group.administradora : undefined) ??
+		(typeof rest.administradora === "string" ? rest.administradora : undefined);
+	const logoUrl = matchAdministradoraLogo(logosByAdministradora, administradoraName);
+	if (logoUrl) out.logoUrl = logoUrl;
 	if (!isUsableGroup(group)) return out;
 
 	out.creditValue = group.creditValue;
@@ -117,10 +130,11 @@ export function coerceRevealCota(
 export function coerceRecommendationPayload(
 	input: Record<string, unknown>,
 	index: RevealGroupIndex,
+	logosByAdministradora?: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
 	const id = typeof input.id === "string" ? input.id : undefined;
 	const group = id ? index.get(id) : undefined;
-	const out = coerceRevealCota(input, group);
+	const out = coerceRevealCota(input, group, logosByAdministradora);
 	if (isUsableGroup(group)) {
 		if (typeof group.score === "number") out.score = group.score;
 		if (group.scoreBreakdown && typeof group.scoreBreakdown === "object") {
@@ -141,6 +155,7 @@ export function coerceRecommendationPayload(
 export function coerceComparisonPayload(
 	input: Record<string, unknown>,
 	index: RevealGroupIndex,
+	logosByAdministradora?: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
 	const groups = Array.isArray(input.groups) ? input.groups : null;
 	if (!groups) return input;
@@ -150,7 +165,7 @@ export function coerceComparisonPayload(
 			if (!g || typeof g !== "object") return g;
 			const cota = g as Record<string, unknown>;
 			const id = typeof cota.id === "string" ? cota.id : undefined;
-			return coerceRevealCota(cota, id ? index.get(id) : undefined);
+			return coerceRevealCota(cota, id ? index.get(id) : undefined, logosByAdministradora);
 		}),
 	};
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "administradoras" ADD COLUMN "logo_url" text;
