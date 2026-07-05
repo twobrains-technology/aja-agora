@@ -99,16 +99,16 @@ export type CreditClamp = {
 	max: number;
 };
 
-/** FIX-33 — guardrail server-side do valor do bem na faixa da categoria. Os
- * sliders da UI já limitam por CREDIT_BOUNDS, mas o caminho de TEXTO LIVRE
- * ("quero uma carta de 5 milhões de auto") não tinha nada — passava cru até
- * morrer na Bevi (MinCreditError) ou retornar oferta absurda. Clampa pro teto/
- * piso da categoria e devolve a flag `clamped` + a faixa, pro agente confrontar
- * a realidade em vez de celebrar um valor que a administradora não entrega. */
+/** FIX-33 (revogado por FIX-218, Ata 2026-07-04) — guardrail server-side que
+ * capava o valor do bem na faixa da categoria. Decisão do cliente: "não há
+ * integração com grupos nesse ponto, então qualquer valor é válido" — o valor
+ * digitado/dito é SEMPRE aceito como veio; a busca (FIX-219) traz a ordem de
+ * grandeza mais próxima em vez do valor exato. `min`/`max` seguem devolvidos
+ * (dica visual do slider, derivação de creditMin), mas `value` nunca é mais
+ * ajustado e `clamped` é sempre `false`. */
 export function clampCreditToCategory(credit: number, category: Category): CreditClamp {
 	const { min, max } = CREDIT_BOUNDS[category];
-	const value = Math.min(Math.max(credit, min), max);
-	return { value, clamped: value !== credit, min, max };
+	return { value: Math.round(credit), clamped: false, min, max };
 }
 
 /**
@@ -118,10 +118,10 @@ export function clampCreditToCategory(credit: number, category: Category): Credi
  * ("um carro de uns 80 mil", "80k", "R$ 80.000"). O turn-analyzer (LLM) é o
  * extrator de runtime — entende inclusive por extenso ("oitenta mil"). Este
  * helper é o CONTRATO determinístico + backstop, fonte única de parsing pros
- * caminhos não-LLM: o input de texto livre do slider simples da web
- * (TODO(bloco-web-valor-agulha): consumir aqui em vez de re-parsear) e qualquer
- * validação determinística. Cobre dígitos com multiplicador (mil/milhão/k/mi) e
- * formatos BRL; retorna null pra texto por extenso (deixa o LLM resolver).
+ * caminhos não-LLM: o input de texto livre do slider simples da web (FIX-218,
+ * consumido em `value-picker.tsx`) e qualquer validação determinística. Cobre
+ * dígitos com multiplicador (mil/milhão/k/mi) e formatos BRL; retorna null pra
+ * texto por extenso (deixa o LLM resolver).
  */
 export function parseValorDoBem(text: string): number | null {
 	if (!text) return null;

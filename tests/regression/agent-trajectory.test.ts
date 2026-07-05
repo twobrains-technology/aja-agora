@@ -5834,10 +5834,13 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
 	});
 
-	it("clamp server-side: 5M de auto persiste o teto da categoria (500k — FIX-54)", async () => {
+	// FIX-218 (Ata 2026-07-04): o guardrail FIX-33/FIX-54 abaixo foi REVOGADO —
+	// "não há integração com grupos nesse ponto, então qualquer valor é
+	// válido". O valor de 5M sobrevive intacto; ver qualify-config.test.ts.
+	it("clamp server-side REVOGADO: 5M de auto NÃO é mais capado ao teto da categoria (FIX-218)", async () => {
 		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
-		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(500_000);
-		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(5_000_000);
+		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(false);
 	});
 
 	it("directive de busca confronta a faixa quando o credito foi clampado (creditClampedFrom)", () => {

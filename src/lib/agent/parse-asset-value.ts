@@ -123,8 +123,10 @@ export function parseAssetValue(
 
 	// 5) FIX-208 — número NU sem marcador ("200"), SÓ no contexto do gate `credit`
 	// com categoria conhecida (o usuário respondendo o valor do bem). Escala pra
-	// milhares quando abaixo do piso da faixa e clampa na categoria. Fora desse
-	// contexto o número nu segue ambíguo (retorna null logo abaixo).
+	// milhares quando abaixo do piso da faixa. FIX-218 (Ata 2026-07-04): o valor
+	// escalado NÃO é mais capado na faixa da categoria — sobrevive intacto, mesmo
+	// acima do teto real. Fora desse contexto o número nu segue ambíguo (retorna
+	// null logo abaixo).
 	if (ctx?.gate === "credit" && ctx.category) {
 		const n = bareNumberAsValue(t);
 		if (n !== null) {
