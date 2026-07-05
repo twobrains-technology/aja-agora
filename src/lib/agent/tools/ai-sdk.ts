@@ -670,7 +670,7 @@ export const consorcioTools = {
 
 	present_decision_prompt: tool({
 		description:
-			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (contratar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
+			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (reservar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
 		inputSchema: z.object({
 			administradora: z
 				.string()
@@ -684,7 +684,7 @@ export const consorcioTools = {
 
 	present_contract_form: tool({
 		description:
-			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
+			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero reservar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra confirmar sua reserva, só preciso de uns dados rápidos'.",
 		inputSchema: z.object({
 			administradora: z
 				.string()
