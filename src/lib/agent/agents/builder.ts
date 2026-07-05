@@ -1,5 +1,7 @@
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { createGatewayOpenAI } from "@/lib/llm/gateway-openai";
+import { isNativeAnthropicModel } from "@/lib/llm/model-provider";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
 import { allowedTools } from "../orchestrator/tool-policy";
@@ -15,6 +17,7 @@ import {
 import { buildConsorcioTools, consorcioTools } from "../tools/ai-sdk";
 
 const anthropic = createGatewayAnthropic();
+const openaiCompat = createGatewayOpenAI();
 
 type ConsorcioToolName = keyof typeof consorcioTools;
 type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;
@@ -281,15 +284,23 @@ export function buildAgent(
 		anthropic: { thinking: { type: "disabled" as const } },
 	};
 
+	// Modelos custom (ex: Qwen) não são nativos da Anthropic — o gateway
+	// LiteLLM quebra `tool_choice` ao traduzir /v1/messages pra um backend
+	// `openai/`-compatible. Esses vão pelo client OpenAI-compatible (sem
+	// tradução) e sem os providerOptions específicos da Anthropic (ver
+	// qwen-gateway-provider.test.ts).
+	const modelId = process.env.AI_MODEL ?? "claude-sonnet-5";
+	const modelIsNativeAnthropic = isNativeAnthropicModel(modelId);
+
 	const settings = {
-		model: anthropic(process.env.AI_MODEL ?? "claude-sonnet-5"),
+		model: modelIsNativeAnthropic ? anthropic(modelId) : openaiCompat(modelId),
 		instructions,
 		tools,
 		// FIX-209 — Sonnet 5 rejeita `temperature` não-default (400), então NÃO
 		// passamos mais sampling params. O tom por persona passa a ser guiado pelo
 		// system prompt/traits (as personas já têm prompts distintos); se alguma
 		// regredir de tom, reforça-se no prompt — não no sampling.
-		providerOptions: anthropicProviderOptions,
+		...(modelIsNativeAnthropic ? { providerOptions: anthropicProviderOptions } : {}),
 		stopWhen: stepCountIs(isConcierge ? 1 : 10),
 		// toolChoice: quando o orchestrator detecta "user respondeu nome"
 		// (detect-name-turn.ts), força save_contact_name. Default 'auto' quando
