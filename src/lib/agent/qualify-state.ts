@@ -17,11 +17,15 @@ export type Gate =
 	| "decision";
 
 /**
- * FIX-208: gates de COLETA ativa da qualificação — quem responde direto a um
- * destes está fornecendo o dado pedido (valor do bem, lance), então o gate
- * dispara mesmo em intent `neutral` (o analyzer é não-confiável em timeout de
- * cold-start). NÃO inclui experience/consent (binárias com card próprio que já
- * são dirigidas por clique) nem name/search/decision (fora da coleta de dados).
+ * FIX-208: gates de COLETA ativa — quem responde direto a um destes está
+ * fornecendo o dado pedido (valor do bem, lance), então o gate dispara mesmo
+ * em intent `neutral` (o analyzer é não-confiável em timeout de cold-start).
+ * NÃO inclui experience/consent (binárias com card próprio que já são
+ * dirigidas por clique) nem name/search/decision (fora da coleta de dados).
+ * FIX-215 (2026-07-04): `lance`/`lance-value`/`lance-embutido` migraram de
+ * PRÉ-search (entrada) pra PÓS-reveal no `nextGate()` — mas continuam aqui:
+ * a mesma classe de bug (resposta direta classificada como `neutral` no
+ * cold-start do analyzer) vale independente de onde o gate mora na sequência.
  * Exportado pra o guard rede-final (gate-reengage) re-emitir a MESMA classe.
  */
 export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
@@ -76,30 +80,29 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (q.creditMax === undefined) return "credit";
 	// FIX-103 (revisão da jornada de entrada — Kairo 2026-06-28): o gate
 	// `timeframe` (prazo desejado de contemplação) SAIU da qualificação
-	// ("usuario so vai falar o valor agora, prazo nao"). O funil pula direto de
-	// `credit` (valor) pra `lance`. "timeframe" segue no union `Gate` e o campo
-	// `prazoMeses` segue opcional no meta — por compat com consumidores fora do
-	// escopo deste bloco (web/whatsapp/orchestrator), que os blocos irmãos
-	// (web-valor-agulha, whatsapp-apresentacao) limpam. `nextGate` NUNCA mais o
-	// emite (prova: qualify-state.fix-103.test.ts). O prazo deixa de pesar na
-	// recomendação (desiredTermMonths=0 → fator neutro, ver tools/ai-sdk.ts).
-	if (!q.hasLance) return "lance";
-	// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
-	// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
-	// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
-	if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
-	// Jornada do doc: TODO MUNDO passa pelo gate de lance embutido (educa +
-	// opt-in) antes da busca — no docx a educação é sub-bullet PARALELO ao
-	// "Se sim", e o próprio texto diz que o lance embutido "ajuda quem não
-	// possui todo o valor do lance hoje" (= quem respondeu Não/Talvez).
-	// FIX-4 (teste manual Kairo 2026-06-05): a versão anterior pulava
-	// "maybe"/"no" — o ramo educativo "sumia" e parecia intermitência.
-	if (q.lanceEmbutido === undefined) return "lance-embutido";
+	// ("usuario so vai falar o valor agora, prazo nao"). "timeframe" segue no
+	// union `Gate` e o campo `prazoMeses` segue opcional no meta — por compat
+	// com consumidores fora do escopo deste bloco (web/whatsapp/orchestrator),
+	// que os blocos irmãos (web-valor-agulha, whatsapp-apresentacao) limpam.
+	// `nextGate` NUNCA mais o emite (prova: qualify-state.fix-103.test.ts). O
+	// prazo deixa de pesar na recomendação (desiredTermMonths=0 → fator
+	// neutro, ver tools/ai-sdk.ts).
 
 	// (FIX-53) O gate `identify` foi movido para ANTES do `credit` — ver acima.
 	// A busca real continua exigindo identidade (tripwire em pipeSearchSummaryTurn /
 	// runSearchSummaryWithOrchestrator); aqui ela já foi coletada cedo.
 
+	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
+	// `credit` (valor) pra `search` — a pergunta de lance ("Pretende dar um
+	// lance?") e a educação de lance embutido SAEM da entrada (reverte a
+	// COLOCAÇÃO de FIX-92/118/212, não o conceito: ele só migra pro pós-reveal
+	// abaixo). Motivo (Bernardo): todo consórcio tem lance; perguntar na
+	// largada, antes do usuário ver qualquer oferta, não faz sentido e confunde
+	// quem nem sabe o que é embutido. A busca real NÃO tem lance como
+	// pré-requisito — só identidade (tool-policy.ts, `identityCollected`) — e
+	// `prefsFromMeta` (discovery-session.ts) já trata `lanceEmbutido` ausente
+	// como "sem embutido" (funciona sem os campos).
+	//
 	// Funil pós-qualificação (jornada.docx): search (passo 3+4 reveal) →
 	// decision (fim do passo 4: "Esse plano faz sentido?"). searchDispatched e
 	// decisionDispatched são guards de idempotência — o orquestrador dirige cada
@@ -116,11 +119,38 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// busca determinística na faixa nova. Converge: o runner re-snapshota
 	// discoveredCreditTarget ao produzir os cards da nova faixa →
 	// revealValueTargetChanged volta a false → sem loop. Anti BUG-REVEAL-LOOP:
-	// afirmativo curto na MESMA faixa (valor == descoberto) NÃO cai aqui.
+	// afirmativo curto na MESMA faixa (valor == descoberto) NÃO cai aqui. Tem
+	// PRECEDÊNCIA sobre a conversa de lance abaixo — trocar de faixa é mais
+	// urgente que continuar a qualificação de lance da faixa antiga.
 	if (revealValueTargetChanged(meta)) return "search";
-	// docx passo 4 (linha 34-36): após apresentar o plano, OFERECER o simulador
-	// ("contemplado em 3, 6 ou 12 meses — que tal?") ANTES do card de decisão.
-	// Conceito do Bernardo (simulador-agulha) no caminho padrão da jornada.
+
+	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +
+	// educação de lance embutido) SÓ entra em jogo DEPOIS que o usuário JÁ VIU
+	// as opções reais (revealCompleted) — nunca antes. Fica ANTES do
+	// `simulator-offer` de propósito: o simulador de contemplação (P5 da
+	// jornada) promete mostrar a parcela pós-contemplação CAINDO com lance
+	// embutido — sem o dado coletado aqui, o dial só teria o cenário "sem
+	// lance" na primeira oferta. Decisão de design registrada em
+	// docs/decisoes/blocos/2026-07-04-bloco-jornada-conversa.md.
+	if (meta.revealCompleted) {
+		if (!q.hasLance) return "lance";
+		// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
+		// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
+		// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
+		if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
+		// Jornada do doc: TODO MUNDO passa pelo gate de lance embutido (educa +
+		// opt-in) — no docx a educação é sub-bullet PARALELO ao "Se sim", e o
+		// próprio texto diz que o lance embutido "ajuda quem não possui todo o
+		// valor do lance hoje" (= quem respondeu Não/Talvez). FIX-4 (teste manual
+		// Kairo 2026-06-05): a versão anterior pulava "maybe"/"no" — o ramo
+		// educativo "sumia" e parecia intermitência.
+		if (q.lanceEmbutido === undefined) return "lance-embutido";
+	}
+
+	// docx passo 4 (linha 34-36): após apresentar o plano (e a conversa de
+	// lance já resolvida), OFERECER o simulador ("contemplado em 3, 6 ou 12
+	// meses — que tal?") ANTES do card de decisão. Conceito do Bernardo
+	// (simulador-agulha) no caminho padrão da jornada.
 	if (meta.revealCompleted && !meta.simulatorOfferDispatched) return "simulator-offer";
 	if (meta.revealCompleted && !meta.decisionDispatched) return "decision";
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
@@ -224,13 +254,23 @@ export function decideShowGate(args: {
 	}
 
 	// "search" dispara busca + cards — a acao mais invasiva do sistema.
-	// Exige sinal EXPLICITO do usuario. Nunca dispara em neutral/asking/doubt/off-topic.
+	// Exige sinal EXPLICITO do usuario. Nunca dispara em asking/doubt/off-topic.
 	if (gate === "search") {
 		// FIX-76: numa retomada com valor-alvo TROCADO (revealValueTargetChanged),
 		// o próprio sinal de troca de faixa já justifica re-buscar — o analyzer
 		// costuma marcar a mensagem da retomada como conversacional (neutral),
 		// e cair em conversacional deixava o modelo alucinar "instabilidade".
 		if (revealValueTargetChanged(meta)) return true;
+		// FIX-215 (Ata 2026-07-04): lance saiu do meio — `credit` agora cai DIRETO
+		// em `search` (antes caía em `lance`, um COLLECTION_GATE tolerante a
+		// `neutral`). Sem este atalho, a MESMA classe de bug do FIX-208 reaparece:
+		// o usuário acaba de responder o valor, o analyzer cai em NEUTRAL_FALLBACK
+		// (timeout cold-start) e a busca — que já tem tudo que precisa
+		// (nextGate só chega em "search" com credit+identity prontos) — ficaria
+		// suspensa esperando um sinal explícito que não vem. `!searchDispatched`
+		// escopa isto à PRIMEIRA busca (o gatilho de fim-de-qualificação); depois
+		// dela, só `revealValueTargetChanged` (acima) reabre — nunca `neutral` solto.
+		if (!meta.searchDispatched && intent === "neutral") return true;
 		return intent === "ready_to_proceed" || intent === "providing_info";
 	}
 

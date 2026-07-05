@@ -86,14 +86,14 @@ describe("perguntas de gate — fiéis ao docx", () => {
 	});
 });
 
-describe("card de decisão — pergunta e 3 opções LITERAIS do docx (passo 4)", () => {
+describe("card de decisão — pergunta e 3 opções (docx passo 4, terminologia atualizada pela Ata 2026-07-04)", () => {
 	it('pergunta canônica: "Esse plano faz sentido para você?"', () => {
 		expect(DECISION_PROMPT_QUESTION).toBe("Esse plano faz sentido para você?");
 	});
 
-	it("as 3 labels são as do docx, na ordem", () => {
+	it("as 3 labels — Ata 2026-07-04 (FIX-216) substitui 'contratar' por 'reservar'", () => {
 		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
-			"Sim, quero contratar agora",
+			"Sim, quero reservar agora",
 			"Quero ver outras opções",
 			"Quero falar com um especialista da Aja Agora",
 		]);

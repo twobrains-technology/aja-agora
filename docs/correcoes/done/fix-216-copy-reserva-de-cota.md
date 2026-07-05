@@ -1,10 +1,12 @@
 ---
 id: FIX-216
 titulo: "Terminologia 'reserva de cota' em todo texto de usuário (contratar→reservar, sem 'fechar'); frase 'não paga nada agora / booking'; wording de reserva concluída"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-jornada-conversa
+commit: c2a021775dbc71a721f0f5bb62cee24dad15c6e7
+executado_em: 2026-07-04
 arquivos:
   - src/lib/chat/types.ts
   - src/app/api/chat/route.ts

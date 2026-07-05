@@ -114,3 +114,46 @@ describe("FIX-118 — WhatsApp educação de lance embutido pra no/maybe (parida
 		expect(persisted).toBeTruthy();
 	});
 });
+
+// FIX-215 (Ata 2026-07-04) — a conversa de lance inteira (incluindo este 2º
+// passo, o opt-in de lance embutido) só acontece PÓS-reveal agora. Resolver o
+// lance-embutido não pode mais re-disparar a busca (ela JÁ ocorreu) — tem que
+// despachar o próximo passo REAL da sequência (simulator-offer/decision),
+// espelhando a mesma correção feita no handler web (route.ts).
+describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca re-busca", () => {
+	it("'Sem lance embutido' pós-reveal → fireGate('simulator-offer'), NUNCA runSearchSummaryWithOrchestrator", async () => {
+		mocks.meta = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 200_000, hasLance: "no" },
+		} as ConversationMetadata;
+
+		await dispatch("lanceembutido_no", "Sem lance embutido");
+
+		expect(mocks.runSearchSummary).not.toHaveBeenCalled();
+		expect(mocks.fireGate).toHaveBeenCalledTimes(1);
+		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("simulator-offer");
+	});
+
+	it("'Sim, considerar' pós-reveal → também despacha simulator-offer, não a busca", async () => {
+		mocks.meta = {
+			currentCategory: "auto",
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 200_000, hasLance: "yes", lanceValue: 30_000 },
+		} as ConversationMetadata;
+
+		await dispatch("lanceembutido_yes", "Sim, considerar");
+
+		expect(mocks.runSearchSummary).not.toHaveBeenCalled();
+		expect(mocks.fireGate).toHaveBeenCalledTimes(1);
+		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("simulator-offer");
+	});
+});
