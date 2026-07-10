@@ -15,20 +15,31 @@
 // (CDC art. 30/37) — mas sem repetir em cada número.
 
 // ── Premissas (documentadas, revisáveis) ─────────────────────────────────────
-const MAX_BID_PCT = 80; // teto realista de lance
+// FIX-225: teto do lance sobe de 80% → 90% (spec docs/03-regras-calculo.md) — a
+// curva power calibrada não achata mais nos meses iniciais, então o teto vira
+// uma trava de segurança rara, não o comportamento normal da região útil.
+const MAX_LANCE_PCT = 90;
 const DEFAULT_MAX_EMBUTIDO_PCT = 30; // teto típico do lance embutido
 const DEFAULT_WINNING_BID_PCT = 40; // lance vencedor "típico" quando não há sinal do grupo
 /** Abaixo disso, o lance é opcional — a contemplação vem mais do sorteio. */
 const SORTEIO_THRESHOLD_PCT = 8;
+/** Curvatura da power curve (FIX-225) — ajustável, não mágica. */
+const CURVE_K = 1.6;
 
 export type DialMode = "lance" | "sorteio";
-export type DialLikelihood = "alta" | "media" | "baixa";
 
 export interface ContemplationDialInput {
 	creditValue: number; // carta R$
 	termMonths: number; // prazo do grupo
 	targetMonth: number; // a agulha (quando quer contemplar)
-	/** Lance vencedor típico do grupo (% da carta), da oferta rica da Descoberta. */
+	/** FIX-225: lance médio da oferta em R$ ABSOLUTO (ex.: `averageBid` da Bevi).
+	 * Fonte preferencial pra derivar `winningBidPct` — POR OFERTA, nunca %
+	 * fixo reaproveitado de outra carta. Quando ausente, cai pro legado
+	 * `historicalWinningBidPct`. */
+	averageBid?: number;
+	/** Legado: lance vencedor típico do grupo (% da carta). Usado só quando
+	 * `averageBid` está ausente (retrocompat de chamadores que ainda não
+	 * migraram pro valor absoluto). */
 	historicalWinningBidPct?: number;
 	/** FIX-C1 (auditoria 2026-06-11): mês em que o lance de referência VENCE,
 	 * vindo da oferta REAL (probContemplacaoMeses da Bevi). Quando presente, a
@@ -40,12 +51,16 @@ export interface ContemplationDialInput {
 	monthlyPayment?: number;
 	/** Teto do lance embutido aceito pelo grupo (default 30%). */
 	maxEmbutidoPct?: number;
+	/** FIX-225: taxa de administração (%, 0-100) — incide sobre a carta cheia,
+	 * inclusive o embutido que o cliente não recebe. Ausente no Trilho A
+	 * (D11: nunca fabricar) → `admSobreEmbutido` sai `undefined`. */
+	admFeePct?: number;
 }
 
 export interface ContemplationDialResult {
 	targetMonth: number;
 	mode: DialMode;
-	requiredLancePct: number; // 0–80
+	requiredLancePct: number; // 0–90
 	requiredLanceValue: number; // R$
 	embeddedBidPct: number; // parte via carta (≤ maxEmbutido)
 	embeddedBidValue: number; // R$
@@ -57,7 +72,9 @@ export interface ContemplationDialResult {
 	 * Até a contemplação vale a parcela real do grupo. Undefined quando não há
 	 * monthlyPayment ou a contemplação cai no último mês. */
 	paymentAfterContemplation?: number;
-	likelihood: DialLikelihood;
+	/** FIX-225: custo escondido do embutido (taxa de adm sobre a parte
+	 * embutida). `undefined` quando `admFeePct` não foi informado (Trilho A). */
+	admSobreEmbutido?: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -74,26 +91,42 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	const maxEmbutido = clamp(
 		finite(input.maxEmbutidoPct ?? DEFAULT_MAX_EMBUTIDO_PCT, DEFAULT_MAX_EMBUTIDO_PCT),
 		0,
-		MAX_BID_PCT,
+		100,
 	);
-	const winningBid = clamp(
-		finite(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, DEFAULT_WINNING_BID_PCT),
-		5,
-		MAX_BID_PCT,
-	);
+
+	// FIX-225: winningBidPct (fração 0-1) é derivado POR OFERTA — nunca % fixo
+	// reaproveitado de outra carta. `averageBid` (R$ absoluto) tem precedência;
+	// sem ele, cai pro legado `historicalWinningBidPct` (%, retrocompat).
+	const averageBid = finite(input.averageBid ?? Number.NaN, Number.NaN);
+	const winningBidPctRaw =
+		Number.isFinite(averageBid) && carta > 0
+			? averageBid / carta
+			: finite(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, DEFAULT_WINNING_BID_PCT) /
+				100;
+	const winningBidPct = clamp(winningBidPctRaw, 0.05, MAX_LANCE_PCT / 100);
 
 	// Mês de referência onde o lance de referência contempla. FIX-C1: quando a
 	// oferta REAL informa o par (lance%, mês) — probContemplacaoMeses da Bevi —
 	// a curva é calibrada nele e dial == card. Sem dado real, âncora heurística
-	// de 25% do prazo. Antes do mês de referência exige mais lance; depois, menos.
+	// de 25% do prazo (comportamento legado preservado).
 	const refRaw = Math.round(finite(input.referenceMonth ?? 0, 0));
-	const anchorMonth =
+	const anchorMonthRaw =
 		refRaw >= 1 ? clamp(refRaw, 1, term) : clamp(Math.round(term * 0.25), 4, term);
-	const raw = winningBid * (anchorMonth / targetMonth);
-	// Taper tardio: quanto mais perto do fim do grupo, mais o sorteio basta sozinho
-	// e o lance necessário tende a zero (taper=1 até o mês de referência, 0 no fim).
-	const lateTaper = clamp((term - targetMonth) / Math.max(1, term - anchorMonth), 0, 1);
-	const requiredLancePct = clamp(Math.round(raw * lateTaper), 0, MAX_BID_PCT);
+	// FIX-225: clampa a `term-1` (quando term>1) pra nunca zerar o denominador
+	// `(1-p(refMonth))` da calibração — referência no último mês é degenerado.
+	const anchorMonth = term > 1 ? Math.min(anchorMonthRaw, term - 1) : 1;
+
+	// FIX-225 (spec docs/03-regras-calculo.md): curva power calibrada — passa
+	// exatamente por (anchorMonth, winningBidPct) e tende a zero no fim do
+	// prazo (o modo sorteio emerge sozinho, sem taper artificial).
+	const p = (m: number) => (term > 1 ? (m - 1) / (term - 1) : 0);
+	const L0 = winningBidPct / (1 - p(anchorMonth)) ** CURVE_K;
+	const requiredLancePctFraction = clamp(
+		L0 * (1 - p(targetMonth)) ** CURVE_K,
+		0,
+		MAX_LANCE_PCT / 100,
+	);
+	const requiredLancePct = Math.round(finite(requiredLancePctFraction, 0) * 100);
 
 	const mode: DialMode = requiredLancePct <= SORTEIO_THRESHOLD_PCT ? "sorteio" : "lance";
 
@@ -121,9 +154,14 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 		paymentAfterContemplation = round2(Math.max(0, remainingBalance) / remainingMonths);
 	}
 
-	// Probabilidade qualitativa: dá pra fazer só com a carta? (sem dinheiro novo)
-	const likelihood: DialLikelihood =
-		requiredLancePct <= maxEmbutido ? "alta" : requiredLancePct <= 50 ? "media" : "baixa";
+	// FIX-225: custo escondido do embutido — taxa de adm incide sobre a carta
+	// cheia, inclusive sobre o embutido que o cliente não recebe. Ausente no
+	// Trilho A (sem admFeePct) → omite a linha, nunca estima (D11).
+	const admFeePct = input.admFeePct;
+	const admSobreEmbutido =
+		admFeePct != null && Number.isFinite(admFeePct)
+			? round2(embeddedBidValue * (admFeePct / 100))
+			: undefined;
 
 	return {
 		targetMonth,
@@ -136,7 +174,7 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 		ownCashValue,
 		receivedCredit,
 		paymentAfterContemplation,
-		likelihood,
+		admSobreEmbutido,
 	};
 }
 

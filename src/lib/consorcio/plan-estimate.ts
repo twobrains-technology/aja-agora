@@ -15,7 +15,7 @@
 // categoria (pontos médios dos ranges de mercado usados no scoring).
 
 import type { Category } from "@/lib/agent/personas";
-import { computeContemplationDial, type DialLikelihood } from "./contemplation-dial";
+import { computeContemplationDial } from "./contemplation-dial";
 
 // ── Premissas de mercado por categoria (documentadas, revisáveis) ────────────
 // Prazo típico de grupo (meses) e taxa de administração típica (ponto médio do
@@ -78,7 +78,6 @@ export interface PlanEstimate {
 	viableAssetForBudget: number;
 	/** Valor que ele recebe se usar o embutido (carta − embutido). */
 	receivedCredit: number;
-	likelihood: DialLikelihood;
 	/** Modo da contemplação no mês-alvo (lance necessário vs sorteio basta). */
 	mode: "lance" | "sorteio";
 }
@@ -154,7 +153,6 @@ export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 		budgetFeasible,
 		viableAssetForBudget,
 		receivedCredit: dial.receivedCredit,
-		likelihood: dial.likelihood,
 		mode: dial.mode,
 	};
 }

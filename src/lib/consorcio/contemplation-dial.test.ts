@@ -51,9 +51,9 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
 	});
 
-	it("teto de 80% no lance pra metas muito agressivas", () => {
+	it("FIX-225: teto de 90% no lance pra metas muito agressivas (curva power, clamp novo)", () => {
 		const r = computeContemplationDial({ ...base, targetMonth: 1, historicalWinningBidPct: 60 });
-		expect(r.requiredLancePct).toBeLessThanOrEqual(80);
+		expect(r.requiredLancePct).toBeLessThanOrEqual(90);
 	});
 
 	it("'sem pressa' (mês tardio) → modo sorteio, lance opcional/baixo", () => {
@@ -62,9 +62,9 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.requiredLancePct).toBeLessThanOrEqual(10);
 	});
 
-	it("likelihood alta quando dá pra fazer só com a carta (≤ teto embutido)", () => {
+	it("FIX-225: likelihood foi removido do output (heurística sem base de dado)", () => {
 		const r = computeContemplationDial({ ...base, targetMonth: 24 });
-		if (r.requiredLancePct <= 30) expect(r.likelihood).toBe("alta");
+		expect("likelihood" in r).toBe(false);
 	});
 
 	it("clampa targetMonth fora do prazo do grupo", () => {
@@ -76,6 +76,121 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		const r = computeContemplationDial({ creditValue: 50_000, termMonths: 60, targetMonth: 12 });
 		expect(r.requiredLancePct).toBeGreaterThanOrEqual(0);
 		expect(r.requiredLanceValue).toBeGreaterThanOrEqual(0);
+	});
+});
+
+// FIX-225 (spec docs/03-regras-calculo.md): a curva hiperbólica antiga achatava em
+// 90% (clamp) nos meses iniciais e nunca convergia a zero no fim do prazo (sorteio
+// não emergia sozinho). A curva power calibrada corrige isso: passa exatamente pelo
+// ponto real (referenceMonth, winningBidPct) e tende a zero no fim do prazo.
+describe("FIX-225 — curva power calibrada (calibração + convergência + winningBidPct por oferta)", () => {
+	it("curve(referenceMonth) === winningBidPct (calibração exata, ±0.5%)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946, // 89_946 / 171_000 = 52,6%
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeCloseTo(52.6, 0);
+	});
+
+	it("curve(termMonths) < 8% — modo sorteio emerge sozinho no fim do prazo", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 96,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeLessThan(8);
+		expect(r.mode).toBe("sorteio");
+	});
+
+	it("curve(m) monotônica decrescente em [1, termMonths]", () => {
+		const input = { creditValue: 171_000, termMonths: 96, averageBid: 89_946, referenceMonth: 20 };
+		const months = [1, 3, 6, 12, 20, 40, 60, 80, 96];
+		const pcts = months.map((m) => computeContemplationDial({ ...input, targetMonth: m }).requiredLancePct);
+		for (let i = 1; i < pcts.length; i++) {
+			expect(pcts[i]).toBeLessThanOrEqual(pcts[i - 1]);
+		}
+	});
+
+	it("curve(1) < 90% — não bate no clamp na região útil (achatamento corrigido)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 1,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeLessThan(90);
+	});
+
+	it("cartas diferentes → winningBidPct diferentes (derivado POR OFERTA, nunca % fixo)", () => {
+		const cartaA = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946, // 52,6%
+			referenceMonth: 20,
+		});
+		const cartaB = computeContemplationDial({
+			creditValue: 123_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 102_090, // 83% — mesma referenceMonth, oferta bem mais cara
+			referenceMonth: 20,
+		});
+		// No mês de referência, cada carta reflete o SEU próprio winningBidPct —
+		// nunca o lance de uma carta reaproveitado em outra.
+		expect(cartaA.requiredLancePct).toBeCloseTo(52.6, 0);
+		expect(cartaB.requiredLancePct).toBeCloseTo(83, 0);
+		expect(cartaA.requiredLancePct).not.toBe(cartaB.requiredLancePct);
+	});
+
+	it("paymentAfterContemplation nunca excede a parcela base", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 12,
+			averageBid: 89_946,
+			referenceMonth: 20,
+			monthlyPayment: 2_500,
+		});
+		expect(r.paymentAfterContemplation).toBeLessThanOrEqual(2_500);
+	});
+
+	it("nenhuma saída expõe redução de prazo (D7 — fora de escopo)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect("reducedTermMonths" in r).toBe(false);
+		expect("newTermMonths" in r).toBe(false);
+	});
+
+	it("admSobreEmbutido: presente quando admFeePct informado, undefined no Trilho A (ausente)", () => {
+		const comAdm = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+			admFeePct: 18,
+		});
+		const semAdm = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(comAdm.admSobreEmbutido).toBeCloseTo(comAdm.embeddedBidValue * 0.18, 2);
+		expect(semAdm.admSobreEmbutido).toBeUndefined();
 	});
 });
 
