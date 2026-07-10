@@ -79,6 +79,8 @@ const CLOSED_META: ConversationMetadata = {
 	recommendedAdministradora: "CANOPUS",
 	// Raia máxima alcançada na conversa antes do lead existir (web flow).
 	maxStageReached: "qualificado",
+	// FIX-244: guard exige que present_contract_form já tenha aparecido.
+	contractFormDispatched: true,
 };
 
 function makeChatReq(body: unknown): NextRequest {

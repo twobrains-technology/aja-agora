@@ -160,6 +160,13 @@ export type ConversationMetadata = {
 	 * 'documentos'). Pós-Parabéns o agente não re-apresenta contract_form
 	 * (BUG-POS-FECHAMENTO-NAO-TERMINAL, E2E real 2026-06-04). */
 	contractClosed?: boolean;
+	/** FIX-244 (rodada 2, Fable r1, gap #9): marca que `present_contract_form`
+	 * JÁ apareceu nesta conversa (runner.ts, no mesmo padrão hardening do
+	 * `decisionDispatched`). O handler `contract-submit` (route.ts) EXIGE essa
+	 * flag antes de criar proposta real — sem isso, o servidor aceitava o
+	 * submit mesmo numa conversa que nunca viu o formulário (defesa em
+	 * profundidade, mesma família do guard `revealCompleted` do FIX-12). */
+	contractFormDispatched?: boolean;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;

@@ -748,6 +748,15 @@ export async function* runAgentTurn(args: {
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
 	}
 
+	// FIX-244 (rodada 2, Fable r1, gap #9): marca contractFormDispatched quando
+	// o formulário de contratação aparece — mesmo hardening do decisionDispatched
+	// acima. O handler contract-submit (route.ts) exige essa flag antes de
+	// aceitar o fechamento (defesa em profundidade, mesma família do FIX-12).
+	if (artifacts.some((a) => a.type === "contract_form") && !meta.contractFormDispatched) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, { ...refreshed, contractFormDispatched: true });
+	}
+
 	const producedArtifact = artifacts.length > 0;
 	const turnArtifactTypes = artifacts.map((a) => a.type);
 	let nextGateToFire: Gate | null = null;

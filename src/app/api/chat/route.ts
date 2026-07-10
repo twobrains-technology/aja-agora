@@ -624,6 +624,21 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
+							// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
+							// GÊMEA da acima — sem o present_contract_form ter aparecido
+							// nesta conversa, contract-submit NÃO pode criar proposta real
+							// (CPF + consulta de bureau não pode ficar a um POST cru de
+							// distância). Achado ao vivo: o Fable fechou uma proposta
+							// atirando contract-submit numa conversa que nunca viu o form.
+							if (freshMeta.contractFormDispatched !== true) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Antes de eu confirmar sua reserva, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+								);
+								return;
+							}
 							// FIX-9: identidade já coletada no identify — o form confirma e o
 							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
 							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
