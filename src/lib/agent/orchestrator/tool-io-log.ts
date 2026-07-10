@@ -95,3 +95,51 @@ export function logToolIO(args: ToolIoLogArgs): void {
 		// Observabilidade nunca pode derrubar o turno.
 	}
 }
+
+// FIX-257 (P1, veredito Fable r4 §P1 #1) — erro de INPUT de tool (falha de
+// validação Zod antes do `execute` rodar) NUNCA pode colapsar no mesmo
+// `output: null` mudo de "a tool rodou e não achou nada" (buildToolIoLogLines
+// acima, quando não há tool-result pareado). É essa indistinguibilidade que
+// alimentou a espiral de negação: o agente tratou "sem confirmação" como "não
+// existe" e negou 3× ofertas que o usuário via na própria tabela.
+//
+// O AI SDK v6 emite um chunk `tool-input-error` no `fullStream` pra esse
+// caso — `runner.ts` precisa ligar este log nesse `case` (Camada 1
+// structural, ver teste). `outcome: "invalid_input"` + `error` populado
+// tornam o defeito BARULHENTO e nomeado, nunca silencioso.
+export type ToolInputErrorRecord = {
+	toolCallId?: string;
+	toolName: string;
+	input?: unknown;
+	errorText?: string;
+};
+
+export type ToolInputErrorLogArgs = {
+	conversationId?: string;
+	stepNumber: number;
+	error: ToolInputErrorRecord;
+};
+
+export function buildToolInputErrorLogLine(args: ToolInputErrorLogArgs): string {
+	return JSON.stringify({
+		level: "error",
+		source: "tool-io",
+		conversation_id: args.conversationId ?? null,
+		step: args.stepNumber,
+		tool: args.error.toolName,
+		toolCallId: args.error.toolCallId ?? null,
+		input: maskPii(args.error.input ?? null),
+		output: null,
+		outcome: "invalid_input",
+		error: args.error.errorText ?? "Input da tool nao bateu o schema esperado (erro de validacao).",
+	});
+}
+
+/** Emite o erro de input de tool via `console.error` (server-side). Nunca lança. */
+export function logToolInputError(args: ToolInputErrorLogArgs): void {
+	try {
+		console.error(buildToolInputErrorLogLine(args));
+	} catch {
+		// Observabilidade nunca pode derrubar o turno.
+	}
+}

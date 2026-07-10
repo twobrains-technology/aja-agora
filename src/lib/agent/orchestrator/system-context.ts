@@ -1,13 +1,22 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { buildMentionedOfferDirective, type ChosenOffer } from "./choose-offer";
 import type { ChatMessage } from "./types";
 
 export function buildSystemContext(args: {
 	knownName: string | null;
 	newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null;
 	meta: ConversationMetadata;
+	/** FIX-258: cota que o texto do turno resolveu deterministicamente contra
+	 * as já exibidas em tela (resolveOfferMentionForConversation) — rota
+	 * ANTES da tool-call, nunca depende da LLM adivinhar o groupId. */
+	mentionedOffer?: ChosenOffer | null;
 }): ChatMessage[] {
-	const { knownName, newlyExtractedExperience, meta } = args;
+	const { knownName, newlyExtractedExperience, meta, mentionedOffer } = args;
 	const out: ChatMessage[] = [];
+
+	if (mentionedOffer) {
+		out.push({ role: "system", content: buildMentionedOfferDirective(mentionedOffer) });
+	}
 
 	if (knownName) {
 		out.push({ role: "system", content: `Nome do usuario: "${knownName}"` });

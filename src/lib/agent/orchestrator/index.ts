@@ -15,6 +15,7 @@ import {
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
+import { resolveOfferMentionForConversation } from "./choose-offer";
 import { isLikelyNameResponse } from "./detect-name-turn";
 import {
 	buildAdvanceToContractDirective,
@@ -207,11 +208,23 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
 
+	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo
+	// ausente ANTES da tool-call): resolve a menção textual do usuário (nome de
+	// administradora ou valor aproximado, ex. "quero a ITAÚ"/"a de 92 mil")
+	// CONTRA os grupos JÁ EXIBIDOS em tela — antes de montar o prompt/deixar a
+	// LLM decidir sozinha. resolveOfferMentionForConversation nunca inventa
+	// (null sem match claro ou ambíguo); a diretiva só entra no systemContext
+	// quando há match real. Rota determinística, Lei 1/4.
+	const mentionedOffer = isUserTurn
+		? await resolveOfferMentionForConversation(conversationId, userText)
+		: null;
+
 	const history = await loadConversationHistory(conversationId);
 	const systemContext = buildSystemContext({
 		knownName,
 		newlyExtractedExperience,
 		meta,
+		mentionedOffer,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
