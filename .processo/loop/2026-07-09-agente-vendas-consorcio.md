@@ -65,3 +65,9 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - r1+r2+r3 mergeados e **pushados na develop** (30c94094); test:unit 3089/3089 verde.
 - Base integ/ + 3 workspaces de bloco deletados (100% mergeado). OrbStack: só develop.
 - Validação FINAL (Fable) rodando na develop consolidada → gaps viram rodada 4 (nova base + blocos).
+
+## Rodada 4 (Fable FINAL 4/10, junção develop)
+- P0 N-A: what-if re-ancora recommendedOffer → fechamento fecha plano ERRADO (contract-input.ts:43 stale) → proposta real errada na Bevi + loop.
+- Cards subiram D2 4→6 (server-side provado); ainda descobertos: scarcity (LLM chama decision_prompt direto), embedded_bid caminho texto; rota nome→grupo falta.
+- Consertos r3 confirmados: splitter ✓, aviso fio ✓, recovery sem beco ✓.
+- Blocos r4: fix-r4-ancora (FIX-251,252) + fix-r4-cards-polish (FIX-253..256). Base integ/consorcio-r4.
