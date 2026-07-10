@@ -680,21 +680,25 @@ export async function POST(req: NextRequest) {
 								// + administradoraPreferida) — módulo único compartilhado com o
 								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
 								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
-								const { proposalId, offer, noOffer } = await startContract(
-									conversationId,
-									buildStartContractInput(
-										meta,
-										{ cpf, celular, lgpd: body.action.lgpd },
-										{ leadId },
-									),
-								);
+								// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
+								// pode sair do destructuring — é o campo que aciona o aviso de
+								// ajuste (FIX-197/240) quando a carta real diverge do pedido.
+								const { proposalId, offer, noOffer, requestedCreditValue } =
+									await startContract(
+										conversationId,
+										buildStartContractInput(
+											meta,
+											{ cpf, celular, lgpd: body.action.lgpd },
+											{ leadId },
+										),
+									);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
 									// FIX-40: o lance declarado na qualificação habilita a frase de
 									// posição factual vs o lance médio do grupo (sem promessa).
 									realOfferPresentation(
-										{ proposalId, offer, noOffer },
+										{ proposalId, offer, noOffer, requestedCreditValue },
 										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
 									),
 									writer,

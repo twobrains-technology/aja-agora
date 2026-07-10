@@ -1043,13 +1043,14 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const lanceLine = Number.isFinite(avgBidValue)
 		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
 		: "";
-	// FIX-240 (CDC art. 30): paridade com o aviso de ajuste do card web
-	// (FIX-197, real-offer.tsx) — quando a carta fechada diverge do valor
-	// pedido, o WhatsApp avisa igual, nunca confirma silenciosamente.
+	// FIX-240/FIX-247 (CDC art. 30, rodada 3 — Fable r2 N3): paridade com o
+	// aviso de ajuste do card web (real-offer.tsx) — quando a carta fechada
+	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma
+	// silenciosamente. Copy corrigida (pedido × carta real, sem inversão).
 	const rawCreditValue = Number(payload.rawCreditValue);
 	const adjustmentLine =
 		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
-			? `\n\n_Ajustamos essa carta de ${brlWa(rawCreditValue)} pra sua faixa de ~${brlWa(credit)}._`
+			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
 			: "";
 	return {
 		type: "interactive",
