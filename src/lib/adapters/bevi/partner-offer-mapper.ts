@@ -87,8 +87,11 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 }
 
 /** Normaliza nome de administradora pra comparação entre trilhos — a Descoberta
- * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). */
-const normalizeAdmin = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+ * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). Exportada
+ * pra fulfillment.ts comparar a administradora fechada com a confirmada (FIX-259 —
+ * detectar troca de marca no fechamento, nunca em silêncio). */
+export const normalizeAdmin = (s: string) =>
+	s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
 
 /** Acima desta distância relativa (crédito), o pick abre mão da fidelidade de
  * marca (BUG-ADMIN-TROCADA-NO-FECHAMENTO) em favor da faixa pedida — compliance

@@ -684,22 +684,39 @@ export async function POST(req: NextRequest) {
 								// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
 								// pode sair do destructuring — é o campo que aciona o aviso de
 								// ajuste (FIX-197/240) quando a carta real diverge do pedido.
-								const { proposalId, offer, noOffer, requestedCreditValue } =
-									await startContract(
-										conversationId,
-										buildStartContractInput(
-											meta,
-											{ cpf, celular, lgpd: body.action.lgpd },
-											{ leadId },
-										),
-									);
+								// FIX-259 (P1, veredito Fable r4): administradoraChanged/
+								// previousAdministradora NÃO podem sair do destructuring — é o
+								// mesmo bug de classe do FIX-247 (rawCreditValue descartado),
+								// agora pro aviso de troca de marca (nunca em silêncio).
+								const {
+									proposalId,
+									offer,
+									noOffer,
+									requestedCreditValue,
+									administradoraChanged,
+									previousAdministradora,
+								} = await startContract(
+									conversationId,
+									buildStartContractInput(
+										meta,
+										{ cpf, celular, lgpd: body.action.lgpd },
+										{ leadId },
+									),
+								);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
 									// FIX-40: o lance declarado na qualificação habilita a frase de
 									// posição factual vs o lance médio do grupo (sem promessa).
 									realOfferPresentation(
-										{ proposalId, offer, noOffer, requestedCreditValue },
+										{
+											proposalId,
+											offer,
+											noOffer,
+											requestedCreditValue,
+											administradoraChanged,
+											previousAdministradora,
+										},
 										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
 									),
 									writer,

@@ -44,10 +44,22 @@ export function realOfferPresentation(
 		];
 	}
 	const offer = result.offer;
+	// FIX-259 (P1, veredito Fable r4): quando o fechamento trocou a
+	// administradora confirmada (catálogo sem ela na faixa), NUNCA silencia —
+	// avisa explicitamente as duas marcas ANTES do card, em vez do "Confirmei
+	// com a X" que sugeria confirmação lisa da marca esperada.
+	const introText =
+		result.administradoraChanged && result.previousAdministradora
+			? `A ${result.previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${offer.administradora}${
+					Number.isFinite(offer.monthlyPayment)
+						? `, com parcela de ${fmtBRL(offer.monthlyPayment as number)}`
+						: ""
+				}. Essa é a carta real — confere e decide se quer seguir:`
+			: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`;
 	const items: ClosingItem[] = [
 		{
 			kind: "text",
-			text: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`,
+			text: introText,
 		},
 		{
 			kind: "artifact",
