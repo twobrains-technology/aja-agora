@@ -125,6 +125,12 @@ export type ConversationMetadata = {
 	 * emitido (padrão consentOffered) — a oferta acontece UMA vez, na sequência
 	 * do reveal, antes do card de decisão. */
 	simulatorOfferDispatched?: boolean;
+	/** FIX-260 (rodada 5, veredito Fable r4): resposta AFIRMATIVA por TEXTO LIVRE
+	 * ao gate simulator-offer já foi processada (emitiu o directive do dial) —
+	 * idempotência pra não reabrir o dial em turnos seguintes com intent
+	 * afirmativo/neutro dentro da mesma janela pré-decision. Espelha
+	 * decisionDispatched/consentOffered (mesmo padrão). */
+	simulatorOfferAnswered?: boolean;
 	/** Idempotency guard do card de decisão (present_decision_prompt). Espelha
 	 * searchDispatched: o orquestrador dirige o card UMA vez, depois o passo 5
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em

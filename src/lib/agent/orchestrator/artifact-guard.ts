@@ -207,6 +207,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 				meta.identityCollected !== true ? "identidade ainda não coletada (dados antes do valor)" : "valor já coletado (anti-repetição)"
 			} (conv=${conversationId})`,
 	},
+	// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no
+	// mesmo turno (2 tool-calls, initialTargetMonth 12 e 6)" — a instrução do
+	// directive ("chame present_contemplation_dial UMA vez") é regra-no-prompt,
+	// sobrevivia mesmo com o texto lá (Lei 4: invariante crítico vira código).
+	// turnArtifactTypes já trazia os artifacts emitidos ANTES neste turno
+	// (runner.ts) — só faltava uma regra que consumisse.
+	{
+		name: "dial-dup-intraturn",
+		applies: ({ artifactType, turnArtifactTypes }) =>
+			artifactType === "contemplation_dial" &&
+			(turnArtifactTypes ?? []).includes("contemplation_dial"),
+		logLine: ({ conversationId }) =>
+			`[dial-dup-intraturn] guard: suprimindo contemplation_dial duplicado no mesmo turno (conv=${conversationId})`,
+	},
 ];
 
 /** Avalia as regras NA ORDEM; a primeira que aplicar suprime e assina o log. */
