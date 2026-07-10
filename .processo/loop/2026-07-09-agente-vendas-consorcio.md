@@ -60,3 +60,8 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - Dev de pé: http://aja-agente-vendas-consorcio.orb.local (workspace `agente-vendas-consorcio`, pg porta 5434).
 - cards travou por `--plan-mode` (ExitPlanMode exige aprovação humana; respondedor só cobre AskUserQuestion) → relançado sem plan-mode.
 - **E2E Haiku r1 abortou** por bug de AMBIENTE (não dos blocos): o backfill do `.env.local` deixou `ANTHROPIC_API_KEY` com o PLACEHOLDER do `.env.example` (`sk-ant-your-key`) — o script só preenchia vars vazias, e o placeholder não estava vazio. `invalid x-api-key` → agente mudo → jornada não passava do gate name. Corrigido: re-backfill sobrescrevendo segredos (não só vazios) com a key real (`sk-ant-api03`) + `up --force-recreate app`. Smoke pós-fix: agente responde, analyzer/cache OK. E2E Haiku r2 rodando.
+
+## CONSOLIDAÇÃO (2026-07-10)
+- r1+r2+r3 mergeados e **pushados na develop** (30c94094); test:unit 3089/3089 verde.
+- Base integ/ + 3 workspaces de bloco deletados (100% mergeado). OrbStack: só develop.
+- Validação FINAL (Fable) rodando na develop consolidada → gaps viram rodada 4 (nova base + blocos).
