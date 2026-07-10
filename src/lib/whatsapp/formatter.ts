@@ -582,8 +582,11 @@ export function handoffConfirmationToWhatsApp(): WhatsAppResponse {
 	};
 }
 
+// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva" varrido —
+// mesma disciplina do FIX-234/FIX-256 (nunca "reserva"/"reservado" antes da
+// contratação real), espelhando o chip equivalente da web (adapter.ts).
 const LANCE_OPTIONS = [
-	{ token: "yes", title: "Sim, tenho reserva" },
+	{ token: "yes", title: "Sim, tenho como dar" },
 	{ token: "maybe", title: "Talvez, depende" },
 	{ token: "no", title: "Por enquanto não" },
 ] as const;

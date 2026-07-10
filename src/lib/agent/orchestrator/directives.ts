@@ -1,5 +1,6 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
+import type { ChosenOffer } from "./choose-offer";
 
 // ---- Transition ----
 
@@ -148,8 +149,16 @@ export function buildLanceSoParcelaDirective(): string {
  * payload coagido a partir da oferta real via `coerceEmbeddedBidPayload`).
  * Regra dura (spec): o card SEMPRE diz que o crédito recebido diminui — já
  * hardcoded na coerção, não depende do texto do modelo. */
+// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "educação do embutido
+// 2× no mesmo turno"): a versão anterior instruía o LLM a "introduzir o
+// conceito" com um exemplo que JÁ explicava lance embutido por completo
+// ("você usa parte da própria carta como lance") — e o gate `lance-embutido`
+// que dispara LOGO EM SEGUIDA (gate-questions.ts, lanceEmbutidoEdu) explica o
+// MESMO conceito de novo, com os números reais. Resultado: a mesma definição
+// saía 2× seguidas, em 2 balões. Agora o directive é SÓ transição (igual ao
+// buildScarcityDirective) — a educação tem UMA fonte só, o gate determinístico.
 export function buildEmbeddedBidDirective(): string {
-	return `Antes de perguntar se o usuário quer considerar lance embutido, escreva APENAS UMA frase curta NO SEU TOM introduzindo o conceito (ex.: "Existe o lance embutido: você usa parte da própria carta como lance, sem tirar do bolso."). NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
+	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Baseado no que você me contou, tenho uma ideia que pode acelerar sua contemplação:"). NÃO explique o que é lance embutido aqui — o sistema já traz a educação completa logo em seguida; explicar de novo duplica a mesma ideia no turno. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
@@ -402,6 +411,75 @@ export function buildToolErrorRecoveryFallback(args: { name?: string | null }): 
 		`${saudacao}as opções que já apareceram aqui pra você continuam valendo. ` +
 		"Me diz o nome da administradora ou o valor que você quer olhar de novo que eu " +
 		"detalho certinho pra você."
+	);
+}
+
+function formatOfferDetails(offer: ChosenOffer): string {
+	const detalhes: string[] = [];
+	if (typeof offer.creditValue === "number") {
+		detalhes.push(
+			`crédito de ${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.monthlyPayment === "number") {
+		detalhes.push(
+			`parcela de ${offer.monthlyPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.termMonths === "number") detalhes.push(`prazo de ${offer.termMonths} meses`);
+	return detalhes.join(", ");
+}
+
+// FIX-266 (P1, veredito Fable r6, "o que segura o 7" #1): o fallback do
+// tool-error (acima) contém o turno, mas NUNCA resolvia — pedia "me diz o
+// nome" mesmo quando o usuário TINHA acabado de nomear a oferta na própria
+// mensagem que disparou o tool-error. O orchestrator agora roda
+// `resolveOfferByMention` sobre o texto do usuário ANTES de cair no fallback
+// (index.ts); quando resolve, usa ESTE texto — reafirma os dados da oferta
+// já ancorada em tela, transformando contenção em resolução (nunca pede de
+// novo o que o usuário já disse — Lei 1/4).
+export function buildToolErrorRecoveryResolvedFallback(args: {
+	name?: string | null;
+	offer: ChosenOffer;
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	const marca = args.offer.administradora ? ` da ${args.offer.administradora}` : "";
+	const detalhes = formatOfferDetails(args.offer);
+	const complemento = detalhes.length > 0 ? ` (${detalhes})` : "";
+	return (
+		`${saudacao}a oferta${marca}${complemento} que você citou continua valendo, tá aqui pra você. ` +
+		"Quer seguir com ela ou prefere olhar outra opção?"
+	);
+}
+
+// FIX-266 (2ª parte): o fallback enlatado repetia a MESMA frase 2× seguidas
+// quando o resolver não achou match (menção genuinamente ambígua/sem match).
+// index.ts detecta a repetição comparando com a última mensagem do assistant
+// no histórico e troca pra ESTA variante — nunca idêntica, e concreta: lista
+// as cotas JÁ EXIBIDAS em vez de repetir o pedido genérico.
+export function buildToolErrorRecoveryFallbackRepeat(args: {
+	name?: string | null;
+	offers: ChosenOffer[];
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	if (args.offers.length === 0) {
+		return (
+			`${saudacao}deixa eu ser mais direto: ainda não consegui identificar qual opção você quer. ` +
+			"Pode me mandar de novo o nome da administradora que apareceu aqui pra tela?"
+		);
+	}
+	const lista = args.offers
+		.map((o) => {
+			const detalhes = formatOfferDetails(o);
+			return o.administradora
+				? `${o.administradora}${detalhes ? ` (${detalhes})` : ""}`
+				: detalhes;
+		})
+		.filter((s) => s.length > 0)
+		.join("; ");
+	return (
+		`${saudacao}deixa eu ser mais direto: as opções que apareceram até agora são ${lista}. ` +
+		"Me diz qual delas você quer olhar de novo."
 	);
 }
 

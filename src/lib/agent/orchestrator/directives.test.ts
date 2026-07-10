@@ -8,9 +8,68 @@ import {
 	buildLanceSoParcelaDirective,
 	buildQualifyStartYesDirective,
 	buildScarcityDirective,
+	buildToolErrorRecoveryFallback,
+	buildToolErrorRecoveryFallbackRepeat,
+	buildToolErrorRecoveryResolvedFallback,
 	buildTransitionFirstContactDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
+
+// FIX-266 (P1, veredito Fable r6, "o que segura o 7" #1): o fallback do
+// tool-error/cap (FIX-262) pedia "me diz o nome da administradora" mesmo
+// quando o usuário TINHA acabado de nomear uma oferta já exibida — contenção
+// sem resolução. `buildToolErrorRecoveryResolvedFallback` transforma a
+// contenção em resolução: reafirma os dados da oferta já ancorada, sem pedir
+// de novo o que o usuário já disse. `buildToolErrorRecoveryFallbackRepeat`
+// cobre o caso sem resolução: nunca repete a MESMA frase 2×, oferece a lista
+// concreta das cotas já exibidas na 2ª ocorrência.
+describe("FIX-266 — recuperação do tool-error transforma contenção em resolução", () => {
+	const offerItau = {
+		groupId: "g-itau",
+		administradora: "ITAU",
+		creditValue: 92902,
+		termMonths: 120,
+		monthlyPayment: 1580.5,
+	};
+
+	it("buildToolErrorRecoveryResolvedFallback reafirma a oferta resolvida — NUNCA pede o nome de novo", () => {
+		const text = buildToolErrorRecoveryResolvedFallback({ name: "Mario", offer: offerItau });
+		expect(text).not.toMatch(/me diz o nome/i);
+		expect(text).toMatch(/ITAU/i);
+		expect(text).toMatch(/92\.902|92902/);
+	});
+
+	it("buildToolErrorRecoveryResolvedFallback sem nome do contato não quebra (sem saudação)", () => {
+		const text = buildToolErrorRecoveryResolvedFallback({ name: null, offer: offerItau });
+		expect(text.length).toBeGreaterThan(0);
+		expect(text).toMatch(/ITAU/i);
+	});
+
+	it("buildToolErrorRecoveryFallbackRepeat NUNCA é idêntico ao fallback genérico (1ª ocorrência)", () => {
+		const first = buildToolErrorRecoveryFallback({ name: "Mario" });
+		const repeat = buildToolErrorRecoveryFallbackRepeat({ name: "Mario", offers: [offerItau] });
+		expect(repeat).not.toBe(first);
+	});
+
+	it("buildToolErrorRecoveryFallbackRepeat lista as opções concretas já exibidas", () => {
+		const repeat = buildToolErrorRecoveryFallbackRepeat({
+			name: "Mario",
+			offers: [
+				offerItau,
+				{ groupId: "g-bb", administradora: "BANCO DO BRASIL", creditValue: 90000 },
+			],
+		});
+		expect(repeat).toMatch(/ITAU/i);
+		expect(repeat).toMatch(/BANCO DO BRASIL/i);
+	});
+
+	it("buildToolErrorRecoveryFallbackRepeat sem ofertas exibidas ainda difere do fallback genérico", () => {
+		const first = buildToolErrorRecoveryFallback({ name: "Mario" });
+		const repeat = buildToolErrorRecoveryFallbackRepeat({ name: "Mario", offers: [] });
+		expect(repeat).not.toBe(first);
+		expect(repeat.length).toBeGreaterThan(0);
+	});
+});
 
 // FIX-186 (Kairo 2026-07-01) — a mensagem determinística de fallback quando a
 // descoberta na Bevi falha após retry. É a copy FIXA que substitui a narração
@@ -75,6 +134,19 @@ describe("buildEmbeddedBidDirective — card de lance embutido (antes órfão)",
 
 	it("instrui a escrever SÓ a frase de introdução", () => {
 		expect(buildEmbeddedBidDirective()).toMatch(/APENAS UMA frase/i);
+	});
+
+	// FIX-268 (rodada 7, veredito Fable r6, residual D4): o directive instruía
+	// o LLM a "introduzir o conceito" de lance embutido — e o gate
+	// `lance-embutido` que dispara LOGO EM SEGUIDA (gate-questions.ts,
+	// lanceEmbutidoEdu) já explica o MESMO conceito por completo. Resultado:
+	// a mesma definição ("usar parte da carta como lance") saía 2× no mesmo
+	// turno, em 2 balões seguidos. O directive não pode mais explicar o
+	// conceito — só faz a transição, igual ao buildScarcityDirective.
+	it("NÃO explica o conceito de lance embutido (a educação completa vem do gate lance-embutido logo em seguida — evita duplicar a mesma ideia no turno)", () => {
+		const d = buildEmbeddedBidDirective();
+		expect(d).not.toMatch(/usa(r)? parte da (própria )?carta( de crédito)? como lance/i);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o explique o que [ée] lance embutido/);
 	});
 });
 

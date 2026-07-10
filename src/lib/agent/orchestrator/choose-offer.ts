@@ -238,18 +238,25 @@ function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set
 	return negated;
 }
 
-/** Todos os valores monetários mencionados no texto casados contra as cotas
- * exibidas — por menção, o CONJUNTO empatado no menor diff (não só o 1º
- * encontrado), unido entre as várias menções do texto. PURO. */
-function matchValueMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+/** Todos os valores mencionados no texto casados contra um CAMPO NUMÉRICO das
+ * cotas exibidas — por menção, o CONJUNTO empatado no menor diff (não só o 1º
+ * encontrado), unido entre as várias menções do texto. PURO. Generaliza a
+ * mesma semântica pra creditValue/monthlyPayment/termMonths (FIX-267). */
+function matchByNumericField(
+	offers: ChosenOffer[],
+	mentions: number[],
+	getField: (o: ChosenOffer) => number | undefined,
+	tolerance: number,
+): ChosenOffer[] {
 	const matched = new Map<string, ChosenOffer>();
 	for (const m of mentions) {
 		let minDiff = Number.POSITIVE_INFINITY;
 		let tied: ChosenOffer[] = [];
 		for (const o of offers) {
-			if (typeof o.creditValue !== "number") continue;
-			const diff = Math.abs(o.creditValue - m) / m;
-			if (diff > 0.1) continue;
+			const value = getField(o);
+			if (typeof value !== "number") continue;
+			const diff = Math.abs(value - m) / m;
+			if (diff > tolerance) continue;
 			if (diff < minDiff) {
 				minDiff = diff;
 				tied = [o];
@@ -260,6 +267,65 @@ function matchValueMentions(offers: ChosenOffer[], mentions: number[]): ChosenOf
 		for (const o of tied) matched.set(o.groupId, o);
 	}
 	return [...matched.values()];
+}
+
+function matchValueMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.creditValue, 0.1);
+}
+
+// FIX-267 (P1, veredito Fable r6, "o que segura o 7" #3): resolveOfferByMention
+// só casava por nome de administradora ou creditValue — menção por PARCELA
+// ("a de 1.200 por mês"/"a da parcela de 1.213,85") ou PRAZO ("a de 84
+// meses"/"a de 7 anos") não resolvia mesmo com o grupo EXIBIDO batendo
+// exatamente. As duas extrações abaixo são independentes das de creditValue
+// (contexto textual próprio — "por mês"/"parcela"/"meses"/"anos" — nunca
+// confunde com um valor de crédito solto no mesmo texto).
+
+/** Menções de PARCELA (monthlyPayment): "parcela de R$ 1.213,85", "1.200 por
+ * mês", "1200/mês", "mensais de 1.200". PURO. */
+function extractMonthlyPaymentMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/(?:parcela|mensalidade)s?\s*(?:de)?\s*(?:R\$\s*)?([\d.,]+)/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	for (const m of text.matchAll(/(?:R\$\s*)?([\d.,]+)\s*(?:por\s*m[eê]s|\/\s*m[eê]s|mensais?)\b/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	return out;
+}
+
+function matchMonthlyPaymentMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.monthlyPayment, 0.05);
+}
+
+/** Menções de PRAZO (termMonths): "84 meses", "7 anos" (convertido pra
+ * meses). PURO. */
+function extractTermMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/\b(\d{1,3})\s*(?:meses|m[eê]s)\b/gi)) {
+		const n = Number(m[1]);
+		if (!Number.isNaN(n)) out.push(n);
+	}
+	for (const m of text.matchAll(/\b(\d{1,2})\s*anos?\b/gi)) {
+		const n = Number(m[1]);
+		if (!Number.isNaN(n)) out.push(n * 12);
+	}
+	return out;
+}
+
+function matchTermMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.termMonths, 0);
+}
+
+/** Une várias listas de matches, dedupe por groupId. PURO. */
+function unionByGroupId(groups: ChosenOffer[][]): ChosenOffer[] {
+	const merged = new Map<string, ChosenOffer>();
+	for (const group of groups) {
+		for (const o of group) merged.set(o.groupId, o);
+	}
+	return [...merged.values()];
 }
 
 /** Resolve determinística de menção textual (nome de administradora OU valor
@@ -280,8 +346,19 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
 			normalizedText.includes(normalizeAdministradora(o.administradora)),
 	);
 
-	const mentions = extractMoneyMentions(text);
-	const valueMatches = mentions.length > 0 ? matchValueMentions(offers, mentions) : [];
+	const moneyMentions = extractMoneyMentions(text);
+	const creditMatches = moneyMentions.length > 0 ? matchValueMentions(offers, moneyMentions) : [];
+
+	// FIX-267: parcela/prazo mencionados casam contra os MESMOS grupos
+	// exibidos, unidos ao conjunto de matches por valor (mesma semântica de
+	// "resolve determinístico se casa um grupo exibido", nunca desiste).
+	const monthlyMentions = extractMonthlyPaymentMentions(text);
+	const monthlyMatches = monthlyMentions.length > 0 ? matchMonthlyPaymentMentions(offers, monthlyMentions) : [];
+
+	const termMentions = extractTermMentions(text);
+	const termMatches = termMentions.length > 0 ? matchTermMentions(offers, termMentions) : [];
+
+	const valueMatches = unionByGroupId([creditMatches, monthlyMatches, termMatches]);
 
 	if (nameMatches.length === 1) {
 		const named = nameMatches[0];
@@ -303,6 +380,16 @@ export async function resolveOfferMentionForConversation(
 ): Promise<ChosenOffer | null> {
 	const rows = await loadArtifactRows(conversationId);
 	return resolveOfferByMention(listShownOffers(rows), text);
+}
+
+// FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente
+// ambígua/sem match) e o fallback de tool-error precisa variar na 2ª
+// ocorrência, o orchestrator precisa da lista de cotas JÁ EXIBIDAS pra montar
+// uma opção concreta (buildToolErrorRecoveryFallbackRepeat) — mesma fonte
+// determinística (`listShownOffers`), só faltava o wrapper async.
+export async function listShownOffersForConversation(conversationId: string): Promise<ChosenOffer[]> {
+	const rows = await loadArtifactRows(conversationId);
+	return listShownOffers(rows);
 }
 
 // FIX-258 (P1, veredito Fable r4: FIX-252 "NÃO" — a resolução por menção

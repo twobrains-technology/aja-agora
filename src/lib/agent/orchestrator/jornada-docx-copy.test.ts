@@ -32,9 +32,14 @@ describe("perguntas de gate — fiéis ao docx", () => {
 	// pergunta mais "em quanto tempo você quer o bem?" na entrada. A copy do gate
 	// timeframe vira legado (não validamos mais fidelidade ao docx pra ela).
 
-	it("lance: pergunta sobre reserva pra antecipar a contemplação", () => {
+	// FIX-268 (rodada 7, veredito Fable r6, residual D4): a pergunta usava
+	// "reserva" — palavra sensível varrida do fechamento (FIX-234/FIX-256, nunca
+	// "reserva"/"reservado" antes da contratação real). O docx (jornada-canonica.md
+	// linha 163) pergunta só "Pretende dar um lance?" — a variação com
+	// "antecipar a contemplação" é enriquecimento local, não precisa de "reserva".
+	it("lance: pergunta sobre dar um lance pra antecipar a contemplação (sem 'reserva')", () => {
 		const q = gateQuestion("lance") ?? "";
-		expect(q.toLowerCase()).toMatch(/reserva/);
+		expect(q.toLowerCase()).not.toMatch(/\breserva/);
 		expect(q.toLowerCase()).toMatch(/lance/);
 		expect(q.toLowerCase()).toMatch(/antecipar|contempla/);
 	});
