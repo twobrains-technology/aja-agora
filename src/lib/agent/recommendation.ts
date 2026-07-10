@@ -80,6 +80,33 @@ export interface ScoringInput {
 	 * score empata — prioriza a coerente com lance (FREE_BID). Critério INVISÍVEL
 	 * (tipoOferta nunca vai pra UI). Ausente/false = desempate estável por ordem. */
 	hasLance?: boolean;
+	/** FIX-226 (D6): invariante duro — quando o usuário tem apetite de lance
+	 * (`hasLance`) e este guardrail está configurado, candidatas de embutido
+	 * (`embeddedVariant === "com"`) cujo netCredit fica ABAIXO do valor do bem
+	 * são REORDENADAS pra depois das que respeitam (nunca descartadas — "não
+	 * pode limitar", Kairo 2026-07-01). Candidatas "sem" embutido nunca são
+	 * avaliadas por este guardrail. */
+	embutidoGuardrail?: {
+		/** Valor do bem que o usuário quer comprar (R$). */
+		valorDoBem: number;
+		/** Teto do lance embutido do grupo (fração 0-1, ex.: 0.3 = 30%). */
+		maxEmbutidoPct: number;
+	};
+}
+
+/**
+ * GUARDRAIL D6 (FIX-226) — o crédito líquido nunca pode ficar abaixo do bem
+ * desejado. Sem isso, o cliente contempla mais rápido usando embutido mas
+ * recebe dinheiro que não compra o que veio comprar — a falha silenciosa mais
+ * perigosa do embutido. `maxEmbutidoPct` é fração 0-1 (ex.: 0.3 = 30%).
+ */
+export function respectsNetCreditGuardrail(
+	creditValue: number,
+	maxEmbutidoPct: number,
+	valorDoBem: number,
+): boolean {
+	const netCredit = creditValue - creditValue * maxEmbutidoPct;
+	return netCredit >= valorDoBem;
 }
 
 /** FIX-193: a oferta é da modalidade de lance livre? (case-insensitive, tolerante
@@ -135,7 +162,24 @@ export function rankGroups(
 		};
 	});
 
+	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
+	// candidatas de embutido ("com") que violam netCredit >= valorDoBem são
+	// REORDENADAS pra depois das que respeitam — critério PRIMÁRIO (antes do
+	// score), pra "a estratégia de embutido recomendada nunca aponta pra uma
+	// carta que viole netCredit". Candidatas "sem" e sem guardrail configurado
+	// sempre "passam" (não interfere).
+	const guardrail = input.hasLance ? input.embutidoGuardrail : undefined;
+	const passesEmbutidoGuardrail = (group: GroupSummary): boolean => {
+		if (!guardrail || group.embeddedVariant !== "com") return true;
+		return respectsNetCreditGuardrail(group.creditValue, guardrail.maxEmbutidoPct, guardrail.valorDoBem);
+	};
+
 	const sorted = scored.sort((a, b) => {
+		if (guardrail) {
+			const aPass = passesEmbutidoGuardrail(a.group) ? 0 : 1;
+			const bPass = passesEmbutidoGuardrail(b.group) ? 0 : 1;
+			if (aPass !== bPass) return aPass - bPass;
+		}
 		if (b.score !== a.score) return b.score - a.score;
 		// FIX-193: desempate por afinidade de lance — só quando o usuário tem
 		// apetite de lance, a modalidade coerente (FREE_BID) vem antes. Assim a
