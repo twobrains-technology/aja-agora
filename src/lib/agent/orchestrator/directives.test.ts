@@ -3,8 +3,10 @@ import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
 	buildDiscoveryFailedFallback,
+	buildEmbeddedBidDirective,
 	buildLanceSoParcelaDirective,
 	buildQualifyStartYesDirective,
+	buildScarcityDirective,
 	buildTransitionFirstContactDirective,
 } from "./directives";
 
@@ -32,6 +34,43 @@ describe("buildLanceSoParcelaDirective — 3ª saída do lance ('só a parcela')
 		const d = buildLanceSoParcelaDirective();
 		expect(d.toLowerCase()).toMatch(/n[ãa]o tem certo ou errado/);
 		expect(d).not.toMatch(/recomendo|eu indicaria|melhor caminho/i);
+	});
+});
+
+// FIX-237 (Fable r1, D2.1 gap #3) — os cards embedded_bid/scarcity existiam
+// (tool+schema+allowlist) mas eram ÓRFÃOS: nenhum directive instruía o modelo
+// a chamá-los, então nunca apareciam em condução real. Estes testes travam a
+// EXISTÊNCIA da instrução de disparo — a wiring em route.ts/index.ts que
+// dispara o directive no gate certo é validada por teste source-level em
+// tests/regression/fix-237-cards-orfaos.test.ts.
+describe("buildEmbeddedBidDirective — card de lance embutido (antes órfão)", () => {
+	it("instrui a chamar present_embedded_bid", () => {
+		expect(buildEmbeddedBidDirective()).toMatch(/present_embedded_bid/);
+	});
+
+	it("proíbe o modelo de inventar os números (percentual/valor líquido)", () => {
+		const d = buildEmbeddedBidDirective();
+		expect(d).toMatch(/N[ÃA]O (invente|digita|calcula)/i);
+	});
+
+	it("instrui a passar o groupId do plano recomendado", () => {
+		expect(buildEmbeddedBidDirective()).toMatch(/groupId/);
+	});
+});
+
+describe("buildScarcityDirective — card de escassez (antes órfão)", () => {
+	it("instrui a chamar present_scarcity", () => {
+		expect(buildScarcityDirective()).toMatch(/present_scarcity/);
+	});
+
+	it("proíbe inventar o número de vagas ou o total de cotas", () => {
+		const d = buildScarcityDirective();
+		expect(d).toMatch(/N[ÃA]O invente/i);
+		expect(d.toLowerCase()).toMatch(/total de cotas/);
+	});
+
+	it("instrui a passar o groupId do plano recomendado", () => {
+		expect(buildScarcityDirective()).toMatch(/groupId/);
 	});
 });
 

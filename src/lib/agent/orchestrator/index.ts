@@ -19,6 +19,7 @@ import {
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
 	buildLanceSoParcelaDirective,
+	buildScarcityDirective,
 	buildSearchSummaryDirective,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -307,12 +308,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
 		// lance-value/lance-embutido/simulator-offer; o card certo é
 		// present_two_paths (dois caminhos), não present_decision_prompt.
-		const directive =
-			refreshed.qualifyAnswers?.hasLance === "so_parcela"
-				? buildLanceSoParcelaDirective()
-				: buildDecisionPromptDirective({
-						administradora: refreshed.recommendedAdministradora,
-					});
+		const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
+		// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
+		// estratégia de lance resolvida, ANTES do card de decisão — só no
+		// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
+		// de escassez, spec `04-copy-fluxos.md` Fluxo B).
+		if (!isSoParcela) {
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildScarcityDirective(),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+			});
+		}
+		const directive = isSoParcela
+			? buildLanceSoParcelaDirective()
+			: buildDecisionPromptDirective({
+					administradora: refreshed.recommendedAdministradora,
+				});
 		yield* runTurn({
 			channel,
 			conversationId,

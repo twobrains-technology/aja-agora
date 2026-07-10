@@ -119,6 +119,32 @@ export function buildLanceSoParcelaDirective(): string {
 	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: (1) escreva UMA frase curta respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis:"); (2) chame a tool present_two_paths (sem parâmetros extras — o sistema monta o payload a partir da oferta real). NÃO explique lance embutido, NÃO chame simulate_quota nem present_contemplation_dial. Depois que o card aparecer, você NÃO recomenda um dos dois caminhos — devolve a decisão ao usuário em UMA frase ("Não tem certo ou errado — depende de você ter pressa ou não. Qual combina mais com o seu momento?").`;
 }
 
+/** FIX-237 (Fable r1, D2.1 gap #3) — card `embedded_bid` (docs/02-cards-novos.md
+ * CARD 1): estava ÓRFÃO — a tool `present_embedded_bid` existia (schema +
+ * allowlist) mas NENHUM directive/prompt instruía o modelo a chamá-la, então
+ * nunca aparecia em nenhuma condução real (0 de 4 no veredito Fable). Dispara
+ * no gate `lance-embutido`, ANTES da agulha (contemplation_dial) — modelo:
+ * `buildSimulatorDialDirective` (1 frase curta + 1 chamada de tool, payload
+ * coagido server-side a partir da oferta real via `coerceEmbeddedBidPayload`).
+ * Regra dura (spec): o card SEMPRE diz que o crédito recebido diminui — já
+ * hardcoded no componente/coerção, não depende do texto do modelo. */
+export function buildEmbeddedBidDirective(): string {
+	return `Antes de perguntar se o usuário quer considerar lance embutido, mostre o card. FLUXO OBRIGATÓRIO neste turno: (1) escreva UMA frase curta NO SEU TOM introduzindo o conceito (ex.: "Existe o lance embutido: você usa parte da própria carta como lance, sem tirar do bolso."); (2) chame present_embedded_bid com o groupId do plano recomendado (o mesmo grupo que você já usou nas ferramentas anteriores) — os valores (embeddedBidValue/netCredit) são calculados pelo sistema a partir da oferta real, você NÃO digita nem calcula nenhum número. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card. NÃO chame outras tools neste turno.`;
+}
+
+/** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
+ * CARD 2): mesmo defeito do embedded_bid, ÓRFÃO por falta de directive.
+ * Dispara depois da estratégia de lance resolvida, ANTES da proposta final —
+ * imediatamente antes do card de decisão ("Esse plano faz sentido?"). O
+ * componente/coerção server-side (`coerceScarcityPayload`) já decide se
+ * renderiza (só quando há `availableSlots` real ancorado no grupo); o
+ * directive só precisa disparar a tool no ponto certo. NÃO dispara no
+ * caminho "só a parcela" (two_paths) — a proposta ali segue direto pro
+ * fecho, sem o gancho de escassez (spec `04-copy-fluxos.md` Fluxo B). */
+export function buildScarcityDirective(): string {
+	return `FLUXO OBRIGATÓRIO neste turno: (1) escreva UMA frase curta de transição NO SEU TOM (ex.: "Ah, e um detalhe sobre esse grupo, só pra você saber:"); (2) chame present_scarcity com o groupId do plano recomendado (o mesmo grupo que você já usou nas ferramentas anteriores). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema calcula o número exibido. NÃO chame outras tools neste turno.`;
+}
+
 // ---- Group actions ----
 
 export function buildGroupSelectedDirective(

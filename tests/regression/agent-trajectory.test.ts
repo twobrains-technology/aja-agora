@@ -476,10 +476,14 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
 		expect(decision).toContain("present_decision_prompt");
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
+		// próximo comentário — um comentário legítimo dentro do próprio bloco
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
+		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		const start = route.indexOf('action.gate === "simulator-offer"');
+		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
-			route.match(
-				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
-			)?.[0] ?? "";
+			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
 		expect(
 			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
