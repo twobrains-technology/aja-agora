@@ -23,6 +23,7 @@ import {
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
+	buildLanceSoParcelaDirective,
 	buildNameCapturedDirective,
 	buildPlanReactionDirective,
 	buildQualifyStartMoreDirective,
@@ -976,6 +977,22 @@ export async function POST(req: NextRequest) {
 							// BUG-LANCE-EMBUTIDO-PULADO (QA noturno E2E 2026-06-21): antes "no"/
 							// "maybe" caíam direto em pipeSearchSummaryTurn, pulando a educação —
 							// regressão do FIX-4 (o nextGate já passava por todos; o handler não).
+							// FIX-236 (Fable r1, P0): 3ª saída "só a parcela" — recusa explícita
+							// de qualquer conversa de lance. Pula lance-embutido/simulator-offer e
+							// apresenta o card `two_paths` (dois caminhos). decisionDispatched=true
+							// idempotente, igual ao ramo so_parcela do orchestrator/index.ts.
+							if (action.value === "so_parcela") {
+								const fresh = await reloadMeta(conversationId);
+								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildLanceSoParcelaDirective(),
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							if (action.value === "yes") {
 								await pipeDirectiveTurn({
 									conversationId,

@@ -116,6 +116,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "yes", label: "Sim, tenho reserva" },
 					{ value: "maybe", label: "Talvez, depende" },
 					{ value: "no", label: "Por enquanto não" },
+					// FIX-236 (Fable r1, P0): 3ª saída — quem não quer comprometer nada além
+					// da parcela vai direto pro card `two_paths` (dois caminhos), pulando a
+					// educação de embutido/agulha (rota em route.ts + orchestrator/index.ts).
+					{ value: "so_parcela", label: "Só a parcela, sem lance" },
 				],
 			};
 		case "lance-value": {
