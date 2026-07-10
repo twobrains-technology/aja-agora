@@ -185,13 +185,12 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				"present_contemplation_dial",
 				"present_decision_prompt",
 				"present_embedded_bid",
+				// FIX-233 — a 3ª saída do lance ("só a parcela") roda com
+				// decisionDispatched=true (persistido antes do directive), então
+				// present_two_paths precisa da fase "closing" além do "reveal".
 				"present_two_paths",
 				"present_scarcity",
 				"present_contract_form",
-				// FIX-233 — a 3ª saída do lance ("só a parcela") já roda com
-				// decisionDispatched=true (persistido antes do directive), então a
-				// fase aqui é "closing" — precisa da tool nas duas fases.
-				"present_two_paths",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "terminal":
