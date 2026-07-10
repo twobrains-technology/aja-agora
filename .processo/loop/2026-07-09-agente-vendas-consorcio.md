@@ -71,3 +71,8 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - Cards subiram D2 4→6 (server-side provado); ainda descobertos: scarcity (LLM chama decision_prompt direto), embedded_bid caminho texto; rota nome→grupo falta.
 - Consertos r3 confirmados: splitter ✓, aviso fio ✓, recovery sem beco ✓.
 - Blocos r4: fix-r4-ancora (FIX-251,252) + fix-r4-cards-polish (FIX-253..256). Base integ/consorcio-r4.
+
+### r4 consolidada (2026-07-10)
+- r4 mergeada e pushada na develop (92a8d2c4); test:unit 3116/3116 verde; migration 0033 aplicada.
+- Base consorcio-r4 + workspaces r4 deletados. OrbStack: só develop.
+- Fable validando a junção r4 (foco no P0 âncora fechado + scarcity/embedded no caminho texto).
