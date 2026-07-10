@@ -104,9 +104,25 @@ export function realOfferPresentation(
 }
 
 /** Passo 5.2 — confirmação: reforços literais do docx → assinatura + documentos
- * → "Parabéns!". A ordem É a do docx (reforços antes, parabéns depois). */
-export function closingPresentation(res: ConfirmOfferResult): ClosingItem[] {
+ * → "Parabéns!". A ordem É a do docx (reforços antes, parabéns depois).
+ *
+ * FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
+ * mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE, mesmo quando o
+ * envio (sendFechoPedirOi) só ENFILEIROU (janela fechada + template não
+ * aprovado) — mentira observável em dev. `whatsappChannel` (resultado real de
+ * `resolveAndSend`, já conhecido pelo caller ANTES de montar esta copy) decide
+ * entre "mandei" (free_text/template — aconteceu agora) e "vou te mandar"
+ * (queued — ainda não chegou). Sem opts (callers que não migraram, ex.
+ * interactive-handlers.ts), mantém o texto de sempre — retrocompatível. */
+export function closingPresentation(
+	res: ConfirmOfferResult,
+	opts: { whatsappChannel?: "free_text" | "template" | "queued" } = {},
+): ClosingItem[] {
 	const administradora = res.administradora ?? "administradora";
+	const pedirOiText =
+		opts.whatsappChannel === "queued"
+			? "Pra gente seguir, olha só: assim que a janela abrir, eu te mando uma mensagenzinha no seu WhatsApp."
+			: "Pra gente seguir, olha só: acabei de te mandar uma mensagenzinha no seu WhatsApp.";
 	return [
 		{
 			kind: "text",
@@ -143,7 +159,7 @@ export function closingPresentation(res: ConfirmOfferResult): ClosingItem[] {
 		// o envio da especialista cai na fila de template.
 		{
 			kind: "text",
-			text: "Pra gente seguir, olha só: acabei de te mandar uma mensagenzinha no seu WhatsApp.",
+			text: pedirOiText,
 		},
 		{
 			kind: "text",

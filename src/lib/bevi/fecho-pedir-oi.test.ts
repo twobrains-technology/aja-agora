@@ -116,4 +116,88 @@ describe("FIX-235 — sendFechoPedirOi via resolveAndSend + dispatchAutoTransbor
 
 		expect(res.sent).toBe(true);
 	});
+
+	// FIX-265 (menor #3, veredito Fable r5, N7): `sent: true` só dizia "não
+	// lançou/best-effort concluído" — não distinguia enviado AGORA (free_text/
+	// template) de só ENFILEIRADO (queued, sem janela). O caller (route.ts)
+	// precisa do canal pra condicionar a copy ("mandei" vs "vou te mandar") —
+	// "acabei de te mandar" era mentira observável quando só enfileirou.
+	describe("FIX-265 — expõe o channel de resolveAndSend pro caller condicionar a copy", () => {
+		it("janela aberta (free_text) → channel='free_text'", async () => {
+			const res = await sendFechoPedirOi("conv-canal-free", {
+				loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn().mockResolvedValue({ ok: true }),
+				whatsappConfigured: () => true,
+				resolveAndSendImpl: async (a) => {
+					await a.freeTextFallback();
+					return { channel: "free_text" };
+				},
+				dispatchAutoTransbordoImpl: vi.fn().mockResolvedValue({ created: true }),
+			});
+			expect(res.channel).toBe("free_text");
+		});
+
+		it("janela fechada + template aprovado → channel='template'", async () => {
+			const res = await sendFechoPedirOi("conv-canal-template", {
+				loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn(),
+				whatsappConfigured: () => true,
+				resolveAndSendImpl: async () => ({ channel: "template", messageId: "m1" }),
+				dispatchAutoTransbordoImpl: vi.fn().mockResolvedValue({ created: true }),
+			});
+			expect(res.channel).toBe("template");
+		});
+
+		it("janela fechada + sem template aprovado → channel='queued' (NUNCA 'sent' cru)", async () => {
+			const res = await sendFechoPedirOi("conv-canal-queued", {
+				loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn(),
+				whatsappConfigured: () => true,
+				resolveAndSendImpl: async () => ({ channel: "queued", queueId: "q1" }),
+				dispatchAutoTransbordoImpl: vi.fn().mockResolvedValue({ created: true }),
+			});
+			expect(res.sent).toBe(true);
+			expect(res.channel).toBe("queued");
+		});
+
+		it("sem identidade / não configurado → channel undefined (nada foi decidido, muito menos enviado)", async () => {
+			const res = await sendFechoPedirOi("conv-canal-sem-identidade", {
+				loadIdentityImpl: async () => null,
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn(),
+				whatsappConfigured: () => true,
+				resolveAndSendImpl: vi.fn(),
+				dispatchAutoTransbordoImpl: vi.fn(),
+			});
+			expect(res.channel).toBeUndefined();
+
+			const resNotConfigured = await sendFechoPedirOi("conv-canal-nao-configurado", {
+				loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn(),
+				whatsappConfigured: () => false,
+				resolveAndSendImpl: vi.fn(),
+				dispatchAutoTransbordoImpl: vi.fn(),
+			});
+			expect(resNotConfigured.channel).toBeUndefined();
+		});
+
+		it("resolveAndSend lança (falha de envio) → channel undefined, sent=false (nunca finge canal)", async () => {
+			const res = await sendFechoPedirOi("conv-canal-erro", {
+				loadIdentityImpl: async () => ({ cpf: "52998224725", celular: "62999887766" }),
+				getLeadIdImpl: async () => "lead-1",
+				sendTextImpl: vi.fn(),
+				whatsappConfigured: () => true,
+				resolveAndSendImpl: async () => {
+					throw new Error("Meta fora do ar");
+				},
+				dispatchAutoTransbordoImpl: vi.fn().mockResolvedValue({ created: true }),
+			});
+			expect(res.sent).toBe(false);
+			expect(res.channel).toBeUndefined();
+		});
+	});
 });

@@ -196,40 +196,104 @@ function parsePtBrNumber(raw: string): number | null {
 	return Number.isNaN(n) ? null : n;
 }
 
+// FIX-265 (menor #2, veredito Fable r5, N6): o runner precisa distinguir
+// re-simulação PEDIDA (usuário citou um valor-alvo) de what-if EXPLORATÓRIO
+// da LLM (nenhum valor citado) antes de aceitar uma nova simulação como a
+// âncora do fechamento/dial. Reusa a mesma extração/tolerância de
+// `resolveOfferByMention` — um só lugar decide "o que conta como valor
+// mencionado pelo usuário".
+/** O texto do usuário menciona (aproximadamente, ≤10%) o valor dado? PURO. */
+export function isCreditValueMentioned(text: string, creditValue: number): boolean {
+	if (!text || typeof creditValue !== "number" || creditValue <= 0) return false;
+	return extractMoneyMentions(text).some((m) => Math.abs(creditValue - m) / m <= 0.1);
+}
+
+// FIX-264 (P1, veredito Fable r5 — FIX-252/258 "PARCIAL"): "RODOBENS de 90
+// mil" com a RODOBENS exibida a 90k desistia por "conflito nome×valor" quando
+// outro grupo exibido empatava no MESMO crédito — o "best" global (menor diff,
+// primeiro no array) elegia arbitrariamente o empate errado em vez do grupo
+// nomeado. Correção: valor vira CONJUNTO por menção (todos os empates no
+// mínimo, não só o 1º encontrado); nome único resolve se seu PRÓPRIO valor
+// está no conjunto — não precisa ser o único elemento dele. Menção negada
+// ("deixa X pra lá"/"esquece"/"cancela") remove X do conjunto de nomes antes
+// de resolver — nunca conta uma administradora explicitamente rejeitada.
+
+const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO QUERO)\b/;
+
+/** Administradoras mencionadas dentro de uma cláusula com gatilho de negação
+ * explícito ("deixa a X pra lá", "esquece a X", "cancela a X") — nunca conta
+ * um uso afirmativo de "deixa" sem o gatilho ("Deixa a X que você recomendou"
+ * continua resolvendo — regressão FIX-252). PURO. */
+function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set<string> {
+	const negated = new Set<string>();
+	for (const clause of text.split(/[.!?;]/)) {
+		const normalizedClause = normalizeAdministradora(clause);
+		if (!NEGATION_TRIGGER.test(normalizedClause)) continue;
+		for (const o of offers) {
+			if (o.administradora && normalizedClause.includes(normalizeAdministradora(o.administradora))) {
+				negated.add(normalizeAdministradora(o.administradora));
+			}
+		}
+	}
+	return negated;
+}
+
+/** Todos os valores monetários mencionados no texto casados contra as cotas
+ * exibidas — por menção, o CONJUNTO empatado no menor diff (não só o 1º
+ * encontrado), unido entre as várias menções do texto. PURO. */
+function matchValueMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	const matched = new Map<string, ChosenOffer>();
+	for (const m of mentions) {
+		let minDiff = Number.POSITIVE_INFINITY;
+		let tied: ChosenOffer[] = [];
+		for (const o of offers) {
+			if (typeof o.creditValue !== "number") continue;
+			const diff = Math.abs(o.creditValue - m) / m;
+			if (diff > 0.1) continue;
+			if (diff < minDiff) {
+				minDiff = diff;
+				tied = [o];
+			} else if (diff === minDiff) {
+				tied.push(o);
+			}
+		}
+		for (const o of tied) matched.set(o.groupId, o);
+	}
+	return [...matched.values()];
+}
+
 /** Resolve determinística de menção textual (nome de administradora OU valor
  * aproximado) pra uma das cotas JÁ EXIBIDAS — nunca inventa (Lei 3): null
- * quando ambíguo ou sem match. Nome e valor discordando entre si também é
- * ambíguo (null) — não escolhe um dos dois no escuro. */
+ * quando genuinamente ambíguo ou sem match. Nome único cujo PRÓPRIO valor
+ * está no conjunto de valores mencionados resolve SEMPRE — mesmo se outro
+ * grupo exibido empata no mesmo valor (LEI: nome/valor casando um grupo
+ * exibido nunca desiste/nega). Menção negada é descartada antes de resolver. */
 export function resolveOfferByMention(offers: ChosenOffer[], text: string): ChosenOffer | null {
 	if (!text || offers.length === 0) return null;
 	const normalizedText = normalizeAdministradora(text);
+	const negated = extractNegatedAdministradoras(text, offers);
 
 	const nameMatches = offers.filter(
-		(o) => o.administradora && normalizedText.includes(normalizeAdministradora(o.administradora)),
+		(o) =>
+			o.administradora &&
+			!negated.has(normalizeAdministradora(o.administradora)) &&
+			normalizedText.includes(normalizeAdministradora(o.administradora)),
 	);
 
 	const mentions = extractMoneyMentions(text);
-	let valueMatch: ChosenOffer | null = null;
-	if (mentions.length > 0) {
-		let best: { offer: ChosenOffer; diff: number } | null = null;
-		for (const o of offers) {
-			if (typeof o.creditValue !== "number") continue;
-			for (const m of mentions) {
-				const diff = Math.abs(o.creditValue - m) / m;
-				if (diff <= 0.1 && (!best || diff < best.diff)) best = { offer: o, diff };
-			}
-		}
-		valueMatch = best?.offer ?? null;
-	}
+	const valueMatches = mentions.length > 0 ? matchValueMentions(offers, mentions) : [];
 
 	if (nameMatches.length === 1) {
-		if (!valueMatch || valueMatch.groupId === nameMatches[0].groupId) return nameMatches[0];
-		return null;
+		const named = nameMatches[0];
+		if (valueMatches.length === 0) return named;
+		return valueMatches.some((o) => o.groupId === named.groupId) ? named : null;
 	}
 	if (nameMatches.length > 1) {
-		return nameMatches.find((o) => valueMatch && o.groupId === valueMatch.groupId) ?? null;
+		const overlap = nameMatches.filter((o) => valueMatches.some((v) => v.groupId === o.groupId));
+		return overlap.length === 1 ? overlap[0] : null;
 	}
-	return valueMatch;
+	if (valueMatches.length === 1) return valueMatches[0];
+	return null;
 }
 
 /** Resolve por menção textual a partir dos artifacts persistidos da conversa. */

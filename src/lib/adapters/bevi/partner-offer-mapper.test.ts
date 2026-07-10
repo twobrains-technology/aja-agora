@@ -9,11 +9,41 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 	it("mapeia os campos disponíveis + categoria do segmento", () => {
 		const real = partnerOfferToRealOffer(offers[0], "AUTOS");
 		expect(real.ofertaId).toBe(offers[0].ofertaId);
-		expect(real.administradora).toBe(offers[0].administradora);
+		// FIX-265 (menor #1, veredito Fable r5, N5): a fixture traz "ANCORA" (cru,
+		// sem acento, código da Bevi) — o mapper normaliza pro nome exibível.
+		expect(real.administradora).toBe("ÂNCORA");
 		expect(real.grupo).toBe(offers[0].grupo);
 		expect(real.category).toBe("auto");
 		expect(real.creditValue).toBe(offers[0].valorCarta);
 		expect(real.monthlyPayment).toBe(Math.round(Number(offers[0].parcela) * 100) / 100);
+	});
+
+	// FIX-265 (menor #1, veredito Fable r5, N5): "ITAU" saía sem acento 3× na
+	// copy do fecho (intro/reforço/Parabéns) — a API de parceiro devolve o
+	// código cru da Bevi, sem acento. O trilho de DESCOBERTA (offer-mapper.ts,
+	// FIX-255) já normalizava; o trilho de FECHAMENTO (este mapper) não.
+	it("FIX-265: normaliza acento dos códigos conhecidos da Bevi (ITAU→ITAÚ, ANCORA→ÂNCORA, TRADICAO→TRADIÇÃO)", () => {
+		const base = offers[0];
+		expect(partnerOfferToRealOffer({ ...base, administradora: "ITAU" }, "AUTOS").administradora).toBe(
+			"ITAÚ",
+		);
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "ANCORA" }, "AUTOS").administradora,
+		).toBe("ÂNCORA");
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "TRADICAO" }, "AUTOS").administradora,
+		).toBe("TRADIÇÃO");
+	});
+
+	it("FIX-265: nome não mapeado passa intacto (nunca inventa/mangla — nem maiúscula/minúscula muda)", () => {
+		const base = offers[0];
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "BANCO DO BRASIL" }, "AUTOS")
+				.administradora,
+		).toBe("BANCO DO BRASIL");
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "RODOBENS" }, "AUTOS").administradora,
+		).toBe("RODOBENS");
 	});
 
 	it("GAPs §11 ficam undefined — nunca chuta prazo/taxa", () => {

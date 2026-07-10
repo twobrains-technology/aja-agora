@@ -4,7 +4,7 @@ import {
 	type UIMessage,
 	type UIMessageStreamWriter,
 } from "ai";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
@@ -12,6 +12,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
+import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
@@ -34,14 +35,13 @@ import {
 	buildTimeframeReactionDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
-import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
+import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
 	buildScarcityCard,
 	buildTwoPathsCard,
 } from "@/lib/agent/orchestrator/server-cards";
-import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import {
 	LANCE_EMBUTIDO_DEFAULT_PERCENT,
@@ -55,10 +55,14 @@ import {
 	closingPresentation,
 	realOfferPresentation,
 } from "@/lib/bevi/closing-presentation";
-import { buildStartContractInput } from "@/lib/bevi/contract-input";
+import {
+	administradoraConflictsWithRegisteredProposal,
+	buildStartContractInput,
+} from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { ChatAction } from "@/lib/chat/actions";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
@@ -649,6 +653,31 @@ export async function POST(req: NextRequest) {
 								);
 								return;
 							}
+							// FIX-263 (P1, veredito Fable r5, seam PARCIAL): anti-refazer em
+							// CÓDIGO — o achado ao vivo foi o agente negando a proposta REAL já
+							// registrada (RODOBENS) e reabrindo o contract_form de outra
+							// administradora (ITAÚ) sob contestação, a 1 clique de criar uma 2ª
+							// proposta real (CPF + consulta de bureau). Nunca confia no que o
+							// modelo afirma sobre o estado — consulta a proposta REGISTRADA
+							// (bevi_proposals) e bloqueia ANTES do gateway quando o fechamento
+							// em curso pede uma administradora DIFERENTE da já registrada.
+							// Status sempre via check_proposal_status (nunca aqui, é o próprio
+							// texto que direciona o usuário pra pedir o status).
+							const existingProposal = await getLatestBeviProposal(conversationId);
+							if (
+								administradoraConflictsWithRegisteredProposal(
+									existingProposal?.administradora,
+									freshMeta.recommendedAdministradora,
+								)
+							) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									`Você já tem uma proposta registrada com a ${existingProposal?.administradora} — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?`,
+								);
+								return;
+							}
 							// FIX-9: identidade já coletada no identify — o form confirma e o
 							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
 							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
@@ -768,10 +797,18 @@ export async function POST(req: NextRequest) {
 								// agente não re-apresenta contract_form (merge sobre meta atual).
 								const fresh = await reloadMeta(conversationId);
 								await persistMeta(conversationId, { ...fresh, contractClosed: true });
+								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona
+								// a mesa (especialista em cadastros) NA HORA. Nunca quebra o
+								// fechamento (best-effort, mesmo padrão de sendContractSummary).
+								// FIX-265 (menor #3, veredito Fable r5, N7): disparado ANTES da
+								// copy (abaixo) pra ela saber o CANAL real (free_text/template
+								// enviado agora × queued só enfileirado) — "acabei de te mandar"
+								// era dito mesmo quando só enfileirou (mentira observável).
+								const fechoPedirOi = await sendFechoPedirOi(conversationId);
 								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 								// (closing-presentation.ts — módulo único produção+eval).
 								await pipeAndSaveClosingItems(
-									closingPresentation(res),
+									closingPresentation(res, { whatsappChannel: fechoPedirOi.channel }),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
@@ -779,10 +816,6 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
-								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e
-								// aciona a mesa (especialista em cadastros) NA HORA. Nunca quebra
-								// o fechamento (best-effort, mesmo padrão de sendContractSummary).
-								await sendFechoPedirOi(conversationId);
 							} catch (err) {
 								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
 								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
@@ -1101,7 +1134,15 @@ export async function POST(req: NextRequest) {
 						// "yes" → directive do dial (dados reais do plano recomendado);
 						// "no" → card de decisão direto ("Esse plano faz sentido?").
 						if (action.gate === "simulator-offer") {
-							const refreshed = { ...meta, simulatorOfferDispatched: true };
+							// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
+							// resposta ao simulator-offer — marca simulatorOfferAnswered
+							// aqui (não só no texto afirmativo subsequente, index.ts) pra
+							// não re-emitir o dial no 1º "sim" do turno seguinte.
+							const refreshed = {
+								...meta,
+								simulatorOfferDispatched: true,
+								simulatorOfferAnswered: true,
+							};
 							await persistMeta(conversationId, refreshed);
 							if (action.value === "yes") {
 								// FIX-241 (âncora de dinheiro): quando o usuário declarou

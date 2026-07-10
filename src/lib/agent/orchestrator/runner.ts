@@ -23,7 +23,11 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
-import { resolveOfferForAdministradora, resolveOfferMentionForConversation } from "./choose-offer";
+import {
+	isCreditValueMentioned,
+	resolveOfferForAdministradora,
+	resolveOfferMentionForConversation,
+} from "./choose-offer";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import {
 	coerceDialPayload,
@@ -47,7 +51,13 @@ import {
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
-import { logToolInputError, logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
+import {
+	logToolError,
+	logToolInputError,
+	logToolIO,
+	type ToolCallRecord,
+	type ToolResultRecord,
+} from "./tool-io-log";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -62,12 +72,42 @@ export type RunAgentResult = {
 	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
 	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
 	discoveryFailedThisTurn?: boolean;
+	/** FIX-262: o modelo chamou uma tool FORA do toolset da fase neste turno (AI
+	 * SDK emitiu `tool-error`) — o runner assumiu o turno ANTES que a narração
+	 * crua do modelo (tipicamente negação de uma oferta real) chegasse ao
+	 * usuário. O orchestrator materializa o fallback determinístico. */
+	toolErrorThisTurn?: boolean;
+	/** FIX-262: o turno excedeu `TOOL_CALL_HARD_CAP` tool-calls — o runner
+	 * abortou a geração e assumiu o turno (mesmo fallback do toolErrorThisTurn,
+	 * finish reason distinto pra observabilidade). */
+	toolCallCapExceededThisTurn?: boolean;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
 	simulate_quota: "engajado",
 	recommend_groups: "qualificado",
 };
+
+// FIX-262 (P1, veredito Fable r5 §N2): cap DURO de tool-calls por turno. O
+// `stopWhen: stepCountIs(10)` (builder.ts) limita STEPS do modelo, não
+// tool-calls — um step pode carregar várias chamadas paralelas/sentinelas, e
+// foi assim que um turno real chegou a 34 tool-calls / 593s (4 fallbacks
+// repetidos, ~20 buscas mudas). O fluxo legítimo mais longo (reveal completo:
+// search_groups + recommend_groups + simulate_quota + 3 present_*) usa ~6
+// chamadas — o cap dá folga generosa sem permitir o loop de auto-DoS.
+export const TOOL_CALL_HARD_CAP = 12;
+
+/** Extrai uma mensagem legível do `error` opaco do chunk `tool-error`
+ * (tipicamente um `NoSuchToolError`, mas tratado defensivamente). */
+function stringifyToolError(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (typeof error === "string") return error;
+	try {
+		return JSON.stringify(error);
+	} catch {
+		return "Tool chamada fora do toolset da fase (chunk tool-error do AI SDK).";
+	}
+}
 
 /** Cards que constituem o reveal do passo 3+4 (âncora de revealCompleted). */
 const REVEAL_ARTIFACTS = new Set([
@@ -210,6 +250,15 @@ export async function* runAgentTurn(args: {
 	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
 	// pro artifact-guard (FIX-187) dropar qualquer proposta.
 	let discoveryFailedThisTurn = false;
+	// FIX-262: chunk `tool-error` observado neste turno (tool fora do toolset da
+	// fase) — a partir daqui, nenhum texto do modelo chega ao usuário (evita a
+	// negação de oferta real) e o orchestrator assume com fallback determinístico.
+	let toolErrorThisTurn = false;
+	// FIX-262: total de tool-calls PROCESSADAS neste turno (não só steps do
+	// modelo — um step pode carregar várias chamadas). Acima do cap duro, o
+	// runner aborta a geração e para de relayar qualquer coisa pro usuário.
+	let toolCallCountThisTurn = 0;
+	let toolCallCapExceededThisTurn = false;
 	// FIX-191: grupos REAIS do recommend_groups/search_groups deste turno,
 	// indexados por id — fonte única dos números do recommendation_card (hero) e
 	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
@@ -278,8 +327,14 @@ export async function* runAgentTurn(args: {
 	// tornou o 'Embracon' impossível de provar na conv 69a38af1). PII mascarada em
 	// tool-io-log.ts; log server-side (console.log estruturado), nunca vaza pro cliente.
 	let toolIoStep = 0;
+	// FIX-262: sinal de aborto pro cap duro de tool-calls / tool-error fora de
+	// fase — melhor esforço pra cortar a geração em background (custo/latência
+	// do loop de 593s), além do runner parar de RELAYAR/processar qualquer
+	// coisa pro usuário assim que o guard dispara (via `break` no consumo).
+	const turnAbortController = new AbortController();
 	const result = await agent.stream({
 		messages,
+		abortSignal: turnAbortController.signal,
 		onStepFinish: (step: { toolCalls?: ToolCallRecord[]; toolResults?: ToolResultRecord[] }) => {
 			logToolIO({
 				conversationId,
@@ -317,7 +372,11 @@ export async function* runAgentTurn(args: {
 				// modelo daqui pra frente — mata a narração de erro cru ("dificuldade
 				// técnica pontual") e o empilhamento de preâmbulos "vou buscar". O
 				// fallback humano é materializado deterministicamente pelo orchestrator.
-				if (discoveryFailedThisTurn) break;
+				// FIX-262: mesma supressão quando o modelo chamou tool fora do
+				// toolset (tool-error) ou estourou o cap de tool-calls — nos dois
+				// casos a narração seguinte tende a negar uma oferta real ou repetir
+				// o fallback cru do loop; nunca chega ao usuário.
+				if (discoveryFailedThisTurn || toolErrorThisTurn || toolCallCapExceededThisTurn) break;
 				const blockId = (part as { id?: string }).id;
 				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
 				// fecha a frase pendente do bloco anterior, com separador entre blocos.
@@ -380,7 +439,58 @@ export async function* runAgentTurn(args: {
 				});
 				break;
 			}
+			// FIX-262 (P1, veredito Fable r5, causa-raiz N1): o modelo chamou uma
+			// tool FORA do toolset da fase (ex.: search_groups em reveal/closing —
+			// tool-policy.ts exclui a descoberta ali) — o AI SDK v6 emite ESTE
+			// chunk (NoSuchToolError) em vez de "tool-result". Sem case dedicado,
+			// a chamada caía no `output: null` mudo de tool-io-log (nenhum
+			// tool-result pareado) — indistinguível de "rodou e não achou nada".
+			// Foi ESSE buraco (não o Zod do FIX-257) que alimentou a espiral de
+			// negação: o modelo tratou "tool indisponível" como "não existe" e
+			// negou 3× ofertas que estavam na própria tabela exibida. Log
+			// BARULHENTO + assume o turno: NENHUM texto do modelo (que tenderia à
+			// negação) chega ao usuário — o orchestrator materializa o fallback
+			// determinístico (mesmo padrão Lei 1/4 do FIX-186/discoveryFailedThisTurn).
+			case "tool-error": {
+				const errPart = part as {
+					toolCallId?: string;
+					toolName: string;
+					input?: unknown;
+					error?: unknown;
+				};
+				logToolError({
+					conversationId,
+					stepNumber: toolIoStep,
+					error: {
+						toolCallId: errPart.toolCallId,
+						toolName: errPart.toolName,
+						input: errPart.input,
+						errorText: stringifyToolError(errPart.error),
+					},
+				});
+				toolErrorThisTurn = true;
+				// Melhor esforço: corta a geração em background (o modelo tende a
+				// insistir na mesma tool indisponível — é essa insistência que vira
+				// o loop de 34/593s do veredito). O `break` logo abaixo do switch
+				// para de RELAYAR qualquer coisa pro usuário neste turno de qualquer
+				// forma, mesmo se o abort não cortar a tempo.
+				turnAbortController.abort();
+				break;
+			}
 			case "tool-call": {
+				// FIX-262: cap DURO de tool-calls por turno. Conta TODA tool-call
+				// processada (não só steps do modelo) — acima do cap, para
+				// completamente de processar/relayar (nem artifact, nem texto) e
+				// aborta a geração. Nunca mais um turno de 34 chamadas/593s.
+				toolCallCountThisTurn += 1;
+				if (toolCallCountThisTurn > TOOL_CALL_HARD_CAP) {
+					toolCallCapExceededThisTurn = true;
+					turnAbortController.abort();
+					console.error(
+						`[tool-call-cap] turno excedeu ${TOOL_CALL_HARD_CAP} tool-calls (conv=${conversationId}) — abortando`,
+					);
+					break;
+				}
 				const toolName = part.toolName;
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
@@ -587,6 +697,35 @@ export async function* runAgentTurn(args: {
 				break;
 			}
 		}
+		// FIX-262: assim que o guard dispara (tool fora do toolset da fase, ou
+		// cap de tool-calls estourado), para de CONSUMIR o stream imediatamente —
+		// nenhuma parte seguinte (texto/tool-call/artifact) é processada ou
+		// relayada pro usuário neste turno.
+		if (toolErrorThisTurn || toolCallCapExceededThisTurn) break;
+	}
+
+	// FIX-262: guard determinístico assumiu o turno (tool-error fora de fase ou
+	// cap de tool-calls estourado) — mesmo padrão do discoveryFailedThisTurn
+	// logo abaixo: NADA do que o modelo gerou é persistido/relayado, o
+	// orchestrator materializa o fallback fixo e finaliza (Lei 1/4).
+	if (toolErrorThisTurn || toolCallCapExceededThisTurn) {
+		console.log(
+			`[tool-error-recovery] guard: ${
+				toolCallCapExceededThisTurn
+					? "cap de tool-calls excedido"
+					: "tool-error fora do toolset da fase"
+			} — fallback determinístico assume o turno (conv=${conversationId})`,
+		);
+		return {
+			fullResponse: "",
+			artifacts: [],
+			handoffSignaled: false,
+			isConcierge,
+			nextGateToFire: null,
+			prefixForNextGate: null,
+			toolErrorThisTurn,
+			toolCallCapExceededThisTurn,
+		};
 	}
 
 	// FIX-186: a descoberta falhou neste turno → NÃO persiste o texto do modelo
@@ -854,11 +993,34 @@ export async function* runAgentTurn(args: {
 				);
 			}
 			const refreshed = await reloadMeta(conversationId);
-			await persistMeta(conversationId, {
-				...refreshed,
-				recommendedOffer: anchor,
-				recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
-			});
+
+			// FIX-265 (menor #2, veredito Fable r5, N6): what-if puramente
+			// EXPLORATÓRIO (a LLM simulou um crédito que o usuário NÃO pediu — nem
+			// por nome/valor já exibido [`mentioned` acima], nem por menção direta
+			// do valor no texto) nunca vira a âncora do fechamento/dial — mantém o
+			// snapshot anterior (a simulação ainda aparece como card informativo,
+			// só não confirma). Só se aplica quando `mentioned` não resolveu nada
+			// (sem `mentioned`, a rota determinística já vetou o grupo — sempre
+			// confiável, Lei 1/4).
+			const currentCredit = refreshed.recommendedOffer?.creditValue;
+			const isExploratoryWhatIf =
+				!mentioned &&
+				typeof currentCredit === "number" &&
+				currentCredit > 0 &&
+				Math.abs(anchor.creditValue - currentCredit) / currentCredit > 0.15 &&
+				!isCreditValueMentioned(lastUserText, anchor.creditValue);
+
+			if (isExploratoryWhatIf) {
+				console.log(
+					`[snapshot-whatif] FIX-265: what-if ${anchor.creditValue} não respaldado pelo texto do usuário — snapshot mantido em ${currentCredit} (conv=${conversationId})`,
+				);
+			} else {
+				await persistMeta(conversationId, {
+					...refreshed,
+					recommendedOffer: anchor,
+					recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
+				});
+			}
 		}
 	}
 

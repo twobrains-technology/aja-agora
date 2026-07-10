@@ -2,10 +2,10 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
-import type { ArtifactType } from "@/lib/chat/types";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
@@ -18,8 +18,8 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { resolveOfferMentionForConversation } from "./choose-offer";
-import { computeMoneyAnchor } from "./dial-payload";
 import { isLikelyNameResponse } from "./detect-name-turn";
+import { computeMoneyAnchor } from "./dial-payload";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -28,6 +28,7 @@ import {
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
+	buildToolErrorRecoveryFallback,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -52,7 +53,8 @@ export type { TurnEvent, TurnInput } from "./types";
 // tem handler próprio em route.ts). Lei 4: invariante de gate vira código,
 // não regra-no-prompt. `intent` (do analyzer) filtra pergunta/dúvida/off-topic
 // ANTES do regex — mesmo critério que decideShowGate já usa pra esses gates.
-const YES_TEXT_MARKERS = /\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
+const YES_TEXT_MARKERS =
+	/\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
 const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
 function detectYesNoText(text: string, intent: UserIntent): boolean | null {
@@ -312,6 +314,41 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		? await resolveOfferMentionForConversation(conversationId, userText)
 		: null;
 
+	// FIX-263 (P1, veredito Fable r5, seam PARCIAL): confirmação TEXTUAL de uma
+	// oferta JÁ EXIBIDA nunca re-ancorava `recommendedOffer`/`recommendedAdministradora`
+	// — só o clique (choose_offer, route.ts) fazia isso. Resultado ao vivo: o
+	// usuário confirmou ITAÚ 92.902 por texto 3×, mas o hero/aviso de troca de
+	// marca no fechamento seguiu nomeando a ÂNCORA (snapshot stale) — porque
+	// NADA persistia a resolução textual quando o turno não produzia um novo
+	// simulation_result (FIX-252 só re-ancora nesse caso, dentro do runner).
+	// Mesma re-ancoragem determinística do clique, aqui pro caminho de TEXTO —
+	// só pós-reveal (há algo mostrado pra re-ancorar) e só com os 3 números da
+	// oferta mencionada completos (nunca ancora parcial, Lei 3).
+	if (
+		isUserTurn &&
+		mentionedOffer &&
+		meta.revealCompleted === true &&
+		typeof mentionedOffer.creditValue === "number" &&
+		typeof mentionedOffer.termMonths === "number" &&
+		typeof mentionedOffer.monthlyPayment === "number" &&
+		mentionedOffer.groupId !== meta.recommendedOffer?.groupId
+	) {
+		meta.recommendedAdministradora =
+			mentionedOffer.administradora ?? meta.recommendedAdministradora;
+		meta.recommendedOffer = {
+			...meta.recommendedOffer,
+			administradora: mentionedOffer.administradora ?? meta.recommendedOffer?.administradora,
+			creditValue: mentionedOffer.creditValue,
+			termMonths: mentionedOffer.termMonths,
+			monthlyPayment: mentionedOffer.monthlyPayment,
+			groupId: mentionedOffer.groupId,
+		};
+		await persistMeta(conversationId, meta);
+		console.log(
+			`[ancora-fechamento] FIX-263: confirmação textual re-ancorou recommendedOffer pra ${meta.recommendedAdministradora} (groupId=${mentionedOffer.groupId}, conv=${conversationId})`,
+		);
+	}
+
 	const history = await loadConversationHistory(conversationId);
 	const systemContext = buildSystemContext({
 		knownName,
@@ -412,6 +449,25 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		yield { type: "text-delta", text: fallback };
 		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
 		yield { type: "finish", reason: "discovery-failed" };
+		return;
+	}
+
+	// FIX-262 (P1, veredito Fable r5, causa-raiz N1/N2): o runner detectou uma
+	// tool chamada fora do toolset da fase (tool-error) ou o turno estourou o
+	// cap duro de tool-calls — nos dois casos a narração do modelo foi
+	// suprimida (tenderia a negar uma oferta real). O orchestrator materializa
+	// o fallback FIXO que reafirma as opções já mostradas, nunca as nega
+	// (Lei 1: código dispõe, mesmo padrão do discoveryFailedThisTurn acima).
+	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
+		const fallback = buildToolErrorRecoveryFallback({ name: knownName });
+		yield { type: "text-delta", text: fallback };
+		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
+		yield {
+			type: "finish",
+			reason: result.toolCallCapExceededThisTurn
+				? "tool-call-cap-exceeded"
+				: "tool-error-recovered",
+		};
 		return;
 	}
 
@@ -529,7 +585,13 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				payload: buildTwoPathsCard(refreshed).payload,
 			});
 			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
-			await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+			await saveMessage(
+				conversationId,
+				"assistant",
+				TWO_PATHS_FOLLOWUP_TEXT,
+				channel,
+				currentPersona,
+			);
 		} else {
 			// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
 			// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE

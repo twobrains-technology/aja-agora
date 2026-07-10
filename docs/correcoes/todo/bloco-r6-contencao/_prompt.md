@@ -1,0 +1,5 @@
+Executor do bloco **bloco-r6-contencao** (rodada 6) no worktree `fix/r6-contencao`. É a TROCA DE ÂNGULO do loop (a nota estagnou 5→5 porque os invariantes ficaram no PROMPT). Ponha a contenção do LLM em CÓDIGO.
+1. Leia: `docs/correcoes/rodada2-fable/veredito-fable-r5.md` (causa-raiz: chunk `tool-error` não tratado + anti-refazer no prompt falha ao vivo) + `docs/correcoes/todo/bloco-r6-contencao/` (_bloco.md + fix-262/263).
+2. LEI 1/4: LLM não dirige o fluxo; invariante crítico é CÓDIGO. O runner DEVE tratar o chunk `tool-error` (o buraco mudo que faz o agente negar oferta real). Cap de tool-calls por turno (o loop de 34/593s é inaceitável). Confirmação textual re-ancora determinístico. Anti-refazer bloqueia contract_form de marca ≠ registrada em CÓDIGO. Ordem: FIX-262 → FIX-263. TDD strict.
+3. INVARIANTES: nunca negar oferta exibida na tabela; nunca 2ª proposta de marca diferente pós-registro; status sempre via check_proposal_status. NÃO quebrar FIX r1-r5. PT correto.
+4. 1 commit por item; mover fix-NN pra done/. Ao fim: push da branch + `.done/`. NÃO abra PR/merge/deploy. test:unit VERDE antes do push.
