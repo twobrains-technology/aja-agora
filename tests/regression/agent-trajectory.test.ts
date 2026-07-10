@@ -5958,16 +5958,23 @@ describe("BUG-ADMIN-DESSINCRONIZADA — what-if atualiza administradora junto co
 	it("source-level: o persistMeta do what-if grava recommendedAdministradora junto com recommendedOffer", () => {
 		const block = whatifBlock();
 		expect(block.length, "bloco 'FIX-6 (what-if)' não isolado no runner").toBeGreaterThan(0);
+		// FIX-252 (rodada 4, veredito Fable FINAL "pro teto" #3): o bloco passou a
+		// resolver `anchor` (snap por padrão, ou o grupo que o TEXTO do usuário
+		// mencionou — "a de 92 mil" — quando diverge do que a LLM simulou; nunca
+		// inventa). O invariante original do BUG-ADMIN-DESSINCRONIZADA continua
+		// intacto: offer e administradora TÊM que persistir a partir da MESMA
+		// variável, juntos.
 		expect(
-			block.includes("recommendedOffer: snap"),
-			"o bloco precisa seguir atualizando o snapshot da oferta (FIX-6).",
+			block.includes("recommendedOffer: anchor"),
+			"o bloco precisa seguir atualizando o snapshot da oferta (FIX-6/FIX-252).",
 		).toBe(true);
 		expect(
-			/recommendedAdministradora:\s*snap\.administradora/.test(block),
+			/recommendedAdministradora:\s*anchor\.administradora/.test(block),
 			"BUG-ADMIN-DESSINCRONIZADA: o persistMeta do what-if TEM que atualizar " +
-				"recommendedAdministradora a partir do snapshot — senão a directive do " +
-				"fechamento e a proposta real (contract-input.ts: administradoraPreferida) " +
-				"apontam pra administradora do reveal antigo, não pra que o usuário decidiu.",
+				"recommendedAdministradora a partir da MESMA âncora do recommendedOffer — " +
+				"senão a directive do fechamento e a proposta real (contract-input.ts: " +
+				"administradoraPreferida) apontam pra administradora do reveal antigo, não " +
+				"pra que o usuário decidiu.",
 		).toBe(true);
 	});
 
