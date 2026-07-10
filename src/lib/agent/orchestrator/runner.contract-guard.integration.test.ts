@@ -94,6 +94,7 @@ const { runTurn } = await import("@/lib/agent/orchestrator");
  * — exatamente o estado da conversa real quando o bug disparou. nextGate
  * deste meta = "identify" (cf. agent-trajectory: funil completo → identify). */
 const END_OF_QUALIFY_META: ConversationMetadata = {
+	desireAsked: true,
 	currentPersona: "moto",
 	currentCategory: "moto",
 	expertiseLevel: "neutro",
