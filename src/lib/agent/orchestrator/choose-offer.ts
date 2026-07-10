@@ -159,3 +159,84 @@ export async function resolveOfferForAdministradora(
 	const rows = await loadArtifactRows(conversationId);
 	return findOfferByAdministradora(rows, administradora);
 }
+
+// FIX-252 ("pro teto" #3, veredito Fable FINAL, 2026-07-10): a mesma lei, num
+// segundo ponto — a LLM podia nomear/errar o grupo certo em texto livre ("a de
+// 92 mil" resolvendo pro grupo de 100k, achado do FIX-249 "PARCIAL"; gap
+// registrado como fora de escopo no próprio commit cd716058).
+// resolveOfferByMention resolve DETERMINISTICAMENTE por nome de administradora
+// ou valor aproximado contra os grupos JÁ EXIBIDOS — nunca inventa (Lei 3).
+
+/** Extrai valores monetários mencionados no texto livre — "92 mil", "R$
+ * 92.902,00", "92.902" (formatação pt-BR). PURO, sem heurística de moeda
+ * implícita em números soltos pequenos (evita falso-positivo em "12 meses"). */
+function extractMoneyMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)\s*mil\b/gi)) {
+		const n = Number(m[1].replace(",", "."));
+		if (!Number.isNaN(n)) out.push(n * 1000);
+	}
+	for (const m of text.matchAll(/R\$\s*([\d.,]+)/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	for (const m of text.matchAll(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g)) {
+		const n = parsePtBrNumber(m[0]);
+		if (n !== null) out.push(n);
+	}
+	return out;
+}
+
+function parsePtBrNumber(raw: string): number | null {
+	const cleaned = raw.trim();
+	const normalized = cleaned.includes(",")
+		? cleaned.replace(/\./g, "").replace(",", ".")
+		: cleaned.replace(/\./g, "");
+	const n = Number(normalized);
+	return Number.isNaN(n) ? null : n;
+}
+
+/** Resolve determinística de menção textual (nome de administradora OU valor
+ * aproximado) pra uma das cotas JÁ EXIBIDAS — nunca inventa (Lei 3): null
+ * quando ambíguo ou sem match. Nome e valor discordando entre si também é
+ * ambíguo (null) — não escolhe um dos dois no escuro. */
+export function resolveOfferByMention(offers: ChosenOffer[], text: string): ChosenOffer | null {
+	if (!text || offers.length === 0) return null;
+	const normalizedText = normalizeAdministradora(text);
+
+	const nameMatches = offers.filter(
+		(o) => o.administradora && normalizedText.includes(normalizeAdministradora(o.administradora)),
+	);
+
+	const mentions = extractMoneyMentions(text);
+	let valueMatch: ChosenOffer | null = null;
+	if (mentions.length > 0) {
+		let best: { offer: ChosenOffer; diff: number } | null = null;
+		for (const o of offers) {
+			if (typeof o.creditValue !== "number") continue;
+			for (const m of mentions) {
+				const diff = Math.abs(o.creditValue - m) / m;
+				if (diff <= 0.1 && (!best || diff < best.diff)) best = { offer: o, diff };
+			}
+		}
+		valueMatch = best?.offer ?? null;
+	}
+
+	if (nameMatches.length === 1) {
+		if (!valueMatch || valueMatch.groupId === nameMatches[0].groupId) return nameMatches[0];
+		return null;
+	}
+	if (nameMatches.length > 1) {
+		return nameMatches.find((o) => valueMatch && o.groupId === valueMatch.groupId) ?? null;
+	}
+	return valueMatch;
+}
+
+/** Resolve por menção textual a partir dos artifacts persistidos da conversa. */
+export async function resolveOfferMentionForConversation(
+	conversationId: string,
+	text: string,
+): Promise<ChosenOffer | null> {
+	const rows = await loadArtifactRows(conversationId);
+	return resolveOfferByMention(listShownOffers(rows), text);
+}

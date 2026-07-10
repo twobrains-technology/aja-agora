@@ -23,7 +23,7 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
-import { resolveOfferForAdministradora } from "./choose-offer";
+import { resolveOfferForAdministradora, resolveOfferMentionForConversation } from "./choose-offer";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import {
 	coerceDialPayload,
@@ -781,11 +781,43 @@ export async function* runAgentTurn(args: {
 		const newSim = artifacts.find((a) => a.type === "simulation_result");
 		const snap = offerSnapshotFromArtifact(newSim?.payload);
 		if (snap) {
+			// FIX-252 ("pro teto" #3, veredito Fable FINAL): o groupId que a LLM
+			// mandou simular pode não ser o que o usuário pediu por nome/valor (ex.:
+			// "a de 92 mil" resolvendo pro grupo de 100k — achado do FIX-249
+			// "PARCIAL"). Quando o texto do turno resolve DETERMINISTICAMENTE pra um
+			// grupo JÁ EXIBIDO diferente do que a LLM simulou, a âncora usa o
+			// resolvido — nunca o palpite da LLM (Lei "nunca aja sobre entidade
+			// não-ancorada"). resolveOfferByMention nunca inventa: sem match claro
+			// (ou ambíguo), snap segue intacto.
+			const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+			const mentioned = lastUserText
+				? await resolveOfferMentionForConversation(conversationId, lastUserText)
+				: null;
+			const anchor =
+				mentioned &&
+				mentioned.groupId !== snap.groupId &&
+				typeof mentioned.creditValue === "number" &&
+				typeof mentioned.termMonths === "number" &&
+				typeof mentioned.monthlyPayment === "number"
+					? {
+							...snap,
+							administradora: mentioned.administradora ?? snap.administradora,
+							creditValue: mentioned.creditValue,
+							termMonths: mentioned.termMonths,
+							monthlyPayment: mentioned.monthlyPayment,
+							groupId: mentioned.groupId,
+						}
+					: snap;
+			if (anchor !== snap) {
+				console.log(
+					`[ancora-fechamento] FIX-252: what-if simulou ${snap.groupId} mas o texto do usuário resolvia pro grupo ${anchor.groupId} (${anchor.administradora}) — âncora corrigida (conv=${conversationId})`,
+				);
+			}
 			const refreshed = await reloadMeta(conversationId);
 			await persistMeta(conversationId, {
 				...refreshed,
-				recommendedOffer: snap,
-				recommendedAdministradora: snap.administradora ?? refreshed.recommendedAdministradora,
+				recommendedOffer: anchor,
+				recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
 			});
 		}
 	}

@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findChosenOffer, findOfferByAdministradora, listShownOffers } from "./choose-offer";
+import {
+	findChosenOffer,
+	findOfferByAdministradora,
+	listShownOffers,
+	resolveOfferByMention,
+} from "./choose-offer";
 
 const readSource = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf-8");
 
@@ -197,7 +202,44 @@ describe("FIX-251 — findOfferByAdministradora resolve a administradora anuncia
 	});
 });
 
-describe("FIX-251 — listShownOffers extrai todas as cotas do comparison_table sem duplicar", () => {
+describe("FIX-252 — resolveOfferByMention resolve nome/valor mencionado em texto livre", () => {
+	const offers = listShownOffers(FLUXO_B_ROWS);
+
+	it('"quero a ITAÚ" com ITAÚ na comparison_table → resolve o groupId da ITAÚ exibida', () => {
+		const resolved = resolveOfferByMention(offers, "quero a ITAÚ");
+		expect(resolved?.groupId).toBe("g-itau");
+	});
+
+	it('"a de 92 mil" → grupo 92.902 (ANCORA), NÃO o de 100k (CANOPUS)', () => {
+		const resolved = resolveOfferByMention(offers, "quero a de 92 mil");
+		expect(resolved?.groupId).toBe("g-ancora");
+		expect(resolved?.creditValue).toBe(92902);
+	});
+
+	it('"deixa a RODOBENS que você recomendou" → resolve RODOBENS, não o what-if ITAÚ', () => {
+		const resolved = resolveOfferByMention(offers, "Deixa a RODOBENS que você recomendou");
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it("valor com R$ formatado (R$ 92.902,00) resolve o mesmo grupo", () => {
+		const resolved = resolveOfferByMention(offers, "fecha com a de R$ 92.902,00");
+		expect(resolved?.groupId).toBe("g-ancora");
+	});
+
+	it("texto sem nome nem valor reconhecível → null (não inventa)", () => {
+		expect(resolveOfferByMention(offers, "beleza, pode seguir")).toBeNull();
+	});
+
+	it("nome e valor apontando pra grupos DIFERENTES → ambíguo, null", () => {
+		expect(resolveOfferByMention(offers, "quero a ITAÚ de 92 mil")).toBeNull();
+	});
+
+	it("lista vazia de ofertas → null", () => {
+		expect(resolveOfferByMention([], "quero a ITAÚ")).toBeNull();
+	});
+});
+
+describe("FIX-251/FIX-252 — listShownOffers extrai todas as cotas do comparison_table sem duplicar", () => {
 	it("4 grupos exibidos, 4 ofertas distintas", () => {
 		const offers = listShownOffers(FLUXO_B_ROWS);
 		expect(offers).toHaveLength(4);
