@@ -1,13 +1,23 @@
 ---
 id: FIX-235
 titulo: "Fecho pro WhatsApp: pedir o 'oi' (abre janela 24h) + especialista de cadastros"
-status: todo
+status: done
 bloco: bloco-jornada-conversa
 arquivos:
-  - src/lib/agent/system-prompt.ts
-  - src/lib/agent/orchestrator/directives.ts
-  - src/lib/whatsapp/proxy.ts
+  - src/lib/bevi/closing-presentation.ts
+  - src/lib/bevi/fecho-pedir-oi.ts
+  - src/app/api/chat/route.ts
+  - src/lib/whatsapp/interactive-handlers.ts
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR9/D8)
+commit: 715d483
+executado_em: "2026-07-09"
+nota: >
+  Escopo de arquivos DIVERGIU do declarado (system-prompt.ts/directives.ts/
+  proxy.ts) — decisão registrada em
+  docs/decisoes/blocos/2026-07-09-jornada-conversa.md: a copy do fecho é
+  DETERMINÍSTICA (closing-presentation.ts, docx passo 5.2), não gerada pela
+  LLM; o disparo do template+mesa espelha contract-summary.ts (novo módulo
+  fecho-pedir-oi.ts), não o handoff-antigo de proxy.ts.
 ---
 
 ## Palavras do operador (handoff)
