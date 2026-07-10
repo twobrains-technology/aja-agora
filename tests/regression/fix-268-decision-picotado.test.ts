@@ -29,7 +29,11 @@ describe("FIX-268 — scarcity e decision não colam no mesmo balão (index.ts)"
 		);
 
 		const scarcityIdx = decisionBlock.indexOf("buildScarcityDirective");
-		const boundaryIdx = decisionBlock.indexOf('type: "text-boundary"');
+		// FIX-272 (rodada 8, veredito Fable r7): um 2º boundary foi acrescentado
+		// NO INÍCIO do bloco (fecha o balão do turno PRINCIPAL antes de entrar em
+		// qualquer directive daqui) — busca a partir do scarcityIdx pra achar
+		// especificamente o boundary ENTRE scarcity e decision, este teste.
+		const boundaryIdx = decisionBlock.indexOf('type: "text-boundary"', scarcityIdx);
 		const decisionDirectiveIdx = decisionBlock.lastIndexOf("buildDecisionPromptDirective");
 
 		expect(scarcityIdx, "buildScarcityDirective não encontrado no bloco de decision").toBeGreaterThan(-1);

@@ -1300,6 +1300,21 @@ export async function POST(req: NextRequest) {
 						}
 
 						if (action.gate === "lance-embutido") {
+							// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click
+							// (clique repetido antes do botão desabilitar) reprocessava um
+							// gate JÁ respondido — o estado já tinha avançado (ex.:
+							// simulatorOfferDispatched=true do click #1), então nextGate
+							// recomputava "decision", que pipeGatePrompt não sabe renderizar
+							// (gatePartData/gateQuestion retornam null) → turno 100% vazio,
+							// ar morto (não passa pelo guard de empty-turn, que só roda no
+							// turno de TEXTO-livre). O click #1 já emitiu a resposta certa —
+							// o replay não tem nada NOVO a fazer.
+							if (meta.qualifyAnswers?.lanceEmbutido !== undefined) {
+								console.log(
+									`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
+								);
+								return;
+							}
 							const considera = action.value === "yes";
 							const q = meta.qualifyAnswers ?? {};
 							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {

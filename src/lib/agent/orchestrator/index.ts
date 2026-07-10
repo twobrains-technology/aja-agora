@@ -559,6 +559,14 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+		// FIX-272 (rodada 8, veredito Fable r7, D4 residual — "outra emenda"): a
+		// resposta do turno PRINCIPAL (às vezes termina em pergunta, ex. "...outro
+		// prazo?") colava SEM espaço no lead-in do directive seguinte (scarcity OU
+		// so_parcela, logo abaixo) — mesma classe do FIX-268, que só fechava a
+		// costura MAIS ADIANTE (entre scarcity e decision_prompt). Fecha o balão
+		// aberto incondicionalmente ANTES de entrar em QUALQUER ramo deste bloco
+		// (no-op se já não houver balão aberto) — cobre os dois caminhos de uma vez.
+		yield { type: "text-boundary" };
 		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
 		// lance-value/lance-embutido/simulator-offer; o card certo é
 		// present_two_paths (dois caminhos), não present_decision_prompt.

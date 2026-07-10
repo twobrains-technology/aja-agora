@@ -2861,7 +2861,10 @@ describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gat
 
 	it("o directive de reacao ao lance NAO instrui pre-explicar lance embutido", () => {
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
-		const m = directives.match(/buildLanceReactionDirective[\s\S]{0,500}?\n}/);
+		// FIX-272 (rodada 8, veredito Fable r7): a janela cresceu de 500→700 —
+		// o corpo ganhou a proibição explícita de "reserva" na reação (o directive
+		// induzia o termo proibido na prosa do LLM), texto legitimamente maior.
+		const m = directives.match(/buildLanceReactionDirective[\s\S]{0,700}?\n}/);
 		expect(m, "buildLanceReactionDirective precisa existir em directives.ts").not.toBeNull();
 		const body = m?.[0] ?? "";
 		// Deve mandar reagir curto e explicitamente NAO explicar embutido aqui.

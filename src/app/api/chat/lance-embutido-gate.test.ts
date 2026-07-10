@@ -72,3 +72,31 @@ describe("FIX-215 — handler do gate lance-embutido despacha o PRÓXIMO gate, n
 		expect(conditionIdx).toBeLessThan(searchCallIdx);
 	});
 });
+
+// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click em "Sim,
+// considerar lance embutido" (2ª vez que o handler roda pra este gate, ex.
+// clique repetido antes do botão desabilitar) reprocessa o estado JÁ avançado
+// por click #1 — `nextGate` recomputa e pode devolver "decision" (porque
+// `simulatorOfferDispatched` já ficou true), que `pipeGatePrompt` não sabe
+// renderizar (gatePartData/gateQuestion retornam null pra "decision") → turno
+// 100% vazio (ar morto), sem passar pelo guard de empty-turn do route (que só
+// roda no turno de TEXTO-livre, não em handlers de ação). O handler precisa
+// detectar o replay ANTES de reprocessar/redespachar.
+describe("FIX-272 — dup-click do gate lance-embutido não reprocessa (evita ar morto)", () => {
+	const src = readFileSync(join(process.cwd(), "src/app/api/chat/route.ts"), "utf8");
+	const start = src.indexOf('if (action.gate === "lance-embutido") {');
+	const end = src.indexOf("trace.setFinish(\"ok\")", start);
+	const lanceEmbutidoHandler = src.slice(start, end);
+
+	it("guarda contra reprocessar um gate JÁ respondido (checa qualifyAnswers.lanceEmbutido antes de despachar)", () => {
+		expect(lanceEmbutidoHandler).toMatch(/qualifyAnswers\?\.lanceEmbutido\s*!==\s*undefined/);
+	});
+
+	it("o guard vem ANTES do persistMeta/despacho do próximo gate (curto-circuita o replay)", () => {
+		const guardIdx = lanceEmbutidoHandler.search(/qualifyAnswers\?\.lanceEmbutido\s*!==\s*undefined/);
+		const dispatchIdx = lanceEmbutidoHandler.indexOf("nextAfterLanceEmbutido");
+		expect(guardIdx).toBeGreaterThan(-1);
+		expect(dispatchIdx).toBeGreaterThan(-1);
+		expect(guardIdx).toBeLessThan(dispatchIdx);
+	});
+});
