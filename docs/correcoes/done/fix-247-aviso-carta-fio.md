@@ -1,10 +1,16 @@
 ---
 id: FIX-247
 titulo: "Aviso de ajuste de carta morto em integração — requestedCreditValue descartado no destructuring"
-status: todo
+status: done
 bloco: bloco-r3-serverside-cards
-arquivos: [src/app/api/chat/route.ts, src/lib/bevi/contract-capture.ts, src/components/chat/artifacts/real-offer.tsx]
+arquivos:
+  - src/app/api/chat/route.ts
+  - src/lib/whatsapp/contract-capture.ts
+  - src/lib/whatsapp/formatter.ts
+  - src/components/chat/artifacts/real-offer.tsx
 rodada: 2026-07-10 rodada 3 (Fable r2, gap #2 PARCIAL)
+commit: 8653571
+executado_em: "2026-07-10"
 ---
 
 ## Gap (veredito Fable r2, gap #2 — PARCIAL)
