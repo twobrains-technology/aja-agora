@@ -1,7 +1,7 @@
 ---
 id: FIX-231
 titulo: "Guard anti-taxaContemplacao + ajustes nos cards existentes (carta em destaque)"
-status: todo
+status: done
 bloco: bloco-cards-ui
 arquivos:
   - src/components/chat/artifacts/group-card.tsx
@@ -9,6 +9,8 @@ arquivos:
   - src/components/chat/artifacts/recommendation-card.tsx
   - src/components/chat/artifacts/contemplation-dial.tsx
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR1-guard + PR2-ajustes)
+commit: aaa2386
+executado_em: 2026-07-10
 ---
 
 ## Palavras do operador (handoff)
@@ -36,3 +38,22 @@ hierárquico à carta; `contemplation-dial.tsx` consome `likelihood` (removido p
 - snapshot/render dos cards com carta em destaque; lance médio presente mas discreto.
 - recommendation-card sem `paymentAfterContemplation`.
 - `contemplation-dial.tsx` renderiza sem depender de `likelihood`.
+
+## Execução (2026-07-10)
+- **Bug real encontrado** (não estava no card, mas cai na mesma regra): `group-card.tsx`
+  exibia `contemplationRate` com `formatPercent()` — mas esse campo é, na origem,
+  `monthlyAwardedQuotas` (contagem real de contemplados/mês, `offer-mapper.ts:132-133`),
+  nunca uma fração. Mostrava, por exemplo, "36,0%" quando o dado real era "36
+  contemplados/mês". Corrigido pro mesmo padrão de contagem do `recommendation-card.tsx`
+  ("Contemplados/mês").
+- **Decisão consciente — instrução nova supersede a antiga**: `recommendation-card.tsx`
+  mostrava o bloco "Até contemplar / Após receber" (FIX-221, Ata 2026-07-04). O handoff
+  de 2026-07-09 (mais novo) pede explicitamente que essa informação só apareça na agulha
+  (`contemplation_dial`). Removido o bloco e o teste `recommendation-card.fix-221.test.tsx`
+  foi reescrito pra validar o novo comportamento (comentário no topo do arquivo explica a
+  supersessão).
+- `contemplation-dial.tsx` parou de consumir `likelihood` (heurística de 3 faixas sem dado
+  real que a sustente) — o teste de branding (`branding-adherence.test.ts`) foi ajustado
+  porque as classes de cor que checava (`text-success/warning/destructive`) existiam só
+  no medidor removido.
+- Commit: `aaa2386`.

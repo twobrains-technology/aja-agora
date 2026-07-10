@@ -4,6 +4,7 @@ import { ContemplationDial } from "./artifacts/contemplation-dial";
 import { ContractForm } from "./artifacts/contract-form";
 import { DecisionPrompt } from "./artifacts/decision-prompt";
 import { DocumentUpload } from "./artifacts/document-upload";
+import { EmbeddedBid } from "./artifacts/embedded-bid";
 import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
@@ -78,6 +79,8 @@ function renderArtifact(artifact: Artifact) {
 			return <DocumentUpload payload={artifact.payload} />;
 		case "contemplation_dial":
 			return <ContemplationDial payload={artifact.payload} />;
+		case "embedded_bid":
+			return <EmbeddedBid payload={artifact.payload} />;
 		case "quick_reply":
 			return null;
 	}

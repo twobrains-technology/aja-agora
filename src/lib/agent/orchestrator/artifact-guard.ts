@@ -70,6 +70,7 @@ const POST_CLOSURE_FAMILY = new Set<ArtifactType>([
 	"group_card",
 	"contemplation_dial",
 	"decision_prompt",
+	"embedded_bid",
 ]);
 
 export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [

@@ -336,6 +336,20 @@ export interface ContemplationDialPayload {
 	declaredLanceValue?: number;
 }
 
+// ---- Card lance embutido (FIX-228, docs/02-cards-novos.md CARD 1) ----
+
+/** Regra dura: este card SEMPRE diz que o crédito recebido diminui — não é
+ * opcional (separa consultoria de venda enganosa). Os números vêm da oferta
+ * REAL, coagidos server-side (`embedded-bid-payload.ts`); a LLM só escolhe o
+ * grupo. `maxEmbutidoPct` é 0-100 (mesma convenção do resto do codebase). */
+export interface EmbeddedBidPayload {
+	maxEmbutidoPct: number;
+	creditValue: number;
+	embeddedBidValue: number;
+	netCredit: number;
+	disclaimer: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -353,7 +367,8 @@ export type ArtifactByType =
 	| { type: "real_offer"; payload: RealOfferPayload }
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
-	| { type: "contemplation_dial"; payload: ContemplationDialPayload };
+	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
+	| { type: "embedded_bid"; payload: EmbeddedBidPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

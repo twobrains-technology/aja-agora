@@ -158,6 +158,9 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				// FIX-228: lance embutido nasce no reveal, antes da agulha (mesma
+				// fase de present_contemplation_dial/present_decision_prompt).
+				"present_embedded_bid",
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
@@ -175,6 +178,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				"present_embedded_bid",
 				"present_contract_form",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];

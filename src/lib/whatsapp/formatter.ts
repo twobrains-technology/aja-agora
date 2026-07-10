@@ -1213,6 +1213,22 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	};
 }
 
+// FIX-228 (docs/02-cards-novos.md CARD 1 — embedded_bid). Regra dura: SEMPRE
+// diz que o crédito recebido diminui — texto hardcoded (não depende do
+// `payload.disclaimer`), mesma garantia do card web (embedded-bid.tsx).
+export function embeddedBidToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const embeddedBidValue = Number(payload.embeddedBidValue ?? 0);
+	const netCredit = Number(payload.netCredit ?? 0);
+	return {
+		type: "text",
+		text:
+			"*Lance embutido — sem tirar do bolso*\n\n" +
+			"Você usa parte da própria carta como lance e antecipa a contemplação, sem desembolsar.\n\n" +
+			`*Lance embutido:* ${brlWa(embeddedBidValue)}\n*Valor que você recebe:* ${brlWa(netCredit)}\n\n` +
+			"O embutido sai da carta, então o crédito recebido diminui um pouco (estimativa, não garantia).",
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -1250,6 +1266,8 @@ export function artifactToWhatsApp(
 			return documentUploadToWhatsApp(payload);
 		case "contemplation_dial":
 			return contemplationDialToWhatsApp(payload);
+		case "embedded_bid":
+			return embeddedBidToWhatsApp(payload);
 		default:
 			return null;
 	}

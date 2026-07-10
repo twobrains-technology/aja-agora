@@ -24,8 +24,13 @@ import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
 import { enrichContractFormPayload } from "./contract-form-prefill";
-import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
+import {
+	coerceDialPayload,
+	offerSnapshotFromArtifact,
+	type RecommendedOfferSnapshot,
+} from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
+import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
 	coerceComparisonPayload,
@@ -82,6 +87,20 @@ export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boo
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
+}
+
+/** Âncora de oferta do turno — MESMA busca usada pelo `contemplation_dial`
+ * (FIX-6/C2) e reaproveitada pelo `embedded_bid` (FIX-228): os dois cards
+ * precisam da oferta REAL recém-confirmada, nunca do que a LLM digitou. */
+function resolveOfferSnapshot(
+	artifacts: ProducedArtifact[],
+	meta: ConversationMetadata,
+): RecommendedOfferSnapshot | null {
+	const turnAnchor =
+		artifacts.find((a) => a.type === "simulation_result") ??
+		artifacts.find((a) => a.type === "recommendation_card") ??
+		artifacts.find((a) => a.type === "group_card");
+	return offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer ?? null;
 }
 
 /** FIX-102: eco/degeneração NÃO-determinística da LLM (raro — 1 ocorrência em
@@ -439,17 +458,18 @@ export async function* runAgentTurn(args: {
 							);
 						}
 						if (artifactType === "contemplation_dial") {
-							const turnAnchor =
-								artifacts.find((a) => a.type === "simulation_result") ??
-								artifacts.find((a) => a.type === "recommendation_card") ??
-								artifacts.find((a) => a.type === "group_card");
-							const snapshot =
-								offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer;
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							// FIX-C5: defaults do perfil declarado na qualificação.
 							payload = coerceDialPayload(input, snapshot, {
 								prazoMeses: meta.qualifyAnswers?.prazoMeses,
 								lanceValue: meta.qualifyAnswers?.lanceValue,
 							});
+						}
+						// FIX-228: mesma âncora de oferta do contemplation_dial — os
+						// números do embedded_bid vêm da oferta REAL do turno, nunca da LLM.
+						if (artifactType === "embedded_bid") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceEmbeddedBidPayload(input, snapshot);
 						}
 						artifacts.push({
 							type: artifactType,

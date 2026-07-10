@@ -158,6 +158,18 @@ export const recommendationSchema = z.object({
 		.describe("Detalhamento do score por fator"),
 });
 
+// FIX-228 (docs/02-cards-novos.md CARD 1) — input mínimo: a LLM só escolhe o
+// grupo (id LITERAL, mesmo padrão anti-fabricação de groupCardSchema); os
+// números (embeddedBidValue/netCredit) são coagidos server-side no runner a
+// partir da oferta REAL ancorada no turno (coerceEmbeddedBidPayload).
+export const embeddedBidSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card. NUNCA derive nem fabrique.",
+		),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -578,6 +590,15 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_embedded_bid: tool({
+		description:
+			"Apresenta o card de lance embutido: explica que o usuário pode usar parte da própria carta como lance, sem desembolsar, mas o crédito recebido diminui. Use no passo 4 (reveal), antes da agulha, quando o usuário sinalizar pressa ou pouca reserva. Passe o groupId do plano recomendado — os valores (embeddedBidValue/netCredit) são calculados pelo sistema a partir da oferta real, você não precisa calcular nem inventar números.",
+		inputSchema: embeddedBidSchema,
+		execute: async (args: z.infer<typeof embeddedBidSchema>) => {
+			return `[Card de lance embutido apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
 	present_lead_form: tool({
 		description:
 			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
@@ -916,6 +937,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_decision_prompt",
 	"present_contract_form",
 	"present_contemplation_dial",
+	"present_embedded_bid",
 ]);
 
 // ============================================================================

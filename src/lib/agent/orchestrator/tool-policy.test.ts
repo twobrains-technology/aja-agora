@@ -122,6 +122,8 @@ const REVEAL_EXPECTED = [
 	"get_rates",
 	"present_contemplation_dial",
 	"present_decision_prompt",
+	// FIX-228: lance embutido nasce no reveal, antes da agulha.
+	"present_embedded_bid",
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",
