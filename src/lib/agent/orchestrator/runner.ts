@@ -97,6 +97,12 @@ const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
 // chamadas — o cap dá folga generosa sem permitir o loop de auto-DoS.
 export const TOOL_CALL_HARD_CAP = 12;
 
+// FIX-270: tools que constituem "busca/consulta real ao catálogo" — só a
+// presença de UMA delas neste turno lastreia uma claim de re-busca ("não
+// apareceu grupo novo"). `get_group_details` fica de fora de propósito: busca
+// detalhe de UM grupo já conhecido, não uma varredura nova do catálogo.
+const CATALOG_SEARCH_TOOL_NAMES = new Set(["search_groups", "recommend_groups"]);
+
 /** Extrai uma mensagem legível do `error` opaco do chunk `tool-error`
  * (tipicamente um `NoSuchToolError`, mas tratado defensivamente). */
 function stringifyToolError(error: unknown): string {
@@ -281,6 +287,12 @@ export async function* runAgentTurn(args: {
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
+	// FIX-270: fonte REAL de "documento recebido" — `meta.documentSlotsSent` só é
+	// preenchido pelo handler de mídia inbound do WhatsApp após upload de fato
+	// (document-inbound.ts); a web hoje não escreve nesse campo, então lá a claim
+	// é sempre falsa até existir um evento real equivalente. Nunca a narrativa
+	// do LLM (Lei 1).
+	const hasReceivedDocuments = (meta.documentSlotsSent?.length ?? 0) > 0;
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -353,7 +365,13 @@ export async function* runAgentTurn(args: {
 	// e NUNCA vira bolha (nem enviado ao vivo, nem persistido). Barreira em código
 	// (Lei 1/4), a regra soft no prompt é só reforço. Pós-onda-1: erro já é
 	// diretiva, então o filtro só cuida de preâmbulo de SUCESSO.
-	const ephemeralFilter = new EphemeralTextFilter();
+	// FIX-270: o getter é chamado a cada push/flush — `hasSearchToolCall` reflete
+	// as tool-calls JÁ processadas até o ponto corrente do stream (causal: uma
+	// claim "já busquei" só é verdadeira se a tool já rodou antes dela).
+	const ephemeralFilter = new EphemeralTextFilter(() => ({
+		hasReceivedDocuments,
+		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+	}));
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
 	const composeClean = (raw: string, blockSep = ""): string => {
@@ -755,11 +773,16 @@ export async function* runAgentTurn(args: {
 		if (tail) yield { type: "text-delta", text: tail };
 	}
 
-	// FIX-102 + FIX-188 + FIX-189: colapsa eco/degeneração da LLM, garante (belt-and-
-	// suspenders) que nenhum preâmbulo persista e desgruda falas coladas — o filtro
-	// já limpou ao vivo, esta é a rede final antes de persistência/prefixo do gate.
+	// FIX-102 + FIX-188 + FIX-189 + FIX-270: colapsa eco/degeneração da LLM,
+	// garante (belt-and-suspenders) que nenhum preâmbulo/estado fabricado
+	// persista e desgruda falas coladas — o filtro já limpou ao vivo com o
+	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
+	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
 	fullResponse = normalizeGluedSentences(
-		stripProcessPreamble(collapseEchoedSegments(fullResponse)),
+		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
+			hasReceivedDocuments,
+			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+		}),
 	).replace(/^\s+/, "");
 
 	try {
