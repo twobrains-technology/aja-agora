@@ -248,3 +248,80 @@ describe("FIX-251/FIX-252 — listShownOffers extrai todas as cotas do compariso
 		);
 	});
 });
+
+// FIX-264 (P1, veredito Fable r5: FIX-252/258 "PARCIAL" — resolveOfferByMention
+// elegia UM valueMatch ("best" global) e desistia por "conflito nome×valor"
+// quando 2+ grupos exibidos empatavam no mesmo crédito — mesmo com o NOME
+// único apontando certo pro grupo exibido. LEI: menção nome/valor que casa um
+// grupo EXIBIDO resolve DETERMINÍSTICO (nunca desiste/nega).
+const FLUXO_R6_ROWS = [
+	{
+		type: "comparison_table",
+		payload: {
+			groups: [
+				{
+					id: "g-rodobens",
+					groupId: "g-rodobens",
+					administradora: "RODOBENS",
+					creditValue: 90000,
+					termMonths: 180,
+					monthlyPayment: 1218.92,
+				},
+				// mesmo crédito da RODOBENS (empate de valor) — o bug real do r5:
+				// "best" global (1º empate na ordem do array) elegia esta em vez da
+				// nomeada, e o nome×valor "discordava" → null.
+				{
+					id: "g-sicredi",
+					groupId: "g-sicredi",
+					administradora: "SICREDI",
+					creditValue: 90000,
+					termMonths: 150,
+					monthlyPayment: 1350.0,
+				},
+				{
+					id: "g-canopus",
+					groupId: "g-canopus",
+					administradora: "CANOPUS",
+					creditValue: 110000,
+					termMonths: 120,
+					monthlyPayment: 1690.0,
+				},
+			],
+		},
+	},
+];
+
+describe("FIX-264 — resolveOfferByMention v2: valueMatch como CONJUNTO + menção negada", () => {
+	const offers = listShownOffers(FLUXO_R6_ROWS);
+
+	it('"RODOBENS de 90 mil" com RODOBENS 90k exibida (empatando em valor com a SICREDI) → resolve RODOBENS, não desiste', () => {
+		const resolved = resolveOfferByMention(offers, "RODOBENS de 90 mil");
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it('nome único + valor batendo no PRÓPRIO grupo nomeado, mesmo com outro grupo empatando no valor → resolve pelo nome (conjunto, não "best" único)', () => {
+		const resolved = resolveOfferByMention(offers, "quero fechar com a SICREDI de 90 mil");
+		expect(resolved?.groupId).toBe("g-sicredi");
+	});
+
+	it('"Deixa a Rodobens pra lá. Me fala da de 110 mil" → menção negada da RODOBENS ignorada, resolve pelo valor (CANOPUS 110k)', () => {
+		const resolved = resolveOfferByMention(offers, "Deixa a Rodobens pra lá. Me fala da de 110 mil");
+		expect(resolved?.groupId).toBe("g-canopus");
+	});
+
+	it('"Deixa a Rodobens pra lá" sozinho (só negação, sem outra menção) → null (não sobra nada pra resolver)', () => {
+		expect(resolveOfferByMention(offers, "Deixa a Rodobens pra lá")).toBeNull();
+	});
+
+	it('negação não é confundida com uso afirmativo de "deixa" ("Deixa a RODOBENS que você recomendou" segue resolvendo — regressão FIX-252)', () => {
+		const resolved = resolveOfferByMention(
+			listShownOffers(FLUXO_B_ROWS),
+			"Deixa a RODOBENS que você recomendou",
+		);
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it("nome × valor genuinamente CONTRADITÓRIOS (valor do OUTRO grupo, sem empate) continua ambíguo — não inventa", () => {
+		expect(resolveOfferByMention(offers, "quero a CANOPUS de 90 mil")).toBeNull();
+	});
+});
