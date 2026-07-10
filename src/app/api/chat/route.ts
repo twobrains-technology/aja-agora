@@ -4,7 +4,7 @@ import {
 	type UIMessage,
 	type UIMessageStreamWriter,
 } from "ai";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
@@ -12,6 +12,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
+import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
@@ -34,14 +35,13 @@ import {
 	buildTimeframeReactionDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
-import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
+import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
 	buildScarcityCard,
 	buildTwoPathsCard,
 } from "@/lib/agent/orchestrator/server-cards";
-import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import {
 	LANCE_EMBUTIDO_DEFAULT_PERCENT,
@@ -55,10 +55,14 @@ import {
 	closingPresentation,
 	realOfferPresentation,
 } from "@/lib/bevi/closing-presentation";
-import { buildStartContractInput } from "@/lib/bevi/contract-input";
+import {
+	administradoraConflictsWithRegisteredProposal,
+	buildStartContractInput,
+} from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { ChatAction } from "@/lib/chat/actions";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
@@ -646,6 +650,31 @@ export async function POST(req: NextRequest) {
 									conversationId,
 									meta.currentPersona ?? null,
 									"Antes de eu confirmar sua reserva, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+								);
+								return;
+							}
+							// FIX-263 (P1, veredito Fable r5, seam PARCIAL): anti-refazer em
+							// CÓDIGO — o achado ao vivo foi o agente negando a proposta REAL já
+							// registrada (RODOBENS) e reabrindo o contract_form de outra
+							// administradora (ITAÚ) sob contestação, a 1 clique de criar uma 2ª
+							// proposta real (CPF + consulta de bureau). Nunca confia no que o
+							// modelo afirma sobre o estado — consulta a proposta REGISTRADA
+							// (bevi_proposals) e bloqueia ANTES do gateway quando o fechamento
+							// em curso pede uma administradora DIFERENTE da já registrada.
+							// Status sempre via check_proposal_status (nunca aqui, é o próprio
+							// texto que direciona o usuário pra pedir o status).
+							const existingProposal = await getLatestBeviProposal(conversationId);
+							if (
+								administradoraConflictsWithRegisteredProposal(
+									existingProposal?.administradora,
+									freshMeta.recommendedAdministradora,
+								)
+							) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									`Você já tem uma proposta registrada com a ${existingProposal?.administradora} — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?`,
 								);
 								return;
 							}

@@ -4,7 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { buildStartContractInput } from "./contract-input";
+import {
+	administradoraConflictsWithRegisteredProposal,
+	buildStartContractInput,
+} from "./contract-input";
 
 const identity = { cpf: "52998224725", celular: "62999887766" };
 
@@ -211,5 +214,36 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 			expect(input.valor).toBe(161258);
 			expect(input.prazoPreferido).toBe(200);
 		});
+	});
+});
+
+// FIX-263 (P1, veredito Fable r5, seam PARCIAL, 2026-07-10) — o anti-refazer
+// era REGRA-NO-PROMPT e falhou ao vivo 2×: o agente negou a proposta
+// RODOBENS registrada, afirmou falsamente que a ITAÚ estava registrada (sem
+// check_proposal_status) e reabriu o contract_form da ITAÚ — a 1 clique de
+// uma 2ª proposta REAL (CPF + bureau) na mesma conversa. Este helper puro é o
+// guard em CÓDIGO (Lei 1/4): decide se o fechamento em curso CONFLITA com uma
+// proposta já registrada — nunca confia no que o modelo afirma.
+describe("administradoraConflictsWithRegisteredProposal (FIX-263 — anti-refazer em código)", () => {
+	it("conflita quando a administradora pedida diverge da já registrada", () => {
+		expect(administradoraConflictsWithRegisteredProposal("RODOBENS", "ITAÚ")).toBe(true);
+	});
+
+	it("NÃO conflita quando é a MESMA administradora (retry legítimo, ex.: erro de rede)", () => {
+		expect(administradoraConflictsWithRegisteredProposal("RODOBENS", "RODOBENS")).toBe(false);
+	});
+
+	it("acento/caixa não disparam falso-positivo (ITAÚ === Itau, mesma regra do FIX-251)", () => {
+		expect(administradoraConflictsWithRegisteredProposal("Itau", "ITAÚ")).toBe(false);
+	});
+
+	it("sem proposta registrada ainda (null/undefined) → nunca conflita (1ª proposta da conversa)", () => {
+		expect(administradoraConflictsWithRegisteredProposal(null, "ITAÚ")).toBe(false);
+		expect(administradoraConflictsWithRegisteredProposal(undefined, "ITAÚ")).toBe(false);
+	});
+
+	it("sem administradora pedida (defensivo) → nunca conflita (nada pra comparar)", () => {
+		expect(administradoraConflictsWithRegisteredProposal("RODOBENS", null)).toBe(false);
+		expect(administradoraConflictsWithRegisteredProposal("RODOBENS", undefined)).toBe(false);
 	});
 });
