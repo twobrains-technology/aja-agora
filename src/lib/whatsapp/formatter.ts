@@ -1043,12 +1043,21 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const lanceLine = Number.isFinite(avgBidValue)
 		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
 		: "";
+	// FIX-240/FIX-247 (CDC art. 30, rodada 3 — Fable r2 N3): paridade com o
+	// aviso de ajuste do card web (real-offer.tsx) — quando a carta fechada
+	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma
+	// silenciosamente. Copy corrigida (pedido × carta real, sem inversão).
+	const rawCreditValue = Number(payload.rawCreditValue);
+	const adjustmentLine =
+		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
+			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
+			: "";
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [
@@ -1213,6 +1222,62 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	};
 }
 
+// FIX-228 (docs/02-cards-novos.md CARD 1 — embedded_bid). Regra dura: SEMPRE
+// diz que o crédito recebido diminui — texto hardcoded (não depende do
+// `payload.disclaimer`), mesma garantia do card web (embedded-bid.tsx).
+export function embeddedBidToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const embeddedBidValue = Number(payload.embeddedBidValue ?? 0);
+	const netCredit = Number(payload.netCredit ?? 0);
+	return {
+		type: "text",
+		text:
+			"*Lance embutido — sem tirar do bolso*\n\n" +
+			"Você usa parte da própria carta como lance e antecipa a contemplação, sem desembolsar.\n\n" +
+			`*Lance embutido:* ${brlWa(embeddedBidValue)}\n*Valor que você recebe:* ${brlWa(netCredit)}\n\n` +
+			"O embutido sai da carta, então o crédito recebido diminui um pouco (estimativa, não garantia).",
+	};
+}
+
+// FIX-229 (docs/02-cards-novos.md CARD 3 — two_paths). Botões interativos —
+// mesmas duas opções do card web, mesmo peso (nenhuma marcada como
+// recomendada). PROIBIDO qualquer % de chance/probabilidade (docs/05).
+export function twoPathsToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const monthlyPayment = Number(payload.monthlyPayment ?? 0);
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text:
+					"Dois caminhos possíveis, sem lance:\n\n" +
+					`*Esperar o sorteio* — paga só a parcela de ${brlWa(monthlyPayment)} e concorre todo mês.\n\n` +
+					"*Lance pequeno lá na frente* — se sobrar um extra, um lance modesto melhora as chances.\n\n" +
+					"Não tem certo ou errado — depende de você ter pressa ou não.",
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "two_paths_sorteio", title: "Vou de sorteio" } },
+					{ type: "reply", reply: { id: "two_paths_lance", title: "Lance pequeno" } },
+				],
+			},
+		},
+	};
+}
+
+// FIX-230 (docs/02-cards-novos.md CARD 2 — scarcity). Texto simples — número
+// placebo já coagido no servidor (coerceScarcityPayload). NUNCA menciona
+// total de cotas nem razão N/total (não temos esse dado). Sem
+// `availableSlots` válido, não envia nada (mesmo comportamento do card web —
+// sem fallback/estimativa, D3 do ADR).
+export function scarcityToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const availableSlots = Number(payload.availableSlots);
+	if (!Number.isFinite(availableSlots)) return null;
+	return {
+		type: "text",
+		text: `Grupo quase cheio, restam apenas ${availableSlots}. Quando preencher, entra fila para o próximo grupo.`,
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -1250,6 +1315,12 @@ export function artifactToWhatsApp(
 			return documentUploadToWhatsApp(payload);
 		case "contemplation_dial":
 			return contemplationDialToWhatsApp(payload);
+		case "embedded_bid":
+			return embeddedBidToWhatsApp(payload);
+		case "two_paths":
+			return twoPathsToWhatsApp(payload);
+		case "scarcity":
+			return scarcityToWhatsApp(payload);
 		default:
 			return null;
 	}

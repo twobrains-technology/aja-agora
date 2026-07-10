@@ -9,11 +9,12 @@ import { describe, expect, it } from "vitest";
 const read = (f: string) => readFileSync(join(__dirname, f), "utf8");
 
 describe("Artifacts — aderência à marca (sem cor Tailwind crua)", () => {
-	it("contemplation-dial usa success/warning/destructive, não emerald/amber/rose", () => {
+	it("contemplation-dial não usa cor Tailwind crua emerald/amber/rose", () => {
+		// FIX-231: o medidor de chance (que usava text-success/warning/destructive)
+		// foi removido — consumia `likelihood`, heurística sem dado real que a
+		// sustente (docs/05-compliance-e-dados.md). A regra de "não usar cor crua"
+		// segue valendo pro que resta no arquivo.
 		const src = read("contemplation-dial.tsx");
-		expect(src).toMatch(/text-success/);
-		expect(src).toMatch(/text-warning/);
-		expect(src).toMatch(/text-destructive/);
 		expect(src).not.toMatch(/text-(emerald|amber|rose)-\d/);
 	});
 

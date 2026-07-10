@@ -14,6 +14,7 @@ import { nextGate } from "./qualify-state";
 // pra metade dos usuários — percebido como intermitência.
 function baseMeta(): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentCategory: "imovel",
 		experiencePrev: "returning",
 		qualifyConsented: true,

@@ -56,6 +56,33 @@ describe("index.ts — branch que dirige o gate 'decision'", () => {
 	});
 });
 
+// FIX-239 (Fable r1, D3.4, gap P1 #6b): "quero seguir com esse plano" (texto
+// livre) DEPOIS que o card de decisão já apareceu uma vez ("deixa eu
+// confirmar com você:" seguido de NADA — turno morto, isDecisionDup suprimia
+// o segundo present_decision_prompt que o LLM tentava chamar de conta
+// própria). Roteamento DETERMINÍSTICO: re-pedido explícito pós-decisão avança
+// direto pro passo 5 (mesma directive do clique "Tenho interesse").
+describe("index.ts — re-pedido de avanço pós-decisão (texto livre) avança pro passo 5", () => {
+	const src = readSource("src/lib/agent/orchestrator/index.ts");
+
+	it("importa buildAdvanceToContractDirective", () => {
+		expect(src).toMatch(/buildAdvanceToContractDirective/);
+	});
+
+	it("detecta ready_to_proceed com decisionDispatched já true e SEM contrato fechado", () => {
+		// 2ª ocorrência: a 1ª é o import no topo do arquivo.
+		const firstIdx = src.indexOf("buildAdvanceToContractDirective");
+		const idx = src.indexOf("buildAdvanceToContractDirective", firstIdx + 1);
+		expect(idx, "buildAdvanceToContractDirective não usado (só importado) em index.ts").toBeGreaterThan(
+			-1,
+		);
+		const windowBefore = src.slice(Math.max(0, idx - 700), idx);
+		expect(windowBefore).toMatch(/decisionDispatched/);
+		expect(windowBefore).toMatch(/ready_to_proceed/);
+		expect(windowBefore).toMatch(/contractClosed/);
+	});
+});
+
 describe("runner.ts — guard anti-re-reveal + flag revealCompleted", () => {
 	const src = readSource("src/lib/agent/orchestrator/runner.ts");
 

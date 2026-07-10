@@ -203,6 +203,10 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
+		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
+		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
+		await sendFechoPedirOi(conversationId).catch(() => {});
 	} catch {
 		await sendTextMessage(
 			from,
@@ -396,10 +400,19 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		"@/lib/agent/orchestrator/directives"
 	);
 	if (resolved.value === "yes") {
+		// FIX-241 (âncora de dinheiro): mesma narração da web — "cálculo único,
+		// duas apresentações" (spec 03).
+		const { computeMoneyAnchor } = await import("@/lib/agent/orchestrator/dial-payload");
+		const moneyAnchor =
+			computeMoneyAnchor(meta.recommendedOffer, {
+				monthlySavings: meta.qualifyAnswers?.monthlySavings,
+				lanceValue: meta.qualifyAnswers?.lanceValue,
+				fgtsValue: meta.qualifyAnswers?.fgtsValue,
+			}) ?? undefined;
 		await runAgentDirective(
 			from,
 			conversationId,
-			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora }),
+			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora, moneyAnchor }),
 		);
 		return true;
 	}

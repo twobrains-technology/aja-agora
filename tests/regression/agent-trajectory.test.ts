@@ -476,10 +476,14 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
 		expect(decision).toContain("present_decision_prompt");
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
+		// próximo comentário — um comentário legítimo dentro do próprio bloco
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
+		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		const start = route.indexOf('action.gate === "simulator-offer"');
+		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
-			route.match(
-				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
-			)?.[0] ?? "";
+			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
 		expect(
 			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
@@ -953,6 +957,9 @@ describe("BUG-WHATSAPP-DROP — artifactToWhatsApp cobre TODAS as PRESENTATION_T
 			scenarios: { scenarios: {} },
 			financing_comparison: { consorcio: {}, financing: {}, diff: {} },
 			whatsapp_optin: {},
+			embedded_bid: { maxEmbutidoPct: 30, creditValue: 120_000, embeddedBidValue: 36_000, netCredit: 84_000, disclaimer: "x" },
+			two_paths: { monthlyPayment: 812, administradora: "X", disclaimer: "x" },
+			scarcity: { groupCode: "g1", administradora: "X", availableSlots: 3 },
 		};
 
 		const expectedArtifactTypes = Array.from(PRESENTATION_TOOLS).map((t) =>
@@ -3025,6 +3032,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 	// Meta de conversa que JA completou qualify + reveal (o usuario viu tudo).
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3175,6 +3183,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", () => {
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3802,6 +3811,7 @@ describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre
 describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
 	function qualifiedSemIdentidade(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -3911,6 +3921,7 @@ describe("MOCK-RUNTIME-MORTO — descoberta nunca mais serve dado fictício", ()
 describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", () => {
 	function postRevealSemOferta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4355,6 +4366,7 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de hasLance='yes'", () => {
 	function metaQualificado(hasLance: "yes" | "no" | "maybe"): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4622,6 +4634,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 		// O que o componente entrega → qualifyAnswers; nextGate deve ir pro
 		// identify sem passar por timeframe/lance/lance-value/lance-embutido.
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4641,6 +4654,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 
 	it("funil: plano PARCIAL (sem decidir lance embutido) → gate educativo continua", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -6013,6 +6027,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 
 	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
 		const base: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -6311,6 +6326,7 @@ describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_g
 
 	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			currentPersona: "auto",
 			experiencePrev: "first",
@@ -6945,6 +6961,7 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 		});
 
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -7452,7 +7469,13 @@ describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () 
 		const route = readSource("src/app/api/chat/route.ts");
 		const start = route.indexOf('if (action.gate === "lance")');
 		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
-		const lanceBlock = route.slice(start, start + 1800);
+		// FIX-236 (Fable r1): janela até o PRÓXIMO bloco `action.gate ===`, não um
+		// tamanho fixo em char — o bloco `so_parcela` inserido antes de yes/no
+		// empurrou "lance-embutido" pra fora de uma janela fixa de 1800 chars
+		// (achado corrigido junto: teste quebrado por crescimento legítimo do bloco).
+		const nextBlockStart = route.indexOf('if (action.gate ===', start + 1);
+		const end = nextBlockStart > -1 ? nextBlockStart : start + 3000;
+		const lanceBlock = route.slice(start, end);
 		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
 		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
 		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);
@@ -8368,11 +8391,19 @@ describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista",
 // Aqui: cassette do texto observado + acoplamento à decisão/gate.
 // ============================================================================
 describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem próximo passo", () => {
-	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print).
+	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print). FIX-233 (D2):
+	// `experience` desceu pra PÓS-reveal — o clique só é alcançável depois de
+	// consent/identify/credit/search/reveal já resolvidos.
 	function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
+			qualifyConsented: true,
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,
 			...over,
@@ -8409,7 +8440,7 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 		).toBe(false);
 	});
 
-	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro consent", () => {
+	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro timeframe (FIX-233: próximo passo pós-experience)", () => {
 		// shouldMarkDoubtsAddressed reconhece o turno de servidor como endereçamento.
 		expect(
 			shouldMarkDoubtsAddressed({
@@ -8418,11 +8449,12 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 				userReplied: true,
 			}),
 		).toBe(true);
-		// Aplicado o marcador, o funil oferece o consent NO MESMO turno server-authored.
+		// Aplicado o marcador, o funil oferece o timeframe NO MESMO turno server-authored
+		// (FIX-233: experience desceu pra pós-reveal, e o consent já foi resolvido antes).
 		const marked = doubtsClickMeta({ doubtsAddressed: true });
-		expect(nextGate(marked, { hasContactName: true })).toBe("consent");
+		expect(nextGate(marked, { hasContactName: true })).toBe("timeframe");
 		expect(
-			decideShowGate({ gate: "consent", intent: "neutral", meta: marked, isUserTurn: false }),
+			decideShowGate({ gate: "timeframe", intent: "neutral", meta: marked, isUserTurn: false }),
 		).toBe(true);
 	});
 
@@ -8453,6 +8485,7 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inatividade", () => {
 	function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
 			experiencePrev: "first",
@@ -8555,6 +8588,7 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 	/** Estado no gate de VALOR pendente: pré-qualificação feita, creditMax ausente. */
 	function creditGateMeta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -8807,7 +8841,9 @@ describe("FIX-212-SEM-EMOJI-LANCE-SPLIT — copy sem emoji + card do lance enxut
 
 	it("cassette estrutural: no WhatsApp a educação vira balão de contexto e o card usa só a pergunta", () => {
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
-		expect(adapter).toMatch(/LANCE_EMBUTIDO_EDU/); // beat de contexto (gateContextBeat)
+		// FIX-245: LANCE_EMBUTIDO_EDU (const genérica) virou lanceEmbutidoEdu(creditValue?)
+		// — mesmo beat de contexto (gateContextBeat), agora com a carta real do cliente.
+		expect(adapter).toMatch(/lanceEmbutidoEdu/);
 		const formatter = readSource("src/lib/whatsapp/formatter.ts");
 		expect(formatter).toMatch(/LANCE_EMBUTIDO_ASK/); // card só com a pergunta
 	});

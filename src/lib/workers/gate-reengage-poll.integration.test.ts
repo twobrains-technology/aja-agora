@@ -24,6 +24,7 @@ let waCounter = 0;
 
 function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentPersona: "helena-imovel",
 		currentCategory: "imovel",
 		// consent ainda não aceito → nextGate = consent (gate re-engajável).

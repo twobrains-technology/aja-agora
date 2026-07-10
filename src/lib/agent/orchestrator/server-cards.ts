@@ -1,0 +1,38 @@
+// FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): os cards
+// `two_paths`/`embedded_bid`/`scarcity` dependiam de o LLM OBEDECER um
+// directive pra chamar `present_X` — 0 emissões em 7 oportunidades ao vivo,
+// porque o invariante crítico ficou no PROMPT, não em CÓDIGO (viola Lei 1 —
+// LLM não dirige o fluxo — e Lei 4 — invariante crítico vira código).
+//
+// Este módulo monta os payloads coagidos DIRETO do `meta.recommendedOffer`
+// (mesma coerção que o runner.ts já aplica quando o LLM chama a tool) pra o
+// handler emitir o card server-side, determinístico, sem tool-call nenhuma.
+
+import type { ConversationMetadata } from "@/lib/agent/personas";
+import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
+import type { RevealGroupIndex, RevealGroupLike } from "./recommendation-payload";
+import { coerceScarcityPayload } from "./scarcity-payload";
+import { coerceTwoPathsPayload } from "./two-paths-payload";
+
+export type ServerCard = { payload: Record<string, unknown> };
+
+export function buildTwoPathsCard(meta: ConversationMetadata): ServerCard {
+	return { payload: coerceTwoPathsPayload({}, meta.recommendedOffer ?? null) };
+}
+
+export function buildEmbeddedBidCard(meta: ConversationMetadata): ServerCard {
+	return { payload: coerceEmbeddedBidPayload({}, meta.recommendedOffer ?? null) };
+}
+
+/** Sem `groupId` ancorado (reveal anterior ao FIX-246, ou nenhuma oferta
+ * recomendada ainda) não fabrica — mesmo comportamento de "sem grupo
+ * utilizável" do `coerceScarcityPayload` (nunca inventa `availableSlots`). */
+export function buildScarcityCard(meta: ConversationMetadata): ServerCard | null {
+	const offer = meta.recommendedOffer;
+	const groupId = offer?.groupId;
+	if (!groupId) return null;
+	const index: RevealGroupIndex = new Map<string, RevealGroupLike>([
+		[groupId, { id: groupId, administradora: offer.administradora }],
+	]);
+	return { payload: coerceScarcityPayload({ groupId }, index) };
+}

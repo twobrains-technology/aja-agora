@@ -61,6 +61,49 @@
     (PENDENTE-KAIRO), mockup/vídeo pro grupo, demo backoffice; backlog P2: voltar às opções,
     agente sugerir não fechar quando o lance for desproporcional, pop-up, granularidade por bem.
 
+## Refino Handoff 2026-07-09 — reordenação do funil + fecho WhatsApp (SUPERSEDE)
+
+> Decisões do Kairo (ADR `docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md`,
+> onda "agente de vendas de consórcio", bloco `bloco-jornada-conversa`). Onde conflitar
+> com os Passos abaixo ou com o "Refino Ata 2026-07-04", **esta seção vence** (regra
+> "palavra nova vence"). Implementação: FIX-233/234/235.
+
+1. **Gate `desire` (NOVO — não bloqueante, sem card), logo após o nome.** Duas
+   perguntas curtas, uma por balão: *"Qual [bem] você tem em mente?"* (slot
+   `desiredItem`) e *"E o que fez você decidir [trocar/comprar] agora?"* (slot
+   `motivation`). O gate dispara UMA vez (marcado por `desireAsked`, mesmo padrão de
+   `consentOffered`) e NUNCA bloqueia — se o usuário pular, o funil segue normal pro
+   `consent`. `motivation` é espelhada no discurso UMA vez (não a cada turno).
+2. **`experience` DESCE pra depois do `search` (reverte a posição histórica).** Antes
+   era o 1º gate da qualificação, logo após o nome; agora roda com os grupos já na
+   tela — quem já fez consórcio não perde tempo com a explicação, quem é novato só
+   faz sentido explicar depois de ver as opções reais.
+3. **`timeframe` REINTRODUZ, pós-recomendação (REVERTE o FIX-103).** O FIX-103
+   (2026-06-28) tinha removido o gate de prazo da entrada. O handoff pediu de volta,
+   mas numa posição NOVA: depois de `experience`, antes do `lance` — é a ponte
+   natural pro simulador de contemplação (`contemplation_dial`). `desiredTermMonths`
+   volta a pesar em `termMatchScore` (recomendação).
+4. **3ª saída do gate `lance`: "não quero comprometer nada além da parcela"**
+   (`hasLance: "so_parcela"`, só via texto livre — sem botão próprio). Pula
+   `lance-value`/`lance-embutido`/`simulator-offer` (a "agulha") por completo — chama
+   `present_two_paths` (card do bloco-cards-ui: esperar o sorteio × lance modesto
+   depois) e devolve a decisão ao usuário, sem recomendar um caminho.
+5. **Sanitizer ganha guardas novas:** bane a LLM dizer "reduzir o prazo"/"terminar
+   antes" (D7 — abatimento vira parcela menor, nunca prazo menor) e "reservado/cota
+   garantida/você já está no grupo" **antes** da contratação real (invariante #9 de
+   compliance). NÃO afeta a copy determinística pós-evento do fechamento self-service
+   ("sua reserva está confirmada"), que é a terminologia OFICIAL da Ata 2026-07-04.
+6. **Cadência/tom:** "1 balão = 1 ideia completa" (2-3 linhas) — nem paredão nem
+   picotado. Tom consultivo, sem gírias ("saco", "furar a fila"), emoji ≤ 1 a cada
+   3-4 balões.
+7. **Fecho pro WhatsApp:** ao aceitar a oferta, o agente NÃO diz "reservado" — diz
+   que mandou uma mensagem no WhatsApp, pede um "oi" (abre a janela de 24h — a copy
+   tem função técnica) e avisa que a especialista em cadastros chama em alguns
+   minutos. O fechamento self-service (`present_contract_form`/`offer-confirm`, já
+   🟢) **não muda** — esta é uma camada adicional de acompanhamento, disparada no
+   mesmo momento (mesa acionada proativamente via `dispatchAutoTransbordo`, em vez de
+   esperar o worker assíncrono de status da Bevi).
+
 ## Como ler (Fase de cada cenário)
 
 | Marca | Significado | O QA autônomo faz |
@@ -104,9 +147,11 @@ só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 | Pergunta o **nome** ("Como posso te chamar?") e captura em 1 turno | texto | texto | 🟢 |
 | Ecoa o objetivo ("…um [carro/imóvel] de cerca de X") | texto | texto | 🟢 |
 | **Só 3 categorias** (moto substitui "serviços") — mesma decisão da landing | 3 chips | 3 botões | 🔴 **web tem 4** (`web/adapter.ts:177` expõe "Outros"/serviços) × WhatsApp 3 (`formatter.ts:806`) × landing 3 (`hero.tsx:19`). Ver D21. |
+| Gate `desire` (NOVO, não bloqueante, sem card): bem específico + motivo de agora | conversa | conversa | 🟢 (FIX-233, ver "Refino Handoff 2026-07-09" acima) |
 
 ### Passo 2 · Entender o cliente
-**Narrativa:** descobre experiência prévia, educa se preciso, coleta o **valor do bem** (só o valor) e a intenção de lance.
+**Narrativa:** descobre experiência prévia (AGORA pós-search, ver "Refino Handoff
+2026-07-09"), educa se preciso, coleta o **valor do bem** (só o valor) e a intenção de lance.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
@@ -114,7 +159,7 @@ só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 | Se não/tem dúvida → **educação** (sem juros, taxa de adm, sorteio/lance) + "pode continuar" | texto+botão | texto+botão | 🟢 |
 | **Valor do bem** — **só o valor**, sem prazo, sem parcela, sem intents | **agulha simples** | conversa ("uns 80 mil") | 🔴 (P4) — web usa `plan-estimate-picker` (valor+prazo+intenção+lance, `web/adapter.ts:87`); WhatsApp usa **lista de faixas** (`formatter.ts:494`), não conversa. Ver D4/D5. |
 | **NÃO** aparece o componente multi-slider | — | — | 🔴 deletar `plan-estimate-picker.tsx` (não o `value-picker`). Ver D6. |
-| Prazo de contemplação **não** é perguntado na entrada (FIX-103) | — | — | 🟢 **o GATE `timeframe` foi removido** (provado por `qualify-state.fix-103.test.ts`). ⚠️ O prazo ainda vaza pelo `plan-estimate-picker` (slider `targetMonth`), mas isso É o 🔴 P4 acima — a linha do gate está correta. |
+| Prazo de contemplação: gate `timeframe` REINTRODUZIDO, pós-recomendação (REVERTE FIX-103) | botão | botão | 🟢 (FIX-233 — ver "Refino Handoff 2026-07-09" acima; `qualify-state.fix-103.test.ts` agora prova o REVERSO: timeframe aparece) |
 | Lance: "Pretende dar um lance?" **Sim/Não/Talvez** | botão | botão | 🟢 |
 | **Educação de lance embutido** pra QUALQUER resposta (Sim/Não/Talvez) | texto | texto | 🟢 web (`route.ts:917`) / 🔴 **WhatsApp pula** pra no/maybe (`interactive-handlers.ts:357`). FIX-92 corrigiu só web. Ver D19. |
 

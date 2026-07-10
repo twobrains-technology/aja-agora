@@ -158,6 +158,40 @@ export const recommendationSchema = z.object({
 		.describe("Detalhamento do score por fator"),
 });
 
+// FIX-228 (docs/02-cards-novos.md CARD 1) — input mínimo: a LLM só escolhe o
+// grupo (id LITERAL, mesmo padrão anti-fabricação de groupCardSchema); os
+// números (embeddedBidValue/netCredit) são coagidos server-side no runner a
+// partir da oferta REAL ancorada no turno (coerceEmbeddedBidPayload).
+export const embeddedBidSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card. NUNCA derive nem fabrique.",
+		),
+});
+
+// FIX-229 (docs/02-cards-novos.md CARD 3) — bifurcação A/B pra quem não vai
+// dar lance (gate `lance`, 3ª saída "só a parcela"). Input mínimo: a LLM só
+// escolhe o grupo; monthlyPayment/administradora são coagidos server-side.
+export const twoPathsSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo escolhido, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
+// FIX-230 (docs/02-cards-novos.md CARD 2) — escassez comercial ("grupo quase
+// cheio"). Input mínimo: a LLM só escolhe o grupo; o número placebo 1-6 é
+// derivado no servidor via hash determinístico do groupId (nunca a LLM).
+export const scarcitySchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -578,6 +612,33 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_embedded_bid: tool({
+		description:
+			"Apresenta o card de lance embutido: explica que o usuário pode usar parte da própria carta como lance, sem desembolsar, mas o crédito recebido diminui. Use no passo 4 (reveal), antes da agulha, quando o usuário sinalizar pressa ou pouca reserva. Passe o groupId do plano recomendado — os valores (embeddedBidValue/netCredit) são calculados pelo sistema a partir da oferta real, você não precisa calcular nem inventar números.",
+		inputSchema: embeddedBidSchema,
+		execute: async (args: z.infer<typeof embeddedBidSchema>) => {
+			return `[Card de lance embutido apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
+	present_two_paths: tool({
+		description:
+			"Apresenta os DOIS caminhos pra quem não vai dar lance: (A) esperar o sorteio pagando só a parcela, (B) um lance pequeno opcional lá na frente. Use no gate lance, quando o usuário disser que não quer comprometer nada além da parcela. NÃO recomende nenhum dos dois — depois do card, devolva a decisão ao usuário ('não tem certo ou errado, depende de você ter pressa ou não'). PROIBIDO mencionar qualquer % de chance de contemplação. Passe o groupId do plano escolhido — a parcela é calculada pelo sistema.",
+		inputSchema: twoPathsSchema,
+		execute: async (args: z.infer<typeof twoPathsSchema>) => {
+			return `[Card de dois caminhos apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
+	present_scarcity: tool({
+		description:
+			"Apresenta o card de escassez comercial ('Grupo quase cheio · restam apenas N') pro grupo escolhido. Use no fechamento, depois da estratégia, antes da proposta final. O número exibido é gerado pelo sistema a partir do grupo — NÃO invente, NÃO calcule, NÃO mencione o total de cotas do grupo (não é um dado que existe).",
+		inputSchema: scarcitySchema,
+		execute: async (args: z.infer<typeof scarcitySchema>) => {
+			return `[Card de escassez apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
 	present_lead_form: tool({
 		description:
 			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
@@ -916,6 +977,9 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_decision_prompt",
 	"present_contract_form",
 	"present_contemplation_dial",
+	"present_embedded_bid",
+	"present_two_paths",
+	"present_scarcity",
 ]);
 
 // ============================================================================

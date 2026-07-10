@@ -45,15 +45,15 @@ describe("C1 — referenceMonth calibra a curva no dado real da Bevi", () => {
 		expect(r.receivedCredit).toBeCloseTo(262_309.8 - r.embeddedBidValue, 2);
 	});
 
-	it("sem referenceMonth → comportamento heurístico anterior (âncora 25% do prazo)", () => {
+	it("sem referenceMonth → âncora heurística de 25% do prazo, curva power calibrada nela (FIX-225)", () => {
 		const r = computeContemplationDial({
 			creditValue: 262_309.8,
 			termMonths: 34,
 			targetMonth: 6,
 			historicalWinningBidPct: 49.28,
 		});
-		// anchor = round(34×0.25) = 9 → 49.28 × 9/6 = 73.9 → 74 (comportamento legado)
-		expect(r.requiredLancePct).toBe(74);
+		// anchor = round(34×0.25) = 9 → curva power calibrada em (9, 49.28%) → 59% no mês 6
+		expect(r.requiredLancePct).toBe(59);
 	});
 
 	it("no prazo declarado do usuário da jornada (27 meses) o lance despenca — mensagem correta", () => {

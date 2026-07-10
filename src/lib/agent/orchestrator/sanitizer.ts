@@ -69,16 +69,150 @@ export function isTechnicalFallback(segment: string): boolean {
 	return TECHNICAL_FALLBACK_PATTERNS.some((rx) => rx.test(s));
 }
 
-/** Segmento EFÊMERO: preâmbulo de processo (FIX-188) OU fallback técnico (FIX-190).
- * Ambos são dropados antes de virar mensagem. */
+// FIX-234 (handoff agente-vendas-consorcio, 2026-07-09 — D7/05-compliance) —
+// "reduzir o prazo"/"terminar antes"/"quitar antes": o abatimento do lance
+// (dinheiro OU embutido) vira PARCELA MENOR, nunca prazo menor. Prometer prazo
+// reduzido é a mesma classe de risco regulatório de "garantir contemplação em
+// mês específico" (CDC art. 37) — barreira em CÓDIGO (Lei 4), a regra no
+// prompt sozinha não segura sob carga.
+const PRAZO_REDUCTION_PATTERNS: RegExp[] = [
+	/\breduzir\s+o\s+prazo\b/i,
+	/\bterminar\s+antes\b/i,
+	/\bquitar\s+antes\b/i,
+];
+
+/** Um segmento promete redução de prazo (D7, proibido) — não pode virar bolha. */
+export function isPrazoReductionClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PRAZO_REDUCTION_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-234 — "reservado/cota garantida/você já está no grupo" ANTES da
+// contratação real (invariante #9, docs/05-compliance-e-dados.md): nada foi
+// contratado ainda até o `present_contract_form`/offer-confirm self-service
+// completar. Mira a LLM afirmando isso na própria fala, não a copy
+// determinística pós-evento (que usa a terminologia oficial "reserva de
+// cota" da Ata 2026-07-04 e não passa por este sanitizer).
+const PREMATURE_RESERVATION_PATTERNS: RegExp[] = [
+	/\bcota\b[\s\S]{0,25}\bgarantida\b/i,
+	/\breservad[ao]\b/i,
+	/\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i,
+];
+
+/** Um segmento afirma reserva/garantia prematura (proibido, invariante #9) —
+ * não pode virar bolha. */
+export function isPrematureReservationClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PREMATURE_RESERVATION_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-243 (rodada 2, Fable r1, §D5.2 do veredito — 05-compliance-e-dados.md):
+// `taxaContemplacao` é campo PROIBIDO — semântica não documentada pela Bevi
+// (registro honesto da spec: foi inferência sem base durante a prototipagem).
+// O guard estático (`no-taxa-contemplacao.guard.test.ts`) só cobre payload/UI;
+// a FALA do LLM vazava o conceito como argumento de venda ("A ITAÚ se destaca
+// pela boa taxa de contemplação"). Fonte permitida de sinal de contemplação:
+// `monthlyAwardedQuotas`/contemplados por mês (contagem REAL), nunca "taxa".
+const TAXA_CONTEMPLACAO_PATTERNS: RegExp[] = [/\btaxa\s+de\s+contempla[çc][ãa]o\b/i];
+
+/** Um segmento cita "taxa de contemplação" (campo proibido, sem semântica
+ * documentada) — não pode virar bolha. */
+export function isTaxaContemplacaoClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
+// "brother". "carro-problema" mira o COMPOSTO pejorativo (não a menção neutra
+// de "problema no carro"); "na sua cabeça" mira a expressão de gíria completa
+// ("qual carro tá na sua cabeça"), não qualquer menção a "cabeça".
+const BANNED_LEXICON_PATTERNS: RegExp[] = [
+	/\bsaco\b/i,
+	/\bfurar\s+a\s+fila\b/i,
+	/\bcarro-problema\b/i,
+	/\bna\s+sua\s+cabe[çc]a\b/i,
+];
+
+/** Um segmento usa léxico banido (gíria/tom informal demais) — não pode virar
+ * bolha. */
+export function isBannedLexicon(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return BANNED_LEXICON_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-249 (rodada 3, Fable r2, N2 P0): "deixa eu resolver isso e já te
+// retorno" / "assim que eu conseguir… te retorno" — a web NÃO TEM canal
+// proativo (nenhum worker manda mensagem "depois" pro usuário nesta
+// conversa); prometer isso é um beco-sem-saída, o turno morre e o usuário
+// fica esperando algo que nunca chega. Mira a PROMESSA de contato futuro,
+// não menções neutras a "contato" (ex.: "seus dados de contato").
+const PROACTIVE_CALLBACK_PATTERNS: RegExp[] = [
+	/\bj[áa]\s+te\s+retorno\b/i,
+	/\bte\s+retorno\b/i,
+	/\bentro\s+em\s+contato\s+(depois|em\s+breve|em\s+instantes)\b/i,
+	/\bvou\s+verificar\s+e\s+(te\s+)?(volto|aviso)\b/i,
+	/\bj[áa]\s+te\s+aviso\b/i,
+];
+
+/** Um segmento promete retorno/contato proativo (proibido — a web não tem
+ * canal proativo, FIX-249) — não pode virar bolha. */
+export function isProactiveCallbackClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PROACTIVE_CALLBACK_PATTERNS.some((rx) => rx.test(s));
+}
+
+/** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
+ * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
+ * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249).
+ * Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string): boolean {
-	return isProcessPreamble(segment) || isTechnicalFallback(segment);
+	return (
+		isProcessPreamble(segment) ||
+		isTechnicalFallback(segment) ||
+		isPrazoReductionClaim(segment) ||
+		isPrematureReservationClaim(segment) ||
+		isBannedLexicon(segment) ||
+		isTaxaContemplacaoClaim(segment) ||
+		isProactiveCallbackClaim(segment)
+	);
+}
+
+const SEGMENT_BOUNDARY_CHARS = new Set([".", "!", "?", ":", "\n"]);
+
+/** FIX-248 (rodada 3, Fable r2, N1 P0): "Juntando R$ 4." | "000,00 por mês" —
+ * quebrava em 2 bolhas ao vivo (narração de dinheiro do FIX-241). Um "."
+ * colado a um DÍGITO é separador de milhar/decimal ("R$ 4.000,00"), nunca fim
+ * de frase real (que sempre segue LETRA) — nunca conta como fronteira. */
+function isThousandsSeparatorDot(text: string, dotIndex: number): boolean {
+	return /\d/.test(text[dotIndex - 1] ?? "");
+}
+
+function isSegmentBoundary(text: string, index: number): boolean {
+	const ch = text[index];
+	if (!SEGMENT_BOUNDARY_CHARS.has(ch)) return false;
+	if (ch === "." && isThousandsSeparatorDot(text, index)) return false;
+	return true;
 }
 
 /** Quebra o texto em segmentos (frases) mantendo o delimitador (. ! ? : \n) à
- * esquerda. Usado pelo sanitizer e pela normalização anti-colagem (FIX-189). */
+ * esquerda. Usado pelo sanitizer e pela normalização anti-colagem (FIX-189).
+ * FIX-248: guarda de dígito — "." de milhar/decimal nunca é fronteira. */
 export function splitSegments(text: string): string[] {
-	return text.split(/(?<=[.!?:\n])/).filter((p) => p.length > 0);
+	const out: string[] = [];
+	let start = 0;
+	for (let i = 0; i < text.length; i++) {
+		if (isSegmentBoundary(text, i)) {
+			out.push(text.slice(start, i + 1));
+			start = i + 1;
+		}
+	}
+	if (start < text.length) out.push(text.slice(start));
+	return out.filter((p) => p.length > 0);
 }
 
 /**
@@ -93,13 +227,15 @@ export function stripProcessPreamble(text: string): string {
 	return kept.join("");
 }
 
+/** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
+ * a dígito ("R$ 4.") nunca é fronteira, mesmo que os dígitos do milhar
+ * ("000,00") ainda não tenham chegado no delta seguinte. Segura a frase até
+ * um limite real (ou o flush final) em vez de cortar o valor ao meio. */
 function lastBoundaryIndex(s: string): number {
-	let idx = -1;
-	for (const ch of [".", "!", "?", ":", "\n"]) {
-		const i = s.lastIndexOf(ch);
-		if (i > idx) idx = i;
+	for (let i = s.length - 1; i >= 0; i--) {
+		if (isSegmentBoundary(s, i)) return i;
 	}
-	return idx;
+	return -1;
 }
 
 /**

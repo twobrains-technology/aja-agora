@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
+import type { ArtifactType } from "@/lib/chat/types";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -16,19 +17,53 @@ import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
 import {
+	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildLanceSoParcelaDirective,
+	buildScarcityDirective,
 	buildSearchSummaryDirective,
+	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
+import { buildScarcityCard, buildTwoPathsCard } from "./server-cards";
 import { buildSystemContext } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
-import type { ChatMessage, TurnEvent, TurnInput } from "./types";
+import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
+ * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
+ * espelha `pipeServerArtifact` do adapter web, mas em generator (o consumidor
+ * de cada canal já sabe tratar `TurnEvent` do tipo "artifact" uniformemente).
+ * Nunca depende de o LLM chamar `present_X`. */
+async function* emitServerCard(args: {
+	conversationId: string;
+	channel: Channel;
+	persona: Persona;
+	artifactType: ArtifactType;
+	payload: Record<string, unknown>;
+}): AsyncGenerator<TurnEvent> {
+	const { conversationId, channel, persona, artifactType, payload } = args;
+	const messageId = await saveMessage(
+		conversationId,
+		"assistant",
+		`[card: ${artifactType}]`,
+		channel,
+		persona,
+	);
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: artifactType,
+		payload,
+		createdAt: simulatorNow(),
+	});
+	yield { type: "artifact", artifactType, payload, toolCallId: crypto.randomUUID() };
+}
 
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const {
@@ -129,6 +164,34 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				expertiseHint: analysis.detectedSubTopic,
 				channel,
 				contactName: knownName,
+			});
+			return;
+		}
+
+		// FIX-239 (Fable r1, D3.4, gap P1 #6b): re-pedido de avanço em TEXTO
+		// LIVRE depois que o card de decisão já foi mostrado uma vez ("quero
+		// seguir com esse plano") batia no guard isDecisionDup
+		// (artifact-guard.ts) — o LLM anunciava "deixa eu confirmar com você:"
+		// e o present_decision_prompt duplicado era suprimido, virando turno
+		// morto (promessa sem entrega, família FIX-206/207). Roteamento
+		// DETERMINÍSTICO: ready_to_proceed pós-decisão avança direto pro passo
+		// 5 — mesma directive do clique "Tenho interesse" (route.ts).
+		if (
+			meta.decisionDispatched === true &&
+			meta.contractClosed !== true &&
+			analysis.userIntent === "ready_to_proceed"
+		) {
+			await saveMessage(conversationId, "user", userText, channel);
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildAdvanceToContractDirective({
+					administradora: meta.recommendedAdministradora,
+				}),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
 			});
 			return;
 		}
@@ -303,9 +366,43 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-		const directive = buildDecisionPromptDirective({
-			administradora: refreshed.recommendedAdministradora,
-		});
+		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
+		// lance-value/lance-embutido/simulator-offer; o card certo é
+		// present_two_paths (dois caminhos), não present_decision_prompt.
+		const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
+		// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
+		// estratégia de lance resolvida, ANTES do card de decisão — só no
+		// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
+		// de escassez, spec `04-copy-fluxos.md` Fluxo B).
+		// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
+		// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
+		// de tool-call do LLM.
+		if (!isSoParcela) {
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildScarcityDirective(),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+			});
+			const scarcityCard = buildScarcityCard(refreshed);
+			if (scarcityCard) {
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "scarcity",
+					payload: scarcityCard.payload,
+				});
+			}
+		}
+		const directive = isSoParcela
+			? buildLanceSoParcelaDirective()
+			: buildDecisionPromptDirective({
+					administradora: refreshed.recommendedAdministradora,
+				});
 		yield* runTurn({
 			channel,
 			conversationId,
@@ -315,10 +412,31 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			skipAnalyzer: true,
 			skipLeadCollection: true,
 		});
+		if (isSoParcela) {
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "two_paths",
+				payload: buildTwoPathsCard(refreshed).payload,
+			});
+			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
+			await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+		}
 		return;
 	}
 
 	if (result.nextGateToFire) {
+		// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): gate `desire` é
+		// NÃO bloqueante — marcado na EMISSÃO (mesmo padrão de consentOffered/
+		// simulatorOfferDispatched), nunca na resposta. Pulou ou não, o funil
+		// nunca mais re-emite este gate.
+		if (result.nextGateToFire === "desire") {
+			const refreshed = await reloadMeta(conversationId);
+			if (!refreshed.desireAsked) {
+				await persistMeta(conversationId, { ...refreshed, desireAsked: true });
+			}
+		}
 		if (result.nextGateToFire === "consent") {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.consentOffered) {

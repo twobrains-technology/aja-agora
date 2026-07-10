@@ -157,6 +157,9 @@ describe("BUG WhatsApp: artifacts orfaos no canal WhatsApp (apresentacao 13h)", 
 			scenarios: { scenarios: {} },
 			financing_comparison: { consorcio: {}, financing: {}, diff: {} },
 			whatsapp_optin: {},
+			embedded_bid: { maxEmbutidoPct: 30, creditValue: 120_000, embeddedBidValue: 36_000, netCredit: 84_000, disclaimer: "x" },
+			two_paths: { monthlyPayment: 812, administradora: "X", disclaimer: "x" },
+			scarcity: { groupCode: "g1", administradora: "X", availableSlots: 3 },
 		};
 
 		// Mapeia tool name (present_X) -> artifact type (X)

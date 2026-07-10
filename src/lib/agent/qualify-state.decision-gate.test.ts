@@ -25,6 +25,7 @@ import { decideShowGate, nextGate } from "./qualify-state";
 // nome capturado, 4 dados respondidos, busca disparada, simulação mostrada.
 function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentPersona: "rafael-auto",
 		currentCategory: "auto",
 		experiencePrev: "first",
@@ -86,7 +87,7 @@ describe("nextGate — avanço pro card de decisão pós-reveal", () => {
 
 	it("FIX-215: pós-reveal com hasLance='yes' sem valor → 'lance-value', nunca 'decision'", () => {
 		const meta = postRevealMeta({
-			qualifyAnswers: { creditMax: 100_000, hasLance: "yes" },
+			qualifyAnswers: { creditMax: 100_000, prazoMeses: 0, hasLance: "yes" },
 		});
 		const g = nextGate(meta, { hasContactName: true });
 		expect(g).not.toBe("decision");

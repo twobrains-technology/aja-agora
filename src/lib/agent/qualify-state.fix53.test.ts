@@ -14,6 +14,7 @@ import { nextGate } from "./qualify-state";
 
 describe("FIX-53 — gate identify ANTES do valor (credit/present_value_picker)", () => {
 	const base: ConversationMetadata = {
+		desireAsked: true,
 		currentCategory: "auto",
 		experiencePrev: "first",
 		qualifyConsented: true,
@@ -48,6 +49,7 @@ describe("FIX-53 — gate identify ANTES do valor (credit/present_value_picker)"
 
 	it("antes do consent o funil ainda não chega no identify (consent primeiro)", () => {
 		const semConsent: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 		};

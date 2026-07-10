@@ -55,6 +55,7 @@ function setMeta(meta: ConversationMetadata) {
 }
 
 const IDENTIFY_READY: ConversationMetadata = {
+	desireAsked: true,
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: false,

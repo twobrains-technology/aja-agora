@@ -1,4 +1,6 @@
 import type { UIMessageStreamWriter } from "ai";
+import { db } from "@/db";
+import { artifacts as artifactsTable } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
@@ -13,6 +15,7 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
+import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
@@ -25,6 +28,8 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveMessage } from "@/lib/conversation/messages";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
+import { getTraceForWriter } from "@/lib/telemetry/turn-trace";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
@@ -51,6 +56,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
 			// texto do agente (gateQuestion('name')=null), o card só complementa.
 			return { kind: "name", gate: "name" };
+		case "desire":
+			// FIX-233: gate não bloqueante, sem card — as duas perguntas (bem
+			// específico + motivo) são conversa livre; o texto sai no directive.
+			return null;
 		case "experience":
 			return {
 				kind: "chips",
@@ -112,6 +121,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "yes", label: "Sim, tenho reserva" },
 					{ value: "maybe", label: "Talvez, depende" },
 					{ value: "no", label: "Por enquanto não" },
+					// FIX-236 (Fable r1, P0): 3ª saída — quem não quer comprometer nada além
+					// da parcela vai direto pro card `two_paths` (dois caminhos), pulando a
+					// educação de embutido/agulha (rota em route.ts + orchestrator/index.ts).
+					{ value: "so_parcela", label: "Só a parcela, sem lance" },
 				],
 			};
 		case "lance-value": {
@@ -164,15 +177,57 @@ export async function pipeGatePrompt(args: {
 	const { conversationId, gate, writer } = args;
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
-	if (!data) return;
-	const question = gateQuestion(gate, meta.currentCategory);
+	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
+	// de "R$ 100 mil" na educação de lance embutido.
+	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue);
+	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
+	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
+	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
+	// virando turno morto ("Prazer, Madalena!" e nada mais).
+	if (!data && !question) return;
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });
 		writer.write({ type: "text-delta", id, delta: question });
 		writer.write({ type: "text-end", id });
 	}
-	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	if (data) {
+		writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	}
+}
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
+ * SERVER-SIDE determinístico direto no stream — sem depender de o LLM chamar
+ * `present_X` (0 emissões ao vivo no veredito, a tool nem existe mais no
+ * toolset). Espelha `pipeGatePrompt` (texto opcional + escrita direta), mas
+ * persiste como artifact vinculado a uma mensagem do assistente (mesmo padrão
+ * de `pipeAndSaveClosingItems` em route.ts) pra sobreviver no histórico/admin. */
+export async function pipeServerArtifact(args: {
+	conversationId: string;
+	artifactType: ArtifactType;
+	payload: Record<string, unknown>;
+	persona: Persona | null;
+	writer: Writer;
+}): Promise<void> {
+	const { conversationId, artifactType, payload, persona, writer } = args;
+	writer.write({
+		type: "data-artifact",
+		id: crypto.randomUUID(),
+		data: { type: artifactType, payload } as unknown as ArtifactPartData,
+	});
+	const messageId = await saveMessage(
+		conversationId,
+		"assistant",
+		`[card: ${artifactType}]`,
+		"web",
+		persona,
+	);
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: artifactType,
+		payload,
+		createdAt: simulatorNow(),
+	});
 }
 
 // FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
@@ -243,20 +298,28 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
-				if (data) {
+				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
+				const question = gateQuestion(
+					ev.gate,
+					meta.currentCategory,
+					meta.recommendedOffer?.creditValue,
+				);
+				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
+				if (data || question) {
 					emittedVisible = true;
-					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();
 						writer.write({ type: "text-start", id });
 						writer.write({ type: "text-delta", id, delta: question });
 						writer.write({ type: "text-end", id });
 					}
-					writer.write({
-						type: "data-gate",
-						id: crypto.randomUUID(),
-						data,
-					});
+					if (data) {
+						writer.write({
+							type: "data-gate",
+							id: crypto.randomUUID(),
+							data,
+						});
+					}
 				}
 				break;
 			}
@@ -311,9 +374,20 @@ export async function pipeOrchestratorToWriter(
 				});
 				break;
 
-			case "meta-update":
 			case "suppression":
+				// FIX-250 (rodada 3, Fable r2, N7): suppression NUNCA vira UI part
+				// (não é pro usuário ver) — mas precisa chegar no turn-trace, senão
+				// `suppressed` fica sempre [] no canal web (gap de observabilidade,
+				// Lei 5). getTraceForWriter recupera o trace pelo writer já
+				// instrumentado por route.ts, sem mudar nenhuma assinatura.
+				getTraceForWriter(writer)?.addSuppression(ev.artifactType);
+				break;
+
 			case "usage":
+				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
+				break;
+
+			case "meta-update":
 			case "finish":
 				// FIX-24: telemetria interna — consumida pelo turn-trace, não
 				// vira UI part. No-op no funil de SSE da web.

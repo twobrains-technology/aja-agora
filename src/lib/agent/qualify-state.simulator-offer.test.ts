@@ -11,6 +11,7 @@ import { decideShowGate, nextGate } from "./qualify-state";
 
 function postReveal(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentCategory: "auto",
 		experiencePrev: "first",
 		qualifyConsented: true,

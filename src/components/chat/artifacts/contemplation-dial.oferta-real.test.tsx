@@ -46,7 +46,9 @@ describe("FIX-C4 — parcela honesta", () => {
 		render(<ContemplationDial payload={payload} />);
 		const text = document.body.textContent ?? "";
 		expect(text).toMatch(/até contemplar/i);
-		expect(text).toContain("9.829"); // brl arredonda pra inteiro
+		// FIX-242: parcela NUNCA arredonda (CDC art. 30) — 9.828,92 literal, não
+		// mais os "9.829" que o brl(0 decimais) arredondava.
+		expect(text).toContain("9.828,92");
 		// a fantasia do bug real (9.829 × (1−0,74) = 2.556) não existe mais
 		expect(text).not.toContain("2.556");
 	});

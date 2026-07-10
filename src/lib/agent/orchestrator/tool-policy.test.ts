@@ -122,6 +122,9 @@ const REVEAL_EXPECTED = [
 	"get_rates",
 	"present_contemplation_dial",
 	"present_decision_prompt",
+	// FIX-246 (rodada 3, Fable r2): embedded_bid/two_paths/scarcity SAÍRAM do
+	// toolset — emissão agora é server-side determinística (server-cards.ts),
+	// nunca mais tool-call do LLM. Ver describe FIX-246 abaixo.
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",
@@ -233,6 +236,20 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 			expect(allowed).not.toContain("present_recommendation_card");
 			expect(allowed).not.toContain("present_comparison_table");
 			expect(allowed).not.toContain("present_group_card");
+		}
+	});
+
+	// FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): os 3 cards
+	// dependiam do LLM obedecer um directive pra chamar present_X — 0 emissões
+	// em 7 oportunidades ao vivo. Tirar a tool do toolset TORNA IMPOSSÍVEL o
+	// LLM chamá-la (Lei 2 — allowlist positiva), não só "desencorajado por
+	// prompt". A emissão vira 100% responsabilidade do handler (server-cards.ts).
+	it("FIX-246 — present_embedded_bid/present_two_paths/present_scarcity NUNCA entram no toolset do LLM, em NENHUMA fase", () => {
+		for (const meta of [QUALIFY_META, REVEAL_META, CLOSING_META, TERMINAL_META]) {
+			const allowed = allowedTools(meta);
+			expect(allowed).not.toContain("present_embedded_bid");
+			expect(allowed).not.toContain("present_two_paths");
+			expect(allowed).not.toContain("present_scarcity");
 		}
 	});
 });

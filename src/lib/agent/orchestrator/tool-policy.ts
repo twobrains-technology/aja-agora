@@ -158,6 +158,11 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				// FIX-246 (rodada 3, Fable r2): embedded_bid/two_paths/scarcity SAÍRAM
+				// do toolset do LLM — 0 emissões ao vivo mesmo com directive
+				// instruindo a tool-call (invariante no prompt, não em código, Lei
+				// 1/2/4). Emissão agora é SERVER-SIDE determinística
+				// (server-cards.ts) — o LLM nunca mais precisa (nem pode) chamá-las.
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
@@ -175,6 +180,8 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				// FIX-246: embedded_bid/two_paths/scarcity saíram do toolset do LLM
+				// em qualquer fase (emissão server-side determinística — ver "reveal").
 				"present_contract_form",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];

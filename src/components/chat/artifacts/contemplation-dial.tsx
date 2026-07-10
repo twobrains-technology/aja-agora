@@ -5,11 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
-import {
-	computeContemplationDial,
-	type DialLikelihood,
-	paymentAfterLabel,
-} from "@/lib/consorcio/contemplation-dial";
+import { computeContemplationDial, paymentAfterLabel } from "@/lib/consorcio/contemplation-dial";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
@@ -24,14 +20,12 @@ import { useRevealSelection } from "../reveal-selection";
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+// FIX-242 (rodada 2, Fable r1, §D2.3): PARCELA nunca arredonda (CDC art. 30).
+// Carta/lance (valores redondos) seguem em `brl` acima; só a parcela (antes/
+// depois da contemplação) precisa de centavos.
+const brl2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// Bucket de chance → rótulo + cor + posição no medidor (coral→âmbar→verde).
-const LIKELIHOOD: Record<DialLikelihood, { label: string; cls: string; pos: number }> = {
-	alta: { label: "alta", cls: "text-success", pos: 82 },
-	media: { label: "média", cls: "text-warning", pos: 50 },
-	baixa: { label: "menor", cls: "text-destructive", pos: 18 },
-};
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
 	const reduce = useReducedMotion();
@@ -85,7 +79,6 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 	const angle = Math.PI * (1 - fraction); // mês 1 → π (esquerda) · fim → 0 (direita)
 	const tipX = 100 + 72 * Math.cos(angle);
 	const tipY = 100 - 72 * Math.sin(angle);
-	const like = LIKELIHOOD[r.likelihood];
 
 	const setFromPointer = (clientX: number, clientY: number) => {
 		const el = gaugeRef.current;
@@ -234,33 +227,13 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 					Arraste o ponteiro pra ajustar o prazo
 				</p>
 
-				{/* Medidor de chance */}
-				<div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-					<span>Chance de contemplação nesse prazo</span>
-					<b className={cn("font-bold capitalize", like.cls)}>{like.label}</b>
-				</div>
-				<div
-					className="relative h-2 rounded-full"
-					style={{
-						background: "linear-gradient(90deg,var(--aja-coral),var(--warning) 50%,var(--success))",
-					}}
-				>
-					<div
-						className={cn(
-							"absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-[var(--surface-ink)] bg-background shadow",
-							!reduce && "transition-[left] duration-300",
-						)}
-						style={{ left: `${like.pos}%` }}
-					/>
-				</div>
-
 				{/* Antes → depois: as duas parcelas que importam */}
 				<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
 					<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
 						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
 							Até contemplar
 						</span>
-						<b className="text-[1.18rem] font-bold tabular-nums">{brl(monthlyPayment)}</b>
+						<b className="text-[1.18rem] font-bold tabular-nums">{brl2(monthlyPayment)}</b>
 						<small className="text-[10px] text-muted-foreground">
 							por ~{activeMonth} {activeMonth === 1 ? "mês" : "meses"}
 						</small>
@@ -273,7 +246,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 							Após receber
 						</span>
 						<b className="text-[1.18rem] font-bold tabular-nums text-[#8a5e09]">
-							{r.paymentAfterContemplation != null ? brl(r.paymentAfterContemplation) : "—"}
+							{r.paymentAfterContemplation != null ? brl2(r.paymentAfterContemplation) : "—"}
 						</b>
 						<small className="text-[10px] text-muted-foreground">
 							{paymentAfterLabel(r.paymentAfterContemplation, monthlyPayment)}

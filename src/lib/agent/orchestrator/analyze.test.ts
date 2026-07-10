@@ -28,6 +28,10 @@ const NEUTRAL: TurnAnalysis = {
 	creditMax: null,
 	prazoMeses: null,
 	hasLance: null,
+	desiredItem: null,
+	motivation: null,
+	monthlySavings: null,
+	fgtsValue: null,
 	userIntent: "neutral",
 };
 
@@ -147,13 +151,17 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		expect(meta.qualifyConsented).toBeFalsy();
 	});
 
-	it("meta resultante → nextGate dispara 'experience' (passo 2 do docx), não 'identify'", async () => {
+	it("meta resultante → nextGate dispara 'desire' (próximo passo legítimo), não 'identify'", async () => {
+		// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): `experience`
+		// desceu pra pós-reveal — o próximo passo legítimo logo após o nome
+		// agora é `desire` (não bloqueante). O ponto do teste (o funil NÃO pula
+		// direto pra `identify` só porque um valor veio em texto livre) continua
+		// valendo: `desire`/`consent` seguem obrigatórios no caminho.
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("um carro de 80 mil", "auto", meta);
 
-		// nome já capturado; o próximo gate canônico é a pergunta de experiência
-		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
 	});
 
 	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
@@ -183,6 +191,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 	// meta no passo do valor: nome/experiência/consent/identidade já feitos → o
 	// ÚNICO gate pendente é `credit` (o valor). Reproduz o print do bug.
 	const atValueStep = (): ConversationMetadata => ({
+		desireAsked: true,
 		currentCategory: "auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
@@ -338,6 +347,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 			experiencePrev: "returning",
 		});
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -355,5 +365,194 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		// sem travar por causa do guard.
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
 		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+	});
+});
+
+// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — gate `desire` (não
+// bloqueante): captura oportunista de desiredItem/motivation por texto livre.
+// O gate não trava se eles nunca vierem, mas quando o usuário os menciona
+// (neste turno ou em qualquer turno posterior), analyzeAndMerge persiste a
+// PRIMEIRA ocorrência sem sobrescrever depois.
+describe("FIX-233 — captura oportunista de desiredItem/motivation (gate desire)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("analyzer extrai desiredItem + motivation → salvos em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um Corolla",
+			motivation: "carro vive na oficina",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um Corolla, meu carro vive na oficina", "auto", meta);
+
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+		expect(meta.qualifyAnswers?.motivation).toBe("carro vive na oficina");
+	});
+
+	it("sem sinal (null) → slots ficam undefined, funil não trava", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("oi", "auto", meta);
+
+		expect(meta.qualifyAnswers?.desiredItem).toBeUndefined();
+		expect(meta.qualifyAnswers?.motivation).toBeUndefined();
+	});
+
+	it("primeira ocorrência NÃO é sobrescrita por um turno posterior", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um Corolla",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um Corolla", "auto", meta);
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um HB20",
+		});
+		await analyzeAndMerge("na verdade quero um HB20", "auto", meta);
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+	});
+});
+
+// FIX-236 (Fable r1, D3.1, gap P0 #1): o gate `lance` estava sendo PULADO no
+// funil real — trace mostrava experience→timeframe→lance-embutido, sem nunca
+// passar por `lance`. Causa raiz: `hasLance` era capturado de QUALQUER turno
+// de texto livre (sem checar se o gate `lance` estava de fato ativo) — uma
+// frase respondendo `timeframe` ("Queria rápido, mas não tenho grana agora")
+// contém sinal lexical de lance ("não tenho") e o analyzer vazava
+// hasLance="no" cedo demais. Duplo efeito: (1) nextGate pulava o gate `lance`
+// direto pra lance-embutido; (2) quando o usuário DEPOIS dizia a recusa
+// explícita ("não quero comprometer nada além da parcela", so_parcela), o
+// guard `!q.hasLance` já estava satisfeito por um "no" falso e a recusa real
+// nunca sobrescrevia — a MESMA bolha de educação de embutido repetia (Fable
+// viu 3× seguidas). Fix: só aceitar hasLance quando o gate `lance` (calculado
+// ANTES do merge, com o estado desta rodada) é o gate REALMENTE ativo.
+describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	function postRevealAwaitingTimeframe(): ConversationMetadata {
+		return {
+			desireAsked: true,
+			currentCategory: "auto",
+			qualifyConsented: true,
+			identityCollected: true,
+			experiencePrev: "first",
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 120_000 },
+		};
+	}
+
+	it("resposta ao gate timeframe com sinal falso de lance NÃO captura hasLance — gate `lance` continua aparecendo", async () => {
+		const meta = postRevealAwaitingTimeframe();
+		// Confirma o estado de partida: o gate ativo AGORA é timeframe.
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			prazoMeses: 0,
+			hasLance: "no", // falso-positivo do analyzer sobre "não tenho grana agora"
+		});
+		await analyzeAndMerge("Queria rápido, mas não tenho grana agora", "auto", meta);
+
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(0);
+		expect(meta.qualifyAnswers?.hasLance).toBeUndefined();
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("lance-embutido");
+	});
+
+	it("resposta ao gate lance (texto livre, so_parcela) captura normalmente e roteia pra decision/two_paths", async () => {
+		const meta = postRevealAwaitingTimeframe();
+		meta.qualifyAnswers!.prazoMeses = 6;
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			hasLance: "so_parcela",
+		});
+		await analyzeAndMerge("não quero comprometer nada além da parcela", "auto", meta);
+
+		expect(meta.qualifyAnswers?.hasLance).toBe("so_parcela");
+		expect(nextGate(meta, { hasContactName: true })).toBe("decision");
+	});
+
+	it("resposta ao gate lance com 'yes' captura normalmente (caminho feliz preservado)", async () => {
+		const meta = postRevealAwaitingTimeframe();
+		meta.qualifyAnswers!.prazoMeses = 6;
+		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, hasLance: "yes" });
+		await analyzeAndMerge("tenho uma reserva pra dar de lance", "auto", meta);
+		expect(meta.qualifyAnswers?.hasLance).toBe("yes");
+	});
+});
+
+// FIX-241 (rodada 2, Fable r1, D1 do veredito) — âncora de dinheiro: captura
+// oportunista de monthlySavings/fgtsValue por texto livre, mesmo padrão de
+// "primeira ocorrência" do FIX-233 (desiredItem/motivation).
+describe("FIX-241 — captura oportunista de monthlySavings/fgtsValue (âncora de dinheiro)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("analyzer extrai monthlySavings → salvo em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 4000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("não tenho reserva, mas junto uns 4 mil por mês", "auto", meta);
+
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
+	});
+
+	it("analyzer extrai fgtsValue → salvo em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "imovel",
+			fgtsValue: 15_000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "imovel" };
+		await analyzeAndMerge("tenho uns 15 mil de FGTS", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.fgtsValue).toBe(15_000);
+	});
+
+	it("sem sinal (null) → slots ficam undefined, funil não trava", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("oi", "auto", meta);
+
+		expect(meta.qualifyAnswers?.monthlySavings).toBeUndefined();
+		expect(meta.qualifyAnswers?.fgtsValue).toBeUndefined();
+	});
+
+	it("primeira ocorrência de monthlySavings NÃO é sobrescrita por um turno posterior", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 4000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("junto uns 4 mil por mês", "auto", meta);
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 1000,
+		});
+		await analyzeAndMerge("na verdade só consigo juntar uns 1000", "auto", meta);
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
 	});
 });

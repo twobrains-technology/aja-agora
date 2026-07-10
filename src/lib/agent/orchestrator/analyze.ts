@@ -1,6 +1,7 @@
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { nextGate } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 const AFFIRMATIVE_REPLIES = new Set([
@@ -73,6 +74,11 @@ export async function analyzeAndMerge(
 	meta: ConversationMetadata,
 ): Promise<AnalyzeResult> {
 	const analysis = await analyzeTurn(text, currentPersona, meta);
+	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
+	// de qualquer merge desta função alterar o estado (ver guard de hasLance
+	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
+	// lance por baixo do pano).
+	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
 
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
@@ -158,8 +164,47 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	if (analysis.hasLance && !q.hasLance) {
+	// FIX-236 (Fable r1, D3.1): hasLance só é aceito quando o gate `lance` é o
+	// REALMENTE ativo (calculado ANTES deste merge, com o estado da rodada).
+	// Captura oportunista irrestrita (como creditMax/prazoMeses) vazava sinais
+	// falsos — "Queria rápido, mas não tenho grana agora" respondendo o gate
+	// `timeframe` continha "não tenho" e o analyzer extraía hasLance="no" cedo
+	// demais, fazendo nextGate PULAR o gate `lance` direto pra lance-embutido.
+	// Pior: com hasLance já "no", a recusa explícita depois ("não quero
+	// comprometer nada além da parcela" → so_parcela) nunca sobrescrevia (guard
+	// `!q.hasLance`), repetindo a MESMA educação de embutido em loop. A conversa
+	// de lance só existe PÓS-reveal (FIX-215) — restringir ao gate ativo não
+	// perde nenhum caminho legítimo.
+	if (analysis.hasLance && !q.hasLance && activeGateAtTurnStart === "lance") {
 		q.hasLance = analysis.hasLance;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	// FIX-233 (gate `desire`, não bloqueante): captura oportunista de
+	// desiredItem/motivation por texto livre — o gate não bloqueia o funil se
+	// eles nunca chegarem, mas quando o usuário os menciona (aqui ou em
+	// qualquer turno posterior), salva a primeira ocorrência.
+	if (analysis.desiredItem && !q.desiredItem) {
+		q.desiredItem = analysis.desiredItem;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	if (analysis.motivation && !q.motivation) {
+		q.motivation = analysis.motivation;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	// FIX-241 (rodada 2, Fable r1, D1 — âncora de dinheiro): captura oportunista
+	// de monthlySavings/fgtsValue por texto livre, mesmo padrão do FIX-233
+	// acima — primeira ocorrência só, nunca sobrescrita por turno posterior.
+	// Alimenta anchorMonth() (dial-payload.ts) em vez do prazo desejado.
+	if (analysis.monthlySavings !== null && q.monthlySavings === undefined) {
+		q.monthlySavings = analysis.monthlySavings;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	if (analysis.fgtsValue !== null && q.fgtsValue === undefined) {
+		q.fgtsValue = analysis.fgtsValue;
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}

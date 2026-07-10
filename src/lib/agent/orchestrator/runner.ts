@@ -24,8 +24,15 @@ import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
 import { enrichContractFormPayload } from "./contract-form-prefill";
-import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
+import {
+	coerceDialPayload,
+	offerSnapshotFromArtifact,
+	type RecommendedOfferSnapshot,
+} from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
+import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
+import { coerceScarcityPayload } from "./scarcity-payload";
+import { coerceTwoPathsPayload } from "./two-paths-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
 	coerceComparisonPayload,
@@ -82,6 +89,20 @@ export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boo
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
+}
+
+/** Âncora de oferta do turno — MESMA busca usada pelo `contemplation_dial`
+ * (FIX-6/C2) e reaproveitada pelo `embedded_bid` (FIX-228): os dois cards
+ * precisam da oferta REAL recém-confirmada, nunca do que a LLM digitou. */
+function resolveOfferSnapshot(
+	artifacts: ProducedArtifact[],
+	meta: ConversationMetadata,
+): RecommendedOfferSnapshot | null {
+	const turnAnchor =
+		artifacts.find((a) => a.type === "simulation_result") ??
+		artifacts.find((a) => a.type === "recommendation_card") ??
+		artifacts.find((a) => a.type === "group_card");
+	return offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer ?? null;
 }
 
 /** FIX-102: eco/degeneração NÃO-determinística da LLM (raro — 1 ocorrência em
@@ -439,17 +460,33 @@ export async function* runAgentTurn(args: {
 							);
 						}
 						if (artifactType === "contemplation_dial") {
-							const turnAnchor =
-								artifacts.find((a) => a.type === "simulation_result") ??
-								artifacts.find((a) => a.type === "recommendation_card") ??
-								artifacts.find((a) => a.type === "group_card");
-							const snapshot =
-								offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer;
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							// FIX-C5: defaults do perfil declarado na qualificação.
+							// FIX-241: monthlySavings/fgtsValue ancoram no BOLSO, não no
+							// prazo desejado (dial-payload.ts:computeMoneyAnchor).
 							payload = coerceDialPayload(input, snapshot, {
 								prazoMeses: meta.qualifyAnswers?.prazoMeses,
 								lanceValue: meta.qualifyAnswers?.lanceValue,
+								monthlySavings: meta.qualifyAnswers?.monthlySavings,
+								fgtsValue: meta.qualifyAnswers?.fgtsValue,
 							});
+						}
+						// FIX-228: mesma âncora de oferta do contemplation_dial — os
+						// números do embedded_bid vêm da oferta REAL do turno, nunca da LLM.
+						if (artifactType === "embedded_bid") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceEmbeddedBidPayload(input, snapshot);
+						}
+						// FIX-229: mesma âncora — monthlyPayment/administradora vêm do
+						// grupo real; NUNCA propaga métrica de chance (docs/05).
+						if (artifactType === "two_paths") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceTwoPathsPayload(input, snapshot);
+						}
+						// FIX-230: número placebo 1-6 derivado no servidor do groupId
+						// REAL (hash determinístico) — a LLM nunca escolhe o número.
+						if (artifactType === "scarcity") {
+							payload = coerceScarcityPayload(input, revealGroupsById);
 						}
 						artifacts.push({
 							type: artifactType,
@@ -709,6 +746,15 @@ export async function* runAgentTurn(args: {
 	if (artifacts.some((a) => a.type === "decision_prompt") && !meta.decisionDispatched) {
 		const refreshed = await reloadMeta(conversationId);
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+	}
+
+	// FIX-244 (rodada 2, Fable r1, gap #9): marca contractFormDispatched quando
+	// o formulário de contratação aparece — mesmo hardening do decisionDispatched
+	// acima. O handler contract-submit (route.ts) exige essa flag antes de
+	// aceitar o fechamento (defesa em profundidade, mesma família do FIX-12).
+	if (artifacts.some((a) => a.type === "contract_form") && !meta.contractFormDispatched) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, { ...refreshed, contractFormDispatched: true });
 	}
 
 	const producedArtifact = artifacts.length > 0;

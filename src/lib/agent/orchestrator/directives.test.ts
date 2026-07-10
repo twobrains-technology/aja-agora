@@ -3,8 +3,12 @@ import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
 	buildDiscoveryFailedFallback,
+	buildEmbeddedBidDirective,
+	buildLanceSoParcelaDirective,
 	buildQualifyStartYesDirective,
+	buildScarcityDirective,
 	buildTransitionFirstContactDirective,
+	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 
 // FIX-186 (Kairo 2026-07-01) — a mensagem determinística de fallback quando a
@@ -12,6 +16,85 @@ import {
 // crua do modelo ("dificuldade técnica pontual"). NÃO é directive pro modelo — é
 // o texto que chega DIRETO ao usuário (Lei 1: código dispõe). Por isso: PT-BR
 // correto (acentos) e ZERO palavra de erro técnico cru.
+// FIX-246 (rodada 3, Fable r2 — causa-raiz): o card `two_paths` continuava
+// órfão mesmo com o directive instruindo "chame present_two_paths" (0
+// emissões em 2 conduções) — invariante no PROMPT, não em CÓDIGO (Lei 1/4).
+// Agora o directive só escreve a frase de introdução (o LLM NÃO chama tool
+// nenhuma); o card é emitido SERVER-SIDE determinístico pelo handler
+// (buildTwoPathsCard) e o convite pra decidir é o texto FIXO
+// TWO_PATHS_FOLLOWUP_TEXT — nunca a critério do modelo.
+describe("buildLanceSoParcelaDirective — 3ª saída do lance ('só a parcela')", () => {
+	it("NÃO instrui a chamar nenhuma tool (emissão do card é server-side, FIX-246)", () => {
+		const d = buildLanceSoParcelaDirective();
+		expect(d).not.toMatch(/present_two_paths/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame.*tool/);
+	});
+
+	it("proíbe explicar lance embutido ou chamar a agulha/simulação", () => {
+		const d = buildLanceSoParcelaDirective();
+		expect(d).toMatch(/N[ÃA]O explique lance embutido/i);
+		expect(d).toMatch(/N[ÃA]O chame simulate_quota/i);
+		expect(d).toMatch(/present_contemplation_dial/);
+	});
+
+	it("instrui a escrever SÓ a frase de introdução (o card + convite ficam por conta do sistema)", () => {
+		const d = buildLanceSoParcelaDirective();
+		expect(d).toMatch(/APENAS UMA frase/i);
+		expect(d).not.toMatch(/recomendo|eu indicaria|melhor caminho/i);
+	});
+});
+
+describe("TWO_PATHS_FOLLOWUP_TEXT — convite fixo pra decidir (nunca gerado pelo LLM)", () => {
+	it("devolve a decisão ao usuário, sem recomendar um caminho (FIX-246: texto fixo, não directive)", () => {
+		expect(TWO_PATHS_FOLLOWUP_TEXT.toLowerCase()).toMatch(/n[ãa]o tem certo ou errado/);
+		expect(TWO_PATHS_FOLLOWUP_TEXT).not.toMatch(/recomendo|eu indicaria|melhor caminho/i);
+	});
+});
+
+// FIX-237 (Fable r1, D2.1 gap #3) — os cards embedded_bid/scarcity existiam
+// (tool+schema+allowlist) mas eram ÓRFÃOS: nenhum directive instruía o modelo
+// a chamá-los, então nunca apareciam em condução real.
+// FIX-246 (rodada 3, Fable r2): mesmo com o directive instruindo a tool-call
+// (FIX-237), o LLM continuou desobedecendo/errando (0 emissões no veredito
+// r2) — a wiring em route.ts/index.ts que dispara o directive no gate certo
+// é validada por teste source-level em
+// tests/regression/fix-237-cards-orfaos.test.ts; a emissão do CARD em si
+// agora é server-side determinística (server-cards.ts), nunca tool-call.
+describe("buildEmbeddedBidDirective — card de lance embutido (antes órfão)", () => {
+	it("NÃO instrui a chamar nenhuma tool (emissão do card é server-side, FIX-246)", () => {
+		const d = buildEmbeddedBidDirective();
+		expect(d).not.toMatch(/present_embedded_bid\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_embedded_bid/);
+	});
+
+	it("proíbe o modelo de inventar os números (percentual/valor líquido)", () => {
+		const d = buildEmbeddedBidDirective();
+		expect(d).toMatch(/N[ÃA]O (invente|digita|calcula)/i);
+	});
+
+	it("instrui a escrever SÓ a frase de introdução", () => {
+		expect(buildEmbeddedBidDirective()).toMatch(/APENAS UMA frase/i);
+	});
+});
+
+describe("buildScarcityDirective — card de escassez (antes órfão)", () => {
+	it("NÃO instrui a chamar nenhuma tool (emissão do card é server-side, FIX-246)", () => {
+		const d = buildScarcityDirective();
+		expect(d).not.toMatch(/present_scarcity\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_scarcity/);
+	});
+
+	it("proíbe inventar o número de vagas ou o total de cotas", () => {
+		const d = buildScarcityDirective();
+		expect(d).toMatch(/N[ÃA]O invente/i);
+		expect(d.toLowerCase()).toMatch(/total de cotas/);
+	});
+
+	it("instrui a escrever SÓ a frase de transição", () => {
+		expect(buildScarcityDirective()).toMatch(/APENAS UMA frase/i);
+	});
+});
+
 describe("buildDiscoveryFailedFallback — mensagem determinística de descoberta falhada", () => {
 	// As MESMAS palavras que o detector do cassette (Camada 2) reprova na narração
 	// crua do modelo. A mensagem determinística tem que passar limpa por elas.
@@ -103,10 +186,13 @@ describe("buildAdvanceToContractDirective — reafirmou interesse pós-decisão 
 	});
 
 	// FIX-216 (Ata 2026-07-04, item 5): terminologia "reserva de cota" — nunca
-	// "contratar/fechar" — e a frase de booking ANTES de coletar os dados.
-	it("usa terminologia de reserva (nunca contratar/fechar) e emite a frase de booking", () => {
+	// "contratar/fechar" — e a frase de pré-reserva ANTES de coletar os dados.
+	// FIX-250 (rodada 3, Fable r2, polish): "é tipo um booking" era inglês
+	// solto na copy do fecho (inviolável PT-BR) — trocado por "pré-reserva".
+	it("usa terminologia de reserva (nunca contratar/fechar), em PT-BR (zero 'booking')", () => {
 		const d = buildAdvanceToContractDirective({ administradora: "Itaú" });
 		expect(d.toLowerCase()).not.toMatch(/contrat|fechar/);
+		expect(d.toLowerCase()).not.toMatch(/\bbooking\b/);
 		expect(d.toLowerCase()).toMatch(/reserva/);
 		expect(d.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
 		expect(d.toLowerCase()).toMatch(/boleto/);

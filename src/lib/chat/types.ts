@@ -336,6 +336,47 @@ export interface ContemplationDialPayload {
 	declaredLanceValue?: number;
 }
 
+// ---- Card lance embutido (FIX-228, docs/02-cards-novos.md CARD 1) ----
+
+/** Regra dura: este card SEMPRE diz que o crédito recebido diminui — não é
+ * opcional (separa consultoria de venda enganosa). Os números vêm da oferta
+ * REAL, coagidos server-side (`embedded-bid-payload.ts`); a LLM só escolhe o
+ * grupo. `maxEmbutidoPct` é 0-100 (mesma convenção do resto do codebase). */
+export interface EmbeddedBidPayload {
+	maxEmbutidoPct: number;
+	creditValue: number;
+	embeddedBidValue: number;
+	netCredit: number;
+	disclaimer: string;
+}
+
+// ---- Card dois caminhos, sem lance (FIX-229, docs/02-cards-novos.md CARD 3) ----
+
+/** Bifurcação A/B pra quem NÃO vai dar lance (gate `lance`, saída "só a
+ * parcela"). NUNCA carrega métrica de chance/probabilidade de contemplação
+ * (proibido, docs/05-compliance-e-dados.md) — nenhum dos dois caminhos é
+ * recomendado, o agente devolve a decisão ao cliente. `administradora`
+ * (PT) segue a convenção do resto do codebase — não `administrator`. */
+export interface TwoPathsPayload {
+	monthlyPayment: number;
+	administradora: string;
+	disclaimer: string;
+}
+
+// ---- Card escassez (FIX-230, docs/02-cards-novos.md CARD 2) ----
+
+/** `availableSlots` é PLACEBO comercial 1-6 (decisão de produto 2026-07-09,
+ * ADR docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md D3) — hash
+ * determinístico do grupo (`scarcity-payload.ts` stableSlotFromId), NUNCA
+ * `Math.random()` por render. `groupCode` é o id real ancorado (não exibido
+ * na UI — só contexto/telemetria). `administradora` (PT). */
+export interface ScarcityPayload {
+	groupCode: string;
+	administradora: string;
+	availableSlots: number;
+	disclaimer?: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -353,7 +394,10 @@ export type ArtifactByType =
 	| { type: "real_offer"; payload: RealOfferPayload }
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
-	| { type: "contemplation_dial"; payload: ContemplationDialPayload };
+	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
+	| { type: "embedded_bid"; payload: EmbeddedBidPayload }
+	| { type: "two_paths"; payload: TwoPathsPayload }
+	| { type: "scarcity"; payload: ScarcityPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

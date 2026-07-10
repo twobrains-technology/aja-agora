@@ -1,5 +1,5 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import type { UserIntent } from "@/lib/agent/qualify-state";
+import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { revealValueTargetChanged } from "./tool-policy";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
@@ -70,6 +70,9 @@ const POST_CLOSURE_FAMILY = new Set<ArtifactType>([
 	"group_card",
 	"contemplation_dial",
 	"decision_prompt",
+	"embedded_bid",
+	"two_paths",
+	"scarcity",
 ]);
 
 export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
@@ -122,6 +125,24 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			artifactType === "contract_form" && meta.revealCompleted !== true,
 		logLine: ({ conversationId, userIntent }) =>
 			`[contract-gate] guard: suprimindo contract_form PRÉ-reveal — identidade é assunto do gate identify (conv=${conversationId}, intent=${userIntent})`,
+	},
+	// FIX-239 (Fable r1, D3.4, gap P1 #6a): "Gostei, faz bastante sentido"
+	// (elogio pós-reveal, NÃO decisão) disparava decision_prompt ANTES de
+	// experience/timeframe/lance estarem resolvidos — a tool present_decision_
+	// prompt é liberada pela FASE (reveal/closing) do tool-policy, não pelo
+	// estado da qualificação; o LLM podia chamá-la livremente em qualquer
+	// afirmativo pós-reveal. `nextGate()` é a fonte única da ordem — só chega
+	// em "decision" depois que experience/timeframe/lance(+lance-embutido/
+	// simulator-offer) resolveram. Escopado a `decisionDispatched !== true`
+	// (a RE-emissão pós-dispatch é papel do `isDecisionDup` em reveal-loop).
+	{
+		name: "premature-decision",
+		applies: ({ artifactType, meta }) => {
+			if (artifactType !== "decision_prompt" || meta.decisionDispatched === true) return false;
+			return nextGate(meta, { hasContactName: true }) !== "decision";
+		},
+		logLine: ({ conversationId, userIntent }) =>
+			`[premature-decision] guard: suprimindo decision_prompt — qualificação pós-reveal (experience/timeframe/lance) ainda não resolvida (conv=${conversationId}, intent=${userIntent})`,
 	},
 	// BUG-REVEAL-LOOP (2026-06-02): pós-reveal, num turno de usuário o agent
 	// re-emitia os cards de DESCOBERTA a cada afirmativo ("ta otimo", "bora") —

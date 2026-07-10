@@ -38,7 +38,7 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
-	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
+	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no" | "so_parcela"; label: string }
 	// docx passo 2: "Qual valor aproximado?" — valor do lance em reais (faixa).
 	| { kind: "gate"; gate: "lance-value"; value: { lanceValue: number }; label: string }
 	| { kind: "gate"; gate: "lance-embutido"; value: "yes" | "no"; label: string }

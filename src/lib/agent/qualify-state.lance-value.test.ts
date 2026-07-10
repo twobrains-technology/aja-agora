@@ -11,6 +11,7 @@ import { nextGate } from "./qualify-state";
 
 function base(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentCategory: "auto",
 		experiencePrev: "first",
 		qualifyConsented: true,

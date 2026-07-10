@@ -18,18 +18,28 @@ import {
 	buildChooseOfferDirective,
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
+	buildEmbeddedBidDirective,
 	buildExperienceDoubtsDirective,
 	buildExperienceFirstDirective,
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
+	buildLanceSoParcelaDirective,
 	buildNameCapturedDirective,
 	buildPlanReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
+	buildScarcityDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
+	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
+import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
+import {
+	buildEmbeddedBidCard,
+	buildScarcityCard,
+	buildTwoPathsCard,
+} from "@/lib/agent/orchestrator/server-cards";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import {
@@ -46,6 +56,7 @@ import {
 } from "@/lib/bevi/closing-presentation";
 import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
+import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
@@ -74,6 +85,7 @@ import {
 	pipeDirectiveTurn,
 	pipeGatePrompt,
 	pipeSearchSummaryTurn,
+	pipeServerArtifact,
 	pipeTransitionTurn,
 	pipeUserTurn,
 } from "@/lib/web/adapter";
@@ -621,6 +633,21 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
+							// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
+							// GÊMEA da acima — sem o present_contract_form ter aparecido
+							// nesta conversa, contract-submit NÃO pode criar proposta real
+							// (CPF + consulta de bureau não pode ficar a um POST cru de
+							// distância). Achado ao vivo: o Fable fechou uma proposta
+							// atirando contract-submit numa conversa que nunca viu o form.
+							if (freshMeta.contractFormDispatched !== true) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									"Antes de eu confirmar sua reserva, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+								);
+								return;
+							}
 							// FIX-9: identidade já coletada no identify — o form confirma e o
 							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
 							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
@@ -653,21 +680,25 @@ export async function POST(req: NextRequest) {
 								// + administradoraPreferida) — módulo único compartilhado com o
 								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
 								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
-								const { proposalId, offer, noOffer } = await startContract(
-									conversationId,
-									buildStartContractInput(
-										meta,
-										{ cpf, celular, lgpd: body.action.lgpd },
-										{ leadId },
-									),
-								);
+								// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
+								// pode sair do destructuring — é o campo que aciona o aviso de
+								// ajuste (FIX-197/240) quando a carta real diverge do pedido.
+								const { proposalId, offer, noOffer, requestedCreditValue } =
+									await startContract(
+										conversationId,
+										buildStartContractInput(
+											meta,
+											{ cpf, celular, lgpd: body.action.lgpd },
+											{ leadId },
+										),
+									);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
 									// FIX-40: o lance declarado na qualificação habilita a frase de
 									// posição factual vs o lance médio do grupo (sem promessa).
 									realOfferPresentation(
-										{ proposalId, offer, noOffer },
+										{ proposalId, offer, noOffer, requestedCreditValue },
 										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
 									),
 									writer,
@@ -730,6 +761,10 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
+								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e
+								// aciona a mesa (especialista em cadastros) NA HORA. Nunca quebra
+								// o fechamento (best-effort, mesmo padrão de sendContractSummary).
+								await sendFechoPedirOi(conversationId);
 							} catch (err) {
 								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
 								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
@@ -971,6 +1006,39 @@ export async function POST(req: NextRequest) {
 							// BUG-LANCE-EMBUTIDO-PULADO (QA noturno E2E 2026-06-21): antes "no"/
 							// "maybe" caíam direto em pipeSearchSummaryTurn, pulando a educação —
 							// regressão do FIX-4 (o nextGate já passava por todos; o handler não).
+							// FIX-236 (Fable r1, P0): 3ª saída "só a parcela" — recusa explícita
+							// de qualquer conversa de lance. Pula lance-embutido/simulator-offer e
+							// apresenta o card `two_paths` (dois caminhos). decisionDispatched=true
+							// idempotente, igual ao ramo so_parcela do orchestrator/index.ts.
+							if (action.value === "so_parcela") {
+								const fresh = await reloadMeta(conversationId);
+								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildLanceSoParcelaDirective(),
+									contactName,
+									writer,
+									userKey,
+								});
+								// FIX-246 (rodada 3, Fable r2 causa-raiz): emissão SERVER-SIDE
+								// determinística do card two_paths (0 emissões ao vivo quando
+								// dependia do LLM chamar a tool) + convite fixo pra decidir
+								// (nunca gerado pelo modelo — TWO_PATHS_FOLLOWUP_TEXT).
+								await pipeServerArtifact({
+									conversationId,
+									artifactType: "two_paths",
+									payload: buildTwoPathsCard(fresh).payload,
+									persona: fresh.currentPersona ?? null,
+									writer,
+								});
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									fresh.currentPersona ?? null,
+									TWO_PATHS_FOLLOWUP_TEXT,
+								);
+								return;
+							}
 							if (action.value === "yes") {
 								await pipeDirectiveTurn({
 									conversationId,
@@ -981,6 +1049,26 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
+							// FIX-237 (Fable r1, D2.1 gap #3): embedded_bid era ÓRFÃO (tool
+							// existia, ninguém instruía o modelo a chamá-la). Directive turn
+							// mostra o card ANTES do texto+chips determinístico do gate.
+							// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto —
+							// o card é emissão SERVER-SIDE determinística (nunca depende de
+							// tool-call do LLM).
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildEmbeddedBidDirective(),
+								contactName,
+								writer,
+								userKey,
+							});
+							await pipeServerArtifact({
+								conversationId,
+								artifactType: "embedded_bid",
+								payload: buildEmbeddedBidCard(meta).payload,
+								persona: meta.currentPersona ?? null,
+								writer,
+							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}
@@ -992,10 +1080,20 @@ export async function POST(req: NextRequest) {
 							const refreshed = { ...meta, simulatorOfferDispatched: true };
 							await persistMeta(conversationId, refreshed);
 							if (action.value === "yes") {
+								// FIX-241 (âncora de dinheiro): quando o usuário declarou
+								// poupança mensal, narra o mês em que o BOLSO alcança o
+								// lance — mesmo cálculo que ancora o slider (dial-payload.ts).
+								const moneyAnchor =
+									computeMoneyAnchor(meta.recommendedOffer, {
+										monthlySavings: meta.qualifyAnswers?.monthlySavings,
+										lanceValue: meta.qualifyAnswers?.lanceValue,
+										fgtsValue: meta.qualifyAnswers?.fgtsValue,
+									}) ?? undefined;
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildSimulatorDialDirective({
 										administradora: meta.recommendedAdministradora,
+										moneyAnchor,
 									}),
 									contactName,
 									writer,
@@ -1005,6 +1103,28 @@ export async function POST(req: NextRequest) {
 							}
 							if (!refreshed.decisionDispatched) {
 								await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+								// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara
+								// depois da estratégia (lance resolvido), ANTES da proposta —
+								// mesmo ponto que o gate `decision` em orchestrator/index.ts.
+								// FIX-246: o directive SÓ escreve o texto — o card é emissão
+								// SERVER-SIDE determinística (nunca tool-call do LLM).
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildScarcityDirective(),
+									contactName,
+									writer,
+									userKey,
+								});
+								const scarcityCard = buildScarcityCard(refreshed);
+								if (scarcityCard) {
+									await pipeServerArtifact({
+										conversationId,
+										artifactType: "scarcity",
+										payload: scarcityCard.payload,
+										persona: refreshed.currentPersona ?? null,
+										writer,
+									});
+								}
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildDecisionPromptDirective({
@@ -1077,6 +1197,23 @@ export async function POST(req: NextRequest) {
 								lanceValue: action.value.lanceValue,
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							// FIX-237 (Fable r1, D2.1 gap #3): mesma wiring do ramo no/maybe do
+							// gate `lance` acima — embedded_bid antes do texto+chips.
+							// FIX-246: card emitido SERVER-SIDE, nunca por tool-call do LLM.
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildEmbeddedBidDirective(),
+								contactName,
+								writer,
+								userKey,
+							});
+							await pipeServerArtifact({
+								conversationId,
+								artifactType: "embedded_bid",
+								payload: buildEmbeddedBidCard(meta).payload,
+								persona: meta.currentPersona ?? null,
+								writer,
+							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}
@@ -1195,7 +1332,13 @@ export async function POST(req: NextRequest) {
 					// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
 					const freshMeta = await reloadMeta(conversationId);
 					const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
-					const reengage = reengageQuestionForGate(gate, freshMeta.currentCategory);
+					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+					const reengage = reengageQuestionForGate(
+						gate,
+						freshMeta.currentCategory,
+						undefined,
+						freshMeta.recommendedOffer?.creditValue,
+					);
 					await writeAndSaveText(
 						writer,
 						conversationId,

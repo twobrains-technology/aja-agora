@@ -22,11 +22,19 @@ import { decideShowGate, nextGate } from "./qualify-state";
 // ============================================================================
 
 const IDENTITY_AND_VALUE_READY: ConversationMetadata = {
+	desireAsked: true,
 	currentCategory: "auto",
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: true,
 	qualifyAnswers: { creditMax: 250_000 },
+};
+
+/** Mesmo estado, mas já com o prazo (timeframe, FIX-233) respondido — usado
+ * pelos testes PÓS-reveal desta suite, que testam SÓ o sub-fluxo de lance. */
+const IDENTITY_VALUE_AND_TIMEFRAME_READY: ConversationMetadata = {
+	...IDENTITY_AND_VALUE_READY,
+	qualifyAnswers: { ...IDENTITY_AND_VALUE_READY.qualifyAnswers, prazoMeses: 0 },
 };
 
 describe("FIX-215.1 — sequência de gates: credit → search DIRETO, nunca lance* antes do reveal", () => {
@@ -70,7 +78,7 @@ describe("FIX-215.2 — busca funciona SEM os campos de lance (prefsFromMeta)", 
 
 describe("FIX-215.3 — lance só é oferecido PÓS-reveal; resolvê-lo re-dispara a sequência", () => {
 	const postReveal = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
-		...IDENTITY_AND_VALUE_READY,
+		...IDENTITY_VALUE_AND_TIMEFRAME_READY,
 		searchDispatched: true,
 		revealCompleted: true,
 		...over,
@@ -87,7 +95,7 @@ describe("FIX-215.3 — lance só é oferecido PÓS-reveal; resolvê-lo re-dispa
 
 	it("pós-reveal, resolver hasLance='no' → segue pro lance-embutido (educa todo mundo, FIX-4)", () => {
 		const meta = postReveal({
-			qualifyAnswers: { ...IDENTITY_AND_VALUE_READY.qualifyAnswers, hasLance: "no" },
+			qualifyAnswers: { ...IDENTITY_VALUE_AND_TIMEFRAME_READY.qualifyAnswers, hasLance: "no" },
 		});
 		expect(nextGate(meta, { hasContactName: true })).toBe("lance-embutido");
 	});
@@ -95,7 +103,7 @@ describe("FIX-215.3 — lance só é oferecido PÓS-reveal; resolvê-lo re-dispa
 	it("pós-reveal, resolver lance-embutido → RE-DISPARA a sequência (simulator-offer)", () => {
 		const meta = postReveal({
 			qualifyAnswers: {
-				...IDENTITY_AND_VALUE_READY.qualifyAnswers,
+				...IDENTITY_VALUE_AND_TIMEFRAME_READY.qualifyAnswers,
 				hasLance: "no",
 				lanceEmbutido: false,
 			},
@@ -106,7 +114,7 @@ describe("FIX-215.3 — lance só é oferecido PÓS-reveal; resolvê-lo re-dispa
 	it("simulator-offer resolvido → decision (fim da sequência pós-reveal)", () => {
 		const meta = postReveal({
 			qualifyAnswers: {
-				...IDENTITY_AND_VALUE_READY.qualifyAnswers,
+				...IDENTITY_VALUE_AND_TIMEFRAME_READY.qualifyAnswers,
 				hasLance: "no",
 				lanceEmbutido: false,
 			},
