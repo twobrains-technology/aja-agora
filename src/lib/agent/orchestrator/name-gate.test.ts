@@ -23,8 +23,8 @@ describe("FIX-17 — gate do nome (primeiro contato)", () => {
 		expect(nextGate(metaWithCategory, { hasContactName: false })).toBe("name");
 	});
 
-	it("com o nome já capturado, segue o funil normal (experience)", () => {
-		expect(nextGate(metaWithCategory, { hasContactName: true })).toBe("experience");
+	it("com o nome já capturado, segue o funil normal (desire — FIX-233: experience desceu pra pós-reveal)", () => {
+		expect(nextGate(metaWithCategory, { hasContactName: true })).toBe("desire");
 	});
 
 	it("gateQuestion('name') é null — a pergunta já vem no texto do agente, o card não duplica", () => {

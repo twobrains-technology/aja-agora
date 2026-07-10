@@ -161,8 +161,9 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// FIX-228: lance embutido nasce no reveal, antes da agulha (mesma
 				// fase de present_contemplation_dial/present_decision_prompt).
 				"present_embedded_bid",
-				// FIX-229: dois caminhos nasce no gate `lance` (reveal), 3ª saída
-				// "só a parcela" — a ligação do gate é do bloco-jornada.
+				// FIX-229/FIX-233: dois caminhos nasce no gate `lance` (reveal), 3ª
+				// saída "só a parcela" — a tool é do bloco-cards-ui e a ligação do
+				// gate (buildLanceSoParcelaDirective) é do bloco-jornada-conversa.
 				"present_two_paths",
 				// FIX-230: escassez comercial, antes da proposta.
 				"present_scarcity",
@@ -187,6 +188,10 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				"present_two_paths",
 				"present_scarcity",
 				"present_contract_form",
+				// FIX-233 — a 3ª saída do lance ("só a parcela") já roda com
+				// decisionDispatched=true (persistido antes do directive), então a
+				// fase aqui é "closing" — precisa da tool nas duas fases.
+				"present_two_paths",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "terminal":

@@ -12,6 +12,7 @@ import { decideShowGate, nextGate } from "./qualify-state";
 // lance como pré-requisito — "qualificação completa" pré-reveal é só
 // identidade + valor. hasLance/lanceEmbutido não entram mais aqui (pós-reveal).
 const qualifiedBase: ConversationMetadata = {
+	desireAsked: true,
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: true,
@@ -29,12 +30,17 @@ const postRevealResolved: ConversationMetadata = {
 
 describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 	it("consent dado, SEM identidade → identify (antes de qualquer valor)", () => {
-		const meta: ConversationMetadata = { experiencePrev: "first", qualifyConsented: true };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			experiencePrev: "first",
+			qualifyConsented: true,
+		};
 		expect(nextGate(meta)).toBe("identify");
 	});
 
 	it("identify precede o valor mesmo com valor já volunteered", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 			qualifyAnswers: { creditMax: 80_000, prazoMeses: 12 },
@@ -48,6 +54,7 @@ describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 
 	it("COM identidade, valor já coletado → segue search (NÃO pede lance antes; FIX-215/FIX-103)", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
@@ -73,6 +80,7 @@ describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 
 	it("FIX-215: pré-reveal (revealCompleted ausente) NUNCA pede lance, mesmo com hasLance indefinido", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,

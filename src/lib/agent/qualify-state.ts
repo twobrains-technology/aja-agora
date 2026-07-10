@@ -3,6 +3,7 @@ import type { ConversationMetadata } from "./personas";
 
 export type Gate =
 	| "name"
+	| "desire"
 	| "experience"
 	| "doubts-wait"
 	| "consent"
@@ -55,8 +56,14 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// Antes era "doubts-wait" (no-op) e o nome era pedido só por texto livre —
 	// inconsistente com o resto do funil e ruim no mobile (teclado não abria).
 	if (opts && opts.hasContactName === false) return "name";
-	if (!meta.experiencePrev) return "experience";
-	if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
+
+	// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): gate `desire`,
+	// NÃO bloqueante — duas perguntas curtas (bem específico + motivo de agora),
+	// logo após o nome. `desireAsked` é marcado na EMISSÃO (padrão de
+	// `consentOffered`/`simulatorOfferDispatched`), não na resposta: se o
+	// usuário pular, o funil segue normal — nunca mais re-emite este gate.
+	if (!meta.desireAsked) return "desire";
+
 	if (meta.pendingFollowUp) return "doubts-wait";
 	if (!meta.qualifyConsented) {
 		// Consent is offered exactly once. After that, user must click the buttons
@@ -78,15 +85,6 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
-	// FIX-103 (revisão da jornada de entrada — Kairo 2026-06-28): o gate
-	// `timeframe` (prazo desejado de contemplação) SAIU da qualificação
-	// ("usuario so vai falar o valor agora, prazo nao"). "timeframe" segue no
-	// union `Gate` e o campo `prazoMeses` segue opcional no meta — por compat
-	// com consumidores fora do escopo deste bloco (web/whatsapp/orchestrator),
-	// que os blocos irmãos (web-valor-agulha, whatsapp-apresentacao) limpam.
-	// `nextGate` NUNCA mais o emite (prova: qualify-state.fix-103.test.ts). O
-	// prazo deixa de pesar na recomendação (desiredTermMonths=0 → fator
-	// neutro, ver tools/ai-sdk.ts).
 
 	// (FIX-53) O gate `identify` foi movido para ANTES do `credit` — ver acima.
 	// A busca real continua exigindo identidade (tripwire em pipeSearchSummaryTurn /
@@ -124,6 +122,23 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// urgente que continuar a qualificação de lance da faixa antiga.
 	if (revealValueTargetChanged(meta)) return "search";
 
+	// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09 — D2): `experience`
+	// DESCE pra depois do reveal (roda com os grupos já na tela; explica só
+	// pra quem é novato — não atrasa quem já conhece consórcio). Antes era o
+	// 1º gate do funil (linha logo após o nome); ver ADR
+	// docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md (D2).
+	if (meta.revealCompleted) {
+		if (!meta.experiencePrev) return "experience";
+		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
+
+		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
+		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural
+		// pro simulador de contemplação (contemplation_dial). Perguntar antes da
+		// recomendação desperdiçava a pergunta (o usuário ainda não tinha visto
+		// nenhuma oferta real pra ancorar a resposta).
+		if (q.prazoMeses === undefined) return "timeframe";
+	}
+
 	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +
 	// educação de lance embutido) SÓ entra em jogo DEPOIS que o usuário JÁ VIU
 	// as opções reais (revealCompleted) — nunca antes. Fica ANTES do
@@ -134,6 +149,14 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// docs/decisoes/blocos/2026-07-04-bloco-jornada-conversa.md.
 	if (meta.revealCompleted) {
 		if (!q.hasLance) return "lance";
+		// FIX-233 — 3ª saída do gate lance: "não quero comprometer nada além da
+		// parcela". Pula lance-value/lance-embutido/simulator-offer (a "agulha")
+		// por completo — o agente chama present_two_paths e devolve a decisão
+		// ao usuário (sem recomendar sorteio vs. lance modesto).
+		if (q.hasLance === "so_parcela") {
+			if (!meta.decisionDispatched) return "decision";
+			return "search"; // terminal — mesma convenção do fallback abaixo
+		}
 		// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
 		// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
 		// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).

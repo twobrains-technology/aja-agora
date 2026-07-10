@@ -50,6 +50,7 @@ async function* emit(events: TurnEvent[]): AsyncGenerator<TurnEvent> {
 // meta onde o funil está TRAVADO no gate identify (consent dado, sem identidade).
 function identifyPendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentCategory: "auto",
 		currentPersona: "helena-auto",
 		experiencePrev: "returning",

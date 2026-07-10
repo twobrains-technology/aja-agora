@@ -17,6 +17,7 @@ import { decideShowGate, nextGate } from "./qualify-state";
 
 /** Reveal completo (256k descoberto), AGORA com valor-alvo trocado pra 130k. */
 const REVEAL_TROCA_DE_FAIXA: ConversationMetadata = {
+	desireAsked: true,
 	currentCategory: "auto",
 	currentPersona: "auto",
 	experiencePrev: "first",

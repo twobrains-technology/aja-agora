@@ -28,6 +28,8 @@ const NEUTRAL: TurnAnalysis = {
 	creditMax: null,
 	prazoMeses: null,
 	hasLance: null,
+	desiredItem: null,
+	motivation: null,
 	userIntent: "neutral",
 };
 
@@ -147,13 +149,17 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		expect(meta.qualifyConsented).toBeFalsy();
 	});
 
-	it("meta resultante → nextGate dispara 'experience' (passo 2 do docx), não 'identify'", async () => {
+	it("meta resultante → nextGate dispara 'desire' (próximo passo legítimo), não 'identify'", async () => {
+		// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): `experience`
+		// desceu pra pós-reveal — o próximo passo legítimo logo após o nome
+		// agora é `desire` (não bloqueante). O ponto do teste (o funil NÃO pula
+		// direto pra `identify` só porque um valor veio em texto livre) continua
+		// valendo: `desire`/`consent` seguem obrigatórios no caminho.
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("um carro de 80 mil", "auto", meta);
 
-		// nome já capturado; o próximo gate canônico é a pergunta de experiência
-		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
 	});
 
 	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
@@ -183,6 +189,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 	// meta no passo do valor: nome/experiência/consent/identidade já feitos → o
 	// ÚNICO gate pendente é `credit` (o valor). Reproduz o print do bug.
 	const atValueStep = (): ConversationMetadata => ({
+		desireAsked: true,
 		currentCategory: "auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
@@ -338,6 +345,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 			experiencePrev: "returning",
 		});
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -355,5 +363,58 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		// sem travar por causa do guard.
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
 		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+	});
+});
+
+// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — gate `desire` (não
+// bloqueante): captura oportunista de desiredItem/motivation por texto livre.
+// O gate não trava se eles nunca vierem, mas quando o usuário os menciona
+// (neste turno ou em qualquer turno posterior), analyzeAndMerge persiste a
+// PRIMEIRA ocorrência sem sobrescrever depois.
+describe("FIX-233 — captura oportunista de desiredItem/motivation (gate desire)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("analyzer extrai desiredItem + motivation → salvos em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um Corolla",
+			motivation: "carro vive na oficina",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um Corolla, meu carro vive na oficina", "auto", meta);
+
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+		expect(meta.qualifyAnswers?.motivation).toBe("carro vive na oficina");
+	});
+
+	it("sem sinal (null) → slots ficam undefined, funil não trava", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("oi", "auto", meta);
+
+		expect(meta.qualifyAnswers?.desiredItem).toBeUndefined();
+		expect(meta.qualifyAnswers?.motivation).toBeUndefined();
+	});
+
+	it("primeira ocorrência NÃO é sobrescrita por um turno posterior", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um Corolla",
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("quero um Corolla", "auto", meta);
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			desiredItem: "um HB20",
+		});
+		await analyzeAndMerge("na verdade quero um HB20", "auto", meta);
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
 	});
 });

@@ -210,3 +210,37 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		expect(idxParabens).toBeGreaterThan(idxSig);
 	});
 });
+
+// FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8) — fecho pro
+// WhatsApp: depois do "Parabéns!", o agente avisa que mandou mensagem no
+// WhatsApp e pede o "oi" (abre a janela de 24h — função técnica), e que a
+// especialista em cadastros chama em seguida. NUNCA "reservado/garantido/
+// você já está no grupo" (nada foi contratado só com a proposta enviada).
+describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", () => {
+	const items = closingPresentation(CONFIRM);
+	const allText = items
+		.filter((i) => i.kind === "text")
+		.map((i) => i.text)
+		.join("\n");
+
+	it("avisa que mandou mensagem no WhatsApp e pede o 'oi'", () => {
+		expect(allText.toLowerCase()).toMatch(/whatsapp/);
+		expect(allText).toMatch(/["“]oi["”]/);
+	});
+
+	it("menciona a especialista em cadastros chamando em seguida", () => {
+		expect(allText.toLowerCase()).toMatch(/especialista em cadastros/);
+	});
+
+	it("NUNCA diz 'reservado/garantido/você já está no grupo'", () => {
+		expect(allText.toLowerCase()).not.toMatch(/reservad[ao]/);
+		expect(allText.toLowerCase()).not.toMatch(/garantid[ao]/);
+		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
+	});
+
+	it("o fecho vem DEPOIS do 'Parabéns!' (não quebra a ordem do docx já travada)", () => {
+		const idxParabens = items.findIndex((i) => i.kind === "text" && /Parabéns!/.test(i.text));
+		const idxOi = items.findIndex((i) => i.kind === "text" && /["“]oi["”]/.test(i.text));
+		expect(idxOi).toBeGreaterThan(idxParabens);
+	});
+});

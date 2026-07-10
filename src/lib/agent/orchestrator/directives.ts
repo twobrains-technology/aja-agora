@@ -109,6 +109,16 @@ export function buildLanceReactionDirective(rangeTitle: string): string {
 	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
 }
 
+/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — 3ª saída do gate
+ * `lance`: "não quero comprometer nada além da parcela". Pula lance-value/
+ * lance-embutido/simulator-offer por completo — chama `present_two_paths`
+ * (tool do bloco-cards-ui, referenciada pelo NOME; allowlist tolera até o
+ * merge do bloco irmão) e devolve a decisão ao usuário, sem recomendar um dos
+ * dois caminhos (sorteio vs. lance modesto depois). */
+export function buildLanceSoParcelaDirective(): string {
+	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: (1) escreva UMA frase curta respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis:"); (2) chame a tool present_two_paths (sem parâmetros extras — o sistema monta o payload a partir da oferta real). NÃO explique lance embutido, NÃO chame simulate_quota nem present_contemplation_dial. Depois que o card aparecer, você NÃO recomenda um dos dois caminhos — devolve a decisão ao usuário em UMA frase ("Não tem certo ou errado — depende de você ter pressa ou não. Qual combina mais com o seu momento?").`;
+}
+
 // ---- Group actions ----
 
 export function buildGroupSelectedDirective(

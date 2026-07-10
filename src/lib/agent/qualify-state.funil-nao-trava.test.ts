@@ -27,11 +27,19 @@ function readSource(rel: string): string {
 }
 
 /** Estado logo após o clique "Tenho dúvidas" (o do print): experiência escolhida,
- * dúvidas ainda não endereçadas, consent ainda não ofertado. */
+ * dúvidas ainda não endereçadas. FIX-233 (D2): `experience` desceu pra PÓS-reveal
+ * — o clique só é alcançável depois de consent/identify/credit/search/reveal já
+ * resolvidos (o funil chega em "experience" só depois disso). */
 function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
+		desireAsked: true,
 		currentPersona: "helena-imovel",
 		currentCategory: "imovel",
+		qualifyConsented: true,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		qualifyAnswers: { creditMax: 300_000 },
 		experiencePrev: "doubts",
 		doubtsAddressed: false,
 		...over,
@@ -102,7 +110,7 @@ describe("FIX-206 shouldMarkDoubtsAddressed — a explicação (server OU user) 
 	});
 });
 
-describe("FIX-206 convergência — o clique 'Tenho dúvidas' termina no gate consent, não em silêncio", () => {
+describe("FIX-206 convergência — o clique 'Tenho dúvidas' termina no próximo gate, não em silêncio", () => {
 	it("o BECO (sem o fix): sem doubtsAddressed, nextGate=doubts-wait e o gate é suprimido", () => {
 		const meta = doubtsClickMeta();
 		expect(nextGate(meta, { hasContactName: true })).toBe("doubts-wait");
@@ -113,24 +121,28 @@ describe("FIX-206 convergência — o clique 'Tenho dúvidas' termina no gate co
 		).toBe(false);
 	});
 
-	it("o FIX: marcado doubtsAddressed, nextGate converge pro consent", () => {
+	// FIX-233 (D2): `experience` desceu pra PÓS-reveal — o próximo gate na
+	// sequência, depois do doubts-wait resolver, agora é `timeframe`
+	// (reintroduzido, D1), não mais `consent` (que já foi resolvido antes do
+	// reveal, nesta posição nova do funil).
+	it("o FIX: marcado doubtsAddressed, nextGate converge pro timeframe (próximo passo pós-experience)", () => {
 		const meta = doubtsClickMeta({ doubtsAddressed: true });
-		expect(nextGate(meta, { hasContactName: true })).toBe("consent");
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
 	});
 
-	it("o FIX: o consent DISPARA no turno server-authored (o próximo passo aparece)", () => {
+	it("o FIX: o timeframe DISPARA no turno server-authored (o próximo passo aparece)", () => {
 		const meta = doubtsClickMeta({ doubtsAddressed: true });
-		expect(decideShowGate({ gate: "consent", intent: "neutral", meta, isUserTurn: false })).toBe(
+		expect(decideShowGate({ gate: "timeframe", intent: "neutral", meta, isUserTurn: false })).toBe(
 			true,
 		);
 	});
 
-	it("invariante: NÃO pula etapa — o gate de consent ainda é obrigatório (não some)", () => {
-		// Auto-avançar ≠ BUG-FUNIL-PULA-PASSO2: o consent continua no caminho, só
-		// deixa de exigir "continua/vai". qualifyConsented ainda é false aqui.
+	it("invariante: NÃO pula etapa — o gate de timeframe ainda é obrigatório (não some)", () => {
+		// Auto-avançar ≠ BUG-FUNIL-PULA-PASSO2: o timeframe continua no caminho, só
+		// deixa de exigir "continua/vai". prazoMeses ainda não foi respondido aqui.
 		const meta = doubtsClickMeta({ doubtsAddressed: true });
-		expect(meta.qualifyConsented).toBeFalsy();
-		expect(nextGate(meta, { hasContactName: true })).toBe("consent");
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
 	});
 });
 
@@ -142,6 +154,7 @@ describe("FIX-206 convergência — o clique 'Tenho dúvidas' termina no gate co
 // ============================================================================
 describe("FIX-206 varredura — nenhuma reação server-authored termina o turno sem próximo passo", () => {
 	const base: ConversationMetadata = {
+		desireAsked: true,
 		currentPersona: "helena-imovel",
 		currentCategory: "imovel",
 	};
@@ -192,7 +205,7 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 				identityCollected: true,
 				searchDispatched: true,
 				revealCompleted: true,
-				qualifyAnswers: { creditMax: 300_000, hasLance: "yes" },
+				qualifyAnswers: { creditMax: 300_000, prazoMeses: 0, hasLance: "yes" },
 			},
 			gateEsperado: "lance-value",
 		},

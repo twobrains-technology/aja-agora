@@ -133,6 +133,7 @@ describe("Gate identify determinístico e forçado (FIX-217)", () => {
 	});
 
 	const IDENTIFY_META = {
+		desireAsked: true,
 		experiencePrev: "first",
 		qualifyConsented: true,
 		identityCollected: false,

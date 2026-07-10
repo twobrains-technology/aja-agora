@@ -21,6 +21,17 @@ const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	servicos: "Em quanto tempo você quer realizar isso?",
 };
 
+/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — gate `desire`, não
+ * bloqueante: 1ª das duas perguntas de contexto (bem específico + motivo de
+ * agora). A pergunta sai no TEXTO do agente (directive), não num card — a
+ * segunda pergunta (motivo) é conversa livre, sem gate próprio. */
+const DESIRE_QUESTIONS: Record<Category, string> = {
+	imovel: "Qual imóvel você tem em mente?",
+	auto: "Qual carro você tem em mente?",
+	moto: "Qual moto você tem em mente?",
+	servicos: "O que você tem em mente pra realizar?",
+};
+
 export function gateQuestion(gate: Gate, category?: Category | null): string | null {
 	switch (gate) {
 		case "name":
@@ -28,6 +39,8 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			// do agente (directive de primeiro contato). O card só complementa com
 			// input focado — null aqui evita a pergunta aparecer duas vezes.
 			return null;
+		case "desire":
+			return category ? DESIRE_QUESTIONS[category] : null;
 		case "experience":
 			return "Você já fez consórcio antes?";
 		case "consent":

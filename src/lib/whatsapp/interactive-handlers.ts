@@ -203,6 +203,10 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
+		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
+		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
+		await sendFechoPedirOi(conversationId).catch(() => {});
 	} catch {
 		await sendTextMessage(
 			from,

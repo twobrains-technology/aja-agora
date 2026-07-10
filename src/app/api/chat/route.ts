@@ -46,6 +46,7 @@ import {
 } from "@/lib/bevi/closing-presentation";
 import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
+import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import type { ChatAction } from "@/lib/chat/actions";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
@@ -730,6 +731,10 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
+								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e
+								// aciona a mesa (especialista em cadastros) NA HORA. Nunca quebra
+								// o fechamento (best-effort, mesmo padrão de sendContractSummary).
+								await sendFechoPedirOi(conversationId);
 							} catch (err) {
 								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
 								// engolia o erro sem logar — mesma lição de empty-env-compose (tool

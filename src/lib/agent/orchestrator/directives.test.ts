@@ -3,6 +3,7 @@ import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
 	buildDiscoveryFailedFallback,
+	buildLanceSoParcelaDirective,
 	buildQualifyStartYesDirective,
 	buildTransitionFirstContactDirective,
 } from "./directives";
@@ -12,6 +13,28 @@ import {
 // crua do modelo ("dificuldade técnica pontual"). NÃO é directive pro modelo — é
 // o texto que chega DIRETO ao usuário (Lei 1: código dispõe). Por isso: PT-BR
 // correto (acentos) e ZERO palavra de erro técnico cru.
+// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — 3ª saída do gate
+// `lance`: "não quero comprometer nada além da parcela". Chama present_two_paths
+// (tool do bloco-cards-ui) e devolve a decisão, sem recomendar um caminho.
+describe("buildLanceSoParcelaDirective — 3ª saída do lance ('só a parcela')", () => {
+	it("instrui a chamar present_two_paths", () => {
+		expect(buildLanceSoParcelaDirective()).toMatch(/present_two_paths/);
+	});
+
+	it("proíbe explicar lance embutido ou chamar a agulha/simulação", () => {
+		const d = buildLanceSoParcelaDirective();
+		expect(d).toMatch(/N[ÃA]O explique lance embutido/i);
+		expect(d).toMatch(/N[ÃA]O chame simulate_quota/i);
+		expect(d).toMatch(/present_contemplation_dial/);
+	});
+
+	it("instrui a DEVOLVER a decisão ao usuário, sem recomendar um caminho", () => {
+		const d = buildLanceSoParcelaDirective();
+		expect(d.toLowerCase()).toMatch(/n[ãa]o tem certo ou errado/);
+		expect(d).not.toMatch(/recomendo|eu indicaria|melhor caminho/i);
+	});
+});
+
 describe("buildDiscoveryFailedFallback — mensagem determinística de descoberta falhada", () => {
 	// As MESMAS palavras que o detector do cassette (Camada 2) reprova na narração
 	// crua do modelo. A mensagem determinística tem que passar limpa por elas.

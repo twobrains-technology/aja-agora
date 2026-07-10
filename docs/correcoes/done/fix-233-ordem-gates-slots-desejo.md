@@ -1,7 +1,7 @@
 ---
 id: FIX-233
 titulo: "Reordenar gates (experience↓, timeframe reintroduzido↑) + slots de desejo + 3ª saída do lance"
-status: todo
+status: done
 bloco: bloco-jornada-conversa
 arquivos:
   - src/lib/agent/qualify-state.ts
@@ -11,6 +11,8 @@ arquivos:
   - src/lib/agent/system-prompt.ts
   - docs/jornada/jornada-canonica.md
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR3/D1/D2)
+commit: a4e8c5106c228ee7acf7ab987789e12835e7155c
+executado_em: "2026-07-09"
 ---
 
 ## Palavras do operador (decisões 2026-07-09)

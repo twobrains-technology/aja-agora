@@ -78,6 +78,7 @@ async function gateInteractive(
 			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
 			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
 		case "name":
+		case "desire":
 		case "identify":
 		case "doubts-wait":
 		case "search":
@@ -86,6 +87,7 @@ async function gateInteractive(
 			// sai no texto do directive de primeiro contato; o card não existe aqui.
 			// "identify" não tem interactive — é coleta textual de CPF (fireGate
 			// manda o prompt como texto; captura em identify-capture.ts).
+			// FIX-233: "desire" é não bloqueante e sem card — conversa livre.
 			return null;
 	}
 }
