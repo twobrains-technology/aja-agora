@@ -172,11 +172,13 @@ export async function pipeGatePrompt(args: {
 	const { conversationId, gate, writer } = args;
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
-	const question = gateQuestion(gate, meta.currentCategory);
+	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
+	// de "R$ 100 mil" na educação de lance embutido.
+	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue);
 	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
-	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm
-	// pergunta a emitir. Antes, `if (!data) return` matava a pergunta junto
-	// com o card ausente, virando turno morto ("Prazer, Madalena!" e nada mais).
+	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
+	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
+	// virando turno morto ("Prazer, Madalena!" e nada mais).
 	if (!data && !question) return;
 	if (question) {
 		const id = crypto.randomUUID();
@@ -257,7 +259,12 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
-				const question = gateQuestion(ev.gate, meta.currentCategory);
+				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
+				const question = gateQuestion(
+					ev.gate,
+					meta.currentCategory,
+					meta.recommendedOffer?.creditValue,
+				);
 				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
 				if (data || question) {
 					emittedVisible = true;

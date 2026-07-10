@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { coerceDialPayload, type RecommendedOfferSnapshot } from "./dial-payload";
+import { coerceDialPayload, computeMoneyAnchor, type RecommendedOfferSnapshot } from "./dial-payload";
 
 const CANOPUS: RecommendedOfferSnapshot = {
 	administradora: "CANOPUS",
@@ -99,5 +99,92 @@ describe("FIX-6 — acoplamento: runner captura o snapshot e coage o payload", (
 		const { readFileSync } = await import("node:fs");
 		const src = readFileSync("src/lib/agent/personas.ts", "utf-8");
 		expect(src).toMatch(/recommendedOffer\?:/);
+	});
+});
+
+// FIX-241 (rodada 2, Fable r1, D1 do veredito) — âncora de dinheiro: quando o
+// usuário declarou monthlySavings, a agulha responde "quando o seu DINHEIRO
+// alcança", não "quando você quer" (spec 03). O mês-alvo inicial do dial passa
+// a vir de anchorMonth() — 1º mês em que o BOLSO cobre o lance — em vez do
+// prazo desejado (que era o bug: Madalena "junto 4 mil/mês" → dial em mês 6,
+// o prazo dela, nunca ~15 do cálculo do bolso).
+describe("FIX-241 — computeMoneyAnchor + coerceDialPayload ancoram no BOLSO, não no desejo", () => {
+	it("sem monthlySavings → null (nada a ancorar, comportamento intacto)", () => {
+		expect(computeMoneyAnchor(CANOPUS, { prazoMeses: 12 })).toBeNull();
+		expect(computeMoneyAnchor(CANOPUS, undefined)).toBeNull();
+	});
+
+	it("sem oferta → null", () => {
+		expect(computeMoneyAnchor(null, { monthlySavings: 4000 })).toBeNull();
+	});
+
+	it("com monthlySavings > 0 → calcula o mês âncora via anchorMonth() (mesmo motor)", async () => {
+		const { anchorMonth } = await import("@/lib/consorcio/contemplation-dial");
+		const expected = anchorMonth(
+			{ creditValue: CANOPUS.creditValue, termMonths: CANOPUS.termMonths },
+			{ initial: 0, monthlySavings: 4000 },
+		);
+		const anchor = computeMoneyAnchor(CANOPUS, { monthlySavings: 4000 });
+		expect(anchor?.anchoredMonth).toBe(expected);
+		expect(anchor?.monthlySavings).toBe(4000);
+	});
+
+	it("lanceValue (reserva pontual já disponível) entra como `initial` no anchorMonth", async () => {
+		const { anchorMonth } = await import("@/lib/consorcio/contemplation-dial");
+		const expected = anchorMonth(
+			{ creditValue: CANOPUS.creditValue, termMonths: CANOPUS.termMonths },
+			{ initial: 5000, monthlySavings: 1000 },
+		);
+		const anchor = computeMoneyAnchor(CANOPUS, { monthlySavings: 1000, lanceValue: 5000 });
+		expect(anchor?.anchoredMonth).toBe(expected);
+	});
+
+	it("fgtsValue entra como fonte extra (abate o bolso, spec 03 — vertical imóvel)", async () => {
+		const { anchorMonth } = await import("@/lib/consorcio/contemplation-dial");
+		const semFgts = anchorMonth(
+			{ creditValue: CANOPUS.creditValue, termMonths: CANOPUS.termMonths },
+			{ initial: 0, monthlySavings: 500 },
+		);
+		const comFgts = computeMoneyAnchor(CANOPUS, { monthlySavings: 500, fgtsValue: 15_000 });
+		// FGTS abate o bolso necessário → contempla mais cedo (mês menor ou igual).
+		expect(comFgts?.anchoredMonth).toBeLessThanOrEqual(semFgts ?? Number.POSITIVE_INFINITY);
+	});
+
+	it("coerceDialPayload: com monthlySavings, initialTargetMonth vem do ANCORADO, não do prazo desejado nem do palpite do modelo", async () => {
+		const { anchorMonth } = await import("@/lib/consorcio/contemplation-dial");
+		const anchored = anchorMonth(
+			{ creditValue: CANOPUS.creditValue, termMonths: CANOPUS.termMonths },
+			{ initial: 0, monthlySavings: 4000 },
+		) as number;
+		// Cenário exato do bug: prazo desejado = 6, modelo também manda 6 —
+		// mas o dinheiro (4 mil/mês) alcança num mês diferente de 6.
+		expect(anchored).not.toBe(6);
+		const out = coerceDialPayload(
+			{
+				category: "moto",
+				creditValue: 1,
+				termMonths: 1,
+				monthlyPayment: 1,
+				initialTargetMonth: 6,
+			},
+			CANOPUS,
+			{ prazoMeses: 6, monthlySavings: 4000 },
+		);
+		expect(out.initialTargetMonth).toBe(anchored);
+	});
+
+	it("coerceDialPayload: sem monthlySavings, mantém a prioridade antiga (modelo → prazo declarado → 6)", () => {
+		const out = coerceDialPayload(
+			{
+				category: "moto",
+				creditValue: 1,
+				termMonths: 1,
+				monthlyPayment: 1,
+				initialTargetMonth: 6,
+			},
+			CANOPUS,
+			{ prazoMeses: 6 },
+		);
+		expect(out.initialTargetMonth).toBe(6);
 	});
 });

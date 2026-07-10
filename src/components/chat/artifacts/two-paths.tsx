@@ -6,12 +6,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { TwoPathsPayload } from "@/lib/chat/types";
 
+// FIX-242 (rodada 2, Fable r1, §D2.3): PARCELA nunca arredonda (CDC art. 30) —
+// os dois usos abaixo são sempre a parcela (payload.monthlyPayment).
 const formatBRL = (value: number): string =>
-	new Intl.NumberFormat("pt-BR", {
-		style: "currency",
-		currency: "BRL",
-		maximumFractionDigits: 0,
-	}).format(value);
+	new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 // FIX-229 (docs/02-cards-novos.md CARD 3): bifurcação A/B pra quem NÃO vai
 // dar lance. Invariantes duros — NUNCA % de chance/probabilidade; NENHUMA

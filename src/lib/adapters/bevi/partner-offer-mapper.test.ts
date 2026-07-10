@@ -91,6 +91,51 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 		});
 	});
 
+	// FIX-240 (rodada 2, Fable r1, D5.1): pedido 120k → recomendada ITAÚ 150k →
+	// no contract-submit a real_offer veio 211.258 (41% acima), SEM aviso —
+	// oferta vinculante fora da faixa pedida (CDC art. 30). Decisão do Kairo:
+	// clamp — não escolhe carta >20% acima do pedido quando existe opção mais
+	// próxima (mesmo que quebre a fidelidade de marca do
+	// BUG-ADMIN-TROCADA-NO-FECHAMENTO; compliance > continuidade de marca).
+	describe("clamp de faixa (FIX-240 — CDC art. 30)", () => {
+		const mk = (administradora: string, valorCarta: number): PartnerOffer =>
+			({
+				ofertaId: `of-${administradora}-${valorCarta}`,
+				administradora,
+				tipoOferta: "FREE_BID",
+				grupo: "500",
+				valorCarta,
+				parcela: valorCarta / 80,
+				taxaContemplacao: 0.5,
+				quotaId: `q-${valorCarta}`,
+			}) as PartnerOffer;
+
+		it("admin preferida >20% acima do pedido + opção mais próxima disponível → prefere a mais próxima", () => {
+			const list = [mk("ITAU", 211_258), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("SUNMARK");
+			expect(chosen?.valorCarta).toBe(150_000);
+		});
+
+		it("admin preferida >20% acima do pedido mas SEM opção mais próxima em nenhuma marca → mantém (aviso cobre)", () => {
+			const list = [mk("ITAU", 211_258)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("ITAU");
+		});
+
+		it("admin preferida dentro de 20% do pedido → mantém fidelidade de marca (não clampa à toa)", () => {
+			const list = [mk("ITAU", 175_000), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("ITAU");
+		});
+
+		it("sem admin preferida, closest geral já é o mais próximo — clamp não altera nada", () => {
+			const list = [mk("ITAU", 211_258), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000);
+			expect(chosen?.administradora).toBe("SUNMARK");
+		});
+	});
+
 	// Matching preparatório (2026-06-28) — fidelidade B→A: dentro da admin preferida,
 	// desempata pela proximidade de PRAZO além do valor, pra o fechamento não trocar
 	// a oferta por outra de prazo bem diferente do que o usuário viu na Descoberta.

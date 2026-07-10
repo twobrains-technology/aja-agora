@@ -462,9 +462,13 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "contemplation_dial") {
 							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							// FIX-C5: defaults do perfil declarado na qualificação.
+							// FIX-241: monthlySavings/fgtsValue ancoram no BOLSO, não no
+							// prazo desejado (dial-payload.ts:computeMoneyAnchor).
 							payload = coerceDialPayload(input, snapshot, {
 								prazoMeses: meta.qualifyAnswers?.prazoMeses,
 								lanceValue: meta.qualifyAnswers?.lanceValue,
+								monthlySavings: meta.qualifyAnswers?.monthlySavings,
+								fgtsValue: meta.qualifyAnswers?.fgtsValue,
 							});
 						}
 						// FIX-228: mesma âncora de oferta do contemplation_dial — os
@@ -742,6 +746,15 @@ export async function* runAgentTurn(args: {
 	if (artifacts.some((a) => a.type === "decision_prompt") && !meta.decisionDispatched) {
 		const refreshed = await reloadMeta(conversationId);
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+	}
+
+	// FIX-244 (rodada 2, Fable r1, gap #9): marca contractFormDispatched quando
+	// o formulário de contratação aparece — mesmo hardening do decisionDispatched
+	// acima. O handler contract-submit (route.ts) exige essa flag antes de
+	// aceitar o fechamento (defesa em profundidade, mesma família do FIX-12).
+	if (artifacts.some((a) => a.type === "contract_form") && !meta.contractFormDispatched) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, { ...refreshed, contractFormDispatched: true });
 	}
 
 	const producedArtifact = artifacts.length > 0;

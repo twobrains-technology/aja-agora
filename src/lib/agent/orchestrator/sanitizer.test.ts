@@ -19,6 +19,7 @@ import {
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
 	isProcessPreamble,
+	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
@@ -230,6 +231,42 @@ describe("FIX-234 — reserva/garantia PREMATURA é PROIBIDA (invariante #9: nad
 		const input = "Boa! Sua cota já está garantida com esse grupo. Só falta assinar depois.";
 		const out = stripProcessPreamble(input);
 		expect(out.toLowerCase()).not.toContain("garantida");
+		expect(out).toContain("Boa!");
+	});
+});
+
+// FIX-243 (rodada 2, Fable r1, §D5.2 do veredito) — B2 T5, o agente disse "A
+// ITAÚ se destaca pela boa taxa de contemplação e uma taxa de administração de
+// 13,46% — uma das mais baixas da faixa". `taxaContemplacao` é campo PROIBIDO
+// (semântica não documentada, spec 05); o guard existente cobre só payload/UI
+// (no-taxa-contemplacao.guard.test.ts) — a FALA do LLM vazava o conceito como
+// argumento de venda. Fonte permitida de sinal de contemplação:
+// contemplados/mês (contagem real), nunca "taxa".
+describe("FIX-243 — 'taxa de contemplação' é PROIBIDA na fala (campo sem semântica documentada)", () => {
+	const TAXA_CONTEMPLACAO_SEGMENTS = [
+		"A ITAÚ se destaca pela boa taxa de contemplação e uma taxa de administração de 13,46%.",
+		"Esse grupo tem uma taxa de contemplação alta.",
+		"A taxa de contemplação dessa oferta é de 60%.",
+		"Gosto dessa oferta pela taxa de contemplação baixa.",
+	];
+
+	it("isTaxaContemplacaoClaim pega as frases que citam taxa de contemplação", () => {
+		for (const s of TAXA_CONTEMPLACAO_SEGMENTS) {
+			expect(isTaxaContemplacaoClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima sobre contemplação (contagem real, sem 'taxa')", () => {
+		expect(isTaxaContemplacaoClaim("Esse grupo contempla 8 pessoas por mês.")).toBe(false);
+		expect(isTaxaContemplacaoClaim("A contemplação pode vir por sorteio ou lance.")).toBe(false);
+		expect(isTaxaContemplacaoClaim("A taxa de administração é de 13,46%.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de taxa de contemplação", () => {
+		const input =
+			"Boa! A ITAÚ se destaca pela boa taxa de contemplação e uma taxa de administração de 13,46%. Vamos seguir?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("taxa de contemplação");
 		expect(out).toContain("Boa!");
 	});
 });

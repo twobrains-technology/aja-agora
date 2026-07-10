@@ -122,8 +122,12 @@ describe("FIX-196 — hero + seletor de cotas", () => {
 		fireEvent.click(screen.getByRole("option", { name: /ITAÚ/i }));
 		// hero rebindou pra ITAÚ (CTA reflete a cota selecionada)
 		expect(screen.getByRole("button", { name: /seguir com ITAÚ/i })).toBeTruthy();
-		// parcela do ITAÚ no HERO (com centavos — o chip mostra sem centavos)
-		expect(screen.getByText(/R\$\s*3\.200,00/)).toBeTruthy();
+		// parcela do ITAÚ no HERO — com centavos (FIX-242: o chip do seletor
+		// TAMBÉM passou a mostrar centavos, então os dois batem — escopa no
+		// testid do hero pra não ambiguar a query).
+		expect(screen.getByTestId("recommendation-secondary-payment").textContent).toMatch(
+			/R\$\s*3\.200,00/,
+		);
 		// seleção é client-side: NENHUMA chamada ao agente
 		expect(sendAction).not.toHaveBeenCalled();
 	});

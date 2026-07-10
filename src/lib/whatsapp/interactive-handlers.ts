@@ -400,10 +400,19 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		"@/lib/agent/orchestrator/directives"
 	);
 	if (resolved.value === "yes") {
+		// FIX-241 (âncora de dinheiro): mesma narração da web — "cálculo único,
+		// duas apresentações" (spec 03).
+		const { computeMoneyAnchor } = await import("@/lib/agent/orchestrator/dial-payload");
+		const moneyAnchor =
+			computeMoneyAnchor(meta.recommendedOffer, {
+				monthlySavings: meta.qualifyAnswers?.monthlySavings,
+				lanceValue: meta.qualifyAnswers?.lanceValue,
+				fgtsValue: meta.qualifyAnswers?.fgtsValue,
+			}) ?? undefined;
 		await runAgentDirective(
 			from,
 			conversationId,
-			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora }),
+			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora, moneyAnchor }),
 		);
 		return true;
 	}

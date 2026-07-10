@@ -158,6 +158,17 @@ Só a **resposta de RESULTADO** vira bolha. A **barreira REAL é código** — o
 
 Substitutos ✅: "entendo bem" / "antecipar a contemplação" / descrever a situação sem rótulo / "qual carro você tem em mente".
 
+### 1.10. "Taxa de contemplação" é campo PROIBIDO na fala (FIX-243, spec 05-compliance-e-dados.md)
+
+`taxaContemplacao` é um campo da Bevi com **semântica não documentada** — PROIBIDO citá-lo como argumento de venda, mesmo com número. A fonte permitida de sinal de contemplação é a contagem REAL de contemplados por mês (`contempladosMes`/`monthlyAwardedQuotas`), nunca uma "taxa". Frase proibida real (B2 T5, veredito Fable r1):
+
+- "A ITAÚ se destaca pela boa taxa de contemplação"
+- "taxa de contemplação de 60%" / "taxa de contemplação alta/baixa"
+
+Vale também o comparativo sem fonte ("uma das mais baixas da faixa") — mesma classe de risco da regra de taxa de administração (Bv2-06, CDC art. 37).
+
+**Barreira em CÓDIGO (Lei 4):** `orchestrator/sanitizer.ts` (`isTaxaContemplacaoClaim`) dropa esses segmentos em runtime. O guard estático (`no-taxa-contemplacao.guard.test.ts`) cobre payload/UI/tools; este cobre a FALA do LLM.
+
 ---
 
 ## 2. Fluxos obrigatórios

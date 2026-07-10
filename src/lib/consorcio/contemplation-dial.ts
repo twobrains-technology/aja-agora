@@ -67,9 +67,10 @@ export interface ContemplationDialResult {
 	ownCashPct: number; // parte em dinheiro
 	ownCashValue: number; // R$
 	receivedCredit: number; // carta − embutido
-	/** FIX-C4: parcela estimada APÓS a contemplação — só o lance em DINHEIRO
-	 * abate o saldo (o embutido reduz o crédito recebido, não a dívida).
-	 * Até a contemplação vale a parcela real do grupo. Undefined quando não há
+	/** FIX-221 (AMORTIZA — substitui o modelo antigo do FIX-C4, este comentário
+	 * estava stale): parcela estimada APÓS a contemplação — o lance TOTAL
+	 * (dinheiro + embutido) amortiza o saldo restante, não só o dinheiro. Até
+	 * a contemplação vale a parcela real do grupo. Undefined quando não há
 	 * monthlyPayment ou a contemplação cai no último mês. */
 	paymentAfterContemplation?: number;
 	/** FIX-225: custo escondido do embutido (taxa de adm sobre a parte

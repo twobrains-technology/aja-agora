@@ -14,6 +14,7 @@
 // confrontar ("cobre / não cobre").
 
 import type { Category } from "@/lib/agent/personas";
+import { anchorMonth } from "@/lib/consorcio/contemplation-dial";
 
 export interface RecommendedOfferSnapshot {
 	administradora?: string;
@@ -37,9 +38,55 @@ export interface RecommendedOfferSnapshot {
 export interface DeclaredProfile {
 	prazoMeses?: number;
 	lanceValue?: number;
+	/** FIX-241 (âncora de dinheiro) — poupança recorrente declarada ("junto uns
+	 * 4 mil por mês"). Presente → o mês-alvo inicial vem de anchorMonth(), não
+	 * do prazo desejado (spec 03: "quando o dinheiro alcança", não "quando
+	 * você quer"). */
+	monthlySavings?: number;
+	/** FIX-241 (vertical imóvel) — FGTS disponível, entrada pontual que abate
+	 * o bolso necessário direto (vai ao vendedor). */
+	fgtsValue?: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface MoneyAnchor {
+	/** 1º mês em que o BOLSO do cliente (lanceValue + monthlySavings*(m-1),
+	 * líquido do FGTS) cobre o lance necessário daquele mês. */
+	anchoredMonth: number;
+	monthlySavings: number;
+}
+
+/** FIX-241 (rodada 2, Fable r1, D1 do veredito — âncora de dinheiro): cálculo
+ * ÚNICO que alimenta tanto o mês-alvo inicial do slider (coerceDialPayload)
+ * quanto a narração do agente ("juntando R$ X/mês, lá pelo mês Y...",
+ * directives.ts) — mesma regra "cálculo único, duas apresentações" da spec.
+ * Sem monthlySavings > 0 ou sem oferta → null (nada a ancorar). */
+export function computeMoneyAnchor(
+	offer: RecommendedOfferSnapshot | null | undefined,
+	profile: DeclaredProfile | undefined,
+): MoneyAnchor | null {
+	const monthlySavings = Number(profile?.monthlySavings);
+	if (!offer || !Number.isFinite(monthlySavings) || monthlySavings <= 0) return null;
+	const initial = Number(profile?.lanceValue);
+	const fgts = Number(profile?.fgtsValue);
+	const anchoredMonth = anchorMonth(
+		{
+			creditValue: offer.creditValue,
+			termMonths: offer.termMonths,
+			averageBid: offer.avgBidValue,
+			historicalWinningBidPct: offer.lanceRefPct,
+			referenceMonth: offer.lanceRefMonth,
+			maxEmbutidoPct: offer.maxEmbutidoPct,
+		},
+		{
+			initial: Number.isFinite(initial) && initial > 0 ? initial : 0,
+			monthlySavings,
+			...(Number.isFinite(fgts) && fgts > 0 ? { fgts } : {}),
+		},
+	);
+	return anchoredMonth != null ? { anchoredMonth, monthlySavings } : null;
+}
 
 /** Extrai o snapshot da oferta a partir do payload de um artifact âncora do
  * reveal (recommendation_card / simulation_result / group_card). Retorna null
@@ -111,14 +158,21 @@ export function coerceDialPayload(
 	if (!offer) return input;
 	const rawTarget = Number(input.initialTargetMonth);
 	const declared = Number(profile?.prazoMeses);
-	// Mês-alvo: modelo (what-if explícito) → prazo declarado → fallback 6.
-	// Sempre dentro do prazo REAL do grupo.
+	// FIX-241 (âncora de dinheiro): com monthlySavings declarado, o mês-alvo
+	// inicial vem do BOLSO (anchorMonth), não do "modelo→prazo desejado→6" —
+	// a agulha responde "quando o dinheiro alcança", nunca "quando você quer"
+	// (spec 03). Sem monthlySavings, prioridade antiga intacta.
+	const moneyAnchor = computeMoneyAnchor(offer, profile);
+	// Mês-alvo: âncora de dinheiro (quando há) → modelo (what-if explícito) →
+	// prazo declarado → fallback 6. Sempre dentro do prazo REAL do grupo.
 	const initialTargetMonth =
-		Number.isFinite(rawTarget) && rawTarget >= 1
-			? Math.min(Math.round(rawTarget), offer.termMonths)
-			: Number.isFinite(declared) && declared >= 1
-				? Math.min(Math.round(declared), offer.termMonths)
-				: Math.min(6, offer.termMonths);
+		moneyAnchor != null
+			? Math.min(moneyAnchor.anchoredMonth, offer.termMonths)
+			: Number.isFinite(rawTarget) && rawTarget >= 1
+				? Math.min(Math.round(rawTarget), offer.termMonths)
+				: Number.isFinite(declared) && declared >= 1
+					? Math.min(Math.round(declared), offer.termMonths)
+					: Math.min(6, offer.termMonths);
 	const declaredLance = Number(profile?.lanceValue);
 	return {
 		...input,

@@ -64,6 +64,14 @@ export function realOfferPresentation(
 				...(Number.isFinite(offer.termMonths) ? { termMonths: offer.termMonths } : {}),
 				// FIX-40: lance médio do grupo só com fonte (rótulo literal no card).
 				...(Number.isFinite(offer.avgBidValue) ? { avgBidValue: offer.avgBidValue } : {}),
+				// FIX-240 (CDC art. 30): a carta fechada pode divergir do valor pedido
+				// (clamp de pickClosestOffer cobre a maioria, mas nem sempre há opção
+				// mais próxima). rawCreditValue = valor pedido aciona o aviso de ajuste
+				// (FIX-197, real-offer.tsx) — NUNCA confirma silenciosamente fora da faixa.
+				...(Number.isFinite(result.requestedCreditValue) &&
+				Math.round(result.requestedCreditValue as number) !== Math.round(offer.creditValue)
+					? { rawCreditValue: result.requestedCreditValue }
+					: {}),
 			},
 		},
 	];

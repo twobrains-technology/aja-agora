@@ -49,11 +49,15 @@ export type QualifyAnswers = {
 	/** FIX-233 — motivação/gatilho do momento ("carro vive na oficina"). Vira
 	 * contexto injetado no prompt e é espelhada UMA vez, não a cada turno. */
 	motivation?: string;
-	/** FIX-233 — quanto o usuário consegue juntar por mês pro lance, quando
-	 * não tem reserva hoje mas pretende ir juntando. Slot tipado apenas; a
-	 * captura por texto livre e o consumo no motor de cálculo (âncora de
-	 * dinheiro na agulha) ficam pro bloco-motor-calculo (PR8 da spec). */
+	/** FIX-233/FIX-241 — quanto o usuário consegue juntar por mês pro lance,
+	 * quando não tem reserva hoje mas pretende ir juntando ("junto uns 4 mil
+	 * por mês"). Ancora a agulha (âncora de dinheiro) no mês em que o BOLSO
+	 * cobre o lance necessário, em vez do prazo desejado (docs/03). */
 	monthlySavings?: number;
+	/** FIX-241 (spec 03 "Âncora de dinheiro") — FGTS disponível (vertical
+	 * imóvel), entrada pontual que abate o bolso necessário direto (vai ao
+	 * vendedor) — maior acelerador da âncora nessa vertical. */
+	fgtsValue?: number;
 };
 
 import type { NavState } from "./orchestrator/navigation";
@@ -156,6 +160,13 @@ export type ConversationMetadata = {
 	 * 'documentos'). Pós-Parabéns o agente não re-apresenta contract_form
 	 * (BUG-POS-FECHAMENTO-NAO-TERMINAL, E2E real 2026-06-04). */
 	contractClosed?: boolean;
+	/** FIX-244 (rodada 2, Fable r1, gap #9): marca que `present_contract_form`
+	 * JÁ apareceu nesta conversa (runner.ts, no mesmo padrão hardening do
+	 * `decisionDispatched`). O handler `contract-submit` (route.ts) EXIGE essa
+	 * flag antes de criar proposta real — sem isso, o servidor aceitava o
+	 * submit mesmo numa conversa que nunca viu o formulário (defesa em
+	 * profundidade, mesma família do guard `revealCompleted` do FIX-12). */
+	contractFormDispatched?: boolean;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;
