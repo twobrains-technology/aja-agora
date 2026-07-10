@@ -44,7 +44,15 @@ Nota final = MÍNIMO das dimensões (não média). 10/10 exige TODAS no teto + o
 ## LEDGER de rodadas
 | Rodada | Blocos lançados | Integrado | Determinístico | Score fable | Achados novos → próxima rodada |
 |---|---|---|---|---|---|
-| 1 | motor-calculo, cards-ui, jornada-conversa (onda 1) | ✓ os 3 na base (7d7a552) | test:unit 2983/2983 ✓ · test:integration 270/270 ✓ · E2E API: jornada roda ponta-a-ponta (cards+ordem nova validados com payload real) | Fable avaliando | G1 embedded_bid órfão · G2 scarcity órfão · G3 two_paths Fluxo B (confirmar) · G4 fecho/proposta |
+| 1 | motor-calculo, cards-ui, jornada-conversa (onda 1) | ✓ os 3 na base (7d7a552) | test:unit 2983/2983 ✓ · test:integration 270/270 ✓ · E2E API: jornada ponta-a-ponta | **Fable 3/10** (10 gaps acionáveis) | G1-G10 → rodada 2 |
+| 2 | fix-r2-funil-cards (Gap 1,3,5,6) · fix-r2-valor-compliance (Gap 2,4,7,8,9,10) | ⏳ 2 blocos disparados (Gap 1 parcial já na base e5882cb6) | (pós-merge) | (pós-merge) | — |
+
+### Rodada 2 — veredito Fable r1 (3/10, `docs/correcoes/rodada2-fable/`)
+P0: 3ª saída quebrada (Fluxo B beco) · carta 211k sem aviso (CDC) · embedded_bid+scarcity órfãos.
+P1: âncora de dinheiro morta · desire engolido · decision prematuro · "taxa de contemplação" na fala.
+P2/P3: arredondamento de parcela · contract-submit sem form · higiene (emoji/comentário stale).
+Bom (verificado): curva por-oferta, amortiza, guardrail netCredit, real_offer co-branded, fecho WhatsApp, pt-BR.
+Decisão Kairo: carta 211k = clamp + aviso.
 
 ### Notas rodada 1
 - 2 fixes de integração: (a) `present_two_paths` duplicado pelo auto-merge (cards+jornada) na fase closing e no REVEAL_EXPECTED do teste; (b) dev subida com `db:push` (só schema) ficou sem personas — corrigido com `db:migrate` (as personas são seedadas pelas migrations `0012/0016`).
