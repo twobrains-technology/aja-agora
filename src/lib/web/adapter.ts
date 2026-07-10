@@ -28,6 +28,7 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveMessage } from "@/lib/conversation/messages";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
+import { getTraceForWriter } from "@/lib/telemetry/turn-trace";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
@@ -373,9 +374,20 @@ export async function pipeOrchestratorToWriter(
 				});
 				break;
 
-			case "meta-update":
 			case "suppression":
+				// FIX-250 (rodada 3, Fable r2, N7): suppression NUNCA vira UI part
+				// (não é pro usuário ver) — mas precisa chegar no turn-trace, senão
+				// `suppressed` fica sempre [] no canal web (gap de observabilidade,
+				// Lei 5). getTraceForWriter recupera o trace pelo writer já
+				// instrumentado por route.ts, sem mudar nenhuma assinatura.
+				getTraceForWriter(writer)?.addSuppression(ev.artifactType);
+				break;
+
 			case "usage":
+				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
+				break;
+
+			case "meta-update":
 			case "finish":
 				// FIX-24: telemetria interna — consumida pelo turn-trace, não
 				// vira UI part. No-op no funil de SSE da web.
