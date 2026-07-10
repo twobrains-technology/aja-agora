@@ -20,6 +20,11 @@ import { useRevealSelection } from "../reveal-selection";
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
+// FIX-242 (rodada 2, Fable r1, §D2.3): PARCELA nunca arredonda (CDC art. 30).
+// Carta/lance (valores redondos) seguem em `brl` acima; só a parcela (antes/
+// depois da contemplação) precisa de centavos.
+const brl2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
@@ -228,7 +233,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
 							Até contemplar
 						</span>
-						<b className="text-[1.18rem] font-bold tabular-nums">{brl(monthlyPayment)}</b>
+						<b className="text-[1.18rem] font-bold tabular-nums">{brl2(monthlyPayment)}</b>
 						<small className="text-[10px] text-muted-foreground">
 							por ~{activeMonth} {activeMonth === 1 ? "mês" : "meses"}
 						</small>
@@ -241,7 +246,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 							Após receber
 						</span>
 						<b className="text-[1.18rem] font-bold tabular-nums text-[#8a5e09]">
-							{r.paymentAfterContemplation != null ? brl(r.paymentAfterContemplation) : "—"}
+							{r.paymentAfterContemplation != null ? brl2(r.paymentAfterContemplation) : "—"}
 						</b>
 						<small className="text-[10px] text-muted-foreground">
 							{paymentAfterLabel(r.paymentAfterContemplation, monthlyPayment)}

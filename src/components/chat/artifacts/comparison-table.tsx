@@ -13,6 +13,12 @@ const formatBRL = (value: number): string =>
 		maximumFractionDigits: 0,
 	}).format(value);
 
+// FIX-242 (rodada 2, Fable r1, §D2.3): PARCELA nunca arredonda (CDC art. 30) —
+// R$ 2.182,01 não pode virar "R$ 2.182". Carta (valor redondo) segue sem
+// centavos (formatBRL acima); só a parcela precisa do formatador com centavos.
+const formatBRL2 = (value: number): string =>
+	new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+
 export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }) {
 	const reveal = useRevealSelection();
 	const { sendAction, status } = useChatContext();
@@ -60,7 +66,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						key={group.id}
 						type="button"
 						tabIndex={0}
-						aria-label={`Simular ${group.administradora}, parcela ${formatBRL(group.monthlyPayment)} por mês`}
+						aria-label={`Simular ${group.administradora}, parcela ${formatBRL2(group.monthlyPayment)} por mês`}
 						onClick={() => handleSelect(group)}
 						className={cn(
 							"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
@@ -110,7 +116,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 									data-testid={`comparison-chip-secondary-payment-${group.id}`}
 									className="aja-num font-semibold"
 								>
-									{formatBRL(group.monthlyPayment)}/mês
+									{formatBRL2(group.monthlyPayment)}/mês
 								</b>
 							</div>
 							<div className="flex items-center justify-between text-xs">
@@ -191,7 +197,7 @@ function QuotaChip({
 			type="button"
 			role="option"
 			aria-selected={selected}
-			aria-label={`Selecionar ${cota.administradora}, parcela ${formatBRL(cota.monthlyPayment)} por mês`}
+			aria-label={`Selecionar ${cota.administradora}, parcela ${formatBRL2(cota.monthlyPayment)} por mês`}
 			onClick={onSelect}
 			className={cn(
 				"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
@@ -241,7 +247,7 @@ function QuotaChip({
 			<div className="flex flex-col gap-1">
 				<div className="flex items-center justify-between text-xs">
 					<span className="text-muted-foreground">Parcela</span>
-					<b className="aja-num font-semibold">{formatBRL(cota.monthlyPayment)}/mês</b>
+					<b className="aja-num font-semibold">{formatBRL2(cota.monthlyPayment)}/mês</b>
 				</div>
 				<div className="flex items-center justify-between text-xs">
 					<span className="text-muted-foreground">Prazo</span>
