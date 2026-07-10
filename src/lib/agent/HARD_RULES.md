@@ -133,6 +133,31 @@ Só a **resposta de RESULTADO** vira bolha. A **barreira REAL é código** — o
 - **Sem mais de 2 perguntas** por mensagem
 - **Sem garantia de contemplação** em prazo específico
 
+### 1.9. Redução de prazo, reserva prematura e léxico banido (FIX-234)
+
+**Redução de prazo (D7)** — o abatimento do lance (dinheiro ou embutido) vira **parcela menor**, nunca prazo menor. Frases proibidas:
+
+- "reduzir o prazo"
+- "terminar antes"
+- "quitar antes"
+
+**Reserva/garantia prematura (invariante #9)** — nada foi contratado até o `present_contract_form`/offer-confirm self-service completar. Frases proibidas na fala da LLM:
+
+- "cota garantida" / "sua cota está garantida"
+- "reservado" / "reservada"
+- "você já está no grupo"
+
+**Barreira em CÓDIGO (Lei 4):** `orchestrator/sanitizer.ts` (`isPrazoReductionClaim`, `isPrematureReservationClaim`) dropa esses segmentos em runtime — mesma defesa-em-profundidade do FIX-190. Não se aplica à copy determinística pós-evento do fechamento self-service ("sua reserva está confirmada", terminologia oficial da Ata 2026-07-04) — essa nunca passa pelo sanitizer.
+
+**Léxico banido (tom consultivo, docs/04-copy-fluxos.md)** — gíria que quebra o tom de "bom consultor, não um brother":
+
+- "saco" (ex.: "saco, né?")
+- "furar a fila"
+- "carro-problema"
+- "na sua cabeça" (ex.: "qual carro tá na sua cabeça")
+
+Substitutos ✅: "entendo bem" / "antecipar a contemplação" / descrever a situação sem rótulo / "qual carro você tem em mente".
+
 ---
 
 ## 2. Fluxos obrigatórios

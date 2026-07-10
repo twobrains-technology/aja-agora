@@ -69,10 +69,75 @@ export function isTechnicalFallback(segment: string): boolean {
 	return TECHNICAL_FALLBACK_PATTERNS.some((rx) => rx.test(s));
 }
 
-/** Segmento EFÊMERO: preâmbulo de processo (FIX-188) OU fallback técnico (FIX-190).
- * Ambos são dropados antes de virar mensagem. */
+// FIX-234 (handoff agente-vendas-consorcio, 2026-07-09 — D7/05-compliance) —
+// "reduzir o prazo"/"terminar antes"/"quitar antes": o abatimento do lance
+// (dinheiro OU embutido) vira PARCELA MENOR, nunca prazo menor. Prometer prazo
+// reduzido é a mesma classe de risco regulatório de "garantir contemplação em
+// mês específico" (CDC art. 37) — barreira em CÓDIGO (Lei 4), a regra no
+// prompt sozinha não segura sob carga.
+const PRAZO_REDUCTION_PATTERNS: RegExp[] = [
+	/\breduzir\s+o\s+prazo\b/i,
+	/\bterminar\s+antes\b/i,
+	/\bquitar\s+antes\b/i,
+];
+
+/** Um segmento promete redução de prazo (D7, proibido) — não pode virar bolha. */
+export function isPrazoReductionClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PRAZO_REDUCTION_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-234 — "reservado/cota garantida/você já está no grupo" ANTES da
+// contratação real (invariante #9, docs/05-compliance-e-dados.md): nada foi
+// contratado ainda até o `present_contract_form`/offer-confirm self-service
+// completar. Mira a LLM afirmando isso na própria fala, não a copy
+// determinística pós-evento (que usa a terminologia oficial "reserva de
+// cota" da Ata 2026-07-04 e não passa por este sanitizer).
+const PREMATURE_RESERVATION_PATTERNS: RegExp[] = [
+	/\bcota\b[\s\S]{0,25}\bgarantida\b/i,
+	/\breservad[ao]\b/i,
+	/\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i,
+];
+
+/** Um segmento afirma reserva/garantia prematura (proibido, invariante #9) —
+ * não pode virar bolha. */
+export function isPrematureReservationClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PREMATURE_RESERVATION_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
+// "brother". "carro-problema" mira o COMPOSTO pejorativo (não a menção neutra
+// de "problema no carro"); "na sua cabeça" mira a expressão de gíria completa
+// ("qual carro tá na sua cabeça"), não qualquer menção a "cabeça".
+const BANNED_LEXICON_PATTERNS: RegExp[] = [
+	/\bsaco\b/i,
+	/\bfurar\s+a\s+fila\b/i,
+	/\bcarro-problema\b/i,
+	/\bna\s+sua\s+cabe[çc]a\b/i,
+];
+
+/** Um segmento usa léxico banido (gíria/tom informal demais) — não pode virar
+ * bolha. */
+export function isBannedLexicon(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return BANNED_LEXICON_PATTERNS.some((rx) => rx.test(s));
+}
+
+/** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
+ * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234).
+ * Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string): boolean {
-	return isProcessPreamble(segment) || isTechnicalFallback(segment);
+	return (
+		isProcessPreamble(segment) ||
+		isTechnicalFallback(segment) ||
+		isPrazoReductionClaim(segment) ||
+		isPrematureReservationClaim(segment) ||
+		isBannedLexicon(segment)
+	);
 }
 
 /** Quebra o texto em segmentos (frases) mantendo o delimitador (. ! ? : \n) à

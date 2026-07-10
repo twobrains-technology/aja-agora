@@ -15,6 +15,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	EphemeralTextFilter,
+	isBannedLexicon,
+	isPrazoReductionClaim,
+	isPrematureReservationClaim,
 	isProcessPreamble,
 	isTechnicalFallback,
 	joinSeparator,
@@ -174,6 +177,83 @@ describe("FIX-190 — fallback técnico ('atualiza a página') é dropado em run
 		let emitted = f.push("Atualiza a página e tenta de novo.");
 		emitted += f.flush();
 		expect(emitted.toLowerCase()).not.toContain("atualiza a página");
+	});
+});
+
+describe("FIX-234 — redução de prazo é PROIBIDA (D7: abatimento vira parcela menor, nunca prazo menor)", () => {
+	const REDUCAO_PRAZO_SEGMENTS = [
+		"Com esse lance dá pra reduzir o prazo do seu consórcio.",
+		"Isso ajuda a terminar antes do previsto.",
+		"Assim você consegue quitar antes do prazo final.",
+	];
+
+	it("isPrazoReductionClaim pega as frases de redução de prazo", () => {
+		for (const s of REDUCAO_PRAZO_SEGMENTS) {
+			expect(isPrazoReductionClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima sobre prazo (menção neutra, sem prometer redução)", () => {
+		expect(isPrazoReductionClaim("O prazo desse grupo é de 60 meses.")).toBe(false);
+		expect(isPrazoReductionClaim("A parcela fica menor com o abatimento.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de redução de prazo", () => {
+		const input = "Boa notícia! Com esse lance dá pra reduzir o prazo do seu consórcio. Vamos seguir?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("reduzir o prazo");
+		expect(out).toContain("Boa notícia!");
+	});
+});
+
+describe("FIX-234 — reserva/garantia PREMATURA é PROIBIDA (invariante #9: nada foi contratado ainda)", () => {
+	const RESERVA_PREMATURA_SEGMENTS = [
+		"Sua cota já está garantida com esse grupo.",
+		"Sua cota está garantida, pode ficar tranquilo.",
+		"Já reservado, parabéns!",
+		"Você já está no grupo, é só aguardar.",
+	];
+
+	it("isPrematureReservationClaim pega as frases de reserva/garantia prematura", () => {
+		for (const s of RESERVA_PREMATURA_SEGMENTS) {
+			expect(isPrematureReservationClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima que não afirma reserva/garantia", () => {
+		expect(isPrematureReservationClaim("Vamos ver se esse grupo faz sentido pra você.")).toBe(
+			false,
+		);
+	});
+
+	it("stripProcessPreamble também remove o segmento de reserva prematura", () => {
+		const input = "Boa! Sua cota já está garantida com esse grupo. Só falta assinar depois.";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("garantida");
+		expect(out).toContain("Boa!");
+	});
+});
+
+describe("FIX-234 — léxico banido (tom consultivo, não 'brother')", () => {
+	const LEXICO_BANIDO_SEGMENTS = [
+		"Saco, né? Entendo bem.",
+		"Dá pra furar a fila com um lance.",
+		"Todo carro-problema incomoda.",
+		"Qual carro tá na sua cabeça?",
+	];
+
+	it("isBannedLexicon pega as frases do léxico banido", () => {
+		for (const s of LEXICO_BANIDO_SEGMENTS) {
+			expect(isBannedLexicon(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima equivalente (as versões ✅ do docx)", () => {
+		expect(isBannedLexicon("Entendo bem — quando o carro dá trabalho, atrapalha tudo.")).toBe(
+			false,
+		);
+		expect(isBannedLexicon("Dá pra antecipar a contemplação com um lance.")).toBe(false);
+		expect(isBannedLexicon("Qual carro você tem em mente?")).toBe(false);
 	});
 });
 
