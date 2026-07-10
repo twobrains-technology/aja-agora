@@ -104,18 +104,24 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 
 				{/* Body */}
 				<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
-					{/* Credit value */}
+					{/* Credit value — hero (é o que o cliente compra) */}
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-xl font-bold leading-tight text-foreground mt-0.5">
+						<p
+							data-testid="group-card-hero-credit"
+							className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]"
+						>
 							{formatBRL(payload.creditValue)}
 						</p>
 					</div>
 
-					{/* Monthly payment — hero number, blue */}
+					{/* Monthly payment — discreta, logo abaixo da carta */}
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-						<p className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
+						<p
+							data-testid="group-card-secondary-payment"
+							className="aja-num text-xl font-semibold leading-tight text-foreground mt-0.5"
+						>
 							{formatBRL(payload.monthlyPayment)}
 						</p>
 					</div>
@@ -136,22 +142,30 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 							<p className="text-xs text-muted-foreground m-0">Vagas</p>
 							<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
 						</div>
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">
-								{formatPercent(payload.contemplationRate)}
-							</p>
-						</div>
-						{/* FIX-223 (Ata 2026-07-04) — lance médio, só com dado real (D11). */}
-						{payload.avgBidValue != null && (
+						{/* FIX-231: `contemplationRate` é, na origem, `monthlyAwardedQuotas`
+						    (contagem real de contemplados/mês, offer-mapper.ts:132-133) — NUNCA
+						    uma fração. Mostrar como "%" era enganoso; segue o mesmo padrão de
+						    contagem do recommendation-card. Ausente/0 → linha omitida. */}
+						{payload.contemplationRate > 0 && (
 							<div>
-								<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+								<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
 								<p className="aja-num text-sm font-semibold mt-0.5">
-									{formatBRL(payload.avgBidValue)}
+									{payload.contemplationRate} por mês
 								</p>
 							</div>
 						)}
 					</div>
+
+					{/* FIX-231 — lance médio vira linha discreta, fora do grid (não é
+					    protagonista). Só com dado real (D11: nunca fabrica). */}
+					{payload.avgBidValue != null && (
+						<p
+							data-testid="group-card-lance-medio"
+							className="text-xs text-muted-foreground m-0 -mt-1"
+						>
+							Lance médio {formatBRL(payload.avgBidValue)} ⌄
+						</p>
+					)}
 
 					{/* CTA ghost */}
 					<Button

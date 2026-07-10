@@ -1,7 +1,7 @@
 ---
 id: FIX-230
 titulo: "Card novo: escassez (present_scarcity) — número placebo 1-6 estável por grupo"
-status: todo
+status: done
 bloco: bloco-cards-ui
 arquivos:
   - src/lib/chat/types.ts
@@ -10,8 +10,10 @@ arquivos:
   - src/lib/agent/orchestrator/runner.ts
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/components/chat/artifacts/scarcity.tsx
-  - src/components/chat/artifacts/artifact-renderer.tsx
+  - src/components/chat/artifact-renderer.tsx
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR7/D4)
+commit: b4b1cc9
+executado_em: 2026-07-10
 ---
 
 ## Palavras do operador (decisão 2026-07-09, LITERAL)
@@ -43,3 +45,16 @@ grupo." Barra **decorativa** (largura fixa ~90%), NUNCA razão N/total (não tem
 - número sempre em `[1,6]`.
 - NUNCA exibe total de cotas nem razão numérica.
 - barra é largura fixa (não deriva de N/total).
+
+## Execução (2026-07-10)
+- Payload usa `administradora` (PT), não `administrator` do exemplo literal do handoff
+  — mesma normalização do FIX-229.
+- Hash djb2 (`stableSlotFromId`) sobre o `groupId` REAL ancorado em `revealGroupsById` —
+  sem grupo ancorado válido, `availableSlots` fica `undefined` e o componente (web e
+  WhatsApp) não renderiza nada, em vez de estimar.
+- **Achado**: os dois guards repo-wide de cobertura WhatsApp
+  (`tests/regression/agent-trajectory.test.ts` e `src/lib/whatsapp/artifact-coverage.test.ts`)
+  usam um mapa de payloads de amostra fixo — precisei adicionar entradas pra
+  `embedded_bid`/`two_paths`/`scarcity` nos DOIS arquivos (o comentário do próprio teste já
+  avisa "mantemos sincronizados").
+- Commit: `b4b1cc9`.

@@ -1,7 +1,7 @@
 ---
 id: FIX-228
 titulo: "Card novo: lance embutido (present_embedded_bid)"
-status: todo
+status: done
 bloco: bloco-cards-ui
 arquivos:
   - src/lib/chat/types.ts
@@ -10,8 +10,10 @@ arquivos:
   - src/lib/agent/orchestrator/runner.ts
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/components/chat/artifacts/embedded-bid.tsx
-  - src/components/chat/artifacts/artifact-renderer.tsx
+  - src/components/chat/artifact-renderer.tsx
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR5/D3)
+commit: dd272b0c
+executado_em: 2026-07-10
 ---
 
 ## Palavras do operador (handoff)
@@ -41,3 +43,21 @@ então o crédito recebido diminui um pouco."
 - o card SEMPRE renderiza a consequência "o crédito recebido diminui" (teste que falha se ausente).
 - payload coagido: `netCredit === creditValue - embeddedBidValue` (server, não LLM).
 - tool só disponível na fase `reveal` (tool-policy).
+
+## Execução (2026-07-10)
+- `maxEmbutidoPct` implementado como 0-100 (convenção JÁ estabelecida no codebase —
+  `contemplation-dial.ts` `DEFAULT_MAX_EMBUTIDO_PCT`, `SimulationResultPayload.embeddedBid.percent`),
+  não a fração 0-1 do exemplo literal do handoff — decisão de consistência técnica, sem
+  ambiguidade de produto.
+- Coerção reaproveita a mesma âncora de oferta do `contemplation_dial` (`resolveOfferSnapshot`,
+  extraído em `runner.ts` a partir do padrão FIX-6/C2 já existente).
+- **Achado durante a execução**: existe um guard repo-wide
+  (`tests/regression/agent-trajectory.test.ts` BUG-WHATSAPP-DROP +
+  `src/lib/whatsapp/artifact-coverage.test.ts`) que exige mapper WhatsApp pra TODA tool
+  em `PRESENTATION_TOOLS` — cada card novo deste bloco também precisa de
+  `<tipo>ToWhatsApp` em `src/lib/whatsapp/formatter.ts`, não só o componente web.
+  Adicionado `embeddedBidToWhatsApp` (mesma regra dura: sempre diz que o crédito
+  recebido diminui). Também bati no guard de vocabulário `jargao-valor-do-bem.test.ts`
+  (proíbe "Crédito líquido" — usa "Valor que você recebe").
+- Commit: `dd272b0c` (consolidado com a nota de conclusão do FIX-231 por um mix de
+  staging na sessão — conteúdo do FIX-228 confirmado no diff do commit).

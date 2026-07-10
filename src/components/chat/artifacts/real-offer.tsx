@@ -1,14 +1,25 @@
 "use client";
 
-import { BadgeCheck, Check, Info } from "lucide-react";
+import { BadgeCheck, Check, Info, ShieldCheck } from "lucide-react";
+import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RealOfferPayload } from "@/lib/chat/types";
+import { AdministradoraLogo } from "./administradora-logo";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const brl2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// FIX-232 (docs/02-cards-novos.md "real-offer"): chips de credibilidade da
+// proposta final — fixos, sem dado variável (não precisam de fonte).
+const CREDIBILITY_CHIPS = [
+	"Sem juros",
+	"Fiscalizado pelo Banco Central",
+	"Dados protegidos (LGPD)",
+	"Acompanhamento até a contemplação",
+];
 
 // Oferta REAL confirmada pela administradora (re-simulação Bevi). O usuário confirma
 // antes do choose_offer — fecha o gap indicativo×real da Descoberta.
@@ -19,10 +30,31 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 	return (
 		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff]">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
+				{/* FIX-232 — header co-branded: Aja Agora + administradora */}
+				<div className="flex items-center justify-between gap-2 pb-1">
+					<span className="flex size-6 items-center justify-center rounded-full bg-[var(--surface-ink)] p-1">
+						<SunMark variant="white" className="size-full" />
+					</span>
+					<span className="text-muted-foreground text-xs">+</span>
+					<AdministradoraLogo
+						administradora={payload.administradora}
+						className="size-6 shrink-0 text-[10px]"
+					/>
+					<span className="flex-1" />
+				</div>
+
 				{/* Selo de confirmação */}
 				<div className="flex items-center gap-2 text-primary">
 					<BadgeCheck className="size-[18px] shrink-0" />
 					<p className="text-sm font-semibold">Confirmado com a {payload.administradora}</p>
+				</div>
+
+				{/* FIX-232 — selo "0% de juros" */}
+				<div className="flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-primary">
+					<ShieldCheck className="size-4 shrink-0" />
+					<p className="text-xs font-semibold leading-snug">
+						0% de juros — você paga o bem, não os juros do banco
+					</p>
 				</div>
 
 				{/* Bloco de dados (stored). BUG-PARCELA-STRING (2026-06-12): payload
@@ -76,6 +108,18 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						? "Demais condições: na sua proposta (PDF), logo após a confirmação."
 						: "Prazo e demais condições: na sua proposta (PDF), logo após a confirmação."}
 				</p>
+
+				{/* FIX-232 — chips de credibilidade */}
+				<div className="flex flex-wrap gap-1.5">
+					{CREDIBILITY_CHIPS.map((chip) => (
+						<span
+							key={chip}
+							className="inline-flex items-center h-6 px-[9px] rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border"
+						>
+							{chip}
+						</span>
+					))}
+				</div>
 
 				{/* CTAs */}
 				<div className="flex flex-col gap-2 pt-0.5">

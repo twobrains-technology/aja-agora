@@ -122,6 +122,12 @@ const REVEAL_EXPECTED = [
 	"get_rates",
 	"present_contemplation_dial",
 	"present_decision_prompt",
+	// FIX-228: lance embutido nasce no reveal, antes da agulha.
+	"present_embedded_bid",
+	// FIX-229: dois caminhos nasce no gate `lance` (reveal).
+	"present_two_paths",
+	// FIX-230: escassez comercial, antes da proposta.
+	"present_scarcity",
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",
