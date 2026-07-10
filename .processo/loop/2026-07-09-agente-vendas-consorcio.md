@@ -114,3 +114,9 @@ Decisão Kairo: carta 211k = clamp + aviso.
 ### r8 consolidada (2026-07-10)
 - r8 mergeada+pushada na develop (9d83483c); test:unit 3244/3244 verde. Base+workspaces r8 deletados. OrbStack só develop.
 - Fable na validação DECISIVA (bloqueador de fabricação de estado matado? matador pra prod?).
+
+## r8 VEREDITO: 8/10 — MATADOR PRA PROD: **SIM** (verificador independente)
+- Bloqueador de fabricação de estado MORTO (FIX-270, 6 sondas adversariais ao vivo). Fecho completo, propostas reais. Suíte 3244/3244.
+- Trajetória: 3→4→4→5→5→7→8→8(matador). Exit primário do loop atingido (verificador aprova).
+- Dívidas 'antes de ESCALAR' (não de deployar): (1) loop empty-turn no wants_more_options (~50s, WhatsApp texto-only sem escape — DÚVIDA ABERTA verificar); (2) justificativa falsa 120k→150k ('a mais próxima' quando foi por score).
+- Nits: blocklist de frases (paráfrase escapa), documentSlotsSent não escrito na web (over-suppress seguro), drop não logado.
