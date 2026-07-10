@@ -85,3 +85,9 @@ Decisão Kairo: carta 211k = clamp + aviso.
 ### r5 consolidada (2026-07-10)
 - r5 mergeada+pushada na develop (f8a55d01); test:unit 3157/3157 verde. Base+workspaces r5 deletados. OrbStack só develop.
 - Fable validando junção r5 (2 P1: espiral de negação [coerce tool input] + seam fechamento [aviso troca marca]).
+
+## Rodada 6 (Fable r5 5/10 — TROCA DE ÂNGULO, nota estagnou 5→5)
+- Ganho r5: fecho COMPLETO ao vivo (assinatura+docs+Parabéns) 1ª vez; gates texto + rawCreditValue ✓.
+- Causa-raiz sistêmica: LLM sai do trilho e o CÓDIGO não contém — chunk tool-error não tratado (negação muda), anti-refazer no prompt falha, resolveOfferByMention desiste. Todos os matadores do Fable são CÓDIGO.
+- Blocos r6: fix-r6-contencao (FIX-262 tool-error+cap, FIX-263 re-ancora textual+anti-refazer código) + fix-r6-mencao-polish (FIX-264 menção v2, FIX-265 menores). Base integ/consorcio-r6.
+- CHECKPOINT: se r6 não subir a nota, vale alinhar com o Kairo até onde perseguir 10/10 (custo/rodada alto; LLM sempre acha jeito novo de sair do trilho).
