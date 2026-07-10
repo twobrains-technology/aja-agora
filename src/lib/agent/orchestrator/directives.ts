@@ -111,8 +111,15 @@ export function buildTimeframeReactionDirective(rangeTitle: string): string {
 	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
 }
 
+// FIX-272 (rodada 8, veredito Fable r7, D4 residual): esta instrução dizia
+// "sobre ter reserva pra lance" — o próprio directive induzia o termo
+// proibido na prosa do LLM (achado ao vivo: "com sua reserva pra lance",
+// "Com sua reserva, dá pra acelerar", inclusive presumindo reserva que o
+// usuário nunca declarou). Troca pra linguagem do gate `lance` (gate-
+// questions.ts:87, FIX-268) e proíbe "reserva" explicitamente na resposta —
+// não basta parar de induzir, o modelo também não pode escolher usá-la.
 export function buildLanceReactionDirective(rangeTitle: string): string {
-	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
+	return `Usuário respondeu "${rangeTitle}" sobre ter como dar um lance pra antecipar a contemplação. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO diga "reserva"/"reservado" (termo proibido pré-contratação, nem presuma reserva que o usuário não declarou). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
 }
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): o convite pra

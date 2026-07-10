@@ -5,6 +5,7 @@ import {
 	buildChooseOfferDirective,
 	buildDiscoveryFailedFallback,
 	buildEmbeddedBidDirective,
+	buildLanceReactionDirective,
 	buildLanceSoParcelaDirective,
 	buildQualifyStartYesDirective,
 	buildScarcityDirective,
@@ -283,6 +284,33 @@ describe("buildChooseOfferDirective — FIX-256: mesma troca de terminologia (se
 		expect(d.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
 		expect(d.toLowerCase()).toMatch(/boleto/);
 		expect(d).toContain("present_contract_form");
+	});
+});
+
+// FIX-272 (rodada 8, veredito Fable r7, D4 residual): o gate `lance` já não
+// dizia mais "reserva" (FIX-268, gate-questions.ts) — mas a REAÇÃO ao clique
+// (este directive, disparado LOGO DEPOIS da resposta do gate) ainda instruía
+// "sobre ter reserva pra lance", e o LLM ecoou o termo na prosa ao vivo 3×
+// ("com sua reserva pra lance", "Com sua reserva, dá pra acelerar") — inclusive
+// presumindo reserva que o usuário nunca declarou. O directive não pode mais
+// induzir nem deixar o modelo livre pra usar a palavra.
+describe("buildLanceReactionDirective — FIX-272: 'reserva' varrido também da REAÇÃO (não só da pergunta do gate)", () => {
+	it("a descrição do que o usuário respondeu NÃO usa 'reserva' (não prime o LLM com o termo)", () => {
+		const d = buildLanceReactionDirective("Sim, tenho como dar");
+		// só a parte que descreve a situação pro modelo (antes do "FLUXO:") —
+		// a proibição explícita mais adiante PRECISA nomear a palavra que veda.
+		const descricao = d.slice(0, d.indexOf("FLUXO:"));
+		expect(descricao.toLowerCase()).not.toMatch(/reserv/);
+	});
+
+	it("proíbe explicitamente o modelo de dizer 'reserva' na reação", () => {
+		const d = buildLanceReactionDirective("Sim, tenho como dar");
+		expect(d.toLowerCase()).toMatch(/n[ãa]o diga.*reserva/);
+	});
+
+	it("segue reagindo sobre a capacidade de dar lance pra antecipar a contemplação (mesma linguagem do gate, FIX-268)", () => {
+		const d = buildLanceReactionDirective("Sim, tenho como dar");
+		expect(d.toLowerCase()).toMatch(/lance/);
 	});
 });
 
