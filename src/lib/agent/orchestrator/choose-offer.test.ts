@@ -240,6 +240,79 @@ describe("FIX-252 — resolveOfferByMention resolve nome/valor mencionado em tex
 	});
 });
 
+// FIX-267 (P1, veredito Fable r6, "o que segura o 7" #3): resolveOfferByMention
+// só casava por nome de administradora ou creditValue — menção por PARCELA
+// ("a de 1.200 por mês") ou PRAZO ("a de 84 meses") não resolvia, mesmo com o
+// grupo EXIBIDO batendo exatamente. Estende o resolver pra casar também
+// monthlyPayment e termMonths — mesma tolerância/semântica determinística
+// (nunca inventa, Lei 3).
+const FLUXO_R7_ROWS = [
+	{
+		type: "comparison_table",
+		payload: {
+			groups: [
+				{
+					id: "g-rodobens",
+					groupId: "g-rodobens",
+					administradora: "RODOBENS",
+					creditValue: 90000,
+					termMonths: 180,
+					monthlyPayment: 1200,
+				},
+				{
+					id: "g-ancora",
+					groupId: "g-ancora",
+					administradora: "ANCORA",
+					creditValue: 92902,
+					termMonths: 120,
+					monthlyPayment: 1213.85,
+				},
+				{
+					id: "g-canopus",
+					groupId: "g-canopus",
+					administradora: "CANOPUS",
+					creditValue: 110000,
+					termMonths: 84,
+					monthlyPayment: 1690.0,
+				},
+			],
+		},
+	},
+];
+
+describe("FIX-267 — resolveOfferByMention resolve por PARCELA (monthlyPayment) e PRAZO (termMonths)", () => {
+	const offers = listShownOffers(FLUXO_R7_ROWS);
+
+	it('"a de 1.200 por mês" → resolve a RODOBENS (parcela exata), não a ÂNCORA', () => {
+		const resolved = resolveOfferByMention(offers, "quero a de 1.200 por mês");
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it('"a da parcela de 1.213,85" (exemplo do veredito r6) → resolve a ÂNCORA', () => {
+		const resolved = resolveOfferByMention(offers, "quero a da parcela de 1.213,85");
+		expect(resolved?.groupId).toBe("g-ancora");
+	});
+
+	it('"a de 84 meses" → resolve a CANOPUS (prazo exato)', () => {
+		const resolved = resolveOfferByMention(offers, "quero a de 84 meses");
+		expect(resolved?.groupId).toBe("g-canopus");
+	});
+
+	it('"a de 7 anos" (prazo em anos) → resolve a CANOPUS (84 meses)', () => {
+		const resolved = resolveOfferByMention(offers, "quero a de 7 anos");
+		expect(resolved?.groupId).toBe("g-canopus");
+	});
+
+	it("nome + parcela do PRÓPRIO grupo nomeado → resolve pelo nome (coerente com o conjunto)", () => {
+		const resolved = resolveOfferByMention(offers, "quero a RODOBENS, a de 1.200 por mês");
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it("parcela mencionada que não bate com NENHUM grupo exibido → null (não inventa)", () => {
+		expect(resolveOfferByMention(offers, "quero a de 5.000 por mês")).toBeNull();
+	});
+});
+
 describe("FIX-251/FIX-252 — listShownOffers extrai todas as cotas do comparison_table sem duplicar", () => {
 	it("4 grupos exibidos, 4 ofertas distintas", () => {
 		const offers = listShownOffers(FLUXO_B_ROWS);
