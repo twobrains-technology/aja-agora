@@ -2,12 +2,11 @@
 
 import { ChevronDown, Info } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
-import { computeContemplationDial, paymentAfterLabel } from "@/lib/consorcio/contemplation-dial";
 import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
@@ -26,9 +25,6 @@ const formatBRL0 = (value: number): string =>
 		currency: "BRL",
 		maximumFractionDigits: 0,
 	}).format(value);
-
-const brlNoDecimals = (value: number): string =>
-	value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 // FIX-197 (§3.6) — a Bevi devolve cartas na denominação do grupo (ex. R$ 300k) e
 // a tela mostra a faixa re-simulada (ex. ~R$ 131k). Sem aviso, o ajuste fica
@@ -128,19 +124,6 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 		: true;
 	const showScoreBreakdown = showFavoritism && scoreBreakdown != null;
 
-	// FIX-221 (Ata 2026-07-04, item 4.2, P0): "mostrar parcela antes e depois da
-	// contemplação (indispensável)" — portado do bloco antes/depois do
-	// contemplation-dial.tsx pra dentro do card (consolidação pedida pela Ata).
-	// Sem mês-alvo escolhido pelo usuário aqui (isso é o simulador-agulha), usa
-	// o MESMO mês-âncora heurístico que o motor já assume internamente quando
-	// não há referenceMonth real da oferta — é a mesma estimativa, mesmo motor
-	// puro, rotulada como estimativa (nunca fabrica dado que não tem).
-	const contemplationPreview = useMemo(() => {
-		if (!(creditValue > 0 && termMonths > 1 && monthlyPayment > 0)) return null;
-		const anchorMonth = Math.min(termMonths - 1, Math.max(1, Math.round(termMonths * 0.25)));
-		return computeContemplationDial({ creditValue, termMonths, targetMonth: anchorMonth, monthlyPayment });
-	}, [creditValue, termMonths, monthlyPayment]);
-
 	const handleFollow = () => {
 		if (isStreaming || !cota) return;
 		// FIX-196: escolha estruturada — carrega o groupId REAL resolvido → contrato
@@ -217,21 +200,37 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 
 			{/* Body */}
 			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
-				{/* Hero monthly payment */}
+				{/* Hero — carta em destaque (FIX-231: é o que o cliente compra) */}
+				<div>
+					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p
+						data-testid="recommendation-hero-credit"
+						className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap"
+					>
+						{formatBRL(creditValue)}
+					</p>
+				</div>
+
+				{/* Parcela — discreta, logo abaixo da carta */}
 				<div>
 					<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap">
+					<p
+						data-testid="recommendation-secondary-payment"
+						className="aja-num text-lg font-semibold leading-tight text-foreground mt-0.5"
+					>
 						{formatBRL(monthlyPayment)}
-						<span className="text-base font-normal text-muted-foreground">/mês</span>
+						<span className="text-sm font-normal text-muted-foreground">/mês</span>
+					</p>
+					{/* FIX-231 (docs/01-gates-e-ordem.md "recommendation") — a parcela
+					    pós-contemplação NÃO aparece aqui; só na agulha (contemplation_dial).
+					    Nota fixa evita a leitura errada de que essa é a parcela definitiva. */}
+					<p className="text-[11px] text-muted-foreground mt-1">
+						Essa é a parcela cheia, que você paga até ser contemplada.
 					</p>
 				</div>
 
 				{/* Key metrics grid 2×2 */}
 				<div className="grid grid-cols-2 gap-x-4 gap-y-3">
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-sm font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{formatBRL(creditValue)}</p>
-					</div>
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Prazo</p>
 						<p className="aja-num text-sm font-semibold mt-0.5">{termMonths} meses</p>
@@ -258,48 +257,6 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						</div>
 					)}
 				</div>
-
-				{/* FIX-221 (Ata 2026-07-04, P0) — parcela ATÉ e DEPOIS da contemplação,
-				    consolidada dentro do card (portado do contemplation-dial.tsx). O
-				    lance TOTAL (embutido + dinheiro) amortiza o saldo pós-contemplação
-				    (modelo AMORTIZA — PENDENTE-Bernardo validar o número exato). */}
-				{contemplationPreview && (
-					<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
-						<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
-							<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-								Até contemplar
-							</span>
-							<b className="aja-num text-[1.05rem] font-bold tabular-nums">
-								{brlNoDecimals(monthlyPayment)}
-							</b>
-						</div>
-						<div className="flex items-center text-primary">→</div>
-						<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-warning/25 bg-[var(--aja-cream)] px-3 py-2.5">
-							<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-								Após receber
-							</span>
-							<b className="aja-num text-[1.05rem] font-bold tabular-nums text-[#8a5e09]">
-								{contemplationPreview.paymentAfterContemplation != null
-									? brlNoDecimals(contemplationPreview.paymentAfterContemplation)
-									: "—"}
-							</b>
-							<small className="text-[10px] text-muted-foreground">
-								{paymentAfterLabel(contemplationPreview.paymentAfterContemplation, monthlyPayment)}
-							</small>
-						</div>
-					</div>
-				)}
-
-				{/* Ata 2026-07-04: educação sempre presente — usar o embutido troca
-				    crédito por facilidade no lance (fato do mecanismo, não depende de
-				    dado específico da oferta). */}
-				{contemplationPreview && (
-					<p className="flex items-start gap-1.5 -mt-1 text-[11px] leading-snug text-muted-foreground">
-						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
-						Usar lance embutido significa que você recebe menos crédito da carta agora
-						(estimativa, não garantia).
-					</p>
-				)}
 
 				{/* FIX-197 (§3.6) — aviso discreto de ajuste de faixa: a carta é da
 				    denominação do grupo (rawCreditValue); ajustamos à faixa pedida

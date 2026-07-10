@@ -5,11 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
-import {
-	computeContemplationDial,
-	type DialLikelihood,
-	paymentAfterLabel,
-} from "@/lib/consorcio/contemplation-dial";
+import { computeContemplationDial, paymentAfterLabel } from "@/lib/consorcio/contemplation-dial";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
@@ -25,13 +21,6 @@ const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-
-// Bucket de chance → rótulo + cor + posição no medidor (coral→âmbar→verde).
-const LIKELIHOOD: Record<DialLikelihood, { label: string; cls: string; pos: number }> = {
-	alta: { label: "alta", cls: "text-success", pos: 82 },
-	media: { label: "média", cls: "text-warning", pos: 50 },
-	baixa: { label: "menor", cls: "text-destructive", pos: 18 },
-};
 
 export function ContemplationDial({ payload }: { payload: ContemplationDialPayload }) {
 	const reduce = useReducedMotion();
@@ -85,7 +74,6 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 	const angle = Math.PI * (1 - fraction); // mês 1 → π (esquerda) · fim → 0 (direita)
 	const tipX = 100 + 72 * Math.cos(angle);
 	const tipY = 100 - 72 * Math.sin(angle);
-	const like = LIKELIHOOD[r.likelihood];
 
 	const setFromPointer = (clientX: number, clientY: number) => {
 		const el = gaugeRef.current;
@@ -233,26 +221,6 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 					<Grab className="size-3" />
 					Arraste o ponteiro pra ajustar o prazo
 				</p>
-
-				{/* Medidor de chance */}
-				<div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-					<span>Chance de contemplação nesse prazo</span>
-					<b className={cn("font-bold capitalize", like.cls)}>{like.label}</b>
-				</div>
-				<div
-					className="relative h-2 rounded-full"
-					style={{
-						background: "linear-gradient(90deg,var(--aja-coral),var(--warning) 50%,var(--success))",
-					}}
-				>
-					<div
-						className={cn(
-							"absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-[var(--surface-ink)] bg-background shadow",
-							!reduce && "transition-[left] duration-300",
-						)}
-						style={{ left: `${like.pos}%` }}
-					/>
-				</div>
 
 				{/* Antes → depois: as duas parcelas que importam */}
 				<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">

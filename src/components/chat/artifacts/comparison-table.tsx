@@ -87,12 +87,15 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 							)}
 						</div>
 
-						{/* Main value — parcela herói */}
+						{/* Main value — carta em destaque (FIX-231: é o que o cliente compra) */}
 						<div>
-							<p className="aja-num text-lg font-bold leading-none text-foreground">
-								{formatBRL(group.monthlyPayment)}
+							<p
+								data-testid={`comparison-chip-hero-credit-${group.id}`}
+								className="aja-num text-lg font-bold leading-none text-primary"
+							>
+								{formatBRL(group.creditValue)}
 							</p>
-							<p className="text-[10px] text-muted-foreground mt-0.5">/mês</p>
+							<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
 						</div>
 
 						{/* Divider */}
@@ -102,14 +105,29 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						{/* Bernardo 2026-06-11: sem "Taxa" no carrossel — composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
 						<div className="flex flex-col gap-1">
 							<div className="flex items-center justify-between text-xs">
-								<span className="text-muted-foreground">Valor do bem</span>
-								<b className="aja-num font-semibold">{formatBRL(group.creditValue)}</b>
+								<span className="text-muted-foreground">Parcela</span>
+								<b
+									data-testid={`comparison-chip-secondary-payment-${group.id}`}
+									className="aja-num font-semibold"
+								>
+									{formatBRL(group.monthlyPayment)}/mês
+								</b>
 							</div>
 							<div className="flex items-center justify-between text-xs">
 								<span className="text-muted-foreground">Prazo</span>
 								<b className="aja-num font-semibold">{group.termMonths}m</b>
 							</div>
 						</div>
+
+						{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
+						{group.avgBidValue != null && (
+							<p
+								data-testid={`comparison-chip-lance-medio-${group.id}`}
+								className="text-[10px] text-muted-foreground -mt-0.5"
+							>
+								Lance médio {formatBRL(group.avgBidValue)}
+							</p>
+						)}
 					</button>
 				);
 			})}
@@ -205,12 +223,15 @@ function QuotaChip({
 				) : null}
 			</div>
 
-			{/* Main value — parcela herói */}
+			{/* Main value — carta em destaque (FIX-231: é o que o cliente compra) */}
 			<div>
-				<p className="aja-num text-lg font-bold leading-none text-foreground">
-					{formatBRL(cota.monthlyPayment)}
+				<p
+					data-testid={`quota-chip-hero-credit-${cota.groupId}`}
+					className="aja-num text-lg font-bold leading-none text-primary"
+				>
+					{formatBRL(cota.creditValue)}
 				</p>
-				<p className="text-[10px] text-muted-foreground mt-0.5">/mês</p>
+				<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
 			</div>
 
 			{/* Divider */}
@@ -219,14 +240,21 @@ function QuotaChip({
 			{/* Details — sem Taxa (Bernardo 2026-06-11); composição na proposta (PDF) */}
 			<div className="flex flex-col gap-1">
 				<div className="flex items-center justify-between text-xs">
-					<span className="text-muted-foreground">Valor do bem</span>
-					<b className="aja-num font-semibold">{formatBRL(cota.creditValue)}</b>
+					<span className="text-muted-foreground">Parcela</span>
+					<b className="aja-num font-semibold">{formatBRL(cota.monthlyPayment)}/mês</b>
 				</div>
 				<div className="flex items-center justify-between text-xs">
 					<span className="text-muted-foreground">Prazo</span>
 					<b className="aja-num font-semibold">{cota.termMonths}m</b>
 				</div>
 			</div>
+
+			{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
+			{cota.avgBidValue != null && (
+				<p className="text-[10px] text-muted-foreground -mt-0.5">
+					Lance médio {formatBRL(cota.avgBidValue)}
+				</p>
+			)}
 		</button>
 	);
 }
