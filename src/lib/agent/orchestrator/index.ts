@@ -314,6 +314,41 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		? await resolveOfferMentionForConversation(conversationId, userText)
 		: null;
 
+	// FIX-263 (P1, veredito Fable r5, seam PARCIAL): confirmação TEXTUAL de uma
+	// oferta JÁ EXIBIDA nunca re-ancorava `recommendedOffer`/`recommendedAdministradora`
+	// — só o clique (choose_offer, route.ts) fazia isso. Resultado ao vivo: o
+	// usuário confirmou ITAÚ 92.902 por texto 3×, mas o hero/aviso de troca de
+	// marca no fechamento seguiu nomeando a ÂNCORA (snapshot stale) — porque
+	// NADA persistia a resolução textual quando o turno não produzia um novo
+	// simulation_result (FIX-252 só re-ancora nesse caso, dentro do runner).
+	// Mesma re-ancoragem determinística do clique, aqui pro caminho de TEXTO —
+	// só pós-reveal (há algo mostrado pra re-ancorar) e só com os 3 números da
+	// oferta mencionada completos (nunca ancora parcial, Lei 3).
+	if (
+		isUserTurn &&
+		mentionedOffer &&
+		meta.revealCompleted === true &&
+		typeof mentionedOffer.creditValue === "number" &&
+		typeof mentionedOffer.termMonths === "number" &&
+		typeof mentionedOffer.monthlyPayment === "number" &&
+		mentionedOffer.groupId !== meta.recommendedOffer?.groupId
+	) {
+		meta.recommendedAdministradora =
+			mentionedOffer.administradora ?? meta.recommendedAdministradora;
+		meta.recommendedOffer = {
+			...meta.recommendedOffer,
+			administradora: mentionedOffer.administradora ?? meta.recommendedOffer?.administradora,
+			creditValue: mentionedOffer.creditValue,
+			termMonths: mentionedOffer.termMonths,
+			monthlyPayment: mentionedOffer.monthlyPayment,
+			groupId: mentionedOffer.groupId,
+		};
+		await persistMeta(conversationId, meta);
+		console.log(
+			`[ancora-fechamento] FIX-263: confirmação textual re-ancorou recommendedOffer pra ${meta.recommendedAdministradora} (groupId=${mentionedOffer.groupId}, conv=${conversationId})`,
+		);
+	}
+
 	const history = await loadConversationHistory(conversationId);
 	const systemContext = buildSystemContext({
 		knownName,

@@ -82,3 +82,29 @@ export function buildStartContractInput(
 		leadId: links.leadId ?? null,
 	};
 }
+
+// FIX-263 (P1, veredito Fable r5, seam PARCIAL, 2026-07-10) — o anti-refazer
+// (não abrir uma 2ª proposta REAL de administradora diferente) era REGRA-NO-
+// PROMPT e falhou ao vivo 2×: o agente negou a proposta RODOBENS registrada,
+// afirmou falsamente que a ITAÚ estava registrada (sem check_proposal_status)
+// e reabriu o contract_form da ITAÚ — a 1 clique de uma 2ª proposta real (CPF
+// + consulta de bureau) na MESMA conversa. Lei 1/4: o guard vira código, não
+// fica no prompt. `route.ts` (contract-submit) chama isto ANTES de startContract
+// com a administradora já registrada em `bevi_proposals` (getLatestBeviProposal)
+// — nunca confia no que o modelo afirma sobre o estado da proposta.
+
+/** A administradora PEDIDA neste fechamento conflita com uma já REGISTRADA
+ * nesta conversa? Mesma normalização do FIX-251 (acento/caixa não disparam
+ * falso-positivo: "Itau" === "ITAÚ"). Sem proposta registrada ainda, ou sem
+ * administradora pedida (defensivo), nunca conflita — só bloqueia quando há
+ * DUAS administradoras REAIS e DIFERENTES em jogo. */
+export function administradoraConflictsWithRegisteredProposal(
+	registeredAdministradora: string | null | undefined,
+	requestedAdministradora: string | null | undefined,
+): boolean {
+	if (!registeredAdministradora || !requestedAdministradora) return false;
+	return (
+		normalizeAdministradora(registeredAdministradora) !==
+		normalizeAdministradora(requestedAdministradora)
+	);
+}
