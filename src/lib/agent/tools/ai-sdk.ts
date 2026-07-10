@@ -181,6 +181,17 @@ export const twoPathsSchema = z.object({
 		),
 });
 
+// FIX-230 (docs/02-cards-novos.md CARD 2) — escassez comercial ("grupo quase
+// cheio"). Input mínimo: a LLM só escolhe o grupo; o número placebo 1-6 é
+// derivado no servidor via hash determinístico do groupId (nunca a LLM).
+export const scarcitySchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -619,6 +630,15 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_scarcity: tool({
+		description:
+			"Apresenta o card de escassez comercial ('Grupo quase cheio · restam apenas N') pro grupo escolhido. Use no fechamento, depois da estratégia, antes da proposta final. O número exibido é gerado pelo sistema a partir do grupo — NÃO invente, NÃO calcule, NÃO mencione o total de cotas do grupo (não é um dado que existe).",
+		inputSchema: scarcitySchema,
+		execute: async (args: z.infer<typeof scarcitySchema>) => {
+			return `[Card de escassez apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
 	present_lead_form: tool({
 		description:
 			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
@@ -959,6 +979,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_contemplation_dial",
 	"present_embedded_bid",
 	"present_two_paths",
+	"present_scarcity",
 ]);
 
 // ============================================================================

@@ -126,6 +126,8 @@ const REVEAL_EXPECTED = [
 	"present_embedded_bid",
 	// FIX-229: dois caminhos nasce no gate `lance` (reveal).
 	"present_two_paths",
+	// FIX-230: escassez comercial, antes da proposta.
+	"present_scarcity",
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",

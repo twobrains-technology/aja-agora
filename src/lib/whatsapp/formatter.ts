@@ -1255,6 +1255,20 @@ export function twoPathsToWhatsApp(payload: Record<string, unknown>): WhatsAppRe
 	};
 }
 
+// FIX-230 (docs/02-cards-novos.md CARD 2 — scarcity). Texto simples — número
+// placebo já coagido no servidor (coerceScarcityPayload). NUNCA menciona
+// total de cotas nem razão N/total (não temos esse dado). Sem
+// `availableSlots` válido, não envia nada (mesmo comportamento do card web —
+// sem fallback/estimativa, D3 do ADR).
+export function scarcityToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const availableSlots = Number(payload.availableSlots);
+	if (!Number.isFinite(availableSlots)) return null;
+	return {
+		type: "text",
+		text: `Grupo quase cheio, restam apenas ${availableSlots}. Quando preencher, entra fila para o próximo grupo.`,
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -1296,6 +1310,8 @@ export function artifactToWhatsApp(
 			return embeddedBidToWhatsApp(payload);
 		case "two_paths":
 			return twoPathsToWhatsApp(payload);
+		case "scarcity":
+			return scarcityToWhatsApp(payload);
 		default:
 			return null;
 	}

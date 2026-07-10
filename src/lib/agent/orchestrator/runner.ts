@@ -31,6 +31,7 @@ import {
 } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
+import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
@@ -477,6 +478,11 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "two_paths") {
 							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							payload = coerceTwoPathsPayload(input, snapshot);
+						}
+						// FIX-230: número placebo 1-6 derivado no servidor do groupId
+						// REAL (hash determinístico) — a LLM nunca escolhe o número.
+						if (artifactType === "scarcity") {
+							payload = coerceScarcityPayload(input, revealGroupsById);
 						}
 						artifacts.push({
 							type: artifactType,

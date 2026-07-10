@@ -363,6 +363,20 @@ export interface TwoPathsPayload {
 	disclaimer: string;
 }
 
+// ---- Card escassez (FIX-230, docs/02-cards-novos.md CARD 2) ----
+
+/** `availableSlots` é PLACEBO comercial 1-6 (decisão de produto 2026-07-09,
+ * ADR docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md D3) — hash
+ * determinístico do grupo (`scarcity-payload.ts` stableSlotFromId), NUNCA
+ * `Math.random()` por render. `groupCode` é o id real ancorado (não exibido
+ * na UI — só contexto/telemetria). `administradora` (PT). */
+export interface ScarcityPayload {
+	groupCode: string;
+	administradora: string;
+	availableSlots: number;
+	disclaimer?: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -382,7 +396,8 @@ export type ArtifactByType =
 	| { type: "document_upload"; payload: DocumentUploadPayload }
 	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
 	| { type: "embedded_bid"; payload: EmbeddedBidPayload }
-	| { type: "two_paths"; payload: TwoPathsPayload };
+	| { type: "two_paths"; payload: TwoPathsPayload }
+	| { type: "scarcity"; payload: ScarcityPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

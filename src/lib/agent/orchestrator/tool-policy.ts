@@ -164,6 +164,8 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// FIX-229: dois caminhos nasce no gate `lance` (reveal), 3ª saída
 				// "só a parcela" — a ligação do gate é do bloco-jornada.
 				"present_two_paths",
+				// FIX-230: escassez comercial, antes da proposta.
+				"present_scarcity",
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
@@ -183,6 +185,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				"present_decision_prompt",
 				"present_embedded_bid",
 				"present_two_paths",
+				"present_scarcity",
 				"present_contract_form",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];

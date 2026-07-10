@@ -10,6 +10,7 @@ import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
 import { RealOffer } from "./artifacts/real-offer";
 import { RecommendationCard } from "./artifacts/recommendation-card";
+import { Scarcity } from "./artifacts/scarcity";
 import { Scenarios } from "./artifacts/scenarios";
 import { SignatureHandoff } from "./artifacts/signature-handoff";
 import { SimulationResult } from "./artifacts/simulation-result";
@@ -84,6 +85,8 @@ function renderArtifact(artifact: Artifact) {
 			return <EmbeddedBid payload={artifact.payload} />;
 		case "two_paths":
 			return <TwoPaths payload={artifact.payload} />;
+		case "scarcity":
+			return <Scarcity payload={artifact.payload} />;
 		case "quick_reply":
 			return null;
 	}

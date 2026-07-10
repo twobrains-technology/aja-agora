@@ -72,6 +72,7 @@ const POST_CLOSURE_FAMILY = new Set<ArtifactType>([
 	"decision_prompt",
 	"embedded_bid",
 	"two_paths",
+	"scarcity",
 ]);
 
 export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [

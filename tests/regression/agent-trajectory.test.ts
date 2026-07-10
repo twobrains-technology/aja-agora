@@ -953,6 +953,9 @@ describe("BUG-WHATSAPP-DROP — artifactToWhatsApp cobre TODAS as PRESENTATION_T
 			scenarios: { scenarios: {} },
 			financing_comparison: { consorcio: {}, financing: {}, diff: {} },
 			whatsapp_optin: {},
+			embedded_bid: { maxEmbutidoPct: 30, creditValue: 120_000, embeddedBidValue: 36_000, netCredit: 84_000, disclaimer: "x" },
+			two_paths: { monthlyPayment: 812, administradora: "X", disclaimer: "x" },
+			scarcity: { groupCode: "g1", administradora: "X", availableSlots: 3 },
 		};
 
 		const expectedArtifactTypes = Array.from(PRESENTATION_TOOLS).map((t) =>
