@@ -7465,7 +7465,11 @@ describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () 
 		const route = readSource("src/app/api/chat/route.ts");
 		const start = route.indexOf('if (action.gate === "lance")');
 		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
-		const lanceBlock = route.slice(start, start + 1800);
+		// FIX-236 (Fable r1) alongou o bloco com o ramo so_parcela + comentário —
+		// janela fixa de 1800 não alcançava mais o pipeGatePrompt("lance-embutido")
+		// no fim do bloco (1927 chars de distância). Margem generosa pra não
+		// quebrar de novo com o próximo comentário/ramo.
+		const lanceBlock = route.slice(start, start + 2600);
 		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
 		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
 		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);
