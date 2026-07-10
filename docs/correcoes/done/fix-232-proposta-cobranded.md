@@ -1,11 +1,13 @@
 ---
 id: FIX-232
 titulo: "Proposta co-branded refinada (real-offer): Aja Agora + administradora, selo 0% juros"
-status: todo
+status: done
 bloco: bloco-cards-ui
 arquivos:
   - src/components/chat/artifacts/real-offer.tsx
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR10)
+commit: f1f3efa
+executado_em: 2026-07-10
 ---
 
 ## Palavras do operador (handoff)
@@ -30,3 +32,17 @@ elementos de credibilidade da proposta final.
 - render do header co-branded + selo + chips.
 - se exibir economia, a premissa (taxa/CET) aparece junto (teste-guard: economia sem premissa = falha).
 - português correto em toda a copy (acentos/cedilha).
+
+## Execução (2026-07-10)
+- Economia vs. financiamento NÃO foi implementada nesta rodada — `RealOfferPayload` não
+  carrega nenhum dado de financiamento/CET; fabricar a comparação sem fonte violaria a
+  própria regra que o card pede pra proteger. O guard (`real-offer.co-branded.test.tsx`)
+  trava a regra pro futuro: se "economia" aparecer no texto, "CET"/"taxa" tem que
+  aparecer junto.
+- **Achado**: um teste pré-existente (`real-offer.test.tsx`, FIX-40) checava a
+  AUSÊNCIA da palavra "contemplação" no card INTEIRO — over-scoped pro seu propósito
+  real (garantir que o RÓTULO do lance médio não promete contemplação). Colidiu com o
+  chip legítimo "Acompanhamento até a contemplação" desta spec. Reescopei o teste pra
+  checar só a linha do lance médio, preservando a intenção original.
+- Único arquivo de produto tocado: `real-offer.tsx` (conforme escopo do card).
+- Commit: `f1f3efa`.
