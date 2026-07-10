@@ -23,6 +23,7 @@ import {
 	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
+	splitSegments,
 	stripProcessPreamble,
 } from "./sanitizer";
 
@@ -143,6 +144,54 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+// FIX-248 (rodada 3, Fable r2, N1 P0): "Juntando R$ 4." | "000,00 por mês" —
+// o splitter tratava o PONTO DE MILHAR como fim de frase e quebrava o valor
+// monetário em 2 bolhas ao vivo. Superfície criada pela narração de dinheiro
+// do FIX-241 ("juntando R$ 4.000,00 por mês, lá pelo mês X..."). Guarda de
+// dígito: um "." colado a um dígito (separador de milhar/decimal) NUNCA é
+// fronteira de sentença — só um "." colado a LETRA é.
+describe("FIX-248 — guarda de dígito no splitter (valor monetário não quebra em 2 bolhas)", () => {
+	it("splitSegments NÃO quebra 'R$ 4.000,00' no ponto de milhar", () => {
+		const segments = splitSegments("Juntando R$ 4.000,00 por mês. Isso ajuda muito.");
+		expect(segments.some((s) => /^000,00/.test(s.trim()))).toBe(false);
+		// reconstrução é lossless (join sem separador reconstitui o original).
+		expect(segments.join("")).toBe("Juntando R$ 4.000,00 por mês. Isso ajuda muito.");
+	});
+
+	it("splitSegments ainda quebra frases reais (fim de frase real preservado)", () => {
+		const segments = splitSegments("Primeira frase. Segunda frase.");
+		expect(segments).toEqual(["Primeira frase.", " Segunda frase."]);
+	});
+
+	it("splitSegments lida com milhar duplo ('R$ 1.234.567,00') sem quebrar em nenhum ponto interno", () => {
+		const segments = splitSegments("O total foi R$ 1.234.567,00 no fim das contas.");
+		expect(segments).toHaveLength(1);
+	});
+
+	it("EphemeralTextFilter: 'Juntando R$ 4.' seguido de '000,00 por mês.' emite como UMA bolha só", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Juntando R$ 4.");
+		// o "." de milhar NÃO pode ter disparado emissão prematura aqui.
+		expect(emitted).toBe("");
+		emitted += f.push("000,00 por mês, lá pelo mês 11 dá.");
+		emitted += f.flush();
+		expect(emitted).toContain("Juntando R$ 4.000,00 por mês");
+		// NUNCA aparece o valor cortado ao meio.
+		expect(emitted).not.toContain("R$ 4.\n");
+	});
+
+	it("EphemeralTextFilter: frase legítima após o valor monetário ainda quebra normalmente", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("O valor é R$ 4.000,00. ");
+		emitted += f.push("Show, vamos em frente.");
+		emitted += f.flush();
+		expect(emitted).toContain("O valor é R$ 4.000,00.");
+		expect(emitted).toContain("Show, vamos em frente.");
 	});
 });
 
