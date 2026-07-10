@@ -2,10 +2,10 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
-import type { ArtifactType } from "@/lib/chat/types";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
@@ -18,8 +18,8 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { resolveOfferMentionForConversation } from "./choose-offer";
-import { computeMoneyAnchor } from "./dial-payload";
 import { isLikelyNameResponse } from "./detect-name-turn";
+import { computeMoneyAnchor } from "./dial-payload";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
@@ -28,6 +28,7 @@ import {
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
+	buildToolErrorRecoveryFallback,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -52,7 +53,8 @@ export type { TurnEvent, TurnInput } from "./types";
 // tem handler próprio em route.ts). Lei 4: invariante de gate vira código,
 // não regra-no-prompt. `intent` (do analyzer) filtra pergunta/dúvida/off-topic
 // ANTES do regex — mesmo critério que decideShowGate já usa pra esses gates.
-const YES_TEXT_MARKERS = /\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
+const YES_TEXT_MARKERS =
+	/\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
 const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
 function detectYesNoText(text: string, intent: UserIntent): boolean | null {
@@ -415,6 +417,25 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		return;
 	}
 
+	// FIX-262 (P1, veredito Fable r5, causa-raiz N1/N2): o runner detectou uma
+	// tool chamada fora do toolset da fase (tool-error) ou o turno estourou o
+	// cap duro de tool-calls — nos dois casos a narração do modelo foi
+	// suprimida (tenderia a negar uma oferta real). O orchestrator materializa
+	// o fallback FIXO que reafirma as opções já mostradas, nunca as nega
+	// (Lei 1: código dispõe, mesmo padrão do discoveryFailedThisTurn acima).
+	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
+		const fallback = buildToolErrorRecoveryFallback({ name: knownName });
+		yield { type: "text-delta", text: fallback };
+		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
+		yield {
+			type: "finish",
+			reason: result.toolCallCapExceededThisTurn
+				? "tool-call-cap-exceeded"
+				: "tool-error-recovered",
+		};
+		return;
+	}
+
 	// Fire-and-forget — extrai fatos do turno e persiste no Letta.
 	// Não awaitamos: turno responde mais rápido; se store falhar, próximo turno
 	// re-extrai do meta corrente.
@@ -529,7 +550,13 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				payload: buildTwoPathsCard(refreshed).payload,
 			});
 			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
-			await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+			await saveMessage(
+				conversationId,
+				"assistant",
+				TWO_PATHS_FOLLOWUP_TEXT,
+				channel,
+				currentPersona,
+			);
 		} else {
 			// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
 			// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE

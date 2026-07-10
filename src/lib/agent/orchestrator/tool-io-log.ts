@@ -18,7 +18,8 @@
  */
 
 /** Chaves cujo valor é sensível por natureza (redigidas inteiras). */
-const SENSITIVE_KEY = /(cpf|phone|celular|telefone|whats|e-?mail|documento|document|\brg\b|passport|passaporte)/i;
+const SENSITIVE_KEY =
+	/(cpf|phone|celular|telefone|whats|e-?mail|documento|document|\brg\b|passport|passaporte)/i;
 
 /** CPF com ou sem pontuação: 529.982.247-25 ou 52998224725. */
 const CPF_RE = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g;
@@ -139,6 +140,55 @@ export function buildToolInputErrorLogLine(args: ToolInputErrorLogArgs): string 
 export function logToolInputError(args: ToolInputErrorLogArgs): void {
 	try {
 		console.error(buildToolInputErrorLogLine(args));
+	} catch {
+		// Observabilidade nunca pode derrubar o turno.
+	}
+}
+
+// FIX-262 (P1, veredito Fable r5 — causa-raiz N1) — o LLM chama uma tool FORA
+// do toolset da fase (ex.: search_groups em reveal/closing, onde tool-policy.ts
+// exclui a descoberta) e o AI SDK v6 emite um chunk `tool-error` (NoSuchToolError)
+// — DIFERENTE do `tool-input-error` do FIX-257 (que é falha de validação Zod
+// de uma tool QUE EXISTE no toolset). Sem case dedicado, esse chunk também
+// caía no `output: null` mudo de `buildToolIoLogLines` (a chamada nunca tem
+// `tool-result` pareado) — e foi ESSE buraco, não o Zod, que alimentou a
+// espiral de negação (o modelo tratou "tool não disponível" como "não existe"
+// e negou 3× ofertas que estavam na própria tabela). Log BARULHENTO e
+// diferenciado (`outcome: "tool_error"`), nunca silencioso.
+export type ToolErrorRecord = {
+	toolCallId?: string;
+	toolName: string;
+	input?: unknown;
+	errorText?: string;
+};
+
+export type ToolErrorLogArgs = {
+	conversationId?: string;
+	stepNumber: number;
+	error: ToolErrorRecord;
+};
+
+export function buildToolErrorLogLine(args: ToolErrorLogArgs): string {
+	return JSON.stringify({
+		level: "error",
+		source: "tool-io",
+		conversation_id: args.conversationId ?? null,
+		step: args.stepNumber,
+		tool: args.error.toolName,
+		toolCallId: args.error.toolCallId ?? null,
+		input: maskPii(args.error.input ?? null),
+		output: null,
+		outcome: "tool_error",
+		error:
+			args.error.errorText ??
+			"Tool chamada fora do toolset da fase, ou falhou na execucao (chunk tool-error do AI SDK).",
+	});
+}
+
+/** Emite o tool-error via `console.error` (server-side). Nunca lança. */
+export function logToolError(args: ToolErrorLogArgs): void {
+	try {
+		console.error(buildToolErrorLogLine(args));
 	} catch {
 		// Observabilidade nunca pode derrubar o turno.
 	}

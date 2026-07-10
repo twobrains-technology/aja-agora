@@ -272,9 +272,7 @@ export function buildSearchSummaryDirective(args: {
 	// 1. Cliente NÃO declarou orçamento mensal (monthlyBudget undefined)
 	// 2. Categoria é MOTO (não coleta orçamento mensal — system-prompt FIX-104 passo 15-17)
 	const hasBudget =
-		category !== "moto" &&
-		typeof q.monthlyBudget === "number" &&
-		q.monthlyBudget > 0;
+		category !== "moto" && typeof q.monthlyBudget === "number" && q.monthlyBudget > 0;
 	const budgetArgs = hasBudget
 		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
 		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;
@@ -384,6 +382,26 @@ export function buildDiscoveryFailedFallback(args: { name?: string | null }): st
 		"não do seu perfil. Me manda uma mensagem daqui a pouco que eu já trago as opções " +
 		"certas pra você. Se preferir, também posso te conectar com um especialista da Aja " +
 		"pra seguir com você."
+	);
+}
+
+// ---- Tool fora do trilho / loop de tool-calls (FIX-262) — fallback humano determinístico ----
+
+/**
+ * FIX-262 (P1, veredito Fable r5, causa-raiz N1/N2) — mensagem FIXA exibida
+ * quando o modelo chama uma tool fora do toolset da fase (AI SDK emite
+ * `tool-error`) ou o turno estoura o cap duro de tool-calls. Nos dois casos o
+ * runner suprimiu TODA narração do modelo (tende a negar uma oferta real que
+ * está na própria tela — o achado do veredito). É o código dispondo (Lei 1):
+ * NUNCA nega o que já foi mostrado, sempre reafirma que continua válido e
+ * convida o usuário a apontar qual oferta ele quer olhar de novo.
+ */
+export function buildToolErrorRecoveryFallback(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return (
+		`${saudacao}as opções que já apareceram aqui pra você continuam valendo. ` +
+		"Me diz o nome da administradora ou o valor que você quer olhar de novo que eu " +
+		"detalho certinho pra você."
 	);
 }
 
