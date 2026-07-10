@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	anchorMonth,
 	computeContemplationDial,
 	contemplationDialMarks,
 	paymentAfterLabel,
@@ -51,9 +52,9 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
 	});
 
-	it("teto de 80% no lance pra metas muito agressivas", () => {
+	it("FIX-225: teto de 90% no lance pra metas muito agressivas (curva power, clamp novo)", () => {
 		const r = computeContemplationDial({ ...base, targetMonth: 1, historicalWinningBidPct: 60 });
-		expect(r.requiredLancePct).toBeLessThanOrEqual(80);
+		expect(r.requiredLancePct).toBeLessThanOrEqual(90);
 	});
 
 	it("'sem pressa' (mês tardio) → modo sorteio, lance opcional/baixo", () => {
@@ -62,9 +63,9 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		expect(r.requiredLancePct).toBeLessThanOrEqual(10);
 	});
 
-	it("likelihood alta quando dá pra fazer só com a carta (≤ teto embutido)", () => {
+	it("FIX-225: likelihood foi removido do output (heurística sem base de dado)", () => {
 		const r = computeContemplationDial({ ...base, targetMonth: 24 });
-		if (r.requiredLancePct <= 30) expect(r.likelihood).toBe("alta");
+		expect("likelihood" in r).toBe(false);
 	});
 
 	it("clampa targetMonth fora do prazo do grupo", () => {
@@ -76,6 +77,121 @@ describe("computeContemplationDial — trade-off tempo↔lance↔crédito", () =
 		const r = computeContemplationDial({ creditValue: 50_000, termMonths: 60, targetMonth: 12 });
 		expect(r.requiredLancePct).toBeGreaterThanOrEqual(0);
 		expect(r.requiredLanceValue).toBeGreaterThanOrEqual(0);
+	});
+});
+
+// FIX-225 (spec docs/03-regras-calculo.md): a curva hiperbólica antiga achatava em
+// 90% (clamp) nos meses iniciais e nunca convergia a zero no fim do prazo (sorteio
+// não emergia sozinho). A curva power calibrada corrige isso: passa exatamente pelo
+// ponto real (referenceMonth, winningBidPct) e tende a zero no fim do prazo.
+describe("FIX-225 — curva power calibrada (calibração + convergência + winningBidPct por oferta)", () => {
+	it("curve(referenceMonth) === winningBidPct (calibração exata, ±0.5%)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946, // 89_946 / 171_000 = 52,6%
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeCloseTo(52.6, 0);
+	});
+
+	it("curve(termMonths) < 8% — modo sorteio emerge sozinho no fim do prazo", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 96,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeLessThan(8);
+		expect(r.mode).toBe("sorteio");
+	});
+
+	it("curve(m) monotônica decrescente em [1, termMonths]", () => {
+		const input = { creditValue: 171_000, termMonths: 96, averageBid: 89_946, referenceMonth: 20 };
+		const months = [1, 3, 6, 12, 20, 40, 60, 80, 96];
+		const pcts = months.map((m) => computeContemplationDial({ ...input, targetMonth: m }).requiredLancePct);
+		for (let i = 1; i < pcts.length; i++) {
+			expect(pcts[i]).toBeLessThanOrEqual(pcts[i - 1]);
+		}
+	});
+
+	it("curve(1) < 90% — não bate no clamp na região útil (achatamento corrigido)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 1,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(r.requiredLancePct).toBeLessThan(90);
+	});
+
+	it("cartas diferentes → winningBidPct diferentes (derivado POR OFERTA, nunca % fixo)", () => {
+		const cartaA = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946, // 52,6%
+			referenceMonth: 20,
+		});
+		const cartaB = computeContemplationDial({
+			creditValue: 123_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 102_090, // 83% — mesma referenceMonth, oferta bem mais cara
+			referenceMonth: 20,
+		});
+		// No mês de referência, cada carta reflete o SEU próprio winningBidPct —
+		// nunca o lance de uma carta reaproveitado em outra.
+		expect(cartaA.requiredLancePct).toBeCloseTo(52.6, 0);
+		expect(cartaB.requiredLancePct).toBeCloseTo(83, 0);
+		expect(cartaA.requiredLancePct).not.toBe(cartaB.requiredLancePct);
+	});
+
+	it("paymentAfterContemplation nunca excede a parcela base", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 12,
+			averageBid: 89_946,
+			referenceMonth: 20,
+			monthlyPayment: 2_500,
+		});
+		expect(r.paymentAfterContemplation).toBeLessThanOrEqual(2_500);
+	});
+
+	it("nenhuma saída expõe redução de prazo (D7 — fora de escopo)", () => {
+		const r = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect("reducedTermMonths" in r).toBe(false);
+		expect("newTermMonths" in r).toBe(false);
+	});
+
+	it("admSobreEmbutido: presente quando admFeePct informado, undefined no Trilho A (ausente)", () => {
+		const comAdm = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+			admFeePct: 18,
+		});
+		const semAdm = computeContemplationDial({
+			creditValue: 171_000,
+			termMonths: 96,
+			targetMonth: 20,
+			averageBid: 89_946,
+			referenceMonth: 20,
+		});
+		expect(comAdm.admSobreEmbutido).toBeCloseTo(comAdm.embeddedBidValue * 0.18, 2);
+		expect(semAdm.admSobreEmbutido).toBeUndefined();
 	});
 });
 
@@ -137,5 +253,63 @@ describe("paymentAfterLabel — rótulo nunca mente (FIX-221)", () => {
 
 	it("sem estimativa (undefined, ex.: contemplação no último mês) → rótulo neutro", () => {
 		expect(paymentAfterLabel(undefined, 6_800)).not.toMatch(/menor/i);
+	});
+});
+
+// FIX-227: a agulha responde "quando o seu DINHEIRO alcança o lance", não
+// "quando você quer". A comparação é contra o BOLSO (ownCashValue), nunca
+// contra o lance total — o embutido não sai do bolso do cliente. FGTS
+// (vertical imóvel) acelera: abate o bolso necessário antes da comparação.
+describe("anchorMonth — mês em que o dinheiro do cliente alcança o lance (FIX-227)", () => {
+	const imovel = {
+		creditValue: 300_000,
+		termMonths: 180,
+		averageBid: 150_000, // 50%
+		referenceMonth: 60,
+		maxEmbutidoPct: 30,
+	};
+
+	it("compara contra ownCashValue (bolso), não requiredLanceValue (lance total)", () => {
+		// bolso no mês-alvo escolhido é sempre <= lance total (parte vai de embutido).
+		const dial = computeContemplationDial({ ...imovel, targetMonth: 60 });
+		expect(dial.ownCashValue).toBeLessThan(dial.requiredLanceValue);
+		// com dinheiro exatamente igual ao bolso do mês 60 (não ao lance total),
+		// a âncora deve resolver pra um mês <= 60 (o bolso é alcançável antes).
+		const m = anchorMonth(imovel, { initial: dial.ownCashValue, monthlySavings: 0 });
+		expect(m).not.toBeNull();
+		expect(m as number).toBeLessThanOrEqual(60);
+	});
+
+	it("initial cobre o bolso do mês 1 → retorna 1", () => {
+		const dial1 = computeContemplationDial({ ...imovel, targetMonth: 1 });
+		const m = anchorMonth(imovel, { initial: dial1.ownCashValue + 1, monthlySavings: 0 });
+		expect(m).toBe(1);
+	});
+
+	it("monthlySavings=0 e initial insuficiente em todo o prazo → retorna null (orienta sorteio)", () => {
+		// Grupo de 1 mês só (sem "esperar até o sorteio" pra diluir o bolso a
+		// zero — a curva SEMPRE converge a 0 no último mês do prazo, então um
+		// prazo mais longo sempre acha âncora no fim; aqui não há "fim" pra
+		// esperar) e sem embutido (bolso = lance inteiro, nunca cai a zero).
+		const semSaida = { creditValue: 300_000, termMonths: 1, averageBid: 150_000, referenceMonth: 1, maxEmbutidoPct: 0 };
+		const m = anchorMonth(semSaida, { initial: 0, monthlySavings: 0 });
+		expect(m).toBeNull();
+	});
+
+	it("FGTS (vertical imóvel) acelera — mês alcançado com FGTS é MENOR (ou igual) que sem FGTS", () => {
+		const money = { initial: 5_000, monthlySavings: 3_000 };
+		const semFgts = anchorMonth(imovel, money);
+		const comFgts = anchorMonth(imovel, { ...money, fgts: 40_000 });
+		expect(semFgts).not.toBeNull();
+		expect(comFgts).not.toBeNull();
+		expect(comFgts as number).toBeLessThanOrEqual(semFgts as number);
+	});
+
+	it("monotonicidade: mais poupança/mês → mês alcançado nunca aumenta", () => {
+		const pouco = anchorMonth(imovel, { initial: 1_000, monthlySavings: 1_000 });
+		const muito = anchorMonth(imovel, { initial: 1_000, monthlySavings: 5_000 });
+		expect(pouco).not.toBeNull();
+		expect(muito).not.toBeNull();
+		expect(muito as number).toBeLessThanOrEqual(pouco as number);
 	});
 });

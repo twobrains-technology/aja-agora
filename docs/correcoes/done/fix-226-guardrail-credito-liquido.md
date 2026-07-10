@@ -1,12 +1,14 @@
 ---
 id: FIX-226
 titulo: "Guardrail de crédito líquido — netCredit nunca abaixo do valor do bem"
-status: todo
+status: done
 bloco: bloco-motor-calculo
 arquivos:
   - src/lib/agent/recommendation.ts
   - src/lib/agent/recommendation.test.ts
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR2/D6)
+commit: 961a869
+executado_em: "2026-07-09"
 ---
 
 ## Palavras do operador (handoff)

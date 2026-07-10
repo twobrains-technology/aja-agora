@@ -1,12 +1,16 @@
 ---
 id: FIX-225
 titulo: "Substituir a curva do lance necessário (hiperbólica → power calibrada)"
-status: todo
+status: done
 bloco: bloco-motor-calculo
 arquivos:
   - src/lib/consorcio/contemplation-dial.ts
   - src/lib/consorcio/contemplation-dial.test.ts
+  - src/lib/consorcio/contemplation-dial.oferta-real.test.ts
+  - src/lib/consorcio/plan-estimate.ts
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR0/D0)
+commit: 9d24bbb
+executado_em: "2026-07-09"
 ---
 
 ## Palavras do operador (handoff)
