@@ -3025,6 +3025,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 	// Meta de conversa que JA completou qualify + reveal (o usuario viu tudo).
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3175,6 +3176,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", () => {
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3802,6 +3804,7 @@ describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre
 describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
 	function qualifiedSemIdentidade(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -3911,6 +3914,7 @@ describe("MOCK-RUNTIME-MORTO — descoberta nunca mais serve dado fictício", ()
 describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", () => {
 	function postRevealSemOferta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4355,6 +4359,7 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de hasLance='yes'", () => {
 	function metaQualificado(hasLance: "yes" | "no" | "maybe"): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4622,6 +4627,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 		// O que o componente entrega → qualifyAnswers; nextGate deve ir pro
 		// identify sem passar por timeframe/lance/lance-value/lance-embutido.
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4641,6 +4647,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 
 	it("funil: plano PARCIAL (sem decidir lance embutido) → gate educativo continua", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -6013,6 +6020,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 
 	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
 		const base: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -6311,6 +6319,7 @@ describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_g
 
 	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			currentPersona: "auto",
 			experiencePrev: "first",
@@ -6945,6 +6954,7 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 		});
 
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -8368,11 +8378,19 @@ describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista",
 // Aqui: cassette do texto observado + acoplamento à decisão/gate.
 // ============================================================================
 describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem próximo passo", () => {
-	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print).
+	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print). FIX-233 (D2):
+	// `experience` desceu pra PÓS-reveal — o clique só é alcançável depois de
+	// consent/identify/credit/search/reveal já resolvidos.
 	function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
+			qualifyConsented: true,
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,
 			...over,
@@ -8409,7 +8427,7 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 		).toBe(false);
 	});
 
-	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro consent", () => {
+	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro timeframe (FIX-233: próximo passo pós-experience)", () => {
 		// shouldMarkDoubtsAddressed reconhece o turno de servidor como endereçamento.
 		expect(
 			shouldMarkDoubtsAddressed({
@@ -8418,11 +8436,12 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 				userReplied: true,
 			}),
 		).toBe(true);
-		// Aplicado o marcador, o funil oferece o consent NO MESMO turno server-authored.
+		// Aplicado o marcador, o funil oferece o timeframe NO MESMO turno server-authored
+		// (FIX-233: experience desceu pra pós-reveal, e o consent já foi resolvido antes).
 		const marked = doubtsClickMeta({ doubtsAddressed: true });
-		expect(nextGate(marked, { hasContactName: true })).toBe("consent");
+		expect(nextGate(marked, { hasContactName: true })).toBe("timeframe");
 		expect(
-			decideShowGate({ gate: "consent", intent: "neutral", meta: marked, isUserTurn: false }),
+			decideShowGate({ gate: "timeframe", intent: "neutral", meta: marked, isUserTurn: false }),
 		).toBe(true);
 	});
 
@@ -8453,6 +8472,7 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inatividade", () => {
 	function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
 			experiencePrev: "first",
@@ -8555,6 +8575,7 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 	/** Estado no gate de VALOR pendente: pré-qualificação feita, creditMax ausente. */
 	function creditGateMeta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",

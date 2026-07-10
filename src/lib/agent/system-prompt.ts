@@ -943,15 +943,30 @@ REGRAS DURAS deste estado:
 - Se o usuário quiser OUTRO consórcio (nova cota/novo bem), diga que é possível iniciar um novo consórcio — uma nova jornada — a qualquer momento: a reserva já está concluída nesta conversa. NÃO reabra a qualificação.`;
 }
 
+/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — o gate `desire`
+ * (não bloqueante) coleta `motivation` (o motivo de agora) por texto livre. O
+ * dono do produto pediu que ela seja ESPELHADA no discurso — "quando o carro
+ * dá trabalho, atrapalha tudo" — mas UMA vez só, não repetida a cada turno.
+ * Como o bloco é reconstruído a cada turno a partir do meta (sem flag própria
+ * de "já espelhado"), a instrução se apoia no histórico visível ao modelo:
+ * ele reconhece se já mencionou o motivo antes e não repete. */
+export function motivationMirrorSection(motivation: string | null | undefined): string {
+	if (!motivation || !motivation.trim()) return "";
+	return `## Motivação do cliente (contexto do gate "desire")
+O cliente mencionou este motivo pra querer o bem agora: "${motivation}". Espelhe isso com empatia UMA ÚNICA VEZ na conversa (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo"), preferencialmente perto de quando ele chegou. Se você já mencionou esse motivo em algum turno anterior (confira o histórico), NÃO repita — siga a conversa normalmente.`;
+}
+
 function buildSpecialistDynamicBlocks(
 	expertise: ExpertiseLevel,
 	whatsappStage: WhatsappOptinStage,
 	contractClosedInfo: ContractClosedInfo | null = null,
+	motivation: string | null = null,
 ): string {
 	return [
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
+		motivationMirrorSection(motivation),
 	]
 		.filter(Boolean)
 		.join("\n\n");
@@ -967,6 +982,9 @@ export function buildSpecialistPrompt(
 	// FIX-11: default null (sem contrato fechado) — comportamento atual em
 	// paths que não derivam do meta; o runtime real (resolveAgent) deriva.
 	contractClosedInfo: ContractClosedInfo | null = null,
+	// FIX-233: motivo do gate `desire`, quando capturado — default null
+	// (comportamento atual em paths que não derivam do meta).
+	motivation: string | null = null,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1058,7 +1076,12 @@ ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 
 	return {
 		stable,
-		dynamic: buildSpecialistDynamicBlocks(expertise, whatsappOptinStage, contractClosedInfo),
+		dynamic: buildSpecialistDynamicBlocks(
+			expertise,
+			whatsappOptinStage,
+			contractClosedInfo,
+			motivation,
+		),
 	};
 }
 

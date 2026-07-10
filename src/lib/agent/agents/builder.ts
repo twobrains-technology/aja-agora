@@ -141,6 +141,7 @@ export function buildAgent(
 				opts.currentDate,
 				opts.whatsappOptinStage,
 				opts.contractClosedInfo ?? null,
+				opts.meta?.qualifyAnswers?.motivation ?? null,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,

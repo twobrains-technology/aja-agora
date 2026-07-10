@@ -51,6 +51,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
 			// texto do agente (gateQuestion('name')=null), o card só complementa.
 			return { kind: "name", gate: "name" };
+		case "desire":
+			// FIX-233: gate não bloqueante, sem card — as duas perguntas (bem
+			// específico + motivo) são conversa livre; o texto sai no directive.
+			return null;
 		case "experience":
 			return {
 				kind: "chips",

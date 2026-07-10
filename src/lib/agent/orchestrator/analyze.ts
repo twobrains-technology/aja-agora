@@ -163,6 +163,20 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
+	// FIX-233 (gate `desire`, não bloqueante): captura oportunista de
+	// desiredItem/motivation por texto livre — o gate não bloqueia o funil se
+	// eles nunca chegarem, mas quando o usuário os menciona (aqui ou em
+	// qualquer turno posterior), salva a primeira ocorrência.
+	if (analysis.desiredItem && !q.desiredItem) {
+		q.desiredItem = analysis.desiredItem;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	if (analysis.motivation && !q.motivation) {
+		q.motivation = analysis.motivation;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
 	// BUG-FUNIL-PULA-PASSO2 (QA noturno 2026-06-21): NÃO presumir experiência nem
 	// consentimento só porque o usuário voluntariou um dado de qualificação (valor/
 	// prazo/lance) em texto livre. Antes, qualquer extração cravava

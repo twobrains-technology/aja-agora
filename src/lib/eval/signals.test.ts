@@ -264,6 +264,7 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 	it("retorna o próximo gate pendente conforme nextGate()", () => {
 		const r = computeSignals({
 			metadata: {
+				desireAsked: true,
 				currentCategory: "imovel",
 				experiencePrev: "first",
 				qualifyConsented: true,

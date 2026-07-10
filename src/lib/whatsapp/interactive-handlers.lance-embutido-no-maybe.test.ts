@@ -123,13 +123,14 @@ describe("FIX-118 — WhatsApp educação de lance embutido pra no/maybe (parida
 describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca re-busca", () => {
 	it("'Sem lance embutido' pós-reveal → fireGate('simulator-offer'), NUNCA runSearchSummaryWithOrchestrator", async () => {
 		mocks.meta = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			qualifyAnswers: { creditMax: 200_000, hasLance: "no" },
+			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "no" },
 		} as ConversationMetadata;
 
 		await dispatch("lanceembutido_no", "Sem lance embutido");
@@ -141,13 +142,14 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 
 	it("'Sim, considerar' pós-reveal → também despacha simulator-offer, não a busca", async () => {
 		mocks.meta = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			qualifyAnswers: { creditMax: 200_000, hasLance: "yes", lanceValue: 30_000 },
+			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "yes", lanceValue: 30_000 },
 		} as ConversationMetadata;
 
 		await dispatch("lanceembutido_yes", "Sim, considerar");
@@ -162,13 +164,14 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 	// simulator-offer com a flag ainda false e o card sairia 2× (o "sim" ignorado).
 	it("idempotência: ao despachar simulator-offer, persiste simulatorOfferDispatched=true e passa a flag pro fireGate", async () => {
 		mocks.meta = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			qualifyAnswers: { creditMax: 200_000, hasLance: "no" },
+			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "no" },
 		} as ConversationMetadata;
 
 		await dispatch("lanceembutido_no", "Sem lance embutido");

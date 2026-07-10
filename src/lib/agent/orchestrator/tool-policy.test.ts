@@ -125,6 +125,7 @@ const REVEAL_EXPECTED = [
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",
+	"present_two_paths",
 	"present_value_picker",
 	"present_whatsapp_optin",
 	"simulate_contemplation",

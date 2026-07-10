@@ -18,6 +18,7 @@ import { isLikelyNameResponse } from "./detect-name-turn";
 import {
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildLanceSoParcelaDirective,
 	buildSearchSummaryDirective,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -303,9 +304,15 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-		const directive = buildDecisionPromptDirective({
-			administradora: refreshed.recommendedAdministradora,
-		});
+		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
+		// lance-value/lance-embutido/simulator-offer; o card certo é
+		// present_two_paths (dois caminhos), não present_decision_prompt.
+		const directive =
+			refreshed.qualifyAnswers?.hasLance === "so_parcela"
+				? buildLanceSoParcelaDirective()
+				: buildDecisionPromptDirective({
+						administradora: refreshed.recommendedAdministradora,
+					});
 		yield* runTurn({
 			channel,
 			conversationId,
@@ -319,6 +326,16 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	}
 
 	if (result.nextGateToFire) {
+		// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): gate `desire` é
+		// NÃO bloqueante — marcado na EMISSÃO (mesmo padrão de consentOffered/
+		// simulatorOfferDispatched), nunca na resposta. Pulou ou não, o funil
+		// nunca mais re-emite este gate.
+		if (result.nextGateToFire === "desire") {
+			const refreshed = await reloadMeta(conversationId);
+			if (!refreshed.desireAsked) {
+				await persistMeta(conversationId, { ...refreshed, desireAsked: true });
+			}
+		}
 		if (result.nextGateToFire === "consent") {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.consentOffered) {

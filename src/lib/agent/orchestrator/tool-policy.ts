@@ -158,6 +158,11 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				"present_decision_prompt",
+				// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — 3ª saída do
+				// gate `lance` ("só a parcela"). Tool do bloco-cards-ui (paralelo);
+				// referenciada pelo NOME — allowlist é lista de strings sem validação
+				// contra o registry, tolera até o merge do bloco irmão.
+				"present_two_paths",
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
@@ -176,6 +181,10 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				"present_contemplation_dial",
 				"present_decision_prompt",
 				"present_contract_form",
+				// FIX-233 — a 3ª saída do lance ("só a parcela") já roda com
+				// decisionDispatched=true (persistido antes do directive), então a
+				// fase aqui é "closing" — precisa da tool nas duas fases.
+				"present_two_paths",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
 		case "terminal":

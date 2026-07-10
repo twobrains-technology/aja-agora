@@ -29,7 +29,11 @@ export type QualifyAnswers = {
 	prazoMeses?: number;
 	/** Eixo Bevi derivado do prazo escolhido (jornada do doc 2026-05-29). */
 	objetivo?: Objetivo;
-	hasLance?: "yes" | "maybe" | "no";
+	/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): 3ª saída do gate
+	 * `lance` — "não quero comprometer nada além da parcela". Pula lance-value/
+	 * lance-embutido/simulator-offer (dial); o agente chama `present_two_paths`
+	 * (tool do bloco-cards-ui) e devolve a decisão ao usuário. */
+	hasLance?: "yes" | "maybe" | "no" | "so_parcela";
 	/** Valor aproximado do lance que o usuário pretende ofertar (em reais).
 	 * Capturado no sub-fluxo de lance embutido quando hasLance="yes". Bevi: valorDoLance. */
 	lanceValue?: number;
@@ -38,6 +42,18 @@ export type QualifyAnswers = {
 	lanceEmbutido?: boolean;
 	/** Percentual do lance embutido aceito (Bevi aceita 30 ou 50). Default 30. */
 	lanceEmbutidoPercent?: 30 | 50;
+	/** FIX-233 — gate `desire` (não bloqueante): bem específico que o usuário
+	 * tem em mente ("um Corolla", "apê de 2 quartos"). Espelhado no card/copy
+	 * de forma livre, não normalizado. */
+	desiredItem?: string;
+	/** FIX-233 — motivação/gatilho do momento ("carro vive na oficina"). Vira
+	 * contexto injetado no prompt e é espelhada UMA vez, não a cada turno. */
+	motivation?: string;
+	/** FIX-233 — quanto o usuário consegue juntar por mês pro lance, quando
+	 * não tem reserva hoje mas pretende ir juntando. Slot tipado apenas; a
+	 * captura por texto livre e o consumo no motor de cálculo (âncora de
+	 * dinheiro na agulha) ficam pro bloco-motor-calculo (PR8 da spec). */
+	monthlySavings?: number;
 };
 
 import type { NavState } from "./orchestrator/navigation";
@@ -55,6 +71,10 @@ export type ConversationMetadata = {
 	 * Push em transições major (gate avançado, persona trocada, artefato chave).
 	 * Pop em detectBackIntent. Cap em NAV_STACK_CAP estados (descarta o mais antigo). */
 	navigationStack?: NavState[];
+	/** FIX-233 — gate `desire` já foi disparado nesta conversa (não bloqueante:
+	 * uma vez marcado, `nextGate` nunca mais o emite, respondido ou não). Mesmo
+	 * padrão de `consentOffered`/`simulatorOfferDispatched`. */
+	desireAsked?: boolean;
 	qualifyConsented?: boolean;
 	/** Set when consent gate fires the first time. Once set, the gate never re-fires —
 	 * user must click "Bora!" / "Entender mais" buttons or volunteer info that triggers

@@ -145,6 +145,7 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 	// usuário (asking_question suprimiu). O funil não fechou o consent ainda.
 	function suppressedConsentMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
 			experiencePrev: "first",
