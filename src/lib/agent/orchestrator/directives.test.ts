@@ -135,6 +135,19 @@ describe("buildEmbeddedBidDirective — card de lance embutido (antes órfão)",
 	it("instrui a escrever SÓ a frase de introdução", () => {
 		expect(buildEmbeddedBidDirective()).toMatch(/APENAS UMA frase/i);
 	});
+
+	// FIX-268 (rodada 7, veredito Fable r6, residual D4): o directive instruía
+	// o LLM a "introduzir o conceito" de lance embutido — e o gate
+	// `lance-embutido` que dispara LOGO EM SEGUIDA (gate-questions.ts,
+	// lanceEmbutidoEdu) já explica o MESMO conceito por completo. Resultado:
+	// a mesma definição ("usar parte da carta como lance") saía 2× no mesmo
+	// turno, em 2 balões seguidos. O directive não pode mais explicar o
+	// conceito — só faz a transição, igual ao buildScarcityDirective.
+	it("NÃO explica o conceito de lance embutido (a educação completa vem do gate lance-embutido logo em seguida — evita duplicar a mesma ideia no turno)", () => {
+		const d = buildEmbeddedBidDirective();
+		expect(d).not.toMatch(/usa(r)? parte da (própria )?carta( de crédito)? como lance/i);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o explique o que [ée] lance embutido/);
+	});
 });
 
 describe("buildScarcityDirective — card de escassez (antes órfão)", () => {

@@ -118,7 +118,9 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				kind: "chips",
 				gate: "lance",
 				options: [
-					{ value: "yes", label: "Sim, tenho reserva" },
+					// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva"
+					// varrido — mesma disciplina do FIX-234/FIX-256.
+					{ value: "yes", label: "Sim, tenho como dar" },
 					{ value: "maybe", label: "Talvez, depende" },
 					{ value: "no", label: "Por enquanto não" },
 					// FIX-236 (Fable r1, P0): 3ª saída — quem não quer comprometer nada além
@@ -391,10 +393,27 @@ export async function pipeOrchestratorToWriter(
 				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
 				break;
 
-			case "meta-update":
+			// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
+			// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
+			// nunca chegava ao trace no canal web — este case era agrupado como
+			// no-op puro (era FIX-24), então route.ts sempre aplicava o default
+			// "ok" por cima, mascarando turnos CONTIDOS como se fossem normais.
+			// Mesmo padrão de suppression/usage: getTraceForWriter recupera o
+			// trace pelo writer já instrumentado, sem mudar assinatura nenhuma.
 			case "finish":
+				getTraceForWriter(writer)?.setFinish(ev.reason);
+				break;
+
+			case "meta-update":
 				// FIX-24: telemetria interna — consumida pelo turn-trace, não
 				// vira UI part. No-op no funil de SSE da web.
+				break;
+
+			case "text-boundary":
+				// FIX-268: força o fechamento do balão de texto aberto — sem
+				// isso, 2 directives seguidos sem artifact/gate no meio colam o
+				// texto num balão só ("1 balão = 1 ideia" violado).
+				closeTextIfOpen();
 				break;
 		}
 	}

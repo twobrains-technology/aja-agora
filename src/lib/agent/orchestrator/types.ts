@@ -44,7 +44,14 @@ export type TurnEvent =
 	// são user-facing: os adapters (web/whatsapp) os tratam como no-op.
 	| { type: "suppression"; artifactType: string; reason: string }
 	| { type: "usage"; cacheRead: number; cacheWrite: number }
-	| { type: "finish"; reason: string };
+	| { type: "finish"; reason: string }
+	// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto picotado"):
+	// força o fechamento do balão de texto aberto SEM depender de um
+	// artifact/gate no meio. Sem isso, 2 directives seguidos (ex.: scarcity →
+	// decision quando o card de scarcity não existe) colam o texto num balão
+	// só, sem espaçamento — "1 balão = 1 ideia" violado. No-op quando não há
+	// balão aberto.
+	| { type: "text-boundary" };
 
 export type TurnInput = {
 	channel: Channel;

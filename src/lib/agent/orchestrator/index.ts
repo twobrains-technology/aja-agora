@@ -590,6 +590,14 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					payload: scarcityCard.payload,
 				});
 			}
+			// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto
+			// picotado no turno de decisão"): quando scarcityCard é null (sem
+			// groupId ancorado), NENHUM artifact separa o texto do directive de
+			// scarcity do texto do directive de decision logo abaixo — os dois
+			// caem no MESMO balão, colados sem espaçamento ("...só pra você
+			// saber:Boa! Então deixa eu confirmar com você:"). Força o boundary
+			// incondicionalmente (no-op quando o artifact já fechou o balão).
+			yield { type: "text-boundary" };
 		}
 		const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
 		yield* runTurn({
