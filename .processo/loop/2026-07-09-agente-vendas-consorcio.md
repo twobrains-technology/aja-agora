@@ -95,3 +95,8 @@ Decisão Kairo: carta 211k = clamp + aviso.
 ### r6 consolidada (2026-07-10)
 - r6 mergeada+pushada na develop (f7cabaa0); test:unit 3195/3195 verde. Base+workspaces r6 deletados. OrbStack só develop.
 - Fable validando junção r6 (troca de ângulo: tool-error tratado no runner + cap steps + re-ancora textual + anti-refazer em código + menção v2).
+
+## Rodada 7 (Fable r6 7/10 — SALTO 5→7, espiral morta) — ACABAMENTO
+- A troca de ângulo (contenção em código) destravou: 4 matadores corrigidos ao vivo, zero regressões, fecho completo.
+- Resta acabamento (não espiral): recuperação enlatada/lenta (72-112s, pede nome já dito 2×) · menção por parcela/prazo · residuais de voz (reserva/dedup/picotado) · finishReason.
+- Blocos r7: fix-r7-recuperacao (FIX-266 recuperação=resolução, FIX-267 parcela/prazo) + fix-r7-voz-polish (FIX-268 voz, FIX-269 observabilidade). Base integ/consorcio-r7.
