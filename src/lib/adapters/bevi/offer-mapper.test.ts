@@ -6,6 +6,7 @@ import {
 	beviOfferToGroupSummary,
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
+	normalizeAdministradoraName,
 	toModelGroupSummary,
 } from "./offer-mapper";
 
@@ -291,5 +292,45 @@ describe("FIX-223 — avgBidValue propagado no shape de descoberta (lance médio
 		const offer = { ...base, averageBid: 5_000 } as unknown as BeviOffer;
 		const model = toModelGroupSummary(beviOfferToGroupSummary(offer)) as Record<string, unknown>;
 		expect(model.avgBidValue).toBe(5_000);
+	});
+});
+
+// FIX-255 (rodada 4, veredito Fable FINAL §N-G): a Bevi devolve `bankLabel`
+// acentuado quando presente ("ITAÚ"), mas o fallback `bank` (usado quando
+// bankLabel está AUSENTE) é código cru sem acento ("ITAU", "TRADICAO",
+// "ANCORA") — visto ao vivo no veredito ("Confirmei com a ITAU/TRADICAO").
+// Nome de administradora sem acento na fala viola o inviolável de PT-BR.
+describe("FIX-255 — normalizeAdministradoraName: acentuação correta dos nomes da Bevi", () => {
+	it("corrige os códigos crus conhecidos", () => {
+		expect(normalizeAdministradoraName("ITAU")).toBe("ITAÚ");
+		expect(normalizeAdministradoraName("TRADICAO")).toBe("TRADIÇÃO");
+		expect(normalizeAdministradoraName("ANCORA")).toBe("ÂNCORA");
+	});
+
+	it("é case-insensitive e tolera espaço nas pontas", () => {
+		expect(normalizeAdministradoraName("itau")).toBe("ITAÚ");
+		expect(normalizeAdministradoraName("  Itau  ")).toBe("ITAÚ");
+	});
+
+	it("nome já correto ou não-mapeado passa intacto (nunca inventa/mangla)", () => {
+		expect(normalizeAdministradoraName("ITAÚ")).toBe("ITAÚ");
+		expect(normalizeAdministradoraName("CANOPUS")).toBe("CANOPUS");
+		expect(normalizeAdministradoraName("RODOBENS")).toBe("RODOBENS");
+		expect(normalizeAdministradoraName("BANCO DO BRASIL")).toBe("BANCO DO BRASIL");
+	});
+
+	it("beviOfferToGroupSummary normaliza quando só o `bank` cru está disponível (bankLabel ausente)", () => {
+		const base = loadFixture("imovel").offers[0];
+		const { bankLabel: _omit, ...rest } = base as unknown as Record<string, unknown>;
+		const offer = { ...rest, bank: "ITAU" } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.administradora).toBe("ITAÚ");
+	});
+
+	it("beviOfferToGroupSummary preserva o bankLabel já acentuado da Bevi", () => {
+		const base = loadFixture("imovel").offers[0];
+		const offer = { ...base, bank: "ITAU", bankLabel: "ITAÚ" } as unknown as BeviOffer;
+		const g = beviOfferToGroupSummary(offer);
+		expect(g.administradora).toBe("ITAÚ");
 	});
 });

@@ -443,12 +443,21 @@ export async function executeSimulateQuota(
 		const relativeDelta = delta / details.creditValue;
 		if (delta > 1 && relativeDelta > 0.01) {
 			const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			// FIX-255 (rodada 4, veredito Fable FINAL §N-E): a mensagem antiga dizia
+			// "ajustada de NOMINAL para SOLICITADO" — mas `simulation` (spreadado
+			// abaixo) é SEMPRE o nominal do grupo: o self-contract (bevi-self-
+			// contract-adapter.ts, simulateQuota) resolve a oferta pelo groupId e
+			// devolve os números fixos dela, `params.creditValue` nunca é usado pra
+			// resimular. A narração então apresentava o nominal como "o valor
+			// correto/pedido" quando na verdade o pedido foi IGNORADO — inversão
+			// semântica (CDC art. 30, oferta tem que ser clara sobre o que
+			// realmente foi simulado).
 			return {
 				...simulation,
 				creditAdjustmentNotice: {
 					requestedCreditValue: args.creditValue,
 					groupNominalCreditValue: details.creditValue,
-					message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+					message: `Voce pediu simular ${fmt(args.creditValue)}, mas esse grupo nao permite ajuste livre de credito — a simulacao abaixo e do valor NOMINAL do grupo (${fmt(details.creditValue)}), nao do valor pedido. Informe isso ao usuario antes de apresentar o resultado.`,
 				},
 			};
 		}
