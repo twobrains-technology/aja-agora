@@ -166,11 +166,76 @@ export function isProactiveCallbackClaim(segment: string): boolean {
 	return PROACTIVE_CALLBACK_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-270 (rodada 8, veredito Fable r7, D5 — ÚNICO bloqueador pra prod): o
+// agente FABRICOU estado no pós-fecho — "os documentos já foram recebidos
+// pela administradora" quando NENHUM upload aconteceu (o cliente pode nunca
+// enviar, achando que já era) e 2× alegou ter re-buscado o catálogo com 0
+// tool-calls ("Não apareceu nenhum grupo novo na faixa hoje"). Estado NUNCA
+// vem da narrativa do LLM (Lei 1) — vem da fonte real: upload confirmado
+// (`meta.documentSlotsSent`, WhatsApp — na web nada escreve nesse campo hoje,
+// então a claim é sempre falsa lá) ou tool-call de busca (`search_groups`/
+// `recommend_groups`) de fato disparada NESTE turno (turn-trace.toolsCalled).
+// Padrões "documentos... já... recebidos/chegaram" exigem "já" pra não pegar
+// frase futura/condicional legítima ("assim que enviar, confirmamos").
+// Nota: `\b` logo após uma vogal acentuada ("á") não funciona como fronteira
+// no modo não-unicode do JS (regex \w não reconhece acento) — usa lookahead
+// de espaço em vez de `\b` nesse ponto específico.
+const DOCUMENT_RECEIPT_CLAIM_PATTERNS: RegExp[] = [
+	/\bdocumentos?\b[\s\S]{0,40}\bj[áa](?=\s)[\s\S]{0,25}\b(recebid[oa]s?|chegaram)\b/i,
+	/\bj[áa]\s+recebemos\s+(seus\s+|os\s+|as\s+)?(fotos|documentos?)\b/i,
+	/\brecebemos\s+(seus\s+|os\s+)?documentos?\b/i,
+];
+
+/** Um segmento afirma que documentos JÁ foram recebidos (estado COMPLETO,
+ * não pedido/futuro) — só pode virar bolha se houve upload real. FIX-270. */
+export function isDocumentReceiptClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return DOCUMENT_RECEIPT_CLAIM_PATTERNS.some((rx) => rx.test(s));
+}
+
+const CATALOG_RESEARCH_CLAIM_PATTERNS: RegExp[] = [
+	/\bre-?busquei\b/i,
+	/\bbusquei\s+(de\s+novo|novamente)\b/i,
+	/\bconsultei\s+o\s+cat[áa]logo\b/i,
+	/\bverifiquei\s+o\s+cat[áa]logo\b/i,
+	/\bn[ãa]o\s+apareceu\s+(nenhum[a]?\s+)?(grupo|oferta|op[çc][ãa]o)s?\s+nov[ao]s?\b/i,
+	/\bn[ãa]o\s+(encontrei|achei)\s+(nada|nenhum[a]?)\s+nov[ao]\b/i,
+];
+
+/** Um segmento afirma re-busca/consulta ao catálogo (estado COMPLETO) — só
+ * pode virar bolha se uma tool de busca real rodou NESTE turno. FIX-270. */
+export function isCatalogResearchClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return CATALOG_RESEARCH_CLAIM_PATTERNS.some((rx) => rx.test(s));
+}
+
+/** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
+ * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
+export type StateVerificationContext = {
+	/** true só quando `meta.documentSlotsSent` tem upload confirmado de fato. */
+	hasReceivedDocuments: boolean;
+	/** true só quando uma tool de busca (search_groups/recommend_groups) já
+	 * rodou neste turno até o ponto corrente do stream. */
+	hasSearchToolCall: boolean;
+};
+
+/** Um segmento afirma estado (documento recebido / re-busca) sem o evento
+ * real por trás — dropar. Sem contexto, nunca dropa (compat retroativa). */
+function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContext): boolean {
+	if (!ctx) return false;
+	if (isDocumentReceiptClaim(segment) && !ctx.hasReceivedDocuments) return true;
+	if (isCatalogResearchClaim(segment) && !ctx.hasSearchToolCall) return true;
+	return false;
+}
+
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
- * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249).
- * Todos são dropados antes de virar mensagem. */
-function isEphemeralSegment(segment: string): boolean {
+ * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
+ * estado fabricado sem lastro real (FIX-270). Todos são dropados antes de
+ * virar mensagem. */
+function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
 		isTechnicalFallback(segment) ||
@@ -178,7 +243,8 @@ function isEphemeralSegment(segment: string): boolean {
 		isPrematureReservationClaim(segment) ||
 		isBannedLexicon(segment) ||
 		isTaxaContemplacaoClaim(segment) ||
-		isProactiveCallbackClaim(segment)
+		isProactiveCallbackClaim(segment) ||
+		isFabricatedStateSegment(segment, ctx)
 	);
 }
 
@@ -219,11 +285,15 @@ export function splitSegments(text: string): string[] {
  * Remove os segmentos de preâmbulo de processo, preservando o espaçamento
  * original entre os segmentos mantidos (a separação de frases legítimas não é
  * tocada — a granularidade de streaming garante que nada seja emitido colado).
+ *
+ * FIX-270: `ctx` opcional habilita a checagem de estado fabricado (documento
+ * recebido / re-busca de catálogo) contra o fato real. Sem `ctx` (chamadas
+ * pré-existentes), o comportamento é idêntico ao anterior.
  */
-export function stripProcessPreamble(text: string): string {
+export function stripProcessPreamble(text: string, ctx?: StateVerificationContext): string {
 	if (!text) return text;
 	const segments = splitSegments(text);
-	const kept = segments.filter((seg) => !isEphemeralSegment(seg));
+	const kept = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
 	return kept.join("");
 }
 
@@ -245,9 +315,17 @@ function lastBoundaryIndex(s: string): number {
  * `fullResponse`); frase legítima é liberada. Garante o invariante "preâmbulo
  * nunca é enviado" (não só "não persistido"), sem matar o streaming (aparece
  * frase-a-frase; o chip determinístico cobre a latência da tool).
+ *
+ * FIX-270: `getContext` opcional (chamado a cada `push`/`flush`, sempre o
+ * estado MAIS RECENTE) habilita a checagem de estado fabricado ao vivo —
+ * `hasSearchToolCall` reflete as tool-calls JÁ processadas até este ponto do
+ * stream (causal: uma claim "já busquei" só é verdadeira se a tool já rodou
+ * ANTES dela na própria geração do modelo).
  */
 export class EphemeralTextFilter {
 	private pending = "";
+
+	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
 	/** Alimenta um delta; devolve o texto LIMPO pronto pra emitir agora. */
 	push(delta: string): string {
@@ -256,7 +334,7 @@ export class EphemeralTextFilter {
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);
 		this.pending = this.pending.slice(idx + 1);
-		return stripProcessPreamble(complete);
+		return stripProcessPreamble(complete, this.getContext?.());
 	}
 
 	/** Fim do bloco/stream: libera a cauda (última frase sem delimitador), também
@@ -265,7 +343,7 @@ export class EphemeralTextFilter {
 		const rest = this.pending;
 		this.pending = "";
 		if (!rest) return "";
-		return stripProcessPreamble(rest);
+		return stripProcessPreamble(rest, this.getContext?.());
 	}
 }
 

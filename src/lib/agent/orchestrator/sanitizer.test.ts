@@ -16,12 +16,14 @@ import { describe, expect, it } from "vitest";
 import {
 	EphemeralTextFilter,
 	isBannedLexicon,
+	isCatalogResearchClaim,
+	isDocumentReceiptClaim,
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
+	isProactiveCallbackClaim,
 	isProcessPreamble,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
-	isProactiveCallbackClaim,
 	joinSeparator,
 	normalizeGluedSentences,
 	splitSegments,
@@ -250,7 +252,8 @@ describe("FIX-234 — redução de prazo é PROIBIDA (D7: abatimento vira parcel
 	});
 
 	it("stripProcessPreamble também remove o segmento de redução de prazo", () => {
-		const input = "Boa notícia! Com esse lance dá pra reduzir o prazo do seu consórcio. Vamos seguir?";
+		const input =
+			"Boa notícia! Com esse lance dá pra reduzir o prazo do seu consórcio. Vamos seguir?";
 		const out = stripProcessPreamble(input);
 		expect(out.toLowerCase()).not.toContain("reduzir o prazo");
 		expect(out).toContain("Boa notícia!");
@@ -387,7 +390,9 @@ describe("FIX-189 — normalizeGluedSentences separa falas coladas pelo modelo",
 	});
 
 	it("NÃO mexe em valores monetários (R$ 1.000,00) nem em números com ponto", () => {
-		expect(normalizeGluedSentences("O valor é R$ 1.000,00 hoje.")).toBe("O valor é R$ 1.000,00 hoje.");
+		expect(normalizeGluedSentences("O valor é R$ 1.000,00 hoje.")).toBe(
+			"O valor é R$ 1.000,00 hoje.",
+		);
 		expect(normalizeGluedSentences("são 72.000 no total")).toBe("são 72.000 no total");
 	});
 
@@ -402,6 +407,157 @@ describe("FIX-189 — normalizeGluedSentences separa falas coladas pelo modelo",
 
 	it("string vazia passa incólume", () => {
 		expect(normalizeGluedSentences("")).toBe("");
+	});
+});
+
+// FIX-270 (rodada 8, veredito Fable r7, D5 — ÚNICO bloqueador pra prod): o
+// agente FABRICOU estado no pós-fecho — "os documentos já foram recebidos pela
+// administradora" (nenhum upload aconteceu, o cliente pode nunca enviar) e 2×
+// "não apareceu nenhum grupo novo na faixa hoje" (toolsCalled=[], nenhuma
+// re-busca real). Estado NUNCA vem da narrativa do LLM (Lei 1) — só do evento
+// real: upload confirmado (`meta.documentSlotsSent`) ou tool-call de busca de
+// fato disparada NESTE turno. `isDocumentReceiptClaim`/`isCatalogResearchClaim`
+// classificam o SEGMENTO; a decisão de dropar exige o contexto real (2ª
+// barreira — puro texto não decide sozinho, precisa do fato).
+describe("FIX-270 — isDocumentReceiptClaim reconhece afirmação de recebimento de documento", () => {
+	const CLAIMS = [
+		"Os documentos já foram recebidos pela administradora.",
+		"Seus documentos já foram recebidos, pode ficar tranquilo.",
+		"Já recebemos seus documentos, obrigado!",
+		"Recebemos os documentos, vamos seguir com a análise.",
+		"Os documentos já chegaram por aqui.",
+	];
+
+	it("classifica como afirmação de recebimento todas as frases observadas", () => {
+		for (const c of CLAIMS) {
+			expect(isDocumentReceiptClaim(c), `deveria classificar: "${c}"`).toBe(true);
+		}
+	});
+
+	it("NÃO classifica pedido/instrução futura de envio (sem afirmar recebimento)", () => {
+		expect(isDocumentReceiptClaim("Pode me mandar seus documentos (RG ou CNH)?")).toBe(false);
+		expect(
+			isDocumentReceiptClaim(
+				"Assim que você enviar os documentos, a gente confirma o recebimento.",
+			),
+		).toBe(false);
+		expect(isDocumentReceiptClaim("Vou precisar do seu RG ou CNH pra seguir.")).toBe(false);
+	});
+
+	it("segmento vazio não é afirmação de recebimento", () => {
+		expect(isDocumentReceiptClaim("")).toBe(false);
+	});
+});
+
+describe("FIX-270 — isCatalogResearchClaim reconhece afirmação de re-busca no catálogo", () => {
+	const CLAIMS = [
+		"Não apareceu nenhum grupo novo na faixa hoje.",
+		"Rebusquei e não achei nada novo.",
+		"Busquei de novo e não encontrei nenhuma opção nova.",
+		"Consultei o catálogo e segue igual.",
+		"Verifiquei o catálogo agora e não mudou nada.",
+	];
+
+	it("classifica como afirmação de re-busca todas as frases observadas", () => {
+		for (const c of CLAIMS) {
+			expect(isCatalogResearchClaim(c), `deveria classificar: "${c}"`).toBe(true);
+		}
+	});
+
+	it("NÃO classifica menção neutra às opções já exibidas (sem afirmar nova busca)", () => {
+		expect(isCatalogResearchClaim("Olha as opções que já te mostrei aqui em cima.")).toBe(false);
+		expect(isCatalogResearchClaim("Dessas 3 que apareceram, qual te interessa mais?")).toBe(false);
+	});
+
+	it("segmento vazio não é afirmação de re-busca", () => {
+		expect(isCatalogResearchClaim("")).toBe(false);
+	});
+});
+
+describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro real", () => {
+	it("dropa 'documentos já recebidos' quando hasReceivedDocuments=false", () => {
+		const input =
+			"Boa! Os documentos já foram recebidos pela administradora. Qualquer coisa te aviso.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+		});
+		expect(out.toLowerCase()).not.toContain("recebidos");
+		expect(out).toContain("Boa!");
+	});
+
+	it("PRESERVA 'documentos já recebidos' quando hasReceivedDocuments=true (evento real aconteceu)", () => {
+		const input = "Boa! Os documentos já foram recebidos pela administradora.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: true,
+			hasSearchToolCall: false,
+		});
+		expect(out).toContain("recebidos");
+	});
+
+	it("dropa 'não apareceu grupo novo' quando hasSearchToolCall=false (0 tool-calls no turno)", () => {
+		const input =
+			"Dei uma olhada aqui. Não apareceu nenhum grupo novo na faixa hoje. Quer ver outra faixa?";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+		});
+		expect(out.toLowerCase()).not.toContain("apareceu");
+		expect(out).toContain("Quer ver outra faixa?");
+	});
+
+	it("PRESERVA 'não apareceu grupo novo' quando hasSearchToolCall=true (a tool rodou de fato)", () => {
+		const input = "Não apareceu nenhum grupo novo na faixa hoje.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: true,
+		});
+		expect(out).toContain("apareceu");
+	});
+
+	it("sem contexto (chamada antiga, sem 2º argumento) NÃO dropa — comportamento pré-FIX-270 preservado", () => {
+		const input = "Os documentos já foram recebidos pela administradora.";
+		expect(stripProcessPreamble(input)).toBe(input);
+	});
+});
+
+describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado ao vivo", () => {
+	it("dropa a afirmação de documento recebido quando o getter reporta hasReceivedDocuments=false", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+		}));
+		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("recebidos");
+	});
+
+	it("emite a afirmação de documento recebido quando o getter reporta hasReceivedDocuments=true", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: true,
+			hasSearchToolCall: false,
+		}));
+		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
+		emitted += f.flush();
+		expect(emitted).toContain("recebidos");
+	});
+
+	it("reflete o estado LIVE do getter — tool chamada NO MEIO do turno destrava a claim seguinte", () => {
+		let searchCalled = false;
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: searchCalled,
+		}));
+		// 1ª claim, ainda sem tool-call — deve ser dropada.
+		let emitted = f.push("Não apareceu nenhum grupo novo agora.");
+		emitted += f.flush();
+		expect(emitted).toBe("");
+		// A tool roda (simulado pelo runner entre steps).
+		searchCalled = true;
+		// 2ª claim, já com a tool chamada — deve sobreviver.
+		let emitted2 = f.push("Não apareceu nenhum grupo novo agora.");
+		emitted2 += f.flush();
+		expect(emitted2).toContain("apareceu");
 	});
 });
 

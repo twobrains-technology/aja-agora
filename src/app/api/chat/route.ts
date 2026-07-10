@@ -11,7 +11,10 @@ import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
-import { resolveChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
+import {
+	resolveChosenOffer,
+	resolveOfferMentionForConversation,
+} from "@/lib/agent/orchestrator/choose-offer";
 import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
 import {
 	buildAdjustValueDirective,
@@ -33,6 +36,7 @@ import {
 	buildScarcityDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
+	buildToolErrorRecoveryResolvedFallback,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
@@ -1296,6 +1300,21 @@ export async function POST(req: NextRequest) {
 						}
 
 						if (action.gate === "lance-embutido") {
+							// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click
+							// (clique repetido antes do botão desabilitar) reprocessava um
+							// gate JÁ respondido — o estado já tinha avançado (ex.:
+							// simulatorOfferDispatched=true do click #1), então nextGate
+							// recomputava "decision", que pipeGatePrompt não sabe renderizar
+							// (gatePartData/gateQuestion retornam null) → turno 100% vazio,
+							// ar morto (não passa pelo guard de empty-turn, que só roda no
+							// turno de TEXTO-livre). O click #1 já emitiu a resposta certa —
+							// o replay não tem nada NOVO a fazer.
+							if (meta.qualifyAnswers?.lanceEmbutido !== undefined) {
+								console.log(
+									`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
+								);
+								return;
+							}
 							const considera = action.value === "yes";
 							const q = meta.qualifyAnswers ?? {};
 							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
@@ -1421,13 +1440,29 @@ export async function POST(req: NextRequest) {
 						undefined,
 						freshMeta.recommendedOffer?.creditValue,
 					);
-					await writeAndSaveText(
-						writer,
-						conversationId,
-						meta.currentPersona ?? null,
-						reengage ?? EMPTY_TURN_FALLBACK,
+					// FIX-271 (rodada 8, veredito Fable r7, mesma família do FIX-266): sem
+					// gate pendente pra reengajar, o fallback enlatado pedia "manda de
+					// novo" mesmo quando o usuário JÁ tinha nomeado uma oferta exibida no
+					// turno que fechou mudo (ao vivo: finishReason="length", 52.9s) —
+					// contenção sem resolução. Roda o MESMO resolver do FIX-266 (contra os
+					// grupos já exibidos) antes de desistir; quando resolve, reafirma os
+					// dados da oferta em vez de pedir de novo.
+					const mentionedOffer = reengage
+						? null
+						: await resolveOfferMentionForConversation(conversationId, userText);
+					const fallbackText = reengage
+						? reengage
+						: mentionedOffer
+							? buildToolErrorRecoveryResolvedFallback({ name: contactName, offer: mentionedOffer })
+							: EMPTY_TURN_FALLBACK;
+					await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, fallbackText);
+					trace.setFinish(
+						reengage
+							? "empty-turn-reengage"
+							: mentionedOffer
+								? "empty-turn-resolved"
+								: "empty-turn-fallback",
 					);
-					trace.setFinish(reengage ? "empty-turn-reengage" : "empty-turn-fallback");
 					// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
 					// quando NENHUM finishReason real chegou do orquestrador (ex.: um
 					// turno CONTIDO por tool-error já setou "tool-error-recovered" via
