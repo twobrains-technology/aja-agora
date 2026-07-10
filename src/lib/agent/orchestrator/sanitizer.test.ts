@@ -21,6 +21,7 @@ import {
 	isProcessPreamble,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
+	isProactiveCallbackClaim,
 	joinSeparator,
 	normalizeGluedSentences,
 	splitSegments,
@@ -340,6 +341,40 @@ describe("FIX-234 — léxico banido (tom consultivo, não 'brother')", () => {
 		);
 		expect(isBannedLexicon("Dá pra antecipar a contemplação com um lance.")).toBe(false);
 		expect(isBannedLexicon("Qual carro você tem em mente?")).toBe(false);
+	});
+});
+
+// FIX-249 (rodada 3, Fable r2, N2 P0): o agente prometeu "deixa eu resolver
+// isso e já te retorno" / "assim que eu conseguir… te retorno" — a WEB NÃO
+// TEM canal proativo (nenhum worker manda mensagem depois nesta conversa);
+// a promessa é um beco-sem-saída (o run inteiro morreu esperando algo que
+// nunca chegaria).
+describe("FIX-249 — promessa de retorno/contato proativo é PROIBIDA na web (beco-sem-saída)", () => {
+	const PROMESSAS_PROIBIDAS = [
+		"Deixa eu resolver isso e já te retorno.",
+		"Assim que eu conseguir, te retorno.",
+		"Vou verificar e já te aviso.",
+		"Entro em contato depois com você.",
+	];
+
+	it("isProactiveCallbackClaim pega as promessas de retorno proativo", () => {
+		for (const s of PROMESSAS_PROIBIDAS) {
+			expect(isProactiveCallbackClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima que não promete contato futuro", () => {
+		expect(isProactiveCallbackClaim("Me confirma seus dados de contato pra eu seguir?")).toBe(
+			false,
+		);
+		expect(isProactiveCallbackClaim("Nossa especialista te chama em alguns minutos.")).toBe(false);
+		expect(isProactiveCallbackClaim("")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de retorno proativo", () => {
+		const texto = "Não encontrei essa opção aqui. Deixa eu resolver isso e já te retorno.";
+		const limpo = stripProcessPreamble(texto);
+		expect(limpo.toLowerCase()).not.toContain("te retorno");
 	});
 });
 

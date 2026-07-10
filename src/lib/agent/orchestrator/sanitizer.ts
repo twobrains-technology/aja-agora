@@ -144,9 +144,32 @@ export function isBannedLexicon(segment: string): boolean {
 	return BANNED_LEXICON_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-249 (rodada 3, Fable r2, N2 P0): "deixa eu resolver isso e já te
+// retorno" / "assim que eu conseguir… te retorno" — a web NÃO TEM canal
+// proativo (nenhum worker manda mensagem "depois" pro usuário nesta
+// conversa); prometer isso é um beco-sem-saída, o turno morre e o usuário
+// fica esperando algo que nunca chega. Mira a PROMESSA de contato futuro,
+// não menções neutras a "contato" (ex.: "seus dados de contato").
+const PROACTIVE_CALLBACK_PATTERNS: RegExp[] = [
+	/\bj[áa]\s+te\s+retorno\b/i,
+	/\bte\s+retorno\b/i,
+	/\bentro\s+em\s+contato\s+(depois|em\s+breve|em\s+instantes)\b/i,
+	/\bvou\s+verificar\s+e\s+(te\s+)?(volto|aviso)\b/i,
+	/\bj[áa]\s+te\s+aviso\b/i,
+];
+
+/** Um segmento promete retorno/contato proativo (proibido — a web não tem
+ * canal proativo, FIX-249) — não pode virar bolha. */
+export function isProactiveCallbackClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PROACTIVE_CALLBACK_PATTERNS.some((rx) => rx.test(s));
+}
+
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
- * taxa de contemplação (FIX-243). Todos são dropados antes de virar mensagem. */
+ * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249).
+ * Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -154,7 +177,8 @@ function isEphemeralSegment(segment: string): boolean {
 		isPrazoReductionClaim(segment) ||
 		isPrematureReservationClaim(segment) ||
 		isBannedLexicon(segment) ||
-		isTaxaContemplacaoClaim(segment)
+		isTaxaContemplacaoClaim(segment) ||
+		isProactiveCallbackClaim(segment)
 	);
 }
 

@@ -16,7 +16,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyShownGroups, type ShownGroups } from "@/lib/agent/tools/shown-groups";
-import { ACTION_PRECONDITIONS, evaluateActionPrecondition } from "./action-policy";
+import {
+	ACTION_PRECONDITIONS,
+	administradoraNaoExibidaDirective,
+	evaluateActionPrecondition,
+	naoExibidoDirective,
+} from "./action-policy";
 
 function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
@@ -194,5 +199,26 @@ describe("FIX-180 — Camada 1 structural: migração do FIX-179 inline pra tabe
 	it("FIX-179 NÃO regride: shown-groups continua sendo a fonte do 'exibido'", () => {
 		const src = readSource("src/lib/agent/tools/ai-sdk.ts");
 		expect(src).toMatch(/getShownGroups|loadShownGroups|markShown/);
+	});
+});
+
+// FIX-249 (rodada 3, Fable r2, N2 P0): achado ao vivo — usuário nomeou "ITAÚ"
+// (visível na comparison_table) e o LLM negou a existência, inventou
+// groupIds (bloqueados aqui, corretamente) e prometeu "te retorno" — beco-
+// sem-saída (a web não tem canal proativo). As diretivas de recovery agora
+// proíbem EXPLICITAMENTE os dois comportamentos.
+describe("FIX-249 — diretivas de recovery proíbem negar existência e prometer retorno proativo", () => {
+	it("naoExibidoDirective proíbe negar a entidade e prometer retorno/contato futuro", () => {
+		const d = naoExibidoDirective("grupo-fabricado-123");
+		expect(d).toMatch(/PROIBIDO.*negar/i);
+		expect(d.toLowerCase()).toMatch(/te retorno/);
+		expect(d.toLowerCase()).toMatch(/resolva agora/);
+	});
+
+	it("administradoraNaoExibidaDirective proíbe negar a existência e prometer retorno/contato futuro", () => {
+		const d = administradoraNaoExibidaDirective("ITAÚ");
+		expect(d).toMatch(/PROIBIDO.*negar/i);
+		expect(d.toLowerCase()).toMatch(/te retorno/);
+		expect(d.toLowerCase()).toMatch(/agora/);
 	});
 });

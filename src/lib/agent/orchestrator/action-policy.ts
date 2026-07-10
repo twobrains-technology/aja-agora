@@ -41,22 +41,35 @@ export type PreconditionVerdict =
 /**
  * FIX-179 — grupo real na Bevi mas nunca exibido em tela. Diretiva ACIONÁVEL
  * (devolve o controle pro modelo re-ancorar) — o execute embrulha em { error }.
+ * FIX-249 (rodada 3, Fable r2, N2 P0): achado ao vivo — o usuário nomeou uma
+ * administradora REAL da tabela (ITAÚ, visível na tela) e o LLM, confuso,
+ * NEGOU que ela existisse, inventou groupIds (bloqueados aqui, corretamente)
+ * e terminou prometendo "te retorno" (a web não tem canal proativo — beco-
+ * sem-saída, o run inteiro morreu). Reforço explícito: nunca negar a
+ * entidade, nunca prometer retorno, sempre re-apresentar AGORA.
  */
 export function naoExibidoDirective(groupId: string): string {
 	return (
 		`O grupo "${groupId}" nao foi exibido em tela pro usuario nesta conversa. ` +
 		"Apresente-o primeiro via present_comparison_table, present_group_card ou present_recommendation_card " +
 		"antes de simular, detalhar ou propor decisao sobre ele. NUNCA pule direto pra simulacao/decisao " +
-		"sobre um grupo que so voce viu no resultado da busca — reapresente o comparativo."
+		"sobre um grupo que so voce viu no resultado da busca — reapresente o comparativo. " +
+		"PROIBIDO neste turno: negar que a administradora/opcao existe (se o usuario a citou pelo nome, " +
+		"ela pode estar na tabela — reapresente e deixe o usuario escolher de novo); PROIBIDO tambem " +
+		"prometer 'te retorno', 'entro em contato depois' ou qualquer retorno futuro — este canal (web) " +
+		"nao tem mensagem proativa, essa promessa nunca se cumpre. Resolva AGORA, no proprio turno."
 	);
 }
 
-/** FIX-179 — administradora nunca apresentada no card de decisão (o 'Embracon' do nada). */
+/** FIX-179 — administradora nunca apresentada no card de decisão (o 'Embracon' do nada).
+ * FIX-249: mesmo reforço do naoExibidoDirective — nunca negar/prometer retorno. */
 export function administradoraNaoExibidaDirective(administradora: string): string {
 	return (
 		`[Bloqueado: o plano "${administradora}" ainda nao foi apresentado pro usuario nesta conversa. ` +
 		"Apresente a recomendacao/comparativo (present_comparison_table / present_recommendation_card) " +
-		"ANTES do card de decisao — nunca proponha decisao sobre um plano que o usuario nao viu.]"
+		"ANTES do card de decisao — nunca proponha decisao sobre um plano que o usuario nao viu. " +
+		"PROIBIDO negar que a administradora existe ou prometer 'te retorno'/contato futuro — " +
+		"reapresente as opcoes reais AGORA, no proprio turno.]"
 	);
 }
 
