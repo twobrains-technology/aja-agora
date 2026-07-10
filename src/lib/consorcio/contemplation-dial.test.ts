@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	anchorMonth,
 	computeContemplationDial,
 	contemplationDialMarks,
 	paymentAfterLabel,
@@ -252,5 +253,63 @@ describe("paymentAfterLabel — rótulo nunca mente (FIX-221)", () => {
 
 	it("sem estimativa (undefined, ex.: contemplação no último mês) → rótulo neutro", () => {
 		expect(paymentAfterLabel(undefined, 6_800)).not.toMatch(/menor/i);
+	});
+});
+
+// FIX-227: a agulha responde "quando o seu DINHEIRO alcança o lance", não
+// "quando você quer". A comparação é contra o BOLSO (ownCashValue), nunca
+// contra o lance total — o embutido não sai do bolso do cliente. FGTS
+// (vertical imóvel) acelera: abate o bolso necessário antes da comparação.
+describe("anchorMonth — mês em que o dinheiro do cliente alcança o lance (FIX-227)", () => {
+	const imovel = {
+		creditValue: 300_000,
+		termMonths: 180,
+		averageBid: 150_000, // 50%
+		referenceMonth: 60,
+		maxEmbutidoPct: 30,
+	};
+
+	it("compara contra ownCashValue (bolso), não requiredLanceValue (lance total)", () => {
+		// bolso no mês-alvo escolhido é sempre <= lance total (parte vai de embutido).
+		const dial = computeContemplationDial({ ...imovel, targetMonth: 60 });
+		expect(dial.ownCashValue).toBeLessThan(dial.requiredLanceValue);
+		// com dinheiro exatamente igual ao bolso do mês 60 (não ao lance total),
+		// a âncora deve resolver pra um mês <= 60 (o bolso é alcançável antes).
+		const m = anchorMonth(imovel, { initial: dial.ownCashValue, monthlySavings: 0 });
+		expect(m).not.toBeNull();
+		expect(m as number).toBeLessThanOrEqual(60);
+	});
+
+	it("initial cobre o bolso do mês 1 → retorna 1", () => {
+		const dial1 = computeContemplationDial({ ...imovel, targetMonth: 1 });
+		const m = anchorMonth(imovel, { initial: dial1.ownCashValue + 1, monthlySavings: 0 });
+		expect(m).toBe(1);
+	});
+
+	it("monthlySavings=0 e initial insuficiente em todo o prazo → retorna null (orienta sorteio)", () => {
+		// Grupo de 1 mês só (sem "esperar até o sorteio" pra diluir o bolso a
+		// zero — a curva SEMPRE converge a 0 no último mês do prazo, então um
+		// prazo mais longo sempre acha âncora no fim; aqui não há "fim" pra
+		// esperar) e sem embutido (bolso = lance inteiro, nunca cai a zero).
+		const semSaida = { creditValue: 300_000, termMonths: 1, averageBid: 150_000, referenceMonth: 1, maxEmbutidoPct: 0 };
+		const m = anchorMonth(semSaida, { initial: 0, monthlySavings: 0 });
+		expect(m).toBeNull();
+	});
+
+	it("FGTS (vertical imóvel) acelera — mês alcançado com FGTS é MENOR (ou igual) que sem FGTS", () => {
+		const money = { initial: 5_000, monthlySavings: 3_000 };
+		const semFgts = anchorMonth(imovel, money);
+		const comFgts = anchorMonth(imovel, { ...money, fgts: 40_000 });
+		expect(semFgts).not.toBeNull();
+		expect(comFgts).not.toBeNull();
+		expect(comFgts as number).toBeLessThanOrEqual(semFgts as number);
+	});
+
+	it("monotonicidade: mais poupança/mês → mês alcançado nunca aumenta", () => {
+		const pouco = anchorMonth(imovel, { initial: 1_000, monthlySavings: 1_000 });
+		const muito = anchorMonth(imovel, { initial: 1_000, monthlySavings: 5_000 });
+		expect(pouco).not.toBeNull();
+		expect(muito).not.toBeNull();
+		expect(muito as number).toBeLessThanOrEqual(pouco as number);
 	});
 });

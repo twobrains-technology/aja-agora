@@ -178,6 +178,33 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	};
 }
 
+/**
+ * FIX-227 — âncora de dinheiro: em que mês o DINHEIRO do cliente alcança o
+ * lance necessário. A agulha responde "quando o seu dinheiro alcança", não
+ * "quando você quer" — a comparação é contra o BOLSO (`ownCashValue`), nunca
+ * contra o lance total (o embutido não sai do bolso do cliente). Mesma função
+ * serve web (visual) e WhatsApp (narração) — cálculo único, duas apresentações.
+ *
+ * FGTS (vertical imóvel): conta como fonte de lance embutido (vai direto ao
+ * vendedor) — abate o BOLSO necessário antes da comparação, sem entrar em
+ * `requiredLanceValue`/`embeddedBidValue` (que descrevem só a mecânica
+ * carta/embutido do grupo). É o maior acelerador da vertical imóvel.
+ */
+export function anchorMonth(
+	base: Omit<ContemplationDialInput, "targetMonth">,
+	money: { initial: number; monthlySavings: number; fgts?: number },
+): number | null {
+	const term = Math.max(1, Math.round(Number.isFinite(base.termMonths) ? base.termMonths : 1));
+	const fgts = Math.max(0, Number.isFinite(money.fgts ?? 0) ? (money.fgts ?? 0) : 0);
+	for (let m = 1; m <= term; m++) {
+		const dial = computeContemplationDial({ ...base, targetMonth: m });
+		const bolsoNecessario = Math.max(0, dial.ownCashValue - fgts);
+		const disponivel = money.initial + money.monthlySavings * (m - 1);
+		if (disponivel >= bolsoNecessario) return m;
+	}
+	return null;
+}
+
 /** Marcos pré-calculados (pro fallback estático do WhatsApp, que não tem slider). */
 export function contemplationDialMarks(
 	base: Omit<ContemplationDialInput, "targetMonth">,
