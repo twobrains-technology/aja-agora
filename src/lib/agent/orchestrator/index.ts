@@ -28,7 +28,12 @@ import {
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
-import { buildScarcityCard, buildTwoPathsCard } from "./server-cards";
+import {
+	buildDecisionPromptCard,
+	buildEmbeddedBidCard,
+	buildScarcityCard,
+	buildTwoPathsCard,
+} from "./server-cards";
 import { buildSystemContext } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
@@ -76,6 +81,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		skipLeadCollection,
 		userIntent: providedIntent,
 		userKey,
+		suppressGateEvent,
 	} = input;
 
 	const conversationId = providedConversationId;
@@ -398,11 +404,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				});
 			}
 		}
-		const directive = isSoParcela
-			? buildLanceSoParcelaDirective()
-			: buildDecisionPromptDirective({
-					administradora: refreshed.recommendedAdministradora,
-				});
+		const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
 		yield* runTurn({
 			channel,
 			conversationId,
@@ -422,6 +424,18 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			});
 			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
 			await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+		} else {
+			// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
+			// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
+			// determinístico aqui, no ÚNICO ramo que dirige a decisão. Nunca mais
+			// depende do LLM chamar a tool (mesma receita do scarcity acima).
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "decision_prompt",
+				payload: buildDecisionPromptCard(refreshed).payload,
+			});
 		}
 		return;
 	}
@@ -451,11 +465,30 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				await persistMeta(conversationId, { ...refreshed, simulatorOfferDispatched: true });
 			}
 		}
-		yield {
-			type: "gate",
-			gate: result.nextGateToFire,
-			prefix: result.prefixForNextGate ?? undefined,
-		};
+		// FIX-253 (rodada 4, veredito Fable FINAL §2/§3, "pro teto" #2): o
+		// caminho de TEXTO LIVRE do gate lance ("não tenho o valor... mas junto 4
+		// mil/mês") despachava a pergunta de lance-embutido SEM o card
+		// embedded_bid — só o clique (route.ts) emitia. `suppressGateEvent`
+		// (FIX-254) protege o caminho de CLIQUE de double-dispatch: quando o
+		// chamador (route.ts) já vai emitir o card+pergunta explicitamente
+		// depois deste turno de directive, este bloco fica inteiramente calado.
+		if (!suppressGateEvent) {
+			if (result.nextGateToFire === "lance-embutido") {
+				const refreshed = await reloadMeta(conversationId);
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "embedded_bid",
+					payload: buildEmbeddedBidCard(refreshed).payload,
+				});
+			}
+			yield {
+				type: "gate",
+				gate: result.nextGateToFire,
+				prefix: result.prefixForNextGate ?? undefined,
+			};
+		}
 	}
 
 	// FIX-207 (watchdog): marca/limpa o gate pendente do funil. Se este turno de

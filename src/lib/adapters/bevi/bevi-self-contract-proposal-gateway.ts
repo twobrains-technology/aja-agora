@@ -37,7 +37,7 @@ import type {
 	UploadDocumentInput,
 } from "../proposal-gateway";
 import { DuplicatedProposalError } from "./bevi-errors";
-import type { BeviOffer } from "./offer-mapper";
+import { type BeviOffer, normalizeAdministradoraName } from "./offer-mapper";
 import type { BeviSelfContractClient, SelfContractSimulationInput } from "./self-contract-client";
 
 // ── STUB local — contrato REAL: dispatchClientDocument(documentId, target)
@@ -77,7 +77,10 @@ const DEFAULT_TTL_MS = 30 * 60_000;
 function toPartnerOffer(offer: BeviOfferExt): PartnerOffer {
 	return {
 		ofertaId: offer.quotaId,
-		administradora: offer.bankLabel ?? offer.bank,
+		// FIX-255 (rodada 4, veredito Fable FINAL §N-G): "Confirmei com a ITAU" —
+		// nome cru sem acento na copy do fecho (closing-presentation.ts lê
+		// `offer.administradora` daqui). Normaliza na FONTE.
+		administradora: normalizeAdministradoraName(offer.bankLabel ?? offer.bank),
 		// EMBEDDED_BID colapsa em SPECIAL_OFFER — GAP documentado (D5), mesmo
 		// padrão de colapso de enum que offer-mapper.ts já usa (adjustmentType).
 		tipoOferta: offer.type === "FREE_BID" ? "FREE_BID" : "SPECIAL_OFFER",

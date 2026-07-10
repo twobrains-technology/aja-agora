@@ -103,6 +103,25 @@ function mapAdjustmentIndex(adjustmentType?: string): "INCC" | "IPCA" {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** FIX-255 (rodada 4, veredito Fable FINAL §N-G): a Bevi devolve `bankLabel`
+ * ACENTUADO quando presente ("ITAÚ", "ÂNCORA" — confirmado nas fixtures reais
+ * docs/integracoes/assets/segmentos/*), mas o fallback `bank` é código cru
+ * SEM acento ("ITAU", "ANCORA", "TRADICAO" — visto ao vivo no veredito,
+ * "Confirmei com a ITAU/TRADICAO"). Nome de administradora cru na fala ao
+ * usuário viola o inviolável de PT-BR. Tabela pequena e SEGURA: só corrige os
+ * códigos conhecidos que precisam de acento; qualquer nome não mapeado passa
+ * intacto (nunca inventa/mangla um nome que não reconhece). */
+const ADMINISTRADORA_DISPLAY_NAME: Record<string, string> = {
+	ITAU: "ITAÚ",
+	ANCORA: "ÂNCORA",
+	TRADICAO: "TRADIÇÃO",
+};
+
+export function normalizeAdministradoraName(raw: string): string {
+	const normalized = ADMINISTRADORA_DISPLAY_NAME[raw.trim().toUpperCase()];
+	return normalized ?? raw;
+}
+
 /** Parse do teto de embutido da Bevi: "30,00" | "30.00" | 0.3 | 30 → 30 (em %).
  * null quando ausente/inválido (FIX-30: sem teto REAL não se inventa embutido). */
 function parseBeviAcceptPercent(v: string | number | undefined | null): number | null {
@@ -117,7 +136,7 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 	const category = beviSegmentToCategory(offer.productType ?? "");
 	return {
 		id: offer.quotaId,
-		administradora: offer.bankLabel ?? offer.bank,
+		administradora: normalizeAdministradoraName(offer.bankLabel ?? offer.bank),
 		category,
 		creditValue: offer.finalValue,
 		monthlyPayment: round2(offer.importedInstallmentValue ?? offer.installmentValue ?? 0),

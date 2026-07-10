@@ -383,8 +383,11 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 	it("tool-policy: present_lead_form NEM ENTRA no toolset pos-reveal (1a linha de defesa)", async () => {
 		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
 		expect(allowedTools(REVEAL_META)).not.toContain("present_lead_form");
-		// O caminho de avanco SIM esta disponivel.
-		expect(allowedTools(REVEAL_META)).toContain("present_decision_prompt");
+		// FIX-253 (rodada 4): o caminho de avanco NAO passa mais por tool-call —
+		// present_decision_prompt saiu do toolset (emissao server-side deterministica,
+		// buildDecisionPromptCard). O avanco pos-reveal continua existindo, so que
+		// nunca mais depende do LLM chamar a tool.
+		expect(allowedTools(REVEAL_META)).not.toContain("present_decision_prompt");
 	});
 
 	it("regra do prompt: NENHUM gatilho de avanco esta amarrado a present_lead_form (anti-regressao)", () => {

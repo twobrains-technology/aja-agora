@@ -26,6 +26,7 @@ import {
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
 	categoryToBeviSegment,
+	normalizeAdministradoraName,
 } from "./offer-mapper";
 import type { BeviSelfContractClient } from "./self-contract-client";
 
@@ -193,7 +194,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return {
 			id: offer.quotaId,
-			administradora: offer.bankLabel ?? offer.bank,
+			administradora: normalizeAdministradoraName(offer.bankLabel ?? offer.bank),
 			groupNumber: offer.group,
 			category: beviSegmentToCategory(offer.productType ?? ""),
 			creditValue: offer.finalValue,
@@ -215,7 +216,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	async getRates(params: GetRatesParams): Promise<RateInfo[]> {
 		const seen = new Map<string, RateInfo>();
 		for (const offer of this.offerIndex.values()) {
-			const administradora = offer.bankLabel ?? offer.bank;
+			const administradora = normalizeAdministradoraName(offer.bankLabel ?? offer.bank);
 			const category = beviSegmentToCategory(offer.productType ?? "");
 			if (params.category && category !== params.category) continue;
 			if (params.administradora && administradora !== params.administradora) continue;

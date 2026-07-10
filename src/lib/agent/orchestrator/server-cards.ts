@@ -36,3 +36,19 @@ export function buildScarcityCard(meta: ConversationMetadata): ServerCard | null
 	]);
 	return { payload: coerceScarcityPayload({ groupId }, index) };
 }
+
+/** FIX-253 (rodada 4, veredito Fable FINAL §3, causa-raiz do 0-scarcity no
+ * Fluxo A): `present_decision_prompt` estava no toolset do LLM em
+ * reveal/closing — o modelo chamava a tool DIRETO, num turno de usuário
+ * comum, bypassando o ramo `nextGateToFire === "decision"` do orchestrator
+ * (que é quem dispara o scarcity server-side ANTES do decision_prompt). O
+ * card de decisão em si NUNCA precisou de dado real da Bevi (payload só
+ * carrega `administradora` de contexto) — emissão SERVER-SIDE determinística
+ * mata a tool por completo, mesma receita do FIX-246. */
+export function buildDecisionPromptCard(meta: ConversationMetadata): ServerCard {
+	return {
+		payload: {
+			...(meta.recommendedAdministradora ? { administradora: meta.recommendedAdministradora } : {}),
+		},
+	};
+}

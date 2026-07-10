@@ -7,7 +7,12 @@
 
 import { describe, expect, it } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { buildEmbeddedBidCard, buildScarcityCard, buildTwoPathsCard } from "./server-cards";
+import {
+	buildDecisionPromptCard,
+	buildEmbeddedBidCard,
+	buildScarcityCard,
+	buildTwoPathsCard,
+} from "./server-cards";
 
 const META_COM_OFERTA: ConversationMetadata = {
 	recommendedAdministradora: "CANOPUS",
@@ -80,5 +85,22 @@ describe("buildScarcityCard — emissão determinística (sem tool-call)", () =>
 
 	it("sem oferta nenhuma no meta, retorna null", () => {
 		expect(buildScarcityCard({})).toBeNull();
+	});
+});
+
+// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt saiu do
+// toolset do LLM (tool-policy.ts) — o card de decisão ("Esse plano faz
+// sentido?") agora é emissão SERVER-SIDE determinística, igual scarcity/
+// two_paths/embedded_bid. Nunca mais depende do modelo chamar a tool.
+describe("buildDecisionPromptCard — emissão determinística (sem tool-call)", () => {
+	it("carrega a administradora recomendada como contexto do card", () => {
+		const card = buildDecisionPromptCard(META_COM_OFERTA);
+		expect(card.payload.administradora).toBe("CANOPUS");
+	});
+
+	it("sem administradora recomendada no meta, ainda retorna payload seguro (nunca lança)", () => {
+		const card = buildDecisionPromptCard({});
+		expect(card.payload).toBeDefined();
+		expect(card.payload.administradora).toBeUndefined();
 	});
 });

@@ -179,7 +179,9 @@ export async function pipeGatePrompt(args: {
 	const data = gatePartData(gate, meta);
 	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
 	// de "R$ 100 mil" na educação de lance embutido.
-	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue);
+	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): copy por canal — "web" pra
+	// não herdar a frase "eu já pego aqui do WhatsApp" (gate identify).
+	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue, "web");
 	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
 	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
@@ -299,10 +301,12 @@ export async function pipeOrchestratorToWriter(
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
 				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
+				// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
 				const question = gateQuestion(
 					ev.gate,
 					meta.currentCategory,
 					meta.recommendedOffer?.creditValue,
+					"web",
 				);
 				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
 				if (data || question) {
@@ -425,8 +429,14 @@ export async function pipeDirectiveTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
+	/** FIX-254 (rodada 4, veredito Fable FINAL §N-C): quando o CHAMADOR já vai
+	 * emitir o gate (card + pergunta) explicitamente logo em seguida (ex.:
+	 * embedded_bid no clique do gate lance), suprime o disparo AUTOMÁTICO de
+	 * `nextGateToFire` deste turno de directive — sem isso, os dois caminhos
+	 * emitem a MESMA educação+chips (double-dispatch: route.ts:1058-1072). */
+	suppressGate?: boolean;
 }): Promise<{ emittedVisible: boolean }> {
-	const { conversationId, directive, contactName, writer, userKey } = args;
+	const { conversationId, directive, contactName, writer, userKey, suppressGate } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -436,6 +446,7 @@ export async function pipeDirectiveTurn(args: {
 		skipAnalyzer: true,
 		skipLeadCollection: true,
 		userKey,
+		suppressGateEvent: suppressGate,
 	});
 	return pipeOrchestratorToWriter(events, writer, conversationId);
 }

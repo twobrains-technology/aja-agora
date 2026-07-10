@@ -121,10 +121,11 @@ const REVEAL_EXPECTED = [
 	"get_group_details",
 	"get_rates",
 	"present_contemplation_dial",
-	"present_decision_prompt",
 	// FIX-246 (rodada 3, Fable r2): embedded_bid/two_paths/scarcity SAÍRAM do
 	// toolset — emissão agora é server-side determinística (server-cards.ts),
 	// nunca mais tool-call do LLM. Ver describe FIX-246 abaixo.
+	// FIX-253 (rodada 4, Fable FINAL): present_decision_prompt SAIU também —
+	// mesma receita (buildDecisionPromptCard). Ver describe FIX-253 abaixo.
 	"present_financing_comparison",
 	"present_scenarios",
 	"present_simulation_result",
@@ -134,13 +135,11 @@ const REVEAL_EXPECTED = [
 	"simulate_quota",
 ].sort();
 
-// present_decision_prompt PERMANECE em closing: o orquestrador persiste
-// decisionDispatched=true ANTES de rodar o turno da directive (index.ts),
-// então o turno que EMITE o card já roda na fase closing — tirar a tool daqui
-// fez a directive mandar chamar uma tool fora do request e o decision_prompt
-// sumiu da jornada (eval nightly 2026-06-11, passo 4 close). O dup em turno
-// de USUÁRIO é responsabilidade do guard isDecisionDup (segunda linha), que
-// distingue user-turn de directive — granularidade que a fase não tem.
+// FIX-253 (rodada 4, veredito Fable FINAL §3, causa-raiz do 0-scarcity no
+// Fluxo A): present_decision_prompt NÃO volta em closing — o card do passo 4
+// agora é emissão SERVER-SIDE determinística (buildDecisionPromptCard), o
+// directive que fecha closing só narra (sem tool-call). Ver describe FIX-253
+// abaixo.
 const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
@@ -192,15 +191,16 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		expect([...allowedTools(REVEAL_META)].sort()).toEqual(REVEAL_EXPECTED);
 	});
 
-	it("closing: lista exata — contract_form ENTRA; decision_prompt PERMANECE (directive roda pós-persist)", () => {
+	it("closing: lista exata — contract_form ENTRA; decision_prompt AUSENTE (emissão server-side, FIX-253)", () => {
 		expect([...allowedTools(CLOSING_META)].sort()).toEqual(CLOSING_EXPECTED);
 	});
 
-	it("REGRESSÃO eval jornada (2026-06-11): turno da directive do decision roda com decisionDispatched=true — a tool TEM que estar no toolset", () => {
+	it("FIX-253 — present_decision_prompt AUSENTE mesmo no turno da directive do decision (decisionDispatched=true): o card é server-side, o directive só narra", () => {
 		// orchestrator/index.ts persiste decisionDispatched=true ANTES do runTurn
-		// da directive. Sem a tool em closing, o card do passo 4 nunca aparece.
+		// da directive — mas o directive NÃO chama tool nenhuma (buildDecisionPromptCard
+		// emite o card direto, sem depender do LLM). A tool fica FORA em toda fase.
 		const metaDoTurnoDaDirective = { ...REVEAL_META, decisionDispatched: true };
-		expect(allowedTools(metaDoTurnoDaDirective)).toContain("present_decision_prompt");
+		expect(allowedTools(metaDoTurnoDaDirective)).not.toContain("present_decision_prompt");
 	});
 
 	it("terminal: lista exata — BASE + check_proposal_status, NADA de descoberta (FIX-11)", () => {
@@ -250,6 +250,24 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 			expect(allowed).not.toContain("present_embedded_bid");
 			expect(allowed).not.toContain("present_two_paths");
 			expect(allowed).not.toContain("present_scarcity");
+		}
+	});
+
+	// FIX-253 (rodada 4, veredito Fable FINAL §3 — causa-raiz do 0-scarcity no
+	// Fluxo A): present_decision_prompt era a última tool "de card" que sobrava
+	// no toolset — o LLM chamava DIRETO num turno de usuário comum, bypassando
+	// o ramo do orchestrator que dispara o scarcity server-side ANTES do
+	// decision_prompt. Mesma receita do FIX-246: tira a tool, mata a
+	// possibilidade (Lei 2 — allowlist positiva).
+	it("FIX-253 — present_decision_prompt NUNCA entra no toolset do LLM, em NENHUMA fase (nem com decisionDispatched=true)", () => {
+		for (const meta of [
+			QUALIFY_META,
+			REVEAL_META,
+			CLOSING_META,
+			TERMINAL_META,
+			{ ...REVEAL_META, decisionDispatched: true },
+		]) {
+			expect(allowedTools(meta)).not.toContain("present_decision_prompt");
 		}
 	});
 });
@@ -366,11 +384,11 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).toContain("present_value_picker");
 	});
 
-	it("reveal: dial/decision/optin entram, re-descoberta e contract_form ficam fora", () => {
+	it("reveal: dial/optin entram, decision (FIX-253, server-side) e re-descoberta/contract_form ficam fora", () => {
 		const agent = buildAgent(makePersonaRow(), "neutro", { meta: REVEAL_META });
 		const tools = exposedTools(agent);
 		expect(tools).toContain("present_contemplation_dial");
-		expect(tools).toContain("present_decision_prompt");
+		expect(tools).not.toContain("present_decision_prompt");
 		expect(tools).toContain("present_whatsapp_optin");
 		expect(tools).toContain("simulate_quota"); // what-if legítimo
 		expect(tools).not.toContain("search_groups");
@@ -380,14 +398,12 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).not.toContain("present_lead_form"); // FIX-34: avanço é decision→contract
 	});
 
-	it("closing: contract_form + check_proposal_status entram; decision_prompt permanece (directive pós-persist)", () => {
+	it("closing: contract_form + check_proposal_status entram; decision_prompt AUSENTE (FIX-253, emissão server-side)", () => {
 		const agent = buildAgent(makePersonaRow(), "neutro", { meta: CLOSING_META });
 		const tools = exposedTools(agent);
 		expect(tools).toContain("present_contract_form");
 		expect(tools).toContain("check_proposal_status");
-		// dup em turno de usuário é papel do guard isDecisionDup (2ª linha) —
-		// o turno da directive (server) roda já com decisionDispatched=true.
-		expect(tools).toContain("present_decision_prompt");
+		expect(tools).not.toContain("present_decision_prompt");
 	});
 
 	it("terminal (FIX-11): toolset mínimo — status sim, re-descoberta NUNCA", () => {
@@ -492,9 +508,10 @@ describe("FIX-68 — allowedTools(reveal): search VOLTA na troca de faixa, FICA 
 		for (const tool of REVEAL_DISCOVERY_TOOLS) {
 			expect(allowed).toContain(tool);
 		}
-		// e o what-if/decisão continuam disponíveis (não é regressão da fase reveal)
+		// e o what-if continua disponível (não é regressão da fase reveal); decisão
+		// (FIX-253) é server-side, nunca entra no toolset.
 		expect(allowed).toContain("simulate_quota");
-		expect(allowed).toContain("present_decision_prompt");
+		expect(allowed).not.toContain("present_decision_prompt");
 	});
 
 	it("MESMA faixa (afirmativo): descoberta CONTINUA fora (BUG-REVEAL-LOOP não regride)", () => {

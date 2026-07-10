@@ -15,20 +15,21 @@ function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
 }
 
+// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt saiu do
+// toolset do LLM — mesma desobediência que o FIX-246 já tinha corrigido pra
+// embedded_bid/two_paths/scarcity (0 emissões no caminho certo, tool chamada
+// DIRETO fora do ramo do orchestrator no Fluxo A). O directive agora só narra;
+// o card é emitido server-side (buildDecisionPromptCard).
 describe("buildDecisionPromptDirective — passo 4 close", () => {
-	it("instrui o agent a chamar present_decision_prompt (não present_lead_form)", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Porto Seguro" });
-		expect(d).toContain("present_decision_prompt");
+	it("NÃO instrui a CHAMAR present_decision_prompt (só a proíbe) — o card é server-side (FIX-253)", () => {
+		const d = buildDecisionPromptDirective();
+		expect(d).not.toMatch(/present_decision_prompt\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_decision_prompt/);
 		expect(d).not.toContain("present_lead_form");
 	});
 
-	it("carrega a administradora do plano recomendado pro contexto do card", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Bradesco" });
-		expect(d).toContain("Bradesco");
-	});
-
 	it("proíbe EXPLICITAMENTE re-apresentar o reveal (anti-loop)", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Porto Seguro" });
+		const d = buildDecisionPromptDirective();
 		// O directive nomeia as tools do reveal só pra PROIBIR re-chamá-las.
 		expect(d).toMatch(/PROIBIDO/);
 		expect(d).toMatch(/search_groups/);
@@ -53,6 +54,13 @@ describe("index.ts — branch que dirige o gate 'decision'", () => {
 
 	it("dirige o directive de decisão (buildDecisionPromptDirective)", () => {
 		expect(src).toContain("buildDecisionPromptDirective");
+	});
+
+	// FIX-253: o card de decisão é emissão SERVER-SIDE determinística — mesma
+	// receita de buildScarcityCard/buildTwoPathsCard (FIX-246), nunca mais
+	// depende do LLM chamar present_decision_prompt.
+	it("emite o card de decisão via buildDecisionPromptCard (server-cards.ts), não via tool-call do LLM", () => {
+		expect(src).toContain("buildDecisionPromptCard");
 	});
 });
 
