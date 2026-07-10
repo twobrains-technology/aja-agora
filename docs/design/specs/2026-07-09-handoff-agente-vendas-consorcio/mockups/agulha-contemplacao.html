@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agulha de Contemplação — Aja Agora</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --primary:#036eff; --primary700:#0a4f9e; --navy:#052440; --cyan:#03b2d9;
+    --bg:#f7f9fc; --surface:#ffffff; --border:#e0e7f0; --line:#eef2f7;
+    --muted:#6b7a92; --muted2:#97a6bd; --ink:#052440;
+    --success:#1f9d63; --warning:#dd9022; --destructive:#f2404f; --coral:#f2404f;
+    --softblue:#eef5ff; --cream:#f8f8ec; --cream2:#f2f2db; --amberBg:#fbf3e2; --amberInk:#8a5a12;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;font-family:'Poppins',ui-sans-serif,system-ui,sans-serif;color:var(--ink);
+    background:
+      radial-gradient(1200px 500px at 50% -10%, rgba(3,110,255,.14), transparent 60%),
+      linear-gradient(180deg,#071a2e,#0a2136 40%,#0c2740);}
+  .wrap{max-width:1120px;margin:0 auto;padding:36px 22px 70px;}
+  .lede{text-align:center;color:#cfe0f5;max-width:660px;margin:0 auto 26px;}
+  .lede h1{font-size:23px;font-weight:700;color:#fff;margin:0 0 8px;letter-spacing:-.01em;}
+  .lede .k{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7db0ff;margin-bottom:10px;}
+  .lede p{font-size:14px;line-height:1.55;margin:0;color:#a9c2de;}
+  .lede b{color:#eaf3ff;}
+
+  .stage{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:24px;align-items:start;}
+  @media(max-width:860px){.stage{grid-template-columns:1fr;max-width:400px;margin:0 auto;}}
+
+  /* ---- the component card ---- */
+  .card{background:var(--surface);border-radius:24px;border:1px solid var(--border);
+    box-shadow:0 30px 70px -30px rgba(0,0,0,.6);overflow:hidden;}
+  .card .inner{padding:20px 20px 18px;display:flex;flex-direction:column;gap:16px;}
+  .title{display:flex;align-items:center;gap:11px;}
+  .title .sun{width:38px;height:38px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .title h2{font-size:16px;font-weight:700;color:var(--navy);margin:0;line-height:1.25;}
+
+  /* gauge */
+  .gauge{position:relative;width:100%;}
+  .gauge svg{display:block;width:100%;height:auto;touch-action:none;cursor:grab;}
+  .gauge svg:active{cursor:grabbing;}
+  .gauge .center{position:absolute;left:0;right:0;top:52%;text-align:center;pointer-events:none;}
+  .gauge .month{font-size:44px;font-weight:700;color:var(--navy);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+  .gauge .month small{font-size:14px;font-weight:600;color:var(--muted);display:block;margin-top:3px;letter-spacing:0;}
+  .ends{display:flex;justify-content:space-between;margin-top:-6px;padding:0 6px;font-size:11.5px;font-weight:600;}
+  .ends .fast{color:var(--destructive);}
+  .ends .slow{color:var(--success);}
+  .hint{display:flex;align-items:center;justify-content:center;gap:7px;font-size:11.5px;color:var(--muted2);margin-top:2px;}
+
+  /* chance bar */
+  .chance{display:flex;flex-direction:column;gap:7px;}
+  .chance .top{display:flex;justify-content:space-between;align-items:baseline;}
+  .chance .top .lab{font-size:12px;color:var(--muted);font-weight:500;}
+  .chance .top .val{font-size:13px;font-weight:700;}
+  .chance .bar{position:relative;height:12px;border-radius:999px;
+    background:linear-gradient(90deg,var(--destructive),var(--warning) 52%,var(--success));}
+  .chance .mk{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;background:#fff;
+    border:3px solid var(--navy);transform:translate(-50%,-50%);box-shadow:0 2px 8px rgba(5,36,64,.35);transition:left .18s ease;}
+
+  /* antes/depois */
+  .ba{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch;}
+  .ba .cell{border-radius:15px;padding:12px 13px;border:1px solid var(--border);background:var(--bg);}
+  .ba .cell.after{background:var(--cream);border-color:var(--cream2);}
+  .ba .cell .cl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .ba .cell.after .cl{color:var(--amberInk);}
+  .ba .cell .cv{font-size:22px;font-weight:700;color:var(--navy);margin-top:5px;font-variant-numeric:tabular-nums;}
+  .ba .cell.after .cv{color:var(--amberInk);}
+  .ba .cell .cs{font-size:11px;color:var(--muted);margin-top:3px;}
+  .ba .arr{display:flex;align-items:center;justify-content:center;color:var(--primary);font-size:22px;}
+  .recal{font-size:10px;color:var(--muted2);margin-top:5px;display:inline-flex;gap:4px;align-items:center;}
+  .amort{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:-4px;}
+  .amort-q{font-size:12px;color:var(--muted);font-weight:500;}
+  .amort-seg{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:3px;gap:3px;}
+  .amort-seg .am{border:none;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:6px 11px;border-radius:8px;cursor:pointer;transition:.14s;}
+  .amort-seg .am.on{background:var(--primary);color:#fff;box-shadow:0 4px 10px -4px rgba(3,110,255,.5);}
+  .receipt .rrow.subtle .rk{font-size:11px;color:var(--muted2);}
+  .receipt .rrow.subtle .rv.muted{font-size:12.5px;font-weight:600;color:var(--muted);}
+  .receipt .tip{display:block;font-size:10px;color:var(--muted2);font-weight:400;}
+
+  /* receita */
+  .receipt{border:1px dashed var(--border);border-radius:15px;padding:13px 15px;background:#fff;}
+  .receipt .rrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:6px 0;}
+  .receipt .rrow + .rrow{border-top:1px solid var(--line);}
+  .receipt .rk{font-size:12.5px;color:var(--muted);}
+  .receipt .rk b{color:var(--ink);font-weight:600;}
+  .receipt .rv{font-size:15px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .receipt .rv.pos{color:var(--success);}
+  .receipt .confront{margin-top:9px;font-size:11.5px;line-height:1.4;border-radius:10px;padding:8px 10px;}
+  .receipt .confront.ok{background:rgba(31,157,99,.09);color:#0f6b41;}
+  .receipt .confront.gap{background:rgba(242,64,79,.08);color:#8a2530;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.05em;}
+  .badge.lance{background:var(--softblue);color:var(--primary);}
+  .badge.sorteio{background:rgba(31,157,99,.12);color:var(--success);}
+
+  .disc{display:flex;gap:8px;align-items:flex-start;font-size:10.5px;line-height:1.45;color:var(--muted2);}
+  .disc .i{flex-shrink:0;width:14px;height:14px;border-radius:50%;border:1px solid var(--muted2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;margin-top:1px;}
+
+  /* ---- right rail: the money-anchor signature ---- */
+  .rail{display:flex;flex-direction:column;gap:18px;}
+  .panel{background:rgba(255,255,255,.04);border:1px solid rgba(125,176,255,.22);border-radius:20px;padding:18px 18px 16px;backdrop-filter:blur(4px);}
+  .panel h3{margin:0 0 4px;font-size:15px;color:#fff;font-weight:700;display:flex;align-items:center;gap:8px;}
+  .panel .sub{font-size:12.5px;color:#9fbbdb;line-height:1.5;margin:0 0 14px;}
+  .panel .sub b{color:#dcebff;}
+
+  .segs{display:flex;gap:8px;margin-bottom:14px;background:rgba(255,255,255,.05);padding:5px;border-radius:13px;}
+  .seg{flex:1;text-align:center;font-size:12.5px;font-weight:600;color:#a9c2de;padding:9px 6px;border-radius:9px;cursor:pointer;transition:.15s;}
+  .seg.on{background:#fff;color:var(--navy);box-shadow:0 4px 12px -4px rgba(0,0,0,.4);}
+
+  .ctrl{display:flex;flex-direction:column;gap:12px;}
+  .ctrl .field{background:rgba(255,255,255,.06);border:1px solid rgba(125,176,255,.2);border-radius:12px;padding:10px 13px;}
+  .ctrl .field label{font-size:11px;color:#9fbbdb;font-weight:600;display:block;margin-bottom:8px;}
+  .ctrl .field .row{display:flex;align-items:center;gap:10px;}
+  .ctrl input[type=range]{flex:1;accent-color:var(--primary);}
+  .ctrl .field .num{font-size:15px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap;min-width:96px;text-align:right;}
+
+  /* sparkline crossing */
+  .spark{margin-top:15px;background:rgba(255,255,255,.05);border-radius:14px;padding:13px 13px 9px;border:1px solid rgba(125,176,255,.16);}
+  .spark .cap{display:flex;justify-content:space-between;font-size:11px;color:#9fbbdb;margin-bottom:6px;}
+  .spark svg{display:block;width:100%;height:auto;}
+  .spark .legend{display:flex;gap:16px;margin-top:8px;font-size:11px;color:#c4d8f0;}
+  .spark .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .spark .legend i{width:14px;height:3px;border-radius:2px;display:inline-block;}
+
+  .verdict{margin-top:14px;border-radius:14px;padding:13px 15px;font-size:13.5px;line-height:1.5;}
+  .verdict.hit{background:linear-gradient(120deg,rgba(31,157,99,.22),rgba(31,157,99,.08));border:1px solid rgba(31,157,99,.4);color:#d6ffe8;}
+  .verdict.miss{background:linear-gradient(120deg,rgba(221,144,34,.2),rgba(221,144,34,.06));border:1px solid rgba(221,144,34,.4);color:#ffe8c4;}
+  .verdict b{color:#fff;}
+  .verdict .cta{margin-top:8px;font-size:12px;color:#bcd3ff;}
+
+  .voice{margin-top:16px;background:rgba(3,110,255,.1);border:1px solid rgba(3,110,255,.3);border-radius:14px;padding:12px 14px;}
+  .voice .vk{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7db0ff;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .voice p{margin:0;font-size:13px;line-height:1.5;color:#e4f0ff;font-style:italic;}
+
+  .handoff{margin-top:22px;font-size:11.5px;color:#8fabc9;line-height:1.6;border-top:1px solid rgba(125,176,255,.16);padding-top:14px;}
+  .handoff b{color:#c4d8f0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lede">
+    <span class="k">Aja Agora · simulador · passo 4</span>
+    <h1>Agulha de Contemplação</h1>
+    <p>Arraste a agulha pra escolher o mês. À direita, o pulo do gato: <b>ancore o mês no dinheiro que a Madalena tem ou vai ter</b> — um 13º, a venda do carro velho, o FGTS, ou a grana que ela vai juntando. A agulha deixa de ser "quando eu quero" e vira <b>"quando meu dinheiro alcança o lance"</b>.</p>
+  </div>
+
+  <div class="stage">
+    <!-- ============ COMPONENTE ============ -->
+    <div class="card">
+      <div class="inner">
+        <div class="title">
+          <span class="sun" id="sun"></span>
+          <h2>Quando você quer ser contemplado?</h2>
+        </div>
+
+        <div class="gauge">
+          <svg id="dial" viewBox="0 0 200 118" role="slider" tabindex="0"
+               aria-label="Mês alvo de contemplação" aria-valuemin="1" aria-valuemax="96" aria-valuenow="12">
+            <path id="trackBg" fill="none" stroke="var(--line)" stroke-width="14" stroke-linecap="round"/>
+            <path id="trackFg" fill="none" stroke="var(--primary)" stroke-width="14" stroke-linecap="round"/>
+            <g id="anchorTick"></g>
+            <line id="needle" stroke="var(--navy)" stroke-width="4" stroke-linecap="round"/>
+            <circle id="pivot" r="8" fill="#fff" stroke="var(--navy)" stroke-width="4"/>
+            <circle id="knob" r="9" fill="var(--primary)" stroke="#fff" stroke-width="3"/>
+          </svg>
+          <div class="center">
+            <div class="month"><span id="mNum">12</span><small>meses até contemplar</small></div>
+          </div>
+        </div>
+        <div class="ends"><span class="fast">◀ Mais rápido</span><span class="slow">Sem pressa ▶</span></div>
+        <div class="hint">✋ Arraste o ponteiro pra ajustar o prazo</div>
+
+        <div class="chance">
+          <div class="top"><span class="lab">Chance de contemplação</span><span class="val" id="chLab">—</span></div>
+          <div class="bar"><span class="mk" id="chMk" style="left:20%"></span></div>
+        </div>
+
+        <div class="amort">
+          <span class="amort-q">O lance abatido vira:</span>
+          <div class="amort-seg">
+            <button class="am on" data-am="parcela">Parcela menor</button>
+            <button class="am" data-am="prazo">Terminar antes</button>
+          </div>
+        </div>
+        <div class="ba">
+          <div class="cell">
+            <div class="cl">Até contemplar</div>
+            <div class="cv" id="payBefore">R$ 1.625</div>
+            <div class="cs" id="payBeforeSub">por ~12 meses</div>
+          </div>
+          <div class="arr">→</div>
+          <div class="cell after">
+            <div class="cl" id="afterLabel">Após receber</div>
+            <div class="cv" id="payAfter">R$ 980</div>
+            <div class="cs recal" id="payAfterSub">↺ depende da regra da administradora</div>
+          </div>
+        </div>
+
+        <div class="receipt">
+          <div class="rrow">
+            <span class="rk" id="lanceLabel">Lance pra contemplar no <b>mês 12</b></span>
+            <span class="rv" id="lanceVal">R$ 54.000 · 45%</span>
+          </div>
+          <div class="rrow">
+            <span class="rk">Você usa da carta (embutido)</span>
+            <span class="rv" id="embVal">R$ 36.000</span>
+          </div>
+          <div class="rrow">
+            <span class="rk">Sai do seu bolso</span>
+            <span class="rv" id="cashVal">R$ 18.000</span>
+          </div>
+          <div class="rrow">
+            <span class="rk">Valor que você recebe</span>
+            <span class="rv pos" id="netVal">R$ 84.000</span>
+          </div>
+          <div class="rrow subtle" id="admRow">
+            <span class="rk">Taxa de adm incide sobre a carta cheia <span class="tip">inclusive o embutido</span></span>
+            <span class="rv muted" id="admVal">—</span>
+          </div>
+          <div class="confront ok" id="confront">Seu dinheiro cobre o lance com folga.</div>
+        </div>
+
+        <div class="disc"><span class="i">i</span>
+          <span>Estimativa a partir dos dados da oferta. Contemplação por lance ou sorteio não é garantida.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ÂNCORA DE DINHEIRO (assinatura) ============ -->
+    <div class="rail">
+      <div class="panel">
+        <h3>💰 Âncora do seu dinheiro</h3>
+        <p class="sub">O melhor mês não é o que você <i>quer</i> — é o que o seu <b>dinheiro alcança</b>. Diz o que vai entrar, e a agulha mira sozinha no mês certo.</p>
+
+        <div class="segs">
+          <div class="seg on" data-mode="lump">Uma entrada</div>
+          <div class="seg" data-mode="save">Vou juntando</div>
+        </div>
+
+        <!-- LUMP -->
+        <div class="ctrl" id="ctrlLump">
+          <div class="field">
+            <label>Quanto entra (13º, venda do carro, FGTS, rescisão…)</label>
+            <div class="row"><input type="range" id="lumpVal" min="10000" max="120000" step="5000" value="85000"><span class="num" id="lumpValN">R$ 85.000</span></div>
+          </div>
+          <div class="field">
+            <label>Em qual mês esse dinheiro cai</label>
+            <div class="row"><input type="range" id="lumpMonth" min="1" max="24" step="1" value="3"><span class="num" id="lumpMonthN">mês 3</span></div>
+          </div>
+        </div>
+
+        <!-- SAVE -->
+        <div class="ctrl" id="ctrlSave" style="display:none">
+          <div class="field">
+            <label>Já tenho guardado hoje</label>
+            <div class="row"><input type="range" id="saveBase" min="0" max="80000" step="5000" value="30000"><span class="num" id="saveBaseN">R$ 30.000</span></div>
+          </div>
+          <div class="field">
+            <label>Consigo juntar por mês</label>
+            <div class="row"><input type="range" id="savePerMonth" min="500" max="10000" step="500" value="4000"><span class="num" id="savePerMonthN">R$ 4.000</span></div>
+          </div>
+        </div>
+
+        <div class="spark">
+          <div class="cap"><span>Lance necessário × seu dinheiro</span><span id="sparkX">cruzam no mês 12</span></div>
+          <svg id="spark" viewBox="0 0 320 120" preserveAspectRatio="none"></svg>
+          <div class="legend">
+            <span><i style="background:var(--destructive)"></i> lance necessário</span>
+            <span><i style="background:var(--success)"></i> seu dinheiro</span>
+          </div>
+        </div>
+
+        <div class="verdict hit" id="verdict"></div>
+
+        <div class="voice">
+          <div class="vk">◔ no WhatsApp o Rafael narra assim</div>
+          <p id="voiceLine">"Madalena, seu 13º cai no mês 3 — bem no ponto. Nesse mês o lance é R$ 66 mil, e você vai ter R$ 85 mil. Dá, com sobra. Miro ali pra você?"</p>
+        </div>
+
+        <div class="handoff">
+          <b>Handoff (lógica validada contra ABAC, Serasa, Sicredi, Rodobens, Unifisa, InfoMoney):</b>
+          curva do gauge ilustrativa — em produção quem manda é <b>computeContemplationDial</b> (calibrada no par real da Bevi: lance histórico × mês). Confirmado: teto embutido ~30% (varia por contrato); <b>embutido reduz o crédito recebido</b>; <b>o lance inteiro (embutido + bolso) amortiza o saldo</b> — corrigido, antes só o bolso abatia. Novo: o abatimento vira <b>parcela menor OU prazo menor</b> (escolha do cliente / regra da administradora — marcado como recalibrável). Novo: <b>taxa de adm incide sobre a carta cheia</b>, inclusive o embutido (custo exibido por honestidade). Para imóvel, <b>FGTS conta como lance embutido</b> (vai direto ao vendedor) — plugar como fonte na âncora. Faixas preservadas: <b>&lt; 8% → sorteio</b>, likelihood coral/âmbar/verde. Disclaimer CDC nunca vira tooltip.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUN = `<svg viewBox="805 138 388 338" width="24" height="24" style="display:block;overflow:visible"><path d="M1065.34,405.47l58.36,64.81c9.8-8.83,18.64-18.67,26.42-29.36l-70.55-51.26c-4.19,5.75-8.95,11.05-14.22,15.8Z" fill="#fff"/><path d="M946.44,241.82l-43.61-75.53c-11.46,6.63-22.18,14.4-31.95,23.21l58.36,64.81c5.26-4.74,11.03-8.92,17.2-12.49Z" fill="#fff"/><path d="M1096.78,351.04c-1.49,7.04-3.72,13.8-6.58,20.22l79.68,35.48c5.32-11.92,9.46-24.48,12.22-37.56l-85.32-18.14Z" fill="#fff"/><path d="M986.66,228.74l-9.12-86.75c-13.35,1.39-26.26,4.19-38.64,8.21l26.96,82.96c6.66-2.16,13.61-3.67,20.8-4.42Z" fill="#fff"/><path d="M1028.72,233.16l26.96-82.96c-12.37-4.02-25.29-6.82-38.64-8.21l-9.12,86.75c7.18.75,14.14,2.26,20.8,4.42Z" fill="#fff"/><path d="M915.02,270.12l-70.55-51.26c-7.73,10.62-14.36,22.07-19.77,34.19l79.68,35.48c2.91-6.53,6.48-12.69,10.64-18.41Z" fill="#fff"/><path d="M1090.2,288.52l79.68-35.48c-5.41-12.13-12.04-23.58-19.77-34.19l-70.55,51.26c4.16,5.71,7.73,11.88,10.64,18.41Z" fill="#fff"/><path d="M1099,329.89h87.22c0-13.47-1.44-26.61-4.12-39.28l-85.32,18.14c1.44,6.82,2.22,13.89,2.22,21.15Z" fill="#fff"/><path d="M1065.34,254.31l58.36-64.81c-9.78-8.81-20.49-16.58-31.95-23.21l-43.61,75.53c6.17,3.57,11.94,7.75,17.2,12.49Z" fill="#fff"/><path d="M897.8,308.74l-85.32-18.14c-2.68,12.68-4.12,25.81-4.12,39.28h87.22c0-7.25.77-14.32,2.22-21.15Z" fill="#fff"/></svg>`;
+document.getElementById('sun').innerHTML = SUN;
+
+// ---- offer / group inputs (would come from the Bevi payload) ----
+const OFFER = {
+  creditValue: 120000,
+  termMonths: 96,
+  monthlyPayment: 1625.22,
+  maxEmbutidoPct: 0.30,
+  admFeePct: 0.20,               // taxa de adm incide sobre a carta CHEIA (validado ABAC/ConsorcioCred)
+  historicalWinningBidPct: 0.45, // par real Bevi
+  referenceMonth: 20,
+};
+let amortMode = "parcela";       // "parcela" (parcela menor) | "prazo" (terminar antes)
+
+const brl = v => "R$ " + Math.round(v).toLocaleString("pt-BR");
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+// ---- computeContemplationDial (illustrative; honors the documented rules) ----
+function computeDial(targetMonth){
+  const { creditValue:C, termMonths:T, monthlyPayment:M, maxEmbutidoPct:emax,
+          historicalWinningBidPct:wp, referenceMonth:rm } = OFFER;
+  const p = m => (m-1)/(T-1);                 // 0 at month1 → 1 at term
+  const k = 1.6;
+  const pRef = p(rm);
+  const L0 = wp / Math.pow(1-pRef, k);        // calibrate curve through the real point
+  const reqPctRaw = L0 * Math.pow(1 - p(targetMonth), k);
+  const requiredLancePct = clamp(reqPctRaw, 0, 0.9);
+  const requiredLanceValue = requiredLancePct * C;
+  const mode = requiredLancePct < 0.08 ? "sorteio" : "lance";
+
+  const embeddedBidValue = Math.min(requiredLanceValue, C*emax);
+  const ownCashValue = Math.max(0, requiredLanceValue - embeddedBidValue);
+  const receivedCredit = C - embeddedBidValue;
+
+  const rem = Math.max(1, T - targetMonth);
+  const remainingBalance = M * rem;
+  // VALIDADO: o lance INTEIRO (embutido + bolso) amortiza o saldo — não só o bolso.
+  const amortizacao = requiredLanceValue;
+  const balanceAfter = Math.max(0, remainingBalance - amortizacao);
+  // dois destinos possíveis do abatimento (escolha do cliente / regra da administradora):
+  const paymentReduzindoParcela = clamp(balanceAfter/rem, 0, M);          // parcela menor, mesmo prazo
+  const mesesEconomizados = Math.min(rem-1, Math.round(amortizacao / M)); // terminar antes, mesma parcela
+  const novoPrazoRestante = rem - mesesEconomizados;
+
+  // custo escondido do embutido: taxa de adm incide sobre a carta cheia, inclusive o embutido
+  const admSobreEmbutido = embeddedBidValue * OFFER.admFeePct;
+
+  let likelihood;                              // 3 faixas
+  if (requiredLancePct >= 0.40) likelihood = "baixa";
+  else if (requiredLancePct >= 0.15) likelihood = "média";
+  else likelihood = "alta";
+
+  return { targetMonth, requiredLancePct, requiredLanceValue, mode,
+           embeddedBidValue, ownCashValue, receivedCredit,
+           paymentReduzindoParcela, mesesEconomizados, novoPrazoRestante, admSobreEmbutido,
+           likelihood };
+}
+
+// ---- gauge geometry ----
+const CX=100, CY=100, R=80;
+const polar = (deg)=>{ const a=deg*Math.PI/180; return [CX + R*Math.cos(a), CY - R*Math.sin(a)]; };
+const arcPath = (d0,d1)=>{ const [x0,y0]=polar(d0), [x1,y1]=polar(d1);
+  const large = Math.abs(d1-d0)>180?1:0; const sweep = d1<d0?1:0;
+  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${R} ${R} 0 ${large} ${sweep} ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
+const monthToDeg = m => 180 - 180*((m-1)/(OFFER.termMonths-1));   // month1→180°, term→0°
+const degToMonth = d => Math.round(1 + ((180-d)/180)*(OFFER.termMonths-1));
+
+document.getElementById('trackBg').setAttribute('d', arcPath(180,0));
+
+let month = 12;
+let anchorMode = "lump";
+const A = { lumpVal:85000, lumpMonth:3, saveBase:30000, savePerMonth:4000 };
+
+function requiredValueAt(m){ return computeDial(m).requiredLanceValue; }
+
+// find the month the money "reaches" the required lance
+function anchorMonth(){
+  if(anchorMode==="lump"){ return A.lumpMonth; }
+  // save: first month where base + perMonth*(m-1) >= requiredValueAt(m)
+  for(let m=1;m<=OFFER.termMonths;m++){
+    const have = A.saveBase + A.savePerMonth*(m-1);
+    if(have >= requiredValueAt(m)) return m;
+  }
+  return null;
+}
+function moneyAt(m){
+  return anchorMode==="lump" ? (m>=A.lumpMonth?A.lumpVal:0)
+                             : A.saveBase + A.savePerMonth*(m-1);
+}
+
+function fmtChance(l){
+  if(l==="alta") return ["Alta","var(--success)",84];
+  if(l==="média") return ["Média","var(--warning)",50];
+  return ["Baixa","var(--destructive)",18];
+}
+
+function render(){
+  const d = computeDial(month);
+
+  // gauge
+  const deg = monthToDeg(month);
+  document.getElementById('trackFg').setAttribute('d', arcPath(180, deg));
+  const [nx,ny]=polar(deg);
+  const nd=document.getElementById('needle');
+  nd.setAttribute('x1',CX); nd.setAttribute('y1',CY); nd.setAttribute('x2',nx.toFixed(2)); nd.setAttribute('y2',ny.toFixed(2));
+  document.getElementById('pivot').setAttribute('cx',CX); document.getElementById('pivot').setAttribute('cy',CY);
+  document.getElementById('knob').setAttribute('cx',nx.toFixed(2)); document.getElementById('knob').setAttribute('cy',ny.toFixed(2));
+  document.getElementById('mNum').textContent = month;
+  const dial=document.getElementById('dial'); dial.setAttribute('aria-valuenow',month);
+
+  // ghost anchor tick on the gauge
+  const am = anchorMonth();
+  const tick=document.getElementById('anchorTick');
+  if(am){ const ad=monthToDeg(clamp(am,1,OFFER.termMonths));
+    const [ix,iy]=polar(ad), [ox,oy]=[CX+(R+12)*Math.cos(ad*Math.PI/180), CY-(R+12)*Math.sin(ad*Math.PI/180)];
+    tick.innerHTML=`<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--success)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="3.4" fill="var(--success)"/>`;
+  } else tick.innerHTML="";
+
+  // chance
+  const [clab,ccol,cpos]=fmtChance(d.likelihood);
+  const chL=document.getElementById('chLab'); chL.textContent=clab; chL.style.color=ccol;
+  document.getElementById('chMk').style.left = cpos+"%";
+
+  // antes/depois
+  document.getElementById('payBefore').textContent = brl(OFFER.monthlyPayment);
+  document.getElementById('payBeforeSub').textContent = `por ~${month} ${month===1?'mês':'meses'}`;
+  const afterLabel=document.getElementById('afterLabel');
+  const payAfter=document.getElementById('payAfter');
+  const payAfterSub=document.getElementById('payAfterSub');
+  if(amortMode==="parcela"){
+    afterLabel.textContent="Parcela nova";
+    payAfter.textContent=brl(d.paymentReduzindoParcela);
+    const cai=Math.max(0,OFFER.monthlyPayment-d.paymentReduzindoParcela);
+    payAfterSub.innerHTML = cai>1 ? `▼ cai ${brl(cai)}/mês` : `mesma parcela`;
+  } else {
+    afterLabel.textContent="Termina antes";
+    payAfter.textContent=`−${d.mesesEconomizados} ${d.mesesEconomizados===1?'mês':'meses'}`;
+    payAfterSub.innerHTML = `parcela segue ${brl(OFFER.monthlyPayment)}`;
+  }
+
+  // receipt
+  const isS = d.mode==="sorteio";
+  // taxa de adm sobre o embutido (custo escondido) — honestidade
+  const admRow=document.getElementById('admRow');
+  if(d.embeddedBidValue>0 && !isS){ admRow.style.display="flex";
+    document.getElementById('admVal').textContent = "≈ "+brl(d.admSobreEmbutido);
+  } else admRow.style.display="none";
+  document.getElementById('lanceLabel').innerHTML = isS
+    ? `Contemplação por <b>sorteio</b> no mês ${month}`
+    : `Lance pra contemplar no <b>mês ${month}</b>`;
+  document.getElementById('lanceVal').innerHTML = isS
+    ? `<span class="badge sorteio">sem lance</span>`
+    : `${brl(d.requiredLanceValue)} · ${Math.round(d.requiredLancePct*100)}%`;
+  document.getElementById('embVal').textContent = brl(d.embeddedBidValue);
+  document.getElementById('cashVal').textContent = brl(d.ownCashValue);
+  document.getElementById('netVal').textContent = brl(d.receivedCredit);
+
+  // confronto: money vs required lance at the CURRENT month
+  const haveNow = moneyAt(month);
+  const conf=document.getElementById('confront');
+  if(isS){ conf.className="confront ok"; conf.textContent="Nesse mês a contemplação sai por sorteio — lance é opcional."; }
+  else if(haveNow >= d.requiredLanceValue){
+    conf.className="confront ok";
+    conf.innerHTML=`Você teria <b>${brl(haveNow)}</b> e o lance é <b>${brl(d.requiredLanceValue)}</b> — dá, e ainda sobra ${brl(haveNow-d.requiredLanceValue)}.`;
+  } else {
+    conf.className="confront gap";
+    conf.innerHTML=`Nesse mês faltam <b>${brl(d.requiredLanceValue-haveNow)}</b> pro lance. Deslize a agulha um pouco pra direita.`;
+  }
+
+  drawSpark();
+  drawVerdict(am);
+  drawVoice(am);
+}
+
+// ---- sparkline: required-lance curve (coral) vs money line (green), crossing dot ----
+function drawSpark(){
+  const W=320,H=120, pad=6, mMax=Math.min(48, OFFER.termMonths);
+  const xs=m=>pad + (m-1)/(mMax-1)*(W-2*pad);
+  let vMax=0;
+  for(let m=1;m<=mMax;m++){ vMax=Math.max(vMax, requiredValueAt(m), moneyAt(m)); }
+  vMax=Math.max(vMax, 1);
+  const ys=v=>H-pad - (v/vMax)*(H-2*pad);
+  const line=(fn)=>{ let dpath=""; for(let m=1;m<=mMax;m++){ dpath+=(m===1?"M":"L")+xs(m).toFixed(1)+" "+ys(fn(m)).toFixed(1)+" "; } return dpath; };
+  const reqLine=line(requiredValueAt), moneyLine=line(moneyAt);
+
+  const am=anchorMonth();
+  let dot="";
+  if(am && am<=mMax){ dot=`<circle cx="${xs(am).toFixed(1)}" cy="${ys(moneyAt(am)).toFixed(1)}" r="5" fill="#fff" stroke="var(--success)" stroke-width="2.5"/>
+    <line x1="${xs(am).toFixed(1)}" y1="6" x2="${xs(am).toFixed(1)}" y2="${H-6}" stroke="rgba(255,255,255,.25)" stroke-width="1" stroke-dasharray="3 3"/>`; }
+
+  document.getElementById('spark').innerHTML =
+    `<path d="${reqLine}" fill="none" stroke="var(--destructive)" stroke-width="2.5"/>
+     <path d="${moneyLine}" fill="none" stroke="var(--success)" stroke-width="2.5"/>${dot}`;
+  document.getElementById('sparkX').textContent = am ? `cruzam no mês ${am}` : "não alcança no prazo";
+}
+
+function drawVerdict(am){
+  const v=document.getElementById('verdict');
+  if(!am){ v.className="verdict miss";
+    v.innerHTML=`<b>Ainda não alcança.</b> Com esse ritmo o dinheiro não encosta no lance dentro do prazo — dá pra aumentar o quanto junta por mês, ou mirar contemplação por sorteio lá na frente.`;
+    return; }
+  const req=requiredValueAt(am), have=moneyAt(am);
+  v.className="verdict hit";
+  if(anchorMode==="lump"){
+    v.innerHTML=`<b>Encaixa no mês ${am}.</b> Quando seu dinheiro cai, o lance é ${brl(req)} e você tem ${brl(have)}. <span class="cta">→ Toque pra mirar a agulha nesse mês.</span>`;
+  } else {
+    v.innerHTML=`<b>Você alcança no mês ${am}.</b> Juntando ${brl(A.savePerMonth)}/mês, aí sua grana passa o lance de ${brl(req)}. <span class="cta">→ Toque pra mirar a agulha nesse mês.</span>`;
+  }
+  v.onclick=()=>{ if(am){ month=clamp(am,1,OFFER.termMonths); render(); } };
+  v.style.cursor="pointer";
+}
+
+function drawVoice(am){
+  const el=document.getElementById('voiceLine');
+  if(!am){ el.textContent=`"Madalena, com esse ritmo a gente não encosta no lance a tempo — mas dá pra mirar lá na frente, onde contempla no sorteio sem precisar de lance. Quer que eu te mostre?"`; return; }
+  const req=requiredValueAt(am);
+  if(anchorMode==="lump"){
+    el.textContent=`"Madalena, sua entrada cai no mês ${am} — bem no ponto. Nesse mês o lance fica em ${brl(req)}, e você vai ter ${brl(A.lumpVal)}. ${A.lumpVal>=req?'Dá, com folga.':'Fica perto — a gente ajusta.'} Miro ali pra você?"`;
+  } else {
+    el.textContent=`"Madalena, juntando ${brl(A.savePerMonth)} por mês, lá pelo mês ${am} seu dinheiro passa o lance de ${brl(req)}. É a hora certa de dar o lance. Deixa eu já reservar sua cota pra segurar a vaga?"`;
+  }
+}
+
+// ---- gauge interaction ----
+const dial=document.getElementById('dial');
+function pointToMonth(evt){
+  const r=dial.getBoundingClientRect();
+  const sx=(evt.clientX-r.left)/r.width*200;
+  const sy=(evt.clientY-r.top)/r.height*118;
+  let deg=Math.atan2(CY-sy, sx-CX)*180/Math.PI;
+  deg=clamp(deg,0,180);
+  return clamp(degToMonth(deg),1,OFFER.termMonths);
+}
+let dragging=false;
+dial.addEventListener('pointerdown',e=>{ dragging=true; dial.setPointerCapture(e.pointerId); month=pointToMonth(e); render(); });
+dial.addEventListener('pointermove',e=>{ if(dragging){ month=pointToMonth(e); render(); } });
+dial.addEventListener('pointerup',()=>dragging=false);
+dial.addEventListener('pointercancel',()=>dragging=false);
+dial.addEventListener('keydown',e=>{
+  const T=OFFER.termMonths; let h=false;
+  if(e.key==='ArrowRight'||e.key==='ArrowUp'){month=clamp(month+1,1,T);h=true;}
+  else if(e.key==='ArrowLeft'||e.key==='ArrowDown'){month=clamp(month-1,1,T);h=true;}
+  else if(e.key==='PageUp'){month=clamp(month+6,1,T);h=true;}
+  else if(e.key==='PageDown'){month=clamp(month-6,1,T);h=true;}
+  else if(e.key==='Home'){month=1;h=true;}
+  else if(e.key==='End'){month=T;h=true;}
+  if(h){e.preventDefault();render();}
+});
+
+// ---- anchor controls ----
+document.querySelectorAll('.seg').forEach(s=>s.addEventListener('click',()=>{
+  document.querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));
+  s.classList.add('on'); anchorMode=s.dataset.mode;
+  document.getElementById('ctrlLump').style.display = anchorMode==='lump'?'flex':'none';
+  document.getElementById('ctrlSave').style.display = anchorMode==='save'?'flex':'none';
+  render();
+}));
+document.querySelectorAll('.amort-seg .am').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.amort-seg .am').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); amortMode=b.dataset.am; render();
+}));
+const bind=(id,key,fmt)=>{ const el=document.getElementById(id), out=document.getElementById(id+'N');
+  el.addEventListener('input',()=>{ A[key]=+el.value; out.textContent=fmt(+el.value); render(); }); };
+bind('lumpVal','lumpVal',v=>brl(v));
+bind('lumpMonth','lumpMonth',v=>'mês '+v);
+bind('saveBase','saveBase',v=>brl(v));
+bind('savePerMonth','savePerMonth',v=>brl(v));
+
+render();
+</script>
+</body>
+</html>
