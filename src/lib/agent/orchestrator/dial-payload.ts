@@ -32,6 +32,11 @@ export interface RecommendedOfferSnapshot {
 	/** FIX-40: lance médio do grupo (R$) — `lanceMedio` da API nova quando o
 	 * artifact-âncora o carrega. Referência factual de lance, nunca probabilidade. */
 	avgBidValue?: number;
+	/** FIX-246 (rodada 3, Fable r2): id do grupo real ancorado no reveal — sobrevive
+	 * no meta pra emissão SERVER-SIDE de cards pós-reveal (scarcity) resolver o
+	 * grupo sem depender de um `RevealGroupIndex` de turno (que só existe durante
+	 * a busca). Nunca fabricado — ausente quando o artifact-âncora não o carrega. */
+	groupId?: string;
 }
 
 /** Perfil declarado na qualificação — alimenta os defaults do dial (FIX-C5). */
@@ -140,6 +145,11 @@ export function offerSnapshotFromArtifact(
 		...(lanceRefMonth != null ? { lanceRefMonth } : {}),
 		...(maxEmbutidoPct != null ? { maxEmbutidoPct } : {}),
 		...(avgBidValue != null ? { avgBidValue } : {}),
+		// FIX-246: groupId real (coerceRevealCota já o grava como `groupId` nos
+		// artifacts do reveal) — nunca fabricado.
+		...(typeof payload.groupId === "string" && payload.groupId.length > 0
+			? { groupId: payload.groupId }
+			: {}),
 	};
 }
 

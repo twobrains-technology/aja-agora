@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
+import type { ArtifactType } from "@/lib/chat/types";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -22,16 +23,47 @@ import {
 	buildLanceSoParcelaDirective,
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
+	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
+import { buildScarcityCard, buildTwoPathsCard } from "./server-cards";
 import { buildSystemContext } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
-import type { ChatMessage, TurnEvent, TurnInput } from "./types";
+import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
+ * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
+ * espelha `pipeServerArtifact` do adapter web, mas em generator (o consumidor
+ * de cada canal já sabe tratar `TurnEvent` do tipo "artifact" uniformemente).
+ * Nunca depende de o LLM chamar `present_X`. */
+async function* emitServerCard(args: {
+	conversationId: string;
+	channel: Channel;
+	persona: Persona;
+	artifactType: ArtifactType;
+	payload: Record<string, unknown>;
+}): AsyncGenerator<TurnEvent> {
+	const { conversationId, channel, persona, artifactType, payload } = args;
+	const messageId = await saveMessage(
+		conversationId,
+		"assistant",
+		`[card: ${artifactType}]`,
+		channel,
+		persona,
+	);
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: artifactType,
+		payload,
+		createdAt: simulatorNow(),
+	});
+	yield { type: "artifact", artifactType, payload, toolCallId: crypto.randomUUID() };
+}
 
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const {
@@ -342,6 +374,9 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// estratégia de lance resolvida, ANTES do card de decisão — só no
 		// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
 		// de escassez, spec `04-copy-fluxos.md` Fluxo B).
+		// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
+		// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
+		// de tool-call do LLM.
 		if (!isSoParcela) {
 			yield* runTurn({
 				channel,
@@ -352,6 +387,16 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				skipAnalyzer: true,
 				skipLeadCollection: true,
 			});
+			const scarcityCard = buildScarcityCard(refreshed);
+			if (scarcityCard) {
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "scarcity",
+					payload: scarcityCard.payload,
+				});
+			}
 		}
 		const directive = isSoParcela
 			? buildLanceSoParcelaDirective()
@@ -367,6 +412,17 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			skipAnalyzer: true,
 			skipLeadCollection: true,
 		});
+		if (isSoParcela) {
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "two_paths",
+				payload: buildTwoPathsCard(refreshed).payload,
+			});
+			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
+			await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+		}
 		return;
 	}
 

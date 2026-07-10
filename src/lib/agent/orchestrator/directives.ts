@@ -114,40 +114,58 @@ export function buildLanceReactionDirective(rangeTitle: string): string {
 	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
 }
 
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): o convite pra
+ * decidir entre os dois caminhos é sempre a MESMA frase neutra — nunca gerada
+ * pelo LLM (que podia "recomendar" um caminho por conta própria, cutucando o
+ * compliance do card). Emitida DIRETO ao usuário depois do card, sem passar
+ * pelo modelo (Lei 1 — mesmo padrão do `buildDiscoveryFailedFallback`). */
+export const TWO_PATHS_FOLLOWUP_TEXT =
+	"Não tem certo ou errado — depende de você ter pressa ou não. Qual dos dois combina mais com você?";
+
 /** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — 3ª saída do gate
  * `lance`: "não quero comprometer nada além da parcela". Pula lance-value/
- * lance-embutido/simulator-offer por completo — chama `present_two_paths`
- * (tool do bloco-cards-ui, referenciada pelo NOME; allowlist tolera até o
- * merge do bloco irmão) e devolve a decisão ao usuário, sem recomendar um dos
- * dois caminhos (sorteio vs. lance modesto depois). */
+ * lance-embutido/simulator-offer por completo.
+ * FIX-246 (rodada 3, Fable r2, causa-raiz): o card `two_paths` tinha 0
+ * emissões em 2 conduções — dependia do LLM obedecer "chame a tool
+ * present_two_paths", invariante que ficou no PROMPT, não em CÓDIGO (Lei
+ * 1/4). Agora o directive só escreve a frase de introdução; o handler
+ * (route.ts/index.ts) emite o card SERVER-SIDE determinístico logo em
+ * seguida (`buildTwoPathsCard`) — e o convite pra decidir é o texto FIXO
+ * `TWO_PATHS_FOLLOWUP_TEXT`, nunca a critério do modelo. */
 export function buildLanceSoParcelaDirective(): string {
-	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: (1) escreva UMA frase curta respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis:"); (2) chame a tool present_two_paths (sem parâmetros extras — o sistema monta o payload a partir da oferta real). NÃO explique lance embutido, NÃO chame simulate_quota nem present_contemplation_dial. Depois que o card aparecer, você NÃO recomenda um dos dois caminhos — devolve a decisão ao usuário em UMA frase ("Não tem certo ou errado — depende de você ter pressa ou não. Qual combina mais com o seu momento?").`;
+	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva APENAS UMA frase curta respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis:"). NÃO explique lance embutido, NÃO chame simulate_quota, NÃO chame present_contemplation_dial nem NENHUMA tool neste turno — o sistema mostra o card dos dois caminhos e a pergunta de decisão automaticamente, logo em seguida.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `embedded_bid` (docs/02-cards-novos.md
  * CARD 1): estava ÓRFÃO — a tool `present_embedded_bid` existia (schema +
  * allowlist) mas NENHUM directive/prompt instruía o modelo a chamá-la, então
- * nunca aparecia em nenhuma condução real (0 de 4 no veredito Fable). Dispara
- * no gate `lance-embutido`, ANTES da agulha (contemplation_dial) — modelo:
- * `buildSimulatorDialDirective` (1 frase curta + 1 chamada de tool, payload
- * coagido server-side a partir da oferta real via `coerceEmbeddedBidPayload`).
+ * nunca aparecia em nenhuma condução real (0 de 4 no veredito Fable r1).
+ * FIX-246 (rodada 3, Fable r2): o directive PASSOU a instruir a tool-call
+ * (FIX-237), mas o LLM continuou desobedecendo/errando (0 emissões em 3
+ * oportunidades no veredito r2) — o mesmo invariante-no-prompt. Agora o
+ * directive só escreve a frase de introdução; o handler emite o card
+ * SERVER-SIDE determinístico logo em seguida (`buildEmbeddedBidCard`,
+ * payload coagido a partir da oferta real via `coerceEmbeddedBidPayload`).
  * Regra dura (spec): o card SEMPRE diz que o crédito recebido diminui — já
- * hardcoded no componente/coerção, não depende do texto do modelo. */
+ * hardcoded na coerção, não depende do texto do modelo. */
 export function buildEmbeddedBidDirective(): string {
-	return `Antes de perguntar se o usuário quer considerar lance embutido, mostre o card. FLUXO OBRIGATÓRIO neste turno: (1) escreva UMA frase curta NO SEU TOM introduzindo o conceito (ex.: "Existe o lance embutido: você usa parte da própria carta como lance, sem tirar do bolso."); (2) chame present_embedded_bid com o groupId do plano recomendado (o mesmo grupo que você já usou nas ferramentas anteriores) — os valores (embeddedBidValue/netCredit) são calculados pelo sistema a partir da oferta real, você NÃO digita nem calcula nenhum número. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card. NÃO chame outras tools neste turno.`;
+	return `Antes de perguntar se o usuário quer considerar lance embutido, escreva APENAS UMA frase curta NO SEU TOM introduzindo o conceito (ex.: "Existe o lance embutido: você usa parte da própria carta como lance, sem tirar do bolso."). NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
  * CARD 2): mesmo defeito do embedded_bid, ÓRFÃO por falta de directive.
- * Dispara depois da estratégia de lance resolvida, ANTES da proposta final —
- * imediatamente antes do card de decisão ("Esse plano faz sentido?"). O
- * componente/coerção server-side (`coerceScarcityPayload`) já decide se
- * renderiza (só quando há `availableSlots` real ancorado no grupo); o
- * directive só precisa disparar a tool no ponto certo. NÃO dispara no
- * caminho "só a parcela" (two_paths) — a proposta ali segue direto pro
- * fecho, sem o gancho de escassez (spec `04-copy-fluxos.md` Fluxo B). */
+ * FIX-246 (rodada 3, Fable r2): mesma desobediência do embedded_bid (0
+ * emissões em 2 oportunidades — o LLM respondeu ao directive com uma bolha
+ * de texto em vez de chamar a tool). Agora o directive só escreve a frase de
+ * transição; o handler emite o card SERVER-SIDE determinístico logo em
+ * seguida (`buildScarcityCard`) — que já decide se renderiza (só quando há
+ * `availableSlots` real ancorado no grupo). Dispara depois da estratégia de
+ * lance resolvida, ANTES da proposta final — imediatamente antes do card de
+ * decisão ("Esse plano faz sentido?"). NÃO dispara no caminho "só a parcela"
+ * (two_paths) — a proposta ali segue direto pro fecho, sem o gancho de
+ * escassez (spec `04-copy-fluxos.md` Fluxo B). */
 export function buildScarcityDirective(): string {
-	return `FLUXO OBRIGATÓRIO neste turno: (1) escreva UMA frase curta de transição NO SEU TOM (ex.: "Ah, e um detalhe sobre esse grupo, só pra você saber:"); (2) chame present_scarcity com o groupId do plano recomendado (o mesmo grupo que você já usou nas ferramentas anteriores). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema calcula o número exibido. NÃO chame outras tools neste turno.`;
+	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Ah, e um detalhe sobre esse grupo, só pra você saber:"). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema mostra o card de escassez automaticamente em seguida, com o número REAL calculado a partir do grupo. NÃO chame present_scarcity nem NENHUMA outra tool neste turno.`;
 }
 
 // ---- Group actions ----

@@ -1,4 +1,6 @@
 import type { UIMessageStreamWriter } from "ai";
+import { db } from "@/db";
+import { artifacts as artifactsTable } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
@@ -13,6 +15,7 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
+import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
@@ -25,6 +28,7 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveMessage } from "@/lib/conversation/messages";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
@@ -189,6 +193,40 @@ export async function pipeGatePrompt(args: {
 	if (data) {
 		writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
 	}
+}
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
+ * SERVER-SIDE determinístico direto no stream — sem depender de o LLM chamar
+ * `present_X` (0 emissões ao vivo no veredito, a tool nem existe mais no
+ * toolset). Espelha `pipeGatePrompt` (texto opcional + escrita direta), mas
+ * persiste como artifact vinculado a uma mensagem do assistente (mesmo padrão
+ * de `pipeAndSaveClosingItems` em route.ts) pra sobreviver no histórico/admin. */
+export async function pipeServerArtifact(args: {
+	conversationId: string;
+	artifactType: ArtifactType;
+	payload: Record<string, unknown>;
+	persona: Persona | null;
+	writer: Writer;
+}): Promise<void> {
+	const { conversationId, artifactType, payload, persona, writer } = args;
+	writer.write({
+		type: "data-artifact",
+		id: crypto.randomUUID(),
+		data: { type: artifactType, payload } as unknown as ArtifactPartData,
+	});
+	const messageId = await saveMessage(
+		conversationId,
+		"assistant",
+		`[card: ${artifactType}]`,
+		"web",
+		persona,
+	);
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: artifactType,
+		payload,
+		createdAt: simulatorNow(),
+	});
 }
 
 // FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
