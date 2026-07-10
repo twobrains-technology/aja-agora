@@ -81,9 +81,12 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 					<Row label="Administradora" value={payload.administradora} />
 				</div>
 
-				{/* FIX-197 (§3.6) — aviso de ajuste de faixa: a carta é da denominação do
-				    grupo (rawCreditValue); a re-simulação ajustou à faixa pedida
-				    (creditValue). Exibe só quando os dois números diferem; ambos reais. */}
+				{/* FIX-197/FIX-247 (§3.6, rodada 3 — Fable r2 N3) — aviso de ajuste no
+				    FECHAMENTO: rawCreditValue é o valor PEDIDO pelo cliente (âncora do
+				    reveal); creditValue é a carta REAL que a administradora fechou. A
+				    copy antiga ("essa carta" apontando pro pedido, "sua faixa" pra
+				    carta nova) estava semanticamente INVERTIDA — corrigido pra "pedido
+				    × carta real", sem ambiguidade. Exibe só quando os dois divergem. */}
 				{payload.rawCreditValue != null &&
 					Number.isFinite(payload.rawCreditValue) &&
 					Number.isFinite(payload.creditValue) &&
@@ -94,7 +97,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						>
 							<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 							<span>
-								Ajustamos essa carta de {brl(payload.rawCreditValue)} pra sua faixa de ~
+								Você pediu uma carta de ~{brl(payload.rawCreditValue)} — a carta real ficou em{" "}
 								{brl(payload.creditValue)}.
 							</span>
 						</p>

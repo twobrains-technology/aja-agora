@@ -1,10 +1,20 @@
 ---
 id: FIX-246
 titulo: "Emitir two_paths/embedded_bid/scarcity server-side (não depender do LLM chamar a tool)"
-status: todo
+status: done
 bloco: bloco-r3-serverside-cards
-arquivos: [src/app/api/chat/route.ts, src/lib/agent/orchestrator/runner.ts]
+arquivos:
+  - src/app/api/chat/route.ts
+  - src/lib/agent/orchestrator/index.ts
+  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/orchestrator/server-cards.ts
+  - src/lib/agent/orchestrator/dial-payload.ts
+  - src/lib/agent/orchestrator/tool-policy.ts
+  - src/lib/agent/personas.ts
+  - src/lib/web/adapter.ts
 rodada: 2026-07-10 rodada 3 (Fable r2, gaps 1/3 PARCIAIS)
+commit: db1b072
+executado_em: "2026-07-10"
 ---
 
 ## Gap (veredito Fable r2, gaps #1 e #3 — PARCIAIS)

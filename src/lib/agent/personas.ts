@@ -152,6 +152,11 @@ export type ConversationMetadata = {
 		creditValue: number;
 		termMonths: number;
 		monthlyPayment: number;
+		/** FIX-246 (rodada 3, Fable r2): id do grupo real ancorado no reveal —
+		 * sobrevive no meta pra emissão SERVER-SIDE do card `scarcity` (pós-
+		 * reveal, sem depender de um `RevealGroupIndex` de turno). Nunca
+		 * fabricado — ausente quando o artifact-âncora não o carrega. */
+		groupId?: string;
 	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */

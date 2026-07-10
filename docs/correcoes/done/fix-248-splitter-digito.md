@@ -1,10 +1,12 @@
 ---
 id: FIX-248
 titulo: "Valor monetário quebrado em 2 bolhas ('Juntando R$ 4.' | '000,00/mês')"
-status: todo
+status: done
 bloco: bloco-r3-serverside-cards
 arquivos: [src/lib/agent/orchestrator/sanitizer.ts]
 rodada: 2026-07-10 rodada 3 (Fable r2, gap NOVO N1 P0)
+commit: 4a798f4
+executado_em: "2026-07-10"
 ---
 
 ## Gap (veredito Fable r2, N1 — NOVO P0)

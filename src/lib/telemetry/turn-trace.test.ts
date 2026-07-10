@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import {
+	getTraceForWriter,
 	instrumentWriter,
 	recordTurnEvent,
 	recordUIPart,
@@ -310,5 +311,29 @@ describe("instrumentWriter — tap por proxy do writer (web SSE)", () => {
 		expect(r.toolsCalled).toEqual([]);
 		expect(r.artifactsEmitted).toEqual([]);
 		expect(r.textChars).toBe(0);
+	});
+});
+
+// FIX-250 (rodada 3, Fable r2, N7 — observabilidade, Lei 5): "suppression" e
+// "usage" são TurnEvents emitidos pelo runner, mas NUNCA viram UI part (são
+// no-op de propósito no funil de SSE da web, `pipeOrchestratorToWriter`) —
+// então `recordUIPart`/`instrumentWriter` NUNCA os via, e `trace.suppressed`
+// ficava SEMPRE `[]` no canal web (achado ao vivo: supressão do guard
+// `premature-decision` não registrada). `getTraceForWriter` expõe o trace já
+// registrado por `instrumentWriter` pro consumidor (pipeOrchestratorToWriter)
+// alimentar suppression/usage MESMO sem escrever nada no writer.
+describe("FIX-250 — getTraceForWriter (fecha o gap de suppression/usage no canal web)", () => {
+	it("instrumentWriter registra o trace — getTraceForWriter recupera pelo writer instrumentado", () => {
+		const { deps } = makeDeps();
+		const trace = new TurnTrace({ conversationId: "c", channel: "web" }, deps);
+		const writer = { write: vi.fn(), merge: vi.fn() };
+		// biome-ignore lint/suspicious/noExplicitAny: writer fake mínimo
+		const traced = instrumentWriter(writer as any, trace);
+		expect(getTraceForWriter(traced)).toBe(trace);
+	});
+
+	it("writer NÃO instrumentado não tem trace associado (undefined, nunca lança)", () => {
+		const writer = { write: vi.fn(), merge: vi.fn() };
+		expect(getTraceForWriter(writer)).toBeUndefined();
 	});
 });

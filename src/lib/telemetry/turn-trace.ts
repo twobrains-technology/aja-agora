@@ -311,6 +311,27 @@ export async function* traceTurnEvents(
 	}
 }
 
+// FIX-250 (rodada 3, Fable r2, N7 — observabilidade, Lei 5): "suppression"/
+// "usage" são TurnEvents que NUNCA viram UI part no canal web (no-op de
+// propósito em `pipeOrchestratorToWriter` — não são pra chegar ao usuário) —
+// `recordUIPart`/`instrumentWriter` sozinhos nunca os enxergam, e
+// `trace.suppressed` ficava SEMPRE `[]` na web (achado ao vivo: supressão do
+// guard `premature-decision` não registrada). Side-channel: quem consome o
+// stream bruto de TurnEvents (`pipeOrchestratorToWriter`) recupera o MESMO
+// trace pelo writer instrumentado e alimenta suppression/usage direto, sem
+// precisar mudar a assinatura de nenhuma função pipeXxx em route.ts.
+const writerTraces = new WeakMap<object, TurnTrace>();
+
+/** Recupera o `TurnTrace` registrado por `instrumentWriter` pra este writer
+ * (o mesmo objeto instrumentado que circula pelas funções pipeXxx). undefined
+ * quando o writer não foi instrumentado — nunca lança. */
+export function getTraceForWriter(writer: unknown): TurnTrace | undefined {
+	if (writer === null || (typeof writer !== "object" && typeof writer !== "function")) {
+		return undefined;
+	}
+	return writerTraces.get(writer as object);
+}
+
 /** Tap por PROXY do writer (funil de consumo da web SSE). Forwarda TODA chamada
  *  ao writer real (passthrough byte-idêntico) e, em `write`, espelha a UI part
  *  no trace. Use com um `TurnTrace` cujo `finalize()` é chamado ao fim do
@@ -319,7 +340,7 @@ export function instrumentWriter<M extends UIMessage>(
 	writer: UIMessageStreamWriter<M>,
 	trace: TurnTrace,
 ): UIMessageStreamWriter<M> {
-	return new Proxy(writer, {
+	const proxy = new Proxy(writer, {
 		get(target, prop, receiver) {
 			if (prop === "write") {
 				return (part: Parameters<UIMessageStreamWriter<M>["write"]>[0]) => {
@@ -335,4 +356,6 @@ export function instrumentWriter<M extends UIMessage>(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
+	writerTraces.set(proxy, trace);
+	return proxy;
 }

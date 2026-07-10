@@ -32,8 +32,14 @@ import {
 	buildScarcityDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
+	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
 import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
+import {
+	buildEmbeddedBidCard,
+	buildScarcityCard,
+	buildTwoPathsCard,
+} from "@/lib/agent/orchestrator/server-cards";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import {
@@ -79,6 +85,7 @@ import {
 	pipeDirectiveTurn,
 	pipeGatePrompt,
 	pipeSearchSummaryTurn,
+	pipeServerArtifact,
 	pipeTransitionTurn,
 	pipeUserTurn,
 } from "@/lib/web/adapter";
@@ -673,21 +680,25 @@ export async function POST(req: NextRequest) {
 								// + administradoraPreferida) — módulo único compartilhado com o
 								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
 								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
-								const { proposalId, offer, noOffer } = await startContract(
-									conversationId,
-									buildStartContractInput(
-										meta,
-										{ cpf, celular, lgpd: body.action.lgpd },
-										{ leadId },
-									),
-								);
+								// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
+								// pode sair do destructuring — é o campo que aciona o aviso de
+								// ajuste (FIX-197/240) quando a carta real diverge do pedido.
+								const { proposalId, offer, noOffer, requestedCreditValue } =
+									await startContract(
+										conversationId,
+										buildStartContractInput(
+											meta,
+											{ cpf, celular, lgpd: body.action.lgpd },
+											{ leadId },
+										),
+									);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
 								// (módulo único — eval valida o MESMO copy de produção).
 								await pipeAndSaveClosingItems(
 									// FIX-40: o lance declarado na qualificação habilita a frase de
 									// posição factual vs o lance médio do grupo (sem promessa).
 									realOfferPresentation(
-										{ proposalId, offer, noOffer },
+										{ proposalId, offer, noOffer, requestedCreditValue },
 										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
 									),
 									writer,
@@ -1009,6 +1020,23 @@ export async function POST(req: NextRequest) {
 									writer,
 									userKey,
 								});
+								// FIX-246 (rodada 3, Fable r2 causa-raiz): emissão SERVER-SIDE
+								// determinística do card two_paths (0 emissões ao vivo quando
+								// dependia do LLM chamar a tool) + convite fixo pra decidir
+								// (nunca gerado pelo modelo — TWO_PATHS_FOLLOWUP_TEXT).
+								await pipeServerArtifact({
+									conversationId,
+									artifactType: "two_paths",
+									payload: buildTwoPathsCard(fresh).payload,
+									persona: fresh.currentPersona ?? null,
+									writer,
+								});
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									fresh.currentPersona ?? null,
+									TWO_PATHS_FOLLOWUP_TEXT,
+								);
 								return;
 							}
 							if (action.value === "yes") {
@@ -1024,12 +1052,22 @@ export async function POST(req: NextRequest) {
 							// FIX-237 (Fable r1, D2.1 gap #3): embedded_bid era ÓRFÃO (tool
 							// existia, ninguém instruía o modelo a chamá-la). Directive turn
 							// mostra o card ANTES do texto+chips determinístico do gate.
+							// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto —
+							// o card é emissão SERVER-SIDE determinística (nunca depende de
+							// tool-call do LLM).
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildEmbeddedBidDirective(),
 								contactName,
 								writer,
 								userKey,
+							});
+							await pipeServerArtifact({
+								conversationId,
+								artifactType: "embedded_bid",
+								payload: buildEmbeddedBidCard(meta).payload,
+								persona: meta.currentPersona ?? null,
+								writer,
 							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
@@ -1068,6 +1106,8 @@ export async function POST(req: NextRequest) {
 								// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara
 								// depois da estratégia (lance resolvido), ANTES da proposta —
 								// mesmo ponto que o gate `decision` em orchestrator/index.ts.
+								// FIX-246: o directive SÓ escreve o texto — o card é emissão
+								// SERVER-SIDE determinística (nunca tool-call do LLM).
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildScarcityDirective(),
@@ -1075,6 +1115,16 @@ export async function POST(req: NextRequest) {
 									writer,
 									userKey,
 								});
+								const scarcityCard = buildScarcityCard(refreshed);
+								if (scarcityCard) {
+									await pipeServerArtifact({
+										conversationId,
+										artifactType: "scarcity",
+										payload: scarcityCard.payload,
+										persona: refreshed.currentPersona ?? null,
+										writer,
+									});
+								}
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildDecisionPromptDirective({
@@ -1149,12 +1199,20 @@ export async function POST(req: NextRequest) {
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							// FIX-237 (Fable r1, D2.1 gap #3): mesma wiring do ramo no/maybe do
 							// gate `lance` acima — embedded_bid antes do texto+chips.
+							// FIX-246: card emitido SERVER-SIDE, nunca por tool-call do LLM.
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildEmbeddedBidDirective(),
 								contactName,
 								writer,
 								userKey,
+							});
+							await pipeServerArtifact({
+								conversationId,
+								artifactType: "embedded_bid",
+								payload: buildEmbeddedBidCard(meta).payload,
+								persona: meta.currentPersona ?? null,
+								writer,
 							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;

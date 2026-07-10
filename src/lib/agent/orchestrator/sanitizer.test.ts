@@ -21,8 +21,10 @@ import {
 	isProcessPreamble,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
+	isProactiveCallbackClaim,
 	joinSeparator,
 	normalizeGluedSentences,
+	splitSegments,
 	stripProcessPreamble,
 } from "./sanitizer";
 
@@ -143,6 +145,54 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+// FIX-248 (rodada 3, Fable r2, N1 P0): "Juntando R$ 4." | "000,00 por mês" —
+// o splitter tratava o PONTO DE MILHAR como fim de frase e quebrava o valor
+// monetário em 2 bolhas ao vivo. Superfície criada pela narração de dinheiro
+// do FIX-241 ("juntando R$ 4.000,00 por mês, lá pelo mês X..."). Guarda de
+// dígito: um "." colado a um dígito (separador de milhar/decimal) NUNCA é
+// fronteira de sentença — só um "." colado a LETRA é.
+describe("FIX-248 — guarda de dígito no splitter (valor monetário não quebra em 2 bolhas)", () => {
+	it("splitSegments NÃO quebra 'R$ 4.000,00' no ponto de milhar", () => {
+		const segments = splitSegments("Juntando R$ 4.000,00 por mês. Isso ajuda muito.");
+		expect(segments.some((s) => /^000,00/.test(s.trim()))).toBe(false);
+		// reconstrução é lossless (join sem separador reconstitui o original).
+		expect(segments.join("")).toBe("Juntando R$ 4.000,00 por mês. Isso ajuda muito.");
+	});
+
+	it("splitSegments ainda quebra frases reais (fim de frase real preservado)", () => {
+		const segments = splitSegments("Primeira frase. Segunda frase.");
+		expect(segments).toEqual(["Primeira frase.", " Segunda frase."]);
+	});
+
+	it("splitSegments lida com milhar duplo ('R$ 1.234.567,00') sem quebrar em nenhum ponto interno", () => {
+		const segments = splitSegments("O total foi R$ 1.234.567,00 no fim das contas.");
+		expect(segments).toHaveLength(1);
+	});
+
+	it("EphemeralTextFilter: 'Juntando R$ 4.' seguido de '000,00 por mês.' emite como UMA bolha só", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Juntando R$ 4.");
+		// o "." de milhar NÃO pode ter disparado emissão prematura aqui.
+		expect(emitted).toBe("");
+		emitted += f.push("000,00 por mês, lá pelo mês 11 dá.");
+		emitted += f.flush();
+		expect(emitted).toContain("Juntando R$ 4.000,00 por mês");
+		// NUNCA aparece o valor cortado ao meio.
+		expect(emitted).not.toContain("R$ 4.\n");
+	});
+
+	it("EphemeralTextFilter: frase legítima após o valor monetário ainda quebra normalmente", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("O valor é R$ 4.000,00. ");
+		emitted += f.push("Show, vamos em frente.");
+		emitted += f.flush();
+		expect(emitted).toContain("O valor é R$ 4.000,00.");
+		expect(emitted).toContain("Show, vamos em frente.");
 	});
 });
 
@@ -291,6 +341,40 @@ describe("FIX-234 — léxico banido (tom consultivo, não 'brother')", () => {
 		);
 		expect(isBannedLexicon("Dá pra antecipar a contemplação com um lance.")).toBe(false);
 		expect(isBannedLexicon("Qual carro você tem em mente?")).toBe(false);
+	});
+});
+
+// FIX-249 (rodada 3, Fable r2, N2 P0): o agente prometeu "deixa eu resolver
+// isso e já te retorno" / "assim que eu conseguir… te retorno" — a WEB NÃO
+// TEM canal proativo (nenhum worker manda mensagem depois nesta conversa);
+// a promessa é um beco-sem-saída (o run inteiro morreu esperando algo que
+// nunca chegaria).
+describe("FIX-249 — promessa de retorno/contato proativo é PROIBIDA na web (beco-sem-saída)", () => {
+	const PROMESSAS_PROIBIDAS = [
+		"Deixa eu resolver isso e já te retorno.",
+		"Assim que eu conseguir, te retorno.",
+		"Vou verificar e já te aviso.",
+		"Entro em contato depois com você.",
+	];
+
+	it("isProactiveCallbackClaim pega as promessas de retorno proativo", () => {
+		for (const s of PROMESSAS_PROIBIDAS) {
+			expect(isProactiveCallbackClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima que não promete contato futuro", () => {
+		expect(isProactiveCallbackClaim("Me confirma seus dados de contato pra eu seguir?")).toBe(
+			false,
+		);
+		expect(isProactiveCallbackClaim("Nossa especialista te chama em alguns minutos.")).toBe(false);
+		expect(isProactiveCallbackClaim("")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de retorno proativo", () => {
+		const texto = "Não encontrei essa opção aqui. Deixa eu resolver isso e já te retorno.";
+		const limpo = stripProcessPreamble(texto);
+		expect(limpo.toLowerCase()).not.toContain("te retorno");
 	});
 });
 
