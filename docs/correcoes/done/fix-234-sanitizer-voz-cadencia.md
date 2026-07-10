@@ -1,7 +1,7 @@
 ---
 id: FIX-234
 titulo: "Sanitizer (sem prazo, sem 'reservado') + voz/cadência consultiva (1 balão = 1 ideia)"
-status: todo
+status: done
 bloco: bloco-jornada-conversa
 arquivos:
   - src/lib/agent/orchestrator/sanitizer.ts
@@ -9,6 +9,8 @@ arquivos:
   - src/lib/agent/HARD_RULES.md
   - src/lib/agent/hard-rules.ts
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR1-sanitizer + PR4/D7/D9)
+commit: 00ddfe6
+executado_em: "2026-07-09"
 ---
 
 ## Palavras do operador (handoff)
