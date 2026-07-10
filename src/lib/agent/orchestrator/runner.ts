@@ -31,6 +31,7 @@ import {
 } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
+import { coerceTwoPathsPayload } from "./two-paths-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
 	coerceComparisonPayload,
@@ -470,6 +471,12 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "embedded_bid") {
 							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							payload = coerceEmbeddedBidPayload(input, snapshot);
+						}
+						// FIX-229: mesma âncora — monthlyPayment/administradora vêm do
+						// grupo real; NUNCA propaga métrica de chance (docs/05).
+						if (artifactType === "two_paths") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceTwoPathsPayload(input, snapshot);
 						}
 						artifacts.push({
 							type: artifactType,

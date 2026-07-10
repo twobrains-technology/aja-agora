@@ -350,6 +350,19 @@ export interface EmbeddedBidPayload {
 	disclaimer: string;
 }
 
+// ---- Card dois caminhos, sem lance (FIX-229, docs/02-cards-novos.md CARD 3) ----
+
+/** Bifurcação A/B pra quem NÃO vai dar lance (gate `lance`, saída "só a
+ * parcela"). NUNCA carrega métrica de chance/probabilidade de contemplação
+ * (proibido, docs/05-compliance-e-dados.md) — nenhum dos dois caminhos é
+ * recomendado, o agente devolve a decisão ao cliente. `administradora`
+ * (PT) segue a convenção do resto do codebase — não `administrator`. */
+export interface TwoPathsPayload {
+	monthlyPayment: number;
+	administradora: string;
+	disclaimer: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -368,7 +381,8 @@ export type ArtifactByType =
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
 	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
-	| { type: "embedded_bid"; payload: EmbeddedBidPayload };
+	| { type: "embedded_bid"; payload: EmbeddedBidPayload }
+	| { type: "two_paths"; payload: TwoPathsPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

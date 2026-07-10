@@ -1229,6 +1229,32 @@ export function embeddedBidToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	};
 }
 
+// FIX-229 (docs/02-cards-novos.md CARD 3 — two_paths). Botões interativos —
+// mesmas duas opções do card web, mesmo peso (nenhuma marcada como
+// recomendada). PROIBIDO qualquer % de chance/probabilidade (docs/05).
+export function twoPathsToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const monthlyPayment = Number(payload.monthlyPayment ?? 0);
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text:
+					"Dois caminhos possíveis, sem lance:\n\n" +
+					`*Esperar o sorteio* — paga só a parcela de ${brlWa(monthlyPayment)} e concorre todo mês.\n\n` +
+					"*Lance pequeno lá na frente* — se sobrar um extra, um lance modesto melhora as chances.\n\n" +
+					"Não tem certo ou errado — depende de você ter pressa ou não.",
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "two_paths_sorteio", title: "Vou de sorteio" } },
+					{ type: "reply", reply: { id: "two_paths_lance", title: "Lance pequeno" } },
+				],
+			},
+		},
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -1268,6 +1294,8 @@ export function artifactToWhatsApp(
 			return contemplationDialToWhatsApp(payload);
 		case "embedded_bid":
 			return embeddedBidToWhatsApp(payload);
+		case "two_paths":
+			return twoPathsToWhatsApp(payload);
 		default:
 			return null;
 	}

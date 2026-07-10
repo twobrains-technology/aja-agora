@@ -14,6 +14,7 @@ import { Scenarios } from "./artifacts/scenarios";
 import { SignatureHandoff } from "./artifacts/signature-handoff";
 import { SimulationResult } from "./artifacts/simulation-result";
 import { TopicPicker } from "./artifacts/topic-picker";
+import { TwoPaths } from "./artifacts/two-paths";
 import { ValuePicker } from "./artifacts/value-picker";
 import { WhatsappOptin } from "./artifacts/whatsapp-optin";
 
@@ -81,6 +82,8 @@ function renderArtifact(artifact: Artifact) {
 			return <ContemplationDial payload={artifact.payload} />;
 		case "embedded_bid":
 			return <EmbeddedBid payload={artifact.payload} />;
+		case "two_paths":
+			return <TwoPaths payload={artifact.payload} />;
 		case "quick_reply":
 			return null;
 	}

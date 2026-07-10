@@ -161,6 +161,9 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// FIX-228: lance embutido nasce no reveal, antes da agulha (mesma
 				// fase de present_contemplation_dial/present_decision_prompt).
 				"present_embedded_bid",
+				// FIX-229: dois caminhos nasce no gate `lance` (reveal), 3ª saída
+				// "só a parcela" — a ligação do gate é do bloco-jornada.
+				"present_two_paths",
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];
@@ -179,6 +182,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				"present_contemplation_dial",
 				"present_decision_prompt",
 				"present_embedded_bid",
+				"present_two_paths",
 				"present_contract_form",
 				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
 			];

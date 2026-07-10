@@ -170,6 +170,17 @@ export const embeddedBidSchema = z.object({
 		),
 });
 
+// FIX-229 (docs/02-cards-novos.md CARD 3) — bifurcação A/B pra quem não vai
+// dar lance (gate `lance`, 3ª saída "só a parcela"). Input mínimo: a LLM só
+// escolhe o grupo; monthlyPayment/administradora são coagidos server-side.
+export const twoPathsSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo escolhido, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -599,6 +610,15 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_two_paths: tool({
+		description:
+			"Apresenta os DOIS caminhos pra quem não vai dar lance: (A) esperar o sorteio pagando só a parcela, (B) um lance pequeno opcional lá na frente. Use no gate lance, quando o usuário disser que não quer comprometer nada além da parcela. NÃO recomende nenhum dos dois — depois do card, devolva a decisão ao usuário ('não tem certo ou errado, depende de você ter pressa ou não'). PROIBIDO mencionar qualquer % de chance de contemplação. Passe o groupId do plano escolhido — a parcela é calculada pelo sistema.",
+		inputSchema: twoPathsSchema,
+		execute: async (args: z.infer<typeof twoPathsSchema>) => {
+			return `[Card de dois caminhos apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
 	present_lead_form: tool({
 		description:
 			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
@@ -938,6 +958,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_contract_form",
 	"present_contemplation_dial",
 	"present_embedded_bid",
+	"present_two_paths",
 ]);
 
 // ============================================================================
