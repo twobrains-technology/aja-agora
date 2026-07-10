@@ -17,7 +17,7 @@ import {
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
-import { resolveOfferMentionForConversation } from "./choose-offer";
+import { listShownOffersForConversation, resolveOfferMentionForConversation } from "./choose-offer";
 import { isLikelyNameResponse } from "./detect-name-turn";
 import { computeMoneyAnchor } from "./dial-payload";
 import {
@@ -29,6 +29,8 @@ import {
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
 	buildToolErrorRecoveryFallback,
+	buildToolErrorRecoveryFallbackRepeat,
+	buildToolErrorRecoveryResolvedFallback,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -458,8 +460,31 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// suprimida (tenderia a negar uma oferta real). O orchestrator materializa
 	// o fallback FIXO que reafirma as opções já mostradas, nunca as nega
 	// (Lei 1: código dispõe, mesmo padrão do discoveryFailedThisTurn acima).
+	//
+	// FIX-266 (P1, veredito Fable r6, "o que segura o 7" #1): o fallback
+	// enlatado pedia "me diz o nome" mesmo quando `mentionedOffer` (resolvido
+	// acima, ANTES do turno, contra os grupos JÁ EXIBIDOS) já apontava pra
+	// exatamente a oferta que o usuário citou — contenção sem resolução.
+	// Quando resolve, reafirma os dados dela em vez de pedir de novo. Quando
+	// não resolve e o ÚLTIMO turno do assistant já foi esse mesmo fallback
+	// genérico, troca pra variante que lista as opções concretas — nunca
+	// repete a frase idêntica 2× seguidas.
 	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
-		const fallback = buildToolErrorRecoveryFallback({ name: knownName });
+		let fallback: string;
+		if (mentionedOffer) {
+			fallback = buildToolErrorRecoveryResolvedFallback({ name: knownName, offer: mentionedOffer });
+		} else {
+			const generic = buildToolErrorRecoveryFallback({ name: knownName });
+			const lastAssistantText =
+				[...history].reverse().find((m) => m.role === "assistant")?.content ?? null;
+			fallback =
+				lastAssistantText === generic
+					? buildToolErrorRecoveryFallbackRepeat({
+							name: knownName,
+							offers: await listShownOffersForConversation(conversationId),
+						})
+					: generic;
+		}
 		yield { type: "text-delta", text: fallback };
 		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
 		yield {

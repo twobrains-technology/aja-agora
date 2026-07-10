@@ -305,6 +305,16 @@ export async function resolveOfferMentionForConversation(
 	return resolveOfferByMention(listShownOffers(rows), text);
 }
 
+// FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente
+// ambígua/sem match) e o fallback de tool-error precisa variar na 2ª
+// ocorrência, o orchestrator precisa da lista de cotas JÁ EXIBIDAS pra montar
+// uma opção concreta (buildToolErrorRecoveryFallbackRepeat) — mesma fonte
+// determinística (`listShownOffers`), só faltava o wrapper async.
+export async function listShownOffersForConversation(conversationId: string): Promise<ChosenOffer[]> {
+	const rows = await loadArtifactRows(conversationId);
+	return listShownOffers(rows);
+}
+
 // FIX-258 (P1, veredito Fable r4: FIX-252 "NÃO" — a resolução por menção
 // (acima) só corrigia a âncora PÓS-simulação; o modo de falha real acontecia
 // ANTES: o usuário nomeia "a ITAÚ"/"a de 92 mil" (visível na comparison_table)

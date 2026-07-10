@@ -1,5 +1,6 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
+import type { ChosenOffer } from "./choose-offer";
 
 // ---- Transition ----
 
@@ -402,6 +403,75 @@ export function buildToolErrorRecoveryFallback(args: { name?: string | null }): 
 		`${saudacao}as opções que já apareceram aqui pra você continuam valendo. ` +
 		"Me diz o nome da administradora ou o valor que você quer olhar de novo que eu " +
 		"detalho certinho pra você."
+	);
+}
+
+function formatOfferDetails(offer: ChosenOffer): string {
+	const detalhes: string[] = [];
+	if (typeof offer.creditValue === "number") {
+		detalhes.push(
+			`crédito de ${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.monthlyPayment === "number") {
+		detalhes.push(
+			`parcela de ${offer.monthlyPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.termMonths === "number") detalhes.push(`prazo de ${offer.termMonths} meses`);
+	return detalhes.join(", ");
+}
+
+// FIX-266 (P1, veredito Fable r6, "o que segura o 7" #1): o fallback do
+// tool-error (acima) contém o turno, mas NUNCA resolvia — pedia "me diz o
+// nome" mesmo quando o usuário TINHA acabado de nomear a oferta na própria
+// mensagem que disparou o tool-error. O orchestrator agora roda
+// `resolveOfferByMention` sobre o texto do usuário ANTES de cair no fallback
+// (index.ts); quando resolve, usa ESTE texto — reafirma os dados da oferta
+// já ancorada em tela, transformando contenção em resolução (nunca pede de
+// novo o que o usuário já disse — Lei 1/4).
+export function buildToolErrorRecoveryResolvedFallback(args: {
+	name?: string | null;
+	offer: ChosenOffer;
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	const marca = args.offer.administradora ? ` da ${args.offer.administradora}` : "";
+	const detalhes = formatOfferDetails(args.offer);
+	const complemento = detalhes.length > 0 ? ` (${detalhes})` : "";
+	return (
+		`${saudacao}a oferta${marca}${complemento} que você citou continua valendo, tá aqui pra você. ` +
+		"Quer seguir com ela ou prefere olhar outra opção?"
+	);
+}
+
+// FIX-266 (2ª parte): o fallback enlatado repetia a MESMA frase 2× seguidas
+// quando o resolver não achou match (menção genuinamente ambígua/sem match).
+// index.ts detecta a repetição comparando com a última mensagem do assistant
+// no histórico e troca pra ESTA variante — nunca idêntica, e concreta: lista
+// as cotas JÁ EXIBIDAS em vez de repetir o pedido genérico.
+export function buildToolErrorRecoveryFallbackRepeat(args: {
+	name?: string | null;
+	offers: ChosenOffer[];
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	if (args.offers.length === 0) {
+		return (
+			`${saudacao}deixa eu ser mais direto: ainda não consegui identificar qual opção você quer. ` +
+			"Pode me mandar de novo o nome da administradora que apareceu aqui pra tela?"
+		);
+	}
+	const lista = args.offers
+		.map((o) => {
+			const detalhes = formatOfferDetails(o);
+			return o.administradora
+				? `${o.administradora}${detalhes ? ` (${detalhes})` : ""}`
+				: detalhes;
+		})
+		.filter((s) => s.length > 0)
+		.join("; ");
+	return (
+		`${saudacao}deixa eu ser mais direto: as opções que apareceram até agora são ${lista}. ` +
+		"Me diz qual delas você quer olhar de novo."
 	);
 }
 
