@@ -136,4 +136,80 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 		expect(input.valor).toBe(100_000);
 	});
+
+	// FIX-251 (P0, veredito Fable FINAL §N-A, 2026-07-10): defesa em profundidade
+	// do fechamento. Sequência real (Fluxo B):
+	//  1. Reveal recomenda RODOBENS 90.000 / R$ 1.218,92.
+	//  2. What-if "quero a ITAÚ" → 161.258 — o runner (à época) re-ancorava
+	//     meta.recommendedOffer no artifact do what-if.
+	//  3. Usuário REJEITA e reconfirma RODOBENS por texto (sem nova tool-call —
+	//     sem novo simulation_result pra re-ancorar).
+	//  4. contract-submit usava valor = meta.recommendedOffer.creditValue =
+	//     161.258 (a oferta STALE vencia o creditMax falado) → clamp de 20%
+	//     EXCLUÍA a RODOBENS 90k (-44%) e fechava ITAU 161.258 — proposta REAL
+	//     errada na Bevi, 79% acima do pedido.
+	// O runner (runner.ts, contract_form + what-if) já re-ancora os dois campos
+	// JUNTOS nos caminhos cobertos — este bloco é a defesa em profundidade pra
+	// qualquer caminho não coberto: se administradora/offer divergirem, NUNCA
+	// usa o creditValue de uma administradora abandonada.
+	describe("FIX-251 — nunca usa creditValue de administradora abandonada (defesa em profundidade)", () => {
+		it("recommendedOffer (ITAÚ, stale) diverge de recommendedAdministradora (RODOBENS, confirmada) → cai pro creditMax, NUNCA 161.258", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				qualifyAnswers: { creditMax: 90000 },
+				recommendedOffer: {
+					administradora: "ITAU",
+					creditValue: 161258,
+					termMonths: 200,
+					monthlyPayment: 2984.38,
+				},
+				recommendedAdministradora: "RODOBENS",
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			expect(input.valor).not.toBe(161258);
+			expect(input.valor).toBe(90000);
+			expect(input.administradoraPreferida).toBe("RODOBENS");
+			expect(input.prazoPreferido).toBeNull();
+		});
+
+		it("administradora/offer CONSISTENTES (fluxo normal) → usa o snapshot normalmente", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				qualifyAnswers: { creditMax: 90000 },
+				recommendedOffer: {
+					administradora: "RODOBENS",
+					creditValue: 90000,
+					termMonths: 180,
+					monthlyPayment: 1218.92,
+				},
+				recommendedAdministradora: "RODOBENS",
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			expect(input.valor).toBe(90000);
+			expect(input.prazoPreferido).toBe(180);
+		});
+
+		it("acento/caixa não disparam falso-positivo de divergência (ITAÚ === Itau)", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				qualifyAnswers: {},
+				recommendedOffer: {
+					administradora: "Itau",
+					creditValue: 161258,
+					termMonths: 200,
+					monthlyPayment: 2984.38,
+				},
+				recommendedAdministradora: "ITAÚ",
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			expect(input.valor).toBe(161258);
+			expect(input.prazoPreferido).toBe(200);
+		});
+	});
 });
