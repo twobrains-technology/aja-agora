@@ -156,6 +156,53 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		expect(calls).toEqual(["choose", "links"]);
 	});
 
+	// FIX-259 (rodada 5, veredito Fable r4, P1 #2): o catálogo do fechamento pode
+	// não ter a administradora confirmada na faixa — pickClosestOffer cai pro
+	// global best (BUG-ADMIN-TROCADA-NO-FECHAMENTO em forma nova). O caller
+	// PRECISA saber que trocou, pra nunca fechar em silêncio (aviso em código).
+	it("FIX-259: administradora confirmada indisponível na faixa → administradoraChanged=true + previousAdministradora preservada", async () => {
+		const gw = new MockProposalGateway();
+		// MockProposalGateway só devolve ANCORA/RODOBENS/ITAU (ADMINS.slice(0,3)) —
+		// BANCO DO BRASIL nunca está na faixa simulada, força o fallback global.
+		const r = await startContract(
+			"conv-adm-troca",
+			{ ...input, administradoraPreferida: "BANCO DO BRASIL" },
+			gw,
+		);
+		expect(r.administradoraChanged).toBe(true);
+		expect(r.previousAdministradora).toBe("BANCO DO BRASIL");
+		expect(r.offer?.administradora).not.toBe("BANCO DO BRASIL");
+	});
+
+	it("FIX-259: administradora confirmada disponível na faixa → administradoraChanged=false (sem aviso falso)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract(
+			"conv-adm-ok",
+			{ ...input, administradoraPreferida: "ITAU" },
+			gw,
+		);
+		expect(r.offer?.administradora).toBe("ITAU");
+		expect(r.administradoraChanged).toBeFalsy();
+		expect(r.previousAdministradora ?? null).toBeNull();
+	});
+
+	it("FIX-259: comparação de administradora ignora acento/caixa (ITAÚ ~ itau)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract(
+			"conv-adm-acento",
+			{ ...input, administradoraPreferida: "itaú" },
+			gw,
+		);
+		expect(r.offer?.administradora).toBe("ITAU");
+		expect(r.administradoraChanged).toBeFalsy();
+	});
+
+	it("FIX-259: sem administradoraPreferida (caminho legado) → administradoraChanged nunca dispara", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract("conv-adm-sem-pref", input, gw);
+		expect(r.administradoraChanged).toBeFalsy();
+	});
+
 	it("FIX-112: uploadContractDocument SEM oferta confirmada (sem links) lança gate", async () => {
 		const gw = new MockProposalGateway();
 		await startContract("conv-nolinks", input, gw); // proposta criada, NÃO confirmada → sem links
