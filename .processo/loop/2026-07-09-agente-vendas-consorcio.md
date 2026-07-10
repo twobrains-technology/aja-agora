@@ -104,3 +104,9 @@ Decisão Kairo: carta 211k = clamp + aviso.
 ### r7 consolidada (2026-07-10)
 - r7 mergeada+pushada na develop (f94d3344); test:unit 3218/3218 verde. Base+workspaces r7 deletados. OrbStack só develop.
 - Fable validando junção r7 (acabamento: recuperação=resolução, menção parcela/prazo, voz, observabilidade).
+
+## Rodada 8 (Fable r7 8/10 — subiu 7→8) — último bloqueador + acabamento
+- D1 9 D2 8 D3 8 D4 8 D5 8 D6 9; zero regressões. Menção parcela/prazo + observabilidade + recuperação: corrigidos ao vivo.
+- ÚNICO bloqueador real: agente FABRICA estado ('documentos recebidos' sem upload; 're-busquei' com 0 tool-calls) → invariante em código (mesma família do loop).
+- Blocos r8: fix-r8-estado-verdade (FIX-270 guard fabricação) + fix-r8-acabamento (FIX-271 empty-turn resolver, FIX-272 voz final). Base integ/consorcio-r8.
+- RECOMENDAÇÃO: r8 mata o bloqueador; depois disso avaliar PARAR (8→9 com todas dims altas é ótimo patamar).
