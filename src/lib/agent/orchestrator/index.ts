@@ -16,6 +16,7 @@ import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { isLikelyNameResponse } from "./detect-name-turn";
 import {
+	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
 	buildLanceSoParcelaDirective,
@@ -131,6 +132,34 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				expertiseHint: analysis.detectedSubTopic,
 				channel,
 				contactName: knownName,
+			});
+			return;
+		}
+
+		// FIX-239 (Fable r1, D3.4, gap P1 #6b): re-pedido de avanço em TEXTO
+		// LIVRE depois que o card de decisão já foi mostrado uma vez ("quero
+		// seguir com esse plano") batia no guard isDecisionDup
+		// (artifact-guard.ts) — o LLM anunciava "deixa eu confirmar com você:"
+		// e o present_decision_prompt duplicado era suprimido, virando turno
+		// morto (promessa sem entrega, família FIX-206/207). Roteamento
+		// DETERMINÍSTICO: ready_to_proceed pós-decisão avança direto pro passo
+		// 5 — mesma directive do clique "Tenho interesse" (route.ts).
+		if (
+			meta.decisionDispatched === true &&
+			meta.contractClosed !== true &&
+			analysis.userIntent === "ready_to_proceed"
+		) {
+			await saveMessage(conversationId, "user", userText, channel);
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildAdvanceToContractDirective({
+					administradora: meta.recommendedAdministradora,
+				}),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
 			});
 			return;
 		}
