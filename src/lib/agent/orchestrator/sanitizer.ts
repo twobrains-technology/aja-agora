@@ -108,6 +108,23 @@ export function isPrematureReservationClaim(segment: string): boolean {
 	return PREMATURE_RESERVATION_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-243 (rodada 2, Fable r1, §D5.2 do veredito — 05-compliance-e-dados.md):
+// `taxaContemplacao` é campo PROIBIDO — semântica não documentada pela Bevi
+// (registro honesto da spec: foi inferência sem base durante a prototipagem).
+// O guard estático (`no-taxa-contemplacao.guard.test.ts`) só cobre payload/UI;
+// a FALA do LLM vazava o conceito como argumento de venda ("A ITAÚ se destaca
+// pela boa taxa de contemplação"). Fonte permitida de sinal de contemplação:
+// `monthlyAwardedQuotas`/contemplados por mês (contagem REAL), nunca "taxa".
+const TAXA_CONTEMPLACAO_PATTERNS: RegExp[] = [/\btaxa\s+de\s+contempla[çc][ãa]o\b/i];
+
+/** Um segmento cita "taxa de contemplação" (campo proibido, sem semântica
+ * documentada) — não pode virar bolha. */
+export function isTaxaContemplacaoClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
+}
+
 // FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
 // "brother". "carro-problema" mira o COMPOSTO pejorativo (não a menção neutra
 // de "problema no carro"); "na sua cabeça" mira a expressão de gíria completa
@@ -128,15 +145,16 @@ export function isBannedLexicon(segment: string): boolean {
 }
 
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
- * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234).
- * Todos são dropados antes de virar mensagem. */
+ * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
+ * taxa de contemplação (FIX-243). Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string): boolean {
 	return (
 		isProcessPreamble(segment) ||
 		isTechnicalFallback(segment) ||
 		isPrazoReductionClaim(segment) ||
 		isPrematureReservationClaim(segment) ||
-		isBannedLexicon(segment)
+		isBannedLexicon(segment) ||
+		isTaxaContemplacaoClaim(segment)
 	);
 }
 
