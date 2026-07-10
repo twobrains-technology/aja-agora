@@ -382,17 +382,17 @@ export function buildDiscoveryFailedFallback(args: { name?: string | null }): st
 
 // ---- Decision prompt (passo 4 close → passo 5 da jornada) ----
 
-export function buildDecisionPromptDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
-	const adminCtx = administradora
-		? ` A administradora do plano recomendado e "${administradora}" — passe ela como contexto pro card.`
-		: "";
-	// Mirror do search reveal: o orquestrador dirige present_decision_prompt UMA
-	// vez, pós-reveal, quando o usuário sinaliza avanco. Fecha o passo 4 da
-	// jornada.docx ("Esse plano faz sentido?") e abre o passo 5 (contratar).
-	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar com você:" ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação.
-2. Chame present_decision_prompt UMA vez.${adminCtx}
+/** FIX-253 (rodada 4, veredito Fable FINAL §3 — causa-raiz do 0-scarcity no
+ * Fluxo A): enquanto `present_decision_prompt` ficou no toolset (reveal/
+ * closing), o LLM a chamava DIRETO num turno de usuário comum, bypassando o
+ * ramo do orchestrator (`nextGateToFire === "decision"`, index.ts) que
+ * dispara o scarcity server-side ANTES da decisão — mesma lei violada que o
+ * FIX-246 fechou pra embedded_bid/two_paths/scarcity. Agora o directive só
+ * escreve a frase de fechamento; o card ("Esse plano faz sentido?") é
+ * emissão SERVER-SIDE determinística (`buildDecisionPromptCard`,
+ * server-cards.ts) — o LLM nunca mais chama tool nenhuma. */
+export function buildDecisionPromptDirective(): string {
+	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva UMA frase curta NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar com você:" ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. NÃO chame present_decision_prompt nem NENHUMA outra tool neste turno — o sistema mostra o card de decisão automaticamente em seguida.
 
-PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência. As 3 opções do card são fixas ("Sim, quero reservar agora" / "Quero ver outras opções" / "Quero falar com um especialista"); você só passa a administradora pra contexto. Quando o usuário clicar "reservar agora", o sistema segue pro passo 5 (present_contract_form).`;
+PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
 }

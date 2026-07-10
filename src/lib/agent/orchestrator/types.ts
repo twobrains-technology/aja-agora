@@ -61,6 +61,18 @@ export type TurnInput = {
 	 * do orquestrador. Usado pela camada de memória pra mapear pessoa ↔ agent.
 	 */
 	userKey?: string | null;
+	/**
+	 * FIX-253/254 (rodada 4) — o handler CHAMADOR (route.ts) já vai emitir o
+	 * "gate" (card + pergunta) explicitamente logo em seguida a este turno de
+	 * directive (ex.: embedded_bid no clique do gate lance). Sem isso, o
+	 * disparo automático de `nextGateToFire` DENTRO deste turno (mayEvaluateGates
+	 * do runner) emite o MESMO gate de novo — double-dispatch (educação+chips
+	 * duplicados, achado N-C do veredito Fable FINAL). Suprime só o EVENTO
+	 * "gate" (e o card server-side que o acompanha); o bookkeeping de meta
+	 * (desireAsked/consentOffered/simulatorOfferDispatched) permanece — é
+	 * estado, não output duplicado.
+	 */
+	suppressGateEvent?: boolean;
 };
 
 export type TurnContext = {

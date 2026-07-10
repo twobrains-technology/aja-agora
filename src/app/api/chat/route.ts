@@ -36,6 +36,7 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
 import {
+	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
 	buildScarcityCard,
 	buildTwoPathsCard,
@@ -1055,12 +1056,18 @@ export async function POST(req: NextRequest) {
 							// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto —
 							// o card é emissão SERVER-SIDE determinística (nunca depende de
 							// tool-call do LLM).
+							// FIX-254 (rodada 4, veredito Fable FINAL §N-C): suppressGate — sem
+							// isso, o disparo AUTOMÁTICO de gate deste turno de directive
+							// (orchestrator/index.ts) emitia a MESMA educação+chips de novo
+							// (double-dispatch). Este pipeServerArtifact + pipeGatePrompt
+							// explícitos abaixo são o ÚNICO caminho de emissão pro clique.
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildEmbeddedBidDirective(),
 								contactName,
 								writer,
 								userKey,
+								suppressGate: true,
 							});
 							await pipeServerArtifact({
 								conversationId,
@@ -1125,14 +1132,23 @@ export async function POST(req: NextRequest) {
 										writer,
 									});
 								}
+								// FIX-253 (rodada 4, veredito Fable FINAL §3): o directive SÓ
+								// narra — o card de decisão é emissão SERVER-SIDE determinística
+								// (nunca mais tool-call do LLM, present_decision_prompt saiu do
+								// toolset em tool-policy.ts).
 								await pipeDirectiveTurn({
 									conversationId,
-									directive: buildDecisionPromptDirective({
-										administradora: meta.recommendedAdministradora,
-									}),
+									directive: buildDecisionPromptDirective(),
 									contactName,
 									writer,
 									userKey,
+								});
+								await pipeServerArtifact({
+									conversationId,
+									artifactType: "decision_prompt",
+									payload: buildDecisionPromptCard(refreshed).payload,
+									persona: refreshed.currentPersona ?? null,
+									writer,
 								});
 							}
 							return;
@@ -1200,12 +1216,15 @@ export async function POST(req: NextRequest) {
 							// FIX-237 (Fable r1, D2.1 gap #3): mesma wiring do ramo no/maybe do
 							// gate `lance` acima — embedded_bid antes do texto+chips.
 							// FIX-246: card emitido SERVER-SIDE, nunca por tool-call do LLM.
+							// FIX-254 (rodada 4): suppressGate — mesmo motivo do ramo no/maybe
+							// (anti double-dispatch, este handler é o ÚNICO emissor).
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildEmbeddedBidDirective(),
 								contactName,
 								writer,
 								userKey,
+								suppressGate: true,
 							});
 							await pipeServerArtifact({
 								conversationId,

@@ -185,9 +185,11 @@ export function buildAgent(
 				present_whatsapp_optin: registry.present_whatsapp_optin,
 				present_value_picker: registry.present_value_picker,
 				present_topic_picker: registry.present_topic_picker,
-				// Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
-				// — primitivo do sistema, sempre exposto (não toggleable pelo admin).
-				present_decision_prompt: registry.present_decision_prompt,
+				// FIX-253 (rodada 4): present_decision_prompt SAIU daqui de propósito —
+				// o card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
+				// virou emissão SERVER-SIDE determinística (buildDecisionPromptCard,
+				// orchestrator/server-cards.ts). A tool NUNCA entra em allowedTools
+				// (tool-policy.ts) em nenhuma fase — listá-la aqui seria morta/enganosa.
 				// Passo 5 "Contratar" (fechamento Bevi) + simulador-agulha (passo 4) —
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,

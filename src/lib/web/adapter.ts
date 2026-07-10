@@ -425,8 +425,14 @@ export async function pipeDirectiveTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
+	/** FIX-254 (rodada 4, veredito Fable FINAL §N-C): quando o CHAMADOR já vai
+	 * emitir o gate (card + pergunta) explicitamente logo em seguida (ex.:
+	 * embedded_bid no clique do gate lance), suprime o disparo AUTOMÁTICO de
+	 * `nextGateToFire` deste turno de directive — sem isso, os dois caminhos
+	 * emitem a MESMA educação+chips (double-dispatch: route.ts:1058-1072). */
+	suppressGate?: boolean;
 }): Promise<{ emittedVisible: boolean }> {
-	const { conversationId, directive, contactName, writer, userKey } = args;
+	const { conversationId, directive, contactName, writer, userKey, suppressGate } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -436,6 +442,7 @@ export async function pipeDirectiveTurn(args: {
 		skipAnalyzer: true,
 		skipLeadCollection: true,
 		userKey,
+		suppressGateEvent: suppressGate,
 	});
 	return pipeOrchestratorToWriter(events, writer, conversationId);
 }
