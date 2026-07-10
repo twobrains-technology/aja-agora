@@ -250,6 +250,14 @@ async function consumeEvents(
 				// FIX-24: telemetria interna — o tap `traceTurnEvents` já consumiu
 				// o evento; nada a enviar no WhatsApp.
 				break;
+
+			case "text-boundary":
+				// FIX-268: mesmo boundary do canal web (adapter web/adapter.ts) —
+				// força o envio do que já foi bufferizado como mensagem própria,
+				// pra 2 directives seguidos (ex.: scarcity → decision) não colarem
+				// no mesmo balão quando não há artifact/gate entre eles.
+				await flushText();
+				break;
 			case "transition": {
 				await flushText();
 				await flushArtifacts();

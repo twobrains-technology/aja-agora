@@ -238,6 +238,9 @@ export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 			break;
 		case "welcome-categories":
 		case "lead-collection-prompt":
+		// FIX-268: boundary de render (fecha o balão de texto aberto) — não
+		// carrega dado de observabilidade, no-op no trace.
+		case "text-boundary":
 			break;
 	}
 }

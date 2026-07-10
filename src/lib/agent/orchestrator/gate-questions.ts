@@ -79,7 +79,12 @@ export function gateQuestion(
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
-			return "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+			// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva" varrido
+			// — mesma disciplina do FIX-234/FIX-256 (nunca "reserva"/"reservado"
+			// antes da contratação real). Aqui o sentido era outro (dinheiro
+			// guardado pro lance), mas a ambiguidade com o termo proibido é
+			// exatamente o risco que a regra existe pra eliminar.
+			return "Você teria como dar um lance pra antecipar a contemplação?";
 		case "lance-value":
 			// docx passo 2 (linha 21-22): se "sim" → "Qual valor aproximado?"
 			return "Boa! E qual valor aproximado você pensa em dar de lance?";

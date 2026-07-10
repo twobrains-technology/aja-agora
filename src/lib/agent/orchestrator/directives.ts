@@ -148,8 +148,16 @@ export function buildLanceSoParcelaDirective(): string {
  * payload coagido a partir da oferta real via `coerceEmbeddedBidPayload`).
  * Regra dura (spec): o card SEMPRE diz que o crédito recebido diminui — já
  * hardcoded na coerção, não depende do texto do modelo. */
+// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "educação do embutido
+// 2× no mesmo turno"): a versão anterior instruía o LLM a "introduzir o
+// conceito" com um exemplo que JÁ explicava lance embutido por completo
+// ("você usa parte da própria carta como lance") — e o gate `lance-embutido`
+// que dispara LOGO EM SEGUIDA (gate-questions.ts, lanceEmbutidoEdu) explica o
+// MESMO conceito de novo, com os números reais. Resultado: a mesma definição
+// saía 2× seguidas, em 2 balões. Agora o directive é SÓ transição (igual ao
+// buildScarcityDirective) — a educação tem UMA fonte só, o gate determinístico.
 export function buildEmbeddedBidDirective(): string {
-	return `Antes de perguntar se o usuário quer considerar lance embutido, escreva APENAS UMA frase curta NO SEU TOM introduzindo o conceito (ex.: "Existe o lance embutido: você usa parte da própria carta como lance, sem tirar do bolso."). NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
+	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Baseado no que você me contou, tenho uma ideia que pode acelerar sua contemplação:"). NÃO explique o que é lance embutido aqui — o sistema já traz a educação completa logo em seguida; explicar de novo duplica a mesma ideia no turno. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
