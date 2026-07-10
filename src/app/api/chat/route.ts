@@ -1332,7 +1332,12 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 					});
-					trace.setFinish("ok");
+					// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
+					// quando NENHUM finishReason real chegou do orquestrador (ex.: um
+					// turno CONTIDO por tool-error já setou "tool-error-recovered" via
+					// o TurnEvent "finish", adapter.ts) — sem o guard, este default
+					// sobrescrevia cegamente qualquer razão real.
+					if (!trace.hasFinish()) trace.setFinish("ok");
 				} finally {
 					trace.finalize();
 				}
@@ -1423,7 +1428,13 @@ export async function POST(req: NextRequest) {
 						reengage ?? EMPTY_TURN_FALLBACK,
 					);
 					trace.setFinish(reengage ? "empty-turn-reengage" : "empty-turn-fallback");
-				} else {
+					// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
+					// quando NENHUM finishReason real chegou do orquestrador (ex.: um
+					// turno CONTIDO por tool-error já setou "tool-error-recovered" via
+					// o TurnEvent "finish", adapter.ts) — sem o guard, este default
+					// sobrescrevia cegamente qualquer razão real (o achado do
+					// veredito: fallback determinístico saiu, mas o log dizia "ok").
+				} else if (!trace.hasFinish()) {
 					trace.setFinish("ok");
 				}
 			} finally {

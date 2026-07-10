@@ -152,6 +152,14 @@ export class TurnTrace {
 	setFinish(reason: string): void {
 		this.finishReason = reason;
 	}
+	/** FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): permite ao
+	 * chamador saber se um finishReason REAL já chegou (via TurnEvent "finish"
+	 * do orquestrador) antes de aplicar um default — sem isto, o default "ok"
+	 * do canal web sobrescrevia cegamente razões como "tool-error-recovered",
+	 * mascarando turnos CONTIDOS como se fossem normais. */
+	hasFinish(): boolean {
+		return this.finishReason !== null;
+	}
 	/** FIX-24: registra um artifact suprimido por guard neste turno. */
 	addSuppression(artifactType: string): void {
 		this.suppressed.push(artifactType);

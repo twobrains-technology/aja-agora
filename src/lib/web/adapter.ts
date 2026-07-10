@@ -393,8 +393,18 @@ export async function pipeOrchestratorToWriter(
 				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
 				break;
 
-			case "meta-update":
+			// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
+			// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
+			// nunca chegava ao trace no canal web — este case era agrupado como
+			// no-op puro (era FIX-24), então route.ts sempre aplicava o default
+			// "ok" por cima, mascarando turnos CONTIDOS como se fossem normais.
+			// Mesmo padrão de suppression/usage: getTraceForWriter recupera o
+			// trace pelo writer já instrumentado, sem mudar assinatura nenhuma.
 			case "finish":
+				getTraceForWriter(writer)?.setFinish(ev.reason);
+				break;
+
+			case "meta-update":
 				// FIX-24: telemetria interna — consumida pelo turn-trace, não
 				// vira UI part. No-op no funil de SSE da web.
 				break;
