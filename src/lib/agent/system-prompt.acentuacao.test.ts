@@ -334,7 +334,7 @@ describe("regressão: acentuação", () => {
 				// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			} as any),
 			directives.buildSimulatorDialDirective({ administradora: "Adm" }),
-			directives.buildDecisionPromptDirective({ administradora: "Adm" }),
+			directives.buildDecisionPromptDirective(),
 		];
 		collectOffenders("directives", directiveTexts.join("\n"), offenders);
 

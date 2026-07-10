@@ -418,11 +418,17 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 	}
 	if (!updated.decisionDispatched) {
 		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
-		await runAgentDirective(
-			from,
-			conversationId,
-			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
-		);
+		// FIX-253 (rodada 4, veredito Fable FINAL §3): o directive SÓ narra — o
+		// card de decisão é emissão SERVER-SIDE determinística (nunca mais
+		// tool-call do LLM, present_decision_prompt saiu do toolset em
+		// tool-policy.ts). Emite explícito aqui — mesma paridade do web
+		// (route.ts, ramo simulator-offer).
+		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
+		const { buildDecisionPromptCard } = await import("@/lib/agent/orchestrator/server-cards");
+		const wa = artifactToWhatsApp("decision_prompt", buildDecisionPromptCard(updated).payload);
+		if (wa?.type === "interactive" && wa.interactive) {
+			await sendInteractiveMessage(from, wa.interactive);
+		}
 	}
 	return true;
 }

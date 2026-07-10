@@ -125,6 +125,18 @@ describe("consorcioTools — tools novas da revisão Bruna v1", () => {
 			expect(result.creditAdjustmentNotice?.requestedCreditValue).toBe(adjustedCredit);
 			expect(result.creditAdjustmentNotice?.groupNominalCreditValue).toBe(itau.creditValue);
 			expect(result.creditAdjustmentNotice?.message).toMatch(/ajust/i);
+			// FIX-255 (rodada 4, veredito Fable FINAL §N-E): a mensagem antiga dizia
+			// "ajustada de NOMINAL para SOLICITADO" — mas o payload (monthlyPayment/
+			// creditValue em `result`) é sempre o NOMINAL (o self-contract não
+			// resimula pra valor arbitrário, bevi-self-contract-adapter.ts:183-188
+			// ignora `params.creditValue`). A narração então apresentava o NOMINAL
+			// como "o valor correto pedido" — inversão semântica. A mensagem tem que
+			// deixar claro que os números abaixo são do NOMINAL, não do solicitado.
+			expect(result.creditAdjustmentNotice?.message).toMatch(/nominal/i);
+			expect(result.creditAdjustmentNotice?.message).not.toMatch(
+				/ajustada de.*\(nominal.*\).*para.*\(.*solicitado.*\)/i,
+			);
+			expect(result.creditValue).toBe(itau.creditValue);
 		});
 
 		it("NÃO retorna notice quando creditValue == nominal do grupo (±1%)", async () => {

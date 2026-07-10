@@ -23,6 +23,7 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
+import { resolveOfferForAdministradora, resolveOfferMentionForConversation } from "./choose-offer";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import {
 	coerceDialPayload,
@@ -31,8 +32,6 @@ import {
 } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
-import { coerceScarcityPayload } from "./scarcity-payload";
-import { coerceTwoPathsPayload } from "./two-paths-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
 	coerceComparisonPayload,
@@ -46,8 +45,10 @@ import {
 	normalizeGluedSentences,
 	stripProcessPreamble,
 } from "./sanitizer";
+import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
 import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
+import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -425,6 +426,56 @@ export async function* runAgentTurn(args: {
 							} catch {
 								// falha de decrypt/DB não pode derrubar o turno — form vazio.
 							}
+							// FIX-251 (P0, veredito Fable FINAL §N-A): um what-if REJEITADO
+							// (ex.: "quero a ITAÚ" → 161k) pode ter deixado meta.recommendedOffer
+							// ancorado numa administradora que o usuário já abandonou — o
+							// fechamento (contract-input.ts) usaria esse valor STALE mesmo
+							// depois do usuário reconfirmar a oferta original por texto (sem
+							// nova tool-call, então sem novo simulation_result pra re-ancorar).
+							// Re-ancora AQUI pela administradora que o PRÓPRIO turno de
+							// fechamento está anunciando (input.administradora) — resolvida
+							// server-side contra os grupos REALMENTE exibidos no reveal
+							// (findOfferByAdministradora), nunca a meta potencialmente stale.
+							// "nunca aja sobre entidade não-ancorada" no ponto mais caro da
+							// jornada: proposta REAL na Bevi.
+							const formAdministradora =
+								typeof input === "object" && input !== null
+									? (input as Record<string, unknown>).administradora
+									: undefined;
+							if (typeof formAdministradora === "string" && formAdministradora.length > 0) {
+								const resolved = await resolveOfferForAdministradora(
+									conversationId,
+									formAdministradora,
+								);
+								if (
+									resolved &&
+									typeof resolved.creditValue === "number" &&
+									typeof resolved.termMonths === "number" &&
+									typeof resolved.monthlyPayment === "number"
+								) {
+									const refreshed = await reloadMeta(conversationId);
+									const stale =
+										refreshed.recommendedAdministradora !== resolved.administradora ||
+										refreshed.recommendedOffer?.creditValue !== resolved.creditValue;
+									if (stale) {
+										console.log(
+											`[ancora-fechamento] FIX-251: recommendedOffer re-ancorado pra ${resolved.administradora} (creditValue=${resolved.creditValue}) — snapshot anterior divergia da administradora anunciada no fechamento (conv=${conversationId})`,
+										);
+										await persistMeta(conversationId, {
+											...refreshed,
+											recommendedAdministradora: resolved.administradora ?? formAdministradora,
+											recommendedOffer: {
+												...refreshed.recommendedOffer,
+												administradora: resolved.administradora ?? formAdministradora,
+												creditValue: resolved.creditValue,
+												termMonths: resolved.termMonths,
+												monthlyPayment: resolved.monthlyPayment,
+												groupId: resolved.groupId,
+											},
+										});
+									}
+								}
+							}
 						}
 						// FIX-27: opt-in com número JÁ capturado (lead form/identify) →
 						// confirmação de 1 clique. knownPhone mascarado vem do meta (LGPD).
@@ -730,11 +781,43 @@ export async function* runAgentTurn(args: {
 		const newSim = artifacts.find((a) => a.type === "simulation_result");
 		const snap = offerSnapshotFromArtifact(newSim?.payload);
 		if (snap) {
+			// FIX-252 ("pro teto" #3, veredito Fable FINAL): o groupId que a LLM
+			// mandou simular pode não ser o que o usuário pediu por nome/valor (ex.:
+			// "a de 92 mil" resolvendo pro grupo de 100k — achado do FIX-249
+			// "PARCIAL"). Quando o texto do turno resolve DETERMINISTICAMENTE pra um
+			// grupo JÁ EXIBIDO diferente do que a LLM simulou, a âncora usa o
+			// resolvido — nunca o palpite da LLM (Lei "nunca aja sobre entidade
+			// não-ancorada"). resolveOfferByMention nunca inventa: sem match claro
+			// (ou ambíguo), snap segue intacto.
+			const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+			const mentioned = lastUserText
+				? await resolveOfferMentionForConversation(conversationId, lastUserText)
+				: null;
+			const anchor =
+				mentioned &&
+				mentioned.groupId !== snap.groupId &&
+				typeof mentioned.creditValue === "number" &&
+				typeof mentioned.termMonths === "number" &&
+				typeof mentioned.monthlyPayment === "number"
+					? {
+							...snap,
+							administradora: mentioned.administradora ?? snap.administradora,
+							creditValue: mentioned.creditValue,
+							termMonths: mentioned.termMonths,
+							monthlyPayment: mentioned.monthlyPayment,
+							groupId: mentioned.groupId,
+						}
+					: snap;
+			if (anchor !== snap) {
+				console.log(
+					`[ancora-fechamento] FIX-252: what-if simulou ${snap.groupId} mas o texto do usuário resolvia pro grupo ${anchor.groupId} (${anchor.administradora}) — âncora corrigida (conv=${conversationId})`,
+				);
+			}
 			const refreshed = await reloadMeta(conversationId);
 			await persistMeta(conversationId, {
 				...refreshed,
-				recommendedOffer: snap,
-				recommendedAdministradora: snap.administradora ?? refreshed.recommendedAdministradora,
+				recommendedOffer: anchor,
+				recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
 			});
 		}
 	}

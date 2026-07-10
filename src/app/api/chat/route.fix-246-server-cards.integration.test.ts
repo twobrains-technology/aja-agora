@@ -198,6 +198,56 @@ describeIfDb("FIX-246 — cards server-side: emissão determinística SEM tool-c
 		expect(String(embeddedBid?.payload.disclaimer)).toMatch(/crédito recebido diminui/i);
 	});
 
+	// FIX-254 (rodada 4, veredito Fable FINAL §N-C): no clique lance="no", a
+	// educação + chips do gate lance-embutido saíam DUPLICADOS no mesmo turno —
+	// o `pipeDirectiveTurn` (embedded_bid intro) já disparava o gate
+	// AUTOMATICAMENTE via orchestrator, E o route.ts chamava `pipeGatePrompt`
+	// de novo. `suppressGate` mata o disparo automático; o handler explícito
+	// vira o ÚNICO emissor.
+	it("FIX-254 — gate lance='no': o gate lance-embutido (pergunta+chips) e o card embedded_bid saem UMA vez cada, nunca duplicados", async () => {
+		// desireAsked/qualifyConsented=true: sem isso, nextGate() (qualify-state.ts)
+		// resolve pro gate "desire" (que precede lance no funil) em vez de
+		// "lance-embutido" — o cenário que este teste precisa estressar.
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				channel: "web",
+				metadata: { ...POS_REVEAL_META, desireAsked: true, qualifyConsented: true },
+			})
+			.returning();
+		convId = c.id;
+
+		const res = await POST(
+			makeReq({
+				conversationId: convId,
+				messages: [{ role: "user", parts: [{ type: "text", text: "Por enquanto não" }] }],
+				action: { kind: "gate", gate: "lance", value: "no", label: "Por enquanto não" },
+			}),
+		);
+		const text = await res.text();
+
+		const embeddedBidCount = (text.match(/"type":"embedded_bid"/g) ?? []).length;
+		expect(embeddedBidCount).toBe(1);
+		const gateLanceEmbutidoCount = (text.match(/"gate":"lance-embutido"/g) ?? []).length;
+		expect(gateLanceEmbutidoCount).toBe(1);
+
+		const rows = await db
+			.select({ id: messagesTable.id })
+			.from(messagesTable)
+			.where(eq(messagesTable.conversationId, convId));
+		const persisted = await db
+			.select()
+			.from(artifactsTable)
+			.where(
+				inArray(
+					artifactsTable.messageId,
+					rows.map((r) => r.id),
+				),
+			);
+		expect(persisted.filter((a) => a.type === "embedded_bid")).toHaveLength(1);
+	});
+
 	it("gate simulator-offer='no' emite o card scarcity no stream E no banco (agente NUNCA chamou tool)", async () => {
 		const [c] = await db
 			.insert(conversations)

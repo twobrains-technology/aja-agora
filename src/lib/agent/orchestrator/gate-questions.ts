@@ -55,6 +55,11 @@ export function gateQuestion(
 	gate: Gate,
 	category?: Category | null,
 	creditValue?: number,
+	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): default "whatsapp" —
+	// preserva o comportamento de TODOS os chamadores pré-existentes
+	// (whatsapp/adapter.ts, identify-capture.ts, gate-reengage.ts), que já
+	// rodam nesse canal. Só web/adapter.ts passa "web" explicitamente.
+	channel: "web" | "whatsapp" = "whatsapp",
 ): string | null {
 	switch (gate) {
 		case "name":
@@ -96,7 +101,15 @@ export function gateQuestion(
 			// celular já é o waId, então só falta o CPF. Sem emoji, sem hedge, sem
 			// "preciso do CPF e celular" (FIX-53 pedia identidade antes do valor; o
 			// gancho forward-looking migrou pro beat de contexto do LLM).
-			return "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
+			//
+			// FIX-255 (rodada 4, veredito Fable FINAL §N-D): a copy "Seu celular eu
+			// já pego aqui do WhatsApp" só faz sentido no CANAL WhatsApp (celular =
+			// waId, já conhecido). Na WEB o form pede CPF E celular (gatePartData
+			// "identity" tem os dois campos, `prefilledPhone: null`) — a mesma frase
+			// mentia sobre de onde o celular vem (3 de 3 runs do veredito).
+			return channel === "web"
+				? "Me manda seu CPF e celular, só os números."
+				: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
 			return (
