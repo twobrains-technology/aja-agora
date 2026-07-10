@@ -116,5 +116,22 @@ export function closingPresentation(res: ConfirmOfferResult): ClosingItem[] {
 			kind: "text",
 			text: "Parabéns! Agora você está oficialmente mais perto da sua conquista!",
 		},
+		// FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8): fecho pro
+		// WhatsApp. NUNCA "reservado/garantido/você já está no grupo" — a proposta
+		// foi enviada, mas nada foi contratado só com isso. O "oi" tem função
+		// TÉCNICA (abre a janela de 24h do WhatsApp, whatsapp/window.ts) — sem ele,
+		// o envio da especialista cai na fila de template.
+		{
+			kind: "text",
+			text: "Pra gente seguir, olha só: acabei de te mandar uma mensagenzinha no seu WhatsApp.",
+		},
+		{
+			kind: "text",
+			text: 'Me responde por lá com um "oi"? É só pra você já salvar o nosso contato.',
+		},
+		{
+			kind: "text",
+			text: "Daí, em alguns minutos, a nossa especialista em cadastros te chama pra pedir seus dados e os documentos pra dar entrada na administradora.",
+		},
 	];
 }
