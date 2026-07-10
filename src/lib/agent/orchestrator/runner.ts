@@ -47,7 +47,7 @@ import {
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
-import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
+import { logToolInputError, logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -352,6 +352,32 @@ export async function* runAgentTurn(args: {
 				if (part.toolName === "recommend_groups" || part.toolName === "search_groups") {
 					indexRevealGroups(revealGroupsById, part.toolName, (part as { output?: unknown }).output);
 				}
+				break;
+			}
+			// FIX-257 (P1, veredito Fable r4 §P1 #1): input de tool que falha a
+			// validação Zod (ex.: creditMin como string não-coagível) NUNCA chega a
+			// rodar `execute` — o AI SDK v6 emite este chunk em vez de "tool-result".
+			// Sem este case, o erro era engolido: nenhum log, nenhum sinal, e o único
+			// rastro (tool-io-log via onStepFinish) mostrava `output: null` —
+			// indistinguível de "a tool rodou e não achou nada" (raiz da espiral de
+			// negação). Log BARULHENTO e nomeado, nunca silencioso.
+			case "tool-input-error": {
+				const errPart = part as {
+					toolCallId?: string;
+					toolName: string;
+					input?: unknown;
+					errorText?: string;
+				};
+				logToolInputError({
+					conversationId,
+					stepNumber: toolIoStep,
+					error: {
+						toolCallId: errPart.toolCallId,
+						toolName: errPart.toolName,
+						input: errPart.input,
+						errorText: errPart.errorText,
+					},
+				});
 				break;
 			}
 			case "tool-call": {
