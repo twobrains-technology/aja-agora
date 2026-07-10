@@ -76,3 +76,8 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - r4 mergeada e pushada na develop (92a8d2c4); test:unit 3116/3116 verde; migration 0033 aplicada.
 - Base consorcio-r4 + workspaces r4 deletados. OrbStack: só develop.
 - Fable validando a junção r4 (foco no P0 âncora fechado + scarcity/embedded no caminho texto).
+
+## Rodada 5 (Fable r4 5/10 — melhor da série, P0 fechado)
+- P0 âncora fechamento CORRIGIDO no núcleo (+1,9% do alvo, não 79%). Scarcity/embedded texto, copy canal, acentos, 0033: todos ✓.
+- 2 P1 restantes: (1) espiral de negação (tool input string→number falha silenciosa → nega ofertas reais 3×); (2) fechamento troca marca em silêncio (ITAÚ→BB) + promessa em loop. FIX-252 rota nome→grupo não saiu.
+- Blocos r5: fix-r5-toolinput-rota (FIX-257,258) + fix-r5-fechamento-gates (FIX-259,260,261). Base integ/consorcio-r5.
