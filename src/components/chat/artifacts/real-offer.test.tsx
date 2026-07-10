@@ -136,10 +136,15 @@ describe("RealOffer — FIX-40: lance médio do grupo (campo da API) renderiza; 
 		expect(screen.getByText(/69\.361/)).toBeDefined();
 	});
 
-	it("rótulo NÃO promete contemplação (sem 'contemplação'/'garante'/'chance')", () => {
-		const { container } = render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
-		const text = container.textContent ?? "";
-		expect(text).not.toMatch(/contempl|garant|chance/i);
+	it("rótulo do lance médio NÃO promete contemplação (sem 'garante'/'chance')", () => {
+		// FIX-232: o card ganhou o chip legítimo "Acompanhamento até a contemplação"
+		// (spec de credibilidade) — a checagem escopa na LINHA do lance médio, não
+		// no card inteiro (a palavra "contemplação" no chip é esperada e correta).
+		render(<RealOffer payload={{ ...PAYLOAD, avgBidValue: 69_361.27 }} />);
+		const label = screen.getByText(/lance médio do grupo/i);
+		const row = label.closest("div");
+		const rowText = row?.textContent ?? "";
+		expect(rowText).not.toMatch(/garant|chance/i);
 	});
 
 	it("sem avgBidValue: NÃO renderiza a linha de lance médio", () => {
