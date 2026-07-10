@@ -110,3 +110,7 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - ÚNICO bloqueador real: agente FABRICA estado ('documentos recebidos' sem upload; 're-busquei' com 0 tool-calls) → invariante em código (mesma família do loop).
 - Blocos r8: fix-r8-estado-verdade (FIX-270 guard fabricação) + fix-r8-acabamento (FIX-271 empty-turn resolver, FIX-272 voz final). Base integ/consorcio-r8.
 - RECOMENDAÇÃO: r8 mata o bloqueador; depois disso avaliar PARAR (8→9 com todas dims altas é ótimo patamar).
+
+### r8 consolidada (2026-07-10)
+- r8 mergeada+pushada na develop (9d83483c); test:unit 3244/3244 verde. Base+workspaces r8 deletados. OrbStack só develop.
+- Fable na validação DECISIVA (bloqueador de fabricação de estado matado? matador pra prod?).
