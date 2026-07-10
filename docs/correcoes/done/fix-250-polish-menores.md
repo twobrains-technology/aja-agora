@@ -1,10 +1,16 @@
 ---
 id: FIX-250
 titulo: "Polish: copy aviso invertida, 'booking' inglês, 'primeira vez' presumido, suppressed trace"
-status: todo
+status: done
 bloco: bloco-r3-serverside-cards
-arquivos: [src/lib/agent/system-prompt.ts, src/lib/telemetry/turn-trace.ts, src/lib/bevi/closing-presentation.ts]
+arquivos:
+  - src/lib/agent/system-prompt.ts
+  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/telemetry/turn-trace.ts
+  - src/lib/web/adapter.ts
 rodada: 2026-07-10 rodada 3 (Fable r2, menores)
+commit: b21a178
+executado_em: "2026-07-10"
 ---
 
 ## Gaps (veredito Fable r2, menores)
