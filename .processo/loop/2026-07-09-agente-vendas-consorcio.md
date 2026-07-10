@@ -100,3 +100,7 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - A troca de ângulo (contenção em código) destravou: 4 matadores corrigidos ao vivo, zero regressões, fecho completo.
 - Resta acabamento (não espiral): recuperação enlatada/lenta (72-112s, pede nome já dito 2×) · menção por parcela/prazo · residuais de voz (reserva/dedup/picotado) · finishReason.
 - Blocos r7: fix-r7-recuperacao (FIX-266 recuperação=resolução, FIX-267 parcela/prazo) + fix-r7-voz-polish (FIX-268 voz, FIX-269 observabilidade). Base integ/consorcio-r7.
+
+### r7 consolidada (2026-07-10)
+- r7 mergeada+pushada na develop (f94d3344); test:unit 3218/3218 verde. Base+workspaces r7 deletados. OrbStack só develop.
+- Fable validando junção r7 (acabamento: recuperação=resolução, menção parcela/prazo, voz, observabilidade).
