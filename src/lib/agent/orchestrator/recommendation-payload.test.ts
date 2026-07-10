@@ -100,6 +100,35 @@ describe("FIX-191 — coerção server-side do recommendation_card (hero)", () =
 	});
 });
 
+// FIX-261 (rodada 5, veredito Fable r4, menores): o hero do reveal podia vir
+// bem acima do valor PEDIDO (denominação real da Bevi) sem NENHUM aviso — só
+// o real_offer do fechamento (FIX-197/240) tinha o aviso de ajuste. O
+// componente (recommendation-card.tsx) já sabia renderizar via rawCreditValue
+// (hasCreditAdjustment) — só faltava o servidor propagar o valor pedido.
+describe("FIX-261 — rawCreditValue no recommendation_card (aviso de ajuste desde o reveal)", () => {
+	it("valor pedido difere da carta real do grupo → out.rawCreditValue = valor pedido", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index, undefined, 120_000);
+		expect(out.rawCreditValue).toBe(120_000);
+		expect(out.creditValue).toBe(300_000);
+	});
+
+	it("valor pedido igual à carta real → SEM rawCreditValue (não inventa aviso)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index, undefined, 300_000);
+		expect("rawCreditValue" in out).toBe(false);
+	});
+
+	it("sem valor pedido (caminho legado) → SEM rawCreditValue, não quebra", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index);
+		expect("rawCreditValue" in out).toBe(false);
+	});
+});
+
 describe("FIX-191 — coerção do seletor (comparison_table) + tipoOferta invisível", () => {
 	it("coage cada cota do comparativo por id (números reais + groupId)", () => {
 		const bb = realGroup();

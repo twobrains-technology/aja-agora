@@ -47,7 +47,7 @@ import {
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
-import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
+import { logToolInputError, logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -354,6 +354,32 @@ export async function* runAgentTurn(args: {
 				}
 				break;
 			}
+			// FIX-257 (P1, veredito Fable r4 §P1 #1): input de tool que falha a
+			// validação Zod (ex.: creditMin como string não-coagível) NUNCA chega a
+			// rodar `execute` — o AI SDK v6 emite este chunk em vez de "tool-result".
+			// Sem este case, o erro era engolido: nenhum log, nenhum sinal, e o único
+			// rastro (tool-io-log via onStepFinish) mostrava `output: null` —
+			// indistinguível de "a tool rodou e não achou nada" (raiz da espiral de
+			// negação). Log BARULHENTO e nomeado, nunca silencioso.
+			case "tool-input-error": {
+				const errPart = part as {
+					toolCallId?: string;
+					toolName: string;
+					input?: unknown;
+					errorText?: string;
+				};
+				logToolInputError({
+					conversationId,
+					stepNumber: toolIoStep,
+					error: {
+						toolCallId: errPart.toolCallId,
+						toolName: errPart.toolName,
+						input: errPart.input,
+						errorText: errPart.errorText,
+					},
+				});
+				break;
+			}
 			case "tool-call": {
 				const toolName = part.toolName;
 				const input = part.input as Record<string, unknown>;
@@ -497,10 +523,16 @@ export async function* runAgentTurn(args: {
 						// "36/mês"). Emite groupId/ofertaId/quotaId + availableSlots real
 						// (CONTRATO com bloco-b); tipoOferta NUNCA vaza (crítério interno).
 						if (artifactType === "recommendation_card") {
+							// FIX-261: valor PEDIDO pelo usuário — mesma precedência do FIX-68
+							// (analyze.ts "lastRequested"): creditClampedFrom (original, antes
+							// do clamp de categoria) senão creditMax.
+							const requestedCreditValue =
+								meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax;
 							payload = coerceRecommendationPayload(
 								input,
 								revealGroupsById,
 								await getAdministradoraLogos(),
+								requestedCreditValue,
 							);
 						}
 						if (artifactType === "comparison_table") {
@@ -593,9 +625,17 @@ export async function* runAgentTurn(args: {
 
 	try {
 		const finishReason = await result.finishReason;
+		// FIX-261 (rodada 5, veredito Fable r4): achado "turno saiu truncado no
+		// meio do nome ('Perfeito, Madal')" — investigação (fork) não achou bug
+		// de split/chunk client nem server (web/adapter.ts não faz split algum).
+		// Candidato mais provável: finishReason anômalo (ex. "length", limite de
+		// tokens) cortando a geração ANTES do fim natural — antes só logava sem
+		// contexto suficiente pra confirmar. A cauda do texto entra no log pra
+		// a PRÓXIMA rodada provar/descartar a hipótese com evidência real (não
+		// especular um retry sem confirmar a causa — regra epistêmica).
 		if (finishReason !== "stop" && finishReason !== "tool-calls") {
 			console.warn(
-				`[orchestrator] Agent stream ended with unexpected finishReason="${finishReason}" persona=${currentPersona}`,
+				`[orchestrator] Agent stream ended with unexpected finishReason="${finishReason}" persona=${currentPersona} tail="${fullResponse.slice(-80)}"`,
 			);
 		}
 	} catch {}

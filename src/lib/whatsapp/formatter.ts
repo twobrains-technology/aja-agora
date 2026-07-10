@@ -1052,12 +1052,22 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
 			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
 			: "";
+	// FIX-259 (P1, veredito Fable r4): paridade com o card web — quando o
+	// fechamento trocou a administradora confirmada, avisa explicitamente as
+	// duas marcas em vez de "Confirmado com a X" liso.
+	const previousAdministradora = payload.previousAdministradora as string | undefined;
+	const swapLine = previousAdministradora
+		? `\n\n_A ${previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${admin}._`
+		: "";
+	const introLine = previousAdministradora
+		? `Confirmado com a ${admin} (opção equivalente à ${previousAdministradora}):`
+		: `Confirmado com a ${admin}:`;
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [

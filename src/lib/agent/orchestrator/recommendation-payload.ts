@@ -131,6 +131,11 @@ export function coerceRecommendationPayload(
 	input: Record<string, unknown>,
 	index: RevealGroupIndex,
 	logosByAdministradora?: ReadonlyMap<string, string>,
+	/** FIX-261 (rodada 5, veredito Fable r4): valor de crédito PEDIDO pelo
+	 * usuário (meta.qualifyAnswers.creditClampedFrom ?? creditMax) — fonte do
+	 * aviso de ajuste (mesmo padrão do FIX-197/240 no real_offer). Ausente →
+	 * sem aviso (degradação graciosa, caminho legado). */
+	requestedCreditValue?: number,
 ): Record<string, unknown> {
 	const id = typeof input.id === "string" ? input.id : undefined;
 	const group = id ? index.get(id) : undefined;
@@ -147,6 +152,18 @@ export function coerceRecommendationPayload(
 	// "neutral" em CÓDIGO (Lei 4 — invariante crítico não vira regra-no-prompt):
 	// a LLM NUNCA decide sozinha quando "personalizar" a recomendação.
 	out.recommendationStage = "neutral";
+	// FIX-261: o hero do reveal podia divergir do valor PEDIDO (denominação real
+	// da Bevi) sem uma palavra de aviso — só o real_offer do fechamento tinha
+	// esse cuidado. rawCreditValue aciona o aviso já implementado no componente
+	// (hasCreditAdjustment, recommendation-card.tsx); nunca confirma silenciosamente.
+	if (
+		typeof requestedCreditValue === "number" &&
+		Number.isFinite(requestedCreditValue) &&
+		typeof out.creditValue === "number" &&
+		Math.round(requestedCreditValue) !== Math.round(out.creditValue)
+	) {
+		out.rawCreditValue = requestedCreditValue;
+	}
 	return out;
 }
 

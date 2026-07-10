@@ -12,6 +12,7 @@
 
 import { getProposalGateway } from "../adapters";
 import {
+	normalizeAdmin,
 	partnerOfferToRealOffer,
 	pickClosestOffer,
 	type RealOffer,
@@ -59,6 +60,14 @@ export interface StartContractResult {
 	 * do `rawCreditValue` que aciona o aviso de ajuste (FIX-197) quando a carta
 	 * fechada (`offer.creditValue`) diverge dele. */
 	requestedCreditValue?: number;
+	/** FIX-259 (P1, veredito Fable r4): a administradora confirmada
+	 * (`input.administradoraPreferida`) não tinha grupo disponível na faixa e o
+	 * fechamento trocou pra mais próxima (clamp/fallback de `pickClosestOffer`) —
+	 * aciona o aviso explícito de troca (nunca em silêncio). */
+	administradoraChanged?: boolean;
+	/** Administradora que o usuário havia confirmado — só presente quando
+	 * `administradoraChanged` é true. */
+	previousAdministradora?: string | null;
 }
 
 /** Passo 5.1 — cria a proposta real e já simula, devolvendo a oferta a confirmar. */
@@ -108,6 +117,15 @@ export async function startContract(
 	);
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
+	// FIX-259: a administradora fechada pode divergir da confirmada (catálogo do
+	// fechamento sem ela na faixa → pickClosestOffer cai pro global best). Detecta
+	// pela comparação final (normalizada) — cobre QUALQUER caminho que produziu a
+	// divergência, sem duplicar a lógica interna do clamp.
+	const administradoraChanged =
+		!!input.administradoraPreferida &&
+		!!offer &&
+		normalizeAdmin(offer.administradora) !== normalizeAdmin(input.administradoraPreferida);
+
 	const snapshot = {
 		proposalId,
 		simulationSessionId: sim.simulationSessionId,
@@ -129,7 +147,14 @@ export async function startContract(
 		await createBeviProposal(conversationId, snapshot, input.leadId);
 	}
 
-	return { proposalId, offer, noOffer: !chosen, requestedCreditValue: input.valor };
+	return {
+		proposalId,
+		offer,
+		noOffer: !chosen,
+		requestedCreditValue: input.valor,
+		administradoraChanged,
+		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
+	};
 }
 
 export interface ConfirmOfferResult {

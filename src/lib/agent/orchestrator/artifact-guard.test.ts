@@ -54,6 +54,9 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"single-option",
 			// FIX-53: value_picker fora de ordem (dados antes do valor + anti-repetição).
 			"value-picker-order",
+			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
+			// no mesmo turno (2 tool-calls) — dedup intra-turno via turnArtifactTypes.
+			"dial-dup-intraturn",
 		]);
 	});
 
@@ -474,5 +477,49 @@ describe("FIX-187 — discovery-failed dropa a família de proposta quando a des
 		);
 		expect(v.allow).toBe(false);
 		if (!v.allow) expect(v.rule).toBe("discovery-failed");
+	});
+});
+
+// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no
+// mesmo turno (2 tool-calls, initialTargetMonth 12 e 6)" — a instrução do
+// directive ("chame UMA vez") é regra-no-prompt, não invariante (Lei 4). O
+// runner JÁ ampara turnArtifactTypes (runner.ts:408, artifacts.map já emitidos
+// neste turno) — a tabela só precisava de uma regra que a consumisse.
+describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada no mesmo turno)", () => {
+	it("suprime a 2ª chamada de contemplation_dial quando já emitido neste turno", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "contemplation_dial",
+				turnArtifactTypes: ["contemplation_dial"],
+			}),
+		);
+		expect(v.allow).toBe(false);
+		if (!v.allow) {
+			expect(v.rule).toBe("dial-dup-intraturn");
+			expect(v.logLine).toMatch(/dial-dup-intraturn/);
+		}
+	});
+
+	it("PERMITE a 1ª chamada de contemplation_dial no turno (turnArtifactTypes vazio)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "contemplation_dial",
+				turnArtifactTypes: [],
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+
+	it("NÃO afeta outros artifacts mesmo repetidos no mesmo turno (regra escopada a contemplation_dial)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "scarcity",
+				turnArtifactTypes: ["scarcity"],
+			}),
+		);
+		expect(v.allow).toBe(true);
 	});
 });

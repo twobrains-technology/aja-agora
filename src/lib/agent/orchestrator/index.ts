@@ -4,6 +4,8 @@ import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { ArtifactType } from "@/lib/chat/types";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
+import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
+import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
@@ -15,6 +17,8 @@ import {
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
+import { resolveOfferMentionForConversation } from "./choose-offer";
+import { computeMoneyAnchor } from "./dial-payload";
 import { isLikelyNameResponse } from "./detect-name-turn";
 import {
 	buildAdvanceToContractDirective,
@@ -23,6 +27,7 @@ import {
 	buildLanceSoParcelaDirective,
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
+	buildSimulatorDialDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -40,6 +45,31 @@ import { planTransition, yieldTransitionAbort } from "./transition";
 import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
+
+// FIX-260 (rodada 5, veredito Fable r4): heurística determinística de sim/não
+// em texto livre — usada SÓ pra consumir os gates lance-embutido/
+// simulator-offer quando a resposta vem digitada (nunca por clique, que já
+// tem handler próprio em route.ts). Lei 4: invariante de gate vira código,
+// não regra-no-prompt. `intent` (do analyzer) filtra pergunta/dúvida/off-topic
+// ANTES do regex — mesmo critério que decideShowGate já usa pra esses gates.
+const YES_TEXT_MARKERS = /\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
+const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
+
+function detectYesNoText(text: string, intent: UserIntent): boolean | null {
+	if (
+		intent === "asking_question" ||
+		intent === "expressing_doubt" ||
+		intent === "off_topic" ||
+		intent === "wants_more_options"
+	) {
+		return null;
+	}
+	const t = text.trim();
+	if (!t) return null;
+	if (NO_TEXT_MARKERS.test(t)) return false;
+	if (YES_TEXT_MARKERS.test(t)) return true;
+	return null;
+}
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
@@ -125,6 +155,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	let analyzedIntent = providedIntent ?? "neutral";
 
 	if (isUserTurn && !skipAnalyzer) {
+		// FIX-260 (rodada 5, veredito Fable r4): snapshot do gate ativo ANTES do
+		// merge do analyzer — mesmo padrão do FIX-236 (activeGateAtTurnStart em
+		// analyze.ts) pra restringir a captura de texto livre ao gate REALMENTE
+		// pendente neste turno (nunca herda "sim" de outro contexto).
+		const activeGateAtTurnStart = nextGate(meta, { hasContactName: Boolean(knownName) });
 		const {
 			analysis,
 			metaChanged,
@@ -136,6 +171,65 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		if (metaChanged) {
 			await persistMeta(conversationId, meta);
 			yield { type: "meta-update", meta };
+		}
+
+		// FIX-260: gate lance-embutido respondido por TEXTO LIVRE não era
+		// CONSUMIDO — só o clique (route.ts) setava qualifyAnswers.lanceEmbutido;
+		// nextGate() devolvia "lance-embutido" pra sempre e o disparo automático
+		// (abaixo) reemitia o card embedded_bid + a educação a cada turno (loop
+		// até o usuário clicar).
+		if (
+			activeGateAtTurnStart === "lance-embutido" &&
+			meta.qualifyAnswers?.lanceEmbutido === undefined
+		) {
+			const answer = detectYesNoText(userText, analyzedIntent);
+			if (answer !== null) {
+				meta.qualifyAnswers = {
+					...(meta.qualifyAnswers ?? {}),
+					lanceEmbutido: answer,
+					lanceEmbutidoPercent: answer ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
+				};
+				await persistMeta(conversationId, meta);
+			}
+		}
+
+		// FIX-260: "Quero ver sim!" (texto) no gate simulator-offer pulava o dial
+		// — simulatorOfferDispatched já marcado na EMISSÃO faz nextGate() avançar
+		// direto pro "decision" na resposta seguinte, sem nunca chamar o directive
+		// do dial (só o clique, route.ts, disparava present_contemplation_dial).
+		// Mesma janela do clique "Quero ver!": já mostrado, ainda sem decision,
+		// ainda sem resposta registrada (idempotência via simulatorOfferAnswered).
+		if (
+			meta.simulatorOfferDispatched === true &&
+			meta.decisionDispatched !== true &&
+			meta.simulatorOfferAnswered !== true &&
+			detectYesNoText(userText, analyzedIntent) === true
+		) {
+			meta.simulatorOfferAnswered = true;
+			await persistMeta(conversationId, meta);
+			await saveMessage(conversationId, "user", userText, channel);
+			// FIX-241 (âncora de dinheiro): mesmo cálculo do clique — quando o
+			// usuário declarou poupança mensal, narra o mês em que o BOLSO
+			// alcança o lance.
+			const moneyAnchor =
+				computeMoneyAnchor(meta.recommendedOffer, {
+					monthlySavings: meta.qualifyAnswers?.monthlySavings,
+					lanceValue: meta.qualifyAnswers?.lanceValue,
+					fgtsValue: meta.qualifyAnswers?.fgtsValue,
+				}) ?? undefined;
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildSimulatorDialDirective({
+					administradora: meta.recommendedAdministradora,
+					moneyAnchor,
+				}),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+			});
+			return;
 		}
 
 		const decision = decideRouting(userText, meta, analysis);
@@ -207,11 +301,23 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
 
+	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo
+	// ausente ANTES da tool-call): resolve a menção textual do usuário (nome de
+	// administradora ou valor aproximado, ex. "quero a ITAÚ"/"a de 92 mil")
+	// CONTRA os grupos JÁ EXIBIDOS em tela — antes de montar o prompt/deixar a
+	// LLM decidir sozinha. resolveOfferMentionForConversation nunca inventa
+	// (null sem match claro ou ambíguo); a diretiva só entra no systemContext
+	// quando há match real. Rota determinística, Lei 1/4.
+	const mentionedOffer = isUserTurn
+		? await resolveOfferMentionForConversation(conversationId, userText)
+		: null;
+
 	const history = await loadConversationHistory(conversationId);
 	const systemContext = buildSystemContext({
 		knownName,
 		newlyExtractedExperience,
 		meta,
+		mentionedOffer,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
@@ -458,7 +564,10 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			}
 		}
 		// docx passo 4: a oferta do simulador acontece UMA vez (padrão consent).
-		// Marcado na emissão — afirmativo digitado depois avança pro decision.
+		// Marcado na emissão. FIX-260: um afirmativo digitado no turno seguinte
+		// é interceptado MAIS ACIMA (antes deste bloco rodar) e dispara o
+		// directive do dial — só chega aqui negativo/ambíguo, que avança pro
+		// decision (comportamento correto, intacto).
 		if (result.nextGateToFire === "simulator-offer") {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.simulatorOfferDispatched) {

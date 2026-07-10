@@ -190,6 +190,34 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
 		expect("rawCreditValue" in artifact.payload).toBe(false);
 	});
+
+	// FIX-259 (rodada 5, veredito Fable r4, P1 #2): a administradora confirmada
+	// pode não ter grupo na faixa → o fechamento troca pro global best. Isso
+	// NUNCA pode sair em silêncio ("Confirmei com a X" sem explicar a troca).
+	it("FIX-259: administradoraChanged → aviso explícito de troca (nunca 'Confirmei com a X' liso)", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, administradora: "BANCO DO BRASIL" },
+			administradoraChanged: true,
+			previousAdministradora: "ITAÚ",
+		});
+		const texts = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(texts).toMatch(/ITAÚ/);
+		expect(texts).toMatch(/n[ãa]o tem grupo dispon[íi]vel/i);
+		expect(texts).toMatch(/BANCO DO BRASIL/);
+	});
+
+	it("FIX-259: sem administradoraChanged → mantém 'Confirmei com a X' (comportamento antigo intacto)", () => {
+		const items = realOfferPresentation(START_OK);
+		const texts = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(texts).toMatch(/Confirmei com a ÂNCORA/);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {

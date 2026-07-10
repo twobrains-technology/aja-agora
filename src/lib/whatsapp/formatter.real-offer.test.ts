@@ -81,3 +81,18 @@ describe("realOfferToWhatsApp — aviso de ajuste (FIX-240/FIX-247, paridade com
 		).not.toMatch(/pediu uma carta/);
 	});
 });
+
+// FIX-259 (rodada 5, veredito Fable r4, P1 #2) — paridade de canal: a troca de
+// administradora no fechamento nunca pode sair em silêncio, nem no WhatsApp.
+describe("realOfferToWhatsApp — aviso de troca de administradora (FIX-259, paridade com o card web)", () => {
+	it("previousAdministradora presente → avisa a troca com as duas marcas", () => {
+		const t = bodyText({ ...BASE, previousAdministradora: "ITAÚ" });
+		expect(t).toMatch(/ITAÚ/);
+		expect(t).toMatch(/n[ãa]o tem grupo dispon[íi]vel/i);
+		expect(t).toMatch(/BANCO DO BRASIL/);
+	});
+
+	it("sem previousAdministradora → NÃO avisa troca (comportamento antigo intacto)", () => {
+		expect(bodyText(BASE).toLowerCase()).not.toMatch(/n[ãa]o tem grupo dispon[íi]vel/);
+	});
+});

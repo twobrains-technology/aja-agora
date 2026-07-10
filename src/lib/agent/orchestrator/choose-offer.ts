@@ -240,3 +240,32 @@ export async function resolveOfferMentionForConversation(
 	const rows = await loadArtifactRows(conversationId);
 	return resolveOfferByMention(listShownOffers(rows), text);
 }
+
+// FIX-258 (P1, veredito Fable r4: FIX-252 "NÃO" — a resolução por menção
+// (acima) só corrigia a âncora PÓS-simulação; o modo de falha real acontecia
+// ANTES: o usuário nomeia "a ITAÚ"/"a de 92 mil" (visível na comparison_table)
+// e a LLM adivinha o groupId ou tenta re-buscar com um sentinela, alimentando
+// a espiral de negação (FIX-257). `buildMentionedOfferDirective` transforma o
+// resultado de `resolveOfferByMention` numa diretiva ACIONÁVEL, injetada no
+// prompt ANTES da LLM decidir (rota determinística — Lei 1/4, "nunca aja
+// sobre entidade não-ancorada" ao contrário: aqui a entidade JÁ está ancorada
+// em tela, então a LLM não pode agir como se não estivesse).
+
+/** Diretiva pro sistema injetar no prompt do turno quando o texto do usuário
+ * resolveu deterministicamente pra uma cota JÁ EXIBIDA. Nomeia o groupId
+ * LITERAL pra LLM usar direto — nunca re-buscar, nunca inventar outro id,
+ * nunca negar que a oferta existe. */
+export function buildMentionedOfferDirective(offer: ChosenOffer): string {
+	const detalhes: string[] = [`groupId="${offer.groupId}"`];
+	if (offer.administradora) detalhes.push(`administradora=${offer.administradora}`);
+	if (typeof offer.creditValue === "number") {
+		detalhes.push(`crédito=${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+	}
+	if (typeof offer.termMonths === "number") detalhes.push(`prazo=${offer.termMonths}m`);
+	return (
+		`O usuário está se referindo à cota JÁ EXIBIDA em tela (${detalhes.join(", ")}). ` +
+		`Use ESSE groupId LITERAL diretamente em simulate_quota/get_group_details — NÃO chame ` +
+		`search_groups de novo pra achar esse grupo, NÃO invente nem adivinhe outro id/sentinela. ` +
+		`NUNCA negue que essa oferta existe: ela está na tabela/card que você mesmo apresentou.`
+	);
+}

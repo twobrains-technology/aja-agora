@@ -282,20 +282,24 @@ const compareWithFinancingSchema = z.object({
 		),
 });
 
-const recommendGroupsSchema = z.object({
+// FIX-257 (P1, veredito Fable r4 §P1 #1): creditMin/creditMax/budget/
+// desiredTermMonths vem de texto livre do usuario — mesma coercao string→
+// number de schemas.ts (searchGroupsInput/simulateQuotaInput). Ver o
+// comentario la pra raiz completa (espiral de negacao).
+export const recommendGroupsSchema = z.object({
 	category: z
 		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
-	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
-	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
-	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
+	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
+	budget: z.coerce.number().positive().describe("Orcamento mensal do usuario em reais"),
 	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
 	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
 	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
 	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
 	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
 	// explicito num what-if pos-reveal.
-	desiredTermMonths: z
+	desiredTermMonths: z.coerce
 		.number()
 		.int()
 		.min(0)
