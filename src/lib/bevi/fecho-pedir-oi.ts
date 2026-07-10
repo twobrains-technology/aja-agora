@@ -20,7 +20,7 @@ import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { dispatchAutoTransbordo } from "@/lib/mesa/dispatch";
 import { sendTextMessage } from "@/lib/whatsapp/api";
-import { resolveAndSend } from "@/lib/whatsapp/template-dispatch";
+import { resolveAndSend, type ResolveAndSendResult } from "@/lib/whatsapp/template-dispatch";
 
 /** Chave lógica do template do fecho (FIX-235) — configurar no admin de
  * WhatsApp Templates antes de ir pra prod. Sem template aprovado, o envio cai
@@ -50,11 +50,19 @@ const defaultConfigured = () =>
 
 /** Dispara o fecho pro WhatsApp: pede o "oi" (template/texto livre conforme a
  * janela) e aciona a mesa. Best-effort — nunca lança, nunca bloqueia o
- * fechamento self-service que já aconteceu antes desta chamada. */
+ * fechamento self-service que já aconteceu antes desta chamada.
+ *
+ * FIX-265 (menor #3, veredito Fable r5, N7): `sent: true` só dizia "não
+ * lançou" — o caller (route.ts) não sabia se a mensagem foi enviada AGORA
+ * (`free_text`/`template`) ou só ENFILEIRADA (`queued`, sem janela/template
+ * aprovado). O agente afirmava "acabei de te mandar uma mensagenzinha" mesmo
+ * quando só enfileirou — mentira observável em dev. `channel` expõe o
+ * resultado real de `resolveAndSend` pra a copy do fechamento (closing-
+ * presentation.ts) condicionar o texto. */
 export async function sendFechoPedirOi(
 	conversationId: string,
 	deps: FechoPedirOiDeps = {},
-): Promise<{ sent: boolean }> {
+): Promise<{ sent: boolean; channel?: ResolveAndSendResult["channel"] }> {
 	const loadIdentityImpl = deps.loadIdentityImpl ?? loadIdentity;
 	const getLeadIdImpl = deps.getLeadIdImpl ?? getLeadIdForConversation;
 	const sendTextImpl = deps.sendTextImpl ?? sendTextMessage;
@@ -76,16 +84,18 @@ export async function sendFechoPedirOi(
 	}
 
 	let sent = false;
+	let channel: ResolveAndSendResult["channel"] | undefined;
 	if (configured()) {
 		try {
 			const to = `55${identity.celular.replace(/\D/g, "")}`;
-			await resolveAndSendImpl({
+			const result = await resolveAndSendImpl({
 				to,
 				conversationId,
 				usageKey: FECHO_PEDIR_OI_USAGE_KEY,
 				freeTextFallback: () => sendTextImpl(to, buildFechoPedirOiText()).then(() => undefined),
 			});
 			sent = true;
+			channel = result.channel;
 		} catch (err) {
 			console.error(
 				JSON.stringify({
@@ -127,5 +137,5 @@ export async function sendFechoPedirOi(
 		);
 	}
 
-	return { sent };
+	return { sent, channel };
 }

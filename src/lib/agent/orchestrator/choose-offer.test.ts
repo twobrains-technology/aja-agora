@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	findChosenOffer,
 	findOfferByAdministradora,
+	isCreditValueMentioned,
 	listShownOffers,
 	resolveOfferByMention,
 } from "./choose-offer";
@@ -246,5 +247,106 @@ describe("FIX-251/FIX-252 — listShownOffers extrai todas as cotas do compariso
 		expect(offers.map((o) => o.groupId).sort()).toEqual(
 			["g-ancora", "g-canopus", "g-itau", "g-rodobens"].sort(),
 		);
+	});
+});
+
+// FIX-264 (P1, veredito Fable r5: FIX-252/258 "PARCIAL" — resolveOfferByMention
+// elegia UM valueMatch ("best" global) e desistia por "conflito nome×valor"
+// quando 2+ grupos exibidos empatavam no mesmo crédito — mesmo com o NOME
+// único apontando certo pro grupo exibido. LEI: menção nome/valor que casa um
+// grupo EXIBIDO resolve DETERMINÍSTICO (nunca desiste/nega).
+const FLUXO_R6_ROWS = [
+	{
+		type: "comparison_table",
+		payload: {
+			groups: [
+				{
+					id: "g-rodobens",
+					groupId: "g-rodobens",
+					administradora: "RODOBENS",
+					creditValue: 90000,
+					termMonths: 180,
+					monthlyPayment: 1218.92,
+				},
+				// mesmo crédito da RODOBENS (empate de valor) — o bug real do r5:
+				// "best" global (1º empate na ordem do array) elegia esta em vez da
+				// nomeada, e o nome×valor "discordava" → null.
+				{
+					id: "g-sicredi",
+					groupId: "g-sicredi",
+					administradora: "SICREDI",
+					creditValue: 90000,
+					termMonths: 150,
+					monthlyPayment: 1350.0,
+				},
+				{
+					id: "g-canopus",
+					groupId: "g-canopus",
+					administradora: "CANOPUS",
+					creditValue: 110000,
+					termMonths: 120,
+					monthlyPayment: 1690.0,
+				},
+			],
+		},
+	},
+];
+
+describe("FIX-264 — resolveOfferByMention v2: valueMatch como CONJUNTO + menção negada", () => {
+	const offers = listShownOffers(FLUXO_R6_ROWS);
+
+	it('"RODOBENS de 90 mil" com RODOBENS 90k exibida (empatando em valor com a SICREDI) → resolve RODOBENS, não desiste', () => {
+		const resolved = resolveOfferByMention(offers, "RODOBENS de 90 mil");
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it('nome único + valor batendo no PRÓPRIO grupo nomeado, mesmo com outro grupo empatando no valor → resolve pelo nome (conjunto, não "best" único)', () => {
+		const resolved = resolveOfferByMention(offers, "quero fechar com a SICREDI de 90 mil");
+		expect(resolved?.groupId).toBe("g-sicredi");
+	});
+
+	it('"Deixa a Rodobens pra lá. Me fala da de 110 mil" → menção negada da RODOBENS ignorada, resolve pelo valor (CANOPUS 110k)', () => {
+		const resolved = resolveOfferByMention(offers, "Deixa a Rodobens pra lá. Me fala da de 110 mil");
+		expect(resolved?.groupId).toBe("g-canopus");
+	});
+
+	it('"Deixa a Rodobens pra lá" sozinho (só negação, sem outra menção) → null (não sobra nada pra resolver)', () => {
+		expect(resolveOfferByMention(offers, "Deixa a Rodobens pra lá")).toBeNull();
+	});
+
+	it('negação não é confundida com uso afirmativo de "deixa" ("Deixa a RODOBENS que você recomendou" segue resolvendo — regressão FIX-252)', () => {
+		const resolved = resolveOfferByMention(
+			listShownOffers(FLUXO_B_ROWS),
+			"Deixa a RODOBENS que você recomendou",
+		);
+		expect(resolved?.groupId).toBe("g-rodobens");
+	});
+
+	it("nome × valor genuinamente CONTRADITÓRIOS (valor do OUTRO grupo, sem empate) continua ambíguo — não inventa", () => {
+		expect(resolveOfferByMention(offers, "quero a CANOPUS de 90 mil")).toBeNull();
+	});
+});
+
+// FIX-265 (menor #2, veredito Fable r5, N6): distingue re-simulação PEDIDA
+// (usuário citou o valor-alvo) de what-if EXPLORATÓRIO da LLM (nenhum valor
+// citado) — usado pelo runner pra decidir se uma nova simulação vira a âncora
+// do fechamento/dial ou fica só informativa.
+describe("FIX-265 — isCreditValueMentioned: o texto do usuário respalda o valor da simulação?", () => {
+	it('"quero simular pra 130 mil" respalda 130000 (±10%)', () => {
+		expect(isCreditValueMentioned("quero simular pra 130 mil", 130000)).toBe(true);
+	});
+
+	it('"e se eu aumentasse um pouco?" NÃO respalda 161258 (nenhum valor citado — what-if exploratório)', () => {
+		expect(isCreditValueMentioned("e se eu aumentasse um pouco?", 161258)).toBe(false);
+	});
+
+	it('valor citado longe (>10%) do simulado não respalda', () => {
+		expect(isCreditValueMentioned("quero ver a de 100 mil", 161258)).toBe(false);
+	});
+
+	it("texto vazio ou creditValue inválido → false, nunca quebra", () => {
+		expect(isCreditValueMentioned("", 100000)).toBe(false);
+		expect(isCreditValueMentioned("quero 100 mil", 0)).toBe(false);
+		expect(isCreditValueMentioned("quero 100 mil", Number.NaN)).toBe(false);
 	});
 });

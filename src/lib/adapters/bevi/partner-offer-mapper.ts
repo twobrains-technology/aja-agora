@@ -11,7 +11,7 @@
 
 import type { PartnerOffer } from "../proposal-gateway";
 import type { ConsorcioCategory } from "../types";
-import { beviSegmentToCategory } from "./offer-mapper";
+import { beviSegmentToCategory, normalizeAdministradoraName } from "./offer-mapper";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -70,7 +70,11 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 	const avgBid = parseMoney(offer.lanceMedio);
 	return {
 		ofertaId: offer.ofertaId,
-		administradora: offer.administradora,
+		// FIX-265 (menor #1, veredito Fable r5, N5): a API de Parceiro devolve o
+		// código cru da Bevi ("ITAU", sem acento) — mesmo normalizador do trilho
+		// de Descoberta (offer-mapper.ts, FIX-255), pra a copy do fecho nunca
+		// falar "ITAU" sem acento (inviolável PT-BR).
+		administradora: normalizeAdministradoraName(offer.administradora),
 		grupo: offer.grupo,
 		category: beviSegmentToCategory(segmento),
 		creditValue: offer.valorCarta,

@@ -305,3 +305,43 @@ describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", ()
 		expect(idxOi).toBeGreaterThan(idxParabens);
 	});
 });
+
+// FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
+// mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE — inclusive
+// quando o envio (sendFechoPedirOi) só ENFILEIROU (sem janela/template
+// aprovado). Mentira observável em dev. A copy agora condiciona ao
+// `whatsappChannel` que o caller (route.ts) já sabe de `sendFechoPedirOi`.
+describe("closingPresentation — FIX-265: copy condicional do fecho WhatsApp (enviado vs enfileirado)", () => {
+	const textOf = (opts?: Parameters<typeof closingPresentation>[1]) =>
+		closingPresentation(CONFIRM, opts)
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+
+	it("channel='free_text' → afirma que MANDOU (enviado agora, na janela aberta)", () => {
+		const text = textOf({ whatsappChannel: "free_text" });
+		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	});
+
+	it("channel='template' → afirma que MANDOU (enviado agora, via template Meta)", () => {
+		const text = textOf({ whatsappChannel: "template" });
+		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	});
+
+	it("channel='queued' → NÃO afirma que já mandou (só enfileirou) — nada de 'acabei de te mandar'", () => {
+		const text = textOf({ whatsappChannel: "queued" });
+		expect(text).not.toMatch(/acabei de te mandar|j[áa] mandei/i);
+		expect(text.toLowerCase()).toMatch(/whatsapp/);
+	});
+
+	it("channel='queued' ainda pede o 'oi' e menciona a especialista (fecho não perde a função técnica)", () => {
+		const text = textOf({ whatsappChannel: "queued" });
+		expect(text).toMatch(/["“]oi["”]/);
+		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
+	});
+
+	it("sem opts (retrocompatível — callers que não migraram, ex. interactive-handlers.ts) mantém o texto de sempre", () => {
+		const text = textOf(undefined);
+		expect(text).toContain("acabei de te mandar uma mensagenzinha no seu WhatsApp");
+	});
+});

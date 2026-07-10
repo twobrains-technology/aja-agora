@@ -181,7 +181,10 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 			{ ...input, administradoraPreferida: "ITAU" },
 			gw,
 		);
-		expect(r.offer?.administradora).toBe("ITAU");
+		// FIX-265 (menor #1): partnerOfferToRealOffer normaliza o código cru da
+		// Bevi ("ITAU") pro nome exibível acentuado (ITAÚ) — a copy do fecho
+		// nunca mais fala o nome sem acento.
+		expect(r.offer?.administradora).toBe("ITAÚ");
 		expect(r.administradoraChanged).toBeFalsy();
 		expect(r.previousAdministradora ?? null).toBeNull();
 	});
@@ -193,7 +196,7 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 			{ ...input, administradoraPreferida: "itaú" },
 			gw,
 		);
-		expect(r.offer?.administradora).toBe("ITAU");
+		expect(r.offer?.administradora).toBe("ITAÚ");
 		expect(r.administradoraChanged).toBeFalsy();
 	});
 
