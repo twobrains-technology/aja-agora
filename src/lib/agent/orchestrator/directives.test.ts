@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildDiscoveryFailedFallback,
 	buildEmbeddedBidDirective,
 	buildLanceSoParcelaDirective,
@@ -186,16 +187,30 @@ describe("buildAdvanceToContractDirective — reafirmou interesse pós-decisão 
 	});
 
 	// FIX-216 (Ata 2026-07-04, item 5): terminologia "reserva de cota" — nunca
-	// "contratar/fechar" — e a frase de pré-reserva ANTES de coletar os dados.
-	// FIX-250 (rodada 3, Fable r2, polish): "é tipo um booking" era inglês
-	// solto na copy do fecho (inviolável PT-BR) — trocado por "pré-reserva".
-	it("usa terminologia de reserva (nunca contratar/fechar), em PT-BR (zero 'booking')", () => {
+	// "contratar/fechar". FIX-250 (rodada 3, Fable r2, polish): "é tipo um
+	// booking" era inglês solto (inviolável PT-BR) — trocado por "pré-reserva".
+	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
+	// "reserva"/"pré-reserva" ainda implica compromisso pré-contratação,
+	// borderline com "nunca 'reservado' antes da contratação". Trocado por
+	// "garantir seu lugar" + "pré-cadastro" — nunca contratar/fechar/reserva.
+	it("NÃO usa 'reserva' pré-contratação (FIX-256) — nunca contratar/fechar/booking, em PT-BR", () => {
 		const d = buildAdvanceToContractDirective({ administradora: "Itaú" });
 		expect(d.toLowerCase()).not.toMatch(/contrat|fechar/);
 		expect(d.toLowerCase()).not.toMatch(/\bbooking\b/);
-		expect(d.toLowerCase()).toMatch(/reserva/);
+		expect(d.toLowerCase()).not.toMatch(/reserv/);
 		expect(d.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
 		expect(d.toLowerCase()).toMatch(/boleto/);
+	});
+});
+
+describe("buildChooseOfferDirective — FIX-256: mesma troca de terminologia (sem 'reserva')", () => {
+	it("NÃO usa 'reserva' pré-contratação — nunca contratar/fechar/booking, em PT-BR", () => {
+		const d = buildChooseOfferDirective({ administradora: "Itaú" });
+		expect(d.toLowerCase()).not.toMatch(/\bbooking\b/);
+		expect(d.toLowerCase()).not.toMatch(/reserv/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
+		expect(d.toLowerCase()).toMatch(/boleto/);
+		expect(d).toContain("present_contract_form");
 	});
 });
 

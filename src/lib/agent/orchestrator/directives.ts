@@ -211,7 +211,12 @@ export function buildAdjustValueDirective(args: {
 export function buildAdvanceToContractDirective(args: { administradora?: string }): string {
 	const { administradora } = args;
 	const adminCtx = administradora ? ` da "${administradora}"` : "";
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra confirmar sua reserva, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é tipo uma pré-reserva, só quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — a reserva e self-service na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
+	// "reserva"/"pré-reserva" ainda implica compromisso fechado antes da
+	// contratação real, borderline com a linha "nunca 'reservado' antes da
+	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
+	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — é self-service, direto na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -223,7 +228,9 @@ export function buildChooseOfferDirective(args: { administradora?: string }): st
 	const { administradora } = args;
 	const adminCtx = administradora ? ` da "${administradora}"` : "";
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra confirmar sua reserva, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é tipo uma pré-reserva, só quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — a reserva é self-service na plataforma.`;
+	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
+	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — é self-service, direto na plataforma.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {

@@ -1,10 +1,22 @@
 ---
 id: FIX-256
 titulo: "Migration 0033 (logo_url) não aplicada + copy 'reserva' borderline pré-contratação"
-status: todo
+status: done
 bloco: bloco-r4-cards-polish
-arquivos: [src/lib/agent/orchestrator/directives.ts, docs/correcoes/rodada2-fable/veredito-fable-final.md]
+arquivos:
+  - src/lib/agent/orchestrator/directives.ts
 rodada: 2026-07-10 rodada 4 (Fable FINAL, N-F/N-I)
+executado_em: "2026-07-10"
+nota: |
+  N-F confirmado como PURO gap de ambiente (não código): drizzle/0033_administradoras_logo_url.sql
+  já existe, versionado, testado (src/db/administradoras-logo-url.migration.test.ts). Nenhuma
+  mudança de código cabe aqui — só falta `db:migrate` rodar no ambiente develop/prod. PENDENTE-KAIRO
+  (fora do blast radius deste worktree — quem aplica é o pipeline de deploy/orquestrador, não este
+  bloco). N-I: copy trocada em buildAdvanceToContractDirective (linha 214 original) E em
+  buildChooseOfferDirective (linha 226 — MESMA copy duplicada por copy-paste, mesmo defeito, corrigida
+  junto pra não deixar um caminho ainda dizendo "reserva" enquanto o outro não diz). buildSimulationInterestDirective
+  (linha ~237, leva a present_lead_form — passo ANTERIOR ao fecho, sem evidência no veredito) foi
+  deixada fora de propósito — escopo do achado N-I é especificamente a copy do FECHO (decision→contract).
 ---
 ## Gaps (veredito FINAL §N-F, §N-I)
 - **N-F**: migration `0033_administradoras_logo_url` NÃO aplicada no ambiente → `column
