@@ -1,7 +1,7 @@
 ---
 id: FIX-229
 titulo: "Card novo: dois caminhos, sem lance (present_two_paths)"
-status: todo
+status: done
 bloco: bloco-cards-ui
 arquivos:
   - src/lib/chat/types.ts
@@ -10,8 +10,10 @@ arquivos:
   - src/lib/agent/orchestrator/runner.ts
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/components/chat/artifacts/two-paths.tsx
-  - src/components/chat/artifacts/artifact-renderer.tsx
+  - src/components/chat/artifact-renderer.tsx
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR6/D5)
+commit: 5700ac2
+executado_em: 2026-07-10
 ---
 
 ## Palavras do operador (handoff)
@@ -43,3 +45,15 @@ A criação da tool é AQUI; o gate que a dispara é do bloco-jornada-conversa.
 ## Regressão exigida
 - payload/render NÃO contém nenhuma métrica de probabilidade/chance (teste-guard).
 - o card apresenta exatamente 2 caminhos, sem destacar/recomendar um.
+
+## Execução (2026-07-10)
+- Payload usa `administradora` (PT), não `administrator` (o exemplo literal do handoff)
+  — consistência com os outros 16+ campos do codebase que usam o termo em português.
+- Coerção usa WHITELIST explícita de campos de saída (não spread do input) — garante
+  que nenhum campo extra (`probability`/`likelihood`/`chanceDeContemplacao` etc.) escape
+  mesmo que a LLM tente mandar.
+- Tool liberada em `reveal` E `closing` (mesmo padrão de `present_contemplation_dial`/
+  `present_decision_prompt`, que também aparecem nas duas fases).
+- Mapper WhatsApp (`twoPathsToWhatsApp`) incluído de saída (lição do FIX-228: guard
+  repo-wide exige cobertura em `formatter.ts` pra toda tool de apresentação).
+- Commit: `5700ac2`.
