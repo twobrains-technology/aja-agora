@@ -7,11 +7,30 @@ import type { Gate } from "@/lib/agent/qualify-state";
  * mostra as duas juntas (gateQuestion compõe abaixo); no WhatsApp a educação sai
  * como balão de contexto e o card carrega SÓ a pergunta — channel-aware, o card
  * deixa de ser 3 parágrafos de aula + a pergunta numa unidade só. */
-export const LANCE_EMBUTIDO_EDU =
-	"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
-	"É usar parte da própria carta de crédito como lance — numa carta de R$ 100 mil, por exemplo, " +
-	"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
-	"sem precisar ter todo o lance em dinheiro hoje.";
+const formatCredit0 = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/** FIX-245 (rodada 2, Fable r1, §D4.d do veredito): o gate `lance-embutido`
+ * roda PÓS-reveal desde o FIX-215 — `meta.recommendedOffer.creditValue` já é
+ * a carta REAL que o cliente está vendo na tela. Um consultor de verdade usa
+ * o número do cliente, não um exemplo genérico. Sem carta real (chamador que
+ * ainda não tem o snapshot) → mantém o exemplo honesto de "R$ 100 mil". */
+export function lanceEmbutidoEdu(creditValue?: number): string {
+	const cartaPhrase =
+		creditValue != null && Number.isFinite(creditValue) && creditValue > 0
+			? `na sua carta de ${formatCredit0(creditValue)}`
+			: "numa carta de R$ 100 mil";
+	return (
+		"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
+		`É usar parte da própria carta de crédito como lance — ${cartaPhrase}, por exemplo, ` +
+		"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
+		"sem precisar ter todo o lance em dinheiro hoje."
+	);
+}
+/** @deprecated Use `lanceEmbutidoEdu(creditValue)` pra usar a carta REAL do
+ * cliente — este const mantém só o fallback genérico, pra quem ainda não
+ * repassou o valor real. */
+export const LANCE_EMBUTIDO_EDU = lanceEmbutidoEdu();
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
 
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
@@ -32,7 +51,11 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
 	servicos: "O que você tem em mente pra realizar?",
 };
 
-export function gateQuestion(gate: Gate, category?: Category | null): string | null {
+export function gateQuestion(
+	gate: Gate,
+	category?: Category | null,
+	creditValue?: number,
+): string | null {
 	switch (gate) {
 		case "name":
 			// FIX-17: a pergunta do nome ("Como posso te chamar?") já sai no TEXTO
@@ -57,9 +80,11 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			return "Boa! E qual valor aproximado você pensa em dar de lance?";
 		case "lance-embutido":
 			// FIX-212: educação + pergunta compostas (a WEB usa o card completo). No
-			// WhatsApp o adapter usa LANCE_EMBUTIDO_EDU e LANCE_EMBUTIDO_ASK separados
+			// WhatsApp o adapter usa lanceEmbutidoEdu()/LANCE_EMBUTIDO_ASK separados
 			// (educação num balão, card só com a pergunta) — split 2 tempos.
-			return `${LANCE_EMBUTIDO_EDU}\n\n${LANCE_EMBUTIDO_ASK}`;
+			// FIX-245: creditValue (carta REAL, pós-reveal) substitui o exemplo
+			// genérico de "R$ 100 mil" quando disponível.
+			return `${lanceEmbutidoEdu(creditValue)}\n\n${LANCE_EMBUTIDO_ASK}`;
 		case "identify":
 			// FIX-210 (reforma de conversa WhatsApp): a copy do identify foi UNIFICADA
 			// e encurtada — aqui vive só o PEDIDO (beat 2 da cadência 2-tempos). O

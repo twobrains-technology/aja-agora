@@ -1243,7 +1243,13 @@ export async function POST(req: NextRequest) {
 					// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
 					const freshMeta = await reloadMeta(conversationId);
 					const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
-					const reengage = reengageQuestionForGate(gate, freshMeta.currentCategory);
+					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+					const reengage = reengageQuestionForGate(
+						gate,
+						freshMeta.currentCategory,
+						undefined,
+						freshMeta.recommendedOffer?.creditValue,
+					);
 					await writeAndSaveText(
 						writer,
 						conversationId,

@@ -99,10 +99,13 @@ export function reengageQuestionForGate(
 	gate: Gate,
 	category: Category | null | undefined,
 	attempt = 1,
+	// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico na
+	// educação de lance embutido, quando o chamador já tem o snapshot.
+	creditValue?: number,
 ): string | null {
 	if (!isMandatoryCollectionGate(gate)) return null;
 	if (attempt >= 4) return SPECIALIST_EXIT_OFFER;
-	const base = gateQuestion(gate, category ?? null);
+	const base = gateQuestion(gate, category ?? null, creditValue);
 	if (!base) return null;
 	if (attempt <= 1) return base;
 	if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;

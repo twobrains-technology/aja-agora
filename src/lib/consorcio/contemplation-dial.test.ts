@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	anchorMonth,
@@ -5,6 +6,25 @@ import {
 	contemplationDialMarks,
 	paymentAfterLabel,
 } from "./contemplation-dial";
+
+// FIX-245 (rodada 2, Fable r1, §D4.e + gap #10): o comentário do campo
+// paymentAfterContemplation (FIX-C4) dizia "só o lance em DINHEIRO abate o
+// saldo" — stale desde o FIX-221 (AMORTIZA), que abate o saldo com o lance
+// TOTAL (dinheiro + embutido). Trava a paridade comentário×código.
+describe("FIX-245 — comentário de paymentAfterContemplation bate com o código (AMORTIZA)", () => {
+	const src = readFileSync(new URL("./contemplation-dial.ts", import.meta.url), "utf8");
+
+	it("NÃO diz mais que 'só o lance em dinheiro' abate o saldo (stale, pré-FIX-221)", () => {
+		// [\s*]+ tolera a quebra de linha do JSDoc ("...DINHEIRO\n\t * abate...").
+		expect(src).not.toMatch(/s[óo]\s+o\s+lance\s+em\s+dinheiro[\s*]+abate/i);
+	});
+
+	it("documenta que o lance TOTAL (dinheiro + embutido) amortiza, igual ao código (FIX-221)", () => {
+		const docBlock = src.slice(src.indexOf("paymentAfterContemplation?:") - 400, src.indexOf("paymentAfterContemplation?:"));
+		expect(docBlock).toMatch(/FIX-221/);
+		expect(docBlock.toLowerCase()).toMatch(/dinheiro \+ embutido|total/);
+	});
+});
 
 const base = {
 	creditValue: 100_000,

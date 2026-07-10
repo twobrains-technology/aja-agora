@@ -8840,7 +8840,9 @@ describe("FIX-212-SEM-EMOJI-LANCE-SPLIT — copy sem emoji + card do lance enxut
 
 	it("cassette estrutural: no WhatsApp a educação vira balão de contexto e o card usa só a pergunta", () => {
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
-		expect(adapter).toMatch(/LANCE_EMBUTIDO_EDU/); // beat de contexto (gateContextBeat)
+		// FIX-245: LANCE_EMBUTIDO_EDU (const genérica) virou lanceEmbutidoEdu(creditValue?)
+		// — mesmo beat de contexto (gateContextBeat), agora com a carta real do cliente.
+		expect(adapter).toMatch(/lanceEmbutidoEdu/);
 		const formatter = readSource("src/lib/whatsapp/formatter.ts");
 		expect(formatter).toMatch(/LANCE_EMBUTIDO_ASK/); // card só com a pergunta
 	});

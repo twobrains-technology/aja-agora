@@ -173,7 +173,9 @@ export async function pipeGatePrompt(args: {
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
 	if (!data) return;
-	const question = gateQuestion(gate, meta.currentCategory);
+	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo
+	// genérico de "R$ 100 mil" na educação de lance embutido.
+	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue);
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });
@@ -253,7 +255,12 @@ export async function pipeOrchestratorToWriter(
 				const data = gatePartData(ev.gate, meta);
 				if (data) {
 					emittedVisible = true;
-					const question = gateQuestion(ev.gate, meta.currentCategory);
+					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+					const question = gateQuestion(
+						ev.gate,
+						meta.currentCategory,
+						meta.recommendedOffer?.creditValue,
+					);
 					if (question) {
 						const id = crypto.randomUUID();
 						writer.write({ type: "text-start", id });

@@ -41,9 +41,18 @@ describe("FIX-212 — varredura anti-emoji na copy do WhatsApp", () => {
 		});
 	}
 
-	it("o system-prompt tem a regra DURA de não usar emoji", () => {
+	// FIX-234 (2026-07-09) relaxou a regra DURA original do FIX-212 pra
+	// PARCIMÔNIA (1 emoji a cada 3-4 balões) — decisão de produto posterior,
+	// não revogada. FIX-245 (rodada 2, Fable r1) removeu a contradição: o
+	// prompt tinha as DUAS regras ao mesmo tempo (proibição total + parcimônia,
+	// com ratios divergentes). Esta asserção passa a exigir a regra VIGENTE
+	// (parcimônia), não mais a proibição total superada.
+	it("o system-prompt tem a regra de parcimônia de emoji (fonte única, sem proibição total residual)", () => {
 		const prompt = `${SYSTEM_PROMPT}\n${SPECIALIST_BASE_PROMPT}`.toLowerCase();
-		expect(prompt).toMatch(/nunca.*emoji|não use.*emoji|sem emoji/);
+		expect(prompt).toMatch(/emoji com parcim[oô]nia/);
+		expect(prompt).toMatch(/1 a cada 3-4/);
+		// nenhuma proibição total incondicional sobrevivendo ao lado da parcimônia
+		expect(prompt).not.toMatch(/nunca use emoji\.?\s*nenhum,?\s*em hip[oó]tese alguma/);
 		// e não sobrou o "use emojis com moderação" antigo
 		expect(prompt).not.toMatch(/emojis com moderação/);
 	});
