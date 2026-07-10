@@ -172,15 +172,21 @@ export async function pipeGatePrompt(args: {
 	const { conversationId, gate, writer } = args;
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
-	if (!data) return;
 	const question = gateQuestion(gate, meta.currentCategory);
+	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
+	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm
+	// pergunta a emitir. Antes, `if (!data) return` matava a pergunta junto
+	// com o card ausente, virando turno morto ("Prazer, Madalena!" e nada mais).
+	if (!data && !question) return;
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });
 		writer.write({ type: "text-delta", id, delta: question });
 		writer.write({ type: "text-end", id });
 	}
-	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	if (data) {
+		writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	}
 }
 
 // FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
@@ -251,20 +257,23 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
-				if (data) {
+				const question = gateQuestion(ev.gate, meta.currentCategory);
+				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
+				if (data || question) {
 					emittedVisible = true;
-					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();
 						writer.write({ type: "text-start", id });
 						writer.write({ type: "text-delta", id, delta: question });
 						writer.write({ type: "text-end", id });
 					}
-					writer.write({
-						type: "data-gate",
-						id: crypto.randomUUID(),
-						data,
-					});
+					if (data) {
+						writer.write({
+							type: "data-gate",
+							id: crypto.randomUUID(),
+							data,
+						});
+					}
 				}
 				break;
 			}

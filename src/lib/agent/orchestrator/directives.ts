@@ -32,10 +32,15 @@ export function buildTransitionCrossSpecialistDirective(): string {
 
 /** FIX-17 — o usuário enviou o nome pelo CARD focado (passo 1). O nome JÁ foi
  * persistido no servidor (saveContactName) — o agente só saúda, sem re-chamar
- * tool nem re-perguntar. Espelha a saudação do caminho texto-livre; o
- * orchestrator dispara o gate de experience em seguida. */
+ * tool nem re-perguntar. Espelha a saudação do caminho texto-livre.
+ * FIX-238 (Fable r1): comentário e texto do directive citavam "gate de
+ * experience em seguida" — STALE desde o FIX-233 (2026-07-09), que moveu
+ * `experience` pra pós-reveal e inseriu o gate `desire` (não bloqueante) logo
+ * após o nome. A pergunta do `desire` ("qual carro você tem em mente?") sai
+ * pelo mecanismo determinístico de gate (gateQuestion, `web/adapter.ts`), não
+ * por este directive — por isso ele segue "PARE após a saudação". */
 export function buildNameCapturedDirective(name: string): string {
-	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudação usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NÃO faca pergunta, NÃO chame tools, NÃO prometa "perguntas rápidas". PARE após a saudação — o sistema dispara o próximo passo (gate de experience) em seguida.`;
+	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudação usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NÃO faca pergunta, NÃO chame tools, NÃO prometa "perguntas rápidas". PARE após a saudação — o sistema pergunta o próximo passo (gate "desire") em seguida.`;
 }
 
 // ---- Experience choices ----

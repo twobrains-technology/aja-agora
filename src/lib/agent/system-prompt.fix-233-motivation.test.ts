@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { motivationMirrorSection } from "./system-prompt";
+import { desireFollowUpSection, motivationMirrorSection } from "./system-prompt";
 
 describe("FIX-233 — motivationMirrorSection (espelhar o motivo do gate desire)", () => {
 	it("com motivation presente, injeta o motivo e instrui a espelhar UMA vez", () => {
@@ -26,5 +26,33 @@ describe("FIX-233 — motivationMirrorSection (espelhar o motivo do gate desire)
 		expect(motivationMirrorSection(undefined)).toBe("");
 		expect(motivationMirrorSection("")).toBe("");
 		expect(motivationMirrorSection("   ")).toBe("");
+	});
+});
+
+// FIX-238 (Fable r1, D3.3, gap P1 #5): a 2ª pergunta do gate `desire` ("o que
+// fez você decidir agora?" → motivation) NUNCA era feita — não existe gate
+// próprio pra ela (desiredItem/motivation são capturados por texto livre,
+// FIX-233), então precisa de uma instrução de sistema pra o modelo perguntar
+// como CONTINUAÇÃO natural, uma vez só, depois que desiredItem for conhecido.
+describe("FIX-238 — desireFollowUpSection (2ª pergunta do gate desire: motivation)", () => {
+	it("desiredItem conhecido + motivation ainda ausente → instrui a perguntar o motivo", () => {
+		const s = desireFollowUpSection("um Corolla", null);
+		expect(s).toMatch(/um Corolla/);
+		expect(s.toLowerCase()).toMatch(/motivo|decidir/);
+	});
+
+	it("instrui a checar o histórico e NÃO repetir se já perguntou antes", () => {
+		const s = desireFollowUpSection("um Corolla", null);
+		expect(s.toUpperCase()).toMatch(/N[ÃA]O REPITA|J[ÁA] PERGUNTOU/);
+	});
+
+	it("motivation já capturada → seção vazia (pergunta resolvida, não repete)", () => {
+		expect(desireFollowUpSection("um Corolla", "carro vive na oficina")).toBe("");
+	});
+
+	it("sem desiredItem ainda → seção vazia (nada pra encadear)", () => {
+		expect(desireFollowUpSection(null, null)).toBe("");
+		expect(desireFollowUpSection(undefined, null)).toBe("");
+		expect(desireFollowUpSection("", null)).toBe("");
 	});
 });
