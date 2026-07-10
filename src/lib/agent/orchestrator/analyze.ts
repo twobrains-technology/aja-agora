@@ -1,6 +1,7 @@
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { nextGate } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 const AFFIRMATIVE_REPLIES = new Set([
@@ -73,6 +74,11 @@ export async function analyzeAndMerge(
 	meta: ConversationMetadata,
 ): Promise<AnalyzeResult> {
 	const analysis = await analyzeTurn(text, currentPersona, meta);
+	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
+	// de qualquer merge desta função alterar o estado (ver guard de hasLance
+	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
+	// lance por baixo do pano).
+	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
 
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
@@ -158,7 +164,18 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	if (analysis.hasLance && !q.hasLance) {
+	// FIX-236 (Fable r1, D3.1): hasLance só é aceito quando o gate `lance` é o
+	// REALMENTE ativo (calculado ANTES deste merge, com o estado da rodada).
+	// Captura oportunista irrestrita (como creditMax/prazoMeses) vazava sinais
+	// falsos — "Queria rápido, mas não tenho grana agora" respondendo o gate
+	// `timeframe` continha "não tenho" e o analyzer extraía hasLance="no" cedo
+	// demais, fazendo nextGate PULAR o gate `lance` direto pra lance-embutido.
+	// Pior: com hasLance já "no", a recusa explícita depois ("não quero
+	// comprometer nada além da parcela" → so_parcela) nunca sobrescrevia (guard
+	// `!q.hasLance`), repetindo a MESMA educação de embutido em loop. A conversa
+	// de lance só existe PÓS-reveal (FIX-215) — restringir ao gate ativo não
+	// perde nenhum caminho legítimo.
+	if (analysis.hasLance && !q.hasLance && activeGateAtTurnStart === "lance") {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;
 		metaChanged = true;

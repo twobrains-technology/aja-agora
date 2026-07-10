@@ -142,6 +142,9 @@ export function buildAgent(
 				opts.whatsappOptinStage,
 				opts.contractClosedInfo ?? null,
 				opts.meta?.qualifyAnswers?.motivation ?? null,
+				// FIX-238: bem específico do gate `desire` — dispara a pergunta
+				// do motivo enquanto ele ainda não chegou.
+				opts.meta?.qualifyAnswers?.desiredItem ?? null,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,

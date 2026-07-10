@@ -18,6 +18,7 @@ import {
 	buildChooseOfferDirective,
 	buildCreditReactionDirective,
 	buildDecisionPromptDirective,
+	buildEmbeddedBidDirective,
 	buildExperienceDoubtsDirective,
 	buildExperienceFirstDirective,
 	buildExperienceReturningDirective,
@@ -28,6 +29,7 @@ import {
 	buildPlanReactionDirective,
 	buildQualifyStartMoreDirective,
 	buildQualifyStartYesDirective,
+	buildScarcityDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
@@ -1003,6 +1005,16 @@ export async function POST(req: NextRequest) {
 								});
 								return;
 							}
+							// FIX-237 (Fable r1, D2.1 gap #3): embedded_bid era ÓRFÃO (tool
+							// existia, ninguém instruía o modelo a chamá-la). Directive turn
+							// mostra o card ANTES do texto+chips determinístico do gate.
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildEmbeddedBidDirective(),
+								contactName,
+								writer,
+								userKey,
+							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}
@@ -1027,6 +1039,16 @@ export async function POST(req: NextRequest) {
 							}
 							if (!refreshed.decisionDispatched) {
 								await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+								// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara
+								// depois da estratégia (lance resolvido), ANTES da proposta —
+								// mesmo ponto que o gate `decision` em orchestrator/index.ts.
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: buildScarcityDirective(),
+									contactName,
+									writer,
+									userKey,
+								});
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildDecisionPromptDirective({
@@ -1099,6 +1121,15 @@ export async function POST(req: NextRequest) {
 								lanceValue: action.value.lanceValue,
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							// FIX-237 (Fable r1, D2.1 gap #3): mesma wiring do ramo no/maybe do
+							// gate `lance` acima — embedded_bid antes do texto+chips.
+							await pipeDirectiveTurn({
+								conversationId,
+								directive: buildEmbeddedBidDirective(),
+								contactName,
+								writer,
+								userKey,
+							});
 							await pipeGatePrompt({ conversationId, gate: "lance-embutido", writer });
 							return;
 						}

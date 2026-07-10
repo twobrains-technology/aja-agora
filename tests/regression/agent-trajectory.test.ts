@@ -476,10 +476,14 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
 		expect(decision).toContain("present_decision_prompt");
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
+		// próximo comentário — um comentário legítimo dentro do próprio bloco
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
+		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		const start = route.indexOf('action.gate === "simulator-offer"');
+		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
-			route.match(
-				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
-			)?.[0] ?? "";
+			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
 		expect(
 			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
@@ -7465,7 +7469,13 @@ describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () 
 		const route = readSource("src/app/api/chat/route.ts");
 		const start = route.indexOf('if (action.gate === "lance")');
 		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
-		const lanceBlock = route.slice(start, start + 1800);
+		// FIX-236 (Fable r1): janela até o PRÓXIMO bloco `action.gate ===`, não um
+		// tamanho fixo em char — o bloco `so_parcela` inserido antes de yes/no
+		// empurrou "lance-embutido" pra fora de uma janela fixa de 1800 chars
+		// (achado corrigido junto: teste quebrado por crescimento legítimo do bloco).
+		const nextBlockStart = route.indexOf('if (action.gate ===', start + 1);
+		const end = nextBlockStart > -1 ? nextBlockStart : start + 3000;
+		const lanceBlock = route.slice(start, end);
 		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
 		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
 		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);

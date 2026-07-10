@@ -983,17 +983,38 @@ export function motivationMirrorSection(motivation: string | null | undefined): 
 O cliente mencionou este motivo pra querer o bem agora: "${motivation}". Espelhe isso com empatia UMA ÚNICA VEZ na conversa (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo"), preferencialmente perto de quando ele chegou. Se você já mencionou esse motivo em algum turno anterior (confira o histórico), NÃO repita — siga a conversa normalmente.`;
 }
 
+/** FIX-238 (Fable r1, D3.3, gap P1 #5) — a 2ª pergunta do gate `desire` ("o
+ * que fez você decidir agora?" → `motivation`) nunca era feita: não existe
+ * gate próprio pra ela (desiredItem/motivation são capturados por texto
+ * livre, FIX-233 — a 1ª pergunta sai via `gateQuestion("desire")`). Quando o
+ * bem já é conhecido mas o motivo ainda não, instrui o modelo a encadear a
+ * pergunta como continuação natural da próxima resposta — mesmo padrão de
+ * `motivationMirrorSection` (sem flag própria, o modelo confere o histórico
+ * pra não repetir). Some assim que `motivation` chegar (o guard de captura
+ * oportunista em `analyze.ts` grava a primeira ocorrência). */
+export function desireFollowUpSection(
+	desiredItem: string | null | undefined,
+	motivation: string | null | undefined,
+): string {
+	if (!desiredItem || !desiredItem.trim()) return "";
+	if (motivation && motivation.trim()) return "";
+	return `## Motivo do momento (gate "desire" — 2ª pergunta)
+O cliente já disse o que tem em mente: "${desiredItem}". Falta só o motivo — "o que fez você decidir agora?". Se você AINDA NÃO fez essa pergunta nesta conversa (confira o histórico), pergunte em UMA frase curta e natural, logo após reagir ao que ele acabou de dizer. Se você já perguntou antes (respondida ou não), NÃO repita — siga a conversa normalmente.`;
+}
+
 function buildSpecialistDynamicBlocks(
 	expertise: ExpertiseLevel,
 	whatsappStage: WhatsappOptinStage,
 	contractClosedInfo: ContractClosedInfo | null = null,
 	motivation: string | null = null,
+	desiredItem: string | null = null,
 ): string {
 	return [
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
 		motivationMirrorSection(motivation),
+		desireFollowUpSection(desiredItem, motivation),
 	]
 		.filter(Boolean)
 		.join("\n\n");
@@ -1012,6 +1033,9 @@ export function buildSpecialistPrompt(
 	// FIX-233: motivo do gate `desire`, quando capturado — default null
 	// (comportamento atual em paths que não derivam do meta).
 	motivation: string | null = null,
+	// FIX-238: bem específico do gate `desire`, quando capturado — dispara a
+	// 2ª pergunta (motivo) enquanto motivation ainda não chegou.
+	desiredItem: string | null = null,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1108,6 +1132,7 @@ ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 			whatsappOptinStage,
 			contractClosedInfo,
 			motivation,
+			desiredItem,
 		),
 	};
 }
