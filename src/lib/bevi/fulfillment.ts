@@ -55,6 +55,10 @@ export interface StartContractResult {
 	offer: RealOffer | null;
 	/** Quando a simulação não devolve oferta (ex.: valor abaixo do mínimo). */
 	noOffer?: boolean;
+	/** FIX-240 (CDC art. 30): o valor PEDIDO pelo cliente (`input.valor`) — fonte
+	 * do `rawCreditValue` que aciona o aviso de ajuste (FIX-197) quando a carta
+	 * fechada (`offer.creditValue`) diverge dele. */
+	requestedCreditValue?: number;
 }
 
 /** Passo 5.1 — cria a proposta real e já simula, devolvendo a oferta a confirmar. */
@@ -125,7 +129,7 @@ export async function startContract(
 		await createBeviProposal(conversationId, snapshot, input.leadId);
 	}
 
-	return { proposalId, offer, noOffer: !chosen };
+	return { proposalId, offer, noOffer: !chosen, requestedCreditValue: input.valor };
 }
 
 export interface ConfirmOfferResult {

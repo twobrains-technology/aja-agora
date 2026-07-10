@@ -157,6 +157,39 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 		const text = lanceText(realOfferPresentation(START_OK, { declaredLanceValue: 117_000 }));
 		expect(text).not.toMatch(/acima|abaixo|na média/i);
 	});
+
+	// FIX-240 (rodada 2, Fable r1, D5.1): pedido 120k → recomendada ITAÚ 150k →
+	// no contract-submit a real_offer veio 211.258 sem aviso (CDC art. 30). O
+	// fecho SEMPRE carrega rawCreditValue (valor pedido) quando difere da carta
+	// fechada — o aviso de ajuste (FIX-197, real-offer.tsx) passa a renderizar.
+	it("FIX-240: carta fechada difere do valor pedido → payload carrega rawCreditValue = valor pedido", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, creditValue: 211_258 },
+			requestedCreditValue: 150_000,
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(artifact.payload.rawCreditValue).toBe(150_000);
+	});
+
+	it("FIX-240: carta fechada é igual ao valor pedido → payload SEM rawCreditValue (sem aviso falso)", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, creditValue: 60_000 },
+			requestedCreditValue: 60_000,
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("rawCreditValue" in artifact.payload).toBe(false);
+	});
+
+	it("FIX-240: sem requestedCreditValue (caminho antigo/legado) → payload SEM rawCreditValue, não inventa", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("rawCreditValue" in artifact.payload).toBe(false);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {

@@ -46,6 +46,15 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		expect(store.get("conv-1")?.ofertaId).toBeTruthy();
 	});
 
+	// FIX-240 (rodada 2, Fable r1, D5.1): o valor PEDIDO pelo cliente (input.valor)
+	// tem que sobreviver no resultado — é a fonte do rawCreditValue que aciona o
+	// aviso de ajuste (FIX-197) quando a carta fechada diverge dele.
+	it("startContract: devolve requestedCreditValue = input.valor (fonte do aviso de ajuste FIX-197)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract("conv-req", input, gw);
+		expect(r.requestedCreditValue).toBe(input.valor);
+	});
+
 	it("confirmOffer: escolhe a oferta → link de assinatura + links de documento", async () => {
 		const gw = new MockProposalGateway();
 		await startContract("conv-2", input, gw);

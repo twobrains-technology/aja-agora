@@ -1043,12 +1043,20 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const lanceLine = Number.isFinite(avgBidValue)
 		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
 		: "";
+	// FIX-240 (CDC art. 30): paridade com o aviso de ajuste do card web
+	// (FIX-197, real-offer.tsx) — quando a carta fechada diverge do valor
+	// pedido, o WhatsApp avisa igual, nunca confirma silenciosamente.
+	const rawCreditValue = Number(payload.rawCreditValue);
+	const adjustmentLine =
+		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
+			? `\n\n_Ajustamos essa carta de ${brlWa(rawCreditValue)} pra sua faixa de ~${brlWa(credit)}._`
+			: "";
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [

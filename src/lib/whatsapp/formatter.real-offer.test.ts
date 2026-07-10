@@ -55,3 +55,23 @@ describe("realOfferToWhatsApp — paridade dos campos novos (FIX-39/40)", () => 
 		expect(ids).toContain("offer_reject");
 	});
 });
+
+// FIX-240 (rodada 2, Fable r1, D5.1 — CDC art. 30): o WhatsApp usa o MESMO
+// payload real_offer do web (closing-presentation.ts) — o aviso de ajuste
+// precisa de paridade de canal, senão o cliente do WhatsApp confirma uma carta
+// fora da faixa pedida sem nenhum aviso (o card web já cobre via FIX-197).
+describe("realOfferToWhatsApp — aviso de ajuste (FIX-240, paridade com o card web)", () => {
+	it("rawCreditValue ≠ creditValue → avisa a divergência no texto", () => {
+		const t = bodyText({ ...BASE, rawCreditValue: 150_000 });
+		expect(t).toMatch(/ajust/i);
+		expect(t).toMatch(/150\.000|150,00/);
+	});
+
+	it("sem rawCreditValue → NÃO avisa (nada a ajustar)", () => {
+		expect(bodyText(BASE)).not.toMatch(/ajust/i);
+	});
+
+	it("rawCreditValue igual a creditValue → NÃO avisa (nada divergiu)", () => {
+		expect(bodyText({ ...BASE, rawCreditValue: BASE.creditValue })).not.toMatch(/ajust/i);
+	});
+});
