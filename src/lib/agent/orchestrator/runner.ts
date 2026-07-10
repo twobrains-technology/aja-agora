@@ -23,7 +23,11 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
-import { resolveOfferForAdministradora, resolveOfferMentionForConversation } from "./choose-offer";
+import {
+	isCreditValueMentioned,
+	resolveOfferForAdministradora,
+	resolveOfferMentionForConversation,
+} from "./choose-offer";
 import { enrichContractFormPayload } from "./contract-form-prefill";
 import {
 	coerceDialPayload,
@@ -854,11 +858,34 @@ export async function* runAgentTurn(args: {
 				);
 			}
 			const refreshed = await reloadMeta(conversationId);
-			await persistMeta(conversationId, {
-				...refreshed,
-				recommendedOffer: anchor,
-				recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
-			});
+
+			// FIX-265 (menor #2, veredito Fable r5, N6): what-if puramente
+			// EXPLORATÓRIO (a LLM simulou um crédito que o usuário NÃO pediu — nem
+			// por nome/valor já exibido [`mentioned` acima], nem por menção direta
+			// do valor no texto) nunca vira a âncora do fechamento/dial — mantém o
+			// snapshot anterior (a simulação ainda aparece como card informativo,
+			// só não confirma). Só se aplica quando `mentioned` não resolveu nada
+			// (sem `mentioned`, a rota determinística já vetou o grupo — sempre
+			// confiável, Lei 1/4).
+			const currentCredit = refreshed.recommendedOffer?.creditValue;
+			const isExploratoryWhatIf =
+				!mentioned &&
+				typeof currentCredit === "number" &&
+				currentCredit > 0 &&
+				Math.abs(anchor.creditValue - currentCredit) / currentCredit > 0.15 &&
+				!isCreditValueMentioned(lastUserText, anchor.creditValue);
+
+			if (isExploratoryWhatIf) {
+				console.log(
+					`[snapshot-whatif] FIX-265: what-if ${anchor.creditValue} não respaldado pelo texto do usuário — snapshot mantido em ${currentCredit} (conv=${conversationId})`,
+				);
+			} else {
+				await persistMeta(conversationId, {
+					...refreshed,
+					recommendedOffer: anchor,
+					recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
+				});
+			}
 		}
 	}
 

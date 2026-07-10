@@ -196,6 +196,18 @@ function parsePtBrNumber(raw: string): number | null {
 	return Number.isNaN(n) ? null : n;
 }
 
+// FIX-265 (menor #2, veredito Fable r5, N6): o runner precisa distinguir
+// re-simulação PEDIDA (usuário citou um valor-alvo) de what-if EXPLORATÓRIO
+// da LLM (nenhum valor citado) antes de aceitar uma nova simulação como a
+// âncora do fechamento/dial. Reusa a mesma extração/tolerância de
+// `resolveOfferByMention` — um só lugar decide "o que conta como valor
+// mencionado pelo usuário".
+/** O texto do usuário menciona (aproximadamente, ≤10%) o valor dado? PURO. */
+export function isCreditValueMentioned(text: string, creditValue: number): boolean {
+	if (!text || typeof creditValue !== "number" || creditValue <= 0) return false;
+	return extractMoneyMentions(text).some((m) => Math.abs(creditValue - m) / m <= 0.1);
+}
+
 // FIX-264 (P1, veredito Fable r5 — FIX-252/258 "PARCIAL"): "RODOBENS de 90
 // mil" com a RODOBENS exibida a 90k desistia por "conflito nome×valor" quando
 // outro grupo exibido empatava no MESMO crédito — o "best" global (menor diff,

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	findChosenOffer,
 	findOfferByAdministradora,
+	isCreditValueMentioned,
 	listShownOffers,
 	resolveOfferByMention,
 } from "./choose-offer";
@@ -323,5 +324,29 @@ describe("FIX-264 — resolveOfferByMention v2: valueMatch como CONJUNTO + menç
 
 	it("nome × valor genuinamente CONTRADITÓRIOS (valor do OUTRO grupo, sem empate) continua ambíguo — não inventa", () => {
 		expect(resolveOfferByMention(offers, "quero a CANOPUS de 90 mil")).toBeNull();
+	});
+});
+
+// FIX-265 (menor #2, veredito Fable r5, N6): distingue re-simulação PEDIDA
+// (usuário citou o valor-alvo) de what-if EXPLORATÓRIO da LLM (nenhum valor
+// citado) — usado pelo runner pra decidir se uma nova simulação vira a âncora
+// do fechamento/dial ou fica só informativa.
+describe("FIX-265 — isCreditValueMentioned: o texto do usuário respalda o valor da simulação?", () => {
+	it('"quero simular pra 130 mil" respalda 130000 (±10%)', () => {
+		expect(isCreditValueMentioned("quero simular pra 130 mil", 130000)).toBe(true);
+	});
+
+	it('"e se eu aumentasse um pouco?" NÃO respalda 161258 (nenhum valor citado — what-if exploratório)', () => {
+		expect(isCreditValueMentioned("e se eu aumentasse um pouco?", 161258)).toBe(false);
+	});
+
+	it('valor citado longe (>10%) do simulado não respalda', () => {
+		expect(isCreditValueMentioned("quero ver a de 100 mil", 161258)).toBe(false);
+	});
+
+	it("texto vazio ou creditValue inválido → false, nunca quebra", () => {
+		expect(isCreditValueMentioned("", 100000)).toBe(false);
+		expect(isCreditValueMentioned("quero 100 mil", 0)).toBe(false);
+		expect(isCreditValueMentioned("quero 100 mil", Number.NaN)).toBe(false);
 	});
 });

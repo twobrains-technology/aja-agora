@@ -768,10 +768,18 @@ export async function POST(req: NextRequest) {
 								// agente não re-apresenta contract_form (merge sobre meta atual).
 								const fresh = await reloadMeta(conversationId);
 								await persistMeta(conversationId, { ...fresh, contractClosed: true });
+								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona
+								// a mesa (especialista em cadastros) NA HORA. Nunca quebra o
+								// fechamento (best-effort, mesmo padrão de sendContractSummary).
+								// FIX-265 (menor #3, veredito Fable r5, N7): disparado ANTES da
+								// copy (abaixo) pra ela saber o CANAL real (free_text/template
+								// enviado agora × queued só enfileirado) — "acabei de te mandar"
+								// era dito mesmo quando só enfileirou (mentira observável).
+								const fechoPedirOi = await sendFechoPedirOi(conversationId);
 								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 								// (closing-presentation.ts — módulo único produção+eval).
 								await pipeAndSaveClosingItems(
-									closingPresentation(res),
+									closingPresentation(res, { whatsappChannel: fechoPedirOi.channel }),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
@@ -779,10 +787,6 @@ export async function POST(req: NextRequest) {
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
-								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e
-								// aciona a mesa (especialista em cadastros) NA HORA. Nunca quebra
-								// o fechamento (best-effort, mesmo padrão de sendContractSummary).
-								await sendFechoPedirOi(conversationId);
 							} catch (err) {
 								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
 								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
@@ -1101,7 +1105,15 @@ export async function POST(req: NextRequest) {
 						// "yes" → directive do dial (dados reais do plano recomendado);
 						// "no" → card de decisão direto ("Esse plano faz sentido?").
 						if (action.gate === "simulator-offer") {
-							const refreshed = { ...meta, simulatorOfferDispatched: true };
+							// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
+							// resposta ao simulator-offer — marca simulatorOfferAnswered
+							// aqui (não só no texto afirmativo subsequente, index.ts) pra
+							// não re-emitir o dial no 1º "sim" do turno seguinte.
+							const refreshed = {
+								...meta,
+								simulatorOfferDispatched: true,
+								simulatorOfferAnswered: true,
+							};
 							await persistMeta(conversationId, refreshed);
 							if (action.value === "yes") {
 								// FIX-241 (âncora de dinheiro): quando o usuário declarou
