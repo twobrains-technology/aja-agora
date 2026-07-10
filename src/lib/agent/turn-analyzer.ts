@@ -82,6 +82,18 @@ export const turnAnalysisSchema = z.object({
 		.describe(
 			"FIX-233 (gate `desire`): o motivo/gatilho de querer o bem agora, em texto livre curto (ex: 'carro vive na oficina', 'família cresceu', 'quer trocar de vida'). null se não mencionado.",
 		),
+	monthlySavings: z
+		.number()
+		.nullable()
+		.describe(
+			"FIX-241 (âncora de dinheiro): quanto o usuário consegue GUARDAR/JUNTAR por mês pro lance, quando não tem reserva hoje mas pretende ir juntando (ex: 'junto uns 4 mil por mês', 'consigo guardar 2000 reais mensais', 'dá pra poupar 500 por mês'). Diferente de monthlyBudget (parcela que ele PAGA no consórcio) — aqui é o quanto ele SOBRA/JUNTA à parte. null se não mencionado.",
+		),
+	fgtsValue: z
+		.number()
+		.nullable()
+		.describe(
+			"FIX-241 (âncora de dinheiro, vertical imóvel): valor de FGTS disponível que o usuário pode usar como lance embutido na compra do imóvel (ex: 'tenho uns 15 mil de FGTS', 'posso usar meu FGTS de 20 mil'). Só relevante pra imóvel. null se não mencionado.",
+		),
 	userIntent: z
 		.enum([
 			"ready_to_proceed",
@@ -120,6 +132,8 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	hasLance: null,
 	desiredItem: null,
 	motivation: null,
+	monthlySavings: null,
+	fgtsValue: null,
 	userIntent: "neutral",
 };
 
@@ -137,6 +151,8 @@ Regras gerais:
 - prazoMeses SÓ deve ser preenchido quando houver menção explicita de TEMPO/horizonte ("em 2 anos", "daqui a 18 meses", "o mais rápido possível", "sem pressa"). ORÇAMENTO/parcela mensal NÃO e prazo: "R$ 850 por mês", "850 mensais", "pago 800/mês", "cabe 1000 no mês" dizem QUANTO a pessoa paga por mês, não o horizonte de tempo. Na dúvida sobre prazo, prazoMeses=null (o sistema pergunta o prazo num passo próprio).
 - Para hasLance, só retorne yes/no/maybe/so_parcela quando o usuário falar de reserva/lance/capacidade de antecipar — não confunda com prazo. so_parcela é RECUSA EXPLÍCITA de qualquer lance (quer só pagar a parcela fixa) — diferente de "no" (ainda pode ser educado sobre lance embutido depois).
 - desiredItem e motivation (FIX-233, gate "desire" não bloqueante): preencha só quando o usuário nomear o bem específico ("um Corolla", "apê de 2 quartos") e/ou o motivo de querer agora ("carro vive na oficina", "família cresceu"). Ambos null se não mencionado — não invente a partir da categoria genérica.
+- monthlySavings (FIX-241, âncora de dinheiro): preencha SÓ quando o usuário falar de quanto consegue GUARDAR/JUNTAR por mês (poupança recorrente pro lance) — "junto uns 4 mil por mês", "consigo guardar 2000 reais mensais", "dá pra poupar 500 por mês". NÃO confunda com monthlyBudget/parcela ("pago 800/mês no consórcio" NÃO é monthlySavings). null se não mencionado.
+- fgtsValue (FIX-241, vertical imóvel): preencha só quando o usuário mencionar FGTS disponível pra usar no lance ("tenho uns 15 mil de FGTS", "posso usar meu FGTS de 20 mil"). null se não mencionado.
 - Quando o usuário der só o limite inferior ("acima de 500k", "a partir de 300", "uns X pra cima", "no mínimo Y"): preencha creditMin com o valor citado E creditMax com uma estimativa razoável de teto (entre 1.5x e 2x o piso). Isso destrava o sistema sem precisar perguntar de novo. Não retorne null em creditMax nesses casos.
 - Quando o usuário der só o limite superior ("até 400 mil", "no máximo 700", "menos de X"): preencha apenas creditMax com o valor; deixe creditMin em null (o sistema usa um piso default).
 - Quando der UM valor isolado ("200 mil", "uns 80k", "tipo 150"): preencha apenas creditMax; creditMin fica null.
@@ -156,6 +172,9 @@ Exemplos:
 - "não quero comprometer nada além da parcela" -> { hasLance: "so_parcela" }
 - "só a parcela mesmo, sem lance nenhum" -> { hasLance: "so_parcela" }
 - "quero um Corolla, meu carro vive na oficina" -> { detectedCategory: "auto", desiredItem: "um Corolla", motivation: "carro vive na oficina" }
+- "não tenho reserva hoje, mas junto uns 4 mil por mês" -> { hasLance: "no", monthlySavings: 4000 }
+- "consigo guardar 2000 reais mensais pro lance" -> { monthlySavings: 2000 }
+- "tenho uns 15 mil de FGTS pra usar" -> { fgtsValue: 15000 }
 - "acima de 500 mil" -> { creditMin: 500000, creditMax: 1000000 }
 - "a partir de 300k" -> { creditMin: 300000, creditMax: 600000 }
 - "uns 200 mil pra cima" -> { creditMin: 200000, creditMax: 400000 }

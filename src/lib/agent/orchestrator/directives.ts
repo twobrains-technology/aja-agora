@@ -280,16 +280,26 @@ O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir 
 
 // ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
 
-export function buildSimulatorDialDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
+export function buildSimulatorDialDirective(args: {
+	administradora?: string;
+	/** FIX-241 (âncora de dinheiro, spec 03): quando o usuário declarou
+	 * poupança mensal, o mês em que o BOLSO cobre o lance (anchorMonth,
+	 * dial-payload.ts:computeMoneyAnchor) — mesmo cálculo que ancora o
+	 * initialTargetMonth do card. "Cálculo único, duas apresentações". */
+	moneyAnchor?: { monthlySavings: number; anchoredMonth: number };
+}): string {
+	const { administradora, moneyAnchor } = args;
 	const adminCtx = administradora
 		? ` Use o grupo do plano recomendado (administradora "${administradora}") — os MESMOS dados reais que o usuário já viu.`
 		: " Use o grupo do plano recomendado — os MESMOS dados reais que o usuário já viu.";
+	const anchorInstruction = moneyAnchor
+		? ` Além disso, o usuário disse que consegue juntar R$ ${moneyAnchor.monthlySavings.toLocaleString("pt-BR")}/mês pro lance — inclua UMA frase factual dizendo que, juntando esse valor por mês, lá pelo mês ${moneyAnchor.anchoredMonth} o dinheiro dele alcança o lance necessário. NÃO prometa contemplação nesse mês (é quando o BOLSO cobre o lance; a contemplação em si depende de lance vencer ou sorteio).`
+		: "";
 	// Conceito do Bernardo (simulador-agulha): o usuário aceitou a oferta do
 	// simulador ("contemplado em 3, 6 ou 12 meses?"). O orquestrador dirige o
 	// dial UMA vez — determinístico, não a critério do modelo.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.
+1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
 2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;

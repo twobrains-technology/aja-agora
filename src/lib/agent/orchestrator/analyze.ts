@@ -177,6 +177,20 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
+	// FIX-241 (rodada 2, Fable r1, D1 — âncora de dinheiro): captura oportunista
+	// de monthlySavings/fgtsValue por texto livre, mesmo padrão do FIX-233
+	// acima — primeira ocorrência só, nunca sobrescrita por turno posterior.
+	// Alimenta anchorMonth() (dial-payload.ts) em vez do prazo desejado.
+	if (analysis.monthlySavings !== null && q.monthlySavings === undefined) {
+		q.monthlySavings = analysis.monthlySavings;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
+	if (analysis.fgtsValue !== null && q.fgtsValue === undefined) {
+		q.fgtsValue = analysis.fgtsValue;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
 	// BUG-FUNIL-PULA-PASSO2 (QA noturno 2026-06-21): NÃO presumir experiência nem
 	// consentimento só porque o usuário voluntariou um dado de qualificação (valor/
 	// prazo/lance) em texto livre. Antes, qualquer extração cravava

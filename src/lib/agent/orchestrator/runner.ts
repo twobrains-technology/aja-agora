@@ -462,9 +462,13 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "contemplation_dial") {
 							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							// FIX-C5: defaults do perfil declarado na qualificação.
+							// FIX-241: monthlySavings/fgtsValue ancoram no BOLSO, não no
+							// prazo desejado (dial-payload.ts:computeMoneyAnchor).
 							payload = coerceDialPayload(input, snapshot, {
 								prazoMeses: meta.qualifyAnswers?.prazoMeses,
 								lanceValue: meta.qualifyAnswers?.lanceValue,
+								monthlySavings: meta.qualifyAnswers?.monthlySavings,
+								fgtsValue: meta.qualifyAnswers?.fgtsValue,
 							});
 						}
 						// FIX-228: mesma âncora de oferta do contemplation_dial — os

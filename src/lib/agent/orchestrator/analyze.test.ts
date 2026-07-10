@@ -30,6 +30,8 @@ const NEUTRAL: TurnAnalysis = {
 	hasLance: null,
 	desiredItem: null,
 	motivation: null,
+	monthlySavings: null,
+	fgtsValue: null,
 	userIntent: "neutral",
 };
 
@@ -416,5 +418,66 @@ describe("FIX-233 — captura oportunista de desiredItem/motivation (gate desire
 		});
 		await analyzeAndMerge("na verdade quero um HB20", "auto", meta);
 		expect(meta.qualifyAnswers?.desiredItem).toBe("um Corolla");
+	});
+});
+
+// FIX-241 (rodada 2, Fable r1, D1 do veredito) — âncora de dinheiro: captura
+// oportunista de monthlySavings/fgtsValue por texto livre, mesmo padrão de
+// "primeira ocorrência" do FIX-233 (desiredItem/motivation).
+describe("FIX-241 — captura oportunista de monthlySavings/fgtsValue (âncora de dinheiro)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("analyzer extrai monthlySavings → salvo em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 4000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("não tenho reserva, mas junto uns 4 mil por mês", "auto", meta);
+
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
+	});
+
+	it("analyzer extrai fgtsValue → salvo em qualifyAnswers", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "imovel",
+			fgtsValue: 15_000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "imovel" };
+		await analyzeAndMerge("tenho uns 15 mil de FGTS", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.fgtsValue).toBe(15_000);
+	});
+
+	it("sem sinal (null) → slots ficam undefined, funil não trava", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("oi", "auto", meta);
+
+		expect(meta.qualifyAnswers?.monthlySavings).toBeUndefined();
+		expect(meta.qualifyAnswers?.fgtsValue).toBeUndefined();
+	});
+
+	it("primeira ocorrência de monthlySavings NÃO é sobrescrita por um turno posterior", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 4000,
+		});
+		const meta: ConversationMetadata = { currentCategory: "auto" };
+		await analyzeAndMerge("junto uns 4 mil por mês", "auto", meta);
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			monthlySavings: 1000,
+		});
+		await analyzeAndMerge("na verdade só consigo juntar uns 1000", "auto", meta);
+		expect(meta.qualifyAnswers?.monthlySavings).toBe(4000);
 	});
 });

@@ -476,9 +476,14 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
 		expect(decision).toContain("present_decision_prompt");
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-241 aninhou um comentário dentro do ramo "yes" (profundidade maior
+		// que o `if (action.gate === "simulator-offer")` de abertura) — a
+		// lookahead original (`\t+`, QUALQUER profundidade) parava nele antes de
+		// alcançar o ramo "no". Trava na MESMA profundidade (6 tabs) do `if` de
+		// abertura, que é a do comentário/gate que de fato encerra o bloco.
 		const simulatorOfferBlock =
 			route.match(
-				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
+				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t{6}\/\/|\n\t{6}if \(action\.gate)/,
 			)?.[0] ?? "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
 		expect(

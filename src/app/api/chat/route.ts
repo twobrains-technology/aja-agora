@@ -31,6 +31,7 @@ import {
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
 } from "@/lib/agent/orchestrator/directives";
+import { computeMoneyAnchor } from "@/lib/agent/orchestrator/dial-payload";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import {
@@ -1014,10 +1015,20 @@ export async function POST(req: NextRequest) {
 							const refreshed = { ...meta, simulatorOfferDispatched: true };
 							await persistMeta(conversationId, refreshed);
 							if (action.value === "yes") {
+								// FIX-241 (âncora de dinheiro): quando o usuário declarou
+								// poupança mensal, narra o mês em que o BOLSO alcança o
+								// lance — mesmo cálculo que ancora o slider (dial-payload.ts).
+								const moneyAnchor =
+									computeMoneyAnchor(meta.recommendedOffer, {
+										monthlySavings: meta.qualifyAnswers?.monthlySavings,
+										lanceValue: meta.qualifyAnswers?.lanceValue,
+										fgtsValue: meta.qualifyAnswers?.fgtsValue,
+									}) ?? undefined;
 								await pipeDirectiveTurn({
 									conversationId,
 									directive: buildSimulatorDialDirective({
 										administradora: meta.recommendedAdministradora,
+										moneyAnchor,
 									}),
 									contactName,
 									writer,

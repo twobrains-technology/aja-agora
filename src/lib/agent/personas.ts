@@ -49,11 +49,15 @@ export type QualifyAnswers = {
 	/** FIX-233 — motivação/gatilho do momento ("carro vive na oficina"). Vira
 	 * contexto injetado no prompt e é espelhada UMA vez, não a cada turno. */
 	motivation?: string;
-	/** FIX-233 — quanto o usuário consegue juntar por mês pro lance, quando
-	 * não tem reserva hoje mas pretende ir juntando. Slot tipado apenas; a
-	 * captura por texto livre e o consumo no motor de cálculo (âncora de
-	 * dinheiro na agulha) ficam pro bloco-motor-calculo (PR8 da spec). */
+	/** FIX-233/FIX-241 — quanto o usuário consegue juntar por mês pro lance,
+	 * quando não tem reserva hoje mas pretende ir juntando ("junto uns 4 mil
+	 * por mês"). Ancora a agulha (âncora de dinheiro) no mês em que o BOLSO
+	 * cobre o lance necessário, em vez do prazo desejado (docs/03). */
 	monthlySavings?: number;
+	/** FIX-241 (spec 03 "Âncora de dinheiro") — FGTS disponível (vertical
+	 * imóvel), entrada pontual que abate o bolso necessário direto (vai ao
+	 * vendedor) — maior acelerador da âncora nessa vertical. */
+	fgtsValue?: number;
 };
 
 import type { NavState } from "./orchestrator/navigation";
