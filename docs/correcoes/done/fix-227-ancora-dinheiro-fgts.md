@@ -1,12 +1,14 @@
 ---
 id: FIX-227
 titulo: "Âncora de dinheiro na agulha — mês em que o bolso alcança o lance (+ FGTS imóvel)"
-status: todo
+status: done
 bloco: bloco-motor-calculo
 arquivos:
   - src/lib/consorcio/contemplation-dial.ts
   - src/lib/consorcio/contemplation-dial.test.ts
 rodada: 2026-07-09 handoff agente-vendas-consorcio (PR8)
+commit: e323117
+executado_em: "2026-07-09"
 ---
 
 ## Palavras do operador (handoff)
