@@ -1,7 +1,7 @@
 ---
 id: FIX-282
 titulo: "Recovery de tool-error devolve fallback genérico 'opções continuam valendo' mesmo quando a pergunta do usuário é sobre exatidão/critério da carta — descarta a resposta honesta"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-2-prompt-honestidade
@@ -11,6 +11,8 @@ arquivos:
   - src/lib/agent/orchestrator/directives.test.ts
   - src/lib/agent/orchestrator/index.fix-282-honestidade-toolerror.integration.test.ts
 rodada: "2026-07-12 loop r9 ONDA 2 (pós-onda-1 Sonnet 4/10, gap G-B)"
+commit: e758a50
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos, Sonnet 5 — G-B/I2, UX 4/10)
 > "o usuário pergunta direto e depois insiste [...] 'Peraí, essa carta que você recomendou é de
