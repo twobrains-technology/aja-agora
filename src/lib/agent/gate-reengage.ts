@@ -102,10 +102,14 @@ export function reengageQuestionForGate(
 	// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico na
 	// educação de lance embutido, quando o chamador já tem o snapshot.
 	creditValue?: number,
+	// FIX-284: valor mencionado no gate `desire` — repassado pro
+	// gateQuestion("credit", ...) pra a re-cobrança também confirmar em vez
+	// de perguntar do zero.
+	creditMentionedAtDesire?: number,
 ): string | null {
 	if (!isMandatoryCollectionGate(gate)) return null;
 	if (attempt >= 4) return SPECIALIST_EXIT_OFFER;
-	const base = gateQuestion(gate, category ?? null, creditValue);
+	const base = gateQuestion(gate, category ?? null, creditValue, undefined, creditMentionedAtDesire);
 	if (!base) return null;
 	if (attempt <= 1) return base;
 	if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;

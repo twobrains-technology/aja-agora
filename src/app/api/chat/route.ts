@@ -1413,6 +1413,7 @@ export async function POST(req: NextRequest) {
 						freshMeta.currentCategory,
 						undefined,
 						freshMeta.recommendedOffer?.creditValue,
+						freshMeta.qualifyAnswers?.creditMentionedAtDesire,
 					);
 					// FIX-271 (rodada 8, veredito Fable r7, mesma família do FIX-266): sem
 					// gate pendente pra reengajar, o fallback enlatado pedia "manda de

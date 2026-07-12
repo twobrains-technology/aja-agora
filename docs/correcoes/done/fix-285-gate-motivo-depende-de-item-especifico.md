@@ -1,7 +1,7 @@
 ---
 id: FIX-285
 titulo: "shouldAskMotive nunca segura o funil quando o usuário só nomeia a categoria genérica (não um item específico) — motivo pulado + CPF repetido em sequência"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-2-gate-refino
@@ -12,7 +12,19 @@ arquivos:
   - src/lib/agent/system-prompt.ts
   - src/lib/agent/qualify-state.fix-285-motivo-item-generico.test.ts
 rodada: "2026-07-12 loop r9 ONDA 2 (pós-onda-1 Sonnet 4/10, gap G-C)"
+commit: 1b5eb66
+executado_em: "2026-07-12"
 ---
+
+## Nota de execução (desvio do proposto no card)
+
+O campo `desireAnswered` é marcado em `analyze.ts` só quando
+`activeGateAtTurnStart === "identify"` (não em qualquer turno com `desireAsked`
+true, como o card sugeria) — sem esse escopo, um turno bem mais tarde (ex.:
+respondendo o gate `credit`) marcaria o campo retroativamente e
+`shouldAskMotive` passaria a segurar TODOS os gates dali em diante, não só o
+`identify`. Regressão pega pelos cassettes `agent-trajectory.test.ts` (FIX-208)
+antes do commit final.
 ## Palavras do juiz (veredito r9pos, Sonnet 5 — G-C, Funcional 6/10)
 > "turno 4 pula direto pra `gate:identify` [...] sem perguntar o motivo. No turno 5, quando o
 > usuário ainda assim dá um motivo [...], o agente REPETE o mesmo pedido de CPF/celular — 2 turnos

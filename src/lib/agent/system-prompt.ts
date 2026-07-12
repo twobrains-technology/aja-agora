@@ -916,8 +916,15 @@ REGRA DURA do turno: NUNCA faca duas perguntas na mesma mensagem. Quando o siste
 
 Exceção única: se o USUÁRIO escrever o número dele espontaneamente, chame save_contact_whatsapp em silencio e siga o fluxo.`;
 		case "done":
-			return `## WhatsApp — o SISTEMA cuida disso
-NÃO mencione, NÃO ofereca e NÃO peca WhatsApp por conta própria — nem antes nem depois de ver a recomendação. Se/quando for a hora certa, o SISTEMA pede automaticamente, com card próprio. Se o usuário pedir pra trocar o número já informado, chame save_contact_whatsapp com o novo. UMA pergunta acionável por turno, sempre.`;
+			// FIX-283 (P2, veredito Sonnet r9pos, G-D, mitigação secundária —
+			// barreira real é o sanitizer, isMechanismNarrationClaim): fraseado
+			// anterior ("por conta própria", "o SISTEMA [...] automaticamente,
+			// com card próprio") era próximo demais de FALA NATURAL — o modelo
+			// parafraseou como algo a dizer ao cliente em vez de regra interna a
+			// seguir em silêncio. Cabeçalho + 1ª frase agora deixam explícito que
+			// é instrução operacional, nunca conteúdo a repetir/parafrasear.
+			return `## WhatsApp — INSTRUÇÃO INTERNA (não é assunto pra comentar com o cliente)
+Regra operacional pra você seguir em silêncio, mesmo se o cliente perguntar como ou quando isso acontece: NÃO mencione, NÃO ofereça e NÃO peça WhatsApp por iniciativa própria — nem antes nem depois de ver a recomendação. O sistema decide o momento certo e dispara o pedido sozinho, com card próprio; você nunca precisa explicar esse mecanismo pro cliente. Se o usuário pedir pra trocar o número já informado, chame save_contact_whatsapp com o novo, sem comentário. UMA pergunta acionável por turno, sempre.`;
 	}
 }
 
@@ -1015,15 +1022,29 @@ O cliente mencionou este motivo pra querer o bem agora: "${motivation}". Espelhe
  * pergunta como continuação natural da próxima resposta — mesmo padrão de
  * `motivationMirrorSection` (sem flag própria, o modelo confere o histórico
  * pra não repetir). Some assim que `motivation` chegar (o guard de captura
- * oportunista em `analyze.ts` grava a primeira ocorrência). */
+ * oportunista em `analyze.ts` grava a primeira ocorrência).
+ *
+ * FIX-285: quando o usuário só nomeou a categoria genérica ("um carro"), o
+ * analyzer não popula `desiredItem` (por design) — mas o gate `desire` ainda
+ * assim foi RESPONDIDO (`desireAnswered`, marcado em `analyze.ts`). Sem
+ * `desiredItem` pra citar, usa uma variante genérica da mesma pergunta em vez
+ * de devolver seção vazia (o que faria `shouldAskMotive` segurar o funil sem
+ * o LLM nunca perguntar nada). */
 export function desireFollowUpSection(
 	desiredItem: string | null | undefined,
 	motivation: string | null | undefined,
+	desireAnswered?: boolean | null,
 ): string {
-	if (!desiredItem || !desiredItem.trim()) return "";
 	if (motivation && motivation.trim()) return "";
-	return `## Motivo do momento (gate "desire" — 2ª pergunta)
+	if (desiredItem && desiredItem.trim()) {
+		return `## Motivo do momento (gate "desire" — 2ª pergunta)
 O cliente já disse o que tem em mente: "${desiredItem}". Falta só o motivo — "o que fez você decidir agora?". Se você AINDA NÃO fez essa pergunta nesta conversa (confira o histórico), pergunte em UMA frase curta e natural, logo após reagir ao que ele acabou de dizer. Se você já perguntou antes (respondida ou não), NÃO repita — siga a conversa normalmente.`;
+	}
+	if (desireAnswered) {
+		return `## Motivo do momento (gate "desire" — 2ª pergunta)
+O cliente já respondeu sobre o que tem em mente (sem citar um modelo específico). Falta só o motivo — "o que fez você decidir agora?". Se você AINDA NÃO fez essa pergunta nesta conversa (confira o histórico), pergunte em UMA frase curta e natural, logo após reagir ao que ele acabou de dizer. Se você já perguntou antes (respondida ou não), NÃO repita — siga a conversa normalmente.`;
+	}
+	return "";
 }
 
 function buildSpecialistDynamicBlocks(
@@ -1032,13 +1053,16 @@ function buildSpecialistDynamicBlocks(
 	contractClosedInfo: ContractClosedInfo | null = null,
 	motivation: string | null = null,
 	desiredItem: string | null = null,
+	// FIX-285: o gate `desire` foi respondido mesmo sem um `desiredItem`
+	// específico — variante genérica da 2ª pergunta (motivo).
+	desireAnswered = false,
 ): string {
 	return [
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
 		motivationMirrorSection(motivation),
-		desireFollowUpSection(desiredItem, motivation),
+		desireFollowUpSection(desiredItem, motivation, desireAnswered),
 	]
 		.filter(Boolean)
 		.join("\n\n");
@@ -1060,6 +1084,10 @@ export function buildSpecialistPrompt(
 	// FIX-238: bem específico do gate `desire`, quando capturado — dispara a
 	// 2ª pergunta (motivo) enquanto motivation ainda não chegou.
 	desiredItem: string | null = null,
+	// FIX-285: o gate `desire` já foi respondido (independente de desiredItem
+	// ter sido extraído) — default false (comportamento atual em paths que
+	// não derivam do meta).
+	desireAnswered = false,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1157,6 +1185,7 @@ ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 			contractClosedInfo,
 			motivation,
 			desiredItem,
+			desireAnswered,
 		),
 	};
 }

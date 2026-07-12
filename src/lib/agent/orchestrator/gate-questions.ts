@@ -60,6 +60,10 @@ export function gateQuestion(
 	// (whatsapp/adapter.ts, identify-capture.ts, gate-reengage.ts), que já
 	// rodam nesse canal. Só web/adapter.ts passa "web" explicitamente.
 	channel: "web" | "whatsapp" = "whatsapp",
+	// FIX-284 — valor aproximado mencionado informalmente no gate `desire`
+	// (`qualifyAnswers.creditMentionedAtDesire`). Quando presente, o gate
+	// `credit` CONFIRMA esse valor em vez de perguntar do zero.
+	creditMentionedAtDesire?: number,
 ): string | null {
 	switch (gate) {
 		case "name":
@@ -72,6 +76,16 @@ export function gateQuestion(
 		case "experience":
 			return "Você já fez consórcio antes?";
 		case "credit":
+			// FIX-284: o valor já foi mencionado informalmente no gate `desire`
+			// (2 turnos atrás) — CONFIRMA em vez de perguntar do zero (viola
+			// "sem pedir dado já dado", veredito Sonnet 5 G-F).
+			if (
+				creditMentionedAtDesire != null &&
+				Number.isFinite(creditMentionedAtDesire) &&
+				creditMentionedAtDesire > 0
+			) {
+				return `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
+			}
 			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
 			return "Qual valor do bem faz mais sentido pra você?";
 		case "timeframe":

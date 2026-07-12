@@ -1,7 +1,7 @@
 ---
 id: FIX-283
 titulo: "Meta-narrativa do mecanismo interno vaza pro cliente no reveal (parafraseia a instrução server-side do WhatsApp optin) — viola D23"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-2-prompt-honestidade
@@ -10,6 +10,8 @@ arquivos:
   - src/lib/agent/system-prompt.ts
   - src/lib/agent/orchestrator/sanitizer.test.ts
 rodada: "2026-07-12 loop r9 ONDA 2 (pós-onda-1 Sonnet 4/10, gap G-D)"
+commit: 1fe77e3
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos, Sonnet 5 — G-D, UX 4/10)
 > "reveal coerente, sem narrar o próprio mecanismo (D23 do canônico) [...] Atual: 'Aqui está o

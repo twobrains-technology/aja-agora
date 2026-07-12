@@ -59,6 +59,12 @@ export function buildStartContractInput(
 		q.creditMax ??
 		q.creditMin ??
 		50000;
+	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
+	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
+	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
+	// (que segue servindo só o matching da oferta, FIX-73): `valor` é o
+	// creditValue da ÚLTIMA oferta vista, nunca o que o cliente pediu de fato.
+	const originalRequestedCreditValue = q.creditClampedFrom ?? q.creditMax;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {
@@ -67,6 +73,7 @@ export function buildStartContractInput(
 		lgpd: identity.lgpd,
 		segmento,
 		valor,
+		originalRequestedCreditValue,
 		objetivo,
 		lanceEmbutido,
 		// Fechamento prefere a MESMA administradora que o usuário decidiu

@@ -8,11 +8,13 @@ import {
 	buildLanceReactionDirective,
 	buildLanceSoParcelaDirective,
 	buildScarcityDirective,
+	buildToolErrorRecoveryExactnessFallback,
 	buildToolErrorRecoveryFallback,
 	buildToolErrorRecoveryFallbackRepeat,
 	buildToolErrorRecoveryResolvedFallback,
 	buildTransitionFirstContactDirective,
 	buildWhatsappOptinDirective,
+	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 
@@ -69,6 +71,68 @@ describe("FIX-266 — recuperação do tool-error transforma contenção em reso
 		const repeat = buildToolErrorRecoveryFallbackRepeat({ name: "Mario", offers: [] });
 		expect(repeat).not.toBe(first);
 		expect(repeat.length).toBeGreaterThan(0);
+	});
+});
+
+// FIX-282 (P1, veredito Sonnet r9pos, G-B/I2): dentro do fallback do
+// tool-error, a pergunta do usuário sobre EXATIDÃO ("é de 120 mil como
+// pedi?", "bate?") ou CRITÉRIO ("por que essa e não outra?") da oferta já
+// mostrada tinha resposta factual pronta em `meta.recommendedOffer`, mas o
+// fallback genérico/resolvido (FIX-262/266) é cego ao conteúdo da pergunta.
+// `isExactnessOrCriteriaQuestion` reconhece esses 2 padrões; `wants_more_options`
+// genuíno ("quero ver mais opções") NUNCA deve casar — continua no fallback antigo.
+describe("FIX-282 — isExactnessOrCriteriaQuestion reconhece pergunta de exatidão/critério (nunca wants_more_options)", () => {
+	const CASAM = [
+		"essa carta que você recomendou é de 120 mil como pedi?",
+		"Por que essa e não outra?",
+		"tinha carta exata? me explica o critério",
+		"tá exatamente no valor que eu pedi?",
+		"bate certinho com o que eu pedi, sem ajuste nenhum?",
+		"por que você recomendou essa e não a outra?",
+	];
+
+	it("casa as perguntas de exatidão/critério do dossiê (probe-i2)", () => {
+		for (const s of CASAM) {
+			expect(isExactnessOrCriteriaQuestion(s), `deveria casar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO casa wants_more_options genuíno nem texto neutro (I1, não pode regredir)", () => {
+		expect(isExactnessOrCriteriaQuestion("quero ver mais opções")).toBe(false);
+		expect(isExactnessOrCriteriaQuestion("ok deixa eu pensar aqui")).toBe(false);
+		expect(isExactnessOrCriteriaQuestion("quero ver outras administradoras")).toBe(false);
+		expect(isExactnessOrCriteriaQuestion("")).toBe(false);
+	});
+
+	it("buildToolErrorRecoveryExactnessFallback compara rawCreditValue × creditValue quando divergem (FIX-277)", () => {
+		const text = buildToolErrorRecoveryExactnessFallback({
+			name: "Rafael",
+			offer: { administradora: "ITAÚ", creditValue: 124_599 },
+			rawCreditValue: 120_000,
+		});
+		expect(text).toMatch(/120\.000/);
+		expect(text).toMatch(/124\.599/);
+		expect(text).not.toMatch(/exatamente.{0,15}o mesmo valor/i);
+	});
+
+	it("buildToolErrorRecoveryExactnessFallback confirma sem ressalva quando rawCreditValue == creditValue", () => {
+		const text = buildToolErrorRecoveryExactnessFallback({
+			name: "Rafael",
+			offer: { administradora: "ITAÚ", creditValue: 120_000 },
+			rawCreditValue: 120_000,
+		});
+		expect(text).toMatch(/bate certinho/i);
+	});
+
+	it("buildToolErrorRecoveryExactnessFallback nunca inventa score — cita o critério em termos gerais", () => {
+		const text = buildToolErrorRecoveryExactnessFallback({
+			name: "Rafael",
+			offer: { administradora: "ITAÚ", creditValue: 124_599 },
+			rawCreditValue: 120_000,
+		});
+		expect(text).toMatch(/prazo/i);
+		expect(text).toMatch(/parcela/i);
+		expect(text).not.toMatch(/\bscore\b/i);
 	});
 });
 

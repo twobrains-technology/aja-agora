@@ -215,6 +215,64 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 			expect(input.prazoPreferido).toBe(200);
 		});
 	});
+
+	// FIX-281 (r9 onda 2, veredito Sonnet r9pos, gap G-A): o `rawCreditValue` que
+	// alimenta o aviso de divergência CDC no `real_offer` (card do fechamento) vinha
+	// de `valor` — que é o `creditValue` da ÚLTIMA oferta vista (correto só pro
+	// matching, FIX-73), NUNCA o pedido ORIGINAL do cliente. Isso silenciava
+	// (mario: pedido≈oferta, aviso nunca dispara) ou sub-representava (madalena: o
+	// aviso comparava contra o creditValue do reveal, não o pedido real) a
+	// divergência. Campo NOVO e independente, MESMA âncora do hero
+	// (runner.ts:656-665, FIX-261): `creditClampedFrom ?? creditMax`.
+	describe("FIX-281 — originalRequestedCreditValue: âncora do aviso CDC do fechamento", () => {
+		it("popula a partir de creditClampedFrom ?? creditMax, NUNCA de recommendedOffer.creditValue (pedido e oferta DIVERGEM)", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				recommendedAdministradora: "ÂNCORA",
+				qualifyAnswers: {
+					creditMax: 250_000,
+					creditClampedFrom: 250_000,
+					objetivo: "contemplacao_rapida",
+				},
+				recommendedOffer: {
+					administradora: "ÂNCORA",
+					category: "auto",
+					creditValue: 260_173, // creditValue do REVEAL anterior — diverge do pedido
+					termMonths: 200,
+					monthlyPayment: 3271.5,
+				},
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			// `valor` (matching da oferta, FIX-73) continua intocado — usa a oferta real.
+			expect(input.valor).toBe(260_173);
+			// o campo NOVO carrega o pedido ORIGINAL — nunca o creditValue da oferta.
+			expect(input.originalRequestedCreditValue).toBe(250_000);
+		});
+
+		it("prefere creditClampedFrom sobre creditMax quando os dois existem (mesma precedência do hero, FIX-68)", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				qualifyAnswers: { creditMax: 300_000, creditClampedFrom: 70_000 },
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			expect(input.originalRequestedCreditValue).toBe(70_000);
+		});
+
+		it("sem creditClampedFrom, cai pra creditMax", () => {
+			const meta: ConversationMetadata = {
+				currentCategory: "auto",
+				qualifyAnswers: { creditMax: 90_000 },
+			} as ConversationMetadata;
+
+			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+			expect(input.originalRequestedCreditValue).toBe(90_000);
+		});
+	});
 });
 
 // FIX-263 (P1, veredito Fable r5, seam PARCIAL, 2026-07-10) — o anti-refazer
