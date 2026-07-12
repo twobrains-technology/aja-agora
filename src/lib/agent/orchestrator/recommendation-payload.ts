@@ -83,6 +83,13 @@ export function coerceRevealCota(
 	input: Record<string, unknown>,
 	group: RevealGroupLike | undefined,
 	logosByAdministradora?: ReadonlyMap<string, string>,
+	/** FIX-287: creditValue REAL já simulado por groupId (turno corrente +
+	 * histórico da conversa — ver `known-credit-values.ts`). O search/recommend
+	 * só traz o valor-ALVO que a Bevi aproxima na busca (offer-mapper.ts:141);
+	 * quando esse groupId já foi simulado e o nominal real diverge, esse mapa
+	 * prevalece — comparison_table/recommendation_card nunca contradizem um
+	 * simulation_result já conhecido do MESMO grupo. */
+	knownCreditValueByGroupId?: ReadonlyMap<string, number>,
 ): Record<string, unknown> {
 	// Descarta o contempladosMes do modelo SEMPRE (fonte única = availableSlots
 	// real) e tipoOferta/grupo (critério INTERNO de ranking/dedup — FIX-193;
@@ -122,6 +129,21 @@ export function coerceRevealCota(
 	// FIX-192: contempladosMes só do dado REAL (>0); 0/ausente → nunca exibido.
 	if (Number(group.availableSlots) > 0) out.contempladosMes = group.availableSlots;
 	if (typeof group.avgBidValue === "number") out.avgBidValue = group.avgBidValue;
+
+	// FIX-287: o groupId já foi simulado (nesta conversa) e o nominal REAL
+	// diverge do valor-alvo que a busca aproximou → corrige creditValue pro
+	// real e guarda o valor-alvo em rawCreditValue (mesmo contrato de aviso do
+	// FIX-197/261 — a UI já sabe renderizar "você pediu X, a carta real é Y").
+	const knownReal = id ? knownCreditValueByGroupId?.get(id) : undefined;
+	if (
+		typeof knownReal === "number" &&
+		knownReal > 0 &&
+		Math.round(knownReal) !== Math.round(out.creditValue as number)
+	) {
+		out.rawCreditValue = out.creditValue;
+		out.creditValue = knownReal;
+	}
+
 	return out;
 }
 
@@ -136,10 +158,12 @@ export function coerceRecommendationPayload(
 	 * aviso de ajuste (mesmo padrão do FIX-197/240 no real_offer). Ausente →
 	 * sem aviso (degradação graciosa, caminho legado). */
 	requestedCreditValue?: number,
+	/** FIX-287: ver `coerceRevealCota`. */
+	knownCreditValueByGroupId?: ReadonlyMap<string, number>,
 ): Record<string, unknown> {
 	const id = typeof input.id === "string" ? input.id : undefined;
 	const group = id ? index.get(id) : undefined;
-	const out = coerceRevealCota(input, group, logosByAdministradora);
+	const out = coerceRevealCota(input, group, logosByAdministradora, knownCreditValueByGroupId);
 	if (isUsableGroup(group)) {
 		if (typeof group.score === "number") out.score = group.score;
 		if (group.scoreBreakdown && typeof group.scoreBreakdown === "object") {
@@ -167,12 +191,54 @@ export function coerceRecommendationPayload(
 	return out;
 }
 
+// FIX-286 (P0, veredito Sonnet r9pos2, guard tool-error suprime reveal
+// legítimo): quando o guard de tool-error (FIX-262) interrompe o turno DEPOIS
+// de `recommend_groups` já ter retornado grupos reais (ranqueados
+// server-side por `rankGroups`, nunca a LLM), o grupo de maior `score` É a
+// mesma recomendação que `present_recommendation_card` teria mostrado — a
+// escolha não depende de nenhum julgamento adicional do modelo. Considera só
+// entradas com `score` definido (só `recommend_groups` o preenche;
+// `search_groups` sozinho não basta pra materializar o hero, ver
+// `buildFirstRevealRecoveryFallback` em `directives.ts` pro caso sem ranking).
+export function pickBestRankedGroup(index: RevealGroupIndex): RevealGroupLike | null {
+	let best: RevealGroupLike | null = null;
+	for (const group of index.values()) {
+		if (typeof group.score !== "number") continue;
+		if (!isUsableGroup(group)) continue;
+		if (!best || group.score > (best.score ?? -Infinity)) best = group;
+	}
+	return best;
+}
+
+/** FIX-286 — materializa o `recommendation_card` inteiro a partir de um grupo
+ * REAL já indexado (sem depender de um `input` de tool-call que nunca chegou
+ * a existir, pois a apresentação falhou em `tool-error`). Reaproveita
+ * `coerceRecommendationPayload` (mesma coerção do caminho feliz) montando um
+ * `input` mínimo cujos campos numéricos são todos sobrescritos pelo grupo. */
+export function buildRecommendationCardFromRevealGroup(
+	group: RevealGroupLike,
+	logosByAdministradora?: ReadonlyMap<string, string>,
+	requestedCreditValue?: number,
+): Record<string, unknown> {
+	const input: Record<string, unknown> = {
+		id: group.id,
+		administradora: group.administradora,
+		category: group.category,
+		score: group.score,
+		scoreBreakdown: group.scoreBreakdown,
+	};
+	const index: RevealGroupIndex = new Map([[group.id, group]]);
+	return coerceRecommendationPayload(input, index, logosByAdministradora, requestedCreditValue);
+}
+
 /** Seletor (`comparison_table`): coage CADA cota por `id` — é a lista de cotas do
  * reveal que o bloco-b renderiza como chips (adendo B8). */
 export function coerceComparisonPayload(
 	input: Record<string, unknown>,
 	index: RevealGroupIndex,
 	logosByAdministradora?: ReadonlyMap<string, string>,
+	/** FIX-287: ver `coerceRevealCota`. */
+	knownCreditValueByGroupId?: ReadonlyMap<string, number>,
 ): Record<string, unknown> {
 	const groups = Array.isArray(input.groups) ? input.groups : null;
 	if (!groups) return input;
@@ -182,7 +248,12 @@ export function coerceComparisonPayload(
 			if (!g || typeof g !== "object") return g;
 			const cota = g as Record<string, unknown>;
 			const id = typeof cota.id === "string" ? cota.id : undefined;
-			return coerceRevealCota(cota, id ? index.get(id) : undefined, logosByAdministradora);
+			return coerceRevealCota(
+				cota,
+				id ? index.get(id) : undefined,
+				logosByAdministradora,
+				knownCreditValueByGroupId,
+			);
 		}),
 	};
 }

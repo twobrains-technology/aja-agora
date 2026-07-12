@@ -1,7 +1,9 @@
 ---
 id: FIX-286
 titulo: "Guard de tool-error/cap (FIX-262) descarta um reveal LEGÍTIMO já buscado no próprio turno e mente 'as opções já apareceram' quando nada apareceu ainda"
-status: todo
+status: done
+commit: b6b1e44
+executado_em: "2026-07-12"
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-3-reveal-guard

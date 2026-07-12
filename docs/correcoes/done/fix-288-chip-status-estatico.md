@@ -1,14 +1,16 @@
 ---
 id: FIX-288
 titulo: "Chip de status do reveal fica ESTÁTICO ~50-64s no mesmo texto (Eixo B — latência percebida, frontend)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-3-latencia-percebida
 arquivos:
   - src/components/chat/streaming-dots.tsx
-  - src/components/chat/chat-message.tsx
+  - src/components/chat/streaming-dots.test.tsx
 rodada: "2026-07-12 loop r9 ONDA 3 (pós-onda-2 Sonnet 4/10, P3-6/G-E, veredito-r9pos2-sonnet.md §3)"
+commit: f787bfc7
+executado_em: 2026-07-12
 ---
 ## Palavras do juiz (veredito r9pos2, Sonnet 5 — P3-6, UX 5/10)
 > "Latência do reveal (busca+recomendação+simulação+comparação, turno 7) ficou em 59-64s em
