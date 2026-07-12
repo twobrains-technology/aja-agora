@@ -18,6 +18,7 @@ import {
 	isBannedLexicon,
 	isCatalogResearchClaim,
 	isDocumentReceiptClaim,
+	isMechanismNarrationClaim,
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
 	isProactiveCallbackClaim,
@@ -378,6 +379,46 @@ describe("FIX-249 — promessa de retorno/contato proativo é PROIBIDA na web (b
 		const texto = "Não encontrei essa opção aqui. Deixa eu resolver isso e já te retorno.";
 		const limpo = stripProcessPreamble(texto);
 		expect(limpo.toLowerCase()).not.toContain("te retorno");
+	});
+});
+
+// FIX-283 (P2, veredito Sonnet r9pos, G-D — viola D23, jornada-canonica.md):
+// o agente parafraseou a instrução server-side do WhatsApp optin
+// ("por conta própria", "o SISTEMA [...] automaticamente, com card próprio",
+// whatsappOptinSection("done")) como se fosse algo a VERBALIZAR pro usuário
+// em vez de regra interna a seguir em silêncio — meta-narrativa do próprio
+// mecanismo. D23 é claro: o agente NUNCA narra o próprio mecanismo, mesmo se
+// o cliente perguntar diretamente.
+describe("FIX-283 — narração do próprio mecanismo interno é PROIBIDA (D23, mesmo se o cliente perguntar)", () => {
+	const MECANISMO_NARRADO_SEGMENTS = [
+		"Consigo te ajudar com o consórcio automóvel, mas não crio esse tipo de texto por conta própria — isso é conduzido automaticamente pelo sistema quando chega a hora certa.",
+		"O sistema decide isso automaticamente.",
+		"Isso não sou eu que decido, é o sistema.",
+	];
+
+	it("isMechanismNarrationClaim pega as frases que narram o mecanismo interno", () => {
+		for (const s of MECANISMO_NARRADO_SEGMENTS) {
+			expect(isMechanismNarrationClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy operacional legítima que menciona 'sistema'/'automaticamente' em outro sentido", () => {
+		expect(
+			isMechanismNarrationClaim("O sistema vai te avisar quando a proposta mudar de status."),
+		).toBe(false);
+		expect(
+			isMechanismNarrationClaim("Sua parcela é debitada automaticamente todo mês."),
+		).toBe(false);
+		expect(isMechanismNarrationClaim("")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de meta-narrativa do mecanismo — dropa o trecho EXATO do dossiê (mario-sem-lance turno 7)", () => {
+		const input =
+			"Aqui está o detalhamento completo da ITAÚ. Quer ajustar o valor do bem? Consigo te ajudar com o consórcio automóvel, mas não crio esse tipo de texto por conta própria — isso é conduzido automaticamente pelo sistema quando chega a hora certa. Sobre o carro: quer ajustar o valor do bem ou seguir com o que já vimos da ITAÚ?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("por conta própria");
+		expect(out.toLowerCase()).not.toContain("conduzido automaticamente");
+		expect(out).toContain("Aqui está o detalhamento completo da ITAÚ.");
 	});
 });
 
