@@ -1,7 +1,7 @@
 ---
 id: FIX-290
 titulo: "comparison_table some do reveal porque o pareamento com recommendation_card é só regra-no-prompt (sem emissão server-side garantida)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-4-reveal-serverside
@@ -11,6 +11,8 @@ arquivos:
   - src/lib/agent/tools/ai-sdk.ts
   - src/lib/agent/orchestrator/recommendation-payload.ts
 rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P0 sistêmico, veredito-r9pos3-sonnet.md §3)"
+commit: 7cdfd3b
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos3, Sonnet 5 — P0 Funcional)
 > "present_recommendation_card e present_comparison_table são 'INSEPARÁVEIS' (regra do
