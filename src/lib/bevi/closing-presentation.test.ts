@@ -228,9 +228,25 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		.join("\n");
 
 	it("reforço 1 literal: administradora escolhida pela Aja Agora para o seu perfil", () => {
-		expect(allText).toContain("Você está contratando um consórcio da ÂNCORA");
+		expect(allText).toContain("Sua cota da ÂNCORA está reservada");
 		expect(allText).toMatch(/escolhida pela Aja Agora/);
 		expect(allText).toMatch(/para o seu perfil/);
+	});
+
+	// FIX-278 (veredito r9, G2): terminologia RESERVA DE COTA (Ata 2026-07-04,
+	// item 2/P0) — nunca "consórcio fechado/contratado". O texto pinava
+	// "contratando um consórcio" (comportamento errado); TDD strict: falha com
+	// a copy antiga, passa com "reserv[a/ada]".
+	it("FIX-278: terminologia RESERVA DE COTA — nunca 'contratando/contratado/fechado', sempre 'reserv'", () => {
+		expect(allText.toLowerCase()).not.toMatch(/contratand[ao]|contratad[ao]|fechad[ao]/);
+		expect(allText.toLowerCase()).toMatch(/reserv/);
+	});
+
+	// FIX-278 (Ata 2026-07-04, item 2/P0): "Você não paga nada agora — tipo
+	// booking. Só quando chegar o boleto." — reforça que a reserva não é cobrança.
+	it("FIX-278: comunica que não paga nada agora (booking, só quando chegar o boleto)", () => {
+		expect(allText.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
+		expect(allText.toLowerCase()).toMatch(/boleto/);
 	});
 
 	it("reforço 2 literal: a Aja Agora segue com você até a contemplação e depois dela", () => {
@@ -275,8 +291,11 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 // FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8) — fecho pro
 // WhatsApp: depois do "Parabéns!", o agente avisa que mandou mensagem no
 // WhatsApp e pede o "oi" (abre a janela de 24h — função técnica), e que a
-// especialista em cadastros chama em seguida. NUNCA "reservado/garantido/
-// você já está no grupo" (nada foi contratado só com a proposta enviada).
+// especialista em cadastros chama em seguida. NUNCA "garantido/você já
+// está no grupo" (a proposta foi enviada, mas a contemplação não).
+// NOTA (FIX-278): "reservado/reservada" deixou de ser banido — virou a
+// terminologia MANDATÓRIA (Ata 2026-07-04, "reserva de cota"). O que
+// continua proibido é afirmar contemplação/vaga no grupo como fato.
 describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", () => {
 	const items = closingPresentation(CONFIRM);
 	const allText = items
@@ -293,8 +312,7 @@ describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", ()
 		expect(allText.toLowerCase()).toMatch(/especialista em cadastros/);
 	});
 
-	it("NUNCA diz 'reservado/garantido/você já está no grupo'", () => {
-		expect(allText.toLowerCase()).not.toMatch(/reservad[ao]/);
+	it("NUNCA diz 'garantido/você já está no grupo' (nada de contemplação prometida)", () => {
 		expect(allText.toLowerCase()).not.toMatch(/garantid[ao]/);
 		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
 	});

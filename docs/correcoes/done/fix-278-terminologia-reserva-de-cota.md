@@ -1,14 +1,19 @@
 ---
 id: FIX-278
 titulo: "Fechamento usa 'contratando um consórcio' — viola terminologia RESERVA DE COTA (Ata 2026-07-04)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-compliance-copy
 arquivos:
   - src/lib/bevi/closing-presentation.ts
   - src/lib/bevi/closing-presentation.test.ts
+  - src/lib/whatsapp/interactive-handlers.contract.test.ts
+  - src/lib/whatsapp/interactive-handlers.template-routing.test.ts
+  - src/lib/eval/jornada-rubric.ts
 rodada: "2026-07-12 loop r9 onda 1 (baseline Sonnet 3/10)"
+commit: 7d84ab6
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9, Sonnet 5 — G2, UI/Compliance 3/10)
 > "fechamento sempre diz 'Você está contratando um consórcio' (3/3 cenários que fecham) —

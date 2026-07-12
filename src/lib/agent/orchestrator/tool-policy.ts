@@ -1,5 +1,4 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 /**
  * FIX-19 (bloco G) — tool-policy por fase da jornada.
@@ -172,7 +171,12 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// 1/2/4). Emissão agora é SERVER-SIDE determinística
 				// (server-cards.ts) — o LLM nunca mais precisa (nem pode) chamá-las.
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
-				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
+				// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU também — mesmo
+				// toolset, mesmo estado, disparava num fluxo e não em outro
+				// estruturalmente idêntico (LLM-discricionário). Emissão agora é
+				// SERVER-SIDE determinística (buildWhatsappOptinCard,
+				// orchestrator/index.ts) — a tool NUNCA entra em allowedTools em
+				// nenhuma fase.
 			];
 		case "closing":
 			// Decisão tomada: passo 5 libera (contract_form). FIX-253: present_
@@ -189,7 +193,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// FIX-246: embedded_bid/two_paths/scarcity saíram do toolset do LLM
 				// em qualquer fase (emissão server-side determinística — ver "reveal").
 				"present_contract_form",
-				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
+				// FIX-280: present_whatsapp_optin saiu daqui também — ver "reveal".
 			];
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.

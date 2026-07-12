@@ -202,8 +202,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   embutida — ela não é deste passo. O que se avalia é a entrega da proposta +
   a continuidade.
 - REFORÇOS LITERAIS (avalie em reforcosPasso5; ausência = flag faltaramReforcos):
-  "você está contratando um consórcio da administradora X, escolhida pela Aja Agora
-  para o seu perfil" E "a Aja Agora segue com você até a contemplação e depois dela".
+  "sua cota da administradora X está reservada, escolhida pela Aja Agora para o seu
+  perfil" E "a Aja Agora segue com você até a contemplação e depois dela". (FIX-278,
+  Ata 2026-07-04 P0: terminologia RESERVA DE COTA — NUNCA "contratando/contratado/
+  fechado" um consórcio; "contratando" nesta frase é agora o comportamento ERRADO.)
 - Entregou a proposta sem o cliente sentir que "mudou de empresa"
   (avalie em assinaturaSemTrocarEmpresa) — a voz continua sendo da Aja Agora, o
   link/PDF da administradora é apresentado como continuidade.

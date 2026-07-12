@@ -81,9 +81,19 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
+	// FIX-279: os 4 testes abaixo exercitam o merge de creditMax, então a meta
+	// precisa refletir o gate `credit` REALMENTE ativo (desireAsked +
+	// identityCollected) — senão o guard novo rejeita a captura antes mesmo de
+	// o clamp entrar em jogo. O comportamento de clamp em si é o que estes
+	// testes verificam, não o timing do gate (isso é o FIX-279 dedicado).
+
 	it("carta de 5 milhões de auto → creditMax preservado (Ata 2026-07-04), sem creditClampedFrom", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
-		const meta: ConversationMetadata = { currentCategory: "auto" };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: true,
+			currentCategory: "auto",
+		};
 		await analyzeAndMerge("quero uma carta de 5 milhoes de auto", "auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
@@ -93,7 +103,11 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 
 	it("valor dentro da faixa NÃO marca clamp", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 150_000 });
-		const meta: ConversationMetadata = { currentCategory: "auto" };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: true,
+			currentCategory: "auto",
+		};
 		await analyzeAndMerge("uns 150 mil", "auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(150_000);
@@ -106,7 +120,11 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 			creditMax: 5_000_000,
 			creditMin: 4_000_000,
 		});
-		const meta: ConversationMetadata = { currentCategory: "auto" };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: true,
+			currentCategory: "auto",
+		};
 		await analyzeAndMerge("entre 4 e 5 milhoes", "auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
@@ -115,7 +133,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
-		const meta: ConversationMetadata = {};
+		const meta: ConversationMetadata = { desireAsked: true, identityCollected: true };
 		await analyzeAndMerge("5 milhoes", "concierge", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
@@ -137,16 +155,19 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("valor sem sinal de experiência NÃO crava experiencePrev='returning' nem consent (dado fica salvo)", async () => {
+	it("valor sem sinal de experiência NÃO crava experiencePrev='returning' nem consent", async () => {
 		// Espelha o cenário real do browser: "carro de 80 mil, 850/mês" — o
 		// analyzer extrai o valor mas NÃO detecta experiência (experiencePrev=null).
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 80_000 });
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("quero um carro de uns 80 mil, gastando perto de 850 por mes", "auto", meta);
 
-		// o valor é preservado — não se re-pergunta
-		expect(meta.qualifyAnswers?.creditMax).toBe(80_000);
-		// mas a experiência NÃO é inventada e o consent NÃO é presumido
+		// FIX-279: este é exatamente o cenário do bug (bem+valor no turno de
+		// `desire`, antes de `credit` ficar ativo) — o guard novo REJEITA a
+		// captura aqui; o valor será coletado depois, pela agulha do gate
+		// `credit` (ver describe "FIX-279" abaixo). O ponto original deste
+		// teste (experiência/consent não são inventados) continua valendo.
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
 		expect(meta.experiencePrev).toBeUndefined();
 		expect(meta.qualifyConsented).toBeFalsy();
 	});
@@ -275,12 +296,19 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 
 	it("'R$ 900 por mês' sem menção temporal → prazoMeses REJEITADO mesmo se o analyzer classificar errado", async () => {
 		// Reproduz o bug real: o analyzer (LLM) classificou por engano.
+		// FIX-279: meta no gate `credit` ativo (desireAsked+identityCollected) —
+		// senão o guard novo rejeitaria a captura de creditMax também, o que
+		// isolaria mal o que este teste verifica (o guard de prazoMeses).
 		vi.mocked(analyzeTurn).mockResolvedValue({
 			...NEUTRAL,
 			creditMax: 70_000,
 			prazoMeses: 117,
 		});
-		const meta: ConversationMetadata = { currentCategory: "auto" };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: true,
+			currentCategory: "auto",
+		};
 		await analyzeAndMerge(
 			"Quero um carro de uns R$ 70 mil, gastando perto de R$ 900 por mês.",
 			"auto",
@@ -493,6 +521,90 @@ describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", (
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, hasLance: "yes" });
 		await analyzeAndMerge("tenho uma reserva pra dar de lance", "auto", meta);
 		expect(meta.qualifyAnswers?.hasLance).toBe("yes");
+	});
+});
+
+// FIX-279 (loop r9, baseline Sonnet 3/10, G3 — Funcional 5/10): o gate `credit`
+// (agulha do valor do bem, P4 do canônico, marcado ✅ resolvido pelo FIX-115)
+// nunca aparecia em produção — o analyzer capturava creditMax de QUALQUER
+// turno de texto livre, inclusive o turno de `desire` (bem + valor juntos, ex.:
+// "Um apartamento de uns 250 mil"), preenchendo q.creditMax ANTES de o gate
+// `credit` ficar ativo. Quando nextGate() chegava em qualify-state.ts:88, a
+// condição `q.creditMax === undefined` já era falsa e o gate nunca disparava.
+// Mesma classe de bug do FIX-236 (hasLance) — a correção replica o guard
+// `activeGateAtTurnStart`.
+describe("FIX-279 — creditMax só captura quando o gate `credit` está ativo", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("bem + valor no MESMO turno do desire (antes de identify) → creditMax REJEITADO, gate `credit` continua ativo", async () => {
+		// meta reproduz o ponto do funil logo após o nome: desire ainda não foi
+		// respondido (desireAsked marcado só na emissão) e identify não rodou.
+		const meta: ConversationMetadata = { desireAsked: false };
+		// Confirma o estado de partida: gate ativo é `desire` (não `credit`).
+		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "imovel",
+			creditMax: 250_000,
+			desiredItem: "um apartamento",
+		});
+		await analyzeAndMerge("Um apartamento de uns 250 mil", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+		// captura oportunista de desiredItem (FIX-233) continua intocada — só
+		// creditMax precisa do guard novo.
+		expect(meta.qualifyAnswers?.desiredItem).toBe("um apartamento");
+	});
+
+	it("no turno seguinte, com desire respondido e identify concluído, o gate `credit` aparece", () => {
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "imovel",
+			identityCollected: true,
+		};
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+	});
+
+	it("resposta DIRETA ao gate `credit` já ativo → creditMax é setado normalmente (caminho legítimo preservado)", async () => {
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "imovel",
+			identityCollected: true,
+		};
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 250_000 });
+		await analyzeAndMerge("200 mil", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(250_000);
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+	});
+
+	it("isRevealRefit pós-reveal continua funcionando (exceção legítima, independe do gate ativo no momento)", async () => {
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "auto",
+			identityCollected: true,
+			revealCompleted: true,
+			experiencePrev: "returning",
+			searchDispatched: true,
+			qualifyAnswers: { creditMax: 80_000 },
+		};
+		// gate ativo agora é `timeframe`, não `credit` — mesmo assim o refit
+		// pós-reveal (isRevealRefit) precisa continuar funcionando.
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			userIntent: "providing_info",
+			creditMax: 130_000,
+		});
+		await analyzeAndMerge("na verdade agora quero um de 130 mil", "auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(130_000);
 	});
 });
 

@@ -1,7 +1,7 @@
 ---
 id: FIX-280
 titulo: "whatsapp_optin dispara no meio do funil em mario-sem-lance mas não em madalena no mesmo ponto (LLM-discricionário, não determinístico)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-gate-funil
@@ -9,7 +9,14 @@ arquivos:
   - src/lib/agent/orchestrator/whatsapp-optin-guard.ts
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/lib/agent/system-prompt.ts
+  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/orchestrator/server-cards.ts
+  - src/lib/agent/orchestrator/index.ts
+  - src/lib/agent/agents/builder.ts
 rodada: "2026-07-12 loop r9 onda 1 (baseline Sonnet 3/10)"
+commit: 18ead19
+executado_em: "2026-07-12"
+decisao: docs/decisoes/blocos/2026-07-12-bloco-r9-gate-funil.md
 ---
 ## Palavras do juiz (veredito r9, Sonnet 5 — G4, Funcional 5/10)
 > "1 gate não-canônico (`whatsapp_optin`) injetado no meio do funil em mario-sem-lance turno 7,

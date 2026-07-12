@@ -1,7 +1,7 @@
 ---
 id: FIX-279
 titulo: "Analyzer preenche creditMax no turno de desire e pula o gate credit (agulha nunca aparece)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-gate-funil
@@ -10,6 +10,8 @@ arquivos:
   - src/lib/agent/qualify-state.ts
   - src/lib/agent/turn-analyzer.ts
 rodada: "2026-07-12 loop r9 onda 1 (baseline Sonnet 3/10)"
+commit: ce637ed
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9, Sonnet 5 — G3, Funcional 5/10)
 > "em nenhuma das 5 conversas o artifact `gate:credit` aparece. A busca (`search_groups`)

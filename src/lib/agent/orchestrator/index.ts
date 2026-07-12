@@ -31,6 +31,7 @@ import {
 	buildToolErrorRecoveryFallback,
 	buildToolErrorRecoveryFallbackRepeat,
 	buildToolErrorRecoveryResolvedFallback,
+	buildWhatsappOptinDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -41,11 +42,13 @@ import {
 	buildEmbeddedBidCard,
 	buildScarcityCard,
 	buildTwoPathsCard,
+	buildWhatsappOptinCard,
 } from "./server-cards";
 import { buildSystemContext } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
+import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 export type { TurnEvent, TurnInput } from "./types";
 
@@ -544,6 +547,34 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			skipAnalyzer: true,
 			skipLeadCollection: true,
 		});
+		// FIX-280 (loop r9, baseline Sonnet 3/10, G4): opt-in de WhatsApp — mesma
+		// receita do FIX-246/253 (scarcity/decision_prompt), emissão SERVER-SIDE
+		// determinística logo após o reveal, no ÚNICO ponto que dispara os cards
+		// do passo 3+4 (search summary directive acima). Nunca mais depende de o
+		// LLM "decidir" chamar a tool — mesmo estado, mesmo resultado sempre,
+		// diferente do bug original (mario-sem-lance chamava, madalena não, no
+		// mesmo ponto do funil).
+		const postReveal = await reloadMeta(conversationId);
+		if (shouldEmitWhatsappOptin(postReveal)) {
+			await persistMeta(conversationId, { ...postReveal, whatsappOptinShown: true });
+			const stage = postReveal.contactPhone ? "confirm" : "open";
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildWhatsappOptinDirective(stage),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+			});
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "whatsapp_optin",
+				payload: buildWhatsappOptinCard(postReveal).payload,
+			});
+		}
 		return;
 	}
 

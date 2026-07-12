@@ -12,6 +12,7 @@ import {
 	buildToolErrorRecoveryFallbackRepeat,
 	buildToolErrorRecoveryResolvedFallback,
 	buildTransitionFirstContactDirective,
+	buildWhatsappOptinDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 
@@ -165,6 +166,41 @@ describe("buildScarcityDirective — card de escassez (antes órfão)", () => {
 
 	it("instrui a escrever SÓ a frase de transição", () => {
 		expect(buildScarcityDirective()).toMatch(/APENAS UMA frase/i);
+	});
+});
+
+// FIX-280 (loop r9, baseline Sonnet 3/10, G4): present_whatsapp_optin era
+// LLM-discricionário — mesmo toolset/estado, disparava em mario-sem-lance
+// turno 7 e não em madalena no mesmo ponto do funil. Mesma receita do
+// FIX-246/253 (buildScarcityDirective/buildDecisionPromptDirective): o
+// directive só escreve a frase de contexto, o card sai server-side
+// (buildWhatsappOptinCard, server-cards.ts) — o LLM nunca mais decide "se"
+// chama a tool (ela nem está mais no toolset).
+describe("buildWhatsappOptinDirective — opt-in de WhatsApp (antes LLM-discricionário)", () => {
+	it("stage 'open': NÃO instrui a chamar nenhuma tool (emissão do card é server-side, FIX-280)", () => {
+		const d = buildWhatsappOptinDirective("open");
+		expect(d).not.toMatch(/present_whatsapp_optin\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_whatsapp_optin/);
+	});
+
+	it("stage 'open': narrativa de segurança/continuidade, pedindo o WhatsApp", () => {
+		const d = buildWhatsappOptinDirective("open");
+		expect(d.toLowerCase()).toMatch(/whatsapp/);
+		expect(d.toLowerCase()).toMatch(/segur|continuidade|perder/);
+	});
+
+	it("stage 'confirm': confirma o canal JÁ conhecido, sem re-pedir o número", () => {
+		const d = buildWhatsappOptinDirective("confirm");
+		expect(d.toLowerCase()).toMatch(/j[áa] informou|j[áa] conhecido|confirm/);
+		expect(d).not.toMatch(/present_whatsapp_optin\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_whatsapp_optin/);
+		// NÃO pode mandar (re)pedir o número — ele já foi informado.
+		expect(d).not.toMatch(/me compartilha seu WhatsApp/i);
+	});
+
+	it("instrui a escrever SÓ a frase, em ambos os estágios", () => {
+		expect(buildWhatsappOptinDirective("open")).toMatch(/APENAS UMA frase/i);
+		expect(buildWhatsappOptinDirective("confirm")).toMatch(/APENAS UMA frase/i);
 	});
 });
 

@@ -9,10 +9,19 @@
  * ARTIFACT pré-reveal, mas a seção do system prompt com as narrativas de
  * opt-in ficava SEMPRE visível — o modelo improvisava o pedido em texto.
  *
- * Fix: a seção WhatsApp sai do SPECIALIST_BASE_PROMPT (estável) e vira bloco
- * DINÂMICO por estágio: "locked" (pré-reveal — proibição explícita),
- * "open" (pós-reveal, optin pendente — narrativa + tool), "done" (já
- * tratado — não voltar ao assunto).
+ * Fix original: a seção WhatsApp sai do SPECIALIST_BASE_PROMPT (estável) e
+ * vira bloco DINÂMICO por estágio: "locked" (pré-reveal — proibição
+ * explícita), "open"/"confirm" (pós-reveal, optin pendente — narrativa +
+ * tool), "done" (já tratado — não voltar ao assunto).
+ *
+ * FIX-280 (loop r9, baseline Sonnet 3/10, G4): "open"/"confirm" saíram —
+ * `present_whatsapp_optin` deixou de ser LLM-discricionário (chamar ou não a
+ * tool era exatamente a causa da inconsistência entre 2 fluxos idênticos).
+ * A narrativa + emissão do card viraram SERVER-SIDE determinísticas
+ * (`buildWhatsappOptinDirective`/`buildWhatsappOptinCard`,
+ * orchestrator/directives.ts+server-cards.ts) — a seção AMBIENTE deste
+ * arquivo só precisa dizer "locked" (pré-reveal) ou "done" (o sistema
+ * cuida, nunca o LLM por conta própria).
  */
 
 import { readFileSync } from "node:fs";
@@ -28,7 +37,7 @@ function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
 }
 
-describe("FIX-5 — whatsappOptinSection por estágio", () => {
+describe("FIX-5/FIX-280 — whatsappOptinSection por estágio", () => {
 	it("locked (pré-reveal): proíbe mencionar WhatsApp e não vaza narrativas de optin", () => {
 		const s = whatsappOptinSection("locked");
 		expect(s).toMatch(/PROIBIDO/);
@@ -41,23 +50,17 @@ describe("FIX-5 — whatsappOptinSection por estágio", () => {
 		expect(s).toMatch(/save_contact_whatsapp/);
 	});
 
-	it("open (pós-reveal, pendente): narrativa estratégica + present_whatsapp_optin", () => {
-		const s = whatsappOptinSection("open");
-		expect(s).toMatch(/present_whatsapp_optin/);
-		expect(s).toMatch(/Posso anotar seu WhatsApp/i);
-		expect(s).toMatch(/present_simulation_result|present_recommendation_card/);
-	});
-
-	it("done: assunto encerrado — não re-oferecer", () => {
+	it("done: o LLM NUNCA oferece por conta própria — o sistema decide/dispara (FIX-280)", () => {
 		const s = whatsappOptinSection("done");
-		expect(s).toMatch(/J[ÁA] (foi )?(tratado|resolvido|oferecido)/i);
 		expect(s).toMatch(/N[ÃA]O/);
+		expect(s.toLowerCase()).toMatch(/sistema/);
+		expect(s).not.toMatch(/present_whatsapp_optin/);
 		expect(s).not.toMatch(/Posso anotar seu WhatsApp\? Assim/);
 	});
 
 	it("em TODO estágio: nunca 2 perguntas no mesmo turno (regra do bug)", () => {
 		// O turno do bug tinha pergunta de optin + pergunta de gate juntas.
-		for (const stage of ["locked", "open", "done"] as const) {
+		for (const stage of ["locked", "done"] as const) {
 			expect(whatsappOptinSection(stage).toLowerCase()).toMatch(
 				/uma (única |unica )?pergunta|nunca.*duas perguntas|n[ãa]o.*junto de outra pergunta/,
 			);
@@ -65,20 +68,14 @@ describe("FIX-5 — whatsappOptinSection por estágio", () => {
 	});
 });
 
-describe("FIX-5 — deriveWhatsappOptinStage(meta)", () => {
-	it("sem reveal → locked (mesmo com optinShown false/undefined)", () => {
+describe("FIX-5/FIX-280 — deriveWhatsappOptinStage(meta)", () => {
+	it("sem reveal → locked", () => {
 		expect(deriveWhatsappOptinStage({})).toBe("locked");
 		expect(deriveWhatsappOptinStage({ revealCompleted: false })).toBe("locked");
 	});
 
-	it("reveal completo + optin pendente → open", () => {
-		expect(deriveWhatsappOptinStage({ revealCompleted: true })).toBe("open");
-	});
-
-	it("reveal completo + optin já mostrado → done", () => {
-		expect(deriveWhatsappOptinStage({ revealCompleted: true, whatsappOptinShown: true })).toBe(
-			"done",
-		);
+	it("reveal completo → done (o sistema decide/dispara o card, nunca o LLM — FIX-280)", () => {
+		expect(deriveWhatsappOptinStage({ revealCompleted: true })).toBe("done");
 	});
 });
 
