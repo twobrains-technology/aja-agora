@@ -12,7 +12,7 @@ arquivos:
   - src/lib/whatsapp/interactive-handlers.template-routing.test.ts
   - src/lib/eval/jornada-rubric.ts
 rodada: "2026-07-12 loop r9 onda 1 (baseline Sonnet 3/10)"
-commit: PENDING
+commit: 7d84ab6
 executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9, Sonnet 5 — G2, UI/Compliance 3/10)
