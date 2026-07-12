@@ -2,61 +2,36 @@
 // pela 3ª vez (lead form + identify já tinham coletado), input vazio, no meio
 // de um fechamento com erro Bevi pendente. deriveWhatsappOptinStage só olhava
 // revealCompleted+whatsappOptinShown — não enxergava telefone já capturado nem
-// o retry de fechamento. Stage novo "confirm" (1-clique, sem re-coleta).
+// o retry de fechamento. Stage "confirm" (1-clique, sem re-coleta) resolveu.
+//
+// FIX-280 (loop r9, baseline Sonnet 3/10, G4): "open"/"confirm" saíram de
+// `deriveWhatsappOptinStage`/`whatsappOptinSection` — a granularidade (número
+// já conhecido? fechamento com retry pendente?) migrou pra dentro do próprio
+// orchestrator (`shouldEmitWhatsappOptin` decide SE emite; o directive
+// `buildWhatsappOptinDirective("open"|"confirm")`, orchestrator/directives.ts,
+// decide a narrativa) — o LLM não decide mais NADA sobre o opt-in em turno
+// normal, então a seção ambiente (whatsappOptinSection) só precisa saber
+// "pré-reveal" (locked) vs "resto" (done, o sistema cuida). Os testes de
+// shouldEmitWhatsappOptin/maskPhoneForDisplay abaixo continuam valendo — a
+// LÓGICA de quando emitir não mudou, só QUEM a executa (servidor, não LLM).
 import { describe, expect, it } from "vitest";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { shouldEmitWhatsappOptin } from "./orchestrator/whatsapp-optin-guard";
-import { deriveWhatsappOptinStage, whatsappOptinSection } from "./system-prompt";
+import { deriveWhatsappOptinStage } from "./system-prompt";
 
-describe("FIX-27 — deriveWhatsappOptinStage enxerga telefone capturado + retry", () => {
-	it("telefone já capturado (pós-reveal, opt-in pendente) → confirm (não re-coleta)", () => {
+describe("FIX-280 — deriveWhatsappOptinStage colapsada (só locked/done — sistema decide o resto)", () => {
+	it("pós-reveal, mesmo com telefone já capturado → done (LLM nunca mais decide 'confirm')", () => {
 		expect(
 			deriveWhatsappOptinStage({ revealCompleted: true, contactPhone: "(62) 9...-6793" }),
-		).toBe("confirm");
-	});
-
-	it("sem telefone capturado → open (coleta normal — comportamento legado)", () => {
-		expect(deriveWhatsappOptinStage({ revealCompleted: true })).toBe("open");
-	});
-
-	it("fechamento com erro Bevi pendente → done (suprime opt-in: assunto é re-tentar)", () => {
-		expect(
-			deriveWhatsappOptinStage({
-				revealCompleted: true,
-				contactPhone: "(62) 9...-6793",
-				contractRetryPending: true,
-			}),
 		).toBe("done");
 	});
 
-	it("opt-in já respondido vence o telefone capturado → done", () => {
-		expect(
-			deriveWhatsappOptinStage({
-				revealCompleted: true,
-				contactPhone: "(62) 9...-6793",
-				whatsappOptinShown: true,
-			}),
-		).toBe("done");
+	it("pós-reveal, sem telefone capturado → done (LLM nunca mais decide 'open')", () => {
+		expect(deriveWhatsappOptinStage({ revealCompleted: true })).toBe("done");
 	});
 
 	it("pré-reveal → locked (mesmo com telefone capturado)", () => {
 		expect(deriveWhatsappOptinStage({ contactPhone: "(62) 9...-6793" })).toBe("locked");
-	});
-});
-
-describe("FIX-27 — whatsappOptinSection('confirm')", () => {
-	const s = whatsappOptinSection("confirm");
-
-	it("instrui CONFIRMAR o canal já conhecido, sem re-pedir o número", () => {
-		expect(s.toLowerCase()).toMatch(/confirm/);
-		expect(s).toMatch(/present_whatsapp_optin/);
-		// NÃO pode mandar pedir/coletar o número de novo (ele já foi informado).
-		expect(s).not.toMatch(/me compartilha seu WhatsApp/i);
-		expect(s).not.toMatch(/anotar seu WhatsApp/i);
-	});
-
-	it("mantém a regra de UMA pergunta acionável por turno", () => {
-		expect(s.toLowerCase()).toMatch(/uma (única |unica )?pergunta|n[ãa]o.*duas perguntas/);
 	});
 });
 

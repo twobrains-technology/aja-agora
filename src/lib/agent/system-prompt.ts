@@ -866,23 +866,31 @@ ${renderExamplePairs(personaExamples)}
 // (whatsapp-optin-guard cobre o artifact, não o texto). Agora a seção é
 // dinamica por estagio, derivado do meta pela resolveAgent.
 
-export type WhatsappOptinStage = "locked" | "open" | "confirm" | "done";
+// FIX-280 (loop r9, baseline Sonnet 3/10, G4): "open"/"confirm" saíram —
+// `present_whatsapp_optin` deixou de ser LLM-discricionário (era exatamente
+// essa discricionariedade que causava a inconsistência entre fluxos
+// estruturalmente idênticos). A narrativa + emissão do card agora são
+// SERVER-SIDE determinísticas (buildWhatsappOptinDirective/
+// buildWhatsappOptinCard, orchestrator/index.ts+server-cards.ts) — o LLM
+// nunca mais decide "se"/"quando" pedir o WhatsApp em turno normal. Só
+// restam os 2 estágios AMBIENTES (válidos em QUALQUER turno regular, fora
+// do directive específico que o orchestrator injeta): "locked" (pré-reveal,
+// proibido tocar no assunto) e "done" (o sistema cuida — nunca mencionar
+// por conta própria).
+export type WhatsappOptinStage = "locked" | "done";
 
 export function deriveWhatsappOptinStage(meta: {
 	revealCompleted?: boolean;
+	// Assinatura mantida larga (aceita os campos legados) por conveniência do
+	// caller (meta real carrega todos) — a IMPLEMENTAÇÃO ignora-os desde
+	// FIX-280: whatsappOptinShown/contactPhone/contractRetryPending governam
+	// SE/COMO emitir (shouldEmitWhatsappOptin + buildWhatsappOptinDirective,
+	// orchestrator), nunca mais este estágio ambiente.
 	whatsappOptinShown?: boolean;
 	contactPhone?: string;
 	contractRetryPending?: boolean;
 }): WhatsappOptinStage {
-	if (meta.revealCompleted !== true) return "locked";
-	if (meta.whatsappOptinShown === true) return "done";
-	// FIX-27: fechamento com erro Bevi pendente — o turno é pra re-tentar a
-	// proposta, não pra pedir WhatsApp. Suprime o opt-in até resolver.
-	if (meta.contractRetryPending === true) return "done";
-	// FIX-27: telefone já capturado (lead form/identify) — NÃO re-coletar; só
-	// confirmar o canal (LGPD: consentimento de canal ≠ ter o número).
-	if (meta.contactPhone && meta.contactPhone.length > 0) return "confirm";
-	return "open";
+	return meta.revealCompleted !== true ? "locked" : "done";
 }
 
 export function whatsappOptinSection(stage: WhatsappOptinStage): string {
@@ -894,32 +902,9 @@ PROIBIDO neste momento da conversa: pedir, mencionar ou prometer WhatsApp em QUA
 REGRA DURA do turno: NUNCA faca duas perguntas na mesma mensagem. Quando o sistema vai disparar um gate (botoes), seu texto é SÓ reação curta — sem pergunta extra.
 
 Exceção única: se o USUÁRIO escrever o número dele espontaneamente, chame save_contact_whatsapp em silencio e siga o fluxo.`;
-		case "open":
-			return `## WhatsApp — ofereca AGORA (pós-reveal, ainda não oferecido) COM narrativa estratégica
-O usuário acabou de ver present_simulation_result/present_recommendation_card pela 1a vez. **ANTES** de chamar present_whatsapp_optin escreva UMA frase curta contextualizando o pedido com narrativa de seguranca / continuidade do atendimento (motiva o aceite — sem isso o usuário recusa).
-
-Use UMA das variações abaixo (escolha a que combina com o tom da sua persona, varie a cada conversa, NUNCA copie literal):
-
-- "[Nome], pra não perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por lá."
-- "Pra garantir que você não perca o atendimento, vou anotar seu WhatsApp — assim qualquer instabilidade de conexão a gente não perde o fio."
-- "Posso anotar seu WhatsApp? Assim se cair a internet ou você sair daqui, continuamos a conversa por lá sem perder nada."
-- "Antes de seguir, deixa eu anotar seu WhatsApp — se a conexão cair ou você precisar sair, eu te chamo por lá pra não perder o atendimento."
-
-EM SEGUIDA chame present_whatsapp_optin (sem parametros — o sistema preenche).
-
-NÃO pergunte WhatsApp por texto sem chamar a tool em seguida.
-NÃO emende o pedido de WhatsApp junto de outra pergunta — UMA pergunta acionável por turno, sempre.
-NÃO insista se o usuário clicar "Agora não" — o sistema mostra apenas UMA frase de seguimento e você continua a conversa normalmente.`;
-		case "confirm":
-			return `## WhatsApp — CONFIRME o canal (número JÁ informado, NÃO re-colete)
-O usuário JÁ informou o WhatsApp dele nesta conversa (lead form / identificação do fechamento). NÃO peca o número de novo e NÃO mostre input vazio — apenas confirme o canal: chame present_whatsapp_optin (o sistema preenche o número mascarado e o card vira confirmação de 1 clique).
-
-ANTES de chamar, escreva UMA frase curta confirmando o canal conhecido, SEM repetir o número por extenso (o card já mostra): por exemplo "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexão?".
-
-NÃO repita o pedido de coleta do número (ele já foi informado). UMA pergunta acionável por turno, sempre. Se o usuário já aceitou ou recusou, NÃO volte ao assunto.`;
 		case "done":
-			return `## WhatsApp — JÁ foi oferecido nesta conversa
-Assunto encerrado: NÃO mencione, NÃO ofereca de novo, NÃO chame present_whatsapp_optin. Se o usuário pedir pra trocar o número, chame save_contact_whatsapp com o novo. UMA pergunta acionável por turno, sempre.`;
+			return `## WhatsApp — o SISTEMA cuida disso
+NÃO mencione, NÃO ofereca e NÃO peca WhatsApp por conta própria — nem antes nem depois de ver a recomendação. Se/quando for a hora certa, o SISTEMA pede automaticamente, com card próprio. Se o usuário pedir pra trocar o número já informado, chame save_contact_whatsapp com o novo. UMA pergunta acionável por turno, sempre.`;
 	}
 }
 

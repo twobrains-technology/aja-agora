@@ -130,7 +130,9 @@ const REVEAL_EXPECTED = [
 	"present_scenarios",
 	"present_simulation_result",
 	"present_value_picker",
-	"present_whatsapp_optin",
+	// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU também — mesma
+	// receita do FIX-246/253, emissão SERVER-SIDE (server-cards.ts). Ver
+	// describe FIX-280 abaixo.
 	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
@@ -207,9 +209,21 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		expect([...allowedTools(TERMINAL_META)].sort()).toEqual(TERMINAL_EXPECTED);
 	});
 
-	it("optin já mostrado: present_whatsapp_optin SAI do toolset (PF-07 a montante)", () => {
-		const allowed = allowedTools({ ...REVEAL_META, whatsappOptinShown: true });
-		expect(allowed).not.toContain("present_whatsapp_optin");
+	// FIX-280 (loop r9, G4): present_whatsapp_optin NUNCA entra no toolset do
+	// LLM em nenhuma fase — não é mais condicional a whatsappOptinShown (a
+	// condição inteira, incluindo o dedupe PF-07, virou responsabilidade do
+	// orchestrator via shouldEmitWhatsappOptin, server-side).
+	it("present_whatsapp_optin NUNCA entra no toolset do LLM, em NENHUMA fase (mostrado ou não)", () => {
+		for (const meta of [
+			QUALIFY_META,
+			REVEAL_META,
+			CLOSING_META,
+			TERMINAL_META,
+			{ ...REVEAL_META, whatsappOptinShown: true },
+			{ ...REVEAL_META, whatsappOptinShown: false },
+		]) {
+			expect(allowedTools(meta)).not.toContain("present_whatsapp_optin");
+		}
 	});
 
 	it("contract_form: AUSENTE em qualify e reveal, presente SÓ em closing", () => {
@@ -384,12 +398,14 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).toContain("present_value_picker");
 	});
 
-	it("reveal: dial/optin entram, decision (FIX-253, server-side) e re-descoberta/contract_form ficam fora", () => {
+	it("reveal: dial entra, decision/optin (FIX-253/FIX-280, server-side) e re-descoberta/contract_form ficam fora", () => {
 		const agent = buildAgent(makePersonaRow(), "neutro", { meta: REVEAL_META });
 		const tools = exposedTools(agent);
 		expect(tools).toContain("present_contemplation_dial");
 		expect(tools).not.toContain("present_decision_prompt");
-		expect(tools).toContain("present_whatsapp_optin");
+		// FIX-280 (loop r9, G4): present_whatsapp_optin saiu do toolset — emissão
+		// SERVER-SIDE determinística (buildWhatsappOptinCard, server-cards.ts).
+		expect(tools).not.toContain("present_whatsapp_optin");
 		expect(tools).toContain("simulate_quota"); // what-if legítimo
 		expect(tools).not.toContain("search_groups");
 		expect(tools).not.toContain("recommend_groups");

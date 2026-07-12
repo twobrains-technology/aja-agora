@@ -21,12 +21,9 @@ import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { conversations, leads, personas } from "@/db/schema";
-import {
-	SPECIALIST_BASE_PROMPT,
-	SYSTEM_PROMPT,
-	whatsappOptinSection,
-} from "@/lib/agent/system-prompt";
+import { conversations, leads } from "@/db/schema";
+import { buildWhatsappOptinDirective } from "@/lib/agent/orchestrator/directives";
+import { whatsappOptinSection } from "@/lib/agent/system-prompt";
 import { POST } from "./route";
 
 function readSource(rel: string): string {
@@ -298,18 +295,19 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 	});
 });
 
-describe("Bug B — system prompt OU examples devem instruir captura proativa de WhatsApp com narrativa estratégica", () => {
+describe("Bug B — o directive de opt-in de WhatsApp instrui narrativa estratégica (anti-regressão)", () => {
 	/**
-	 * Hoje o system-prompt diz apenas:
-	 *   "Apos apresentar present_simulation_result OU present_recommendation_card
-	 *    pela 1a vez na conversa, chame present_whatsapp_optin (sem parametros)."
+	 * Histórico: o system-prompt dizia "chame present_whatsapp_optin" sem
+	 * narrativa — o agente pedia o WhatsApp seco, taxa de aceite baixa. FIX-5
+	 * resolveu isolando a narrativa num bloco dinâmico por estágio
+	 * (whatsappOptinSection).
 	 *
-	 * Falta a narrativa estratégica de "segurança / instabilidade de internet /
-	 * não perder o atendimento", que é o que faz o usuário aceitar
-	 * compartilhar o WhatsApp ao invés de fechar a aba.
-	 *
-	 * O teste afirma o CONTRATO CONFIGURACIONAL — basta um dos dois (prompt OU
-	 * exemplos seedados) trazer a narrativa pra considerar a regressão coberta.
+	 * FIX-280 (loop r9, G4): present_whatsapp_optin SAIU do toolset do LLM —
+	 * a narrativa (E a emissão do card) viraram 100% responsabilidade do
+	 * orchestrator (`buildWhatsappOptinDirective`, orchestrator/directives.ts),
+	 * nunca mais do system-prompt/few-shot examples da persona. O contrato
+	 * anti-regressão migra pra essa função: é ela que SEMPRE roda no turno em
+	 * que o opt-in é oferecido, incondicionalmente.
 	 */
 
 	// Token-test: pelo menos UM gatilho semântico que vincule a oferta do
@@ -331,41 +329,14 @@ describe("Bug B — system prompt OU examples devem instruir captura proativa de
 		return /whats(app)?/i.test(text);
 	}
 
-	it("o prompt menciona narrativa estratégica NO ESTÁGIO em que oferece o WhatsApp (anti-regressão)", () => {
-		// FIX-5 (2026-06-05): a seção de opt-in saiu do SPECIALIST_BASE_PROMPT
-		// (estável) e virou bloco DINÂMICO por estágio — pré-reveal o modelo nem
-		// vê as frases (era exatamente o que ele imitava cedo demais). A
-		// narrativa estratégica agora PRECISA estar no estágio "open" (pós-reveal,
-		// optin pendente) — onde o agente de fato oferece.
-		const combined = `${SYSTEM_PROMPT}\n\n${SPECIALIST_BASE_PROMPT}\n\n${whatsappOptinSection("open")}`;
-		expect(hasWhatsappMention(combined)).toBe(true);
+	it("buildWhatsappOptinDirective('open') carrega a narrativa estratégica (anti-regressão)", () => {
+		const directive = buildWhatsappOptinDirective("open");
+		expect(hasWhatsappMention(directive)).toBe(true);
 		expect(
-			containsStrategicNarrative(combined),
-			`Nenhum padrão de narrativa estratégica (instabilidade / não perder atendimento / continuar por lá) encontrado no prompt do estágio "open". O agente vai pedir WhatsApp de forma seca, sem motivar — taxa de aceite baixa.`,
+			containsStrategicNarrative(directive),
+			`Nenhum padrão de narrativa estratégica (instabilidade / não perder atendimento / continuar por lá) encontrado no directive "open". O agente vai pedir WhatsApp de forma seca, sem motivar — taxa de aceite baixa.`,
 		).toBe(true);
-		// E o estágio "locked" (pré-reveal) NÃO carrega as frases-modelo.
+		// E o estágio ambiente "locked" (pré-reveal) NÃO carrega as frases-modelo.
 		expect(containsStrategicNarrative(whatsappOptinSection("locked"))).toBe(false);
-	});
-
-	it("pelo menos 1 example seedado (mig 0016) ou no DB cobre oferta proativa de WhatsApp com narrativa estratégica", async () => {
-		// Persona-by-persona: basta UMA das specialists ter o example pra a
-		// regressão estar coberta. Idealmente todas teriam, mas evitamos
-		// over-fitting do teste.
-		const rows = await db.query.personas.findMany({
-			where: eq(personas.role, "specialist"),
-		});
-		expect(rows.length).toBeGreaterThan(0);
-
-		const matches = rows.flatMap((row) =>
-			(row.examples ?? []).filter((ex) => {
-				const text = `${ex.context ?? ""}\n${ex.userMessage}\n${ex.assistantResponse}`;
-				return hasWhatsappMention(text) && containsStrategicNarrative(text);
-			}),
-		);
-
-		expect(
-			matches.length,
-			`Nenhum example em nenhuma persona specialist cobre a oferta proativa de WhatsApp com narrativa estratégica (segurança/instabilidade/continuar por lá). Sem esse anchor de few-shot, o agente vai cair no fluxo seco de present_whatsapp_optin sem motivar — usuário recusa.`,
-		).toBeGreaterThan(0);
 	});
 });

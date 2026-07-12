@@ -170,6 +170,22 @@ export function buildScarcityDirective(): string {
 	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Ah, e um detalhe sobre esse grupo, só pra você saber:"). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema mostra o card de escassez automaticamente em seguida, com o número REAL calculado a partir do grupo. NÃO chame present_scarcity nem NENHUMA outra tool neste turno.`;
 }
 
+/** FIX-280 (loop r9, baseline Sonnet 3/10, G4): `present_whatsapp_optin` saiu
+ * do toolset do LLM — mesma receita do FIX-246/253 (buildScarcityDirective/
+ * buildDecisionPromptDirective). O directive só escreve a frase de contexto
+ * (narrativa varia por persona/conversa); o handler (orchestrator/index.ts)
+ * emite o card SERVER-SIDE determinístico logo em seguida
+ * (`buildWhatsappOptinCard`) — nunca mais depende de o LLM "decidir" chamar
+ * a tool. `stage` espelha `deriveWhatsappOptinStage`: "open" (número ainda
+ * não coletado) pede o WhatsApp; "confirm" (número já conhecido — lead
+ * form/identify) só confirma o canal, sem re-coletar. */
+export function buildWhatsappOptinDirective(stage: "open" | "confirm"): string {
+	if (stage === "confirm") {
+		return `O usuário JÁ informou o WhatsApp dele nesta conversa (lead form / identificação do fechamento). Escreva APENAS UMA frase curta confirmando o canal, SEM repetir o número por extenso (o card já mostra) — ex.: "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexão?". NÃO peça o número de novo. NÃO chame present_whatsapp_optin nem NENHUMA outra tool neste turno — o sistema mostra o card de confirmação de 1 clique automaticamente em seguida.`;
+	}
+	return `Escreva APENAS UMA frase curta contextualizando um pedido de WhatsApp, com narrativa de segurança/continuidade do atendimento NO SEU TOM (ex.: "Pra não perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por lá."). NÃO chame present_whatsapp_optin nem NENHUMA outra tool neste turno — o sistema mostra o card automaticamente em seguida, com input mascarado + botões "Quero receber"/"Agora não".`;
+}
+
 // ---- Group actions ----
 
 export function buildGroupSelectedDirective(
