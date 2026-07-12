@@ -1,0 +1,20 @@
+{
+  "cenario": "mario-sem-lance",
+  "descricao": "Fluxo P0-B — cliente SEM lance ('só a parcela, sem lance'). Automóvel. Leva até a 3ª saída do gate lance -> card two_paths (dois caminhos: esperar o sorteio x lance modesto depois), SEM % de chance, devolvendo a decisão ao usuário -> fechamento. REQUER env E2E_TEST_CPF + E2E_TEST_CELULAR.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome com 3 categorias." },
+    { "type": "action", "action": { "kind": "category", "category": "auto" }, "label": "Automóvel", "expect": "transição pro especialista de automóvel + gate name." },
+    { "type": "text", "text": "Mário", "expect": "save_contact_name + saudação + gate desire 1ª pergunta ('Qual automóvel você tem em mente?')." },
+    { "type": "text", "text": "Um carro popular, uns 70 mil", "expect": "eco do objetivo + 2ª pergunta do desire (motivo) em turno próprio." },
+    { "type": "text", "text": "Meu carro velho vive na oficina, cansei", "expect": "espelha o motivo 1x + gate identify (CPF+celular)." },
+    { "type": "action", "action": { "kind": "gate", "gate": "identify", "value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true } }, "label": "CPF e celular", "expect": "identidade aceita + gate credit (agulha do valor do bem)." },
+    { "type": "text", "text": "Valor do bem: R$ 70.000", "expect": "confirma valor + reveal (recommendation_card + outras) + gate experience. taxaContemplacao nunca exibida." },
+    { "type": "action", "action": { "kind": "gate", "gate": "experience", "value": "first" }, "label": "É a primeira vez", "expect": "educação de consórcio pra novato (sem juros, taxa de adm, sorteio/lance) + gate timeframe." },
+    { "type": "action", "action": { "kind": "gate", "gate": "timeframe", "value": { "prazoMeses": 24 } }, "label": "2 anos ou mais", "expect": "ack do prazo + gate lance (4 saídas)." },
+    { "type": "action", "action": { "kind": "gate", "gate": "lance", "value": "so_parcela" }, "label": "Só a parcela, sem lance", "expect": "3ª saída: card two_paths (dois caminhos — esperar o sorteio x lance modesto depois), SEM porcentagem de chance, SEM recomendar um caminho + convite fixo pra decidir (TWO_PATHS_FOLLOWUP_TEXT). Pula lance-value/lance-embutido/simulador." },
+    { "type": "text", "text": "Prefiro seguir e garantir minha vaga no grupo, bora", "expect": "acolhe a decisão do usuário; não empurra sorteio nem lance. Encaminha ao fechamento (nunca diz 'reservado' antes da hora)." },
+    { "type": "action", "action": { "kind": "interest", "administradora": "recomendada" }, "label": "Tenho interesse", "expect": "avanço ao fechamento + card contract_form." },
+    { "type": "action", "action": { "kind": "contract-submit", "useStoredIdentity": true, "lgpd": true }, "label": "Confirmar e reservar", "expect": "proposta real na Bevi -> real_offer co-branded (ou degradação amigável se Trilho A instável)." },
+    { "type": "action", "action": { "kind": "offer-confirm" }, "label": "Confirmar oferta", "expect": "fecho: signature_handoff + document_upload + 'Parabéns!' + fecho WhatsApp. Terminologia 'reserva de cota'." }
+  ]
+}
