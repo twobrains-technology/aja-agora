@@ -259,7 +259,11 @@ export function buildComparisonTableFromRevealGroups(
 ): Record<string, unknown> {
 	const usable = [...index.values()].filter(isUsableGroup);
 	const input: Record<string, unknown> = {
-		groups: usable.map((g) => ({ id: g.id, administradora: g.administradora, category: g.category })),
+		groups: usable.map((g) => ({
+			id: g.id,
+			administradora: g.administradora,
+			category: g.category,
+		})),
 	};
 	return coerceComparisonPayload(input, index, logosByAdministradora, knownCreditValueByGroupId);
 }

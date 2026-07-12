@@ -226,76 +226,79 @@ async function drainUserTurn(
 	return { text, events };
 }
 
-describeIfDb("FIX-290 — comparison_table nunca some do reveal quando o modelo para na 1ª tool", () => {
-	let convId: string;
-	beforeEach(() => {
-		vi.clearAllMocks();
-		groupCount = 2;
-		modelCallsComparisonTable = false;
-	});
-	afterEach(async () => {
-		if (convId) await cleanup(convId);
-	});
+describeIfDb(
+	"FIX-290 — comparison_table nunca some do reveal quando o modelo para na 1ª tool",
+	() => {
+		let convId: string;
+		beforeEach(() => {
+			vi.clearAllMocks();
+			groupCount = 2;
+			modelCallsComparisonTable = false;
+		});
+		afterEach(async () => {
+			if (convId) await cleanup(convId);
+		});
 
-	it("2+ grupos, modelo chama só present_recommendation_card e para: comparison_table é forçado server-side", async () => {
-		convId = await seedConversation(FIRST_SEARCH_META);
+		it("2+ grupos, modelo chama só present_recommendation_card e para: comparison_table é forçado server-side", async () => {
+			convId = await seedConversation(FIRST_SEARCH_META);
 
-		const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
+			const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
 
-		const artifactEvents = events.filter((e) => e.type === "artifact");
-		const recommendation = artifactEvents.find(
-			(e) => e.type === "artifact" && e.artifactType === "recommendation_card",
-		);
-		const comparison = artifactEvents.find(
-			(e) => e.type === "artifact" && e.artifactType === "comparison_table",
-		);
-		expect(recommendation).toBeDefined();
-		expect(comparison).toBeDefined();
-		if (comparison && comparison.type === "artifact") {
-			const payload = comparison.payload as { groups?: Array<Record<string, unknown>> };
-			expect(Array.isArray(payload.groups)).toBe(true);
-			expect(payload.groups?.length).toBe(2);
-			const ids = payload.groups?.map((g) => g.id);
-			expect(ids).toEqual(expect.arrayContaining([GROUP_A.id, GROUP_B.id]));
-			// Coagido server-side (mesmo padrão do FIX-191): números vêm do grupo
-			// REAL indexado, nunca do que a LLM teria digitado.
-			const rowA = payload.groups?.find((g) => g.id === GROUP_A.id);
-			expect(rowA?.creditValue).toBe(GROUP_A.creditValue);
-			expect(rowA?.monthlyPayment).toBeCloseTo(GROUP_A.monthlyPayment);
-		}
+			const artifactEvents = events.filter((e) => e.type === "artifact");
+			const recommendation = artifactEvents.find(
+				(e) => e.type === "artifact" && e.artifactType === "recommendation_card",
+			);
+			const comparison = artifactEvents.find(
+				(e) => e.type === "artifact" && e.artifactType === "comparison_table",
+			);
+			expect(recommendation).toBeDefined();
+			expect(comparison).toBeDefined();
+			if (comparison && comparison.type === "artifact") {
+				const payload = comparison.payload as { groups?: Array<Record<string, unknown>> };
+				expect(Array.isArray(payload.groups)).toBe(true);
+				expect(payload.groups?.length).toBe(2);
+				const ids = payload.groups?.map((g) => g.id);
+				expect(ids).toEqual(expect.arrayContaining([GROUP_A.id, GROUP_B.id]));
+				// Coagido server-side (mesmo padrão do FIX-191): números vêm do grupo
+				// REAL indexado, nunca do que a LLM teria digitado.
+				const rowA = payload.groups?.find((g) => g.id === GROUP_A.id);
+				expect(rowA?.creditValue).toBe(GROUP_A.creditValue);
+				expect(rowA?.monthlyPayment).toBeCloseTo(GROUP_A.monthlyPayment);
+			}
 
-		// Persistido no DB junto do resto dos artifacts do turno.
-		const rows = await db
-			.select({ type: artifactsTable.type })
-			.from(artifactsTable)
-			.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
-			.where(eq(messagesTable.conversationId, convId));
-		expect(rows.some((r) => r.type === "comparison_table")).toBe(true);
-	});
+			// Persistido no DB junto do resto dos artifacts do turno.
+			const rows = await db
+				.select({ type: artifactsTable.type })
+				.from(artifactsTable)
+				.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
+				.where(eq(messagesTable.conversationId, convId));
+			expect(rows.some((r) => r.type === "comparison_table")).toBe(true);
+		});
 
-	it("caso de borda — 1 grupo único: NUNCA força comparison_table", async () => {
-		groupCount = 1;
-		convId = await seedConversation(FIRST_SEARCH_META);
+		it("caso de borda — 1 grupo único: NUNCA força comparison_table", async () => {
+			groupCount = 1;
+			convId = await seedConversation(FIRST_SEARCH_META);
 
-		const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
+			const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
 
-		const artifactEvents = events.filter((e) => e.type === "artifact");
-		const comparison = artifactEvents.find(
-			(e) => e.type === "artifact" && e.artifactType === "comparison_table",
-		);
-		expect(comparison).toBeUndefined();
-	});
+			const artifactEvents = events.filter((e) => e.type === "artifact");
+			const comparison = artifactEvents.find(
+				(e) => e.type === "artifact" && e.artifactType === "comparison_table",
+			);
+			expect(comparison).toBeUndefined();
+		});
 
-	it("caminho feliz — modelo chama as duas tools normalmente: idempotente, sem duplicar", async () => {
-		modelCallsComparisonTable = true;
-		convId = await seedConversation(FIRST_SEARCH_META);
+		it("caminho feliz — modelo chama as duas tools normalmente: idempotente, sem duplicar", async () => {
+			modelCallsComparisonTable = true;
+			convId = await seedConversation(FIRST_SEARCH_META);
 
-		const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
+			const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
 
-		const artifactEvents = events.filter((e) => e.type === "artifact");
-		const comparisonEvents = artifactEvents.filter(
-			(e) => e.type === "artifact" && e.artifactType === "comparison_table",
-		);
-		expect(comparisonEvents.length).toBe(1);
-	});
-});
+			const artifactEvents = events.filter((e) => e.type === "artifact");
+			const comparisonEvents = artifactEvents.filter(
+				(e) => e.type === "artifact" && e.artifactType === "comparison_table",
+			);
+			expect(comparisonEvents.length).toBe(1);
+		});
+	},
+);
