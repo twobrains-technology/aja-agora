@@ -632,7 +632,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			yield { type: "finish", reason: "search-no-category" };
 			return;
 		}
-		await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 		const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 		yield* runTurn({
 			channel,
@@ -651,6 +650,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// diferente do bug original (mario-sem-lance chamava, madalena não, no
 		// mesmo ponto do funil).
 		const postReveal = await reloadMeta(conversationId);
+		// FIX-291 (b): `searchDispatched` NÃO é mais marcado preemptivamente ANTES
+		// do runTurn acima — o runner (runner.ts) já grava searchDispatched=true
+		// JUNTO com revealCompleted, só quando artifacts REAIS aparecem. Marcar
+		// antes travava uma busca que falhasse (teto agregado do FIX-291a
+		// estourado, erro duro etc.) em searchDispatched=true PRA SEMPRE: o guard
+		// "search-already-dispatched" (acima) nunca mais deixava retentar a busca
+		// num turno seguinte, mesmo sem jamais ter mostrado dado real.
+		if (!postReveal.revealCompleted) {
+			console.log(
+				`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+			);
+			return;
+		}
 		if (shouldEmitWhatsappOptin(postReveal)) {
 			await persistMeta(conversationId, { ...postReveal, whatsappOptinShown: true });
 			const stage = postReveal.contactPhone ? "confirm" : "open";

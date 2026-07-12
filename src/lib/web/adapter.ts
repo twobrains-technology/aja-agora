@@ -15,6 +15,7 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
@@ -24,10 +25,9 @@ import type {
 	SliderField,
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
-import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { saveMessage } from "@/lib/conversation/messages";
-import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
+import { saveMessage } from "@/lib/conversation/messages";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { getTraceForWriter } from "@/lib/telemetry/turn-trace";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 
@@ -520,7 +520,6 @@ export async function pipeSearchSummaryTurn(args: {
 	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
-	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 	const { emittedVisible } = await pipeDirectiveTurn({
 		conversationId,
@@ -529,6 +528,22 @@ export async function pipeSearchSummaryTurn(args: {
 		writer,
 		userKey,
 	});
+	// FIX-291 (b): `searchDispatched` só é marcado DEPOIS de confirmar que a
+	// descoberta de fato completou (`revealCompleted`, setado pelo runner só com
+	// artifacts REAIS na tela — runner.ts). Antes, o marcador saía PREEMPTIVO
+	// (antes desta chamada) — uma busca que falhasse (teto agregado do FIX-291a
+	// estourado, erro duro etc.) travava searchDispatched=true PRA SEMPRE, e o
+	// curto-circuito desta função + o de orchestrator/index.ts
+	// ("search-already-dispatched") nunca mais permitiam retentar a busca num
+	// turno seguinte — mesmo sem jamais ter mostrado dado real ao usuário.
+	const postSearch = await reloadMeta(conversationId);
+	if (postSearch.revealCompleted) {
+		await persistMeta(conversationId, { ...postSearch, searchDispatched: true });
+	} else {
+		console.log(
+			`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+		);
+	}
 	// FIX-189 (pendura): a descoberta é disparada pelo caminho de AÇÃO (resposta a
 	// gate), que NÃO roda o guard de turno-mudo do route (só o turno de texto-livre
 	// roda). Se o turno de descoberta fechou sem nada visível (só o chip "Buscando
