@@ -449,6 +449,46 @@ describe("FIX-233 — captura oportunista de desiredItem/motivation (gate desire
 	});
 });
 
+// FIX-285 (r9 onda 2, G-C): `desireAnswered` marca o primeiro turno de
+// usuário após `desireAsked`, independente do que o analyzer extraiu como
+// `desiredItem` — substitui esse campo como proxy de "o gate desire foi
+// respondido" (o proxy antigo falhava na categoria genérica, "um carro").
+describe("FIX-285 — desireAnswered marcado no 1º turno de usuário após o gate desire", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("'Um carro, uns 80 mil' (categoria genérica) → desireAnswered=true mesmo com desiredItem null", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", desiredItem: null });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: false,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("Um carro, uns 80 mil", "rafael-auto", meta);
+
+		expect(meta.desireAnswered).toBe(true);
+		expect(meta.qualifyAnswers?.desiredItem).toBeUndefined();
+	});
+
+	it("antes de desireAsked, NÃO marca desireAnswered", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL });
+		const meta: ConversationMetadata = { desireAsked: false };
+		await analyzeAndMerge("oi", "concierge", meta);
+
+		expect(meta.desireAnswered).toBeUndefined();
+	});
+
+	it("já marcado → não regride (idempotente, não gera metaChanged de novo)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = { desireAsked: true, desireAnswered: true, currentCategory: "auto" };
+		const { metaChanged } = await analyzeAndMerge("beleza", "rafael-auto", meta);
+
+		expect(meta.desireAnswered).toBe(true);
+		expect(metaChanged).toBe(false);
+	});
+});
+
 // FIX-236 (Fable r1, D3.1, gap P0 #1): o gate `lance` estava sendo PULADO no
 // funil real — trace mostrava experience→timeframe→lance-embutido, sem nunca
 // passar por `lance`. Causa raiz: `hasLance` era capturado de QUALQUER turno

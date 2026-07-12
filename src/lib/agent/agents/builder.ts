@@ -145,6 +145,9 @@ export function buildAgent(
 				// FIX-238: bem específico do gate `desire` — dispara a pergunta
 				// do motivo enquanto ele ainda não chegou.
 				opts.meta?.qualifyAnswers?.desiredItem ?? null,
+				// FIX-285: o gate `desire` foi respondido mesmo sem item
+				// específico — variante genérica da pergunta do motivo.
+				opts.meta?.desireAnswered ?? false,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,

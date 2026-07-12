@@ -56,6 +56,7 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 	it("com desiredItem capturado e motivo pendente, o funil SEGURA — não emite o próximo card", () => {
 		const meta: ConversationMetadata = {
 			...base,
+			desireAnswered: true, // FIX-285: proxy determinístico (não mais o desiredItem)
 			qualifyAnswers: { desiredItem: "kia sportage" }, // motivation ausente
 		};
 		// O gate estrutural seguinte já é identify (consent removido)...
@@ -71,6 +72,7 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 	it("com o motivo já capturado, o identify DISPARA normalmente", () => {
 		const meta: ConversationMetadata = {
 			...base,
+			desireAnswered: true,
 			qualifyAnswers: { desiredItem: "sportage", motivation: "cansei do carro velho" },
 		};
 		expect(shouldAskMotive(meta)).toBe(false);
@@ -82,6 +84,7 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 	it("NÃO bloqueia: se o motivo foi perguntado uma vez (motivationAsked) e não veio, o funil segue", () => {
 		const meta: ConversationMetadata = {
 			...base,
+			desireAnswered: true,
 			motivationAsked: true,
 			qualifyAnswers: { desiredItem: "sportage" }, // motivation ainda ausente
 		};

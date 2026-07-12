@@ -25,6 +25,7 @@ import { decideShowGate, nextGate } from "./qualify-state";
 
 const posBeat = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
 	desireAsked: true,
+	desireAnswered: true, // FIX-285: proxy determinístico (não mais o desiredItem)
 	motivationAsked: true, // o beat já perguntou o motivo no turno anterior
 	currentPersona: "rafael-auto",
 	currentCategory: "auto",

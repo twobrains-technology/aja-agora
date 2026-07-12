@@ -84,6 +84,14 @@ export type ConversationMetadata = {
 	 * perguntar o motivo (`shouldAskMotive`). Torna o beat NÃO-bloqueante: se o motivo
 	 * não vier, o funil segue mesmo assim (mesmo padrão de `desireAsked`). */
 	motivationAsked?: boolean;
+	/** FIX-285 — o gate `desire` já recebeu uma RESPOSTA do usuário nesta
+	 * conversa, independente de o item citado ter sido específico o bastante
+	 * pra virar `qualifyAnswers.desiredItem` (o analyzer devolve `desiredItem:
+	 * null` por design quando o usuário só nomeia a categoria genérica, ex.:
+	 * "um carro"). Marcado em `analyze.ts` no primeiro turno de usuário após
+	 * `desireAsked` — substitui `Boolean(qualifyAnswers.desiredItem)` como
+	 * precondição de `shouldAskMotive`, que falhava nesse cenário. */
+	desireAnswered?: boolean;
 	/** @deprecated FIX-274 — o gate `consent` saiu do funil (decisão do Kairo,
 	 * 2026-07-11: "remover, fiel ao mockup"). Campo mantido só pra não quebrar
 	 * conversas legadas em jsonb; não é mais lido/escrito por nenhum caminho vivo. */

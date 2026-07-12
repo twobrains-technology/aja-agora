@@ -49,6 +49,19 @@ export async function analyzeAndMerge(
 		newlyExtractedExperience = analysis.experiencePrev;
 		metaChanged = true;
 	}
+	// FIX-285: marca que o gate `desire` recebeu uma RESPOSTA — independente do
+	// que o analyzer extraiu como `desiredItem` (que fica null por design na
+	// categoria genérica). Escopado à janela `identify` (ativo entre o desire
+	// já perguntado e a identidade ainda não coletada — exatamente o turno da
+	// resposta ao desire, FIX-53): sem esse escopo, qualquer turno POSTERIOR
+	// (ex.: respondendo o `credit`, muitos turnos depois) marcaria o campo
+	// retroativamente e `shouldAskMotive` passaria a segurar TODOS os gates
+	// dali em diante, não só o `identify` (regressão pega pelos cassettes de
+	// `agent-trajectory.test.ts`, FIX-208).
+	if (meta.desireAsked && !meta.desireAnswered && activeGateAtTurnStart === "identify") {
+		meta.desireAnswered = true;
+		metaChanged = true;
+	}
 	const q = meta.qualifyAnswers ?? {};
 	// FIX-68: pós-reveal o usuário pode TROCAR de faixa de valor — um creditMax
 	// novo, fornecido explicitamente (providing_info) e DIFERENTE do que já está
