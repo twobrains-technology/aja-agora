@@ -120,3 +120,31 @@ Decisão Kairo: carta 211k = clamp + aviso.
 - Trajetória: 3→4→4→5→5→7→8→8(matador). Exit primário do loop atingido (verificador aprova).
 - Dívidas 'antes de ESCALAR' (não de deployar): (1) loop empty-turn no wants_more_options (~50s, WhatsApp texto-only sem escape — DÚVIDA ABERTA verificar); (2) justificativa falsa 120k→150k ('a mais próxima' quando foi por score).
 - Nits: blocklist de frases (paráfrase escapa), documentSlotsSent não escrito na web (over-suppress seguro), drop não logado.
+
+---
+
+## Rodada 9 (re-baseline pós-reforma consent — alvo 10/10 LIMPO) — ABERTA 2026-07-12
+Contexto: depois do r8 (8/10 "matador pra prod: SIM"), o develop foi **reformado** (merge 473e8843 +
+FIX-274/275/276: remove gate consent, motivo em turno próprio via `shouldAskMotive`, terminologia,
+recomendação ancorada no valor do bem pedido, + QA de 40 critérios). O veredito r8 está **DEFASADO**
+frente ao HEAD atual (4cf81754). A rodada 9 **re-baselina o develop atual** e persegue **10/10 limpo**
+(não só "matador") — o Kairo pediu loop até o Fable selar 10/10.
+
+**Itens candidatos** (herdados do veredito r8 — a CONFIRMAR contra o código atual no baseline; a reforma
+pode ter fechado/mudado algum):
+- **I1 (P1)** — loop empty-turn no intent `wants_more_options` (`docs/correcoes/inbox/2026-07-10-divida-empty-turn-loop-wants-more.md`). Quando o agente PROMETE busca e o próximo turno vem `length`/empty, disparar a busca determinística (não re-perguntar) + cap de repetição de fallback idêntico. FIX-271 não cobre este caminho (não é menção de oferta).
+- **I2 (P2)** — justificativa FALSA da divergência de faixa 120k→150k (`.../2026-07-10-divida-justificativa-falsa-faixa.md`). A explicação da divergência tem que vir do motivo REAL (score/ranking), não de "a mais próxima" inventada.
+- **I3 (P3 nits)** — guard de fabricação (FIX-270): blocklist frágil (paráfrase escapa → sinal semântico/estado real); `documentSlotsSent` não fiado na web (over-suppress seguro, mas fiar o slot); DROP do guard não logado (Lei 5).
+
+**Baseline (④ primeiro, porque o código andou):** verificação fresca na develop atual — Opus planner
+escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Haiku coletor monta o dossiê
+(`evidencias/rodada-9/`) → Fable juiz pontua a rubrica → score + gaps reais definem os itens finais.
+
+### r9 — LEDGER
+| Etapa | Estado |
+|---|---|
+| env feasibility (agente responde LLM ao vivo?) | ⏳ smoke rodando |
+| baseline Fable (develop atual) | ⏳ aguarda env |
+| execução (blocos) | — |
+| verificação | — |
+| decisão | — |
