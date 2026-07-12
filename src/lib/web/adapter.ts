@@ -166,7 +166,13 @@ export async function pipeGatePrompt(args: {
 	// de "R$ 100 mil" na educação de lance embutido.
 	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): copy por canal — "web" pra
 	// não herdar a frase "eu já pego aqui do WhatsApp" (gate identify).
-	const question = gateQuestion(gate, meta.currentCategory, meta.recommendedOffer?.creditValue, "web");
+	const question = gateQuestion(
+		gate,
+		meta.currentCategory,
+		meta.recommendedOffer?.creditValue,
+		"web",
+		meta.qualifyAnswers?.creditMentionedAtDesire,
+	);
 	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
 	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
@@ -292,6 +298,7 @@ export async function pipeOrchestratorToWriter(
 					meta.currentCategory,
 					meta.recommendedOffer?.creditValue,
 					"web",
+					meta.qualifyAnswers?.creditMentionedAtDesire,
 				);
 				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
 				if (data || question) {

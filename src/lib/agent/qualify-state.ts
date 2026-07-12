@@ -182,15 +182,23 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 
 /**
  * FIX-274 — o "por que agora" (motivo, 2ª pergunta do gate `desire`) tem turno
- * próprio: enquanto o cliente já disse o bem (`desiredItem`) mas ainda não o
- * motivo, o funil SEGURA — o LLM pergunta o motivo (desireFollowUpSection) e
- * NENHUM card estruturado é emitido junto (anti CK-1: 2 perguntas no mesmo balão).
- * NÃO-bloqueante: `motivationAsked` (marcado no runner quando o beat ativa) libera
- * o funil no turno seguinte mesmo se o motivo não vier. Função PURA (Camada 1).
+ * próprio: enquanto o cliente já RESPONDEU ao gate `desire` (`desireAnswered`)
+ * mas ainda não deu o motivo, o funil SEGURA — o LLM pergunta o motivo
+ * (desireFollowUpSection) e NENHUM card estruturado é emitido junto (anti
+ * CK-1: 2 perguntas no mesmo balão). NÃO-bloqueante: `motivationAsked`
+ * (marcado no runner quando o beat ativa) libera o funil no turno seguinte
+ * mesmo se o motivo não vier. Função PURA (Camada 1).
+ *
+ * FIX-285: a precondição era `Boolean(q.desiredItem)` — falhava quando o
+ * usuário só nomeava a categoria genérica ("um carro", sem citar um modelo),
+ * porque o `turn-analyzer.ts` devolve `desiredItem: null` POR DESIGN nesse
+ * caso (não inventa item a partir da categoria). `desireAnswered` é um proxy
+ * determinístico de "o gate desire recebeu uma resposta", independente do que
+ * o analyzer conseguiu extrair.
  */
 export function shouldAskMotive(meta: ConversationMetadata): boolean {
 	const q = meta.qualifyAnswers ?? {};
-	return Boolean(q.desiredItem) && q.motivation === undefined && !meta.motivationAsked;
+	return Boolean(meta.desireAnswered) && q.motivation === undefined && !meta.motivationAsked;
 }
 
 /**

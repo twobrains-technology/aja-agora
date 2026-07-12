@@ -56,3 +56,34 @@ describe("FIX-238 — desireFollowUpSection (2ª pergunta do gate desire: motiva
 		expect(desireFollowUpSection("", null)).toBe("");
 	});
 });
+
+// FIX-285 (r9 onda 2, G-C): sem desiredItem específico (categoria genérica,
+// "um carro"), a seção antiga ficava vazia e `shouldAskMotive` segurava o
+// funil SEM o LLM nunca perguntar nada — turno morto. Com `desireAnswered`,
+// uma variante genérica da pergunta é instruída mesmo sem citar o item.
+describe("FIX-285 — desireFollowUpSection com item genérico (desireAnswered=true, sem desiredItem)", () => {
+	it("desireAnswered=true + sem desiredItem → instrui a perguntar o motivo (sem citar item)", () => {
+		const s = desireFollowUpSection(null, null, true);
+		expect(s.toLowerCase()).toMatch(/motivo|decidir/);
+		expect(s).not.toMatch(/undefined|null/);
+	});
+
+	it("instrui a checar o histórico e NÃO repetir se já perguntou antes", () => {
+		const s = desireFollowUpSection(undefined, null, true);
+		expect(s.toUpperCase()).toMatch(/N[ÃA]O REPITA|J[ÁA] PERGUNTOU/);
+	});
+
+	it("motivation já capturada → seção vazia mesmo com desireAnswered=true (pergunta resolvida)", () => {
+		expect(desireFollowUpSection(null, "cansei do carro velho", true)).toBe("");
+	});
+
+	it("sem desireAnswered e sem desiredItem → segue vazia (comportamento antigo preservado)", () => {
+		expect(desireFollowUpSection(null, null, false)).toBe("");
+		expect(desireFollowUpSection(null, null)).toBe("");
+	});
+
+	it("desiredItem específico tem PRECEDÊNCIA sobre a variante genérica", () => {
+		const s = desireFollowUpSection("um Corolla", null, true);
+		expect(s).toMatch(/um Corolla/);
+	});
+});
