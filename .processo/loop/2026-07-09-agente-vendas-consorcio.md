@@ -143,8 +143,15 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 ### r9 — LEDGER
 | Etapa | Estado |
 |---|---|
-| env feasibility (agente responde LLM ao vivo?) | ⏳ smoke rodando |
-| baseline Fable (develop atual) | ⏳ aguarda env |
+| env feasibility (agente responde LLM ao vivo?) | ✅ VIÁVEL — `aja-app-develop.orb.local`, contrato `POST /api/chat` SSE (`text-delta`+`data-*`), 5 personas seedadas, key real direto Anthropic (sem VPN) |
+| crítico estático (②) I1/I2/I3 vs código pós-reforma | ⏳ rodando (Opus) |
+| planner baseline (roteiros+driver) | ⏳ rodando (Opus) → `.processo/loop/evidencias-r9/` |
+| coletores Haiku (funil ao vivo) | — aguarda planner |
+| baseline Fable (develop atual) | — aguarda dossiê |
 | execução (blocos) | — |
 | verificação | — |
 | decisão | — |
+
+**Escopo (contrato vigente):** campanha = **jornada do agente de vendas de consórcio** (rubrica no topo). Cards do inbox de outras superfícies (servicos, dashboard, simulador, whatsapp templates) estão FORA desta campanha; o baseline Fable ao vivo é o árbitro autoritativo dos gaps reais da jornada. Escopo maior = decisão do Kairo (não expando no escuro).
+
+**Housekeeping (fazer na consolidação):** 15/16 blocos em `todo/` mergeados → arquivar em `done/`; `bloco-f-artifacts-produto` (FIX-93/95/96, antigo, fora do escopo consórcio, branch inexistente) = incerto, flag pro Kairo. Triage: inbox ~17 resolvidos; "provavelmente aberto" é baixa confiança (grep raso).
