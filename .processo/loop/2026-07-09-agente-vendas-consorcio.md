@@ -151,7 +151,7 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | execução onda 1 (blocos) | ✅ 2 blocos DONE + integrados. FIX-277 direção do aviso · FIX-278 reserva de cota · FIX-279 agulha só no gate ativo (guard `activeGateAtTurnStart`) · FIX-280 optin server-side. Merge LIMPO (system-prompt.ts auto-mergeou, regiões distintas). Promovido develop `193c1c83`. Container reiniciado. `test:unit` no container = gate. Workspaces de bloco deletados. |
 | re-verificação (pós-onda-1) | ✅ **Sonnet 4/10** (subiu 3→4). Neg 7·Func 6·Cálc 5·UX 4·UI/Compl 6·E2E 9. `veredito-r9pos-sonnet.md`. **G1-G4 CONFIRMADOS MORTOS.** MÍNIMO=UX(4). |
 | execução onda 2 | ✅ 3 blocos DONE + integrados. FIX-281 âncora rawCreditValue→real_offer · FIX-282 classificador de pergunta-de-exatidão (não fallback) · FIX-283 sanitizer meta-narrativa · FIX-284 gate credit confirma o desire · FIX-285 desireAnswered desacoplado. Merge LIMPO (system-prompt.ts auto-mergeou). Promovido develop `26cc9e0e`. Container reiniciado (smoke ok, sem 500). Workspaces + base deletados. |
-| re-verificação (pós-onda-2) | ⏳ test:unit no container → re-rodar 5 roteiros + juiz Sonnet |
+| re-verificação (pós-onda-2) | ✅ test:unit **3304 verde** (24 files que falhavam por @ai-sdk/openai agora passam). 5 roteiros rodados (68 turnos, 0 erros, `dossies-r9pos2/`). Sinais: **G-A ✓** (`real_offer.payload.rawCreditValue`=pedido original: madalena 250000, mario 70000 — antes sumia/errado) · **G-B ✓** (probe-i2: agente RESPONDE "bate certinho" + explica critério, sem evadir). ⏳ juiz Sonnet → `veredito-r9pos2-sonnet.md` |
 
 ### r9 ONDA 2 — spec (pós-onda-1 Sonnet 4/10)
 Onda 1 fechou G1-G4; nota subiu 3→4. Novos blockers (`veredito-r9pos-sonnet.md` §3):
