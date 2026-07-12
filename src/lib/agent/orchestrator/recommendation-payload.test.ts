@@ -298,7 +298,9 @@ describe("FIX-287 — creditValue REAL já simulado sobrescreve o valor-alvo da 
 			recommendations: [bb, canopus, ancora, rodobens],
 		});
 
-		const knownCreditValueByGroupId = new Map([[bb.id, 160000]]);
+		const knownCreditValueByGroupId = new Map([
+			[bb.id, { creditValue: 160000, monthlyPayment: 2137.5 }],
+		]);
 
 		const llmComparison = {
 			groups: [bb, canopus, ancora, rodobens].map((g) => ({
@@ -315,6 +317,9 @@ describe("FIX-287 — creditValue REAL já simulado sobrescreve o valor-alvo da 
 
 		expect(groups[0].creditValue).toBe(160000);
 		expect(groups[0].rawCreditValue).toBe(120000);
+		// FIX-292: monthlyPayment vem do MESMO registro conhecido, nunca da
+		// estimativa antiga (que correspondia ao creditValue errado).
+		expect(groups[0].monthlyPayment).toBe(2137.5);
 
 		for (const g of groups.slice(1)) {
 			expect(g.creditValue).toBe(120000);
@@ -326,7 +331,7 @@ describe("FIX-287 — creditValue REAL já simulado sobrescreve o valor-alvo da 
 		const bb = realGroup({ id: "bb-sem-divergencia", creditValue: 120000 });
 		const index: RevealGroupIndex = new Map();
 		indexRevealGroups(index, "recommend_groups", { recommendations: [bb] });
-		const known = new Map([[bb.id, 120000]]);
+		const known = new Map([[bb.id, { creditValue: 120000, monthlyPayment: 1 }]]);
 		const out = coerceComparisonPayload(
 			{ groups: [{ id: bb.id, creditValue: 120000, monthlyPayment: 1, termMonths: 1 }] },
 			index,
@@ -357,10 +362,11 @@ describe("FIX-287 — creditValue REAL já simulado sobrescreve o valor-alvo da 
 		const bb = realGroup({ id: "hero-bb", creditValue: 120000 });
 		const index: RevealGroupIndex = new Map();
 		indexRevealGroups(index, "recommend_groups", { recommendations: [bb] });
-		const known = new Map([[bb.id, 160000]]);
+		const known = new Map([[bb.id, { creditValue: 160000, monthlyPayment: 2137.5 }]]);
 		const out = coerceRecommendationPayload({ id: bb.id }, index, undefined, undefined, known);
 		expect(out.creditValue).toBe(160000);
 		expect(out.rawCreditValue).toBe(120000);
+		expect(out.monthlyPayment).toBe(2137.5);
 	});
 });
 
