@@ -148,7 +148,8 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | planner baseline (roteiros+driver) | ⏳ rodando (Opus) → `.processo/loop/evidencias-r9/` |
 | coletores (funil ao vivo) | ✅ 5 dossiês capturados via driver DETERMINÍSTICO (sem Haiku — turnos pré-scriptados, respostas capturadas verbatim): madalena 17t/0err (jornada completa até fechamento+real_offer), mario-sem-lance 14t/0err, probe-i1/i2/i3 ok. `evidencias-r9/dossies/` (gitignorado, sem PII) |
 | baseline juiz Sonnet (develop atual) | ✅ **3/10 (MÍNIMO) — matador: NÃO** (`veredito-baseline-sonnet.md`). Neg 7·Func 5·Cálc 8·UX 5·**UI/Compl 3**·E2E 9 |
-| execução onda 1 (blocos) | ⏳ 2 blocos disparados (sonnet): fix-r9-compliance-copy `71e95c2b` (FIX-277/278 P0) · fix-r9-gate-funil `17abd9b6` (FIX-279/280 P1). Base `integ/consorcio-r9`. Poll 10min. |
+| execução onda 1 (blocos) | ✅ 2 blocos DONE + integrados. FIX-277 direção do aviso · FIX-278 reserva de cota · FIX-279 agulha só no gate ativo (guard `activeGateAtTurnStart`) · FIX-280 optin server-side. Merge LIMPO (system-prompt.ts auto-mergeou, regiões distintas). Promovido develop `193c1c83`. Container reiniciado. `test:unit` no container = gate. Workspaces de bloco deletados. |
+| re-verificação (pós-fix) | ⏳ test:unit no container → re-rodar 5 roteiros + juiz Sonnet |
 
 **⚠️ Incidente recuperado (housekeeping adiado mordeu):** o 1º `launch-blocks --wave 1` disparou os 18 blocos STALE que ainda estavam em `todo/` (r2-r8 + reveal, já mergeados/em done/ mas nunca arquivados). Criou 5 workspaces antes de parar. Recuperação: deletei os 5 workspaces stale, **arquivei as 18 pastas** (cards já em `done/`, zero perda), sincronizei a base, re-lancei só os 2 r9. **Lição:** arquivar `todo/` ANTES de `launch-blocks` (a memória já avisava — adiei e paguei).
 
