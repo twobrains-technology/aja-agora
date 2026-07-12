@@ -1,7 +1,7 @@
 ---
 id: FIX-292
 titulo: "monthlyPayment fica do cenário errado mesmo após o FIX-287 corrigir o creditValue por groupId"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-4-valor-honestidade
@@ -9,6 +9,8 @@ arquivos:
   - src/lib/agent/orchestrator/recommendation-payload.ts
   - src/lib/agent/tools/known-credit-values.ts
 rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P1 Cálculo, veredito-r9pos3-sonnet.md §3)"
+commit: fccad78f
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos3, Sonnet 5 — P1 Cálculo)
 > "recommendation_card = {creditValue:150000, monthlyPayment:3549.75}; simulation_result =

@@ -1,14 +1,16 @@
 ---
 id: FIX-293
 titulo: "sob pressão o agente inventa estado de grupo (cheio/pausado) e simplifica o score multi-fator pra 'valor mais próximo' — directive determinística só cobre o caminho de tool-error"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-4-valor-honestidade
 arquivos:
   - src/lib/agent/system-prompt.ts
-  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/orchestrator/index.ts
 rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P2 UX/I2, veredito-r9pos3-sonnet.md §3)"
+commit: 1aa963ad
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos3, Sonnet 5 — P2 UX, probe-i2-justificativa turnos 8-9)
 > "'é o valor mais próximo disponível' (simplifica o score multi-fator pra só proximidade); 'às
