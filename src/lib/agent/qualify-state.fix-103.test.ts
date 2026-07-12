@@ -34,9 +34,6 @@ function walkFunnelComPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 			case "desire":
 				meta = { ...meta, desireAsked: true };
 				break;
-			case "consent":
-				meta = { ...meta, qualifyConsented: true };
-				break;
 			case "identify":
 				meta = { ...meta, identityCollected: true };
 				break;
@@ -80,7 +77,6 @@ describe("FIX-103 revertido pelo FIX-233 â€” gate de prazo (timeframe) VOLTA, pÃ
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"consent",
 			"identify",
 			"credit",
 			"search",
@@ -99,7 +95,6 @@ describe("FIX-103 revertido pelo FIX-233 â€” gate de prazo (timeframe) VOLTA, pÃ
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"consent",
 			"identify",
 			"credit",
 			"search",

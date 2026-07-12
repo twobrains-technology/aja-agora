@@ -23,8 +23,6 @@ import {
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
-	buildQualifyStartMoreDirective,
-	buildQualifyStartYesDirective,
 	buildRangePickerDirective,
 	buildSimulateDirective,
 	buildTimeframeReactionDirective,
@@ -100,8 +98,6 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 
 	if (replyId === "handoff_confirm") return handleHandoffConfirm(ctx);
 	if (replyId === "handoff_decline") return handleHandoffDecline(ctx);
-	if (replyId === "qualify_start_yes" || replyId === "qualify_start_more")
-		return handleQualifyStart(ctx);
 	if (replyId.startsWith("category_")) return handleCategory(ctx);
 	if (replyId.startsWith("experience_")) return handleExperience(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
@@ -304,26 +300,6 @@ async function handleExperience(ctx: Ctx): Promise<boolean> {
 	else directive = buildExperienceDoubtsDirective(ctx.replyTitle);
 
 	await runDirectiveWithOrchestrator({ from, conversationId, directive });
-	return true;
-}
-
-async function handleQualifyStart(ctx: Ctx): Promise<boolean> {
-	const { from, replyId, conversationId } = ctx;
-	const meta = await loadMeta(conversationId);
-	await recordUserClick(ctx);
-
-	if (!meta.currentCategory) return true;
-
-	if (replyId === "qualify_start_yes") {
-		await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-		await runAgentDirective(from, conversationId, buildQualifyStartYesDirective());
-		return true;
-	}
-
-	// pendingFollowUp keeps nextGate at doubts-wait until the user types
-	// their question and the AI answers; then the post-AI hook clears it.
-	await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
-	await runAgentDirective(from, conversationId, buildQualifyStartMoreDirective());
 	return true;
 }
 

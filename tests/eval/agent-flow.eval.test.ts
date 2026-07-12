@@ -162,20 +162,6 @@ async function handleGateEvent(args: {
 			});
 		}
 
-		case "consent": {
-			// "Bora!" — aceita a qualificação direto.
-			const label = "Bora!";
-			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-			await saveMessage(conversationId, "user", label, "web");
-			// Importa só aqui pra evitar circular import na carga inicial.
-			const { buildQualifyStartYesDirective } = await import("@/lib/agent/orchestrator/directives");
-			return await consumeAgentTurn({
-				conversationId,
-				userText: buildQualifyStartYesDirective(),
-				isUserTurn: false,
-			});
-		}
-
 		case "credit": {
 			// FIX-15: perfil Monique alinhado à captura REAL de IMOVEL (crédito ~R$ 80k,
 			// parcela R$ 366–548). A fixture serve esses números; injetar 400k/2500 aqui

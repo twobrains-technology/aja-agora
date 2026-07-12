@@ -297,8 +297,6 @@ describe("regressão: acentuação", () => {
 			directives.buildExperienceFirstDirective("Primeira vez"),
 			directives.buildExperienceReturningDirective("Já fiz"),
 			directives.buildExperienceDoubtsDirective("Tenho dúvidas"),
-			directives.buildQualifyStartYesDirective(),
-			directives.buildQualifyStartMoreDirective(),
 			directives.buildPlanReactionDirective({
 				assetLabel: "Carro",
 				intent: "parcela",

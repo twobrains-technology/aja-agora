@@ -76,11 +76,10 @@ describe("buildAction — mapeamento de chip de gate para ChatAction (BUG-LANCE-
 		});
 	});
 
-	it("experience/consent/timeframe seguem corretos", () => {
+	it("experience/timeframe seguem corretos", () => {
 		expect(
 			gateOf(buildAction("experience", { value: "first", label: "É a primeira vez" })).gate,
 		).toBe("experience");
-		expect(gateOf(buildAction("consent", { value: "yes", label: "Bora!" })).gate).toBe("consent");
 		expect(buildAction("timeframe", { value: "0", label: "O mais rápido possível" })).toEqual({
 			kind: "gate",
 			gate: "timeframe",

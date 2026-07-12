@@ -7,9 +7,10 @@ import { PRESENTATION_TOOLS } from "./tools/ai-sdk";
 // + simulador-agulha. Asserts contra a fonte de produção (prompt/tools/formatter).
 
 describe("passo 5 — roteamento no prompt", () => {
-	it("'reservar agora' aponta pra present_contract_form (não mais lead_form puro)", () => {
-		// FIX-216 (Ata 2026-07-04): terminologia "reservar" substitui "contratar".
-		const re = /reservar agora[\s\S]{0,400}present_contract_form/i;
+	it("'seguir agora' aponta pra present_contract_form (não mais lead_form puro)", () => {
+		// DV-8 (QA 2026-07-11): "reserva" só pós-fechamento; o gatilho de avanço vira
+		// "seguir agora" (supera o FIX-216, que tinha posto "reservar").
+		const re = /seguir agora[\s\S]{0,400}present_contract_form/i;
 		expect(SPECIALIST_BASE_PROMPT).toMatch(re);
 	});
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
 import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 import { gatePartData } from "@/lib/web/adapter";
-import { qualifyConsentToWhatsApp } from "@/lib/whatsapp/formatter";
 import type { ConversationMetadata } from "../personas";
 import {
 	buildExperienceFirstDirective,
@@ -96,9 +95,9 @@ describe("card de decisão — pergunta e 3 opções (docx passo 4, terminologia
 		expect(DECISION_PROMPT_QUESTION).toBe("Esse plano faz sentido para você?");
 	});
 
-	it("as 3 labels — Ata 2026-07-04 (FIX-216) substitui 'contratar' por 'reservar'", () => {
+	it("as 3 labels — DV-8 (QA 2026-07-11) troca 'reservar' por 'seguir' (reserva só pós-fechamento; supera FIX-216)", () => {
 		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
-			"Sim, quero reservar agora",
+			"Sim, quero seguir agora",
 			"Quero ver outras opções",
 			"Quero falar com um especialista da Aja Agora",
 		]);
@@ -121,32 +120,9 @@ describe("simulador-agulha — marcos default cobrem 3/6/12 do docx", () => {
 	});
 });
 
-describe('consent pós-explicação de primeira vez — botão "Entendi, pode continuar" (docx passo 2)', () => {
-	const metaFirst = { experiencePrev: "first" } as ConversationMetadata;
-	const metaReturning = { experiencePrev: "returning" } as ConversationMetadata;
-
-	it("web: chips do consent pra primeira vez usam a label literal do docx", () => {
-		const data = gatePartData("consent", metaFirst);
-		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
-		expect(data.options.map((o) => o.label)).toContain("Entendi, pode continuar");
-	});
-
-	it("web: quem já conhece consórcio mantém o convite curto (Bora!)", () => {
-		const data = gatePartData("consent", metaReturning);
-		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
-		expect(data.options.map((o) => o.label)).toContain("Bora!");
-	});
-
-	it("whatsapp: botão de consent pra primeira vez ecoa o docx (≤20 chars)", () => {
-		const res = qualifyConsentToWhatsApp(undefined, { firstTime: true });
-		const interactive = res.interactive as
-			| { action?: { buttons?: Array<{ reply: { title: string } }> } }
-			| undefined;
-		const titles = interactive?.action?.buttons?.map((b) => b.reply.title) ?? [];
-		expect(titles.some((t) => /entendi/i.test(t))).toBe(true);
-		for (const t of titles) expect(t.length).toBeLessThanOrEqual(20);
-	});
-});
+// FIX-274: o gate `consent` ("posso te fazer 3 perguntinhas" + "Entendi, pode
+// continuar"/"Entender mais antes") foi REMOVIDO do funil — não há mais card de
+// consent na web nem botões no WhatsApp. Testes correspondentes removidos.
 
 describe("texto-ponte do passo 1 — docx linha 14", () => {
 	it('directive de primeiro contato carrega a ponte "perguntinhas… de cerca de X"', () => {

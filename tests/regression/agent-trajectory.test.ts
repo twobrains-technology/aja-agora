@@ -2195,20 +2195,19 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo; FIX-215: sem lance antes da busca)", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-274: ordem sem consent, desejo → identidade → valor)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
-		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
-		// saiu. FIX-215 (Ata 2026-07-04): o lance também saiu do meio — a ordem
-		// agora é experience → (consent → identidade) → valor → busca (lance é
-		// pós-reveal, ver seção "Lance e lance embutido").
-		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,300}busca/i;
+		// continuaria reproduzível em prod. FIX-233: experience desceu pra pós-busca.
+		// FIX-274: o gate `consent` saiu — a ordem da coleta agora é
+		// desejo (bem + motivo) → identidade → valor → busca (lance é pós-reveal).
+		const ordemDosGates = /desejo[\s\S]{0,700}identidade[\s\S]{0,400}valor do bem/i;
 		const proibeValorAntes =
 			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
 			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → busca) E " +
-				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo fora; FIX-215: lance fora do meio.",
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (desejo → identidade → valor) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-274: consent fora; experience pós-busca.",
 		).toBe(true);
 	});
 
@@ -2274,7 +2273,6 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			const q = meta.qualifyAnswers ?? {};
 			if (g === "name") hasName = true;
 			else if (g === "experience") meta = { ...meta, experiencePrev: "first" };
-			else if (g === "consent") meta = { ...meta, qualifyConsented: true };
 			else if (g === "identify") meta = { ...meta, identityCollected: true };
 			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
 			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
@@ -2901,12 +2899,13 @@ describe("FEAT-CONTRACT-FLOW — passo 5 'contratar agora' dispara present_contr
 		expect(text).not.toMatch(/preencha o formul[áa]rio|digite seu cpf no campo/i);
 	});
 
-	it("regra do prompt: 'reservar agora' acoplado a present_contract_form (<400 chars)", () => {
-		// FIX-216 (Ata 2026-07-04): terminologia "reservar" substitui "contratar".
-		const re = /reservar agora[\s\S]{0,400}present_contract_form/i;
+	it("regra do prompt: 'seguir agora' acoplado a present_contract_form (<400 chars)", () => {
+		// DV-8 (QA 2026-07-11): "reserva" só pós-fechamento; o gatilho de avanço vira
+		// "seguir agora" (supera o FIX-216, que tinha posto "reservar").
+		const re = /seguir agora[\s\S]{0,400}present_contract_form/i;
 		expect(
 			re.test(SPECIALIST_BASE_PROMPT),
-			"'reservar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
+			"'seguir agora' precisa apontar pra present_contract_form no prompt (passo 5).",
 		).toBe(true);
 	});
 });
@@ -8501,13 +8500,13 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
-			experiencePrev: "first",
 			...over,
 		};
 	}
 	const NOW = 1_800_000_000_000;
 
 	it("o orquestrador MARCA a pendência quando o gate real é suprimido num turno de usuário", () => {
+		// FIX-274: sem consent, identify é o 1º gate estrutural pós-desire.
 		expect(
 			pendingGateAfterTurn({
 				meta: pendingMeta(),
@@ -8515,7 +8514,7 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("consent");
+		).toBe("identify");
 	});
 
 	it("nunca marca em turno server-authored (FIX-206 já avança) nem quando o gate disparou", () => {
@@ -8794,7 +8793,6 @@ describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", 
 		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
 		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
 		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
-		expect(reengageQuestionForGate("consent", null, 1)).toBeNull();
 	});
 
 	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {

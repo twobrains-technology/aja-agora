@@ -4,45 +4,6 @@ import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-con
 import { nextGate } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
-const AFFIRMATIVE_REPLIES = new Set([
-	"sim",
-	"claro",
-	"ok",
-	"okay",
-	"vamos",
-	"vamo",
-	"bora",
-	"manda",
-	"manda ver",
-	"pode",
-	"pode mandar",
-	"pode ser",
-	"certo",
-	"beleza",
-	"blz",
-	"show",
-	"isso",
-	"aham",
-	"positivo",
-	"topo",
-	"topei",
-	"tá",
-	"ta",
-	"fechou",
-	"vai",
-	"segue",
-	"siga",
-]);
-
-function isShortAffirmative(text: string): boolean {
-	const trimmed = text
-		.trim()
-		.toLowerCase()
-		.replace(/[!.?,]+$/, "")
-		.trim();
-	return AFFIRMATIVE_REPLIES.has(trimmed);
-}
-
 // FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
 // gate "timeframe" — o usuário disse só "…R$ 70 mil, gastando perto de R$ 900
 // por mês" (valor + orçamento MENSAL, sem menção de prazo) e o analyzer LLM
@@ -115,10 +76,11 @@ export async function analyzeAndMerge(
 	// gate `credit` — aí um número NU ("200") vira valor (200 mil, clampado). Sem
 	// isso, parseAssetValue("200")=null por design e o funil fechava mudo no gate de
 	// valor. O contexto só é passado quando o gate credit está DE FATO pendente.
+	// FIX-274: o gate `consent` saiu do funil — o pré-requisito do `credit` agora é
+	// só identidade coletada (identify vem antes do credit desde o FIX-53).
 	const creditGatePending =
 		q.creditMax === undefined &&
 		Boolean(meta.currentCategory) &&
-		Boolean(meta.qualifyConsented) &&
 		Boolean(meta.identityCollected) &&
 		!meta.pendingFollowUp;
 	const parsedCreditMax =
@@ -208,26 +170,10 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	// BUG-FUNIL-PULA-PASSO2 (QA noturno 2026-06-21): NÃO presumir experiência nem
-	// consentimento só porque o usuário voluntariou um dado de qualificação (valor/
-	// prazo/lance) em texto livre. Antes, qualquer extração cravava
-	// experiencePrev="returning" + qualifyConsented=true, e o nextGate pulava os
-	// gates `experience` e `consent` (passo 2 da jornada-canonica §2) — justamente
-	// no caminho mais comum, já que a landing incentiva dizer o valor de cara. Os
-	// dados extraídos acima PERMANECEM salvos (não se re-pergunta o valor); o passo
-	// 2 volta a ser dirigido pelos botões reais: o gate `experience` persiste
-	// experiencePrev e o gate `consent` persiste qualifyConsented (route.ts:776-803).
-	// A confirmação curta ("sim"/"bora") ainda destrava o consent logo abaixo.
-	if (
-		meta.currentCategory &&
-		!meta.qualifyConsented &&
-		meta.experiencePrev &&
-		!meta.pendingFollowUp &&
-		isShortAffirmative(text)
-	) {
-		meta.qualifyConsented = true;
-		metaChanged = true;
-	}
+	// FIX-274 (Kairo, 2026-07-11): o gate `consent` saiu do funil, então o
+	// auto-consentimento por texto livre ("sim"/"bora" destrava o consent — antigo
+	// BUG-FUNIL-PULA-PASSO2 / FIX-273) foi REMOVIDO junto: não há mais consent pra
+	// destravar. `qualifyConsented` deixou de ser lido por qualquer caminho vivo.
 
 	if (analysis.expertiseLevel !== "neutro" && analysis.expertiseLevel !== meta.expertiseLevel) {
 		meta.expertiseLevel = analysis.expertiseLevel;

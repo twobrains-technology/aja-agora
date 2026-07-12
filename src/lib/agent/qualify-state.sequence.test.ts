@@ -5,16 +5,15 @@ import { decideShowGate, type Gate, nextGate } from "./qualify-state";
 // ============================================================================
 // Sequência canônica COMPLETA do funil (jornada-canonica.md passo 2 + FIX-53
 // + FIX-215/Refino Ata 2026-07-04 + FIX-233/handoff agente-vendas-consorcio,
-// 2026-07-09). Encadeia nextGate respondendo cada gate como o usuário faria,
-// e prova a ORDEM real ponta-a-ponta — o que faltava: os testes existentes
-// cobrem cada transição isolada, não a progressão inteira.
+// 2026-07-09 + FIX-274/remoção do consent, 2026-07-11). Encadeia nextGate
+// respondendo cada gate como o usuário faria, e prova a ORDEM real ponta-a-ponta.
 //
-// Ordem ATUAL (FIX-233, ADR 2026-07-09-agente-vendas-consorcio.md D1/D2):
-// gate `desire` (não bloqueante) entra logo após o nome; `experience` DESCE
-// pra depois do reveal; `timeframe` REINTRODUZ pós-recomendação (reverte o
-// FIX-103) — ponte pro simulador de contemplação. FIX-53 (revisão 2):
-// identidade (CPF+celular) ANTES do valor. FIX-215 moveu lance/lance-value/
-// lance-embutido do PRÉ-search (entre credit e search) pro PÓS-reveal.
+// Ordem ATUAL: gate `desire` (não bloqueante) entra logo após o nome; FIX-274
+// REMOVEU o gate `consent` (o "posso te fazer 3 perguntinhas" + "Entender mais
+// antes") — depois do desire vai direto pro `identify`. `experience` DESCE pra
+// depois do reveal (FIX-233 D2); `timeframe` REINTRODUZ pós-recomendação (D1).
+// FIX-53: identidade (CPF+celular) ANTES do valor. FIX-215 moveu lance/lance-
+// value/lance-embutido do PRÉ-search pro PÓS-reveal.
 // ============================================================================
 
 /** Percorre o funil do zero até `decision`, respondendo cada gate. */
@@ -33,9 +32,6 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 				break;
 			case "desire":
 				meta = { ...meta, desireAsked: true };
-				break;
-			case "consent":
-				meta = { ...meta, qualifyConsented: true };
 				break;
 			case "identify":
 				meta = { ...meta, identityCollected: true };
@@ -73,13 +69,12 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 	return seq;
 }
 
-describe("funil — sequência canônica completa (docx passo 2 + FIX-53 + FIX-215 + FIX-233)", () => {
-	it("sem lance: desire→consent→identify→credit→search→experience→timeframe→lance→lance-embutido→simulator-offer→decision", () => {
+describe("funil — sequência canônica completa (FIX-53 + FIX-215 + FIX-233 + FIX-274 sem consent)", () => {
+	it("sem lance: desire→identify→credit→search→experience→timeframe→lance→lance-embutido→simulator-offer→decision", () => {
 		const seq = walkFunnel({ hasLance: "no" });
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"consent",
 			"identify",
 			"credit",
 			"search",
@@ -97,7 +92,6 @@ describe("funil — sequência canônica completa (docx passo 2 + FIX-53 + FIX-2
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"consent",
 			"identify",
 			"credit",
 			"search",
@@ -109,6 +103,11 @@ describe("funil — sequência canônica completa (docx passo 2 + FIX-53 + FIX-2
 			"simulator-offer",
 			"decision",
 		]);
+	});
+
+	it("FIX-274: `consent` NUNCA aparece na sequência", () => {
+		expect(walkFunnel({ hasLance: "no" })).not.toContain("consent");
+		expect(walkFunnel({ hasLance: "yes" })).not.toContain("consent");
 	});
 
 	it("INVARIANTE FIX-53/FIX-215/FIX-233: identify < credit < search < experience < timeframe < lance", () => {
@@ -126,13 +125,13 @@ describe("funil — sequência canônica completa (docx passo 2 + FIX-53 + FIX-2
 	});
 });
 
-describe("FIX-233 — gate `desire` não bloqueia", () => {
-	it("usuário pula (nunca preenche desiredItem/motivation) → funil segue normal pro consent", () => {
+describe("FIX-233/FIX-274 — gate `desire` não bloqueia", () => {
+	it("usuário pula (nunca preenche desiredItem/motivation) → funil segue direto pro identify (sem consent)", () => {
 		const meta: ConversationMetadata = { desireAsked: true };
-		expect(nextGate(meta, { hasContactName: true })).toBe("consent");
+		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
 	});
 
-	it("sem desireAsked, é o próximo gate logo após o nome (antes do consent)", () => {
+	it("sem desireAsked, é o próximo gate logo após o nome", () => {
 		expect(nextGate({}, { hasContactName: true })).toBe("desire");
 	});
 });
@@ -141,7 +140,6 @@ describe("FIX-233 — 3ª saída do gate lance ('só a parcela') pula lance-valu
 	const postReveal = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
 		desireAsked: true,
 		currentCategory: "auto",
-		qualifyConsented: true,
 		identityCollected: true,
 		experiencePrev: "first",
 		qualifyAnswers: { creditMax: 80_000, prazoMeses: 6 },
@@ -170,16 +168,13 @@ describe("FIX-233 — 3ª saída do gate lance ('só a parcela') pula lance-valu
 	});
 });
 
-describe("FIX-233 — lead que responde tudo numa frase não vê cards redundantes (decideShowGate)", () => {
-	// "Quero um Corolla de uns 120 mil, já fiz consórcio antes" — o analyzer
-	// extrai credit + experience (e potencialmente desiredItem) NUM turno só,
-	// ANTES de qualquer card ter sido disparado. O funil não pode re-exibir os
-	// gates cujo dado já veio por texto livre — nextGate PULA direto pra frente,
-	// e decideShowGate só interrompe no PRÓXIMO gate realmente pendente.
-	it("credit + experience já preenchidos por texto livre → nextGate pula direto pro identify (nunca credit/experience de novo)", () => {
+describe("FIX-233/FIX-274 — lead que responde tudo numa frase não vê cards redundantes", () => {
+	// "Quero um Corolla de uns 120 mil" — o analyzer extrai credit (e potencialmente
+	// desiredItem) NUM turno só, ANTES de qualquer card. O funil não pode re-exibir
+	// os gates cujo dado já veio por texto livre — nextGate PULA direto pra frente.
+	it("credit já preenchido por texto livre → nextGate pula direto pro identify (nunca credit de novo)", () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
-			qualifyConsented: true,
 			qualifyAnswers: { creditMax: 120_000 },
 		};
 		const gate = nextGate(meta, { hasContactName: true });
@@ -187,10 +182,9 @@ describe("FIX-233 — lead que responde tudo numa frase não vê cards redundant
 		expect(gate).not.toBe("credit");
 	});
 
-	it("desire+consent+identify+credit todos resolvidos num só turno → nextGate vai direto pra search, sem re-emitir nenhum gate de coleta", () => {
+	it("desire+identify+credit todos resolvidos num só turno → nextGate vai direto pra search", () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
-			qualifyConsented: true,
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 120_000 },
 		};
@@ -199,14 +193,9 @@ describe("FIX-233 — lead que responde tudo numa frase não vê cards redundant
 		expect(["desire", "consent", "identify", "credit"]).not.toContain(gate);
 	});
 
-	it("decideShowGate não reabre gate resolvido: turno de usuário com intent providing_info sobre um dado NOVO não força o card de um gate já satisfeito", () => {
-		// O ponto de decideShowGate é decidir SE interrompe com UI no gate atual
-		// retornado por nextGate — como nextGate já pulou os gates satisfeitos
-		// (provado acima), decideShowGate nunca é chamado pra um gate redundante;
-		// aqui confirmamos que ele libera normalmente o PRÓXIMO gate real (search).
+	it("decideShowGate libera normalmente o próximo gate real (search)", () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
-			qualifyConsented: true,
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 120_000 },
 		};

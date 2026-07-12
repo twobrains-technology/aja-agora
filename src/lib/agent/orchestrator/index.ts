@@ -660,12 +660,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				await persistMeta(conversationId, { ...refreshed, desireAsked: true });
 			}
 		}
-		if (result.nextGateToFire === "consent") {
-			const refreshed = await reloadMeta(conversationId);
-			if (!refreshed.consentOffered) {
-				await persistMeta(conversationId, { ...refreshed, consentOffered: true });
-			}
-		}
 		// docx passo 4: a oferta do simulador acontece UMA vez (padrão consent).
 		// Marcado na emissão. FIX-260: um afirmativo digitado no turno seguinte
 		// é interceptado MAIS ACIMA (antes deste bloco rodar) e dispara o

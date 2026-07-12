@@ -22,7 +22,6 @@ import {
 	lanceEmbutidoQuestionToWhatsApp,
 	lanceQuestionToWhatsApp,
 	lanceValueQuestionToWhatsApp,
-	qualifyConsentToWhatsApp,
 	simulatorOfferToWhatsApp,
 	splitMessage,
 	timeframeQuestionToWhatsApp,
@@ -47,12 +46,6 @@ async function gateInteractive(
 	switch (gate) {
 		case "experience":
 			return experienceQuestionToWhatsApp(prefix).interactive ?? null;
-		case "consent":
-			// docx: pós-explicação de primeira vez → "Entendi, pode continuar".
-			return (
-				qualifyConsentToWhatsApp(prefix, { firstTime: meta.experiencePrev === "first" })
-					.interactive ?? null
-			);
 		case "credit":
 			// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA — o WhatsApp
 			// não manda mais a lista de faixas. A pergunta sai como TEXTO (ver
@@ -521,9 +514,6 @@ export async function fireGate(
 	meta: ConversationMetadata,
 	prefix?: string,
 ): Promise<void> {
-	if (gate === "consent" && !meta.consentOffered) {
-		await persistMeta(conversationId, { ...meta, consentOffered: true });
-	}
 	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos
 	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro.
 	if (gate === "identify") {
