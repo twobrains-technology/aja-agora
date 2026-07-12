@@ -16,6 +16,10 @@ import {
 } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import {
+	extractKnownCreditValue,
+	loadKnownGroupCreditValues,
+} from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
@@ -271,6 +275,29 @@ export async function* runAgentTurn(args: {
 	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
 	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
 	const revealGroupsById: RevealGroupIndex = new Map();
+	// FIX-287: creditValue REAL já simulado por groupId — turno corrente (todo
+	// simulate_quota que resolver neste turno, atualizado ao vivo abaixo) +
+	// histórico da conversa (memoizado, carregado sob demanda — só quando o
+	// turno realmente emite comparison_table/recommendation_card). search/
+	// recommend só trazem o valor-ALVO que a Bevi aproxima na busca; este mapa
+	// é a fonte única que corrige comparison_table/recommendation_card contra
+	// um simulation_result já conhecido do MESMO grupo (ver recommendation-payload.ts).
+	const turnKnownCreditValues = new Map<string, number>();
+	let knownCreditValuesPromise: Promise<Map<string, number>> | null = null;
+	const getKnownCreditValues = async (): Promise<ReadonlyMap<string, number>> => {
+		if (!knownCreditValuesPromise) {
+			knownCreditValuesPromise = loadKnownGroupCreditValues(conversationId).catch((err) => {
+				console.error(
+					"[known-credit-values] falha ao carregar histórico de simulações, usando fallback",
+					err,
+				);
+				return new Map<string, number>();
+			});
+		}
+		const historical = await knownCreditValuesPromise;
+		// Turno corrente prevalece sobre histórico (dado mais fresco).
+		return new Map([...historical, ...turnKnownCreditValues]);
+	};
 	// FIX-222: logo da administradora (cadastro `administradoras.logo_url`) —
 	// carregado sob demanda (só quando o turno realmente emite recommendation_card
 	// /comparison_table) e memoizado no turno. Falha de DB nunca derruba o turno:
@@ -424,6 +451,12 @@ export async function* runAgentTurn(args: {
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
 					lastQuotaSimulation = output ?? null;
+					// FIX-287: groupId simulado neste turno → creditValue REAL conhecido
+					// pra qualquer comparison_table/recommendation_card SUBSEQUENTE do
+					// mesmo turno (não retroage pro que já foi emitido ANTES desta
+					// simulação — gap residual documentado no ADR do bloco).
+					const known = extractKnownCreditValue("simulation_result", output);
+					if (known) turnKnownCreditValues.set(known.groupId, known.creditValue);
 				}
 				// FIX-191: indexa os grupos reais da descoberta deste turno pra coagir
 				// o hero (recommendation_card) e o seletor (comparison_table).
@@ -662,6 +695,7 @@ export async function* runAgentTurn(args: {
 								revealGroupsById,
 								await getAdministradoraLogos(),
 								requestedCreditValue,
+								await getKnownCreditValues(),
 							);
 						}
 						if (artifactType === "comparison_table") {
@@ -669,6 +703,7 @@ export async function* runAgentTurn(args: {
 								input,
 								revealGroupsById,
 								await getAdministradoraLogos(),
+								await getKnownCreditValues(),
 							);
 						}
 						if (artifactType === "contemplation_dial") {

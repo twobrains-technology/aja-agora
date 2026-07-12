@@ -1,10 +1,21 @@
 "use client";
 
-import { Check, Crown } from "lucide-react";
+import { Check, Crown, Info } from "lucide-react";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ComparisonTablePayload, GroupCardPayload } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 import { type RevealCota, useRevealSelection } from "../reveal-selection";
+
+// FIX-287 (veredito r9pos2 §3 P1-2): mesmo critério do recommendation-card.tsx
+// (FIX-197/261) — aviso SÓ quando o valor-alvo (rawCreditValue) realmente
+// diverge do creditValue exibido (já corrigido server-side quando o grupo já
+// foi simulado, ver recommendation-payload.ts). Ancorado nos dois números
+// reais; nunca aparece pros grupos sem divergência conhecida.
+const hasCreditAdjustment = (rawCreditValue: number | undefined, creditValue: number): boolean =>
+	rawCreditValue != null &&
+	Number.isFinite(rawCreditValue) &&
+	Number.isFinite(creditValue) &&
+	Math.round(rawCreditValue) !== Math.round(creditValue);
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -192,6 +203,9 @@ function QuotaChip({
 	showTop: boolean;
 	onSelect: () => void;
 }) {
+	// FIX-287 — aviso de divergência: o groupId já foi simulado nesta conversa
+	// e o nominal REAL diverge do valor-alvo mostrado no comparativo.
+	const showAdjustNotice = hasCreditAdjustment(cota.rawCreditValue, cota.creditValue);
 	return (
 		<button
 			type="button"
@@ -238,6 +252,19 @@ function QuotaChip({
 					{formatBRL(cota.creditValue)}
 				</p>
 				<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+				{/* FIX-287 — aviso discreto: esse grupo não aceitou o valor pedido
+				    (nominal real já provado por uma simulação nesta conversa). */}
+				{showAdjustNotice && cota.rawCreditValue != null && (
+					<p
+						data-testid={`quota-chip-adjustment-notice-${cota.groupId}`}
+						className="flex items-start gap-1 mt-1 text-[9px] leading-snug text-muted-foreground"
+					>
+						<Info className="mt-0.5 size-[9px] shrink-0 text-primary" />
+						<span className="whitespace-normal break-words">
+							Não aceita ~{formatBRL(cota.rawCreditValue)}
+						</span>
+					</p>
+				)}
 			</div>
 
 			{/* Divider */}
