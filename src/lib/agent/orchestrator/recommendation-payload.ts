@@ -231,6 +231,43 @@ export function buildRecommendationCardFromRevealGroup(
 	return coerceRecommendationPayload(input, index, logosByAdministradora, requestedCreditValue);
 }
 
+/** FIX-290: quantos grupos REAIS (não o shape de erro) estão indexados neste
+ * turno — usado pelo runner pra decidir se o ramo é "2+ grupos" (força
+ * comparison_table junto do hero) ou "1 grupo único" (nunca força, mesma
+ * regra documentada do reveal: "só pulam os DOIS juntos quando a busca
+ * devolveu 1 grupo único"). */
+export function usableRevealGroupCount(index: RevealGroupIndex): number {
+	let count = 0;
+	for (const group of index.values()) {
+		if (isUsableGroup(group)) count += 1;
+	}
+	return count;
+}
+
+// FIX-290 (P0 sistêmico, veredito r9pos3 Sonnet §3): o pareamento
+// `recommendation_card` × `comparison_table` era só regra-no-prompt
+// (directives.ts:348, "REGRA DURA... INSEPARÁVEIS") — sem invariante em código,
+// se o modelo parasse de gerar tool-calls após a 1ª, a tabela comparativa
+// simplesmente sumia. Materializa o `comparison_table` inteiro a partir dos
+// grupos REAIS já indexados neste turno (sem depender de um `input` de
+// tool-call que nunca chegou a existir) — mesmo padrão do FIX-286
+// (`buildRecommendationCardFromRevealGroup`) pro hero.
+export function buildComparisonTableFromRevealGroups(
+	index: RevealGroupIndex,
+	logosByAdministradora?: ReadonlyMap<string, string>,
+	knownCreditValueByGroupId?: ReadonlyMap<string, number>,
+): Record<string, unknown> {
+	const usable = [...index.values()].filter(isUsableGroup);
+	const input: Record<string, unknown> = {
+		groups: usable.map((g) => ({
+			id: g.id,
+			administradora: g.administradora,
+			category: g.category,
+		})),
+	};
+	return coerceComparisonPayload(input, index, logosByAdministradora, knownCreditValueByGroupId);
+}
+
 /** Seletor (`comparison_table`): coage CADA cota por `id` — é a lista de cotas do
  * reveal que o bloco-b renderiza como chips (adendo B8). */
 export function coerceComparisonPayload(
