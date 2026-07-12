@@ -297,12 +297,19 @@ function expandRange(params: SearchGroupsParams, factor: number): SearchGroupsPa
  * Busca grupos garantindo ≥3 opções: filtro estrito → ±20% → ±50%. Marca
  * alternativos. Se mesmo ±50% não basta, retorna o que tem com flag
  * insufficientOptions=true. Bug #09 (Bruna v1 review).
+ *
+ * FIX-289: `seedGroups`, quando presente, substitui a busca estrita
+ * (`adapter.searchGroups(params)`) — reaproveita grupos que o MESMO turno já
+ * buscou (ex.: via `search_groups`) em vez de rebuscar do zero. A lógica de
+ * expansão (`EXPANSION_STEPS`) segue intacta, só se o conjunto reaproveitado
+ * for insuficiente (essas chamadas continuam batendo a Bevi de verdade).
  */
 export async function recommendWithFallback(
 	adapter: AdministradoraAdapter,
 	params: SearchGroupsParams,
+	seedGroups?: GroupSummary[],
 ): Promise<RecommendationResult> {
-	const strict = await adapter.searchGroups(params);
+	const strict = seedGroups ?? (await adapter.searchGroups(params));
 	if (strict.length >= MIN_OPTIONS) {
 		return {
 			groups: strict.map((g) => ({ ...g, alternativa: false })),

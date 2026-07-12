@@ -104,7 +104,10 @@ describe("FIX-193 — hasLance é plumbado do perfil (nunca da LLM)", () => {
 
 	it("recommend_groups repassa hasLance do CONTEXTO pra executeRecommendGroups (não do input)", () => {
 		const tools = readSource("src/lib/agent/tools/ai-sdk.ts");
-		expect(tools).toMatch(/executeRecommendGroups\(adapter, args, \{ hasLance \}\)/);
+		// FIX-289: a chamada ganhou seedGroups (cache de search_groups do mesmo
+		// turno) ao lado de hasLance — ambos seguem vindo do CONTEXTO/closure,
+		// nunca do input schema da tool (ver asserção abaixo).
+		expect(tools).toMatch(/executeRecommendGroups\(adapter, args, \{ hasLance, seedGroups \}\)/);
 		// hasLance NÃO entra no schema da tool (não é input da LLM).
 		const recSchema =
 			tools.match(/const recommendGroupsSchema = z\.object\(\{[\s\S]*?\n\}\);/)?.[0] ?? "";
