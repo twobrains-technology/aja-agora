@@ -12,7 +12,7 @@ arquivos:
   - src/components/chat/artifacts/credit-adjustment-notice.fix-197.test.tsx
   - src/lib/agent/system-prompt.fix-277-falsa-exatidao.test.ts
 rodada: "2026-07-12 loop r9 onda 1 (baseline Sonnet 3/10)"
-commit: PENDING
+commit: b821db20
 executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9, Sonnet 5 — G1, UI/Compliance 3/10)
