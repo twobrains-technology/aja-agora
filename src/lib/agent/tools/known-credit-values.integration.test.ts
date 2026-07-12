@@ -1,6 +1,7 @@
-// Integration (DB real) — FIX-287: loadKnownGroupCreditValues mina o creditValue
-// REAL de todos os simulation_result já persistidos pra uma conversa. Skip se
-// DATABASE_URL ausente (mesmo padrão de shown-groups.integration.test.ts).
+// Integration (DB real) — FIX-287/FIX-292: loadKnownGroupCreditValues mina o
+// cenário REAL (creditValue + monthlyPayment) de todos os simulation_result já
+// persistidos pra uma conversa. Skip se DATABASE_URL ausente (mesmo padrão de
+// shown-groups.integration.test.ts).
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -46,7 +47,12 @@ describeIfDb("FIX-287 — loadKnownGroupCreditValues (integration)", () => {
 		await db.insert(schema.artifacts).values({
 			messageId: m2.id,
 			type: "simulation_result",
-			payload: { groupId: "grupo-bb", administradora: "BANCO DO BRASIL", creditValue: 160000 },
+			payload: {
+				groupId: "grupo-bb",
+				administradora: "BANCO DO BRASIL",
+				creditValue: 160000,
+				monthlyPayment: 2200,
+			},
 		});
 
 		// turno 3: simulation_result de outro grupo, sem divergência.
@@ -57,7 +63,12 @@ describeIfDb("FIX-287 — loadKnownGroupCreditValues (integration)", () => {
 		await db.insert(schema.artifacts).values({
 			messageId: m3.id,
 			type: "simulation_result",
-			payload: { groupId: "grupo-canopus", administradora: "CANOPUS", creditValue: 220000 },
+			payload: {
+				groupId: "grupo-canopus",
+				administradora: "CANOPUS",
+				creditValue: 220000,
+				monthlyPayment: 3100,
+			},
 		});
 	});
 
@@ -66,10 +77,10 @@ describeIfDb("FIX-287 — loadKnownGroupCreditValues (integration)", () => {
 		await db.delete(schema.conversations).where(eq(schema.conversations.id, conversationId));
 	});
 
-	it("mina o creditValue REAL de cada groupId já simulado em qualquer turno da conversa", async () => {
+	it("mina o cenário REAL (creditValue + monthlyPayment) de cada groupId já simulado em qualquer turno da conversa", async () => {
 		const known = await loadKnownGroupCreditValues(conversationId);
-		expect(known.get("grupo-bb")).toBe(160000);
-		expect(known.get("grupo-canopus")).toBe(220000);
+		expect(known.get("grupo-bb")).toEqual({ creditValue: 160000, monthlyPayment: 2200 });
+		expect(known.get("grupo-canopus")).toEqual({ creditValue: 220000, monthlyPayment: 3100 });
 	});
 
 	it("NÃO inclui grupos que só apareceram num comparison_table (nunca simulados)", async () => {

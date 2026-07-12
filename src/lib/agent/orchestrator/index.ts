@@ -363,6 +363,39 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		);
 	}
 
+	// FIX-293 (rodada r9 onda 4, veredito r9pos3 §3 P2 UX, probe-i2-justificativa
+	// turnos 8-9): a MESMA pergunta de exatidão/critério do FIX-282 (linha
+	// ~570 abaixo) acontecia de LONGE mais vezes FORA do caminho de
+	// tool-error/cap — usuário pergunta em texto livre normal, sem nenhum
+	// guard interceptando o turno. Checar isExactnessOrCriteriaQuestion só
+	// DEPOIS de `runAgentTurn` (como o FIX-282 faz) não resolveria esse caso:
+	// o `result` ali vem de `yield* runAgentTurn(...)`, que STREAMA cada
+	// text-delta pro consumidor em tempo real — na hora que `result` existe,
+	// o texto livre do modelo (o "cheio/pausado" fabricado do veredito) já
+	// chegou ao usuário. O short-circuit determinístico por isso tem que
+	// acontecer ANTES de invocar a LLM (Lei 4: invariante crítico em código,
+	// não filtro depois) — nunca chama `runAgentTurn` pra esse padrão de
+	// pergunta. Mesma resposta do FIX-282 (buildToolErrorRecoveryExactnessFallback),
+	// mesmo escopo estreito de isExactnessOrCriteriaQuestion (falso-negativo
+	// preferível a falso-positivo) — só dispara com reveal já completo e
+	// `recommendedOffer` conhecido (antes disso não há o que justificar).
+	if (
+		isUserTurn &&
+		meta.revealCompleted === true &&
+		isExactnessOrCriteriaQuestion(userText) &&
+		typeof meta.recommendedOffer?.creditValue === "number"
+	) {
+		const fallback = buildToolErrorRecoveryExactnessFallback({
+			name: knownName,
+			offer: meta.recommendedOffer,
+			rawCreditValue: meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
+		});
+		yield { type: "text-delta", text: fallback };
+		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
+		yield { type: "finish", reason: "exactness-criteria-answered" };
+		return;
+	}
+
 	const history = await loadConversationHistory(conversationId);
 	const systemContext = buildSystemContext({
 		knownName,
@@ -632,7 +665,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			yield { type: "finish", reason: "search-no-category" };
 			return;
 		}
-		await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 		const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 		yield* runTurn({
 			channel,
@@ -651,6 +683,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// diferente do bug original (mario-sem-lance chamava, madalena não, no
 		// mesmo ponto do funil).
 		const postReveal = await reloadMeta(conversationId);
+		// FIX-291 (b): `searchDispatched` NÃO é mais marcado preemptivamente ANTES
+		// do runTurn acima — o runner (runner.ts) já grava searchDispatched=true
+		// JUNTO com revealCompleted, só quando artifacts REAIS aparecem. Marcar
+		// antes travava uma busca que falhasse (teto agregado do FIX-291a
+		// estourado, erro duro etc.) em searchDispatched=true PRA SEMPRE: o guard
+		// "search-already-dispatched" (acima) nunca mais deixava retentar a busca
+		// num turno seguinte, mesmo sem jamais ter mostrado dado real.
+		if (!postReveal.revealCompleted) {
+			console.log(
+				`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+			);
+			return;
+		}
 		if (shouldEmitWhatsappOptin(postReveal)) {
 			await persistMeta(conversationId, { ...postReveal, whatsappOptinShown: true });
 			const stage = postReveal.contactPhone ? "confirm" : "open";

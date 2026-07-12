@@ -18,6 +18,7 @@ import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import {
 	extractKnownCreditValue,
+	type KnownGroupValue,
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
@@ -43,10 +44,12 @@ import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
+	buildComparisonTableFromRevealGroups,
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
 	type RevealGroupIndex,
+	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
 	EphemeralTextFilter,
@@ -281,23 +284,24 @@ export async function* runAgentTurn(args: {
 	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
 	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
 	const revealGroupsById: RevealGroupIndex = new Map();
-	// FIX-287: creditValue REAL já simulado por groupId — turno corrente (todo
-	// simulate_quota que resolver neste turno, atualizado ao vivo abaixo) +
-	// histórico da conversa (memoizado, carregado sob demanda — só quando o
+	// FIX-287/FIX-292: cenário REAL já simulado por groupId — turno corrente
+	// (todo simulate_quota que resolver neste turno, atualizado ao vivo abaixo)
+	// + histórico da conversa (memoizado, carregado sob demanda — só quando o
 	// turno realmente emite comparison_table/recommendation_card). search/
 	// recommend só trazem o valor-ALVO que a Bevi aproxima na busca; este mapa
-	// é a fonte única que corrige comparison_table/recommendation_card contra
-	// um simulation_result já conhecido do MESMO grupo (ver recommendation-payload.ts).
-	const turnKnownCreditValues = new Map<string, number>();
-	let knownCreditValuesPromise: Promise<Map<string, number>> | null = null;
-	const getKnownCreditValues = async (): Promise<ReadonlyMap<string, number>> => {
+	// é a fonte única MULTI-CAMPO (creditValue + monthlyPayment + termMonths)
+	// que corrige comparison_table/recommendation_card contra um
+	// simulation_result já conhecido do MESMO grupo (ver recommendation-payload.ts).
+	const turnKnownCreditValues = new Map<string, KnownGroupValue>();
+	let knownCreditValuesPromise: Promise<Map<string, KnownGroupValue>> | null = null;
+	const getKnownCreditValues = async (): Promise<ReadonlyMap<string, KnownGroupValue>> => {
 		if (!knownCreditValuesPromise) {
 			knownCreditValuesPromise = loadKnownGroupCreditValues(conversationId).catch((err) => {
 				console.error(
 					"[known-credit-values] falha ao carregar histórico de simulações, usando fallback",
 					err,
 				);
-				return new Map<string, number>();
+				return new Map<string, KnownGroupValue>();
 			});
 		}
 		const historical = await knownCreditValuesPromise;
@@ -457,12 +461,16 @@ export async function* runAgentTurn(args: {
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
 					lastQuotaSimulation = output ?? null;
-					// FIX-287: groupId simulado neste turno → creditValue REAL conhecido
-					// pra qualquer comparison_table/recommendation_card SUBSEQUENTE do
+					// FIX-287/FIX-292: groupId simulado neste turno → cenário REAL
+					// conhecido (creditValue + monthlyPayment + termMonths) pra
+					// qualquer comparison_table/recommendation_card SUBSEQUENTE do
 					// mesmo turno (não retroage pro que já foi emitido ANTES desta
 					// simulação — gap residual documentado no ADR do bloco).
 					const known = extractKnownCreditValue("simulation_result", output);
-					if (known) turnKnownCreditValues.set(known.groupId, known.creditValue);
+					if (known) {
+						const { groupId, ...value } = known;
+						turnKnownCreditValues.set(groupId, value);
+					}
 				}
 				// FIX-191: indexa os grupos reais da descoberta deste turno pra coagir
 				// o hero (recommendation_card) e o seletor (comparison_table).
@@ -903,6 +911,37 @@ export async function* runAgentTurn(args: {
 		artifacts.push(...nonGroupCards, consolidated);
 		console.log(
 			`[orchestrator] Guard: consolidated ${groupCards.length} group_cards into comparison_table`,
+		);
+	}
+
+	// FIX-290 (P0 sistêmico, veredito r9pos3 Sonnet §3): recommendation_card e
+	// comparison_table são "INSEPARÁVEIS" (directives.ts:348) — mas até aqui
+	// isso era só regra-no-prompt. Se o modelo chamou present_recommendation_card
+	// e parou (nunca chamou present_comparison_table) num turno com 2+ grupos
+	// reais, força a emissão server-side aqui — mesmo padrão do FIX-286
+	// (buildRecommendationCardFromRevealGroup) pro hero, reaproveitando os
+	// MESMOS grupos indexados neste turno (revealGroupsById). Caso de borda: 1
+	// grupo único NUNCA força a tabela (regra do reveal — os dois só pulam
+	// juntos quando há 1 grupo só).
+	if (
+		artifacts.some((a) => a.type === "recommendation_card") &&
+		!artifacts.some((a) => a.type === "comparison_table") &&
+		usableRevealGroupCount(revealGroupsById) >= 2
+	) {
+		const payload = buildComparisonTableFromRevealGroups(
+			revealGroupsById,
+			await getAdministradoraLogos(),
+			await getKnownCreditValues(),
+		);
+		artifacts.push({ type: "comparison_table", payload });
+		yield {
+			type: "artifact",
+			artifactType: "comparison_table",
+			payload,
+			toolCallId: crypto.randomUUID(),
+		};
+		console.log(
+			`[orchestrator] FIX-290: comparison_table forçado server-side (recommendation_card sem par neste turno, conv=${conversationId})`,
 		);
 	}
 

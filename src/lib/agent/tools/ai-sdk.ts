@@ -21,7 +21,7 @@ import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-poli
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
-import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
+import { compareWithFinancing } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
 	getGroupDetailsInput,
@@ -359,6 +359,42 @@ function discoveryFailedResult(toolName: string): { __discoveryFailed: true; err
 let discoveryRetryDelayMs = 300;
 export function __setDiscoveryRetryDelayForTests(ms: number | null): void {
 	discoveryRetryDelayMs = ms ?? 300;
+}
+
+// FIX-291 (a) — teto AGREGADO de tempo pra descoberta de UM turno, cruzando
+// client+adapter+tool. Root cause: cada camada tinha SEU orçamento isolado
+// (self-contract-client SIM_RETRY=4×SIM_TIMEOUT_MS=30s ~120s; adapter
+// offersForValue faz 2 chamadas sequenciais ~240s; e o retry silencioso daqui
+// reexecutava a função INTEIRA, dobrando pra ~480s teórico) — nenhuma camada
+// sabia do orçamento das outras. 45s fica folgado abaixo de qualquer timeout
+// de cliente real (browser/WhatsApp, tipicamente ~90s) — o usuário SEMPRE
+// recebe a degradação honesta antes do cliente dele desistir sozinho.
+let discoveryBudgetMs = 45_000;
+export function __setDiscoveryBudgetForTests(ms: number | null): void {
+	discoveryBudgetMs = ms ?? 45_000;
+}
+
+class DiscoveryBudgetExceededError extends Error {
+	constructor() {
+		super("Orcamento agregado de descoberta (client+adapter+tool) excedido neste turno.");
+		this.name = "DiscoveryBudgetExceededError";
+	}
+}
+
+/** Corre `p` contra o restante do orçamento agregado (`deadline`). Estourou
+ * ANTES de tentar → rejeita direto (nem chama `fn`, que já teria custo). O
+ * timer é `unref`'d — não impede o processo de encerrar se `p` ficar presa
+ * pra sempre (adapter que nunca resolve/rejeita, pior caso deste fix). */
+function withDiscoveryBudget<T>(p: Promise<T>, deadline: number): Promise<T> {
+	const remaining = deadline - Date.now();
+	if (remaining <= 0) return Promise.reject(new DiscoveryBudgetExceededError());
+	return Promise.race([
+		p,
+		new Promise<T>((_resolve, reject) => {
+			const timer = setTimeout(() => reject(new DiscoveryBudgetExceededError()), remaining);
+			if (typeof timer.unref === "function") timer.unref();
+		}),
+	]);
 }
 
 // FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
@@ -1252,24 +1288,34 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	): Promise<T | { __discoveryFailed: true; error: string }> => {
 		// Curto-circuito: a descoberta já falhou neste turno → não martela a Bevi.
 		if (discoveryFailed) return discoveryFailedResult(toolName);
+		// FIX-291 (a): deadline ÚNICO pra esta invocação — 1ª tentativa + retry
+		// compartilham o MESMO teto agregado (nunca somam orçamentos independentes).
+		const deadline = Date.now() + discoveryBudgetMs;
 		try {
-			return await fn();
+			return await withDiscoveryBudget(fn(), deadline);
 		} catch (err) {
 			logDiscoveryError(toolName, "first", err);
-			// Erro transitório → 1 retry silencioso (determinístico, não o modelo).
-			if (isTransientDiscoveryError(err)) {
+			const remaining = deadline - Date.now();
+			// Erro transitório E ainda sobra orçamento → 1 retry silencioso
+			// (determinístico, não o modelo). Sem orçamento restante, retentar não
+			// ganha nada — só atrasa mais a degradação honesta (root cause: o
+			// retry daqui reexecutava a função inteira, dobrando o pior caso).
+			if (isTransientDiscoveryError(err) && remaining > 0) {
 				if (discoveryRetryDelayMs > 0) {
-					await new Promise((resolve) => setTimeout(resolve, discoveryRetryDelayMs));
+					await new Promise((resolve) =>
+						setTimeout(resolve, Math.min(discoveryRetryDelayMs, remaining)),
+					);
 				}
 				try {
-					return await fn();
+					return await withDiscoveryBudget(fn(), deadline);
 				} catch (retryErr) {
 					logDiscoveryError(toolName, "retry", retryErr);
 					discoveryFailed = true;
 					return discoveryFailedResult(toolName);
 				}
 			}
-			// Erro duro (config/4xx): nunca cura no retry → fallback direto.
+			// Erro duro (config/4xx) ou orçamento esgotado: nunca cura no retry →
+			// fallback direto.
 			discoveryFailed = true;
 			return discoveryFailedResult(toolName);
 		}
