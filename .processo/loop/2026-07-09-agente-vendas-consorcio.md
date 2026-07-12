@@ -148,7 +148,9 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | planner baseline (roteiros+driver) | ⏳ rodando (Opus) → `.processo/loop/evidencias-r9/` |
 | coletores (funil ao vivo) | ✅ 5 dossiês capturados via driver DETERMINÍSTICO (sem Haiku — turnos pré-scriptados, respostas capturadas verbatim): madalena 17t/0err (jornada completa até fechamento+real_offer), mario-sem-lance 14t/0err, probe-i1/i2/i3 ok. `evidencias-r9/dossies/` (gitignorado, sem PII) |
 | baseline juiz Sonnet (develop atual) | ✅ **3/10 (MÍNIMO) — matador: NÃO** (`veredito-baseline-sonnet.md`). Neg 7·Func 5·Cálc 8·UX 5·**UI/Compl 3**·E2E 9 |
-| execução onda 1 (blocos) | ⏳ definindo (2 blocos, FIX-277..280) |
+| execução onda 1 (blocos) | ⏳ 2 blocos disparados (sonnet): fix-r9-compliance-copy `71e95c2b` (FIX-277/278 P0) · fix-r9-gate-funil `17abd9b6` (FIX-279/280 P1). Base `integ/consorcio-r9`. Poll 10min. |
+
+**⚠️ Incidente recuperado (housekeeping adiado mordeu):** o 1º `launch-blocks --wave 1` disparou os 18 blocos STALE que ainda estavam em `todo/` (r2-r8 + reveal, já mergeados/em done/ mas nunca arquivados). Criou 5 workspaces antes de parar. Recuperação: deletei os 5 workspaces stale, **arquivei as 18 pastas** (cards já em `done/`, zero perda), sincronizei a base, re-lancei só os 2 r9. **Lição:** arquivar `todo/` ANTES de `launch-blocks` (a memória já avisava — adiei e paguei).
 
 ### r9 — BASELINE Sonnet 3/10 (achados reais ≠ herdados I1/I2/I3)
 Sondas: **I1 (empty-turn) NÃO reproduziu ao vivo** (4 reps <20s, copy variou) · **I3 (fabricação) guard segurou** · **I2 CONFIRMADO e pior**. Verificado contra canon/Ata/código:
