@@ -141,6 +141,17 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
+	// FIX-284: captura oportunista do valor mencionado ANTES de o gate `credit`
+	// ficar ativo (ex.: no turno do `desire`, "Um carro, uns 70 mil") — SEM
+	// gating por `activeGateAtTurnStart` (nunca substitui a agulha formal do
+	// FIX-279 acima, só serve pra o gate `credit` poder CONFIRMAR esse valor
+	// em vez de perguntar do zero, ver gate-questions.ts). Primeira ocorrência
+	// apenas, mesmo padrão de `desiredItem`/`motivation`.
+	if (sourceCreditMax !== null && q.creditMentionedAtDesire === undefined) {
+		q.creditMentionedAtDesire = sourceCreditMax;
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
 	if (
 		analysis.prazoMeses !== null &&
 		q.prazoMeses === undefined &&

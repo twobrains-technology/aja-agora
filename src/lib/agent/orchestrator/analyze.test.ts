@@ -489,6 +489,70 @@ describe("FIX-285 — desireAnswered marcado no 1º turno de usuário após o ga
 	});
 });
 
+// FIX-284 (r9 onda 2, veredito Sonnet 5 pós-onda-1, G-F): o valor mencionado
+// informalmente no turno do `desire` ("Um carro, uns 70 mil") nunca ficava
+// salvo em NENHUM campo — nem em `q.creditMax` (correto, por design: guard
+// `activeGateAtTurnStart` do FIX-279) nem em qualquer outro lugar — então
+// quando o `gate:credit` ligava, 2 turnos depois, não havia nada pra
+// confirmar. `creditMentionedAtDesire` captura esse valor SEM gating por
+// `activeGateAtTurnStart` (nunca substitui a agulha formal do `creditMax`).
+describe("FIX-284 — captura oportunista do valor mencionado no desire (creditMentionedAtDesire)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("'Um carro, uns 70 mil' no turno do desire → creditMentionedAtDesire=70000 SEM popular creditMax (não regride FIX-279/G3)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: false,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("Um carro, uns 70 mil", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(70_000);
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+	});
+
+	it("quando o gate credit está REALMENTE ativo, popula creditMax E creditMentionedAtDesire", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: true,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("uns 70 mil", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(70_000);
+	});
+
+	it("não sobrescreve creditMentionedAtDesire já capturado (primeira ocorrência apenas)", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 90_000 });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: false,
+			currentCategory: "auto",
+			qualifyAnswers: { creditMentionedAtDesire: 70_000 },
+		};
+		await analyzeAndMerge("na verdade uns 90 mil", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(70_000);
+	});
+
+	it("sem nenhum valor mencionado, não popula o campo", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto" });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			identityCollected: false,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("um carro", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBeUndefined();
+	});
+});
+
 // FIX-236 (Fable r1, D3.1, gap P0 #1): o gate `lance` estava sendo PULADO no
 // funil real — trace mostrava experience→timeframe→lance-embutido, sem nunca
 // passar por `lance`. Causa raiz: `hasLance` era capturado de QUALQUER turno

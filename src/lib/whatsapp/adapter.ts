@@ -105,7 +105,7 @@ async function gateTextPrompt(
 	if (!WHATSAPP_TEXT_GATES.has(gate)) return null;
 	const meta = await reloadMeta(conversationId);
 	// `credit` usa a categoria no texto; `identify` é fixo — gateQuestion aceita null.
-	const question = gateQuestion(gate, meta.currentCategory ?? null, meta.recommendedOffer?.creditValue);
+	const question = gateQuestion(gate, meta.currentCategory ?? null, meta.recommendedOffer?.creditValue, "whatsapp", meta.qualifyAnswers?.creditMentionedAtDesire);
 	if (!question) return null;
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
@@ -375,6 +375,7 @@ async function consumeEvents(
 				guardMeta.currentCategory,
 				attempt,
 				guardMeta.recommendedOffer?.creditValue,
+				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
 			);
 			console.warn(
 				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
@@ -392,6 +393,7 @@ async function consumeEvents(
 				guardMeta.currentCategory,
 				attempt,
 				guardMeta.recommendedOffer?.creditValue,
+				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
 			);
 			if (reengage) {
 				console.warn(

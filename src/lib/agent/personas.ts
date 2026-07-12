@@ -58,6 +58,13 @@ export type QualifyAnswers = {
 	 * imóvel), entrada pontual que abate o bolso necessário direto (vai ao
 	 * vendedor) — maior acelerador da âncora nessa vertical. */
 	fgtsValue?: number;
+	/** FIX-284 — valor aproximado do bem MENCIONADO informalmente no turno do
+	 * gate `desire` (ex.: "Um carro, uns 70 mil"), antes de a agulha formal do
+	 * `credit` estar ativa. Captura oportunista, primeira ocorrência apenas —
+	 * NUNCA substitui `creditMax` (guard `activeGateAtTurnStart` do FIX-279),
+	 * só alimenta a copy de CONFIRMAÇÃO do gate `credit` (`gateQuestion`) em
+	 * vez de perguntar o valor do zero. */
+	creditMentionedAtDesire?: number;
 };
 
 import type { NavState } from "./orchestrator/navigation";
