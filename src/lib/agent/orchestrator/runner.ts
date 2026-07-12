@@ -82,6 +82,12 @@ export type RunAgentResult = {
 	 * abortou a geração e assumiu o turno (mesmo fallback do toolErrorThisTurn,
 	 * finish reason distinto pra observabilidade). */
 	toolCallCapExceededThisTurn?: boolean;
+	/** FIX-286: grupos reais indexados de `search_groups`/`recommend_groups`
+	 * NESTE turno, expostos mesmo quando o guard de tool-error/cap assume o
+	 * turno — o orchestrator (index.ts) usa isto pra distinguir "o reveal já
+	 * tinha dados reais em mãos quando a apresentação falhou" (materializa o
+	 * card, Via A) de "nada foi buscado ainda" (fallback honesto, Via B). */
+	revealGroupsById?: RevealGroupIndex;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
@@ -744,6 +750,7 @@ export async function* runAgentTurn(args: {
 			prefixForNextGate: null,
 			toolErrorThisTurn,
 			toolCallCapExceededThisTurn,
+			revealGroupsById,
 		};
 	}
 

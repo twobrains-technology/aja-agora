@@ -423,6 +423,40 @@ export function buildToolErrorRecoveryFallback(args: { name?: string | null }): 
 	);
 }
 
+// ---- Reveal LEGÍTIMO interrompido pelo guard de tool-error (FIX-286) ----
+
+/**
+ * FIX-286 (P0, veredito Sonnet r9pos2 §3) — texto que acompanha o
+ * `recommendation_card` quando o guard de tool-error (FIX-262) interrompe a
+ * PRIMEIRA apresentação do turno, mas `search_groups`/`recommend_groups` já
+ * tinham retornado grupos reais (o runner materializa o card server-side a
+ * partir deles, `buildRecommendationCardFromRevealGroup`). NUNCA usa a frase
+ * "já apareceram" do `buildToolErrorRecoveryFallback` — seria mentira nesse
+ * ponto (é a primeira vez que o usuário vê o card).
+ */
+export function buildFirstRevealCardIntro(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return `${saudacao}encontrei uma opção que combina bem com o que você pediu — olha só:`;
+}
+
+/**
+ * FIX-286 — quando o guard de tool-error interrompe a PRIMEIRA apresentação
+ * do turno e os dados buscados não bastam pra montar o card completo (ex.:
+ * só `search_groups` rodou, `recommend_groups` nunca chegou a rodar — sem
+ * ranking, não há "melhor grupo" server-computed pra materializar), a
+ * resposta é um D10 honesto de retry: nunca afirma que algo "já apareceu"
+ * (nada apareceu ainda), nunca usa palavra de erro técnico cru (mesma regra
+ * do `buildDiscoveryFailedFallback`), só sinaliza que a busca vai ser
+ * retomada.
+ */
+export function buildFirstRevealRecoveryFallback(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return (
+		`${saudacao}ainda não terminei de montar as opções certinhas pra você — deixa eu ` +
+		"retomar a busca rapidinho e já te trago tudo direitinho."
+	);
+}
+
 // FIX-282 (P1, veredito Sonnet r9pos, G-B/I2) — a pergunta do usuário sobre
 // EXATIDÃO do valor ("é de 120 mil como pedi?", "bate?", "sem ajuste?") ou
 // sobre o CRITÉRIO de escolha ("por que essa e não outra?", "qual o

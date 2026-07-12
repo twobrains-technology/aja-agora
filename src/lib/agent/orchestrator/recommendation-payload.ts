@@ -167,6 +167,46 @@ export function coerceRecommendationPayload(
 	return out;
 }
 
+// FIX-286 (P0, veredito Sonnet r9pos2, guard tool-error suprime reveal
+// legítimo): quando o guard de tool-error (FIX-262) interrompe o turno DEPOIS
+// de `recommend_groups` já ter retornado grupos reais (ranqueados
+// server-side por `rankGroups`, nunca a LLM), o grupo de maior `score` É a
+// mesma recomendação que `present_recommendation_card` teria mostrado — a
+// escolha não depende de nenhum julgamento adicional do modelo. Considera só
+// entradas com `score` definido (só `recommend_groups` o preenche;
+// `search_groups` sozinho não basta pra materializar o hero, ver
+// `buildFirstRevealRecoveryFallback` em `directives.ts` pro caso sem ranking).
+export function pickBestRankedGroup(index: RevealGroupIndex): RevealGroupLike | null {
+	let best: RevealGroupLike | null = null;
+	for (const group of index.values()) {
+		if (typeof group.score !== "number") continue;
+		if (!isUsableGroup(group)) continue;
+		if (!best || group.score > (best.score ?? -Infinity)) best = group;
+	}
+	return best;
+}
+
+/** FIX-286 — materializa o `recommendation_card` inteiro a partir de um grupo
+ * REAL já indexado (sem depender de um `input` de tool-call que nunca chegou
+ * a existir, pois a apresentação falhou em `tool-error`). Reaproveita
+ * `coerceRecommendationPayload` (mesma coerção do caminho feliz) montando um
+ * `input` mínimo cujos campos numéricos são todos sobrescritos pelo grupo. */
+export function buildRecommendationCardFromRevealGroup(
+	group: RevealGroupLike,
+	logosByAdministradora?: ReadonlyMap<string, string>,
+	requestedCreditValue?: number,
+): Record<string, unknown> {
+	const input: Record<string, unknown> = {
+		id: group.id,
+		administradora: group.administradora,
+		category: group.category,
+		score: group.score,
+		scoreBreakdown: group.scoreBreakdown,
+	};
+	const index: RevealGroupIndex = new Map([[group.id, group]]);
+	return coerceRecommendationPayload(input, index, logosByAdministradora, requestedCreditValue);
+}
+
 /** Seletor (`comparison_table`): coage CADA cota por `id` — é a lista de cotas do
  * reveal que o bloco-b renderiza como chips (adendo B8). */
 export function coerceComparisonPayload(

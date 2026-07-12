@@ -6,6 +6,7 @@ import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
+import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
@@ -19,11 +20,13 @@ import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { listShownOffersForConversation, resolveOfferMentionForConversation } from "./choose-offer";
 import { isLikelyNameResponse } from "./detect-name-turn";
-import { computeMoneyAnchor } from "./dial-payload";
+import { computeMoneyAnchor, offerSnapshotFromArtifact } from "./dial-payload";
 import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildFirstRevealCardIntro,
+	buildFirstRevealRecoveryFallback,
 	buildLanceSoParcelaDirective,
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
@@ -37,6 +40,10 @@ import {
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
+import {
+	buildRecommendationCardFromRevealGroup,
+	pickBestRankedGroup,
+} from "./recommendation-payload";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn } from "./runner";
 import {
@@ -475,6 +482,76 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// genérico, troca pra variante que lista as opções concretas — nunca
 	// repete a frase idêntica 2× seguidas.
 	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
+		// FIX-286 (P0, veredito Sonnet r9pos2 §3): a família FIX-262/266/282
+		// abaixo foi desenhada e testada só pro cenário de REPETIÇÃO pós-reveal
+		// (`meta.revealCompleted === true` — "as opções que já apareceram
+		// continuam valendo" É verdade nesse caso). Quando o guard interrompe a
+		// PRIMEIRA apresentação do turno (`!meta.revealCompleted`), essa frase
+		// é uma MENTIRA — nada tinha aparecido ainda. `result.revealGroupsById`
+		// (exposto pelo runner mesmo no early-return do guard) diz se
+		// `search_groups`/`recommend_groups` já retornaram grupos reais neste
+		// turno: com ranking real (`recommend_groups` rodou, `pickBestRankedGroup`
+		// acha o de maior score — a mesma escolha server-computed que
+		// `present_recommendation_card` teria mostrado), materializa o
+		// `recommendation_card` (Via A, reaproveita `coerceRecommendationPayload`,
+		// mesma coerção do caminho feliz); sem ranking suficiente (ex.: só
+		// `search_groups` rodou), honesto D10 de retry (Via B) — nunca "já
+		// apareceram".
+		if (!meta.revealCompleted) {
+			const bestGroup = result.revealGroupsById
+				? pickBestRankedGroup(result.revealGroupsById)
+				: null;
+			if (bestGroup) {
+				const requestedCreditValue =
+					meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax;
+				const logos = await loadAdministradoraLogoMap().catch(() => new Map<string, string>());
+				const payload = buildRecommendationCardFromRevealGroup(
+					bestGroup,
+					logos,
+					requestedCreditValue,
+				);
+				const intro = buildFirstRevealCardIntro({ name: knownName });
+				yield { type: "text-delta", text: intro };
+				await saveMessage(conversationId, "assistant", intro, channel, currentPersona);
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "recommendation_card",
+					payload,
+				});
+				const refreshed = await reloadMeta(conversationId);
+				if (!refreshed.revealCompleted) {
+					const offerSnapshot = offerSnapshotFromArtifact(payload);
+					await persistMeta(conversationId, {
+						...refreshed,
+						revealCompleted: true,
+						searchDispatched: true,
+						recommendedAdministradora:
+							typeof payload.administradora === "string"
+								? payload.administradora
+								: refreshed.recommendedAdministradora,
+						...(typeof refreshed.qualifyAnswers?.creditMax === "number"
+							? { discoveredCreditTarget: refreshed.qualifyAnswers.creditMax }
+							: {}),
+						...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
+					});
+				}
+				yield { type: "finish", reason: "reveal-recovered" };
+				return;
+			}
+			const recoveryFallback = buildFirstRevealRecoveryFallback({ name: knownName });
+			yield { type: "text-delta", text: recoveryFallback };
+			await saveMessage(conversationId, "assistant", recoveryFallback, channel, currentPersona);
+			yield {
+				type: "finish",
+				reason: result.toolCallCapExceededThisTurn
+					? "tool-call-cap-exceeded"
+					: "tool-error-recovered",
+			};
+			return;
+		}
+
 		let fallback: string;
 		// FIX-282 (P1, veredito Sonnet r9pos, G-B/I2): a pergunta do usuário
 		// sobre EXATIDÃO/CRITÉRIO da oferta já mostrada ("é de 120 mil como
