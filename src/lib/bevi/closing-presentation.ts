@@ -103,8 +103,11 @@ export function realOfferPresentation(
 	return items;
 }
 
-/** Passo 5.2 — confirmação: reforços literais do docx → assinatura + documentos
- * → "Parabéns!". A ordem É a do docx (reforços antes, parabéns depois).
+/** Passo 5.2 — confirmação: reforços literais → assinatura + documentos →
+ * "Parabéns!". A ordem É a do docx (reforços antes, parabéns depois).
+ *
+ * FIX-278 (veredito r9, G2): terminologia RESERVA DE COTA (Ata 2026-07-04,
+ * item 2/P0, SUPERSEDE o docx) — nunca "consórcio fechado/contratado".
  *
  * FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
  * mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE, mesmo quando o
@@ -127,9 +130,13 @@ export function closingPresentation(
 		{
 			kind: "text",
 			text:
-				`Perfeito! Você está contratando um consórcio da ${administradora}, ` +
+				`Perfeito! Sua cota da ${administradora} está reservada, ` +
 				"escolhida pela Aja Agora para o seu perfil. " +
 				"E a Aja Agora segue com você até a contemplação — e depois dela.",
+		},
+		{
+			kind: "text",
+			text: "Você não paga nada agora — é como um booking: só quando chegar o boleto na sua casa.",
 		},
 		{
 			kind: "artifact",

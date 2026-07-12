@@ -99,7 +99,7 @@ describe("FIX-203 — offer_confirm roteia a confirmação por resolveAndSend", 
 
 		// copy livre preservada (reforço, Parabéns, link da proposta)
 		const allText = resolveCalls.map((c) => c.text).join("\n");
-		expect(allText).toMatch(/contratando um consórcio da ANCORA/i);
+		expect(allText).toMatch(/cota da ANCORA está reservada/i); // FIX-278: terminologia reserva de cota
 		expect(allText).toMatch(/Parabéns/i);
 		expect(allText).toContain(CONFIRM_RESULT.consortiumProposalLink);
 
