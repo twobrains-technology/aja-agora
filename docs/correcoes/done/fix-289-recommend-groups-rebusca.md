@@ -1,14 +1,18 @@
 ---
 id: FIX-289
 titulo: "recommend_groups rebusca do zero o que search_groups já trouxe no mesmo turno (Eixo A-seguro — latência real, backend, SEM paralelizar Bevi)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-3-latencia-percebida
 arquivos:
   - src/lib/agent/tools/ai-sdk.ts
   - src/lib/agent/recommendation.ts
+  - src/lib/agent/tools/ai-sdk.fix-289-recommend-reaproveita.test.ts
+  - src/lib/agent/recommendation.fix193.test.ts
 rodada: "2026-07-12 loop r9 ONDA 3 (pós-onda-2 Sonnet 4/10, P3-6/G-E, veredito-r9pos2-sonnet.md §3)"
+commit: b35a7622
+executado_em: 2026-07-12
 ---
 ## Palavras do juiz (veredito r9pos2, Sonnet 5 — P3-6, UX 5/10)
 > "Latência do reveal (busca+recomendação+simulação+comparação, turno 7) ficou em 59-64s em
