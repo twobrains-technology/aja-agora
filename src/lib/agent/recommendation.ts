@@ -7,14 +7,36 @@ import type {
 
 // ---- Scoring weights ----
 
+// FIX-276: o usuário nunca informa orçamento mensal (só o valor do bem) — o
+// `budget` de ScoringInput é INVENTADO pelo LLM (recommend_groups exige o
+// campo, mas não há de onde vir um número real). Com monthlyFit a 0.4 do
+// peso, um budget inventado alto empurrava a recomendação pra carta MAIS CARA
+// que o valor pedido (risco CDC — recomendar acima do que o cliente pediu).
+// `creditProximity` ancora no dado REAL do cliente (o valor do bem pedido,
+// `creditMax`) e passa a ser o fator DOMINANTE; monthlyFit perde peso (não
+// some — ainda desempata por conforto de parcela quando a proximidade empata).
 export const WEIGHTS = {
-	monthlyFit: 0.4,
-	contemplation: 0.25,
-	adminFee: 0.2,
-	termMatch: 0.15,
+	creditProximity: 0.4,
+	monthlyFit: 0.15,
+	contemplation: 0.2,
+	adminFee: 0.15,
+	termMatch: 0.1,
 } as const;
 
 // ---- Factor scoring functions (all pure, deterministic) ----
+
+/**
+ * FIX-276 — quão próxima a carta está do valor do bem PEDIDO (`creditMax`),
+ * o âncora real do cliente. Carta == pedido pontua 1; quanto mais distante
+ * (pra cima OU pra baixo), mais penaliza, linear em `|creditValue - creditMax| / creditMax`.
+ * Sem `creditMax` (busca sem faixa) → neutro 0.5, mesmo padrão dos demais
+ * fatores quando falta dado (contemplationScore/termMatchScore).
+ */
+export function creditProximityScore(creditValue: number, creditMax: number | undefined): number {
+	if (!creditMax || creditMax <= 0) return 0.5;
+	const ratio = Math.abs(creditValue - creditMax) / creditMax;
+	return Math.max(0, 1 - ratio);
+}
 
 /**
  * How well the monthly payment fits the user's budget.
@@ -75,6 +97,10 @@ export interface ScoringInput {
 	budget: number;
 	/** User's desired timeline in months (0 = no preference) */
 	desiredTermMonths: number;
+	/** FIX-276: valor do bem PEDIDO pelo usuário (creditMax do input de busca) —
+	 * o âncora real do cliente, usado por `creditProximityScore`. Ausente
+	 * (busca sem faixa) → o fator vira neutro (0.5), não interfere no ranking. */
+	creditMax?: number;
 	/** FIX-193: usuário tem apetite de lance (qualifyAnswers.hasLance==="yes").
 	 * Desempata modalidades do MESMO grupo (SPECIAL_OFFER × FREE_BID) quando o
 	 * score empata — prioriza a coerente com lance (FREE_BID). Critério INVISÍVEL
@@ -121,6 +147,7 @@ export interface ScoredGroup {
 	/** 0-1 composite score */
 	score: number;
 	factors: {
+		creditProximity: number;
 		monthlyFit: number;
 		contemplation: number;
 		adminFee: number;
@@ -143,6 +170,7 @@ export function rankGroups(
 ): ScoredGroup[] {
 	const scored: ScoredGroup[] = groups.map((group) => {
 		const factors = {
+			creditProximity: creditProximityScore(group.creditValue, input.creditMax),
 			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
 			contemplation: contemplationScore(group.contemplationRate),
 			adminFee: adminFeeScore(group.adminFeePercent, group.category),
@@ -150,6 +178,7 @@ export function rankGroups(
 		};
 
 		const score =
+			factors.creditProximity * WEIGHTS.creditProximity +
 			factors.monthlyFit * WEIGHTS.monthlyFit +
 			factors.contemplation * WEIGHTS.contemplation +
 			factors.adminFee * WEIGHTS.adminFee +

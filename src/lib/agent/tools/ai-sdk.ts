@@ -510,6 +510,9 @@ async function executeRecommendGroups(
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-276: âncora real da recomendação — o valor do bem PEDIDO, nunca o
+		// budget mensal (inventado pelo LLM, ver comentário em recommendation.ts).
+		creditMax: searchParams.creditMax,
 		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
 		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
 		hasLance: opts.hasLance,
