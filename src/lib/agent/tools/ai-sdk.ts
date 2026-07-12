@@ -15,6 +15,7 @@ import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters"
 import { isTransientDiscoveryError } from "@/lib/adapters/bevi/bevi-errors";
 import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
+import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
@@ -380,7 +381,10 @@ async function executeSearchGroups(
 	// `args` (incl. sweep) flui direto pro adapter — SearchGroupsParams.sweep.
 	const groups = await adapter.searchGroups(args);
 	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
-	return { groups: groups.map(toModelGroupSummary), total: groups.length };
+	// FIX-289: `raw` (grupos completos, com tipoOferta/grupo/embeddedVariant)
+	// fica só pro cache por-turno do closure (buildConsorcioTools) reaproveitar
+	// em recommend_groups — NUNCA vaza pro tool-result do modelo.
+	return { result: { groups: groups.map(toModelGroupSummary), total: groups.length }, raw: groups };
 }
 
 /**
@@ -503,10 +507,13 @@ export async function executeGetGroupDetails(
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
-	opts: { hasLance?: boolean } = {},
+	opts: { hasLance?: boolean; seedGroups?: GroupSummary[] } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
-	const fallbackResult = await recommendWithFallback(adapter, searchParams);
+	// FIX-289: `seedGroups` (grupos que search_groups já buscou NESTE turno com
+	// parâmetros equivalentes) pula a rebusca estrita — só bate a Bevi de novo
+	// se a expansão de faixa for necessária (recommendWithFallback).
+	const fallbackResult = await recommendWithFallback(adapter, searchParams, opts.seedGroups);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
@@ -1051,6 +1058,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// não propor sobre dado que não carregou).
 	let discoveryFailed = false;
 
+	// FIX-289: grupos REAIS que search_groups já buscou NESTE turno — closure
+	// fresca por turno (mesmo padrão de discoveryFailed/hasLance). recommend_groups
+	// reaproveita quando os parâmetros (category/creditMin/creditMax) batem, em
+	// vez de rebuscar do zero na Bevi (round-trip redundante). Parâmetros
+	// divergentes (ex.: faixa de expansão) continuam disparando busca real —
+	// isto NÃO paraleliza chamadas à Bevi, só elimina uma rebusca desnecessária.
+	let lastSearchGroups: { params: SearchGroupsParams; groups: GroupSummary[] } | null = null;
+	const sameSearchParams = (a: SearchGroupsParams, b: SearchGroupsParams): boolean =>
+		a.category === b.category && a.creditMin === b.creditMin && a.creditMax === b.creditMax;
+
 	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
 	const getShownGroups = () => {
 		if (!conversationId) return Promise.resolve(emptyShownGroups());
@@ -1266,7 +1283,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));
+			return runDiscovery("search_groups", async () => {
+				const { result, raw } = await executeSearchGroups(adapter, args);
+				// FIX-289: cacheia os grupos crus pro recommend_groups reaproveitar
+				// se chamado no mesmo turno com parâmetros equivalentes.
+				lastSearchGroups = { params: args, groups: raw };
+				return result;
+			});
 		},
 	});
 
@@ -1323,9 +1346,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-289: reaproveita search_groups do MESMO turno se os parâmetros
+			// de busca baterem — evita rebuscar do zero na Bevi.
+			const { budget: _budget, desiredTermMonths: _desiredTermMonths, ...searchParams } = args;
+			const seedGroups =
+				lastSearchGroups && sameSearchParams(lastSearchGroups.params, searchParams)
+					? lastSearchGroups.groups
+					: undefined;
 			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
 			return runDiscovery("recommend_groups", () =>
-				executeRecommendGroups(adapter, args, { hasLance }),
+				executeRecommendGroups(adapter, args, { hasLance, seedGroups }),
 			);
 		},
 	});
