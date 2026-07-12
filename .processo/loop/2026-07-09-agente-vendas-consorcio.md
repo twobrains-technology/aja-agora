@@ -146,8 +146,10 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | env feasibility (agente responde LLM ao vivo?) | ✅ VIÁVEL — `aja-app-develop.orb.local`, contrato `POST /api/chat` SSE (`text-delta`+`data-*`), 5 personas seedadas, key real direto Anthropic (sem VPN) |
 | crítico estático (②) I1/I2/I3 vs código pós-reforma | ⏳ rodando (Opus) |
 | planner baseline (roteiros+driver) | ⏳ rodando (Opus) → `.processo/loop/evidencias-r9/` |
-| coletores Haiku (funil ao vivo) | — aguarda planner |
-| baseline Fable (develop atual) | — aguarda dossiê |
+| coletores (funil ao vivo) | ✅ 5 dossiês capturados via driver DETERMINÍSTICO (sem Haiku — turnos pré-scriptados, respostas capturadas verbatim): madalena 17t/0err (jornada completa até fechamento+real_offer), mario-sem-lance 14t/0err, probe-i1/i2/i3 ok. `evidencias-r9/dossies/` (gitignorado, sem PII) |
+| baseline juiz Sonnet (develop atual) | ⏳ lendo dossiês → `veredito-baseline-sonnet.md` |
+
+**Incidente infra (resolvido):** no meio da coleta o engine do OrbStack travou (`docker` não respondia, `fetch failed` em todos os turnos). `orb restart` exige nome de máquina; o fix foi **`orb stop` + `orb start`** (2ª tentativa pegou) → containers auto-voltaram, app 200. Lição: engine wedga sob carga sustentada; ciclar via stop/start, não `orb restart`. Latências reais capturadas: reveal Bevi ~54-66s (fricção de UX a avaliar).
 | execução (blocos) | — |
 | verificação | — |
 | decisão | — |
