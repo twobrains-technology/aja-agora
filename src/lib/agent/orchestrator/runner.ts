@@ -10,6 +10,7 @@ import {
 	decideShowGate,
 	type Gate,
 	nextGate,
+	shouldAskMotive,
 	shouldMarkDoubtsAddressed,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
@@ -1108,6 +1109,14 @@ export async function* runAgentTurn(args: {
 			meta: refreshed,
 			isUserTurn,
 		});
+		// FIX-274 — quando o beat do motivo segura o funil (shouldShow=false acima
+		// porque shouldAskMotive), marca motivationAsked: o LLM pergunta "por que
+		// agora" NESTE turno e, no PRÓXIMO, o funil avança mesmo se o motivo não vier
+		// (não-bloqueante, mesmo padrão de desireAsked). shouldShow já foi calculado
+		// com o estado ANTERIOR — a marcação só afeta o turno seguinte.
+		if (isUserTurn && shouldAskMotive(refreshed)) {
+			await persistMeta(conversationId, { ...refreshed, motivationAsked: true });
+		}
 		const passesArtifactGuard =
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);
 		if (shouldShow && passesArtifactGuard) {

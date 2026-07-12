@@ -71,8 +71,6 @@ export function gateQuestion(
 			return category ? DESIRE_QUESTIONS[category] : null;
 		case "experience":
 			return "Você já fez consórcio antes?";
-		case "consent":
-			return "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
 		case "credit":
 			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
 			return "Qual valor do bem faz mais sentido pra você?";

@@ -62,20 +62,6 @@ export function buildExperienceDoubtsDirective(replyTitle: string): string {
 	return `Usuário escolheu "${replyTitle}" — ele tem dúvidas sobre consórcio. IMPORTANTE: o sistema JÁ te apresentou no turno anterior — NÃO se apresente de novo, NÃO diga "Aqui é Helena/Rafael/Camila", NÃO mencione "anos de experiência/mercado/especialidade". Va DIRETO ao conteúdo. FLUXO: escreva UMA mensagem (4-5 frases) explicando o essencial do produto com SUAS palavras: e um grupo de pessoas que paga parcelas mensais sem juros, contemplação acontece por sorteio ou lance, prazo flexível, diferença de financiamento. Após a explicação, EM UMA frase curta convide o usuário a perguntar algo específico se quiser ("se ficou alguma dúvida específica, manda aqui que eu respondo"). Tom acolhedor e didático, sem jargão técnico (cota, lance livre, fundo reserva). NÃO chame tools.`;
 }
 
-// ---- Qualify reactions ----
-
-export function buildQualifyStartYesDirective(): string {
-	// FIX-194 (qa-dono-produto, defeito E): o próximo passo é a IDENTIDADE (CPF +
-	// celular + LGPD) — o sistema mostra esse card em seguida. O valor do bem tem o
-	// PRÓPRIO passo, DEPOIS da identidade (FIX-53). Sem esta trava, o agente puxava
-	// "Quanto custa o carro?" no MESMO balão do gate de CPF (uma pergunta que o
-	// usuário nem pode responder ali). Uma coisa por vez: reage curto e PARA.
-	return `Usuário aceitou começar a qualificação. FLUXO: escreva UMA frase curta e calorosa de transição no SEU TOM (ex.: "Perfeito, bora lá!" / "Show, vamos nessa."). NÃO pergunte o valor nem o preço do bem, NÃO peça nenhum dado, NÃO chame tools — o sistema conduz o próximo passo (a identidade) logo em seguida. O valor do bem vem DEPOIS, no passo dele.`;
-}
-
-export function buildQualifyStartMoreDirective(): string {
-	return `[usuário clicou "Entender mais antes" — pergunte em uma frase curta sobre o que especificamente ele quer entender, sem despejar info ainda]`;
-}
 
 /** Benefício a reforçar conforme a INTENÇÃO escolhida no segmented control do
  * "Planeje sua conquista" (re-UX por intenção). */

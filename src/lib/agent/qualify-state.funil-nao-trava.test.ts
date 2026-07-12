@@ -163,24 +163,15 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 	// (o que o directive daquele clique deixa no meta), + o gate esperado.
 	const cases: Array<{ nome: string; meta: ConversationMetadata; gateEsperado: string }> = [
 		{
-			nome: "experiência 'primeira vez' → consent",
-			meta: { ...base, experiencePrev: "first" },
-			gateEsperado: "consent",
-		},
-		{
-			nome: "experiência 'já conheço' → consent",
-			meta: { ...base, experiencePrev: "returning" },
-			gateEsperado: "consent",
-		},
-		{
-			nome: "experiência 'tenho dúvidas' (pós-explicação) → consent",
-			meta: { ...base, experiencePrev: "doubts", doubtsAddressed: true },
-			gateEsperado: "consent",
-		},
-		{
-			nome: "consent aceito → identify",
-			meta: { ...base, experiencePrev: "first", qualifyConsented: true },
+			// FIX-274: sem consent, o desire cai direto no identify.
+			nome: "após o desire → identify",
+			meta: { ...base },
 			gateEsperado: "identify",
+		},
+		{
+			nome: "identidade coletada → credit",
+			meta: { ...base, identityCollected: true },
+			gateEsperado: "credit",
 		},
 		{
 			// FIX-215 (Ata 2026-07-04): lance saiu da entrada — valor informado vai
@@ -188,23 +179,46 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 			nome: "valor do bem informado → search",
 			meta: {
 				...base,
-				experiencePrev: "first",
-				qualifyConsented: true,
 				identityCollected: true,
 				qualifyAnswers: { creditMax: 300_000 },
 			},
 			gateEsperado: "search",
 		},
 		{
+			// FIX-233 (D2): experience roda PÓS-reveal e leva ao timeframe (D1).
+			nome: "pós-reveal, experiência 'primeira vez' → timeframe",
+			meta: {
+				...base,
+				identityCollected: true,
+				searchDispatched: true,
+				revealCompleted: true,
+				experiencePrev: "first",
+				qualifyAnswers: { creditMax: 300_000 },
+			},
+			gateEsperado: "timeframe",
+		},
+		{
+			nome: "pós-reveal, 'tenho dúvidas' endereçadas → timeframe",
+			meta: {
+				...base,
+				identityCollected: true,
+				searchDispatched: true,
+				revealCompleted: true,
+				experiencePrev: "doubts",
+				doubtsAddressed: true,
+				qualifyAnswers: { creditMax: 300_000 },
+			},
+			gateEsperado: "timeframe",
+		},
+		{
 			// FIX-215: a conversa de lance só entra em jogo PÓS-reveal.
 			nome: "pós-reveal, tem lance → lance-value",
 			meta: {
 				...base,
-				experiencePrev: "first",
-				qualifyConsented: true,
 				identityCollected: true,
 				searchDispatched: true,
 				revealCompleted: true,
+				experiencePrev: "first",
 				qualifyAnswers: { creditMax: 300_000, prazoMeses: 0, hasLance: "yes" },
 			},
 			gateEsperado: "lance-value",

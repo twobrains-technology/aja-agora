@@ -18,9 +18,11 @@ const payload: ScarcityPayload = {
 };
 
 describe("Scarcity", () => {
-	it("mostra 'restam apenas N'", () => {
+	it("DV-4 — mostra o sinal de procura SEM cravar número (a Bevi não dá vagas reais)", () => {
 		render(<Scarcity payload={payload} />);
-		expect(screen.getByText(/restam apenas 3/i)).toBeTruthy();
+		expect(screen.getByText(/mais procurados/i)).toBeTruthy();
+		// o número placebo (era "restam apenas 3") NÃO é mais exibido
+		expect(document.body.textContent ?? "").not.toMatch(/restam apenas/i);
 	});
 
 	it("NUNCA exibe total de cotas nem razão N/total", () => {

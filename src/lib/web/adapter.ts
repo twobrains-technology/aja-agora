@@ -70,23 +70,6 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "doubts", label: "Tenho dúvidas" },
 				],
 			};
-		case "consent":
-			return {
-				kind: "chips",
-				gate: "consent",
-				options:
-					// docx passo 2: após a explicação de primeira vez, o botão é
-					// LITERALMENTE "Entendi, pode continuar".
-					meta.experiencePrev === "first"
-						? [
-								{ value: "yes", label: "Entendi, pode continuar" },
-								{ value: "more", label: "Entender mais antes" },
-							]
-						: [
-								{ value: "yes", label: "Bora!" },
-								{ value: "more", label: "Entender mais antes" },
-							],
-			};
 		case "credit": {
 			const category = meta.currentCategory;
 			if (!category) return null;

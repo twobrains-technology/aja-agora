@@ -50,7 +50,6 @@ describe("FIX-211 — escada de cobrança: textos distintos por tentativa + saí
 	it("gates NÃO obrigatórios retornam null em qualquer tentativa", () => {
 		for (const attempt of [1, 2, 3, 4]) {
 			expect(reengageQuestionForGate("experience", null, attempt)).toBeNull();
-			expect(reengageQuestionForGate("consent", null, attempt)).toBeNull();
 			expect(reengageQuestionForGate("name", null, attempt)).toBeNull();
 		}
 	});

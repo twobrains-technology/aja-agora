@@ -79,6 +79,14 @@ export type ConversationMetadata = {
 	 * uma vez marcado, `nextGate` nunca mais o emite, respondido ou não). Mesmo
 	 * padrão de `consentOffered`/`simulatorOfferDispatched`. */
 	desireAsked?: boolean;
+	/** FIX-274 — o beat do MOTIVO ("por que agora", 2ª pergunta do gate desire) já
+	 * foi ativado nesta conversa. Marcado no runner quando o funil segura pra o LLM
+	 * perguntar o motivo (`shouldAskMotive`). Torna o beat NÃO-bloqueante: se o motivo
+	 * não vier, o funil segue mesmo assim (mesmo padrão de `desireAsked`). */
+	motivationAsked?: boolean;
+	/** @deprecated FIX-274 — o gate `consent` saiu do funil (decisão do Kairo,
+	 * 2026-07-11: "remover, fiel ao mockup"). Campo mantido só pra não quebrar
+	 * conversas legadas em jsonb; não é mais lido/escrito por nenhum caminho vivo. */
 	qualifyConsented?: boolean;
 	/** Set when consent gate fires the first time. Once set, the gate never re-fires —
 	 * user must click "Bora!" / "Entender mais" buttons or volunteer info that triggers

@@ -69,11 +69,19 @@ de preencher formulário — diz o que quer conquistar ("um carro de uns 80 mil"
 ## 3. Jornada canônica — passos, artefatos e critérios de aceite
 
 Mesma jornada nos dois canais (regra-mãe de paridade). A **ordem dos gates é determinística** e
-vem do orquestrador (servidor), `src/lib/agent/qualify-state.ts` (`nextGate`):
-`name → experience → (doubts-wait/consent) → identify → credit → lance → lance-value(se sim) →
-lance-embutido → search → [reveal] → simulator-offer → decision → [contratar]`. Na **web**, o
-`identify` foi movido pra **antes do `credit`** (FIX-53). O agente LLM só **reage curto e para**;
-quem renderiza o próximo gate é o servidor.
+vem do orquestrador (servidor), `src/lib/agent/qualify-state.ts` (`nextGate`). **Ordem ATUAL
+(FIX-233 + FIX-274):**
+`name → desire[carro] → desire[motivo] → identify → credit → search → [reveal] → experience →
+recommendation → timeframe → lance → lance-value(se tem reserva) → lance-embutido →
+contemplation_dial → scarcity → proposal → decision → [contratar] → whatsapp-handoff`.
+- **FIX-53:** `identify` (CPF+celular+LGPD) vem **antes do `credit`**.
+- **FIX-233:** `experience` DESCE pra **depois do `search`**; `timeframe` reintroduzido pós-recomendação.
+- **FIX-274 (2026-07-11):** o gate `consent` ("posso te fazer 3 perguntinhas" + "Entender mais
+  antes") foi **REMOVIDO** — depois do `desire` vai direto pro `identify`. O motivo ("por que
+  agora") tem **turno próprio** (`shouldAskMotive`), e vale a regra dura **nunca 2 perguntas por
+  balão**. A explicação de consórcio fica só no `experience` (pós-busca).
+
+O agente LLM só **reage curto e para**; quem renderiza o próximo gate é o servidor.
 
 ### Passo 1 — Entender a necessidade
 - **Usuário faz:** abre o chat e diz/escolhe o que quer (bem). Web: clica um dos 3 cards de

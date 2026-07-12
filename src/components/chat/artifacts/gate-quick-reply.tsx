@@ -16,14 +16,6 @@ export function buildAction(gate: ChipsPayload["gate"], option: GatePartOption):
 			label: option.label,
 		};
 	}
-	if (gate === "consent") {
-		return {
-			kind: "gate",
-			gate: "consent",
-			value: option.value as "yes" | "more",
-			label: option.label,
-		};
-	}
 	if (gate === "timeframe") {
 		return {
 			kind: "gate",

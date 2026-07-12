@@ -31,8 +31,6 @@ import {
 	buildLanceSoParcelaDirective,
 	buildNameCapturedDirective,
 	buildPlanReactionDirective,
-	buildQualifyStartMoreDirective,
-	buildQualifyStartYesDirective,
 	buildScarcityDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
@@ -633,7 +631,7 @@ export async function POST(req: NextRequest) {
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
-									"Calma, a gente tá quase lá! Antes de confirmar sua reserva eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
+									"Calma, a gente tá quase lá! Antes de seguir eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
 								);
 								await pipeGatePrompt({
 									conversationId,
@@ -653,7 +651,7 @@ export async function POST(req: NextRequest) {
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
-									"Antes de eu confirmar sua reserva, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+									"Antes de eu confirmar seu plano, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
 								);
 								return;
 							}
@@ -938,30 +936,6 @@ export async function POST(req: NextRequest) {
 										? buildExperienceReturningDirective(action.label)
 										: buildExperienceDoubtsDirective(action.label);
 							await pipeDirectiveTurn({ conversationId, directive, contactName, writer, userKey });
-							return;
-						}
-
-						if (action.gate === "consent") {
-							if (!meta.currentCategory) return;
-							if (action.value === "yes") {
-								await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-								await pipeDirectiveTurn({
-									conversationId,
-									directive: buildQualifyStartYesDirective(),
-									contactName,
-									writer,
-									userKey,
-								});
-								return;
-							}
-							await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildQualifyStartMoreDirective(),
-								contactName,
-								writer,
-								userKey,
-							});
 							return;
 						}
 

@@ -6,7 +6,6 @@ export type Gate =
 	| "desire"
 	| "experience"
 	| "doubts-wait"
-	| "consent"
 	| "credit"
 	| "timeframe"
 	| "lance"
@@ -65,13 +64,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (!meta.desireAsked) return "desire";
 
 	if (meta.pendingFollowUp) return "doubts-wait";
-	if (!meta.qualifyConsented) {
-		// Consent is offered exactly once. After that, user must click the buttons
-		// or volunteer qualify data (which auto-sets qualifyConsented). Re-firing
-		// after every free-text answer felt like spam.
-		if (meta.consentOffered) return "doubts-wait";
-		return "consent";
-	}
+
+	// FIX-274 (Kairo, teste manual web 2026-07-11 — "remover, fiel ao mockup"): o
+	// gate `consent` ("Posso te fazer 3 perguntinhas pra entender seu perfil?" +
+	// botões Bora!/Entender mais antes) SAIU do funil. Depois do `desire` (carro +
+	// motivo), a conversa vai direto pro `identify`. A explicação/dúvidas de
+	// consórcio fica no gate `experience` (PÓS-reveal, FIX-233 D1). Sem o consent,
+	// somem tanto a 2ª pergunta colidindo no mesmo balão (CK-1) quanto o "Entender
+	// mais antes" cedo demais (CK-2). O motivo ("por que agora") ganha turno próprio
+	// via `shouldAskMotive` (decideShowGate) pra nunca colidir com o próximo card.
 
 	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
 	// dados, antes do valor". O gate `identify` (CPF+celular+LGPD, cifrado, D1)
@@ -180,6 +181,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 }
 
 /**
+ * FIX-274 — o "por que agora" (motivo, 2ª pergunta do gate `desire`) tem turno
+ * próprio: enquanto o cliente já disse o bem (`desiredItem`) mas ainda não o
+ * motivo, o funil SEGURA — o LLM pergunta o motivo (desireFollowUpSection) e
+ * NENHUM card estruturado é emitido junto (anti CK-1: 2 perguntas no mesmo balão).
+ * NÃO-bloqueante: `motivationAsked` (marcado no runner quando o beat ativa) libera
+ * o funil no turno seguinte mesmo se o motivo não vier. Função PURA (Camada 1).
+ */
+export function shouldAskMotive(meta: ConversationMetadata): boolean {
+	const q = meta.qualifyAnswers ?? {};
+	return Boolean(q.desiredItem) && q.motivation === undefined && !meta.motivationAsked;
+}
+
+/**
  * FIX-206 — o clique "🤔 Tenho dúvidas" dispara `buildExperienceDoubtsDirective`
  * como turno de SERVIDOR (isUserTurn=false). Esse turno JÁ é a explicação que
  * endereça as dúvidas — exatamente como quando o usuário responde por texto no
@@ -227,6 +241,21 @@ export function decideShowGate(args: {
 	// não é trava. O clique "Tenho dúvidas" NÃO cai mais aqui — o runner marca
 	// doubtsAddressed (shouldMarkDoubtsAddressed) e nextGate converge pro consent.
 	if (gate === "doubts-wait") return false;
+	// FIX-274 — o motivo ("por que agora?") tem turno próprio: enquanto pendente, o
+	// LLM o pergunta e NENHUM card estruturado é emitido junto (anti CK-1, 2 perguntas
+	// no mesmo balão). Só em turno de usuário; server-authored avança normal abaixo.
+	if (isUserTurn && shouldAskMotive(meta)) return false;
+	// FIX-275 — depois que o beat do motivo já rodou (motivationAsked), a resposta do
+	// usuário (o "por que agora") quase sempre é uma QUEIXA — "cansei do carro velho,
+	// vive na oficina" — que o analyzer classifica como expressing_doubt/off_topic.
+	// Mas é a RESPOSTA ESPERADA, não um desvio: o `identify` tem que disparar no mesmo
+	// turno (espelho do motivo + card de CPF; o card NÃO é uma 2ª pergunta). Sem isto,
+	// o funil trava 1 turno até o usuário mandar "vamos" (provado no log: [gate-skip]
+	// gate=identify intent=expressing_doubt). Só uma pergunta EXPLÍCITA deixa o agente
+	// responder antes; o watchdog (FIX-207) re-cobra o identify se ele sumir.
+	if (isUserTurn && gate === "identify" && meta.motivationAsked && !meta.identityCollected) {
+		return intent !== "asking_question";
+	}
 	// Server-authored turns (button click, transition) are always followed by the
 	// next gate — that's the whole point of the directive flow. Por isso qualquer
 	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o

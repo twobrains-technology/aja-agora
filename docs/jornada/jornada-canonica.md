@@ -61,6 +61,31 @@
     (PENDENTE-KAIRO), mockup/vídeo pro grupo, demo backoffice; backlog P2: voltar às opções,
     agente sugerir não fechar quando o lance for desproporcional, pop-up, granularidade por bem.
 
+## Refino 2026-07-11 — remoção do gate `consent` + motivo em turno próprio (SUPERSEDE)
+
+> Decisão do Kairo (teste manual web, "remover fiel ao mockup"). Onde conflitar com o
+> "Refino Handoff 2026-07-09" abaixo ou com os Passos, **esta seção vence** (palavra nova
+> vence). Implementação: FIX-273 (raiz do travamento) + **FIX-274** (remoção do consent).
+
+1. **O gate `consent` SAIU do funil.** O passo *"Posso te fazer 3 perguntinhas pra entender seu
+   perfil?"* + botões `Bora!`/`Entender mais antes` foi REMOVIDO (card web, botões WhatsApp,
+   handlers, directives, tipos — tudo). Depois do `desire`, a conversa vai **direto pro
+   `identify`** (CPF+celular+LGPD). Motivo: o consent (a) empilhava uma 2ª pergunta no mesmo
+   balão do "por que agora?", e (b) trazia a dúvida de consórcio cedo demais pelo "Entender mais
+   antes". O mockup não tem esse passo.
+2. **Nova ordem:** `name → desire[carro] → desire[motivo] → identify → credit → search →
+   experience → recommendation → timeframe → lance → [lance-value] → lance-embutido →
+   contemplation_dial → scarcity → proposal → decision → whatsapp-handoff`. Fonte: `nextGate`
+   em `src/lib/agent/qualify-state.ts` (sem `consent`).
+3. **O motivo ("por que agora") tem TURNO PRÓPRIO.** `shouldAskMotive` (qualify-state.ts) segura
+   o funil UMA vez quando o `desiredItem` já veio mas o `motivation` não — o LLM pergunta só o
+   motivo, sem emitir o card seguinte junto. NÃO-bloqueante: `motivationAsked` (marcado no runner)
+   libera o funil no turno seguinte mesmo se o motivo não vier.
+4. **Regra dura de cadência:** **NUNCA duas perguntas na mesma mensagem/balão** (máx 1 pergunta
+   por balão). Endurece o "1 balão = 1 ideia" do refino 2026-07-09.
+5. **A explicação/dúvidas de consórcio fica SÓ no gate `experience`** (pós-`search`) — nunca no
+   começo (já era o alvo do D1/handoff; agora sem escape antecipado pelo consent).
+
 ## Refino Handoff 2026-07-09 — reordenação do funil + fecho WhatsApp (SUPERSEDE)
 
 > Decisões do Kairo (ADR `docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md`,
@@ -71,9 +96,11 @@
 1. **Gate `desire` (NOVO — não bloqueante, sem card), logo após o nome.** Duas
    perguntas curtas, uma por balão: *"Qual [bem] você tem em mente?"* (slot
    `desiredItem`) e *"E o que fez você decidir [trocar/comprar] agora?"* (slot
-   `motivation`). O gate dispara UMA vez (marcado por `desireAsked`, mesmo padrão de
-   `consentOffered`) e NUNCA bloqueia — se o usuário pular, o funil segue normal pro
-   `consent`. `motivation` é espelhada no discurso UMA vez (não a cada turno).
+   `motivation`). O gate dispara UMA vez (marcado por `desireAsked`) e NUNCA bloqueia — se o
+   usuário pular, o funil segue normal. **(FIX-274, 2026-07-11:** o motivo passou a ter turno
+   próprio via `shouldAskMotive`, e o próximo gate após o desire é o `identify` — o `consent`
+   foi removido; ver "Refino 2026-07-11" acima.)** `motivation` é espelhada no discurso UMA
+   vez (não a cada turno).
 2. **`experience` DESCE pra depois do `search` (reverte a posição histórica).** Antes
    era o 1º gate da qualificação, logo após o nome; agora roda com os grupos já na
    tela — quem já fez consórcio não perde tempo com a explicação, quem é novato só
