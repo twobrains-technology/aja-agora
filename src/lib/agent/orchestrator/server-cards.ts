@@ -52,3 +52,19 @@ export function buildDecisionPromptCard(meta: ConversationMetadata): ServerCard 
 		},
 	};
 }
+
+/** FIX-280 (loop r9, baseline Sonnet 3/10, G4): `present_whatsapp_optin` era
+ * puramente LLM-discricionário — a tool ficava disponível em reveal/closing
+ * (via `shouldEmitWhatsappOptin`), mas CHAMAR ou não continuava 100% a
+ * critério do modelo. Mesmo toolset, mesmo estado de sistema, resultado
+ * divergente entre 2 fluxos estruturalmente idênticos (mario-sem-lance
+ * turno 7 chamava; madalena, no mesmo ponto, não). O payload NUNCA dependeu
+ * de dado do LLM (schema vazio — "o sistema preenche") — candidato direto
+ * pra emissão SERVER-SIDE determinística, mesma receita do FIX-246/253. */
+export function buildWhatsappOptinCard(meta: ConversationMetadata): ServerCard {
+	return {
+		payload: {
+			...(meta.contactPhone ? { knownPhone: meta.contactPhone } : {}),
+		},
+	};
+}

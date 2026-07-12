@@ -91,7 +91,19 @@ export async function analyzeAndMerge(
 				)
 			: null;
 	const sourceCreditMax = analysis.creditMax ?? parsedCreditMax;
-	if (sourceCreditMax !== null && (q.creditMax === undefined || isRevealRefit)) {
+	// FIX-279 (loop r9, baseline Sonnet 3/10, G3): mesmo guard do FIX-236 (linha
+	// 140, hasLance) aplicado a creditMax — captura oportunista irrestrita
+	// preenchia q.creditMax de QUALQUER turno de texto livre (ex.: o turno de
+	// `desire`, "Um apartamento de uns 250 mil"), ANTES de o gate `credit` (a
+	// agulha dedicada, P4 do canônico) ficar ativo. Como nextGate() só dispara
+	// o gate enquanto `creditMax === undefined`, o valor pré-preenchido fazia a
+	// agulha nunca aparecer. `isRevealRefit` continua como exceção legítima
+	// separada (troca de faixa pós-reveal é decisão do LLM, independe do gate
+	// ativo no momento).
+	if (
+		sourceCreditMax !== null &&
+		((q.creditMax === undefined && activeGateAtTurnStart === "credit") || isRevealRefit)
+	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só
 		// normaliza (nunca ajusta `value`). Sem categoria ainda (concierge), grava

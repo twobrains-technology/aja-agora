@@ -60,7 +60,7 @@ describe("BUG-LEAD-CAPTURE-WEB: tools de captura conversacional expostas ao spec
 		).toContain("save_contact_name");
 	});
 
-	it("specialist de auto DEVE ter save_contact_whatsapp + present_whatsapp_optin (CA-05/CA-08)", async () => {
+	it("specialist de auto DEVE ter save_contact_whatsapp (CA-05)", async () => {
 		const persona = await pickPersonaForCategory("auto", null);
 		const agent = buildAgent(persona);
 		// biome-ignore lint/suspicious/noExplicitAny: introspecção do agent
@@ -68,7 +68,12 @@ describe("BUG-LEAD-CAPTURE-WEB: tools de captura conversacional expostas ao spec
 		const exposedToolNames = Object.keys(toolsRecord ?? {});
 
 		expect(exposedToolNames).toContain("save_contact_whatsapp");
-		expect(exposedToolNames).toContain("present_whatsapp_optin");
+		// FIX-280 (loop r9, G4): present_whatsapp_optin (CA-08) SAIU do toolset
+		// do LLM por completo — emissão virou SERVER-SIDE determinística
+		// (buildWhatsappOptinCard, orchestrator/server-cards.ts), mesma receita
+		// do present_decision_prompt (FIX-253). Listá-la em unfilteredTools
+		// (builder.ts) seria morta/enganosa.
+		expect(exposedToolNames).not.toContain("present_whatsapp_optin");
 	});
 
 	it("todas as personas specialist (auto/imovel/moto/servicos) expõem save_contact_name", async () => {

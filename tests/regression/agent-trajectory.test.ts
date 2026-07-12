@@ -4308,13 +4308,17 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 		expect(toolCalls.some((tc) => tc.toolName === "present_whatsapp_optin")).toBe(true);
 	});
 
-	it("estrutural: derive enxerga telefone capturado (confirm) e suprime em retry (done)", async () => {
-		const { deriveWhatsappOptinStage, whatsappOptinSection } = await import(
-			"@/lib/agent/system-prompt"
-		);
+	// FIX-280 (loop r9, G4): deriveWhatsappOptinStage colapsou pra locked/done —
+	// "confirm" (número já conhecido, não re-coletar) migrou pra
+	// buildWhatsappOptinDirective("confirm") (orchestrator/directives.ts), que
+	// o orchestrator escolhe deterministicamente via meta.contactPhone, nunca
+	// mais o LLM decidindo o estágio do prompt.
+	it("estrutural: derive colapsou pra locked/done; o directive 'confirm' não re-pede o número já conhecido", async () => {
+		const { deriveWhatsappOptinStage } = await import("@/lib/agent/system-prompt");
+		const { buildWhatsappOptinDirective } = await import("@/lib/agent/orchestrator/directives");
 		expect(
 			deriveWhatsappOptinStage({ revealCompleted: true, contactPhone: "(62) 9...-6793" }),
-		).toBe("confirm");
+		).toBe("done");
 		expect(
 			deriveWhatsappOptinStage({
 				revealCompleted: true,
@@ -4322,11 +4326,11 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 				contractRetryPending: true,
 			}),
 		).toBe("done");
-		// a seção confirm NÃO re-pede o número (já informado).
-		const s = whatsappOptinSection("confirm");
-		expect(s).not.toMatch(/me compartilha seu WhatsApp/i);
-		expect(s).not.toMatch(/anotar seu WhatsApp/i);
-		expect(s).toMatch(/present_whatsapp_optin/);
+		// o directive 'confirm' NÃO re-pede o número (já informado).
+		const d = buildWhatsappOptinDirective("confirm");
+		expect(d).not.toMatch(/me compartilha seu WhatsApp/i);
+		expect(d).not.toMatch(/anotar seu WhatsApp/i);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_whatsapp_optin/);
 	});
 
 	it("estrutural: guard remove present_whatsapp_optin em retry pendente (determinismo)", async () => {
