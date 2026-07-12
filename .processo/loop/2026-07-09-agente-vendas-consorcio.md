@@ -147,7 +147,23 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | crítico estático (②) I1/I2/I3 vs código pós-reforma | ⏳ rodando (Opus) |
 | planner baseline (roteiros+driver) | ⏳ rodando (Opus) → `.processo/loop/evidencias-r9/` |
 | coletores (funil ao vivo) | ✅ 5 dossiês capturados via driver DETERMINÍSTICO (sem Haiku — turnos pré-scriptados, respostas capturadas verbatim): madalena 17t/0err (jornada completa até fechamento+real_offer), mario-sem-lance 14t/0err, probe-i1/i2/i3 ok. `evidencias-r9/dossies/` (gitignorado, sem PII) |
-| baseline juiz Sonnet (develop atual) | ⏳ lendo dossiês → `veredito-baseline-sonnet.md` |
+| baseline juiz Sonnet (develop atual) | ✅ **3/10 (MÍNIMO) — matador: NÃO** (`veredito-baseline-sonnet.md`). Neg 7·Func 5·Cálc 8·UX 5·**UI/Compl 3**·E2E 9 |
+| execução onda 1 (blocos) | ⏳ definindo (2 blocos, FIX-277..280) |
+
+### r9 — BASELINE Sonnet 3/10 (achados reais ≠ herdados I1/I2/I3)
+Sondas: **I1 (empty-turn) NÃO reproduziu ao vivo** (4 reps <20s, copy variou) · **I3 (fabricação) guard segurou** · **I2 CONFIRMADO e pior**. Verificado contra canon/Ata/código:
+- **G1 · P0 · falsa exatidão do valor** — agente jura "sem ajuste nenhum/exatamente" com divergência real 1,5-6,7% em 4/5 dossiês (mario 70k→71.043, i2 120k→124.599, i3 150k→160k). Card `recommendation-card.tsx:264-275` INVERTIDO (renderiza `rawCreditValue`=pedido como "essa carta"; payload popula ao contrário do comentário FIX-197). Fala do reveal = LLM livre sem invariante. **Fix:** invariante server-side comparando `rawCreditValue`×`creditValue` + paridade real_offer no card + regression test.
+- **G2 · P0 · terminologia "contratando"** — `closing-presentation.ts:130` "Você está contratando um consórcio" viola canon (`jornada-canonica.md:31-32`) + Ata (`atas/2026-07-04:78,157`: "RESERVA DE COTA, não contratado/fechado"). **Pinado por teste ERRADO** (`closing-presentation.test.ts:230-231`). **Fix:** copy "reserva de cota" + corrigir código E teste juntos.
+- **G3 · P1 · gate `credit` nunca dispara** (5/5) — `turn-analyzer` extrai `creditMax` do turno `desire` livre → pula a agulha canônica (`qualify-state.ts:88`); consequência: valor afirmado pós-reveal vira "ajuste" com promessa quebrada (madalena t7 promete detalhamento atualizado, nunca re-emite card). **Fix:** não pré-preencher `creditMax` do desire (gate agulha dispara) OU re-emitir card no ajuste — alinhar canon.
+- **G4 · P1 · `whatsapp_optin` inconsistente** — mario t7 injeta gate não-canônico ausente em madalena no mesmo ponto (`whatsapp-optin-guard.ts`, `tool-policy.ts:175/192`). **Fix:** consistência entre fluxos (investigar condicional).
+- **G5 · P2 · latência reveal 38-66s** (5/5) — tool-calls sequenciais search→recommend→simulate→comparison. **Fix (onda 2):** feedback intermediário / paralelizar.
+- **G6 · P3** probe-i1 round-trip extra · **PENDENTE-VISUAL:** concatenação de balões no fechamento (pode ser artefato do dossiê — checar screenshot) + render do recommendation-card.
+- **BOM (não regredir):** 2 fluxos fecham ponta-a-ponta · identidade antes da busca (5/5) · taxaContemplacao nunca como % · two_paths sem % · embedded_bid aritmética+disclaimer · escassez 1-6 · guard fabricação segura · E2E 68/68 · pt-BR com acento.
+
+### r9 ONDA 1 — spec (2 blocos, defeitos ancorados em canon, sem decisão do Kairo)
+- **bloco-r9-compliance-copy** (P0): FIX-277 (G1 falsa exatidão) + FIX-278 (G2 reserva de cota). Arquivos: `recommendation-card.tsx`, `recommendation-payload.ts`, `system-prompt.ts`, `closing-presentation.ts(+test)`.
+- **bloco-r9-gate-funil** (P1): FIX-279 (G3 credit gate/promessa) + FIX-280 (G4 whatsapp_optin). Arquivos: `qualify-state.ts`, `turn-analyzer.ts`, `whatsapp-optin-guard.ts`, `tool-policy.ts`.
+- Onda 2 (após re-verificar): G5 latência (FIX-281), G6/pendente-visual.
 
 **Incidente infra (resolvido):** no meio da coleta o engine do OrbStack travou (`docker` não respondia, `fetch failed` em todos os turnos). `orb restart` exige nome de máquina; o fix foi **`orb stop` + `orb start`** (2ª tentativa pegou) → containers auto-voltaram, app 200. Lição: engine wedga sob carga sustentada; ciclar via stop/start, não `orb restart`. Latências reais capturadas: reveal Bevi ~54-66s (fricção de UX a avaliar).
 | execução (blocos) | — |
