@@ -43,10 +43,12 @@ import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
+	buildComparisonTableFromRevealGroups,
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
 	type RevealGroupIndex,
+	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
 	EphemeralTextFilter,
@@ -903,6 +905,37 @@ export async function* runAgentTurn(args: {
 		artifacts.push(...nonGroupCards, consolidated);
 		console.log(
 			`[orchestrator] Guard: consolidated ${groupCards.length} group_cards into comparison_table`,
+		);
+	}
+
+	// FIX-290 (P0 sistêmico, veredito r9pos3 Sonnet §3): recommendation_card e
+	// comparison_table são "INSEPARÁVEIS" (directives.ts:348) — mas até aqui
+	// isso era só regra-no-prompt. Se o modelo chamou present_recommendation_card
+	// e parou (nunca chamou present_comparison_table) num turno com 2+ grupos
+	// reais, força a emissão server-side aqui — mesmo padrão do FIX-286
+	// (buildRecommendationCardFromRevealGroup) pro hero, reaproveitando os
+	// MESMOS grupos indexados neste turno (revealGroupsById). Caso de borda: 1
+	// grupo único NUNCA força a tabela (regra do reveal — os dois só pulam
+	// juntos quando há 1 grupo só).
+	if (
+		artifacts.some((a) => a.type === "recommendation_card") &&
+		!artifacts.some((a) => a.type === "comparison_table") &&
+		usableRevealGroupCount(revealGroupsById) >= 2
+	) {
+		const payload = buildComparisonTableFromRevealGroups(
+			revealGroupsById,
+			await getAdministradoraLogos(),
+			await getKnownCreditValues(),
+		);
+		artifacts.push({ type: "comparison_table", payload });
+		yield {
+			type: "artifact",
+			artifactType: "comparison_table",
+			payload,
+			toolCallId: crypto.randomUUID(),
+		};
+		console.log(
+			`[orchestrator] FIX-290: comparison_table forçado server-side (recommendation_card sem par neste turno, conv=${conversationId})`,
 		);
 	}
 
