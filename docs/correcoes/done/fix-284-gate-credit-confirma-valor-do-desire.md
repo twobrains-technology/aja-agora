@@ -1,7 +1,7 @@
 ---
 id: FIX-284
 titulo: "gate:credit pergunta o valor do bem do ZERO mesmo quando o desire já trouxe um valor aproximado — efeito colateral do FIX-279"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-2-gate-refino
@@ -12,7 +12,17 @@ arquivos:
   - src/lib/agent/orchestrator/analyze.test.ts
   - src/lib/agent/orchestrator/gate-questions.fix-284-confirma-desire.test.ts
 rodada: "2026-07-12 loop r9 ONDA 2 (pós-onda-1 Sonnet 4/10, gap G-F)"
+commit: f3f5282
+executado_em: "2026-07-12"
 ---
+
+## Nota de execução
+
+Call-sites de `gateQuestion("credit", ...)` ajustados além do previsto no
+card: `src/lib/web/adapter.ts` tem DOIS call-sites (`pipeGatePrompt` e o
+handler de `gate` em `pipeOrchestratorToWriter`), não um só. `gate-reengage.ts`
+(`reengageQuestionForGate`) também precisou de um parâmetro novo próprio,
+repassado pelos seus 3 chamadores (`route.ts` web + 2x `whatsapp/adapter.ts`).
 ## Palavras do juiz (veredito r9pos, Sonnet 5 — G-F, UX 4/10)
 > "em TODOS os 5 dossiês o valor do bem já é mencionado de forma aproximada no turno do `desire`
 > ('uns 250 mil', 'uns 70 mil', 'uns 150 mil') e o `gate:credit` pede o mesmo dado de novo 2
