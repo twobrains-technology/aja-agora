@@ -423,6 +423,85 @@ export function buildToolErrorRecoveryFallback(args: { name?: string | null }): 
 	);
 }
 
+// FIX-282 (P1, veredito Sonnet r9pos, G-B/I2) — a pergunta do usuário sobre
+// EXATIDÃO do valor ("é de 120 mil como pedi?", "bate?", "sem ajuste?") ou
+// sobre o CRITÉRIO de escolha ("por que essa e não outra?", "qual o
+// critério?") tem resposta factual pronta em `meta.recommendedOffer` — mas
+// o fallback genérico do tool-error (acima) é cego ao CONTEÚDO da pergunta e
+// nunca a responde (contenção sem resolução, mesma família do FIX-266, mas
+// pro caso em que o usuário NÃO cita administradora/valor — só questiona a
+// oferta já na tela). Escopo estreito de propósito (preferindo
+// falso-negativo a falso-positivo, decisão do card): mira só os padrões
+// literais do dossiê que provou o bug, nunca dúvidas genéricas ("quero ver
+// mais opções" continua no fallback antigo).
+const EXACTNESS_QUESTION_PATTERNS: RegExp[] = [
+	/\bbate\b/i,
+	/\bexat[ao]\b/i,
+	/\bexatamente\b/i,
+	/\bsem\s+ajuste\b/i,
+	/\bo\s+mesmo\s+valor\b/i,
+	/\bcomo\s+(eu\s+)?pedi\b/i,
+];
+
+const CRITERIA_QUESTION_PATTERNS: RegExp[] = [
+	/\bpor\s+qu[eê]\s+essa\b/i,
+	/\be\s+n[ãa]o\s+outra\b/i,
+	/\bcrit[ée]rio\b/i,
+	/\bpor\s+qu[eê]\s+(voc[eê]\s+)?(me\s+)?recomend/i,
+];
+
+/** O texto do usuário questiona a EXATIDÃO do valor da carta ou o CRITÉRIO de
+ * escolha da oferta já mostrada (probe-i2, FIX-282) — resposta honesta com os
+ * números reais cabe aqui, nunca o fallback genérico cego ao conteúdo. */
+export function isExactnessOrCriteriaQuestion(text: string): boolean {
+	const t = text.trim();
+	if (!t) return false;
+	return (
+		EXACTNESS_QUESTION_PATTERNS.some((rx) => rx.test(t)) ||
+		CRITERIA_QUESTION_PATTERNS.some((rx) => rx.test(t))
+	);
+}
+
+/**
+ * FIX-282 — resposta FACTUAL determinística quando o tool-error interrompe o
+ * modelo NO MEIO de uma pergunta de exatidão/critério (acima). Compara
+ * `rawCreditValue` (valor PEDIDO, mesma âncora do FIX-261/281:
+ * `qualifyAnswers.creditClampedFrom ?? creditMax`) × `creditValue` (carta
+ * REAL), no mesmo padrão já validado da diretiva FIX-277
+ * (`system-prompt.ts`). Decisão de design (Opção A, `AskUserQuestion`,
+ * 2026-07-12): o critério de RANKING (score/scoreBreakdown) não é persistido
+ * em `meta.recommendedOffer` hoje — em vez de inventar um número que não
+ * existe em memória, a resposta cita o critério COMBINADO em termos gerais
+ * (prazo/parcela/contemplação), nunca um score fabricado.
+ */
+export function buildToolErrorRecoveryExactnessFallback(args: {
+	name?: string | null;
+	offer: { administradora?: string; creditValue: number };
+	rawCreditValue?: number;
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	const marca = args.offer.administradora ? ` da ${args.offer.administradora}` : "";
+	const creditoFmt = args.offer.creditValue.toLocaleString("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+	});
+	let exatidao: string;
+	if (typeof args.rawCreditValue === "number" && args.rawCreditValue !== args.offer.creditValue) {
+		const pedidoFmt = args.rawCreditValue.toLocaleString("pt-BR", {
+			style: "currency",
+			currency: "BRL",
+		});
+		exatidao = `Você pediu ${pedidoFmt} — a carta real${marca} ficou em ${creditoFmt}, um ajuste em relação ao que você pediu.`;
+	} else {
+		exatidao = `Sim, a carta${marca} bate certinho com o valor que você pediu: ${creditoFmt}.`;
+	}
+	return (
+		`${saudacao}${exatidao} Ela foi a que mais fez sentido pro seu perfil considerando prazo, ` +
+		"parcela e chance de contemplação juntos, não só o valor de crédito isolado. Quer que eu " +
+		"detalhe algum desses pontos ou prefere ver outra opção?"
+	);
+}
+
 function formatOfferDetails(offer: ChosenOffer): string {
 	const detalhes: string[] = [];
 	if (typeof offer.creditValue === "number") {

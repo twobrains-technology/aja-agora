@@ -28,10 +28,12 @@ import {
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
+	buildToolErrorRecoveryExactnessFallback,
 	buildToolErrorRecoveryFallback,
 	buildToolErrorRecoveryFallbackRepeat,
 	buildToolErrorRecoveryResolvedFallback,
 	buildWhatsappOptinDirective,
+	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
 import { runLeadCollectionTurn } from "./lead-collection";
@@ -474,7 +476,24 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// repete a frase idêntica 2× seguidas.
 	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
 		let fallback: string;
-		if (mentionedOffer) {
+		// FIX-282 (P1, veredito Sonnet r9pos, G-B/I2): a pergunta do usuário
+		// sobre EXATIDÃO/CRITÉRIO da oferta já mostrada ("é de 120 mil como
+		// pedi? por que essa e não outra?") tem resposta factual pronta em
+		// `meta.recommendedOffer` — checa ANTES do fallback genérico/resolvido
+		// (que são cegos ao conteúdo da pergunta) pra nunca deixar essa
+		// pergunta específica sem resposta honesta. `isUserTurn` mesma guarda
+		// de `mentionedOffer` — directive interno nunca aciona isto.
+		if (
+			isUserTurn &&
+			isExactnessOrCriteriaQuestion(userText) &&
+			typeof meta.recommendedOffer?.creditValue === "number"
+		) {
+			fallback = buildToolErrorRecoveryExactnessFallback({
+				name: knownName,
+				offer: meta.recommendedOffer,
+				rawCreditValue: meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
+			});
+		} else if (mentionedOffer) {
 			fallback = buildToolErrorRecoveryResolvedFallback({ name: knownName, offer: mentionedOffer });
 		} else {
 			const generic = buildToolErrorRecoveryFallback({ name: knownName });

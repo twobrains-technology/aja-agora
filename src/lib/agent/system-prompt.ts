@@ -916,8 +916,15 @@ REGRA DURA do turno: NUNCA faca duas perguntas na mesma mensagem. Quando o siste
 
 Exceção única: se o USUÁRIO escrever o número dele espontaneamente, chame save_contact_whatsapp em silencio e siga o fluxo.`;
 		case "done":
-			return `## WhatsApp — o SISTEMA cuida disso
-NÃO mencione, NÃO ofereca e NÃO peca WhatsApp por conta própria — nem antes nem depois de ver a recomendação. Se/quando for a hora certa, o SISTEMA pede automaticamente, com card próprio. Se o usuário pedir pra trocar o número já informado, chame save_contact_whatsapp com o novo. UMA pergunta acionável por turno, sempre.`;
+			// FIX-283 (P2, veredito Sonnet r9pos, G-D, mitigação secundária —
+			// barreira real é o sanitizer, isMechanismNarrationClaim): fraseado
+			// anterior ("por conta própria", "o SISTEMA [...] automaticamente,
+			// com card próprio") era próximo demais de FALA NATURAL — o modelo
+			// parafraseou como algo a dizer ao cliente em vez de regra interna a
+			// seguir em silêncio. Cabeçalho + 1ª frase agora deixam explícito que
+			// é instrução operacional, nunca conteúdo a repetir/parafrasear.
+			return `## WhatsApp — INSTRUÇÃO INTERNA (não é assunto pra comentar com o cliente)
+Regra operacional pra você seguir em silêncio, mesmo se o cliente perguntar como ou quando isso acontece: NÃO mencione, NÃO ofereça e NÃO peça WhatsApp por iniciativa própria — nem antes nem depois de ver a recomendação. O sistema decide o momento certo e dispara o pedido sozinho, com card próprio; você nunca precisa explicar esse mecanismo pro cliente. Se o usuário pedir pra trocar o número já informado, chame save_contact_whatsapp com o novo, sem comentário. UMA pergunta acionável por turno, sempre.`;
 	}
 }
 

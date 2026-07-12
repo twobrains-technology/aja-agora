@@ -211,6 +211,37 @@ export function isCatalogResearchClaim(segment: string): boolean {
 	return CATALOG_RESEARCH_CLAIM_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-283 (P2, veredito Sonnet r9pos, G-D — viola D23, jornada-canonica.md):
+// o modelo parafraseou a instrução server-side do WhatsApp optin ("por conta
+// própria", "o SISTEMA [...] automaticamente, com card próprio",
+// `system-prompt.ts` `whatsappOptinSection("done")`) como se fosse algo a
+// VERBALIZAR pro usuário em vez de regra interna a seguir em silêncio —
+// meta-narrativa do próprio mecanismo. D23: o agente NUNCA narra o próprio
+// mecanismo, mesmo se o cliente perguntar diretamente. Escopo estreito de
+// propósito (preferindo falso-negativo a falso-positivo, mesma decisão do
+// FIX-243/249 acima): mira os padrões literais do dossiê, nunca copy
+// operacional legítima que mencione "sistema"/"automaticamente" noutro
+// sentido (ex. "o sistema vai te avisar quando a proposta mudar de status").
+const MECHANISM_NARRATION_PATTERNS: RegExp[] = [
+	/\bn[ãa]o\s+cri[eo]\s+esse\s+tipo\s+de\s+texto\s+por\s+conta\s+pr[óo]pria\b/i,
+	/\bconduzid[oa]\s+automaticamente\s+pelo\s+sistema\b/i,
+	/\bo\s+sistema\s+decide\s+isso\s+automaticamente\b/i,
+	// Nota: sem `\b` antes de "é" — vogal acentuada não conta como \w no modo
+	// não-unicode do JS, então `\b` entre espaço e "é" nunca casa (mesma
+	// pegadinha documentada acima em DOCUMENT_RECEIPT_CLAIM_PATTERNS).
+	/\bn[ãa]o\s+sou\s+eu\s+que\s+decid[eo]\b[\s\S]{0,30}[ée]\s+o\s+sistema\b/i,
+	/\bpor\s+conta\s+pr[óo]pria\b[\s\S]{0,60}\bsistema\b/i,
+];
+
+/** Um segmento narra o próprio mecanismo interno do sistema ("não crio isso
+ * por conta própria, o sistema conduz automaticamente") — viola D23, mesmo
+ * se o cliente perguntar. Não pode virar bolha. FIX-283. */
+export function isMechanismNarrationClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return MECHANISM_NARRATION_PATTERNS.some((rx) => rx.test(s));
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -233,8 +264,8 @@ function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContex
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
- * estado fabricado sem lastro real (FIX-270). Todos são dropados antes de
- * virar mensagem. */
+ * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
+ * interno (FIX-283). Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -244,6 +275,7 @@ function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): bo
 		isBannedLexicon(segment) ||
 		isTaxaContemplacaoClaim(segment) ||
 		isProactiveCallbackClaim(segment) ||
+		isMechanismNarrationClaim(segment) ||
 		isFabricatedStateSegment(segment, ctx)
 	);
 }
