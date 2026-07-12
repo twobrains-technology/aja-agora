@@ -150,7 +150,7 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | baseline juiz Sonnet (develop atual) | ✅ **3/10 (MÍNIMO) — matador: NÃO** (`veredito-baseline-sonnet.md`). Neg 7·Func 5·Cálc 8·UX 5·**UI/Compl 3**·E2E 9 |
 | execução onda 1 (blocos) | ✅ 2 blocos DONE + integrados. FIX-277 direção do aviso · FIX-278 reserva de cota · FIX-279 agulha só no gate ativo (guard `activeGateAtTurnStart`) · FIX-280 optin server-side. Merge LIMPO (system-prompt.ts auto-mergeou, regiões distintas). Promovido develop `193c1c83`. Container reiniciado. `test:unit` no container = gate. Workspaces de bloco deletados. |
 | re-verificação (pós-onda-1) | ✅ **Sonnet 4/10** (subiu 3→4). Neg 7·Func 6·Cálc 5·UX 4·UI/Compl 6·E2E 9. `veredito-r9pos-sonnet.md`. **G1-G4 CONFIRMADOS MORTOS.** MÍNIMO=UX(4). |
-| execução onda 2 | ⏳ montando 3 blocos (G-A, G-B+G-D, G-F+G-C); G-E latência deferida p/ onda 3 |
+| execução onda 2 | ⏳ 3 blocos disparados (sonnet): anchor-fechamento `5e70e0cb` (FIX-281) · prompt-honestidade `b77eff3d` (FIX-282/283) · gate-refino `d954e160` (FIX-284/285). Base `integ/consorcio-r9-o2`. Poll 10min. Root causes REFINADOS pela autoria: FIX-282=`index.ts:475-500` (fallback tool-error engole a narração, não é prompt); FIX-285=`shouldAskMotive` exige `desiredItem` que o analyzer só popula p/ item específico. G-E latência → onda 3. |
 
 ### r9 ONDA 2 — spec (pós-onda-1 Sonnet 4/10)
 Onda 1 fechou G1-G4; nota subiu 3→4. Novos blockers (`veredito-r9pos-sonnet.md` §3):
