@@ -290,8 +290,9 @@ export interface RealOfferPayload {
 	 * partir dele (semântica não confirmada — só comparação factual de posição). */
 	avgBidValue?: number;
 	/** FIX-197 CONTRATO(bloco-a): valorCarta BRUTO (denominação da carta, ex. 300k)
-	 * — distinto de `creditValue` (faixa re-simulada exibida). Presente e ≠ da faixa
-	 * → aviso "ajustamos essa carta pra sua faixa de ~R$ X". Ausente → sem aviso. */
+	 * — distinto de `creditValue` (carta real exibida). Presente e ≠ da carta real
+	 * → aviso "você pediu ~R$ X — a carta real ficou em R$ Y" (FIX-277). Ausente →
+	 * sem aviso. */
 	rawCreditValue?: number;
 }
 

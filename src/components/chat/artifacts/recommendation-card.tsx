@@ -258,9 +258,12 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					)}
 				</div>
 
-				{/* FIX-197 (§3.6) — aviso discreto de ajuste de faixa: a carta é da
-				    denominação do grupo (rawCreditValue); ajustamos à faixa pedida
-				    (creditValue). Ancorado nos dois números reais; some quando iguais. */}
+				{/* FIX-277 (veredito r9, G1)/FIX-197 (§3.6) — aviso discreto de ajuste:
+				    rawCreditValue é o valor PEDIDO pelo cliente; creditValue é a carta
+				    REAL do grupo. A copy antiga chamava o pedido de "essa carta" e a
+				    carta real de "sua faixa ajustada" — invertido. Paridade com o
+				    padrão já correto de real-offer.tsx: "pedido × carta real", sem
+				    ambiguidade. Ancorado nos dois números reais; some quando iguais. */}
 				{showAdjustNotice && rawCreditValue != null && (
 					<p
 						data-testid="credit-adjustment-notice"
@@ -268,7 +271,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 						<span className="whitespace-normal break-words">
-							Ajustamos essa carta de <span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> pra sua faixa de ~
+							Você pediu uma carta de ~<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real ficou em{" "}
 							<span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
 						</span>
 					</p>
