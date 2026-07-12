@@ -1,15 +1,18 @@
 ---
 id: FIX-287
 titulo: "comparison_table e simulation_result do MESMO groupId, no MESMO turno, mostram creditValue divergente (120k vs 160k) sem aviso na tabela"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 bloco: bloco-r9-3-consistencia-valor
 arquivos:
-  - src/lib/agent/tools/ai-sdk.ts
-  - src/lib/adapters/bevi/bevi-self-contract-adapter.ts
-  - src/lib/adapters/bevi/offer-mapper.ts
+  - src/lib/agent/orchestrator/recommendation-payload.ts
+  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/tools/known-credit-values.ts
+  - src/components/chat/artifacts/comparison-table.tsx
 rodada: "2026-07-12 loop r9 ONDA 3 (pós-onda-2 Sonnet 4/10, P1-2, veredito-r9pos2-sonnet.md §3)"
+commit: d73037b
+executado_em: "2026-07-12"
 ---
 ## Palavras do juiz (veredito r9pos2, Sonnet 5 — P1-2, Cálculo 6/10)
 > "em `probe-i2` turno 8, o artifact `comparison_table` mostra BANCO DO BRASIL com `creditValue:
