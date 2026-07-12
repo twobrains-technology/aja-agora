@@ -1,16 +1,18 @@
 ---
 id: FIX-291
 titulo: "busca na Bevi (Trilho B) empilha retries sem cap agregado e o funil segue roteirizado com dados vazios até quebrar no fechamento — sem degradação honesta"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 bloco: bloco-r9-4-bevi-degradacao
 arquivos:
-  - src/lib/adapters/bevi/self-contract-client.ts
-  - src/lib/adapters/bevi/bevi-self-contract-adapter.ts
   - src/lib/agent/tools/ai-sdk.ts
   - src/lib/web/adapter.ts
+  - src/lib/agent/orchestrator/index.ts
 rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P0 Negócio/E2E, veredito-r9pos3-sonnet.md §3+§6)"
+executado_em: 2026-07-12
+commit: 604cbde (a: teto agregado), 25a8f50 (b: recovery searchDispatched)
+decisao: docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md
 ---
 ## Palavras do juiz (veredito r9pos3, Sonnet 5 — P0 Negócio+E2E, "erro do mario")
 > "search_groups estoura o timeout de 90s do coletor [...] o funil segue roteirizado
@@ -95,3 +97,24 @@ rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P0 Negócio/E2E, veredito-
   avançaria pro fechamento) NUNCA produz artifact com campos vazios/nulos (`administradora:""`,
   `monthlyPayment:null`) — em vez disso emite o fallback honesto de degradação.
 - `pnpm test:unit` verde.
+
+## Resolução (2026-07-12)
+
+Ver decisão completa em `docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md`
+(investigação do passo 3 + trade-offs de design). Resumo:
+
+- **(a) cap agregado**: `runDiscovery` (`ai-sdk.ts`) mede um deadline ÚNICO de 45s por invocação
+  de tool, cobrindo 1ª tentativa + retry — nunca soma orçamentos independentes de client/adapter.
+  Regressão: `ai-sdk.fix-291-budget.test.ts` (adapter que nunca resolve; prova que o tempo total
+  fica dentro do teto e que o retry não reexecuta quando o orçamento já esgotou).
+- **(b) degradação honesta + recovery**: a investigação do passo 3 CONFIRMOU que
+  `qualify-state.ts`/`two-paths-payload.ts` já gateavam corretamente atrás de `revealCompleted`
+  (a suposição do card estava parcialmente errada) — o gap real era `searchDispatched` marcado
+  PREEMPTIVAMENTE (antes da busca rodar) em `web/adapter.ts` e `orchestrator/index.ts`, travando
+  o retry pra sempre quando a busca falhava. Corrigido nos dois pontos (o 2º fora do
+  `escopo_arquivos` original, ver decisão). Regressão:
+  `adapter.fix-291-search-recovery.test.ts`.
+- Achado colateral fora de escopo (gap de `comparison_table` sem `recommendedOffer` em
+  `runner.ts`, caminho de SUCESSO, não de falha Bevi) — documentado na decisão, não corrigido
+  aqui, candidato a `anota-bug`.
+- `pnpm test:unit` verde (3325 testes, com DB real decriptado via `secrets.sh`).
