@@ -39,6 +39,12 @@ export interface StartContractInput {
 	objetivo: ProposalObjetivo;
 	/** Crédito (ou parcela) desejado — o que o usuário viu na Descoberta. */
 	valor: number;
+	/** FIX-281 (r9 onda 2, gap G-A): o pedido ORIGINAL do cliente (mesma âncora do
+	 * hero, `creditClampedFrom ?? creditMax` — FIX-261), independente de `valor`
+	 * acima (que é o creditValue da ÚLTIMA oferta vista, só pro matching — FIX-73).
+	 * Fonte do `rawCreditValue` (aviso de divergência CDC) no `real_offer`.
+	 * Ausente (caminho legado) → `startContract` cai pro `valor` antigo. */
+	originalRequestedCreditValue?: number;
 	tipoSimulacao?: SimulationType;
 	lanceEmbutido?: LanceEmbutido;
 	leadId?: string | null;
@@ -56,9 +62,11 @@ export interface StartContractResult {
 	offer: RealOffer | null;
 	/** Quando a simulação não devolve oferta (ex.: valor abaixo do mínimo). */
 	noOffer?: boolean;
-	/** FIX-240 (CDC art. 30): o valor PEDIDO pelo cliente (`input.valor`) — fonte
-	 * do `rawCreditValue` que aciona o aviso de ajuste (FIX-197) quando a carta
-	 * fechada (`offer.creditValue`) diverge dele. */
+	/** FIX-240 (CDC art. 30): o valor PEDIDO pelo cliente — fonte do
+	 * `rawCreditValue` que aciona o aviso de ajuste (FIX-197) quando a carta
+	 * fechada (`offer.creditValue`) diverge dele. FIX-281: vem de
+	 * `input.originalRequestedCreditValue` (o pedido ORIGINAL, mesma âncora do
+	 * hero), com fallback pro `input.valor` antigo quando ausente. */
 	requestedCreditValue?: number;
 	/** FIX-259 (P1, veredito Fable r4): a administradora confirmada
 	 * (`input.administradoraPreferida`) não tinha grupo disponível na faixa e o
@@ -151,7 +159,7 @@ export async function startContract(
 		proposalId,
 		offer,
 		noOffer: !chosen,
-		requestedCreditValue: input.valor,
+		requestedCreditValue: input.originalRequestedCreditValue ?? input.valor,
 		administradoraChanged,
 		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
 	};
