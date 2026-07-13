@@ -188,7 +188,14 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
 	});
 
-	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
+	// FIX-310 (rodada 10, onda 4) SUPERA a expectativa original deste teste:
+	// desde o FIX-233 (D2) o gate `experience` mora PÓS-reveal — um sinal
+	// explícito no turno do `desire` (`meta.desireAsked=true`, ainda sem
+	// reveal) não é mais "o gate experience realmente ativo", é captura
+	// oportunista cedo demais (a mesma classe de bug que travava o card
+	// `gate:experience` de aparecer, dossiê Madalena). Ver describe "FIX-310"
+	// abaixo pro caminho feliz (captura funciona quando o gate ESTÁ ativo).
+	it("classifier COM sinal explícito de experiência ANTES do gate `experience` estar ativo NÃO captura (FIX-310)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({
 			...NEUTRAL,
 			creditMax: 80_000,
@@ -197,7 +204,59 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("ja fiz consorcio antes, quero um carro de 80 mil", "auto", meta);
 
-		expect(meta.experiencePrev).toBe("returning");
+		expect(meta.experiencePrev).toBeUndefined();
+	});
+});
+
+// FIX-310 (rodada 10, onda 4 — investigação de causa-raiz direta): o gate
+// `experience` nunca aparecia como artifact no dossiê da Madalena, apesar do
+// banco mostrar `experiencePrev: "first"` preenchido — o CARD nunca teve
+// chance de aparecer porque o campo foi preenchido ANTES do gate `experience`
+// ficar ativo (nextGate() pula o gate achando que já foi resolvido). Mesmo
+// padrão de trava que `hasLance` (FIX-236) e `creditMax` (FIX-279) já usam:
+// só aceita a captura oportunista quando o gate REALMENTE ativo no turno é o
+// gate que o dado pertence.
+describe("FIX-310 — experiencePrev só captura quando o gate `experience` está ativo", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	function postRevealAwaitingExperience(): ConversationMetadata {
+		return {
+			desireAsked: true,
+			currentCategory: "auto",
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 80_000 },
+		};
+	}
+
+	it("sinal de experiência ANTES do gate `experience` estar ativo (ex.: turno do desire) NÃO preenche o campo", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			experiencePrev: "first",
+		});
+		const meta: ConversationMetadata = { desireAsked: true, currentCategory: "auto" };
+		// Estado de partida: o gate REALMENTE ativo agora é "credit", não
+		// "experience" (que só existe pós-reveal, FIX-233 D2).
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		await analyzeAndMerge("E a primeira vez", "auto", meta);
+
+		expect(meta.experiencePrev).toBeUndefined();
+	});
+
+	it("resposta DIRETA quando o gate `experience` está ativo → captura normal (caminho feliz intacto)", async () => {
+		const meta = postRevealAwaitingExperience();
+		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, experiencePrev: "first" });
+		await analyzeAndMerge("E a primeira vez", "auto", meta);
+
+		expect(meta.experiencePrev).toBe("first");
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("experience");
 	});
 });
 
