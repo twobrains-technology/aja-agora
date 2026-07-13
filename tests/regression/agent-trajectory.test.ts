@@ -4451,7 +4451,12 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 
 	it("a copy educativa segue a do docx e os chips funcionam pra quem NÃO tem reserva", () => {
 		const gq = readSource("src/lib/agent/orchestrator/gate-questions.ts");
-		expect(gq).toMatch(/Você sabe o que é lance embutido\?/);
+		// FIX-327 (rodada 10, P4): a abertura virou afirmação (sem "?") — o
+		// texto educativo do lance embutido não pode mais abrir com pergunta
+		// retórica, senão cola com a pergunta REAL do gate no mesmo balão (2
+		// interrogações, achado ao vivo pós-FIX-326).
+		expect(gq).toMatch(/Deixa eu te explicar o lance embutido/);
+		expect(gq).not.toMatch(/Você sabe o que é lance embutido\?/);
 		// O chip negativo não pode pressupor que o usuário TEM dinheiro pro lance
 		// ("recursos próprios") — precisa ser neutro pros dois fluxos.
 		const cfg = readSource("src/lib/agent/qualify-config.ts");

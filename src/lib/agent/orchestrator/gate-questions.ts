@@ -28,7 +28,7 @@ export function lanceEmbutidoEdu(creditValue?: number): string {
 			? `na sua carta de ${formatCredit0(creditValue)}`
 			: "numa carta de R$ 100 mil";
 	return (
-		"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
+		"Deixa eu te explicar o lance embutido rapidinho — fica tranquilo, a gente te ajuda. " +
 		`É usar parte da própria carta de crédito como lance — ${cartaPhrase}, por exemplo, ` +
 		"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
 		"sem precisar ter todo o lance em dinheiro hoje."
