@@ -827,3 +827,27 @@ ou permitir opportunistic capture de `hasLance` mais cedo), ou (b) o design atua
 TODO usuário veja reco-consent/hero por padrão, e o "fluxo sem-hero" do mockup original (array F2)
 não se aplica mais à cascata atual — decisão de produto que precisa confirmação do Kairo antes de
 tratar como bug (regra "não crave o que não verificou").
+
+### Achado 7 — CRÍTICO: dados financeiros fabricados chegando ao usuário (FIX-315, corrigido)
+Juiz Sonnet (Rodada A.3) achou `present_comparison_table`/`present_recommendation_card` exibindo
+números 100% inventados (ex.: "R$161.258,00"/"R$2.984,38" sem nenhum tool-call de origem) quando o
+LLM citava um grupo/administradora que não batia com nenhum resultado real de
+search_groups/recommend_groups. Causa-raiz: `coerceRevealCota` (recommendation-payload.ts) usava
+`{...rest}` (blocklist — só removia 3 campos) em vez de allowlist — sem grupo real ancorado
+(`!isUsableGroup(group)`), o resto do payload do modelo (todo número financeiro + campos de schema
+inventados como `awardingPattern`/`avgWinningBidPct`) atravessava intacto. Também achado: `groups`
+podia chegar como STRING serializada (não array) sem nenhuma coerção. **Corrigido** (commit
+`f1cefe60`): reconstrução por allowlist estrita (só id/administradora/category do modelo, todo
+número vem do `group` real) + `comparison_table` descarta cotas sem grupo real + falha fechado
+(lista vazia) quando `groups` não é array de verdade. Re-coleta confirmou: fabricação sumiu.
+
+### Pendências remanescentes (não bloqueiam a decisão do Fable, mas registradas)
+- `two_paths` ainda não dispara quando o usuário declara "só quero a parcela" — `hasLance` não
+  converte a tempo (gate ativo não bate no momento da captura).
+- Fechamento do Mario pode ignorar a administradora que o usuário preferiu nomear em texto livre
+  (ex.: pediu Canopus, fechou com a recomendação original) quando a administradora citada não está
+  entre os grupos realmente retornados — precisa decidir se é (a) bug de resolução por nome ou (b)
+  comportamento correto pós-FIX-315 (nunca fabricar oferta pra administradora sem dado real).
+
+Escalando para o Fable (juiz final, supercrítico) com o relatório completo do Sonnet + as 3
+correções desta sessão (FIX-313, FIX-314, FIX-315) + evidência fresca.
