@@ -266,6 +266,25 @@ function lastInterrogativeIndex(segments: string[]): number {
 	return last;
 }
 
+// FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição, "Perfeito, kairo! ✅"):
+// emoji sobrevivendo com modelo mais fraco apesar da regra de parcimônia do
+// system-prompt (Lei 4 de novo — regra-no-prompt não segura sob carga). Strip
+// determinístico, cobre os blocos Unicode de emoji mais comuns (emoticons,
+// símbolos/pictogramas, transporte, dingbats, bandeiras, seletor de variação e
+// ZWJ). Não mexe em acentuação pt-BR (Latin-1 Supplement/Latin Extended-A
+// ficam fora de todas essas faixas).
+const EMOJI_PATTERN =
+	/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu;
+
+/** Remove emoji de um texto de forma determinística (independe do modelo
+ * obedecer a regra de parcimônia do prompt). Colapsa o espaço duplo deixado
+ * pelo emoji removido, sem tocar em espaçamento de borda (join entre blocos).
+ * FIX-299. */
+export function stripEmoji(text: string): string {
+	if (!text) return text;
+	return text.replace(EMOJI_PATTERN, "").replace(/[ \t]{2,}/g, " ");
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -354,7 +373,9 @@ export function stripProcessPreamble(text: string, ctx?: StateVerificationContex
 	// pergunta sobrevive; perguntas anteriores no mesmo texto são dropadas.
 	const lastQuestion = lastInterrogativeIndex(survivors);
 	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
-	return kept.join("");
+	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
+	// regra de parcimônia do prompt.
+	return stripEmoji(kept.join(""));
 }
 
 /** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
@@ -412,8 +433,8 @@ export class EphemeralTextFilter {
 		return out + this.releaseHeldQuestion();
 	}
 
-	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero e
-	 * segura a sentença interrogativa (FIX-298). */
+	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero, segura
+	 * a sentença interrogativa (FIX-298) e limpa emoji do que sobra (FIX-299). */
 	private filterComplete(complete: string): string {
 		const ctx = this.getContext?.();
 		const segments = splitSegments(complete);
@@ -426,13 +447,13 @@ export class EphemeralTextFilter {
 			}
 			out += seg;
 		}
-		return out;
+		return stripEmoji(out);
 	}
 
 	private releaseHeldQuestion(): string {
 		const held = this.heldQuestion;
 		this.heldQuestion = "";
-		return held;
+		return held ? stripEmoji(held) : "";
 	}
 }
 

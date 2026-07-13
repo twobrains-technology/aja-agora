@@ -28,6 +28,7 @@ import {
 	joinSeparator,
 	normalizeGluedSentences,
 	splitSegments,
+	stripEmoji,
 	stripProcessPreamble,
 } from "./sanitizer";
 
@@ -672,5 +673,43 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 	it("texto com só 1 pergunta (comum) continua sobrevivendo normalmente", () => {
 		const input = "Boa! Olha as opções que separei. Você quer buscar em outra faixa?";
 		expect(stripProcessPreamble(input)).toBe(input);
+	});
+});
+
+// FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição): "Show, kairo!" (nome
+// em minúscula) e "Perfeito, kairo! ✅" (emoji fora da parcimônia esperada) com
+// Qwen 3.5 Fast. Casca determinística — independe do modelo obedecer ao prompt.
+describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () => {
+	it("stripEmoji remove emoji isolado sem tocar no resto do texto", () => {
+		expect(stripEmoji("Perfeito, kairo! ✅").trim()).toBe("Perfeito, kairo!");
+	});
+
+	it("stripEmoji remove múltiplos emoji em posições diferentes", () => {
+		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe("Sua reserva foi confirmada");
+	});
+
+	it("stripEmoji não mexe em acentuação pt-BR", () => {
+		const texto = "Você não vai perder a simulação, é rapidinho: informação, atenção.";
+		expect(stripEmoji(texto)).toBe(texto);
+	});
+
+	it("string vazia passa incólume", () => {
+		expect(stripEmoji("")).toBe("");
+	});
+
+	it("stripProcessPreamble também limpa emoji do texto final", () => {
+		const out = stripProcessPreamble("Perfeito, kairo! ✅ Vamos seguir com a simulação.");
+		expect(out).not.toContain("✅");
+		expect(out).toContain("Perfeito, kairo!");
+		expect(out).toContain("Vamos seguir com a simulação.");
+	});
+
+	it("EphemeralTextFilter nunca emite emoji ao vivo, em qualquer modelo", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Perfeito, kairo! ✅ Bora simular.");
+		emitted += f.flush();
+		expect(emitted).not.toContain("✅");
+		expect(emitted).toContain("Perfeito, kairo!");
+		expect(emitted).toContain("Bora simular.");
 	});
 });
