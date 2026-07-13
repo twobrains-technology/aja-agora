@@ -4,7 +4,7 @@ import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
-import { gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
@@ -125,6 +125,119 @@ async function* emitServerCard(args: {
 		createdAt: simulatorNow(),
 	});
 	yield { type: "artifact", artifactType, payload, toolCallId: crypto.randomUUID() };
+}
+
+/** BUG-REVEAL-LOOP + FIX-331 (rodada 10): dirige o card de decisão ("Esse
+ * plano faz sentido?" ou, no ramo so_parcela, `two_paths`) UMA vez — fim do
+ * passo 4 da jornada → abre o passo 5 (contratar). Directive determinístico +
+ * guard de idempotência (`decisionDispatched`).
+ *
+ * Extraído em função própria (FIX-331, veredito Sonnet A.8/A.9 — achado ao
+ * vivo confirmado em produção) pra ser chamada tanto do caminho PÓS-modelo
+ * (`nextGateToFire==="decision"`, computado por `runner.ts` depois do LLM
+ * rodar) quanto de um intercepto PRÉ-modelo (mais abaixo nesta função): sem
+ * o intercepto, o modelo — ainda no toolset da fase "reveal", já que
+ * `decisionDispatched` continua false — às vezes tentava avançar sozinho
+ * (`present_contract_form`/`present_decision_prompt`, tools fora da fase),
+ * gerando um `tool_error` que SUPRIME TODA a computação de gate do turno
+ * (guard do tool-error-recovery) — e como o gate nunca avançava, o funil
+ * travava definitivamente depois do simulador quando o usuário confirmava
+ * por TEXTO LIVRE em vez de clicar (achado ao vivo: nenhum `contract_form`/
+ * `decision_prompt` jamais persistido na conversa reproduzida). */
+async function* dispatchDecisionCascade(args: {
+	conversationId: string;
+	channel: Channel;
+	currentPersona: Persona;
+	knownName: string | null;
+}): AsyncGenerator<TurnEvent> {
+	const { conversationId, channel, currentPersona, knownName } = args;
+	const refreshed = await reloadMeta(conversationId);
+	if (refreshed.decisionDispatched) {
+		yield { type: "finish", reason: "decision-already-dispatched" };
+		return;
+	}
+	await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+	// FIX-272 (rodada 8, veredito Fable r7, D4 residual — "outra emenda"): a
+	// resposta do turno PRINCIPAL (às vezes termina em pergunta, ex. "...outro
+	// prazo?") colava SEM espaço no lead-in do directive seguinte (scarcity OU
+	// so_parcela, logo abaixo) — mesma classe do FIX-268, que só fechava a
+	// costura MAIS ADIANTE (entre scarcity e decision_prompt). Fecha o balão
+	// aberto incondicionalmente ANTES de entrar em QUALQUER ramo deste bloco
+	// (no-op se já não houver balão aberto) — cobre os dois caminhos de uma vez.
+	yield { type: "text-boundary" };
+	// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
+	// lance-value/lance-embutido/simulator-offer; o card certo é
+	// present_two_paths (dois caminhos), não present_decision_prompt.
+	const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
+	// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
+	// estratégia de lance resolvida, ANTES do card de decisão — só no
+	// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
+	// de escassez, spec `04-copy-fluxos.md` Fluxo B).
+	// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
+	// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
+	// de tool-call do LLM.
+	if (!isSoParcela) {
+		yield* runTurn({
+			channel,
+			conversationId,
+			userText: buildScarcityDirective(),
+			isUserTurn: false,
+			contactName: knownName,
+			skipAnalyzer: true,
+			skipLeadCollection: true,
+		});
+		const scarcityCard = buildScarcityCard(refreshed);
+		if (scarcityCard) {
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "scarcity",
+				payload: scarcityCard.payload,
+			});
+		}
+		// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto
+		// picotado no turno de decisão"): quando scarcityCard é null (sem
+		// groupId ancorado), NENHUM artifact separa o texto do directive de
+		// scarcity do texto do directive de decision logo abaixo — os dois
+		// caem no MESMO balão, colados sem espaçamento ("...só pra você
+		// saber:Boa! Então deixa eu confirmar com você:"). Força o boundary
+		// incondicionalmente (no-op quando o artifact já fechou o balão).
+		yield { type: "text-boundary" };
+	}
+	const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
+	yield* runTurn({
+		channel,
+		conversationId,
+		userText: directive,
+		isUserTurn: false,
+		contactName: knownName,
+		skipAnalyzer: true,
+		skipLeadCollection: true,
+	});
+	if (isSoParcela) {
+		yield* emitServerCard({
+			conversationId,
+			channel,
+			persona: currentPersona,
+			artifactType: "two_paths",
+			payload: buildTwoPathsCard(refreshed).payload,
+		});
+		yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
+		await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+	} else {
+		// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
+		// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
+		// determinístico aqui, no ÚNICO ramo que dirige a decisão. Nunca mais
+		// depende do LLM chamar a tool (mesma receita do scarcity acima).
+		yield* emitServerCard({
+			conversationId,
+			channel,
+			persona: currentPersona,
+			artifactType: "decision_prompt",
+			payload: buildDecisionPromptCard(refreshed).payload,
+		});
+	}
 }
 
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
@@ -351,6 +464,37 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					});
 				}
 			}
+			return;
+		}
+
+		// FIX-331 (rodada 10, veredito Sonnet A.8/A.9 — achado ao vivo, root
+		// cause confirmada em produção): depois do simulador (dial) responder
+		// por TEXTO LIVRE (`simulatorOfferAnswered=true`), se o usuário segue
+		// confirmando por texto livre em vez de clicar um botão, `nextGate()`
+		// já aponta "decision" — mas só o cálculo TARDIO (pós-modelo, em
+		// `runner.ts`) disparava esse gate. Nesse meio-tempo, o modelo (ainda
+		// no toolset da fase "reveal", já que `decisionDispatched` continua
+		// false) às vezes tenta avançar sozinho (`present_contract_form`/
+		// `present_decision_prompt`) — tool FORA da policy, `tool_error`, que
+		// SUPRIME TODA a computação de gate desse turno (guard do
+		// tool-error-recovery). Como o gate nunca avança, o PRÓXIMO turno
+		// reproduz o MESMO problema pra sempre — achado ao vivo: a conversa
+		// trava definitivamente depois do dial, nunca mais fecha por texto
+		// (confirmado no Postgres real: nenhum contract_form/decision_prompt
+		// jamais persistido). Intercepta ANTES de chamar o modelo — mesmo
+		// padrão do FIX-260 (simulator-offer)/FIX-297 (reco-consent) acima —
+		// usando as MESMAS funções puras (nextGate/decideShowGate) que o
+		// cálculo tardio já usa, sem duplicar lógica de decisão nova. O
+		// modelo NUNCA chega a rodar neste turno — o card sai determinístico,
+		// sem risco de tool-error.
+		if (
+			meta.revealCompleted === true &&
+			meta.decisionDispatched !== true &&
+			nextGate(meta, { hasContactName: Boolean(knownName) }) === "decision" &&
+			decideShowGate({ gate: "decision", intent: analyzedIntent, meta, isUserTurn: true })
+		) {
+			await saveMessage(conversationId, "user", userText, channel);
+			yield* dispatchDecisionCascade({ conversationId, channel, currentPersona, knownName });
 			return;
 		}
 
@@ -945,100 +1089,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// 4 da jornada → abre o passo 5 (contratar). Espelha o search reveal acima:
 	// directive determinístico + guard de idempotência (decisionDispatched). Sem
 	// isso o agent re-disparava o reveal em loop e nunca cruzava pra plataforma nova.
+	// FIX-331: extraído em função própria — ver `dispatchDecisionCascade` acima,
+	// chamada tanto daqui (pós-modelo) quanto do intercepto PRÉ-modelo mais acima
+	// nesta função.
 	if (result.nextGateToFire === "decision") {
-		const refreshed = await reloadMeta(conversationId);
-		if (refreshed.decisionDispatched) {
-			yield { type: "finish", reason: "decision-already-dispatched" };
-			return;
-		}
-		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-		// FIX-272 (rodada 8, veredito Fable r7, D4 residual — "outra emenda"): a
-		// resposta do turno PRINCIPAL (às vezes termina em pergunta, ex. "...outro
-		// prazo?") colava SEM espaço no lead-in do directive seguinte (scarcity OU
-		// so_parcela, logo abaixo) — mesma classe do FIX-268, que só fechava a
-		// costura MAIS ADIANTE (entre scarcity e decision_prompt). Fecha o balão
-		// aberto incondicionalmente ANTES de entrar em QUALQUER ramo deste bloco
-		// (no-op se já não houver balão aberto) — cobre os dois caminhos de uma vez.
-		yield { type: "text-boundary" };
-		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
-		// lance-value/lance-embutido/simulator-offer; o card certo é
-		// present_two_paths (dois caminhos), não present_decision_prompt.
-		const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
-		// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
-		// estratégia de lance resolvida, ANTES do card de decisão — só no
-		// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
-		// de escassez, spec `04-copy-fluxos.md` Fluxo B).
-		// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
-		// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
-		// de tool-call do LLM.
-		if (!isSoParcela) {
-			yield* runTurn({
-				channel,
-				conversationId,
-				userText: buildScarcityDirective(),
-				isUserTurn: false,
-				contactName: knownName,
-				skipAnalyzer: true,
-				skipLeadCollection: true,
-			});
-			const scarcityCard = buildScarcityCard(refreshed);
-			if (scarcityCard) {
-				yield* emitServerCard({
-					conversationId,
-					channel,
-					persona: currentPersona,
-					artifactType: "scarcity",
-					payload: scarcityCard.payload,
-				});
-			}
-			// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto
-			// picotado no turno de decisão"): quando scarcityCard é null (sem
-			// groupId ancorado), NENHUM artifact separa o texto do directive de
-			// scarcity do texto do directive de decision logo abaixo — os dois
-			// caem no MESMO balão, colados sem espaçamento ("...só pra você
-			// saber:Boa! Então deixa eu confirmar com você:"). Força o boundary
-			// incondicionalmente (no-op quando o artifact já fechou o balão).
-			yield { type: "text-boundary" };
-		}
-		const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
-		yield* runTurn({
-			channel,
-			conversationId,
-			userText: directive,
-			isUserTurn: false,
-			contactName: knownName,
-			skipAnalyzer: true,
-			skipLeadCollection: true,
-		});
-		if (isSoParcela) {
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "two_paths",
-				payload: buildTwoPathsCard(refreshed).payload,
-			});
-			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
-			await saveMessage(
-				conversationId,
-				"assistant",
-				TWO_PATHS_FOLLOWUP_TEXT,
-				channel,
-				currentPersona,
-			);
-		} else {
-			// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
-			// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
-			// determinístico aqui, no ÚNICO ramo que dirige a decisão. Nunca mais
-			// depende do LLM chamar a tool (mesma receita do scarcity acima).
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "decision_prompt",
-				payload: buildDecisionPromptCard(refreshed).payload,
-			});
-		}
+		yield* dispatchDecisionCascade({ conversationId, channel, currentPersona, knownName });
 		return;
 	}
 

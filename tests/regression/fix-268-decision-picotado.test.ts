@@ -18,11 +18,14 @@ function readSource(rel: string): string {
 }
 
 describe("FIX-268 — scarcity e decision não colam no mesmo balão (index.ts)", () => {
+	// FIX-331 (rodada 10): o bloco inline `nextGateToFire === "decision"` foi
+	// extraído pra `dispatchDecisionCascade` — trava aqui aponta pro corpo da
+	// função, não mais pro bloco inline.
 	it("bloco de decision emite um evento 'text-boundary' entre buildScarcityDirective e buildDecisionPromptDirective", () => {
 		const idx = readSource("src/lib/agent/orchestrator/index.ts");
-		const decisionBlockStart = idx.indexOf('nextGateToFire === "decision"');
-		expect(decisionBlockStart, "bloco de decision não encontrado em index.ts").toBeGreaterThan(-1);
-		const nextBlockStart = idx.indexOf("if (result.nextGateToFire) {", decisionBlockStart + 1);
+		const decisionBlockStart = idx.indexOf("async function* dispatchDecisionCascade");
+		expect(decisionBlockStart, "dispatchDecisionCascade não encontrada em index.ts").toBeGreaterThan(-1);
+		const nextBlockStart = idx.indexOf("\nexport async function* runTurn", decisionBlockStart + 1);
 		const decisionBlock = idx.slice(
 			decisionBlockStart,
 			nextBlockStart > -1 ? nextBlockStart : decisionBlockStart + 2500,

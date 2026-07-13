@@ -45,15 +45,21 @@ describe("FIX-237 — embedded_bid disparado no gate lance-embutido (route.ts)",
 });
 
 describe("FIX-237 — scarcity disparado antes do card de decisão (index.ts + route.ts)", () => {
-	it("orchestrator/index.ts: gate decision (caminho normal, não so_parcela) dispara buildScarcityDirective antes de buildDecisionPromptDirective", () => {
+	// FIX-331 (rodada 10): o bloco inline `nextGateToFire === "decision"` foi
+	// extraído pra `dispatchDecisionCascade` (chamada tanto do caminho
+	// pós-modelo quanto de um intercepto pré-modelo novo) — mesmo padrão de
+	// extração que `pipeClosingCeremony` (route.ts) já usa, checado abaixo.
+	it("orchestrator/index.ts: dispatchDecisionCascade (caminho normal, não so_parcela) dispara buildScarcityDirective antes de buildDecisionPromptDirective", () => {
 		const idx = readSource("src/lib/agent/orchestrator/index.ts");
 		expect(idx).toMatch(/buildScarcityDirective/);
-		const decisionBlockStart = idx.indexOf('nextGateToFire === "decision"');
-		expect(decisionBlockStart, "bloco de decision não encontrado em index.ts").toBeGreaterThan(-1);
-		const nextBlockStart = idx.indexOf("if (result.nextGateToFire) {", decisionBlockStart + 1);
+		expect(idx).toMatch(/nextGateToFire === "decision"/);
+		expect(idx).toMatch(/dispatchDecisionCascade/);
+		const helperStart = idx.indexOf("async function* dispatchDecisionCascade");
+		expect(helperStart, "dispatchDecisionCascade não encontrada em index.ts").toBeGreaterThan(-1);
+		const nextFnStart = idx.indexOf("\nexport async function* runTurn", helperStart + 1);
 		const decisionBlock = idx.slice(
-			decisionBlockStart,
-			nextBlockStart > -1 ? nextBlockStart : decisionBlockStart + 2000,
+			helperStart,
+			nextFnStart > -1 ? nextFnStart : helperStart + 3000,
 		);
 		expect(decisionBlock).toMatch(/buildScarcityDirective/);
 		expect(decisionBlock).toMatch(/buildDecisionPromptDirective/);

@@ -12,6 +12,12 @@
 // pro integration test (index.fix-246-server-cards.integration.test.ts, que já
 // cobre a emissão de artifacts deste mesmo bloco); aqui travamos a invariante
 // de que o boundary existe e vem ANTES de qualquer directive do bloco.
+//
+// FIX-331 (rodada 10): o bloco inline `nextGateToFire === "decision"` foi
+// extraído pra `dispatchDecisionCascade` (chamada tanto do caminho pós-modelo
+// quanto de um intercepto pré-modelo novo, achado ao vivo de funil travado
+// pós-simulador) — trava aqui aponta pro corpo da função, não mais pro
+// bloco inline.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,7 +27,7 @@ describe("FIX-272 — boundary fecha o balão do turno anterior ANTES do bloco d
 		join(process.cwd(), "src/lib/agent/orchestrator/index.ts"),
 		"utf8",
 	);
-	const blockStart = src.indexOf('if (result.nextGateToFire === "decision") {');
+	const blockStart = src.indexOf("async function* dispatchDecisionCascade");
 	const isSoParcelaIdx = src.indexOf("const isSoParcela", blockStart);
 	const scarcityCallIdx = src.indexOf("buildScarcityDirective()", blockStart);
 	const firstBoundaryIdx = src.indexOf('type: "text-boundary"', blockStart);
