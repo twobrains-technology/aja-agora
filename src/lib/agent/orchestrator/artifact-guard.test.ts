@@ -110,16 +110,33 @@ describe("FIX-20 — regra whatsapp-optin (PF-07 + BUG-OPTIN-ENGOLE-GATES)", () 
 	it("SUPRIME: optin duplicado (whatsappOptinShown=true)", () => {
 		const verdict = evaluateArtifactGuards(
 			makeInput({
-				meta: { ...POST_REVEAL, whatsappOptinShown: true },
+				meta: { ...POST_REVEAL, contractFormDispatched: true, whatsappOptinShown: true },
 				artifactType: "whatsapp_optin",
 			}),
 		);
 		expect(verdict.allow).toBe(false);
 	});
 
-	it("PERMITE: primeiro optin pós-reveal", () => {
+	// FIX-303 (rodada r10 onda 2): pós-reveal sozinho não basta mais — o optin só
+	// é permitido no FECHO (contractFormDispatched=true, present_contract_form
+	// já apresentado). Regressão do bug real: card soltava logo após a
+	// recomendação, sem proposta nenhuma na tela.
+	it("SUPRIME: optin pós-reveal SEM contractFormDispatched (FIX-303 — ainda não é fecho)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({ meta: POST_REVEAL, artifactType: "whatsapp_optin" }),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("whatsapp-optin");
+	});
+
+	it("PERMITE: primeiro optin no fecho (reveal + contractFormDispatched)", () => {
 		expect(
-			evaluateArtifactGuards(makeInput({ meta: POST_REVEAL, artifactType: "whatsapp_optin" })),
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { ...POST_REVEAL, contractFormDispatched: true },
+					artifactType: "whatsapp_optin",
+				}),
+			),
 		).toEqual({ allow: true });
 	});
 });

@@ -4017,7 +4017,12 @@ describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", ()
 		);
 		// Cenário exato do run 1: reserva respondida, qualificação incompleta.
 		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } })).toBe(false);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+		// FIX-303: revealCompleted sozinho não basta mais — só no fecho
+		// (contractFormDispatched), ver describe FIX-303 mais abaixo.
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(false);
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
 	});
 });
 
@@ -4346,10 +4351,17 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 		const { shouldEmitWhatsappOptin } = await import(
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true, contractRetryPending: true })).toBe(
-			false,
-		);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+		expect(
+			shouldEmitWhatsappOptin({
+				revealCompleted: true,
+				contractFormDispatched: true,
+				contractRetryPending: true,
+			}),
+		).toBe(false);
+		// FIX-303: o gatilho migrou pro fecho (contractFormDispatched).
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
 	});
 
 	it("estrutural: acoplamento runtime (runner enriquece knownPhone, route confirma, leads marca)", () => {

@@ -1,12 +1,14 @@
 ---
 id: FIX-303
 titulo: "WhatsApp opt-in move de pós-reveal pro fecho (pós-proposta apresentada)"
-status: todo
+status: done
 bloco: bloco-r10-2-whatsapp-fecho
 severidade: media
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/whatsapp-optin-guard.ts, src/lib/agent/orchestrator/index.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 2, bloco r10-2-whatsapp-fecho — sequencial, depende da onda 1 integrada)
+commit: "1 commit conventional na branch fix/r10-2-whatsapp-fecho (ver git log)"
+executado_em: "2026-07-13"
 ---
 ## Palavras do operador
 > "Continua o WhatsApp Enviei meus dados pra buscar as ofertas... Show, kairo! Anotei seu WhatsApp"
@@ -50,3 +52,24 @@ rodada: 2026-07-12 (loop-de-goal r10, onda 2, bloco r10-2-whatsapp-fecho — seq
 - Teste de regressão: FIX-294 (denylist `present_whatsapp_optin` do specialist) e FIX-295 (re-emite
   identify na supressão de contract_form) continuam verdes — este fix não reabre o LLM pra chamar
   a tool, só move o gatilho server-side.
+
+## Resultado (executado)
+- `whatsapp-optin-guard.ts:18-25`: `shouldEmitWhatsappOptin` ganhou o check
+  `meta.contractFormDispatched !== true → false`, entre o check de `revealCompleted` e o de
+  `contractRetryPending` (FIX-27 preservado).
+- `orchestrator/index.ts`: o emit (directive + `emitServerCard` do `whatsapp_optin`) foi **removido**
+  do branch `nextGateToFire === "search"` (linha antiga ~797, logo após o reveal) e **movido** pra um
+  bloco novo logo depois do `if (result.isConcierge)` (antes de qualquer branch de `nextGateToFire`),
+  guardado por `if (result.artifacts.some((a) => a.type === "contract_form"))`. Esse é o MESMO turno
+  em que `runAgentTurn` (runner.ts:1222-1224) já persistiu `contractFormDispatched: true` — o bloco
+  recarrega o meta (`reloadMeta`) pra enxergar o flag antes de chamar `shouldEmitWhatsappOptin`. Não
+  duplica: `contract_form` só entra em `result.artifacts` no turno em que a tool é chamada
+  (LLM-driven, não directive-driven), então o novo bloco nunca corre no mesmo turno que os branches
+  `nextGateToFire === "search"/"decision"` (que produzem artifacts diferentes ou nenhum).
+- Testes: `whatsapp-optin-guard.test.ts` (+4 casos FIX-303) e `system-prompt.fix-27.test.ts`
+  atualizados; `artifact-guard.test.ts` (+1 caso SUPRIME pós-reveal sem fecho); 2 fixtures em
+  `tests/regression/agent-trajectory.test.ts` atualizadas; `index.fix-280-*.integration.test.ts`
+  invertido pra provar a NEGATIVA (reveal sozinho não dispara mais); novo
+  `index.fix-303-whatsapp-optin-fecho.integration.test.ts` prova a emissão no fecho +
+  `contractRetryPending` não reabre. `test:unit` (3394 testes) e `test:integration` (322 testes)
+  100% verdes.
