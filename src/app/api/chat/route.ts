@@ -206,6 +206,56 @@ async function writeAndSaveText(
 	await saveMessage(conversationId, "assistant", text, "web", persona);
 }
 
+/**
+ * FIX-311 (r10-4, happy-path-ceremony): cerimônia scarcity→decision_prompt —
+ * extraída do ramo de recusa/ambiguidade do simulador (única região que a
+ * implementava) pra ser o passo comum do funil. Os dois fast-paths do ramo
+ * FELIZ (ação `interest`, aceite do simulador) religam aqui em vez de pular
+ * direto pro fecho — quem aceita de cara merece a mesma cerimônia de
+ * segurança/urgência de quem hesitou. Idempotência (decisionDispatched) é
+ * responsabilidade do CALLER, igual ao padrão anterior.
+ */
+async function pipeClosingCeremony(args: {
+	conversationId: string;
+	meta: ConversationMetadata;
+	contactName: string | null;
+	writer: UIMessageStreamWriter<AjaUIMessage>;
+	userKey: string | null;
+}): Promise<void> {
+	const { conversationId, meta, contactName, writer, userKey } = args;
+	await pipeDirectiveTurn({
+		conversationId,
+		directive: buildScarcityDirective(),
+		contactName,
+		writer,
+		userKey,
+	});
+	const scarcityCard = buildScarcityCard(meta);
+	if (scarcityCard) {
+		await pipeServerArtifact({
+			conversationId,
+			artifactType: "scarcity",
+			payload: scarcityCard.payload,
+			persona: meta.currentPersona ?? null,
+			writer,
+		});
+	}
+	await pipeDirectiveTurn({
+		conversationId,
+		directive: buildDecisionPromptDirective(),
+		contactName,
+		writer,
+		userKey,
+	});
+	await pipeServerArtifact({
+		conversationId,
+		artifactType: "decision_prompt",
+		payload: buildDecisionPromptCard(meta).payload,
+		persona: meta.currentPersona ?? null,
+		writer,
+	});
+}
+
 /** FIX-11: pipeClosingItems + persistência — 1 message com os textos do
  * fechamento e os artifacts vinculados a ela (mesmo padrão do runner,
  * runner.ts `saveMessage` + insert em `artifacts`). */
@@ -492,24 +542,33 @@ export async function POST(req: NextRequest) {
 						// FIX-29/FIX-34/FIX-38: "Tenho interesse" pós-reveal é AVANÇO no
 						// funil canônico (contratação self-service), NUNCA captura de lead
 						// pra consultor humano. O clique é o sinal EXPLÍCITO de avanço — JÁ
-						// é a decisão —, então vai DIRETO pro passo 5 (present_contract_form),
-						// sem o card "Esse plano faz sentido?". FIX-38: a dupla confirmação
-						// por construção do FIX-34 (interest sempre disparava o decision na
-						// 1ª vez) era fricção inútil pra quem já decidiu ("ta pedindo
-						// confirmacao demais"). Marca decisionDispatched ANTES de dirigir o
-						// avanço: a tool-policy só libera present_contract_form na fase
-						// "closing" (decisionDispatched===true) — sem a marca o avanço cairia
-						// na fase "reveal" e a tool seria filtrada. Idempotência: o gate
-						// "decision" do funil (caminho AMBÍGUO — satisfação difusa em texto)
-						// também não reaparece. O card de decisão fica pros caminhos ambíguos
-						// (gate simulator-offer "Agora não") — validado contra a
-						// jornada-canonica.md passo 4→5 (o card é instrumento pra DEFINIR,
-						// não pedágio depois da definição já dada no clique).
+						// é a decisão —, então segue direto pro passo 5
+						// (present_contract_form). FIX-311 (r10-4, investigação de
+						// causa-raiz): REVERTE a suposição do FIX-38 de que o avanço
+						// dispensa a cerimônia — "aceitar de cara" não é dispensa de
+						// cuidado, é só um caminho mais curto até a mesma decisão; quem
+						// aceita direto merece a MESMA cerimônia de segurança/urgência
+						// (scarcity→decision_prompt) de quem hesitou, não menos (achado real:
+						// os 2 dossiês limpos investigados nunca mostravam scarcity/
+						// decision_prompt porque este fast-path pulava direto pro fecho).
+						// Marca decisionDispatched ANTES de dirigir o avanço: a tool-policy
+						// só libera present_contract_form na fase "closing"
+						// (decisionDispatched===true) — sem a marca o avanço cairia na fase
+						// "reveal" e a tool seria filtrada. Idempotência: quem já viu a
+						// cerimônia por outro caminho (ex.: gate simulator-offer) não a vê
+						// de novo aqui.
 						if (body.action?.kind === "interest") {
 							const fresh = await reloadMeta(conversationId);
 							const administradora = fresh.recommendedAdministradora ?? body.action.administradora;
 							if (!fresh.decisionDispatched) {
 								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
+								await pipeClosingCeremony({
+									conversationId,
+									meta: fresh,
+									contactName,
+									writer,
+									userKey,
+								});
 							}
 							await pipeDirectiveTurn({
 								conversationId,
@@ -1109,8 +1168,9 @@ export async function POST(req: NextRequest) {
 						}
 
 						// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
-						// "yes" → directive do dial (dados reais do plano recomendado);
-						// "no" → card de decisão direto ("Esse plano faz sentido?").
+						// "yes" → directive do dial + cerimônia scarcity→decision_prompt no
+						// MESMO turno (FIX-311, ver nota abaixo); "no" → cerimônia direto
+						// ("Esse plano faz sentido?").
 						if (action.gate === "simulator-offer") {
 							// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
 							// resposta ao simulator-offer — marca simulatorOfferAnswered
@@ -1142,49 +1202,36 @@ export async function POST(req: NextRequest) {
 									writer,
 									userKey,
 								});
+								// FIX-311 (r10-4, investigação de causa-raiz): este fast-path
+								// só mostrava o dial e TERMINAVA o turno — a cerimônia
+								// scarcity→decision_prompt ficava dependendo de um turno de
+								// texto livre FUTURO classificar a resposta como avanço
+								// (orchestrator/index.ts, nextGateToFire==="decision"), o que
+								// nos 2 dossiês limpos investigados NUNCA aconteceu (o clique
+								// seguinte ia direto pro fast-path "interest", que também
+								// pulava a cerimônia). Dispara aqui, DETERMINISTICAMENTE, no
+								// mesmo turno — idempotente via decisionDispatched, igual ao
+								// ramo "no" abaixo.
+								if (!refreshed.decisionDispatched) {
+									await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+									await pipeClosingCeremony({
+										conversationId,
+										meta: refreshed,
+										contactName,
+										writer,
+										userKey,
+									});
+								}
 								return;
 							}
 							if (!refreshed.decisionDispatched) {
 								await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-								// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara
-								// depois da estratégia (lance resolvido), ANTES da proposta —
-								// mesmo ponto que o gate `decision` em orchestrator/index.ts.
-								// FIX-246: o directive SÓ escreve o texto — o card é emissão
-								// SERVER-SIDE determinística (nunca tool-call do LLM).
-								await pipeDirectiveTurn({
+								await pipeClosingCeremony({
 									conversationId,
-									directive: buildScarcityDirective(),
+									meta: refreshed,
 									contactName,
 									writer,
 									userKey,
-								});
-								const scarcityCard = buildScarcityCard(refreshed);
-								if (scarcityCard) {
-									await pipeServerArtifact({
-										conversationId,
-										artifactType: "scarcity",
-										payload: scarcityCard.payload,
-										persona: refreshed.currentPersona ?? null,
-										writer,
-									});
-								}
-								// FIX-253 (rodada 4, veredito Fable FINAL §3): o directive SÓ
-								// narra — o card de decisão é emissão SERVER-SIDE determinística
-								// (nunca mais tool-call do LLM, present_decision_prompt saiu do
-								// toolset em tool-policy.ts).
-								await pipeDirectiveTurn({
-									conversationId,
-									directive: buildDecisionPromptDirective(),
-									contactName,
-									writer,
-									userKey,
-								});
-								await pipeServerArtifact({
-									conversationId,
-									artifactType: "decision_prompt",
-									payload: buildDecisionPromptCard(refreshed).payload,
-									persona: refreshed.currentPersona ?? null,
-									writer,
 								});
 							}
 							return;

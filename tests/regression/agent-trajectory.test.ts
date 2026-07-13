@@ -423,11 +423,18 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 // decisão é instrumento pra DEFINIR, não pedágio após a definição já dada).
 // ============================================================================
 
-describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avança em UM passo", () => {
-	it("cassette: o turno do avanço dirige present_contract_form em UM passo, sem nova pergunta de confirmação", async () => {
-		// Trajetória CORRETA pós-FIX-38: o clique explícito já decidiu — o agente
-		// fecha com UMA frase e chama present_contract_form. Sem card de decisão,
-		// sem re-perguntar "faz sentido?".
+// FIX-311 (r10-4, happy-path-ceremony): REVERTE o FIX-38 — investigação de
+// causa-raiz achou que os 2 dossiês limpos investigados (Madalena, Mario)
+// NUNCA mostravam scarcity/decision_prompt, porque o clique explícito
+// "Tenho interesse" pulava direto pro avanço. "Aceitar de cara" não é
+// dispensa de cuidado: o clique agora passa pela MESMA cerimônia de quem
+// hesitou (scarcity->decision_prompt) antes do avanço (present_contract_form).
+describe("FIX-311-HAPPY-PATH-CEREMONY — clique explícito 'Tenho interesse' passa pela cerimônia scarcity->decision_prompt antes do avanço", () => {
+	it("cassette: o turno de AVANÇO em si (após a cerimônia) dirige present_contract_form, sem re-chamar present_decision_prompt no MESMO turno", async () => {
+		// Este cassette testa só o turno do directive de avanço em isolamento
+		// (buildAdvanceToContractDirective) — a cerimônia (scarcity/decision_prompt)
+		// acontece em turnos SEPARADOS, disparados pelo route.ts antes deste
+		// (pipeClosingCeremony), não neste mesmo tool-call.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
@@ -447,7 +454,7 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		expect(text.toLowerCase()).not.toContain("consultor");
 	});
 
-	it("estrutural: o branch interest do route vai DIRETO pro avanço (sem buildDecisionPromptDirective) e marca decisionDispatched", () => {
+	it("estrutural: o branch interest do route religa pipeClosingCeremony ANTES do avanço e marca decisionDispatched", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		const interestBlock =
 			route.match(
@@ -456,42 +463,46 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 		expect(
 			interestBlock.includes("buildAdvanceToContractDirective"),
-			"FIX-38: clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+			"clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+		).toBe(true);
+		// FIX-311: REVERTE o FIX-38 — o clique explícito AGORA religa a cerimônia
+		// extraída (pipeClosingCeremony) antes do avanço, igual a quem hesitou.
+		expect(
+			interestBlock.includes("pipeClosingCeremony"),
+			"FIX-311: clique explícito precisa religar pipeClosingCeremony (scarcity->decision_prompt) antes do avanço.",
 		).toBe(true);
 		expect(
-			interestBlock.includes("buildDecisionPromptDirective"),
-			"FIX-38: clique explícito NÃO passa pelo card de decisão (sem dupla confirmação).",
-		).toBe(false);
-		expect(
 			interestBlock.includes("decisionDispatched"),
-			"FIX-38: marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
+			"marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
 		).toBe(true);
 	});
 
-	it("directives: avanço dirige present_contract_form; o card de decisão (caminho ambíguo) segue existindo e nunca vira lead", () => {
+	it("directives: avanço dirige present_contract_form; a cerimônia de decisão passa a valer pros DOIS ramos do simulator-offer", () => {
 		const advance = buildAdvanceToContractDirective({ administradora: "ITAÚ" });
 		expect(advance).toContain("present_contract_form");
 		expect(advance).not.toContain("present_lead_form");
 		expect(advance).not.toContain("present_decision_prompt");
 
-		// Caminho AMBÍGUO preservado: o card de decisão continua disponível (o
-		// route ainda o dispara no gate simulator-offer "Agora não").
-		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
+		const decision = buildDecisionPromptDirective();
 		expect(decision).toContain("present_decision_prompt");
+
 		const route = readSource("src/app/api/chat/route.ts");
 		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
 		// próximo comentário — um comentário legítimo dentro do próprio bloco
-		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
-		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo.
 		const start = route.indexOf('action.gate === "simulator-offer"');
 		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
 			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
+		// FIX-311: REVERTE o FIX-38 — os DOIS ramos (yes/aceite do simulador,
+		// no/recusa) religam a MESMA cerimônia extraída (pipeClosingCeremony),
+		// não só o caminho ambíguo ("Agora não").
+		const religamentos = simulatorOfferBlock.match(/pipeClosingCeremony/g)?.length ?? 0;
 		expect(
-			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
-			"FIX-38: o card de decisão fica pros caminhos ambíguos — o gate simulator-offer 'Agora não' ainda o dispara.",
-		).toBe(true);
+			religamentos,
+			"FIX-311: os dois ramos do simulator-offer (yes/no) precisam religar pipeClosingCeremony.",
+		).toBeGreaterThanOrEqual(2);
 	});
 });
 

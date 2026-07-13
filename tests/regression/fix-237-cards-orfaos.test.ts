@@ -63,20 +63,42 @@ describe("FIX-237 — scarcity disparado antes do card de decisão (index.ts + r
 		);
 	});
 
-	it("route.ts: simulator-offer 'no' dispara buildScarcityDirective antes de buildDecisionPromptDirective", () => {
+	// FIX-311 (r10-4, happy-path-ceremony): a cerimônia scarcity->decision_prompt
+	// foi extraída pra uma função comum (pipeClosingCeremony) — os DOIS ramos do
+	// simulator-offer (yes/aceite do simulador, no/recusa) religam nela, em vez
+	// de cada um chamar buildScarcityDirective/buildDecisionPromptDirective
+	// inline. O teste original (pré-FIX-311) checava as chamadas inline; agora
+	// checa que os dois ramos religam o helper E que o PRÓPRIO helper dispara
+	// scarcity antes de decision_prompt.
+	it("route.ts: simulator-offer (yes e no) religam pipeClosingCeremony, que dispara buildScarcityDirective antes de buildDecisionPromptDirective", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		expect(route).toMatch(/buildScarcityDirective/);
+
 		const simulatorBlockStart = route.indexOf('action.gate === "simulator-offer"');
 		expect(simulatorBlockStart, "bloco simulator-offer não encontrado").toBeGreaterThan(-1);
 		const nextBlockStart = route.indexOf("if (action.gate ===", simulatorBlockStart + 1);
 		const simulatorBlock = route.slice(
 			simulatorBlockStart,
-			nextBlockStart > -1 ? nextBlockStart : simulatorBlockStart + 1500,
+			nextBlockStart > -1 ? nextBlockStart : simulatorBlockStart + 2000,
 		);
-		expect(simulatorBlock).toMatch(/buildScarcityDirective/);
-		expect(simulatorBlock).toMatch(/buildDecisionPromptDirective/);
-		expect(simulatorBlock.indexOf("buildScarcityDirective")).toBeLessThan(
-			simulatorBlock.indexOf("buildDecisionPromptDirective"),
+		expect(simulatorBlock).toMatch(/pipeClosingCeremony/);
+		const religamentos = simulatorBlock.match(/pipeClosingCeremony/g)?.length ?? 0;
+		expect(
+			religamentos,
+			"os DOIS ramos (yes/aceite do simulador, no/recusa) precisam religar pipeClosingCeremony",
+		).toBeGreaterThanOrEqual(2);
+
+		const helperStart = route.indexOf("async function pipeClosingCeremony");
+		expect(helperStart, "pipeClosingCeremony não encontrada").toBeGreaterThan(-1);
+		const nextFnStart = route.indexOf("async function pipeAndSaveClosingItems", helperStart + 1);
+		const helperBody = route.slice(
+			helperStart,
+			nextFnStart > -1 ? nextFnStart : helperStart + 1500,
+		);
+		expect(helperBody).toMatch(/buildScarcityDirective/);
+		expect(helperBody).toMatch(/buildDecisionPromptDirective/);
+		expect(helperBody.indexOf("buildScarcityDirective")).toBeLessThan(
+			helperBody.indexOf("buildDecisionPromptDirective"),
 		);
 	});
 });
