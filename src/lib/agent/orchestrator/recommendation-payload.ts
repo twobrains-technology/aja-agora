@@ -73,12 +73,19 @@ function isUsableGroup(g: RevealGroupLike | undefined): g is RevealGroupLike {
 
 /**
  * Coage os campos numéricos + de identidade de UMA cota do reveal a partir do
- * grupo REAL. SEMPRE remove o `contempladosMes` que o modelo digitou (o "36"
- * fabricado — spec §2) e o re-adiciona APENAS do `availableSlots` REAL > 0
- * (FIX-192; 0/ausente → oculto pelo bloco-b). `tipoOferta`/`grupo` NUNCA entram
- * (critério interno — FIX-193). Sem grupo utilizável (não deveria ocorrer no
- * reveal canônico), ainda assim remove o `contempladosMes` fabricado e mantém o
- * `groupId`/`quotaId` derivado do `id` — nunca deixa o número inventado passar.
+ * grupo REAL. FIX-315 (rodada 10, onda 4 — Rodada A.3, achado de dados
+ * financeiros 100% fabricados chegando ao usuário): esta função reconstrói o
+ * payload por ALLOWLIST (Lei 2 — allowlist, não blocklist), não mais por
+ * `{...rest}` menos 3 campos removidos. Sob a versão antiga, quando o modelo
+ * inventava um `id`/administradora que não batia com NENHUM grupo real
+ * (`!isUsableGroup(group)`), a função devolvia `input` quase intacto — todo
+ * numero fabricado (creditValue, monthlyPayment, adminFeePercent, termMonths)
+ * e até campos de schema inteiramente inventados (`awardingPattern`,
+ * `avgWinningBidPct`, etc., vistos ao vivo num dossiê real) atravessavam sem
+ * checagem. Agora: SEM grupo real ancorado, a cota fica só com identidade
+ * (id/administradora/category) — NENHUM número financeiro passa. Isso é
+ * causa-raiz também de `two_paths`/fechamento divergente do escolhido pelo
+ * cliente (a proposta se ancorava em cotas fabricadas).
  */
 export function coerceRevealCota(
 	input: Record<string, unknown>,
@@ -93,29 +100,24 @@ export function coerceRevealCota(
 	 * dentro do MESMO artifact. */
 	knownCreditValueByGroupId?: ReadonlyMap<string, KnownGroupValue>,
 ): Record<string, unknown> {
-	// Descarta o contempladosMes do modelo SEMPRE (fonte única = availableSlots
-	// real) e tipoOferta/grupo (critério INTERNO de ranking/dedup — FIX-193;
-	// nunca vaza pra UI, mesmo se aparecer no input).
-	const { contempladosMes: _dropModel, tipoOferta: _dropTipo, grupo: _dropGrupo, ...rest } = input;
-	const out: Record<string, unknown> = { ...rest };
-	const id = typeof rest.id === "string" && rest.id.length > 0 ? rest.id : undefined;
+	// ALLOWLIST (FIX-315): só identidade sai do input do modelo. Category é um
+	// enum fechado no schema (Zod já valida) — seguro copiar. Nenhum campo
+	// numérico/financeiro do modelo entra aqui; todos vêm do `group` real abaixo.
+	const id = typeof input.id === "string" && input.id.length > 0 ? input.id : undefined;
+	const out: Record<string, unknown> = {};
+	if (id) out.id = id;
+	if (typeof input.category === "string") out.category = input.category;
 	// CONTRATO: groupId/quotaId sempre presentes quando há id (bloco-b emite choose_offer).
 	if (id) {
 		out.groupId = id;
 		out.quotaId = id;
 	}
-	// FIX-223: lance médio SEMPRE do grupo real — nunca o que a LLM digitou.
-	// FIX-222: idem pro logoUrl — casado por administradora contra o cadastro
-	// (nunca uma URL que a LLM inventou). Descarta incondicionalmente aqui
-	// (mesmo sem grupo ancorado); só volta abaixo com dado real (D11). O nome
-	// da administradora em si já não é coagido nesta função (a LLM copia do
-	// resultado real da busca) — casar o logo por ele é o mesmo nível de
-	// confiança já aceito pro resto do payload.
-	delete out.avgBidValue;
-	delete out.logoUrl;
 	const administradoraName =
 		(isUsableGroup(group) ? group.administradora : undefined) ??
-		(typeof rest.administradora === "string" ? rest.administradora : undefined);
+		(typeof input.administradora === "string" ? input.administradora : undefined);
+	if (administradoraName) out.administradora = administradoraName;
+	// FIX-222: logoUrl casado por administradora contra o cadastro (nunca uma
+	// URL que a LLM inventou).
 	const logoUrl = matchAdministradoraLogo(logosByAdministradora, administradoraName);
 	if (logoUrl) out.logoUrl = logoUrl;
 	if (!isUsableGroup(group)) return out;
@@ -282,20 +284,23 @@ export function coerceComparisonPayload(
 	/** FIX-287/FIX-292: ver `coerceRevealCota`. */
 	knownCreditValueByGroupId?: ReadonlyMap<string, KnownGroupValue>,
 ): Record<string, unknown> {
-	const groups = Array.isArray(input.groups) ? input.groups : null;
-	if (!groups) return input;
-	return {
-		...input,
-		groups: groups.map((g) => {
-			if (!g || typeof g !== "object") return g;
+	// FIX-315: FAIL-CLOSED — `groups` que não chega como array de verdade (visto
+	// ao vivo: o modelo mandou uma STRING JSON-serializada) vira lista VAZIA,
+	// nunca o input cru fabricado. Antes: `return input` passava o payload
+	// inteiro adiante sem nenhuma coerção.
+	const groups = Array.isArray(input.groups) ? input.groups : [];
+	const coerced = groups
+		.map((g) => {
+			if (!g || typeof g !== "object") return null;
 			const cota = g as Record<string, unknown>;
 			const id = typeof cota.id === "string" ? cota.id : undefined;
-			return coerceRevealCota(
-				cota,
-				id ? index.get(id) : undefined,
-				logosByAdministradora,
-				knownCreditValueByGroupId,
-			);
-		}),
-	};
+			const group = id ? index.get(id) : undefined;
+			// FIX-315: cota sem grupo REAL ancorado é DESCARTADA da tabela — uma
+			// linha comparativa sem número real não tem por que existir (ao
+			// contrário do hero, que é 1 cota só e pode aparecer incompleta).
+			if (!isUsableGroup(group)) return null;
+			return coerceRevealCota(cota, group, logosByAdministradora, knownCreditValueByGroupId);
+		})
+		.filter((cota): cota is Record<string, unknown> => cota !== null);
+	return { ...input, groups: coerced };
 }

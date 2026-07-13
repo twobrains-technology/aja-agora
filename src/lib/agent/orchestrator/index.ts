@@ -4,7 +4,7 @@ import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
-import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
@@ -28,6 +28,7 @@ import {
 	buildFirstRevealCardIntro,
 	buildFirstRevealRecoveryFallback,
 	buildLanceSoParcelaDirective,
+	buildRecoConsentAcceptedDirective,
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
@@ -39,6 +40,7 @@ import {
 	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
+import { CLARIFY_LEAD_IN, gateStuckDefaultNotice } from "./gate-questions";
 import { runLeadCollectionTurn } from "./lead-collection";
 import {
 	buildRecommendationCardFromRevealGroup,
@@ -50,6 +52,7 @@ import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
 	buildScarcityCard,
+	buildTopicPickerCard,
 	buildTwoPathsCard,
 	buildWhatsappOptinCard,
 } from "./server-cards";
@@ -63,12 +66,20 @@ export type { TurnEvent, TurnInput } from "./types";
 
 // FIX-260 (rodada 5, veredito Fable r4): heurística determinística de sim/não
 // em texto livre — usada SÓ pra consumir os gates lance-embutido/
-// simulator-offer quando a resposta vem digitada (nunca por clique, que já
-// tem handler próprio em route.ts). Lei 4: invariante de gate vira código,
-// não regra-no-prompt. `intent` (do analyzer) filtra pergunta/dúvida/off-topic
-// ANTES do regex — mesmo critério que decideShowGate já usa pra esses gates.
+// simulator-offer/reco-consent quando a resposta vem digitada (nunca por
+// clique, que já tem handler próprio em route.ts). Lei 4: invariante de gate
+// vira código, não regra-no-prompt. `intent` (do analyzer) filtra pergunta/
+// dúvida/off-topic ANTES do regex — mesmo critério que decideShowGate já usa
+// pra esses gates.
+//
+// FIX-308 (rodada 10, onda 4): "pode"/"mostra"/"mostrar" entraram — variantes
+// comuns de aceite a um CONVITE ("Posso te mostrar a opção que eu
+// recomendo?" → "Pode mostrar"/"Pode"/"Mostra aí") que o dossiê real da
+// Madalena provou não estarem cobertas (o hero só liberou 6 turnos depois,
+// em "quero"). Risco de falso-positivo de "pode" sozinho é mitigado pelo
+// filtro de `intent` acima (pergunta/dúvida nunca chegam no regex).
 const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
+	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
 const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
 function detectYesNoText(text: string, intent: UserIntent): boolean | null {
@@ -116,6 +127,119 @@ async function* emitServerCard(args: {
 	yield { type: "artifact", artifactType, payload, toolCallId: crypto.randomUUID() };
 }
 
+/** BUG-REVEAL-LOOP + FIX-331 (rodada 10): dirige o card de decisão ("Esse
+ * plano faz sentido?" ou, no ramo so_parcela, `two_paths`) UMA vez — fim do
+ * passo 4 da jornada → abre o passo 5 (contratar). Directive determinístico +
+ * guard de idempotência (`decisionDispatched`).
+ *
+ * Extraído em função própria (FIX-331, veredito Sonnet A.8/A.9 — achado ao
+ * vivo confirmado em produção) pra ser chamada tanto do caminho PÓS-modelo
+ * (`nextGateToFire==="decision"`, computado por `runner.ts` depois do LLM
+ * rodar) quanto de um intercepto PRÉ-modelo (mais abaixo nesta função): sem
+ * o intercepto, o modelo — ainda no toolset da fase "reveal", já que
+ * `decisionDispatched` continua false — às vezes tentava avançar sozinho
+ * (`present_contract_form`/`present_decision_prompt`, tools fora da fase),
+ * gerando um `tool_error` que SUPRIME TODA a computação de gate do turno
+ * (guard do tool-error-recovery) — e como o gate nunca avançava, o funil
+ * travava definitivamente depois do simulador quando o usuário confirmava
+ * por TEXTO LIVRE em vez de clicar (achado ao vivo: nenhum `contract_form`/
+ * `decision_prompt` jamais persistido na conversa reproduzida). */
+async function* dispatchDecisionCascade(args: {
+	conversationId: string;
+	channel: Channel;
+	currentPersona: Persona;
+	knownName: string | null;
+}): AsyncGenerator<TurnEvent> {
+	const { conversationId, channel, currentPersona, knownName } = args;
+	const refreshed = await reloadMeta(conversationId);
+	if (refreshed.decisionDispatched) {
+		yield { type: "finish", reason: "decision-already-dispatched" };
+		return;
+	}
+	await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+	// FIX-272 (rodada 8, veredito Fable r7, D4 residual — "outra emenda"): a
+	// resposta do turno PRINCIPAL (às vezes termina em pergunta, ex. "...outro
+	// prazo?") colava SEM espaço no lead-in do directive seguinte (scarcity OU
+	// so_parcela, logo abaixo) — mesma classe do FIX-268, que só fechava a
+	// costura MAIS ADIANTE (entre scarcity e decision_prompt). Fecha o balão
+	// aberto incondicionalmente ANTES de entrar em QUALQUER ramo deste bloco
+	// (no-op se já não houver balão aberto) — cobre os dois caminhos de uma vez.
+	yield { type: "text-boundary" };
+	// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
+	// lance-value/lance-embutido/simulator-offer; o card certo é
+	// present_two_paths (dois caminhos), não present_decision_prompt.
+	const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
+	// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
+	// estratégia de lance resolvida, ANTES do card de decisão — só no
+	// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
+	// de escassez, spec `04-copy-fluxos.md` Fluxo B).
+	// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
+	// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
+	// de tool-call do LLM.
+	if (!isSoParcela) {
+		yield* runTurn({
+			channel,
+			conversationId,
+			userText: buildScarcityDirective(),
+			isUserTurn: false,
+			contactName: knownName,
+			skipAnalyzer: true,
+			skipLeadCollection: true,
+		});
+		const scarcityCard = buildScarcityCard(refreshed);
+		if (scarcityCard) {
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "scarcity",
+				payload: scarcityCard.payload,
+			});
+		}
+		// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto
+		// picotado no turno de decisão"): quando scarcityCard é null (sem
+		// groupId ancorado), NENHUM artifact separa o texto do directive de
+		// scarcity do texto do directive de decision logo abaixo — os dois
+		// caem no MESMO balão, colados sem espaçamento ("...só pra você
+		// saber:Boa! Então deixa eu confirmar com você:"). Força o boundary
+		// incondicionalmente (no-op quando o artifact já fechou o balão).
+		yield { type: "text-boundary" };
+	}
+	const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
+	yield* runTurn({
+		channel,
+		conversationId,
+		userText: directive,
+		isUserTurn: false,
+		contactName: knownName,
+		skipAnalyzer: true,
+		skipLeadCollection: true,
+	});
+	if (isSoParcela) {
+		yield* emitServerCard({
+			conversationId,
+			channel,
+			persona: currentPersona,
+			artifactType: "two_paths",
+			payload: buildTwoPathsCard(refreshed).payload,
+		});
+		yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
+		await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+	} else {
+		// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
+		// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
+		// determinístico aqui, no ÚNICO ramo que dirige a decisão. Nunca mais
+		// depende do LLM chamar a tool (mesma receita do scarcity acima).
+		yield* emitServerCard({
+			conversationId,
+			channel,
+			persona: currentPersona,
+			artifactType: "decision_prompt",
+			payload: buildDecisionPromptCard(refreshed).payload,
+		});
+	}
+}
+
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const {
 		channel,
@@ -128,6 +252,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		userIntent: providedIntent,
 		userKey,
 		suppressGateEvent,
+		forceToolChoice: callerForceToolChoice,
 	} = input;
 
 	const conversationId = providedConversationId;
@@ -180,6 +305,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			analysis,
 			metaChanged,
 			newlyExtractedExperience: extracted,
+			stuckGateDefaultApplied,
 		} = await analyzeAndMerge(userText, currentPersona, meta);
 		newlyExtractedExperience = extracted;
 		analyzedIntent = analysis.userIntent;
@@ -187,6 +313,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		if (metaChanged) {
 			await persistMeta(conversationId, meta);
 			yield { type: "meta-update", meta };
+		}
+
+		// FIX-305: o teto de tentativas sem progresso foi atingido neste turno —
+		// o default já foi assumido (persistido acima, junto com metaChanged) e o
+		// funil vai avançar pro próximo gate mais adiante nesta mesma função.
+		// Avisa o usuário ANTES do resto do turno, texto determinístico (mesmo
+		// padrão de TWO_PATHS_FOLLOWUP_TEXT/SPECIALIST_EXIT_OFFER) — nunca finge
+		// que o dado veio dele.
+		if (stuckGateDefaultApplied) {
+			const notice = gateStuckDefaultNotice(stuckGateDefaultApplied, meta.qualifyAnswers ?? {});
+			if (notice) {
+				yield { type: "text-delta", text: notice };
+				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
+				yield { type: "text-boundary" };
+			}
 		}
 
 		// FIX-260: gate lance-embutido respondido por TEXTO LIVRE não era
@@ -248,6 +389,115 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 
+		// FIX-297 (rodada 10, 2026-07-12): resposta AFIRMATIVA por TEXTO ao gate
+		// `reco-consent` libera o hero pendente (recommendation_card +
+		// simulation_result, se houver) — computado no turno da busca original e
+		// guardado em meta (Lei 1: nunca recalculado, nunca dependente de nova
+		// tool-call do LLM). Mesmo mecanismo do simulator-offer/lance-embutido
+		// (detectYesNoText) acima. Sem hero pendente (ex.: 1 grupo só, que nunca
+		// entra na ceremônia de consentimento), só avança normalmente.
+		//
+		// FIX-308 (rodada 10, onda 4): `intent==="ready_to_proceed"` também conta
+		// como consentimento, mesmo quando o texto foge do YES_TEXT_MARKERS (ex.:
+		// "bora, quero fechar logo" — já capturado pelo regex, mas cobre gírias
+		// novas que o analyzer reconheça com confiança sem precisar de mais uma
+		// entrada no regex). Só se aplica enquanto este gate está mesmo pendente
+		// (recoConsentDispatched && !recoConsentAnswered) — nunca sequestra um
+		// "ready_to_proceed" de outro contexto.
+		//
+		// FIX-325 (rodada 10, veredito Sonnet A.5 + decisão de produto do Kairo,
+		// AskUserQuestion 2026-07-13): nomear uma administradora JÁ EXIBIDA no
+		// comparison_table (ex.: "A Canopus parece boa, parcela baixa") TAMBÉM é
+		// consentimento inequívoco — sem isso, `recoConsentAnswered` ficava
+		// PARA SEMPRE undefined nesse padrão de resposta, travando toda a
+		// cascata pós-reveal (nextGate() nunca sai de "reco-consent") até o
+		// usuário clicar um botão de fast-path independente (achado ao vivo,
+		// dossiê Mario). Mesmo guard de intent do `detectYesNoText` (pergunta/
+		// dúvida/off-topic/quer-mais-opções nunca contam) — reusa a resolução
+		// por menção já provada em resolveOfferMentionForConversation
+		// (FIX-258/263): só resolve contra oferta JÁ ANCORADA em tela, nunca
+		// inventa.
+		const recoConsentGatePending =
+			meta.recoConsentDispatched === true && meta.recoConsentAnswered !== true;
+		const excludedIntentForConsent =
+			analyzedIntent === "asking_question" ||
+			analyzedIntent === "expressing_doubt" ||
+			analyzedIntent === "off_topic" ||
+			analyzedIntent === "wants_more_options";
+		const mentionedOfferForConsent =
+			recoConsentGatePending && !excludedIntentForConsent
+				? await resolveOfferMentionForConversation(conversationId, userText)
+				: null;
+		if (
+			recoConsentGatePending &&
+			(detectYesNoText(userText, analyzedIntent) === true ||
+				analyzedIntent === "ready_to_proceed" ||
+				mentionedOfferForConsent !== null)
+		) {
+			meta.recoConsentAnswered = true;
+			await persistMeta(conversationId, meta);
+			await saveMessage(conversationId, "user", userText, channel);
+			if (meta.pendingRecommendationCard) {
+				yield* runTurn({
+					channel,
+					conversationId,
+					userText: buildRecoConsentAcceptedDirective(),
+					isUserTurn: false,
+					contactName: knownName,
+					skipAnalyzer: true,
+					skipLeadCollection: true,
+				});
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "recommendation_card",
+					payload: meta.pendingRecommendationCard,
+				});
+				if (meta.pendingSimulationResult) {
+					yield* emitServerCard({
+						conversationId,
+						channel,
+						persona: currentPersona,
+						artifactType: "simulation_result",
+						payload: meta.pendingSimulationResult,
+					});
+				}
+			}
+			return;
+		}
+
+		// FIX-331 (rodada 10, veredito Sonnet A.8/A.9 — achado ao vivo, root
+		// cause confirmada em produção): depois do simulador (dial) responder
+		// por TEXTO LIVRE (`simulatorOfferAnswered=true`), se o usuário segue
+		// confirmando por texto livre em vez de clicar um botão, `nextGate()`
+		// já aponta "decision" — mas só o cálculo TARDIO (pós-modelo, em
+		// `runner.ts`) disparava esse gate. Nesse meio-tempo, o modelo (ainda
+		// no toolset da fase "reveal", já que `decisionDispatched` continua
+		// false) às vezes tenta avançar sozinho (`present_contract_form`/
+		// `present_decision_prompt`) — tool FORA da policy, `tool_error`, que
+		// SUPRIME TODA a computação de gate desse turno (guard do
+		// tool-error-recovery). Como o gate nunca avança, o PRÓXIMO turno
+		// reproduz o MESMO problema pra sempre — achado ao vivo: a conversa
+		// trava definitivamente depois do dial, nunca mais fecha por texto
+		// (confirmado no Postgres real: nenhum contract_form/decision_prompt
+		// jamais persistido). Intercepta ANTES de chamar o modelo — mesmo
+		// padrão do FIX-260 (simulator-offer)/FIX-297 (reco-consent) acima —
+		// usando as MESMAS funções puras (nextGate/decideShowGate) que o
+		// cálculo tardio já usa, sem duplicar lógica de decisão nova. O
+		// modelo NUNCA chega a rodar neste turno — o card sai determinístico,
+		// sem risco de tool-error.
+		if (
+			meta.revealCompleted === true &&
+			meta.decisionDispatched !== true &&
+			nextGate(meta, { hasContactName: Boolean(knownName) }) === "decision" &&
+			decideShowGate({ gate: "decision", intent: analyzedIntent, meta, isUserTurn: true })
+		) {
+			await saveMessage(conversationId, "user", userText, channel);
+			yield* dispatchDecisionCascade({ conversationId, channel, currentPersona, knownName });
+			return;
+		}
+
 		const decision = decideRouting(userText, meta, analysis);
 		if (decision.kind === "transition") {
 			if (decision.usedFallback) {
@@ -298,6 +548,20 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			analysis.userIntent === "ready_to_proceed"
 		) {
 			await saveMessage(conversationId, "user", userText, channel);
+			// FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0): sem este guard,
+			// este caminho e o clique "Tenho interesse" (route.ts) podiam disparar
+			// `buildAdvanceToContractDirective` em turnos CONSECUTIVOS — achado ao
+			// vivo (dossiê Madalena, turnos 18→19): 2 `contract_form` seguidos.
+			// `contractFormDispatched` já persiste assim que o 1º aparece
+			// (runner.ts:1244-1246) — reafirma o formulário JÁ mostrado em vez de
+			// pedir de novo.
+			if (meta.contractFormDispatched === true) {
+				const notice = "Você já viu o formulário aqui em cima — é só preencher pra eu seguir!";
+				yield { type: "text-delta", text: notice };
+				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
+				yield { type: "text-boundary" };
+				return;
+			}
 			yield* runTurn({
 				channel,
 				conversationId,
@@ -315,6 +579,57 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 
 	if (isUserTurn) {
 		await saveMessage(conversationId, "user", userText, channel);
+	}
+
+	// FIX-301 (P7, loop-de-goal r10): usuário CONFUSO ("não entendi") com um gate
+	// REALMENTE pendente — reancora no MESMO gate/card com um lead-in
+	// simplificado, em vez de deixar a LLM narrar/inventar um menu genérico
+	// (P7: "uai nao sei voce nao me perguntou nada"). Curto-circuito ANTES de
+	// invocar a LLM (Lei 4) — se rodasse depois, o texto livre já teria
+	// streamado pro usuário.
+	// CORREÇÃO 1 (mesma rodada, achada no gate da onda 1): a decisão original
+	// (docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-clarify.md)
+	// reusava `expressing_doubt` "sem intent nova" — quebrou o FIX-266 (r9),
+	// porque "deixa eu pensar aqui"/"tenho que pensar" JÁ é expressing_doubt
+	// por design (turn-analyzer.ts) e passou a ser hijackado por este
+	// short-circuit, atropelando a recuperação de tool-error. `confused` é
+	// uma intent NOVA (turn-analyzer.ts), semanticamente distinta: não
+	// entendeu a PERGUNTA (confused) vs. entendeu mas está decidindo
+	// (expressing_doubt, que segue fluindo pra LLM normalmente).
+	// CORREÇÃO 2 (mesmo gate): mesmo com a intent nova, o analyzer (LLM, não-
+	// determinístico) ainda pode confundir "por que essa e não outra?" (pergunta
+	// de EXATIDÃO/CRITÉRIO sobre a recomendação, FIX-282/293) com "não entendi a
+	// pergunta". Blindagem em CÓDIGO (Lei 4, não confia só no prompt):
+	// `isExactnessOrCriteriaQuestion` é o MESMO regex determinístico que o
+	// FIX-282/293 já usa — se bater, cede passagem pra aquele caminho (resposta
+	// com números reais), nunca reancora aqui.
+	if (
+		isUserTurn &&
+		!skipAnalyzer &&
+		analyzedIntent === "confused" &&
+		!isExactnessOrCriteriaQuestion(userText)
+	) {
+		const clarifyGate = gateAwaitingReply(meta, Boolean(knownName));
+		if (clarifyGate === "decision") {
+			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
+			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "decision_prompt",
+				payload: buildDecisionPromptCard(meta).payload,
+			});
+			yield { type: "finish", reason: "clarify-reanchor" };
+			return;
+		}
+		if (clarifyGate) {
+			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
+			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
+			yield { type: "gate", gate: clarifyGate };
+			yield { type: "finish", reason: "clarify-reanchor" };
+			return;
+		}
 	}
 
 	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo
@@ -454,8 +769,9 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// Background: Anthropic Claude Sonnet 4-6 escapava da regra dura no
 	// prompt em variantes curtas ("Prazer, Paulo!" sem tool). Forçar via
 	// toolChoice é defesa em código — não depende de obediência do modelo.
-	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | undefined;
-	if (isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
+	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | "none" | undefined =
+		callerForceToolChoice;
+	if (!callerForceToolChoice && isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
 		// Pega o último turn do assistant no histórico salvo (já inclui o
 		// turn anterior ao user-text atual).
 		const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
@@ -649,6 +965,80 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		yield { type: "welcome-categories" };
 	}
 
+	// FIX-309 (rodada 10 onda 4, investigação de causa-raiz): `topic_picker`
+	// (menu de dúvidas: lance/sorteio/contemplação/cartas variam) tinha 0
+	// emissões em 2 dossiês limpos — dependia do LLM chamar `present_topic_
+	// picker` espontaneamente (mesma classe de bug do FIX-246/253/280).
+	// Ponto certo da cascata, confirmado pelo roteiro canônico
+	// (docs/design/specs/assets/2026-07-12-aja-dois-cenarios.html, cenário
+	// Madalena): pós-`experience`, quando o usuário é NOVATO
+	// (`experiencePrev === "first"`) — ele não sabe o que perguntar, então o
+	// menu de FAQ é oferecido proativamente. NÃO é o mesmo gatilho de
+	// `experiencePrev === "doubts"` ("Tenho dúvidas"), que já tem seu próprio
+	// mecanismo dedicado (`doubts-wait`/`pendingFollowUp` — resposta livre à
+	// pergunta específica do usuário, sem menu). Guard duplo:
+	// `recoConsentDispatched !== true` evita reabrir o card numa conversa que
+	// já avançou pra reco-consent (não regride a fase); `topicPickerDispatched`
+	// garante emissão única (mesmo padrão de recoConsentDispatched).
+	{
+		const refreshed = await reloadMeta(conversationId);
+		if (
+			refreshed.experiencePrev === "first" &&
+			refreshed.recoConsentDispatched !== true &&
+			refreshed.topicPickerDispatched !== true
+		) {
+			await persistMeta(conversationId, { ...refreshed, topicPickerDispatched: true });
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "topic_picker",
+				payload: buildTopicPickerCard().payload,
+			});
+		}
+	}
+
+	// FIX-303 (rodada r10 onda 2, loop-de-goal consórcio, 2026-07-12): opt-in de
+	// WhatsApp migra do pós-reveal pro FECHO — o card "Quero receber pelo
+	// WhatsApp" aparecia logo após a recomendação, sem o usuário ter pedido e
+	// antes de qualquer proposta apresentada (achado do teste manual com Qwen
+	// 3.5 Fast). Dispara agora no MESMO turno em que present_contract_form
+	// (passo 5, proposta real) aparece pela 1ª vez — nunca antes.
+	// contractFormDispatched já foi persistido por runAgentTurn (runner.ts,
+	// junto com o artifact contract_form) antes deste ponto; recarrega o meta
+	// pra enxergar o flag (o objeto `meta` local não foi mutado por essa
+	// escrita, que passa por reloadMeta/persistMeta internos ao runner).
+	if (result.artifacts.some((a) => a.type === "contract_form")) {
+		const postContract = await reloadMeta(conversationId);
+		if (shouldEmitWhatsappOptin(postContract)) {
+			await persistMeta(conversationId, { ...postContract, whatsappOptinShown: true });
+			const stage = postContract.contactPhone ? "confirm" : "open";
+			// FIX-318 (rodada 10, onda 4 — achado ao vivo pós-túnel, dossiê Mario):
+			// mesma classe do FIX-316 (pipeClosingCeremony) — este sub-turno
+			// reavaliava `nextGateToFire` de forma independente e, com reco-consent
+			// ainda pendente, re-anexava "Posso te mostrar a opção que eu
+			// recomendo?" NO MEIO do pedido de WhatsApp do fecho. `suppressGateEvent`
+			// impede isso (mesmo padrão já usado noutros sub-turnos de fecho).
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildWhatsappOptinDirective(stage),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+				suppressGateEvent: true,
+			});
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "whatsapp_optin",
+				payload: buildWhatsappOptinCard(postContract).payload,
+			});
+		}
+	}
+
 	if (result.nextGateToFire === "search") {
 		const refreshed = await reloadMeta(conversationId);
 		// FIX-76: na troca de faixa (revealValueTargetChanged) a busca é uma
@@ -675,14 +1065,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			skipAnalyzer: true,
 			skipLeadCollection: true,
 		});
-		// FIX-280 (loop r9, baseline Sonnet 3/10, G4): opt-in de WhatsApp — mesma
-		// receita do FIX-246/253 (scarcity/decision_prompt), emissão SERVER-SIDE
-		// determinística logo após o reveal, no ÚNICO ponto que dispara os cards
-		// do passo 3+4 (search summary directive acima). Nunca mais depende de o
-		// LLM "decidir" chamar a tool — mesmo estado, mesmo resultado sempre,
-		// diferente do bug original (mario-sem-lance chamava, madalena não, no
-		// mesmo ponto do funil).
-		const postReveal = await reloadMeta(conversationId);
 		// FIX-291 (b): `searchDispatched` NÃO é mais marcado preemptivamente ANTES
 		// do runTurn acima — o runner (runner.ts) já grava searchDispatched=true
 		// JUNTO com revealCompleted, só quando artifacts REAIS aparecem. Marcar
@@ -690,32 +1072,15 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// estourado, erro duro etc.) em searchDispatched=true PRA SEMPRE: o guard
 		// "search-already-dispatched" (acima) nunca mais deixava retentar a busca
 		// num turno seguinte, mesmo sem jamais ter mostrado dado real.
+		const postReveal = await reloadMeta(conversationId);
 		if (!postReveal.revealCompleted) {
 			console.log(
 				`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
 			);
 			return;
 		}
-		if (shouldEmitWhatsappOptin(postReveal)) {
-			await persistMeta(conversationId, { ...postReveal, whatsappOptinShown: true });
-			const stage = postReveal.contactPhone ? "confirm" : "open";
-			yield* runTurn({
-				channel,
-				conversationId,
-				userText: buildWhatsappOptinDirective(stage),
-				isUserTurn: false,
-				contactName: knownName,
-				skipAnalyzer: true,
-				skipLeadCollection: true,
-			});
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "whatsapp_optin",
-				payload: buildWhatsappOptinCard(postReveal).payload,
-			});
-		}
+		// FIX-303: o opt-in de WhatsApp NÃO dispara mais aqui (pós-reveal) — só no
+		// FECHO, ver bloco logo antes de `nextGateToFire === "search"` acima.
 		return;
 	}
 
@@ -724,100 +1089,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// 4 da jornada → abre o passo 5 (contratar). Espelha o search reveal acima:
 	// directive determinístico + guard de idempotência (decisionDispatched). Sem
 	// isso o agent re-disparava o reveal em loop e nunca cruzava pra plataforma nova.
+	// FIX-331: extraído em função própria — ver `dispatchDecisionCascade` acima,
+	// chamada tanto daqui (pós-modelo) quanto do intercepto PRÉ-modelo mais acima
+	// nesta função.
 	if (result.nextGateToFire === "decision") {
-		const refreshed = await reloadMeta(conversationId);
-		if (refreshed.decisionDispatched) {
-			yield { type: "finish", reason: "decision-already-dispatched" };
-			return;
-		}
-		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
-		// FIX-272 (rodada 8, veredito Fable r7, D4 residual — "outra emenda"): a
-		// resposta do turno PRINCIPAL (às vezes termina em pergunta, ex. "...outro
-		// prazo?") colava SEM espaço no lead-in do directive seguinte (scarcity OU
-		// so_parcela, logo abaixo) — mesma classe do FIX-268, que só fechava a
-		// costura MAIS ADIANTE (entre scarcity e decision_prompt). Fecha o balão
-		// aberto incondicionalmente ANTES de entrar em QUALQUER ramo deste bloco
-		// (no-op se já não houver balão aberto) — cobre os dois caminhos de uma vez.
-		yield { type: "text-boundary" };
-		// FIX-233 — 3ª saída do gate `lance` ("só a parcela") chega aqui pulando
-		// lance-value/lance-embutido/simulator-offer; o card certo é
-		// present_two_paths (dois caminhos), não present_decision_prompt.
-		const isSoParcela = refreshed.qualifyAnswers?.hasLance === "so_parcela";
-		// FIX-237 (Fable r1, D2.1 gap #3): scarcity era ÓRFÃO. Dispara depois da
-		// estratégia de lance resolvida, ANTES do card de decisão — só no
-		// caminho normal (o so_parcela vai direto pro two_paths, sem o gancho
-		// de escassez, spec `04-copy-fluxos.md` Fluxo B).
-		// FIX-246 (rodada 3, Fable r2): o directive SÓ escreve o texto — o card
-		// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
-		// de tool-call do LLM.
-		if (!isSoParcela) {
-			yield* runTurn({
-				channel,
-				conversationId,
-				userText: buildScarcityDirective(),
-				isUserTurn: false,
-				contactName: knownName,
-				skipAnalyzer: true,
-				skipLeadCollection: true,
-			});
-			const scarcityCard = buildScarcityCard(refreshed);
-			if (scarcityCard) {
-				yield* emitServerCard({
-					conversationId,
-					channel,
-					persona: currentPersona,
-					artifactType: "scarcity",
-					payload: scarcityCard.payload,
-				});
-			}
-			// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto
-			// picotado no turno de decisão"): quando scarcityCard é null (sem
-			// groupId ancorado), NENHUM artifact separa o texto do directive de
-			// scarcity do texto do directive de decision logo abaixo — os dois
-			// caem no MESMO balão, colados sem espaçamento ("...só pra você
-			// saber:Boa! Então deixa eu confirmar com você:"). Força o boundary
-			// incondicionalmente (no-op quando o artifact já fechou o balão).
-			yield { type: "text-boundary" };
-		}
-		const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
-		yield* runTurn({
-			channel,
-			conversationId,
-			userText: directive,
-			isUserTurn: false,
-			contactName: knownName,
-			skipAnalyzer: true,
-			skipLeadCollection: true,
-		});
-		if (isSoParcela) {
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "two_paths",
-				payload: buildTwoPathsCard(refreshed).payload,
-			});
-			yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
-			await saveMessage(
-				conversationId,
-				"assistant",
-				TWO_PATHS_FOLLOWUP_TEXT,
-				channel,
-				currentPersona,
-			);
-		} else {
-			// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
-			// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
-			// determinístico aqui, no ÚNICO ramo que dirige a decisão. Nunca mais
-			// depende do LLM chamar a tool (mesma receita do scarcity acima).
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "decision_prompt",
-				payload: buildDecisionPromptCard(refreshed).payload,
-			});
-		}
+		yield* dispatchDecisionCascade({ conversationId, channel, currentPersona, knownName });
 		return;
 	}
 
@@ -841,6 +1117,25 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.simulatorOfferDispatched) {
 				await persistMeta(conversationId, { ...refreshed, simulatorOfferDispatched: true });
+			}
+		}
+		// FIX-297: "Posso te mostrar a opção que eu recomendo?" acontece UMA vez
+		// (padrão simulator-offer) — `recoConsentDispatched` só marca que a
+		// PERGUNTA já saiu, idempotente (só grava na 1ª vez). Um afirmativo
+		// digitado é interceptado MAIS ACIMA (antes deste bloco rodar) e libera o
+		// hero pendente, marcando `recoConsentAnswered`.
+		//
+		// FIX-308 (rodada 10, onda 4): ao contrário do simulator-offer, aqui
+		// negativo/ambíguo NÃO avança a cascata — `nextGate()` (qualify-state.ts)
+		// está acoplado a `recoConsentAnswered`, não a este flag: enquanto a
+		// resposta não é reconhecida como consentimento, `nextGateToFire` volta a
+		// ser "reco-consent" turno após turno (mesmo padrão dos gates de coleta),
+		// e este bloco só re-executa o no-op abaixo (já dispatched, nada a
+		// gravar de novo).
+		if (result.nextGateToFire === "reco-consent") {
+			const refreshed = await reloadMeta(conversationId);
+			if (!refreshed.recoConsentDispatched) {
+				await persistMeta(conversationId, { ...refreshed, recoConsentDispatched: true });
 			}
 		}
 		// FIX-253 (rodada 4, veredito Fable FINAL §2/§3, "pro teto" #2): o

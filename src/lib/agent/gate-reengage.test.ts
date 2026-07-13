@@ -141,15 +141,15 @@ describe("FIX-207 isConversationPausedOrTerminal — estados onde o funil não r
 });
 
 describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sentido", () => {
-	// Estado onde o 1º gate estrutural pós-desire (identify) ficou pendente após
-	// uma pergunta do usuário (asking_question suprimiu). FIX-274: sem consent,
-	// `identify` é o gate real pendente logo após o desire.
+	// Estado onde o 1º gate estrutural pós-desire (credit) ficou pendente após
+	// uma pergunta do usuário (asking_question suprimiu). FIX-296: sem consent,
+	// `credit` é o gate real pendente logo após o desire (reversão do FIX-53).
 	function suppressedIdentifyMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
 			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
-			// identidade ainda não coletada → nextGate = identify
+			// valor ainda não coletado → nextGate = credit
 			...over,
 		};
 	}
@@ -162,7 +162,7 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("identify");
+		).toBe("credit");
 	});
 
 	it("gate DISPARADO neste turno → não há pendência (null)", () => {

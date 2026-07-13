@@ -126,7 +126,15 @@ export async function sendTurn(baseUrl, conversationId, turn, opts = {}) {
 				}
 				if (!obj || typeof obj.type !== "string") continue;
 				result.rawEvents.push(obj.type);
-				if (obj.type === "text-delta") {
+				if (obj.type === "text-start") {
+					// Espelha chat-message.tsx (groupAdjacentText): o servidor emite
+					// blocos text-start/text-end SEPARADOS pra resposta livre do LLM e
+					// pra pergunta do gate (adapter.ts closeTextIfOpen() + novo bloco) —
+					// o frontend real junta blocos ADJACENTES com "\n\n". Sem este
+					// separador, agentText concatenava tudo cru e criava um falso
+					// "balões colados" que nunca existiu na tela real do usuário.
+					if (result.agentText.length > 0) result.agentText += "\n\n";
+				} else if (obj.type === "text-delta") {
 					if (typeof obj.delta === "string") result.agentText += obj.delta;
 				} else if (obj.type.startsWith("data-")) {
 					result.artifacts.push({ type: artifactTypeOf(obj), data: obj.data ?? null });

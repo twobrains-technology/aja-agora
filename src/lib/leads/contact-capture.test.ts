@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
-import { saveContactName, saveContactWhatsapp } from "./contact-capture";
+import { capitalizeName, saveContactName, saveContactWhatsapp } from "./contact-capture";
 
 async function createConv(opts?: { isSimulated?: boolean }): Promise<string> {
 	const [c] = await db
@@ -140,6 +140,55 @@ describe("saveContactName", () => {
 	it("PF-01: rejeita se só houver stopwords", async () => {
 		const r = await saveContactName(convId, "sou o");
 		expect(r.ok).toBe(false);
+	});
+
+	// FIX-299 (loop-de-goal r10, P9/P10 — Qwen 3.5 Fast): "Show, kairo!" — nome
+	// ecoado em minúscula. Capitalização determinística no save, independe de
+	// como o usuário digitou.
+	it("FIX-299: nome digitado em minúsculo vira Title Case ao ser salvo", async () => {
+		const r = await saveContactName(convId, "kairo");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Kairo");
+	});
+
+	it("FIX-299: nome digitado todo em maiúsculo vira Title Case ao ser salvo", async () => {
+		const r = await saveContactName(convId, "MARIA");
+		expect(r.ok).toBe(true);
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, convId),
+		});
+		expect(conv?.contactName).toBe("Maria");
+	});
+});
+
+describe("FIX-299 — capitalizeName (Title Case determinístico, unit puro)", () => {
+	it("capitaliza nome minúsculo", () => {
+		expect(capitalizeName("kairo")).toBe("Kairo");
+	});
+
+	it("capitaliza nome todo em maiúsculo", () => {
+		expect(capitalizeName("MARIA")).toBe("Maria");
+	});
+
+	it("capitaliza nome misto", () => {
+		expect(capitalizeName("mArIa")).toBe("Maria");
+	});
+
+	it("mantém partículas pt-BR (de/da/do/das/dos) minúsculas quando não são a 1ª palavra", () => {
+		expect(capitalizeName("joão da silva")).toBe("João da Silva");
+		expect(capitalizeName("MARIA DE SOUZA")).toBe("Maria de Souza");
+		expect(capitalizeName("ana dos santos")).toBe("Ana dos Santos");
+	});
+
+	it("capitaliza cada lado de nome hifenizado", () => {
+		expect(capitalizeName("jean-luc")).toBe("Jean-Luc");
+	});
+
+	it("já capitalizado corretamente permanece igual", () => {
+		expect(capitalizeName("Kairo")).toBe("Kairo");
 	});
 });
 

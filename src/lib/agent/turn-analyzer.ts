@@ -101,6 +101,7 @@ export const turnAnalysisSchema = z.object({
 			"asking_question",
 			"providing_info",
 			"expressing_doubt",
+			"confused",
 			"off_topic",
 			"neutral",
 		])
@@ -110,7 +111,8 @@ export const turnAnalysisSchema = z.object({
 				"wants_more_options = quer ver MAIS/TODAS/OUTRAS opções ALÉM das que já foram mostradas ('quero ver todos', 'ver todas as opções', 'tem mais opções?', 'mostra as outras', 'quero ver mais', 'só essas?'). NÃO confundir com ready_to_proceed: aqui o usuário NÃO quer decidir/avançar, quer AMPLIAR o que viu. Só use quando já houve uma apresentação de opções antes. " +
 				"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
 				"providing_info = já respondeu/colaborou com dado concreto ('uns 200 mil', '2 anos', 'tenho reserva'). " +
-				"expressing_doubt = hesitando, sem decisão ('não sei', 'to em dúvida', 'depende', 'tenho que pensar'). " +
+				"expressing_doubt = HESITANDO sobre uma decisão que ENTENDE, ainda avaliando ('não sei', 'to em dúvida', 'depende', 'tenho que pensar', 'deixa eu pensar aqui'). NÃO usar quando o usuário não entendeu a pergunta/card em si — isso é confused. " +
+				"confused = NÃO ENTENDEU a pergunta/card/opção que acabou de ver, pede pra reexplicar mais simples ('não entendi', 'como assim?', 'não sei do que você tá falando', 'que isso quer dizer?', 'oi?'). Diferente de expressing_doubt: aqui a pessoa entende a pergunta mas ainda não decidiu; confused é quando a PRÓPRIA PERGUNTA não ficou clara. " +
 				"off_topic = assunto fora do consórcio ('você e robô?', 'tudo bem?', piadas, smalltalk). " +
 				"neutral = afirmação curta de acolhimento sem direção clara ('entendi', 'ah ta', 'legal', 'show'). " +
 				"Em dúvida, prefira neutral.",
@@ -190,6 +192,8 @@ Exemplos:
 - "como funciona o lance livre?" -> { userIntent: "asking_question" }
 - "uns 200 mil então" -> { userIntent: "providing_info", creditMax: 200000 }
 - "ainda não sei direito" -> { userIntent: "expressing_doubt" }
+- "não entendi" -> { userIntent: "confused" }
+- "como assim?" -> { userIntent: "confused" }
 - "você e um robô?" -> { userIntent: "off_topic" }
 - "entendi, legal" -> { userIntent: "neutral" }`;
 

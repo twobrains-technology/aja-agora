@@ -242,6 +242,49 @@ export function isMechanismNarrationClaim(segment: string): boolean {
 	return MECHANISM_NARRATION_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-298 (loop-de-goal r10, P4 — transcrição real com Qwen 3.5 Fast): "Quer
+// ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo? Você já fez
+// consórcio antes?" — duas sentenças interrogativas no mesmo balão, usuário só
+// conseguiu responder uma. A regra "nunca mais de uma pergunta por mensagem"
+// só existia como texto no system-prompt (Lei 4: instruction-following degrada
+// sob modelo mais fraco). Corte é por SENTENÇA (delimitada por . ! ? : \n, os
+// mesmos limites já usados pelo splitSegments) — NÃO por "pedido": uma frase
+// composta com um único "?" ("Que carro você tem em mente, e quanto custa mais
+// ou menos?") é UMA sentença válida e não pode ser cortada.
+function isInterrogativeSentence(segment: string): boolean {
+	return /\?\s*$/.test(segment.trimEnd());
+}
+
+/** Um segmento é a última sentença interrogativa dentre `segments` (índice
+ * `index`) — usado pra decidir quais perguntas anteriores são dropadas.
+ * FIX-298: nunca mais de 1 sentença interrogativa sobrevive por turno. */
+function lastInterrogativeIndex(segments: string[]): number {
+	let last = -1;
+	segments.forEach((seg, i) => {
+		if (isInterrogativeSentence(seg)) last = i;
+	});
+	return last;
+}
+
+// FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição, "Perfeito, kairo! ✅"):
+// emoji sobrevivendo com modelo mais fraco apesar da regra de parcimônia do
+// system-prompt (Lei 4 de novo — regra-no-prompt não segura sob carga). Strip
+// determinístico, cobre os blocos Unicode de emoji mais comuns (emoticons,
+// símbolos/pictogramas, transporte, dingbats, bandeiras, seletor de variação e
+// ZWJ). Não mexe em acentuação pt-BR (Latin-1 Supplement/Latin Extended-A
+// ficam fora de todas essas faixas).
+const EMOJI_PATTERN =
+	/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu;
+
+/** Remove emoji de um texto de forma determinística (independe do modelo
+ * obedecer a regra de parcimônia do prompt). Colapsa o espaço duplo deixado
+ * pelo emoji removido, sem tocar em espaçamento de borda (join entre blocos).
+ * FIX-299. */
+export function stripEmoji(text: string): string {
+	if (!text) return text;
+	return text.replace(EMOJI_PATTERN, "").replace(/[ \t]{2,}/g, " ");
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -325,8 +368,14 @@ export function splitSegments(text: string): string[] {
 export function stripProcessPreamble(text: string, ctx?: StateVerificationContext): string {
 	if (!text) return text;
 	const segments = splitSegments(text);
-	const kept = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
-	return kept.join("");
+	const survivors = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
+	// FIX-298: nunca mais de 1 sentença interrogativa por balão — só a ÚLTIMA
+	// pergunta sobrevive; perguntas anteriores no mesmo texto são dropadas.
+	const lastQuestion = lastInterrogativeIndex(survivors);
+	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
+	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
+	// regra de parcimônia do prompt.
+	return stripEmoji(kept.join(""));
 }
 
 /** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
@@ -356,6 +405,12 @@ function lastBoundaryIndex(s: string): number {
  */
 export class EphemeralTextFilter {
 	private pending = "";
+	// FIX-298: a sentença interrogativa mais recente vista até agora NUNCA é
+	// emitida na hora — só no próximo flush(). Isso garante que uma pergunta
+	// SEGUINTE no mesmo turno sempre substitui a anterior antes de qualquer
+	// uma delas chegar ao usuário (ao vivo, não dá pra "desmandar" uma frase já
+	// emitida — segurar é a única forma de garantir que só a última sobrevive).
+	private heldQuestion = "";
 
 	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
@@ -366,16 +421,66 @@ export class EphemeralTextFilter {
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);
 		this.pending = this.pending.slice(idx + 1);
-		return stripProcessPreamble(complete, this.getContext?.());
+		return this.filterComplete(complete);
 	}
 
-	/** Fim do bloco/stream: libera a cauda (última frase sem delimitador), também
-	 * filtrada. */
+	/** Fim REAL do turno: libera a cauda (última frase sem delimitador), também
+	 * filtrada, seguido da pergunta segurada (se houver — FIX-298). Só chame
+	 * isto no fim de verdade do turno — pra fronteiras INTERMEDIÁRIAS (troca de
+	 * bloco, pré-tool-call), use `flushPending()`. */
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
-		if (!rest) return "";
-		return stripProcessPreamble(rest, this.getContext?.());
+		const out = rest ? this.filterComplete(rest) : "";
+		return out + this.releaseHeldQuestion();
+	}
+
+	/** FIX-330 — mesma coisa que `flush()`, mas NUNCA libera a pergunta
+	 * segurada (FIX-298). Usado nas fronteiras INTERMEDIÁRIAS do turno (troca
+	 * de bloco multi-tool-call, pré-tool-call) — essas NÃO são o fim real do
+	 * turno, e `flush()` ali liberava a pergunta cedo demais: achado ao vivo
+	 * (dossiê Mario) — "Quer ajustar o valor do bem?" (bloco 1, antes de uma
+	 * tool-call) escapava pro stream ANTES de "Você já fez consórcio antes?"
+	 * (bloco final, gate real) — 2 perguntas no mesmo turno persistido, P4
+	 * escapando pela ponta CONTRÁRIA do que `discardHeldQuestion` (FIX-326)
+	 * cobre (lá a pergunta escapa DEPOIS do ponto de decisão; aqui, ANTES dele
+	 * sequer existir). */
+	flushPending(): string {
+		const rest = this.pending;
+		this.pending = "";
+		return rest ? this.filterComplete(rest) : "";
+	}
+
+	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero, segura
+	 * a sentença interrogativa (FIX-298) e limpa emoji do que sobra (FIX-299). */
+	private filterComplete(complete: string): string {
+		const ctx = this.getContext?.();
+		const segments = splitSegments(complete);
+		let out = "";
+		for (const seg of segments) {
+			if (isEphemeralSegment(seg, ctx)) continue;
+			if (isInterrogativeSentence(seg)) {
+				this.heldQuestion = seg;
+				continue;
+			}
+			out += seg;
+		}
+		return stripEmoji(out);
+	}
+
+	private releaseHeldQuestion(): string {
+		const held = this.heldQuestion;
+		this.heldQuestion = "";
+		return held ? stripEmoji(held) : "";
+	}
+
+	/** FIX-326 — descarta a pergunta segurada SEM emiti-la. Usado quando o
+	 * runner prevê que um gate estrutural com pergunta própria vai disparar no
+	 * MESMO turno: a pergunta do MODELO perderia a corrida de qualquer jeito
+	 * (2 perguntas no mesmo balão, achado P4) — melhor nunca emitir a dele do
+	 * que deixar as duas colarem. No-op seguro quando não há pergunta segurada. */
+	discardHeldQuestion(): void {
+		this.heldQuestion = "";
 	}
 }
 

@@ -80,6 +80,21 @@ export type TurnInput = {
 	 * estado, não output duplicado.
 	 */
 	suppressGateEvent?: boolean;
+	/**
+	 * FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0 confirmado): sub-turnos
+	 * de directive PURAMENTE NARRATIVOS (ex.: scarcity/decision_prompt em
+	 * `pipeClosingCeremony`, route.ts) dependiam só de texto de prompt ("NÃO
+	 * chame nenhuma tool") pra impedir o modelo de chamar `present_contract_form`
+	 * — que continua na allowlist da fase "closing" o turno INTEIRO. Achado ao
+	 * vivo: o modelo chamava a tool cedo demais nesses sub-turnos, duplicando
+	 * `contract_form` no mesmo turno HTTP. `forceToolChoice: "none"` faz o AI
+	 * SDK proibir QUALQUER tool-call nesse turno em nível de API (nunca
+	 * regra-no-prompt) — mesmo primitivo já usado por `forceToolChoice` em
+	 * `runAgentTurn` (runner.ts), agora exposto pro CHAMADOR de `runTurn`
+	 * (index.ts) escolher explicitamente, em vez de só a heurística interna.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: ToolChoice é genérico sobre o ToolSet do agent — repassado como-está até resolveAgent/buildAgent.
+	forceToolChoice?: "none";
 };
 
 export type TurnContext = {

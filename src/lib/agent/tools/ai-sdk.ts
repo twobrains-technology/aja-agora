@@ -18,6 +18,7 @@ import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
@@ -253,12 +254,22 @@ const scenariosSchema = z.object({
 	termMonths: z.number().int().positive().describe("Prazo nominal do consorcio em meses"),
 });
 
-const topicPickerSchema = z.object({
+// FIX-300: `topics` deixou de ser string livre — o Zod só aceita um id do
+// catálogo canônico (topic-catalog.ts). O COPY do chip vem SEMPRE do
+// catálogo (resolveTopicPickerPayload, runner.ts), nunca do texto que o
+// modelo mandou — mata o vetor do card alucinado (chips "a"/"b").
+export const topicPickerSchema = z.object({
 	prompt: z
 		.string()
 		.optional()
 		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
-	topics: z.array(z.string().min(1)).min(2).max(5).describe("Lista de topicos clicaveis (2-5)"),
+	topics: z
+		.array(z.enum(CANONICAL_TOPIC_IDS))
+		.min(2)
+		.max(5)
+		.describe(
+			`Ids das duvidas clicaveis (2-5), EXATAMENTE do catalogo canonico: ${CANONICAL_TOPIC_IDS.join(", ")}. NUNCA invente um id novo — o copy do chip vem do catalogo, nao do texto que voce escrever aqui.`,
+		),
 	includeBackButton: z
 		.boolean()
 		.default(true)
@@ -293,7 +304,20 @@ export const recommendGroupsSchema = z.object({
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
-	budget: z.coerce.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-322: o usuario quase nunca declara orcamento mensal (so o valor do
+	// bem) — recommendation.ts:10-17 (FIX-276) ja documenta que esse campo e
+	// "INVENTADO pelo LLM" quando falta o dado real, e monthlyFitScore ja trata
+	// budget<=0 graciosamente (contribui 0 no score, nao quebra). Exigir
+	// positive() forcava a LLM a chutar um numero OU falhar a chamada inteira
+	// (achado ao vivo: turno inteiro caia no fallback degradado). 0 = "sem
+	// dado" (mesmo padrao de desiredTermMonths abaixo) — NAO invente um valor.
+	budget: z.coerce
+		.number()
+		.min(0)
+		.default(0)
+		.describe(
+			"Orcamento mensal do usuario em reais. 0 = usuario nao informou (PADRAO — nao invente um valor).",
+		),
 	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
 	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
 	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual

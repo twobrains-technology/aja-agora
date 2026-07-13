@@ -37,13 +37,55 @@ function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationM
 }
 
 describe("FIX-183 — 'ver mais' não empurra o funil (roteamento determinístico)", () => {
-	it("num turno de primeiro contato, wants_more_options NÃO abre gate de coleta", () => {
+	it("num turno de primeiro contato, wants_more_options NÃO abre gate ancorado numa oferta específica", () => {
 		// Este é o assert que FALHA antes do fix: sem a cláusula explícita, o intent
 		// desconhecido caía no ramo neutral-primeiro-contato (hasNoQualifyData=true)
-		// e o gate DISPARAVA. "Ver mais" nunca deve abrir UI estruturada.
+		// e o gate DISPARAVA. "Ver mais" nunca deve abrir UI ancorada numa oferta
+		// específica não-escolhida.
+		//
+		// FIX-317 (rodada 10, onda 4): o gate-exemplo mudou de "experience" pra
+		// "decision" — "experience" é uma pergunta ESTRUTURAL (não ancora em
+		// nenhuma oferta), e passou a ser corretamente exempta desta trava (ver
+		// achados A5/A6 do veredito Fable). "decision" continua bloqueado, aqui e
+		// via seu próprio allow-list (ready_to_proceed/neutral apenas).
 		expect(
-			decideShowGate({ gate: "experience", intent: "wants_more_options", meta: {}, isUserTurn: true }),
+			decideShowGate({ gate: "decision", intent: "wants_more_options", meta: {}, isUserTurn: true }),
 		).toBe(false);
+	});
+
+	it("FIX-317 — pós-reveal, 'Quero ver todas' (wants_more_options) AINDA assim mostra o gate experience (achado real: usuário nunca via a pergunta)", () => {
+		expect(
+			decideShowGate({
+				gate: "experience",
+				intent: "wants_more_options",
+				meta: postRevealMeta({ experiencePrev: undefined }),
+				isUserTurn: true,
+			}),
+		).toBe(true);
+	});
+
+	it("FIX-317 — pós-reveal, 'Quero ver todas' (wants_more_options) AINDA assim mostra o gate identify", () => {
+		expect(
+			decideShowGate({
+				gate: "identify",
+				intent: "wants_more_options",
+				meta: postRevealMeta({ identityCollected: false }),
+				isUserTurn: true,
+			}),
+		).toBe(true);
+	});
+
+	it("FIX-317 — regressão: experience/identify SEGUEM mudos em pergunta/dúvida/confuso/off-topic (não viraram 'sempre mostra')", () => {
+		for (const intent of ["asking_question", "expressing_doubt", "confused", "off_topic"] as const) {
+			expect(
+				decideShowGate({ gate: "experience", intent, meta: postRevealMeta(), isUserTurn: true }),
+				`experience com intent=${intent}`,
+			).toBe(false);
+			expect(
+				decideShowGate({ gate: "identify", intent, meta: postRevealMeta(), isUserTurn: true }),
+				`identify com intent=${intent}`,
+			).toBe(false);
+		}
 	});
 
 	it("pós-reveal, wants_more_options NÃO dispara o card de decisão (o desvio da Mirella)", () => {

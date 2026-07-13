@@ -46,7 +46,6 @@ const BASE = [
 	"suggest_handoff",
 	"save_contact_name",
 	"save_contact_whatsapp",
-	"present_topic_picker",
 	"check_proposal_status",
 ];
 
@@ -131,8 +130,18 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// Bevi exige CPF+celular pra simular (D1) e lança IdentityNotCollectedError
 			// se buscar sem eles — o agente free-rodava search_groups antes do gate
 			// identify e cuspia "dificuldade técnica". Com a tool fora do request, o
-			// modelo nem consegue chamá-la cedo; o funil coleta a identidade primeiro
-			// (nextGate: identify precede credit) e só então libera a busca.
+			// modelo nem consegue chamá-la cedo; o funil coleta a identidade (agora
+			// depois do credit — FIX-296, reversão do FIX-53) e só então libera a
+			// busca — o pré-requisito real é `identityCollected`, não a ordem.
+			//
+			// FIX-309 (rodada 10 onda 4, investigação de causa-raiz): present_
+			// topic_picker SAIU do toolset em TODA fase (era só closing/terminal
+			// desde o FIX-300) — 0 emissões em 2 dossiês limpos mostraram que o
+			// problema não era o LLM chamar fora de fase, era o LLM nunca chamar
+			// (mesma classe LLM-discricionária do FIX-246/253/280). Emissão agora
+			// é SERVER-SIDE determinística (buildTopicPickerCard,
+			// orchestrator/index.ts) — a tool NUNCA entra em allowedTools em
+			// nenhuma fase.
 			return [
 				...BASE,
 				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),
@@ -193,7 +202,8 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				// FIX-246: embedded_bid/two_paths/scarcity saíram do toolset do LLM
 				// em qualquer fase (emissão server-side determinística — ver "reveal").
 				"present_contract_form",
-				// FIX-280: present_whatsapp_optin saiu daqui também — ver "reveal".
+				// FIX-280/309: present_whatsapp_optin/present_topic_picker saíram
+				// daqui também — ver "reveal".
 			];
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.

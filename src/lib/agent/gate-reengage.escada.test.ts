@@ -47,6 +47,16 @@ describe("FIX-211 — escada de cobrança: textos distintos por tentativa + saí
 		);
 	});
 
+	it("FIX-302: canal WEB usa a copy do identify SEM 'aqui do WhatsApp' (celular não é conhecido via waId)", () => {
+		const wa = reengageQuestionForGate("identify", null, 1, undefined, undefined, "whatsapp");
+		const web = reengageQuestionForGate("identify", null, 1, undefined, undefined, "web");
+		expect(wa).toContain("WhatsApp");
+		expect(web).not.toContain("WhatsApp");
+		expect(web).toContain("CPF e celular");
+		// Default (sem channel) preserva o comportamento pré-existente (whatsapp).
+		expect(reengageQuestionForGate("identify", null, 1)).toBe(wa);
+	});
+
 	it("gates NÃO obrigatórios retornam null em qualquer tentativa", () => {
 		for (const attempt of [1, 2, 3, 4]) {
 			expect(reengageQuestionForGate("experience", null, attempt)).toBeNull();
