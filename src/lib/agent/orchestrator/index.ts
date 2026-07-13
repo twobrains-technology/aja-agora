@@ -828,6 +828,12 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		if (shouldEmitWhatsappOptin(postContract)) {
 			await persistMeta(conversationId, { ...postContract, whatsappOptinShown: true });
 			const stage = postContract.contactPhone ? "confirm" : "open";
+			// FIX-318 (rodada 10, onda 4 — achado ao vivo pós-túnel, dossiê Mario):
+			// mesma classe do FIX-316 (pipeClosingCeremony) — este sub-turno
+			// reavaliava `nextGateToFire` de forma independente e, com reco-consent
+			// ainda pendente, re-anexava "Posso te mostrar a opção que eu
+			// recomendo?" NO MEIO do pedido de WhatsApp do fecho. `suppressGateEvent`
+			// impede isso (mesmo padrão já usado noutros sub-turnos de fecho).
 			yield* runTurn({
 				channel,
 				conversationId,
@@ -836,6 +842,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				contactName: knownName,
 				skipAnalyzer: true,
 				skipLeadCollection: true,
+				suppressGateEvent: true,
 			});
 			yield* emitServerCard({
 				conversationId,
