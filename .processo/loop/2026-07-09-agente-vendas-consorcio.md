@@ -960,3 +960,35 @@ modelava): antes, a repetição aparecia; depois, sumiu.
 
 Total: 6 fixes reais e testados nesta sessão (FIX-313 a FIX-318). Escalando pra nova rodada de
 julgamento (Sonnet → Fable) com evidência fresca e 100% ao vivo.
+
+### FIX-319 — contract_form duplicado (2 P0 do veredito Sonnet, corrigido, commit `761d6898`)
+1. `present_contract_form` continuava na allowlist da fase "closing" durante os 2 sub-turnos
+   PURAMENTE narrativos de `pipeClosingCeremony` (scarcity/decision_prompt), protegidos só por
+   texto de prompt. Corrigido: novo `forceToolChoice: "none"` (threading TurnInput→runTurn→
+   pipeDirectiveTurn→resolveAgent) proíbe QUALQUER tool-call nesses 2 sub-turnos em nível de API.
+2. Nem o re-pedido por texto livre pós-decisão (FIX-239) nem o clique "Tenho interesse" checavam
+   `contractFormDispatched` antes de redisparar o avanço — turnos consecutivos duplicavam o form.
+   Corrigido com guard de idempotência nos 2 callers.
+
+**Verificado AO VIVO (túnel SSM, container recriado — Turbopack cache sujo, resolvido com
+restart):** Madalena 21/21 turnos limpos, 0 contaminados — turno 19 ("Tenho interesse" de novo)
+agora mostra corretamente "Você já viu o formulário aqui em cima" em vez de reabrir. Mario 13/13,
+0 contaminados — turno 11 agora com UM SÓ `contract_form` (antes: 2), sequência
+scarcity→decision_prompt→contract_form→whatsapp_optin correta.
+
+### Achado NOVO do veredito Sonnet, DIAGNOSTICADO mas NÃO corrigido — P4 (2 perguntas por turno)
+Madalena turno 6 (limpo, não contaminado): "Perfeito. Quanto custa esse Corolla que você tem em
+mente?\n\nE quanto custa esse Corolla hoje?" — 2 interrogativas sobre o MESMO dado (uma da reação
+livre do LLM, outra da pergunta determinística do gate `credit`), em blocos SEPARADOS (`\n\n`
+correto, não é o bug de colagem já descartado). Causa-raiz identificada com precisão:
+`EphemeralTextFilter` (sanitizer.ts:406-458, FIX-298) já seguraria a ÚLTIMA pergunta do LLM até o
+`flush()` final — mas esse flush (`runner.ts:895`) acontece ANTES do cálculo de `nextGateToFire`
+(`runner.ts:1251,1315`), ou seja, quando o texto do LLM é liberado pro stream, o código AINDA NÃO
+sabe se um gate vai disparar logo depois — não dá pra suprimir a pergunta do LLM synchronous a essa
+altura. Corrigir exige mover o cálculo do gate pra ANTES do flush final (reordenação de streaming
+com risco real de regressão) — não tentado nesta sessão por segurança/tempo. Registrado como item
+aberto de alta prioridade pra próxima rodada.
+
+### Total da sessão: 9 fixes reais (FIX-311 já existia; FIX-313 a FIX-319 nesta sessão)
+Todos commitados/pushados em `integ/consorcio-r10`, validados por 3433 unit + 345 integration
+(LLM mockado) e por evidência AO VIVO via túnel SSM. Escalando pra nova rodada Sonnet/Fable.
