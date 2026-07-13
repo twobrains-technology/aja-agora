@@ -938,11 +938,21 @@ export async function* runAgentTurn(args: {
 					Boolean(pendingSimulationPayload));
 			const previewDecisionDispatchesNow =
 				!meta.decisionDispatched && artifacts.some((a) => a.type === "decision_prompt");
+			const previewUserReplied = fullResponse.length > 0;
 			const previewDoubtsAddressedNow = shouldMarkDoubtsAddressed({
 				meta,
 				producedArtifact: previewProducedArtifact,
-				userReplied: fullResponse.length > 0,
+				userReplied: previewUserReplied,
 			});
+			// FIX-329 (rodada 10, veredito Sonnet A.8 — achado provado por sonda
+			// do juiz): `pendingFollowUp` (gate `consent`/"Entender mais antes",
+			// hoje vestigial — nada no funil novo mais SETA esse campo desde o
+			// FIX-274 — mas defesa-em-profundidade pra conversas legadas que
+			// ainda o carreguem persistido) é limpo em runtime na MESMA janela.
+			// Sem replicar, `nextGate()` previa "doubts-wait" (isento) enquanto o
+			// cálculo real, com o campo já limpo, avança pro próximo gate real.
+			const previewPendingFollowUpClearsNow =
+				isUserTurn && !previewProducedArtifact && Boolean(meta.pendingFollowUp) && previewUserReplied;
 			// FIX-328 (rodada 10, veredito Sonnet A.7 — hipótese de código, não
 			// reproduzida ao vivo, mas mesma classe do doubtsAddressed acima):
 			// FIX-68 re-snapshota `discoveredCreditTarget` quando o reveal
@@ -968,6 +978,7 @@ export async function* runAgentTurn(args: {
 				...(previewDiscoveredCreditTargetResync !== undefined
 					? { discoveredCreditTarget: previewDiscoveredCreditTargetResync }
 					: {}),
+				...(previewPendingFollowUpClearsNow ? { pendingFollowUp: false } : {}),
 			};
 			const { conversations: previewConversationsTable } = await import("@/db/schema");
 			const { eq: previewEq } = await import("drizzle-orm");

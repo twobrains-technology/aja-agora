@@ -262,4 +262,64 @@ describe("FIX-326 — pergunta do modelo NÃO cola com a pergunta do gate no mes
 		).not.toContain("Quer seguir com a Canopus?");
 		expect(fullText).toContain("Perfeito!");
 	});
+
+	// FIX-329 (rodada 10, veredito Sonnet A.8 — achado provado por sonda do
+	// juiz, campo hoje vestigial mas defesa-em-profundidade pra conversas
+	// legadas): `pendingFollowUp` (gate `consent`/"Entender mais antes",
+	// removido do funil novo pelo FIX-274) só é limpo em runtime (ANTES do
+	// cálculo real de nextGateToFire, DEPOIS do bloco de previsão) — sem
+	// replicar isso, uma conversa legada com pendingFollowUp=true ainda
+	// persistido teria a MESMA colisão de P4 que FIX-326/328 já fecham pros
+	// outros 2 campos (doubtsAddressed/discoveredCreditTarget).
+	it("FIX-329 — pendingFollowUp limpo no turno: pergunta do modelo some, só a do gate seguinte (credit) sobrevive", async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Mario",
+				channel: "web",
+				metadata: {
+					desireAsked: true,
+					currentPersona: "auto",
+					currentCategory: "auto",
+					identityCollected: false,
+					pendingFollowUp: true,
+					qualifyAnswers: {},
+				},
+			})
+			.returning();
+		convId = c.id;
+
+		const events: Array<{ type: string; text?: string; gate?: string }> = [];
+		const gen = runTurn({
+			channel: "web",
+			conversationId: convId,
+			userText: "Entendi, obrigado",
+			isUserTurn: true,
+			contactName: "Mario",
+			skipLeadCollection: true,
+			skipAnalyzer: true,
+			userIntent: "neutral",
+			userKey: null,
+		});
+		for await (const ev of gen) {
+			if (ev.type === "text-delta") events.push({ type: ev.type, text: ev.text });
+			else if (ev.type === "gate") events.push({ type: ev.type, gate: ev.gate });
+			else events.push({ type: ev.type });
+		}
+
+		const fullText = events
+			.filter((e) => e.type === "text-delta")
+			.map((e) => e.text)
+			.join("");
+
+		expect(
+			events.some((e) => e.type === "gate" && e.gate === "credit"),
+			`esperava o gate credit disparar neste turno — eventos: ${JSON.stringify(events)}`,
+		).toBe(true);
+		expect(
+			fullText,
+			"a pergunta PRÓPRIA do modelo não pode sobreviver quando pendingFollowUp libera credit no mesmo turno",
+		).not.toContain("Quer seguir com a Canopus?");
+		expect(fullText).toContain("Perfeito!");
+	});
 });
