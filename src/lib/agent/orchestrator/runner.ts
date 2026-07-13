@@ -465,9 +465,13 @@ export async function* runAgentTurn(args: {
 				const blockId = (part as { id?: string }).id;
 				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
 				// fecha a frase pendente do bloco anterior, com separador entre blocos.
+				// FIX-330: `flushPending()`, não `flush()` — essa fronteira NÃO é o
+				// fim real do turno; liberar a pergunta segurada aqui deixava ela
+				// escapar cedo demais quando o bloco SEGUINTE (ou o gate no fim do
+				// turno) também termina em pergunta (achado ao vivo, P4).
 				if (blockId !== lastTextBlockId && lastTextBlockId !== undefined) {
 					const blockSep = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
-					const flushed = composeClean(ephemeralFilter.flush(), blockSep);
+					const flushed = composeClean(ephemeralFilter.flushPending(), blockSep);
 					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = blockId;
@@ -594,8 +598,12 @@ export async function* runAgentTurn(args: {
 				// ANTES de emitir o tool-call/artifact — o status real é o chip
 				// determinístico, não uma fala do modelo. Exceção: handoff (agente
 				// calado por design; o texto pendente some com o turno).
+				// FIX-330: `flushPending()` — pré-tool-call NÃO é o fim real do
+				// turno (mais tool-calls/texto podem vir depois); liberar a
+				// pergunta segurada aqui é a MESMA classe de escape prematuro do
+				// FIX-182 acima.
 				if (toolName !== "suggest_handoff") {
-					const flushed = composeClean(ephemeralFilter.flush());
+					const flushed = composeClean(ephemeralFilter.flushPending());
 					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = undefined;

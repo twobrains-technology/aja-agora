@@ -424,13 +424,31 @@ export class EphemeralTextFilter {
 		return this.filterComplete(complete);
 	}
 
-	/** Fim do bloco/stream: libera a cauda (última frase sem delimitador), também
-	 * filtrada, seguido da pergunta segurada (se houver — FIX-298). */
+	/** Fim REAL do turno: libera a cauda (última frase sem delimitador), também
+	 * filtrada, seguido da pergunta segurada (se houver — FIX-298). Só chame
+	 * isto no fim de verdade do turno — pra fronteiras INTERMEDIÁRIAS (troca de
+	 * bloco, pré-tool-call), use `flushPending()`. */
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
 		const out = rest ? this.filterComplete(rest) : "";
 		return out + this.releaseHeldQuestion();
+	}
+
+	/** FIX-330 — mesma coisa que `flush()`, mas NUNCA libera a pergunta
+	 * segurada (FIX-298). Usado nas fronteiras INTERMEDIÁRIAS do turno (troca
+	 * de bloco multi-tool-call, pré-tool-call) — essas NÃO são o fim real do
+	 * turno, e `flush()` ali liberava a pergunta cedo demais: achado ao vivo
+	 * (dossiê Mario) — "Quer ajustar o valor do bem?" (bloco 1, antes de uma
+	 * tool-call) escapava pro stream ANTES de "Você já fez consórcio antes?"
+	 * (bloco final, gate real) — 2 perguntas no mesmo turno persistido, P4
+	 * escapando pela ponta CONTRÁRIA do que `discardHeldQuestion` (FIX-326)
+	 * cobre (lá a pergunta escapa DEPOIS do ponto de decisão; aqui, ANTES dele
+	 * sequer existir). */
+	flushPending(): string {
+		const rest = this.pending;
+		this.pending = "";
+		return rest ? this.filterComplete(rest) : "";
 	}
 
 	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero, segura

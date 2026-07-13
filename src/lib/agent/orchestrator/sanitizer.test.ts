@@ -723,6 +723,52 @@ describe("FIX-326 — discardHeldQuestion() descarta a pergunta segurada sem emi
 	});
 });
 
+// FIX-330 (rodada 10, achado ao vivo pós-FIX-329 — 3ª variante de P4, distinta
+// do FIX-326/328/329): dossiê fresco Mario mostrou "Quer ajustar o valor do
+// bem? [...] Você já fez consórcio antes?" no MESMO turno — 2 perguntas reais,
+// vindas de blocos DIFERENTES da mesma resposta multi-tool-call. Causa: o
+// runner chama `flush()` em CADA fronteira de bloco/pré-tool-call (não só no
+// fim real do turno) — e `flush()` SEMPRE libera a pergunta segurada
+// (FIX-298), mesmo nessas fronteiras INTERMEDIÁRIAS. A pergunta do bloco 1
+// escapava ANTES do fim do turno, ANTES até de o runner saber se um gate ia
+// disparar depois (P4 escapando pela ponta CONTRÁRIA do que FIX-326 cobre).
+describe("FIX-330 — flushPending() nunca libera a pergunta segurada (só o fim REAL do turno pode)", () => {
+	it("flushPending() esvazia o pending mas MANTÉM a pergunta segurada (não libera)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		emitted += f.flushPending();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		// a pergunta continua segurada — surge só no flush() FINAL:
+		emitted += f.push("Você já fez consórcio antes?");
+		emitted += f.flush();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+
+	it("regressão — flushPending() continua liberando texto NÃO-interrogativo pendente normalmente", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("A parcela fica em R$ 1.635,21 por mês");
+		emitted += f.flushPending();
+		expect(emitted).toContain("A parcela fica em R$ 1.635,21 por mês");
+	});
+
+	it("cassette real reproduzido: 2 blocos, cada um terminando em pergunta, com flushPending() entre eles — só a ÚLTIMA sobrevive", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Aqui está o detalhamento completo da ITAÚ. Quer ajustar o valor do bem?");
+		emitted += f.flushPending(); // fronteira de bloco/pré-tool-call — NÃO libera
+		emitted += f.push("Essas são as melhores alternativas pro seu perfil. ");
+		emitted += f.push("Você já fez consórcio antes?");
+		emitted += f.flush(); // fim REAL do turno — libera só a última
+		const questionMarks = emitted.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+});
+
 // FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição): "Show, kairo!" (nome
 // em minúscula) e "Perfeito, kairo! ✅" (emoji fora da parcimônia esperada) com
 // Qwen 3.5 Fast. Casca determinística — independe do modelo obedecer ao prompt.
