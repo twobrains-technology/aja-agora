@@ -513,3 +513,69 @@ arrisca rabbit hole sem o veredito de um verificador de verdade. Este gap vira i
 **planner da verificação Etapa A** decidir se sonda isso explicitamente, não uma onda 4 ad-hoc.
 
 ## Etapa A — Verificação (planner Opus → coletor Haiku → juiz Sonnet/Fable) — 2026-07-13, ABERTA
+
+### Rodada A.1 — planner + 3 coletores + juiz Sonnet
+
+- **Planner (Opus):** roteiro completo em `.processo/loop/evidencias-r10/ROTEIRO-verificacao.md`
+  + 5 roteiros executáveis em `.../roteiros/`. Cobre P0-A/P0-B fiéis ao mockup, sonda dedicada
+  pra CADA P1-P10, sonda sob modelo fraco (Qwen), gap §4 (tool_error present_decision_prompt)
+  medido nos dois modelos, divisão determinístico×visual.
+- **Coletor A (Haiku, determinístico, PROD/Haiku, limpo):** 4 roteiros rodados (madalena-junta,
+  mario-sem-lance, probe-p4-prod, probe-p7-prod), 0 erro HTTP, test:unit 324/324 e
+  test:integration verdes. `dossies/RESUMO-coletor-prod.md`.
+- **Coletor B (Haiku, determinístico, Qwen):** parcial/prejudicado por infra real (túnel LiteLLM
+  instável, OrbStack wedge sob carga sustentada) — P0-B parcial, P4 completo (mas por fallback
+  genérico), P6/P7 truncados sem dossiê salvo, P9 não rodado nesta coleta (reusa os 3 logs
+  históricos de onda 2/3). `dossies/RESUMO-coletor-qwen.md`.
+- **Coletor C (Haiku + Claude in Chrome, visual):** **CONTAMINADO** — rodou em paralelo com o
+  coletor B, que trocou `AI_MODEL`/reiniciou o MESMO container no meio da sessão. Só o Ponto 1
+  (divider de especialista) é confiável; Pontos 2-5 precisam de re-coleta limpa.
+  `dossies/RESUMO-coletor-visual.md` + `dossies/NOTA-contaminacao-visual.md` (causa-raiz).
+  Lição registrada: [[feedback_loop_goal_coletores_paralelos_ai_model_race]].
+- **Juiz (Sonnet):** foi direto ao `dossie.json` BRUTO (não confiou nos `.md` resumidos dos
+  coletores) e achou problemas MAIS graves do que os coletores relataram.
+
+### 🔴 VEREDITO A.1: **2/10 — MATADOR PRA PROD: NÃO**
+
+Nota final = MÍNIMO das dimensões (Funcional 2, UX 2, UI/Compliance 2; Negócio 3; E2E 4; Cálculo 7).
+
+**P1-P10:**
+| P | Veredito |
+|---|---|
+| P1 | **FAIL** — motivo colado ao credit na mesma frase (Madalena); `gate:identify` NUNCA aparece no dossiê Mario (0 ocorrências) |
+| P2 | PASS (qualificado) |
+| P3 | **FAIL severo** — hero (`recommendation_card`) NUNCA aparece no dossiê Madalena inteiro (0 ocorrências de recommendation_card/reco-consent/gate:experience/topic_picker); hero dispara indevido em Mario e probe-p4 |
+| P4 | **FAIL** — 4 turnos com 2+ `?` em Madalena (coletor só achou 3), 2 em Mario |
+| P5 | **FAIL (achado NOVO)** — whatsapp_optin+contract_form disparam prematuro no turno 12 de Madalena, antes de lance/scarcity/decision |
+| P6 | INCONCLUSIVO — zero dossiê salvo |
+| P7 | INCONCLUSIVO parcial — leg PROD existe mas com reancora pro gate ERRADO em 2 pontos; leg Qwen sem dossiê |
+| P8 | PASS (qualificado, só pela suíte agregada) |
+| P9 | PASS (qualificado, reusa histórico de onda 2/3, não desta coleta) |
+| P10 | **FAIL severo e sistêmico** — 42 instâncias de frase colada nos 4 dossiês PROD, sob Anthropic NATIVO (refuta a hipótese de que era só gateway OpenAI-compat) |
+
+**Achado mais grave:** `gate:experience`, `topic_picker`, `scarcity`, `decision_prompt` **nunca
+aparecem em NENHUM dos 4 dossiês PROD** — sugere que a coreografia pós-reveal (S2/FIX-297) pode
+estar fundamentalmente quebrada na base integrada, não só um bug pontual — os testes unit/
+integration por-bloco (que passavam) não capturam isso porque testam unidades isoladas, não o
+fluxo E2E completo golden-path.
+
+### 9 achados → itens da próxima onda (r10 onda 4, a montar)
+1. **[ALTA]** Frases coladas sistêmicas, inclusive sob PROD/Anthropic nativo (42 instâncias) — `normalizeGluedSentences`/pipeline de composição.
+2. **[ALTA]** Hero nunca aparece no golden path Madalena — coreografia S2 quebrada na integração.
+3. **[ALTA]** WhatsApp optin dispara prematuro em Madalena (turno 12, antes do fecho real).
+4. **[ALTA]** `present_recommendation_card` dispara em fluxos que NUNCA deveriam mostrar hero (Mario, probe-p4).
+5. **[MÉDIA]** Gate `credit` de Mario preso em loop 8x; `gate:identify` nunca aparece — CPF parece descartado silenciosamente.
+6. **[MÉDIA]** Fallback "Acho que me perdi por aqui" reproduz sob PROD limpo (Madalena T18, sem contaminação) — pode ser bug de produto real, não só ruído de infra do lado Qwen.
+7. **[MÉDIA]** `experience`/`topic_picker`/`scarcity`/`decision_prompt` nunca aparecem em NENHUM dossiê PROD — investigar causa raiz comum.
+8. **[MÉDIA]** Motivo nunca vira turno próprio em Madalena (P1c).
+9. **[BAIXA]** Copy do credit de Mario nunca nomeia o item nas reconfirmações.
+
+### Re-coleta pendente (não é fix, é medição)
+P6 (zero evidência) · P7 leg Qwen (zero evidência) · P9 dentro do dossiê oficial desta etapa ·
+Visual Pontos 2-5 (contaminados, rodar sequenciado — especialmente vale confirmar visualmente o
+achado #2 acima).
+
+**Próximo passo:** achados #2, #4 e #7 parecem correlacionados (coreografia pós-reveal
+inteira ausente/quebrada) — antes de escrever fix-cards item-a-item, vale um crítico investigando
+se há uma causa-raiz ÚNICA (ex.: um guard/condição que está suprimindo a cadeia inteira,
+silenciosamente, na base integrada) antes de desenhar a onda 4.
