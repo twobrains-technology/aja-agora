@@ -291,10 +291,35 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// entrada no regex). Só se aplica enquanto este gate está mesmo pendente
 		// (recoConsentDispatched && !recoConsentAnswered) — nunca sequestra um
 		// "ready_to_proceed" de outro contexto.
+		//
+		// FIX-325 (rodada 10, veredito Sonnet A.5 + decisão de produto do Kairo,
+		// AskUserQuestion 2026-07-13): nomear uma administradora JÁ EXIBIDA no
+		// comparison_table (ex.: "A Canopus parece boa, parcela baixa") TAMBÉM é
+		// consentimento inequívoco — sem isso, `recoConsentAnswered` ficava
+		// PARA SEMPRE undefined nesse padrão de resposta, travando toda a
+		// cascata pós-reveal (nextGate() nunca sai de "reco-consent") até o
+		// usuário clicar um botão de fast-path independente (achado ao vivo,
+		// dossiê Mario). Mesmo guard de intent do `detectYesNoText` (pergunta/
+		// dúvida/off-topic/quer-mais-opções nunca contam) — reusa a resolução
+		// por menção já provada em resolveOfferMentionForConversation
+		// (FIX-258/263): só resolve contra oferta JÁ ANCORADA em tela, nunca
+		// inventa.
+		const recoConsentGatePending =
+			meta.recoConsentDispatched === true && meta.recoConsentAnswered !== true;
+		const excludedIntentForConsent =
+			analyzedIntent === "asking_question" ||
+			analyzedIntent === "expressing_doubt" ||
+			analyzedIntent === "off_topic" ||
+			analyzedIntent === "wants_more_options";
+		const mentionedOfferForConsent =
+			recoConsentGatePending && !excludedIntentForConsent
+				? await resolveOfferMentionForConversation(conversationId, userText)
+				: null;
 		if (
-			meta.recoConsentDispatched === true &&
-			meta.recoConsentAnswered !== true &&
-			(detectYesNoText(userText, analyzedIntent) === true || analyzedIntent === "ready_to_proceed")
+			recoConsentGatePending &&
+			(detectYesNoText(userText, analyzedIntent) === true ||
+				analyzedIntent === "ready_to_proceed" ||
+				mentionedOfferForConsent !== null)
 		) {
 			meta.recoConsentAnswered = true;
 			await persistMeta(conversationId, meta);

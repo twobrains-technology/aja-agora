@@ -66,6 +66,19 @@ const TIMEOUT_MS = 15_000;
 const SIM_RETRY = 4; // 404 transitório do step de simulação (spec §4.3)
 const SIM_RETRY_DELAY_MS = 500;
 
+// FIX-324 (rodada 10, veredito Sonnet A.5): achado ao vivo via docker logs —
+// choose_offer_bevi_consorcio (o passo mais crítico do funil, o FECHO) tinha
+// sucessos reais chegando a 10,6-14,5s, perigosamente perto do TIMEOUT_MS
+// default de 15s, e ZERO retry. Assim que a Bevi ficou um pouco mais lenta
+// durante a sessão, toda chamada seguinte estourou o teto (15003-15013ms) sem
+// nenhuma segunda chance — usuário via "Tive um problema ao gerar sua
+// proposta" no passo mais crítico do funil. Timeout maior (folga real acima
+// da latência já observada) + 1 retry específico de rede/timeout (distinto do
+// retry de 404 do simulate, que é erro DE NEGÓCIO já com envelope parseado).
+const CHOOSE_OFFER_TIMEOUT_MS = 25_000;
+const FETCH_ERROR_RETRY = 2;
+const FETCH_ERROR_RETRY_DELAY_MS = 500;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export class BeviApiAdapter implements ProposalGateway {
@@ -78,13 +91,30 @@ export class BeviApiAdapter implements ProposalGateway {
 	}
 
 	/** 1 chamada genérica: injeta auth + service_id, parseia o envelope, lança erro
-	 * tipado quando success:false. `retryOn404` só pro calculate_simulation. */
+	 * tipado quando success:false. `retryOn404` só pro calculate_simulation.
+	 * `retryOnFetchError` (FIX-324) retenta quando o PRÓPRIO fetch() falha
+	 * (timeout/rede) — distinto de `retryOn404`, que precisa do envelope já
+	 * parseado (erro DE NEGÓCIO, não de transporte). */
 	private async callService<T>(
 		serviceId: string,
-		opts: { method?: string; body?: unknown; qs?: string; retryOn404?: boolean } = {},
+		opts: {
+			method?: string;
+			body?: unknown;
+			qs?: string;
+			retryOn404?: boolean;
+			retryOnFetchError?: boolean;
+			timeoutMs?: number;
+		} = {},
 	): Promise<T> {
-		const { method = "POST", body, qs = "", retryOn404 = false } = opts;
-		const maxAttempts = retryOn404 ? SIM_RETRY : 1;
+		const {
+			method = "POST",
+			body,
+			qs = "",
+			retryOn404 = false,
+			retryOnFetchError = false,
+			timeoutMs = TIMEOUT_MS,
+		} = opts;
+		const maxAttempts = retryOn404 ? SIM_RETRY : retryOnFetchError ? FETCH_ERROR_RETRY : 1;
 
 		// Observabilidade de trilho: toda chamada de parceiro é TRILHO A. Endpoint =
 		// service_id (roteia o RPC) + qs; sem body no log (pode conter PII).
@@ -95,16 +125,26 @@ export class BeviApiAdapter implements ProposalGateway {
 		let lastErr: unknown;
 		try {
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-				const res = await fetch(this.config.baseUrl + qs, {
-					method,
-					headers: {
-						Authorization: `Bearer ${this.config.apiToken}`,
-						service_id: serviceId,
-						...(body ? { "Content-Type": "application/json" } : {}),
-					},
-					body: body ? JSON.stringify(body) : undefined,
-					signal: AbortSignal.timeout(TIMEOUT_MS),
-				});
+				let res: Response;
+				try {
+					res = await fetch(this.config.baseUrl + qs, {
+						method,
+						headers: {
+							Authorization: `Bearer ${this.config.apiToken}`,
+							service_id: serviceId,
+							...(body ? { "Content-Type": "application/json" } : {}),
+						},
+						body: body ? JSON.stringify(body) : undefined,
+						signal: AbortSignal.timeout(timeoutMs),
+					});
+				} catch (fetchErr) {
+					if (retryOnFetchError && attempt < maxAttempts) {
+						lastErr = fetchErr;
+						await sleep(FETCH_ERROR_RETRY_DELAY_MS);
+						continue;
+					}
+					throw fetchErr;
+				}
 
 				const env = (await res.json()) as BeviEnvelope<T>;
 				if (env.success) {
@@ -128,7 +168,7 @@ export class BeviApiAdapter implements ProposalGateway {
 				}
 				throw toBeviError(env.code, env.message, env.data);
 			}
-			// esgotou retries de 404
+			// esgotou retries de 404/timeout
 			throw lastErr;
 		} catch (err) {
 			logTrilho({
@@ -207,7 +247,13 @@ export class BeviApiAdapter implements ProposalGateway {
 	async chooseOffer(input: ChooseOfferInput): Promise<ChooseOfferResult> {
 		const data = await this.callService<{ proposalId: string; consortiumProposalLink: string }>(
 			"choose_offer_bevi_consorcio",
-			{ body: { propostaId: input.proposalId, ofertaId: input.ofertaId } },
+			{
+				body: { propostaId: input.proposalId, ofertaId: input.ofertaId },
+				// FIX-324: passo mais crítico do funil (o fecho) — timeout maior +
+				// retry de rede/timeout, ver constantes acima.
+				timeoutMs: CHOOSE_OFFER_TIMEOUT_MS,
+				retryOnFetchError: true,
+			},
 		);
 		return {
 			proposalId: data.proposalId,
