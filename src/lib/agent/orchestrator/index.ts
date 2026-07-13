@@ -784,16 +784,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// (menu de dúvidas: lance/sorteio/contemplação/cartas variam) tinha 0
 	// emissões em 2 dossiês limpos — dependia do LLM chamar `present_topic_
 	// picker` espontaneamente (mesma classe de bug do FIX-246/253/280).
-	// Ponto certo da cascata: pós-`experience`, quando o usuário escolheu
-	// "tenho dúvidas" (`experiencePrev === "doubts"`) — a mesma janela em que
-	// `nextGate()` passaria por `doubts-wait` (qualify-state.ts). Guard duplo:
+	// Ponto certo da cascata, confirmado pelo roteiro canônico
+	// (docs/design/specs/assets/2026-07-12-aja-dois-cenarios.html, cenário
+	// Madalena): pós-`experience`, quando o usuário é NOVATO
+	// (`experiencePrev === "first"`) — ele não sabe o que perguntar, então o
+	// menu de FAQ é oferecido proativamente. NÃO é o mesmo gatilho de
+	// `experiencePrev === "doubts"` ("Tenho dúvidas"), que já tem seu próprio
+	// mecanismo dedicado (`doubts-wait`/`pendingFollowUp` — resposta livre à
+	// pergunta específica do usuário, sem menu). Guard duplo:
 	// `recoConsentDispatched !== true` evita reabrir o card numa conversa que
 	// já avançou pra reco-consent (não regride a fase); `topicPickerDispatched`
 	// garante emissão única (mesmo padrão de recoConsentDispatched).
 	{
 		const refreshed = await reloadMeta(conversationId);
 		if (
-			refreshed.experiencePrev === "doubts" &&
+			refreshed.experiencePrev === "first" &&
 			refreshed.recoConsentDispatched !== true &&
 			refreshed.topicPickerDispatched !== true
 		) {

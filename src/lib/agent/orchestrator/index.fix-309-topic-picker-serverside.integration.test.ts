@@ -3,10 +3,15 @@
 // `present_topic_picker` era 100% LLM-discricionário (ai-sdk.ts:766) — mesma
 // classe de bug do FIX-246/253/280 (invariante crítico no prompt, não em
 // código). Migra pra emissão SERVER-SIDE determinística (server-cards.ts +
-// orchestrator/index.ts), no ponto pós-`experience` (usuário escolheu "tenho
-// dúvidas"). Integração (DB real): agente MOCADO nunca chama nenhuma tool —
-// espelha exatamente o directive real (buildExperienceDoubtsDirective diz
-// "NÃO chame tools").
+// orchestrator/index.ts), no ponto pós-`experience` quando o usuário é NOVATO
+// (`experiencePrev === "first"`) — confirmado pelo roteiro canônico
+// (docs/design/specs/assets/2026-07-12-aja-dois-cenarios.html, cenário
+// Madalena, turno "É a primeira vez" -> topic_picker). NÃO é o mesmo gatilho
+// de `experiencePrev === "doubts"` ("Tenho dúvidas"), que já tem mecanismo
+// dedicado (`doubts-wait`/`pendingFollowUp` — resposta livre, sem menu).
+// Integração (DB real): agente MOCADO nunca chama nenhuma tool — espelha
+// exatamente o directive real (buildExperienceFirstDirective diz "NÃO chame
+// tools").
 
 import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,12 +24,12 @@ vi.mock("@/lib/agent/agents", () => {
 		return {
 			stream: async () => ({
 				fullStream: (async function* () {
-					// Espelha buildExperienceDoubtsDirective: explicação em texto puro,
+					// Espelha buildExperienceFirstDirective: explicação em texto puro,
 					// SEM tool-call nenhuma — o directive real proíbe "NÃO chame tools".
 					yield {
 						type: "text-delta",
 						id: "s0",
-						text: "Consórcio é um grupo de pessoas que paga parcelas mensais sem juros, e todo mês alguém é contemplado por sorteio ou lance. Se ficou alguma dúvida específica, manda aqui que eu respondo.",
+						text: "Consórcio é um grupo de pessoas que paga parcelas mensais sem juros, e todo mês alguém é contemplado por sorteio ou lance pra receber a carta de crédito. Nosso papel na Aja Agora é encontrar o grupo com maior chance de atender seu objetivo no prazo que você deseja.",
 					};
 				})(),
 				finishReason: Promise.resolve("stop" as const),
@@ -62,13 +67,13 @@ const {
 	artifacts: artifactsTable,
 } = await import("@/db/schema");
 const { runTurn } = await import("@/lib/agent/orchestrator");
-const { buildExperienceDoubtsDirective } = await import("@/lib/agent/orchestrator/directives");
+const { buildExperienceFirstDirective } = await import("@/lib/agent/orchestrator/directives");
 type ConversationMetadata = import("@/lib/agent/personas").ConversationMetadata;
 
 // Ponto do funil imediatamente pós-reveal, onde o usuário acabou de clicar
-// "Tenho dúvidas" no gate `experience` — mesmo estado que route.ts persiste
+// "É a primeira vez" no gate `experience` — mesmo estado que route.ts persiste
 // (action.gate === "experience") ANTES de disparar o directive.
-function posExperienceDoubtsMeta(): ConversationMetadata {
+function posExperienceFirstMeta(): ConversationMetadata {
 	return {
 		currentPersona: "auto",
 		currentCategory: "auto",
@@ -77,8 +82,7 @@ function posExperienceDoubtsMeta(): ConversationMetadata {
 		qualifyAnswers: { creditMin: 76_500, creditMax: 90_000 },
 		revealCompleted: true,
 		searchDispatched: true,
-		experiencePrev: "doubts",
-		doubtsAddressed: false,
+		experiencePrev: "first",
 	};
 }
 
@@ -116,21 +120,21 @@ async function cleanup(convId: string): Promise<void> {
 	await db.delete(conversations).where(eq(conversations.id, convId));
 }
 
-describeIfDb("FIX-309 — topic_picker server-side (pós-experience, doubts)", () => {
+describeIfDb("FIX-309 — topic_picker server-side (pós-experience, novato)", () => {
 	let convId: string;
 	beforeEach(() => vi.clearAllMocks());
 	afterEach(async () => {
 		if (convId) await cleanup(convId);
 	});
 
-	it("emite topic_picker SEMPRE após a explicação de dúvidas, mesmo sem o LLM chamar present_topic_picker", async () => {
+	it("emite topic_picker SEMPRE após a explicação pro novato, mesmo sem o LLM chamar present_topic_picker", async () => {
 		const [c] = await db
 			.insert(conversations)
-			.values({ contactName: "Kairo", channel: "web", metadata: posExperienceDoubtsMeta() })
+			.values({ contactName: "Kairo", channel: "web", metadata: posExperienceFirstMeta() })
 			.returning();
 		convId = c.id;
 
-		const events = await drainDirective(convId, buildExperienceDoubtsDirective("Tenho dúvidas"));
+		const events = await drainDirective(convId, buildExperienceFirstDirective("É a primeira vez"));
 
 		const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
 		expect(artifactTypes).toContain("topic_picker");
@@ -167,8 +171,7 @@ describeIfDb("FIX-309 — topic_picker server-side (pós-experience, doubts)", (
 				contactName: "Kairo",
 				channel: "web",
 				metadata: {
-					...posExperienceDoubtsMeta(),
-					doubtsAddressed: true,
+					...posExperienceFirstMeta(),
 					topicPickerDispatched: true,
 				},
 			})
@@ -181,22 +184,22 @@ describeIfDb("FIX-309 — topic_picker server-side (pós-experience, doubts)", (
 		expect(artifactTypes).not.toContain("topic_picker");
 	});
 
-	it("não regride a fase: experiencePrev='first' (nunca teve dúvidas) NÃO emite topic_picker", async () => {
+	it("não regride a fase: experiencePrev='doubts' (tem dúvida específica, mecanismo dedicado doubts-wait) NÃO emite topic_picker", async () => {
 		const [c] = await db
 			.insert(conversations)
 			.values({
 				contactName: "Kairo",
 				channel: "web",
 				metadata: {
-					...posExperienceDoubtsMeta(),
-					experiencePrev: "first",
-					doubtsAddressed: undefined,
+					...posExperienceFirstMeta(),
+					experiencePrev: "doubts",
+					doubtsAddressed: false,
 				},
 			})
 			.returning();
 		convId = c.id;
 
-		const events = await drainDirective(convId, "Prazer, primeira vez com consórcio.");
+		const events = await drainDirective(convId, "Tenho uma dúvida específica sobre lance.");
 
 		const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
 		expect(artifactTypes).not.toContain("topic_picker");
@@ -209,9 +212,8 @@ describeIfDb("FIX-309 — topic_picker server-side (pós-experience, doubts)", (
 				contactName: "Kairo",
 				channel: "web",
 				metadata: {
-					...posExperienceDoubtsMeta(),
+					...posExperienceFirstMeta(),
 					experiencePrev: "returning",
-					doubtsAddressed: undefined,
 				},
 			})
 			.returning();
@@ -230,8 +232,7 @@ describeIfDb("FIX-309 — topic_picker server-side (pós-experience, doubts)", (
 				contactName: "Kairo",
 				channel: "web",
 				metadata: {
-					...posExperienceDoubtsMeta(),
-					doubtsAddressed: true,
+					...posExperienceFirstMeta(),
 					recoConsentDispatched: true,
 				},
 			})
