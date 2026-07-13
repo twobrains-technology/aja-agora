@@ -1,12 +1,14 @@
 ---
 id: FIX-308
 titulo: "Acopla avanço da cascata ao consentimento REAL (recoConsentAnswered), não só ao dispatch"
-status: todo
+status: done
 bloco: bloco-r10-4-reco-consent-hero
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/index.ts, src/lib/agent/qualify-state.ts]
 rodada: 2026-07-13 (loop-de-goal r10, onda 4, bloco r10-4-reco-consent-hero — investigação de causa-raiz da Etapa A)
+commit: 052ba67..a9ff9ff9
+executado_em: 2026-07-13
 ---
 ## Palavras do operador
 > Investigação de causa-raiz: hero (`recommendation_card`) aparece no dossiê real da Madalena, mas
