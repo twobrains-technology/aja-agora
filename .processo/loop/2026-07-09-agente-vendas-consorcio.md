@@ -1084,3 +1084,74 @@ sendo HIPÓTESE, não fato cravado (não temos visibilidade da infra da Bevi).
 - **Espelho de motivação duplicado (Madalena)**: não reinvestigado nesta rodada.
 - **Vazamento "seja transparente:"**: JÁ CORRIGIDO nesta rodada — ver acima, mas não listado como
   FIX-32X porque a numeração seguiu (registrado junto do achado ALTA original do juiz).
+
+## Rodada A.5 — veredito Sonnet pós-FIX-320..323: 3/10 (progresso real, 2 pendências ALTA novas processadas)
+
+Juiz Sonnet reproduziu os testes/suite ele mesmo (confirmou 4 fixes sólidos, sem regressão) e achou
+2 pendências ALTA NÃO catalogadas antes, ambas com evidência de log/DB (não hipótese):
+
+### FIX-324 — timeout/retry do fechamento (`choose_offer_bevi_consorcio`) — corrigido
+Achado: sucessos reais chegavam a 10,6-14,5s (perto do `TIMEOUT_MS=15_000`) e ZERO retry — assim
+que a Bevi degradou um pouco na sessão, toda chamada seguinte estourou o teto (15003-15013ms) sem
+segunda chance, no passo MAIS crítico do funil (o fecho). Fix: `chooseOffer` ganhou timeout próprio
+de 25s + 1 retry específico de erro de rede/timeout (`retryOnFetchError`, distinto do retry de 404
+do `simulate`, que é erro de negócio já com envelope parseado). TDD:
+`bevi-api-adapter.test.ts` (+4 testes: retry com sucesso na 2ª tentativa, esgota retries e lança,
+timeout maior que o default, regressão do timeout default nos outros services). RED→GREEN
+confirmado, suíte completa (373 unit + 88 integration) segue verde.
+
+### FIX-325 — reco-consent nunca reconhecia menção a administradora já exibida como consentimento — corrigido (decisão de produto)
+Investigação da pendência "two_paths dispara tarde" revelou causa-raiz mais profunda: `nextGate()`
+trava TODA a cascata pós-reveal (timeframe/lance/decision) atrás de `recoConsentAnswered` — e esse
+campo só virava `true` via `detectYesNoText`/`intent==="ready_to_proceed"` (FIX-297/308). Quando o
+usuário responde nomeando uma administradora ESPECÍFICA já vista na lista (ex.: "A Canopus parece
+boa, parcela baixa" — exatamente o padrão do roteiro Mario), isso nunca contava — `recoConsentAnswered`
+ficava PARA SEMPRE undefined, e só o clique "Tenho interesse" (fast-path independente, route.ts)
+fechava a conversa, sem nunca passar pela decisão/two_paths na hora certa.
+
+**Decisão de produto perguntada ao Kairo (AskUserQuestion, 2026-07-13)**: nomear uma administradora
+já exibida DEVE contar como consentimento? Resposta: **Sim** (recomendado). Fix: reaproveita
+`resolveOfferMentionForConversation` (mesma resolução por menção já provada em FIX-258/263, nunca
+inventa — só resolve contra oferta JÁ ANCORADA em tela) como 3ª via de consentimento, com o MESMO
+guard de intent do `detectYesNoText` (pergunta/dúvida/off-topic/quer-mais-opções nunca contam). TDD:
+`index.fix-325-reco-consent-mencao-administradora.integration.test.ts` (4 testes: menção reconhecida
+libera hero + marca answered, cascata sai de reco-consent no mesmo fio, regressão texto ambíguo
+continua bloqueado, regressão administradora NUNCA exibida continua bloqueada). RED→GREEN
+confirmado; suíte completa dos 3 arquivos relacionados (FIX-325 + FIX-308 + FIX-263) 12/12 verde,
+sem regressão.
+
+### Suíte após FIX-324+325
+`test:unit`: 373 arquivos / 3446 testes verdes. `test:integration`: rodando. `typecheck`
+diferencial: limpo nos arquivos tocados (só a mesma dívida pré-existente de sempre em `runner.ts`).
+
+### Verificado ao vivo — FIX-325 funciona, mas sequenciamento do two_paths só melhora PARCIALMENTE
+4 recoletas do Mario pós-FIX-324/325 (r1 a r4). r1/r2 vieram QUEBRADAS (funil preso em
+"welcome"/concierge em quase todo turno) — causa-raiz: cache Turbopack sujo no container (mesmo
+padrão recorrente da sessão), resolvido com `docker restart`, não `touch`. r3/r4 (pós-restart)
+vieram limpas (13/13, 0 contaminados) e trouxeram a primeira evidência desta campanha de um fluxo
+FECHANDO ponta-a-ponta de verdade: turno 13 chega em `signature_handoff`+`document_upload` (antes,
+100% dos dossiês morriam no "Tive um problema ao gerar sua proposta" — FIX-324 parece ter
+resolvido isso também, ainda que sem prova estatística forte de 1 amostra).
+
+`recoConsentAnswered` (FIX-325) É capturado corretamente quando o analyzer classifica o texto como
+`providing_info` (r4: DB confirma `recoConsentAnswered: true`, hero libera + funil avança direto pra
+`gate:timeframe` no MESMO turno) — mas o MESMO texto ("A Canopus parece boa, parcela baixa") às
+vezes é classificado pelo analyzer como `expressing_doubt` (r3: "está avaliando a opção, não
+informando esses dados") — um dos 4 intents excluídos por design (mesmo guard do
+`detectYesNoText`), e nesse caso a captura NÃO acontece. Isso é variância inerente do classificador
+LLM sobre texto ambíguo, não um bug determinístico do FIX-325 (a lógica em si está correta e
+testada; o gargalo é a classificação probabilística upstream).
+
+Mesmo quando `recoConsentAnswered` resolve cedo (r4) e `hasLance` chega a "so_parcela" no turno
+seguinte, `two_paths` AINDA só aparece no turno do clique "Tenho interesse" (bundlado com
+`contract_form`/`whatsapp_optin`), não num turno de texto livre antes disso — sugere que
+`nextGate()` alcança "decision" mas o disparo natural (via `decideShowGate`/`nextGateToFire` em
+`runner.ts`, fora do fast-path de clique) não está saindo no turno esperado. Causa-raiz EXATA não
+isolada nesta rodada (investigação mais profunda, possível 3º nível do mesmo mecanismo já mexido 2x
+hoje) — registrado como pendência ALTA residual pro próximo juiz avaliar, não escondida.
+
+### Total da rodada A.4/A.5: 6 fixes reais (FIX-320 a FIX-325), todos com TDD + verificação ao vivo
+Commits `78b7c970` (FIX-320-323) e `c2fba801` (FIX-324-325) em `integ/consorcio-r10`, pushados.
+Suíte: 373 unit / 3446 testes + 89 integration / 352 testes, 100% verde. Escalando pra nova rodada
+de julgamento (Sonnet) com evidência fresca — incluindo o primeiro fecho ponta-a-ponta completo
+desta campanha.
