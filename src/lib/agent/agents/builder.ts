@@ -22,6 +22,17 @@ const openaiCompat = createGatewayOpenAI();
 type ConsorcioToolName = keyof typeof consorcioTools;
 type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;
 
+/**
+ * Tools que EXISTEM no registry (compat/execute interno) mas NUNCA podem ser
+ * expostas ao LLM — a emissão virou server-side determinística e listá-las
+ * seria tool morta/enganosa (Lei 2: allowlist, não expor o que não deve ser
+ * chamado). Migration 0015 gravou `present_whatsapp_optin` em `active_tools`
+ * de toda persona specialist no DB ANTES do FIX-280 mudar a emissão pra
+ * server-side (buildWhatsappOptinCard) — sem este filtro, `selectTools`
+ * confia cegamente no DB e reexpõe a tool desativada (regressão do FIX-280).
+ */
+const SERVER_SIDE_ONLY_TOOLS = new Set(["present_whatsapp_optin"]);
+
 function selectTools(
 	activeTools: string[],
 	// Registry usado pra resolver `activeTools` — pode ser o estático
@@ -32,6 +43,7 @@ function selectTools(
 ): ConsorcioToolSet {
 	const out: ConsorcioToolSet = {};
 	for (const name of activeTools) {
+		if (SERVER_SIDE_ONLY_TOOLS.has(name)) continue;
 		if (name in registry) {
 			out[name] = registry[name];
 		}

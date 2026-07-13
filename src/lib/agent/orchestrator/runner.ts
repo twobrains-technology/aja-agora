@@ -270,6 +270,14 @@ export async function* runAgentTurn(args: {
 	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
 	// pro artifact-guard (FIX-187) dropar qualquer proposta.
 	let discoveryFailedThisTurn = false;
+	// FIX-12 (recovery, regressão pós-FIX-285): o guard `premature-contract`
+	// (artifact-guard.ts) suprime um contract_form pré-reveal — o modelo tentou
+	// pular direto pro fechamento. O turno tem que reconduzir ao gate `identify`
+	// MESMO quando `shouldAskMotive` está segurando o funil (FIX-274/285): a
+	// prioridade aqui é reafirmar identidade, não perguntar "por que agora" — o
+	// usuário nem chegou a ver o reveal. Sem esta força, o turno ficava
+	// inteiramente mudo (nem artifact, nem gate).
+	let prematureContractSuppressedThisTurn = false;
 	// FIX-262: chunk `tool-error` observado neste turno (tool fora do toolset da
 	// fase) — a partir daqui, nenhum texto do modelo chega ao usuário (evita a
 	// negação de oferta real) e o orchestrator assume com fallback determinístico.
@@ -614,6 +622,11 @@ export async function* runAgentTurn(args: {
 						// FIX-24: além do console.log (que cassettes grepam), emite o
 						// evento de telemetria pro turn-trace popular `suppressed[]`.
 						yield { type: "suppression", artifactType, reason: guardVerdict.rule };
+						// FIX-12 (recovery): marca pra forçar o gate identify no fim do
+						// turno, mesmo se decideShowGate/shouldAskMotive quiserem segurar.
+						if (guardVerdict.rule === "premature-contract") {
+							prematureContractSuppressedThisTurn = true;
+						}
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
 						// ativa — coage payload com o snapshot do reveal (ou com o
@@ -1184,12 +1197,17 @@ export async function* runAgentTurn(args: {
 			columns: { contactName: true },
 		});
 		const gate = nextGate(refreshed, { hasContactName: Boolean(conv?.contactName) });
-		const shouldShow = decideShowGate({
-			gate,
-			intent: userIntent,
-			meta: refreshed,
-			isUserTurn,
-		});
+		const shouldShow =
+			decideShowGate({
+				gate,
+				intent: userIntent,
+				meta: refreshed,
+				isUserTurn,
+			}) ||
+			// FIX-12 (recovery): contract_form pré-reveal suprimido → o gate identify
+			// tem que aparecer neste MESMO turno, nunca ficar mudo esperando o motivo
+			// (shouldAskMotive) ou um sinal de avanço do usuário.
+			(prematureContractSuppressedThisTurn && gate === "identify");
 		// FIX-274 — quando o beat do motivo segura o funil (shouldShow=false acima
 		// porque shouldAskMotive), marca motivationAsked: o LLM pergunta "por que
 		// agora" NESTE turno e, no PRÓXIMO, o funil avança mesmo se o motivo não vier
