@@ -486,3 +486,246 @@ como dúvida aberta, não implementado (regra do bloco: não cravar fix sem conf
 **Próximo passo (antes da verificação Etapa A):** investigar e corrigir a causa-raiz do
 `simulator-offer` preso, porque rodar o planner+coletor+juiz (caro) contra uma regressão já
 conhecida e diagnosticada é desperdício — mais barato fechar agora numa onda cirúrgica.
+
+| 10.3 (onda 3) | r10-3-timeframe-stuck | ✅ 1/1 na base `integ/consorcio-r10` (pushado) | test:unit 3403/3403 verde | — | Fechado — ver abaixo |
+
+### Onda 3 — FIX-305 fechado (RED→GREEN provado, bakeoff recuperou parcialmente)
+
+Decisão do Kairo (`AskUserQuestion`): default após N tentativas, nunca trava. Implementado: **N=3**,
+default de prazo 12 meses (opção canônica já existente), campo novo `meta.gateStuckTurns`
+(distinto de `gateAttempts`, que é escalada por inatividade). **Estendido pra além do pedido
+original** (decisão técnica do executor, correta): `lance`/`lance-value`/`lance-embutido` tinham a
+MESMA classe de risco (confirmado no código, não assumido) — mesmo tratamento aplicado aos 4
+gates, cada um com default de produto sensato (lance="no", lance-value=20% do crédito,
+lance-embutido=false/consent-minimization), sempre avisando o usuário antes de seguir.
+
+**Bakeoff Qwen — 3 pontos agora:** baseline 0.774 → pós-onda-1 **0.68** → pós-onda-3 **0.734**.
+Recuperação real mas parcial (ressalva honesta do executor: n=1, essa execução específica não
+chegou a exercitar o mecanismo de escape — o Qwen respondeu prazo direto dessa vez). O que dá pra
+afirmar com confiança: a falha CATASTRÓFICA (simulator-offer nunca disparado) não se repetiu.
+
+**⚠️ Gap conhecido, FORA do escopo desta onda (não é achado novo, já estava diagnosticado no
+FIX-304):** 12/31 testes do eval seguem vermelhos sob Qwen — mesma classe: `tool_error` em
+`present_decision_prompt` chamado fora de fase (BUG-REVEAL-LOOP, `tool-policy.ts`) + desvio pro
+"especialista em cadastros" no fechamento em vez de self-service. Decisão: **não perseguir mais
+achados via bakeoff isolado** — a formação de onda-a-onda guiada só pela minha leitura de log
+arrisca rabbit hole sem o veredito de um verificador de verdade. Este gap vira input pro
+**planner da verificação Etapa A** decidir se sonda isso explicitamente, não uma onda 4 ad-hoc.
+
+## Etapa A — Verificação (planner Opus → coletor Haiku → juiz Sonnet/Fable) — 2026-07-13, ABERTA
+
+### Rodada A.1 — planner + 3 coletores + juiz Sonnet
+
+- **Planner (Opus):** roteiro completo em `.processo/loop/evidencias-r10/ROTEIRO-verificacao.md`
+  + 5 roteiros executáveis em `.../roteiros/`. Cobre P0-A/P0-B fiéis ao mockup, sonda dedicada
+  pra CADA P1-P10, sonda sob modelo fraco (Qwen), gap §4 (tool_error present_decision_prompt)
+  medido nos dois modelos, divisão determinístico×visual.
+- **Coletor A (Haiku, determinístico, PROD/Haiku, limpo):** 4 roteiros rodados (madalena-junta,
+  mario-sem-lance, probe-p4-prod, probe-p7-prod), 0 erro HTTP, test:unit 324/324 e
+  test:integration verdes. `dossies/RESUMO-coletor-prod.md`.
+- **Coletor B (Haiku, determinístico, Qwen):** parcial/prejudicado por infra real (túnel LiteLLM
+  instável, OrbStack wedge sob carga sustentada) — P0-B parcial, P4 completo (mas por fallback
+  genérico), P6/P7 truncados sem dossiê salvo, P9 não rodado nesta coleta (reusa os 3 logs
+  históricos de onda 2/3). `dossies/RESUMO-coletor-qwen.md`.
+- **Coletor C (Haiku + Claude in Chrome, visual):** **CONTAMINADO** — rodou em paralelo com o
+  coletor B, que trocou `AI_MODEL`/reiniciou o MESMO container no meio da sessão. Só o Ponto 1
+  (divider de especialista) é confiável; Pontos 2-5 precisam de re-coleta limpa.
+  `dossies/RESUMO-coletor-visual.md` + `dossies/NOTA-contaminacao-visual.md` (causa-raiz).
+  Lição registrada: [[feedback_loop_goal_coletores_paralelos_ai_model_race]].
+- **Juiz (Sonnet):** foi direto ao `dossie.json` BRUTO (não confiou nos `.md` resumidos dos
+  coletores) e achou problemas MAIS graves do que os coletores relataram.
+
+### 🔴 VEREDITO A.1: **2/10 — MATADOR PRA PROD: NÃO**
+
+Nota final = MÍNIMO das dimensões (Funcional 2, UX 2, UI/Compliance 2; Negócio 3; E2E 4; Cálculo 7).
+
+**P1-P10:**
+| P | Veredito |
+|---|---|
+| P1 | **FAIL** — motivo colado ao credit na mesma frase (Madalena); `gate:identify` NUNCA aparece no dossiê Mario (0 ocorrências) |
+| P2 | PASS (qualificado) |
+| P3 | **FAIL severo** — hero (`recommendation_card`) NUNCA aparece no dossiê Madalena inteiro (0 ocorrências de recommendation_card/reco-consent/gate:experience/topic_picker); hero dispara indevido em Mario e probe-p4 |
+| P4 | **FAIL** — 4 turnos com 2+ `?` em Madalena (coletor só achou 3), 2 em Mario |
+| P5 | **FAIL (achado NOVO)** — whatsapp_optin+contract_form disparam prematuro no turno 12 de Madalena, antes de lance/scarcity/decision |
+| P6 | INCONCLUSIVO — zero dossiê salvo |
+| P7 | INCONCLUSIVO parcial — leg PROD existe mas com reancora pro gate ERRADO em 2 pontos; leg Qwen sem dossiê |
+| P8 | PASS (qualificado, só pela suíte agregada) |
+| P9 | PASS (qualificado, reusa histórico de onda 2/3, não desta coleta) |
+| P10 | **FAIL severo e sistêmico** — 42 instâncias de frase colada nos 4 dossiês PROD, sob Anthropic NATIVO (refuta a hipótese de que era só gateway OpenAI-compat) |
+
+**Achado mais grave:** `gate:experience`, `topic_picker`, `scarcity`, `decision_prompt` **nunca
+aparecem em NENHUM dos 4 dossiês PROD** — sugere que a coreografia pós-reveal (S2/FIX-297) pode
+estar fundamentalmente quebrada na base integrada, não só um bug pontual — os testes unit/
+integration por-bloco (que passavam) não capturam isso porque testam unidades isoladas, não o
+fluxo E2E completo golden-path.
+
+### 9 achados → itens da próxima onda (r10 onda 4, a montar)
+1. **[ALTA]** Frases coladas sistêmicas, inclusive sob PROD/Anthropic nativo (42 instâncias) — `normalizeGluedSentences`/pipeline de composição.
+2. **[ALTA]** Hero nunca aparece no golden path Madalena — coreografia S2 quebrada na integração.
+3. **[ALTA]** WhatsApp optin dispara prematuro em Madalena (turno 12, antes do fecho real).
+4. **[ALTA]** `present_recommendation_card` dispara em fluxos que NUNCA deveriam mostrar hero (Mario, probe-p4).
+5. **[MÉDIA]** Gate `credit` de Mario preso em loop 8x; `gate:identify` nunca aparece — CPF parece descartado silenciosamente.
+6. **[MÉDIA]** Fallback "Acho que me perdi por aqui" reproduz sob PROD limpo (Madalena T18, sem contaminação) — pode ser bug de produto real, não só ruído de infra do lado Qwen.
+7. **[MÉDIA]** `experience`/`topic_picker`/`scarcity`/`decision_prompt` nunca aparecem em NENHUM dossiê PROD — investigar causa raiz comum.
+8. **[MÉDIA]** Motivo nunca vira turno próprio em Madalena (P1c).
+9. **[BAIXA]** Copy do credit de Mario nunca nomeia o item nas reconfirmações.
+
+### Re-coleta pendente (não é fix, é medição)
+P6 (zero evidência) · P7 leg Qwen (zero evidência) · P9 dentro do dossiê oficial desta etapa ·
+Visual Pontos 2-5 (contaminados, rodar sequenciado — especialmente vale confirmar visualmente o
+achado #2 acima).
+
+**Próximo passo:** achados #2, #4 e #7 parecem correlacionados (coreografia pós-reveal
+inteira ausente/quebrada) — antes de escrever fix-cards item-a-item, vale um crítico investigando
+se há uma causa-raiz ÚNICA (ex.: um guard/condição que está suprimindo a cadeia inteira,
+silenciosamente, na base integrada) antes de desenhar a onda 4.
+
+### 🔴🔴 INVALIDAÇÃO DA RODADA A.1 — o veredito 2/10 foi medido contra AMBIENTE QUEBRADO
+
+Investigação de causa-raiz (dispatch dedicado) confirmou: **o achado mais grave da rodada A.1**
+("hero/experience/topic_picker/scarcity/decision_prompt nunca aparecem") **não é regressão de
+produto — é artefato de dois bugs de AMBIENTE encadeados**, achados e corrigidos nesta sessão:
+
+1. **`docker-compose.yml` nunca repassava `AI_MODEL` pro container** (só materializa vars
+   EXPLICITAMENTE listadas no bloco `environment:`) — o app SEMPRE rodou no default do código
+   (`claude-sonnet-5`), nunca no modelo que `.env.local` pedia. Ou seja: nenhum dos coletores desta
+   rodada testou de fato o modelo que pensavam estar testando.
+2. **Ao corrigir isso, um segundo bug apareceu**: `LITELLM_API_KEY` (virtual key órfã, deixada
+   pelo coletor Qwen no `.env.local`) passou a chegar no container — e
+   `src/lib/llm/gateway-anthropic.ts` usa `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` (`??` só cai no
+   fallback em `null`/`undefined`, NUNCA em string vazia; e compose SEMPRE materializa a var,
+   mesmo vazia, quando listada) → a key real ficava mascarada por uma vazia/inválida →
+   `invalid x-api-key`/`x-api-key header is required` em TODA chamada real de LLM → o app degrada
+   graciosamente pro fallback determinístico (`EMPTY_TURN_FALLBACK`) **com HTTP 200** — por isso
+   coletor A reportou "0 erros HTTP" num dossiê que na prática nunca teve uma resposta real da
+   LLM na maior parte dos turnos que importam.
+
+**Corrigido e commitado:**
+- `docker-compose.yml` (worktree + pushado): `AI_MODEL: ${AI_MODEL:-}` adicionado ao
+  `environment:`; NÃO adicionadas `LITELLM_*`/`OPENAI_API_KEY` (o padrão `${VAR:-}` quebraria o
+  `??` de novo) — comentário no arquivo explica o porquê pra não repetir.
+- `.env.local` do worktree: `LITELLM_API_KEY` órfã removida.
+- `evidencias-r9/driver/run-scenario.mjs` (develop): guard novo — cada turno é checado contra
+  marcadores de fallback conhecidos (`EMPTY_TURN_FALLBACK`, degradação do reveal) e marcado
+  `contaminated: true`; o resumo final avisa ALTO se qualquer turno veio contaminado. **HTTP 200
+  não significa turno saudável** — essa é a lição que quase deixou passar um veredito 2/10 falso.
+- Smoke confirmado pós-fix: resposta real e coerente da LLM ("Oi! Aqui é a Sofia...").
+
+**Item novo pra próxima onda (achado no debug, não fix urgente):** `gateway-anthropic.ts` usar
+`??` em vez de checagem de truthy pra `LITELLM_API_KEY` é um footgun latente — qualquer ambiente
+que materialize a var vazia (não só este container) pode mascarar silenciosamente a key real.
+Trocar por `||` ou checagem explícita.
+
+**Consequência:** o veredito 2/10 e os 9 achados da rodada A.1 (exceto os que vieram de fonte
+independente do LLM — ex. a suíte `test:unit`/`test:integration`, que usa mocks e não foi afetada)
+**não são confiáveis**. A rodada A.1 é descartada como medição; **rodada A.2 recomeça do zero com
+ambiente limpo**, abaixo.
+
+### Rodada A.2 — re-coleta com ambiente confirmado limpo + juiz Sonnet
+
+Um coletor delegado (Haiku) relatou coleta bem-sucedida ("madalena-junta-v2", artifacts
+confirmados) mas **os arquivos nunca existiram no disco** (confirmado por `find` — 0 resultados;
+hallucinated success, registrado em
+[[feedback_loop_goal_coletor_hallucinated_success]]). Rodei os 4 roteiros EU MESMO, diretamente,
+verificando cada dossiê no disco antes de seguir:
+- `madalena-junta-v2`: 21 turnos, **0 contaminados**.
+- `mario-sem-lance-v2`: 11 turnos, **0 contaminados**.
+- `probe-p4-prod-v2`: 10 turnos, 1 contaminado (turno 8, marcado e descartado).
+- `probe-p7-prod-v2`: 13 turnos, 1 contaminado (turno 9, marcado e descartado).
+O guard de contaminação novo no driver funcionou exatamente como desenhado — pegou degradação
+residual em 2 turnos isolados sem precisar descartar o dossiê inteiro.
+
+### 🔴 VEREDITO A.2: **1/10 — MATADOR PRA PROD: NÃO** (`veredito-rodadaA2-sonnet.md`)
+
+Nota = MÍNIMO (Funcional 1 · UX 1 · UI/Compliance 1 · Negócio 3 · Cálculo 6 · E2E 3).
+
+**Achado epistêmico central:** a correção do ambiente NÃO resgatou o produto — os achados mais
+graves da A.1 **reproduzem-se identicamente em evidência limpa**, alguns até PIORES. "HTTP 200
+não significa turno saudável" (lição da invalidação) se estende: **"turno não-contaminado não
+significa funil correto"**. Confirmado por 2 métodos independentes (driver determinístico + o
+coletor visual ao vivo, cujo achado do Ponto 2 tinha sido descartado por engano — a nota de
+contaminação dele se baseava no dossiê ORIGINAL, não no v2 limpo; `NOTA-contaminacao-visual.md`
+**precisa de correção**, item #11 abaixo).
+
+**P1-P10 (resumo, ver arquivo completo pra evidência linha-a-linha):**
+FAIL: P1 (identify ausente em Mario), P3 (severo — 6 artifact types 100% ausentes coordenadamente:
+`gate:experience`/`gate:reco-consent`/`topic_picker`/`scarcity`/`decision_prompt`/`two_paths`),
+P4, P5 (Madalena — optin+contract_form prematuro T12), P7 (2/3 sondas reancoram gate errado), P10
+(severo — coladas sob Claude NATIVO, refuta hipótese "só gateway"). PASS qualificado: P2, P5
+(Mario), P8, P9. INCONCLUSIVO: P6 (agravado — topic_picker ausente até no golden path PROD, não
+só sob Qwen). NÃO MEDIDO: gap §4.
+
+**12 achados → onda 4** (arquivo tem evidência completa por item): coreografia pós-reveal ausente
+(P0 crítico) · optin prematuro (P0) · two_paths ausente no Mario (P0) · topic_picker ausente até
+sob PROD (alta) · identify ausente em Mario (alta) · credit em loop 3-4x (alta) · frases coladas
+sob Claude nativo (alta) · P4 mesma causa-raiz (alta) · P7 reancora gate errado (média) · "esse um
+Corolla" gramática (média) · nota de contaminação visual desatualizada (baixa/processo) · gap §4
+não medido (baixa).
+
+**Recomendação do juiz (adotada):** tratar como **investigação de causa-raiz ÚNICA** antes de
+montar a onda 4 item-a-item — 6 artifact types sumindo coordenadamente sugere um guard/condição
+comum suprimindo a cadeia inteira `experience→topic_picker→reco-consent`, não 6 bugs
+independentes. Próximo passo: dispatch de investigação dedicada.
+
+### Investigação de causa-raiz — resultado (query real no DB + código, 2026-07-13)
+
+**Correção epistêmica ao veredito do juiz:** `gate:reco-consent` **NUNCA foi bug** — é um gate
+TEXT-ONLY por design (`adapter.ts:148-156` retorna `null` pra ele), nunca emite artifact
+`data-gate`. O grep do juiz por esse tipo sempre daria zero, por construção. O banco confirma
+`recoConsentDispatched=true` na Madalena — o gate disparou (como texto), só não aparece no grep.
+Removido da lista de achados reais.
+
+**NÃO é uma causa única — são 2 famílias:**
+
+1. **Mario: 1 causa DOMINANTE que explica quase tudo.** `creditMax` nunca é preenchido —
+   `nextGate()` trava em `"credit"` pra sempre (`qualify-state.ts:205`, antes de identify). Causa:
+   quando o valor vem NO MESMO balão que responde o `desire` (ex.: "um usado, uns R$ 90 mil"), o
+   analyzer só grava em `creditMentionedAtDesire` (não em `creditMax`) porque a trava
+   `desireAnsweredBeforeThisTurn` (`analyze.ts:52,136`) é um snapshot PRÉ-mutação — no turno em
+   que o desire É respondido, ainda lê `false`. Sem promoção posterior (nenhum código promove
+   `creditMentionedAtDesire→creditMax` numa confirmação), e `credit` foi DELIBERADAMENTE excluído
+   do `STUCK_ESCAPE_GATES` (`qualify-state.ts:59-64`, "não fabricar dado financeiro") — trava sem
+   saída. Isso sozinho explica: identify não-estruturado, `two_paths` ausente (hasLance nunca
+   coletado), e todo o resto do funil pulado nele.
+2. **Madalena: cluster de 4 causas distintas**, não uma comum:
+   - `gate:experience` suprimido — `experiencePrev` é capturado OPORTUNISTICAMENTE do texto livre
+     sem trava de "gate ativo" (`analyze.ts:57-61`) — ao contrário de `hasLance`(FIX-236)/
+     `creditMax`(FIX-279), que já têm essa trava. O card nunca chega a aparecer.
+   - Hero atrasado (turno 18 em vez de ~12) — `recoConsentAnswered` só vira `true` via
+     `detectYesNoText` (regex de marcadores de sim/não); "Pode mostrar" (turno 12) não bate no
+     regex, só "quero" (turno 18) bateu. Consentimento real, mas mal-reconhecido.
+   - `topic_picker` nunca emitido server-side — depende do LLM chamar `present_topic_picker`
+     (sem gate/`emitServerCard` próprio, nem membro do tipo `Gate`) — mesma lição já registrada
+     em memória ("card novo tem que ser server-side, não directive pro LLM chamar present_X").
+   - `scarcity`+`decision_prompt` só existem no ramo "recusou o simulador"/texto ambíguo
+     (`route.ts:1147-1189`) — o ramo FELIZ (engaja simulador → "Tenho interesse") pula direto pro
+     `contract_form` (fast-path FIX-38, `route.ts:508-522`), nunca passa pela cerimônia.
+
+**Loop do `gate:credit`:** Madalena (3x) é BENIGNO — sem número nenhum até o turno 7, resolve
+normal quando o valor chega; só o defeito de copy (P4/P10, pergunta re-aparece colada) é real.
+Mario (4x) é o mesmo bug crítico acima — nunca resolve porque o número já tinha vindo (junto do
+desire) e ficou em `creditMentionedAtDesire`, não em `creditMax`.
+
+**7 fixes prontos (viram FIX-306..312 na onda 4):**
+- **FIX-306 [P0]** Promover `creditMentionedAtDesire→creditMax` quando o valor vem junto da
+  resposta do desire (`analyze.ts:~136`) — mata o deadlock do Mario.
+- **FIX-307 [P0]** Escape do gate `credit`: se travado ≥N turnos E `creditMentionedAtDesire`
+  existe, promove (não é fabricar dado, é usar o que o usuário já disse) — `qualify-state.ts:59-64`.
+- **FIX-308 [P0]** Acoplar avanço da cascata a `recoConsentAnswered` de verdade (não só
+  `recoConsentDispatched`) + robustecer o reconhecimento do "sim" (incluir "pode/pode mostrar/mostra")
+  — `index.ts:276-312`, `qualify-state.ts:258`.
+- **FIX-309 [ALTA]** `topic_picker` vira emissão server-side determinística (gate/`emitServerCard`
+  canônico pós-experience), não mais dependente do LLM chamar a tool — `ai-sdk.ts:766`,
+  `artifact-guard.ts:255-261`.
+- **FIX-310 [ALTA]** Blindar `experiencePrev` contra captura oportunista — mesma trava de
+  gate-ativo que `hasLance`/`creditMax` já têm — `analyze.ts:57-61`.
+- **FIX-311 [ALTA]** Ligar `scarcity`+`decision_prompt` ao ramo FELIZ do funil (hoje só existem no
+  ramo de recusa) — `route.ts:508-522`, `route.ts:1125-1145`.
+- **FIX-312 [MÉDIA]** Copy do `credit` em loop: reconhecer tentativa anterior, separar balões
+  (mesmo defeito P10), corrigir "esse **um** Corolla" (artigo+demonstrativo colidindo) —
+  `gate-questions.ts:90-110`.
+
+**Nota sobre a suíte:** `test:unit`/`test:integration` passam porque mockam o LLM e testam gates
+ISOLADOS — nenhum exercita a sequência real onde o valor vem junto do desire (Mario) nem o hero
+atravessando o sub-fluxo de lance (Madalena). Um teste de trajetória E2E cobrindo os 2 cassettes
+reais fecharia esse gap de detecção — considerar pra onda 4.

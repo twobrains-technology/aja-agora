@@ -1,0 +1,16 @@
+{
+  "cenario": "probe-p4-perguntas-compostas",
+  "descricao": "Sonda P4 — ZERO baloes com 2+ perguntas (2+ sentencas interrogativas). Combina (a) o caso VALIDO do mockup: pergunta composta com UM '?' ('que carro... e quanto custa?') tem que sobreviver INTEIRA (nao pode ser cortada pelo sanitizer FIX-298); (b) provocar o ponto historico de 2 perguntas: chegar ao reveal e mandar um what-if ambiguo no limiar do experience, onde a transcricao real do Qwen emendou 'Quer ajustar...? Voce ja fez consorcio antes?'. CRITERIO: o coletor conta '?' por balao do AGENTE em CADA turno; qualquer balao com 2+ sentencas terminando em '?' = FALHA P4. Rodar sob Claude E sob Qwen (a regra so segura em codigo). REQUER env E2E_TEST_CPF + E2E_TEST_CELULAR.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome." },
+    { "type": "text", "text": "Quero um carro, uns 90 mil", "expect": "P4: pergunta composta valida ('que carro voce tem em mente, e quanto custa?') chega INTEIRA, UM balao, UM '?'. NAO pode virar duas perguntas nem ser cortada." },
+    { "type": "text", "text": "Mario", "expect": "save_contact_name + 1 pergunta so." },
+    { "type": "text", "text": "Um Corolla usado", "expect": "eco + motivo em turno proprio (1 '?')." },
+    { "type": "text", "text": "O meu ta velho, quero trocar", "expect": "espelho + objetivo. Sem 2 perguntas." },
+    { "type": "text", "text": "beleza", "expect": "gate credit ('quanto custa esse Corolla?') — 1 '?'." },
+    { "type": "text", "text": "uns 90 mil", "expect": "moldura identify — no maximo 1 '?'." },
+    { "type": "action", "action": { "kind": "gate", "gate": "identify", "value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true } }, "label": "CPF e celular", "expect": "reveal (comparison_table) + gate experience — o balao do experience tem UMA pergunta so ('ja fez consorcio antes, ou e a primeira vez?' = 1 '?'). NUNCA emenda uma 2a pergunta livre do LLM (P4).", "timeoutMs": 120000 },
+    { "type": "text", "text": "e se eu quisesse uma carta maior, tipo 120 mil? vale a pena?", "expect": "P4 STRESS — what-if ambiguo no limiar do experience/reveal (ponto historico do bug '2 perguntas'). O agente responde o what-if E/OU faz a pergunta do gate, mas NUNCA 2 sentencas '?' no mesmo balao. Coletor: contar '?' neste balao — 2+ = FALHA P4." },
+    { "type": "text", "text": "sei la, tanto faz", "expect": "resposta neutra do agente, sem despejar 2 perguntas. Maximo 1 '?' por balao." }
+  ]
+}

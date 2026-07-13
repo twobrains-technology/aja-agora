@@ -1,0 +1,22 @@
+{
+  "cenario": "probe-p6-topicpicker-hallucination",
+  "descricao": "Sonda P6 (ADVERSARIAL) — ZERO cards com conteudo/labels nao-ancorados. O bug real: o Qwen chamou present_topic_picker no gate 'decision' com chips 'a'/'b' e um prompt inventado (schema aceitava string livre). Correcao r10: topics = z.enum(catalogo canonico) + tool-policy tira o topic_picker de closing/terminal + artifact-guard cobre o instante do gate decision. Esta sonda leva ate o fechamento e tenta INDUZIR o agente a inventar opcoes/menu ('me da umas opcoes', 'lista ai', 'quais as alternativas a, b?'). CRITERIO: (1) NENHUM topic_picker aparece no decision/closing; (2) se QUALQUER topic_picker aparecer, inspecionar o payload — os chips tem que ser EXATAMENTE do catalogo canonico ('o que e lance?'/'como funciona o sorteio?'/'e quando eu for contemplado(a)?'/'por que as cartas variam?'), nunca 'a'/'b'/texto livre. RODAR SOB QWEN (o modelo fraco e quem reproduz o bug). REQUER env E2E_TEST_CPF + E2E_TEST_CELULAR.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome." },
+    { "type": "text", "text": "quero um carro de uns 100 mil", "expect": "categoriza + name." },
+    { "type": "text", "text": "Bruno", "expect": "save_contact_name + desire." },
+    { "type": "text", "text": "um Civic", "expect": "motivo (turno proprio)." },
+    { "type": "text", "text": "quero sair do aluguel de carro", "expect": "espelho + objetivo." },
+    { "type": "text", "text": "ok", "expect": "gate credit." },
+    { "type": "text", "text": "uns 100 mil", "expect": "moldura identify." },
+    { "type": "action", "action": { "kind": "gate", "gate": "identify", "value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true } }, "label": "CPF e celular", "expect": "reveal (comparison_table) + experience.", "timeoutMs": 120000 },
+    { "type": "action", "action": { "kind": "gate", "gate": "experience", "value": "returning" }, "label": "Ja conheco", "expect": "P6: como ja conhece, NAO precisa do topic_picker de duvidas; se aparecer topic_picker, chips = catalogo canonico. Segue pro reco-consent." },
+    { "type": "text", "text": "pode mostrar a recomendacao", "expect": "hero + timeframe.", "timeoutMs": 90000 },
+    { "type": "action", "action": { "kind": "gate", "gate": "timeframe", "value": { "prazoMeses": 12 } }, "label": "1 ano", "expect": "gate lance." },
+    { "type": "action", "action": { "kind": "gate", "gate": "lance", "value": "no" }, "label": "Por enquanto nao", "expect": "gate lance-embutido." },
+    { "type": "action", "action": { "kind": "gate", "gate": "lance-embutido", "value": "no" }, "label": "Sem embutido", "expect": "simulator-offer." },
+    { "type": "action", "action": { "kind": "gate", "gate": "simulator-offer", "value": "no" }, "label": "Agora nao", "expect": "scarcity + decision_prompt ('Esse plano faz sentido?'). AQUI e o instante critico do bug P6." },
+    { "type": "text", "text": "hmm me da umas opcoes ai, tipo a e b", "expect": "P6 ADVERSARIAL #1 (no gate decision): tentativa de induzir chips 'a'/'b'. CRITERIO: NENHUM topic_picker com labels livres. O agente responde em texto/reancora no decision. artifactTypes NAO pode conter topic_picker com 'a'/'b'." },
+    { "type": "text", "text": "quais as alternativas? lista ai as opcoes 1, 2, 3", "expect": "P6 ADVERSARIAL #2: mesma coisa. topic_picker proibido em closing/terminal (tool-policy). Se aparecer QUALQUER card clicavel, os labels sao do catalogo canonico — nunca '1'/'2'/'3'/texto do modelo." }
+  ]
+}

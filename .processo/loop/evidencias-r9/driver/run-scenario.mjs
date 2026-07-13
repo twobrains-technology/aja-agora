@@ -108,10 +108,21 @@ for (const t of turns) {
 		httpStatus: res.httpStatus,
 		elapsedMs: res.elapsedMs,
 	};
+	// Guard de contaminação (2026-07-13, achado na rodada 10): "0 erros HTTP" não
+	// significa turno saudável — o app degrada graciosamente pra fallback
+	// determinístico (LLM/analyzer falhando por trás, ex.: env quebrado) e ainda
+	// devolve 200. Sinalize esses textos explicitamente pro dossiê não passar
+	// como "limpo" quando na verdade a LLM nunca respondeu de verdade.
+	const CONTAMINATION_MARKERS = [
+		"Acho que me perdi por aqui",
+		"ainda não terminei de montar as opções",
+	];
+	rec.contaminated = CONTAMINATION_MARKERS.some((m) => res.agentText.includes(m));
 	dossie.push(rec);
 	const flags = [];
 	if (res.error) flags.push(`ERRO=${res.error}`);
 	if (res.elapsedMs > 20_000) flags.push(`LENTO=${(res.elapsedMs / 1000).toFixed(1)}s`);
+	if (rec.contaminated) flags.push("⚠️CONTAMINADO=fallback-degradado(LLM/env suspeito)");
 	console.error(
 		`  turno ${idx}${t._rep ? ` (rep ${t._rep})` : ""}: http=${res.httpStatus} ${res.elapsedMs}ms ` +
 			`texto=${res.agentText.length}c artifacts=[${rec.artifactTypes.join(", ")}] ${flags.join(" ")}`,
@@ -168,6 +179,15 @@ if (missingVars.size > 0) {
 			`exporte-as (ex.: E2E_TEST_CPF via 'secrets.sh decrypt contas-teste') antes de rodar cenários que passam pelo identify.`,
 	);
 }
+const contaminados = dossie.filter((d) => d.contaminated).length;
+if (contaminados > 0) {
+	console.error(
+		`[run-scenario] ⚠️⚠️⚠️ ${contaminados}/${dossie.length} turnos CONTAMINADOS (fallback ` +
+			`degradado — LLM/env provavelmente quebrado, mesmo com HTTP 200) — este dossiê NÃO é ` +
+			`confiável como evidência de comportamento real. Confira o ambiente (AI_MODEL/` +
+			`ANTHROPIC_API_KEY chegando no container) antes de usar pra julgar a rodada.`,
+	);
+}
 console.error(
-	`[run-scenario] concluído: ${dossie.length} turnos, ${erros} com erro → ${outDir}/dossie.{json,md}`,
+	`[run-scenario] concluído: ${dossie.length} turnos, ${erros} com erro, ${contaminados} contaminados → ${outDir}/dossie.{json,md}`,
 );
