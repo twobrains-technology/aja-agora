@@ -1,7 +1,9 @@
 ---
 id: FIX-307
 titulo: "Escape do gate credit quando travado com valor já mencionado (creditMentionedAtDesire)"
-status: todo
+status: done
+commit: c7d11bfb
+executado_em: 2026-07-13
 bloco: bloco-r10-4-credit-deadlock
 severidade: alta
 projeto: aja-agora

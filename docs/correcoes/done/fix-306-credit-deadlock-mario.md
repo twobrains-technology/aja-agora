@@ -1,7 +1,9 @@
 ---
 id: FIX-306
 titulo: "Promove creditMentionedAtDesire→creditMax quando o valor vem junto da resposta do desire"
-status: todo
+status: done
+commit: 4b813d7a
+executado_em: 2026-07-13
 bloco: bloco-r10-4-credit-deadlock
 severidade: alta
 projeto: aja-agora

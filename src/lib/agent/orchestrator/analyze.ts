@@ -54,7 +54,17 @@ export async function analyzeAndMerge(
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
 
-	if (analysis.experiencePrev && !meta.experiencePrev) {
+	// FIX-310: mesma trava de gate-ativo que `hasLance` (FIX-236) e `creditMax`
+	// (FIX-279) já usam — sem ela, `experiencePrev` era preenchido por texto
+	// livre ANTES de o gate `experience` (pós-reveal, FIX-233 D2) ficar
+	// realmente ativo, e `nextGate()` pulava o gate achando que já tinha sido
+	// resolvido: o CARD nunca chegava a aparecer (dossiê Madalena, banco
+	// mostrava `experiencePrev` preenchido sem o artifact `gate:experience`).
+	if (
+		analysis.experiencePrev &&
+		!meta.experiencePrev &&
+		activeGateAtTurnStart === "experience"
+	) {
 		meta.experiencePrev = analysis.experiencePrev;
 		newlyExtractedExperience = analysis.experiencePrev;
 		metaChanged = true;
@@ -68,7 +78,14 @@ export async function analyzeAndMerge(
 	// depois) marcaria o campo retroativamente e `shouldAskMotive` passaria a
 	// segurar TODOS os gates dali em diante, não só o do turno certo
 	// (regressão pega pelos cassettes de `agent-trajectory.test.ts`, FIX-208).
-	if (meta.desireAsked && !meta.desireAnswered && activeGateAtTurnStart === "credit") {
+	// FIX-306: mesma condição usada logo abaixo pra marcar `desireAnswered` —
+	// capturada ANTES da mutação pra sinalizar "o desire está sendo respondido
+	// NESTE turno" ao guard de promoção de creditMax mais adiante (o cenário
+	// exato do cassette Mario: bem+valor no MESMO balão que responde o desire
+	// composto).
+	const desireAnsweredThisTurn =
+		meta.desireAsked === true && !meta.desireAnswered && activeGateAtTurnStart === "credit";
+	if (desireAnsweredThisTurn) {
 		meta.desireAnswered = true;
 		metaChanged = true;
 	}
@@ -131,9 +148,17 @@ export async function analyzeAndMerge(
 	// SEGUINTE ao que respondeu o desire o `credit` está genuinamente ativo.
 	// `isRevealRefit` continua como exceção legítima separada (troca de faixa
 	// pós-reveal é decisão do LLM, independe do gate ativo no momento).
+	//
+	// FIX-306 (rodada 10, onda 4 — cassette Mario): `desireAnsweredBeforeThisTurn`
+	// sozinho perdia o caso "desire respondido AGORA, com valor junto" (a
+	// pergunta composta "Que carro você tem em mente, e quanto custa mais ou
+	// menos?" — o snapshot pré-mutação ainda lê `false` nesse turno). Sem
+	// `desireAnsweredThisTurn`, o valor caía só em `creditMentionedAtDesire` e
+	// nunca era promovido — `nextGate()` travava em "credit" pra sempre.
 	if (
 		sourceCreditMax !== null &&
-		((q.creditMax === undefined && desireAnsweredBeforeThisTurn) || isRevealRefit)
+		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
+			isRevealRefit)
 	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só

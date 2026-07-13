@@ -55,6 +55,13 @@ export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
  * e já têm defesa própria (FIX-115 backstop determinístico + FIX-208 guard de
  * turno-mudo) — assumir um valor de crédito no escuro seria fabricar dado
  * financeiro, não um fallback de conveniência.
+ *
+ * FIX-307 (rodada 10, onda 4 — defesa em profundidade do FIX-306): `credit`
+ * continua fora deste set incondicional, mas ganha um escape CONDICIONAL —
+ * ver `registerGateStuckTurn` abaixo — quando `qualifyAnswers.
+ * creditMentionedAtDesire` já existe (o usuário JÁ disse o valor, só não foi
+ * promovido). Sem esse valor mencionado, `credit` segue travando pra sempre,
+ * como sempre foi.
  */
 export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"timeframe",
@@ -89,6 +96,14 @@ const DEFAULT_STUCK_LANCE_VALUE_FALLBACK = 20_000;
 
 function stuckGateDefaultPatch(gate: Gate, meta: ConversationMetadata): Partial<QualifyAnswers> {
 	switch (gate) {
+		case "credit": {
+			// FIX-307 — só chega aqui quando `registerGateStuckTurn` já confirmou
+			// `creditMentionedAtDesire` definido (ver checagem condicional abaixo);
+			// promove o valor que o usuário JÁ disse, nunca fabrica um novo.
+			const mentioned = meta.qualifyAnswers?.creditMentionedAtDesire;
+			if (mentioned === undefined) return {};
+			return { creditMax: mentioned, creditMin: Math.round(mentioned * 0.9) };
+		}
 		case "timeframe":
 			return {
 				prazoMeses: DEFAULT_STUCK_PRAZO_MESES,
@@ -131,7 +146,13 @@ export function registerGateStuckTurn(
 	meta: ConversationMetadata,
 	gate: Gate,
 ): Partial<ConversationMetadata> | null {
-	if (!STUCK_ESCAPE_GATES.has(gate)) return null;
+	// FIX-307 — escape CONDICIONAL do `credit`: só entra na mesma máquina dos
+	// `STUCK_ESCAPE_GATES` quando o usuário já mencionou um valor
+	// (`creditMentionedAtDesire`). Sem isso, `credit` segue de fora — nunca
+	// fabrica dado financeiro do zero (comportamento original preservado).
+	const conditionalCreditEscape =
+		gate === "credit" && meta.qualifyAnswers?.creditMentionedAtDesire !== undefined;
+	if (!STUCK_ESCAPE_GATES.has(gate) && !conditionalCreditEscape) return null;
 	const turns = (meta.gateStuckTurns?.[gate] ?? 0) + 1;
 	if (turns < GATE_STUCK_ESCAPE_THRESHOLD) {
 		return { gateStuckTurns: { ...meta.gateStuckTurns, [gate]: turns } };

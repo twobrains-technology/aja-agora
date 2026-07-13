@@ -40,6 +40,42 @@ export function lanceEmbutidoEdu(creditValue?: number): string {
 export const LANCE_EMBUTIDO_EDU = lanceEmbutidoEdu();
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
 
+/** FIX-312 — "esse"/"essa" concordando com o `desiredItem` referenciado no
+ * gate `credit`. Prioridade 1: o PRÓPRIO artigo indefinido que o analyzer já
+ * capturou junto do item ("um Corolla", "uma casa") — sinal mais confiável
+ * que a categoria sozinha, porque `imovel`/`servicos` têm itens de género
+ * variável ("um apartamento" vs. "uma casa"). Sem artigo no texto, cai no
+ * default por categoria (auto/imovel = masculino do "carro"/"imóvel", moto =
+ * feminino da "moto"). Sem isso, "esse " + "um Corolla" (artigo cru, sem
+ * remoção) virava "esse um Corolla" — erro de concordância, veredito Sonnet
+ * rodada A.2. */
+const INDEFINITE_ARTICLE_PREFIX = /^(um|uma|uns|umas)\s+(.+)$/i;
+const CREDIT_DEMONSTRATIVE_FALLBACK_BY_CATEGORY: Record<Category, "esse" | "essa"> = {
+	imovel: "esse",
+	auto: "esse",
+	moto: "essa",
+	servicos: "esse",
+};
+
+function creditItemDemonstrative(
+	item: string,
+	category: Category | null | undefined,
+): { demonstrative: "esse" | "essa"; item: string } {
+	const trimmed = item.trim();
+	const articleMatch = trimmed.match(INDEFINITE_ARTICLE_PREFIX);
+	if (articleMatch) {
+		const article = articleMatch[1].toLowerCase();
+		return {
+			demonstrative: article === "uma" || article === "umas" ? "essa" : "esse",
+			item: articleMatch[2],
+		};
+	}
+	return {
+		demonstrative: category ? CREDIT_DEMONSTRATIVE_FALLBACK_BY_CATEGORY[category] : "esse",
+		item: trimmed,
+	};
+}
+
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
 	auto: "Em quanto tempo você quer estar com o carro novo?",
@@ -76,6 +112,12 @@ export function gateQuestion(
 	// `creditMentionedAtDesire`, a copy do `credit` referencia o bem
 	// ("E quanto custa esse Corolla hoje?") em vez da pergunta genérica.
 	desiredItem?: string | null,
+	// FIX-312 — nº da tentativa (1-based) em que o gate `credit` está sendo
+	// perguntado NESTA conversa. Na 2ª+ tentativa a copy reconhece que já foi
+	// perguntado em vez de repetir o texto verbatim (balão colado + repetição,
+	// veredito Sonnet rodada A.2, dossiê Madalena). Default 1 preserva o
+	// comportamento de todos os chamadores pré-existentes.
+	attempt = 1,
 ): string | null {
 	switch (gate) {
 		case "name":
@@ -87,7 +129,8 @@ export function gateQuestion(
 			return category ? DESIRE_QUESTIONS[category] : null;
 		case "experience":
 			return "Você já fez consórcio antes?";
-		case "credit":
+		case "credit": {
+			const isReask = attempt >= 2;
 			// FIX-284: o valor já foi mencionado informalmente no gate `desire`
 			// (2 turnos atrás) — CONFIRMA em vez de perguntar do zero (viola
 			// "sem pedir dado já dado", veredito Sonnet 5 G-F).
@@ -96,7 +139,9 @@ export function gateQuestion(
 				Number.isFinite(creditMentionedAtDesire) &&
 				creditMentionedAtDesire > 0
 			) {
-				return `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
+				return isReask
+					? `Ainda sobre o valor: fica em uns ${formatCredit0(creditMentionedAtDesire)} mesmo, ou prefere ajustar?`
+					: `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
 			}
 			// FIX-296 (mockup Madalena, docs/design/specs/assets/2026-07-12-aja-
 			// dois-cenarios.html): com o bem já nomeado no gate `desire`, a
@@ -104,10 +149,18 @@ export function gateQuestion(
 			// hoje?" — em vez da fria "qual valor do bem". Fallback genérico
 			// (FIX-2, linguagem do docx) quando o bem não é específico o
 			// bastante (ex.: usuário só disse "um carro").
+			// FIX-312: "esse"/"essa" concorda com o género do item (nunca "esse
+			// um X") e a 2ª+ tentativa varia a copy em vez de repetir verbatim.
 			if (desiredItem && desiredItem.trim()) {
-				return `E quanto custa esse ${desiredItem.trim()} hoje?`;
+				const { demonstrative, item } = creditItemDemonstrative(desiredItem, category);
+				return isReask
+					? `Só retomando: quanto custa ${demonstrative} ${item}, mais ou menos?`
+					: `E quanto custa ${demonstrative} ${item} hoje?`;
 			}
-			return "Qual valor do bem faz mais sentido pra você?";
+			return isReask
+				? "Voltando aqui: qual valor você tem em mente pro bem?"
+				: "Qual valor do bem faz mais sentido pra você?";
+		}
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
