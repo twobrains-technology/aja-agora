@@ -228,9 +228,13 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 	it("FIX-311 — src/app/api/chat/route.ts: handler `interest` passa pela cerimônia scarcity→decision_prompt ANTES do avanço (passo 5), marca decisionDispatched, sem lead_form", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		// Isola o corpo do branch interest (até o próximo branch de action).
+		// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+		// (`if (body.action?.kind === "interest") {`) do branch mais específico
+		// do topic_picker (`body.action?.kind === "interest" && body.action.
+		// administradora === "topic-picker"`), que agora vem ANTES no arquivo.
 		const interestBlock =
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(
 			interestBlock.length,

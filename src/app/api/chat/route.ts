@@ -35,6 +35,8 @@ import {
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
 	buildToolErrorRecoveryResolvedFallback,
+	buildTopicPickerAnswerDirective,
+	buildTopicPickerBackDirective,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
@@ -536,6 +538,35 @@ export async function POST(req: NextRequest) {
 								meta.currentPersona ?? null,
 								"Sem problema, seguimos por aqui mesmo.",
 							);
+							return;
+						}
+
+						// FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação):
+						// clique num chip do `topic_picker` (menu de dúvidas pós-experience)
+						// reusa `kind: "interest"` com `administradora: "topic-picker"`
+						// (topic-picker.tsx) — SEM este branch, caía no handler genérico
+						// abaixo (avanço ao fechamento), disparando decisionDispatched +
+						// present_contract_form + WhatsApp opt-in NO MEIO de uma pergunta de
+						// dúvida (achado real: texto com "Posso te mostrar a opção que eu
+						// recomendo?" repetido 3-4x colado, contract_form disparando cedo
+						// demais). Este branch responde SÓ a dúvida específica — a cascata
+						// de reco-consent segue pelo caminho normal de `nextGateToFire`
+						// (idempotente, já disparado no turno anterior).
+						if (
+							body.action?.kind === "interest" &&
+							body.action.administradora === "topic-picker"
+						) {
+							const label = body.action.label;
+							await pipeDirectiveTurn({
+								conversationId,
+								directive:
+									label === "voltar"
+										? buildTopicPickerBackDirective()
+										: buildTopicPickerAnswerDirective(label),
+								contactName,
+								writer,
+								userKey,
+							});
 							return;
 						}
 

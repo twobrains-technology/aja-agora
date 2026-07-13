@@ -457,8 +457,13 @@ describe("FIX-311-HAPPY-PATH-CEREMONY — clique explícito 'Tenho interesse' pa
 	it("estrutural: o branch interest do route religa pipeClosingCeremony ANTES do avanço e marca decisionDispatched", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		const interestBlock =
+			// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+			// (`if (body.action?.kind === "interest") {`) do branch mais específico
+			// do topic_picker (`body.action?.kind === "interest" && body.action.
+			// administradora === "topic-picker"`), que agora vem ANTES no arquivo e
+			// bateria primeiro sem essa âncora.
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 		expect(
@@ -1354,8 +1359,13 @@ describe("FIX-29-INTEREST-NAO-VIRA-LEAD — clique 'Tenho interesse' dirige a DE
 
 		// Isola o corpo do branch interest.
 		const interestBlock =
+			// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+			// (`if (body.action?.kind === "interest") {`) do branch mais específico
+			// do topic_picker (`body.action?.kind === "interest" && body.action.
+			// administradora === "topic-picker"`), que agora vem ANTES no arquivo e
+			// bateria primeiro sem essa âncora.
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 

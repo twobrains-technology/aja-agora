@@ -224,6 +224,25 @@ export function buildAdjustValueDirective(args: {
 	return `Usuário clicou "Ajustar valor" no card de simulação de "${administradora}"${valorCtx}. Ele quer MUDAR o valor do bem, e o OPOSTO de avancar pro fechamento. FLUXO: pergunte em UMA frase, no SEU TOM, qual o novo valor do bem (ou a parcela mensal) que ele quer simular. NÃO simule ainda — espere a resposta com o novo valor. PROIBIDO neste turno: iniciar qualquer fechamento, reserva, contratação ou card de decisão. NUNCA diga "vou reservar essa opção" nem prometa atendente/consultor — "ajustar valor" e o contrario de fechar.`;
 }
 
+/** FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação): clique
+ * num chip do `topic_picker` (menu de dúvidas pós-experience, ex.: "o que é
+ * lance?") chegava SEM tratamento dedicado em route.ts — caía no `kind ===
+ * "interest"` genérico (linha do "Tenho interesse"), que dispara a cerimônia
+ * de FECHAMENTO (decisionDispatched + present_contract_form) em vez de
+ * responder a dúvida. Resultado real observado: texto com a pergunta de
+ * reco-consent REPETIDA 3-4x colada, WhatsApp opt-in prematuro, contract_form
+ * disparando no meio de uma pergunta de dúvida. Esta directive faz o agente
+ * responder SÓ a dúvida específica — o resto da cascata (reco-consent
+ * idempotente) segue pelo caminho normal de `nextGateToFire`. */
+export function buildTopicPickerAnswerDirective(topicLabel: string): string {
+	return `Usuário clicou no chip de dúvida "${topicLabel}" (menu topic_picker, oferecido logo após a explicação de consórcio pro novato). IMPORTANTE: o sistema JÁ te apresentou antes — NÃO se apresente de novo, NÃO mencione "anos de experiência/mercado". FLUXO: responda a dúvida específica em 2-3 frases, direto e didático, sem jargão técnico não explicado (nunca "cota"/"lance livre"/"fundo de reserva" sem contexto). NÃO chame nenhuma tool, NÃO reabra o menu de tópicos, NÃO repita a explicação geral de consórcio que você já deu. NÃO faça nenhuma pergunta ao final — o sistema encaminha o próximo passo automaticamente.`;
+}
+
+/** FIX-313 — usuário clicou "Voltar" no menu de dúvidas (topic_picker). */
+export function buildTopicPickerBackDirective(): string {
+	return `Usuário clicou em "Voltar" no menu de dúvidas (topic_picker), sem escolher nenhum tópico. FLUXO: reconheça brevemente em UMA frase curta (algo como "Sem problema, seguimos daqui.") e NÃO repita a explicação de consórcio, NÃO chame tools, NÃO reabra o menu. NÃO faça pergunta — o sistema encaminha o próximo passo automaticamente.`;
+}
+
 /** FIX-29 — usuário JÁ viu o card de decisão e reafirmou avanco ("Tenho
  * interesse" de novo). Avanca pro passo 5 (contratação real), nunca lead. */
 export function buildAdvanceToContractDirective(args: { administradora?: string }): string {
