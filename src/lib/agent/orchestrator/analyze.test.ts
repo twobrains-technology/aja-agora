@@ -507,7 +507,13 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("'Um carro, uns 70 mil' no turno do desire → creditMentionedAtDesire=70000 SEM popular creditMax (não regride FIX-279/G3)", async () => {
+	// FIX-306 (rodada 10, onda 4) SUPERA a expectativa original deste teste: o
+	// texto responde o desire (composto, bem+valor) NESTE MESMO turno — cenário
+	// idêntico ao cassette real do Mario ("Um usado, uns R$ 90 mil"), que
+	// travava o funil pra sempre em "credit". A promoção de creditMax agora É
+	// esperada aqui (ver describe "FIX-306" abaixo); creditMentionedAtDesire
+	// continua sendo gravado em paralelo (não é substituído, os dois convivem).
+	it("'Um carro, uns 70 mil' no turno do desire → creditMentionedAtDesire=70000 E creditMax=70000 (FIX-306: promovido no mesmo turno)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
@@ -517,7 +523,7 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		await analyzeAndMerge("Um carro, uns 70 mil", "rafael-auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(70_000);
-		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
 	});
 
 	it("quando o gate credit está REALMENTE ativo (desireAnswered já true de um turno anterior), popula creditMax E creditMentionedAtDesire", async () => {
@@ -556,6 +562,77 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		await analyzeAndMerge("um carro", "rafael-auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBeUndefined();
+	});
+});
+
+// FIX-306 (rodada 10, onda 4 — investigação de causa-raiz direta, cassette
+// real do Mario, `.processo/loop/2026-07-09-agente-vendas-consorcio.md`
+// seção Rodada 10 → onda 4): quando o usuário responde o gate `desire`
+// COMPOSTO (bem + valor no MESMO balão, ex.: "Um usado, uns R$ 90 mil"), o
+// guard do FIX-279 (`desireAnsweredBeforeThisTurn`, snapshot PRÉ-mutação)
+// rejeitava a promoção pra `creditMax` porque `desireAnswered` só é setado
+// NESTE MESMO turno (linha ~71) — o valor caía só em
+// `creditMentionedAtDesire` e nunca era promovido, travando `nextGate()` em
+// "credit" pra sempre (todo o funil pós-credit virava código morto). Fix:
+// aceitar a promoção também quando o desire está sendo respondido AGORA
+// (mesma condição que seta `meta.desireAnswered` nesta função), não só
+// quando já tinha sido respondido em turno anterior.
+describe("FIX-306 — valor no MESMO turno do desire promove creditMax (cassette Mario)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("'Um usado, uns R$ 90 mil' respondendo o desire composto → creditMax preenchido, nextGate avança pra identify", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			creditMax: 90_000,
+		});
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "auto",
+		};
+		// Estado de partida: nextGate() já devolve "credit" desde o próprio
+		// turno em que o desire está sendo respondido (FIX-296) — o sinal que
+		// distingue os dois casos é `desireAnswered`, não o gate ativo.
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		await analyzeAndMerge("Um usado, uns R$ 90 mil", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(90_000);
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(90_000);
+		expect(meta.desireAnswered).toBe(true);
+		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+	});
+
+	it("caminho ANTIGO preservado: valor em turno SEPARADO do desire (Madalena) continua promovendo normalmente", async () => {
+		// desireAnswered já true de um turno ANTERIOR (o desire foi respondido
+		// sem valor, ex.: "Um Corolla, sempre quis") — o valor só chega 2+
+		// turnos depois, quando o gate `credit` de fato pergunta.
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 120_000 });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			desireAnswered: true,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("Uns R$ 120.000", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(120_000);
+	});
+
+	it("bem+valor ANTES do desire ser sequer perguntado (desireAsked=false) continua REJEITADO — não regride o FIX-279", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "imovel",
+			creditMax: 250_000,
+			desiredItem: "um apartamento",
+		});
+		const meta: ConversationMetadata = { desireAsked: false };
+		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
+
+		await analyzeAndMerge("Um apartamento de uns 250 mil", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
 	});
 });
 
