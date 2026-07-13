@@ -45,6 +45,8 @@ const userIntentEnum = z.enum([
 	"asking_question",
 	"providing_info",
 	"expressing_doubt",
+	// FIX-301 (rodada 10): distinto de expressing_doubt — ver qualify-state.ts.
+	"confused",
 	"off_topic",
 	"neutral",
 ]);

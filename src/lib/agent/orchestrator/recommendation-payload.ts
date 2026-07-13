@@ -262,7 +262,7 @@ export function usableRevealGroupCount(index: RevealGroupIndex): number {
 export function buildComparisonTableFromRevealGroups(
 	index: RevealGroupIndex,
 	logosByAdministradora?: ReadonlyMap<string, string>,
-	knownCreditValueByGroupId?: ReadonlyMap<string, number>,
+	knownCreditValueByGroupId?: ReadonlyMap<string, KnownGroupValue>,
 ): Record<string, unknown> {
 	const usable = [...index.values()].filter(isUsableGroup);
 	const input: Record<string, unknown> = {
