@@ -890,3 +890,37 @@ até configurar um gateway/chave alternativa (decisão de infra que precisa do K
 desta sessão (FIX-313/314/315/316) estão commitados e pushados em `integ/consorcio-r10`, validados
 por 3430+344 testes automatizados (LLM mockado) e por 2 rodadas de julgamento com evidência real —
 prontos pra reverificação assim que o acesso for restaurado.
+
+### Achado 9 — FIX-317: gates estruturais mudos com "quero ver mais" (corrigido, commit `f742ada1`)
+`decideShowGate` tinha um blanket `if (intent === "wants_more_options") return false` que suprimia
+QUALQUER gate — inclusive `experience`/`identify` (perguntas estruturais mandatórias, sem relação
+com "grupo específico não-escolhido", o problema real que o FIX-183 original resolvia). Corrigido
+com exceção explícita ANTES do blanket, escopada só a `experience`/`identify` — `COLLECTION_GATES`
+(credit/lance) mantidos sob a trava original (tinham teste de regressão explícito confirmando esse
+comportamento como intencional).
+
+### Tentativa de contornar o bloqueio de budget (sem sucesso, revertida com segurança)
+Autorizado pelo Kairo a configurar gateway alternativo. Investigação: `tb/dev/aja-agora/env`
+(AWS Secrets Manager) tem `LITELLM_API_KEY`+`AI_MODEL=claude-haiku-4-5`, mas a rota até
+`litellm-srv.tb.local` exige VPN cujo mecanismo não foi identificado (não é Tailscale — instalado
+no host mas sem uso confirmado pra isso; sem `.ovpn` do TwoBrains achado; pergunta de esclarecimento
+ao Kairo ficou sem resposta). Tentei trocar `ANTHROPIC_API_KEY` pelo do secret de dev — também
+`invalid x-api-key` direto (só funciona via o gateway). Revertido ao key original (workspace
+esgotada, mas consistente). **Achado colateral real e mantido**: `.env` (nível compose, usado pelas
+substituições `${...}` do `docker-compose.yml`) estava MUITO desatualizado vs `.env.local` (usado
+pelo Next.js em runtime) — faltavam 20 variáveis (`IDENTITY_ENC_KEY`, `WORKSPACE_DB_NAME`,
+`REDIS_DB_INDEX`, `BEVI_API_TOKEN`, etc.), causando `DATABASE_URL` apontar pro banco genérico errado
+e `IDENTITY_ENC_KEY` ausente quebrando testes de integração locais. Sincronizado (só neste
+worktree, arquivos não versionados) — não é bug de produto, é drift de bootstrap local, mas vale
+registrar como possível fricção de `bootstrap-workspace.sh` a investigar depois (talvez ele só
+escreva `.env.local`, nunca `.env`).
+
+### Status final da sessão (bloqueada por budget externo, não por falta de trabalho)
+5 fixes reais nesta sessão (FIX-313 a FIX-317), todos commitados/pushados em `integ/consorcio-r10`,
+validados por 3433 testes unit + 344 integration (LLM mockado) + typecheck diferencial limpo em
+CADA um. Pendências do veredito Fable ainda NÃO atacadas por falta de evidência ao vivo pra
+confirmar a causa-raiz com segurança antes de mexer (regra "não crave o que não verificou"):
+A9 (motivo/espelho — hipótese não confirmada), A10 (netCredit pós-embutido), A11 (contract_form
+duplicado, ordem do optin). Etapa B (10 cenários fictícios do Fable + Haiku via Chrome) não pode
+nem começar — depende inteiramente de LLM real. Bloqueio: budget da workspace Anthropic esgotado
+até 01/08/2026; gateway LiteLLM alternativo não configurável nesta sessão (VPN não identificada).
