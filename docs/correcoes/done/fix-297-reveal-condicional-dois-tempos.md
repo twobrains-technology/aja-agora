@@ -1,13 +1,38 @@
 ---
 id: FIX-297
 titulo: "Reveal condicional em dois tempos com consentimento (nunca hero direto sem pedir)"
-status: todo
+status: done
 bloco: bloco-r10-1-funil-reveal
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/runner.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/orchestrator/recommendation-payload.ts, src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/gate-questions.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-funil-reveal — MESMO bloco do FIX-296, fusão obrigatória por acoplamento de máquina de estados)
+commit: 8fe104b3
+executado_em: 2026-07-13
 ---
+
+## Nota de execução (2026-07-13)
+
+Implementado como novo valor `"reco-consent"` no enum `Gate` (decisão do Kairo
+via AskUserQuestion — ver `docs/decisoes/blocos/2026-07-12-bloco-r10-1-funil-reveal.md`
+D2), não como sub-passo ad-hoc do `experience`. Hero server-forced via
+`emitServerCard`, payload persistido em `meta.pendingRecommendationCard` no
+turno da busca original (guard `hero-awaits-reco-consent`) e reemitido
+deterministicamente quando o usuário consente.
+
+**Gaps honestos (não cobertos nesta execução):**
+- Cenário Mario (auto-seleção da lista, pula experience/reco-consent/hero
+  direto pra `two_paths`) diverge do mockup — decisão explícita do Kairo (D3
+  no ADR) de manter `experience` sempre no caminho padrão, sem plugar o sinal
+  de auto-seleção. O caminho sem-lance (`hasLance="so_parcela"`) pula
+  reco-consent/hero, mas só depois que `experience` já rodou.
+- Catálogo canônico de dúvida ("o que é lance?", "como funciona o sorteio?")
+  é o escopo do FIX-300 (bloco separado) — não implementado aqui.
+- Sonda adversarial com modelo fraco (Qwen) não rodou nesta sessão — fora de
+  escopo do bloco (`_prompt.md` proíbe smoke/QA de browser); a garantia de
+  "hero server-forced, nunca depende do LLM chamar tool" está provada por
+  teste de integração (`runner.fix-290-comparison-forced.integration.test.ts`),
+  não por sonda ao vivo.
 ## Palavras do operador
 > "Encontramos boas opções pra você nessa faixa. Vamos te mostrar a mais adequada... [detalhamento
 > completo da ITAÚ]" — o agente escolhe e detalha uma administradora sem pedir permissão nem

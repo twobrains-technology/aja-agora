@@ -3,14 +3,15 @@ import type { ConversationMetadata } from "./personas";
 import { decideShowGate, nextGate } from "./qualify-state";
 
 // Gate "identify" — D1 (docs/jornada/CONTEXT.md): a Bevi exige CPF+celular+LGPD
-// ANTES de simular. FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19):
-// "Precisa pedir os dados, antes do valor" — a identidade subiu de ÚLTIMO gate
-// da qualificação para LOGO APÓS o consent, ANTES do `credit` (valor). A busca
-// real continua exigindo identidade (tripwire), aqui já coletada cedo.
+// ANTES de simular (isso NUNCA mudou — é o invariante real). FIX-296 (rodada
+// 10, 2026-07-12) REVERTE conscientemente a POSIÇÃO relativa ao `credit` que o
+// FIX-53 havia fixado ("dados antes do valor"): agora o `credit` (valor) vem
+// ANTES do `identify`, fiel ao mockup novo ("valor antes dos dados"). A busca
+// real continua exigindo identidade (tripwire) — só a ordem de coleta mudou.
 
-// FIX-215 (Ata 2026-07-04): busca/reveal já ocorrem DIRETO após o valor, sem
-// lance como pré-requisito — "qualificação completa" pré-reveal é só
-// identidade + valor. hasLance/lanceEmbutido não entram mais aqui (pós-reveal).
+// FIX-215 (Ata 2026-07-04): busca/reveal já ocorrem DIRETO após a identidade,
+// sem lance como pré-requisito — "qualificação completa" pré-reveal é só
+// valor + identidade. hasLance/lanceEmbutido não entram mais aqui (pós-reveal).
 const qualifiedBase: ConversationMetadata = {
 	desireAsked: true,
 	experiencePrev: "first",
@@ -25,20 +26,23 @@ const postRevealResolved: ConversationMetadata = {
 	...qualifiedBase,
 	searchDispatched: true,
 	revealCompleted: true,
+	// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+	// timeframe/lance/decision (senão insere "reco-consent" antes).
+	recoConsentDispatched: true,
 	qualifyAnswers: { ...qualifiedBase.qualifyAnswers, hasLance: "no", lanceEmbutido: false },
 };
 
-describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
-	it("consent dado, SEM identidade → identify (antes de qualquer valor)", () => {
+describe("nextGate — credit vem ANTES do identify (FIX-296, reversão do FIX-53)", () => {
+	it("consent dado, SEM valor nem identidade → credit (antes da identidade)", () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 		};
-		expect(nextGate(meta)).toBe("identify");
+		expect(nextGate(meta)).toBe("credit");
 	});
 
-	it("identify precede o valor mesmo com valor já volunteered", () => {
+	it("valor já dado, sem identidade → identify (identidade segue obrigatória antes do search)", () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
 			experiencePrev: "first",

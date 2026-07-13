@@ -12,6 +12,7 @@ import {
 	nextGate,
 	shouldAskMotive,
 	shouldMarkDoubtsAddressed,
+	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
@@ -278,6 +279,13 @@ export async function* runAgentTurn(args: {
 	// usuário nem chegou a ver o reveal. Sem esta força, o turno ficava
 	// inteiramente mudo (nem artifact, nem gate).
 	let prematureContractSuppressedThisTurn = false;
+	// FIX-297: hero (recommendation_card) e a simulação que o aprofunda ficam
+	// PENDENTES no reveal original (guard hero-awaits-reco-consent) — os
+	// payloads já COAGIDOS server-side (mesma coerção do caminho permitido)
+	// são guardados aqui pra persistir em meta.pendingRecommendationCard/
+	// pendingSimulationResult (emissão determinística mais tarde, pós-consent).
+	let pendingRecommendationPayload: Record<string, unknown> | null = null;
+	let pendingSimulationPayload: Record<string, unknown> | null = null;
 	// FIX-262: chunk `tool-error` observado neste turno (tool fora do toolset da
 	// fase) — a partir daqui, nenhum texto do modelo chega ao usuário (evita a
 	// negação de oferta real) e o orchestrator assume com fallback determinístico.
@@ -627,6 +635,26 @@ export async function* runAgentTurn(args: {
 						if (guardVerdict.rule === "premature-contract") {
 							prematureContractSuppressedThisTurn = true;
 						}
+						// FIX-297: hero suprimido por falta de consentimento — computa o
+						// MESMO payload coagido que o caminho permitido usaria (Lei 1: os
+						// números vêm do grupo real do turno, nunca do texto do modelo) e
+						// guarda pra emissão determinística posterior (reco-consent).
+						if (guardVerdict.rule === "hero-awaits-reco-consent") {
+							if (artifactType === "recommendation_card") {
+								const requestedCreditValue =
+									meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax;
+								pendingRecommendationPayload = coerceRecommendationPayload(
+									input,
+									revealGroupsById,
+									await getAdministradoraLogos(),
+									requestedCreditValue,
+									await getKnownCreditValues(),
+								);
+							}
+							if (artifactType === "simulation_result") {
+								pendingSimulationPayload = coerceSimulationPayload(input, lastQuotaSimulation);
+							}
+						}
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
 						// ativa — coage payload com o snapshot do reveal (ou com o
@@ -936,8 +964,14 @@ export async function* runAgentTurn(args: {
 	// MESMOS grupos indexados neste turno (revealGroupsById). Caso de borda: 1
 	// grupo único NUNCA força a tabela (regra do reveal — os dois só pulam
 	// juntos quando há 1 grupo só).
+	//
+	// FIX-297: `pendingRecommendationPayload` conta como "o modelo chamou
+	// present_recommendation_card" — o guard hero-awaits-reco-consent suprime a
+	// EMISSÃO do hero, não a INTENÇÃO do modelo; a tabela continua obrigatória
+	// no mesmo turno (nunca some, invariante do FIX-290 preservado mesmo com o
+	// hero pendente).
 	if (
-		artifacts.some((a) => a.type === "recommendation_card") &&
+		(artifacts.some((a) => a.type === "recommendation_card") || pendingRecommendationPayload) &&
 		!artifacts.some((a) => a.type === "comparison_table") &&
 		usableRevealGroupCount(revealGroupsById) >= 2
 	) {
@@ -1016,28 +1050,41 @@ export async function* runAgentTurn(args: {
 	// group_card (1), recommendation_card (destacado) ou simulation_result. Limitar
 	// a recommendation/simulation deixava a flag desligada quando o agent abria o
 	// reveal com group_card/comparison (visto no run real 2026-06-02).
-	if (artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) && !meta.revealCompleted) {
+	if (
+		(artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) ||
+			pendingRecommendationPayload ||
+			pendingSimulationPayload) &&
+		!meta.revealCompleted
+	) {
 		const refreshed = await reloadMeta(conversationId);
+		// FIX-297: hero (recommendation_card) e a simulação que o aprofunda podem
+		// ter sido SUPRIMIDOS deste turno (pendentes até reco-consent) — a âncora
+		// de administradora/oferta usa o payload PENDENTE quando o artifact
+		// visível não existe, senão o contexto do dial/decisão ficaria pobre
+		// (group_card, se houver, ou nada) enquanto o hero espera consentimento.
+		const recommendationPayload =
+			artifacts.find((a) => a.type === "recommendation_card")?.payload ??
+			pendingRecommendationPayload ??
+			undefined;
+		const simulationPayload =
+			artifacts.find((a) => a.type === "simulation_result")?.payload ??
+			pendingSimulationPayload ??
+			undefined;
+		const groupCardPayload = artifacts.find((a) => a.type === "group_card")?.payload;
 		// Captura a administradora do plano destacado pro contexto do card de
 		// decisão / passo 5. Prioridade: recommendation > simulation > group_card.
-		const anchor =
-			artifacts.find((a) => a.type === "recommendation_card") ??
-			artifacts.find((a) => a.type === "simulation_result") ??
-			artifacts.find((a) => a.type === "group_card");
+		const anchorPayload = recommendationPayload ?? simulationPayload ?? groupCardPayload;
 		const administradora =
-			typeof anchor?.payload?.administradora === "string"
-				? anchor.payload.administradora
+			typeof anchorPayload?.administradora === "string"
+				? anchorPayload.administradora
 				: refreshed.recommendedAdministradora;
 		// FIX-6: snapshot dos números da oferta âncora — fonte única do dial.
 		// BUG-SNAPSHOT-ANCHOR-POBRE (E2E real 2026-06-11): o snapshot precisa do
 		// artifact RICO — só o simulation_result carrega lanceScenario/embeddedBid
 		// (lance real + mês de referência + teto de embutido, FIX-C2). Usar o
 		// recommendation_card aqui deixava o dial sem calibração (31% vs 24%).
-		const snapshotAnchor =
-			artifacts.find((a) => a.type === "simulation_result") ??
-			artifacts.find((a) => a.type === "recommendation_card") ??
-			artifacts.find((a) => a.type === "group_card");
-		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchor?.payload);
+		const snapshotAnchorPayload = simulationPayload ?? recommendationPayload ?? groupCardPayload;
+		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchorPayload);
 		await persistMeta(conversationId, {
 			...refreshed,
 			revealCompleted: true,
@@ -1052,6 +1099,14 @@ export async function* runAgentTurn(args: {
 				? { discoveredCreditTarget: refreshed.qualifyAnswers.creditMax }
 				: {}),
 			...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
+			// FIX-297: hero e simulação pendentes (guard hero-awaits-reco-consent) —
+			// sobrevivem no meta pra emissão determinística quando reco-consent
+			// resolver, muitos turnos depois (revealGroupsById já não existe fora
+			// deste turno).
+			...(pendingRecommendationPayload
+				? { pendingRecommendationCard: pendingRecommendationPayload }
+				: {}),
+			...(pendingSimulationPayload ? { pendingSimulationResult: pendingSimulationPayload } : {}),
 		});
 	}
 
@@ -1215,6 +1270,13 @@ export async function* runAgentTurn(args: {
 		// com o estado ANTERIOR — a marcação só afeta o turno seguinte.
 		if (isUserTurn && shouldAskMotive(refreshed)) {
 			await persistMeta(conversationId, { ...refreshed, motivationAsked: true });
+		}
+		// FIX-296 — mesmo padrão acima, um turno depois: quando o motivo já
+		// chegou e o beat de espelho+objetivo segura o funil (shouldShow=false
+		// por shouldMirrorMotivation), marca motivationMirrored — o gate real
+		// (credit) dispara normalmente no turno SEGUINTE.
+		if (isUserTurn && shouldMirrorMotivation(refreshed)) {
+			await persistMeta(conversationId, { ...refreshed, motivationMirrored: true });
 		}
 		const passesArtifactGuard =
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);

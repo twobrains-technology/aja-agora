@@ -25,6 +25,9 @@ function postReveal(over: Partial<ConversationMetadata> = {}): ConversationMetad
 		},
 		searchDispatched: true,
 		revealCompleted: true,
+		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+		// timeframe/lance/simulator-offer (senão insere "reco-consent" antes).
+		recoConsentDispatched: true,
 		recommendedAdministradora: "ITAÚ",
 		...over,
 	};

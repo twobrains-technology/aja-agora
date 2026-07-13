@@ -47,7 +47,9 @@ async function* emit(events: TurnEvent[]): AsyncGenerator<TurnEvent> {
 	for (const ev of events) yield ev;
 }
 
-// meta onde o funil está TRAVADO no gate identify (consent dado, sem identidade).
+// meta onde o funil está TRAVADO no gate identify (consent dado, valor já
+// coletado, sem identidade). FIX-296 (rodada 10): credit precede identify —
+// pra nextGate chegar genuinamente em identify, o valor já precisa constar.
 function identifyPendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
 		desireAsked: true,
@@ -55,6 +57,7 @@ function identifyPendingMeta(over: Partial<ConversationMetadata> = {}): Conversa
 		currentPersona: "helena-auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
+		qualifyAnswers: { creditMax: 80_000 },
 		...over,
 	} as ConversationMetadata;
 }

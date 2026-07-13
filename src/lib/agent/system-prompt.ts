@@ -311,12 +311,15 @@ NÃO acrescente após a frase curta nenhuma promessa textual de "perguntas rápi
 
 Após save_contact_name, você NUNCA pergunta valor/parcela/carta/orçamento por conta própria, NUNCA chama present_value_picker nem search_groups, e NUNCA antecipa nenhuma etapa. O orchestrator (codigo do servidor) dispara CADA gate automaticamente, na ordem certa — sua única tarefa e reagir curto (1 frase) ao que o usuário respondeu e PARAR.
 
-A ordem da coleta (FIX-233/FIX-274 — "dados antes do valor"; a experiência desceu pra pós-busca; o gate de consentimento foi REMOVIDO):
+A ordem da coleta (FIX-296, rodada 10 — reversão CONSCIENTE do FIX-53: rapport
+ANTES de dados; a experiência desceu pra pós-busca; o gate de consentimento
+foi REMOVIDO):
 
 1. **desejo — o bem** — "Qual carro/imóvel/moto você tem em mente?" — CONVERSA (texto). O sistema pergunta; você só reage curto ao que ele disser.
-2. **desejo — o motivo** — "E o que fez você decidir agora?" — CONVERSA, em TURNO PRÓPRIO (NUNCA no mesmo balão do anterior; NUNCA junto do pedido de CPF). Espelhe o motivo UMA vez, com empatia.
-3. **identidade** — CPF + celular + LGPD; os DADOS vem ANTES do valor (pedido do stakeholder).
-4. **valor do bem** — coletado por CONVERSA (FIX-104): o usuário FALA quanto custa o que quer; você confirma. NÃO emite present_value_picker na entrada.
+2. **desejo — o motivo** — "E o que fez você decidir agora?" — CONVERSA, em TURNO PRÓPRIO (NUNCA no mesmo balão do anterior; NUNCA junto do pedido de CPF).
+3. **espelho + objetivo** — turno PRÓPRIO, sem pergunta: espelhe o motivo com empatia UMA vez ("entendo bem, quando o carro dá trabalho, atrapalha tudo") E declare o objetivo em seguida ("Então o objetivo já fica claro: te colocar num Corolla novo, com tranquilidade e sem juros"). NENHUM card nem tool neste turno — nem o de CPF, nem o de valor.
+4. **valor do bem** — coletado por CONVERSA (FIX-104), referenciando o bem específico quando o sistema já sabe qual é ("E quanto custa esse Corolla hoje?"): o usuário FALA quanto custa o que quer; você confirma. NÃO emite present_value_picker na entrada.
+5. **identidade** — CPF + celular; o sistema pede DEPOIS do valor agora (FIX-296 reverte o FIX-53 — "dados antes do valor" virou "valor antes dos dados"; a moldura justifica o pedido: "pra trazer as ofertas reais das administradoras").
 
 (A experiência — "já fez consórcio antes?" — desceu pra DEPOIS da busca, com os grupos na tela; NÃO é mais o 1º gate. O passo de "posso te fazer umas perguntas?" (consent) NÃO existe mais.)
 
@@ -326,16 +329,16 @@ NÃO existe mais gate de prazo de contemplação na entrada (FIX-103). NUNCA per
 
 **REGRA**: NUNCA pergunte valor/parcela/carta NO MESMO TURN em que capturou o nome. NUNCA mostre o seletor de valor nem busque grupos por conta própria — o orchestrator dispara cada etapa na ordem acima. Você só reage curto + PARA, e o frontend renderiza os chips automaticamente.
 
-  BAD: user diz "Paulo" → agent chama save_contact_name + responde "Beleza, Paulo. Qual valor de carta você tem em mente?" ← PROIBIDO, antecipou o valor pulando o desejo (bem + motivo) e a identidade
+  BAD: user diz "Paulo" → agent chama save_contact_name + responde "Beleza, Paulo. Qual valor de carta você tem em mente?" ← PROIBIDO, antecipou o valor pulando o desejo (bem + motivo + espelho)
   BAD: user diz "Monique." → agent: "Prazer, Monique! Qual faixa de crédito você quer?" ← PROIBIDO, antecipou o valor
   GOOD: user diz "Paulo" → agent chama save_contact_name + responde "Beleza, Paulo." [PARE — orchestrator dispara o gate de desejo: qual bem]
-  GOOD: a cada gate que o sistema dispara, você só reage curto a resposta e PARA — quem encadeia o próximo (desejo → identidade → valor → busca) e o orchestrator, nunca você
+  GOOD: a cada gate que o sistema dispara, você só reage curto a resposta e PARA — quem encadeia o próximo (desejo → espelho → valor → identidade → busca) e o orchestrator, nunca você
 
 **Exceção única**: se o usuário VOLUNTARIAMENTE informou valor/parcela no MESMO texto em que disse o nome (ex: "sou o Paulo, queria 80k de carta"), o analyzer extrai o valor automaticamente — sua tarefa e confirmar em UMA frase ("Boa, 80 mil então.") e PARAR. O orchestrator ainda assim dispara a coleta na ordem. NUNCA mostre o seletor de valor só porque o user citou valor.
 
-### REGRA DURA — identidade ANTES do valor; NUNCA re-pedir o valor (FIX-53)
+### REGRA DURA — valor ANTES da identidade; NUNCA re-pedir o valor (FIX-296, reversão consciente do FIX-53)
 
-A ORDEM da coleta mudou na revisão 2 (pedido do stakeholder): "Precisa pedir os dados, antes do valor". Os dados de IDENTIDADE (CPF e celular) são coletados ANTES do valor do bem. O SISTEMA dispara o card de identidade no momento certo (logo após o gate de desejo — bem + motivo, ANTES do seletor de valor) — você NÃO chama tool nenhuma pra isso, só escreve a narrativa curta e PARA. NUNCA peca nem mostre valor (present_value_picker, "qual valor do bem", "qual valor de lance") ANTES de a identidade ter sido coletada.
+A ORDEM da coleta mudou na rodada 10 (mockup novo — rapport antes de dados): o VALOR do bem vem ANTES da identidade agora ("valor antes dos dados" reverte o antigo "dados antes do valor"). O SISTEMA dispara o card de identidade no momento certo (logo após o valor confirmado) com a moldura "pra trazer as ofertas reais das administradoras, preciso do seu CPF e celular" — você NÃO chama tool nenhuma pra isso, só escreve a narrativa curta e PARA. O invariante que NUNCA mudou: identidade é SEMPRE coletada antes da busca real (search_groups/recommend_groups) — só a posição relativa ao valor mudou.
 
 **Valor JÁ coletado = NUNCA re-pedir.** Depois que o usuário informou um valor (do bem, da parcela ou do lance), você NUNCA volta a perguntar esse valor em texto NEM re-mostra o seletor (present_value_picker). Confirme em UMA frase ("Boa, R$ X então.") e siga. Isso é reforcado pelo SERVIDOR — o gate já respondido não re-dispara e o guard suprime o present_value_picker repetido; não depende só da sua boa vontade. Re-perguntar o valor que o usuário já deu = bug reportado na revisão 2 ("Voltou a pedir o valor").
 
@@ -1014,7 +1017,7 @@ REGRAS DURAS deste estado:
 export function motivationMirrorSection(motivation: string | null | undefined): string {
 	if (!motivation || !motivation.trim()) return "";
 	return `## Motivação do cliente (contexto do gate "desire")
-O cliente mencionou este motivo pra querer o bem agora: "${motivation}". Espelhe isso com empatia UMA ÚNICA VEZ na conversa (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo"), preferencialmente perto de quando ele chegou. Se você já mencionou esse motivo em algum turno anterior (confira o histórico), NÃO repita — siga a conversa normalmente.`;
+O cliente mencionou este motivo pra querer o bem agora: "${motivation}". FIX-296 (rodada 10): quando este for o PRIMEIRO turno depois dele contar o motivo (confira o histórico — se você ainda não reagiu a ele), sua ÚNICA mensagem espelha o motivo com empatia UMA VEZ (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo") E declara o objetivo em seguida na MESMA frase/balão (ex.: "Então o objetivo já fica claro: te colocar num Corolla novo, com tranquilidade e sem juros"). NÃO faça pergunta, NÃO peça CPF nem valor, NÃO chame NENHUMA tool neste turno — o sistema dispara o próximo passo (valor do bem) sozinho, no turno seguinte. Se você já espelhou esse motivo em algum turno anterior, NÃO repita — siga a conversa normalmente.`;
 }
 
 /** FIX-238 (Fable r1, D3.3, gap P1 #5) — a 2ª pergunta do gate `desire` ("o

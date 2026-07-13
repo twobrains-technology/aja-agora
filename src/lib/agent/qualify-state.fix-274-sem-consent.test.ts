@@ -42,13 +42,14 @@ describe("FIX-274 — o gate consent saiu do funil", () => {
 		}
 	});
 
-	it("após o desire, o próximo gate estrutural é identify (não mais consent)", () => {
+	it("após o desire, o próximo gate estrutural é credit (não mais consent, FIX-296)", () => {
 		const meta: ConversationMetadata = {
 			...base,
 			motivationAsked: true,
+			motivationMirrored: true,
 			qualifyAnswers: { desiredItem: "sportage", motivation: "cansei" },
 		};
-		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
 	});
 });
 
@@ -59,17 +60,17 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 			desireAnswered: true, // FIX-285: proxy determinístico (não mais o desiredItem)
 			qualifyAnswers: { desiredItem: "kia sportage" }, // motivation ausente
 		};
-		// O gate estrutural seguinte já é identify (consent removido)...
-		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+		// O gate estrutural seguinte já é credit (consent removido, FIX-296)...
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
 		// ...mas o motivo tem prioridade: o LLM pergunta "por que agora" NESTE turno,
-		// e o card de identidade NÃO é emitido junto (evita 2 perguntas / colisão).
+		// e nenhum card estruturado é emitido junto (evita 2 perguntas / colisão).
 		expect(shouldAskMotive(meta)).toBe(true);
 		expect(
-			decideShowGate({ gate: "identify", intent: "neutral", meta, isUserTurn: true }),
+			decideShowGate({ gate: "credit", intent: "neutral", meta, isUserTurn: true }),
 		).toBe(false);
 	});
 
-	it("com o motivo já capturado, o identify DISPARA normalmente", () => {
+	it("com o motivo já capturado mas sem motivationAsked, o credit DISPARA normalmente (o mirror ainda não entrou em jogo)", () => {
 		const meta: ConversationMetadata = {
 			...base,
 			desireAnswered: true,
@@ -77,7 +78,7 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 		};
 		expect(shouldAskMotive(meta)).toBe(false);
 		expect(
-			decideShowGate({ gate: "identify", intent: "neutral", meta, isUserTurn: true }),
+			decideShowGate({ gate: "credit", intent: "neutral", meta, isUserTurn: true }),
 		).toBe(true);
 	});
 
@@ -90,7 +91,7 @@ describe("FIX-274 — o motivo ('por que agora') tem turno próprio (nunca colid
 		};
 		expect(shouldAskMotive(meta)).toBe(false);
 		expect(
-			decideShowGate({ gate: "identify", intent: "neutral", meta, isUserTurn: true }),
+			decideShowGate({ gate: "credit", intent: "neutral", meta, isUserTurn: true }),
 		).toBe(true);
 	});
 

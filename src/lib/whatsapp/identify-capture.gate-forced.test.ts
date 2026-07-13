@@ -54,11 +54,15 @@ function setMeta(meta: ConversationMetadata) {
 	mocks.metaStore[CONV_ID] = meta;
 }
 
+// FIX-296 (rodada 10, 2026-07-12): `credit` passou a preceder `identify` no
+// funil (reversão consciente do FIX-53) — pra `nextGate` chegar genuinamente
+// em `identify`, o valor do bem (`creditMax`) já precisa estar resolvido.
 const IDENTIFY_READY: ConversationMetadata = {
 	desireAsked: true,
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: false,
+	qualifyAnswers: { creditMax: 80_000 },
 } as ConversationMetadata;
 
 beforeEach(() => {

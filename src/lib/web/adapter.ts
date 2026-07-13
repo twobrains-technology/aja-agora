@@ -145,6 +145,11 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "no", label: "Agora não" },
 				],
 			};
+		case "reco-consent":
+			// FIX-297: gate leve, sem card — só a pergunta em texto (gateQuestion),
+			// resolvido por texto livre (sim/não), mesmo mecanismo de simulator-
+			// offer/lance-embutido em orchestrator/index.ts (detectYesNoText).
+			// "mecanismo mais simples que funciona" (decisão do bloco).
 		case "doubts-wait":
 		case "search":
 		case "decision":
@@ -172,6 +177,7 @@ export async function pipeGatePrompt(args: {
 		meta.recommendedOffer?.creditValue,
 		"web",
 		meta.qualifyAnswers?.creditMentionedAtDesire,
+		meta.qualifyAnswers?.desiredItem,
 	);
 	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
@@ -299,6 +305,7 @@ export async function pipeOrchestratorToWriter(
 					meta.recommendedOffer?.creditValue,
 					"web",
 					meta.qualifyAnswers?.creditMentionedAtDesire,
+					meta.qualifyAnswers?.desiredItem,
 				);
 				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
 				if (data || question) {

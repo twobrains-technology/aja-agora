@@ -64,6 +64,11 @@ export function gateQuestion(
 	// (`qualifyAnswers.creditMentionedAtDesire`). Quando presente, o gate
 	// `credit` CONFIRMA esse valor em vez de perguntar do zero.
 	creditMentionedAtDesire?: number,
+	// FIX-296 — o bem específico capturado no gate `desire`
+	// (`qualifyAnswers.desiredItem`, ex.: "Corolla"). Quando presente e sem
+	// `creditMentionedAtDesire`, a copy do `credit` referencia o bem
+	// ("E quanto custa esse Corolla hoje?") em vez da pergunta genérica.
+	desiredItem?: string | null,
 ): string | null {
 	switch (gate) {
 		case "name":
@@ -86,7 +91,15 @@ export function gateQuestion(
 			) {
 				return `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
 			}
-			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
+			// FIX-296 (mockup Madalena, docs/design/specs/assets/2026-07-12-aja-
+			// dois-cenarios.html): com o bem já nomeado no gate `desire`, a
+			// pergunta do valor referencia ele — "E quanto custa esse Corolla
+			// hoje?" — em vez da fria "qual valor do bem". Fallback genérico
+			// (FIX-2, linguagem do docx) quando o bem não é específico o
+			// bastante (ex.: usuário só disse "um carro").
+			if (desiredItem && desiredItem.trim()) {
+				return `E quanto custa esse ${desiredItem.trim()} hoje?`;
+			}
 			return "Qual valor do bem faz mais sentido pra você?";
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
@@ -124,8 +137,14 @@ export function gateQuestion(
 			// waId, já conhecido). Na WEB o form pede CPF E celular (gatePartData
 			// "identity" tem os dois campos, `prefilledPhone: null`) — a mesma frase
 			// mentia sobre de onde o celular vem (3 de 3 runs do veredito).
+			// FIX-296 (mockup Madalena): no canal WEB o identify agora chega
+			// DEPOIS do valor (reversão do FIX-53) — a moldura do docx justifica
+			// o pedido ANTES de fazê-lo: "pra eu trazer as ofertas reais das
+			// administradoras, preciso do seu CPF e WhatsApp". O WhatsApp segue
+			// com o beat de contexto próprio (identify-capture.ts,
+			// IDENTIFY_CONTEXT_WHATSAPP) — fora de escopo deste fix.
 			return channel === "web"
-				? "Me manda seu CPF e celular, só os números."
+				? "Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."
 				: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
@@ -133,6 +152,11 @@ export function gateQuestion(
 				"Se quiser, temos o nosso simulador pra ver como ficariam as suas parcelas, " +
 				"caso você seja contemplado em 3, 6 ou 12 meses — que tal?"
 			);
+		case "reco-consent":
+			// FIX-297: gate leve entre a lista (comparison_table) e o hero
+			// (recommendation_card) — só com resposta afirmativa aqui o hero é
+			// liberado (server-forced em orchestrator/index.ts).
+			return "Posso te mostrar a opção que eu recomendo?";
 		case "doubts-wait":
 		case "search":
 		case "decision":

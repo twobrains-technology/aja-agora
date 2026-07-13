@@ -83,6 +83,9 @@ const DOUBTS_CLICK_META: ConversationMetadata = {
 	identityCollected: true,
 	searchDispatched: true,
 	revealCompleted: true,
+	// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+	// o timeframe (senão insere "reco-consent" antes).
+	recoConsentDispatched: true,
 	qualifyAnswers: { creditMax: 300_000 },
 	experiencePrev: "doubts",
 	doubtsAddressed: false,

@@ -70,6 +70,9 @@ async function gateInteractive(
 		case "simulator-offer":
 			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
 			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
+		case "reco-consent":
+			// FIX-297: fora de escopo desta rodada (só coreografia web) — cai no
+			// caminho textual (WHATSAPP_TEXT_GATES abaixo), sem card interativo.
 		case "name":
 		case "desire":
 		case "identify":
@@ -96,7 +99,11 @@ async function gateInteractive(
 // pro gate identify, o gate disparava mas NADA era enviado no WhatsApp (gateInteractive
 // e gateTextPrompt = null), fechando o turno MUDO: por clique = silêncio, por texto
 // ("continua") = "me perdi". Agora o identify entrega a pergunta do CPF como texto.
-const WHATSAPP_TEXT_GATES = new Set<Gate>(["credit", "identify"]);
+// FIX-297: "reco-consent" entra aqui pra não ficar mudo no WhatsApp (nenhum
+// card interativo neste MVP — a recoreografia do reveal focou no canal web)
+// — a pergunta sai como texto e a resposta livre resolve via detectYesNoText
+// (orchestrator/index.ts), mesmo mecanismo do lance-embutido/simulator-offer.
+const WHATSAPP_TEXT_GATES = new Set<Gate>(["credit", "identify", "reco-consent"]);
 async function gateTextPrompt(
 	gate: Gate,
 	conversationId: string,

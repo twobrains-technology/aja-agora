@@ -13,6 +13,7 @@ export type Gate =
 	| "lance-embutido"
 	| "identify"
 	| "search"
+	| "reco-consent"
 	| "simulator-offer"
 	| "decision";
 
@@ -74,22 +75,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// mais antes" cedo demais (CK-2). O motivo ("por que agora") ganha turno próprio
 	// via `shouldAskMotive` (decideShowGate) pra nunca colidir com o próximo card.
 
-	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
-	// dados, antes do valor". O gate `identify` (CPF+celular+LGPD, cifrado, D1)
-	// — que era o ÚLTIMO da qualificação — sobe para ANTES do `credit` (seletor
-	// de valor / present_value_picker), logo após o consent. A Bevi exige
-	// CPF+celular+LGPD antes de simular de qualquer forma (D1), então coletar
-	// cedo só reforça D1. Os handlers de identidade (web/route + whatsapp/
-	// processor) NÃO disparam mais o reveal — despacham o próximo gate; o reveal
-	// segue sendo disparado por pipeSearchSummaryTurn no fim da qualificação.
-	if (!meta.identityCollected) return "identify";
-
+	// FIX-296 (rodada 10, loop-de-goal consórcio, 2026-07-12) — REVERSÃO
+	// CONSCIENTE do FIX-53: o mockup novo (docs/design/specs/assets/2026-07-12-
+	// aja-dois-cenarios.html, F1) pede rapport ANTES de dados — motivo→espelho+
+	// objetivo→valor do bem→SÓ ENTÃO CPF/WhatsApp ("pra eu trazer as ofertas
+	// reais das administradoras"). O invariante REAL nunca foi "identidade logo
+	// após o desire": é "identidade SEMPRE antes do search" (a Bevi exige
+	// CPF+celular+LGPD antes de simular, D1) — isso continua intacto abaixo, só
+	// a posição relativa ao `credit` muda. "Palavra nova vence" — a razão do
+	// FIX-53 era "dados antes do valor"; a intenção nova é confiança antes de
+	// dados, sem abrir mão do pré-requisito de identidade pro search.
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
-
-	// (FIX-53) O gate `identify` foi movido para ANTES do `credit` — ver acima.
-	// A busca real continua exigindo identidade (tripwire em pipeSearchSummaryTurn /
-	// runSearchSummaryWithOrchestrator); aqui ela já foi coletada cedo.
+	if (!meta.identityCollected) return "identify";
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
 	// `credit` (valor) pra `search` — a pergunta de lance ("Pretende dar um
@@ -131,6 +129,17 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (meta.revealCompleted) {
 		if (!meta.experiencePrev) return "experience";
 		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
+
+		// FIX-297 (rodada 10, 2026-07-12) — reveal em DOIS TEMPOS com
+		// consentimento: a lista (comparison_table) já apareceu no search
+		// (FIX-290 preservado), `experience` acabou de resolver — antes de
+		// avançar, pergunta "Posso te mostrar a opção que eu recomendo?" e só
+		// com resposta afirmativa o hero (recommendation_card) é liberado
+		// (server-forced em orchestrator/index.ts, nunca dependente de tool-call
+		// do LLM). PULA quando o usuário já recusou a conversa de lance
+		// (hasLance="so_parcela", capturado oportunisticamente a qualquer
+		// momento) — não há o que recomendar pra quem só quer a parcela fixa.
+		if (q.hasLance !== "so_parcela" && !meta.recoConsentDispatched) return "reco-consent";
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural
@@ -202,6 +211,25 @@ export function shouldAskMotive(meta: ConversationMetadata): boolean {
 }
 
 /**
+ * FIX-296 — depois que o motivo chega (`motivationAsked` já rodou e o texto do
+ * usuário trouxe `motivation`), o funil segura MAIS UM turno pra um beat de
+ * ESPELHO + OBJETIVO ("entendo bem — quando o carro dá trabalho, atrapalha
+ * tudo. Então o objetivo já fica claro: te colocar num Corolla novo…") — sem
+ * NENHUM card estruturado junto (mesmo anti-CK-1 do `shouldAskMotive`: o
+ * espelho não pode competir com um gate no mesmo balão). NÃO-bloqueante:
+ * `motivationMirrored` é marcado no runner quando o beat ativa (mesmo padrão
+ * de `motivationAsked`) — o gate seguinte (`credit`, pós FIX-296) dispara
+ * normalmente no turno DEPOIS deste. Sem `motivation` capturado (usuário
+ * ignorou a pergunta e mudou de assunto), não há o que espelhar — a função
+ * devolve false e o funil segue direto pro próximo gate estrutural, sem
+ * inserir um beat vazio. Função PURA (Camada 1).
+ */
+export function shouldMirrorMotivation(meta: ConversationMetadata): boolean {
+	const q = meta.qualifyAnswers ?? {};
+	return Boolean(meta.motivationAsked) && q.motivation !== undefined && !meta.motivationMirrored;
+}
+
+/**
  * FIX-206 — o clique "🤔 Tenho dúvidas" dispara `buildExperienceDoubtsDirective`
  * como turno de SERVIDOR (isUserTurn=false). Esse turno JÁ é a explicação que
  * endereça as dúvidas — exatamente como quando o usuário responde por texto no
@@ -253,17 +281,15 @@ export function decideShowGate(args: {
 	// LLM o pergunta e NENHUM card estruturado é emitido junto (anti CK-1, 2 perguntas
 	// no mesmo balão). Só em turno de usuário; server-authored avança normal abaixo.
 	if (isUserTurn && shouldAskMotive(meta)) return false;
-	// FIX-275 — depois que o beat do motivo já rodou (motivationAsked), a resposta do
-	// usuário (o "por que agora") quase sempre é uma QUEIXA — "cansei do carro velho,
-	// vive na oficina" — que o analyzer classifica como expressing_doubt/off_topic.
-	// Mas é a RESPOSTA ESPERADA, não um desvio: o `identify` tem que disparar no mesmo
-	// turno (espelho do motivo + card de CPF; o card NÃO é uma 2ª pergunta). Sem isto,
-	// o funil trava 1 turno até o usuário mandar "vamos" (provado no log: [gate-skip]
-	// gate=identify intent=expressing_doubt). Só uma pergunta EXPLÍCITA deixa o agente
-	// responder antes; o watchdog (FIX-207) re-cobra o identify se ele sumir.
-	if (isUserTurn && gate === "identify" && meta.motivationAsked && !meta.identityCollected) {
-		return intent !== "asking_question";
-	}
+	// FIX-296 — depois que o motivo chega, o funil segura MAIS UM turno pro beat de
+	// espelho+objetivo (shouldMirrorMotivation) — NENHUM gate estruturado compete com
+	// ele (mesma resposta costuma ser uma QUEIXA — "cansei do carro velho, vive na
+	// oficina" — que o analyzer classifica como expressing_doubt/off_topic; isso NÃO
+	// é um desvio, é a resposta esperada, mas aqui ela ganha só o espelho, sem card —
+	// reversão consciente do antigo FIX-275, que forçava o card de identidade no MESMO
+	// turno). O gate real (credit, pós FIX-296) dispara no turno SEGUINTE, quando
+	// shouldMirrorMotivation já for false.
+	if (isUserTurn && shouldMirrorMotivation(meta)) return false;
 	// Server-authored turns (button click, transition) are always followed by the
 	// next gate — that's the whole point of the directive flow. Por isso qualquer
 	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o
@@ -293,6 +319,14 @@ export function decideShowGate(args: {
 	// Server-authored já retornou true acima; em turno do usuário, mesmo
 	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
 	if (gate === "simulator-offer") {
+		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// "reco-consent" — FIX-297: "Posso te mostrar a opção que eu recomendo?"
+	// Mesmo critério de decision/simulator-offer: afirmativo avança (libera o
+	// hero), pergunta/dúvida deixa o agente conversar (o hero fica pendente,
+	// nunca é forçado sem consentimento).
+	if (gate === "reco-consent") {
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 

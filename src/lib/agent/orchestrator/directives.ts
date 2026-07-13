@@ -350,6 +350,20 @@ REGRA DURA — present_recommendation_card e present_comparison_table são INSEP
 O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, não comentar atributos específicos de cada grupo.`;
 }
 
+// ---- Reco-consent (FIX-297, rodada 10) — hero liberado após consentimento ----
+
+/**
+ * FIX-297 (rodada 10, 2026-07-12) — o usuário respondeu SIM ao gate
+ * `reco-consent` ("Posso te mostrar a opção que eu recomendo?"). O hero
+ * (`recommendation_card`) já foi computado no turno da busca original e é
+ * emitido SERVER-SIDE logo em seguida (`emitServerCard`, nunca depende de o
+ * LLM chamar tool) — o directive só escreve a frase de introdução, mesmo
+ * padrão de `buildScarcityDirective`/`buildEmbeddedBidDirective`.
+ */
+export function buildRecoConsentAcceptedDirective(): string {
+	return `Escreva APENAS UMA frase curta introduzindo a recomendação NO SEU TOM (ex.: "Essa é a que eu indicaria pra alguém da minha família — a parcela mais leve entre as opções:"). NÃO descreva números (parcela/valor/lance) em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os dados REAIS. NÃO chame present_recommendation_card nem NENHUMA outra tool neste turno.`;
+}
+
 // ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
 
 export function buildSimulatorDialDirective(args: {

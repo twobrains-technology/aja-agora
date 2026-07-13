@@ -52,6 +52,10 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"premature-decision",
 			"reveal-loop",
 			"single-option",
+			// FIX-297: hero (recommendation_card/simulation_result) pendente até o
+			// gate reco-consent resolver — checado logo após single-option (que já
+			// resolve o caso de 1 grupo só, sem ceremônia de consentimento).
+			"hero-awaits-reco-consent",
 			// FIX-53: value_picker fora de ordem (dados antes do valor + anti-repetição).
 			"value-picker-order",
 			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
@@ -205,6 +209,9 @@ describe("FIX-239 — regra premature-decision (decision_prompt antes da qualifi
 	const POST_REVEAL_QUALIFIED: ConversationMetadata = {
 		...POST_REVEAL_PRE_QUALIFY,
 		experiencePrev: "returning",
+		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+		// experience/timeframe/lance até chegar em "decision".
+		recoConsentDispatched: true,
 		qualifyAnswers: {
 			creditMax: 100_000,
 			prazoMeses: 12,
@@ -344,6 +351,9 @@ describe("FIX-20 — regra reveal-loop (re-emissão pós-reveal + dups)", () => 
 			desireAsked: true,
 			qualifyConsented: true,
 			experiencePrev: "returning",
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 12,
@@ -378,25 +388,78 @@ describe("FIX-20 — regra single-option (FIX-7: descoberta de opção única)",
 		}
 	});
 
-	it("PERMITE: recommendation_card com 2+ opções", () => {
+	it("PERMITE: recommendation_card com 2+ opções (pós reco-consent já resolvido — FIX-297 isolado no describe dedicado)", () => {
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
-					meta: { searchDispatched: true },
+					meta: { searchDispatched: true, revealCompleted: true },
 					artifactType: "recommendation_card",
 					discoveryCount: 3,
+					isUserTurn: false,
 				}),
 			),
 		).toEqual({ allow: true });
 	});
 
-	it("PERMITE: sem descoberta neste turno (discoveryCount=null) nada é suprimido", () => {
+	it("PERMITE: sem descoberta neste turno (discoveryCount=null), pós reco-consent já resolvido", () => {
+		expect(
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { searchDispatched: true, revealCompleted: true },
+					artifactType: "recommendation_card",
+					discoveryCount: null,
+					isUserTurn: false,
+				}),
+			),
+		).toEqual({ allow: true });
+	});
+});
+
+describe("FIX-297 — regra hero-awaits-reco-consent (reveal em dois tempos com consentimento)", () => {
+	it("SUPRIME recommendation_card no reveal ORIGINAL (revealCompleted ainda false), independente de discoveryCount", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true },
+				artifactType: "recommendation_card",
+				discoveryCount: 3,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("SUPRIME simulation_result quando 2+ grupos (aprofunda o hero, que ainda não foi consentido)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true },
+				artifactType: "simulation_result",
+				discoveryCount: 2,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("PERMITE simulation_result com 1 grupo só (é o card único do reveal, sem ceremônia de consentimento)", () => {
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
 					meta: { searchDispatched: true },
+					artifactType: "simulation_result",
+					discoveryCount: 1,
+				}),
+			),
+		).toEqual({ allow: true });
+	});
+
+	it("PERMITE recommendation_card depois que revealCompleted já é true (emissão determinística pós-consentimento não passa pelo tool-call loop, mas o guard não deve interferir num turno hipotético subsequente)", () => {
+		expect(
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { searchDispatched: true, revealCompleted: true },
 					artifactType: "recommendation_card",
-					discoveryCount: null,
+					discoveryCount: 3,
+					isUserTurn: false,
 				}),
 			),
 		).toEqual({ allow: true });

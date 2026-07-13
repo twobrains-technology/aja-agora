@@ -11,64 +11,81 @@ import { decideShowGate, nextGate } from "./qualify-state";
 //   analyzer intent=expressing_doubt | "cansei do meu carro velho, vive na oficina"
 //   [gate-skip] gate=identify intent=expressing_doubt — staying conversational
 //
-// Root cause: o motivo do cliente é quase sempre uma QUEIXA ("cansei do carro
-// velho", "o aluguel tá caro") → o analyzer classifica como `expressing_doubt`
-// (ou off_topic) → o decideShowGate suprime o gate `identify`. Mas o motivo NÃO é
-// um desvio: é a RESPOSTA ESPERADA ao beat. O funil tem que avançar pro identify
-// no mesmo turno (espelho do motivo + card de CPF; card ≠ 2ª pergunta).
+// Root cause original: o motivo do cliente é quase sempre uma QUEIXA ("cansei
+// do carro velho", "o aluguel tá caro") → o analyzer classifica como
+// `expressing_doubt` (ou off_topic) → o decideShowGate suprimia o gate real.
 //
-// Fix: uma vez que o beat do motivo já rodou (`motivationAsked`), o `identify`
-// dispara em qualquer intent — SÓ uma pergunta EXPLÍCITA (`asking_question`)
-// deixa o agente responder antes (o watchdog re-cobra depois). Invariante em
-// código (Lei 4), não regra-no-prompt.
+// FIX-296 (rodada 10, 2026-07-12) SUBSTITUI a solução original (que forçava o
+// card de identidade no MESMO turno do motivo) por um beat de ESPELHO+OBJETIVO
+// dedicado (`shouldMirrorMotivation`): a resposta ao motivo NUNCA mais dispara
+// um card no mesmo turno — ela ganha só o espelho (sem competir com nenhum
+// gate, seja identify OU credit). O gate REAL (credit, pós-FIX-296) dispara no
+// turno SEGUINTE, quando `motivationMirrored` já estiver true. Este arquivo
+// prova que o não-travamento se mantém com o novo mecanismo.
 // ============================================================================
 
-const posBeat = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
+const posMotivo = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
 	desireAsked: true,
 	desireAnswered: true, // FIX-285: proxy determinístico (não mais o desiredItem)
 	motivationAsked: true, // o beat já perguntou o motivo no turno anterior
 	currentPersona: "rafael-auto",
 	currentCategory: "auto",
-	qualifyAnswers: { desiredItem: "kia sportage" },
+	qualifyAnswers: { desiredItem: "kia sportage", motivation: "carro velho, vive na oficina" },
 	...over,
 });
 
-describe("FIX-275 — após o beat do motivo, o identify NÃO trava por 'dúvida'", () => {
-	it("o gate estrutural é identify (pós-desire, sem consent)", () => {
-		expect(nextGate(posBeat(), { hasContactName: true })).toBe("identify");
+describe("FIX-275/FIX-296 — resposta ao motivo NUNCA trava o funil, mesmo classificada como 'dúvida'", () => {
+	it("o gate estrutural pós-motivo é credit (reversão FIX-53, sem consent)", () => {
+		expect(nextGate(posMotivo(), { hasContactName: true })).toBe("credit");
 	});
 
-	it("identify DISPARA com intent=expressing_doubt (o motivo parece queixa, mas é a resposta)", () => {
-		expect(
-			decideShowGate({ gate: "identify", intent: "expressing_doubt", meta: posBeat(), isUserTurn: true }),
-		).toBe(true);
-	});
-
-	it("identify dispara também em off_topic / neutral / providing_info", () => {
-		for (const intent of ["off_topic", "neutral", "providing_info"] as const) {
+	it("ANTES do beat de espelho rodar (motivationMirrored ausente), o funil SEGURA o credit — mesmo em intent de queixa (não é trava, é o beat pendente)", () => {
+		const meta = posMotivo();
+		for (const intent of ["expressing_doubt", "off_topic", "neutral", "providing_info"] as const) {
 			expect(
-				decideShowGate({ gate: "identify", intent, meta: posBeat(), isUserTurn: true }),
-			).toBe(true);
+				decideShowGate({ gate: "credit", intent, meta, isUserTurn: true }),
+				`intent=${intent}`,
+			).toBe(false);
 		}
 	});
 
-	it("SÓ uma pergunta explícita (asking_question) deixa o agente responder antes do card", () => {
+	it("DEPOIS do beat de espelho (motivationMirrored=true), credit dispara normalmente (gate de coleta, FIX-208): neutral/providing_info avançam, dúvida/pergunta/off-topic deixam o agente conversar", () => {
+		const meta = posMotivo({ motivationMirrored: true });
+		for (const intent of ["neutral", "providing_info"] as const) {
+			expect(
+				decideShowGate({ gate: "credit", intent, meta, isUserTurn: true }),
+				`intent=${intent}`,
+			).toBe(true);
+		}
+		for (const intent of ["expressing_doubt", "off_topic", "asking_question"] as const) {
+			expect(
+				decideShowGate({ gate: "credit", intent, meta, isUserTurn: true }),
+				`intent=${intent}`,
+			).toBe(false);
+		}
+	});
+
+	it("SÓ uma pergunta explícita (asking_question) deixa o agente responder antes do card, mesmo pós-beat", () => {
+		const meta = posMotivo({ motivationMirrored: true });
 		expect(
-			decideShowGate({ gate: "identify", intent: "asking_question", meta: posBeat(), isUserTurn: true }),
+			decideShowGate({ gate: "credit", intent: "asking_question", meta, isUserTurn: true }),
 		).toBe(false);
 	});
 
-	it("ANTES do beat (motivationAsked ausente), o funil ainda SEGURA pro motivo (não pula o beat)", () => {
-		const preBeat = posBeat({ motivationAsked: undefined });
-		// shouldAskMotive segura: o motivo ainda não foi perguntado.
+	it("ANTES do motivo ter sido perguntado (motivationAsked ausente), o funil ainda SEGURA pro beat de pergunta (shouldAskMotive)", () => {
+		const preBeat = posMotivo({ motivationAsked: false, qualifyAnswers: { desiredItem: "x" } });
 		expect(
-			decideShowGate({ gate: "identify", intent: "providing_info", meta: preBeat, isUserTurn: true }),
+			decideShowGate({ gate: "credit", intent: "providing_info", meta: preBeat, isUserTurn: true }),
 		).toBe(false);
 	});
 
-	it("não afeta gates posteriores: com identidade já coletada, o forçar não vale", () => {
-		const comId = posBeat({ identityCollected: true, qualifyAnswers: { desiredItem: "x", creditMax: 80_000 } });
-		// gate agora é search (não identify); o guard do FIX-275 não interfere.
-		expect(nextGate(comId, { hasContactName: true })).toBe("search");
+	it("não afeta gates posteriores: com valor+identidade já coletados, o guard do FIX-296 não interfere", () => {
+		const comTudo = posMotivo({
+			motivationMirrored: true,
+			identityCollected: true,
+			qualifyAnswers: { desiredItem: "x", creditMax: 80_000 },
+		});
+		// gate agora é search (não credit/identify); o guard não interfere.
+		expect(nextGate(comTudo, { hasContactName: true })).toBe("search");
 	});
 });

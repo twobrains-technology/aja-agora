@@ -131,8 +131,9 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// Bevi exige CPF+celular pra simular (D1) e lança IdentityNotCollectedError
 			// se buscar sem eles — o agente free-rodava search_groups antes do gate
 			// identify e cuspia "dificuldade técnica". Com a tool fora do request, o
-			// modelo nem consegue chamá-la cedo; o funil coleta a identidade primeiro
-			// (nextGate: identify precede credit) e só então libera a busca.
+			// modelo nem consegue chamá-la cedo; o funil coleta a identidade (agora
+			// depois do credit — FIX-296, reversão do FIX-53) e só então libera a
+			// busca — o pré-requisito real é `identityCollected`, não a ordem.
 			return [
 				...BASE,
 				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),

@@ -27,9 +27,9 @@ function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMeta
 		desireAsked: true,
 		currentPersona: "helena-imovel",
 		currentCategory: "imovel",
-		// FIX-274: sem consent, identify é o 1º gate estrutural pós-desire (re-engajável).
+		// FIX-296: sem consent, credit é o 1º gate estrutural pós-desire (re-engajável).
 		pendingGateSince: STALE,
-		pendingGate: "identify",
+		pendingGate: "credit",
 		...over,
 	};
 }
@@ -71,10 +71,10 @@ describeIfDb("FIX-207 gate-reengage worker — re-abre o funil parado no WhatsAp
 		const result = await runReengageCycle({ now: NOW, fire });
 
 		expect(result.reengaged).toBeGreaterThanOrEqual(1);
-		// Disparou o gate re-calculado (identify) no waId da conversa.
+		// Disparou o gate re-calculado (credit) no waId da conversa.
 		const call = fire.mock.calls.find((c) => c[1] === id);
 		expect(call).toBeTruthy();
-		expect(call?.[2]).toBe("identify");
+		expect(call?.[2]).toBe("credit");
 
 		// Marcador limpo (idempotência: não re-dispara).
 		const conv = await db.query.conversations.findFirst({ where: eq(conversations.id, id) });
