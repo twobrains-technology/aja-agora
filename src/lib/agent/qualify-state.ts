@@ -13,6 +13,7 @@ export type Gate =
 	| "lance-embutido"
 	| "identify"
 	| "search"
+	| "reco-consent"
 	| "simulator-offer"
 	| "decision";
 
@@ -128,6 +129,17 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (meta.revealCompleted) {
 		if (!meta.experiencePrev) return "experience";
 		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
+
+		// FIX-297 (rodada 10, 2026-07-12) — reveal em DOIS TEMPOS com
+		// consentimento: a lista (comparison_table) já apareceu no search
+		// (FIX-290 preservado), `experience` acabou de resolver — antes de
+		// avançar, pergunta "Posso te mostrar a opção que eu recomendo?" e só
+		// com resposta afirmativa o hero (recommendation_card) é liberado
+		// (server-forced em orchestrator/index.ts, nunca dependente de tool-call
+		// do LLM). PULA quando o usuário já recusou a conversa de lance
+		// (hasLance="so_parcela", capturado oportunisticamente a qualquer
+		// momento) — não há o que recomendar pra quem só quer a parcela fixa.
+		if (q.hasLance !== "so_parcela" && !meta.recoConsentDispatched) return "reco-consent";
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural
@@ -307,6 +319,14 @@ export function decideShowGate(args: {
 	// Server-authored já retornou true acima; em turno do usuário, mesmo
 	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
 	if (gate === "simulator-offer") {
+		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// "reco-consent" — FIX-297: "Posso te mostrar a opção que eu recomendo?"
+	// Mesmo critério de decision/simulator-offer: afirmativo avança (libera o
+	// hero), pergunta/dúvida deixa o agente conversar (o hero fica pendente,
+	// nunca é forçado sem consentimento).
+	if (gate === "reco-consent") {
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 

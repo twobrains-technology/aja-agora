@@ -28,6 +28,7 @@ import {
 	buildFirstRevealCardIntro,
 	buildFirstRevealRecoveryFallback,
 	buildLanceSoParcelaDirective,
+	buildRecoConsentAcceptedDirective,
 	buildScarcityDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
@@ -245,6 +246,51 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				skipAnalyzer: true,
 				skipLeadCollection: true,
 			});
+			return;
+		}
+
+		// FIX-297 (rodada 10, 2026-07-12): resposta AFIRMATIVA por TEXTO ao gate
+		// `reco-consent` libera o hero pendente (recommendation_card +
+		// simulation_result, se houver) — computado no turno da busca original e
+		// guardado em meta (Lei 1: nunca recalculado, nunca dependente de nova
+		// tool-call do LLM). Mesmo mecanismo do simulator-offer/lance-embutido
+		// (detectYesNoText) acima. Sem hero pendente (ex.: 1 grupo só, que nunca
+		// entra na ceremônia de consentimento), só avança normalmente.
+		if (
+			meta.recoConsentDispatched === true &&
+			meta.recoConsentAnswered !== true &&
+			detectYesNoText(userText, analyzedIntent) === true
+		) {
+			meta.recoConsentAnswered = true;
+			await persistMeta(conversationId, meta);
+			await saveMessage(conversationId, "user", userText, channel);
+			if (meta.pendingRecommendationCard) {
+				yield* runTurn({
+					channel,
+					conversationId,
+					userText: buildRecoConsentAcceptedDirective(),
+					isUserTurn: false,
+					contactName: knownName,
+					skipAnalyzer: true,
+					skipLeadCollection: true,
+				});
+				yield* emitServerCard({
+					conversationId,
+					channel,
+					persona: currentPersona,
+					artifactType: "recommendation_card",
+					payload: meta.pendingRecommendationCard,
+				});
+				if (meta.pendingSimulationResult) {
+					yield* emitServerCard({
+						conversationId,
+						channel,
+						persona: currentPersona,
+						artifactType: "simulation_result",
+						payload: meta.pendingSimulationResult,
+					});
+				}
+			}
 			return;
 		}
 
@@ -841,6 +887,17 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.simulatorOfferDispatched) {
 				await persistMeta(conversationId, { ...refreshed, simulatorOfferDispatched: true });
+			}
+		}
+		// FIX-297: "Posso te mostrar a opção que eu recomendo?" acontece UMA vez
+		// (padrão simulator-offer). Marcado na emissão. Um afirmativo digitado no
+		// turno seguinte é interceptado MAIS ACIMA (antes deste bloco rodar) e
+		// libera o hero pendente — só chega aqui negativo/ambíguo, que avança
+		// pro timeframe (comportamento correto, intacto).
+		if (result.nextGateToFire === "reco-consent") {
+			const refreshed = await reloadMeta(conversationId);
+			if (!refreshed.recoConsentDispatched) {
+				await persistMeta(conversationId, { ...refreshed, recoConsentDispatched: true });
 			}
 		}
 		// FIX-253 (rodada 4, veredito Fable FINAL §2/§3, "pro teto" #2): o

@@ -188,6 +188,29 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId }) =>
 			`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
 	},
+	// FIX-297 (rodada 10, 2026-07-12): reveal em DOIS TEMPOS com consentimento.
+	// No turno da busca ORIGINAL (revealCompleted ainda false), o hero
+	// (recommendation_card) e o `simulation_result` que o aprofunda ficam
+	// PENDENTES até o usuário consentir no gate `reco-consent` (pós-
+	// experience) — só a `comparison_table` (lista) sai imediata (FIX-290
+	// preservado, tipo diferente, não cai aqui). `single-option` acima já
+	// resolve o caso de 1 grupo só (sem hero, sem ceremônia de consentimento);
+	// `simulation_result` só é pendurado quando há 2+ grupos (senão ELE é o
+	// card único do reveal, precisa sair na hora). O runner.ts captura o
+	// payload coagido e persiste em `meta.pendingRecommendationCard`/
+	// `pendingSimulationResult` pra emissão determinística posterior
+	// (`emitServerCard`, nunca recalculado, nunca dependente de nova tool-call).
+	{
+		name: "hero-awaits-reco-consent",
+		applies: ({ artifactType, meta, discoveryCount }) => {
+			if (meta.revealCompleted === true) return false;
+			if (artifactType === "recommendation_card") return true;
+			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;
+			return false;
+		},
+		logLine: ({ artifactType, conversationId }) =>
+			`[hero-awaits-reco-consent] guard: suprimindo ${artifactType} no reveal original — pendente até o gate reco-consent resolver (conv=${conversationId})`,
+	},
 	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19) — HISTÓRICO, ordem
 	// REVERTIDA pelo FIX-296 (rodada 10, 2026-07-12: "valor antes dos dados").
 	// O credit gate (value picker server-emitido) já respeita a ordem nova via

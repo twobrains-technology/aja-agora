@@ -47,6 +47,9 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 			case "experience":
 				meta = { ...meta, experiencePrev: "first" };
 				break;
+			case "reco-consent":
+				meta = { ...meta, recoConsentDispatched: true };
+				break;
 			case "timeframe":
 				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 6 } };
 				break;
@@ -81,6 +84,7 @@ describe("funil — sequência canônica completa (FIX-296 reordena pré-reveal 
 			"identify",
 			"search",
 			"experience",
+			"reco-consent",
 			"timeframe",
 			"lance",
 			"lance-embutido",
@@ -98,6 +102,7 @@ describe("funil — sequência canônica completa (FIX-296 reordena pré-reveal 
 			"identify",
 			"search",
 			"experience",
+			"reco-consent",
 			"timeframe",
 			"lance",
 			"lance-value",
@@ -112,7 +117,7 @@ describe("funil — sequência canônica completa (FIX-296 reordena pré-reveal 
 		expect(walkFunnel({ hasLance: "yes" })).not.toContain("consent");
 	});
 
-	it("INVARIANTE FIX-296/FIX-215/FIX-233: credit < identify < search < experience < timeframe < lance", () => {
+	it("INVARIANTE FIX-296/FIX-297/FIX-215/FIX-233: credit < identify < search < experience < reco-consent < timeframe < lance", () => {
 		const seq = walkFunnel({ hasLance: "no" });
 		const idx = (g: Gate) => seq.indexOf(g);
 		// FIX-296 (reversão consciente do FIX-53): valor antes da identidade
@@ -121,8 +126,9 @@ describe("funil — sequência canônica completa (FIX-296 reordena pré-reveal 
 		expect(idx("identify")).toBeLessThan(idx("search"));
 		// FIX-233 (D2): experience roda DEPOIS do reveal, não antes
 		expect(idx("search")).toBeLessThan(idx("experience"));
-		// FIX-233 (D1): timeframe reintroduzido, pós-experience e antes do lance
-		expect(idx("experience")).toBeLessThan(idx("timeframe"));
+		// FIX-297: reco-consent entra entre experience e timeframe
+		expect(idx("experience")).toBeLessThan(idx("reco-consent"));
+		expect(idx("reco-consent")).toBeLessThan(idx("timeframe"));
 		expect(idx("timeframe")).toBeLessThan(idx("lance"));
 	});
 });

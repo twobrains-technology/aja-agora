@@ -165,6 +165,29 @@ export type ConversationMetadata = {
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
 	decisionDispatched?: boolean;
+	/** FIX-297 (rodada 10, 2026-07-12) — gate `reco-consent` ("Posso te mostrar
+	 * a opção que eu recomendo?") já foi disparado nesta conversa. Mesmo padrão
+	 * de `simulatorOfferDispatched`: marcado na EMISSÃO, não na resposta —
+	 * torna o gate não-bloqueante (nextGate nunca mais o re-emite depois de
+	 * dispatched, respondido ou não). */
+	recoConsentDispatched?: boolean;
+	/** FIX-297 — resposta AFIRMATIVA por TEXTO LIVRE ao gate reco-consent já foi
+	 * processada (emitiu o hero pendente) — idempotência pra não reemitir o
+	 * hero em turnos seguintes com intent afirmativo/neutro. Espelha
+	 * `simulatorOfferAnswered`. */
+	recoConsentAnswered?: boolean;
+	/** FIX-297 — hero (recommendation_card) computado no turno da busca original
+	 * mas SUPRIMIDO até o usuário consentir (`hero-awaits-reco-consent` em
+	 * artifact-guard.ts) — o payload já coagido server-side (Lei 1) fica aqui
+	 * pra emissão determinística posterior via `emitServerCard`, sem depender
+	 * de o LLM re-chamar a tool nem de recalcular com dados diferentes do
+	 * turno original. Limpo (fica, é inofensivo) depois de emitido. */
+	pendingRecommendationCard?: Record<string, unknown>;
+	/** FIX-297 — mesma ideia do `pendingRecommendationCard`, pro
+	 * `simulation_result` que aprofunda a oferta recomendada (só existe quando
+	 * a busca original também produziu simulação — grupo único não passa por
+	 * aqui, ver `discoveryCount` em runner.ts). */
+	pendingSimulationResult?: Record<string, unknown>;
 	/** Administradora do plano recomendado no reveal — usada como contexto do
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */

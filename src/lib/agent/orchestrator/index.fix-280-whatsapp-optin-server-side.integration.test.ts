@@ -163,7 +163,7 @@ describeIfDb(
 			if (convId) await cleanup(convId);
 		});
 
-		it("conversa A: emite recommendation_card + whatsapp_optin, nessa ordem, sem tool-call do LLM", async () => {
+		it("conversa A: emite whatsapp_optin sem tool-call do LLM (FIX-297: recommendation_card fica pendente até reco-consent, nunca sai neste turno)", async () => {
 			callState.variant = "a";
 			const [c] = await db
 				.insert(conversations)
@@ -174,17 +174,20 @@ describeIfDb(
 			const events = await drain(convId, "Bora, quero ver as opções");
 
 			const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
-			expect(artifactTypes).toContain("recommendation_card");
+			// FIX-297 (rodada 10): o hero fica pendente no reveal original — só sai
+			// depois que o usuário consentir no gate reco-consent (pós-experience).
+			expect(artifactTypes).not.toContain("recommendation_card");
 			expect(artifactTypes).toContain("whatsapp_optin");
-			expect(artifactTypes.indexOf("whatsapp_optin")).toBeGreaterThan(
-				artifactTypes.indexOf("recommendation_card"),
-			);
 
 			const [convRow] = await db
 				.select()
 				.from(conversations)
 				.where(eq(conversations.id, convId));
-			expect((convRow.metadata as ConversationMetadata).whatsappOptinShown).toBe(true);
+			const persistedMeta = convRow.metadata as ConversationMetadata;
+			expect(persistedMeta.whatsappOptinShown).toBe(true);
+			// O payload coagido do hero sobrevive no meta pra emissão determinística
+			// posterior (reco-consent), nunca perdido/descartado.
+			expect(persistedMeta.pendingRecommendationCard).toBeDefined();
 		});
 
 		it("conversa B: MESMO meta, texto do LLM totalmente diferente → MESMO resultado (determinismo, não LLM-discricionário)", async () => {
@@ -198,7 +201,7 @@ describeIfDb(
 			const events = await drain(convId, "Show, pode seguir com a busca");
 
 			const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
-			expect(artifactTypes).toContain("recommendation_card");
+			expect(artifactTypes).not.toContain("recommendation_card");
 			expect(artifactTypes).toContain("whatsapp_optin");
 
 			const rows = await db

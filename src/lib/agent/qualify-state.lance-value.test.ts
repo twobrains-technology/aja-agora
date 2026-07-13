@@ -18,6 +18,9 @@ function base(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		identityCollected: true,
 		searchDispatched: true,
 		revealCompleted: true,
+		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+		// timeframe/lance (senão insere "reco-consent" antes).
+		recoConsentDispatched: true,
 		qualifyAnswers: { creditMax: 100_000, prazoMeses: 12 },
 		...over,
 	};

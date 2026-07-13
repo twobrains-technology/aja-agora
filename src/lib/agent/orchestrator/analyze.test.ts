@@ -586,6 +586,9 @@ describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", (
 			experiencePrev: "first",
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+			// o timeframe (senão insere "reco-consent" antes).
+			recoConsentDispatched: true,
 			qualifyAnswers: { creditMax: 120_000 },
 		};
 	}
@@ -700,6 +703,9 @@ describe("FIX-279 — creditMax só captura quando o gate `credit` está ativo",
 			currentCategory: "auto",
 			identityCollected: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+			// o timeframe (senão insere "reco-consent" antes).
+			recoConsentDispatched: true,
 			experiencePrev: "returning",
 			searchDispatched: true,
 			qualifyAnswers: { creditMax: 80_000 },

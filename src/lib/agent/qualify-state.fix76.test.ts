@@ -23,6 +23,9 @@ const REVEAL_TROCA_DE_FAIXA: ConversationMetadata = {
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: true,
+	// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+	// timeframe/lance/simulator-offer (senão insere "reco-consent" antes).
+	recoConsentDispatched: true,
 	qualifyAnswers: {
 		creditMax: 130_000,
 		prazoMeses: 60,

@@ -46,6 +46,9 @@ function walkFunnelComPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 			case "experience":
 				meta = { ...meta, experiencePrev: "first" };
 				break;
+			case "reco-consent":
+				meta = { ...meta, recoConsentDispatched: true };
+				break;
 			case "timeframe":
 				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 6 } };
 				break;
@@ -81,6 +84,7 @@ describe("FIX-103 revertido pelo FIX-233 ‚Äî gate de prazo (timeframe) VOLTA, p√
 			"identify",
 			"search",
 			"experience",
+			"reco-consent",
 			"timeframe",
 			"lance",
 			"lance-embutido",
@@ -99,6 +103,7 @@ describe("FIX-103 revertido pelo FIX-233 ‚Äî gate de prazo (timeframe) VOLTA, p√
 			"identify",
 			"search",
 			"experience",
+			"reco-consent",
 			"timeframe",
 			"lance",
 			"lance-value",
@@ -128,6 +133,9 @@ describe("FIX-103 revertido pelo FIX-233 ‚Äî gate de prazo (timeframe) VOLTA, p√
 			qualifyConsented: true,
 			identityCollected: true,
 			experiencePrev: "first",
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// at√© o timeframe (sen√£o insere "reco-consent" antes).
+			recoConsentDispatched: true,
 			qualifyAnswers: { creditMax: 80_000 },
 			searchDispatched: true,
 			revealCompleted: true,

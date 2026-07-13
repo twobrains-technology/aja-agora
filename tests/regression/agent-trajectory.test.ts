@@ -3056,6 +3056,9 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
 			// docx passo 4: oferta do simulador já feita (gate simulator-offer).
 			simulatorOfferDispatched: true,
 			...over,
@@ -3204,6 +3207,9 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
 			simulatorOfferDispatched: true,
 			// Snapshot da descoberta de 256k (gravado pelo runner no reveal).
 			discoveredCreditTarget: 256_000,
@@ -3931,6 +3937,9 @@ describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", ()
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// timeframe/lance até chegar em "simulator-offer".
+			recoConsentDispatched: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 0,
@@ -4383,6 +4392,9 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 			// PÓS-reveal — sem isso o funil pularia direto pra "search".
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// timeframe/lance até chegar em "lance-embutido".
+			recoConsentDispatched: true,
 			qualifyAnswers: {
 				creditMax: 20_000,
 				monthlyBudget: 500,
@@ -4667,13 +4679,16 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
-			// FIX-53: `identify` precede `credit`. FIX-215 (Ata 2026-07-04): a
+			// FIX-296: `credit` precede `identify`. FIX-215 (Ata 2026-07-04): a
 			// conversa de lance só entra em jogo PÓS-reveal — com a identidade e o
 			// reveal já feitos, o funil chega ao gate educativo de lance embutido,
 			// que é o foco deste teste (plano parcial, falta só decidir o lance embutido).
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
+			// timeframe/lance até chegar em "lance-embutido".
+			recoConsentDispatched: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -5358,13 +5373,15 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 	it("runner: snapshot do reveal usa simulation_result ANTES de recommendation_card", async () => {
 		const { readFileSync } = await import("node:fs");
 		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
-		// O bloco do persist do reveal declara um snapshotAnchor com
-		// simulation_result em primeiro lugar (artifact rico em lance fields).
-		const m =
-			/const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
+		// FIX-297: a âncora agora prioriza o payload (recommendation_card/
+		// simulation_result podem estar SUPRIMIDOS do array `artifacts` — pendentes
+		// até reco-consent — então a extração cai pro payload já coagido em vez do
+		// artifact em si), mas a PRIORIDADE simulation_result > recommendation_card
+		// continua intacta (artifact rico em lance fields vence).
+		const m = /const snapshotAnchorPayload = simulationPayload \?\? recommendationPayload/m;
 		expect(src).toMatch(m);
 		// e o offerSnapshot é extraído DELE, não do anchor de administradora
-		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchor\?\.payload\)/);
+		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchorPayload\)/);
 	});
 
 	it("offerSnapshotFromArtifact: payload de recommendation_card (sem lance) produz snapshot SEM lance fields — nunca inventa", async () => {
@@ -6603,7 +6620,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		if (!verdict.allow) expect(verdict.rule).toBe("single-option");
 	});
 
-	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
+	it("2+ grupos via search_groups NÃO suprime pelo single-option (FIX-297: fica pendente por hero-awaits-reco-consent, não por opção única)", async () => {
 		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
@@ -6616,7 +6633,23 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 			discoveryCount,
 			conversationId: "conv-rev-a-multi-option",
 		});
-		expect(verdict.allow).toBe(true);
+		// FIX-297 (rodada 10): o reveal em dois tempos com consentimento suprime
+		// TODO recommendation_card no reveal ORIGINAL (revealCompleted ainda
+		// false) — nunca mais por single-option (que é só o caso de 1 grupo).
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+
+		// Pós reco-consent já resolvido (revealCompleted=true), o mesmo cenário
+		// de 2+ grupos PASSA normalmente — não é mais opção única, nem pendente.
+		const verdictPostConsent = evaluateArtifactGuards({
+			meta: { currentCategory: "auto", revealCompleted: true } as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-multi-option",
+		});
+		expect(verdictPostConsent.allow).toBe(true);
 	});
 });
 
@@ -7897,7 +7930,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 		}
 	});
 
-	it("fluxo normal não regride: sem falha de descoberta, a proposta passa", () => {
+	it("fluxo normal não regride: sem falha de descoberta, a proposta passa (FIX-297: pendente por reco-consent no reveal ORIGINAL, não mais bloqueada por discovery-failed)", () => {
 		expect(
 			evaluateActionPrecondition("present_recommendation_card", {
 				shown: emptyShownGroups(),
@@ -7915,7 +7948,25 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			conversationId: "conv-187",
 			turnArtifactTypes: [],
 		});
-		expect(guard.allow).toBe(true);
+		// FIX-297 (rodada 10): no reveal ORIGINAL o hero fica pendente até
+		// reco-consent — a regra que aplica aqui é "hero-awaits-reco-consent",
+		// não mais "discovery-failed" (o ponto deste teste, que continua provado
+		// acima pelo evaluateActionPrecondition).
+		expect(guard.allow).toBe(false);
+		if (!guard.allow) expect(guard.rule).toBe("hero-awaits-reco-consent");
+
+		// Pós reco-consent já resolvido, o mesmo cenário passa normalmente.
+		const guardPostConsent = evaluateArtifactGuards({
+			meta: { revealCompleted: true },
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount: 3,
+			discoveryFailedThisTurn: false,
+			conversationId: "conv-187",
+			turnArtifactTypes: [],
+		});
+		expect(guardPostConsent.allow).toBe(true);
 	});
 
 	it("structural: as 3 tools de proposta constam em ACTION_PRECONDITIONS e o guard tem a regra", () => {
@@ -8422,6 +8473,9 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+			// o timeframe (senão insere "reco-consent" antes).
+			recoConsentDispatched: true,
 			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,

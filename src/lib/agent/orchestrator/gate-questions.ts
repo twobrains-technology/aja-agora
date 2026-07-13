@@ -152,6 +152,11 @@ export function gateQuestion(
 				"Se quiser, temos o nosso simulador pra ver como ficariam as suas parcelas, " +
 				"caso você seja contemplado em 3, 6 ou 12 meses — que tal?"
 			);
+		case "reco-consent":
+			// FIX-297: gate leve entre a lista (comparison_table) e o hero
+			// (recommendation_card) — só com resposta afirmativa aqui o hero é
+			// liberado (server-forced em orchestrator/index.ts).
+			return "Posso te mostrar a opção que eu recomendo?";
 		case "doubts-wait":
 		case "search":
 		case "decision":

@@ -145,6 +145,11 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "no", label: "Agora não" },
 				],
 			};
+		case "reco-consent":
+			// FIX-297: gate leve, sem card — só a pergunta em texto (gateQuestion),
+			// resolvido por texto livre (sim/não), mesmo mecanismo de simulator-
+			// offer/lance-embutido em orchestrator/index.ts (detectYesNoText).
+			// "mecanismo mais simples que funciona" (decisão do bloco).
 		case "doubts-wait":
 		case "search":
 		case "decision":

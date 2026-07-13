@@ -33,6 +33,9 @@ function baseMeta(): ConversationMetadata {
 		// sub-fluxo de lance embutido; o gate identify tem suite própria
 		// (qualify-state.identify-gate.test.ts).
 		identityCollected: true,
+		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
+		// timeframe/lance (senão insere "reco-consent" antes).
+		recoConsentDispatched: true,
 	};
 }
 
