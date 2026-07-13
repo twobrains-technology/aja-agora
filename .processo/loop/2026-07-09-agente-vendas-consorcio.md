@@ -766,3 +766,64 @@ segue em revisão pela campanha).
 
 **Próximo passo:** Rodada A.3 de verificação (coletor Haiku direto + juiz Sonnet/Fable) contra a
 base já com os 7 fixes, antes de declarar Etapa A fechada.
+
+---
+
+## Rodada A.3 — verificação pós-onda-4 (2026-07-13, sessão contínua)
+
+Coleta direta (não delegada, lição do coletor-hallucinado) contra `integ/consorcio-r10` com os
+7 fixes da onda 4 integrados, container `aja-app-consorcio-r10` (Haiku 4.5, modelo prod real).
+
+### Achado 1 — FIX-309 tinha a condição ERRADA (corrigido nesta sessão, commit `50450b84`)
+`topic_picker` estava condicionado a `experiencePrev === "doubts"`, mas o roteiro canônico exige
+disparo em `experiencePrev === "first"` (novato) — "doubts" já tem mecanismo próprio
+(`doubts-wait`/`pendingFollowUp`). Corrigido + teste de integração reescrito (positivo agora é
+"first", negativos "doubts"/"returning"). Confirmado ao vivo: `topic_picker` aparece corretamente
+no turno certo (pós-experience="first").
+
+### Achado 2 — FIX-313, NOVO (corrigido nesta sessão, commit `bdb7bfff`)
+Clique num chip do `topic_picker` (`{kind:"interest", administradora:"topic-picker", label:"..."}`,
+componente real `topic-picker.tsx`) caía no handler GENÉRICO de "Tenho interesse" (route.ts) —
+sem checar `administradora`, disparava `decisionDispatched`/`present_contract_form`/
+`whatsapp_optin` NO MEIO de uma pergunta de dúvida, com "Posso te mostrar a opção que eu
+recomendo?" repetida 3-4x colada no mesmo balão. Corrigido com branch dedicado
+(`buildTopicPickerAnswerDirective`/`buildTopicPickerBackDirective`) ANTES do handler genérico.
+TDD: RED confirmado (3/4 casos falhavam sem o fix) → GREEN. 2 testes estruturais pré-existentes
+(regex que isolava o branch "interest" pelo 1º match) precisaram de âncora mais específica.
+
+### Achado 3 — correção EPISTÊMICA: "balões colados" não é bug de UI (driver corrigido, sem código de produto tocado)
+Investigação de "texto colado" (ex.: "...no prazo que você deseja.Posso te mostrar a opção que eu
+recomendo?") levou à leitura de `adapter.ts:296-317` — CONFIRMADO que o servidor emite blocos
+`text-start`/`text-end` SEPARADOS pra resposta livre do LLM e pra pergunta do gate
+(`closeTextIfOpen()` fecha o bloco aberto antes de abrir um novo). O frontend real
+(`chat-message.tsx:135-150`, `groupAdjacentText`) junta blocos ADJACENTES com `"\n\n"` — ou seja,
+a tela do usuário NUNCA mostrou o texto colado; era 100% artefato da concatenação ingênua do
+driver (`chat-client.mjs`, `agentText += obj.delta` cru, ignorando fronteiras de bloco). Corrigido
+o driver pra inserir `"\n\n"` em cada `text-start` novo (espelha o frontend exatamente). Após a
+correção, os dossiês desta rodada mostram texto corretamente formatado. **Nota:** isso NÃO invalida
+FIX-312 (correção gramatical real "esse um Corolla" — é erro de concordância, não de separação).
+
+### Achado 4 — golden path Madalena agora CORRETO ponta-a-ponta
+Após os 3 achados acima: `topic_picker` (turno 10) → explicação do tópico clicado sem fast-path
+leak (turno 11) → hero + timeframe no turno CERTO (turno 12, "Pode mostrar") → scarcity+
+decision_prompt juntos (turno 17) → contract_form/whatsapp_optin só no fecho de verdade (turno
+18). 1 turno contaminado isolado (busca/discovery, fora da região crítica) — resto limpo.
+
+### Achado 5 — roteiro Mario estava DESATUALIZADO (script consertado nesta sessão, não é bug de produto)
+`mario-sem-lance.json` não tinha turno de resposta ao "motivo" (mandatório desde FIX-296) nem ao
+gate `experience` (mandatório pra todo mundo pós-reveal, não só quem vê hero) — causava confusão
+de estado (gate:experience repetindo 3x). Adicionados os 2 turnos faltantes.
+
+### Achado 6 — QUESTÃO DE PRODUTO EM ABERTO (não é bug óbvio, precisa decisão)
+Com o roteiro corrigido, Mario (que eventualmente escolhe `hasLance="so_parcela"` no turno 9)
+AINDA vê "Posso te mostrar a opção que eu recomendo?" (reco-consent) no turno 7, logo após
+`experience`. Causa: `qualify-state.ts:291` só pula reco-consent quando
+`q.hasLance === "so_parcela"` — mas na ORDEM ATUAL da cascata (experience → reco-consent → hero →
+timeframe → **lance**), a pergunta de lance (onde `hasLance` é capturado) só acontece DEPOIS de
+reco-consent/hero. Ou seja: **nenhum usuário consegue de fato pular reco-consent/hero por essa
+via** — o mecanismo de skip está posicionado depois do ponto que ele deveria prevenir. Isso pode
+ser: (a) bug real (a ordem da cascata deveria mover a pergunta de lance pra ANTES de reco-consent,
+ou permitir opportunistic capture de `hasLance` mais cedo), ou (b) o design atual pretende que
+TODO usuário veja reco-consent/hero por padrão, e o "fluxo sem-hero" do mockup original (array F2)
+não se aplica mais à cascata atual — decisão de produto que precisa confirmação do Kairo antes de
+tratar como bug (regra "não crave o que não verificou").
