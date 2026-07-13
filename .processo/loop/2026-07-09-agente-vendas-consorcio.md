@@ -992,3 +992,95 @@ aberto de alta prioridade pra próxima rodada.
 ### Total da sessão: 9 fixes reais (FIX-311 já existia; FIX-313 a FIX-319 nesta sessão)
 Todos commitados/pushados em `integ/consorcio-r10`, validados por 3433 unit + 345 integration
 (LLM mockado) e por evidência AO VIVO via túnel SSM. Escalando pra nova rodada Sonnet/Fable.
+
+## Rodada A.4 — veredito Sonnet pós-FIX-319: 2/10 (achados novos processados)
+
+Juiz Sonnet confirmou os 2 P0 do FIX-319 resolvidos, mas achou 1 P0 NOVO (não catalogado antes) +
+reafirmou pendências conhecidas com evidência mais detalhada. Nota mínima 2/10 (Funcional/UX).
+Processados nesta rodada:
+
+### FIX-320 — `gate:experience` nunca disparava de fato (P0 novo, corrigido, verificado ao vivo)
+Causa-raiz: `nextGate()` calcula "experience" como o PRIMEIRO gate pós-reveal — no MESMO turno em
+que `revealCompleted` vira true. Mas `allowGateWithArtifacts` (o guard anti-atropelo que abre
+exceção pro turno de reveal) só perdoava `simulator-offer` — qualquer turno que reapresentasse um
+REVEAL_ARTIFACT (ex.: "Quero ver todas" reabrindo `comparison_table`) engolia a chance de
+"experience" disparar, e como toda a cascata pós-reveal fica bloqueada atrás dele, o gate NUNCA
+encontrava um turno "limpo" — usuário real nunca via "Você já fez consórcio antes?" em nenhum dos
+2 dossiês. Fix: `experience` ganhou a MESMA exceção do `simulator-offer` (mesma receita do
+BUG-SIMULATOR-OFFER-ENGOLIDO). TDD: `runner.simulator-gate.test.ts` (RED confirmado, GREEN após o
+fix). **Verificado AO VIVO** (recoleta Madalena+Mario): `gate:experience` dispara corretamente no
+turno do reveal, texto "Você já fez consórcio antes?" aparece junto dos cards.
+
+**Achado colateral observado na recoleta** (não corrigido, registrado honestamente): numa das
+recoletas, "experience" apareceu 2x em turnos consecutivos (turno 8 junto do reveal, turno 9 de
+novo após "Quero ver todas" sem resposta) — mesmo padrão de repetição que o gate `credit` já exibe
+(3x seguidas nos turnos 4-6 do mesmo dossiê, sem crítica do juiz) enquanto o usuário não responde
+diretamente. Interpretado como consistente com o design ACEITO de gates bloqueantes (re-perguntam
+até serem respondidos), não uma regressão nova — mas fica registrado pro próximo juiz avaliar com
+seus próprios olhos, não cravado como "não-problema" sem verificação externa.
+
+### FIX-321 — recusa explícita de lance ("so_parcela") descartada quando chega ANTES do gate `lance` ficar ativo (corrigido)
+Causa-raiz: o guard FIX-236 (`analyze.ts`) só aceitava `hasLance` quando `activeGateAtTurnStart
+=== "lance"` literalmente — proteção correta contra falsos-positivos AMBÍGUOS ("não tenho grana
+agora" respondendo `timeframe`), mas também descartava a recusa EXPLÍCITA e inequívoca ("não quero
+comprometer nada além da parcela") quando o usuário a antecipa, respondendo ainda o gate
+`timeframe`. Fix: `so_parcela` (só esse valor, não yes/no/maybe) é aceito em qualquer turno
+PÓS-reveal, não só com `lance` ativo — o texto em si já é inequívoco. TDD:
+`analyze.fix-236...test.ts` (RED confirmado, GREEN após o fix, regressão do FIX-236 original
+intacta — falso-positivo "no" continua bloqueado). **Verificado ao vivo**: DB confirma
+`qualifyAnswers.hasLance: "so_parcela"` persistido corretamente após o texto livre do Mario (antes
+do fix, isso era estruturalmente impossível de capturar nesse ponto da conversa).
+
+### FIX-322 — achado incidental: `recommend_groups` falhava (tool-error) quando o usuário nunca menciona orçamento mensal
+Achado ao vivo (contaminação numa recoleta): `budget: 0` rejeitado pelo schema
+(`z.coerce.number().positive()`), derrubando o turno inteiro pro fallback degradado. Causa-raiz:
+o próprio FIX-276 (`recommendation.ts:10-17`, PRÉ-EXISTENTE) já documenta que "o usuário nunca
+informa orçamento mensal... budget é INVENTADO pelo LLM" e `monthlyFitScore` já trata `budget<=0`
+graciosamente (contribui 0 no score) — mas o SCHEMA da tool ainda exigia `positive()`, forçando o
+modelo a chutar um número ou falhar a chamada inteira. Fix: `budget` vira `min(0).default(0)`,
+mesmo padrão de `desiredTermMonths` (0 = sem dado, não invente). TDD:
+`ai-sdk.fix-322-budget-zero.test.ts` (RED confirmado, GREEN após o fix, regressão FIX-257 intacta).
+
+### FIX-323 — `two_paths` nunca disparava pro Mario via botão "Tenho interesse" (root cause real do item já registrado)
+Investigação revelou que o problema NÃO era (só) a captura de `hasLance` (FIX-321 resolve isso) —
+é que `pipeClosingCeremony` (route.ts, extraída no FIX-311, usada por 3 chamadores: ação
+`interest`, gate `simulator-offer` yes/no) NUNCA verificava `hasLance==="so_parcela"`. Só o clique
+estrutural do PRÓPRIO gate `lance` (ramo `action.gate==="lance"`, valor `"so_parcela"`) tinha a
+exceção — implementada ORIGINALMENTE só em `orchestrator/index.ts` (`nextGateToFire==="decision"`,
+caminho de texto livre). Quem recusa lance por TEXTO LIVRE e fecha clicando "Tenho interesse" (o
+caminho mais comum de fechamento) SEMPRE caía na cerimônia normal (scarcity+decision_prompt), nunca
+via `two_paths`. Fix: `pipeClosingCeremony` ganhou a mesma branch `isSoParcela` internamente —
+todos os 3 chamadores corrigidos de uma vez. TDD:
+`route.fix-323-so-parcela-fast-path.integration.test.ts` (3 testes: interest+so_parcela,
+simulator-offer yes+so_parcela, regressão SEM so_parcela intacta — RED confirmado, GREEN após o
+fix; FIX-311 original: 6/6 continuam passando).
+
+**Verificado AO VIVO** (recoleta `mario-sem-lance-fix323`, 13/13 turnos limpos, 0 contaminados):
+turno 11 ("Tenho interesse") agora emite `['two_paths', 'tool:present_contract_form',
+'contract_form', 'whatsapp_optin']` — o texto `TWO_PATHS_FOLLOWUP_TEXT` ("Não tem certo ou errado —
+depende de você ter pressa ou não. Qual dos dois combina mais com você?") aparece corretamente
+antes do avanço pro form. Antes do fix, a MESMA sequência de turnos sempre produzia
+`scarcity`+`decision_prompt`. Pendência de produto fechada de ponta a ponta.
+
+### Suíte após os 4 fixes desta rodada (FIX-320..323)
+`test:unit`: 373 arquivos / 3442 testes verdes. `test:integration`: 88 arquivos / 348 testes verdes
++ 5 skipped (dependência externa). `typecheck` diferencial: só os 2 erros pré-existentes (não
+tocados por este diff) em `runner.ts:518,1024` — dívida já conhecida, fora de escopo.
+
+### Achado ao vivo adicional (NÃO investigado a fundo, honesto): erro transiente em `confirmOffer` reproduz
+Numa recoleta contaminada do Mario, viu-se `[offer-confirm] confirmOffer falhou ... TimeoutError`
+no `choose_offer_bevi_consorcio` — mesma família do "Mario turno 13" que o juiz Sonnet já
+classificou como hipoteticamente "degradação honesta" (terceiro Bevi instável). Esta segunda
+ocorrência, com uma mensagem de erro DIFERENTE (timeout puro, não erro genérico), reforça a
+hipótese de instabilidade real do terceiro em vez de bug determinístico do código — mas continua
+sendo HIPÓTESE, não fato cravado (não temos visibilidade da infra da Bevi).
+
+### Pendências que seguem em aberto (não atacadas nesta rodada, por escolha deliberada)
+- **P4 (2 perguntas por turno)**: root cause diagnosticada (ordem flush×gate em `runner.ts`), risco
+  de regressão avaliado como alto pra mexer às pressas — segue aberta.
+- **Narração mecânica empilhada** ("Agora vou recomendar...", "Deixa eu detalhar...", "Agora vou
+  mostrar..."): observada de novo nas recoletas frescas desta rodada (Madalena T8, Mario T6) —
+  contraria o objetivo de humanização da própria rodada r10, não corrigida.
+- **Espelho de motivação duplicado (Madalena)**: não reinvestigado nesta rodada.
+- **Vazamento "seja transparente:"**: JÁ CORRIGIDO nesta rodada — ver acima, mas não listado como
+  FIX-32X porque a numeração seguiu (registrado junto do achado ALTA original do juiz).
