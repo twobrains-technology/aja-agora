@@ -4,7 +4,7 @@ import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
-import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import { gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
@@ -39,6 +39,7 @@ import {
 	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
+import { CLARIFY_LEAD_IN } from "./gate-questions";
 import { runLeadCollectionTurn } from "./lead-collection";
 import {
 	buildRecommendationCardFromRevealGroup,
@@ -315,6 +316,38 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 
 	if (isUserTurn) {
 		await saveMessage(conversationId, "user", userText, channel);
+	}
+
+	// FIX-301 (P7, loop-de-goal r10): usuário CONFUSO ("não entendi") com um gate
+	// REALMENTE pendente — reancora no MESMO gate/card com um lead-in
+	// simplificado, em vez de deixar a LLM narrar/inventar um menu genérico
+	// (P7: "uai nao sei voce nao me perguntou nada"). Curto-circuito ANTES de
+	// invocar a LLM (Lei 4) — se rodasse depois, o texto livre já teria
+	// streamado pro usuário. `expressing_doubt` é o sinal de confusão (decisão
+	// registrada em docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-
+	// clarify.md — sem intent nova, sem estado novo no enum `Gate`).
+	if (isUserTurn && !skipAnalyzer && analyzedIntent === "expressing_doubt") {
+		const clarifyGate = gateAwaitingReply(meta, Boolean(knownName));
+		if (clarifyGate === "decision") {
+			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
+			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "decision_prompt",
+				payload: buildDecisionPromptCard(meta).payload,
+			});
+			yield { type: "finish", reason: "clarify-reanchor" };
+			return;
+		}
+		if (clarifyGate) {
+			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
+			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
+			yield { type: "gate", gate: clarifyGate };
+			yield { type: "finish", reason: "clarify-reanchor" };
+			return;
+		}
 	}
 
 	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo

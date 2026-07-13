@@ -181,6 +181,36 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 }
 
 /**
+ * FIX-301 (P7, loop-de-goal r10) — o usuário está CONFUSO ("não entendi") num
+ * turno em que já existe um gate REALMENTE aguardando resposta. Devolve o
+ * `Gate` a REANCORAR (mesmo gate, sem avançar nem inventar menu), ou `null`
+ * quando não há pergunta canônica re-apresentável agora.
+ *
+ * Caso especial: `decision`. `nextGate()` só devolve `"decision"` enquanto
+ * `!meta.decisionDispatched` — assim que o card é mostrado, o dispatch marca
+ * a flag e `nextGate()` avança pro terminal (`"search"`). Sem este caso à
+ * parte, o usuário confuso respondendo ao PRÓPRIO card de decisão não teria
+ * pra onde reancorar. Os demais gates (credit/lance/identify/…) continuam
+ * corretos via `nextGate()` puro — o DADO em si (não uma flag de "já
+ * mostrei") é que os mantém pendentes.
+ *
+ * `name`/`doubts-wait`/`search` não têm pergunta canônica re-apresentável
+ * (nome vem do texto de abertura; doubts-wait é um "aguarde"; search é ação,
+ * não pergunta) — devolve `null` pra esses.
+ */
+export function gateAwaitingReply(
+	meta: ConversationMetadata,
+	hasContactName: boolean,
+): Gate | null {
+	if (meta.revealCompleted && meta.decisionDispatched === true && meta.contractClosed !== true) {
+		return "decision";
+	}
+	const gate = nextGate(meta, { hasContactName });
+	if (gate === "name" || gate === "doubts-wait" || gate === "search") return null;
+	return gate;
+}
+
+/**
  * FIX-274 — o "por que agora" (motivo, 2ª pergunta do gate `desire`) tem turno
  * próprio: enquanto o cliente já RESPONDEU ao gate `desire` (`desireAnswered`)
  * mas ainda não deu o motivo, o funil SEGURA — o LLM pergunta o motivo
