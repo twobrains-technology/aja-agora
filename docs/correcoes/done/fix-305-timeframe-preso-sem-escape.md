@@ -1,13 +1,49 @@
 ---
 id: FIX-305
 titulo: "Gate timeframe (e outros não-COLLECTION pós-reveal) sem escape — trava indefinida sob modelo fraco"
-status: todo
+status: done
 bloco: bloco-r10-3-timeframe-stuck
 severidade: alta
 projeto: aja-agora
-arquivos: [src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/personas.ts]
+arquivos:
+  - src/lib/agent/qualify-state.ts
+  - src/lib/agent/orchestrator/analyze.ts
+  - src/lib/agent/orchestrator/index.ts
+  - src/lib/agent/orchestrator/gate-questions.ts
+  - src/lib/agent/personas.ts
+  - src/lib/agent/qualify-state.fix-305-timeframe-stuck.test.ts
+  - src/lib/agent/orchestrator/index.fix-305-timeframe-stuck.integration.test.ts
 rodada: 2026-07-13 (loop-de-goal r10, onda 3 — achado durante a verificação do bakeoff pós-onda-1, FIX-304)
+commit: 6f38bdad, 8896be98
+executado_em: 2026-07-13
 ---
+
+## Resumo da execução
+
+Implementado exatamente como proposto, com uma correção ao próprio card: `lance`/`lance-value`/
+`lance-embutido` **continuam** em `COLLECTION_GATES` hoje (confirmado lendo o código, não
+assumido) — mas isso não os protege do mesmo risco, porque `COLLECTION_GATES` só afeta
+`decideShowGate` (se o card volta a aparecer), nunca `nextGate()` (a cascata que decide se o
+funil avança). Os 4 gates (`timeframe`/`lance`/`lance-value`/`lance-embutido`) ganharam o MESMO
+mecanismo. Decisão técnica completa (N=3, defaults por gate, nome do campo) em
+`docs/decisoes/blocos/2026-07-13-bloco-r10-3-timeframe-stuck.md`.
+
+TDD strict: Camada 1 (`qualify-state.fix-305-timeframe-stuck.test.ts`, 9 testes, lógica pura sem
+DB/LLM) + Camada 2 (`index.fix-305-timeframe-stuck.integration.test.ts`, DB real + LLM mockado,
+reproduz o log exato do bakeoff `[gate-skip] gate=timeframe intent=neutral`). Ambos vermelhos
+antes do fix, verdes depois. `pnpm test:unit` completo (368 arquivos/3403 testes) verde, sem
+regressão.
+
+**Bakeoff Qwen re-rodado** (`tests/eval/jornada-aja-agora.eval.test.ts`, mesma régua do FIX-304):
+`fluxoScore` 0.68 → **0.734** (baseline pré-onda-1 era 0.774); a falha catastrófica do FIX-304
+("gate simulator-offer nunca disparou, preso em timeframe 4x") não se repetiu — a jornada alcançou
+`simulator-offer`. Ressalva honesta: `n=1`, e o log desta execução mostra que o escape NÃO chegou
+a disparar (Qwen respondeu o prazo direto desta vez) — não dá pra atribuir a melhora do score ao
+fix com confiança, só a AUSÊNCIA de regressão. Os 12/31 testes que continuam falhando são a MESMA
+classe já diagnosticada no FIX-304 (BUG-REVEAL-LOOP: `tool_error` em `present_decision_prompt`
+fora de fase + desvio pra "especialista em cadastros" no fechamento) — confirmado nesta execução
+pelos mesmos logs de `tool_error`, fora do escopo deste bloco (`tool-policy.ts`, não
+`qualify-state.ts`).
 ## Palavras do operador
 > Decisão via `AskUserQuestion` (2026-07-13): "Default após N tentativas (Recomendado) — Depois de
 > ~2-3 respostas vagas/neutras seguidas sem extrair prazo, assume um prazo padrão razoável (ex.:
