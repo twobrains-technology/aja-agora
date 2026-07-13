@@ -851,3 +851,42 @@ número vem do `group` real) + `comparison_table` descarta cotas sem grupo real 
 
 Escalando para o Fable (juiz final, supercrítico) com o relatório completo do Sonnet + as 3
 correções desta sessão (FIX-313, FIX-314, FIX-315) + evidência fresca.
+
+### Achado 8 — 3 P0 do veredito Fable corrigidos (FIX-316, commit `11207231`)
+1. Guard `hero-awaits-reco-consent` (artifact-guard.ts) checava `revealCompleted` em vez de
+   `recoConsentAnswered` — hero vazava sem consentimento em QUALQUER turno pós-reveal (não só o
+   original), zumbificando a cascata inteira (timeframe/lance/two_paths nunca disparavam).
+2. `contract_form` (runner.ts) só re-ancorava o `meta`, nunca o `payload` exibido ao usuário —
+   achado ao vivo: form mostrava "Canopus", proposta final fechava "ITAÚ". Corrigido: payload
+   sempre reflete a âncora resolvida.
+3. `pipeClosingCeremony` (route.ts) encadeia 3 sub-turnos que reavaliavam `nextGateToFire`
+   independentemente — pergunta de reco-consent repetia 3x no fechamento. Corrigido com
+   `suppressGate` nos 2 sub-turnos intermediários.
+
+Todos com TDD (testes novos + 3 fixtures pré-existentes corrigidas). Suite completa verde
+(3430 unit + 344 integration) + typecheck diferencial limpo.
+
+### BLOQUEIO EXTERNO — workspace Anthropic sem budget (2026-07-13)
+Tentativa de recoleta pós-FIX-316 (Mario + Madalena) retornou 6-9 de N turnos contaminados —
+investigação nos logs do container confirmou causa real: `AI_APICallError: You have reached your
+specified workspace API usage limits. You will regain access on 2026-08-01 at 00:00 UTC.` — NÃO é
+bug de código (env/AI_MODEL conferem corretos; testes unit/integration com LLM mockado continuam
+100% válidos e verdes). Sem chave/gateway alternativo configurado neste ambiente (`.env.local` não
+tem LITELLM_BASE_URL/LITELLM_API_KEY — removidos propositalmente numa investigação anterior desta
+mesma rodada por estarem stale/mascarando a chave certa).
+
+**Estado da campanha no momento do bloqueio:**
+- Sonnet (Rodada A.3): 1/10, achados P0 de dados fabricados + coreografia quebrada.
+- Fable (1ª rodada pós-FIX-313/314/315): 2/10, aprovou a correção da fabricação mas achou 3 novos
+  P0 (guard do hero, mismatch administradora no fechamento, pergunta repetida 3x) + vários P1/P2
+  ainda abertos (motivo não vira turno próprio, `gate:experience` não aparece visível, resolução de
+  administradora por nome, netCredit sem aviso, contract_form duplicado).
+- FIX-316 corrigiu os 3 P0 da 2ª rodada — **ainda NÃO reverificado ao vivo** (bloqueado pelo budget).
+- P1/P2 remanescentes do Fable **ainda não atacados** (tempo/budget insuficientes nesta sessão).
+
+**Decisão:** NÃO fazer commit/PR pra develop/main agora — Fable ainda não aprovou uma rodada
+genuinamente 10/10, e não há como coletar evidência ao vivo fresca até o budget resetar (01/08) ou
+até configurar um gateway/chave alternativa (decisão de infra que precisa do Kairo). Os 4 fixes
+desta sessão (FIX-313/314/315/316) estão commitados e pushados em `integ/consorcio-r10`, validados
+por 3430+344 testes automatizados (LLM mockado) e por 2 rodadas de julgamento com evidência real —
+prontos pra reverificação assim que o acesso for restaurado.
