@@ -74,6 +74,7 @@ describe("FIX-307 — escape condicional do gate `credit` quando travado com val
 			searchDispatched: true,
 			revealCompleted: true,
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			experiencePrev: "first",
 			qualifyAnswers: { creditMax: 80_000 },
 		});
