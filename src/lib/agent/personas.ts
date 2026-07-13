@@ -136,6 +136,19 @@ export type ConversationMetadata = {
 	 * especialista. Por-gate (Partial<Record<Gate,number>>) → não vaza entre gates;
 	 * resetado ao capturar o dado. */
 	gateAttempts?: Partial<Record<Gate, number>>;
+	/** FIX-305 — contador de turnos de USUÁRIO consecutivos em que o MESMO gate
+	 * (`STUCK_ESCAPE_GATES`, qualify-state.ts: timeframe/lance/lance-value/
+	 * lance-embutido) não avançou (nextGate() devolveu o mesmo gate antes e
+	 * depois do merge do turno). DISTINTO de `gateAttempts` (escalada por
+	 * INATIVIDADE/desvio, termina em oferta de especialista) — este mede "sem
+	 * progresso NA MESMA conversa ativa" e, no teto, ASSUME um default e segue
+	 * o funil (Kairo, AskUserQuestion 2026-07-13: "nunca trava"). Resetado a 0
+	 * quando o default é assumido — o gate avança e o contador nunca mais é lido. */
+	gateStuckTurns?: Partial<Record<Gate, number>>;
+	/** FIX-305 — marca os gates cujo dado em `qualifyAnswers` foi um DEFAULT
+	 * assumido (teto de tentativas atingido), não uma resposta real do
+	 * usuário. Só rastreabilidade/analytics — nenhuma lógica de gate lê isto. */
+	gateDefaultsAssumed?: Partial<Record<Gate, true>>;
 	/** Identidade (CPF+celular+LGPD) coletada no gate "identify" — fim do passo 2
 	 * (D1, docs/jornada/CONTEXT.md). A Bevi exige antes de simular; a busca real
 	 * (passo 3) só libera com isto true. */
