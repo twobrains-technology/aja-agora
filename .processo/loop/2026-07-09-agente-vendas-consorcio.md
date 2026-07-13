@@ -420,4 +420,39 @@ parcial:
 | Rodada | Blocos lançados | Integrado | Determinístico | Score Fable | Achados novos |
 |---|---|---|---|---|---|
 | 10.0 (crítico) | — | — | — | — | ✅ 8 buracos reais achados (2 estruturais + 4 precisão + 2 regressão r9); D1/D2/D4 resolvidos pelo Kairo (`AskUserQuestion`); itens reescritos, execução vira onda 1 (4 blocos) + onda 2 (2 blocos, sequencial) |
-| 10.1 (onda 1) | r10-1-funil-reveal · r10-1-sanitizer-invariantes · r10-1-topicpicker-clarify · r10-1-web-reengage | ⏳ a lançar via `todo-blocks` | — | — | — |
+| 10.1 (onda 1) | r10-1-funil-reveal · r10-1-sanitizer-invariantes · r10-1-topicpicker-clarify · r10-1-web-reengage | ✅ 4/4 na base `integ/consorcio-r10` (`a70c9108`, pushado) | test:unit 3391/3391 · test:integration 320/325 (5 skip) · eval real (Camada 3) verde | — (verificação r10.1 ainda não rodou) | Ver "Gate da onda 1" abaixo — 3 causas-raiz reais achadas e corrigidas no próprio gate (não achados pra próxima rodada, já fechados) |
+
+### Gate da onda 1 — o que quebrou e por quê (achado DURANTE a integração, corrigido na hora)
+
+O gate do `merge-wave.sh` (host, sem container v2) reprovou os 4 blocos simultaneamente na
+primeira tentativa — sintoma clássico de falha de AMBIENTE, não de código. Diagnosticado e
+corrigido em 3 camadas, todas com causa-raiz provada (nunca `--no-verify`/skip):
+
+1. **`merge-wave.sh` não reconhecia a convenção local-dev v2** (volume por-workspace, projeto
+   migrou nessa mesma manhã) — só sabia detectar o volume único v1. **Corrigido NA FONTE da skill
+   global** `todo-blocks` (`merge-wave.sh`, detecção v2 via `docker exec` no container já rodando,
+   retrocompatível com v1). Commit em `~/.claude` (repo separado da skill).
+2. **`.env.local` do worktree incompleto** (mesmo gap histórico de
+   `project_aja_worktree_env_bootstrap`, agora também na v2): `ADMIN_*`/`BETTER_AUTH_SECRET`/
+   `IDENTITY_ENC_KEY`/`BEVI_*`/`ANTHROPIC_API_KEY` ausentes/placeholder — backfill do clone
+   principal. `DATABASE_URL` também apontava pra porta v1 morta (`localhost:5433`) — corrigido pro
+   DNS OrbStack do pg shared (`aja-shared-pg.orb.local:5432`, alcançável do HOST, confirmado).
+3. **Bugs reais de integração entre blocos** (não conflito textual — conflito de COMPORTAMENTO):
+   - `qualify-state.fix-301-clarify.test.ts` + `artifact-guard.test.ts`: fixtures não conheciam o
+     gate novo `reco-consent` (FIX-297) nem a ordem nova credit-antes-de-identify (FIX-296) —
+     `nextGate()` parava num lugar diferente do que os testes assumiam. Também achado um gap real
+     em `gateAwaitingReply`: não tratava `contractClosed` como terminal universal — corrigido em
+     código (não só teste).
+   - **O achado mais importante:** a decisão original do bloco topicpicker-clarify (ADR) reusava a
+     intent `expressing_doubt` pro short-circuito de "usuário confuso" (FIX-301), "sem intent
+     nova". Isso quebrou o FIX-266 (r9) — "deixa eu pensar aqui" é `expressing_doubt` POR DESIGN
+     (hesitação sobre decisão que a pessoa entende) e passou a ser hijackado pelo short-circuito,
+     atropelando a recuperação de tool-error. **Corrigido adicionando a intent `confused`** (nova,
+     genuína, `turn-analyzer.ts`+`qualify-state.ts`), semanticamente distinta de `expressing_doubt`.
+     Reforço em código (não só prompt): `isExactnessOrCriteriaQuestion` (mesmo regex do FIX-282/293)
+     blinda contra o analyzer LLM confundir "por que essa e não outra?" com confusão genuína.
+   - `gate-reengage-poll.integration.test.ts`: fixtures simulavam "stuck em identify" sem setar
+     `qualifyAnswers.creditMax` — o worker RECALCULA o gate no disparo (não confia no `pendingGate`
+     salvo), então caía em "credit" sob a ordem nova. Corrigido setando o campo nos 2 cenários.
+   ADRs atualizados com adendo (`docs/decisoes/blocos/2026-07-12-bloco-r10-1-*.md`) — "palavra nova
+   vence", evidência > estimativa prévia, decisão original registrada e corrigida, não apagada.
