@@ -1,4 +1,4 @@
-import type { ToolChoice } from "ai";
+import { InvalidToolInputError, type ToolChoice } from "ai";
 import { db } from "@/db";
 import { artifacts as artifactsTable } from "@/db/schema";
 import { resolveAgent } from "@/lib/agent/agents";
@@ -512,44 +512,16 @@ export async function* runAgentTurn(args: {
 				}
 				break;
 			}
-			// FIX-257 (P1, veredito Fable r4 §P1 #1): input de tool que falha a
-			// validação Zod (ex.: creditMin como string não-coagível) NUNCA chega a
-			// rodar `execute` — o AI SDK v6 emite este chunk em vez de "tool-result".
-			// Sem este case, o erro era engolido: nenhum log, nenhum sinal, e o único
-			// rastro (tool-io-log via onStepFinish) mostrava `output: null` —
-			// indistinguível de "a tool rodou e não achou nada" (raiz da espiral de
-			// negação). Log BARULHENTO e nomeado, nunca silencioso.
-			case "tool-input-error": {
-				const errPart = part as {
-					toolCallId?: string;
-					toolName: string;
-					input?: unknown;
-					errorText?: string;
-				};
-				logToolInputError({
-					conversationId,
-					stepNumber: toolIoStep,
-					error: {
-						toolCallId: errPart.toolCallId,
-						toolName: errPart.toolName,
-						input: errPart.input,
-						errorText: errPart.errorText,
-					},
-				});
-				break;
-			}
-			// FIX-262 (P1, veredito Fable r5, causa-raiz N1): o modelo chamou uma
-			// tool FORA do toolset da fase (ex.: search_groups em reveal/closing —
-			// tool-policy.ts exclui a descoberta ali) — o AI SDK v6 emite ESTE
-			// chunk (NoSuchToolError) em vez de "tool-result". Sem case dedicado,
-			// a chamada caía no `output: null` mudo de tool-io-log (nenhum
-			// tool-result pareado) — indistinguível de "rodou e não achou nada".
-			// Foi ESSE buraco (não o Zod do FIX-257) que alimentou a espiral de
-			// negação: o modelo tratou "tool indisponível" como "não existe" e
-			// negou 3× ofertas que estavam na própria tabela exibida. Log
-			// BARULHENTO + assume o turno: NENHUM texto do modelo (que tenderia à
-			// negação) chega ao usuário — o orchestrator materializa o fallback
-			// determinístico (mesmo padrão Lei 1/4 do FIX-186/discoveryFailedThisTurn).
+			// FIX-257 (P1, veredito Fable r4 §P1 #1) + FIX-262 (P1, veredito Fable
+			// r5, causa-raiz N1): o AI SDK (versão instalada) unificou o antigo chunk
+			// "tool-input-error" dentro de "tool-error" — ambos os cenários (Zod
+			// rejeita o input; ou o modelo chama tool FORA do toolset da fase,
+			// NoSuchToolError) chegam aqui, distinguíveis só pelo tipo de `error`.
+			// Sem case dedicado, a chamada caía no `output: null` mudo de
+			// tool-io-log (nenhum tool-result pareado) — indistinguível de "rodou e
+			// não achou nada". Foi esse buraco que alimentou a espiral de negação:
+			// o modelo tratou "tool indisponível" como "não existe" e negou 3×
+			// ofertas que estavam na própria tabela exibida.
 			case "tool-error": {
 				const errPart = part as {
 					toolCallId?: string;
@@ -557,6 +529,26 @@ export async function* runAgentTurn(args: {
 					input?: unknown;
 					error?: unknown;
 				};
+				// Input inválido (Zod) é recuperável — o modelo pode corrigir e
+				// retentar no próprio turno. Log nomeado, sem abortar (FIX-257).
+				if (InvalidToolInputError.isInstance(errPart.error)) {
+					logToolInputError({
+						conversationId,
+						stepNumber: toolIoStep,
+						error: {
+							toolCallId: errPart.toolCallId,
+							toolName: errPart.toolName,
+							input: errPart.input,
+							errorText: stringifyToolError(errPart.error),
+						},
+					});
+					break;
+				}
+				// Qualquer outro tool-error (ex.: NoSuchToolError — tool fora do
+				// toolset da fase) é a causa-raiz do FIX-262: log BARULHENTO + assume
+				// o turno, NENHUM texto do modelo (que tenderia à negação) chega ao
+				// usuário — o orchestrator materializa o fallback determinístico
+				// (mesmo padrão Lei 1/4 do FIX-186/discoveryFailedThisTurn).
 				logToolError({
 					conversationId,
 					stepNumber: toolIoStep,

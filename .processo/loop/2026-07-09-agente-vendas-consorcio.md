@@ -1420,3 +1420,11 @@ deploy autorizado):
 
 **Próximos passos**: merge `integ/consorcio-r10` → `develop` → `main` (prod), depois exclusão do
 workspace Superset, per instrução direta do Kairo.
+
+**Execução confirmada**: PR #50 (`integ/consorcio-r10`→`develop`) e PR #51 (`develop`→`main`)
+mergeados; workspace Superset (`4603b257-3008-4176-9c63-2d85c5ead67a`) e branch remota excluídos.
+O Stop hook original do `/goal` (que cobra o critério de 10/10 do Fable) continuou disparando após
+o encerramento — Kairo confirmou EXPLICITAMENTE, por segunda vez (via pergunta estruturada, não
+só em texto livre), que parar em 7/10 sem a Etapa B foi uma decisão intencional e definitiva:
+"Encerrar o /goal por aqui". Loop encerrado por decisão do dono do produto, não por
+descumprimento — registrado para eliminar qualquer ambiguidade em revisões futuras deste diário.
