@@ -393,6 +393,29 @@ Mesma do topo do doc: sem cap, Fable sela, no-progress força troca de ângulo. 
 rodada pode declarar 10/10 se o dossiê não incluir a sonda adversarial contra CADA P1-P10** — dossiê
 incompleto = rodada inválida, não *pass* por omissão.
 
+### 🎯 Encerramento oficial da campanha (armado via `/goal` nativo, 2026-07-13) — DUAS ETAPAS
+O Kairo armou o hook `/goal` da sessão com a condição abaixo (verbatim, resumida). A campanha SÓ
+encerra (libera o Stop hook) quando AMBAS as etapas passarem — nenhum atalho, nenhuma aprovação
+parcial:
+
+- **ETAPA A — Selo de produção (o que já estava em andamento).** Loop verificação em código real:
+  planner (Opus) escreve o roteiro E2E → coletor (Haiku, determinístico + Claude in Chrome +
+  conversacional) monta o dossiê → juiz da rodada (Sonnet) pontua → quando achar que bateu o teto,
+  escala pro **Fable**, que lê o MESMO dossiê e só sela quando genuinamente 10/10 "pronto pra
+  produção" (supercrítico contra P1-P10, sem aprovação parcial). Enquanto não for 10/10: achados
+  viram itens novos → crítico → nova onda → nova verificação. Sem cap de rodadas.
+- **ETAPA B — Suíte adversarial de 10 cenários fictícios (SÓ começa depois da Etapa A fechar).**
+  O **Fable** (não o Kairo, não esta sessão) autora 10 cenários FICTÍCIOS de conversa cobrindo a
+  jornada (variações de perfil/objeção/modelo fraco/ambiguidade — a composição exata é decisão do
+  Fable como autor). Pra CADA cenário: o **Haiku pilota a conversa ao vivo via `claude-in-chrome`**
+  (nunca Playwright/autopilot proibido) e monta o dossiê (prints + transcript + console/network).
+  O **Fable relê cada dossiê como crítico da jornada** (mesmo rigor supercrítico da Etapa A) e
+  pontua. Achado num cenário → vira item → conserto → **revalida TODOS os 10** de novo (não só o
+  que falhou — regressão cruzada é sempre possível). **Só encerra quando o Fable der 10/10 nos 10
+  cenários simultaneamente.**
+- **Sem atalho:** nenhuma etapa pode ser pulada nem fundida; o veredito é sempre do Fable lendo
+  evidência real (prints/dossiê), nunca self-report do executor nem desta sessão orquestradora.
+
 ### r10 — LEDGER
 | Rodada | Blocos lançados | Integrado | Determinístico | Score Fable | Achados novos |
 |---|---|---|---|---|---|
