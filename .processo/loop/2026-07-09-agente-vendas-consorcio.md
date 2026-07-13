@@ -666,3 +666,66 @@ não medido (baixa).
 montar a onda 4 item-a-item — 6 artifact types sumindo coordenadamente sugere um guard/condição
 comum suprimindo a cadeia inteira `experience→topic_picker→reco-consent`, não 6 bugs
 independentes. Próximo passo: dispatch de investigação dedicada.
+
+### Investigação de causa-raiz — resultado (query real no DB + código, 2026-07-13)
+
+**Correção epistêmica ao veredito do juiz:** `gate:reco-consent` **NUNCA foi bug** — é um gate
+TEXT-ONLY por design (`adapter.ts:148-156` retorna `null` pra ele), nunca emite artifact
+`data-gate`. O grep do juiz por esse tipo sempre daria zero, por construção. O banco confirma
+`recoConsentDispatched=true` na Madalena — o gate disparou (como texto), só não aparece no grep.
+Removido da lista de achados reais.
+
+**NÃO é uma causa única — são 2 famílias:**
+
+1. **Mario: 1 causa DOMINANTE que explica quase tudo.** `creditMax` nunca é preenchido —
+   `nextGate()` trava em `"credit"` pra sempre (`qualify-state.ts:205`, antes de identify). Causa:
+   quando o valor vem NO MESMO balão que responde o `desire` (ex.: "um usado, uns R$ 90 mil"), o
+   analyzer só grava em `creditMentionedAtDesire` (não em `creditMax`) porque a trava
+   `desireAnsweredBeforeThisTurn` (`analyze.ts:52,136`) é um snapshot PRÉ-mutação — no turno em
+   que o desire É respondido, ainda lê `false`. Sem promoção posterior (nenhum código promove
+   `creditMentionedAtDesire→creditMax` numa confirmação), e `credit` foi DELIBERADAMENTE excluído
+   do `STUCK_ESCAPE_GATES` (`qualify-state.ts:59-64`, "não fabricar dado financeiro") — trava sem
+   saída. Isso sozinho explica: identify não-estruturado, `two_paths` ausente (hasLance nunca
+   coletado), e todo o resto do funil pulado nele.
+2. **Madalena: cluster de 4 causas distintas**, não uma comum:
+   - `gate:experience` suprimido — `experiencePrev` é capturado OPORTUNISTICAMENTE do texto livre
+     sem trava de "gate ativo" (`analyze.ts:57-61`) — ao contrário de `hasLance`(FIX-236)/
+     `creditMax`(FIX-279), que já têm essa trava. O card nunca chega a aparecer.
+   - Hero atrasado (turno 18 em vez de ~12) — `recoConsentAnswered` só vira `true` via
+     `detectYesNoText` (regex de marcadores de sim/não); "Pode mostrar" (turno 12) não bate no
+     regex, só "quero" (turno 18) bateu. Consentimento real, mas mal-reconhecido.
+   - `topic_picker` nunca emitido server-side — depende do LLM chamar `present_topic_picker`
+     (sem gate/`emitServerCard` próprio, nem membro do tipo `Gate`) — mesma lição já registrada
+     em memória ("card novo tem que ser server-side, não directive pro LLM chamar present_X").
+   - `scarcity`+`decision_prompt` só existem no ramo "recusou o simulador"/texto ambíguo
+     (`route.ts:1147-1189`) — o ramo FELIZ (engaja simulador → "Tenho interesse") pula direto pro
+     `contract_form` (fast-path FIX-38, `route.ts:508-522`), nunca passa pela cerimônia.
+
+**Loop do `gate:credit`:** Madalena (3x) é BENIGNO — sem número nenhum até o turno 7, resolve
+normal quando o valor chega; só o defeito de copy (P4/P10, pergunta re-aparece colada) é real.
+Mario (4x) é o mesmo bug crítico acima — nunca resolve porque o número já tinha vindo (junto do
+desire) e ficou em `creditMentionedAtDesire`, não em `creditMax`.
+
+**7 fixes prontos (viram FIX-306..312 na onda 4):**
+- **FIX-306 [P0]** Promover `creditMentionedAtDesire→creditMax` quando o valor vem junto da
+  resposta do desire (`analyze.ts:~136`) — mata o deadlock do Mario.
+- **FIX-307 [P0]** Escape do gate `credit`: se travado ≥N turnos E `creditMentionedAtDesire`
+  existe, promove (não é fabricar dado, é usar o que o usuário já disse) — `qualify-state.ts:59-64`.
+- **FIX-308 [P0]** Acoplar avanço da cascata a `recoConsentAnswered` de verdade (não só
+  `recoConsentDispatched`) + robustecer o reconhecimento do "sim" (incluir "pode/pode mostrar/mostra")
+  — `index.ts:276-312`, `qualify-state.ts:258`.
+- **FIX-309 [ALTA]** `topic_picker` vira emissão server-side determinística (gate/`emitServerCard`
+  canônico pós-experience), não mais dependente do LLM chamar a tool — `ai-sdk.ts:766`,
+  `artifact-guard.ts:255-261`.
+- **FIX-310 [ALTA]** Blindar `experiencePrev` contra captura oportunista — mesma trava de
+  gate-ativo que `hasLance`/`creditMax` já têm — `analyze.ts:57-61`.
+- **FIX-311 [ALTA]** Ligar `scarcity`+`decision_prompt` ao ramo FELIZ do funil (hoje só existem no
+  ramo de recusa) — `route.ts:508-522`, `route.ts:1125-1145`.
+- **FIX-312 [MÉDIA]** Copy do `credit` em loop: reconhecer tentativa anterior, separar balões
+  (mesmo defeito P10), corrigir "esse **um** Corolla" (artigo+demonstrativo colidindo) —
+  `gate-questions.ts:90-110`.
+
+**Nota sobre a suíte:** `test:unit`/`test:integration` passam porque mockam o LLM e testam gates
+ISOLADOS — nenhum exercita a sequência real onde o valor vem junto do desire (Mario) nem o hero
+atravessando o sub-fluxo de lance (Madalena). Um teste de trajetória E2E cobrindo os 2 cassettes
+reais fecharia esse gap de detecção — considerar pra onda 4.
