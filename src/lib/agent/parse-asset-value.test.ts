@@ -94,8 +94,12 @@ describe("FIX-208 — número nu no contexto do gate `credit` vira valor do bem"
 		expect(parseAssetValue("80000", { gate: "credit", category: "auto" })).toBe(80_000);
 	});
 
-	it("clampa na faixa da categoria (moto: 200 => teto 80000)", () => {
-		expect(parseAssetValue("200", { gate: "credit", category: "moto" })).toBe(80_000);
+	// FIX-218 (Ata 2026-07-04): o clamp na faixa da categoria foi REVOGADO —
+	// o número nu escalado (moto: 200 => 200.000) sobrevive intacto, mesmo
+	// muito acima do teto real da moto (a busca acha a ordem de grandeza mais
+	// próxima em vez de forçar o valor pro teto do slider).
+	it("número nu escalado NÃO clampa mais na faixa da categoria (moto: 200 => 200000)", () => {
+		expect(parseAssetValue("200", { gate: "credit", category: "moto" })).toBe(200_000);
 	});
 
 	it("SEM contexto de gate credit, número nu segue null (não regride FIX-115)", () => {

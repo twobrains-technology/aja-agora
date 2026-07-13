@@ -8,23 +8,39 @@ import { decideShowGate, nextGate } from "./qualify-state";
 // da qualificação para LOGO APÓS o consent, ANTES do `credit` (valor). A busca
 // real continua exigindo identidade (tripwire), aqui já coletada cedo.
 
+// FIX-215 (Ata 2026-07-04): busca/reveal já ocorrem DIRETO após o valor, sem
+// lance como pré-requisito — "qualificação completa" pré-reveal é só
+// identidade + valor. hasLance/lanceEmbutido não entram mais aqui (pós-reveal).
 const qualifiedBase: ConversationMetadata = {
+	desireAsked: true,
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: true,
-	// FIX-4: lanceEmbutido respondido — o gate de lance embutido agora vale
-	// pra TODO hasLance (docx educa todo mundo); qualificação completa o inclui.
-	qualifyAnswers: { creditMax: 80_000, prazoMeses: 12, hasLance: "no", lanceEmbutido: false },
+	qualifyAnswers: { creditMax: 80_000, prazoMeses: 12 },
+};
+
+// Estado pós-reveal com a conversa de lance JÁ resolvida (lance=no) — usado
+// pelos testes que verificam o funil DEPOIS do reveal (simulator-offer/decision).
+const postRevealResolved: ConversationMetadata = {
+	...qualifiedBase,
+	searchDispatched: true,
+	revealCompleted: true,
+	qualifyAnswers: { ...qualifiedBase.qualifyAnswers, hasLance: "no", lanceEmbutido: false },
 };
 
 describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 	it("consent dado, SEM identidade → identify (antes de qualquer valor)", () => {
-		const meta: ConversationMetadata = { experiencePrev: "first", qualifyConsented: true };
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			experiencePrev: "first",
+			qualifyConsented: true,
+		};
 		expect(nextGate(meta)).toBe("identify");
 	});
 
 	it("identify precede o valor mesmo com valor já volunteered", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 			qualifyAnswers: { creditMax: 80_000, prazoMeses: 12 },
@@ -32,16 +48,27 @@ describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 		expect(nextGate(meta)).toBe("identify");
 	});
 
-	it("COM identidade + qualificação completa (lance=no) → search (descoberta liberada)", () => {
+	it("COM identidade + valor, SEM busca ainda → search (descoberta liberada DIRETO, sem lance)", () => {
 		expect(nextGate(qualifiedBase)).toBe("search");
 	});
 
-	it("COM identidade, lance=yes SEM lance-embutido respondido → lance-embutido (antes da busca)", () => {
+	it("COM identidade, valor já coletado → segue search (NÃO pede lance antes; FIX-215/FIX-103)", () => {
 		const meta: ConversationMetadata = {
-			...qualifiedBase,
+			desireAsked: true,
+			experiencePrev: "first",
+			qualifyConsented: true,
+			identityCollected: true,
+			qualifyAnswers: { creditMax: 80_000 },
+		};
+		expect(nextGate(meta)).toBe("search");
+	});
+
+	it("FIX-215: pós-reveal, lance=yes SEM lance-embutido respondido → lance-embutido", () => {
+		const meta: ConversationMetadata = {
+			...postRevealResolved,
 			// lanceValue já respondido (gate lance-value tem suite própria)
 			qualifyAnswers: {
-				...qualifiedBase.qualifyAnswers,
+				...postRevealResolved.qualifyAnswers,
 				hasLance: "yes",
 				lanceValue: 30_000,
 				// sobrepõe o lanceEmbutido:false da base — aqui queremos SEM resposta
@@ -51,22 +78,22 @@ describe("nextGate — identify vem ANTES do valor (FIX-53)", () => {
 		expect(nextGate(meta)).toBe("lance-embutido");
 	});
 
-	it("COM identidade, valor já coletado → segue lance (NÃO re-pede o valor; FIX-103: prazo fora)", () => {
+	it("FIX-215: pré-reveal (revealCompleted ausente) NUNCA pede lance, mesmo com hasLance indefinido", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 80_000 },
 		};
-		expect(nextGate(meta)).toBe("lance");
+		expect(nextGate(meta)).not.toBe("lance");
+		expect(nextGate(meta)).not.toBe("lance-value");
+		expect(nextGate(meta)).not.toBe("lance-embutido");
 	});
 
-	it("fluxo pós-busca não regride: search dispatched + reveal → decision", () => {
+	it("fluxo pós-busca não regride: search dispatched + reveal + lance resolvido → decision", () => {
 		const meta: ConversationMetadata = {
-			...qualifiedBase,
-			identityCollected: true,
-			searchDispatched: true,
-			revealCompleted: true,
+			...postRevealResolved,
 			simulatorOfferDispatched: true,
 		};
 		expect(nextGate(meta)).toBe("decision");

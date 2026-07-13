@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PartnerOffer, SimulationResult } from "../adapters/proposal-gateway";
 import { MockProposalGateway } from "../../../tests/helpers/mock-proposal-gateway";
 
 // Mock do repo (DB) — guarda em memória, mantém isOfferFresh real.
@@ -44,6 +45,73 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		expect(r.offer?.creditValue).toBeGreaterThan(30000);
 		expect(store.get("conv-1")?.proposalId).toBe(r.proposalId);
 		expect(store.get("conv-1")?.ofertaId).toBeTruthy();
+	});
+
+	// FIX-240 (rodada 2, Fable r1, D5.1): o valor PEDIDO pelo cliente (input.valor)
+	// tem que sobreviver no resultado — é a fonte do rawCreditValue que aciona o
+	// aviso de ajuste (FIX-197) quando a carta fechada diverge dele.
+	it("startContract: devolve requestedCreditValue = input.valor (fonte do aviso de ajuste FIX-197)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract("conv-req", input, gw);
+		expect(r.requestedCreditValue).toBe(input.valor);
+	});
+
+	// FIX-281 (r9 onda 2, veredito Sonnet r9pos, gap G-A): `requestedCreditValue`
+	// tem que refletir o PEDIDO original do cliente (o mesmo dado que alimenta o
+	// aviso de divergência CDC no `real_offer`), nunca o `valor` de matching (que é
+	// o creditValue da ÚLTIMA oferta vista, FIX-73) — mesmo quando os dois DIVERGEM
+	// da carta final devolvida pela simulação. Gateway fixo (não o
+	// MockProposalGateway padrão, cuja fórmula sintética não reproduz os números
+	// reais) pina literalmente os dois cenários do veredito.
+	describe("FIX-281 — requestedCreditValue usa originalRequestedCreditValue, NUNCA o valor de matching", () => {
+		function fixedOfferGateway(creditValue: number): MockProposalGateway {
+			const gw = new MockProposalGateway();
+			const offer: PartnerOffer = {
+				ofertaId: "oferta-fixa",
+				administradora: "RODOBENS",
+				tipoOferta: "SPECIAL_OFFER",
+				grupo: "500",
+				valorCarta: creditValue,
+				parcela: creditValue / 80,
+				taxaContemplacao: 0.6,
+				quotaId: "quota-fixa",
+			};
+			gw.simulate = async (): Promise<SimulationResult> => ({
+				simulationSessionId: "sess-fixa",
+				expiresAt: new Date("2026-07-12T21:00:00.000Z").toISOString(),
+				offers: [offer],
+			});
+			return gw;
+		}
+
+		it("mario: pedido 70.000, carta final 71.043 → rawCreditValue (requestedCreditValue) sai 70.000", async () => {
+			const gw = fixedOfferGateway(71_043);
+			const r = await startContract(
+				"conv-mario",
+				{ ...input, valor: 71_043, originalRequestedCreditValue: 70_000 },
+				gw,
+			);
+			expect(r.offer?.creditValue).toBe(71_043);
+			expect(r.requestedCreditValue).toBe(70_000);
+		});
+
+		it("madalena: pedido 250.000, carta final 263.864 → rawCreditValue sai 250.000, NUNCA 260.173 (creditValue do reveal anterior)", async () => {
+			const gw = fixedOfferGateway(263_864);
+			const r = await startContract(
+				"conv-madalena",
+				{ ...input, valor: 260_173, originalRequestedCreditValue: 250_000 },
+				gw,
+			);
+			expect(r.offer?.creditValue).toBe(263_864);
+			expect(r.requestedCreditValue).toBe(250_000);
+			expect(r.requestedCreditValue).not.toBe(260_173);
+		});
+
+		it("sem originalRequestedCreditValue (caminho legado) → cai pro valor de matching (fallback gracioso)", async () => {
+			const gw = fixedOfferGateway(52_000);
+			const r = await startContract("conv-legado", { ...input, valor: 50_000 }, gw);
+			expect(r.requestedCreditValue).toBe(50_000);
+		});
 	});
 
 	it("confirmOffer: escolhe a oferta → link de assinatura + links de documento", async () => {
@@ -145,6 +213,56 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 		});
 		await confirmOffer("conv-order", gw);
 		expect(calls).toEqual(["choose", "links"]);
+	});
+
+	// FIX-259 (rodada 5, veredito Fable r4, P1 #2): o catálogo do fechamento pode
+	// não ter a administradora confirmada na faixa — pickClosestOffer cai pro
+	// global best (BUG-ADMIN-TROCADA-NO-FECHAMENTO em forma nova). O caller
+	// PRECISA saber que trocou, pra nunca fechar em silêncio (aviso em código).
+	it("FIX-259: administradora confirmada indisponível na faixa → administradoraChanged=true + previousAdministradora preservada", async () => {
+		const gw = new MockProposalGateway();
+		// MockProposalGateway só devolve ANCORA/RODOBENS/ITAU (ADMINS.slice(0,3)) —
+		// BANCO DO BRASIL nunca está na faixa simulada, força o fallback global.
+		const r = await startContract(
+			"conv-adm-troca",
+			{ ...input, administradoraPreferida: "BANCO DO BRASIL" },
+			gw,
+		);
+		expect(r.administradoraChanged).toBe(true);
+		expect(r.previousAdministradora).toBe("BANCO DO BRASIL");
+		expect(r.offer?.administradora).not.toBe("BANCO DO BRASIL");
+	});
+
+	it("FIX-259: administradora confirmada disponível na faixa → administradoraChanged=false (sem aviso falso)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract(
+			"conv-adm-ok",
+			{ ...input, administradoraPreferida: "ITAU" },
+			gw,
+		);
+		// FIX-265 (menor #1): partnerOfferToRealOffer normaliza o código cru da
+		// Bevi ("ITAU") pro nome exibível acentuado (ITAÚ) — a copy do fecho
+		// nunca mais fala o nome sem acento.
+		expect(r.offer?.administradora).toBe("ITAÚ");
+		expect(r.administradoraChanged).toBeFalsy();
+		expect(r.previousAdministradora ?? null).toBeNull();
+	});
+
+	it("FIX-259: comparação de administradora ignora acento/caixa (ITAÚ ~ itau)", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract(
+			"conv-adm-acento",
+			{ ...input, administradoraPreferida: "itaú" },
+			gw,
+		);
+		expect(r.offer?.administradora).toBe("ITAÚ");
+		expect(r.administradoraChanged).toBeFalsy();
+	});
+
+	it("FIX-259: sem administradoraPreferida (caminho legado) → administradoraChanged nunca dispara", async () => {
+		const gw = new MockProposalGateway();
+		const r = await startContract("conv-adm-sem-pref", input, gw);
+		expect(r.administradoraChanged).toBeFalsy();
 	});
 
 	it("FIX-112: uploadContractDocument SEM oferta confirmada (sem links) lança gate", async () => {

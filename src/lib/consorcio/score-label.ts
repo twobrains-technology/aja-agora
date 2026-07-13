@@ -15,7 +15,7 @@ export function scoreLabel(score: number): string {
 // rotulava "Compatível com seu perfil" — desonesto, o breakdown confessava
 // "Orçamento 0%". Quando o orçamento não fecha, o rótulo vira honesto: é a
 // melhor opção na FAIXA DE CRÉDITO, não no orçamento. (Sob orçamento — raro pro
-// grupo recomendado, que maximiza o score com monthlyFit a 40% do peso — o
+// grupo recomendado, que pondera múltiplos fatores incluindo orçamento — o
 // rótulo segue honesto: nunca afirma compatibilidade que não existe.)
 const MIN_BUDGET_FIT = 0.2;
 

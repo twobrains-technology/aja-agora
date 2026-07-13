@@ -141,14 +141,15 @@ describe("FIX-207 isConversationPausedOrTerminal — estados onde o funil não r
 });
 
 describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sentido", () => {
-	// Estado onde um gate REAL (consent) ficou pendente após uma pergunta do
-	// usuário (asking_question suprimiu). O funil não fechou o consent ainda.
-	function suppressedConsentMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
+	// Estado onde o 1º gate estrutural pós-desire (identify) ficou pendente após
+	// uma pergunta do usuário (asking_question suprimiu). FIX-274: sem consent,
+	// `identify` é o gate real pendente logo após o desire.
+	function suppressedIdentifyMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
-			experiencePrev: "first",
-			// consent ainda não aceito → nextGate = consent
+			// identidade ainda não coletada → nextGate = identify
 			...over,
 		};
 	}
@@ -156,18 +157,18 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 	it("turno de usuário sem gate disparado + gate real pendente → marca o gate", () => {
 		expect(
 			pendingGateAfterTurn({
-				meta: suppressedConsentMeta(),
+				meta: suppressedIdentifyMeta(),
 				gateFired: false,
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("consent");
+		).toBe("identify");
 	});
 
 	it("gate DISPARADO neste turno → não há pendência (null)", () => {
 		expect(
 			pendingGateAfterTurn({
-				meta: suppressedConsentMeta(),
+				meta: suppressedIdentifyMeta(),
 				gateFired: true,
 				isUserTurn: true,
 				hasContactName: true,
@@ -178,7 +179,7 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 	it("turno server-authored → null (server-authored já avança, FIX-206)", () => {
 		expect(
 			pendingGateAfterTurn({
-				meta: suppressedConsentMeta(),
+				meta: suppressedIdentifyMeta(),
 				gateFired: false,
 				isUserTurn: false,
 				hasContactName: true,
@@ -189,7 +190,7 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 	it("estado terminal (handoff) → null mesmo com gate pendente", () => {
 		expect(
 			pendingGateAfterTurn({
-				meta: suppressedConsentMeta({ handoffSuggested: true }),
+				meta: suppressedIdentifyMeta({ handoffSuggested: true }),
 				gateFired: false,
 				isUserTurn: true,
 				hasContactName: true,
@@ -198,9 +199,9 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 	});
 
 	it("nextGate=doubts-wait (espera legítima: agente perguntou) → null", () => {
-		// consent já ofertado + dúvida em aberto → nextGate=doubts-wait: o agente
-		// tem gancho conversacional, não é uma trava de gate.
-		const meta = suppressedConsentMeta({ consentOffered: true, pendingFollowUp: true });
+		// pendingFollowUp em aberto → nextGate=doubts-wait: o agente tem gancho
+		// conversacional, não é uma trava de gate.
+		const meta = suppressedIdentifyMeta({ pendingFollowUp: true });
 		expect(
 			pendingGateAfterTurn({ meta, gateFired: false, isUserTurn: true, hasContactName: true }),
 		).toBeNull();
@@ -208,8 +209,7 @@ describe("FIX-207 pendingGateAfterTurn — marca a pendência só quando faz sen
 
 	it("nextGate=search (terminal, orquestrador conduz) → null", () => {
 		// Qualificação completa → nextGate=search (todos os gates respondidos).
-		const meta = suppressedConsentMeta({
-			qualifyConsented: true,
+		const meta = suppressedIdentifyMeta({
 			identityCollected: true,
 			qualifyAnswers: {
 				creditMax: 300_000,
@@ -251,18 +251,11 @@ describe("FIX-208 reengageQuestionForGate — a re-pergunta do gate pendente, n�
 		expect(reengageQuestionForGate("identify", "auto")).toMatch(/CPF/i);
 	});
 
-	it("gates FORA da coleta (experience/consent/name/search/decision/doubts-wait) → null (fallback honesto)", () => {
-		// Restrito à mesma classe do decideShowGate (COLLECTION_GATES). experience/
-		// consent têm card próprio dirigido por clique; name/search/decision não são
-		// coleta de dado. Preserva o EMPTY_TURN_FALLBACK do FIX-172 nesses casos.
-		for (const gate of [
-			"experience",
-			"consent",
-			"name",
-			"search",
-			"decision",
-			"doubts-wait",
-		] as const) {
+	it("gates FORA da coleta (experience/name/search/decision/doubts-wait) → null (fallback honesto)", () => {
+		// Restrito à mesma classe do decideShowGate (COLLECTION_GATES). experience
+		// tem card próprio dirigido por clique; name/search/decision não são coleta
+		// de dado. Preserva o EMPTY_TURN_FALLBACK do FIX-172 nesses casos.
+		for (const gate of ["experience", "name", "search", "decision", "doubts-wait"] as const) {
 			expect(reengageQuestionForGate(gate, "auto")).toBeNull();
 		}
 	});

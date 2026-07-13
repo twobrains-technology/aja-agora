@@ -11,6 +11,7 @@ import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { useRevealSelection } from "../reveal-selection";
+import { AdministradoraLogo } from "./administradora-logo";
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -96,6 +97,11 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const rawCreditValue = cota?.rawCreditValue ?? payload.rawCreditValue;
 	const showAdjustNotice = hasCreditAdjustment(rawCreditValue, creditValue);
 
+	// FIX-223 — lance médio do grupo (R$), só quando a fonte real o traz.
+	const avgBidValue = cota?.avgBidValue ?? payload.avgBidValue;
+	// FIX-222 — logo da administradora, quando cadastrado (fallback: iniciais).
+	const logoUrl = cota?.logoUrl ?? payload.logoUrl;
+
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
 	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
 	const contempladosMes = cota
@@ -107,7 +113,16 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const isRecommended = cota ? cota.isRecommended : true;
 	const score = cota ? cota.score : payload.score;
 	const scoreBreakdown = cota ? cota.scoreBreakdown : payload.scoreBreakdown;
-	const showScoreBreakdown = isRecommended && scoreBreakdown != null;
+	// FIX-220 (Ata 2026-07-04): dentro do reveal, com 2+ cotas ("1ª lista"), NINGUÉM
+	// é branded como preferencial — ainda não há dado de lance pra recomendar nada
+	// (mesmo peso). Só afirma favoritismo quando (a) não há concorrência visível
+	// (reveal de 1 cota só, ou uso legado fora do reveal) ou (b) o estágio 2
+	// (ONDA 2, ainda não implementado) sinalizar `recommendationStage:"personalized"`.
+	const hasPeers = reveal.cotas.length > 1;
+	const showFavoritism = cota
+		? isRecommended && (reveal.recommendationStage === "personalized" || !hasPeers)
+		: true;
+	const showScoreBreakdown = showFavoritism && scoreBreakdown != null;
 
 	const handleFollow = () => {
 		if (isStreaming || !cota) return;
@@ -142,7 +157,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				{/* Selo + rótulo qualitativo. Recomendada → marca-sol + fit label; cota
 				    alternativa selecionada no seletor → selo neutro, sem afirmar score. */}
 				<div className="flex items-center justify-between gap-2">
-					{isRecommended ? (
+					{showFavoritism ? (
 						<span
 							className={cn(
 								"inline-flex items-center gap-1.5 h-6 px-[11px] rounded-full text-[11px] font-semibold border",
@@ -166,33 +181,56 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					{/* FIX-7: rótulo qualitativo — % numérico só em contexto comparativo
 					    (comparison-table); breakdown segue no expansível.
 					    FIX-18: honesto quando o orçamento não fecha — monthlyFit≈0 →
-					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil". */}
-					{isRecommended && score != null && scoreBreakdown != null && (
+					    "Melhor opção na faixa de crédito", nunca "Compatível com seu perfil".
+					    FIX-220: some junto com o selo — mesmo peso na 1ª lista neutra. */}
+					{showFavoritism && score != null && scoreBreakdown != null && (
 						<span className="text-sm font-semibold text-primary">
 							{recommendationFitLabel(score, scoreBreakdown.monthlyFit)}
 						</span>
 					)}
 				</div>
-				<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				<div className="flex items-center gap-1.5">
+					{/* FIX-222 (Ata 2026-07-04) — logo da administradora (confiabilidade +
+					    "o cara sabe pra onde vai"); fallback gracioso (iniciais) enquanto
+					    os assets reais são PENDENTE (sourcing/design). */}
+					<AdministradoraLogo administradora={administradora} logoUrl={logoUrl} className="size-5 shrink-0 text-[9px]" />
+					<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
+				</div>
 			</div>
 
 			{/* Body */}
 			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
-				{/* Hero monthly payment */}
+				{/* Hero — carta em destaque (FIX-231: é o que o cliente compra) */}
+				<div>
+					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p
+						data-testid="recommendation-hero-credit"
+						className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap"
+					>
+						{formatBRL(creditValue)}
+					</p>
+				</div>
+
+				{/* Parcela — discreta, logo abaixo da carta */}
 				<div>
 					<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-					<p className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap">
+					<p
+						data-testid="recommendation-secondary-payment"
+						className="aja-num text-lg font-semibold leading-tight text-foreground mt-0.5"
+					>
 						{formatBRL(monthlyPayment)}
-						<span className="text-base font-normal text-muted-foreground">/mês</span>
+						<span className="text-sm font-normal text-muted-foreground">/mês</span>
+					</p>
+					{/* FIX-231 (docs/01-gates-e-ordem.md "recommendation") — a parcela
+					    pós-contemplação NÃO aparece aqui; só na agulha (contemplation_dial).
+					    Nota fixa evita a leitura errada de que essa é a parcela definitiva. */}
+					<p className="text-[11px] text-muted-foreground mt-1">
+						Essa é a parcela cheia, que você paga até ser contemplada.
 					</p>
 				</div>
 
 				{/* Key metrics grid 2×2 */}
 				<div className="grid grid-cols-2 gap-x-4 gap-y-3">
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-sm font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{formatBRL(creditValue)}</p>
-					</div>
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Prazo</p>
 						<p className="aja-num text-sm font-semibold mt-0.5">{termMonths} meses</p>
@@ -210,11 +248,22 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						<p className="text-xs text-muted-foreground m-0">Tipo de grupo</p>
 						<p className="text-sm font-semibold mt-0.5">{CATEGORY_LABELS[category]}</p>
 					</div>
+					{/* FIX-223 (Ata 2026-07-04) — lance médio do grupo, só com dado real
+					    (D11: nunca fabrica; ausente → linha omitida). */}
+					{avgBidValue != null && (
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Lance médio</p>
+							<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(avgBidValue)}</p>
+						</div>
+					)}
 				</div>
 
-				{/* FIX-197 (§3.6) — aviso discreto de ajuste de faixa: a carta é da
-				    denominação do grupo (rawCreditValue); ajustamos à faixa pedida
-				    (creditValue). Ancorado nos dois números reais; some quando iguais. */}
+				{/* FIX-277 (veredito r9, G1)/FIX-197 (§3.6) — aviso discreto de ajuste:
+				    rawCreditValue é o valor PEDIDO pelo cliente; creditValue é a carta
+				    REAL do grupo. A copy antiga chamava o pedido de "essa carta" e a
+				    carta real de "sua faixa ajustada" — invertido. Paridade com o
+				    padrão já correto de real-offer.tsx: "pedido × carta real", sem
+				    ambiguidade. Ancorado nos dois números reais; some quando iguais. */}
 				{showAdjustNotice && rawCreditValue != null && (
 					<p
 						data-testid="credit-adjustment-notice"
@@ -222,7 +271,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 						<span className="whitespace-normal break-words">
-							Ajustamos essa carta de <span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> pra sua faixa de ~
+							Você pediu uma carta de ~<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real ficou em{" "}
 							<span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
 						</span>
 					</p>

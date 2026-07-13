@@ -15,20 +15,21 @@ function readSource(rel: string): string {
 	return readFileSync(resolve(process.cwd(), rel), "utf-8");
 }
 
+// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt saiu do
+// toolset do LLM — mesma desobediência que o FIX-246 já tinha corrigido pra
+// embedded_bid/two_paths/scarcity (0 emissões no caminho certo, tool chamada
+// DIRETO fora do ramo do orchestrator no Fluxo A). O directive agora só narra;
+// o card é emitido server-side (buildDecisionPromptCard).
 describe("buildDecisionPromptDirective — passo 4 close", () => {
-	it("instrui o agent a chamar present_decision_prompt (não present_lead_form)", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Porto Seguro" });
-		expect(d).toContain("present_decision_prompt");
+	it("NÃO instrui a CHAMAR present_decision_prompt (só a proíbe) — o card é server-side (FIX-253)", () => {
+		const d = buildDecisionPromptDirective();
+		expect(d).not.toMatch(/present_decision_prompt\(/);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_decision_prompt/);
 		expect(d).not.toContain("present_lead_form");
 	});
 
-	it("carrega a administradora do plano recomendado pro contexto do card", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Bradesco" });
-		expect(d).toContain("Bradesco");
-	});
-
 	it("proíbe EXPLICITAMENTE re-apresentar o reveal (anti-loop)", () => {
-		const d = buildDecisionPromptDirective({ administradora: "Porto Seguro" });
+		const d = buildDecisionPromptDirective();
 		// O directive nomeia as tools do reveal só pra PROIBIR re-chamá-las.
 		expect(d).toMatch(/PROIBIDO/);
 		expect(d).toMatch(/search_groups/);
@@ -53,6 +54,40 @@ describe("index.ts — branch que dirige o gate 'decision'", () => {
 
 	it("dirige o directive de decisão (buildDecisionPromptDirective)", () => {
 		expect(src).toContain("buildDecisionPromptDirective");
+	});
+
+	// FIX-253: o card de decisão é emissão SERVER-SIDE determinística — mesma
+	// receita de buildScarcityCard/buildTwoPathsCard (FIX-246), nunca mais
+	// depende do LLM chamar present_decision_prompt.
+	it("emite o card de decisão via buildDecisionPromptCard (server-cards.ts), não via tool-call do LLM", () => {
+		expect(src).toContain("buildDecisionPromptCard");
+	});
+});
+
+// FIX-239 (Fable r1, D3.4, gap P1 #6b): "quero seguir com esse plano" (texto
+// livre) DEPOIS que o card de decisão já apareceu uma vez ("deixa eu
+// confirmar com você:" seguido de NADA — turno morto, isDecisionDup suprimia
+// o segundo present_decision_prompt que o LLM tentava chamar de conta
+// própria). Roteamento DETERMINÍSTICO: re-pedido explícito pós-decisão avança
+// direto pro passo 5 (mesma directive do clique "Tenho interesse").
+describe("index.ts — re-pedido de avanço pós-decisão (texto livre) avança pro passo 5", () => {
+	const src = readSource("src/lib/agent/orchestrator/index.ts");
+
+	it("importa buildAdvanceToContractDirective", () => {
+		expect(src).toMatch(/buildAdvanceToContractDirective/);
+	});
+
+	it("detecta ready_to_proceed com decisionDispatched já true e SEM contrato fechado", () => {
+		// 2ª ocorrência: a 1ª é o import no topo do arquivo.
+		const firstIdx = src.indexOf("buildAdvanceToContractDirective");
+		const idx = src.indexOf("buildAdvanceToContractDirective", firstIdx + 1);
+		expect(idx, "buildAdvanceToContractDirective não usado (só importado) em index.ts").toBeGreaterThan(
+			-1,
+		);
+		const windowBefore = src.slice(Math.max(0, idx - 700), idx);
+		expect(windowBefore).toMatch(/decisionDispatched/);
+		expect(windowBefore).toMatch(/ready_to_proceed/);
+		expect(windowBefore).toMatch(/contractClosed/);
 	});
 });
 

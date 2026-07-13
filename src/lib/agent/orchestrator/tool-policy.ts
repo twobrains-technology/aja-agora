@@ -1,5 +1,4 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 /**
  * FIX-19 (bloco G) — tool-policy por fase da jornada.
@@ -144,7 +143,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 		case "reveal":
 			// BUG-REVEAL-LOOP: re-descoberta (search/recommend/cards do reveal)
 			// FORA por padrão — o que sobra de reveal é what-if/detalhe. Dial
-			// (passo 4) e decision_prompt entram; contract_form SÓ depois da decisão.
+			// (passo 4) entra; contract_form SÓ depois da decisão.
 			//
 			// FIX-68 (exceção cirúrgica): quando o usuário TROCA de faixa de valor
 			// (valor-alvo ≠ o da última descoberta), a re-descoberta VOLTA — sem ela
@@ -152,31 +151,49 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// (`auto-130k-60m`) e travava em loop de "instabilidade" (conversa
 			// a8b0a80d, 2026-06-22). O afirmativo curto na MESMA faixa NÃO cai aqui
 			// (revealValueTargetChanged=false) → o anti-loop original continua valendo.
+			//
+			// FIX-253 (rodada 4, veredito Fable FINAL §3, causa-raiz): present_
+			// decision_prompt SAIU do toolset (era a última tool "de card" que
+			// sobrava — mesma família do FIX-246). Enquanto ficou exposta, o LLM
+			// chamava a tool DIRETO num turno de usuário comum, bypassando o ramo
+			// `nextGateToFire === "decision"` do orchestrator (index.ts) — que é
+			// quem dispara o scarcity server-side ANTES do decision_prompt. Card
+			// agora é emissão SERVER-SIDE determinística (buildDecisionPromptCard),
+			// como embedded_bid/two_paths/scarcity — o LLM nunca mais chama.
 			return [
 				...BASE,
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
-				"present_decision_prompt",
+				// FIX-246 (rodada 3, Fable r2): embedded_bid/two_paths/scarcity SAÍRAM
+				// do toolset do LLM — 0 emissões ao vivo mesmo com directive
+				// instruindo a tool-call (invariante no prompt, não em código, Lei
+				// 1/2/4). Emissão agora é SERVER-SIDE determinística
+				// (server-cards.ts) — o LLM nunca mais precisa (nem pode) chamá-las.
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
-				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
+				// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU também — mesmo
+				// toolset, mesmo estado, disparava num fluxo e não em outro
+				// estruturalmente idêntico (LLM-discricionário). Emissão agora é
+				// SERVER-SIDE determinística (buildWhatsappOptinCard,
+				// orchestrator/index.ts) — a tool NUNCA entra em allowedTools em
+				// nenhuma fase.
 			];
 		case "closing":
-			// Decisão tomada: passo 5 libera (contract_form). present_decision_prompt
-			// PERMANECE: o orquestrador persiste decisionDispatched=true ANTES de
-			// rodar o turno da directive (index.ts) — o turno que EMITE o card já
-			// roda nesta fase. Tirar a tool daqui fez o card do passo 4 sumir da
-			// jornada (eval nightly 2026-06-11). Dup em turno de USUÁRIO é papel
-			// do guard isDecisionDup (2ª linha), que distingue user-turn de
-			// directive — granularidade que a fase não tem.
+			// Decisão tomada: passo 5 libera (contract_form). FIX-253: present_
+			// decision_prompt NÃO volta aqui — o card do passo 4 já foi emitido
+			// SERVER-SIDE (buildDecisionPromptCard) ANTES do meta chegar em
+			// decisionDispatched=true (o directive que fecha closing é só
+			// narrativo, sem tool-call — ver orchestrator/index.ts). Dup em turno
+			// de USUÁRIO segue coberta pelo guard isDecisionDup (2ª linha).
 			return [
 				...BASE,
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
-				"present_decision_prompt",
+				// FIX-246: embedded_bid/two_paths/scarcity saíram do toolset do LLM
+				// em qualquer fase (emissão server-side determinística — ver "reveal").
 				"present_contract_form",
-				...(shouldEmitWhatsappOptin(meta) ? ["present_whatsapp_optin"] : []),
+				// FIX-280: present_whatsapp_optin saiu daqui também — ver "reveal".
 			];
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.

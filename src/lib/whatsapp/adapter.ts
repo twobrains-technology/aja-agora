@@ -22,7 +22,6 @@ import {
 	lanceEmbutidoQuestionToWhatsApp,
 	lanceQuestionToWhatsApp,
 	lanceValueQuestionToWhatsApp,
-	qualifyConsentToWhatsApp,
 	simulatorOfferToWhatsApp,
 	splitMessage,
 	timeframeQuestionToWhatsApp,
@@ -47,12 +46,6 @@ async function gateInteractive(
 	switch (gate) {
 		case "experience":
 			return experienceQuestionToWhatsApp(prefix).interactive ?? null;
-		case "consent":
-			// docx: pós-explicação de primeira vez → "Entendi, pode continuar".
-			return (
-				qualifyConsentToWhatsApp(prefix, { firstTime: meta.experiencePrev === "first" })
-					.interactive ?? null
-			);
 		case "credit":
 			// FIX-120 (paridade FIX-115): o valor do bem virou CONVERSA — o WhatsApp
 			// não manda mais a lista de faixas. A pergunta sai como TEXTO (ver
@@ -78,6 +71,7 @@ async function gateInteractive(
 			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
 			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
 		case "name":
+		case "desire":
 		case "identify":
 		case "doubts-wait":
 		case "search":
@@ -86,6 +80,7 @@ async function gateInteractive(
 			// sai no texto do directive de primeiro contato; o card não existe aqui.
 			// "identify" não tem interactive — é coleta textual de CPF (fireGate
 			// manda o prompt como texto; captura em identify-capture.ts).
+			// FIX-233: "desire" é não bloqueante e sem card — conversa livre.
 			return null;
 	}
 }
@@ -110,7 +105,7 @@ async function gateTextPrompt(
 	if (!WHATSAPP_TEXT_GATES.has(gate)) return null;
 	const meta = await reloadMeta(conversationId);
 	// `credit` usa a categoria no texto; `identify` é fixo — gateQuestion aceita null.
-	const question = gateQuestion(gate, meta.currentCategory ?? null);
+	const question = gateQuestion(gate, meta.currentCategory ?? null, meta.recommendedOffer?.creditValue, "whatsapp", meta.qualifyAnswers?.creditMentionedAtDesire);
 	if (!question) return null;
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
@@ -120,7 +115,7 @@ async function gateTextPrompt(
 // como balão próprio ANTES do pedido, em vez de deixar o gancho a cargo do LLM.
 // null = o contexto vem do texto do LLM (buffer). O lance-embutido entra aqui no
 // FIX-212 (educação curta antes do card).
-async function gateContextBeat(gate: Gate): Promise<string | null> {
+async function gateContextBeat(gate: Gate, conversationId: string): Promise<string | null> {
 	if (gate === "identify") {
 		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
 		return IDENTIFY_CONTEXT_WHATSAPP;
@@ -128,8 +123,10 @@ async function gateContextBeat(gate: Gate): Promise<string | null> {
 	if (gate === "lance-embutido") {
 		// FIX-212 (split 2 tempos): a educação do lance embutido sai como balão de
 		// contexto ANTES do card, que fica só com a pergunta curta + botões.
-		const { LANCE_EMBUTIDO_EDU } = await import("@/lib/agent/orchestrator/gate-questions");
-		return LANCE_EMBUTIDO_EDU;
+		// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+		const { lanceEmbutidoEdu } = await import("@/lib/agent/orchestrator/gate-questions");
+		const meta = await reloadMeta(conversationId);
+		return lanceEmbutidoEdu(meta.recommendedOffer?.creditValue);
 	}
 	return null;
 }
@@ -246,6 +243,14 @@ async function consumeEvents(
 				// FIX-24: telemetria interna — o tap `traceTurnEvents` já consumiu
 				// o evento; nada a enviar no WhatsApp.
 				break;
+
+			case "text-boundary":
+				// FIX-268: mesmo boundary do canal web (adapter web/adapter.ts) —
+				// força o envio do que já foi bufferizado como mensagem própria,
+				// pra 2 directives seguidos (ex.: scarcity → decision) não colarem
+				// no mesmo balão quando não há artifact/gate entre eles.
+				await flushText();
+				break;
 			case "transition": {
 				await flushText();
 				await flushArtifacts();
@@ -300,7 +305,7 @@ async function consumeEvents(
 				// lance-embutido tem a educação): o beat de contexto é determinístico —
 				// substituímos a reação do LLM pelo contexto fixo (o gancho nunca some).
 				// Demais gates: o contexto vem do texto do LLM (buffer via flushText).
-				const contextBeat = await gateContextBeat(ev.gate);
+				const contextBeat = await gateContextBeat(ev.gate, conversationId);
 				if (contextBeat) {
 					textBuffer = ""; // reação do LLM substituída pelo contexto fixo (gancho garantido)
 					await flushArtifacts();
@@ -364,7 +369,14 @@ async function consumeEvents(
 			// coleta pendente (escalado, FIX-211) em vez do "me perdi"; demais gates caem
 			// no fallback honesto. Nunca deixa o usuário no silêncio.
 			const attempt = mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
-			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+			const reengage = reengageQuestionForGate(
+				ng,
+				guardMeta.currentCategory,
+				attempt,
+				guardMeta.recommendedOffer?.creditValue,
+				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
+			);
 			console.warn(
 				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
 			);
@@ -375,7 +387,14 @@ async function consumeEvents(
 			// neste turno. Re-cobra ESCALADO em vez de esperar o watchdog de 90s. Teto de
 			// 3 tentativas + saída pro especialista (anti-armadilha, reengageQuestionForGate).
 			const attempt = await bumpGateAttempt(conversationId, guardMeta, ng);
-			const reengage = reengageQuestionForGate(ng, guardMeta.currentCategory, attempt);
+			// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+			const reengage = reengageQuestionForGate(
+				ng,
+				guardMeta.currentCategory,
+				attempt,
+				guardMeta.recommendedOffer?.creditValue,
+				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
+			);
 			if (reengage) {
 				console.warn(
 					`[gate-collect-reengage] conv=${conversationId} DESVIO no gate=${ng} tentativa=${attempt}`,
@@ -497,9 +516,6 @@ export async function fireGate(
 	meta: ConversationMetadata,
 	prefix?: string,
 ): Promise<void> {
-	if (gate === "consent" && !meta.consentOffered) {
-		await persistMeta(conversationId, { ...meta, consentOffered: true });
-	}
 	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos
 	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro.
 	if (gate === "identify") {
@@ -511,7 +527,7 @@ export async function fireGate(
 	}
 	// FIX-212 (split 2 tempos): gates com contexto fixo (lance-embutido: educação)
 	// emitem o beat de contexto ANTES do card, também no caminho de clique/fireGate.
-	const contextBeat = await gateContextBeat(gate);
+	const contextBeat = await gateContextBeat(gate, conversationId);
 	if (contextBeat) await sendTextMessage(from, contextBeat);
 	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
 	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);

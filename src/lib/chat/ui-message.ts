@@ -55,7 +55,6 @@ export type GatePartData =
 			kind: "chips";
 			gate:
 				| "experience"
-				| "consent"
 				| "lance"
 				| "lance-value"
 				| "lance-embutido"

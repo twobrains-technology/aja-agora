@@ -1,10 +1,21 @@
 "use client";
 
-import { Check, Crown } from "lucide-react";
+import { Check, Crown, Info } from "lucide-react";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ComparisonTablePayload, GroupCardPayload } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 import { type RevealCota, useRevealSelection } from "../reveal-selection";
+
+// FIX-287 (veredito r9pos2 §3 P1-2): mesmo critério do recommendation-card.tsx
+// (FIX-197/261) — aviso SÓ quando o valor-alvo (rawCreditValue) realmente
+// diverge do creditValue exibido (já corrigido server-side quando o grupo já
+// foi simulado, ver recommendation-payload.ts). Ancorado nos dois números
+// reais; nunca aparece pros grupos sem divergência conhecida.
+const hasCreditAdjustment = (rawCreditValue: number | undefined, creditValue: number): boolean =>
+	rawCreditValue != null &&
+	Number.isFinite(rawCreditValue) &&
+	Number.isFinite(creditValue) &&
+	Math.round(rawCreditValue) !== Math.round(creditValue);
 
 const formatBRL = (value: number): string =>
 	new Intl.NumberFormat("pt-BR", {
@@ -12,6 +23,12 @@ const formatBRL = (value: number): string =>
 		currency: "BRL",
 		maximumFractionDigits: 0,
 	}).format(value);
+
+// FIX-242 (rodada 2, Fable r1, §D2.3): PARCELA nunca arredonda (CDC art. 30) —
+// R$ 2.182,01 não pode virar "R$ 2.182". Carta (valor redondo) segue sem
+// centavos (formatBRL acima); só a parcela precisa do formatador com centavos.
+const formatBRL2 = (value: number): string =>
+	new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }) {
 	const reveal = useRevealSelection();
@@ -60,7 +77,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						key={group.id}
 						type="button"
 						tabIndex={0}
-						aria-label={`Simular ${group.administradora}, parcela ${formatBRL(group.monthlyPayment)} por mês`}
+						aria-label={`Simular ${group.administradora}, parcela ${formatBRL2(group.monthlyPayment)} por mês`}
 						onClick={() => handleSelect(group)}
 						className={cn(
 							"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
@@ -87,12 +104,15 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 							)}
 						</div>
 
-						{/* Main value — parcela herói */}
+						{/* Main value — carta em destaque (FIX-231: é o que o cliente compra) */}
 						<div>
-							<p className="aja-num text-lg font-bold leading-none text-foreground">
-								{formatBRL(group.monthlyPayment)}
+							<p
+								data-testid={`comparison-chip-hero-credit-${group.id}`}
+								className="aja-num text-lg font-bold leading-none text-primary"
+							>
+								{formatBRL(group.creditValue)}
 							</p>
-							<p className="text-[10px] text-muted-foreground mt-0.5">/mês</p>
+							<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
 						</div>
 
 						{/* Divider */}
@@ -102,14 +122,29 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						{/* Bernardo 2026-06-11: sem "Taxa" no carrossel — composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
 						<div className="flex flex-col gap-1">
 							<div className="flex items-center justify-between text-xs">
-								<span className="text-muted-foreground">Valor do bem</span>
-								<b className="aja-num font-semibold">{formatBRL(group.creditValue)}</b>
+								<span className="text-muted-foreground">Parcela</span>
+								<b
+									data-testid={`comparison-chip-secondary-payment-${group.id}`}
+									className="aja-num font-semibold"
+								>
+									{formatBRL2(group.monthlyPayment)}/mês
+								</b>
 							</div>
 							<div className="flex items-center justify-between text-xs">
 								<span className="text-muted-foreground">Prazo</span>
 								<b className="aja-num font-semibold">{group.termMonths}m</b>
 							</div>
 						</div>
+
+						{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
+						{group.avgBidValue != null && (
+							<p
+								data-testid={`comparison-chip-lance-medio-${group.id}`}
+								className="text-[10px] text-muted-foreground -mt-0.5"
+							>
+								Lance médio {formatBRL(group.avgBidValue)}
+							</p>
+						)}
 					</button>
 				);
 			})}
@@ -124,6 +159,9 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 	const reveal = useRevealSelection();
 	if (reveal.cotas.length === 0) return null;
+	// FIX-220: "Top" só quando o estágio 2 (ONDA 2) sinalizar personalização — a
+	// 1ª lista (neutra, mesmo peso) não elege nenhuma cota como melhor no seletor.
+	const showTop = reveal.recommendationStage === "personalized";
 
 	return (
 		<div className="flex w-full flex-col gap-1.5">
@@ -145,6 +183,7 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 						key={cota.groupId}
 						cota={cota}
 						selected={cota.groupId === reveal.selectedGroupId}
+						showTop={showTop}
 						onSelect={() => reveal.select(cota.groupId)}
 					/>
 				))}
@@ -156,18 +195,23 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 function QuotaChip({
 	cota,
 	selected,
+	showTop,
 	onSelect,
 }: {
 	cota: RevealCota;
 	selected: boolean;
+	showTop: boolean;
 	onSelect: () => void;
 }) {
+	// FIX-287 — aviso de divergência: o groupId já foi simulado nesta conversa
+	// e o nominal REAL diverge do valor-alvo mostrado no comparativo.
+	const showAdjustNotice = hasCreditAdjustment(cota.rawCreditValue, cota.creditValue);
 	return (
 		<button
 			type="button"
 			role="option"
 			aria-selected={selected}
-			aria-label={`Selecionar ${cota.administradora}, parcela ${formatBRL(cota.monthlyPayment)} por mês`}
+			aria-label={`Selecionar ${cota.administradora}, parcela ${formatBRL2(cota.monthlyPayment)} por mês`}
 			onClick={onSelect}
 			className={cn(
 				"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
@@ -188,7 +232,7 @@ function QuotaChip({
 						<Check className="size-[11px]" />
 						Selecionada
 					</span>
-				) : cota.isRecommended ? (
+				) : cota.isRecommended && showTop ? (
 					<span
 						className="inline-flex items-center gap-[3px] shrink-0 h-5 px-[7px] rounded-full text-[10px] font-semibold"
 						style={{ background: "var(--surface-ink)", color: "#fff" }}
@@ -199,12 +243,28 @@ function QuotaChip({
 				) : null}
 			</div>
 
-			{/* Main value — parcela herói */}
+			{/* Main value — carta em destaque (FIX-231: é o que o cliente compra) */}
 			<div>
-				<p className="aja-num text-lg font-bold leading-none text-foreground">
-					{formatBRL(cota.monthlyPayment)}
+				<p
+					data-testid={`quota-chip-hero-credit-${cota.groupId}`}
+					className="aja-num text-lg font-bold leading-none text-primary"
+				>
+					{formatBRL(cota.creditValue)}
 				</p>
-				<p className="text-[10px] text-muted-foreground mt-0.5">/mês</p>
+				<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+				{/* FIX-287 — aviso discreto: esse grupo não aceitou o valor pedido
+				    (nominal real já provado por uma simulação nesta conversa). */}
+				{showAdjustNotice && cota.rawCreditValue != null && (
+					<p
+						data-testid={`quota-chip-adjustment-notice-${cota.groupId}`}
+						className="flex items-start gap-1 mt-1 text-[9px] leading-snug text-muted-foreground"
+					>
+						<Info className="mt-0.5 size-[9px] shrink-0 text-primary" />
+						<span className="whitespace-normal break-words">
+							Não aceita ~{formatBRL(cota.rawCreditValue)}
+						</span>
+					</p>
+				)}
 			</div>
 
 			{/* Divider */}
@@ -213,14 +273,21 @@ function QuotaChip({
 			{/* Details — sem Taxa (Bernardo 2026-06-11); composição na proposta (PDF) */}
 			<div className="flex flex-col gap-1">
 				<div className="flex items-center justify-between text-xs">
-					<span className="text-muted-foreground">Valor do bem</span>
-					<b className="aja-num font-semibold">{formatBRL(cota.creditValue)}</b>
+					<span className="text-muted-foreground">Parcela</span>
+					<b className="aja-num font-semibold">{formatBRL2(cota.monthlyPayment)}/mês</b>
 				</div>
 				<div className="flex items-center justify-between text-xs">
 					<span className="text-muted-foreground">Prazo</span>
 					<b className="aja-num font-semibold">{cota.termMonths}m</b>
 				</div>
 			</div>
+
+			{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
+			{cota.avgBidValue != null && (
+				<p className="text-[10px] text-muted-foreground -mt-0.5">
+					Lance médio {formatBRL(cota.avgBidValue)}
+				</p>
+			)}
 		</button>
 	);
 }

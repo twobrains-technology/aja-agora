@@ -11,7 +11,7 @@
 
 import type { PartnerOffer } from "../proposal-gateway";
 import type { ConsorcioCategory } from "../types";
-import { beviSegmentToCategory } from "./offer-mapper";
+import { beviSegmentToCategory, normalizeAdministradoraName } from "./offer-mapper";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -70,7 +70,11 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 	const avgBid = parseMoney(offer.lanceMedio);
 	return {
 		ofertaId: offer.ofertaId,
-		administradora: offer.administradora,
+		// FIX-265 (menor #1, veredito Fable r5, N5): a API de Parceiro devolve o
+		// código cru da Bevi ("ITAU", sem acento) — mesmo normalizador do trilho
+		// de Descoberta (offer-mapper.ts, FIX-255), pra a copy do fecho nunca
+		// falar "ITAU" sem acento (inviolável PT-BR).
+		administradora: normalizeAdministradoraName(offer.administradora),
 		grupo: offer.grupo,
 		category: beviSegmentToCategory(segmento),
 		creditValue: offer.valorCarta,
@@ -87,8 +91,16 @@ export function partnerOfferToRealOffer(offer: PartnerOffer, segmento: string): 
 }
 
 /** Normaliza nome de administradora pra comparação entre trilhos — a Descoberta
- * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). */
-const normalizeAdmin = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+ * devolve "ÂNCORA" e a API de Parceiro "ANCORA" (acento/caixa divergem). Exportada
+ * pra fulfillment.ts comparar a administradora fechada com a confirmada (FIX-259 —
+ * detectar troca de marca no fechamento, nunca em silêncio). */
+export const normalizeAdmin = (s: string) =>
+	s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+
+/** Acima desta distância relativa (crédito), o pick abre mão da fidelidade de
+ * marca (BUG-ADMIN-TROCADA-NO-FECHAMENTO) em favor da faixa pedida — compliance
+ * (CDC art. 30, FIX-240) pesa mais que continuidade de administradora. */
+const MAX_CREDIT_DEVIATION = 0.2;
 
 /** Escolhe, dentre as ofertas reais, a mais próxima do crédito que o usuário viu na
  * Descoberta (pra costurar o seam indicativo→real sem trocar o "plano" debaixo dele).
@@ -97,7 +109,15 @@ const normalizeAdmin = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
  * administradora recomendada e o fechamento entregava OUTRA — closest por valor
  * ignorava a marca. Com `preferAdministradora` presente nas ofertas do parceiro,
  * escolhe a mais próxima DELA; ausente, cai no closest geral (não trava o
- * fechamento por divergência de catálogo entre trilhos). */
+ * fechamento por divergência de catálogo entre trilhos).
+ *
+ * FIX-240 (rodada 2, Fable r1, D5.1 — CDC art. 30): a fidelidade de marca acima
+ * não tinha teto — pedido 120k → recomendada ITAÚ 150k → fechamento entregou
+ * 211.258 (41% acima) porque era a única carta ITAÚ na simulação. Clamp: quando a
+ * melhor oferta da admin preferida está a mais de MAX_CREDIT_DEVIATION do pedido
+ * E existe oferta (de qualquer marca) mais próxima, prefere a mais próxima. Sem
+ * opção mais próxima em nenhuma marca, mantém a preferida — o aviso de ajuste
+ * (FIX-197) cobre o resto. */
 export function pickClosestOffer(
 	offers: PartnerOffer[],
 	targetCredit: number,
@@ -120,11 +140,20 @@ export function pickClosestOffer(
 				: 0;
 		return creditTerm + termTerm;
 	};
+	const creditDeviation = (o: PartnerOffer): number =>
+		targetCredit > 0 ? Math.abs(o.valorCarta - targetCredit) / targetCredit : 0;
 	const best = (list: PartnerOffer[]) => list.reduce((b, o) => (score(o) < score(b) ? o : b));
 	if (preferAdministradora) {
 		const pref = normalizeAdmin(preferAdministradora);
 		const preferred = offers.filter((o) => normalizeAdmin(o.administradora) === pref);
-		if (preferred.length > 0) return best(preferred);
+		if (preferred.length > 0) {
+			const preferredBest = best(preferred);
+			if (creditDeviation(preferredBest) > MAX_CREDIT_DEVIATION) {
+				const globalBest = best(offers);
+				if (score(globalBest) < score(preferredBest)) return globalBest;
+			}
+			return preferredBest;
+		}
 	}
 	return best(offers);
 }

@@ -1,0 +1,8 @@
+{
+  "cenario": "smoke-2turnos",
+  "descricao": "Prova de fumaça do driver: oi -> escolher imóvel. Confirma texto real do agente e artifacts.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome com 3 categorias (Imóvel/Automóvel/Moto)" },
+    { "type": "action", "action": { "kind": "category", "category": "imovel" }, "label": "Imóvel", "expect": "transição pra especialista + gate name (Como posso te chamar?)" }
+  ]
+}

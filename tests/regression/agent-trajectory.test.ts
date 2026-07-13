@@ -383,8 +383,11 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 	it("tool-policy: present_lead_form NEM ENTRA no toolset pos-reveal (1a linha de defesa)", async () => {
 		const { allowedTools } = await import("@/lib/agent/orchestrator/tool-policy");
 		expect(allowedTools(REVEAL_META)).not.toContain("present_lead_form");
-		// O caminho de avanco SIM esta disponivel.
-		expect(allowedTools(REVEAL_META)).toContain("present_decision_prompt");
+		// FIX-253 (rodada 4): o caminho de avanco NAO passa mais por tool-call —
+		// present_decision_prompt saiu do toolset (emissao server-side deterministica,
+		// buildDecisionPromptCard). O avanco pos-reveal continua existindo, so que
+		// nunca mais depende do LLM chamar a tool.
+		expect(allowedTools(REVEAL_META)).not.toContain("present_decision_prompt");
 	});
 
 	it("regra do prompt: NENHUM gatilho de avanco esta amarrado a present_lead_form (anti-regressao)", () => {
@@ -476,10 +479,14 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
 		expect(decision).toContain("present_decision_prompt");
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
+		// próximo comentário — um comentário legítimo dentro do próprio bloco
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
+		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		const start = route.indexOf('action.gate === "simulator-offer"');
+		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
-			route.match(
-				/action\.gate === "simulator-offer"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(action\.gate)/,
-			)?.[0] ?? "";
+			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
 		expect(
 			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
@@ -953,6 +960,9 @@ describe("BUG-WHATSAPP-DROP — artifactToWhatsApp cobre TODAS as PRESENTATION_T
 			scenarios: { scenarios: {} },
 			financing_comparison: { consorcio: {}, financing: {}, diff: {} },
 			whatsapp_optin: {},
+			embedded_bid: { maxEmbutidoPct: 30, creditValue: 120_000, embeddedBidValue: 36_000, netCredit: 84_000, disclaimer: "x" },
+			two_paths: { monthlyPayment: 812, administradora: "X", disclaimer: "x" },
+			scarcity: { groupCode: "g1", administradora: "X", availableSlots: 3 },
 		};
 
 		const expectedArtifactTypes = Array.from(PRESENTATION_TOOLS).map((t) =>
@@ -2185,18 +2195,19 @@ describe("BUG-AUTO-SKIPS-PRE-VALUE-GATES — agent pula gates experience/timefra
 		).toEqual([]);
 	});
 
-	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-103: sem prazo)", () => {
+	it("CROSS-REF prompt: regra dura no SPECIALIST_BASE_PROMPT acopla os gates à proibição de pedir valor antes (FIX-274: ordem sem consent, desejo → identidade → valor)", () => {
 		// Acoplamento ao prompt source: o reforço estrutural compartilhado
 		// precisa estar lá. Se essa regra sumir, o cassette deste describe
-		// continuaria reproduzível em prod. FIX-103: o gate de prazo (timeframe)
-		// saiu — a ordem agora é experience → (consent → identidade) → valor → lance.
-		const ordemDosGates = /experience[\s\S]{0,600}valor do bem[\s\S]{0,200}lance/i;
+		// continuaria reproduzível em prod. FIX-233: experience desceu pra pós-busca.
+		// FIX-274: o gate `consent` saiu — a ordem da coleta agora é
+		// desejo (bem + motivo) → identidade → valor → busca (lance é pós-reveal).
+		const ordemDosGates = /desejo[\s\S]{0,700}identidade[\s\S]{0,400}valor do bem/i;
 		const proibeValorAntes =
 			/NUNCA pergunta valor[\s\S]{0,200}(present_value_picker|search_groups|conta própria)/i;
 		expect(
 			ordemDosGates.test(SPECIALIST_BASE_PROMPT) && proibeValorAntes.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa listar a ordem (experience → valor → lance) E " +
-				"acoplá-la à proibição de pedir valor por conta própria. FIX-103: prazo NÃO entra mais na ordem.",
+			"SPECIALIST_BASE_PROMPT precisa listar a ordem (desejo → identidade → valor) E " +
+				"acoplá-la à proibição de pedir valor por conta própria. FIX-274: consent fora; experience pós-busca.",
 		).toBe(true);
 	});
 
@@ -2262,7 +2273,6 @@ describe("FIX-103 — funil pula o prazo (web + WhatsApp)", () => {
 			const q = meta.qualifyAnswers ?? {};
 			if (g === "name") hasName = true;
 			else if (g === "experience") meta = { ...meta, experiencePrev: "first" };
-			else if (g === "consent") meta = { ...meta, qualifyConsented: true };
 			else if (g === "identify") meta = { ...meta, identityCollected: true };
 			else if (g === "credit") meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
 			else if (g === "lance") meta = { ...meta, qualifyAnswers: { ...q, hasLance } };
@@ -2849,7 +2859,10 @@ describe("FEATURE-LANCE-EMBUTIDO — reacao curta ao lance, educacao fica no gat
 
 	it("o directive de reacao ao lance NAO instrui pre-explicar lance embutido", () => {
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
-		const m = directives.match(/buildLanceReactionDirective[\s\S]{0,500}?\n}/);
+		// FIX-272 (rodada 8, veredito Fable r7): a janela cresceu de 500→700 —
+		// o corpo ganhou a proibição explícita de "reserva" na reação (o directive
+		// induzia o termo proibido na prosa do LLM), texto legitimamente maior.
+		const m = directives.match(/buildLanceReactionDirective[\s\S]{0,700}?\n}/);
 		expect(m, "buildLanceReactionDirective precisa existir em directives.ts").not.toBeNull();
 		const body = m?.[0] ?? "";
 		// Deve mandar reagir curto e explicitamente NAO explicar embutido aqui.
@@ -2886,11 +2899,13 @@ describe("FEAT-CONTRACT-FLOW — passo 5 'contratar agora' dispara present_contr
 		expect(text).not.toMatch(/preencha o formul[áa]rio|digite seu cpf no campo/i);
 	});
 
-	it("regra do prompt: 'contratar agora' acoplado a present_contract_form (<400 chars)", () => {
-		const re = /contratar agora[\s\S]{0,400}present_contract_form/i;
+	it("regra do prompt: 'seguir agora' acoplado a present_contract_form (<400 chars)", () => {
+		// DV-8 (QA 2026-07-11): "reserva" só pós-fechamento; o gatilho de avanço vira
+		// "seguir agora" (supera o FIX-216, que tinha posto "reservar").
+		const re = /seguir agora[\s\S]{0,400}present_contract_form/i;
 		expect(
 			re.test(SPECIALIST_BASE_PROMPT),
-			"'contratar agora' precisa apontar pra present_contract_form no prompt (passo 5).",
+			"'seguir agora' precisa apontar pra present_contract_form no prompt (passo 5).",
 		).toBe(true);
 	});
 });
@@ -3022,6 +3037,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 	// Meta de conversa que JA completou qualify + reveal (o usuario viu tudo).
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3172,6 +3188,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", () => {
 	function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "rafael-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -3799,6 +3816,7 @@ describe("FIX-183 — 'quero ver todos' re-apresenta opções, não decide sobre
 describe("GATE-IDENTIFY — CPF antecipado antes da busca real (D1)", () => {
 	function qualifiedSemIdentidade(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -3908,6 +3926,7 @@ describe("MOCK-RUNTIME-MORTO — descoberta nunca mais serve dado fictício", ()
 describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", () => {
 	function postRevealSemOferta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4289,13 +4308,17 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 		expect(toolCalls.some((tc) => tc.toolName === "present_whatsapp_optin")).toBe(true);
 	});
 
-	it("estrutural: derive enxerga telefone capturado (confirm) e suprime em retry (done)", async () => {
-		const { deriveWhatsappOptinStage, whatsappOptinSection } = await import(
-			"@/lib/agent/system-prompt"
-		);
+	// FIX-280 (loop r9, G4): deriveWhatsappOptinStage colapsou pra locked/done —
+	// "confirm" (número já conhecido, não re-coletar) migrou pra
+	// buildWhatsappOptinDirective("confirm") (orchestrator/directives.ts), que
+	// o orchestrator escolhe deterministicamente via meta.contactPhone, nunca
+	// mais o LLM decidindo o estágio do prompt.
+	it("estrutural: derive colapsou pra locked/done; o directive 'confirm' não re-pede o número já conhecido", async () => {
+		const { deriveWhatsappOptinStage } = await import("@/lib/agent/system-prompt");
+		const { buildWhatsappOptinDirective } = await import("@/lib/agent/orchestrator/directives");
 		expect(
 			deriveWhatsappOptinStage({ revealCompleted: true, contactPhone: "(62) 9...-6793" }),
-		).toBe("confirm");
+		).toBe("done");
 		expect(
 			deriveWhatsappOptinStage({
 				revealCompleted: true,
@@ -4303,11 +4326,11 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 				contractRetryPending: true,
 			}),
 		).toBe("done");
-		// a seção confirm NÃO re-pede o número (já informado).
-		const s = whatsappOptinSection("confirm");
-		expect(s).not.toMatch(/me compartilha seu WhatsApp/i);
-		expect(s).not.toMatch(/anotar seu WhatsApp/i);
-		expect(s).toMatch(/present_whatsapp_optin/);
+		// o directive 'confirm' NÃO re-pede o número (já informado).
+		const d = buildWhatsappOptinDirective("confirm");
+		expect(d).not.toMatch(/me compartilha seu WhatsApp/i);
+		expect(d).not.toMatch(/anotar seu WhatsApp/i);
+		expect(d.toLowerCase()).toMatch(/n[ãa]o chame present_whatsapp_optin/);
 	});
 
 	it("estrutural: guard remove present_whatsapp_optin em retry pendente (determinismo)", async () => {
@@ -4352,9 +4375,14 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de hasLance='yes'", () => {
 	function metaQualificado(hasLance: "yes" | "no" | "maybe"): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
+			// FIX-215 (Ata 2026-07-04): a conversa de lance só entra em jogo
+			// PÓS-reveal — sem isso o funil pularia direto pra "search".
+			searchDispatched: true,
+			revealCompleted: true,
 			qualifyAnswers: {
 				creditMax: 20_000,
 				monthlyBudget: 500,
@@ -4615,6 +4643,7 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 		// O que o componente entrega → qualifyAnswers; nextGate deve ir pro
 		// identify sem passar por timeframe/lance/lance-value/lance-embutido.
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -4634,13 +4663,17 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 
 	it("funil: plano PARCIAL (sem decidir lance embutido) → gate educativo continua", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
-			// FIX-53: `identify` precede `credit`. Com a identidade já coletada, o
-			// funil chega ao gate educativo de lance embutido — que é o foco deste
-			// teste (plano parcial, falta só decidir o lance embutido).
+			// FIX-53: `identify` precede `credit`. FIX-215 (Ata 2026-07-04): a
+			// conversa de lance só entra em jogo PÓS-reveal — com a identidade e o
+			// reveal já feitos, o funil chega ao gate educativo de lance embutido,
+			// que é o foco deste teste (plano parcial, falta só decidir o lance embutido).
 			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -5170,7 +5203,7 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		expect(names).toContain("present_recommendation_card");
 	});
 
-	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel com a recomendada destacada", () => {
+	it("estrutural: directive de reveal (2+ grupos) instrui o carrossel neutro (FIX-220 — sem destaque)", () => {
 		const d = buildSearchSummaryDirective({
 			category: "auto",
 			meta: {
@@ -5186,7 +5219,10 @@ describe("BUG-REVEAL-3-OPCOES-1-CARD — reveal anunciou 3 mas mostrava 1 card",
 		});
 		expect(d).toMatch(/present_comparison_table/);
 		expect(d).toMatch(/TODOS os grupos/);
-		expect(d).toMatch(/highlightBestIndex=0/);
+		// FIX-220 (Ata 2026-07-04): a 1ª lista é NEUTRA — não instrui mais a
+		// destacar a recomendada (highlightBestIndex saiu da diretiva).
+		expect(d).not.toMatch(/highlightBestIndex\s*=\s*0/);
+		expect(d.toLowerCase()).toMatch(/mesmo peso|sem destacar nenhuma|neutr/);
 		// Garante que a proibicao antiga ("comparacao sob demanda") saiu.
 		expect(d).not.toMatch(/N[AÃ]O chame present_comparison_table neste turno/i);
 	});
@@ -5289,8 +5325,10 @@ describe("BUG-DIAL-DESCALIBRADO — card 49,28%/~6m vs dial 74%/6m na mesma ofer
 		});
 		expect(r.requiredLancePct).toBe(49);
 		expect(r.ownCashValue).toBe(0); // embutido real cobre — sem "R$ 115 mil do bolso"
-		// C4: parcela honesta — embutido nao derruba a parcela (nada de R$ 2.556)
-		expect(r.paymentAfterContemplation).toBeCloseTo(9_828.92, 2);
+		// FIX-221 (Ata 2026-07-04, AMORTIZA): o lance TOTAL (embutido) agora abate o
+		// saldo pos-contemplacao — a parcela CAI pra ~R$ 5.238 (jornada-canonica D9),
+		// nao mais fixa em R$ 9.828,92. PENDENTE-Bernardo validar o numero exato.
+		expect(r.paymentAfterContemplation).toBeCloseTo(5_238.5, 0);
 	});
 
 	it("wiring estrutural: runner captura simulate_quota e coage simulation_result + dial com perfil", async () => {
@@ -5834,10 +5872,13 @@ describe("FIX-33-CLAMP-CARTA — valor fora da faixa por texto livre nao passa c
 		expect(text).not.toMatch(/[óo]tim[ao].*5 milh|perfeito.*5 milh|5 milh[õo]es.*[óo]tim/i);
 	});
 
-	it("clamp server-side: 5M de auto persiste o teto da categoria (500k — FIX-54)", async () => {
+	// FIX-218 (Ata 2026-07-04): o guardrail FIX-33/FIX-54 abaixo foi REVOGADO —
+	// "não há integração com grupos nesse ponto, então qualquer valor é
+	// válido". O valor de 5M sobrevive intacto; ver qualify-config.test.ts.
+	it("clamp server-side REVOGADO: 5M de auto NÃO é mais capado ao teto da categoria (FIX-218)", async () => {
 		const { clampCreditToCategory } = await import("@/lib/agent/qualify-config");
-		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(500_000);
-		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(true);
+		expect(clampCreditToCategory(5_000_000, "auto").value).toBe(5_000_000);
+		expect(clampCreditToCategory(5_000_000, "auto").clamped).toBe(false);
 	});
 
 	it("directive de busca confronta a faixa quando o credito foi clampado (creditClampedFrom)", () => {
@@ -5926,16 +5967,23 @@ describe("BUG-ADMIN-DESSINCRONIZADA — what-if atualiza administradora junto co
 	it("source-level: o persistMeta do what-if grava recommendedAdministradora junto com recommendedOffer", () => {
 		const block = whatifBlock();
 		expect(block.length, "bloco 'FIX-6 (what-if)' não isolado no runner").toBeGreaterThan(0);
+		// FIX-252 (rodada 4, veredito Fable FINAL "pro teto" #3): o bloco passou a
+		// resolver `anchor` (snap por padrão, ou o grupo que o TEXTO do usuário
+		// mencionou — "a de 92 mil" — quando diverge do que a LLM simulou; nunca
+		// inventa). O invariante original do BUG-ADMIN-DESSINCRONIZADA continua
+		// intacto: offer e administradora TÊM que persistir a partir da MESMA
+		// variável, juntos.
 		expect(
-			block.includes("recommendedOffer: snap"),
-			"o bloco precisa seguir atualizando o snapshot da oferta (FIX-6).",
+			block.includes("recommendedOffer: anchor"),
+			"o bloco precisa seguir atualizando o snapshot da oferta (FIX-6/FIX-252).",
 		).toBe(true);
 		expect(
-			/recommendedAdministradora:\s*snap\.administradora/.test(block),
+			/recommendedAdministradora:\s*anchor\.administradora/.test(block),
 			"BUG-ADMIN-DESSINCRONIZADA: o persistMeta do what-if TEM que atualizar " +
-				"recommendedAdministradora a partir do snapshot — senão a directive do " +
-				"fechamento e a proposta real (contract-input.ts: administradoraPreferida) " +
-				"apontam pra administradora do reveal antigo, não pra que o usuário decidiu.",
+				"recommendedAdministradora a partir da MESMA âncora do recommendedOffer — " +
+				"senão a directive do fechamento e a proposta real (contract-input.ts: " +
+				"administradoraPreferida) apontam pra administradora do reveal antigo, não " +
+				"pra que o usuário decidiu.",
 		).toBe(true);
 	});
 
@@ -5995,6 +6043,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 
 	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
 		const base: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
@@ -6293,6 +6342,7 @@ describe("FIX-76-ALUCINA-FALHA-BUSCA — narra instabilidade sem chamar search_g
 
 	it("gate: retomada com valor-alvo TROCADO força a busca (não cai em conversacional)", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			currentPersona: "auto",
 			experiencePrev: "first",
@@ -6927,6 +6977,7 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 		});
 
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -6944,9 +6995,10 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 		// — não persiste dado fabricado no perfil.
 		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
 		// FIX-103: nextGate NUNCA emite "timeframe" (gate removido da
-		// qualificação) — o funil segue pro próximo gate real (lance).
+		// qualificação) — o funil segue pro próximo gate real (busca/reveal
+		// direto; FIX-215 tirou o lance do meio também).
 		expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 	});
 
 	it("controle: mesmo cassette com menção temporal explícita ('em 2 anos') preserva prazoMeses e NÃO reabre o gate", async () => {
@@ -7433,7 +7485,13 @@ describe("FIX-118-WHATSAPP-LANCE-EMBUTIDO-NO-MAYBE — paridade com FIX-92", () 
 		const route = readSource("src/app/api/chat/route.ts");
 		const start = route.indexOf('if (action.gate === "lance")');
 		expect(start, "bloco do gate lance não encontrado no route").toBeGreaterThan(-1);
-		const lanceBlock = route.slice(start, start + 1800);
+		// FIX-236 (Fable r1): janela até o PRÓXIMO bloco `action.gate ===`, não um
+		// tamanho fixo em char — o bloco `so_parcela` inserido antes de yes/no
+		// empurrou "lance-embutido" pra fora de uma janela fixa de 1800 chars
+		// (achado corrigido junto: teste quebrado por crescimento legítimo do bloco).
+		const nextBlockStart = route.indexOf('if (action.gate ===', start + 1);
+		const end = nextBlockStart > -1 ? nextBlockStart : start + 3000;
+		const lanceBlock = route.slice(start, end);
 		// yes reage; no/maybe → pipeGatePrompt do gate lance-embutido (antes da busca)
 		expect(lanceBlock).toMatch(/buildLanceReactionDirective/);
 		expect(lanceBlock).toMatch(/gate:\s*"lance-embutido"/);
@@ -8349,11 +8407,19 @@ describe("FIX-INTEGRIDADE — MOTO: NÃO emite 'teto' mesmo que default exista",
 // Aqui: cassette do texto observado + acoplamento à decisão/gate.
 // ============================================================================
 describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem próximo passo", () => {
-	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print).
+	// Estado logo após o clique "🤔 Tenho dúvidas" (o do print). FIX-233 (D2):
+	// `experience` desceu pra PÓS-reveal — o clique só é alcançável depois de
+	// consent/identify/credit/search/reveal já resolvidos.
 	function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
+			qualifyConsented: true,
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,
 			...over,
@@ -8390,7 +8456,7 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 		).toBe(false);
 	});
 
-	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro consent", () => {
+	it("o FIX: a explicação server-authored marca doubtsAddressed → converge pro timeframe (FIX-233: próximo passo pós-experience)", () => {
 		// shouldMarkDoubtsAddressed reconhece o turno de servidor como endereçamento.
 		expect(
 			shouldMarkDoubtsAddressed({
@@ -8399,11 +8465,12 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 				userReplied: true,
 			}),
 		).toBe(true);
-		// Aplicado o marcador, o funil oferece o consent NO MESMO turno server-authored.
+		// Aplicado o marcador, o funil oferece o timeframe NO MESMO turno server-authored
+		// (FIX-233: experience desceu pra pós-reveal, e o consent já foi resolvido antes).
 		const marked = doubtsClickMeta({ doubtsAddressed: true });
-		expect(nextGate(marked, { hasContactName: true })).toBe("consent");
+		expect(nextGate(marked, { hasContactName: true })).toBe("timeframe");
 		expect(
-			decideShowGate({ gate: "consent", intent: "neutral", meta: marked, isUserTurn: false }),
+			decideShowGate({ gate: "timeframe", intent: "neutral", meta: marked, isUserTurn: false }),
 		).toBe(true);
 	});
 
@@ -8434,15 +8501,16 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inatividade", () => {
 	function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-imovel",
 			currentCategory: "imovel",
-			experiencePrev: "first",
 			...over,
 		};
 	}
 	const NOW = 1_800_000_000_000;
 
 	it("o orquestrador MARCA a pendência quando o gate real é suprimido num turno de usuário", () => {
+		// FIX-274: sem consent, identify é o 1º gate estrutural pós-desire.
 		expect(
 			pendingGateAfterTurn({
 				meta: pendingMeta(),
@@ -8450,7 +8518,7 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("consent");
+		).toBe("identify");
 	});
 
 	it("nunca marca em turno server-authored (FIX-206 já avança) nem quando o gate disparou", () => {
@@ -8536,6 +8604,7 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 	/** Estado no gate de VALOR pendente: pré-qualificação feita, creditMax ausente. */
 	function creditGateMeta(): ConversationMetadata {
 		return {
+			desireAsked: true,
 			currentPersona: "helena-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",
@@ -8581,10 +8650,15 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 
 		// (a) captura: o número nu no contexto credit virou 200 mil (clampado na faixa auto).
 		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
-		// O funil avança: com o valor salvo, o próximo gate é lance (não re-pergunta credit).
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		// O funil avança: com o valor salvo, o próximo gate é search (FIX-215:
+		// lance saiu do meio — busca direto após o valor, não re-pergunta credit).
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
 		// (b) e o gate seguinte dispara mesmo em neutral — turno não fecha mudo.
-		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+		// FIX-215: search herdou a tolerância a `neutral` que antes vivia em
+		// `lance` (COLLECTION_GATE) — mesma classe de bug do FIX-208.
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
 	});
 
 	it("cassette: '200 mil reais' com analyzer neutral → capturado; avança pra lance", async () => {
@@ -8608,10 +8682,13 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 		await analyzeAndMerge("200 mil reais", "helena-auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(200_000);
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
-		// O elo que travava mesmo com o valor JÁ capturado: o gate seguinte (lance)
+		// FIX-215: lance saiu do meio — busca direto após o valor.
+		expect(nextGate(meta, { hasContactName: true })).toBe("search");
+		// O elo que travava mesmo com o valor JÁ capturado: o gate seguinte (search)
 		// era suprimido em `neutral` → turno mudo. Com o fix (b), dispara.
-		expect(decideShowGate({ gate: "lance", intent: "neutral", meta, isUserTurn: true })).toBe(true);
+		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
+			true,
+		);
 	});
 
 	it("guard rede-final: turno-mudo no gate credit re-emite a pergunta do valor, NÃO o fallback", () => {
@@ -8720,7 +8797,6 @@ describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", 
 		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
 		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
 		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
-		expect(reengageQuestionForGate("consent", null, 1)).toBeNull();
 	});
 
 	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {
@@ -8780,7 +8856,9 @@ describe("FIX-212-SEM-EMOJI-LANCE-SPLIT — copy sem emoji + card do lance enxut
 
 	it("cassette estrutural: no WhatsApp a educação vira balão de contexto e o card usa só a pergunta", () => {
 		const adapter = readSource("src/lib/whatsapp/adapter.ts");
-		expect(adapter).toMatch(/LANCE_EMBUTIDO_EDU/); // beat de contexto (gateContextBeat)
+		// FIX-245: LANCE_EMBUTIDO_EDU (const genérica) virou lanceEmbutidoEdu(creditValue?)
+		// — mesmo beat de contexto (gateContextBeat), agora com a carta real do cliente.
+		expect(adapter).toMatch(/lanceEmbutidoEdu/);
 		const formatter = readSource("src/lib/whatsapp/formatter.ts");
 		expect(formatter).toMatch(/LANCE_EMBUTIDO_ASK/); // card só com a pergunta
 	});

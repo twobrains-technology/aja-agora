@@ -1,5 +1,6 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
+import type { ChosenOffer } from "./choose-offer";
 
 // ---- Transition ----
 
@@ -32,10 +33,15 @@ export function buildTransitionCrossSpecialistDirective(): string {
 
 /** FIX-17 — o usuário enviou o nome pelo CARD focado (passo 1). O nome JÁ foi
  * persistido no servidor (saveContactName) — o agente só saúda, sem re-chamar
- * tool nem re-perguntar. Espelha a saudação do caminho texto-livre; o
- * orchestrator dispara o gate de experience em seguida. */
+ * tool nem re-perguntar. Espelha a saudação do caminho texto-livre.
+ * FIX-238 (Fable r1): comentário e texto do directive citavam "gate de
+ * experience em seguida" — STALE desde o FIX-233 (2026-07-09), que moveu
+ * `experience` pra pós-reveal e inseriu o gate `desire` (não bloqueante) logo
+ * após o nome. A pergunta do `desire` ("qual carro você tem em mente?") sai
+ * pelo mecanismo determinístico de gate (gateQuestion, `web/adapter.ts`), não
+ * por este directive — por isso ele segue "PARE após a saudação". */
 export function buildNameCapturedDirective(name: string): string {
-	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudação usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NÃO faca pergunta, NÃO chame tools, NÃO prometa "perguntas rápidas". PARE após a saudação — o sistema dispara o próximo passo (gate de experience) em seguida.`;
+	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. FLUXO: escreva UMA frase curta e calorosa de saudação usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NÃO faca pergunta, NÃO chame tools, NÃO prometa "perguntas rápidas". PARE após a saudação — o sistema pergunta o próximo passo (gate "desire") em seguida.`;
 }
 
 // ---- Experience choices ----
@@ -56,20 +62,6 @@ export function buildExperienceDoubtsDirective(replyTitle: string): string {
 	return `Usuário escolheu "${replyTitle}" — ele tem dúvidas sobre consórcio. IMPORTANTE: o sistema JÁ te apresentou no turno anterior — NÃO se apresente de novo, NÃO diga "Aqui é Helena/Rafael/Camila", NÃO mencione "anos de experiência/mercado/especialidade". Va DIRETO ao conteúdo. FLUXO: escreva UMA mensagem (4-5 frases) explicando o essencial do produto com SUAS palavras: e um grupo de pessoas que paga parcelas mensais sem juros, contemplação acontece por sorteio ou lance, prazo flexível, diferença de financiamento. Após a explicação, EM UMA frase curta convide o usuário a perguntar algo específico se quiser ("se ficou alguma dúvida específica, manda aqui que eu respondo"). Tom acolhedor e didático, sem jargão técnico (cota, lance livre, fundo reserva). NÃO chame tools.`;
 }
 
-// ---- Qualify reactions ----
-
-export function buildQualifyStartYesDirective(): string {
-	// FIX-194 (qa-dono-produto, defeito E): o próximo passo é a IDENTIDADE (CPF +
-	// celular + LGPD) — o sistema mostra esse card em seguida. O valor do bem tem o
-	// PRÓPRIO passo, DEPOIS da identidade (FIX-53). Sem esta trava, o agente puxava
-	// "Quanto custa o carro?" no MESMO balão do gate de CPF (uma pergunta que o
-	// usuário nem pode responder ali). Uma coisa por vez: reage curto e PARA.
-	return `Usuário aceitou começar a qualificação. FLUXO: escreva UMA frase curta e calorosa de transição no SEU TOM (ex.: "Perfeito, bora lá!" / "Show, vamos nessa."). NÃO pergunte o valor nem o preço do bem, NÃO peça nenhum dado, NÃO chame tools — o sistema conduz o próximo passo (a identidade) logo em seguida. O valor do bem vem DEPOIS, no passo dele.`;
-}
-
-export function buildQualifyStartMoreDirective(): string {
-	return `[usuário clicou "Entender mais antes" — pergunte em uma frase curta sobre o que especificamente ele quer entender, sem despejar info ainda]`;
-}
 
 /** Benefício a reforçar conforme a INTENÇÃO escolhida no segmented control do
  * "Planeje sua conquista" (re-UX por intenção). */
@@ -105,8 +97,93 @@ export function buildTimeframeReactionDirective(rangeTitle: string): string {
 	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva UMA frase curta de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO faca pergunta, NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
 }
 
+// FIX-272 (rodada 8, veredito Fable r7, D4 residual): esta instrução dizia
+// "sobre ter reserva pra lance" — o próprio directive induzia o termo
+// proibido na prosa do LLM (achado ao vivo: "com sua reserva pra lance",
+// "Com sua reserva, dá pra acelerar", inclusive presumindo reserva que o
+// usuário nunca declarou). Troca pra linguagem do gate `lance` (gate-
+// questions.ts:87, FIX-268) e proíbe "reserva" explicitamente na resposta —
+// não basta parar de induzir, o modelo também não pode escolher usá-la.
 export function buildLanceReactionDirective(rangeTitle: string): string {
-	return `Usuário respondeu "${rangeTitle}" sobre ter reserva pra lance. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
+	return `Usuário respondeu "${rangeTitle}" sobre ter como dar um lance pra antecipar a contemplação. FLUXO: escreva UMA frase curta de reação positiva (ex: "Boa, lance acelera bastante a contemplação.", "Show, com lance dá pra antecipar."). NÃO diga "reserva"/"reservado" (termo proibido pré-contratação, nem presuma reserva que o usuário não declarou). NÃO explique o que e lance embutido aqui (o sistema vai apresentar isso em seguida), NÃO faca pergunta, NÃO chame tools.`;
+}
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): o convite pra
+ * decidir entre os dois caminhos é sempre a MESMA frase neutra — nunca gerada
+ * pelo LLM (que podia "recomendar" um caminho por conta própria, cutucando o
+ * compliance do card). Emitida DIRETO ao usuário depois do card, sem passar
+ * pelo modelo (Lei 1 — mesmo padrão do `buildDiscoveryFailedFallback`). */
+export const TWO_PATHS_FOLLOWUP_TEXT =
+	"Não tem certo ou errado — depende de você ter pressa ou não. Qual dos dois combina mais com você?";
+
+/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — 3ª saída do gate
+ * `lance`: "não quero comprometer nada além da parcela". Pula lance-value/
+ * lance-embutido/simulator-offer por completo.
+ * FIX-246 (rodada 3, Fable r2, causa-raiz): o card `two_paths` tinha 0
+ * emissões em 2 conduções — dependia do LLM obedecer "chame a tool
+ * present_two_paths", invariante que ficou no PROMPT, não em CÓDIGO (Lei
+ * 1/4). Agora o directive só escreve a frase de introdução; o handler
+ * (route.ts/index.ts) emite o card SERVER-SIDE determinístico logo em
+ * seguida (`buildTwoPathsCard`) — e o convite pra decidir é o texto FIXO
+ * `TWO_PATHS_FOLLOWUP_TEXT`, nunca a critério do modelo. */
+export function buildLanceSoParcelaDirective(): string {
+	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva APENAS UMA frase curta respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis:"). NÃO explique lance embutido, NÃO chame simulate_quota, NÃO chame present_contemplation_dial nem NENHUMA tool neste turno — o sistema mostra o card dos dois caminhos e a pergunta de decisão automaticamente, logo em seguida.`;
+}
+
+/** FIX-237 (Fable r1, D2.1 gap #3) — card `embedded_bid` (docs/02-cards-novos.md
+ * CARD 1): estava ÓRFÃO — a tool `present_embedded_bid` existia (schema +
+ * allowlist) mas NENHUM directive/prompt instruía o modelo a chamá-la, então
+ * nunca aparecia em nenhuma condução real (0 de 4 no veredito Fable r1).
+ * FIX-246 (rodada 3, Fable r2): o directive PASSOU a instruir a tool-call
+ * (FIX-237), mas o LLM continuou desobedecendo/errando (0 emissões em 3
+ * oportunidades no veredito r2) — o mesmo invariante-no-prompt. Agora o
+ * directive só escreve a frase de introdução; o handler emite o card
+ * SERVER-SIDE determinístico logo em seguida (`buildEmbeddedBidCard`,
+ * payload coagido a partir da oferta real via `coerceEmbeddedBidPayload`).
+ * Regra dura (spec): o card SEMPRE diz que o crédito recebido diminui — já
+ * hardcoded na coerção, não depende do texto do modelo. */
+// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "educação do embutido
+// 2× no mesmo turno"): a versão anterior instruía o LLM a "introduzir o
+// conceito" com um exemplo que JÁ explicava lance embutido por completo
+// ("você usa parte da própria carta como lance") — e o gate `lance-embutido`
+// que dispara LOGO EM SEGUIDA (gate-questions.ts, lanceEmbutidoEdu) explica o
+// MESMO conceito de novo, com os números reais. Resultado: a mesma definição
+// saía 2× seguidas, em 2 balões. Agora o directive é SÓ transição (igual ao
+// buildScarcityDirective) — a educação tem UMA fonte só, o gate determinístico.
+export function buildEmbeddedBidDirective(): string {
+	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Baseado no que você me contou, tenho uma ideia que pode acelerar sua contemplação:"). NÃO explique o que é lance embutido aqui — o sistema já traz a educação completa logo em seguida; explicar de novo duplica a mesma ideia no turno. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO chame present_embedded_bid nem NENHUMA outra tool neste turno.`;
+}
+
+/** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
+ * CARD 2): mesmo defeito do embedded_bid, ÓRFÃO por falta de directive.
+ * FIX-246 (rodada 3, Fable r2): mesma desobediência do embedded_bid (0
+ * emissões em 2 oportunidades — o LLM respondeu ao directive com uma bolha
+ * de texto em vez de chamar a tool). Agora o directive só escreve a frase de
+ * transição; o handler emite o card SERVER-SIDE determinístico logo em
+ * seguida (`buildScarcityCard`) — que já decide se renderiza (só quando há
+ * `availableSlots` real ancorado no grupo). Dispara depois da estratégia de
+ * lance resolvida, ANTES da proposta final — imediatamente antes do card de
+ * decisão ("Esse plano faz sentido?"). NÃO dispara no caminho "só a parcela"
+ * (two_paths) — a proposta ali segue direto pro fecho, sem o gancho de
+ * escassez (spec `04-copy-fluxos.md` Fluxo B). */
+export function buildScarcityDirective(): string {
+	return `Escreva APENAS UMA frase curta de transição NO SEU TOM (ex.: "Ah, e um detalhe sobre esse grupo, só pra você saber:"). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema mostra o card de escassez automaticamente em seguida, com o número REAL calculado a partir do grupo. NÃO chame present_scarcity nem NENHUMA outra tool neste turno.`;
+}
+
+/** FIX-280 (loop r9, baseline Sonnet 3/10, G4): `present_whatsapp_optin` saiu
+ * do toolset do LLM — mesma receita do FIX-246/253 (buildScarcityDirective/
+ * buildDecisionPromptDirective). O directive só escreve a frase de contexto
+ * (narrativa varia por persona/conversa); o handler (orchestrator/index.ts)
+ * emite o card SERVER-SIDE determinístico logo em seguida
+ * (`buildWhatsappOptinCard`) — nunca mais depende de o LLM "decidir" chamar
+ * a tool. `stage` espelha `deriveWhatsappOptinStage`: "open" (número ainda
+ * não coletado) pede o WhatsApp; "confirm" (número já conhecido — lead
+ * form/identify) só confirma o canal, sem re-coletar. */
+export function buildWhatsappOptinDirective(stage: "open" | "confirm"): string {
+	if (stage === "confirm") {
+		return `O usuário JÁ informou o WhatsApp dele nesta conversa (lead form / identificação do fechamento). Escreva APENAS UMA frase curta confirmando o canal, SEM repetir o número por extenso (o card já mostra) — ex.: "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexão?". NÃO peça o número de novo. NÃO chame present_whatsapp_optin nem NENHUMA outra tool neste turno — o sistema mostra o card de confirmação de 1 clique automaticamente em seguida.`;
+	}
+	return `Escreva APENAS UMA frase curta contextualizando um pedido de WhatsApp, com narrativa de segurança/continuidade do atendimento NO SEU TOM (ex.: "Pra não perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por lá."). NÃO chame present_whatsapp_optin nem NENHUMA outra tool neste turno — o sistema mostra o card automaticamente em seguida, com input mascarado + botões "Quero receber"/"Agora não".`;
 }
 
 // ---- Group actions ----
@@ -152,7 +229,12 @@ export function buildAdjustValueDirective(args: {
 export function buildAdvanceToContractDirective(args: { administradora?: string }): string {
 	const { administradora } = args;
 	const adminCtx = administradora ? ` da "${administradora}"` : "";
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — a contratação e self-service na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
+	// "reserva"/"pré-reserva" ainda implica compromisso fechado antes da
+	// contratação real, borderline com a linha "nunca 'reservado' antes da
+	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
+	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva UMA frase curta de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — é self-service, direto na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -164,11 +246,13 @@ export function buildChooseOfferDirective(args: { administradora?: string }): st
 	const { administradora } = args;
 	const adminCtx = administradora ? ` da "${administradora}"` : "";
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra fechar, só preciso de uns dados rápidos:") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — a contratação é self-service na plataforma.`;
+	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
+	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva UMA frase curta de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — é self-service, direto na plataforma.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção ou atendente humano (a contratação é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
+	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva UMA frase curta de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos para confirmar sua reserva." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma). (2) chame present_lead_form (sem parametros). NÃO chame outras tools.`;
 }
 
 export function buildDetailDirective(groupId: string): string {
@@ -206,9 +290,7 @@ export function buildSearchSummaryDirective(args: {
 	// 1. Cliente NÃO declarou orçamento mensal (monthlyBudget undefined)
 	// 2. Categoria é MOTO (não coleta orçamento mensal — system-prompt FIX-104 passo 15-17)
 	const hasBudget =
-		category !== "moto" &&
-		typeof q.monthlyBudget === "number" &&
-		q.monthlyBudget > 0;
+		category !== "moto" && typeof q.monthlyBudget === "number" && q.monthlyBudget > 0;
 	const budgetArgs = hasBudget
 		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
 		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;
@@ -257,29 +339,39 @@ FLUXO OBRIGATÓRIO neste turno (ordem do docx — recomendado PRIMEIRO, em desta
    - apenas 1 grupo: anuncie que encontrou UMA opção forte pra ele — NÃO anuncie "3 boas opções", NÃO use plural ("boas opções") nem prometa comparação/curadoria que não existe.
    Em 1-2 frases curtas NO SEU TOM. NÃO use bullets/checkboxes (✅), NÃO use template, NÃO descreva números específicos dos grupos.
 3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com a PRIMEIRA opção retornada (maior score) — administradora, category, creditValue, monthlyPayment, termMonths, score, scoreBreakdown. NÃO digite número de contemplação: o sistema coage os números do card (parcela, valor, prazo, contemplados/mês) a partir do grupo REAL da busca — você só ancora pelo id (FIX-191). SE retornou apenas 1 grupo: NÃO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card único do reveal e a simulação abaixo); seu texto faz o papel da recomendação.
-4. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups (o carrossel de opções que o usuário anunciado pode comparar), com highlightBestIndex=0 pra DESTACAR a recomendada. Isso mostra as opções anunciadas ("3 boas opções") lado a lado no próprio reveal — NÃO esconda as outras atrás de um botao. SE retornou apenas 1 grupo: NÃO chame present_comparison_table (só ha uma opção).
-5. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — o detalhamento do docx. OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variação com/sem lance e com lance embutido — exigência literal do docx); omiti-los é defeito.
+4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — aprofunda a opção que o card acabou de mostrar (cenário com lance, correção prevista). OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variação com/sem lance e com lance embutido — exigência literal do docx); omiti-los é defeito.
+5. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups — por ÚLTIMO, como convite pra comparar depois de já ter visto a opção completa (FIX-224, Ata 2026-07-04) — SEM destacar nenhuma opção como preferencial (FIX-220: a 1ª lista é NEUTRA, mesmo peso pra todas — ainda não há dado de lance pra recomendar nada). SE retornou apenas 1 grupo: NÃO chame present_comparison_table (só ha uma opção).
 6. SE recommend_groups retornar insufficientOptions=true: diga com transparência, em UMA frase, que as opções na faixa dele estao limitadas hoje e que você expandiu a busca pra trazer o que ha de melhor — NUNCA esconda a escassez nem invente abundância.${confrontoBudget}${confrontoFaixa}
 
-A ORDEM dos cards no reveal: recommendation_card (a recomendada em destaque) → comparison_table (o carrossel de TODAS as opções, recomendada destacada) → simulation_result (detalhamento da recomendada). As "outras opções" também seguem acessíveis depois pelo botao do card de decisão, mas no reveal o usuário JÁ VE as opções anunciadas.
+A ORDEM dos cards no reveal (FIX-224, Ata 2026-07-04 — resolve a confusão dos 3 blocos soltos): recommendation_card (a opção completa: parcela, logo, lance médio, antes/depois da contemplação) → simulation_result (aprofunda: cenário com lance, correção prevista) → comparison_table (convite pra comparar com as outras opções, por último, mesmo peso pra todas). As "outras opções" também seguem acessíveis depois pelo botao do card de decisão.
 
-REGRA DURA — present_recommendation_card e present_comparison_table são INSEPARÁVEIS no ramo 2+ grupos (FIX-78, bug real conv a9c5effa 2026-06-25): se você chamou present_recommendation_card, é porque a busca devolveu 2+ grupos — então present_comparison_table com TODOS os grupos (highlightBestIndex=0) É OBRIGATÓRIO no MESMO turno. Emitir um sem o outro é DEFEITO: o usuário fica só com a proposta recomendada e PERDE o carrossel comparativo das demais (foi o que aconteceu — recommendation_card saiu, comparison_table sumiu). NUNCA emita um sem o outro no ramo 2+ grupos. (Só pulam os DOIS juntos quando a busca devolveu 1 grupo único — aí nenhum dos dois é chamado.)
+REGRA DURA — present_recommendation_card e present_comparison_table são INSEPARÁVEIS no ramo 2+ grupos (FIX-78, bug real conv a9c5effa 2026-06-25): se você chamou present_recommendation_card, é porque a busca devolveu 2+ grupos — então present_comparison_table com TODOS os grupos É OBRIGATÓRIO no MESMO turno (mesmo saindo por ÚLTIMO na ordem — ver acima). Emitir um sem o outro é DEFEITO: o usuário fica só com a proposta recomendada e PERDE o carrossel comparativo das demais (foi o que aconteceu — recommendation_card saiu, comparison_table sumiu). NUNCA emita um sem o outro no ramo 2+ grupos. (Só pulam os DOIS juntos quando a busca devolveu 1 grupo único — aí nenhum dos dois é chamado.)
 
 O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, não comentar atributos específicos de cada grupo.`;
 }
 
 // ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
 
-export function buildSimulatorDialDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
+export function buildSimulatorDialDirective(args: {
+	administradora?: string;
+	/** FIX-241 (âncora de dinheiro, spec 03): quando o usuário declarou
+	 * poupança mensal, o mês em que o BOLSO cobre o lance (anchorMonth,
+	 * dial-payload.ts:computeMoneyAnchor) — mesmo cálculo que ancora o
+	 * initialTargetMonth do card. "Cálculo único, duas apresentações". */
+	moneyAnchor?: { monthlySavings: number; anchoredMonth: number };
+}): string {
+	const { administradora, moneyAnchor } = args;
 	const adminCtx = administradora
 		? ` Use o grupo do plano recomendado (administradora "${administradora}") — os MESMOS dados reais que o usuário já viu.`
 		: " Use o grupo do plano recomendado — os MESMOS dados reais que o usuário já viu.";
+	const anchorInstruction = moneyAnchor
+		? ` Além disso, o usuário disse que consegue juntar R$ ${moneyAnchor.monthlySavings.toLocaleString("pt-BR")}/mês pro lance — inclua UMA frase factual dizendo que, juntando esse valor por mês, lá pelo mês ${moneyAnchor.anchoredMonth} o dinheiro dele alcança o lance necessário. NÃO prometa contemplação nesse mês (é quando o BOLSO cobre o lance; a contemplação em si depende de lance vencer ou sorteio).`
+		: "";
 	// Conceito do Bernardo (simulador-agulha): o usuário aceitou a oferta do
 	// simulador ("contemplado em 3, 6 ou 12 meses?"). O orquestrador dirige o
 	// dial UMA vez — determinístico, não a critério do modelo.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.
+1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
 2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;
@@ -311,19 +403,221 @@ export function buildDiscoveryFailedFallback(args: { name?: string | null }): st
 	);
 }
 
+// ---- Tool fora do trilho / loop de tool-calls (FIX-262) — fallback humano determinístico ----
+
+/**
+ * FIX-262 (P1, veredito Fable r5, causa-raiz N1/N2) — mensagem FIXA exibida
+ * quando o modelo chama uma tool fora do toolset da fase (AI SDK emite
+ * `tool-error`) ou o turno estoura o cap duro de tool-calls. Nos dois casos o
+ * runner suprimiu TODA narração do modelo (tende a negar uma oferta real que
+ * está na própria tela — o achado do veredito). É o código dispondo (Lei 1):
+ * NUNCA nega o que já foi mostrado, sempre reafirma que continua válido e
+ * convida o usuário a apontar qual oferta ele quer olhar de novo.
+ */
+export function buildToolErrorRecoveryFallback(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return (
+		`${saudacao}as opções que já apareceram aqui pra você continuam valendo. ` +
+		"Me diz o nome da administradora ou o valor que você quer olhar de novo que eu " +
+		"detalho certinho pra você."
+	);
+}
+
+// ---- Reveal LEGÍTIMO interrompido pelo guard de tool-error (FIX-286) ----
+
+/**
+ * FIX-286 (P0, veredito Sonnet r9pos2 §3) — texto que acompanha o
+ * `recommendation_card` quando o guard de tool-error (FIX-262) interrompe a
+ * PRIMEIRA apresentação do turno, mas `search_groups`/`recommend_groups` já
+ * tinham retornado grupos reais (o runner materializa o card server-side a
+ * partir deles, `buildRecommendationCardFromRevealGroup`). NUNCA usa a frase
+ * "já apareceram" do `buildToolErrorRecoveryFallback` — seria mentira nesse
+ * ponto (é a primeira vez que o usuário vê o card).
+ */
+export function buildFirstRevealCardIntro(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return `${saudacao}encontrei uma opção que combina bem com o que você pediu — olha só:`;
+}
+
+/**
+ * FIX-286 — quando o guard de tool-error interrompe a PRIMEIRA apresentação
+ * do turno e os dados buscados não bastam pra montar o card completo (ex.:
+ * só `search_groups` rodou, `recommend_groups` nunca chegou a rodar — sem
+ * ranking, não há "melhor grupo" server-computed pra materializar), a
+ * resposta é um D10 honesto de retry: nunca afirma que algo "já apareceu"
+ * (nada apareceu ainda), nunca usa palavra de erro técnico cru (mesma regra
+ * do `buildDiscoveryFailedFallback`), só sinaliza que a busca vai ser
+ * retomada.
+ */
+export function buildFirstRevealRecoveryFallback(args: { name?: string | null }): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	return (
+		`${saudacao}ainda não terminei de montar as opções certinhas pra você — deixa eu ` +
+		"retomar a busca rapidinho e já te trago tudo direitinho."
+	);
+}
+
+// FIX-282 (P1, veredito Sonnet r9pos, G-B/I2) — a pergunta do usuário sobre
+// EXATIDÃO do valor ("é de 120 mil como pedi?", "bate?", "sem ajuste?") ou
+// sobre o CRITÉRIO de escolha ("por que essa e não outra?", "qual o
+// critério?") tem resposta factual pronta em `meta.recommendedOffer` — mas
+// o fallback genérico do tool-error (acima) é cego ao CONTEÚDO da pergunta e
+// nunca a responde (contenção sem resolução, mesma família do FIX-266, mas
+// pro caso em que o usuário NÃO cita administradora/valor — só questiona a
+// oferta já na tela). Escopo estreito de propósito (preferindo
+// falso-negativo a falso-positivo, decisão do card): mira só os padrões
+// literais do dossiê que provou o bug, nunca dúvidas genéricas ("quero ver
+// mais opções" continua no fallback antigo).
+const EXACTNESS_QUESTION_PATTERNS: RegExp[] = [
+	/\bbate\b/i,
+	/\bexat[ao]\b/i,
+	/\bexatamente\b/i,
+	/\bsem\s+ajuste\b/i,
+	/\bo\s+mesmo\s+valor\b/i,
+	/\bcomo\s+(eu\s+)?pedi\b/i,
+];
+
+const CRITERIA_QUESTION_PATTERNS: RegExp[] = [
+	/\bpor\s+qu[eê]\s+essa\b/i,
+	/\be\s+n[ãa]o\s+outra\b/i,
+	/\bcrit[ée]rio\b/i,
+	/\bpor\s+qu[eê]\s+(voc[eê]\s+)?(me\s+)?recomend/i,
+];
+
+/** O texto do usuário questiona a EXATIDÃO do valor da carta ou o CRITÉRIO de
+ * escolha da oferta já mostrada (probe-i2, FIX-282) — resposta honesta com os
+ * números reais cabe aqui, nunca o fallback genérico cego ao conteúdo. */
+export function isExactnessOrCriteriaQuestion(text: string): boolean {
+	const t = text.trim();
+	if (!t) return false;
+	return (
+		EXACTNESS_QUESTION_PATTERNS.some((rx) => rx.test(t)) ||
+		CRITERIA_QUESTION_PATTERNS.some((rx) => rx.test(t))
+	);
+}
+
+/**
+ * FIX-282 — resposta FACTUAL determinística quando o tool-error interrompe o
+ * modelo NO MEIO de uma pergunta de exatidão/critério (acima). Compara
+ * `rawCreditValue` (valor PEDIDO, mesma âncora do FIX-261/281:
+ * `qualifyAnswers.creditClampedFrom ?? creditMax`) × `creditValue` (carta
+ * REAL), no mesmo padrão já validado da diretiva FIX-277
+ * (`system-prompt.ts`). Decisão de design (Opção A, `AskUserQuestion`,
+ * 2026-07-12): o critério de RANKING (score/scoreBreakdown) não é persistido
+ * em `meta.recommendedOffer` hoje — em vez de inventar um número que não
+ * existe em memória, a resposta cita o critério COMBINADO em termos gerais
+ * (prazo/parcela/contemplação), nunca um score fabricado.
+ */
+export function buildToolErrorRecoveryExactnessFallback(args: {
+	name?: string | null;
+	offer: { administradora?: string; creditValue: number };
+	rawCreditValue?: number;
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	const marca = args.offer.administradora ? ` da ${args.offer.administradora}` : "";
+	const creditoFmt = args.offer.creditValue.toLocaleString("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+	});
+	let exatidao: string;
+	if (typeof args.rawCreditValue === "number" && args.rawCreditValue !== args.offer.creditValue) {
+		const pedidoFmt = args.rawCreditValue.toLocaleString("pt-BR", {
+			style: "currency",
+			currency: "BRL",
+		});
+		exatidao = `Você pediu ${pedidoFmt} — a carta real${marca} ficou em ${creditoFmt}, um ajuste em relação ao que você pediu.`;
+	} else {
+		exatidao = `Sim, a carta${marca} bate certinho com o valor que você pediu: ${creditoFmt}.`;
+	}
+	return (
+		`${saudacao}${exatidao} Ela foi a que mais fez sentido pro seu perfil considerando prazo, ` +
+		"parcela e chance de contemplação juntos, não só o valor de crédito isolado. Quer que eu " +
+		"detalhe algum desses pontos ou prefere ver outra opção?"
+	);
+}
+
+function formatOfferDetails(offer: ChosenOffer): string {
+	const detalhes: string[] = [];
+	if (typeof offer.creditValue === "number") {
+		detalhes.push(
+			`crédito de ${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.monthlyPayment === "number") {
+		detalhes.push(
+			`parcela de ${offer.monthlyPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
+	}
+	if (typeof offer.termMonths === "number") detalhes.push(`prazo de ${offer.termMonths} meses`);
+	return detalhes.join(", ");
+}
+
+// FIX-266 (P1, veredito Fable r6, "o que segura o 7" #1): o fallback do
+// tool-error (acima) contém o turno, mas NUNCA resolvia — pedia "me diz o
+// nome" mesmo quando o usuário TINHA acabado de nomear a oferta na própria
+// mensagem que disparou o tool-error. O orchestrator agora roda
+// `resolveOfferByMention` sobre o texto do usuário ANTES de cair no fallback
+// (index.ts); quando resolve, usa ESTE texto — reafirma os dados da oferta
+// já ancorada em tela, transformando contenção em resolução (nunca pede de
+// novo o que o usuário já disse — Lei 1/4).
+export function buildToolErrorRecoveryResolvedFallback(args: {
+	name?: string | null;
+	offer: ChosenOffer;
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	const marca = args.offer.administradora ? ` da ${args.offer.administradora}` : "";
+	const detalhes = formatOfferDetails(args.offer);
+	const complemento = detalhes.length > 0 ? ` (${detalhes})` : "";
+	return (
+		`${saudacao}a oferta${marca}${complemento} que você citou continua valendo, tá aqui pra você. ` +
+		"Quer seguir com ela ou prefere olhar outra opção?"
+	);
+}
+
+// FIX-266 (2ª parte): o fallback enlatado repetia a MESMA frase 2× seguidas
+// quando o resolver não achou match (menção genuinamente ambígua/sem match).
+// index.ts detecta a repetição comparando com a última mensagem do assistant
+// no histórico e troca pra ESTA variante — nunca idêntica, e concreta: lista
+// as cotas JÁ EXIBIDAS em vez de repetir o pedido genérico.
+export function buildToolErrorRecoveryFallbackRepeat(args: {
+	name?: string | null;
+	offers: ChosenOffer[];
+}): string {
+	const saudacao = args.name ? `${args.name}, ` : "";
+	if (args.offers.length === 0) {
+		return (
+			`${saudacao}deixa eu ser mais direto: ainda não consegui identificar qual opção você quer. ` +
+			"Pode me mandar de novo o nome da administradora que apareceu aqui pra tela?"
+		);
+	}
+	const lista = args.offers
+		.map((o) => {
+			const detalhes = formatOfferDetails(o);
+			return o.administradora
+				? `${o.administradora}${detalhes ? ` (${detalhes})` : ""}`
+				: detalhes;
+		})
+		.filter((s) => s.length > 0)
+		.join("; ");
+	return (
+		`${saudacao}deixa eu ser mais direto: as opções que apareceram até agora são ${lista}. ` +
+		"Me diz qual delas você quer olhar de novo."
+	);
+}
+
 // ---- Decision prompt (passo 4 close → passo 5 da jornada) ----
 
-export function buildDecisionPromptDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
-	const adminCtx = administradora
-		? ` A administradora do plano recomendado e "${administradora}" — passe ela como contexto pro card.`
-		: "";
-	// Mirror do search reveal: o orquestrador dirige present_decision_prompt UMA
-	// vez, pós-reveal, quando o usuário sinaliza avanco. Fecha o passo 4 da
-	// jornada.docx ("Esse plano faz sentido?") e abre o passo 5 (contratar).
-	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno:
-1. Escreva UMA frase curta NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar com você:" ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação.
-2. Chame present_decision_prompt UMA vez.${adminCtx}
+/** FIX-253 (rodada 4, veredito Fable FINAL §3 — causa-raiz do 0-scarcity no
+ * Fluxo A): enquanto `present_decision_prompt` ficou no toolset (reveal/
+ * closing), o LLM a chamava DIRETO num turno de usuário comum, bypassando o
+ * ramo do orchestrator (`nextGateToFire === "decision"`, index.ts) que
+ * dispara o scarcity server-side ANTES da decisão — mesma lei violada que o
+ * FIX-246 fechou pra embedded_bid/two_paths/scarcity. Agora o directive só
+ * escreve a frase de fechamento; o card ("Esse plano faz sentido?") é
+ * emissão SERVER-SIDE determinística (`buildDecisionPromptCard`,
+ * server-cards.ts) — o LLM nunca mais chama tool nenhuma. */
+export function buildDecisionPromptDirective(): string {
+	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva UMA frase curta NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar com você:" ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. NÃO chame present_decision_prompt nem NENHUMA outra tool neste turno — o sistema mostra o card de decisão automaticamente em seguida.
 
-PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência. As 3 opções do card são fixas ("Sim, quero contratar agora" / "Quero ver outras opções" / "Quero falar com um especialista"); você só passa a administradora pra contexto. Quando o usuário clicar "contratar agora", o sistema segue pro passo 5 (present_contract_form).`;
+PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
 }

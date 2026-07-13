@@ -9,11 +9,41 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 	it("mapeia os campos disponíveis + categoria do segmento", () => {
 		const real = partnerOfferToRealOffer(offers[0], "AUTOS");
 		expect(real.ofertaId).toBe(offers[0].ofertaId);
-		expect(real.administradora).toBe(offers[0].administradora);
+		// FIX-265 (menor #1, veredito Fable r5, N5): a fixture traz "ANCORA" (cru,
+		// sem acento, código da Bevi) — o mapper normaliza pro nome exibível.
+		expect(real.administradora).toBe("ÂNCORA");
 		expect(real.grupo).toBe(offers[0].grupo);
 		expect(real.category).toBe("auto");
 		expect(real.creditValue).toBe(offers[0].valorCarta);
 		expect(real.monthlyPayment).toBe(Math.round(Number(offers[0].parcela) * 100) / 100);
+	});
+
+	// FIX-265 (menor #1, veredito Fable r5, N5): "ITAU" saía sem acento 3× na
+	// copy do fecho (intro/reforço/Parabéns) — a API de parceiro devolve o
+	// código cru da Bevi, sem acento. O trilho de DESCOBERTA (offer-mapper.ts,
+	// FIX-255) já normalizava; o trilho de FECHAMENTO (este mapper) não.
+	it("FIX-265: normaliza acento dos códigos conhecidos da Bevi (ITAU→ITAÚ, ANCORA→ÂNCORA, TRADICAO→TRADIÇÃO)", () => {
+		const base = offers[0];
+		expect(partnerOfferToRealOffer({ ...base, administradora: "ITAU" }, "AUTOS").administradora).toBe(
+			"ITAÚ",
+		);
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "ANCORA" }, "AUTOS").administradora,
+		).toBe("ÂNCORA");
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "TRADICAO" }, "AUTOS").administradora,
+		).toBe("TRADIÇÃO");
+	});
+
+	it("FIX-265: nome não mapeado passa intacto (nunca inventa/mangla — nem maiúscula/minúscula muda)", () => {
+		const base = offers[0];
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "BANCO DO BRASIL" }, "AUTOS")
+				.administradora,
+		).toBe("BANCO DO BRASIL");
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "RODOBENS" }, "AUTOS").administradora,
+		).toBe("RODOBENS");
 	});
 
 	it("GAPs §11 ficam undefined — nunca chuta prazo/taxa", () => {
@@ -88,6 +118,51 @@ describe("pickClosestOffer — costura indicativo→real", () => {
 			const list = [mk("RODOBENS", 60_000), mk("ANCORA", 64_000)];
 			const chosen = pickClosestOffer(list, 60_000, "Âncora");
 			expect(chosen?.administradora).toBe("ANCORA");
+		});
+	});
+
+	// FIX-240 (rodada 2, Fable r1, D5.1): pedido 120k → recomendada ITAÚ 150k →
+	// no contract-submit a real_offer veio 211.258 (41% acima), SEM aviso —
+	// oferta vinculante fora da faixa pedida (CDC art. 30). Decisão do Kairo:
+	// clamp — não escolhe carta >20% acima do pedido quando existe opção mais
+	// próxima (mesmo que quebre a fidelidade de marca do
+	// BUG-ADMIN-TROCADA-NO-FECHAMENTO; compliance > continuidade de marca).
+	describe("clamp de faixa (FIX-240 — CDC art. 30)", () => {
+		const mk = (administradora: string, valorCarta: number): PartnerOffer =>
+			({
+				ofertaId: `of-${administradora}-${valorCarta}`,
+				administradora,
+				tipoOferta: "FREE_BID",
+				grupo: "500",
+				valorCarta,
+				parcela: valorCarta / 80,
+				taxaContemplacao: 0.5,
+				quotaId: `q-${valorCarta}`,
+			}) as PartnerOffer;
+
+		it("admin preferida >20% acima do pedido + opção mais próxima disponível → prefere a mais próxima", () => {
+			const list = [mk("ITAU", 211_258), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("SUNMARK");
+			expect(chosen?.valorCarta).toBe(150_000);
+		});
+
+		it("admin preferida >20% acima do pedido mas SEM opção mais próxima em nenhuma marca → mantém (aviso cobre)", () => {
+			const list = [mk("ITAU", 211_258)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("ITAU");
+		});
+
+		it("admin preferida dentro de 20% do pedido → mantém fidelidade de marca (não clampa à toa)", () => {
+			const list = [mk("ITAU", 175_000), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000, "ITAU");
+			expect(chosen?.administradora).toBe("ITAU");
+		});
+
+		it("sem admin preferida, closest geral já é o mais próximo — clamp não altera nada", () => {
+			const list = [mk("ITAU", 211_258), mk("SUNMARK", 150_000)];
+			const chosen = pickClosestOffer(list, 150_000);
+			expect(chosen?.administradora).toBe("SUNMARK");
 		});
 	});
 

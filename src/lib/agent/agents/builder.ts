@@ -22,6 +22,17 @@ const openaiCompat = createGatewayOpenAI();
 type ConsorcioToolName = keyof typeof consorcioTools;
 type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;
 
+/**
+ * Tools que EXISTEM no registry (compat/execute interno) mas NUNCA podem ser
+ * expostas ao LLM — a emissão virou server-side determinística e listá-las
+ * seria tool morta/enganosa (Lei 2: allowlist, não expor o que não deve ser
+ * chamado). Migration 0015 gravou `present_whatsapp_optin` em `active_tools`
+ * de toda persona specialist no DB ANTES do FIX-280 mudar a emissão pra
+ * server-side (buildWhatsappOptinCard) — sem este filtro, `selectTools`
+ * confia cegamente no DB e reexpõe a tool desativada (regressão do FIX-280).
+ */
+const SERVER_SIDE_ONLY_TOOLS = new Set(["present_whatsapp_optin"]);
+
 function selectTools(
 	activeTools: string[],
 	// Registry usado pra resolver `activeTools` — pode ser o estático
@@ -32,6 +43,7 @@ function selectTools(
 ): ConsorcioToolSet {
 	const out: ConsorcioToolSet = {};
 	for (const name of activeTools) {
+		if (SERVER_SIDE_ONLY_TOOLS.has(name)) continue;
 		if (name in registry) {
 			out[name] = registry[name];
 		}
@@ -141,6 +153,13 @@ export function buildAgent(
 				opts.currentDate,
 				opts.whatsappOptinStage,
 				opts.contractClosedInfo ?? null,
+				opts.meta?.qualifyAnswers?.motivation ?? null,
+				// FIX-238: bem específico do gate `desire` — dispara a pergunta
+				// do motivo enquanto ele ainda não chegou.
+				opts.meta?.qualifyAnswers?.desiredItem ?? null,
+				// FIX-285: o gate `desire` foi respondido mesmo sem item
+				// específico — variante genérica da pergunta do motivo.
+				opts.meta?.desireAnswered ?? false,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,
@@ -157,16 +176,15 @@ export function buildAgent(
 	});
 
 	// Specialists always have suggest_handoff + as ferramentas de captura
-	// conversacional de lead (save_contact_name, save_contact_whatsapp,
-	// present_whatsapp_optin) + o seletor interativo de valores
-	// (present_value_picker) + o seletor de tópicos clicáveis
-	// (present_topic_picker) disponíveis — são primitivos do sistema, não
-	// comportamento toggleable pelo admin. Sem essas tools no contexto, o
-	// agent não consegue persistir o nome/WhatsApp capturados na conversa
-	// (BUG-LEAD-CAPTURE-WEB) nem renderizar o card de seleção de faixa de
-	// crédito (BUG-CREDIT-PICKER-WEB) nem oferecer atalhos clicáveis em vez
-	// de prometer "opções abaixo" sem produzir UI (BUG-TOPIC-PICKER-WEB) —
-	// cai em texto puro violando o system-prompt.
+	// conversacional de lead (save_contact_name, save_contact_whatsapp) + o
+	// seletor interativo de valores (present_value_picker) + o seletor de
+	// tópicos clicáveis (present_topic_picker) disponíveis — são primitivos
+	// do sistema, não comportamento toggleable pelo admin. Sem essas tools no
+	// contexto, o agent não consegue persistir o nome/WhatsApp capturados na
+	// conversa (BUG-LEAD-CAPTURE-WEB) nem renderizar o card de seleção de
+	// faixa de crédito (BUG-CREDIT-PICKER-WEB) nem oferecer atalhos clicáveis
+	// em vez de prometer "opções abaixo" sem produzir UI (BUG-TOPIC-PICKER-WEB)
+	// — cai em texto puro violando o system-prompt.
 	// CINTO+SUSPENSÓRIO: migrations 0015/0017/0019 também adicionam no DB; o
 	// invariante aqui garante que mesmo se admin remover via UI futuramente,
 	// o builder ainda expõe (mesmo padrão do suggest_handoff).
@@ -178,12 +196,16 @@ export function buildAgent(
 				suggest_handoff: registry.suggest_handoff,
 				save_contact_name: registry.save_contact_name,
 				save_contact_whatsapp: registry.save_contact_whatsapp,
-				present_whatsapp_optin: registry.present_whatsapp_optin,
 				present_value_picker: registry.present_value_picker,
 				present_topic_picker: registry.present_topic_picker,
-				// Card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
-				// — primitivo do sistema, sempre exposto (não toggleable pelo admin).
-				present_decision_prompt: registry.present_decision_prompt,
+				// FIX-253 (rodada 4): present_decision_prompt SAIU daqui de propósito —
+				// o card de decisão "Esse plano faz sentido?" (jornada do .docx etapa 4)
+				// virou emissão SERVER-SIDE determinística (buildDecisionPromptCard,
+				// orchestrator/server-cards.ts). A tool NUNCA entra em allowedTools
+				// (tool-policy.ts) em nenhuma fase — listá-la aqui seria morta/enganosa.
+				// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU daqui pelo mesmo
+				// motivo (buildWhatsappOptinCard, orchestrator/server-cards.ts) — era
+				// LLM-discricionário e disparava inconsistente entre 2 fluxos idênticos.
 				// Passo 5 "Contratar" (fechamento Bevi) + simulador-agulha (passo 4) —
 				// primitivos do sistema, sempre expostos.
 				present_contract_form: registry.present_contract_form,

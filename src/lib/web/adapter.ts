@@ -1,4 +1,6 @@
 import type { UIMessageStreamWriter } from "ai";
+import { db } from "@/db";
+import { artifacts as artifactsTable } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
@@ -13,6 +15,8 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
+import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
@@ -21,10 +25,11 @@ import type {
 	SliderField,
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
-import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { saveMessage } from "@/lib/conversation/messages";
-import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
+import { saveMessage } from "@/lib/conversation/messages";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { getTraceForWriter } from "@/lib/telemetry/turn-trace";
+import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
@@ -51,6 +56,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
 			// texto do agente (gateQuestion('name')=null), o card só complementa.
 			return { kind: "name", gate: "name" };
+		case "desire":
+			// FIX-233: gate não bloqueante, sem card — as duas perguntas (bem
+			// específico + motivo) são conversa livre; o texto sai no directive.
+			return null;
 		case "experience":
 			return {
 				kind: "chips",
@@ -60,23 +69,6 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 					{ value: "returning", label: "Já conheço" },
 					{ value: "doubts", label: "Tenho dúvidas" },
 				],
-			};
-		case "consent":
-			return {
-				kind: "chips",
-				gate: "consent",
-				options:
-					// docx passo 2: após a explicação de primeira vez, o botão é
-					// LITERALMENTE "Entendi, pode continuar".
-					meta.experiencePrev === "first"
-						? [
-								{ value: "yes", label: "Entendi, pode continuar" },
-								{ value: "more", label: "Entender mais antes" },
-							]
-						: [
-								{ value: "yes", label: "Bora!" },
-								{ value: "more", label: "Entender mais antes" },
-							],
 			};
 		case "credit": {
 			const category = meta.currentCategory;
@@ -109,9 +101,15 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				kind: "chips",
 				gate: "lance",
 				options: [
-					{ value: "yes", label: "Sim, tenho reserva" },
+					// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva"
+					// varrido — mesma disciplina do FIX-234/FIX-256.
+					{ value: "yes", label: "Sim, tenho como dar" },
 					{ value: "maybe", label: "Talvez, depende" },
 					{ value: "no", label: "Por enquanto não" },
+					// FIX-236 (Fable r1, P0): 3ª saída — quem não quer comprometer nada além
+					// da parcela vai direto pro card `two_paths` (dois caminhos), pulando a
+					// educação de embutido/agulha (rota em route.ts + orchestrator/index.ts).
+					{ value: "so_parcela", label: "Só a parcela, sem lance" },
 				],
 			};
 		case "lance-value": {
@@ -164,15 +162,65 @@ export async function pipeGatePrompt(args: {
 	const { conversationId, gate, writer } = args;
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
-	if (!data) return;
-	const question = gateQuestion(gate, meta.currentCategory);
+	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
+	// de "R$ 100 mil" na educação de lance embutido.
+	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): copy por canal — "web" pra
+	// não herdar a frase "eu já pego aqui do WhatsApp" (gate identify).
+	const question = gateQuestion(
+		gate,
+		meta.currentCategory,
+		meta.recommendedOffer?.creditValue,
+		"web",
+		meta.qualifyAnswers?.creditMentionedAtDesire,
+	);
+	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
+	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
+	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
+	// virando turno morto ("Prazer, Madalena!" e nada mais).
+	if (!data && !question) return;
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });
 		writer.write({ type: "text-delta", id, delta: question });
 		writer.write({ type: "text-end", id });
 	}
-	writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	if (data) {
+		writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
+	}
+}
+
+/** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
+ * SERVER-SIDE determinístico direto no stream — sem depender de o LLM chamar
+ * `present_X` (0 emissões ao vivo no veredito, a tool nem existe mais no
+ * toolset). Espelha `pipeGatePrompt` (texto opcional + escrita direta), mas
+ * persiste como artifact vinculado a uma mensagem do assistente (mesmo padrão
+ * de `pipeAndSaveClosingItems` em route.ts) pra sobreviver no histórico/admin. */
+export async function pipeServerArtifact(args: {
+	conversationId: string;
+	artifactType: ArtifactType;
+	payload: Record<string, unknown>;
+	persona: Persona | null;
+	writer: Writer;
+}): Promise<void> {
+	const { conversationId, artifactType, payload, persona, writer } = args;
+	writer.write({
+		type: "data-artifact",
+		id: crypto.randomUUID(),
+		data: { type: artifactType, payload } as unknown as ArtifactPartData,
+	});
+	const messageId = await saveMessage(
+		conversationId,
+		"assistant",
+		`[card: ${artifactType}]`,
+		"web",
+		persona,
+	);
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: artifactType,
+		payload,
+		createdAt: simulatorNow(),
+	});
 }
 
 // FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
@@ -243,20 +291,31 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				const meta = await reloadMeta(conversationId);
 				const data = gatePartData(ev.gate, meta);
-				if (data) {
+				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
+				// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
+				const question = gateQuestion(
+					ev.gate,
+					meta.currentCategory,
+					meta.recommendedOffer?.creditValue,
+					"web",
+					meta.qualifyAnswers?.creditMentionedAtDesire,
+				);
+				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
+				if (data || question) {
 					emittedVisible = true;
-					const question = gateQuestion(ev.gate, meta.currentCategory);
 					if (question) {
 						const id = crypto.randomUUID();
 						writer.write({ type: "text-start", id });
 						writer.write({ type: "text-delta", id, delta: question });
 						writer.write({ type: "text-end", id });
 					}
-					writer.write({
-						type: "data-gate",
-						id: crypto.randomUUID(),
-						data,
-					});
+					if (data) {
+						writer.write({
+							type: "data-gate",
+							id: crypto.randomUUID(),
+							data,
+						});
+					}
 				}
 				break;
 			}
@@ -311,12 +370,40 @@ export async function pipeOrchestratorToWriter(
 				});
 				break;
 
-			case "meta-update":
 			case "suppression":
+				// FIX-250 (rodada 3, Fable r2, N7): suppression NUNCA vira UI part
+				// (não é pro usuário ver) — mas precisa chegar no turn-trace, senão
+				// `suppressed` fica sempre [] no canal web (gap de observabilidade,
+				// Lei 5). getTraceForWriter recupera o trace pelo writer já
+				// instrumentado por route.ts, sem mudar nenhuma assinatura.
+				getTraceForWriter(writer)?.addSuppression(ev.artifactType);
+				break;
+
 			case "usage":
+				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
+				break;
+
+			// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
+			// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
+			// nunca chegava ao trace no canal web — este case era agrupado como
+			// no-op puro (era FIX-24), então route.ts sempre aplicava o default
+			// "ok" por cima, mascarando turnos CONTIDOS como se fossem normais.
+			// Mesmo padrão de suppression/usage: getTraceForWriter recupera o
+			// trace pelo writer já instrumentado, sem mudar assinatura nenhuma.
 			case "finish":
+				getTraceForWriter(writer)?.setFinish(ev.reason);
+				break;
+
+			case "meta-update":
 				// FIX-24: telemetria interna — consumida pelo turn-trace, não
 				// vira UI part. No-op no funil de SSE da web.
+				break;
+
+			case "text-boundary":
+				// FIX-268: força o fechamento do balão de texto aberto — sem
+				// isso, 2 directives seguidos sem artifact/gate no meio colam o
+				// texto num balão só ("1 balão = 1 ideia" violado).
+				closeTextIfOpen();
 				break;
 		}
 	}
@@ -351,8 +438,14 @@ export async function pipeDirectiveTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
+	/** FIX-254 (rodada 4, veredito Fable FINAL §N-C): quando o CHAMADOR já vai
+	 * emitir o gate (card + pergunta) explicitamente logo em seguida (ex.:
+	 * embedded_bid no clique do gate lance), suprime o disparo AUTOMÁTICO de
+	 * `nextGateToFire` deste turno de directive — sem isso, os dois caminhos
+	 * emitem a MESMA educação+chips (double-dispatch: route.ts:1058-1072). */
+	suppressGate?: boolean;
 }): Promise<{ emittedVisible: boolean }> {
-	const { conversationId, directive, contactName, writer, userKey } = args;
+	const { conversationId, directive, contactName, writer, userKey, suppressGate } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -362,6 +455,7 @@ export async function pipeDirectiveTurn(args: {
 		skipAnalyzer: true,
 		skipLeadCollection: true,
 		userKey,
+		suppressGateEvent: suppressGate,
 	});
 	return pipeOrchestratorToWriter(events, writer, conversationId);
 }
@@ -426,7 +520,6 @@ export async function pipeSearchSummaryTurn(args: {
 	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
-	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 	const { emittedVisible } = await pipeDirectiveTurn({
 		conversationId,
@@ -435,6 +528,22 @@ export async function pipeSearchSummaryTurn(args: {
 		writer,
 		userKey,
 	});
+	// FIX-291 (b): `searchDispatched` só é marcado DEPOIS de confirmar que a
+	// descoberta de fato completou (`revealCompleted`, setado pelo runner só com
+	// artifacts REAIS na tela — runner.ts). Antes, o marcador saía PREEMPTIVO
+	// (antes desta chamada) — uma busca que falhasse (teto agregado do FIX-291a
+	// estourado, erro duro etc.) travava searchDispatched=true PRA SEMPRE, e o
+	// curto-circuito desta função + o de orchestrator/index.ts
+	// ("search-already-dispatched") nunca mais permitiam retentar a busca num
+	// turno seguinte — mesmo sem jamais ter mostrado dado real ao usuário.
+	const postSearch = await reloadMeta(conversationId);
+	if (postSearch.revealCompleted) {
+		await persistMeta(conversationId, { ...postSearch, searchDispatched: true });
+	} else {
+		console.log(
+			`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+		);
+	}
 	// FIX-189 (pendura): a descoberta é disparada pelo caminho de AÇÃO (resposta a
 	// gate), que NÃO roda o guard de turno-mudo do route (só o turno de texto-livre
 	// roda). Se o turno de descoberta fechou sem nada visível (só o chip "Buscando

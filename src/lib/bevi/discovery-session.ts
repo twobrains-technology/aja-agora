@@ -9,15 +9,22 @@ import type {
 	SelfContractSimulationPrefs,
 } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { reloadMeta } from "@/lib/conversation/meta";
 
+// FIX-219 (Ata 2026-07-04, item 4): a Bevi não informa se a cota aceita
+// embutido, e a conversa de lance só acontece PÓS-reveal (FIX-215) — na 1ª
+// busca `lanceEmbutido` nem foi perguntado ainda. Não dá mais pra gatear no
+// opt-in: assume-se o teto histórico (~30%) sempre; o adapter varre COM e SEM
+// embutido (offersForValue) e une os resultados. `lanceEmbutidoPercent`
+// explícito (quando já coletado) ainda prevalece sobre o default.
 export function prefsFromMeta(meta: ConversationMetadata): SelfContractSimulationPrefs {
 	const q = meta.qualifyAnswers ?? {};
 	return {
-		embeddedPercentage: q.lanceEmbutido
-			? ((String(q.lanceEmbutidoPercent ?? 30) as "30" | "50") ?? "30")
-			: undefined,
+		embeddedPercentage: String(
+			q.lanceEmbutidoPercent ?? LANCE_EMBUTIDO_DEFAULT_PERCENT,
+		) as "30" | "50",
 		objective: q.objetivo === "investimento" ? "INVESTMENT" : "FAST_APPROVAL",
 	};
 }

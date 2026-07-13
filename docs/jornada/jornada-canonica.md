@@ -13,6 +13,124 @@
 > conflita com uma decisão técnica/ADR e a correção é **recalibrar com o stakeholder**, não
 > mudar o código no escuro.
 
+## Refino Ata 2026-07-04 — reunião de alinhamento com o cliente (SUPERSEDE)
+
+> Decisões da **Ata de 2026-07-04** (Kairo, Romulo × Bruna, Bernardo, Eduardo). Onde conflitar
+> com os Passos abaixo, **esta seção vence** (é a decisão mais nova do stakeholder — regra
+> "palavra nova vence"). Fonte: `~/Downloads/Ata_Mudancas_AJA_AGORA.md` (cópia em
+> [`docs/jornada/atas/2026-07-04-mudancas-cliente.md`](./atas/2026-07-04-mudancas-cliente.md)).
+> Onda de implementação: `integ/ata-mudancas-aja` (FIX-215..224).
+
+1. **Lance sai da entrada (P0 — REVERTE parte do Passo 2).** A pergunta "Pretende dar um lance?"
+   e a educação de lance embutido **NÃO acontecem mais antes da busca**. Novo fluxo: nome →
+   experiência → (educação) → identidade (CPF+telefone) → **valor do bem** → **busca os grupos e
+   mostra as opções** → só DEPOIS a conversa de lance (recurso próprio / embutido). Motivo
+   (Bernardo): todo consórcio tem lance; perguntar na largada não faz sentido e confunde. ⚠️ Isto
+   **move** (não apaga) o conceito de lance do Passo 2 pro Passo 5; reverte a *colocação* de
+   FIX-92/118/212 (a educação de embutido continua existindo, só mais tarde). — FIX-215.
+2. **Terminologia: RESERVA DE COTA (P0).** Não é "consórcio fechado/contratado" — é **reserva de
+   cota**. Botão "confirmar e contratar" → "confirmar e reservar". Evitar "fechar/fechado".
+   Comunicar "Você não paga nada agora — tipo booking. Só quando chegar o boleto." Na reserva
+   concluída, deixar claro que dá pra iniciar um NOVO consórcio (nova jornada). — FIX-216.
+3. **Valor do bem digitável/livre (P1).** Aceitar valor digitado livre (122 mil, 1.012.000) sem
+   capar à faixa do slider. Grupos voltam por **ordem de grandeza**, não valor exato — precisão
+   fina não é essencial. — FIX-218.
+4. **Busca Bevi com E sem lance embutido (P1).** Consultar a Bevi 2× (com/sem embutido), unir e
+   deduplicar. A Bevi **não** retorna info de lance embutido — por ora **assumir que todos podem
+   ter embutido (~30% utilizável, confirmar teto)**; se a cota não permitir, vende-se equivalente.
+   Caso de borda resolvido depois. — FIX-219.
+5. **Cards (P0/P1).** 1ª lista: todos os grupos com **mesmo peso** (sem preferencial — ainda não
+   há dado de lance). Card: **logo da administradora**, **lance médio**, **parcela antes e depois
+   da contemplação** (indispensável, P0), deixar explícito que **embutido = recebe menos** crédito.
+   Reordenar/consolidar os 3 blocos do reveal (lance dentro do card). — FIX-220..224.
+6. **Recomendação em 2 estágios (P1 — ONDA 2).** Estágio 1 = carta exata pedida, com briefing
+   honesto ("não costuma ser a mais atrativa"); estágio 2 = personalizada (pergunta recurso
+   próprio/embutido → carta maior otimizada, "brilha o olho"). *Fica pra onda 2.*
+7. **Modelo do lance embutido na parcela pós-contemplação (T2 — resolvido por ora: AMORTIZA).**
+   Decisão da Ata (ex.: 6.800 → ~800 após o lance): o lance **abate o saldo** → parcela
+   pós-contemplação **cai**. Isto **inverte** o `CONTEXT` D18/C4 + código (`contemplation-dial.ts:116`
+   só `−ownCashValue`) + `system-prompt.ts:222`. Implementado atrás de teste em
+   `integ/ata-mudancas-aja`; ⚠️ **PENDENTE-Bernardo validar o número exato** antes de prod. — FIX-221.
+8. **Form vira texto no WhatsApp (P0 bug).** O gate de identidade (form) vira texto solto
+   ignorável no WhatsApp; forçar gate determinístico — pedir só **CPF** (celular já é auto do
+   WhatsApp, `waIdToCelular`). — FIX-217.
+9. **Proposta/PDF com marca AJA+administradora (P1 — ONDA 2/PENDENTE).** Hoje é pass-through (PDF
+   Bevi + portal Conexia). Gerar PDF próprio depende de destravar o fechamento (Trilho A travado,
+   D10). *Adiado.*
+10. **Fora desta onda (não-dev / backlog):** site Figma do Lucas, **comprar número da mesa na Meta**
+    (PENDENTE-KAIRO), mockup/vídeo pro grupo, demo backoffice; backlog P2: voltar às opções,
+    agente sugerir não fechar quando o lance for desproporcional, pop-up, granularidade por bem.
+
+## Refino 2026-07-11 — remoção do gate `consent` + motivo em turno próprio (SUPERSEDE)
+
+> Decisão do Kairo (teste manual web, "remover fiel ao mockup"). Onde conflitar com o
+> "Refino Handoff 2026-07-09" abaixo ou com os Passos, **esta seção vence** (palavra nova
+> vence). Implementação: FIX-273 (raiz do travamento) + **FIX-274** (remoção do consent).
+
+1. **O gate `consent` SAIU do funil.** O passo *"Posso te fazer 3 perguntinhas pra entender seu
+   perfil?"* + botões `Bora!`/`Entender mais antes` foi REMOVIDO (card web, botões WhatsApp,
+   handlers, directives, tipos — tudo). Depois do `desire`, a conversa vai **direto pro
+   `identify`** (CPF+celular+LGPD). Motivo: o consent (a) empilhava uma 2ª pergunta no mesmo
+   balão do "por que agora?", e (b) trazia a dúvida de consórcio cedo demais pelo "Entender mais
+   antes". O mockup não tem esse passo.
+2. **Nova ordem:** `name → desire[carro] → desire[motivo] → identify → credit → search →
+   experience → recommendation → timeframe → lance → [lance-value] → lance-embutido →
+   contemplation_dial → scarcity → proposal → decision → whatsapp-handoff`. Fonte: `nextGate`
+   em `src/lib/agent/qualify-state.ts` (sem `consent`).
+3. **O motivo ("por que agora") tem TURNO PRÓPRIO.** `shouldAskMotive` (qualify-state.ts) segura
+   o funil UMA vez quando o `desiredItem` já veio mas o `motivation` não — o LLM pergunta só o
+   motivo, sem emitir o card seguinte junto. NÃO-bloqueante: `motivationAsked` (marcado no runner)
+   libera o funil no turno seguinte mesmo se o motivo não vier.
+4. **Regra dura de cadência:** **NUNCA duas perguntas na mesma mensagem/balão** (máx 1 pergunta
+   por balão). Endurece o "1 balão = 1 ideia" do refino 2026-07-09.
+5. **A explicação/dúvidas de consórcio fica SÓ no gate `experience`** (pós-`search`) — nunca no
+   começo (já era o alvo do D1/handoff; agora sem escape antecipado pelo consent).
+
+## Refino Handoff 2026-07-09 — reordenação do funil + fecho WhatsApp (SUPERSEDE)
+
+> Decisões do Kairo (ADR `docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md`,
+> onda "agente de vendas de consórcio", bloco `bloco-jornada-conversa`). Onde conflitar
+> com os Passos abaixo ou com o "Refino Ata 2026-07-04", **esta seção vence** (regra
+> "palavra nova vence"). Implementação: FIX-233/234/235.
+
+1. **Gate `desire` (NOVO — não bloqueante, sem card), logo após o nome.** Duas
+   perguntas curtas, uma por balão: *"Qual [bem] você tem em mente?"* (slot
+   `desiredItem`) e *"E o que fez você decidir [trocar/comprar] agora?"* (slot
+   `motivation`). O gate dispara UMA vez (marcado por `desireAsked`) e NUNCA bloqueia — se o
+   usuário pular, o funil segue normal. **(FIX-274, 2026-07-11:** o motivo passou a ter turno
+   próprio via `shouldAskMotive`, e o próximo gate após o desire é o `identify` — o `consent`
+   foi removido; ver "Refino 2026-07-11" acima.)** `motivation` é espelhada no discurso UMA
+   vez (não a cada turno).
+2. **`experience` DESCE pra depois do `search` (reverte a posição histórica).** Antes
+   era o 1º gate da qualificação, logo após o nome; agora roda com os grupos já na
+   tela — quem já fez consórcio não perde tempo com a explicação, quem é novato só
+   faz sentido explicar depois de ver as opções reais.
+3. **`timeframe` REINTRODUZ, pós-recomendação (REVERTE o FIX-103).** O FIX-103
+   (2026-06-28) tinha removido o gate de prazo da entrada. O handoff pediu de volta,
+   mas numa posição NOVA: depois de `experience`, antes do `lance` — é a ponte
+   natural pro simulador de contemplação (`contemplation_dial`). `desiredTermMonths`
+   volta a pesar em `termMatchScore` (recomendação).
+4. **3ª saída do gate `lance`: "não quero comprometer nada além da parcela"**
+   (`hasLance: "so_parcela"`, só via texto livre — sem botão próprio). Pula
+   `lance-value`/`lance-embutido`/`simulator-offer` (a "agulha") por completo — chama
+   `present_two_paths` (card do bloco-cards-ui: esperar o sorteio × lance modesto
+   depois) e devolve a decisão ao usuário, sem recomendar um caminho.
+5. **Sanitizer ganha guardas novas:** bane a LLM dizer "reduzir o prazo"/"terminar
+   antes" (D7 — abatimento vira parcela menor, nunca prazo menor) e "reservado/cota
+   garantida/você já está no grupo" **antes** da contratação real (invariante #9 de
+   compliance). NÃO afeta a copy determinística pós-evento do fechamento self-service
+   ("sua reserva está confirmada"), que é a terminologia OFICIAL da Ata 2026-07-04.
+6. **Cadência/tom:** "1 balão = 1 ideia completa" (2-3 linhas) — nem paredão nem
+   picotado. Tom consultivo, sem gírias ("saco", "furar a fila"), emoji ≤ 1 a cada
+   3-4 balões.
+7. **Fecho pro WhatsApp:** ao aceitar a oferta, o agente NÃO diz "reservado" — diz
+   que mandou uma mensagem no WhatsApp, pede um "oi" (abre a janela de 24h — a copy
+   tem função técnica) e avisa que a especialista em cadastros chama em alguns
+   minutos. O fechamento self-service (`present_contract_form`/`offer-confirm`, já
+   🟢) **não muda** — esta é uma camada adicional de acompanhamento, disparada no
+   mesmo momento (mesa acionada proativamente via `dispatchAutoTransbordo`, em vez de
+   esperar o worker assíncrono de status da Bevi).
+
 ## Como ler (Fase de cada cenário)
 
 | Marca | Significado | O QA autônomo faz |
@@ -56,9 +174,11 @@ só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 | Pergunta o **nome** ("Como posso te chamar?") e captura em 1 turno | texto | texto | 🟢 |
 | Ecoa o objetivo ("…um [carro/imóvel] de cerca de X") | texto | texto | 🟢 |
 | **Só 3 categorias** (moto substitui "serviços") — mesma decisão da landing | 3 chips | 3 botões | 🔴 **web tem 4** (`web/adapter.ts:177` expõe "Outros"/serviços) × WhatsApp 3 (`formatter.ts:806`) × landing 3 (`hero.tsx:19`). Ver D21. |
+| Gate `desire` (NOVO, não bloqueante, sem card): bem específico + motivo de agora | conversa | conversa | 🟢 (FIX-233, ver "Refino Handoff 2026-07-09" acima) |
 
 ### Passo 2 · Entender o cliente
-**Narrativa:** descobre experiência prévia, educa se preciso, coleta o **valor do bem** (só o valor) e a intenção de lance.
+**Narrativa:** descobre experiência prévia (AGORA pós-search, ver "Refino Handoff
+2026-07-09"), educa se preciso, coleta o **valor do bem** (só o valor) e a intenção de lance.
 
 | Cenário de aceitação | Web | WhatsApp | Fase |
 |---|---|---|---|
@@ -66,7 +186,7 @@ só num canal): D5, D11, D13, D18, D19, D22 no mapa.
 | Se não/tem dúvida → **educação** (sem juros, taxa de adm, sorteio/lance) + "pode continuar" | texto+botão | texto+botão | 🟢 |
 | **Valor do bem** — **só o valor**, sem prazo, sem parcela, sem intents | **agulha simples** | conversa ("uns 80 mil") | 🔴 (P4) — web usa `plan-estimate-picker` (valor+prazo+intenção+lance, `web/adapter.ts:87`); WhatsApp usa **lista de faixas** (`formatter.ts:494`), não conversa. Ver D4/D5. |
 | **NÃO** aparece o componente multi-slider | — | — | 🔴 deletar `plan-estimate-picker.tsx` (não o `value-picker`). Ver D6. |
-| Prazo de contemplação **não** é perguntado na entrada (FIX-103) | — | — | 🟢 **o GATE `timeframe` foi removido** (provado por `qualify-state.fix-103.test.ts`). ⚠️ O prazo ainda vaza pelo `plan-estimate-picker` (slider `targetMonth`), mas isso É o 🔴 P4 acima — a linha do gate está correta. |
+| Prazo de contemplação: gate `timeframe` REINTRODUZIDO, pós-recomendação (REVERTE FIX-103) | botão | botão | 🟢 (FIX-233 — ver "Refino Handoff 2026-07-09" acima; `qualify-state.fix-103.test.ts` agora prova o REVERSO: timeframe aparece) |
 | Lance: "Pretende dar um lance?" **Sim/Não/Talvez** | botão | botão | 🟢 |
 | **Educação de lance embutido** pra QUALQUER resposta (Sim/Não/Talvez) | texto | texto | 🟢 web (`route.ts:917`) / 🔴 **WhatsApp pula** pra no/maybe (`interactive-handlers.ts:357`). FIX-92 corrigiu só web. Ver D19. |
 
@@ -209,6 +329,10 @@ atender" assume**; o atendente entra manualmente na administradora **guiado pelo
   líquido, não a dívida**. É uma questão de **modelagem financeira do produto** — só o stakeholder
   (Bernardo) decide qual está certo. Enquanto aberto, os dois docs se contradizem; qualquer sessão
   que "corrigir" um lado reabre o outro.
+  → **Atualização 2026-07-04 (Ata):** o stakeholder decidiu por ora o modelo **AMORTIZA** (o lance
+  abate o saldo, parcela pós cai — ex. 6.800 → ~800). Implementado em `integ/ata-mudancas-aja`
+  (FIX-221), invertendo código/CONTEXT. ⚠️ **PENDENTE-Bernardo validar o número exato antes de prod**
+  — deixou de ser tensão de design, mas ainda pende a validação financeira. Ver "Refino Ata 2026-07-04".
 - **(Hipótese não confirmada)** O 2º root-cause do FIX-114 ("`identityCollected=true` mas
   `getIdentity=null`") **não é reproduzível por código** (`conversation/identity.ts:113-126` é
   atômico). O furo confirmado do P6 é o LLM free-run (D7). Não cravar o 2º como fato.

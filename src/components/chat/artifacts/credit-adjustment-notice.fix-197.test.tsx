@@ -52,6 +52,20 @@ describe("FIX-197 — aviso de ajuste de faixa (recommendation_card)", () => {
 		expect(notice.textContent ?? "").toMatch(/131\.042/);
 	});
 
+	// FIX-277 (veredito r9, G1): a copy do hero estava com a direção INVERTIDA —
+	// chamava o valor PEDIDO (rawCreditValue) de "essa carta" e a carta REAL
+	// (creditValue) de "sua faixa ajustada", quando na verdade a carta sempre foi
+	// creditValue. Paridade com o padrão já correto de real-offer.tsx: "Você
+	// pediu ~X — a carta real ficou em Y". Falha com "ajustamos essa carta".
+	it("FIX-277: direção do aviso — 'você pediu ~X — a carta real ficou em Y' (paridade com real_offer)", () => {
+		render(<RecommendationCard payload={rec(300_000)} />);
+		const notice = screen.getByTestId("credit-adjustment-notice");
+		const text = notice.textContent ?? "";
+		expect(text).toMatch(/pediu/i);
+		expect(text).not.toMatch(/ajustamos essa carta/i);
+		expect(text).not.toMatch(/sua faixa/i);
+	});
+
 	it("sem rawCreditValue → NÃO exibe o aviso", () => {
 		render(<RecommendationCard payload={rec(undefined)} />);
 		expect(screen.queryByTestId("credit-adjustment-notice")).toBeNull();

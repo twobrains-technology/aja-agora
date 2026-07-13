@@ -26,6 +26,7 @@ import {
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
 	categoryToBeviSegment,
+	normalizeAdministradoraName,
 } from "./offer-mapper";
 import type { BeviSelfContractClient } from "./self-contract-client";
 
@@ -169,11 +170,14 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 			throw new Error("searchGroups exige creditMax/creditMin > 0 (valor do bem do passo 2).");
 		}
 		const segment = categoryToBeviSegment(params.category);
+		const prefs = await this.session.getSimulationPrefs();
 		// FIX-70: sweep opt-in (default off) — a busca simples mantém o < 3s da 1ª
 		// impressão; o sweep enriquece o índice cumulativo com 3-5 faixas.
+		// FIX-219: o valor-alvo SEMPRE varre com/sem lance embutido (offersForValue);
+		// o sweep de faixa de valor mantém 1 variante por faixa (a de `prefs`).
 		const offers = params.sweep
-			? await this.sweepOffers(segment, value)
-			: await this.ensureOffers(segment, value);
+			? await this.sweepOffers(segment, value, prefs.embeddedPercentage)
+			: await this.offersForValue(segment, value, prefs.embeddedPercentage);
 		return offers.map(beviOfferToGroupSummary);
 	}
 
@@ -190,7 +194,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return {
 			id: offer.quotaId,
-			administradora: offer.bankLabel ?? offer.bank,
+			administradora: normalizeAdministradoraName(offer.bankLabel ?? offer.bank),
 			groupNumber: offer.group,
 			category: beviSegmentToCategory(offer.productType ?? ""),
 			creditValue: offer.finalValue,
@@ -212,7 +216,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	async getRates(params: GetRatesParams): Promise<RateInfo[]> {
 		const seen = new Map<string, RateInfo>();
 		for (const offer of this.offerIndex.values()) {
-			const administradora = offer.bankLabel ?? offer.bank;
+			const administradora = normalizeAdministradoraName(offer.bankLabel ?? offer.bank);
 			const category = beviSegmentToCategory(offer.productType ?? "");
 			if (params.category && category !== params.category) continue;
 			if (params.administradora && administradora !== params.administradora) continue;
@@ -229,9 +233,17 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		return [...seen.values()];
 	}
 
-	/** Garante proposta criada + segmento gravado + simulação cacheada. */
-	private async ensureOffers(segment: string, value: number): Promise<BeviOffer[]> {
-		const key = `${segment}:${value}`;
+	/** Garante proposta criada + segmento gravado + simulação cacheada.
+	 * FIX-219: `embeddedPercentage` é PARÂMETRO explícito (não mais derivado
+	 * internamente de `session.getSimulationPrefs()`) — quem chama decide a
+	 * variante (sem/com embutido); a cache key inclui o embutido pra não
+	 * colidir entre variantes do mesmo (segmento, valor). */
+	private async ensureOffers(
+		segment: string,
+		value: number,
+		embeddedPercentage: "30" | "50" | undefined,
+	): Promise<BeviOffer[]> {
+		const key = `${segment}:${value}:${embeddedPercentage ?? "none"}`;
 		const cached = this.offerCache.get(key);
 		if (cached) return cached;
 
@@ -255,13 +267,65 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		const prefs = await this.session.getSimulationPrefs();
 		const offers = await this.client.simulate({
 			simulationValue: value,
-			embeddedPercentage: prefs.embeddedPercentage,
+			embeddedPercentage,
 			objective: prefs.objective,
 		});
 
 		this.offerCache.set(key, offers);
 		for (const offer of offers) this.offerIndex.set(offer.quotaId, offer);
 		return offers;
+	}
+
+	/** FIX-219 (Ata 2026-07-04, item 4) — a Bevi exige informar um valor de
+	 * embutido pra simular e NÃO informa se a cota aceita; tratamos como DUAS
+	 * queries pro mesmo valor: SEM embutido (baseline) e COM (~30%, de
+	 * `getSimulationPrefs`). Une os resultados por quotaId (mesmo padrão do
+	 * sweep de valor) e marca cada oferta com a variante que a produziu —
+	 * `recommendation.ts` usa esse marcador pra não colapsar as duas
+	 * modalidades do mesmo grupo no dedup.
+	 *
+	 * Defensivo: a variante SEM é a baseline — falha aqui é falha real de
+	 * busca, propaga. A variante COM é o caso de borda da Ata ("se a cota não
+	 * permitir, vende-se equivalente"): se falhar, degrada pro que já foi
+	 * achado SEM embutido em vez de travar a busca inteira. */
+	private async offersForValue(
+		segment: string,
+		value: number,
+		embeddedCandidate: "30" | "50" | undefined,
+	): Promise<BeviOffer[]> {
+		const collected: BeviOffer[] = [];
+		const seen = new Set<string>();
+		const merge = (offers: BeviOffer[], variant: "sem" | "com") => {
+			for (const offer of offers) {
+				if (!seen.has(offer.quotaId)) {
+					seen.add(offer.quotaId);
+					collected.push({ ...offer, embeddedVariant: variant });
+				}
+			}
+		};
+
+		merge(await this.ensureOffers(segment, value, undefined), "sem");
+
+		if (embeddedCandidate !== undefined) {
+			if (this.sweepConfig.gapMs > 0) await sleep(this.sweepConfig.gapMs);
+			try {
+				merge(await this.ensureOffers(segment, value, embeddedCandidate), "com");
+			} catch (err) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						source: "discovery-sweep",
+						event: "embedded_variant_error",
+						segment,
+						value,
+						embeddedCandidate,
+						error_name: err instanceof Error ? err.name : "unknown",
+					}),
+				);
+			}
+		}
+
+		return collected;
 	}
 
 	/** FIX-70 — sweep sequencial multi-faixa. Varre alvo + vizinhas (1 proposta
@@ -276,8 +340,18 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	 *   acumulou (nunca relança). Throttle (429) é logado distintamente (calibra o
 	 *   gap — o limite de rate não está no cookbook, o spike FIX-69 sonda).
 	 * - Budget de tempo (`maxSweepMs`): não lança nova vizinha se estourar.
-	 * - Faixa vazia (piso, §5a) não contribui ofertas, mas não para o sweep. */
-	private async sweepOffers(segment: string, target: number): Promise<BeviOffer[]> {
+	 * - Faixa vazia (piso, §5a) não contribui ofertas, mas não para o sweep.
+	 *
+	 * FIX-219: o sweep de VALOR mantém 1 variante de embutido por faixa (a de
+	 * `getSimulationPrefs`) — o eixo com/sem embutido roda só no valor-alvo via
+	 * `offersForValue` (`searchGroups`). Dobrar as duas dimensões (valor ×
+	 * embutido) multiplicaria as chamadas sequenciais sem pedido explícito da
+	 * Ata, que descreve "a busca" (o valor-alvo) como as duas queries. */
+	private async sweepOffers(
+		segment: string,
+		target: number,
+		embeddedPercentage: "30" | "50" | undefined,
+	): Promise<BeviOffer[]> {
 		const { spread, floor, gapMs, maxSweepMs } = this.sweepConfig;
 		const values = deriveSweepValues(target, { spread, floor });
 		const collected: BeviOffer[] = [];
@@ -307,7 +381,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 			}
 
 			try {
-				const offers = await this.ensureOffers(segment, value);
+				const offers = await this.ensureOffers(segment, value, embeddedPercentage);
 				for (const offer of offers) {
 					if (!seen.has(offer.quotaId)) {
 						seen.add(offer.quotaId);

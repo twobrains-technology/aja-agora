@@ -7,14 +7,36 @@ import type {
 
 // ---- Scoring weights ----
 
+// FIX-276: o usuário nunca informa orçamento mensal (só o valor do bem) — o
+// `budget` de ScoringInput é INVENTADO pelo LLM (recommend_groups exige o
+// campo, mas não há de onde vir um número real). Com monthlyFit a 0.4 do
+// peso, um budget inventado alto empurrava a recomendação pra carta MAIS CARA
+// que o valor pedido (risco CDC — recomendar acima do que o cliente pediu).
+// `creditProximity` ancora no dado REAL do cliente (o valor do bem pedido,
+// `creditMax`) e passa a ser o fator DOMINANTE; monthlyFit perde peso (não
+// some — ainda desempata por conforto de parcela quando a proximidade empata).
 export const WEIGHTS = {
-	monthlyFit: 0.4,
-	contemplation: 0.25,
-	adminFee: 0.2,
-	termMatch: 0.15,
+	creditProximity: 0.4,
+	monthlyFit: 0.15,
+	contemplation: 0.2,
+	adminFee: 0.15,
+	termMatch: 0.1,
 } as const;
 
 // ---- Factor scoring functions (all pure, deterministic) ----
+
+/**
+ * FIX-276 — quão próxima a carta está do valor do bem PEDIDO (`creditMax`),
+ * o âncora real do cliente. Carta == pedido pontua 1; quanto mais distante
+ * (pra cima OU pra baixo), mais penaliza, linear em `|creditValue - creditMax| / creditMax`.
+ * Sem `creditMax` (busca sem faixa) → neutro 0.5, mesmo padrão dos demais
+ * fatores quando falta dado (contemplationScore/termMatchScore).
+ */
+export function creditProximityScore(creditValue: number, creditMax: number | undefined): number {
+	if (!creditMax || creditMax <= 0) return 0.5;
+	const ratio = Math.abs(creditValue - creditMax) / creditMax;
+	return Math.max(0, 1 - ratio);
+}
 
 /**
  * How well the monthly payment fits the user's budget.
@@ -75,11 +97,42 @@ export interface ScoringInput {
 	budget: number;
 	/** User's desired timeline in months (0 = no preference) */
 	desiredTermMonths: number;
+	/** FIX-276: valor do bem PEDIDO pelo usuário (creditMax do input de busca) —
+	 * o âncora real do cliente, usado por `creditProximityScore`. Ausente
+	 * (busca sem faixa) → o fator vira neutro (0.5), não interfere no ranking. */
+	creditMax?: number;
 	/** FIX-193: usuário tem apetite de lance (qualifyAnswers.hasLance==="yes").
 	 * Desempata modalidades do MESMO grupo (SPECIAL_OFFER × FREE_BID) quando o
 	 * score empata — prioriza a coerente com lance (FREE_BID). Critério INVISÍVEL
 	 * (tipoOferta nunca vai pra UI). Ausente/false = desempate estável por ordem. */
 	hasLance?: boolean;
+	/** FIX-226 (D6): invariante duro — quando o usuário tem apetite de lance
+	 * (`hasLance`) e este guardrail está configurado, candidatas de embutido
+	 * (`embeddedVariant === "com"`) cujo netCredit fica ABAIXO do valor do bem
+	 * são REORDENADAS pra depois das que respeitam (nunca descartadas — "não
+	 * pode limitar", Kairo 2026-07-01). Candidatas "sem" embutido nunca são
+	 * avaliadas por este guardrail. */
+	embutidoGuardrail?: {
+		/** Valor do bem que o usuário quer comprar (R$). */
+		valorDoBem: number;
+		/** Teto do lance embutido do grupo (fração 0-1, ex.: 0.3 = 30%). */
+		maxEmbutidoPct: number;
+	};
+}
+
+/**
+ * GUARDRAIL D6 (FIX-226) — o crédito líquido nunca pode ficar abaixo do bem
+ * desejado. Sem isso, o cliente contempla mais rápido usando embutido mas
+ * recebe dinheiro que não compra o que veio comprar — a falha silenciosa mais
+ * perigosa do embutido. `maxEmbutidoPct` é fração 0-1 (ex.: 0.3 = 30%).
+ */
+export function respectsNetCreditGuardrail(
+	creditValue: number,
+	maxEmbutidoPct: number,
+	valorDoBem: number,
+): boolean {
+	const netCredit = creditValue - creditValue * maxEmbutidoPct;
+	return netCredit >= valorDoBem;
 }
 
 /** FIX-193: a oferta é da modalidade de lance livre? (case-insensitive, tolerante
@@ -94,6 +147,7 @@ export interface ScoredGroup {
 	/** 0-1 composite score */
 	score: number;
 	factors: {
+		creditProximity: number;
 		monthlyFit: number;
 		contemplation: number;
 		adminFee: number;
@@ -116,6 +170,7 @@ export function rankGroups(
 ): ScoredGroup[] {
 	const scored: ScoredGroup[] = groups.map((group) => {
 		const factors = {
+			creditProximity: creditProximityScore(group.creditValue, input.creditMax),
 			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
 			contemplation: contemplationScore(group.contemplationRate),
 			adminFee: adminFeeScore(group.adminFeePercent, group.category),
@@ -123,6 +178,7 @@ export function rankGroups(
 		};
 
 		const score =
+			factors.creditProximity * WEIGHTS.creditProximity +
 			factors.monthlyFit * WEIGHTS.monthlyFit +
 			factors.contemplation * WEIGHTS.contemplation +
 			factors.adminFee * WEIGHTS.adminFee +
@@ -135,7 +191,24 @@ export function rankGroups(
 		};
 	});
 
+	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
+	// candidatas de embutido ("com") que violam netCredit >= valorDoBem são
+	// REORDENADAS pra depois das que respeitam — critério PRIMÁRIO (antes do
+	// score), pra "a estratégia de embutido recomendada nunca aponta pra uma
+	// carta que viole netCredit". Candidatas "sem" e sem guardrail configurado
+	// sempre "passam" (não interfere).
+	const guardrail = input.hasLance ? input.embutidoGuardrail : undefined;
+	const passesEmbutidoGuardrail = (group: GroupSummary): boolean => {
+		if (!guardrail || group.embeddedVariant !== "com") return true;
+		return respectsNetCreditGuardrail(group.creditValue, guardrail.maxEmbutidoPct, guardrail.valorDoBem);
+	};
+
 	const sorted = scored.sort((a, b) => {
+		if (guardrail) {
+			const aPass = passesEmbutidoGuardrail(a.group) ? 0 : 1;
+			const bPass = passesEmbutidoGuardrail(b.group) ? 0 : 1;
+			if (aPass !== bPass) return aPass - bPass;
+		}
 		if (b.score !== a.score) return b.score - a.score;
 		// FIX-193: desempate por afinidade de lance — só quando o usuário tem
 		// apetite de lance, a modalidade coerente (FREE_BID) vem antes. Assim a
@@ -155,13 +228,18 @@ export function rankGroups(
 	// sobrevivente (melhor score; empate → FREE_BID quando hasLance). Só dedupa
 	// quando `grupo` está presente — shapes sem o nº do grupo (fixtures/legado)
 	// seguem tratados como únicos (preserva o FIX-56).
+	// FIX-219: a chave INCLUI `embeddedVariant` — o mesmo grupo físico agora pode
+	// vir de DUAS buscas (com/sem lance embutido, bevi-self-contract-adapter.ts)
+	// e as modalidades NÃO podem colapsar uma na outra (números diferentes:
+	// crédito líquido menor com embutido). Grupos sem o marcador (legado/mesma
+	// variante) seguem dedupados como antes — o sufixo vazio é estável.
 	const seenGroupKeys = new Set<string>();
 	const deduped: ScoredGroup[] = [];
 	for (const s of sorted) {
 		const grupo = s.group.grupo;
 		const admin = s.group.administradora;
 		if (typeof grupo === "string" && grupo.length > 0 && admin) {
-			const key = `${admin}::${grupo}`;
+			const key = `${admin}::${grupo}::${s.group.embeddedVariant ?? ""}`;
 			if (seenGroupKeys.has(key)) continue;
 			seenGroupKeys.add(key);
 		}
@@ -219,12 +297,19 @@ function expandRange(params: SearchGroupsParams, factor: number): SearchGroupsPa
  * Busca grupos garantindo ≥3 opções: filtro estrito → ±20% → ±50%. Marca
  * alternativos. Se mesmo ±50% não basta, retorna o que tem com flag
  * insufficientOptions=true. Bug #09 (Bruna v1 review).
+ *
+ * FIX-289: `seedGroups`, quando presente, substitui a busca estrita
+ * (`adapter.searchGroups(params)`) — reaproveita grupos que o MESMO turno já
+ * buscou (ex.: via `search_groups`) em vez de rebuscar do zero. A lógica de
+ * expansão (`EXPANSION_STEPS`) segue intacta, só se o conjunto reaproveitado
+ * for insuficiente (essas chamadas continuam batendo a Bevi de verdade).
  */
 export async function recommendWithFallback(
 	adapter: AdministradoraAdapter,
 	params: SearchGroupsParams,
+	seedGroups?: GroupSummary[],
 ): Promise<RecommendationResult> {
-	const strict = await adapter.searchGroups(params);
+	const strict = seedGroups ?? (await adapter.searchGroups(params));
 	if (strict.length >= MIN_OPTIONS) {
 		return {
 			groups: strict.map((g) => ({ ...g, alternativa: false })),

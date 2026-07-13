@@ -159,7 +159,8 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 						</div>
 						<p className="text-xs text-muted-foreground mt-1">
 							Usa parte da própria carta como lance — sem precisar do valor todo em dinheiro
-							(estimativa, não garantia).
+							(estimativa, não garantia). Usar o embutido significa que você recebe menos crédito
+							da carta agora.
 						</p>
 					</div>
 				)}

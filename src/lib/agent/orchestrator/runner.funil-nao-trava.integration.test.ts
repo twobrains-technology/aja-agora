@@ -71,10 +71,19 @@ const { metaOf } = await import("@/lib/conversation/meta");
 type ConversationMetadata = import("@/lib/agent/personas").ConversationMetadata;
 
 // Estado logo após o clique "🤔 Tenho dúvidas" (o do print): experiência
-// escolhida, dúvidas ainda não endereçadas, consent ainda não ofertado.
+// escolhida, dúvidas ainda não endereçadas. FIX-233 (D2): `experience` desceu
+// pra PÓS-reveal — o clique só é alcançável depois de consent/identify/
+// credit/search/reveal já resolvidos (o funil chega em "experience" só
+// depois disso).
 const DOUBTS_CLICK_META: ConversationMetadata = {
+	desireAsked: true,
 	currentPersona: "helena-imovel",
 	currentCategory: "imovel",
+	qualifyConsented: true,
+	identityCollected: true,
+	searchDispatched: true,
+	revealCompleted: true,
+	qualifyAnswers: { creditMax: 300_000 },
 	experiencePrev: "doubts",
 	doubtsAddressed: false,
 };
@@ -136,8 +145,8 @@ describeIfDb("FIX-206 — clique 'Tenho dúvidas' NÃO trava: oferece o consent 
 
 		// A explicação saiu...
 		expect(text.toLowerCase()).toContain("consórcio");
-		// ...E o próximo passo (consent) foi oferecido no MESMO turno.
-		expect(gates).toContain("consent");
+		// ...E o próximo passo (timeframe, FIX-233: pós-experience) foi oferecido no MESMO turno.
+		expect(gates).toContain("timeframe");
 	});
 
 	it("marca doubtsAddressed no meta (o endereçamento server-authored foi registrado)", async () => {

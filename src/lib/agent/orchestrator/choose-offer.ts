@@ -64,18 +64,359 @@ export function findChosenOffer(rows: ArtifactRow[], groupId: string): ChosenOff
 	return null;
 }
 
+async function loadArtifactRows(conversationId: string): Promise<ArtifactRow[]> {
+	const { db } = await import("@/db");
+	const { artifacts: artifactsTable, messages: messagesTable } = await import("@/db/schema");
+	const { eq } = await import("drizzle-orm");
+	return db
+		.select({ type: artifactsTable.type, payload: artifactsTable.payload })
+		.from(artifactsTable)
+		.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
+		.where(eq(messagesTable.conversationId, conversationId));
+}
+
 /** Resolve a cota escolhida a partir dos artifacts persistidos da conversa. */
 export async function resolveChosenOffer(
 	conversationId: string,
 	groupId: string,
 ): Promise<ChosenOffer | null> {
-	const { db } = await import("@/db");
-	const { artifacts: artifactsTable, messages: messagesTable } = await import("@/db/schema");
-	const { eq } = await import("drizzle-orm");
-	const rows = await db
-		.select({ type: artifactsTable.type, payload: artifactsTable.payload })
-		.from(artifactsTable)
-		.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
-		.where(eq(messagesTable.conversationId, conversationId));
+	const rows = await loadArtifactRows(conversationId);
 	return findChosenOffer(rows, groupId);
+}
+
+// FIX-251 (P0, veredito Fable FINAL §N-A, 2026-07-10): "nunca aja sobre
+// entidade não-ancorada" no ponto mais caro da jornada — o fechamento
+// (present_contract_form) confiava cegamente em meta.recommendedOffer mesmo
+// quando um what-if REJEITADO tinha deixado o snapshot ancorado noutra
+// administradora. Re-resolve pela administradora que o PRÓPRIO turno de
+// fechamento anuncia, contra os grupos REALMENTE exibidos no reveal
+// (findOfferByAdministradora) — nunca a meta potencialmente stale.
+
+/** Normaliza nome de administradora pra comparação (maiúsculas, sem acento). */
+export function normalizeAdministradora(s: string): string {
+	return s
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toUpperCase()
+		.trim();
+}
+
+/** Lista TODAS as cotas distintas (por groupId) já exibidas nos artifacts do
+ * reveal — comparison_table (seletor) + cards individuais. PURO. */
+export function listShownOffers(rows: ArtifactRow[]): ChosenOffer[] {
+	const out: ChosenOffer[] = [];
+	const seen = new Set<string>();
+	const add = (p: Record<string, unknown>, idKey: "id" | "groupId") => {
+		const id = p[idKey];
+		if (typeof id !== "string" || id.length === 0 || seen.has(id)) return;
+		seen.add(id);
+		out.push(pickOffer(p, id));
+	};
+	for (const row of rows) {
+		const p = row.payload;
+		if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+		const payload = p as Record<string, unknown>;
+		if (row.type === "comparison_table" && Array.isArray(payload.groups)) {
+			for (const g of payload.groups) {
+				if (g && typeof g === "object" && !Array.isArray(g)) {
+					add(g as Record<string, unknown>, "id");
+				}
+			}
+			continue;
+		}
+		if (row.type === "simulation_result") {
+			add(payload, "groupId");
+			continue;
+		}
+		if (row.type === "group_card" || row.type === "recommendation_card") {
+			add(payload, "id");
+		}
+	}
+	return out;
+}
+
+/** Acha a cota exibida cuja administradora bate com o nome dado (normalizado).
+ * Ambíguo (2+ grupos da mesma administradora exibidos) → null, nunca chuta
+ * qual dos dois (Lei 3). */
+export function findOfferByAdministradora(
+	rows: ArtifactRow[],
+	administradora: string,
+): ChosenOffer | null {
+	if (!administradora) return null;
+	const target = normalizeAdministradora(administradora);
+	const matches = listShownOffers(rows).filter(
+		(o) => o.administradora && normalizeAdministradora(o.administradora) === target,
+	);
+	return matches.length === 1 ? matches[0] : null;
+}
+
+/** Resolve o groupId a partir dos artifacts persistidos + a administradora
+ * anunciada pelo turno de fechamento (present_contract_form). */
+export async function resolveOfferForAdministradora(
+	conversationId: string,
+	administradora: string,
+): Promise<ChosenOffer | null> {
+	const rows = await loadArtifactRows(conversationId);
+	return findOfferByAdministradora(rows, administradora);
+}
+
+// FIX-252 ("pro teto" #3, veredito Fable FINAL, 2026-07-10): a mesma lei, num
+// segundo ponto — a LLM podia nomear/errar o grupo certo em texto livre ("a de
+// 92 mil" resolvendo pro grupo de 100k, achado do FIX-249 "PARCIAL"; gap
+// registrado como fora de escopo no próprio commit cd716058).
+// resolveOfferByMention resolve DETERMINISTICAMENTE por nome de administradora
+// ou valor aproximado contra os grupos JÁ EXIBIDOS — nunca inventa (Lei 3).
+
+/** Extrai valores monetários mencionados no texto livre — "92 mil", "R$
+ * 92.902,00", "92.902" (formatação pt-BR). PURO, sem heurística de moeda
+ * implícita em números soltos pequenos (evita falso-positivo em "12 meses"). */
+function extractMoneyMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)\s*mil\b/gi)) {
+		const n = Number(m[1].replace(",", "."));
+		if (!Number.isNaN(n)) out.push(n * 1000);
+	}
+	for (const m of text.matchAll(/R\$\s*([\d.,]+)/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	for (const m of text.matchAll(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g)) {
+		const n = parsePtBrNumber(m[0]);
+		if (n !== null) out.push(n);
+	}
+	return out;
+}
+
+function parsePtBrNumber(raw: string): number | null {
+	const cleaned = raw.trim();
+	const normalized = cleaned.includes(",")
+		? cleaned.replace(/\./g, "").replace(",", ".")
+		: cleaned.replace(/\./g, "");
+	const n = Number(normalized);
+	return Number.isNaN(n) ? null : n;
+}
+
+// FIX-265 (menor #2, veredito Fable r5, N6): o runner precisa distinguir
+// re-simulação PEDIDA (usuário citou um valor-alvo) de what-if EXPLORATÓRIO
+// da LLM (nenhum valor citado) antes de aceitar uma nova simulação como a
+// âncora do fechamento/dial. Reusa a mesma extração/tolerância de
+// `resolveOfferByMention` — um só lugar decide "o que conta como valor
+// mencionado pelo usuário".
+/** O texto do usuário menciona (aproximadamente, ≤10%) o valor dado? PURO. */
+export function isCreditValueMentioned(text: string, creditValue: number): boolean {
+	if (!text || typeof creditValue !== "number" || creditValue <= 0) return false;
+	return extractMoneyMentions(text).some((m) => Math.abs(creditValue - m) / m <= 0.1);
+}
+
+// FIX-264 (P1, veredito Fable r5 — FIX-252/258 "PARCIAL"): "RODOBENS de 90
+// mil" com a RODOBENS exibida a 90k desistia por "conflito nome×valor" quando
+// outro grupo exibido empatava no MESMO crédito — o "best" global (menor diff,
+// primeiro no array) elegia arbitrariamente o empate errado em vez do grupo
+// nomeado. Correção: valor vira CONJUNTO por menção (todos os empates no
+// mínimo, não só o 1º encontrado); nome único resolve se seu PRÓPRIO valor
+// está no conjunto — não precisa ser o único elemento dele. Menção negada
+// ("deixa X pra lá"/"esquece"/"cancela") remove X do conjunto de nomes antes
+// de resolver — nunca conta uma administradora explicitamente rejeitada.
+
+const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO QUERO)\b/;
+
+/** Administradoras mencionadas dentro de uma cláusula com gatilho de negação
+ * explícito ("deixa a X pra lá", "esquece a X", "cancela a X") — nunca conta
+ * um uso afirmativo de "deixa" sem o gatilho ("Deixa a X que você recomendou"
+ * continua resolvendo — regressão FIX-252). PURO. */
+function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set<string> {
+	const negated = new Set<string>();
+	for (const clause of text.split(/[.!?;]/)) {
+		const normalizedClause = normalizeAdministradora(clause);
+		if (!NEGATION_TRIGGER.test(normalizedClause)) continue;
+		for (const o of offers) {
+			if (o.administradora && normalizedClause.includes(normalizeAdministradora(o.administradora))) {
+				negated.add(normalizeAdministradora(o.administradora));
+			}
+		}
+	}
+	return negated;
+}
+
+/** Todos os valores mencionados no texto casados contra um CAMPO NUMÉRICO das
+ * cotas exibidas — por menção, o CONJUNTO empatado no menor diff (não só o 1º
+ * encontrado), unido entre as várias menções do texto. PURO. Generaliza a
+ * mesma semântica pra creditValue/monthlyPayment/termMonths (FIX-267). */
+function matchByNumericField(
+	offers: ChosenOffer[],
+	mentions: number[],
+	getField: (o: ChosenOffer) => number | undefined,
+	tolerance: number,
+): ChosenOffer[] {
+	const matched = new Map<string, ChosenOffer>();
+	for (const m of mentions) {
+		let minDiff = Number.POSITIVE_INFINITY;
+		let tied: ChosenOffer[] = [];
+		for (const o of offers) {
+			const value = getField(o);
+			if (typeof value !== "number") continue;
+			const diff = Math.abs(value - m) / m;
+			if (diff > tolerance) continue;
+			if (diff < minDiff) {
+				minDiff = diff;
+				tied = [o];
+			} else if (diff === minDiff) {
+				tied.push(o);
+			}
+		}
+		for (const o of tied) matched.set(o.groupId, o);
+	}
+	return [...matched.values()];
+}
+
+function matchValueMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.creditValue, 0.1);
+}
+
+// FIX-267 (P1, veredito Fable r6, "o que segura o 7" #3): resolveOfferByMention
+// só casava por nome de administradora ou creditValue — menção por PARCELA
+// ("a de 1.200 por mês"/"a da parcela de 1.213,85") ou PRAZO ("a de 84
+// meses"/"a de 7 anos") não resolvia mesmo com o grupo EXIBIDO batendo
+// exatamente. As duas extrações abaixo são independentes das de creditValue
+// (contexto textual próprio — "por mês"/"parcela"/"meses"/"anos" — nunca
+// confunde com um valor de crédito solto no mesmo texto).
+
+/** Menções de PARCELA (monthlyPayment): "parcela de R$ 1.213,85", "1.200 por
+ * mês", "1200/mês", "mensais de 1.200". PURO. */
+function extractMonthlyPaymentMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/(?:parcela|mensalidade)s?\s*(?:de)?\s*(?:R\$\s*)?([\d.,]+)/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	for (const m of text.matchAll(/(?:R\$\s*)?([\d.,]+)\s*(?:por\s*m[eê]s|\/\s*m[eê]s|mensais?)\b/gi)) {
+		const n = parsePtBrNumber(m[1]);
+		if (n !== null) out.push(n);
+	}
+	return out;
+}
+
+function matchMonthlyPaymentMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.monthlyPayment, 0.05);
+}
+
+/** Menções de PRAZO (termMonths): "84 meses", "7 anos" (convertido pra
+ * meses). PURO. */
+function extractTermMentions(text: string): number[] {
+	const out: number[] = [];
+	for (const m of text.matchAll(/\b(\d{1,3})\s*(?:meses|m[eê]s)\b/gi)) {
+		const n = Number(m[1]);
+		if (!Number.isNaN(n)) out.push(n);
+	}
+	for (const m of text.matchAll(/\b(\d{1,2})\s*anos?\b/gi)) {
+		const n = Number(m[1]);
+		if (!Number.isNaN(n)) out.push(n * 12);
+	}
+	return out;
+}
+
+function matchTermMentions(offers: ChosenOffer[], mentions: number[]): ChosenOffer[] {
+	return matchByNumericField(offers, mentions, (o) => o.termMonths, 0);
+}
+
+/** Une várias listas de matches, dedupe por groupId. PURO. */
+function unionByGroupId(groups: ChosenOffer[][]): ChosenOffer[] {
+	const merged = new Map<string, ChosenOffer>();
+	for (const group of groups) {
+		for (const o of group) merged.set(o.groupId, o);
+	}
+	return [...merged.values()];
+}
+
+/** Resolve determinística de menção textual (nome de administradora OU valor
+ * aproximado) pra uma das cotas JÁ EXIBIDAS — nunca inventa (Lei 3): null
+ * quando genuinamente ambíguo ou sem match. Nome único cujo PRÓPRIO valor
+ * está no conjunto de valores mencionados resolve SEMPRE — mesmo se outro
+ * grupo exibido empata no mesmo valor (LEI: nome/valor casando um grupo
+ * exibido nunca desiste/nega). Menção negada é descartada antes de resolver. */
+export function resolveOfferByMention(offers: ChosenOffer[], text: string): ChosenOffer | null {
+	if (!text || offers.length === 0) return null;
+	const normalizedText = normalizeAdministradora(text);
+	const negated = extractNegatedAdministradoras(text, offers);
+
+	const nameMatches = offers.filter(
+		(o) =>
+			o.administradora &&
+			!negated.has(normalizeAdministradora(o.administradora)) &&
+			normalizedText.includes(normalizeAdministradora(o.administradora)),
+	);
+
+	const moneyMentions = extractMoneyMentions(text);
+	const creditMatches = moneyMentions.length > 0 ? matchValueMentions(offers, moneyMentions) : [];
+
+	// FIX-267: parcela/prazo mencionados casam contra os MESMOS grupos
+	// exibidos, unidos ao conjunto de matches por valor (mesma semântica de
+	// "resolve determinístico se casa um grupo exibido", nunca desiste).
+	const monthlyMentions = extractMonthlyPaymentMentions(text);
+	const monthlyMatches = monthlyMentions.length > 0 ? matchMonthlyPaymentMentions(offers, monthlyMentions) : [];
+
+	const termMentions = extractTermMentions(text);
+	const termMatches = termMentions.length > 0 ? matchTermMentions(offers, termMentions) : [];
+
+	const valueMatches = unionByGroupId([creditMatches, monthlyMatches, termMatches]);
+
+	if (nameMatches.length === 1) {
+		const named = nameMatches[0];
+		if (valueMatches.length === 0) return named;
+		return valueMatches.some((o) => o.groupId === named.groupId) ? named : null;
+	}
+	if (nameMatches.length > 1) {
+		const overlap = nameMatches.filter((o) => valueMatches.some((v) => v.groupId === o.groupId));
+		return overlap.length === 1 ? overlap[0] : null;
+	}
+	if (valueMatches.length === 1) return valueMatches[0];
+	return null;
+}
+
+/** Resolve por menção textual a partir dos artifacts persistidos da conversa. */
+export async function resolveOfferMentionForConversation(
+	conversationId: string,
+	text: string,
+): Promise<ChosenOffer | null> {
+	const rows = await loadArtifactRows(conversationId);
+	return resolveOfferByMention(listShownOffers(rows), text);
+}
+
+// FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente
+// ambígua/sem match) e o fallback de tool-error precisa variar na 2ª
+// ocorrência, o orchestrator precisa da lista de cotas JÁ EXIBIDAS pra montar
+// uma opção concreta (buildToolErrorRecoveryFallbackRepeat) — mesma fonte
+// determinística (`listShownOffers`), só faltava o wrapper async.
+export async function listShownOffersForConversation(conversationId: string): Promise<ChosenOffer[]> {
+	const rows = await loadArtifactRows(conversationId);
+	return listShownOffers(rows);
+}
+
+// FIX-258 (P1, veredito Fable r4: FIX-252 "NÃO" — a resolução por menção
+// (acima) só corrigia a âncora PÓS-simulação; o modo de falha real acontecia
+// ANTES: o usuário nomeia "a ITAÚ"/"a de 92 mil" (visível na comparison_table)
+// e a LLM adivinha o groupId ou tenta re-buscar com um sentinela, alimentando
+// a espiral de negação (FIX-257). `buildMentionedOfferDirective` transforma o
+// resultado de `resolveOfferByMention` numa diretiva ACIONÁVEL, injetada no
+// prompt ANTES da LLM decidir (rota determinística — Lei 1/4, "nunca aja
+// sobre entidade não-ancorada" ao contrário: aqui a entidade JÁ está ancorada
+// em tela, então a LLM não pode agir como se não estivesse).
+
+/** Diretiva pro sistema injetar no prompt do turno quando o texto do usuário
+ * resolveu deterministicamente pra uma cota JÁ EXIBIDA. Nomeia o groupId
+ * LITERAL pra LLM usar direto — nunca re-buscar, nunca inventar outro id,
+ * nunca negar que a oferta existe. */
+export function buildMentionedOfferDirective(offer: ChosenOffer): string {
+	const detalhes: string[] = [`groupId="${offer.groupId}"`];
+	if (offer.administradora) detalhes.push(`administradora=${offer.administradora}`);
+	if (typeof offer.creditValue === "number") {
+		detalhes.push(`crédito=${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+	}
+	if (typeof offer.termMonths === "number") detalhes.push(`prazo=${offer.termMonths}m`);
+	return (
+		`O usuário está se referindo à cota JÁ EXIBIDA em tela (${detalhes.join(", ")}). ` +
+		`Use ESSE groupId LITERAL diretamente em simulate_quota/get_group_details — NÃO chame ` +
+		`search_groups de novo pra achar esse grupo, NÃO invente nem adivinhe outro id/sentinela. ` +
+		`NUNCA negue que essa oferta existe: ela está na tabela/card que você mesmo apresentou.`
+	);
 }

@@ -195,7 +195,10 @@ const MOCK_ROW = {
 	updatedAt: new Date(0),
 } as unknown as PersonaRow;
 
-const WHATSAPP_STAGES: WhatsappOptinStage[] = ["locked", "open", "confirm", "done"];
+// FIX-280: "open"/"confirm" saíram de WhatsappOptinStage — a narrativa deles
+// migrou pra buildWhatsappOptinDirective (orchestrator/directives.ts), coberta
+// pela mesma varredura de acentuação via directives.test.ts / grep abaixo.
+const WHATSAPP_STAGES: WhatsappOptinStage[] = ["locked", "done"];
 
 // Marcadores literais parseados/casados pelo código — preservados SEM acento
 // (consistência com a fonte que os gera/casa). Removidos antes da varredura.
@@ -297,8 +300,6 @@ describe("regressão: acentuação", () => {
 			directives.buildExperienceFirstDirective("Primeira vez"),
 			directives.buildExperienceReturningDirective("Já fiz"),
 			directives.buildExperienceDoubtsDirective("Tenho dúvidas"),
-			directives.buildQualifyStartYesDirective(),
-			directives.buildQualifyStartMoreDirective(),
 			directives.buildPlanReactionDirective({
 				assetLabel: "Carro",
 				intent: "parcela",
@@ -334,7 +335,9 @@ describe("regressão: acentuação", () => {
 				// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			} as any),
 			directives.buildSimulatorDialDirective({ administradora: "Adm" }),
-			directives.buildDecisionPromptDirective({ administradora: "Adm" }),
+			directives.buildDecisionPromptDirective(),
+			directives.buildWhatsappOptinDirective("open"),
+			directives.buildWhatsappOptinDirective("confirm"),
 		];
 		collectOffenders("directives", directiveTexts.join("\n"), offenders);
 

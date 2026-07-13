@@ -58,3 +58,5 @@ scripts/eval-calibrate.bundle.cjs
 # Playwright artifacts
 playwright-report/
 test-results/
+.bakeoff/
+.processo/loop/evidencias-r9/dossies/

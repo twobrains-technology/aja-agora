@@ -24,6 +24,12 @@ export interface GroupCardPayload {
 	 * `creditValue` (faixa re-simulada exibida). Alimenta o aviso de ajuste de
 	 * faixa. Ausente → aviso não aparece (degradação graciosa). */
 	rawCreditValue?: number;
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 export interface ComparisonTablePayload {
@@ -105,6 +111,19 @@ export interface RecommendationCardPayload {
 	/** FIX-197: valorCarta BRUTO (denominação, ex. 300k) vs a faixa exibida
 	 * (`creditValue`). Alimenta o aviso de ajuste de faixa. */
 	rawCreditValue?: number;
+	/** FIX-220 (Ata 2026-07-04): a 1ª lista de reveal é NEUTRA — sem "grupo
+	 * preferencial" (ainda não há dado de lance pra recomendar nada). Server-side
+	 * SEMPRE coage "neutral" hoje (ver recommendation-payload.ts); "personalized"
+	 * é o gancho pro estágio 2 (ONDA 2 — recomendação personalizada com dado de
+	 * lance/recurso próprio, jornada-canonica.md item 6), ainda não implementado.
+	 * Ausente == "neutral" (default seguro). */
+	recommendationStage?: "neutral" | "personalized";
+	/** FIX-223 (Ata 2026-07-04): lance médio do grupo (R$), quando a fonte o
+	 * traz. Ausente → linha "Lance médio" omitida (nunca fabrica). */
+	avgBidValue?: number;
+	/** FIX-222 (Ata 2026-07-04): logo da administradora, quando cadastrado.
+	 * Ausente → o card cai no fallback gracioso (iniciais/nome). */
+	logoUrl?: string;
 }
 
 // ---- Lead form payload (NO PII — only metadata for artifact storage) ----
@@ -225,7 +244,7 @@ export const DECISION_PROMPT_OPTIONS: Array<{
 	label: string;
 	waTitle: string;
 }> = [
-	{ intent: "contratar", label: "Sim, quero contratar agora", waTitle: "Contratar agora" },
+	{ intent: "contratar", label: "Sim, quero seguir agora", waTitle: "Seguir agora" },
 	{ intent: "outras", label: "Quero ver outras opções", waTitle: "Ver outras opções" },
 	{
 		intent: "especialista",
@@ -271,8 +290,9 @@ export interface RealOfferPayload {
 	 * partir dele (semântica não confirmada — só comparação factual de posição). */
 	avgBidValue?: number;
 	/** FIX-197 CONTRATO(bloco-a): valorCarta BRUTO (denominação da carta, ex. 300k)
-	 * — distinto de `creditValue` (faixa re-simulada exibida). Presente e ≠ da faixa
-	 * → aviso "ajustamos essa carta pra sua faixa de ~R$ X". Ausente → sem aviso. */
+	 * — distinto de `creditValue` (carta real exibida). Presente e ≠ da carta real
+	 * → aviso "você pediu ~R$ X — a carta real ficou em R$ Y" (FIX-277). Ausente →
+	 * sem aviso. */
 	rawCreditValue?: number;
 }
 
@@ -317,6 +337,47 @@ export interface ContemplationDialPayload {
 	declaredLanceValue?: number;
 }
 
+// ---- Card lance embutido (FIX-228, docs/02-cards-novos.md CARD 1) ----
+
+/** Regra dura: este card SEMPRE diz que o crédito recebido diminui — não é
+ * opcional (separa consultoria de venda enganosa). Os números vêm da oferta
+ * REAL, coagidos server-side (`embedded-bid-payload.ts`); a LLM só escolhe o
+ * grupo. `maxEmbutidoPct` é 0-100 (mesma convenção do resto do codebase). */
+export interface EmbeddedBidPayload {
+	maxEmbutidoPct: number;
+	creditValue: number;
+	embeddedBidValue: number;
+	netCredit: number;
+	disclaimer: string;
+}
+
+// ---- Card dois caminhos, sem lance (FIX-229, docs/02-cards-novos.md CARD 3) ----
+
+/** Bifurcação A/B pra quem NÃO vai dar lance (gate `lance`, saída "só a
+ * parcela"). NUNCA carrega métrica de chance/probabilidade de contemplação
+ * (proibido, docs/05-compliance-e-dados.md) — nenhum dos dois caminhos é
+ * recomendado, o agente devolve a decisão ao cliente. `administradora`
+ * (PT) segue a convenção do resto do codebase — não `administrator`. */
+export interface TwoPathsPayload {
+	monthlyPayment: number;
+	administradora: string;
+	disclaimer: string;
+}
+
+// ---- Card escassez (FIX-230, docs/02-cards-novos.md CARD 2) ----
+
+/** `availableSlots` é PLACEBO comercial 1-6 (decisão de produto 2026-07-09,
+ * ADR docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md D3) — hash
+ * determinístico do grupo (`scarcity-payload.ts` stableSlotFromId), NUNCA
+ * `Math.random()` por render. `groupCode` é o id real ancorado (não exibido
+ * na UI — só contexto/telemetria). `administradora` (PT). */
+export interface ScarcityPayload {
+	groupCode: string;
+	administradora: string;
+	availableSlots: number;
+	disclaimer?: string;
+}
+
 export type ArtifactByType =
 	| { type: "group_card"; payload: GroupCardPayload }
 	| { type: "comparison_table"; payload: ComparisonTablePayload }
@@ -334,7 +395,10 @@ export type ArtifactByType =
 	| { type: "real_offer"; payload: RealOfferPayload }
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
-	| { type: "contemplation_dial"; payload: ContemplationDialPayload };
+	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
+	| { type: "embedded_bid"; payload: EmbeddedBidPayload }
+	| { type: "two_paths"; payload: TwoPathsPayload }
+	| { type: "scarcity"; payload: ScarcityPayload };
 
 export type ArtifactType = ArtifactByType["type"];
 

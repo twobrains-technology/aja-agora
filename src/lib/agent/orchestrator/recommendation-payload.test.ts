@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
-	coerceRevealCota,
 	indexRevealGroups,
 	type RevealGroupIndex,
 } from "./recommendation-payload";
@@ -97,6 +96,35 @@ describe("FIX-191 — coerção server-side do recommendation_card (hero)", () =
 		// mantém groupId/quotaId derivados do id (contrato), sem inventar números.
 		expect(out.groupId).toBe("id-fantasma");
 		expect(out.creditValue).toBeUndefined();
+	});
+});
+
+// FIX-261 (rodada 5, veredito Fable r4, menores): o hero do reveal podia vir
+// bem acima do valor PEDIDO (denominação real da Bevi) sem NENHUM aviso — só
+// o real_offer do fechamento (FIX-197/240) tinha o aviso de ajuste. O
+// componente (recommendation-card.tsx) já sabia renderizar via rawCreditValue
+// (hasCreditAdjustment) — só faltava o servidor propagar o valor pedido.
+describe("FIX-261 — rawCreditValue no recommendation_card (aviso de ajuste desde o reveal)", () => {
+	it("valor pedido difere da carta real do grupo → out.rawCreditValue = valor pedido", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index, undefined, 120_000);
+		expect(out.rawCreditValue).toBe(120_000);
+		expect(out.creditValue).toBe(300_000);
+	});
+
+	it("valor pedido igual à carta real → SEM rawCreditValue (não inventa aviso)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index, undefined, 300_000);
+		expect("rawCreditValue" in out).toBe(false);
+	});
+
+	it("sem valor pedido (caminho legado) → SEM rawCreditValue, não quebra", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id }, index);
+		expect("rawCreditValue" in out).toBe(false);
 	});
 });
 
@@ -201,5 +229,187 @@ describe("FIX-191 — anti-regressão estrutural (fonte de produção)", () => {
 	it("a diretiva do reveal NÃO manda a LLM 'copiar' contempladosMes/availableSlots (vira código)", () => {
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
 		expect(directives).not.toMatch(/contempladosMes \(copie de availableSlots/);
+	});
+});
+
+// FIX-223 (Ata 2026-07-04) — lance médio (avgBidValue) coagido server-side a
+// partir do grupo REAL, igual aos demais números do hero/seletor. A LLM nunca
+// fabrica o valor mesmo se tentar (Lei 3/4).
+describe("FIX-223 — avgBidValue coagido server-side (lance médio)", () => {
+	it("coerceRecommendationPayload propaga avgBidValue do grupo real, ignora o que a LLM mandou", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", {
+			recommendations: [realGroup({ avgBidValue: 4_200 })],
+		});
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBe(4_200);
+	});
+
+	it("sem avgBidValue no grupo real → omitido (nunca fabrica)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload({ id: realGroup().id, avgBidValue: 999_999 }, index);
+		expect(out.avgBidValue).toBeUndefined();
+	});
+
+	it("coerceComparisonPayload propaga avgBidValue por cota, cada uma com o seu valor real", () => {
+		const bb = realGroup({ avgBidValue: 4_200 });
+		const canopus = realGroup({ id: "6a3e6cec419653c0a99936d0", avgBidValue: 1_800 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb, canopus] });
+		const out = coerceComparisonPayload(
+			{
+				groups: [
+					{ id: bb.id, avgBidValue: 1 },
+					{ id: canopus.id, avgBidValue: 1 },
+				],
+			},
+			index,
+		);
+		const groups = out.groups as Array<Record<string, unknown>>;
+		expect(groups[0].avgBidValue).toBe(4_200);
+		expect(groups[1].avgBidValue).toBe(1_800);
+	});
+});
+
+// FIX-287 (veredito r9pos2 §3 P1-2): comparison_table/simulation_result do
+// MESMO groupId, no MESMO turno, mostravam creditValue divergente (120k vs
+// 160k) sem aviso — a tabela era coagida só a partir do valor-ALVO da busca
+// (search/recommend), nunca sabia que aquele grupo específico já tinha sido
+// simulado com um nominal REAL diferente. `knownCreditValueByGroupId` (minerado
+// dos simulation_result já persistidos + do simulate_quota do turno corrente,
+// ver known-credit-values.ts/runner.ts) fecha essa lacuna.
+describe("FIX-287 — creditValue REAL já simulado sobrescreve o valor-alvo da busca", () => {
+	it("dossiê: 4 grupos com creditValue:120000, BB já simulado com nominal real 160000 → comparison_table reflete 160000 pro BB + rawCreditValue:120000; os outros 3 permanecem intocados", () => {
+		const bb = realGroup({
+			id: "6a3e6ceb419653c0a99932d7",
+			administradora: "BANCO DO BRASIL",
+			creditValue: 120000,
+		});
+		const canopus = realGroup({ id: "canopus-id", administradora: "CANOPUS", creditValue: 120000 });
+		const ancora = realGroup({ id: "ancora-id", administradora: "ÂNCORA", creditValue: 120000 });
+		const rodobens = realGroup({
+			id: "rodobens-id",
+			administradora: "RODOBENS",
+			creditValue: 120000,
+		});
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", {
+			recommendations: [bb, canopus, ancora, rodobens],
+		});
+
+		const knownCreditValueByGroupId = new Map([
+			[bb.id, { creditValue: 160000, monthlyPayment: 2137.5 }],
+		]);
+
+		const llmComparison = {
+			groups: [bb, canopus, ancora, rodobens].map((g) => ({
+				id: g.id,
+				administradora: g.administradora,
+				creditValue: 120000,
+				monthlyPayment: 1,
+				termMonths: 1,
+			})),
+		};
+
+		const out = coerceComparisonPayload(llmComparison, index, undefined, knownCreditValueByGroupId);
+		const groups = out.groups as Array<Record<string, unknown>>;
+
+		expect(groups[0].creditValue).toBe(160000);
+		expect(groups[0].rawCreditValue).toBe(120000);
+		// FIX-292: monthlyPayment vem do MESMO registro conhecido, nunca da
+		// estimativa antiga (que correspondia ao creditValue errado).
+		expect(groups[0].monthlyPayment).toBe(2137.5);
+
+		for (const g of groups.slice(1)) {
+			expect(g.creditValue).toBe(120000);
+			expect("rawCreditValue" in g).toBe(false);
+		}
+	});
+
+	it("grupo já simulado mas SEM divergência (nominal real == valor-alvo) → creditValue intocado, sem rawCreditValue", () => {
+		const bb = realGroup({ id: "bb-sem-divergencia", creditValue: 120000 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb] });
+		const known = new Map([[bb.id, { creditValue: 120000, monthlyPayment: 1 }]]);
+		const out = coerceComparisonPayload(
+			{ groups: [{ id: bb.id, creditValue: 120000, monthlyPayment: 1, termMonths: 1 }] },
+			index,
+			undefined,
+			known,
+		);
+		const g0 = (out.groups as Array<Record<string, unknown>>)[0];
+		expect(g0.creditValue).toBe(120000);
+		expect("rawCreditValue" in g0).toBe(false);
+	});
+
+	it("grupo nunca simulado (sem entrada no mapa) → creditValue do valor-alvo, sem rawCreditValue (não inventa)", () => {
+		const bb = realGroup({ id: "bb-nunca-simulado", creditValue: 120000 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb] });
+		const out = coerceComparisonPayload(
+			{ groups: [{ id: bb.id, creditValue: 120000, monthlyPayment: 1, termMonths: 1 }] },
+			index,
+			undefined,
+			new Map(),
+		);
+		const g0 = (out.groups as Array<Record<string, unknown>>)[0];
+		expect(g0.creditValue).toBe(120000);
+		expect("rawCreditValue" in g0).toBe(false);
+	});
+
+	it("coerceRecommendationPayload (hero) também aplica a correção do groupId conhecido", () => {
+		const bb = realGroup({ id: "hero-bb", creditValue: 120000 });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb] });
+		const known = new Map([[bb.id, { creditValue: 160000, monthlyPayment: 2137.5 }]]);
+		const out = coerceRecommendationPayload({ id: bb.id }, index, undefined, undefined, known);
+		expect(out.creditValue).toBe(160000);
+		expect(out.rawCreditValue).toBe(120000);
+		expect(out.monthlyPayment).toBe(2137.5);
+	});
+});
+
+// FIX-222 (Ata 2026-07-04) — logo da administradora coagido server-side a
+// partir do índice de logos (DB, injetado como Map puro — nunca a LLM fabrica
+// uma URL). Ausente do cadastro → card cai no fallback (sem quebrar).
+describe("FIX-222 — logoUrl coagido server-side (logo da administradora)", () => {
+	it("coerceRecommendationPayload casa logoUrl por administradora (tolerante a acento/caixa)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const logos = new Map([["BANCO DO BRASIL", "https://cdn/bb.png"]]);
+		const out = coerceRecommendationPayload(
+			{ id: realGroup().id, logoUrl: "https://fabricado.com/x.png" },
+			index,
+			logos,
+		);
+		expect(out.logoUrl).toBe("https://cdn/bb.png");
+	});
+
+	it("sem match no índice de logos → logoUrl ausente (fallback do card, nunca fabrica)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+		const out = coerceRecommendationPayload(
+			{ id: realGroup().id, logoUrl: "https://fabricado.com/x.png" },
+			index,
+			new Map(),
+		);
+		expect(out.logoUrl).toBeUndefined();
+	});
+
+	it("coerceComparisonPayload casa logoUrl por cota", () => {
+		const bb = realGroup();
+		const canopus = realGroup({ id: "6a3e6cec419653c0a99936d0", administradora: "CANOPUS" });
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [bb, canopus] });
+		const logos = new Map([["CANOPUS", "https://cdn/canopus.png"]]);
+		const out = coerceComparisonPayload(
+			{ groups: [{ id: bb.id }, { id: canopus.id }] },
+			index,
+			logos,
+		);
+		const groups = out.groups as Array<Record<string, unknown>>;
+		expect(groups[0].logoUrl).toBeUndefined();
+		expect(groups[1].logoUrl).toBe("https://cdn/canopus.png");
 	});
 });

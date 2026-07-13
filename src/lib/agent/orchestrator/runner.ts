@@ -10,27 +10,46 @@ import {
 	decideShowGate,
 	type Gate,
 	nextGate,
+	shouldAskMotive,
 	shouldMarkDoubtsAddressed,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import {
+	extractKnownCreditValue,
+	type KnownGroupValue,
+	loadKnownGroupCreditValues,
+} from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
+import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import type { MemoryContext } from "@/lib/memory/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
+import {
+	isCreditValueMentioned,
+	resolveOfferForAdministradora,
+	resolveOfferMentionForConversation,
+} from "./choose-offer";
 import { enrichContractFormPayload } from "./contract-form-prefill";
-import { coerceDialPayload, offerSnapshotFromArtifact } from "./dial-payload";
+import {
+	coerceDialPayload,
+	offerSnapshotFromArtifact,
+	type RecommendedOfferSnapshot,
+} from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
+import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
 import { detectLeadFormArtifact, initializeLeadCollection } from "./lead-collection";
 import {
+	buildComparisonTableFromRevealGroups,
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
 	type RevealGroupIndex,
+	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
 	EphemeralTextFilter,
@@ -38,8 +57,16 @@ import {
 	normalizeGluedSentences,
 	stripProcessPreamble,
 } from "./sanitizer";
+import { coerceScarcityPayload } from "./scarcity-payload";
 import { coerceSimulationPayload } from "./simulation-payload";
-import { logToolIO, type ToolCallRecord, type ToolResultRecord } from "./tool-io-log";
+import {
+	logToolError,
+	logToolInputError,
+	logToolIO,
+	type ToolCallRecord,
+	type ToolResultRecord,
+} from "./tool-io-log";
+import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
 export type RunAgentResult = {
@@ -53,12 +80,54 @@ export type RunAgentResult = {
 	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
 	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
 	discoveryFailedThisTurn?: boolean;
+	/** FIX-262: o modelo chamou uma tool FORA do toolset da fase neste turno (AI
+	 * SDK emitiu `tool-error`) — o runner assumiu o turno ANTES que a narração
+	 * crua do modelo (tipicamente negação de uma oferta real) chegasse ao
+	 * usuário. O orchestrator materializa o fallback determinístico. */
+	toolErrorThisTurn?: boolean;
+	/** FIX-262: o turno excedeu `TOOL_CALL_HARD_CAP` tool-calls — o runner
+	 * abortou a geração e assumiu o turno (mesmo fallback do toolErrorThisTurn,
+	 * finish reason distinto pra observabilidade). */
+	toolCallCapExceededThisTurn?: boolean;
+	/** FIX-286: grupos reais indexados de `search_groups`/`recommend_groups`
+	 * NESTE turno, expostos mesmo quando o guard de tool-error/cap assume o
+	 * turno — o orchestrator (index.ts) usa isto pra distinguir "o reveal já
+	 * tinha dados reais em mãos quando a apresentação falhou" (materializa o
+	 * card, Via A) de "nada foi buscado ainda" (fallback honesto, Via B). */
+	revealGroupsById?: RevealGroupIndex;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
 	simulate_quota: "engajado",
 	recommend_groups: "qualificado",
 };
+
+// FIX-262 (P1, veredito Fable r5 §N2): cap DURO de tool-calls por turno. O
+// `stopWhen: stepCountIs(10)` (builder.ts) limita STEPS do modelo, não
+// tool-calls — um step pode carregar várias chamadas paralelas/sentinelas, e
+// foi assim que um turno real chegou a 34 tool-calls / 593s (4 fallbacks
+// repetidos, ~20 buscas mudas). O fluxo legítimo mais longo (reveal completo:
+// search_groups + recommend_groups + simulate_quota + 3 present_*) usa ~6
+// chamadas — o cap dá folga generosa sem permitir o loop de auto-DoS.
+export const TOOL_CALL_HARD_CAP = 12;
+
+// FIX-270: tools que constituem "busca/consulta real ao catálogo" — só a
+// presença de UMA delas neste turno lastreia uma claim de re-busca ("não
+// apareceu grupo novo"). `get_group_details` fica de fora de propósito: busca
+// detalhe de UM grupo já conhecido, não uma varredura nova do catálogo.
+const CATALOG_SEARCH_TOOL_NAMES = new Set(["search_groups", "recommend_groups"]);
+
+/** Extrai uma mensagem legível do `error` opaco do chunk `tool-error`
+ * (tipicamente um `NoSuchToolError`, mas tratado defensivamente). */
+function stringifyToolError(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (typeof error === "string") return error;
+	try {
+		return JSON.stringify(error);
+	} catch {
+		return "Tool chamada fora do toolset da fase (chunk tool-error do AI SDK).";
+	}
+}
 
 /** Cards que constituem o reveal do passo 3+4 (âncora de revealCompleted). */
 const REVEAL_ARTIFACTS = new Set([
@@ -81,6 +150,20 @@ export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boo
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
+}
+
+/** Âncora de oferta do turno — MESMA busca usada pelo `contemplation_dial`
+ * (FIX-6/C2) e reaproveitada pelo `embedded_bid` (FIX-228): os dois cards
+ * precisam da oferta REAL recém-confirmada, nunca do que a LLM digitou. */
+function resolveOfferSnapshot(
+	artifacts: ProducedArtifact[],
+	meta: ConversationMetadata,
+): RecommendedOfferSnapshot | null {
+	const turnAnchor =
+		artifacts.find((a) => a.type === "simulation_result") ??
+		artifacts.find((a) => a.type === "recommendation_card") ??
+		artifacts.find((a) => a.type === "group_card");
+	return offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer ?? null;
 }
 
 /** FIX-102: eco/degeneração NÃO-determinística da LLM (raro — 1 ocorrência em
@@ -187,14 +270,75 @@ export async function* runAgentTurn(args: {
 	// (não vaza erro cru) e sinaliza pro orchestrator materializar o fallback +
 	// pro artifact-guard (FIX-187) dropar qualquer proposta.
 	let discoveryFailedThisTurn = false;
+	// FIX-12 (recovery, regressão pós-FIX-285): o guard `premature-contract`
+	// (artifact-guard.ts) suprime um contract_form pré-reveal — o modelo tentou
+	// pular direto pro fechamento. O turno tem que reconduzir ao gate `identify`
+	// MESMO quando `shouldAskMotive` está segurando o funil (FIX-274/285): a
+	// prioridade aqui é reafirmar identidade, não perguntar "por que agora" — o
+	// usuário nem chegou a ver o reveal. Sem esta força, o turno ficava
+	// inteiramente mudo (nem artifact, nem gate).
+	let prematureContractSuppressedThisTurn = false;
+	// FIX-262: chunk `tool-error` observado neste turno (tool fora do toolset da
+	// fase) — a partir daqui, nenhum texto do modelo chega ao usuário (evita a
+	// negação de oferta real) e o orchestrator assume com fallback determinístico.
+	let toolErrorThisTurn = false;
+	// FIX-262: total de tool-calls PROCESSADAS neste turno (não só steps do
+	// modelo — um step pode carregar várias chamadas). Acima do cap duro, o
+	// runner aborta a geração e para de relayar qualquer coisa pro usuário.
+	let toolCallCountThisTurn = 0;
+	let toolCallCapExceededThisTurn = false;
 	// FIX-191: grupos REAIS do recommend_groups/search_groups deste turno,
 	// indexados por id — fonte única dos números do recommendation_card (hero) e
 	// de cada cota do comparison_table (seletor). Mata o "36/mês" fabricado
 	// (spec §2): o hero deixa de ser o único artifact do reveal sem coerção.
 	const revealGroupsById: RevealGroupIndex = new Map();
+	// FIX-287/FIX-292: cenário REAL já simulado por groupId — turno corrente
+	// (todo simulate_quota que resolver neste turno, atualizado ao vivo abaixo)
+	// + histórico da conversa (memoizado, carregado sob demanda — só quando o
+	// turno realmente emite comparison_table/recommendation_card). search/
+	// recommend só trazem o valor-ALVO que a Bevi aproxima na busca; este mapa
+	// é a fonte única MULTI-CAMPO (creditValue + monthlyPayment + termMonths)
+	// que corrige comparison_table/recommendation_card contra um
+	// simulation_result já conhecido do MESMO grupo (ver recommendation-payload.ts).
+	const turnKnownCreditValues = new Map<string, KnownGroupValue>();
+	let knownCreditValuesPromise: Promise<Map<string, KnownGroupValue>> | null = null;
+	const getKnownCreditValues = async (): Promise<ReadonlyMap<string, KnownGroupValue>> => {
+		if (!knownCreditValuesPromise) {
+			knownCreditValuesPromise = loadKnownGroupCreditValues(conversationId).catch((err) => {
+				console.error(
+					"[known-credit-values] falha ao carregar histórico de simulações, usando fallback",
+					err,
+				);
+				return new Map<string, KnownGroupValue>();
+			});
+		}
+		const historical = await knownCreditValuesPromise;
+		// Turno corrente prevalece sobre histórico (dado mais fresco).
+		return new Map([...historical, ...turnKnownCreditValues]);
+	};
+	// FIX-222: logo da administradora (cadastro `administradoras.logo_url`) —
+	// carregado sob demanda (só quando o turno realmente emite recommendation_card
+	// /comparison_table) e memoizado no turno. Falha de DB nunca derruba o turno:
+	// cai no fallback gracioso do card (Map vazio).
+	let administradoraLogosPromise: Promise<Map<string, string>> | null = null;
+	const getAdministradoraLogos = (): Promise<Map<string, string>> => {
+		if (!administradoraLogosPromise) {
+			administradoraLogosPromise = loadAdministradoraLogoMap().catch((err) => {
+				console.error("[administradora-logo] falha ao carregar logos, usando fallback", err);
+				return new Map<string, string>();
+			});
+		}
+		return administradoraLogosPromise;
+	};
 	const executedToolNames: string[] = [];
 	let handoffSignal: { triggerId?: string; reason: string } | null = null;
 	const stagesEmitted = new Set<string>();
+	// FIX-270: fonte REAL de "documento recebido" — `meta.documentSlotsSent` só é
+	// preenchido pelo handler de mídia inbound do WhatsApp após upload de fato
+	// (document-inbound.ts); a web hoje não escreve nesse campo, então lá a claim
+	// é sempre falsa até existir um evento real equivalente. Nunca a narrativa
+	// do LLM (Lei 1).
+	const hasReceivedDocuments = (meta.documentSlotsSent?.length ?? 0) > 0;
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -241,8 +385,14 @@ export async function* runAgentTurn(args: {
 	// tornou o 'Embracon' impossível de provar na conv 69a38af1). PII mascarada em
 	// tool-io-log.ts; log server-side (console.log estruturado), nunca vaza pro cliente.
 	let toolIoStep = 0;
+	// FIX-262: sinal de aborto pro cap duro de tool-calls / tool-error fora de
+	// fase — melhor esforço pra cortar a geração em background (custo/latência
+	// do loop de 593s), além do runner parar de RELAYAR/processar qualquer
+	// coisa pro usuário assim que o guard dispara (via `break` no consumo).
+	const turnAbortController = new AbortController();
 	const result = await agent.stream({
 		messages,
+		abortSignal: turnAbortController.signal,
 		onStepFinish: (step: { toolCalls?: ToolCallRecord[]; toolResults?: ToolResultRecord[] }) => {
 			logToolIO({
 				conversationId,
@@ -261,7 +411,13 @@ export async function* runAgentTurn(args: {
 	// e NUNCA vira bolha (nem enviado ao vivo, nem persistido). Barreira em código
 	// (Lei 1/4), a regra soft no prompt é só reforço. Pós-onda-1: erro já é
 	// diretiva, então o filtro só cuida de preâmbulo de SUCESSO.
-	const ephemeralFilter = new EphemeralTextFilter();
+	// FIX-270: o getter é chamado a cada push/flush — `hasSearchToolCall` reflete
+	// as tool-calls JÁ processadas até o ponto corrente do stream (causal: uma
+	// claim "já busquei" só é verdadeira se a tool já rodou antes dela).
+	const ephemeralFilter = new EphemeralTextFilter(() => ({
+		hasReceivedDocuments,
+		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+	}));
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
 	const composeClean = (raw: string, blockSep = ""): string => {
@@ -280,7 +436,11 @@ export async function* runAgentTurn(args: {
 				// modelo daqui pra frente — mata a narração de erro cru ("dificuldade
 				// técnica pontual") e o empilhamento de preâmbulos "vou buscar". O
 				// fallback humano é materializado deterministicamente pelo orchestrator.
-				if (discoveryFailedThisTurn) break;
+				// FIX-262: mesma supressão quando o modelo chamou tool fora do
+				// toolset (tool-error) ou estourou o cap de tool-calls — nos dois
+				// casos a narração seguinte tende a negar uma oferta real ou repetir
+				// o fallback cru do loop; nunca chega ao usuário.
+				if (discoveryFailedThisTurn || toolErrorThisTurn || toolCallCapExceededThisTurn) break;
 				const blockId = (part as { id?: string }).id;
 				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
 				// fecha a frase pendente do bloco anterior, com separador entre blocos.
@@ -309,6 +469,16 @@ export async function* runAgentTurn(args: {
 				// payload do simulation_result emitido neste mesmo turno.
 				if (part.toolName === "simulate_quota") {
 					lastQuotaSimulation = output ?? null;
+					// FIX-287/FIX-292: groupId simulado neste turno → cenário REAL
+					// conhecido (creditValue + monthlyPayment + termMonths) pra
+					// qualquer comparison_table/recommendation_card SUBSEQUENTE do
+					// mesmo turno (não retroage pro que já foi emitido ANTES desta
+					// simulação — gap residual documentado no ADR do bloco).
+					const known = extractKnownCreditValue("simulation_result", output);
+					if (known) {
+						const { groupId, ...value } = known;
+						turnKnownCreditValues.set(groupId, value);
+					}
 				}
 				// FIX-191: indexa os grupos reais da descoberta deste turno pra coagir
 				// o hero (recommendation_card) e o seletor (comparison_table).
@@ -317,7 +487,84 @@ export async function* runAgentTurn(args: {
 				}
 				break;
 			}
+			// FIX-257 (P1, veredito Fable r4 §P1 #1): input de tool que falha a
+			// validação Zod (ex.: creditMin como string não-coagível) NUNCA chega a
+			// rodar `execute` — o AI SDK v6 emite este chunk em vez de "tool-result".
+			// Sem este case, o erro era engolido: nenhum log, nenhum sinal, e o único
+			// rastro (tool-io-log via onStepFinish) mostrava `output: null` —
+			// indistinguível de "a tool rodou e não achou nada" (raiz da espiral de
+			// negação). Log BARULHENTO e nomeado, nunca silencioso.
+			case "tool-input-error": {
+				const errPart = part as {
+					toolCallId?: string;
+					toolName: string;
+					input?: unknown;
+					errorText?: string;
+				};
+				logToolInputError({
+					conversationId,
+					stepNumber: toolIoStep,
+					error: {
+						toolCallId: errPart.toolCallId,
+						toolName: errPart.toolName,
+						input: errPart.input,
+						errorText: errPart.errorText,
+					},
+				});
+				break;
+			}
+			// FIX-262 (P1, veredito Fable r5, causa-raiz N1): o modelo chamou uma
+			// tool FORA do toolset da fase (ex.: search_groups em reveal/closing —
+			// tool-policy.ts exclui a descoberta ali) — o AI SDK v6 emite ESTE
+			// chunk (NoSuchToolError) em vez de "tool-result". Sem case dedicado,
+			// a chamada caía no `output: null` mudo de tool-io-log (nenhum
+			// tool-result pareado) — indistinguível de "rodou e não achou nada".
+			// Foi ESSE buraco (não o Zod do FIX-257) que alimentou a espiral de
+			// negação: o modelo tratou "tool indisponível" como "não existe" e
+			// negou 3× ofertas que estavam na própria tabela exibida. Log
+			// BARULHENTO + assume o turno: NENHUM texto do modelo (que tenderia à
+			// negação) chega ao usuário — o orchestrator materializa o fallback
+			// determinístico (mesmo padrão Lei 1/4 do FIX-186/discoveryFailedThisTurn).
+			case "tool-error": {
+				const errPart = part as {
+					toolCallId?: string;
+					toolName: string;
+					input?: unknown;
+					error?: unknown;
+				};
+				logToolError({
+					conversationId,
+					stepNumber: toolIoStep,
+					error: {
+						toolCallId: errPart.toolCallId,
+						toolName: errPart.toolName,
+						input: errPart.input,
+						errorText: stringifyToolError(errPart.error),
+					},
+				});
+				toolErrorThisTurn = true;
+				// Melhor esforço: corta a geração em background (o modelo tende a
+				// insistir na mesma tool indisponível — é essa insistência que vira
+				// o loop de 34/593s do veredito). O `break` logo abaixo do switch
+				// para de RELAYAR qualquer coisa pro usuário neste turno de qualquer
+				// forma, mesmo se o abort não cortar a tempo.
+				turnAbortController.abort();
+				break;
+			}
 			case "tool-call": {
+				// FIX-262: cap DURO de tool-calls por turno. Conta TODA tool-call
+				// processada (não só steps do modelo) — acima do cap, para
+				// completamente de processar/relayar (nem artifact, nem texto) e
+				// aborta a geração. Nunca mais um turno de 34 chamadas/593s.
+				toolCallCountThisTurn += 1;
+				if (toolCallCountThisTurn > TOOL_CALL_HARD_CAP) {
+					toolCallCapExceededThisTurn = true;
+					turnAbortController.abort();
+					console.error(
+						`[tool-call-cap] turno excedeu ${TOOL_CALL_HARD_CAP} tool-calls (conv=${conversationId}) — abortando`,
+					);
+					break;
+				}
 				const toolName = part.toolName;
 				const input = part.input as Record<string, unknown>;
 				const toolCallId = part.toolCallId;
@@ -375,6 +622,11 @@ export async function* runAgentTurn(args: {
 						// FIX-24: além do console.log (que cassettes grepam), emite o
 						// evento de telemetria pro turn-trace popular `suppressed[]`.
 						yield { type: "suppression", artifactType, reason: guardVerdict.rule };
+						// FIX-12 (recovery): marca pra forçar o gate identify no fim do
+						// turno, mesmo se decideShowGate/shouldAskMotive quiserem segurar.
+						if (guardVerdict.rule === "premature-contract") {
+							prematureContractSuppressedThisTurn = true;
+						}
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
 						// ativa — coage payload com o snapshot do reveal (ou com o
@@ -388,6 +640,56 @@ export async function* runAgentTurn(args: {
 								payload = enrichContractFormPayload(input, identity);
 							} catch {
 								// falha de decrypt/DB não pode derrubar o turno — form vazio.
+							}
+							// FIX-251 (P0, veredito Fable FINAL §N-A): um what-if REJEITADO
+							// (ex.: "quero a ITAÚ" → 161k) pode ter deixado meta.recommendedOffer
+							// ancorado numa administradora que o usuário já abandonou — o
+							// fechamento (contract-input.ts) usaria esse valor STALE mesmo
+							// depois do usuário reconfirmar a oferta original por texto (sem
+							// nova tool-call, então sem novo simulation_result pra re-ancorar).
+							// Re-ancora AQUI pela administradora que o PRÓPRIO turno de
+							// fechamento está anunciando (input.administradora) — resolvida
+							// server-side contra os grupos REALMENTE exibidos no reveal
+							// (findOfferByAdministradora), nunca a meta potencialmente stale.
+							// "nunca aja sobre entidade não-ancorada" no ponto mais caro da
+							// jornada: proposta REAL na Bevi.
+							const formAdministradora =
+								typeof input === "object" && input !== null
+									? (input as Record<string, unknown>).administradora
+									: undefined;
+							if (typeof formAdministradora === "string" && formAdministradora.length > 0) {
+								const resolved = await resolveOfferForAdministradora(
+									conversationId,
+									formAdministradora,
+								);
+								if (
+									resolved &&
+									typeof resolved.creditValue === "number" &&
+									typeof resolved.termMonths === "number" &&
+									typeof resolved.monthlyPayment === "number"
+								) {
+									const refreshed = await reloadMeta(conversationId);
+									const stale =
+										refreshed.recommendedAdministradora !== resolved.administradora ||
+										refreshed.recommendedOffer?.creditValue !== resolved.creditValue;
+									if (stale) {
+										console.log(
+											`[ancora-fechamento] FIX-251: recommendedOffer re-ancorado pra ${resolved.administradora} (creditValue=${resolved.creditValue}) — snapshot anterior divergia da administradora anunciada no fechamento (conv=${conversationId})`,
+										);
+										await persistMeta(conversationId, {
+											...refreshed,
+											recommendedAdministradora: resolved.administradora ?? formAdministradora,
+											recommendedOffer: {
+												...refreshed.recommendedOffer,
+												administradora: resolved.administradora ?? formAdministradora,
+												creditValue: resolved.creditValue,
+												termMonths: resolved.termMonths,
+												monthlyPayment: resolved.monthlyPayment,
+												groupId: resolved.groupId,
+											},
+										});
+									}
+								}
 							}
 						}
 						// FIX-27: opt-in com número JÁ capturado (lead form/identify) →
@@ -410,23 +712,55 @@ export async function* runAgentTurn(args: {
 						// "36/mês"). Emite groupId/ofertaId/quotaId + availableSlots real
 						// (CONTRATO com bloco-b); tipoOferta NUNCA vaza (crítério interno).
 						if (artifactType === "recommendation_card") {
-							payload = coerceRecommendationPayload(input, revealGroupsById);
+							// FIX-261: valor PEDIDO pelo usuário — mesma precedência do FIX-68
+							// (analyze.ts "lastRequested"): creditClampedFrom (original, antes
+							// do clamp de categoria) senão creditMax.
+							const requestedCreditValue =
+								meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax;
+							payload = coerceRecommendationPayload(
+								input,
+								revealGroupsById,
+								await getAdministradoraLogos(),
+								requestedCreditValue,
+								await getKnownCreditValues(),
+							);
 						}
 						if (artifactType === "comparison_table") {
-							payload = coerceComparisonPayload(input, revealGroupsById);
+							payload = coerceComparisonPayload(
+								input,
+								revealGroupsById,
+								await getAdministradoraLogos(),
+								await getKnownCreditValues(),
+							);
 						}
 						if (artifactType === "contemplation_dial") {
-							const turnAnchor =
-								artifacts.find((a) => a.type === "simulation_result") ??
-								artifacts.find((a) => a.type === "recommendation_card") ??
-								artifacts.find((a) => a.type === "group_card");
-							const snapshot =
-								offerSnapshotFromArtifact(turnAnchor?.payload) ?? meta.recommendedOffer;
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
 							// FIX-C5: defaults do perfil declarado na qualificação.
+							// FIX-241: monthlySavings/fgtsValue ancoram no BOLSO, não no
+							// prazo desejado (dial-payload.ts:computeMoneyAnchor).
 							payload = coerceDialPayload(input, snapshot, {
 								prazoMeses: meta.qualifyAnswers?.prazoMeses,
 								lanceValue: meta.qualifyAnswers?.lanceValue,
+								monthlySavings: meta.qualifyAnswers?.monthlySavings,
+								fgtsValue: meta.qualifyAnswers?.fgtsValue,
 							});
+						}
+						// FIX-228: mesma âncora de oferta do contemplation_dial — os
+						// números do embedded_bid vêm da oferta REAL do turno, nunca da LLM.
+						if (artifactType === "embedded_bid") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceEmbeddedBidPayload(input, snapshot);
+						}
+						// FIX-229: mesma âncora — monthlyPayment/administradora vêm do
+						// grupo real; NUNCA propaga métrica de chance (docs/05).
+						if (artifactType === "two_paths") {
+							const snapshot = resolveOfferSnapshot(artifacts, meta);
+							payload = coerceTwoPathsPayload(input, snapshot);
+						}
+						// FIX-230: número placebo 1-6 derivado no servidor do groupId
+						// REAL (hash determinístico) — a LLM nunca escolhe o número.
+						if (artifactType === "scarcity") {
+							payload = coerceScarcityPayload(input, revealGroupsById);
 						}
 						artifacts.push({
 							type: artifactType,
@@ -444,6 +778,36 @@ export async function* runAgentTurn(args: {
 				break;
 			}
 		}
+		// FIX-262: assim que o guard dispara (tool fora do toolset da fase, ou
+		// cap de tool-calls estourado), para de CONSUMIR o stream imediatamente —
+		// nenhuma parte seguinte (texto/tool-call/artifact) é processada ou
+		// relayada pro usuário neste turno.
+		if (toolErrorThisTurn || toolCallCapExceededThisTurn) break;
+	}
+
+	// FIX-262: guard determinístico assumiu o turno (tool-error fora de fase ou
+	// cap de tool-calls estourado) — mesmo padrão do discoveryFailedThisTurn
+	// logo abaixo: NADA do que o modelo gerou é persistido/relayado, o
+	// orchestrator materializa o fallback fixo e finaliza (Lei 1/4).
+	if (toolErrorThisTurn || toolCallCapExceededThisTurn) {
+		console.log(
+			`[tool-error-recovery] guard: ${
+				toolCallCapExceededThisTurn
+					? "cap de tool-calls excedido"
+					: "tool-error fora do toolset da fase"
+			} — fallback determinístico assume o turno (conv=${conversationId})`,
+		);
+		return {
+			fullResponse: "",
+			artifacts: [],
+			handoffSignaled: false,
+			isConcierge,
+			nextGateToFire: null,
+			prefixForNextGate: null,
+			toolErrorThisTurn,
+			toolCallCapExceededThisTurn,
+			revealGroupsById,
+		};
 	}
 
 	// FIX-186: a descoberta falhou neste turno → NÃO persiste o texto do modelo
@@ -473,18 +837,31 @@ export async function* runAgentTurn(args: {
 		if (tail) yield { type: "text-delta", text: tail };
 	}
 
-	// FIX-102 + FIX-188 + FIX-189: colapsa eco/degeneração da LLM, garante (belt-and-
-	// suspenders) que nenhum preâmbulo persista e desgruda falas coladas — o filtro
-	// já limpou ao vivo, esta é a rede final antes de persistência/prefixo do gate.
+	// FIX-102 + FIX-188 + FIX-189 + FIX-270: colapsa eco/degeneração da LLM,
+	// garante (belt-and-suspenders) que nenhum preâmbulo/estado fabricado
+	// persista e desgruda falas coladas — o filtro já limpou ao vivo com o
+	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
+	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
 	fullResponse = normalizeGluedSentences(
-		stripProcessPreamble(collapseEchoedSegments(fullResponse)),
+		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
+			hasReceivedDocuments,
+			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+		}),
 	).replace(/^\s+/, "");
 
 	try {
 		const finishReason = await result.finishReason;
+		// FIX-261 (rodada 5, veredito Fable r4): achado "turno saiu truncado no
+		// meio do nome ('Perfeito, Madal')" — investigação (fork) não achou bug
+		// de split/chunk client nem server (web/adapter.ts não faz split algum).
+		// Candidato mais provável: finishReason anômalo (ex. "length", limite de
+		// tokens) cortando a geração ANTES do fim natural — antes só logava sem
+		// contexto suficiente pra confirmar. A cauda do texto entra no log pra
+		// a PRÓXIMA rodada provar/descartar a hipótese com evidência real (não
+		// especular um retry sem confirmar a causa — regra epistêmica).
 		if (finishReason !== "stop" && finishReason !== "tool-calls") {
 			console.warn(
-				`[orchestrator] Agent stream ended with unexpected finishReason="${finishReason}" persona=${currentPersona}`,
+				`[orchestrator] Agent stream ended with unexpected finishReason="${finishReason}" persona=${currentPersona} tail="${fullResponse.slice(-80)}"`,
 			);
 		}
 	} catch {}
@@ -547,6 +924,37 @@ export async function* runAgentTurn(args: {
 		artifacts.push(...nonGroupCards, consolidated);
 		console.log(
 			`[orchestrator] Guard: consolidated ${groupCards.length} group_cards into comparison_table`,
+		);
+	}
+
+	// FIX-290 (P0 sistêmico, veredito r9pos3 Sonnet §3): recommendation_card e
+	// comparison_table são "INSEPARÁVEIS" (directives.ts:348) — mas até aqui
+	// isso era só regra-no-prompt. Se o modelo chamou present_recommendation_card
+	// e parou (nunca chamou present_comparison_table) num turno com 2+ grupos
+	// reais, força a emissão server-side aqui — mesmo padrão do FIX-286
+	// (buildRecommendationCardFromRevealGroup) pro hero, reaproveitando os
+	// MESMOS grupos indexados neste turno (revealGroupsById). Caso de borda: 1
+	// grupo único NUNCA força a tabela (regra do reveal — os dois só pulam
+	// juntos quando há 1 grupo só).
+	if (
+		artifacts.some((a) => a.type === "recommendation_card") &&
+		!artifacts.some((a) => a.type === "comparison_table") &&
+		usableRevealGroupCount(revealGroupsById) >= 2
+	) {
+		const payload = buildComparisonTableFromRevealGroups(
+			revealGroupsById,
+			await getAdministradoraLogos(),
+			await getKnownCreditValues(),
+		);
+		artifacts.push({ type: "comparison_table", payload });
+		yield {
+			type: "artifact",
+			artifactType: "comparison_table",
+			payload,
+			toolCallId: crypto.randomUUID(),
+		};
+		console.log(
+			`[orchestrator] FIX-290: comparison_table forçado server-side (recommendation_card sem par neste turno, conv=${conversationId})`,
 		);
 	}
 
@@ -670,12 +1078,67 @@ export async function* runAgentTurn(args: {
 		const newSim = artifacts.find((a) => a.type === "simulation_result");
 		const snap = offerSnapshotFromArtifact(newSim?.payload);
 		if (snap) {
+			// FIX-252 ("pro teto" #3, veredito Fable FINAL): o groupId que a LLM
+			// mandou simular pode não ser o que o usuário pediu por nome/valor (ex.:
+			// "a de 92 mil" resolvendo pro grupo de 100k — achado do FIX-249
+			// "PARCIAL"). Quando o texto do turno resolve DETERMINISTICAMENTE pra um
+			// grupo JÁ EXIBIDO diferente do que a LLM simulou, a âncora usa o
+			// resolvido — nunca o palpite da LLM (Lei "nunca aja sobre entidade
+			// não-ancorada"). resolveOfferByMention nunca inventa: sem match claro
+			// (ou ambíguo), snap segue intacto.
+			const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+			const mentioned = lastUserText
+				? await resolveOfferMentionForConversation(conversationId, lastUserText)
+				: null;
+			const anchor =
+				mentioned &&
+				mentioned.groupId !== snap.groupId &&
+				typeof mentioned.creditValue === "number" &&
+				typeof mentioned.termMonths === "number" &&
+				typeof mentioned.monthlyPayment === "number"
+					? {
+							...snap,
+							administradora: mentioned.administradora ?? snap.administradora,
+							creditValue: mentioned.creditValue,
+							termMonths: mentioned.termMonths,
+							monthlyPayment: mentioned.monthlyPayment,
+							groupId: mentioned.groupId,
+						}
+					: snap;
+			if (anchor !== snap) {
+				console.log(
+					`[ancora-fechamento] FIX-252: what-if simulou ${snap.groupId} mas o texto do usuário resolvia pro grupo ${anchor.groupId} (${anchor.administradora}) — âncora corrigida (conv=${conversationId})`,
+				);
+			}
 			const refreshed = await reloadMeta(conversationId);
-			await persistMeta(conversationId, {
-				...refreshed,
-				recommendedOffer: snap,
-				recommendedAdministradora: snap.administradora ?? refreshed.recommendedAdministradora,
-			});
+
+			// FIX-265 (menor #2, veredito Fable r5, N6): what-if puramente
+			// EXPLORATÓRIO (a LLM simulou um crédito que o usuário NÃO pediu — nem
+			// por nome/valor já exibido [`mentioned` acima], nem por menção direta
+			// do valor no texto) nunca vira a âncora do fechamento/dial — mantém o
+			// snapshot anterior (a simulação ainda aparece como card informativo,
+			// só não confirma). Só se aplica quando `mentioned` não resolveu nada
+			// (sem `mentioned`, a rota determinística já vetou o grupo — sempre
+			// confiável, Lei 1/4).
+			const currentCredit = refreshed.recommendedOffer?.creditValue;
+			const isExploratoryWhatIf =
+				!mentioned &&
+				typeof currentCredit === "number" &&
+				currentCredit > 0 &&
+				Math.abs(anchor.creditValue - currentCredit) / currentCredit > 0.15 &&
+				!isCreditValueMentioned(lastUserText, anchor.creditValue);
+
+			if (isExploratoryWhatIf) {
+				console.log(
+					`[snapshot-whatif] FIX-265: what-if ${anchor.creditValue} não respaldado pelo texto do usuário — snapshot mantido em ${currentCredit} (conv=${conversationId})`,
+				);
+			} else {
+				await persistMeta(conversationId, {
+					...refreshed,
+					recommendedOffer: anchor,
+					recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
+				});
+			}
 		}
 	}
 
@@ -686,6 +1149,15 @@ export async function* runAgentTurn(args: {
 	if (artifacts.some((a) => a.type === "decision_prompt") && !meta.decisionDispatched) {
 		const refreshed = await reloadMeta(conversationId);
 		await persistMeta(conversationId, { ...refreshed, decisionDispatched: true });
+	}
+
+	// FIX-244 (rodada 2, Fable r1, gap #9): marca contractFormDispatched quando
+	// o formulário de contratação aparece — mesmo hardening do decisionDispatched
+	// acima. O handler contract-submit (route.ts) exige essa flag antes de
+	// aceitar o fechamento (defesa em profundidade, mesma família do FIX-12).
+	if (artifacts.some((a) => a.type === "contract_form") && !meta.contractFormDispatched) {
+		const refreshed = await reloadMeta(conversationId);
+		await persistMeta(conversationId, { ...refreshed, contractFormDispatched: true });
 	}
 
 	const producedArtifact = artifacts.length > 0;
@@ -725,12 +1197,25 @@ export async function* runAgentTurn(args: {
 			columns: { contactName: true },
 		});
 		const gate = nextGate(refreshed, { hasContactName: Boolean(conv?.contactName) });
-		const shouldShow = decideShowGate({
-			gate,
-			intent: userIntent,
-			meta: refreshed,
-			isUserTurn,
-		});
+		const shouldShow =
+			decideShowGate({
+				gate,
+				intent: userIntent,
+				meta: refreshed,
+				isUserTurn,
+			}) ||
+			// FIX-12 (recovery): contract_form pré-reveal suprimido → o gate identify
+			// tem que aparecer neste MESMO turno, nunca ficar mudo esperando o motivo
+			// (shouldAskMotive) ou um sinal de avanço do usuário.
+			(prematureContractSuppressedThisTurn && gate === "identify");
+		// FIX-274 — quando o beat do motivo segura o funil (shouldShow=false acima
+		// porque shouldAskMotive), marca motivationAsked: o LLM pergunta "por que
+		// agora" NESTE turno e, no PRÓXIMO, o funil avança mesmo se o motivo não vier
+		// (não-bloqueante, mesmo padrão de desireAsked). shouldShow já foi calculado
+		// com o estado ANTERIOR — a marcação só afeta o turno seguinte.
+		if (isUserTurn && shouldAskMotive(refreshed)) {
+			await persistMeta(conversationId, { ...refreshed, motivationAsked: true });
+		}
 		const passesArtifactGuard =
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);
 		if (shouldShow && passesArtifactGuard) {

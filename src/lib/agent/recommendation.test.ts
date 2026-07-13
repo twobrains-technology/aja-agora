@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdministradoraAdapter, GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
-import { recommendWithFallback } from "./recommendation";
+import { rankGroups, recommendWithFallback, respectsNetCreditGuardrail } from "./recommendation";
 
 const baseGroup: GroupSummary = {
 	id: "g1",
@@ -141,5 +141,98 @@ describe("recommendWithFallback — ≥3 opções (bug #09)", () => {
 		if (firstAltIndex !== -1 && lastOriginalIndex !== -1) {
 			expect(firstAltIndex).toBeGreaterThan(lastOriginalIndex);
 		}
+	});
+});
+
+// FIX-226 (D6 — docs/03-regras-calculo.md): sem guardrail, uma estratégia de
+// lance embutido podia recomendar uma carta cujo netCredit fica ABAIXO do
+// valor do bem — o cliente contempla mais rápido mas recebe dinheiro que não
+// compra o que veio comprar. Invariante duro → CÓDIGO, não prompt.
+describe("respectsNetCreditGuardrail — netCredit nunca abaixo do valor do bem (D6)", () => {
+	it("netCredit > valorDoBem → true", () => {
+		expect(respectsNetCreditGuardrail(200_000, 0.3, 120_000)).toBe(true);
+	});
+
+	it("netCredit < valorDoBem → false", () => {
+		// 123_300 * (1-0.3) = 86_310 < 120_000
+		expect(respectsNetCreditGuardrail(123_300, 0.3, 120_000)).toBe(false);
+	});
+
+	it("caso de borda: netCredit === valorDoBem → true", () => {
+		// creditValue tal que creditValue*(1-0.3) === 120_000 exatamente
+		const creditValue = 120_000 / 0.7;
+		expect(respectsNetCreditGuardrail(creditValue, 0.3, 120_000)).toBe(true);
+	});
+});
+
+describe("rankGroups — guardrail de crédito líquido reordena (nunca descarta) candidatas de embutido", () => {
+	const bem = 120_000;
+
+	const violaGuardrail: GroupSummary = {
+		...baseGroup,
+		id: "com-viola",
+		creditValue: 123_300, // netCredit 30% = 86_310 < 120_000
+		embeddedVariant: "com",
+	};
+	const respeitaGuardrail: GroupSummary = {
+		...baseGroup,
+		id: "com-respeita",
+		creditValue: 200_000, // netCredit 30% = 140_000 >= 120_000
+		embeddedVariant: "com",
+	};
+
+	it("hasLance + embutidoGuardrail: candidata que respeita vem ANTES da que viola", () => {
+		const ranked = rankGroups([violaGuardrail, respeitaGuardrail], {
+			budget: 3_000,
+			desiredTermMonths: 0,
+			hasLance: true,
+			embutidoGuardrail: { valorDoBem: bem, maxEmbutidoPct: 0.3 },
+		});
+		expect(ranked[0].group.id).toBe("com-respeita");
+		expect(ranked[1].group.id).toBe("com-viola");
+	});
+
+	it("nunca descarta a candidata que viola — só reordena", () => {
+		const ranked = rankGroups([violaGuardrail, respeitaGuardrail], {
+			budget: 3_000,
+			desiredTermMonths: 0,
+			hasLance: true,
+			embutidoGuardrail: { valorDoBem: bem, maxEmbutidoPct: 0.3 },
+		});
+		expect(ranked.length).toBe(2);
+		expect(ranked.some((r) => r.group.id === "com-viola")).toBe(true);
+	});
+
+	it("sem hasLance → guardrail não interfere na ordem (mesmo com embutidoGuardrail configurado)", () => {
+		const semGuardrail = rankGroups([violaGuardrail, respeitaGuardrail], {
+			budget: 3_000,
+			desiredTermMonths: 0,
+			hasLance: false,
+			embutidoGuardrail: { valorDoBem: bem, maxEmbutidoPct: 0.3 },
+		});
+		const semConfig = rankGroups([violaGuardrail, respeitaGuardrail], {
+			budget: 3_000,
+			desiredTermMonths: 0,
+		});
+		expect(semGuardrail.map((r) => r.group.id)).toEqual(semConfig.map((r) => r.group.id));
+	});
+
+	it("candidatas 'sem' embutido nunca são afetadas pelo guardrail (ordem por score, não por netCredit)", () => {
+		const semEmbutido: GroupSummary = {
+			...baseGroup,
+			id: "sem-embutido",
+			creditValue: 100_000, // netCredit 30% = 70_000 < 120_000 — violaria SE fosse avaliada
+			embeddedVariant: "sem",
+		};
+		// Mesmo score que respeitaGuardrail (mesmos monthlyPayment/contemplationRate/
+		// adminFeePercent/termMonths do baseGroup) — sem o guardrail interferindo, a
+		// ordem de saída preserva a ordem de entrada (empate estável).
+		const ranked = rankGroups([semEmbutido, respeitaGuardrail], {
+			budget: 3_000,
+			desiredTermMonths: 0,
+			hasLance: true,
+			embutidoGuardrail: { valorDoBem: bem, maxEmbutidoPct: 0.3 },
+		});
+		expect(ranked.map((r) => r.group.id)).toEqual(["sem-embutido", "com-respeita"]);
 	});
 });

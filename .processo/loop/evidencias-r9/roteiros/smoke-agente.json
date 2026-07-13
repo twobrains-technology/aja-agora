@@ -1,0 +1,10 @@
+{
+  "cenario": "smoke-agente",
+  "descricao": "Smoke pós-merge: confirma que o agente (builder→gateway) responde com LLM real após restart.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome" },
+    { "type": "action", "action": { "kind": "category", "category": "imovel" }, "label": "Imóvel", "expect": "transição Helena + gate name" },
+    { "type": "text", "text": "Joana", "expect": "saudação + gate desire (LLM real)" },
+    { "type": "text", "text": "Um apartamento de uns 300 mil pra sair do aluguel", "expect": "eco do objetivo + 2ª pergunta motivo (LLM real)" }
+  ]
+}

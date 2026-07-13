@@ -3,19 +3,22 @@ import type { ConversationMetadata } from "./personas";
 import { type Gate, nextGate } from "./qualify-state";
 
 // ============================================================================
-// FIX-103 (revisão da jornada de entrada — decisão Kairo 2026-06-28)
+// FIX-103 (revisão da jornada de entrada — decisão Kairo 2026-06-28) REVERTIDO
+// pelo FIX-233 (handoff agente-vendas-consorcio, decisão Kairo 2026-07-09, D1).
 // ----------------------------------------------------------------------------
-// "usuario so vai falar o valor agora, prazo nao." O gate `timeframe` (prazo
-// desejado de contemplação) SAI da qualificação. O campo `prazoMeses` e o tipo
-// `Gate` (com "timeframe") seguem existindo por compat com consumidores fora do
-// escopo deste bloco (web/whatsapp/orchestrator), mas `nextGate` NUNCA mais
-// emite o gate — o funil pula direto de `credit` (valor) pra `lance`.
+// O FIX-103 tinha REMOVIDO o gate `timeframe` da qualificação ("usuario so vai
+// falar o valor agora, prazo nao"). O handoff pediu o prazo de volta como a
+// ponte natural pro simulador de contemplação — o Kairo decidiu reintroduzir
+// (ADR docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md, D1), agora
+// PÓS-recomendação (depois do reveal + experience), não mais na entrada.
+//
+// Este arquivo mantém o nome (histórico do FIX-103) mas a premissa se
+// INVERTEU: prova que `timeframe` VOLTA a aparecer, na nova posição.
 // ============================================================================
 
 /** Percorre o funil do zero até o terminal, respondendo cada gate como o
- * usuário faria — SEM nunca preencher `prazoMeses` (o usuário não responde mais
- * prazo). Prova que o funil converge sem travar esperando o prazo. */
-function walkFunnelSemPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
+ * usuário faria — incluindo o prazo (timeframe), agora pós-recomendação. */
+function walkFunnelComPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 	let meta: ConversationMetadata = {};
 	let hasName = false;
 	const seq: Gate[] = [];
@@ -28,17 +31,23 @@ function walkFunnelSemPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 			case "name":
 				hasName = true;
 				break;
-			case "experience":
-				meta = { ...meta, experiencePrev: "first" };
-				break;
-			case "consent":
-				meta = { ...meta, qualifyConsented: true };
+			case "desire":
+				meta = { ...meta, desireAsked: true };
 				break;
 			case "identify":
 				meta = { ...meta, identityCollected: true };
 				break;
 			case "credit":
 				meta = { ...meta, qualifyAnswers: { ...q, creditMax: 80_000 } };
+				break;
+			case "search":
+				meta = { ...meta, searchDispatched: true, revealCompleted: true };
+				break;
+			case "experience":
+				meta = { ...meta, experiencePrev: "first" };
+				break;
+			case "timeframe":
+				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 6 } };
 				break;
 			case "lance":
 				meta = { ...meta, qualifyAnswers: { ...q, hasLance: opts.hasLance } };
@@ -48,9 +57,6 @@ function walkFunnelSemPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 				break;
 			case "lance-embutido":
 				meta = { ...meta, qualifyAnswers: { ...q, lanceEmbutido: false } };
-				break;
-			case "search":
-				meta = { ...meta, searchDispatched: true, revealCompleted: true };
 				break;
 			case "simulator-offer":
 				meta = { ...meta, simulatorOfferDispatched: true };
@@ -64,66 +70,85 @@ function walkFunnelSemPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 	return seq;
 }
 
-describe("FIX-103 — gate de prazo (timeframe) fora da qualificação", () => {
-	it("o funil completo NUNCA passa pelo gate timeframe (sem lance)", () => {
-		const seq = walkFunnelSemPrazo({ hasLance: "no" });
-		expect(seq).not.toContain("timeframe");
+describe("FIX-103 revertido pelo FIX-233 — gate de prazo (timeframe) VOLTA, pós-recomendação", () => {
+	it("o funil completo PASSA pelo gate timeframe, depois de experience e antes de lance (sem lance)", () => {
+		const seq = walkFunnelComPrazo({ hasLance: "no" });
+		expect(seq).toContain("timeframe");
 		expect(seq).toEqual([
 			"name",
-			"experience",
-			"consent",
+			"desire",
 			"identify",
 			"credit",
+			"search",
+			"experience",
+			"timeframe",
 			"lance",
 			"lance-embutido",
-			"search",
 			"simulator-offer",
 			"decision",
 		]);
 	});
 
-	it("o funil completo NUNCA passa pelo gate timeframe (com lance)", () => {
-		const seq = walkFunnelSemPrazo({ hasLance: "yes" });
-		expect(seq).not.toContain("timeframe");
+	it("o funil completo PASSA pelo gate timeframe (com lance)", () => {
+		const seq = walkFunnelComPrazo({ hasLance: "yes" });
+		expect(seq).toContain("timeframe");
 		expect(seq).toEqual([
 			"name",
-			"experience",
-			"consent",
+			"desire",
 			"identify",
 			"credit",
+			"search",
+			"experience",
+			"timeframe",
 			"lance",
 			"lance-value",
 			"lance-embutido",
-			"search",
 			"simulator-offer",
 			"decision",
 		]);
 	});
 
-	it("valor coletado segue DIRETO pra lance (não re-pede prazo)", () => {
+	it("valor coletado + reveal completo, SEM experience/timeframe respondidos → nextGate pede experience primeiro", () => {
 		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
-			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
 			qualifyAnswers: { creditMax: 80_000 },
+			searchDispatched: true,
+			revealCompleted: true,
 		};
-		// Antes do FIX-103 isto retornava "timeframe"; agora pula direto pro lance.
-		expect(nextGate(meta, { hasContactName: true })).toBe("lance");
+		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
 	});
 
-	it("nextGate NUNCA retorna timeframe mesmo com prazoMeses ausente em qualquer combinação de qualifyAnswers", () => {
-		const base: ConversationMetadata = {
+	it("experience respondido, timeframe (prazoMeses) ainda ausente → nextGate pede timeframe (nunca pula direto pro lance)", () => {
+		const meta: ConversationMetadata = {
+			desireAsked: true,
 			currentCategory: "auto",
-			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
+			experiencePrev: "first",
+			qualifyAnswers: { creditMax: 80_000 },
+			searchDispatched: true,
+			revealCompleted: true,
+		};
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+	});
+
+	it("timeframe respondido (prazoMeses definido) → nextGate segue pro lance, nunca re-pede timeframe", () => {
+		const base: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "auto",
+			qualifyConsented: true,
+			identityCollected: true,
+			experiencePrev: "first",
+			searchDispatched: true,
+			revealCompleted: true,
 		};
 		const combos: ConversationMetadata[] = [
-			{ ...base, qualifyAnswers: { creditMax: 80_000 } },
-			{ ...base, qualifyAnswers: { creditMax: 80_000, hasLance: "no" } },
-			{ ...base, qualifyAnswers: { creditMax: 80_000, hasLance: "yes" } },
-			{ ...base, qualifyAnswers: { creditMax: 80_000, hasLance: "yes", lanceValue: 8_000 } },
+			{ ...base, qualifyAnswers: { creditMax: 80_000, prazoMeses: 0 } },
+			{ ...base, qualifyAnswers: { creditMax: 80_000, prazoMeses: 6, hasLance: "no" } },
+			{ ...base, qualifyAnswers: { creditMax: 80_000, prazoMeses: 12, hasLance: "yes" } },
 		];
 		for (const meta of combos) {
 			expect(nextGate(meta, { hasContactName: true })).not.toBe("timeframe");

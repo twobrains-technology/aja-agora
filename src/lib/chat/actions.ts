@@ -13,7 +13,6 @@ export type ChatAction =
 	// Convive com o caminho texto-livre (save_contact_name forçado no orchestrator).
 	| { kind: "gate"; gate: "name"; value: { name: string }; label: string }
 	| { kind: "gate"; gate: "experience"; value: ExperiencePrev; label: string }
-	| { kind: "gate"; gate: "consent"; value: "yes" | "more"; label: string }
 	| {
 			kind: "gate";
 			gate: "credit";
@@ -38,7 +37,7 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "gate"; gate: "timeframe"; value: { prazoMeses: number }; label: string }
-	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no"; label: string }
+	| { kind: "gate"; gate: "lance"; value: "yes" | "maybe" | "no" | "so_parcela"; label: string }
 	// docx passo 2: "Qual valor aproximado?" — valor do lance em reais (faixa).
 	| { kind: "gate"; gate: "lance-value"; value: { lanceValue: number }; label: string }
 	| { kind: "gate"; gate: "lance-embutido"; value: "yes" | "no"; label: string }

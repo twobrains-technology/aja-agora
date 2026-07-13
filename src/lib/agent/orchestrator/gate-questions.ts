@@ -7,11 +7,30 @@ import type { Gate } from "@/lib/agent/qualify-state";
  * mostra as duas juntas (gateQuestion compõe abaixo); no WhatsApp a educação sai
  * como balão de contexto e o card carrega SÓ a pergunta — channel-aware, o card
  * deixa de ser 3 parágrafos de aula + a pergunta numa unidade só. */
-export const LANCE_EMBUTIDO_EDU =
-	"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
-	"É usar parte da própria carta de crédito como lance — numa carta de R$ 100 mil, por exemplo, " +
-	"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
-	"sem precisar ter todo o lance em dinheiro hoje.";
+const formatCredit0 = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/** FIX-245 (rodada 2, Fable r1, §D4.d do veredito): o gate `lance-embutido`
+ * roda PÓS-reveal desde o FIX-215 — `meta.recommendedOffer.creditValue` já é
+ * a carta REAL que o cliente está vendo na tela. Um consultor de verdade usa
+ * o número do cliente, não um exemplo genérico. Sem carta real (chamador que
+ * ainda não tem o snapshot) → mantém o exemplo honesto de "R$ 100 mil". */
+export function lanceEmbutidoEdu(creditValue?: number): string {
+	const cartaPhrase =
+		creditValue != null && Number.isFinite(creditValue) && creditValue > 0
+			? `na sua carta de ${formatCredit0(creditValue)}`
+			: "numa carta de R$ 100 mil";
+	return (
+		"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
+		`É usar parte da própria carta de crédito como lance — ${cartaPhrase}, por exemplo, ` +
+		"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
+		"sem precisar ter todo o lance em dinheiro hoje."
+	);
+}
+/** @deprecated Use `lanceEmbutidoEdu(creditValue)` pra usar a carta REAL do
+ * cliente — este const mantém só o fallback genérico, pra quem ainda não
+ * repassou o valor real. */
+export const LANCE_EMBUTIDO_EDU = lanceEmbutidoEdu();
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
 
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
@@ -21,32 +40,73 @@ const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	servicos: "Em quanto tempo você quer realizar isso?",
 };
 
-export function gateQuestion(gate: Gate, category?: Category | null): string | null {
+/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — gate `desire`, não
+ * bloqueante: 1ª das duas perguntas de contexto (bem específico + motivo de
+ * agora). A pergunta sai no TEXTO do agente (directive), não num card — a
+ * segunda pergunta (motivo) é conversa livre, sem gate próprio. */
+const DESIRE_QUESTIONS: Record<Category, string> = {
+	imovel: "Qual imóvel você tem em mente?",
+	auto: "Qual carro você tem em mente?",
+	moto: "Qual moto você tem em mente?",
+	servicos: "O que você tem em mente pra realizar?",
+};
+
+export function gateQuestion(
+	gate: Gate,
+	category?: Category | null,
+	creditValue?: number,
+	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): default "whatsapp" —
+	// preserva o comportamento de TODOS os chamadores pré-existentes
+	// (whatsapp/adapter.ts, identify-capture.ts, gate-reengage.ts), que já
+	// rodam nesse canal. Só web/adapter.ts passa "web" explicitamente.
+	channel: "web" | "whatsapp" = "whatsapp",
+	// FIX-284 — valor aproximado mencionado informalmente no gate `desire`
+	// (`qualifyAnswers.creditMentionedAtDesire`). Quando presente, o gate
+	// `credit` CONFIRMA esse valor em vez de perguntar do zero.
+	creditMentionedAtDesire?: number,
+): string | null {
 	switch (gate) {
 		case "name":
 			// FIX-17: a pergunta do nome ("Como posso te chamar?") já sai no TEXTO
 			// do agente (directive de primeiro contato). O card só complementa com
 			// input focado — null aqui evita a pergunta aparecer duas vezes.
 			return null;
+		case "desire":
+			return category ? DESIRE_QUESTIONS[category] : null;
 		case "experience":
 			return "Você já fez consórcio antes?";
-		case "consent":
-			return "Posso te fazer 3 perguntinhas rápidas pra entender seu perfil?";
 		case "credit":
+			// FIX-284: o valor já foi mencionado informalmente no gate `desire`
+			// (2 turnos atrás) — CONFIRMA em vez de perguntar do zero (viola
+			// "sem pedir dado já dado", veredito Sonnet 5 G-F).
+			if (
+				creditMentionedAtDesire != null &&
+				Number.isFinite(creditMentionedAtDesire) &&
+				creditMentionedAtDesire > 0
+			) {
+				return `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
+			}
 			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
 			return "Qual valor do bem faz mais sentido pra você?";
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
-			return "Você teria uma reserva pra dar um lance e antecipar a contemplação?";
+			// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva" varrido
+			// — mesma disciplina do FIX-234/FIX-256 (nunca "reserva"/"reservado"
+			// antes da contratação real). Aqui o sentido era outro (dinheiro
+			// guardado pro lance), mas a ambiguidade com o termo proibido é
+			// exatamente o risco que a regra existe pra eliminar.
+			return "Você teria como dar um lance pra antecipar a contemplação?";
 		case "lance-value":
 			// docx passo 2 (linha 21-22): se "sim" → "Qual valor aproximado?"
 			return "Boa! E qual valor aproximado você pensa em dar de lance?";
 		case "lance-embutido":
 			// FIX-212: educação + pergunta compostas (a WEB usa o card completo). No
-			// WhatsApp o adapter usa LANCE_EMBUTIDO_EDU e LANCE_EMBUTIDO_ASK separados
+			// WhatsApp o adapter usa lanceEmbutidoEdu()/LANCE_EMBUTIDO_ASK separados
 			// (educação num balão, card só com a pergunta) — split 2 tempos.
-			return `${LANCE_EMBUTIDO_EDU}\n\n${LANCE_EMBUTIDO_ASK}`;
+			// FIX-245: creditValue (carta REAL, pós-reveal) substitui o exemplo
+			// genérico de "R$ 100 mil" quando disponível.
+			return `${lanceEmbutidoEdu(creditValue)}\n\n${LANCE_EMBUTIDO_ASK}`;
 		case "identify":
 			// FIX-210 (reforma de conversa WhatsApp): a copy do identify foi UNIFICADA
 			// e encurtada — aqui vive só o PEDIDO (beat 2 da cadência 2-tempos). O
@@ -58,7 +118,15 @@ export function gateQuestion(gate: Gate, category?: Category | null): string | n
 			// celular já é o waId, então só falta o CPF. Sem emoji, sem hedge, sem
 			// "preciso do CPF e celular" (FIX-53 pedia identidade antes do valor; o
 			// gancho forward-looking migrou pro beat de contexto do LLM).
-			return "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
+			//
+			// FIX-255 (rodada 4, veredito Fable FINAL §N-D): a copy "Seu celular eu
+			// já pego aqui do WhatsApp" só faz sentido no CANAL WhatsApp (celular =
+			// waId, já conhecido). Na WEB o form pede CPF E celular (gatePartData
+			// "identity" tem os dois campos, `prefilledPhone: null`) — a mesma frase
+			// mentia sobre de onde o celular vem (3 de 3 runs do veredito).
+			return channel === "web"
+				? "Me manda seu CPF e celular, só os números."
+				: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
 			return (

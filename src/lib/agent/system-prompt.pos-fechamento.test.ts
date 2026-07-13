@@ -36,7 +36,17 @@ describe("FIX-11 — contractClosedSection (estado terminal no prompt)", () => {
 		const s = contractClosedSection(CLOSED_INFO);
 		expect(s).toMatch(/CANOPUS/);
 		expect(s).toMatch(/4400/);
-		expect(s.toLowerCase()).toMatch(/contrat|fechad/);
+		expect(s.toLowerCase()).toMatch(/reserv/);
+	});
+
+	// FIX-216 (Ata 2026-07-04): terminologia "reserva de cota" — nunca "contrato
+	// fechado"/"contratou". Deixa claro que dá pra iniciar um NOVO consórcio.
+	it("usa 'RESERVA CONFIRMADA'/'JÁ RESERVOU' e menciona nova jornada, nunca 'contrat'/'fechad'", () => {
+		const s = contractClosedSection(CLOSED_INFO);
+		expect(s).toMatch(/RESERVA CONFIRMADA/);
+		expect(s).toMatch(/JÁ RESERVOU/);
+		expect(s.toLowerCase()).not.toMatch(/contrat|fechad/);
+		expect(s.toLowerCase()).toMatch(/nova jornada/);
 	});
 
 	it("proíbe explicitamente re-descoberta e segunda administradora", () => {

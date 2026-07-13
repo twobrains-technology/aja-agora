@@ -113,10 +113,27 @@ describe("FIX-208 decideShowGate — não regride comportamentos existentes", ()
 		).toBe(false);
 	});
 
-	it("não interfere no gate 'search' (ação invasiva) — neutral segue suprimido", () => {
+	it("FIX-215: 'search' (primeira busca, ainda não disparada) TOLERA neutral — herdou o lugar de 'lance'", () => {
+		// Antes do FIX-215, `credit` era seguido por `lance` (COLLECTION_GATE,
+		// tolerante a neutral) — só bem mais tarde "search" aparecia, exigindo
+		// sinal forte. Agora `credit` cai DIRETO em `search`: sem esta tolerância,
+		// a MESMA classe de bug do FIX-208 reaparece (analyzer cold-start=neutral
+		// trava logo após o usuário responder o valor). `!searchDispatched` escopa
+		// isto à primeira busca — ver qualify-state.fix76.test.ts pra prova de que,
+		// DEPOIS de searchDispatched=true, neutral solto NÃO re-dispara a busca.
 		const meta = collectingMeta({ revealCompleted: false });
 		expect(decideShowGate({ gate: "search", intent: "neutral", meta, isUserTurn: true })).toBe(
-			false,
+			true,
 		);
+	});
+
+	it("'search' ainda EXIGE sinal explícito quando não-neutral (asking/doubt/off-topic seguem suprimidos)", () => {
+		const meta = collectingMeta({ revealCompleted: false });
+		for (const intent of ["asking_question", "expressing_doubt", "off_topic"] as const) {
+			expect(
+				decideShowGate({ gate: "search", intent, meta, isUserTurn: true }),
+				`intent=${intent}`,
+			).toBe(false);
+		}
 	});
 });

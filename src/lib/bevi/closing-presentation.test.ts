@@ -157,6 +157,67 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 		const text = lanceText(realOfferPresentation(START_OK, { declaredLanceValue: 117_000 }));
 		expect(text).not.toMatch(/acima|abaixo|na média/i);
 	});
+
+	// FIX-240 (rodada 2, Fable r1, D5.1): pedido 120k → recomendada ITAÚ 150k →
+	// no contract-submit a real_offer veio 211.258 sem aviso (CDC art. 30). O
+	// fecho SEMPRE carrega rawCreditValue (valor pedido) quando difere da carta
+	// fechada — o aviso de ajuste (FIX-197, real-offer.tsx) passa a renderizar.
+	it("FIX-240: carta fechada difere do valor pedido → payload carrega rawCreditValue = valor pedido", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, creditValue: 211_258 },
+			requestedCreditValue: 150_000,
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(artifact.payload.rawCreditValue).toBe(150_000);
+	});
+
+	it("FIX-240: carta fechada é igual ao valor pedido → payload SEM rawCreditValue (sem aviso falso)", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, creditValue: 60_000 },
+			requestedCreditValue: 60_000,
+		});
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("rawCreditValue" in artifact.payload).toBe(false);
+	});
+
+	it("FIX-240: sem requestedCreditValue (caminho antigo/legado) → payload SEM rawCreditValue, não inventa", () => {
+		const items = realOfferPresentation(START_OK);
+		const artifact = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (artifact?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("rawCreditValue" in artifact.payload).toBe(false);
+	});
+
+	// FIX-259 (rodada 5, veredito Fable r4, P1 #2): a administradora confirmada
+	// pode não ter grupo na faixa → o fechamento troca pro global best. Isso
+	// NUNCA pode sair em silêncio ("Confirmei com a X" sem explicar a troca).
+	it("FIX-259: administradoraChanged → aviso explícito de troca (nunca 'Confirmei com a X' liso)", () => {
+		const items = realOfferPresentation({
+			...START_OK,
+			offer: { ...START_OK.offer, administradora: "BANCO DO BRASIL" },
+			administradoraChanged: true,
+			previousAdministradora: "ITAÚ",
+		});
+		const texts = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(texts).toMatch(/ITAÚ/);
+		expect(texts).toMatch(/n[ãa]o tem grupo dispon[íi]vel/i);
+		expect(texts).toMatch(/BANCO DO BRASIL/);
+	});
+
+	it("FIX-259: sem administradoraChanged → mantém 'Confirmei com a X' (comportamento antigo intacto)", () => {
+		const items = realOfferPresentation(START_OK);
+		const texts = items
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+		expect(texts).toMatch(/Confirmei com a ÂNCORA/);
+	});
 });
 
 describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {
@@ -167,9 +228,25 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		.join("\n");
 
 	it("reforço 1 literal: administradora escolhida pela Aja Agora para o seu perfil", () => {
-		expect(allText).toContain("Você está contratando um consórcio da ÂNCORA");
+		expect(allText).toContain("Sua cota da ÂNCORA está reservada");
 		expect(allText).toMatch(/escolhida pela Aja Agora/);
 		expect(allText).toMatch(/para o seu perfil/);
+	});
+
+	// FIX-278 (veredito r9, G2): terminologia RESERVA DE COTA (Ata 2026-07-04,
+	// item 2/P0) — nunca "consórcio fechado/contratado". O texto pinava
+	// "contratando um consórcio" (comportamento errado); TDD strict: falha com
+	// a copy antiga, passa com "reserv[a/ada]".
+	it("FIX-278: terminologia RESERVA DE COTA — nunca 'contratando/contratado/fechado', sempre 'reserv'", () => {
+		expect(allText.toLowerCase()).not.toMatch(/contratand[ao]|contratad[ao]|fechad[ao]/);
+		expect(allText.toLowerCase()).toMatch(/reserv/);
+	});
+
+	// FIX-278 (Ata 2026-07-04, item 2/P0): "Você não paga nada agora — tipo
+	// booking. Só quando chegar o boleto." — reforça que a reserva não é cobrança.
+	it("FIX-278: comunica que não paga nada agora (booking, só quando chegar o boleto)", () => {
+		expect(allText.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
+		expect(allText.toLowerCase()).toMatch(/boleto/);
 	});
 
 	it("reforço 2 literal: a Aja Agora segue com você até a contemplação e depois dela", () => {
@@ -208,5 +285,81 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		expect(idxReforco).toBeGreaterThanOrEqual(0);
 		expect(idxSig).toBeGreaterThan(idxReforco);
 		expect(idxParabens).toBeGreaterThan(idxSig);
+	});
+});
+
+// FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8) — fecho pro
+// WhatsApp: depois do "Parabéns!", o agente avisa que mandou mensagem no
+// WhatsApp e pede o "oi" (abre a janela de 24h — função técnica), e que a
+// especialista em cadastros chama em seguida. NUNCA "garantido/você já
+// está no grupo" (a proposta foi enviada, mas a contemplação não).
+// NOTA (FIX-278): "reservado/reservada" deixou de ser banido — virou a
+// terminologia MANDATÓRIA (Ata 2026-07-04, "reserva de cota"). O que
+// continua proibido é afirmar contemplação/vaga no grupo como fato.
+describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", () => {
+	const items = closingPresentation(CONFIRM);
+	const allText = items
+		.filter((i) => i.kind === "text")
+		.map((i) => i.text)
+		.join("\n");
+
+	it("avisa que mandou mensagem no WhatsApp e pede o 'oi'", () => {
+		expect(allText.toLowerCase()).toMatch(/whatsapp/);
+		expect(allText).toMatch(/["“]oi["”]/);
+	});
+
+	it("menciona a especialista em cadastros chamando em seguida", () => {
+		expect(allText.toLowerCase()).toMatch(/especialista em cadastros/);
+	});
+
+	it("NUNCA diz 'garantido/você já está no grupo' (nada de contemplação prometida)", () => {
+		expect(allText.toLowerCase()).not.toMatch(/garantid[ao]/);
+		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
+	});
+
+	it("o fecho vem DEPOIS do 'Parabéns!' (não quebra a ordem do docx já travada)", () => {
+		const idxParabens = items.findIndex((i) => i.kind === "text" && /Parabéns!/.test(i.text));
+		const idxOi = items.findIndex((i) => i.kind === "text" && /["“]oi["”]/.test(i.text));
+		expect(idxOi).toBeGreaterThan(idxParabens);
+	});
+});
+
+// FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
+// mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE — inclusive
+// quando o envio (sendFechoPedirOi) só ENFILEIROU (sem janela/template
+// aprovado). Mentira observável em dev. A copy agora condiciona ao
+// `whatsappChannel` que o caller (route.ts) já sabe de `sendFechoPedirOi`.
+describe("closingPresentation — FIX-265: copy condicional do fecho WhatsApp (enviado vs enfileirado)", () => {
+	const textOf = (opts?: Parameters<typeof closingPresentation>[1]) =>
+		closingPresentation(CONFIRM, opts)
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+
+	it("channel='free_text' → afirma que MANDOU (enviado agora, na janela aberta)", () => {
+		const text = textOf({ whatsappChannel: "free_text" });
+		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	});
+
+	it("channel='template' → afirma que MANDOU (enviado agora, via template Meta)", () => {
+		const text = textOf({ whatsappChannel: "template" });
+		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	});
+
+	it("channel='queued' → NÃO afirma que já mandou (só enfileirou) — nada de 'acabei de te mandar'", () => {
+		const text = textOf({ whatsappChannel: "queued" });
+		expect(text).not.toMatch(/acabei de te mandar|j[áa] mandei/i);
+		expect(text.toLowerCase()).toMatch(/whatsapp/);
+	});
+
+	it("channel='queued' ainda pede o 'oi' e menciona a especialista (fecho não perde a função técnica)", () => {
+		const text = textOf({ whatsappChannel: "queued" });
+		expect(text).toMatch(/["“]oi["”]/);
+		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
+	});
+
+	it("sem opts (retrocompatível — callers que não migraram, ex. interactive-handlers.ts) mantém o texto de sempre", () => {
+		const text = textOf(undefined);
+		expect(text).toContain("acabei de te mandar uma mensagenzinha no seu WhatsApp");
 	});
 });

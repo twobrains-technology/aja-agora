@@ -101,11 +101,18 @@ export async function processTextMessage(
 				IDENTIFY_CONFIRMED_REPLY,
 				IDENTIFY_CONTINUE_REPLY,
 				IDENTIFY_INVALID_CPF_REPLY,
+				IDENTIFY_WHATSAPP_PROMPT,
 			} = await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
 				if (capture.outcome === "invalid") {
 					await sendTextMessage(from, IDENTIFY_INVALID_CPF_REPLY);
+					return;
+				}
+				// FIX-217: qualquer desvio (pergunta, tentativa de pular) reemite o
+				// pedido do CPF — NUNCA passa pro pipeline geral do agente (Lei 4).
+				if (capture.outcome === "ask-cpf") {
+					await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
 					return;
 				}
 				const conv = await db.query.conversations.findFirst({

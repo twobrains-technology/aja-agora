@@ -540,30 +540,6 @@ export function resolveTimeframeReply(replyId: string): {
 	return { prazoMeses: t.prazoMeses, title: t.title };
 }
 
-export function qualifyConsentToWhatsApp(
-	prefix?: string,
-	opts: { firstTime?: boolean } = {},
-): WhatsAppResponse {
-	const question = gateQuestion("consent") ?? "";
-	const text = prefix ? `${prefix}\n\n${question}` : question;
-	// docx passo 2: pós-explicação de primeira vez o botão é "Entendi, pode
-	// continuar" — no WhatsApp o título encurta pro limite de 20 chars.
-	const yesTitle = opts.firstTime ? "Entendi, continuar" : "Bora!";
-	return {
-		type: "interactive",
-		interactive: {
-			type: "button",
-			body: { text },
-			action: {
-				buttons: [
-					{ type: "reply", reply: { id: "qualify_start_yes", title: yesTitle } },
-					{ type: "reply", reply: { id: "qualify_start_more", title: "Entender mais antes" } },
-				],
-			},
-		},
-	};
-}
-
 export function handoffConfirmationToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "interactive",
@@ -582,8 +558,11 @@ export function handoffConfirmationToWhatsApp(): WhatsAppResponse {
 	};
 }
 
+// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva" varrido —
+// mesma disciplina do FIX-234/FIX-256 (nunca "reserva"/"reservado" antes da
+// contratação real), espelhando o chip equivalente da web (adapter.ts).
 const LANCE_OPTIONS = [
-	{ token: "yes", title: "Sim, tenho reserva" },
+	{ token: "yes", title: "Sim, tenho como dar" },
 	{ token: "maybe", title: "Talvez, depende" },
 	{ token: "no", title: "Por enquanto não" },
 ] as const;
@@ -1043,12 +1022,31 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const lanceLine = Number.isFinite(avgBidValue)
 		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
 		: "";
+	// FIX-240/FIX-247 (CDC art. 30, rodada 3 — Fable r2 N3): paridade com o
+	// aviso de ajuste do card web (real-offer.tsx) — quando a carta fechada
+	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma
+	// silenciosamente. Copy corrigida (pedido × carta real, sem inversão).
+	const rawCreditValue = Number(payload.rawCreditValue);
+	const adjustmentLine =
+		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
+			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
+			: "";
+	// FIX-259 (P1, veredito Fable r4): paridade com o card web — quando o
+	// fechamento trocou a administradora confirmada, avisa explicitamente as
+	// duas marcas em vez de "Confirmado com a X" liso.
+	const previousAdministradora = payload.previousAdministradora as string | undefined;
+	const swapLine = previousAdministradora
+		? `\n\n_A ${previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${admin}._`
+		: "";
+	const introLine = previousAdministradora
+		? `Confirmado com a ${admin} (opção equivalente à ${previousAdministradora}):`
+		: `Confirmado com a ${admin}:`;
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `Confirmado com a ${admin}:\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [
@@ -1078,7 +1076,7 @@ export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): Wh
 export function documentUploadToWhatsApp(_payload: Record<string, unknown>): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Pra fechar a ficha, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*.",
+		text: "Pra completar sua reserva, me manda a foto do seu *RG ou CNH* (frente e verso) aqui mesmo. É opcional — se preferir enviar depois, responde *pular*.",
 	};
 }
 
@@ -1093,7 +1091,7 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 	return {
 		type: "text",
 		text: allDone
-			? "Recebi. Sua ficha está completa! Agora é com a administradora, e eu te aviso de cada passo."
+			? "Recebi. Sua reserva está confirmada! Agora é com a administradora, e eu te aviso de cada passo."
 			: "Recebi a frente. Agora me manda o *verso* do documento, é só mandar a foto aqui.",
 	};
 }
@@ -1103,7 +1101,7 @@ export function documentReceivedToWhatsApp(allDone: boolean): WhatsAppResponse {
 export function documentNotReadyToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente fechar sua carta, eu te peço o RG ou CNH por aqui.",
+		text: "Recebi sua foto! Mas ainda não cheguei na etapa de documentos com você. Assim que a gente confirmar sua reserva, eu te peço o RG ou CNH por aqui.",
 	};
 }
 
@@ -1213,6 +1211,62 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	};
 }
 
+// FIX-228 (docs/02-cards-novos.md CARD 1 — embedded_bid). Regra dura: SEMPRE
+// diz que o crédito recebido diminui — texto hardcoded (não depende do
+// `payload.disclaimer`), mesma garantia do card web (embedded-bid.tsx).
+export function embeddedBidToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const embeddedBidValue = Number(payload.embeddedBidValue ?? 0);
+	const netCredit = Number(payload.netCredit ?? 0);
+	return {
+		type: "text",
+		text:
+			"*Lance embutido — sem tirar do bolso*\n\n" +
+			"Você usa parte da própria carta como lance e antecipa a contemplação, sem desembolsar.\n\n" +
+			`*Lance embutido:* ${brlWa(embeddedBidValue)}\n*Valor que você recebe:* ${brlWa(netCredit)}\n\n` +
+			"O embutido sai da carta, então o crédito recebido diminui um pouco (estimativa, não garantia).",
+	};
+}
+
+// FIX-229 (docs/02-cards-novos.md CARD 3 — two_paths). Botões interativos —
+// mesmas duas opções do card web, mesmo peso (nenhuma marcada como
+// recomendada). PROIBIDO qualquer % de chance/probabilidade (docs/05).
+export function twoPathsToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
+	const monthlyPayment = Number(payload.monthlyPayment ?? 0);
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: {
+				text:
+					"Dois caminhos possíveis, sem lance:\n\n" +
+					`*Esperar o sorteio* — paga só a parcela de ${brlWa(monthlyPayment)} e concorre todo mês.\n\n` +
+					"*Lance pequeno lá na frente* — se sobrar um extra, um lance modesto melhora as chances.\n\n" +
+					"Não tem certo ou errado — depende de você ter pressa ou não.",
+			},
+			action: {
+				buttons: [
+					{ type: "reply", reply: { id: "two_paths_sorteio", title: "Vou de sorteio" } },
+					{ type: "reply", reply: { id: "two_paths_lance", title: "Lance pequeno" } },
+				],
+			},
+		},
+	};
+}
+
+// FIX-230 (docs/02-cards-novos.md CARD 2 — scarcity). Texto simples — número
+// placebo já coagido no servidor (coerceScarcityPayload). NUNCA menciona
+// total de cotas nem razão N/total (não temos esse dado). Sem
+// `availableSlots` válido, não envia nada (mesmo comportamento do card web —
+// sem fallback/estimativa, D3 do ADR).
+export function scarcityToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const availableSlots = Number(payload.availableSlots);
+	if (!Number.isFinite(availableSlots)) return null;
+	return {
+		type: "text",
+		text: `Grupo quase cheio, restam apenas ${availableSlots}. Quando preencher, entra fila para o próximo grupo.`,
+	};
+}
+
 export function artifactToWhatsApp(
 	type: string,
 	payload: Record<string, unknown>,
@@ -1250,6 +1304,12 @@ export function artifactToWhatsApp(
 			return documentUploadToWhatsApp(payload);
 		case "contemplation_dial":
 			return contemplationDialToWhatsApp(payload);
+		case "embedded_bid":
+			return embeddedBidToWhatsApp(payload);
+		case "two_paths":
+			return twoPathsToWhatsApp(payload);
+		case "scarcity":
+			return scarcityToWhatsApp(payload);
 		default:
 			return null;
 	}
@@ -1258,9 +1318,9 @@ export function artifactToWhatsApp(
 /** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
  * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
  * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
- * irmãos "Contratar agora"/"Falar c/ consultor" (decision_contratar/
+ * irmãos "Reservar agora"/"Falar c/ consultor" (decision_contratar/
  * decision_especialista) ainda caem no processamento de texto (contratar →
- * fechamento, especialista → handoff) — fora do escopo da D22. */
+ * reserva, especialista → handoff) — fora do escopo da D22. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

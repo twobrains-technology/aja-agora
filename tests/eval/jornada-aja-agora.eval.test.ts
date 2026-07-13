@@ -48,7 +48,6 @@ import {
 	buildCreditReactionDirective,
 	buildExperienceFirstDirective,
 	buildLanceReactionDirective,
-	buildQualifyStartYesDirective,
 	buildSearchSummaryDirective,
 	buildSimulatorDialDirective,
 	buildTimeframeReactionDirective,
@@ -299,20 +298,6 @@ async function respondToGate(conversationId: string, gate: Gate): Promise<GateRe
 			);
 			return { turns: [t] };
 		}
-		case "consent": {
-			// docx: botão pós-explicação de primeira vez = "Entendi, pode continuar".
-			const label = "Entendi, pode continuar";
-			await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-			await saveMessage(conversationId, "user", label, "web");
-			const t = await consumeTurn(
-				conversationId,
-				buildQualifyStartYesDirective(),
-				false,
-				"passo2:consent",
-				label,
-			);
-			return { turns: [t] };
-		}
 		case "credit": {
 			// Carta COERENTE com as capturas reais de auto (ITAÚ 54.832 / BB 50.000 /
 			// ÂNCORA 42.000) — pedir 100k com fixtures de ~50k faria a recomendação
@@ -549,7 +534,6 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		// a sequência pula de credit (valor) direto pra lance.
 		const GATE_SEQUENCE: Gate[] = [
 			"experience",
-			"consent",
 			"identify",
 			"credit",
 			"lance",
@@ -770,7 +754,6 @@ describeIfKey("CENÁRIO — A Jornada Aja Agora (passo 1→5, carro, primeira ve
 		const seq = allGates(turns);
 		const expected: Gate[] = [
 			"experience",
-			"consent",
 			"identify",
 			"credit",
 			"lance",

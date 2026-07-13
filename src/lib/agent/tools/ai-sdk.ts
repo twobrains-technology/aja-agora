@@ -15,12 +15,13 @@ import { type AdministradoraAdapter, getDiscoveryAdapter } from "@/lib/adapters"
 import { isTransientDiscoveryError } from "@/lib/adapters/bevi/bevi-errors";
 import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
+import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
-import { compareWithFinancing, DEFAULT_FINANCING_RATES } from "@/lib/finance/pmt";
+import { compareWithFinancing } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
 	getGroupDetailsInput,
@@ -49,6 +50,9 @@ export const groupCardSchema = z.object({
 	termMonths: z.number().int().describe("Prazo em meses"),
 	availableSlots: z.number().int().describe("Vagas disponiveis"),
 	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
+	// FIX-223: lance medio (R$) — copie LITERAL de search_groups/recommend_groups
+	// quando presente; omita o campo se a fonte nao trouxer (NUNCA invente).
+	avgBidValue: z.number().optional().describe("Lance medio do grupo em reais, quando a fonte traz"),
 });
 
 export const comparisonTableSchema = z.object({
@@ -155,6 +159,40 @@ export const recommendationSchema = z.object({
 		.describe("Detalhamento do score por fator"),
 });
 
+// FIX-228 (docs/02-cards-novos.md CARD 1) — input mínimo: a LLM só escolhe o
+// grupo (id LITERAL, mesmo padrão anti-fabricação de groupCardSchema); os
+// números (embeddedBidValue/netCredit) são coagidos server-side no runner a
+// partir da oferta REAL ancorada no turno (coerceEmbeddedBidPayload).
+export const embeddedBidSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card. NUNCA derive nem fabrique.",
+		),
+});
+
+// FIX-229 (docs/02-cards-novos.md CARD 3) — bifurcação A/B pra quem não vai
+// dar lance (gate `lance`, 3ª saída "só a parcela"). Input mínimo: a LLM só
+// escolhe o grupo; monthlyPayment/administradora são coagidos server-side.
+export const twoPathsSchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo escolhido, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
+// FIX-230 (docs/02-cards-novos.md CARD 2) — escassez comercial ("grupo quase
+// cheio"). Input mínimo: a LLM só escolhe o grupo; o número placebo 1-6 é
+// derivado no servidor via hash determinístico do groupId (nunca a LLM).
+export const scarcitySchema = z.object({
+	groupId: z
+		.string()
+		.describe(
+			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups/present_recommendation_card.",
+		),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -245,20 +283,24 @@ const compareWithFinancingSchema = z.object({
 		),
 });
 
-const recommendGroupsSchema = z.object({
+// FIX-257 (P1, veredito Fable r4 §P1 #1): creditMin/creditMax/budget/
+// desiredTermMonths vem de texto livre do usuario — mesma coercao string→
+// number de schemas.ts (searchGroupsInput/simulateQuotaInput). Ver o
+// comentario la pra raiz completa (espiral de negacao).
+export const recommendGroupsSchema = z.object({
 	category: z
 		.enum(["imovel", "auto", "moto", "servicos"])
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
-	creditMin: z.number().min(0).optional().describe("Valor minimo de credito em reais"),
-	creditMax: z.number().positive().optional().describe("Valor maximo de credito em reais"),
-	budget: z.number().positive().describe("Orcamento mensal do usuario em reais"),
+	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
+	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
+	budget: z.coerce.number().positive().describe("Orcamento mensal do usuario em reais"),
 	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
 	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
 	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual
 	// pra todos), e o ranking passa a priorizar parcela/contemplacao/taxa. NAO
 	// invente um prazo desejado; deixe 0 a menos que o usuario peca um prazo
 	// explicito num what-if pos-reveal.
-	desiredTermMonths: z
+	desiredTermMonths: z.coerce
 		.number()
 		.int()
 		.min(0)
@@ -319,6 +361,42 @@ export function __setDiscoveryRetryDelayForTests(ms: number | null): void {
 	discoveryRetryDelayMs = ms ?? 300;
 }
 
+// FIX-291 (a) — teto AGREGADO de tempo pra descoberta de UM turno, cruzando
+// client+adapter+tool. Root cause: cada camada tinha SEU orçamento isolado
+// (self-contract-client SIM_RETRY=4×SIM_TIMEOUT_MS=30s ~120s; adapter
+// offersForValue faz 2 chamadas sequenciais ~240s; e o retry silencioso daqui
+// reexecutava a função INTEIRA, dobrando pra ~480s teórico) — nenhuma camada
+// sabia do orçamento das outras. 45s fica folgado abaixo de qualquer timeout
+// de cliente real (browser/WhatsApp, tipicamente ~90s) — o usuário SEMPRE
+// recebe a degradação honesta antes do cliente dele desistir sozinho.
+let discoveryBudgetMs = 45_000;
+export function __setDiscoveryBudgetForTests(ms: number | null): void {
+	discoveryBudgetMs = ms ?? 45_000;
+}
+
+class DiscoveryBudgetExceededError extends Error {
+	constructor() {
+		super("Orcamento agregado de descoberta (client+adapter+tool) excedido neste turno.");
+		this.name = "DiscoveryBudgetExceededError";
+	}
+}
+
+/** Corre `p` contra o restante do orçamento agregado (`deadline`). Estourou
+ * ANTES de tentar → rejeita direto (nem chama `fn`, que já teria custo). O
+ * timer é `unref`'d — não impede o processo de encerrar se `p` ficar presa
+ * pra sempre (adapter que nunca resolve/rejeita, pior caso deste fix). */
+function withDiscoveryBudget<T>(p: Promise<T>, deadline: number): Promise<T> {
+	const remaining = deadline - Date.now();
+	if (remaining <= 0) return Promise.reject(new DiscoveryBudgetExceededError());
+	return Promise.race([
+		p,
+		new Promise<T>((_resolve, reject) => {
+			const timer = setTimeout(() => reject(new DiscoveryBudgetExceededError()), remaining);
+			if (typeof timer.unref === "function") timer.unref();
+		}),
+	]);
+}
+
 // FIX-70: search_groups model-facing ganha o opt-in `sweep` (varredura
 // multi-faixa). Schema estendido LOCAL (não toca schemas.ts) — `sweep` é só
 // faixa de valor (sem objetivo×lance). O adapter Bevi varre o alvo + vizinhas e
@@ -339,7 +417,10 @@ async function executeSearchGroups(
 	// `args` (incl. sweep) flui direto pro adapter — SearchGroupsParams.sweep.
 	const groups = await adapter.searchGroups(args);
 	// FIX-23: tool-result pro modelo em dieta — corta `totalParticipants` morto.
-	return { groups: groups.map(toModelGroupSummary), total: groups.length };
+	// FIX-289: `raw` (grupos completos, com tipoOferta/grupo/embeddedVariant)
+	// fica só pro cache por-turno do closure (buildConsorcioTools) reaproveitar
+	// em recommend_groups — NUNCA vaza pro tool-result do modelo.
+	return { result: { groups: groups.map(toModelGroupSummary), total: groups.length }, raw: groups };
 }
 
 /**
@@ -406,12 +487,21 @@ export async function executeSimulateQuota(
 		const relativeDelta = delta / details.creditValue;
 		if (delta > 1 && relativeDelta > 0.01) {
 			const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+			// FIX-255 (rodada 4, veredito Fable FINAL §N-E): a mensagem antiga dizia
+			// "ajustada de NOMINAL para SOLICITADO" — mas `simulation` (spreadado
+			// abaixo) é SEMPRE o nominal do grupo: o self-contract (bevi-self-
+			// contract-adapter.ts, simulateQuota) resolve a oferta pelo groupId e
+			// devolve os números fixos dela, `params.creditValue` nunca é usado pra
+			// resimular. A narração então apresentava o nominal como "o valor
+			// correto/pedido" quando na verdade o pedido foi IGNORADO — inversão
+			// semântica (CDC art. 30, oferta tem que ser clara sobre o que
+			// realmente foi simulado).
 			return {
 				...simulation,
 				creditAdjustmentNotice: {
 					requestedCreditValue: args.creditValue,
 					groupNominalCreditValue: details.creditValue,
-					message: `Simulacao ajustada de ${fmt(details.creditValue)} (nominal do grupo) para ${fmt(args.creditValue)} (valor solicitado). Informe esse ajuste ao usuario antes de apresentar o resultado.`,
+					message: `Voce pediu simular ${fmt(args.creditValue)}, mas esse grupo nao permite ajuste livre de credito — a simulacao abaixo e do valor NOMINAL do grupo (${fmt(details.creditValue)}), nao do valor pedido. Informe isso ao usuario antes de apresentar o resultado.`,
 				},
 			};
 		}
@@ -453,13 +543,19 @@ export async function executeGetGroupDetails(
 async function executeRecommendGroups(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof recommendGroupsSchema>,
-	opts: { hasLance?: boolean } = {},
+	opts: { hasLance?: boolean; seedGroups?: GroupSummary[] } = {},
 ) {
 	const { budget, desiredTermMonths, ...searchParams } = args;
-	const fallbackResult = await recommendWithFallback(adapter, searchParams);
+	// FIX-289: `seedGroups` (grupos que search_groups já buscou NESTE turno com
+	// parâmetros equivalentes) pula a rebusca estrita — só bate a Bevi de novo
+	// se a expansão de faixa for necessária (recommendWithFallback).
+	const fallbackResult = await recommendWithFallback(adapter, searchParams, opts.seedGroups);
 	const ranked = rankGroups(fallbackResult.groups, {
 		budget,
 		desiredTermMonths: desiredTermMonths ?? 0,
+		// FIX-276: âncora real da recomendação — o valor do bem PEDIDO, nunca o
+		// budget mensal (inventado pelo LLM, ver comentário em recommendation.ts).
+		creditMax: searchParams.creditMax,
 		// FIX-193: afinidade de lance no desempate (tipoOferta) — critério interno,
 		// vem do perfil (meta.qualifyAnswers.hasLance), NUNCA input da LLM.
 		hasLance: opts.hasLance,
@@ -483,7 +579,8 @@ async function executeRecommendGroups(
 export const consorcioTools = {
 	search_groups: tool({
 		description:
-			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar.",
+			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar. " +
+			"A busca ja cobre automaticamente os cenarios com e sem lance embutido (FIX-219) — nao precisa perguntar sobre lance antes de buscar.",
 		inputSchema: searchGroupsInput,
 		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,
 	}),
@@ -571,6 +668,33 @@ export const consorcioTools = {
 		inputSchema: recommendationSchema,
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+		},
+	}),
+
+	present_embedded_bid: tool({
+		description:
+			"Apresenta o card de lance embutido: explica que o usuário pode usar parte da própria carta como lance, sem desembolsar, mas o crédito recebido diminui. Use no passo 4 (reveal), antes da agulha, quando o usuário sinalizar pressa ou pouca reserva. Passe o groupId do plano recomendado — os valores (embeddedBidValue/netCredit) são calculados pelo sistema a partir da oferta real, você não precisa calcular nem inventar números.",
+		inputSchema: embeddedBidSchema,
+		execute: async (args: z.infer<typeof embeddedBidSchema>) => {
+			return `[Card de lance embutido apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
+	present_two_paths: tool({
+		description:
+			"Apresenta os DOIS caminhos pra quem não vai dar lance: (A) esperar o sorteio pagando só a parcela, (B) um lance pequeno opcional lá na frente. Use no gate lance, quando o usuário disser que não quer comprometer nada além da parcela. NÃO recomende nenhum dos dois — depois do card, devolva a decisão ao usuário ('não tem certo ou errado, depende de você ter pressa ou não'). PROIBIDO mencionar qualquer % de chance de contemplação. Passe o groupId do plano escolhido — a parcela é calculada pelo sistema.",
+		inputSchema: twoPathsSchema,
+		execute: async (args: z.infer<typeof twoPathsSchema>) => {
+			return `[Card de dois caminhos apresentado para o grupo ${args.groupId}]`;
+		},
+	}),
+
+	present_scarcity: tool({
+		description:
+			"Apresenta o card de escassez comercial ('Grupo quase cheio · restam apenas N') pro grupo escolhido. Use no fechamento, depois da estratégia, antes da proposta final. O número exibido é gerado pelo sistema a partir do grupo — NÃO invente, NÃO calcule, NÃO mencione o total de cotas do grupo (não é um dado que existe).",
+		inputSchema: scarcitySchema,
+		execute: async (args: z.infer<typeof scarcitySchema>) => {
+			return `[Card de escassez apresentado para o grupo ${args.groupId}]`;
 		},
 	}),
 
@@ -666,7 +790,7 @@ export const consorcioTools = {
 
 	present_decision_prompt: tool({
 		description:
-			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (contratar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
+			"Apresenta o card de decisão 'Esse plano faz sentido?' com 3 opções (reservar agora / ver outras opções / falar com especialista). Use UMA vez, DEPOIS de o usuário ter visto a recomendação + simulação completa e estar perto de decidir — fecha a etapa de avaliação. NÃO use durante a coleta nem antes da simulação. As 3 opções são fixas; passe apenas a administradora do plano recomendado pra contexto.",
 		inputSchema: z.object({
 			administradora: z
 				.string()
@@ -680,7 +804,7 @@ export const consorcioTools = {
 
 	present_contract_form: tool({
 		description:
-			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero contratar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra fechar, só preciso de uns dados rápidos'.",
+			"Apresenta o formulário de CONTRATAÇÃO (CPF + celular + aceite LGPD) que cria a proposta REAL na administradora. Use SÓ depois que o usuário escolheu 'Sim, quero reservar agora' no card de decisão (passo 5 'Contratar' da jornada). NUNCA peça CPF por texto — sempre via este card. Passe só a administradora do plano escolhido pra contexto. Não escreva 'preencha o formulário', diga algo natural tipo 'pra confirmar sua reserva, só preciso de uns dados rápidos'.",
 		inputSchema: z.object({
 			administradora: z
 				.string()
@@ -912,6 +1036,9 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_decision_prompt",
 	"present_contract_form",
 	"present_contemplation_dial",
+	"present_embedded_bid",
+	"present_two_paths",
+	"present_scarcity",
 ]);
 
 // ============================================================================
@@ -966,6 +1093,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// lido pelas tools de descoberta (curto-circuito) e de apresentação (FIX-187,
 	// não propor sobre dado que não carregou).
 	let discoveryFailed = false;
+
+	// FIX-289: grupos REAIS que search_groups já buscou NESTE turno — closure
+	// fresca por turno (mesmo padrão de discoveryFailed/hasLance). recommend_groups
+	// reaproveita quando os parâmetros (category/creditMin/creditMax) batem, em
+	// vez de rebuscar do zero na Bevi (round-trip redundante). Parâmetros
+	// divergentes (ex.: faixa de expansão) continuam disparando busca real —
+	// isto NÃO paraleliza chamadas à Bevi, só elimina uma rebusca desnecessária.
+	let lastSearchGroups: { params: SearchGroupsParams; groups: GroupSummary[] } | null = null;
+	const sameSearchParams = (a: SearchGroupsParams, b: SearchGroupsParams): boolean =>
+		a.category === b.category && a.creditMin === b.creditMin && a.creditMax === b.creditMax;
 
 	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
 	const getShownGroups = () => {
@@ -1151,24 +1288,34 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	): Promise<T | { __discoveryFailed: true; error: string }> => {
 		// Curto-circuito: a descoberta já falhou neste turno → não martela a Bevi.
 		if (discoveryFailed) return discoveryFailedResult(toolName);
+		// FIX-291 (a): deadline ÚNICO pra esta invocação — 1ª tentativa + retry
+		// compartilham o MESMO teto agregado (nunca somam orçamentos independentes).
+		const deadline = Date.now() + discoveryBudgetMs;
 		try {
-			return await fn();
+			return await withDiscoveryBudget(fn(), deadline);
 		} catch (err) {
 			logDiscoveryError(toolName, "first", err);
-			// Erro transitório → 1 retry silencioso (determinístico, não o modelo).
-			if (isTransientDiscoveryError(err)) {
+			const remaining = deadline - Date.now();
+			// Erro transitório E ainda sobra orçamento → 1 retry silencioso
+			// (determinístico, não o modelo). Sem orçamento restante, retentar não
+			// ganha nada — só atrasa mais a degradação honesta (root cause: o
+			// retry daqui reexecutava a função inteira, dobrando o pior caso).
+			if (isTransientDiscoveryError(err) && remaining > 0) {
 				if (discoveryRetryDelayMs > 0) {
-					await new Promise((resolve) => setTimeout(resolve, discoveryRetryDelayMs));
+					await new Promise((resolve) =>
+						setTimeout(resolve, Math.min(discoveryRetryDelayMs, remaining)),
+					);
 				}
 				try {
-					return await fn();
+					return await withDiscoveryBudget(fn(), deadline);
 				} catch (retryErr) {
 					logDiscoveryError(toolName, "retry", retryErr);
 					discoveryFailed = true;
 					return discoveryFailedResult(toolName);
 				}
 			}
-			// Erro duro (config/4xx): nunca cura no retry → fallback direto.
+			// Erro duro (config/4xx) ou orçamento esgotado: nunca cura no retry →
+			// fallback direto.
 			discoveryFailed = true;
 			return discoveryFailedResult(toolName);
 		}
@@ -1182,7 +1329,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
-			return runDiscovery("search_groups", () => executeSearchGroups(adapter, args));
+			return runDiscovery("search_groups", async () => {
+				const { result, raw } = await executeSearchGroups(adapter, args);
+				// FIX-289: cacheia os grupos crus pro recommend_groups reaproveitar
+				// se chamado no mesmo turno com parâmetros equivalentes.
+				lastSearchGroups = { params: args, groups: raw };
+				return result;
+			});
 		},
 	});
 
@@ -1239,9 +1392,16 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
+			// FIX-289: reaproveita search_groups do MESMO turno se os parâmetros
+			// de busca baterem — evita rebuscar do zero na Bevi.
+			const { budget: _budget, desiredTermMonths: _desiredTermMonths, ...searchParams } = args;
+			const seedGroups =
+				lastSearchGroups && sameSearchParams(lastSearchGroups.params, searchParams)
+					? lastSearchGroups.groups
+					: undefined;
 			// FIX-193: hasLance vem do contexto da request (perfil), não da LLM.
 			return runDiscovery("recommend_groups", () =>
-				executeRecommendGroups(adapter, args, { hasLance }),
+				executeRecommendGroups(adapter, args, { hasLance, seedGroups }),
 			);
 		},
 	});

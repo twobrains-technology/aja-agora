@@ -14,7 +14,7 @@ describe("decision_prompt — opções canônicas do doc", () => {
 			"especialista",
 		]);
 		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
-			"Sim, quero contratar agora",
+			"Sim, quero seguir agora",
 			"Quero ver outras opções",
 			"Quero falar com um especialista da Aja Agora",
 		]);
@@ -58,18 +58,19 @@ describe("prompt — roteamento das 3 ações do card de decisão", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(/falar com um especialista[\s\S]{0,80}suggest_handoff/i);
 	});
 
-	it("FIX-34 — 'contratar agora' é gatilho de present_contract_form (passo 5), NÃO present_lead_form", () => {
-		expect(SPECIALIST_BASE_PROMPT).toMatch(/contratar agora/i);
-		// Jornada canônica (passo 5): "Sim, quero contratar agora" → fechamento
-		// self-service via present_contract_form (proposta real). NUNCA lead_form.
+	it("FIX-34/DV-8 — 'seguir agora' é gatilho de present_contract_form (passo 5), NÃO present_lead_form", () => {
+		// DV-8 (QA 2026-07-11) supera o FIX-216 (Ata 2026-07-04, que pôs "reservar"):
+		// "reserva" volta a valer só PÓS-fechamento; o gatilho de avanço vira "seguir
+		// agora" → present_contract_form (proposta real). NUNCA lead_form.
+		expect(SPECIALIST_BASE_PROMPT).toMatch(/seguir agora/i);
 		expect(
-			/contratar[\s\S]{0,600}present_contract_form|present_contract_form[\s\S]{0,600}contratar/i.test(
+			/seguir[\s\S]{0,600}present_contract_form|present_contract_form[\s\S]{0,600}seguir/i.test(
 				SPECIALIST_BASE_PROMPT,
 			),
 		).toBe(true);
 		// E o gatilho de avanço não pode estar amarrado a present_lead_form.
 		expect(
-			/contratar[\s\S]{0,600}present_lead_form|present_lead_form[\s\S]{0,600}contratar/i.test(
+			/seguir[\s\S]{0,600}present_lead_form|present_lead_form[\s\S]{0,600}seguir/i.test(
 				SPECIALIST_BASE_PROMPT,
 			),
 		).toBe(false);

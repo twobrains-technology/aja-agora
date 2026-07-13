@@ -23,8 +23,6 @@ import {
 	buildExperienceReturningDirective,
 	buildGroupSelectedDirective,
 	buildLanceReactionDirective,
-	buildQualifyStartMoreDirective,
-	buildQualifyStartYesDirective,
 	buildRangePickerDirective,
 	buildSimulateDirective,
 	buildTimeframeReactionDirective,
@@ -100,8 +98,6 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 
 	if (replyId === "handoff_confirm") return handleHandoffConfirm(ctx);
 	if (replyId === "handoff_decline") return handleHandoffDecline(ctx);
-	if (replyId === "qualify_start_yes" || replyId === "qualify_start_more")
-		return handleQualifyStart(ctx);
 	if (replyId.startsWith("category_")) return handleCategory(ctx);
 	if (replyId.startsWith("experience_")) return handleExperience(ctx);
 	if (replyId.startsWith("timeframe_")) return handleTimeframe(ctx);
@@ -203,6 +199,10 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
+		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
+		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
+		await sendFechoPedirOi(conversationId).catch(() => {});
 	} catch {
 		await sendTextMessage(
 			from,
@@ -303,26 +303,6 @@ async function handleExperience(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
-async function handleQualifyStart(ctx: Ctx): Promise<boolean> {
-	const { from, replyId, conversationId } = ctx;
-	const meta = await loadMeta(conversationId);
-	await recordUserClick(ctx);
-
-	if (!meta.currentCategory) return true;
-
-	if (replyId === "qualify_start_yes") {
-		await persistMeta(conversationId, { ...meta, qualifyConsented: true });
-		await runAgentDirective(from, conversationId, buildQualifyStartYesDirective());
-		return true;
-	}
-
-	// pendingFollowUp keeps nextGate at doubts-wait until the user types
-	// their question and the AI answers; then the post-AI hook clears it.
-	await persistMeta(conversationId, { ...meta, pendingFollowUp: true });
-	await runAgentDirective(from, conversationId, buildQualifyStartMoreDirective());
-	return true;
-}
-
 // FIX-120 (paridade FIX-115): o gate credit no WhatsApp virou CONVERSA — não há
 // mais lista de faixas, logo nenhum reply `credit_*` chega. `handleCredit` (que
 // resolvia a faixa e gravava range.max) foi aposentado; o valor é dito por texto
@@ -396,20 +376,35 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		"@/lib/agent/orchestrator/directives"
 	);
 	if (resolved.value === "yes") {
+		// FIX-241 (âncora de dinheiro): mesma narração da web — "cálculo único,
+		// duas apresentações" (spec 03).
+		const { computeMoneyAnchor } = await import("@/lib/agent/orchestrator/dial-payload");
+		const moneyAnchor =
+			computeMoneyAnchor(meta.recommendedOffer, {
+				monthlySavings: meta.qualifyAnswers?.monthlySavings,
+				lanceValue: meta.qualifyAnswers?.lanceValue,
+				fgtsValue: meta.qualifyAnswers?.fgtsValue,
+			}) ?? undefined;
 		await runAgentDirective(
 			from,
 			conversationId,
-			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora }),
+			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora, moneyAnchor }),
 		);
 		return true;
 	}
 	if (!updated.decisionDispatched) {
 		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
-		await runAgentDirective(
-			from,
-			conversationId,
-			buildDecisionPromptDirective({ administradora: meta.recommendedAdministradora }),
-		);
+		// FIX-253 (rodada 4, veredito Fable FINAL §3): o directive SÓ narra — o
+		// card de decisão é emissão SERVER-SIDE determinística (nunca mais
+		// tool-call do LLM, present_decision_prompt saiu do toolset em
+		// tool-policy.ts). Emite explícito aqui — mesma paridade do web
+		// (route.ts, ramo simulator-offer).
+		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
+		const { buildDecisionPromptCard } = await import("@/lib/agent/orchestrator/server-cards");
+		const wa = artifactToWhatsApp("decision_prompt", buildDecisionPromptCard(updated).payload);
+		if (wa?.type === "interactive" && wa.interactive) {
+			await sendInteractiveMessage(from, wa.interactive);
+		}
 	}
 	return true;
 }
@@ -448,12 +443,29 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 		// lanceValue veio do gate lance-value (resposta do usuário, docx).
 		lanceValue: q.lanceValue,
 	};
-	await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+	const updated = { ...meta, qualifyAnswers: merged };
+	await persistMeta(conversationId, updated);
 	await recordUserClick(ctx);
 
 	if (!meta.currentCategory) return true;
 
-	await runSearchSummaryWithOrchestrator({ from, conversationId });
+	// FIX-215 (Ata 2026-07-04): lance agora é PÓS-reveal — a busca JÁ ocorreu
+	// (é o pré-requisito pra este gate existir, ver qualify-state.ts). Despacha
+	// o próximo passo REAL (simulator-offer/decision), nunca re-dispara a busca.
+	const gate = nextGate(updated);
+	if (gate === "search") {
+		await runSearchSummaryWithOrchestrator({ from, conversationId });
+	} else if (gate === "simulator-offer") {
+		// Idempotência (FIX-215): despachando o simulator-offer por AQUI (e não via
+		// index.ts), marca o dispatch — senão, se o usuário responder o card por
+		// TEXTO, nextGate recomputaria simulator-offer com a flag ainda false e o
+		// card sairia 2× (o "sim" do usuário não seria honrado).
+		const dispatched = { ...updated, simulatorOfferDispatched: true };
+		await persistMeta(conversationId, dispatched);
+		await fireGate(from, conversationId, gate, dispatched);
+	} else {
+		await fireGate(from, conversationId, gate, updated);
+	}
 	return true;
 }
 

@@ -96,7 +96,7 @@ describe("FIX-122 — handleDocumentInbound (paridade com o web: mesmo uploadCon
 		expect(replies[0].toLowerCase()).toContain("verso");
 	});
 
-	it("2ª foto (frente já enviada) → sobe no verso e confirma ficha completa", async () => {
+	it("2ª foto (frente já enviada) → sobe no verso e confirma reserva confirmada", async () => {
 		const { deps, uploads, replies, persisted } = makeDeps({
 			loadConversation: async () => ({
 				id: "conv-1",
@@ -110,7 +110,8 @@ describe("FIX-122 — handleDocumentInbound (paridade com o web: mesmo uploadCon
 			"identidade_frente",
 			"identidade_verso",
 		]);
-		expect(replies[0].toLowerCase()).toContain("completa");
+		// FIX-216 (Ata 2026-07-04): "reserva confirmada", nunca "ficha completa".
+		expect(replies[0].toLowerCase()).toContain("confirmada");
 	});
 
 	it("foto extra depois de tudo enviado → confirma sem re-subir (idempotente)", async () => {
@@ -126,7 +127,7 @@ describe("FIX-122 — handleDocumentInbound (paridade com o web: mesmo uploadCon
 
 		expect(uploads).toHaveLength(0); // não re-sobe
 		expect(replies).toHaveLength(1); // mas responde (nunca silêncio)
-		expect(replies[0].toLowerCase()).toContain("completa");
+		expect(replies[0].toLowerCase()).toContain("confirmada");
 	});
 
 	it("download da mídia falha → responde amigável, sem chamar upload", async () => {

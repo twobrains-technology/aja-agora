@@ -29,7 +29,11 @@ export type QualifyAnswers = {
 	prazoMeses?: number;
 	/** Eixo Bevi derivado do prazo escolhido (jornada do doc 2026-05-29). */
 	objetivo?: Objetivo;
-	hasLance?: "yes" | "maybe" | "no";
+	/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): 3ª saída do gate
+	 * `lance` — "não quero comprometer nada além da parcela". Pula lance-value/
+	 * lance-embutido/simulator-offer (dial); o agente chama `present_two_paths`
+	 * (tool do bloco-cards-ui) e devolve a decisão ao usuário. */
+	hasLance?: "yes" | "maybe" | "no" | "so_parcela";
 	/** Valor aproximado do lance que o usuário pretende ofertar (em reais).
 	 * Capturado no sub-fluxo de lance embutido quando hasLance="yes". Bevi: valorDoLance. */
 	lanceValue?: number;
@@ -38,6 +42,29 @@ export type QualifyAnswers = {
 	lanceEmbutido?: boolean;
 	/** Percentual do lance embutido aceito (Bevi aceita 30 ou 50). Default 30. */
 	lanceEmbutidoPercent?: 30 | 50;
+	/** FIX-233 — gate `desire` (não bloqueante): bem específico que o usuário
+	 * tem em mente ("um Corolla", "apê de 2 quartos"). Espelhado no card/copy
+	 * de forma livre, não normalizado. */
+	desiredItem?: string;
+	/** FIX-233 — motivação/gatilho do momento ("carro vive na oficina"). Vira
+	 * contexto injetado no prompt e é espelhada UMA vez, não a cada turno. */
+	motivation?: string;
+	/** FIX-233/FIX-241 — quanto o usuário consegue juntar por mês pro lance,
+	 * quando não tem reserva hoje mas pretende ir juntando ("junto uns 4 mil
+	 * por mês"). Ancora a agulha (âncora de dinheiro) no mês em que o BOLSO
+	 * cobre o lance necessário, em vez do prazo desejado (docs/03). */
+	monthlySavings?: number;
+	/** FIX-241 (spec 03 "Âncora de dinheiro") — FGTS disponível (vertical
+	 * imóvel), entrada pontual que abate o bolso necessário direto (vai ao
+	 * vendedor) — maior acelerador da âncora nessa vertical. */
+	fgtsValue?: number;
+	/** FIX-284 — valor aproximado do bem MENCIONADO informalmente no turno do
+	 * gate `desire` (ex.: "Um carro, uns 70 mil"), antes de a agulha formal do
+	 * `credit` estar ativa. Captura oportunista, primeira ocorrência apenas —
+	 * NUNCA substitui `creditMax` (guard `activeGateAtTurnStart` do FIX-279),
+	 * só alimenta a copy de CONFIRMAÇÃO do gate `credit` (`gateQuestion`) em
+	 * vez de perguntar o valor do zero. */
+	creditMentionedAtDesire?: number;
 };
 
 import type { NavState } from "./orchestrator/navigation";
@@ -55,6 +82,26 @@ export type ConversationMetadata = {
 	 * Push em transições major (gate avançado, persona trocada, artefato chave).
 	 * Pop em detectBackIntent. Cap em NAV_STACK_CAP estados (descarta o mais antigo). */
 	navigationStack?: NavState[];
+	/** FIX-233 — gate `desire` já foi disparado nesta conversa (não bloqueante:
+	 * uma vez marcado, `nextGate` nunca mais o emite, respondido ou não). Mesmo
+	 * padrão de `consentOffered`/`simulatorOfferDispatched`. */
+	desireAsked?: boolean;
+	/** FIX-274 — o beat do MOTIVO ("por que agora", 2ª pergunta do gate desire) já
+	 * foi ativado nesta conversa. Marcado no runner quando o funil segura pra o LLM
+	 * perguntar o motivo (`shouldAskMotive`). Torna o beat NÃO-bloqueante: se o motivo
+	 * não vier, o funil segue mesmo assim (mesmo padrão de `desireAsked`). */
+	motivationAsked?: boolean;
+	/** FIX-285 — o gate `desire` já recebeu uma RESPOSTA do usuário nesta
+	 * conversa, independente de o item citado ter sido específico o bastante
+	 * pra virar `qualifyAnswers.desiredItem` (o analyzer devolve `desiredItem:
+	 * null` por design quando o usuário só nomeia a categoria genérica, ex.:
+	 * "um carro"). Marcado em `analyze.ts` no primeiro turno de usuário após
+	 * `desireAsked` — substitui `Boolean(qualifyAnswers.desiredItem)` como
+	 * precondição de `shouldAskMotive`, que falhava nesse cenário. */
+	desireAnswered?: boolean;
+	/** @deprecated FIX-274 — o gate `consent` saiu do funil (decisão do Kairo,
+	 * 2026-07-11: "remover, fiel ao mockup"). Campo mantido só pra não quebrar
+	 * conversas legadas em jsonb; não é mais lido/escrito por nenhum caminho vivo. */
 	qualifyConsented?: boolean;
 	/** Set when consent gate fires the first time. Once set, the gate never re-fires —
 	 * user must click "Bora!" / "Entender mais" buttons or volunteer info that triggers
@@ -101,6 +148,12 @@ export type ConversationMetadata = {
 	 * emitido (padrão consentOffered) — a oferta acontece UMA vez, na sequência
 	 * do reveal, antes do card de decisão. */
 	simulatorOfferDispatched?: boolean;
+	/** FIX-260 (rodada 5, veredito Fable r4): resposta AFIRMATIVA por TEXTO LIVRE
+	 * ao gate simulator-offer já foi processada (emitiu o directive do dial) —
+	 * idempotência pra não reabrir o dial em turnos seguintes com intent
+	 * afirmativo/neutro dentro da mesma janela pré-decision. Espelha
+	 * decisionDispatched/consentOffered (mesmo padrão). */
+	simulatorOfferAnswered?: boolean;
 	/** Idempotency guard do card de decisão (present_decision_prompt). Espelha
 	 * searchDispatched: o orquestrador dirige o card UMA vez, depois o passo 5
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
@@ -128,6 +181,11 @@ export type ConversationMetadata = {
 		creditValue: number;
 		termMonths: number;
 		monthlyPayment: number;
+		/** FIX-246 (rodada 3, Fable r2): id do grupo real ancorado no reveal —
+		 * sobrevive no meta pra emissão SERVER-SIDE do card `scarcity` (pós-
+		 * reveal, sem depender de um `RevealGroupIndex` de turno). Nunca
+		 * fabricado — ausente quando o artifact-âncora não o carrega. */
+		groupId?: string;
 	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
@@ -136,6 +194,13 @@ export type ConversationMetadata = {
 	 * 'documentos'). Pós-Parabéns o agente não re-apresenta contract_form
 	 * (BUG-POS-FECHAMENTO-NAO-TERMINAL, E2E real 2026-06-04). */
 	contractClosed?: boolean;
+	/** FIX-244 (rodada 2, Fable r1, gap #9): marca que `present_contract_form`
+	 * JÁ apareceu nesta conversa (runner.ts, no mesmo padrão hardening do
+	 * `decisionDispatched`). O handler `contract-submit` (route.ts) EXIGE essa
+	 * flag antes de criar proposta real — sem isso, o servidor aceitava o
+	 * submit mesmo numa conversa que nunca viu o formulário (defesa em
+	 * profundidade, mesma família do guard `revealCompleted` do FIX-12). */
+	contractFormDispatched?: boolean;
 	/** Set when AI calls suggest_handoff. Pauses gates/search until user confirms or declines. */
 	handoffSuggested?: boolean;
 	handoffReason?: string;

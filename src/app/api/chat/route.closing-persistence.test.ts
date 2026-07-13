@@ -138,6 +138,10 @@ const CLOSED_META: ConversationMetadata = {
 	qualifyAnswers: { creditMax: 46000, prazoMeses: 8 },
 	revealCompleted: true,
 	recommendedAdministradora: "CANOPUS",
+	// FIX-244: os testes abaixo simulam a jornada NORMAL, onde o usuário JÁ viu
+	// o present_contract_form antes de submeter — sem isso o guard de defesa em
+	// profundidade (novo describe FIX-244 mais abaixo) bloquearia o fechamento.
+	contractFormDispatched: true,
 };
 
 const REAL_OFFER = {
@@ -255,8 +259,10 @@ describe("FIX-11 — handlers do fechamento persistem a mensagem assistant", () 
 
 		const assistants = await assistantMessages(convId);
 		expect(assistants.length).toBeGreaterThanOrEqual(1);
+		// FIX-216 (Ata 2026-07-04): terminologia "reserva de cota", nunca "proposta
+		// registrada/contratação" — o usuário nunca vê "fechado/contratado".
 		expect(assistants.map((m) => m.content).join("\n")).toMatch(
-			/proposta j[áa] est[áa] registrada/,
+			/reserva de cota j[áa] est[áa] confirmada/,
 		);
 	});
 });
@@ -334,6 +340,94 @@ describe("FIX-12 — defesa em profundidade: contract-submit pré-reveal NÃO cr
 			convId,
 			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
 			"Continuar com segurança",
+		);
+
+		expect(fulfillmentRef.startContract).toHaveBeenCalledTimes(1);
+	});
+});
+
+// FIX-244 (rodada 2, Fable r1, gap #9): o Fable fechou uma proposta atirando
+// contract-submit CRU numa conversa que nunca viu o present_contract_form —
+// faltava validar o estado do funil (só revealCompleted era checado, FIX-12).
+describe("FIX-244 — defesa em profundidade: contract-submit sem contract_form emitido NÃO cria proposta", () => {
+	let convId: string;
+
+	beforeEach(async () => {
+		// revealCompleted:true (passou pelo guard do FIX-12), mas o
+		// present_contract_form NUNCA apareceu nesta conversa — exatamente o
+		// estado que o Fable explorou atirando o POST sem o form na tela.
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				metadata: {
+					currentPersona: "auto",
+					currentCategory: "auto",
+					expertiseLevel: "neutro",
+					qualifyAnswers: { creditMax: 46000, prazoMeses: 8 },
+					revealCompleted: true,
+					recommendedAdministradora: "CANOPUS",
+				} satisfies ConversationMetadata,
+			})
+			.returning();
+		convId = c.id;
+		fulfillmentRef.startContract.mockReset();
+	});
+
+	afterEach(async () => {
+		await cleanup(convId);
+	});
+
+	it("sem contractFormDispatched: startContract NUNCA é chamado (proposta real + bureau sem o usuário ter visto o form)", async () => {
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"contract-submit cru, sem nunca ter visto o formulário",
+		);
+
+		expect(
+			fulfillmentRef.startContract,
+			"contract-submit sem present_contract_form ter sido apresentado criou proposta REAL — " +
+				"o guard (FIX-244) tem que bloquear igual ao FIX-12 faz pra revealCompleted",
+		).not.toHaveBeenCalled();
+	});
+
+	it("recusa é comunicada e PERSISTIDA (não vira ghost no histórico — regra do FIX-11)", async () => {
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"contract-submit cru, sem nunca ter visto o formulário",
+		);
+
+		const assistants = await assistantMessages(convId);
+		expect(assistants.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("com contractFormDispatched=true: startContract roda normal (fluxo legítimo não regrediu)", async () => {
+		await db
+			.update(conversations)
+			.set({
+				metadata: {
+					currentPersona: "auto",
+					currentCategory: "auto",
+					expertiseLevel: "neutro",
+					qualifyAnswers: { creditMax: 46000, prazoMeses: 8 },
+					revealCompleted: true,
+					recommendedAdministradora: "CANOPUS",
+					contractFormDispatched: true,
+				} satisfies ConversationMetadata,
+			})
+			.where(eq(conversations.id, convId));
+		fulfillmentRef.startContract.mockResolvedValue({
+			proposalId: "prop-ok-2",
+			offer: REAL_OFFER,
+			noOffer: false,
+		});
+
+		await postAction(
+			convId,
+			{ kind: "contract-submit", cpf: "39053344705", celular: "62999990000", lgpd: true },
+			"Enviei meus dados pra contratar",
 		);
 
 		expect(fulfillmentRef.startContract).toHaveBeenCalledTimes(1);

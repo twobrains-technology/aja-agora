@@ -7,6 +7,7 @@ import { useChatContext } from "@/lib/chat/provider";
 import type { GroupCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
+import { AdministradoraLogo } from "./administradora-logo";
 
 // Categorias mapeadas à paleta da marca (tokens --cat-*, com variante dark
 // embutida): Imóvel=azul · Automóvel=cyan · Moto=coral · Serviços=navy.
@@ -89,23 +90,38 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 					>
 						{category.label}
 					</span>
-					<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+					<div className="flex items-center gap-1.5">
+						{/* FIX-222 (Ata 2026-07-04) — logo da administradora; fallback
+						    gracioso (iniciais) enquanto os assets reais são PENDENTE. */}
+						<AdministradoraLogo
+							administradora={payload.administradora}
+							logoUrl={payload.logoUrl}
+							className="size-5 shrink-0 text-[9px]"
+						/>
+						<p className="text-xs text-muted-foreground truncate m-0">{payload.administradora}</p>
+					</div>
 				</div>
 
 				{/* Body */}
 				<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
-					{/* Credit value */}
+					{/* Credit value — hero (é o que o cliente compra) */}
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p className="aja-num text-xl font-bold leading-tight text-foreground mt-0.5">
+						<p
+							data-testid="group-card-hero-credit"
+							className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]"
+						>
 							{formatBRL(payload.creditValue)}
 						</p>
 					</div>
 
-					{/* Monthly payment — hero number, blue */}
+					{/* Monthly payment — discreta, logo abaixo da carta */}
 					<div>
 						<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-						<p className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]">
+						<p
+							data-testid="group-card-secondary-payment"
+							className="aja-num text-xl font-semibold leading-tight text-foreground mt-0.5"
+						>
 							{formatBRL(payload.monthlyPayment)}
 						</p>
 					</div>
@@ -126,13 +142,30 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 							<p className="text-xs text-muted-foreground m-0">Vagas</p>
 							<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
 						</div>
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Contemplação</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">
-								{formatPercent(payload.contemplationRate)}
-							</p>
-						</div>
+						{/* FIX-231: `contemplationRate` é, na origem, `monthlyAwardedQuotas`
+						    (contagem real de contemplados/mês, offer-mapper.ts:132-133) — NUNCA
+						    uma fração. Mostrar como "%" era enganoso; segue o mesmo padrão de
+						    contagem do recommendation-card. Ausente/0 → linha omitida. */}
+						{payload.contemplationRate > 0 && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">
+									{payload.contemplationRate} por mês
+								</p>
+							</div>
+						)}
 					</div>
+
+					{/* FIX-231 — lance médio vira linha discreta, fora do grid (não é
+					    protagonista). Só com dado real (D11: nunca fabrica). */}
+					{payload.avgBidValue != null && (
+						<p
+							data-testid="group-card-lance-medio"
+							className="text-xs text-muted-foreground m-0 -mt-1"
+						>
+							Lance médio {formatBRL(payload.avgBidValue)} ⌄
+						</p>
+					)}
 
 					{/* CTA ghost */}
 					<Button

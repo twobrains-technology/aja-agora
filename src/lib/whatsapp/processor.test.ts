@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 
 // vi.mock hoisting workaround — usar vi.hoisted pra compartilhar mocks entre factory e tests.
 const mocks = vi.hoisted(() => ({
@@ -46,6 +47,8 @@ vi.mock("@/lib/conversation/meta", () => ({
 	persistMeta: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { db } from "@/db";
+import { metaOf } from "@/lib/conversation/meta";
 import { processTextMessage } from "./processor";
 
 describe("WhatsApp processor — paridade web + early-return 'voltar' (bug #06 #20)", () => {
@@ -111,5 +114,60 @@ describe("WhatsApp processor — paridade web + early-return 'voltar' (bug #06 #
 		// Texto que normalmente iria pro orchestrator não vaza pra vendas.
 		expect(mocks.handleMesaCopilotMock).toHaveBeenCalledTimes(1);
 		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
+	});
+});
+
+// FIX-217 (Ata 2026-07-04, item 9 + inbox 2026-07-01-whatsapp-identify-gate) —
+// no gate identify, texto sem CPF (tentativa de pular, pergunta) NUNCA pode
+// cair no pipeline geral do agente: o gate é DETERMINÍSTICO e FORÇADO (Lei 4).
+describe("Gate identify determinístico e forçado (FIX-217)", () => {
+	// Describe irmão do bloco acima — NÃO herda o beforeEach dele. Reseta aqui
+	// pra não vazar isMesaAttendantPhoneMock=true deixado por um teste anterior
+	// (achado real: sem isto, "acha logo os grupos" roteava pro copiloto de mesa
+	// em vez do gate identify, mascarando 100% dos asserts como falso-negativo).
+	beforeEach(() => {
+		mocks.sendTextMock.mockClear();
+		mocks.processOrchestratorMock.mockClear();
+		mocks.isMesaAttendantPhoneMock.mockClear();
+		mocks.isMesaAttendantPhoneMock.mockResolvedValue(false);
+	});
+
+	const IDENTIFY_META = {
+		desireAsked: true,
+		experiencePrev: "first",
+		qualifyConsented: true,
+		identityCollected: false,
+	} as ConversationMetadata;
+
+	it("texto que tenta pular a identidade ('acha logo os grupos') NUNCA chama o orchestrator — reemite o pedido de CPF", async () => {
+		vi.mocked(db.query.conversations.findFirst).mockResolvedValueOnce({
+			id: "conv-identify-fix217",
+			metadata: IDENTIFY_META,
+		} as never);
+		vi.mocked(metaOf).mockReturnValueOnce(IDENTIFY_META);
+
+		await processTextMessage("5562999998888", "acha logo os grupos pra mim", "Op", "msgID1");
+
+		// Invariante dura: sem identidade, o agente NUNCA roda (search_groups vive
+		// atrás do orchestrator) — a trava acontece ANTES, aqui no processor.
+		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
+		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
+		const sentText = (mocks.sendTextMock.mock.calls[0]?.[1] as string).toLowerCase();
+		expect(sentText).toMatch(/cpf/);
+		// Nunca narra avanço/busca sem o CPF coletado (o achado real do inbox).
+		expect(sentText).not.toMatch(/bora ver|vou buscar|encontrei|opç(õ|o)es reais|encaixa na sua faixa/);
+	});
+
+	it("pergunta livre ('por que precisam disso?') também reemite o CPF, sem abrir conversa livre", async () => {
+		vi.mocked(db.query.conversations.findFirst).mockResolvedValueOnce({
+			id: "conv-identify-fix217",
+			metadata: IDENTIFY_META,
+		} as never);
+		vi.mocked(metaOf).mockReturnValueOnce(IDENTIFY_META);
+
+		await processTextMessage("5562999998888", "por que vocês precisam do meu CPF?", "Op", "msgID2");
+
+		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
+		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
 	});
 });

@@ -129,7 +129,7 @@ describe("offer_confirm — terminal paridade web (CA-9)", () => {
 		expect(closedPersist, "deve setar contractClosed=true").toBeTruthy();
 
 		const allSent = mocks.sendText.mock.calls.map((c) => c[1]).join("\n");
-		expect(allSent).toMatch(/contratando um consórcio da ANCORA/i); // reforço literal
+		expect(allSent).toMatch(/cota da ANCORA está reservada/i); // reforço literal (FIX-278: terminologia reserva de cota)
 		expect(allSent).toMatch(/Parabéns/i);
 		expect(allSent).toContain(CONFIRM_RESULT.consortiumProposalLink); // assinatura
 		expect(mocks.sendContractSummary).toHaveBeenCalledWith(CONV_ID);

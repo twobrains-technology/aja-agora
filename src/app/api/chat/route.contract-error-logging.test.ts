@@ -75,6 +75,8 @@ const CLOSED_META: ConversationMetadata = {
 	qualifyAnswers: { creditMax: 46000, prazoMeses: 8 },
 	revealCompleted: true,
 	recommendedAdministradora: "ITAU",
+	// FIX-244: guard exige que present_contract_form já tenha aparecido.
+	contractFormDispatched: true,
 };
 
 describe("contract-submit loga o erro do startContract (bug dev 2026-06-11)", () => {

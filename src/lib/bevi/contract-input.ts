@@ -7,6 +7,7 @@
 // decifrados). Esta função não loga, não persiste — só monta o objeto pro gateway.
 
 import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
+import { normalizeAdministradora } from "@/lib/agent/orchestrator/choose-offer";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { StartContractInput } from "./fulfillment";
 
@@ -33,6 +34,19 @@ export function buildStartContractInput(
 ): StartContractInput {
 	const q = meta.qualifyAnswers ?? {};
 	const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
+	// FIX-251 (P0, veredito Fable FINAL §N-A, defesa em profundidade): o
+	// runner já re-ancora recommendedOffer/recommendedAdministradora juntos no
+	// fechamento (contract_form) e no what-if (choose-offer.ts), mas se por
+	// algum caminho não coberto os dois campos divergirem — snapshot de UMA
+	// administradora, recommendedAdministradora de OUTRA — o creditValue do
+	// snapshot é de uma oferta que o usuário JÁ abandonou. Nunca usa esse
+	// número stale: cai pro teto pedido (creditMax/creditMin), nunca pra
+	// carta de uma administradora diferente da confirmada.
+	const offerMatchesCurrentAdmin =
+		!meta.recommendedOffer?.administradora ||
+		!meta.recommendedAdministradora ||
+		normalizeAdministradora(meta.recommendedOffer.administradora) ===
+			normalizeAdministradora(meta.recommendedAdministradora);
 	// FIX-73: o fechamento reusa o crédito da oferta REAL recomendada
 	// (snapshot persistido no reveal — FIX-6/FIX-C2), NUNCA re-deriva de
 	// creditMax (teto que o usuário pediu, não a oferta que ele viu). Sem
@@ -40,7 +54,17 @@ export function buildStartContractInput(
 	// número que o card de recomendação anunciou (bait-and-switch, jornada
 	// AUTO 2026-07-02). creditMax/creditMin seguem como fallback defensivo
 	// (fechamento sem reveal já é bloqueado a montante pelo guard revealCompleted).
-	const valor = meta.recommendedOffer?.creditValue ?? q.creditMax ?? q.creditMin ?? 50000;
+	const valor =
+		(offerMatchesCurrentAdmin ? meta.recommendedOffer?.creditValue : undefined) ??
+		q.creditMax ??
+		q.creditMin ??
+		50000;
+	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
+	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
+	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
+	// (que segue servindo só o matching da oferta, FIX-73): `valor` é o
+	// creditValue da ÚLTIMA oferta vista, nunca o que o cliente pediu de fato.
+	const originalRequestedCreditValue = q.creditClampedFrom ?? q.creditMax;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {
@@ -49,16 +73,45 @@ export function buildStartContractInput(
 		lgpd: identity.lgpd,
 		segmento,
 		valor,
+		originalRequestedCreditValue,
 		objetivo,
 		lanceEmbutido,
 		// Fechamento prefere a MESMA administradora que o usuário decidiu
 		// (BUG-ADMIN-TROCADA-NO-FECHAMENTO).
 		administradoraPreferida: meta.recommendedAdministradora ?? null,
 		// E o MESMO prazo que ele viu — desempata o matching dentro da admin
-		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o prazo.
-		prazoPreferido: meta.recommendedOffer?.termMonths ?? null,
+		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o
+		// prazo — mesma checagem de consistência do `valor` acima.
+		prazoPreferido:
+			(offerMatchesCurrentAdmin ? meta.recommendedOffer?.termMonths : undefined) ?? null,
 		// FIX-48: vincula a proposta ao lead já existente da conversa pra a raia
 		// avançar (qualificado→proposta_enviada). null explícito (nunca undefined).
 		leadId: links.leadId ?? null,
 	};
+}
+
+// FIX-263 (P1, veredito Fable r5, seam PARCIAL, 2026-07-10) — o anti-refazer
+// (não abrir uma 2ª proposta REAL de administradora diferente) era REGRA-NO-
+// PROMPT e falhou ao vivo 2×: o agente negou a proposta RODOBENS registrada,
+// afirmou falsamente que a ITAÚ estava registrada (sem check_proposal_status)
+// e reabriu o contract_form da ITAÚ — a 1 clique de uma 2ª proposta real (CPF
+// + consulta de bureau) na MESMA conversa. Lei 1/4: o guard vira código, não
+// fica no prompt. `route.ts` (contract-submit) chama isto ANTES de startContract
+// com a administradora já registrada em `bevi_proposals` (getLatestBeviProposal)
+// — nunca confia no que o modelo afirma sobre o estado da proposta.
+
+/** A administradora PEDIDA neste fechamento conflita com uma já REGISTRADA
+ * nesta conversa? Mesma normalização do FIX-251 (acento/caixa não disparam
+ * falso-positivo: "Itau" === "ITAÚ"). Sem proposta registrada ainda, ou sem
+ * administradora pedida (defensivo), nunca conflita — só bloqueia quando há
+ * DUAS administradoras REAIS e DIFERENTES em jogo. */
+export function administradoraConflictsWithRegisteredProposal(
+	registeredAdministradora: string | null | undefined,
+	requestedAdministradora: string | null | undefined,
+): boolean {
+	if (!registeredAdministradora || !requestedAdministradora) return false;
+	return (
+		normalizeAdministradora(registeredAdministradora) !==
+		normalizeAdministradora(requestedAdministradora)
+	);
 }

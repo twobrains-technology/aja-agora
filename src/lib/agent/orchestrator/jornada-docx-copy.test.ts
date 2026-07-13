@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
 import { contemplationDialMarks } from "@/lib/consorcio/contemplation-dial";
 import { gatePartData } from "@/lib/web/adapter";
-import { qualifyConsentToWhatsApp } from "@/lib/whatsapp/formatter";
 import type { ConversationMetadata } from "../personas";
 import {
 	buildExperienceFirstDirective,
@@ -32,9 +31,14 @@ describe("perguntas de gate — fiéis ao docx", () => {
 	// pergunta mais "em quanto tempo você quer o bem?" na entrada. A copy do gate
 	// timeframe vira legado (não validamos mais fidelidade ao docx pra ela).
 
-	it("lance: pergunta sobre reserva pra antecipar a contemplação", () => {
+	// FIX-268 (rodada 7, veredito Fable r6, residual D4): a pergunta usava
+	// "reserva" — palavra sensível varrida do fechamento (FIX-234/FIX-256, nunca
+	// "reserva"/"reservado" antes da contratação real). O docx (jornada-canonica.md
+	// linha 163) pergunta só "Pretende dar um lance?" — a variação com
+	// "antecipar a contemplação" é enriquecimento local, não precisa de "reserva".
+	it("lance: pergunta sobre dar um lance pra antecipar a contemplação (sem 'reserva')", () => {
 		const q = gateQuestion("lance") ?? "";
-		expect(q.toLowerCase()).toMatch(/reserva/);
+		expect(q.toLowerCase()).not.toMatch(/\breserva/);
 		expect(q.toLowerCase()).toMatch(/lance/);
 		expect(q.toLowerCase()).toMatch(/antecipar|contempla/);
 	});
@@ -86,14 +90,14 @@ describe("perguntas de gate — fiéis ao docx", () => {
 	});
 });
 
-describe("card de decisão — pergunta e 3 opções LITERAIS do docx (passo 4)", () => {
+describe("card de decisão — pergunta e 3 opções (docx passo 4, terminologia atualizada pela Ata 2026-07-04)", () => {
 	it('pergunta canônica: "Esse plano faz sentido para você?"', () => {
 		expect(DECISION_PROMPT_QUESTION).toBe("Esse plano faz sentido para você?");
 	});
 
-	it("as 3 labels são as do docx, na ordem", () => {
+	it("as 3 labels — DV-8 (QA 2026-07-11) troca 'reservar' por 'seguir' (reserva só pós-fechamento; supera FIX-216)", () => {
 		expect(DECISION_PROMPT_OPTIONS.map((o) => o.label)).toEqual([
-			"Sim, quero contratar agora",
+			"Sim, quero seguir agora",
 			"Quero ver outras opções",
 			"Quero falar com um especialista da Aja Agora",
 		]);
@@ -116,32 +120,9 @@ describe("simulador-agulha — marcos default cobrem 3/6/12 do docx", () => {
 	});
 });
 
-describe('consent pós-explicação de primeira vez — botão "Entendi, pode continuar" (docx passo 2)', () => {
-	const metaFirst = { experiencePrev: "first" } as ConversationMetadata;
-	const metaReturning = { experiencePrev: "returning" } as ConversationMetadata;
-
-	it("web: chips do consent pra primeira vez usam a label literal do docx", () => {
-		const data = gatePartData("consent", metaFirst);
-		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
-		expect(data.options.map((o) => o.label)).toContain("Entendi, pode continuar");
-	});
-
-	it("web: quem já conhece consórcio mantém o convite curto (Bora!)", () => {
-		const data = gatePartData("consent", metaReturning);
-		if (data?.kind !== "chips") throw new Error("consent deveria ser chips");
-		expect(data.options.map((o) => o.label)).toContain("Bora!");
-	});
-
-	it("whatsapp: botão de consent pra primeira vez ecoa o docx (≤20 chars)", () => {
-		const res = qualifyConsentToWhatsApp(undefined, { firstTime: true });
-		const interactive = res.interactive as
-			| { action?: { buttons?: Array<{ reply: { title: string } }> } }
-			| undefined;
-		const titles = interactive?.action?.buttons?.map((b) => b.reply.title) ?? [];
-		expect(titles.some((t) => /entendi/i.test(t))).toBe(true);
-		for (const t of titles) expect(t.length).toBeLessThanOrEqual(20);
-	});
-});
+// FIX-274: o gate `consent` ("posso te fazer 3 perguntinhas" + "Entendi, pode
+// continuar"/"Entender mais antes") foi REMOVIDO do funil — não há mais card de
+// consent na web nem botões no WhatsApp. Testes correspondentes removidos.
 
 describe("texto-ponte do passo 1 — docx linha 14", () => {
 	it('directive de primeiro contato carrega a ponte "perguntinhas… de cerca de X"', () => {

@@ -165,7 +165,14 @@ export async function fireContract(from: string, conversationId: string): Promis
 			},
 			{ leadId },
 		);
-		const { offer, noOffer } = await startContract(conversationId, input);
+		// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue aciona o
+		// aviso de ajuste (FIX-240) quando a carta real diverge do pedido —
+		// paridade com o web (route.ts), que tinha o mesmo campo descartado.
+		// FIX-259 (P1, veredito Fable r4): mesma classe de bug pro aviso de troca
+		// de administradora — administradoraChanged/previousAdministradora não
+		// podem sair do destructuring, senão a troca sai em silêncio no WhatsApp.
+		const { offer, noOffer, requestedCreditValue, administradoraChanged, previousAdministradora } =
+			await startContract(conversationId, input);
 
 		if (noOffer || !offer) {
 			await sendTextMessage(
@@ -184,6 +191,8 @@ export async function fireContract(from: string, conversationId: string): Promis
 			// (defensivos no formatter; ausentes → linha omitida).
 			termMonths: offer.termMonths,
 			avgBidValue: offer.avgBidValue,
+			rawCreditValue: requestedCreditValue,
+			previousAdministradora: administradoraChanged ? previousAdministradora : undefined,
 		});
 		if (wa.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);

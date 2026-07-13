@@ -264,12 +264,14 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 	it("retorna o próximo gate pendente conforme nextGate()", () => {
 		const r = computeSignals({
 			metadata: {
+				desireAsked: true,
 				currentCategory: "imovel",
 				experiencePrev: "first",
 				qualifyConsented: true,
 				// FIX-53: o gate `identify` subiu para antes de `credit`. FIX-103: o
-				// gate de prazo (timeframe) SAIU da qualificação — com identidade e
-				// valor já coletados, o próximo gate pendente é o `lance`.
+				// gate de prazo (timeframe) SAIU da qualificação. FIX-215 (Ata
+				// 2026-07-04): o lance também saiu do meio — com identidade e valor
+				// já coletados, o próximo gate pendente é a busca/reveal (`search`).
 				identityCollected: true,
 				qualifyAnswers: { creditMax: 200000 },
 			},
@@ -278,7 +280,7 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 			artifacts: [],
 			lead: null,
 		});
-		expect(r.dropOffGate).toBe("lance");
+		expect(r.dropOffGate).toBe("search");
 	});
 
 	it("retorna null sem categoria (sem fluxo de gates)", () => {

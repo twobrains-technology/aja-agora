@@ -46,16 +46,21 @@ describe("FIX-C4 — parcela honesta", () => {
 		render(<ContemplationDial payload={payload} />);
 		const text = document.body.textContent ?? "";
 		expect(text).toMatch(/até contemplar/i);
-		expect(text).toContain("9.829"); // brl arredonda pra inteiro
+		// FIX-242: parcela NUNCA arredonda (CDC art. 30) — 9.828,92 literal, não
+		// mais os "9.829" que o brl(0 decimais) arredondava.
+		expect(text).toContain("9.828,92");
 		// a fantasia do bug real (9.829 × (1−0,74) = 2.556) não existe mais
 		expect(text).not.toContain("2.556");
 	});
 
-	it("lance 100% embutido → parcela estimada DEPOIS não cai (embutido não abate dívida)", () => {
+	it("FIX-221 (Ata 2026-07-04): lance 100% embutido → parcela estimada DEPOIS CAI (embutido amortiza o saldo)", () => {
 		render(<ContemplationDial payload={payload} />);
 		const text = document.body.textContent ?? "";
-		// depois = igual à parcela real quando bolso é zero
 		expect(text).toMatch(/depois/i);
+		// "Até contemplar" continua a parcela real (R$ 9.829); "Após receber" agora
+		// cai pra ~R$ 5.238 (jornada-canonica.md D9) — nunca mais idêntica à de
+		// antes (PENDENTE-Bernardo validar o número exato antes de prod).
+		expect(text).toMatch(/5\.23[89]/);
 	});
 });
 

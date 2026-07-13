@@ -1,0 +1,16 @@
+{
+  "cenario": "probe-i1-empty-turn",
+  "descricao": "Sonda adversarial do I1 (loop empty-turn no intent wants_more_options). Chega ao reveal e dispara 'quero ver mais opções' várias vezes, logo após o agente prometer buscar. O COLETOR mede o TEMPO de resposta (o bug ao vivo foi ~50s, finishReason length) e se a COPY se repete idêntica. REQUER env E2E_TEST_CPF + E2E_TEST_CELULAR.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome." },
+    { "type": "action", "action": { "kind": "category", "category": "auto" }, "label": "Automóvel", "expect": "transição + gate name." },
+    { "type": "text", "text": "Joana", "expect": "saudação + gate desire (item)." },
+    { "type": "text", "text": "Um carro, uns 80 mil", "expect": "eco + pergunta do motivo (turno próprio)." },
+    { "type": "text", "text": "Quero trocar o meu que já tá velho", "expect": "espelha motivo + gate identify." },
+    { "type": "action", "action": { "kind": "gate", "gate": "identify", "value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true } }, "label": "CPF e celular", "expect": "identidade aceita + gate credit." },
+    { "type": "text", "text": "Valor do bem: R$ 80.000", "expect": "reveal (recommendation_card + outras) + gate experience." },
+    { "type": "text", "text": "Quero ver mais opções, todas que tiver", "expect": "SONDA I1 #1 — wants_more_options NÃO abre gate estruturado; o agente re-apresenta o comparativo conversacionalmente. Resposta em TEMPO NORMAL (<20s), NUNCA empty-turn." },
+    { "type": "text", "text": "isso, me mostra mais opções", "expect": "SONDA I1 #2 — mesma coisa; a COPY NÃO pode ser idêntica à do turno anterior (fallback repetido) nem demorar ~50s (finishReason length). Coletor: registrar elapsedMs e comparar o texto com o turno #1." },
+    { "type": "text", "text": "e aí, achou mais alguma? quero ver mais opções", "repeat": 2, "expect": "SONDA I1 #3/#4 — estresse do loop: promessa de busca -> turno seguinte NÃO pode vir vazio/length ~50s nem repetir a copy. Se disparar a busca determinística (mostrar as outras) = OK; re-perguntar em loop / ar morto = FALHA I1. Coletor: elapsedMs de cada repetição + diff de copy." }
+  ]
+}

@@ -46,10 +46,17 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"whatsapp-optin",
 			"post-closure",
 			"premature-contract",
+			// FIX-239: decision_prompt fora de ordem (qualificação pós-reveal
+			// incompleta) — mesma família do premature-contract, checada antes do
+			// reveal-loop (que só cobre a RE-emissão, pós decisionDispatched).
+			"premature-decision",
 			"reveal-loop",
 			"single-option",
 			// FIX-53: value_picker fora de ordem (dados antes do valor + anti-repetição).
 			"value-picker-order",
+			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
+			// no mesmo turno (2 tool-calls) — dedup intra-turno via turnArtifactTypes.
+			"dial-dup-intraturn",
 		]);
 	});
 
@@ -176,6 +183,95 @@ describe("FIX-20 — regra premature-contract (FIX-12: contract_form pré-reveal
 	});
 });
 
+// FIX-239 (Fable r1, D3.4, gap P1 #6a): "Gostei, faz bastante sentido" (elogio
+// pós-reveal, NÃO decisão) disparava decision_prompt ANTES de
+// experience/timeframe/lance estarem resolvidos — o LLM podia chamar
+// present_decision_prompt livremente (tool liberada pela fase "reveal"), sem
+// nenhum guard checando se a qualificação pós-reveal estava completa.
+// nextGate() é a fonte única da ordem — só retorna "decision" quando
+// experience/timeframe/lance(+lance-embutido/simulator-offer) já resolveram.
+describe("FIX-239 — regra premature-decision (decision_prompt antes da qualificação pós-reveal)", () => {
+	const POST_REVEAL_PRE_QUALIFY: ConversationMetadata = {
+		desireAsked: true,
+		qualifyConsented: true,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		qualifyAnswers: { creditMax: 100_000 },
+		// experiencePrev/prazoMeses/hasLance ainda NÃO resolvidos — nextGate()
+		// aqui é "experience", nunca "decision".
+	};
+
+	const POST_REVEAL_QUALIFIED: ConversationMetadata = {
+		...POST_REVEAL_PRE_QUALIFY,
+		experiencePrev: "returning",
+		qualifyAnswers: {
+			creditMax: 100_000,
+			prazoMeses: 12,
+			hasLance: "no",
+			lanceEmbutido: false,
+		},
+		simulatorOfferDispatched: true,
+	};
+
+	it("SUPRIME: decision_prompt disparado num elogio ANTES de experience/timeframe/lance resolvidos", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL_PRE_QUALIFY,
+				artifactType: "decision_prompt",
+				userIntent: "neutral",
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) {
+			expect(verdict.rule).toBe("premature-decision");
+			expect(verdict.logLine).toMatch(/premature-decision/);
+		}
+	});
+
+	it("SUPRIME também em ready_to_proceed (elogio forte) antes da qualificação", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL_PRE_QUALIFY,
+				artifactType: "decision_prompt",
+				userIntent: "ready_to_proceed",
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("premature-decision");
+	});
+
+	it("PERMITE: decision_prompt pós-qualificação completa (nextGate já é decision)", () => {
+		expect(
+			evaluateArtifactGuards(
+				makeInput({ meta: POST_REVEAL_QUALIFIED, artifactType: "decision_prompt" }),
+			),
+		).toEqual({ allow: true });
+	});
+
+	it("não interfere em outros artifacts (ex.: embedded_bid) pré-qualificação", () => {
+		// embedded_bid não faz parte da família reveal-loop (isRereveal) — isola
+		// que a regra premature-decision é ESPECÍFICA de decision_prompt.
+		expect(
+			evaluateArtifactGuards(
+				makeInput({ meta: POST_REVEAL_PRE_QUALIFY, artifactType: "embedded_bid" }),
+			),
+		).toEqual({ allow: true });
+	});
+
+	it("decisionDispatched=true → premature-decision não se aplica (é papel do isDecisionDup/reveal-loop)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { ...POST_REVEAL_PRE_QUALIFY, decisionDispatched: true },
+				artifactType: "decision_prompt",
+				isUserTurn: true,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("reveal-loop");
+	});
+});
+
 describe("FIX-20 — regra reveal-loop (re-emissão pós-reveal + dups)", () => {
 	it("SUPRIME: cards de descoberta re-emitidos em turno de usuário pós-reveal", () => {
 		for (const artifactType of ["comparison_table", "recommendation_card", "group_card"] as const) {
@@ -239,10 +335,26 @@ describe("FIX-20 — regra reveal-loop (re-emissão pós-reveal + dups)", () => 
 		if (!verdict.allow) expect(verdict.rule).toBe("reveal-loop");
 	});
 
-	it("PERMITE: primeiro decision_prompt (decisionDispatched=false)", () => {
+	it("PERMITE: primeiro decision_prompt (decisionDispatched=false) COM qualificação pós-reveal completa", () => {
+		// FIX-239: POST_REVEAL sozinho (sem experience/timeframe/lance) NÃO
+		// basta mais — vira "premature-decision" (ver describe dedicado acima).
+		// Este teste isola o caminho FELIZ: qualificação completa + 1ª emissão.
+		const qualified: ConversationMetadata = {
+			...POST_REVEAL,
+			desireAsked: true,
+			qualifyConsented: true,
+			experiencePrev: "returning",
+			qualifyAnswers: {
+				creditMax: 100_000,
+				prazoMeses: 12,
+				hasLance: "no",
+				lanceEmbutido: false,
+			},
+			simulatorOfferDispatched: true,
+		};
 		expect(
 			evaluateArtifactGuards(
-				makeInput({ meta: POST_REVEAL, artifactType: "decision_prompt", isUserTurn: false }),
+				makeInput({ meta: qualified, artifactType: "decision_prompt", isUserTurn: false }),
 			),
 		).toEqual({ allow: true });
 	});
@@ -365,5 +477,49 @@ describe("FIX-187 — discovery-failed dropa a família de proposta quando a des
 		);
 		expect(v.allow).toBe(false);
 		if (!v.allow) expect(v.rule).toBe("discovery-failed");
+	});
+});
+
+// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no
+// mesmo turno (2 tool-calls, initialTargetMonth 12 e 6)" — a instrução do
+// directive ("chame UMA vez") é regra-no-prompt, não invariante (Lei 4). O
+// runner JÁ ampara turnArtifactTypes (runner.ts:408, artifacts.map já emitidos
+// neste turno) — a tabela só precisava de uma regra que a consumisse.
+describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada no mesmo turno)", () => {
+	it("suprime a 2ª chamada de contemplation_dial quando já emitido neste turno", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "contemplation_dial",
+				turnArtifactTypes: ["contemplation_dial"],
+			}),
+		);
+		expect(v.allow).toBe(false);
+		if (!v.allow) {
+			expect(v.rule).toBe("dial-dup-intraturn");
+			expect(v.logLine).toMatch(/dial-dup-intraturn/);
+		}
+	});
+
+	it("PERMITE a 1ª chamada de contemplation_dial no turno (turnArtifactTypes vazio)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "contemplation_dial",
+				turnArtifactTypes: [],
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+
+	it("NÃO afeta outros artifacts mesmo repetidos no mesmo turno (regra escopada a contemplation_dial)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: POST_REVEAL,
+				artifactType: "scarcity",
+				turnArtifactTypes: ["scarcity"],
+			}),
+		);
+		expect(v.allow).toBe(true);
 	});
 });
