@@ -747,6 +747,40 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		yield { type: "welcome-categories" };
 	}
 
+	// FIX-303 (rodada r10 onda 2, loop-de-goal consórcio, 2026-07-12): opt-in de
+	// WhatsApp migra do pós-reveal pro FECHO — o card "Quero receber pelo
+	// WhatsApp" aparecia logo após a recomendação, sem o usuário ter pedido e
+	// antes de qualquer proposta apresentada (achado do teste manual com Qwen
+	// 3.5 Fast). Dispara agora no MESMO turno em que present_contract_form
+	// (passo 5, proposta real) aparece pela 1ª vez — nunca antes.
+	// contractFormDispatched já foi persistido por runAgentTurn (runner.ts,
+	// junto com o artifact contract_form) antes deste ponto; recarrega o meta
+	// pra enxergar o flag (o objeto `meta` local não foi mutado por essa
+	// escrita, que passa por reloadMeta/persistMeta internos ao runner).
+	if (result.artifacts.some((a) => a.type === "contract_form")) {
+		const postContract = await reloadMeta(conversationId);
+		if (shouldEmitWhatsappOptin(postContract)) {
+			await persistMeta(conversationId, { ...postContract, whatsappOptinShown: true });
+			const stage = postContract.contactPhone ? "confirm" : "open";
+			yield* runTurn({
+				channel,
+				conversationId,
+				userText: buildWhatsappOptinDirective(stage),
+				isUserTurn: false,
+				contactName: knownName,
+				skipAnalyzer: true,
+				skipLeadCollection: true,
+			});
+			yield* emitServerCard({
+				conversationId,
+				channel,
+				persona: currentPersona,
+				artifactType: "whatsapp_optin",
+				payload: buildWhatsappOptinCard(postContract).payload,
+			});
+		}
+	}
+
 	if (result.nextGateToFire === "search") {
 		const refreshed = await reloadMeta(conversationId);
 		// FIX-76: na troca de faixa (revealValueTargetChanged) a busca é uma
@@ -773,14 +807,6 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			skipAnalyzer: true,
 			skipLeadCollection: true,
 		});
-		// FIX-280 (loop r9, baseline Sonnet 3/10, G4): opt-in de WhatsApp — mesma
-		// receita do FIX-246/253 (scarcity/decision_prompt), emissão SERVER-SIDE
-		// determinística logo após o reveal, no ÚNICO ponto que dispara os cards
-		// do passo 3+4 (search summary directive acima). Nunca mais depende de o
-		// LLM "decidir" chamar a tool — mesmo estado, mesmo resultado sempre,
-		// diferente do bug original (mario-sem-lance chamava, madalena não, no
-		// mesmo ponto do funil).
-		const postReveal = await reloadMeta(conversationId);
 		// FIX-291 (b): `searchDispatched` NÃO é mais marcado preemptivamente ANTES
 		// do runTurn acima — o runner (runner.ts) já grava searchDispatched=true
 		// JUNTO com revealCompleted, só quando artifacts REAIS aparecem. Marcar
@@ -788,32 +814,15 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// estourado, erro duro etc.) em searchDispatched=true PRA SEMPRE: o guard
 		// "search-already-dispatched" (acima) nunca mais deixava retentar a busca
 		// num turno seguinte, mesmo sem jamais ter mostrado dado real.
+		const postReveal = await reloadMeta(conversationId);
 		if (!postReveal.revealCompleted) {
 			console.log(
 				`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
 			);
 			return;
 		}
-		if (shouldEmitWhatsappOptin(postReveal)) {
-			await persistMeta(conversationId, { ...postReveal, whatsappOptinShown: true });
-			const stage = postReveal.contactPhone ? "confirm" : "open";
-			yield* runTurn({
-				channel,
-				conversationId,
-				userText: buildWhatsappOptinDirective(stage),
-				isUserTurn: false,
-				contactName: knownName,
-				skipAnalyzer: true,
-				skipLeadCollection: true,
-			});
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "whatsapp_optin",
-				payload: buildWhatsappOptinCard(postReveal).payload,
-			});
-		}
+		// FIX-303: o opt-in de WhatsApp NÃO dispara mais aqui (pós-reveal) — só no
+		// FECHO, ver bloco logo antes de `nextGateToFire === "search"` acima.
 		return;
 	}
 
