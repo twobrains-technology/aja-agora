@@ -1,0 +1,19 @@
+{
+  "cenario": "probe-p7-confused-reancora",
+  "descricao": "Sonda P7 — usuario CONFUSO ('nao entendi') num gate pendente -> reancora no MESMO gate de forma mais simples (CLARIFY_LEAD_IN 'Sem problemas, deixa eu simplificar:'), NUNCA menu generico nem dissertacao fora de escopo. Correcao r10: intent 'confused' (nova, distinta de expressing_doubt) + gateAwaitingReply reancora o gate pendente. Blindagem: isExactnessOrCriteriaQuestion nao vira clarify (pergunta 'por que essa e nao outra?' e criterio, nao confusao). CRITERIO por turno: (a) o agente reconhece a confusao em 1 frase + RE-APRESENTA o gate corrente (mesmo card/pergunta), (b) NAO abre menu de opcoes generico, (c) NAO disserta sobre consorcio generico fora do gate pendente. REQUER env E2E_TEST_CPF + E2E_TEST_CELULAR.",
+  "turns": [
+    { "type": "text", "text": "oi", "expect": "welcome." },
+    { "type": "text", "text": "quero trocar de carro, uns 110 mil", "expect": "categoriza + name." },
+    { "type": "text", "text": "Carla", "expect": "save_contact_name + desire (item)." },
+    { "type": "text", "text": "nao entendi", "expect": "P7 #1 — confused no gate desire. Reancora: reconhece + re-pergunta o desire de forma simples ('qual carro voce quer?'). NAO abre menu. NAO disserta." },
+    { "type": "text", "text": "ah ta, um HB20", "expect": "eco + motivo (turno proprio)." },
+    { "type": "text", "text": "como assim?", "expect": "P7 #2 — confused no gate motivo. Reancora o motivo simplificado ('o que te fez decidir trocar agora?'), sem menu, sem dissertacao." },
+    { "type": "text", "text": "porque o meu ja deu muito problema", "expect": "espelho + objetivo + segue pro credit." },
+    { "type": "text", "text": "uns 110 mil", "expect": "moldura identify." },
+    { "type": "action", "action": { "kind": "gate", "gate": "identify", "value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true } }, "label": "CPF e celular", "expect": "reveal (comparison_table) + experience.", "timeoutMs": 120000 },
+    { "type": "text", "text": "nao sei do que voce ta falando", "expect": "P7 #3 — confused no gate experience. Reancora a pergunta do experience de forma simples ('voce ja fez consorcio antes, ou e a primeira vez?'), NAO um menu generico, NAO uma aula fora de escopo." },
+    { "type": "action", "action": { "kind": "gate", "gate": "experience", "value": "first" }, "label": "E a primeira vez", "expect": "explicacao + topic_picker canonico + reco-consent." },
+    { "type": "text", "text": "por que essa e nao outra?", "expect": "P7 BLINDAGEM — isso e pergunta de CRITERIO/EXATIDAO, NAO confusao. NAO pode virar clarify/reancora: o agente RESPONDE o criterio (parcela mais leve/score), nao repete a mesma pergunta como se a pessoa estivesse confusa." },
+    { "type": "text", "text": "em quanto tempo eu recebo o carro?", "expect": "P7 — pergunta valida no fluxo. O agente responde no ESCOPO (ponte pro timeframe/simulador), NAO disserta sobre consorcio generico e NAO abre menu. Reancora na decisao pendente." }
+  ]
+}
