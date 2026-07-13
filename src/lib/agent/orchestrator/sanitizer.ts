@@ -242,6 +242,30 @@ export function isMechanismNarrationClaim(segment: string): boolean {
 	return MECHANISM_NARRATION_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-298 (loop-de-goal r10, P4 — transcrição real com Qwen 3.5 Fast): "Quer
+// ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo? Você já fez
+// consórcio antes?" — duas sentenças interrogativas no mesmo balão, usuário só
+// conseguiu responder uma. A regra "nunca mais de uma pergunta por mensagem"
+// só existia como texto no system-prompt (Lei 4: instruction-following degrada
+// sob modelo mais fraco). Corte é por SENTENÇA (delimitada por . ! ? : \n, os
+// mesmos limites já usados pelo splitSegments) — NÃO por "pedido": uma frase
+// composta com um único "?" ("Que carro você tem em mente, e quanto custa mais
+// ou menos?") é UMA sentença válida e não pode ser cortada.
+function isInterrogativeSentence(segment: string): boolean {
+	return /\?\s*$/.test(segment.trimEnd());
+}
+
+/** Um segmento é a última sentença interrogativa dentre `segments` (índice
+ * `index`) — usado pra decidir quais perguntas anteriores são dropadas.
+ * FIX-298: nunca mais de 1 sentença interrogativa sobrevive por turno. */
+function lastInterrogativeIndex(segments: string[]): number {
+	let last = -1;
+	segments.forEach((seg, i) => {
+		if (isInterrogativeSentence(seg)) last = i;
+	});
+	return last;
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -325,7 +349,11 @@ export function splitSegments(text: string): string[] {
 export function stripProcessPreamble(text: string, ctx?: StateVerificationContext): string {
 	if (!text) return text;
 	const segments = splitSegments(text);
-	const kept = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
+	const survivors = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
+	// FIX-298: nunca mais de 1 sentença interrogativa por balão — só a ÚLTIMA
+	// pergunta sobrevive; perguntas anteriores no mesmo texto são dropadas.
+	const lastQuestion = lastInterrogativeIndex(survivors);
+	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
 	return kept.join("");
 }
 
@@ -356,6 +384,12 @@ function lastBoundaryIndex(s: string): number {
  */
 export class EphemeralTextFilter {
 	private pending = "";
+	// FIX-298: a sentença interrogativa mais recente vista até agora NUNCA é
+	// emitida na hora — só no próximo flush(). Isso garante que uma pergunta
+	// SEGUINTE no mesmo turno sempre substitui a anterior antes de qualquer
+	// uma delas chegar ao usuário (ao vivo, não dá pra "desmandar" uma frase já
+	// emitida — segurar é a única forma de garantir que só a última sobrevive).
+	private heldQuestion = "";
 
 	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
@@ -366,16 +400,39 @@ export class EphemeralTextFilter {
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);
 		this.pending = this.pending.slice(idx + 1);
-		return stripProcessPreamble(complete, this.getContext?.());
+		return this.filterComplete(complete);
 	}
 
 	/** Fim do bloco/stream: libera a cauda (última frase sem delimitador), também
-	 * filtrada. */
+	 * filtrada, seguido da pergunta segurada (se houver — FIX-298). */
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
-		if (!rest) return "";
-		return stripProcessPreamble(rest, this.getContext?.());
+		const out = rest ? this.filterComplete(rest) : "";
+		return out + this.releaseHeldQuestion();
+	}
+
+	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero e
+	 * segura a sentença interrogativa (FIX-298). */
+	private filterComplete(complete: string): string {
+		const ctx = this.getContext?.();
+		const segments = splitSegments(complete);
+		let out = "";
+		for (const seg of segments) {
+			if (isEphemeralSegment(seg, ctx)) continue;
+			if (isInterrogativeSentence(seg)) {
+				this.heldQuestion = seg;
+				continue;
+			}
+			out += seg;
+		}
+		return out;
+	}
+
+	private releaseHeldQuestion(): string {
+		const held = this.heldQuestion;
+		this.heldQuestion = "";
+		return held;
 	}
 }
 

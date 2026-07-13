@@ -617,3 +617,60 @@ describe("FIX-188 — joinSeparator evita colagem de falas distintas", () => {
 		expect(joinSeparator("texto", "")).toBe("");
 	});
 });
+
+// FIX-298 (loop-de-goal r10, P4 — transcrição REAL com Qwen 3.5 Fast,
+// 2026-07-12): "Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ
+// mesmo? Você já fez consórcio antes?" — duas sentenças interrogativas no
+// mesmo balão; o usuário só conseguiu responder uma. A regra "nunca mais de
+// uma pergunta por mensagem" só existia como texto no system-prompt (Lei 4:
+// instruction-following degrada sob modelo mais fraco) — este é o invariante
+// em CÓDIGO. Cuidado de precisão: o corte é por SENTENÇA (delimitada por
+// . ! ? : \n), não por "pedido" — uma frase composta com um único "?" é uma
+// sentença válida e não pode ser cortada (mockup Mario, cenário F2).
+describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette real)", () => {
+	const BUG_TRANSCRIPT =
+		"Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo? Você já fez consórcio antes?";
+
+	it("stripProcessPreamble dropa a PRIMEIRA pergunta e mantém só a ÚLTIMA", () => {
+		const out = stripProcessPreamble(BUG_TRANSCRIPT);
+		const questionMarks = out.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(out).not.toContain("Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?");
+		expect(out).toContain("Você já fez consórcio antes?");
+	});
+
+	it("EphemeralTextFilter (stream frase-a-frase) também nunca deixa 2 perguntas passarem ao vivo", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		for (const delta of [
+			"Quer ajustar o valor do bem ",
+			"ou seguir com essa opção da ITAÚ mesmo? ",
+			"Você já fez consórcio ",
+			"antes?",
+		]) {
+			emitted += f.push(delta);
+		}
+		emitted += f.flush();
+		const questionMarks = emitted.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(emitted).not.toContain("seguir com essa opção da ITAÚ mesmo?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+
+	// Teste POSITIVO obrigatório: frase composta do mockup (Mario, F2) — UMA
+	// sentença, dois pedidos, um "?" só. NÃO pode ser cortada.
+	it("NÃO corta frase composta com dois pedidos e um único '?' (mockup Mario, F2)", () => {
+		const composta = "Que carro você tem em mente, e quanto custa mais ou menos?";
+		expect(stripProcessPreamble(composta)).toBe(composta);
+
+		const f = new EphemeralTextFilter();
+		let emitted = f.push(composta);
+		emitted += f.flush();
+		expect(emitted).toBe(composta);
+	});
+
+	it("texto com só 1 pergunta (comum) continua sobrevivendo normalmente", () => {
+		const input = "Boa! Olha as opções que separei. Você quer buscar em outra faixa?";
+		expect(stripProcessPreamble(input)).toBe(input);
+	});
+});
