@@ -456,3 +456,33 @@ corrigido em 3 camadas, todas com causa-raiz provada (nunca `--no-verify`/skip):
      salvo), então caía em "credit" sob a ordem nova. Corrigido setando o campo nos 2 cenários.
    ADRs atualizados com adendo (`docs/decisoes/blocos/2026-07-12-bloco-r10-1-*.md`) — "palavra nova
    vence", evidência > estimativa prévia, decisão original registrada e corrigida, não apagada.
+
+| 10.2 (onda 2) | r10-2-whatsapp-fecho · r10-2-bakeoff-regua | ✅ 2/2 na base `integ/consorcio-r10` (`1fcfc32c`, pushado) | test:unit 3394/3394 verde | — | **⚠️ ACHADO SÓBRIO, não fechado** — ver abaixo |
+
+### ⚠️ Onda 2 — o bakeoff PIOROU pós-onda-1 (a premissa central da rodada, testada e refutada)
+
+FIX-304 re-rodou `scripts/bakeoff.sh` com Qwen (`qwen3.6-flash`) contra a base pós-onda-1. Resultado
+**contrário à hipótese do estudo original** (S7: "a nota deve subir porque o funil deixa de
+depender de obediência ao prompt"):
+
+| | Baseline (2026-07-05, pré-r10) | Pós-onda-1 (2026-07-13) |
+|---|---|---|
+| `fluxoScore` | 0.774 | **0.68 (PIOROU)** |
+| Testes falhos | 4/31 | **12/31** |
+| Gate `simulator-offer` | disparou 2x | **nunca disparou** — preso em `timeframe` 4x |
+
+**Decisão de admissão confirmada/reforçada:** Qwen 3.6 Flash continua reprovado, agora com margem
+maior. Nenhuma troca de modelo justificada. Prod hoje usa `claude-haiku-4-5` (confirmado no secret
+`tb/dev/aja-agora/env`), não Qwen — o risco de blast radius real é baixo, mas a REGRESSÃO em si
+(o funil ficou mais frágil sob tool-calling fraco, não mais robusto) é o problema arquitetural que
+importa: `reco-consent` (gate novo) + tool-policy mais restrito por fase provavelmente aumentam a
+chance de tool-error/gate-preso quando o modelo erra a chamada. Root cause AINDA NÃO investigada a
+fundo (task em andamento). P10 (chunking gateway-openai.ts): **inconclusivo** — mas achou uma PISTA
+real e mais concreta: `normalizeGluedSentences` (FIX-189) só dispara quando a frase seguinte começa
+com MAIÚSCULA, e a copy real do produto é majoritariamente minúscula mesmo no início de frase
+("boa, kairo!") — o guard nunca protege esse caso, **independente de modelo/gateway**. Registrado
+como dúvida aberta, não implementado (regra do bloco: não cravar fix sem confirmação).
+
+**Próximo passo (antes da verificação Etapa A):** investigar e corrigir a causa-raiz do
+`simulator-offer` preso, porque rodar o planner+coletor+juiz (caro) contra uma regressão já
+conhecida e diagnosticada é desperdício — mais barato fechar agora numa onda cirúrgica.
