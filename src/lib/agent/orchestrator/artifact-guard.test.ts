@@ -57,6 +57,9 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
 			// no mesmo turno (2 tool-calls) — dedup intra-turno via turnArtifactTypes.
 			"dial-dup-intraturn",
+			// FIX-300: topic_picker no instante exato do gate decision (2ª linha,
+			// cobre a janela em que a fase ainda é "reveal" pro tool-policy).
+			"topic-picker-server-gate",
 		]);
 	});
 
@@ -518,6 +521,65 @@ describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada n
 				meta: POST_REVEAL,
 				artifactType: "scarcity",
 				turnArtifactTypes: ["scarcity"],
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+});
+
+// FIX-300 (P6, loop-de-goal r10): print real — o Qwen chamou present_topic_
+// picker no gate `decision` com chips "a"/"b" fabricados em vez do card "Esse
+// plano faz sentido?". tool-policy.ts já bloqueia topic_picker em closing/
+// terminal, mas o instante exato do gate `decision` ainda é fase "reveal"
+// (decisionDispatched só vira true DEPOIS do directive) — esta regra é a 2ª
+// linha que cobre esse instante específico via nextGate().
+describe("FIX-300 — regra topic-picker-server-gate (card alucinado no gate decision)", () => {
+	const DECISION_GATE_META: ConversationMetadata = {
+		desireAsked: true,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		experiencePrev: "returning",
+		qualifyAnswers: {
+			creditMax: 120_000,
+			prazoMeses: 24,
+			hasLance: "no",
+			lanceEmbutido: false,
+		},
+		simulatorOfferDispatched: true,
+		decisionDispatched: false,
+	};
+
+	it("sonda adversarial: suprime topic_picker no gate decision, mesmo com chips arbitrários ('a'/'b') fabricados pelo modelo", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: DECISION_GATE_META,
+				artifactType: "topic_picker",
+				isUserTurn: false,
+			}),
+		);
+		expect(v.allow).toBe(false);
+		if (!v.allow) {
+			expect(v.rule).toBe("topic-picker-server-gate");
+			expect(v.logLine).toMatch(/topic-picker-server-gate/);
+		}
+	});
+
+	it("PERMITE topic_picker fora do gate decision (ex.: meio da qualificação, dúvida legítima)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: { desireAsked: true },
+				artifactType: "topic_picker",
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+
+	it("NÃO afeta outros artifacts no mesmo gate decision (regra escopada a topic_picker)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: DECISION_GATE_META,
+				artifactType: "decision_prompt",
 			}),
 		);
 		expect(v.allow).toBe(true);

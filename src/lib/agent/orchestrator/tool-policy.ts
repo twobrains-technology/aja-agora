@@ -46,9 +46,22 @@ const BASE = [
 	"suggest_handoff",
 	"save_contact_name",
 	"save_contact_whatsapp",
-	"present_topic_picker",
 	"check_proposal_status",
 ];
+
+/**
+ * FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): `present_
+ * topic_picker` SAI de `closing`/`terminal` — nesses estados o servidor já
+ * dirige a conversa com prompts canônicos (contract_form, status da proposta),
+ * então um menu de dúvidas escrito pelo LLM ali é sempre ruído (foi assim que o
+ * Qwen chamou a tool no gate `decision` com chips "a"/"b" fabricados). Fica
+ * disponível só em `qualify`/`reveal`, onde ainda faz sentido oferecer atalhos
+ * de dúvida. 2ª linha de defesa em `artifact-guard.ts` cobre o instante exato
+ * do gate `decision` (que tecnicamente ainda é fase `reveal` até o dispatch).
+ */
+function topicPickerTools(phase: ToolPhase): string[] {
+	return phase === "closing" || phase === "terminal" ? [] : ["present_topic_picker"];
+}
 
 /** Descoberta completa + cards do reveal — o passo 3+4 acontece na fase
  * qualify (o turno do reveal roda com revealCompleted ainda false). */
@@ -135,6 +148,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// (nextGate: identify precede credit) e só então libera a busca.
 			return [
 				...BASE,
+				...topicPickerTools(phase),
 				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
@@ -162,6 +176,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// como embedded_bid/two_paths/scarcity — o LLM nunca mais chama.
 			return [
 				...BASE,
+				...topicPickerTools(phase),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
@@ -187,6 +202,7 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// de USUÁRIO segue coberta pelo guard isDecisionDup (2ª linha).
 			return [
 				...BASE,
+				...topicPickerTools(phase),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
@@ -198,6 +214,6 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.
 			// Status respondido pela tool real (FIX-14, via BASE), resto é conversa.
-			return [...BASE];
+			return [...BASE, ...topicPickerTools(phase)];
 	}
 }

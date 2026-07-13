@@ -82,7 +82,6 @@ const BASE = [
 	// que pode existir sem meta.contractClosed (eval FIX-14 pegou a regressão:
 	// policy sem a tool em qualify fez o agent negar proposta REAL de memória).
 	"check_proposal_status",
-	"present_topic_picker",
 	"save_contact_name",
 	"save_contact_whatsapp",
 	"suggest_handoff",
@@ -90,6 +89,9 @@ const BASE = [
 
 const QUALIFY_EXPECTED = [
 	...BASE,
+	// FIX-300: present_topic_picker só em qualify/reveal — some em closing/
+	// terminal (servidor já dirige com prompts canônicos nesses estados).
+	"present_topic_picker",
 	// descoberta completa — o reveal (passo 3+4) acontece NESTA fase
 	"capture_lead",
 	"compare_with_financing",
@@ -112,6 +114,8 @@ const QUALIFY_EXPECTED = [
 
 const REVEAL_EXPECTED = [
 	...BASE,
+	// FIX-300: ainda dentro (fase reveal) — só some em closing/terminal.
+	"present_topic_picker",
 	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP).
 	// FIX-34: present_lead_form FORA — pós-reveal o avanço é decision → contract_form
 	// (jornada self-service), nunca captura de lead pra consultor humano.
@@ -142,7 +146,13 @@ const REVEAL_EXPECTED = [
 // agora é emissão SERVER-SIDE determinística (buildDecisionPromptCard), o
 // directive que fecha closing só narra (sem tool-call). Ver describe FIX-253
 // abaixo.
-const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
+//
+// FIX-300: present_topic_picker também SAI em closing — o servidor já dirige
+// com contract_form/status; um menu de dúvidas do LLM ali é sempre ruído.
+const CLOSING_EXPECTED = [
+	...REVEAL_EXPECTED.filter((t) => t !== "present_topic_picker"),
+	"present_contract_form",
+].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
 
@@ -283,6 +293,18 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		]) {
 			expect(allowedTools(meta)).not.toContain("present_decision_prompt");
 		}
+	});
+
+	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`):
+	// present_topic_picker SAI de closing/terminal — nesses estados o servidor
+	// já dirige com prompts canônicos (contract_form/status), um menu de
+	// dúvidas do LLM é sempre ruído. Continua em qualify/reveal (ainda faz
+	// sentido oferecer atalhos de dúvida ali).
+	it("FIX-300 — present_topic_picker: presente em qualify/reveal, AUSENTE em closing/terminal", () => {
+		expect(allowedTools(QUALIFY_META)).toContain("present_topic_picker");
+		expect(allowedTools(REVEAL_META)).toContain("present_topic_picker");
+		expect(allowedTools(CLOSING_META)).not.toContain("present_topic_picker");
+		expect(allowedTools(TERMINAL_META)).not.toContain("present_topic_picker");
 	});
 });
 

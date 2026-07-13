@@ -18,6 +18,7 @@ import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
@@ -253,12 +254,22 @@ const scenariosSchema = z.object({
 	termMonths: z.number().int().positive().describe("Prazo nominal do consorcio em meses"),
 });
 
-const topicPickerSchema = z.object({
+// FIX-300: `topics` deixou de ser string livre — o Zod só aceita um id do
+// catálogo canônico (topic-catalog.ts). O COPY do chip vem SEMPRE do
+// catálogo (resolveTopicPickerPayload, runner.ts), nunca do texto que o
+// modelo mandou — mata o vetor do card alucinado (chips "a"/"b").
+export const topicPickerSchema = z.object({
 	prompt: z
 		.string()
 		.optional()
 		.describe("Frase curta antes dos chips (ex: 'Sobre o que voce gostaria de saber?')"),
-	topics: z.array(z.string().min(1)).min(2).max(5).describe("Lista de topicos clicaveis (2-5)"),
+	topics: z
+		.array(z.enum(CANONICAL_TOPIC_IDS))
+		.min(2)
+		.max(5)
+		.describe(
+			`Ids das duvidas clicaveis (2-5), EXATAMENTE do catalogo canonico: ${CANONICAL_TOPIC_IDS.join(", ")}. NUNCA invente um id novo — o copy do chip vem do catalogo, nao do texto que voce escrever aqui.`,
+		),
 	includeBackButton: z
 		.boolean()
 		.default(true)
