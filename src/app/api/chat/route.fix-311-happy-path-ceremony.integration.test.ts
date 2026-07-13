@@ -169,6 +169,31 @@ describeIfDb("FIX-311 — cerimônia scarcity→decision_prompt no ramo FELIZ do
 		).toBeLessThanOrEqual(1);
 	});
 
+	it("FIX-319 — clique 'Tenho interesse' com contract_form JÁ dispatchado não redispara o avanço (achado ao vivo: 2x no mesmo turno)", async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Kairo",
+				channel: "web",
+				metadata: { ...POS_REVEAL_META, decisionDispatched: true, contractFormDispatched: true },
+			})
+			.returning();
+		convId = c.id;
+
+		const res = await POST(
+			makeReq({
+				conversationId: convId,
+				messages: [{ role: "user", parts: [{ type: "text", text: "Tenho interesse!" }] }],
+				action: { kind: "interest", administradora: "CANOPUS", label: "Tenho interesse!" },
+			}),
+		);
+		const text = await res.text();
+
+		expect(text).not.toContain('"type":"contract_form"');
+		expect(text).not.toContain('"type":"scarcity"');
+		expect(text).toContain("já viu o formulário");
+	});
+
 	it("gate simulator-offer='yes' (aceite do simulador, hoje só mostra o dial): scarcity e decision_prompt aparecem NESSA ORDEM no mesmo turno", async () => {
 		const [c] = await db
 			.insert(conversations)

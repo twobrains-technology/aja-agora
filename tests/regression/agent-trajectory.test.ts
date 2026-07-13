@@ -7517,8 +7517,11 @@ describe("FIX-117 — WhatsApp interest = avanço direto ao contract (paridade F
 
 	it("paridade web: route.ts do interesse SEMPRE avança (sem intercalar decisão)", () => {
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-319 (r10-4): janela alargada de 600→900 — o guard de idempotência
+		// contra contractFormDispatched duplicado (novo) empurrou
+		// buildAdvanceToContractDirective pra além do corte antigo.
 		const interestBlock =
-			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,600}/)?.[0] ?? "";
+			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,900}/)?.[0] ?? "";
 		expect(interestBlock).toContain("buildAdvanceToContractDirective");
 		expect(interestBlock).not.toContain("buildDecisionPromptDirective");
 	});

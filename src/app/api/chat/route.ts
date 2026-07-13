@@ -233,6 +233,14 @@ async function pipeClosingCeremony(args: {
 	// resultando na pergunta repetida 3x no turno de fechamento (achado ao
 	// vivo). `suppressGate` nos 2 sub-turnos intermediários — só o avanço
 	// final (chamador desta função) deixa o gate aparecer, no máximo 1x.
+	//
+	// FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0): `present_contract_form`
+	// continua na allowlist da fase "closing" (tool-policy.ts) durante TODO O
+	// TURNO — inclusive estes 2 sub-turnos PURAMENTE narrativos, protegidos só
+	// por texto de prompt ("NÃO chame nenhuma tool"). Achado ao vivo (dossiê
+	// Mario): o modelo chamou a tool aqui mesmo, duplicando `contract_form` no
+	// MESMO turno HTTP. `forceToolChoice: "none"` proíbe QUALQUER tool-call
+	// nestes 2 sub-turnos em nível de API — nunca regra-no-prompt (Lei 4).
 	await pipeDirectiveTurn({
 		conversationId,
 		directive: buildScarcityDirective(),
@@ -240,6 +248,7 @@ async function pipeClosingCeremony(args: {
 		writer,
 		userKey,
 		suppressGate: true,
+		forceToolChoice: "none",
 	});
 	const scarcityCard = buildScarcityCard(meta);
 	if (scarcityCard) {
@@ -258,6 +267,7 @@ async function pipeClosingCeremony(args: {
 		writer,
 		userKey,
 		suppressGate: true,
+		forceToolChoice: "none",
 	});
 	await pipeServerArtifact({
 		conversationId,
@@ -610,6 +620,15 @@ export async function POST(req: NextRequest) {
 									writer,
 									userKey,
 								});
+							}
+							if (fresh.contractFormDispatched === true) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									fresh.currentPersona ?? null,
+									"Você já viu o formulário aqui em cima — é só preencher pra eu seguir!",
+								);
+								return;
 							}
 							await pipeDirectiveTurn({
 								conversationId,

@@ -139,6 +139,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		userIntent: providedIntent,
 		userKey,
 		suppressGateEvent,
+		forceToolChoice: callerForceToolChoice,
 	} = input;
 
 	const conversationId = providedConversationId;
@@ -378,6 +379,20 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			analysis.userIntent === "ready_to_proceed"
 		) {
 			await saveMessage(conversationId, "user", userText, channel);
+			// FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0): sem este guard,
+			// este caminho e o clique "Tenho interesse" (route.ts) podiam disparar
+			// `buildAdvanceToContractDirective` em turnos CONSECUTIVOS — achado ao
+			// vivo (dossiê Madalena, turnos 18→19): 2 `contract_form` seguidos.
+			// `contractFormDispatched` já persiste assim que o 1º aparece
+			// (runner.ts:1244-1246) — reafirma o formulário JÁ mostrado em vez de
+			// pedir de novo.
+			if (meta.contractFormDispatched === true) {
+				const notice = "Você já viu o formulário aqui em cima — é só preencher pra eu seguir!";
+				yield { type: "text-delta", text: notice };
+				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
+				yield { type: "text-boundary" };
+				return;
+			}
 			yield* runTurn({
 				channel,
 				conversationId,
@@ -585,8 +600,9 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// Background: Anthropic Claude Sonnet 4-6 escapava da regra dura no
 	// prompt em variantes curtas ("Prazer, Paulo!" sem tool). Forçar via
 	// toolChoice é defesa em código — não depende de obediência do modelo.
-	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | undefined;
-	if (isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
+	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | "none" | undefined =
+		callerForceToolChoice;
+	if (!callerForceToolChoice && isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
 		// Pega o último turn do assistant no histórico salvo (já inclui o
 		// turn anterior ao user-text atual).
 		const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");

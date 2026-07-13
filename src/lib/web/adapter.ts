@@ -451,8 +451,14 @@ export async function pipeDirectiveTurn(args: {
 	 * `nextGateToFire` deste turno de directive — sem isso, os dois caminhos
 	 * emitem a MESMA educação+chips (double-dispatch: route.ts:1058-1072). */
 	suppressGate?: boolean;
+	/** FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0): directive PURAMENTE
+	 * narrativo (ex.: scarcity/decision_prompt) — `"none"` proíbe QUALQUER
+	 * tool-call neste turno em nível de API (nunca regra-no-prompt). Ver
+	 * `TurnInput.forceToolChoice` (orchestrator/types.ts). */
+	forceToolChoice?: "none";
 }): Promise<{ emittedVisible: boolean }> {
-	const { conversationId, directive, contactName, writer, userKey, suppressGate } = args;
+	const { conversationId, directive, contactName, writer, userKey, suppressGate, forceToolChoice } =
+		args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -463,6 +469,7 @@ export async function pipeDirectiveTurn(args: {
 		skipLeadCollection: true,
 		userKey,
 		suppressGateEvent: suppressGate,
+		forceToolChoice,
 	});
 	return pipeOrchestratorToWriter(events, writer, conversationId);
 }
