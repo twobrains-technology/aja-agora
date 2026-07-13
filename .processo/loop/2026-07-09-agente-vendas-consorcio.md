@@ -156,7 +156,16 @@ escreve os cenários E2E (2 fluxos P0 + sondas adversariais nos 3 cards) → Hai
 | re-verificação (pós-onda-3, **OpenAI**) | ✅ test:unit 3321 verde. 5 roteiros OpenAI. **Sonnet 4/10** (Neg4·Func5·Cálc5·UX5·UI6·E2E4). `veredito-r9pos3-sonnet.md`. Latência 62→33s ✓. Travou 3ª vez em 4 (whack-a-mole + pivô OpenAI). |
 | execução onda 4 (raiz) | ✅ 3 blocos DONE + integrados. FIX-290 `comparison_table` server-side (nunca some) · FIX-291 degradação honesta Bevi + cap de retry · FIX-292 monthlyPayment consistente · FIX-293 directive anti-invenção. Merge LIMPO. Promovido develop `404cd35b`. Workspaces+base deletados. |
 | **SELO FINAL (Fable, claude)** | ✅ `veredito-FABLE-selo.md`: **8/10 (MÍNIMO), MATADOR: NÃO por 1 bloqueio** (Neg10·Func9·Cálc9·**UX8**·UI9·**E2E8**). Trajetória 3→4→4→4→**8**. Produto vivo matador (comparison_table nunca some, degradação honesta, valores consistentes, anti-fabricação, reserva de cota, 3 propostas reais). Bloqueio **G-R0**: `test:integration` 2 vermelhas (ondas só gatearam test:unit): (a) `present_whatsapp_optin` re-exposta ao specialist (`ai-sdk.ts:1035` PRESENTATION_TOOLS, viola FIX-280); (b) contract_form pré-reveal suprimido sem re-emitir identify (recovery FIX-12 perdida × colisão FIX-279). Fable: resolvidas as 2 + suíte verde → MATADOR SIM sem nova coleta. |
-| onda 5 (cirúrgica G-R0) | ✅ fix commitado develop `03296e07` (FIX-294 denylist optin em `builder.ts` · FIX-295 re-emite identify em `runner.ts`; root cause B = colisão FIX-285, não FIX-279). **test:integration 312 verde (0 falhas), test:unit 3335 verde** (container). ⏳ re-Fable confirma o selo → done-report + `develop→main`. |
+| onda 5 (cirúrgica G-R0) | ✅ FIX-294 denylist optin (`builder.ts`) · FIX-295 re-emite identify (`runner.ts`; root cause = colisão FIX-285). test:integration 312 verde, test:unit 3335 verde. |
+| **🏆 SELO FABLE FINAL** | ✅ **MATADOR PRA PROD: SIM — 10/10** (`veredito-FABLE-selo-final.md`, claude-sonnet-5, prova mecânica das suítes + estática do fix honesto). `develop→main` AUTORIZADO. |
+
+## 🏁 CONCLUSÃO — r9 MATADOR PRA PROD (2026-07-12)
+- **Selo Fable 10/10** no modelo de prod (claude). Trajetória: 3→4→4→4→8→**10**.
+- **15 fixes** FIX-277..295, 5 ondas (4 raiz + 1 cirúrgica), cada uma verificada por juiz independente ao vivo.
+- Suíte: **3335 unit + 312 integração, 0 falha.** Done-report: `.done/2026-07-12-2153-jornada-consorcio-matador-prod.md`.
+- **Deploy:** `develop→main` (prod). Blast radius verificado: migration 0033 aditiva, sem breaking de contrato.
+- **Gaps não-bloqueantes (próxima onda):** latência Bevi ~60s (PENDENTE-AGX paralelização) · G-R1..R6 polish.
+- **Nota:** ondas 3-4 validadas no OpenAI (key salesbox, patch revertido); selo+deploy no claude (prod).
 
 ### r9 ONDA 4 — spec (pós-onda-3 4/10; 3 rodadas travadas → fix de RAIZ, lição r6/r8 "invariante em código")
 Padrão claro: o MÍNIMO pula porque cards do reveal sem coerção server-side somem + Bevi third-party sem degradação. Gaps (`veredito-r9pos3-sonnet.md`):
