@@ -1,0 +1,83 @@
+# Serviços COMPARTILHADOS do projeto aja-agora — convenção local-dev v2 (2026-07-12).
+# Sobem 1× por projeto (project aja-shared, via project-shared-up.sh); cada workspace
+# ganha um DATABASE próprio no pg (workspace-db.sh) e um Redis DB index. Decisão e
+# porquê: organizacao-produtiva/docs/decisoes.md (stack por workspace estourava o teto
+# de 12 GB do OrbStack com N workspaces).
+#
+# ⚠️ SEM label tb.workspace — shared não é stack de workspace (reaper/delete-stack não tocam).
+#
+# MinIO compartilhado com buckets comuns (aja-administradora-docs, aja-client-docs):
+# conteúdo é documento derivado/cache — cruzar entre workspaces é dev-tolerável
+# (trade-off consciente, padrão Arcjet; ver decisoes.md).
+services:
+  pg:
+    image: postgres:16-alpine
+    container_name: aja-shared-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aja_agora}
+    volumes:
+      - aja-shared-pgdata:/var/lib/postgresql/data
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: db.aja-shared.orb.local
+      tb.project: aja-agora
+      tb.role: shared-pg
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    # BullMQ (polling de desfecho) — isolamento por workspace via Redis DB index
+    # (REDIS_DB_INDEX no compose do workspace, alocado pelo bootstrap).
+    image: redis:7-alpine
+    container_name: aja-shared-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - aja-shared-redisdata:/data
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: redis.aja-shared.orb.local
+      tb.project: aja-agora
+      tb.role: shared-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    # Object storage S3-compatível (PDFs de administradora, docs de cliente). O bucket
+    # é criado on-demand pelo client (ensureBucket) — sem passo de provisionamento.
+    image: minio/minio:latest
+    container_name: aja-shared-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    volumes:
+      - aja-shared-miniodata:/data
+    networks:
+      - tb-local-net
+    labels:
+      dev.orbstack.domains: minio.aja-shared.orb.local console.aja-shared-minio.orb.local
+      tb.project: aja-agora
+      tb.role: shared-minio
+
+volumes:
+  aja-shared-pgdata:
+  aja-shared-redisdata:
+  aja-shared-miniodata:
+
+networks:
+  tb-local-net:
+    external: true
+    name: tb-local-net
