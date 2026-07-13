@@ -370,7 +370,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// (P7: "uai nao sei voce nao me perguntou nada"). Curto-circuito ANTES de
 	// invocar a LLM (Lei 4) — se rodasse depois, o texto livre já teria
 	// streamado pro usuário.
-	// CORREÇÃO (mesma rodada, achada no gate da onda 1): a decisão original
+	// CORREÇÃO 1 (mesma rodada, achada no gate da onda 1): a decisão original
 	// (docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-clarify.md)
 	// reusava `expressing_doubt` "sem intent nova" — quebrou o FIX-266 (r9),
 	// porque "deixa eu pensar aqui"/"tenho que pensar" JÁ é expressing_doubt
@@ -379,7 +379,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// uma intent NOVA (turn-analyzer.ts), semanticamente distinta: não
 	// entendeu a PERGUNTA (confused) vs. entendeu mas está decidindo
 	// (expressing_doubt, que segue fluindo pra LLM normalmente).
-	if (isUserTurn && !skipAnalyzer && analyzedIntent === "confused") {
+	// CORREÇÃO 2 (mesmo gate): mesmo com a intent nova, o analyzer (LLM, não-
+	// determinístico) ainda pode confundir "por que essa e não outra?" (pergunta
+	// de EXATIDÃO/CRITÉRIO sobre a recomendação, FIX-282/293) com "não entendi a
+	// pergunta". Blindagem em CÓDIGO (Lei 4, não confia só no prompt):
+	// `isExactnessOrCriteriaQuestion` é o MESMO regex determinístico que o
+	// FIX-282/293 já usa — se bater, cede passagem pra aquele caminho (resposta
+	// com números reais), nunca reancora aqui.
+	if (
+		isUserTurn &&
+		!skipAnalyzer &&
+		analyzedIntent === "confused" &&
+		!isExactnessOrCriteriaQuestion(userText)
+	) {
 		const clarifyGate = gateAwaitingReply(meta, Boolean(knownName));
 		if (clarifyGate === "decision") {
 			yield { type: "text-delta", text: CLARIFY_LEAD_IN };

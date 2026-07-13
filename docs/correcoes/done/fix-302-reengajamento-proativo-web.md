@@ -1,12 +1,15 @@
 ---
 id: FIX-302
 titulo: "Reengajamento proativo no web quando o usuário some (hoje só existe no WhatsApp)"
-status: todo
+status: done
 bloco: bloco-r10-1-web-reengage
 severidade: alta
 projeto: aja-agora
-arquivos: [src/lib/workers/gate-reengage-poll.ts, src/lib/agent/gate-reengage.ts, src/app/api/chat/resume/route.ts]
+arquivos: [src/lib/workers/gate-reengage-poll.ts, src/lib/agent/gate-reengage.ts, src/lib/workers/gate-reengage-poll.integration.test.ts, src/lib/agent/gate-reengage.escada.test.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-web-reengage — único item paralelo sem colisão)
+commit: "1 commit conventional na branch fix/r10-1-web-reengage (ver git log)"
+executado_em: "2026-07-12"
+decisao: docs/decisoes/blocos/2026-07-12-bloco-r10-1-web-reengage.md
 ---
 ## Palavras do operador
 > "tem que dar uma chamada no usuário, tem que ser bem proativo... se o usuário não responder, tem
@@ -50,3 +53,21 @@ rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-web-reengage — únic
   persistida e entregue ao cliente (não precisa reload manual).
 - Teste de integração: comportamento do WhatsApp não regride (continua via `fireGate`).
 - Teste da escada completa (4 tentativas) reproduzida no canal web.
+
+## Implementado (2026-07-12)
+
+Decisão de entrega registrada em `docs/decisoes/blocos/2026-07-12-bloco-r10-1-web-reengage.md`:
+persistir na tabela `messages` (`saveMessage`) + reusar `/api/chat/resume` — sem endpoint novo.
+
+- `gate-reengage-poll.ts`: query parou de filtrar por canal; `runReengageCycle` ramifica a
+  entrega (WhatsApp via `fireGate`, sem mudança; web via `saveMessage` + publish best-effort no
+  `message-bus`). Gates de coleta obrigatória re-armam o marcador até o teto de 4 tentativas da
+  escada FIX-211 (a 4ª — `SPECIALIST_EXIT_OFFER` — não re-arma, anti-loop-infinito).
+- `gate-reengage.ts`: `reengageQuestionForGate` ganhou parâmetro `channel` (bug lateral
+  corrigido — sem ele, o gate `identify` mentia "aqui do WhatsApp" pro usuário web).
+- 3 novos testes de integração + 1 teste unitário da escada (39/39 verdes, container
+  transitório + PG shared do workspace — DB do host bloqueado por convenção).
+- **Gap explícito**: `theater-chat.tsx` só consulta `/api/chat/resume` uma vez no mount — não
+  há poll periódico enquanto a aba fica ociosa. A mensagem fica disponível (regressão exigida
+  cumprida), mas só chega visualmente no próximo mount/reconexão, não "empurrada" numa aba já
+  aberta. Fora do `escopo_arquivos` do bloco — follow-up natural, não uma correção silenciosa.
