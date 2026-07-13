@@ -1,7 +1,9 @@
 ---
 id: FIX-310
 titulo: "Blinda experiencePrev contra captura oportunista sem trava de gate-ativo"
-status: todo
+status: done
+commit: 1c02d09a
+executado_em: 2026-07-13
 bloco: bloco-r10-4-credit-deadlock
 severidade: alta
 projeto: aja-agora

@@ -1,7 +1,9 @@
 ---
 id: FIX-312
 titulo: "Copy do gate credit em loop: reconhece tentativa anterior + corrige gramática 'esse um Corolla'"
-status: todo
+status: done
+commit: ebf2c4d0
+executado_em: 2026-07-13
 bloco: bloco-r10-4-credit-deadlock
 severidade: media
 projeto: aja-agora
