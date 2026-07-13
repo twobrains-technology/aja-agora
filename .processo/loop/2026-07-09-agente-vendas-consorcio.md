@@ -579,3 +579,44 @@ achado #2 acima).
 inteira ausente/quebrada) — antes de escrever fix-cards item-a-item, vale um crítico investigando
 se há uma causa-raiz ÚNICA (ex.: um guard/condição que está suprimindo a cadeia inteira,
 silenciosamente, na base integrada) antes de desenhar a onda 4.
+
+### 🔴🔴 INVALIDAÇÃO DA RODADA A.1 — o veredito 2/10 foi medido contra AMBIENTE QUEBRADO
+
+Investigação de causa-raiz (dispatch dedicado) confirmou: **o achado mais grave da rodada A.1**
+("hero/experience/topic_picker/scarcity/decision_prompt nunca aparecem") **não é regressão de
+produto — é artefato de dois bugs de AMBIENTE encadeados**, achados e corrigidos nesta sessão:
+
+1. **`docker-compose.yml` nunca repassava `AI_MODEL` pro container** (só materializa vars
+   EXPLICITAMENTE listadas no bloco `environment:`) — o app SEMPRE rodou no default do código
+   (`claude-sonnet-5`), nunca no modelo que `.env.local` pedia. Ou seja: nenhum dos coletores desta
+   rodada testou de fato o modelo que pensavam estar testando.
+2. **Ao corrigir isso, um segundo bug apareceu**: `LITELLM_API_KEY` (virtual key órfã, deixada
+   pelo coletor Qwen no `.env.local`) passou a chegar no container — e
+   `src/lib/llm/gateway-anthropic.ts` usa `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` (`??` só cai no
+   fallback em `null`/`undefined`, NUNCA em string vazia; e compose SEMPRE materializa a var,
+   mesmo vazia, quando listada) → a key real ficava mascarada por uma vazia/inválida →
+   `invalid x-api-key`/`x-api-key header is required` em TODA chamada real de LLM → o app degrada
+   graciosamente pro fallback determinístico (`EMPTY_TURN_FALLBACK`) **com HTTP 200** — por isso
+   coletor A reportou "0 erros HTTP" num dossiê que na prática nunca teve uma resposta real da
+   LLM na maior parte dos turnos que importam.
+
+**Corrigido e commitado:**
+- `docker-compose.yml` (worktree + pushado): `AI_MODEL: ${AI_MODEL:-}` adicionado ao
+  `environment:`; NÃO adicionadas `LITELLM_*`/`OPENAI_API_KEY` (o padrão `${VAR:-}` quebraria o
+  `??` de novo) — comentário no arquivo explica o porquê pra não repetir.
+- `.env.local` do worktree: `LITELLM_API_KEY` órfã removida.
+- `evidencias-r9/driver/run-scenario.mjs` (develop): guard novo — cada turno é checado contra
+  marcadores de fallback conhecidos (`EMPTY_TURN_FALLBACK`, degradação do reveal) e marcado
+  `contaminated: true`; o resumo final avisa ALTO se qualquer turno veio contaminado. **HTTP 200
+  não significa turno saudável** — essa é a lição que quase deixou passar um veredito 2/10 falso.
+- Smoke confirmado pós-fix: resposta real e coerente da LLM ("Oi! Aqui é a Sofia...").
+
+**Item novo pra próxima onda (achado no debug, não fix urgente):** `gateway-anthropic.ts` usar
+`??` em vez de checagem de truthy pra `LITELLM_API_KEY` é um footgun latente — qualquer ambiente
+que materialize a var vazia (não só este container) pode mascarar silenciosamente a key real.
+Trocar por `||` ou checagem explícita.
+
+**Consequência:** o veredito 2/10 e os 9 achados da rodada A.1 (exceto os que vieram de fonte
+independente do LLM — ex. a suíte `test:unit`/`test:integration`, que usa mocks e não foi afetada)
+**não são confiáveis**. A rodada A.1 é descartada como medição; **rodada A.2 recomeça do zero com
+ambiente limpo**, abaixo.
