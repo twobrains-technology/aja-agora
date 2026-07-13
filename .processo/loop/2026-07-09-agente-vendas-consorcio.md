@@ -729,3 +729,40 @@ desire) e ficou em `creditMentionedAtDesire`, não em `creditMax`.
 ISOLADOS — nenhum exercita a sequência real onde o valor vem junto do desire (Mario) nem o hero
 atravessando o sub-fluxo de lance (Madalena). Um teste de trajetória E2E cobrindo os 2 cassettes
 reais fecharia esse gap de detecção — considerar pra onda 4.
+
+---
+
+## Onda 4 — 4 blocos disparados, integrados e validados (2026-07-13)
+
+4 blocos disparados via `todo-blocks` (modelo Sonnet fixado), cada um em workspace próprio,
+forkando de `integ/consorcio-r10` (ondas 1+2+3 já integradas):
+`bloco-r10-4-credit-deadlock` (FIX-306/307/310/312), `bloco-r10-4-reco-consent-hero` (FIX-308),
+`bloco-r10-4-topic-picker-serverside` (FIX-309), `bloco-r10-4-happy-path-ceremony` (FIX-311).
+
+**Integração:** `merge-wave.sh merge --wave 4` na 1ª tentativa rodou o gate NO HOST (container
+`aja-app-consorcio-r10` não estava de pé) — 3 dos 4 blocos caíram em gate-vermelho falso
+(exatamente o padrão de falso-negativo por ambiente já catalogado nesta campanha). Bootstrap do
+container (`bootstrap-workspace.sh`) + nova tentativa: `credit-deadlock` e `happy-path-ceremony`
+integraram limpos. Os 2 restantes (`reco-consent-hero`, `topic-picker-serverside`) reprovaram o
+gate DENTRO do container — dessa vez real: colisão de merge esperada (documentada no `_bloco.md`
+de cada um) entre `FIX-307` (credit-deadlock) e `FIX-308` (reco-consent-hero), ambos tocando o
+invariante de `nextGate()` em `qualify-state.ts`. O teste de regressão do FIX-307
+(`qualify-state.fix-307-credit-stuck-escape.test.ts:76`) simulava "já passou do reco-consent" só
+com `recoConsentDispatched: true` — correto sob a lógica antiga, mas o FIX-308 trocou esse
+invariante pra `recoConsentAnswered`. Fix aplicado pelo orquestrador (commit `03a0b5a5`, ANTES do
+merge do FIX-308, pra não quebrar o gate diferencial no meio da integração): adiciona
+`recoConsentAnswered: true` na fixture. Após o fix, os 2 blocos restantes mergearam limpo.
+
+**Validação final (dentro do container, gate real do projeto — não o `pnpm test` genérico que o
+merge-wave.sh auto-detecta, que sofre falso-positivo de paralelismo entre arquivos de integração):**
+typecheck diferencial 0 erros novos (14 pré-existentes intocados, 1 "novo" descartado como
+falso-positivo — TS2678 em `runner.ts` idêntico, só a ordem dos membros do union mudou na
+mensagem do tsc) + `test:unit` (3425 verde) + `test:integration` (338 verde, 5 skip) em cada
+etapa incremental do merge.
+
+Base `integ/consorcio-r10` com as 4 ondas integradas, pushada (`c4eb9e47`). 4 workspaces limpos
+via `finish-wave.sh consorcio-r10 --wave 4` (sem `--to-develop` — base ainda não vai pra develop,
+segue em revisão pela campanha).
+
+**Próximo passo:** Rodada A.3 de verificação (coletor Haiku direto + juiz Sonnet/Fable) contra a
+base já com os 7 fixes, antes de declarar Etapa A fechada.
