@@ -73,9 +73,10 @@ const LANCE_EMBUTIDO_PENDING_META: ConversationMetadata = {
 	identityCollected: true,
 	searchDispatched: true,
 	revealCompleted: true,
-	// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-	// timeframe/lance até chegar em "lance-embutido".
+	// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+	// cruzar timeframe/lance até chegar em "lance-embutido".
 	recoConsentDispatched: true,
+	recoConsentAnswered: true,
 	simulatorOfferDispatched: true,
 	decisionDispatched: false,
 	recommendedAdministradora: "CANOPUS",

@@ -47,7 +47,8 @@ function walkFunnelComPrazo(opts: { hasLance: "yes" | "no" }): Gate[] {
 				meta = { ...meta, experiencePrev: "first" };
 				break;
 			case "reco-consent":
-				meta = { ...meta, recoConsentDispatched: true };
+				// FIX-308: resolver o gate exige a resposta REAL, não só o dispatch.
+				meta = { ...meta, recoConsentDispatched: true, recoConsentAnswered: true };
 				break;
 			case "timeframe":
 				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 6 } };
@@ -133,9 +134,10 @@ describe("FIX-103 revertido pelo FIX-233 — gate de prazo (timeframe) VOLTA, p�
 			qualifyConsented: true,
 			identityCollected: true,
 			experiencePrev: "first",
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// até o timeframe (senão insere "reco-consent" antes).
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar até o timeframe (senão insere "reco-consent" antes).
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 80_000 },
 			searchDispatched: true,
 			revealCompleted: true,

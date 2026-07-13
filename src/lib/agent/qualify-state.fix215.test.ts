@@ -81,9 +81,10 @@ describe("FIX-215.3 — lance só é oferecido PÓS-reveal; resolvê-lo re-dispa
 		...IDENTITY_VALUE_AND_TIMEFRAME_READY,
 		searchDispatched: true,
 		revealCompleted: true,
-		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
-		// o lance (senão insere "reco-consent" antes).
+		// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+		// cruzar até o lance (senão fica preso em "reco-consent").
 		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		...over,
 	});
 

@@ -46,9 +46,10 @@ function postRevealMeta(over: Partial<ConversationMetadata> = {}): ConversationM
 		identityCollected: true,
 		searchDispatched: true,
 		revealCompleted: true,
-		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
-		// o decision (senão insere "reco-consent" bem antes).
+		// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+		// cruzar até o decision (senão fica preso em "reco-consent").
 		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		// docx passo 4: oferta do simulador já feita (suite própria em
 		// qualify-state.simulator-offer.test.ts) — aqui testamos SÓ o decision.
 		simulatorOfferDispatched: true,

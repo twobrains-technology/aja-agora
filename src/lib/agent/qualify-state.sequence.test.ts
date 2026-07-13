@@ -48,7 +48,8 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 				meta = { ...meta, experiencePrev: "first" };
 				break;
 			case "reco-consent":
-				meta = { ...meta, recoConsentDispatched: true };
+				// FIX-308: resolver o gate exige a resposta REAL, não só o dispatch.
+				meta = { ...meta, recoConsentDispatched: true, recoConsentAnswered: true };
 				break;
 			case "timeframe":
 				meta = { ...meta, qualifyAnswers: { ...q, prazoMeses: 6 } };

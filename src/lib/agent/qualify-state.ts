@@ -276,7 +276,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// do LLM). PULA quando o usuário já recusou a conversa de lance
 		// (hasLance="so_parcela", capturado oportunisticamente a qualquer
 		// momento) — não há o que recomendar pra quem só quer a parcela fixa.
-		if (q.hasLance !== "so_parcela" && !meta.recoConsentDispatched) return "reco-consent";
+		//
+		// FIX-308 (rodada 10, onda 4 — causa-raiz real da Madalena): acoplado a
+		// `recoConsentAnswered` (resposta REAL), não mais a `recoConsentDispatched`
+		// (a PERGUNTA ter sido feita). Antes, a cascata avançava pra
+		// timeframe/lance/decisão assim que a pergunta saía, mesmo sem resposta
+		// reconhecida — o fecho (contract_form/whatsapp_optin) chegava a disparar
+		// ANTES do hero aparecer, porque nada mais barrava o avanço. Enquanto a
+		// resposta não é reconhecida como consentimento (detectYesNoText/intent
+		// em index.ts), a cascata FICA parada aqui — mesmo padrão dos gates de
+		// coleta (credit/lance/lance-embutido, que também travam até o dado
+		// chegar). decideShowGate() evita re-perguntar em pergunta/dúvida/
+		// off-topic (o agente conversa à vontade enquanto o gate segura).
+		if (q.hasLance !== "so_parcela" && !meta.recoConsentAnswered) return "reco-consent";
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural

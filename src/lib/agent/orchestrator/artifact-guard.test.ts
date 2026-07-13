@@ -229,9 +229,10 @@ describe("FIX-239 — regra premature-decision (decision_prompt antes da qualifi
 	const POST_REVEAL_QUALIFIED: ConversationMetadata = {
 		...POST_REVEAL_PRE_QUALIFY,
 		experiencePrev: "returning",
-		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-		// experience/timeframe/lance até chegar em "decision".
+		// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+		// cruzar experience/timeframe/lance até chegar em "decision".
 		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		qualifyAnswers: {
 			creditMax: 100_000,
 			prazoMeses: 12,
@@ -371,9 +372,10 @@ describe("FIX-20 — regra reveal-loop (re-emissão pós-reveal + dups)", () => 
 			desireAsked: true,
 			qualifyConsented: true,
 			experiencePrev: "returning",
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// experience/timeframe/lance até chegar em "decision".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 12,
@@ -620,11 +622,13 @@ describe("FIX-300 — regra topic-picker-server-gate (card alucinado no gate dec
 		searchDispatched: true,
 		revealCompleted: true,
 		experiencePrev: "returning",
-		// FIX-297 (rodada 10): reveal em dois tempos insere o gate `reco-consent`
-		// entre `experience` e `decision` — sem marcá-lo resolvido, nextGate()
-		// para em "reco-consent", não "decision", e a regra topic-picker-server-gate
-		// (que só aplica em nextGate===decision) nunca dispara.
+		// FIX-297/FIX-308 (rodada 10): reveal em dois tempos insere o gate
+		// `reco-consent` entre `experience` e `decision` — sem marcá-lo
+		// RESPONDIDO (não só dispatched), nextGate() para em "reco-consent", não
+		// "decision", e a regra topic-picker-server-gate (que só aplica em
+		// nextGate===decision) nunca dispara.
 		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		qualifyAnswers: {
 			creditMax: 120_000,
 			prazoMeses: 24,

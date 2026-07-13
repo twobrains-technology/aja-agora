@@ -3067,9 +3067,10 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// experience/timeframe/lance até chegar em "decision".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			// docx passo 4: oferta do simulador já feita (gate simulator-offer).
 			simulatorOfferDispatched: true,
 			...over,
@@ -3218,9 +3219,10 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// experience/timeframe/lance até chegar em "decision".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			simulatorOfferDispatched: true,
 			// Snapshot da descoberta de 256k (gravado pelo runner no reveal).
 			discoveredCreditTarget: 256_000,
@@ -3948,9 +3950,10 @@ describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", ()
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// timeframe/lance até chegar em "simulator-offer".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "simulator-offer".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 0,
@@ -4415,9 +4418,10 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 			// PÓS-reveal — sem isso o funil pularia direto pra "search".
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// timeframe/lance até chegar em "lance-embutido".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "lance-embutido".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 20_000,
 				monthlyBudget: 500,
@@ -4709,9 +4713,10 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// timeframe/lance até chegar em "lance-embutido".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "lance-embutido".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -8496,9 +8501,10 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
-			// o timeframe (senão insere "reco-consent" antes).
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar até o timeframe (senão fica preso em "reco-consent").
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,

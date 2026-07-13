@@ -65,12 +65,20 @@ export type { TurnEvent, TurnInput } from "./types";
 
 // FIX-260 (rodada 5, veredito Fable r4): heurística determinística de sim/não
 // em texto livre — usada SÓ pra consumir os gates lance-embutido/
-// simulator-offer quando a resposta vem digitada (nunca por clique, que já
-// tem handler próprio em route.ts). Lei 4: invariante de gate vira código,
-// não regra-no-prompt. `intent` (do analyzer) filtra pergunta/dúvida/off-topic
-// ANTES do regex — mesmo critério que decideShowGate já usa pra esses gates.
+// simulator-offer/reco-consent quando a resposta vem digitada (nunca por
+// clique, que já tem handler próprio em route.ts). Lei 4: invariante de gate
+// vira código, não regra-no-prompt. `intent` (do analyzer) filtra pergunta/
+// dúvida/off-topic ANTES do regex — mesmo critério que decideShowGate já usa
+// pra esses gates.
+//
+// FIX-308 (rodada 10, onda 4): "pode"/"mostra"/"mostrar" entraram — variantes
+// comuns de aceite a um CONVITE ("Posso te mostrar a opção que eu
+// recomendo?" → "Pode mostrar"/"Pode"/"Mostra aí") que o dossiê real da
+// Madalena provou não estarem cobertas (o hero só liberou 6 turnos depois,
+// em "quero"). Risco de falso-positivo de "pode" sozinho é mitigado pelo
+// filtro de `intent` acima (pergunta/dúvida nunca chegam no regex).
 const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode ser|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
+	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
 const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
 function detectYesNoText(text: string, intent: UserIntent): boolean | null {
@@ -273,10 +281,18 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// tool-call do LLM). Mesmo mecanismo do simulator-offer/lance-embutido
 		// (detectYesNoText) acima. Sem hero pendente (ex.: 1 grupo só, que nunca
 		// entra na ceremônia de consentimento), só avança normalmente.
+		//
+		// FIX-308 (rodada 10, onda 4): `intent==="ready_to_proceed"` também conta
+		// como consentimento, mesmo quando o texto foge do YES_TEXT_MARKERS (ex.:
+		// "bora, quero fechar logo" — já capturado pelo regex, mas cobre gírias
+		// novas que o analyzer reconheça com confiança sem precisar de mais uma
+		// entrada no regex). Só se aplica enquanto este gate está mesmo pendente
+		// (recoConsentDispatched && !recoConsentAnswered) — nunca sequestra um
+		// "ready_to_proceed" de outro contexto.
 		if (
 			meta.recoConsentDispatched === true &&
 			meta.recoConsentAnswered !== true &&
-			detectYesNoText(userText, analyzedIntent) === true
+			(detectYesNoText(userText, analyzedIntent) === true || analyzedIntent === "ready_to_proceed")
 		) {
 			meta.recoConsentAnswered = true;
 			await persistMeta(conversationId, meta);
@@ -967,10 +983,18 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			}
 		}
 		// FIX-297: "Posso te mostrar a opção que eu recomendo?" acontece UMA vez
-		// (padrão simulator-offer). Marcado na emissão. Um afirmativo digitado no
-		// turno seguinte é interceptado MAIS ACIMA (antes deste bloco rodar) e
-		// libera o hero pendente — só chega aqui negativo/ambíguo, que avança
-		// pro timeframe (comportamento correto, intacto).
+		// (padrão simulator-offer) — `recoConsentDispatched` só marca que a
+		// PERGUNTA já saiu, idempotente (só grava na 1ª vez). Um afirmativo
+		// digitado é interceptado MAIS ACIMA (antes deste bloco rodar) e libera o
+		// hero pendente, marcando `recoConsentAnswered`.
+		//
+		// FIX-308 (rodada 10, onda 4): ao contrário do simulator-offer, aqui
+		// negativo/ambíguo NÃO avança a cascata — `nextGate()` (qualify-state.ts)
+		// está acoplado a `recoConsentAnswered`, não a este flag: enquanto a
+		// resposta não é reconhecida como consentimento, `nextGateToFire` volta a
+		// ser "reco-consent" turno após turno (mesmo padrão dos gates de coleta),
+		// e este bloco só re-executa o no-op abaixo (já dispatched, nada a
+		// gravar de novo).
 		if (result.nextGateToFire === "reco-consent") {
 			const refreshed = await reloadMeta(conversationId);
 			if (!refreshed.recoConsentDispatched) {
