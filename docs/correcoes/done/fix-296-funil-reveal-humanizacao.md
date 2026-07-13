@@ -1,13 +1,25 @@
 ---
 id: FIX-296
 titulo: "Reordenar funil pré-reveal + abertura por categoria com divider de especialista"
-status: todo
+status: done
 bloco: bloco-r10-1-funil-reveal
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/gate-questions.ts, src/lib/agent/orchestrator/directives.ts, src/lib/chat/types.ts, src/components/chat/artifact-renderer.tsx]
 rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-funil-reveal)
+commit: 6ac23ce1
+executado_em: 2026-07-13
 ---
+
+## Nota de execução (2026-07-13)
+
+Abertura por categoria com divider de especialista **já existia** no código
+(`transition.ts` + `TransitionDivider` em `chat-message.tsx`) e já dispara
+corretamente no primeiro contato (`decideRouting` → `planTransition`) —
+verificado, não recriado. O trabalho real foi a reordenação do funil
+(`credit` antes de `identify`) + o beat de espelho+objetivo
+(`shouldMirrorMotivation`, substituindo o case especial do FIX-275). Ver
+`docs/decisoes/blocos/2026-07-12-bloco-r10-1-funil-reveal.md`.
 ## Palavras do operador
 > "uai já tá errado, porque não é aqui o momento dele fazer isso [pedir CPF]... essa questão aqui de
 > pedir o CPF, o celular, tem que ser mais para frente depois que trocou uma ideia ali com o
