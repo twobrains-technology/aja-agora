@@ -423,11 +423,18 @@ describe("FIX-34-FUNIL-CANONICO — sinal de avanco pos-reveal vai pra DECISAO, 
 // decisão é instrumento pra DEFINIR, não pedágio após a definição já dada).
 // ============================================================================
 
-describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avança em UM passo", () => {
-	it("cassette: o turno do avanço dirige present_contract_form em UM passo, sem nova pergunta de confirmação", async () => {
-		// Trajetória CORRETA pós-FIX-38: o clique explícito já decidiu — o agente
-		// fecha com UMA frase e chama present_contract_form. Sem card de decisão,
-		// sem re-perguntar "faz sentido?".
+// FIX-311 (r10-4, happy-path-ceremony): REVERTE o FIX-38 — investigação de
+// causa-raiz achou que os 2 dossiês limpos investigados (Madalena, Mario)
+// NUNCA mostravam scarcity/decision_prompt, porque o clique explícito
+// "Tenho interesse" pulava direto pro avanço. "Aceitar de cara" não é
+// dispensa de cuidado: o clique agora passa pela MESMA cerimônia de quem
+// hesitou (scarcity->decision_prompt) antes do avanço (present_contract_form).
+describe("FIX-311-HAPPY-PATH-CEREMONY — clique explícito 'Tenho interesse' passa pela cerimônia scarcity->decision_prompt antes do avanço", () => {
+	it("cassette: o turno de AVANÇO em si (após a cerimônia) dirige present_contract_form, sem re-chamar present_decision_prompt no MESMO turno", async () => {
+		// Este cassette testa só o turno do directive de avanço em isolamento
+		// (buildAdvanceToContractDirective) — a cerimônia (scarcity/decision_prompt)
+		// acontece em turnos SEPARADOS, disparados pelo route.ts antes deste
+		// (pipeClosingCeremony), não neste mesmo tool-call.
 		const { text, toolCalls } = await runMockStream([
 			{ type: "stream-start", warnings: [] },
 			...textChunks("t1", "Boa! Pra fechar, só preciso de uns dados rápidos:"),
@@ -447,51 +454,60 @@ describe("FIX-38-NO-DOUBLE-CONFIRM — clique explícito 'Tenho interesse' avan�
 		expect(text.toLowerCase()).not.toContain("consultor");
 	});
 
-	it("estrutural: o branch interest do route vai DIRETO pro avanço (sem buildDecisionPromptDirective) e marca decisionDispatched", () => {
+	it("estrutural: o branch interest do route religa pipeClosingCeremony ANTES do avanço e marca decisionDispatched", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		const interestBlock =
+			// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+			// (`if (body.action?.kind === "interest") {`) do branch mais específico
+			// do topic_picker (`body.action?.kind === "interest" && body.action.
+			// administradora === "topic-picker"`), que agora vem ANTES no arquivo e
+			// bateria primeiro sem essa âncora.
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 		expect(
 			interestBlock.includes("buildAdvanceToContractDirective"),
-			"FIX-38: clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+			"clique explícito dirige o passo 5 (buildAdvanceToContractDirective).",
+		).toBe(true);
+		// FIX-311: REVERTE o FIX-38 — o clique explícito AGORA religa a cerimônia
+		// extraída (pipeClosingCeremony) antes do avanço, igual a quem hesitou.
+		expect(
+			interestBlock.includes("pipeClosingCeremony"),
+			"FIX-311: clique explícito precisa religar pipeClosingCeremony (scarcity->decision_prompt) antes do avanço.",
 		).toBe(true);
 		expect(
-			interestBlock.includes("buildDecisionPromptDirective"),
-			"FIX-38: clique explícito NÃO passa pelo card de decisão (sem dupla confirmação).",
-		).toBe(false);
-		expect(
 			interestBlock.includes("decisionDispatched"),
-			"FIX-38: marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
+			"marca decisionDispatched (idempotência + libera present_contract_form na fase closing).",
 		).toBe(true);
 	});
 
-	it("directives: avanço dirige present_contract_form; o card de decisão (caminho ambíguo) segue existindo e nunca vira lead", () => {
+	it("directives: avanço dirige present_contract_form; a cerimônia de decisão passa a valer pros DOIS ramos do simulator-offer", () => {
 		const advance = buildAdvanceToContractDirective({ administradora: "ITAÚ" });
 		expect(advance).toContain("present_contract_form");
 		expect(advance).not.toContain("present_lead_form");
 		expect(advance).not.toContain("present_decision_prompt");
 
-		// Caminho AMBÍGUO preservado: o card de decisão continua disponível (o
-		// route ainda o dispara no gate simulator-offer "Agora não").
-		const decision = buildDecisionPromptDirective({ administradora: "ITAÚ" });
+		const decision = buildDecisionPromptDirective();
 		expect(decision).toContain("present_decision_prompt");
+
 		const route = readSource("src/app/api/chat/route.ts");
 		// FIX-237: janela até o PRÓXIMO bloco `if (action.gate ===`, não até o
 		// próximo comentário — um comentário legítimo dentro do próprio bloco
-		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo
-		// e escondia buildDecisionPromptDirective, que vem DEPOIS do comentário.
+		// (ex.: explicando a wiring do card de escassez) cortava a janela cedo.
 		const start = route.indexOf('action.gate === "simulator-offer"');
 		const nextBlockStart = route.indexOf("if (action.gate ===", start + 1);
 		const simulatorOfferBlock =
 			start > -1 ? route.slice(start, nextBlockStart > -1 ? nextBlockStart : start + 2000) : "";
 		expect(simulatorOfferBlock.length, "branch simulator-offer não isolado").toBeGreaterThan(0);
+		// FIX-311: REVERTE o FIX-38 — os DOIS ramos (yes/aceite do simulador,
+		// no/recusa) religam a MESMA cerimônia extraída (pipeClosingCeremony),
+		// não só o caminho ambíguo ("Agora não").
+		const religamentos = simulatorOfferBlock.match(/pipeClosingCeremony/g)?.length ?? 0;
 		expect(
-			simulatorOfferBlock.includes("buildDecisionPromptDirective"),
-			"FIX-38: o card de decisão fica pros caminhos ambíguos — o gate simulator-offer 'Agora não' ainda o dispara.",
-		).toBe(true);
+			religamentos,
+			"FIX-311: os dois ramos do simulator-offer (yes/no) precisam religar pipeClosingCeremony.",
+		).toBeGreaterThanOrEqual(2);
 	});
 });
 
@@ -1343,8 +1359,13 @@ describe("FIX-29-INTEREST-NAO-VIRA-LEAD — clique 'Tenho interesse' dirige a DE
 
 		// Isola o corpo do branch interest.
 		const interestBlock =
+			// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+			// (`if (body.action?.kind === "interest") {`) do branch mais específico
+			// do topic_picker (`body.action?.kind === "interest" && body.action.
+			// administradora === "topic-picker"`), que agora vem ANTES no arquivo e
+			// bateria primeiro sem essa âncora.
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(interestBlock.length, "branch interest não isolado").toBeGreaterThan(0);
 
@@ -3056,6 +3077,10 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			// docx passo 4: oferta do simulador já feita (gate simulator-offer).
 			simulatorOfferDispatched: true,
 			...over,
@@ -3204,6 +3229,10 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			simulatorOfferDispatched: true,
 			// Snapshot da descoberta de 256k (gravado pelo runner no reveal).
 			discoveredCreditTarget: 256_000,
@@ -3931,6 +3960,10 @@ describe("GATE-SIMULATOR-OFFER — simulador do Bernardo no caminho padrão", ()
 			experiencePrev: "first",
 			qualifyConsented: true,
 			identityCollected: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "simulator-offer".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 0,
@@ -4008,7 +4041,12 @@ describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", ()
 		);
 		// Cenário exato do run 1: reserva respondida, qualificação incompleta.
 		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } })).toBe(false);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+		// FIX-303: revealCompleted sozinho não basta mais — só no fecho
+		// (contractFormDispatched), ver describe FIX-303 mais abaixo.
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(false);
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
 	});
 });
 
@@ -4337,10 +4375,17 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 		const { shouldEmitWhatsappOptin } = await import(
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true, contractRetryPending: true })).toBe(
-			false,
-		);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+		expect(
+			shouldEmitWhatsappOptin({
+				revealCompleted: true,
+				contractFormDispatched: true,
+				contractRetryPending: true,
+			}),
+		).toBe(false);
+		// FIX-303: o gatilho migrou pro fecho (contractFormDispatched).
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
 	});
 
 	it("estrutural: acoplamento runtime (runner enriquece knownPhone, route confirma, leads marca)", () => {
@@ -4383,6 +4428,10 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 			// PÓS-reveal — sem isso o funil pularia direto pra "search".
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "lance-embutido".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 20_000,
 				monthlyBudget: 500,
@@ -4402,7 +4451,12 @@ describe("FIX-4-LANCE-EMBUTIDO-PRA-TODOS — educação não pode depender de ha
 
 	it("a copy educativa segue a do docx e os chips funcionam pra quem NÃO tem reserva", () => {
 		const gq = readSource("src/lib/agent/orchestrator/gate-questions.ts");
-		expect(gq).toMatch(/Você sabe o que é lance embutido\?/);
+		// FIX-327 (rodada 10, P4): a abertura virou afirmação (sem "?") — o
+		// texto educativo do lance embutido não pode mais abrir com pergunta
+		// retórica, senão cola com a pergunta REAL do gate no mesmo balão (2
+		// interrogações, achado ao vivo pós-FIX-326).
+		expect(gq).toMatch(/Deixa eu te explicar o lance embutido/);
+		expect(gq).not.toMatch(/Você sabe o que é lance embutido\?/);
 		// O chip negativo não pode pressupor que o usuário TEM dinheiro pro lance
 		// ("recursos próprios") — precisa ser neutro pros dois fluxos.
 		const cfg = readSource("src/lib/agent/qualify-config.ts");
@@ -4667,13 +4721,17 @@ describe("PLANEJE-SUA-CONQUISTA — re-UX guiada por intenção (não 4 sliders)
 			currentCategory: "moto",
 			experiencePrev: "first",
 			qualifyConsented: true,
-			// FIX-53: `identify` precede `credit`. FIX-215 (Ata 2026-07-04): a
+			// FIX-296: `credit` precede `identify`. FIX-215 (Ata 2026-07-04): a
 			// conversa de lance só entra em jogo PÓS-reveal — com a identidade e o
 			// reveal já feitos, o funil chega ao gate educativo de lance embutido,
 			// que é o foco deste teste (plano parcial, falta só decidir o lance embutido).
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "lance-embutido".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMin: 17_000,
 				creditMax: 20_000,
@@ -5358,13 +5416,15 @@ describe("BUG-SNAPSHOT-ANCHOR-POBRE — persist do reveal precisa do artifact RI
 	it("runner: snapshot do reveal usa simulation_result ANTES de recommendation_card", async () => {
 		const { readFileSync } = await import("node:fs");
 		const src = readFileSync("src/lib/agent/orchestrator/runner.ts", "utf-8");
-		// O bloco do persist do reveal declara um snapshotAnchor com
-		// simulation_result em primeiro lugar (artifact rico em lance fields).
-		const m =
-			/const snapshotAnchor =\s*artifacts\.find\(\(a\) => a\.type === "simulation_result"\)/m;
+		// FIX-297: a âncora agora prioriza o payload (recommendation_card/
+		// simulation_result podem estar SUPRIMIDOS do array `artifacts` — pendentes
+		// até reco-consent — então a extração cai pro payload já coagido em vez do
+		// artifact em si), mas a PRIORIDADE simulation_result > recommendation_card
+		// continua intacta (artifact rico em lance fields vence).
+		const m = /const snapshotAnchorPayload = simulationPayload \?\? recommendationPayload/m;
 		expect(src).toMatch(m);
 		// e o offerSnapshot é extraído DELE, não do anchor de administradora
-		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchor\?\.payload\)/);
+		expect(src).toMatch(/offerSnapshotFromArtifact\(snapshotAnchorPayload\)/);
 	});
 
 	it("offerSnapshotFromArtifact: payload de recommendation_card (sem lance) produz snapshot SEM lance fields — nunca inventa", async () => {
@@ -6041,20 +6101,22 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
 	});
 
-	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
+	it("estrutural: nextGate coloca credit ANTES de identify (reversão FIX-296)", () => {
 		const base: ConversationMetadata = {
 			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
 		};
-		expect(nextGate(base, { hasContactName: true })).toBe("identify");
-		expect(nextGate({ ...base, identityCollected: true }, { hasContactName: true })).toBe("credit");
+		expect(nextGate(base, { hasContactName: true })).toBe("credit");
+		expect(
+			nextGate({ ...base, qualifyAnswers: { creditMax: 80_000 } }, { hasContactName: true }),
+		).toBe("identify");
 	});
 
 	it("estrutural: o prompt proíbe re-pedir o valor e explica o enforcement do servidor", () => {
 		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
-		expect(p).toMatch(/identidade antes do valor/);
+		expect(p).toMatch(/valor antes da identidade/);
 		expect(p).toMatch(/valor j[áa] coletado/);
 		expect(p).toMatch(/servidor/);
 		expect(p).toMatch(/voltou a pedir o valor/);
@@ -6063,7 +6125,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 	it("estrutural: o artifact-guard tem a regra value-picker-order (2ª linha de defesa)", () => {
 		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
 		expect(src).toMatch(/value-picker-order/);
-		expect(src).toMatch(/dados antes do valor/);
+		expect(src).toMatch(/valor antes dos dados/);
 	});
 
 	it("estrutural: o handler de identidade (web/route) despacha o próximo gate, NÃO o reveal", () => {
@@ -6601,7 +6663,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		if (!verdict.allow) expect(verdict.rule).toBe("single-option");
 	});
 
-	it("2+ grupos via search_groups NÃO suprime (recommendation_card legítimo)", async () => {
+	it("2+ grupos via search_groups NÃO suprime pelo single-option (FIX-297: fica pendente por hero-awaits-reco-consent, não por opção única)", async () => {
 		const { extractDiscoveryCount } = await import("@/lib/agent/orchestrator/discovery-count");
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
@@ -6614,7 +6676,27 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 			discoveryCount,
 			conversationId: "conv-rev-a-multi-option",
 		});
-		expect(verdict.allow).toBe(true);
+		// FIX-297 (rodada 10): o reveal em dois tempos com consentimento suprime
+		// TODO recommendation_card no reveal ORIGINAL (revealCompleted ainda
+		// false) — nunca mais por single-option (que é só o caso de 1 grupo).
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+
+		// Pós reco-consent já resolvido (revealCompleted=true), o mesmo cenário
+		// de 2+ grupos PASSA normalmente — não é mais opção única, nem pendente.
+		const verdictPostConsent = evaluateArtifactGuards({
+			meta: {
+				currentCategory: "auto",
+				revealCompleted: true,
+				recoConsentAnswered: true,
+			} as ConversationMetadata,
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount,
+			conversationId: "conv-rev-a-multi-option",
+		});
+		expect(verdictPostConsent.allow).toBe(true);
 	});
 });
 
@@ -6978,6 +7060,7 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -7439,8 +7522,11 @@ describe("FIX-117 — WhatsApp interest = avanço direto ao contract (paridade F
 
 	it("paridade web: route.ts do interesse SEMPRE avança (sem intercalar decisão)", () => {
 		const route = readSource("src/app/api/chat/route.ts");
+		// FIX-319 (r10-4): janela alargada de 600→900 — o guard de idempotência
+		// contra contractFormDispatched duplicado (novo) empurrou
+		// buildAdvanceToContractDirective pra além do corte antigo.
 		const interestBlock =
-			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,600}/)?.[0] ?? "";
+			route.match(/if \(body\.action\?\.kind === "interest"\)[\s\S]{0,900}/)?.[0] ?? "";
 		expect(interestBlock).toContain("buildAdvanceToContractDirective");
 		expect(interestBlock).not.toContain("buildDecisionPromptDirective");
 	});
@@ -7894,7 +7980,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 		}
 	});
 
-	it("fluxo normal não regride: sem falha de descoberta, a proposta passa", () => {
+	it("fluxo normal não regride: sem falha de descoberta, a proposta passa (FIX-297: pendente por reco-consent no reveal ORIGINAL, não mais bloqueada por discovery-failed)", () => {
 		expect(
 			evaluateActionPrecondition("present_recommendation_card", {
 				shown: emptyShownGroups(),
@@ -7912,7 +7998,25 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			conversationId: "conv-187",
 			turnArtifactTypes: [],
 		});
-		expect(guard.allow).toBe(true);
+		// FIX-297 (rodada 10): no reveal ORIGINAL o hero fica pendente até
+		// reco-consent — a regra que aplica aqui é "hero-awaits-reco-consent",
+		// não mais "discovery-failed" (o ponto deste teste, que continua provado
+		// acima pelo evaluateActionPrecondition).
+		expect(guard.allow).toBe(false);
+		if (!guard.allow) expect(guard.rule).toBe("hero-awaits-reco-consent");
+
+		// Pós reco-consent já resolvido, o mesmo cenário passa normalmente.
+		const guardPostConsent = evaluateArtifactGuards({
+			meta: { revealCompleted: true, recoConsentAnswered: true },
+			artifactType: "recommendation_card",
+			userIntent: "neutral",
+			isUserTurn: false,
+			discoveryCount: 3,
+			discoveryFailedThisTurn: false,
+			conversationId: "conv-187",
+			turnArtifactTypes: [],
+		});
+		expect(guardPostConsent.allow).toBe(true);
 	});
 
 	it("structural: as 3 tools de proposta constam em ACTION_PRECONDITIONS e o guard tem a regra", () => {
@@ -8419,6 +8523,10 @@ describe("BUG-EXPERIENCE-EXPLICA-E-TRAVA — agente explica e o funil trava sem 
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar até o timeframe (senão fica preso em "reco-consent").
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 300_000 },
 			experiencePrev: "doubts",
 			doubtsAddressed: false,
@@ -8510,7 +8618,8 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 	const NOW = 1_800_000_000_000;
 
 	it("o orquestrador MARCA a pendência quando o gate real é suprimido num turno de usuário", () => {
-		// FIX-274: sem consent, identify é o 1º gate estrutural pós-desire.
+		// FIX-296: sem consent, credit é o 1º gate estrutural pós-desire
+		// (reversão do FIX-53 — valor antes dos dados).
 		expect(
 			pendingGateAfterTurn({
 				meta: pendingMeta(),
@@ -8518,7 +8627,7 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("identify");
+		).toBe("credit");
 	});
 
 	it("nunca marca em turno server-authored (FIX-206 já avança) nem quando o gate disparou", () => {
@@ -8605,6 +8714,12 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 	function creditGateMeta(): ConversationMetadata {
 		return {
 			desireAsked: true,
+			desireAnswered: true,
+			// FIX-296: o beat de motivo/espelho já rodou — sem isso,
+			// shouldAskMotive/shouldMirrorMotivation segurariam o gate credit
+			// (comportamento correto, mas fora do escopo deste cassette FIX-208).
+			motivationAsked: true,
+			motivationMirrored: true,
 			currentPersona: "helena-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",

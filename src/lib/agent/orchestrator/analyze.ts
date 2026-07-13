@@ -1,7 +1,7 @@
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
-import { nextGate } from "@/lib/agent/qualify-state";
+import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 // FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
@@ -27,6 +27,11 @@ export type AnalyzeResult = {
 	analysis: TurnAnalysis;
 	metaChanged: boolean;
 	newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null;
+	/** FIX-305 — gate cujo default foi assumido NESTE turno (teto de tentativas
+	 * sem progresso atingido, `registerGateStuckTurn`). `null` quando nenhum
+	 * escape disparou (inclui os turnos "abaixo do teto", que só incrementam
+	 * o contador em silêncio). */
+	stuckGateDefaultApplied: Gate | null;
 };
 
 export async function analyzeAndMerge(
@@ -40,25 +45,47 @@ export async function analyzeAndMerge(
 	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
 	// lance por baixo do pano).
 	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	// FIX-296: snapshot de `desireAnswered` ANTES de qualquer mutação deste
+	// turno (a marcação de `desireAnswered`, logo abaixo, pode acontecer NESTE
+	// MESMO turno — o guard de creditMax mais adiante precisa saber se o
+	// desire já tinha sido respondido ANTES deste turno começar).
+	const desireAnsweredBeforeThisTurn = Boolean(meta.desireAnswered);
 
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
 
-	if (analysis.experiencePrev && !meta.experiencePrev) {
+	// FIX-310: mesma trava de gate-ativo que `hasLance` (FIX-236) e `creditMax`
+	// (FIX-279) já usam — sem ela, `experiencePrev` era preenchido por texto
+	// livre ANTES de o gate `experience` (pós-reveal, FIX-233 D2) ficar
+	// realmente ativo, e `nextGate()` pulava o gate achando que já tinha sido
+	// resolvido: o CARD nunca chegava a aparecer (dossiê Madalena, banco
+	// mostrava `experiencePrev` preenchido sem o artifact `gate:experience`).
+	if (
+		analysis.experiencePrev &&
+		!meta.experiencePrev &&
+		activeGateAtTurnStart === "experience"
+	) {
 		meta.experiencePrev = analysis.experiencePrev;
 		newlyExtractedExperience = analysis.experiencePrev;
 		metaChanged = true;
 	}
 	// FIX-285: marca que o gate `desire` recebeu uma RESPOSTA — independente do
 	// que o analyzer extraiu como `desiredItem` (que fica null por design na
-	// categoria genérica). Escopado à janela `identify` (ativo entre o desire
-	// já perguntado e a identidade ainda não coletada — exatamente o turno da
-	// resposta ao desire, FIX-53): sem esse escopo, qualquer turno POSTERIOR
-	// (ex.: respondendo o `credit`, muitos turnos depois) marcaria o campo
-	// retroativamente e `shouldAskMotive` passaria a segurar TODOS os gates
-	// dali em diante, não só o `identify` (regressão pega pelos cassettes de
-	// `agent-trajectory.test.ts`, FIX-208).
-	if (meta.desireAsked && !meta.desireAnswered && activeGateAtTurnStart === "identify") {
+	// categoria genérica). Escopado à janela `credit` (FIX-296: ativo entre o
+	// desire já perguntado e o valor ainda não coletado — exatamente o turno da
+	// resposta ao desire, agora que credit precede identify): sem esse escopo,
+	// qualquer turno POSTERIOR (ex.: respondendo o `identify`, muitos turnos
+	// depois) marcaria o campo retroativamente e `shouldAskMotive` passaria a
+	// segurar TODOS os gates dali em diante, não só o do turno certo
+	// (regressão pega pelos cassettes de `agent-trajectory.test.ts`, FIX-208).
+	// FIX-306: mesma condição usada logo abaixo pra marcar `desireAnswered` —
+	// capturada ANTES da mutação pra sinalizar "o desire está sendo respondido
+	// NESTE turno" ao guard de promoção de creditMax mais adiante (o cenário
+	// exato do cassette Mario: bem+valor no MESMO balão que responde o desire
+	// composto).
+	const desireAnsweredThisTurn =
+		meta.desireAsked === true && !meta.desireAnswered && activeGateAtTurnStart === "credit";
+	if (desireAnsweredThisTurn) {
 		meta.desireAnswered = true;
 		metaChanged = true;
 	}
@@ -89,12 +116,12 @@ export async function analyzeAndMerge(
 	// gate `credit` — aí um número NU ("200") vira valor (200 mil, clampado). Sem
 	// isso, parseAssetValue("200")=null por design e o funil fechava mudo no gate de
 	// valor. O contexto só é passado quando o gate credit está DE FATO pendente.
-	// FIX-274: o gate `consent` saiu do funil — o pré-requisito do `credit` agora é
-	// só identidade coletada (identify vem antes do credit desde o FIX-53).
+	// FIX-296 (reversão do FIX-53): o pré-requisito do `credit` agora é só o
+	// desire já respondido (o `credit` precede o `identify` desde a rodada 10).
 	const creditGatePending =
 		q.creditMax === undefined &&
 		Boolean(meta.currentCategory) &&
-		Boolean(meta.identityCollected) &&
+		Boolean(meta.desireAnswered) &&
 		!meta.pendingFollowUp;
 	const parsedCreditMax =
 		analysis.creditMax === null && q.creditMax === undefined
@@ -110,12 +137,28 @@ export async function analyzeAndMerge(
 	// `desire`, "Um apartamento de uns 250 mil"), ANTES de o gate `credit` (a
 	// agulha dedicada, P4 do canônico) ficar ativo. Como nextGate() só dispara
 	// o gate enquanto `creditMax === undefined`, o valor pré-preenchido fazia a
-	// agulha nunca aparecer. `isRevealRefit` continua como exceção legítima
-	// separada (troca de faixa pós-reveal é decisão do LLM, independe do gate
-	// ativo no momento).
+	// agulha nunca aparecer.
+	//
+	// FIX-296 (rodada 10): `activeGateAtTurnStart === "credit"` deixou de ser
+	// um sinal confiável — com o `credit` reordenado pra logo após o `desire`,
+	// nextGate() já devolve "credit" DESDE o próprio turno em que o desire está
+	// sendo respondido (exatamente o turno que este guard precisa excluir). O
+	// sinal correto agora é `meta.desireAnswered` ANTES deste turno (snapshot
+	// pré-mutação, `desireAnsweredBeforeThisTurn`) — só a partir do turno
+	// SEGUINTE ao que respondeu o desire o `credit` está genuinamente ativo.
+	// `isRevealRefit` continua como exceção legítima separada (troca de faixa
+	// pós-reveal é decisão do LLM, independe do gate ativo no momento).
+	//
+	// FIX-306 (rodada 10, onda 4 — cassette Mario): `desireAnsweredBeforeThisTurn`
+	// sozinho perdia o caso "desire respondido AGORA, com valor junto" (a
+	// pergunta composta "Que carro você tem em mente, e quanto custa mais ou
+	// menos?" — o snapshot pré-mutação ainda lê `false` nesse turno). Sem
+	// `desireAnsweredThisTurn`, o valor caía só em `creditMentionedAtDesire` e
+	// nunca era promovido — `nextGate()` travava em "credit" pra sempre.
 	if (
 		sourceCreditMax !== null &&
-		((q.creditMax === undefined && activeGateAtTurnStart === "credit") || isRevealRefit)
+		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
+			isRevealRefit)
 	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só
@@ -173,7 +216,23 @@ export async function analyzeAndMerge(
 	// `!q.hasLance`), repetindo a MESMA educação de embutido em loop. A conversa
 	// de lance só existe PÓS-reveal (FIX-215) — restringir ao gate ativo não
 	// perde nenhum caminho legítimo.
-	if (analysis.hasLance && !q.hasLance && activeGateAtTurnStart === "lance") {
+	//
+	// FIX-321 (rodada 10, veredito Sonnet A.4): "so_parcela" é RECUSA EXPLÍCITA
+	// e inequívoca ("não quero comprometer nada além da parcela") — bem
+	// diferente do falso-positivo "no"/"yes"/"maybe" que o guard acima existe
+	// pra bloquear (frases ambíguas tipo "não tenho grana agora"). Sem exceção,
+	// um usuário que recusa lance ANTES do gate `lance` ficar ativo (ex.:
+	// respondendo `timeframe`) tinha a recusa descartada — two_paths nunca
+	// disparava (achado ao vivo, dossiê Mario). `so_parcela` é aceito em
+	// qualquer turno PÓS-reveal, não só com `lance` ativo — o texto em si já é
+	// inequívoco o bastante pra não precisar do gate certo pra confirmar.
+	const isExplicitLanceRefusal = analysis.hasLance === "so_parcela";
+	if (
+		analysis.hasLance &&
+		!q.hasLance &&
+		(activeGateAtTurnStart === "lance" ||
+			(isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
+	) {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;
 		metaChanged = true;
@@ -216,5 +275,22 @@ export async function analyzeAndMerge(
 		metaChanged = true;
 	}
 
-	return { analysis, metaChanged, newlyExtractedExperience };
+	// FIX-305 — turno "sem progresso": o gate ativo ANTES deste merge (linha
+	// 39) é o MESMO de agora (nenhum dos merges acima o resolveu). Conta como
+	// tentativa; no teto, assume um default e o funil avança (nunca trava).
+	// Só STUCK_ESCAPE_GATES agem aqui — os demais devolvem null (nada a fazer).
+	let stuckGateDefaultApplied: Gate | null = null;
+	const gateAfterMerge = nextGate(meta, { hasContactName: true });
+	if (gateAfterMerge === activeGateAtTurnStart) {
+		const stuckPatch = registerGateStuckTurn(meta, gateAfterMerge);
+		if (stuckPatch) {
+			Object.assign(meta, stuckPatch);
+			metaChanged = true;
+			if (stuckPatch.gateDefaultsAssumed) {
+				stuckGateDefaultApplied = gateAfterMerge;
+			}
+		}
+	}
+
+	return { analysis, metaChanged, newlyExtractedExperience, stuckGateDefaultApplied };
 }

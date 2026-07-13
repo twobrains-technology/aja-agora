@@ -129,12 +129,16 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 		expect(payload).toBeNull();
 	});
 
-	// FIX-38 (2026-06-12): o clique explícito "Tenho interesse" no plano em tela
-	// JÁ é o sinal de avanço — vai DIRETO pro passo 5 (present_contract_form),
-	// SEM o card de decisão "Esse plano faz sentido?" (a dupla confirmação por
-	// construção do FIX-34). Marca decisionDispatched pra idempotência (o gate
-	// "decision" do funil — caminho ambíguo — não reaparece depois).
-	it("FIX-38: dirige o avanço pro passo 5 (present_contract_form) SEM card de decisão e persiste decisionDispatched", async () => {
+	// FIX-311 (r10-4, happy-path-ceremony): REVERTE a decisão do FIX-38 — o
+	// clique explícito "Tenho interesse" não dispensa mais a cerimônia
+	// scarcity→decision_prompt. Achado real (investigação de causa-raiz): os 2
+	// dossiês limpos investigados nunca mostravam scarcity/decision_prompt
+	// porque este fast-path pulava direto pro fecho — "aceitar de cara" não é
+	// dispensa de cuidado. Agora o clique PASSA pela mesma cerimônia de quem
+	// hesitou e só ENTÃO avança pro passo 5 (present_contract_form).
+	// Idempotência preservada: decisionDispatched segue marcado ANTES do
+	// avanço, e quem já viu a cerimônia por outro caminho não a vê de novo.
+	it("FIX-311: dirige a cerimônia scarcity→decision_prompt e SÓ ENTÃO o avanço pro passo 5 (present_contract_form), persistindo decisionDispatched", async () => {
 		await (
 			await POST(
 				makeReq({
@@ -144,14 +148,16 @@ describe("FIX-29 — POST /api/chat action=interest pós-reveal NÃO emite lead_
 			)
 		).text();
 
-		// O handler dispara o turno de AVANÇO via pipeDirectiveTurn — UM passo.
-		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(1);
-		const arg = pipeDirectiveTurnMock.mock.calls[0]?.[0];
-		// Avanço direto pro contrato — NÃO o card de decisão (sem dupla confirmação).
-		expect(arg.directive).toContain("present_contract_form");
-		expect(arg.directive).not.toContain("present_decision_prompt");
-		// Invariante FIX-34: NUNCA captura de lead pra consultor humano.
-		expect(arg.directive).not.toContain("present_lead_form");
+		// 3 passos no MESMO turno: scarcity, decision_prompt, avanço.
+		expect(pipeDirectiveTurnMock).toHaveBeenCalledTimes(3);
+		const directives = pipeDirectiveTurnMock.mock.calls.map(
+			(call) => (call[0] as { directive: string }).directive,
+		);
+		expect(directives[0]).toContain("present_scarcity");
+		expect(directives[1]).toContain("present_decision_prompt");
+		expect(directives[2]).toContain("present_contract_form");
+		// Invariante FIX-34 (segue valendo): NUNCA captura de lead pra consultor humano.
+		expect(directives[2]).not.toContain("present_lead_form");
 
 		// Estado avança (determinístico, independe da LLM): idempotência preservada.
 		const conv = await db.query.conversations.findFirst({
@@ -219,12 +225,16 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 		).toBe(true);
 	});
 
-	it("FIX-38 — src/app/api/chat/route.ts: handler `interest` vai DIRETO pro avanço (sem card de decisão), marca decisionDispatched, sem lead_form", () => {
+	it("FIX-311 — src/app/api/chat/route.ts: handler `interest` passa pela cerimônia scarcity→decision_prompt ANTES do avanço (passo 5), marca decisionDispatched, sem lead_form", () => {
 		const route = readSource("src/app/api/chat/route.ts");
 		// Isola o corpo do branch interest (até o próximo branch de action).
+		// FIX-313 (r10-4): `\)` logo após "interest" isola o branch GENÉRICO
+		// (`if (body.action?.kind === "interest") {`) do branch mais específico
+		// do topic_picker (`body.action?.kind === "interest" && body.action.
+		// administradora === "topic-picker"`), que agora vem ANTES no arquivo.
 		const interestBlock =
 			route.match(
-				/body\.action\?\.kind === "interest"[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
+				/body\.action\?\.kind === "interest"\)[\s\S]*?(?=\n\t+\/\/|\n\t+if \(body\.action\?\.kind)/,
 			)?.[0] ?? "";
 		expect(
 			interestBlock.length,
@@ -235,20 +245,24 @@ describe("BUG-LEAD-FORM-PREFILL-REGRESSION — source-level guards das 3 peças 
 			interestBlock.includes("lead_form"),
 			"handler `interest` NÃO pode emitir lead_form — o avanço pós-reveal é self-service.",
 		).toBe(false);
-		// FIX-38: clique explícito vai DIRETO pro passo 5 (avanço), sem dupla confirmação.
 		expect(
 			interestBlock.includes("buildAdvanceToContractDirective"),
-			"FIX-38: handler `interest` precisa dirigir buildAdvanceToContractDirective (passo 5) no clique explícito.",
+			"handler `interest` precisa dirigir buildAdvanceToContractDirective (passo 5) no clique explícito.",
 		).toBe(true);
+		// FIX-311 (r10-4, investigação de causa-raiz): REVERTE o FIX-38 — o
+		// clique explícito "Tenho interesse" AGORA passa pela mesma cerimônia
+		// scarcity→decision_prompt de quem hesitou, antes do avanço. Achado real:
+		// pulá-la deixava scarcity/decision_prompt fora dos 2 dossiês limpos
+		// investigados (o fast-path ia direto pro fecho).
 		expect(
-			interestBlock.includes("buildDecisionPromptDirective"),
-			"FIX-38: o clique EXPLÍCITO 'Tenho interesse' NÃO passa mais pelo card de decisão (dupla confirmação por construção). O decision_prompt fica nos caminhos ambíguos (simulator-offer 'Agora não', satisfação difusa em texto).",
-		).toBe(false);
+			interestBlock.includes("pipeClosingCeremony"),
+			"FIX-311: handler `interest` precisa religar a cerimônia extraída (pipeClosingCeremony) antes do avanço — aceitar de cara não dispensa scarcity/decision_prompt.",
+		).toBe(true);
 		// Idempotência: marca decisionDispatched pra o gate "decision" do funil não reaparecer
 		// E pra a tool-policy liberar present_contract_form (fase "closing").
 		expect(
 			interestBlock.includes("decisionDispatched"),
-			"FIX-38: handler `interest` precisa marcar decisionDispatched (idempotência + libera present_contract_form na fase closing da tool-policy).",
+			"handler `interest` precisa marcar decisionDispatched (idempotência + libera present_contract_form na fase closing da tool-policy).",
 		).toBe(true);
 	});
 

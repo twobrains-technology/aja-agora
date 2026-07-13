@@ -1,5 +1,12 @@
-import type { Category } from "@/lib/agent/personas";
+import type { Category, QualifyAnswers } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
+
+/** FIX-301 (P7, loop-de-goal r10) — lead-in universal quando o usuário sinaliza
+ * confusão ("não entendi") com um gate REALMENTE pendente. Reconhece a dúvida
+ * em 1 frase e deixa a pergunta/card canônico do MESMO gate seguir — nunca um
+ * menu novo nem uma dissertação livre. Usado por `orchestrator/index.ts`
+ * (curto-circuito ANTES de invocar a LLM, Lei 4). */
+export const CLARIFY_LEAD_IN = "Sem problemas, deixa eu simplificar:";
 
 /** FIX-212 (split 2 tempos) — a EDUCAÇÃO do lance embutido e a PERGUNTA são
  * constantes separadas. Preserva as âncoras do docx (própria carta / R$ 100 mil /
@@ -21,7 +28,7 @@ export function lanceEmbutidoEdu(creditValue?: number): string {
 			? `na sua carta de ${formatCredit0(creditValue)}`
 			: "numa carta de R$ 100 mil";
 	return (
-		"Você sabe o que é lance embutido? Fica tranquilo, a gente te ajuda. " +
+		"Deixa eu te explicar o lance embutido rapidinho — fica tranquilo, a gente te ajuda. " +
 		`É usar parte da própria carta de crédito como lance — ${cartaPhrase}, por exemplo, ` +
 		"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
 		"sem precisar ter todo o lance em dinheiro hoje."
@@ -32,6 +39,42 @@ export function lanceEmbutidoEdu(creditValue?: number): string {
  * repassou o valor real. */
 export const LANCE_EMBUTIDO_EDU = lanceEmbutidoEdu();
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
+
+/** FIX-312 — "esse"/"essa" concordando com o `desiredItem` referenciado no
+ * gate `credit`. Prioridade 1: o PRÓPRIO artigo indefinido que o analyzer já
+ * capturou junto do item ("um Corolla", "uma casa") — sinal mais confiável
+ * que a categoria sozinha, porque `imovel`/`servicos` têm itens de género
+ * variável ("um apartamento" vs. "uma casa"). Sem artigo no texto, cai no
+ * default por categoria (auto/imovel = masculino do "carro"/"imóvel", moto =
+ * feminino da "moto"). Sem isso, "esse " + "um Corolla" (artigo cru, sem
+ * remoção) virava "esse um Corolla" — erro de concordância, veredito Sonnet
+ * rodada A.2. */
+const INDEFINITE_ARTICLE_PREFIX = /^(um|uma|uns|umas)\s+(.+)$/i;
+const CREDIT_DEMONSTRATIVE_FALLBACK_BY_CATEGORY: Record<Category, "esse" | "essa"> = {
+	imovel: "esse",
+	auto: "esse",
+	moto: "essa",
+	servicos: "esse",
+};
+
+function creditItemDemonstrative(
+	item: string,
+	category: Category | null | undefined,
+): { demonstrative: "esse" | "essa"; item: string } {
+	const trimmed = item.trim();
+	const articleMatch = trimmed.match(INDEFINITE_ARTICLE_PREFIX);
+	if (articleMatch) {
+		const article = articleMatch[1].toLowerCase();
+		return {
+			demonstrative: article === "uma" || article === "umas" ? "essa" : "esse",
+			item: articleMatch[2],
+		};
+	}
+	return {
+		demonstrative: category ? CREDIT_DEMONSTRATIVE_FALLBACK_BY_CATEGORY[category] : "esse",
+		item: trimmed,
+	};
+}
 
 const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
@@ -64,6 +107,17 @@ export function gateQuestion(
 	// (`qualifyAnswers.creditMentionedAtDesire`). Quando presente, o gate
 	// `credit` CONFIRMA esse valor em vez de perguntar do zero.
 	creditMentionedAtDesire?: number,
+	// FIX-296 — o bem específico capturado no gate `desire`
+	// (`qualifyAnswers.desiredItem`, ex.: "Corolla"). Quando presente e sem
+	// `creditMentionedAtDesire`, a copy do `credit` referencia o bem
+	// ("E quanto custa esse Corolla hoje?") em vez da pergunta genérica.
+	desiredItem?: string | null,
+	// FIX-312 — nº da tentativa (1-based) em que o gate `credit` está sendo
+	// perguntado NESTA conversa. Na 2ª+ tentativa a copy reconhece que já foi
+	// perguntado em vez de repetir o texto verbatim (balão colado + repetição,
+	// veredito Sonnet rodada A.2, dossiê Madalena). Default 1 preserva o
+	// comportamento de todos os chamadores pré-existentes.
+	attempt = 1,
 ): string | null {
 	switch (gate) {
 		case "name":
@@ -75,7 +129,8 @@ export function gateQuestion(
 			return category ? DESIRE_QUESTIONS[category] : null;
 		case "experience":
 			return "Você já fez consórcio antes?";
-		case "credit":
+		case "credit": {
+			const isReask = attempt >= 2;
 			// FIX-284: o valor já foi mencionado informalmente no gate `desire`
 			// (2 turnos atrás) — CONFIRMA em vez de perguntar do zero (viola
 			// "sem pedir dado já dado", veredito Sonnet 5 G-F).
@@ -84,10 +139,28 @@ export function gateQuestion(
 				Number.isFinite(creditMentionedAtDesire) &&
 				creditMentionedAtDesire > 0
 			) {
-				return `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
+				return isReask
+					? `Ainda sobre o valor: fica em uns ${formatCredit0(creditMentionedAtDesire)} mesmo, ou prefere ajustar?`
+					: `Uns ${formatCredit0(creditMentionedAtDesire)} então, é isso? Pode ajustar se quiser.`;
 			}
-			// FIX-2: "valor do bem" (linguagem do docx), não "faixa de crédito".
-			return "Qual valor do bem faz mais sentido pra você?";
+			// FIX-296 (mockup Madalena, docs/design/specs/assets/2026-07-12-aja-
+			// dois-cenarios.html): com o bem já nomeado no gate `desire`, a
+			// pergunta do valor referencia ele — "E quanto custa esse Corolla
+			// hoje?" — em vez da fria "qual valor do bem". Fallback genérico
+			// (FIX-2, linguagem do docx) quando o bem não é específico o
+			// bastante (ex.: usuário só disse "um carro").
+			// FIX-312: "esse"/"essa" concorda com o género do item (nunca "esse
+			// um X") e a 2ª+ tentativa varia a copy em vez de repetir verbatim.
+			if (desiredItem && desiredItem.trim()) {
+				const { demonstrative, item } = creditItemDemonstrative(desiredItem, category);
+				return isReask
+					? `Só retomando: quanto custa ${demonstrative} ${item}, mais ou menos?`
+					: `E quanto custa ${demonstrative} ${item} hoje?`;
+			}
+			return isReask
+				? "Voltando aqui: qual valor você tem em mente pro bem?"
+				: "Qual valor do bem faz mais sentido pra você?";
+		}
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
 		case "lance":
@@ -124,8 +197,14 @@ export function gateQuestion(
 			// waId, já conhecido). Na WEB o form pede CPF E celular (gatePartData
 			// "identity" tem os dois campos, `prefilledPhone: null`) — a mesma frase
 			// mentia sobre de onde o celular vem (3 de 3 runs do veredito).
+			// FIX-296 (mockup Madalena): no canal WEB o identify agora chega
+			// DEPOIS do valor (reversão do FIX-53) — a moldura do docx justifica
+			// o pedido ANTES de fazê-lo: "pra eu trazer as ofertas reais das
+			// administradoras, preciso do seu CPF e WhatsApp". O WhatsApp segue
+			// com o beat de contexto próprio (identify-capture.ts,
+			// IDENTIFY_CONTEXT_WHATSAPP) — fora de escopo deste fix.
 			return channel === "web"
-				? "Me manda seu CPF e celular, só os números."
+				? "Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."
 				: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
@@ -133,11 +212,45 @@ export function gateQuestion(
 				"Se quiser, temos o nosso simulador pra ver como ficariam as suas parcelas, " +
 				"caso você seja contemplado em 3, 6 ou 12 meses — que tal?"
 			);
+		case "reco-consent":
+			// FIX-297: gate leve entre a lista (comparison_table) e o hero
+			// (recommendation_card) — só com resposta afirmativa aqui o hero é
+			// liberado (server-forced em orchestrator/index.ts).
+			return "Posso te mostrar a opção que eu recomendo?";
 		case "doubts-wait":
 		case "search":
 		case "decision":
 			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
 			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
+			return null;
+	}
+}
+
+/**
+ * FIX-305 — texto determinístico (fora do LLM, mesmo padrão de
+ * `TWO_PATHS_FOLLOWUP_TEXT`/`SPECIALIST_EXIT_OFFER`) emitido quando um gate
+ * atinge o teto de tentativas sem progresso e o orquestrador assume o default
+ * (`registerGateStuckTurn`, qualify-state.ts). Avisa o usuário do valor
+ * assumido e que pode ajustar depois — nunca finge que o dado veio dele.
+ * `patch` é o retalho de `qualifyAnswers` recém-aplicado (já mesclado no
+ * meta pelo chamador), usado só pra compor o número/valor na frase.
+ */
+export function gateStuckDefaultNotice(
+	gate: Gate,
+	patch: Pick<QualifyAnswers, "prazoMeses" | "lanceValue">,
+): string | null {
+	switch (gate) {
+		case "timeframe":
+			return `Vou considerar ${patch.prazoMeses} meses por enquanto — você pode ajustar isso depois.`;
+		case "lance":
+			return "Vou seguir sem considerar lance por enquanto — se quiser, a gente volta nesse assunto depois.";
+		case "lance-value":
+			return patch.lanceValue
+				? `Vou considerar um lance de ${formatCredit0(patch.lanceValue)} por enquanto — você pode ajustar depois.`
+				: "Vou considerar um lance moderado por enquanto — você pode ajustar depois.";
+		case "lance-embutido":
+			return "Vou seguir sem considerar o lance embutido por enquanto — se quiser, a gente volta nesse assunto depois.";
+		default:
 			return null;
 	}
 }

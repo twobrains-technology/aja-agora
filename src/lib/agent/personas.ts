@@ -91,6 +91,12 @@ export type ConversationMetadata = {
 	 * perguntar o motivo (`shouldAskMotive`). Torna o beat NÃO-bloqueante: se o motivo
 	 * não vier, o funil segue mesmo assim (mesmo padrão de `desireAsked`). */
 	motivationAsked?: boolean;
+	/** FIX-296 — o beat de ESPELHO+OBJETIVO ("entendo bem — quando o carro dá
+	 * trabalho, atrapalha tudo. Então o objetivo já fica claro...") já foi
+	 * ativado nesta conversa (`shouldMirrorMotivation`). Marcado no runner
+	 * quando o beat dispara — igual `motivationAsked`, torna o beat NÃO-
+	 * bloqueante e garante que ele rode UMA vez só, nunca a cada turno. */
+	motivationMirrored?: boolean;
 	/** FIX-285 — o gate `desire` já recebeu uma RESPOSTA do usuário nesta
 	 * conversa, independente de o item citado ter sido específico o bastante
 	 * pra virar `qualifyAnswers.desiredItem` (o analyzer devolve `desiredItem:
@@ -109,6 +115,13 @@ export type ConversationMetadata = {
 	consentOffered?: boolean;
 	/** Set after specialist answers the user's question on the doubts path. */
 	doubtsAddressed?: boolean;
+	/** FIX-309 (rodada 10 onda 4) — idempotência do card `topic_picker` (menu de
+	 * dúvidas: lance/sorteio/contemplação/cartas variam). Marcado na EMISSÃO
+	 * (mesmo padrão de `recoConsentDispatched`/`simulatorOfferDispatched`),
+	 * disparada SERVER-SIDE (`emitServerCard`) no ponto pós-`experience` quando
+	 * `experiencePrev === "doubts"` — nunca mais dependente do LLM chamar
+	 * `present_topic_picker` (0 emissões medidas em 2 dossiês limpos, r10). */
+	topicPickerDispatched?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
 	/** FIX-207 (watchdog de inatividade) — epoch ms de quando um turno de usuário
@@ -130,6 +143,19 @@ export type ConversationMetadata = {
 	 * especialista. Por-gate (Partial<Record<Gate,number>>) → não vaza entre gates;
 	 * resetado ao capturar o dado. */
 	gateAttempts?: Partial<Record<Gate, number>>;
+	/** FIX-305 — contador de turnos de USUÁRIO consecutivos em que o MESMO gate
+	 * (`STUCK_ESCAPE_GATES`, qualify-state.ts: timeframe/lance/lance-value/
+	 * lance-embutido) não avançou (nextGate() devolveu o mesmo gate antes e
+	 * depois do merge do turno). DISTINTO de `gateAttempts` (escalada por
+	 * INATIVIDADE/desvio, termina em oferta de especialista) — este mede "sem
+	 * progresso NA MESMA conversa ativa" e, no teto, ASSUME um default e segue
+	 * o funil (Kairo, AskUserQuestion 2026-07-13: "nunca trava"). Resetado a 0
+	 * quando o default é assumido — o gate avança e o contador nunca mais é lido. */
+	gateStuckTurns?: Partial<Record<Gate, number>>;
+	/** FIX-305 — marca os gates cujo dado em `qualifyAnswers` foi um DEFAULT
+	 * assumido (teto de tentativas atingido), não uma resposta real do
+	 * usuário. Só rastreabilidade/analytics — nenhuma lógica de gate lê isto. */
+	gateDefaultsAssumed?: Partial<Record<Gate, true>>;
 	/** Identidade (CPF+celular+LGPD) coletada no gate "identify" — fim do passo 2
 	 * (D1, docs/jornada/CONTEXT.md). A Bevi exige antes de simular; a busca real
 	 * (passo 3) só libera com isto true. */
@@ -159,6 +185,29 @@ export type ConversationMetadata = {
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
 	decisionDispatched?: boolean;
+	/** FIX-297 (rodada 10, 2026-07-12) — gate `reco-consent` ("Posso te mostrar
+	 * a opção que eu recomendo?") já foi disparado nesta conversa. Mesmo padrão
+	 * de `simulatorOfferDispatched`: marcado na EMISSÃO, não na resposta —
+	 * torna o gate não-bloqueante (nextGate nunca mais o re-emite depois de
+	 * dispatched, respondido ou não). */
+	recoConsentDispatched?: boolean;
+	/** FIX-297 — resposta AFIRMATIVA por TEXTO LIVRE ao gate reco-consent já foi
+	 * processada (emitiu o hero pendente) — idempotência pra não reemitir o
+	 * hero em turnos seguintes com intent afirmativo/neutro. Espelha
+	 * `simulatorOfferAnswered`. */
+	recoConsentAnswered?: boolean;
+	/** FIX-297 — hero (recommendation_card) computado no turno da busca original
+	 * mas SUPRIMIDO até o usuário consentir (`hero-awaits-reco-consent` em
+	 * artifact-guard.ts) — o payload já coagido server-side (Lei 1) fica aqui
+	 * pra emissão determinística posterior via `emitServerCard`, sem depender
+	 * de o LLM re-chamar a tool nem de recalcular com dados diferentes do
+	 * turno original. Limpo (fica, é inofensivo) depois de emitido. */
+	pendingRecommendationCard?: Record<string, unknown>;
+	/** FIX-297 — mesma ideia do `pendingRecommendationCard`, pro
+	 * `simulation_result` que aprofunda a oferta recomendada (só existe quando
+	 * a busca original também produziu simulação — grupo único não passa por
+	 * aqui, ver `discoveryCount` em runner.ts). */
+	pendingSimulationResult?: Record<string, unknown>;
 	/** Administradora do plano recomendado no reveal — usada como contexto do
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */

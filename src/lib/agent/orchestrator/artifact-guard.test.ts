@@ -52,11 +52,18 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"premature-decision",
 			"reveal-loop",
 			"single-option",
+			// FIX-297: hero (recommendation_card/simulation_result) pendente até o
+			// gate reco-consent resolver — checado logo após single-option (que já
+			// resolve o caso de 1 grupo só, sem ceremônia de consentimento).
+			"hero-awaits-reco-consent",
 			// FIX-53: value_picker fora de ordem (dados antes do valor + anti-repetição).
 			"value-picker-order",
 			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
 			// no mesmo turno (2 tool-calls) — dedup intra-turno via turnArtifactTypes.
 			"dial-dup-intraturn",
+			// FIX-300: topic_picker no instante exato do gate decision (2ª linha,
+			// cobre a janela em que a fase ainda é "reveal" pro tool-policy).
+			"topic-picker-server-gate",
 		]);
 	});
 
@@ -103,16 +110,33 @@ describe("FIX-20 — regra whatsapp-optin (PF-07 + BUG-OPTIN-ENGOLE-GATES)", () 
 	it("SUPRIME: optin duplicado (whatsappOptinShown=true)", () => {
 		const verdict = evaluateArtifactGuards(
 			makeInput({
-				meta: { ...POST_REVEAL, whatsappOptinShown: true },
+				meta: { ...POST_REVEAL, contractFormDispatched: true, whatsappOptinShown: true },
 				artifactType: "whatsapp_optin",
 			}),
 		);
 		expect(verdict.allow).toBe(false);
 	});
 
-	it("PERMITE: primeiro optin pós-reveal", () => {
+	// FIX-303 (rodada r10 onda 2): pós-reveal sozinho não basta mais — o optin só
+	// é permitido no FECHO (contractFormDispatched=true, present_contract_form
+	// já apresentado). Regressão do bug real: card soltava logo após a
+	// recomendação, sem proposta nenhuma na tela.
+	it("SUPRIME: optin pós-reveal SEM contractFormDispatched (FIX-303 — ainda não é fecho)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({ meta: POST_REVEAL, artifactType: "whatsapp_optin" }),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("whatsapp-optin");
+	});
+
+	it("PERMITE: primeiro optin no fecho (reveal + contractFormDispatched)", () => {
 		expect(
-			evaluateArtifactGuards(makeInput({ meta: POST_REVEAL, artifactType: "whatsapp_optin" })),
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { ...POST_REVEAL, contractFormDispatched: true },
+					artifactType: "whatsapp_optin",
+				}),
+			),
 		).toEqual({ allow: true });
 	});
 });
@@ -205,6 +229,10 @@ describe("FIX-239 — regra premature-decision (decision_prompt antes da qualifi
 	const POST_REVEAL_QUALIFIED: ConversationMetadata = {
 		...POST_REVEAL_PRE_QUALIFY,
 		experiencePrev: "returning",
+		// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+		// cruzar experience/timeframe/lance até chegar em "decision".
+		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		qualifyAnswers: {
 			creditMax: 100_000,
 			prazoMeses: 12,
@@ -344,6 +372,10 @@ describe("FIX-20 — regra reveal-loop (re-emissão pós-reveal + dups)", () => 
 			desireAsked: true,
 			qualifyConsented: true,
 			experiencePrev: "returning",
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar experience/timeframe/lance até chegar em "decision".
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: {
 				creditMax: 100_000,
 				prazoMeses: 12,
@@ -378,25 +410,91 @@ describe("FIX-20 — regra single-option (FIX-7: descoberta de opção única)",
 		}
 	});
 
-	it("PERMITE: recommendation_card com 2+ opções", () => {
+	it("PERMITE: recommendation_card com 2+ opções (pós reco-consent já resolvido — FIX-297 isolado no describe dedicado)", () => {
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
-					meta: { searchDispatched: true },
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
 					artifactType: "recommendation_card",
 					discoveryCount: 3,
+					isUserTurn: false,
 				}),
 			),
 		).toEqual({ allow: true });
 	});
 
-	it("PERMITE: sem descoberta neste turno (discoveryCount=null) nada é suprimido", () => {
+	it("PERMITE: sem descoberta neste turno (discoveryCount=null), pós reco-consent já resolvido", () => {
+		expect(
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
+					artifactType: "recommendation_card",
+					discoveryCount: null,
+					isUserTurn: false,
+				}),
+			),
+		).toEqual({ allow: true });
+	});
+});
+
+describe("FIX-297 — regra hero-awaits-reco-consent (reveal em dois tempos com consentimento)", () => {
+	it("SUPRIME recommendation_card no reveal ORIGINAL (revealCompleted ainda false), independente de discoveryCount", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true },
+				artifactType: "recommendation_card",
+				discoveryCount: 3,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("SUPRIME simulation_result quando 2+ grupos (aprofunda o hero, que ainda não foi consentido)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true },
+				artifactType: "simulation_result",
+				discoveryCount: 2,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("PERMITE simulation_result com 1 grupo só (é o card único do reveal, sem ceremônia de consentimento)", () => {
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
 					meta: { searchDispatched: true },
+					artifactType: "simulation_result",
+					discoveryCount: 1,
+				}),
+			),
+		).toEqual({ allow: true });
+	});
+
+	it("SUPRIME recommendation_card mesmo com revealCompleted=true, SE reco-consent ainda não foi respondido (FIX-316, veredito Fable — achado real: o LLM chamava a tool de novo num turno pós-reveal, sem consentimento, e o guard antigo deixava passar por checar só revealCompleted)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true, revealCompleted: true },
+				artifactType: "recommendation_card",
+				discoveryCount: 3,
+				isUserTurn: false,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("PERMITE recommendation_card num turno pós-reveal QUANDO reco-consent já foi respondido", () => {
+		expect(
+			evaluateArtifactGuards(
+				makeInput({
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
 					artifactType: "recommendation_card",
-					discoveryCount: null,
+					discoveryCount: 3,
+					isUserTurn: false,
 				}),
 			),
 		).toEqual({ allow: true });
@@ -518,6 +616,72 @@ describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada n
 				meta: POST_REVEAL,
 				artifactType: "scarcity",
 				turnArtifactTypes: ["scarcity"],
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+});
+
+// FIX-300 (P6, loop-de-goal r10): print real — o Qwen chamou present_topic_
+// picker no gate `decision` com chips "a"/"b" fabricados em vez do card "Esse
+// plano faz sentido?". tool-policy.ts já bloqueia topic_picker em closing/
+// terminal, mas o instante exato do gate `decision` ainda é fase "reveal"
+// (decisionDispatched só vira true DEPOIS do directive) — esta regra é a 2ª
+// linha que cobre esse instante específico via nextGate().
+describe("FIX-300 — regra topic-picker-server-gate (card alucinado no gate decision)", () => {
+	const DECISION_GATE_META: ConversationMetadata = {
+		desireAsked: true,
+		identityCollected: true,
+		searchDispatched: true,
+		revealCompleted: true,
+		experiencePrev: "returning",
+		// FIX-297/FIX-308 (rodada 10): reveal em dois tempos insere o gate
+		// `reco-consent` entre `experience` e `decision` — sem marcá-lo
+		// RESPONDIDO (não só dispatched), nextGate() para em "reco-consent", não
+		// "decision", e a regra topic-picker-server-gate (que só aplica em
+		// nextGate===decision) nunca dispara.
+		recoConsentDispatched: true,
+		recoConsentAnswered: true,
+		qualifyAnswers: {
+			creditMax: 120_000,
+			prazoMeses: 24,
+			hasLance: "no",
+			lanceEmbutido: false,
+		},
+		simulatorOfferDispatched: true,
+		decisionDispatched: false,
+	};
+
+	it("sonda adversarial: suprime topic_picker no gate decision, mesmo com chips arbitrários ('a'/'b') fabricados pelo modelo", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: DECISION_GATE_META,
+				artifactType: "topic_picker",
+				isUserTurn: false,
+			}),
+		);
+		expect(v.allow).toBe(false);
+		if (!v.allow) {
+			expect(v.rule).toBe("topic-picker-server-gate");
+			expect(v.logLine).toMatch(/topic-picker-server-gate/);
+		}
+	});
+
+	it("PERMITE topic_picker fora do gate decision (ex.: meio da qualificação, dúvida legítima)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: { desireAsked: true },
+				artifactType: "topic_picker",
+			}),
+		);
+		expect(v.allow).toBe(true);
+	});
+
+	it("NÃO afeta outros artifacts no mesmo gate decision (regra escopada a topic_picker)", () => {
+		const v = evaluateArtifactGuards(
+			makeInput({
+				meta: DECISION_GATE_META,
+				artifactType: "decision_prompt",
 			}),
 		);
 		expect(v.allow).toBe(true);

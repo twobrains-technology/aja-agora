@@ -91,6 +91,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -105,6 +106,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 150_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -122,6 +124,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -133,7 +136,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
-		const meta: ConversationMetadata = { desireAsked: true, identityCollected: true };
+		const meta: ConversationMetadata = { desireAsked: true, desireAnswered: true, identityCollected: true };
 		await analyzeAndMerge("5 milhoes", "concierge", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
@@ -185,7 +188,14 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
 	});
 
-	it("classifier COM sinal explícito de experiência ainda marca 'returning' (não regrediu)", async () => {
+	// FIX-310 (rodada 10, onda 4) SUPERA a expectativa original deste teste:
+	// desde o FIX-233 (D2) o gate `experience` mora PÓS-reveal — um sinal
+	// explícito no turno do `desire` (`meta.desireAsked=true`, ainda sem
+	// reveal) não é mais "o gate experience realmente ativo", é captura
+	// oportunista cedo demais (a mesma classe de bug que travava o card
+	// `gate:experience` de aparecer, dossiê Madalena). Ver describe "FIX-310"
+	// abaixo pro caminho feliz (captura funciona quando o gate ESTÁ ativo).
+	it("classifier COM sinal explícito de experiência ANTES do gate `experience` estar ativo NÃO captura (FIX-310)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({
 			...NEUTRAL,
 			creditMax: 80_000,
@@ -194,7 +204,59 @@ describe("BUG-FUNIL-PULA-PASSO2 — valor em texto livre não presume experiênc
 		const meta: ConversationMetadata = { currentCategory: "auto" };
 		await analyzeAndMerge("ja fiz consorcio antes, quero um carro de 80 mil", "auto", meta);
 
-		expect(meta.experiencePrev).toBe("returning");
+		expect(meta.experiencePrev).toBeUndefined();
+	});
+});
+
+// FIX-310 (rodada 10, onda 4 — investigação de causa-raiz direta): o gate
+// `experience` nunca aparecia como artifact no dossiê da Madalena, apesar do
+// banco mostrar `experiencePrev: "first"` preenchido — o CARD nunca teve
+// chance de aparecer porque o campo foi preenchido ANTES do gate `experience`
+// ficar ativo (nextGate() pula o gate achando que já foi resolvido). Mesmo
+// padrão de trava que `hasLance` (FIX-236) e `creditMax` (FIX-279) já usam:
+// só aceita a captura oportunista quando o gate REALMENTE ativo no turno é o
+// gate que o dado pertence.
+describe("FIX-310 — experiencePrev só captura quando o gate `experience` está ativo", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	function postRevealAwaitingExperience(): ConversationMetadata {
+		return {
+			desireAsked: true,
+			currentCategory: "auto",
+			identityCollected: true,
+			searchDispatched: true,
+			revealCompleted: true,
+			qualifyAnswers: { creditMax: 80_000 },
+		};
+	}
+
+	it("sinal de experiência ANTES do gate `experience` estar ativo (ex.: turno do desire) NÃO preenche o campo", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			experiencePrev: "first",
+		});
+		const meta: ConversationMetadata = { desireAsked: true, currentCategory: "auto" };
+		// Estado de partida: o gate REALMENTE ativo agora é "credit", não
+		// "experience" (que só existe pós-reveal, FIX-233 D2).
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		await analyzeAndMerge("E a primeira vez", "auto", meta);
+
+		expect(meta.experiencePrev).toBeUndefined();
+	});
+
+	it("resposta DIRETA quando o gate `experience` está ativo → captura normal (caminho feliz intacto)", async () => {
+		const meta = postRevealAwaitingExperience();
+		expect(nextGate(meta, { hasContactName: true })).toBe("experience");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, experiencePrev: "first" });
+		await analyzeAndMerge("E a primeira vez", "auto", meta);
+
+		expect(meta.experiencePrev).toBe("first");
+		expect(nextGate(meta, { hasContactName: true })).not.toBe("experience");
 	});
 });
 
@@ -213,6 +275,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 	// ÚNICO gate pendente é `credit` (o valor). Reproduz o print do bug.
 	const atValueStep = (): ConversationMetadata => ({
 		desireAsked: true,
+		desireAnswered: true,
 		currentCategory: "auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
@@ -306,6 +369,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -376,6 +440,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -501,7 +566,13 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		vi.mocked(analyzeTurn).mockReset();
 	});
 
-	it("'Um carro, uns 70 mil' no turno do desire → creditMentionedAtDesire=70000 SEM popular creditMax (não regride FIX-279/G3)", async () => {
+	// FIX-306 (rodada 10, onda 4) SUPERA a expectativa original deste teste: o
+	// texto responde o desire (composto, bem+valor) NESTE MESMO turno — cenário
+	// idêntico ao cassette real do Mario ("Um usado, uns R$ 90 mil"), que
+	// travava o funil pra sempre em "credit". A promoção de creditMax agora É
+	// esperada aqui (ver describe "FIX-306" abaixo); creditMentionedAtDesire
+	// continua sendo gravado em paralelo (não é substituído, os dois convivem).
+	it("'Um carro, uns 70 mil' no turno do desire → creditMentionedAtDesire=70000 E creditMax=70000 (FIX-306: promovido no mesmo turno)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
@@ -511,14 +582,14 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		await analyzeAndMerge("Um carro, uns 70 mil", "rafael-auto", meta);
 
 		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(70_000);
-		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+		expect(meta.qualifyAnswers?.creditMax).toBe(70_000);
 	});
 
-	it("quando o gate credit está REALMENTE ativo, popula creditMax E creditMentionedAtDesire", async () => {
+	it("quando o gate credit está REALMENTE ativo (desireAnswered já true de um turno anterior), popula creditMax E creditMentionedAtDesire", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
-			identityCollected: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 		};
 		await analyzeAndMerge("uns 70 mil", "rafael-auto", meta);
@@ -553,6 +624,77 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 	});
 });
 
+// FIX-306 (rodada 10, onda 4 — investigação de causa-raiz direta, cassette
+// real do Mario, `.processo/loop/2026-07-09-agente-vendas-consorcio.md`
+// seção Rodada 10 → onda 4): quando o usuário responde o gate `desire`
+// COMPOSTO (bem + valor no MESMO balão, ex.: "Um usado, uns R$ 90 mil"), o
+// guard do FIX-279 (`desireAnsweredBeforeThisTurn`, snapshot PRÉ-mutação)
+// rejeitava a promoção pra `creditMax` porque `desireAnswered` só é setado
+// NESTE MESMO turno (linha ~71) — o valor caía só em
+// `creditMentionedAtDesire` e nunca era promovido, travando `nextGate()` em
+// "credit" pra sempre (todo o funil pós-credit virava código morto). Fix:
+// aceitar a promoção também quando o desire está sendo respondido AGORA
+// (mesma condição que seta `meta.desireAnswered` nesta função), não só
+// quando já tinha sido respondido em turno anterior.
+describe("FIX-306 — valor no MESMO turno do desire promove creditMax (cassette Mario)", () => {
+	beforeEach(() => {
+		vi.mocked(analyzeTurn).mockReset();
+	});
+
+	it("'Um usado, uns R$ 90 mil' respondendo o desire composto → creditMax preenchido, nextGate avança pra identify", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "auto",
+			creditMax: 90_000,
+		});
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			currentCategory: "auto",
+		};
+		// Estado de partida: nextGate() já devolve "credit" desde o próprio
+		// turno em que o desire está sendo respondido (FIX-296) — o sinal que
+		// distingue os dois casos é `desireAnswered`, não o gate ativo.
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
+
+		await analyzeAndMerge("Um usado, uns R$ 90 mil", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(90_000);
+		expect(meta.qualifyAnswers?.creditMentionedAtDesire).toBe(90_000);
+		expect(meta.desireAnswered).toBe(true);
+		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+	});
+
+	it("caminho ANTIGO preservado: valor em turno SEPARADO do desire (Madalena) continua promovendo normalmente", async () => {
+		// desireAnswered já true de um turno ANTERIOR (o desire foi respondido
+		// sem valor, ex.: "Um Corolla, sempre quis") — o valor só chega 2+
+		// turnos depois, quando o gate `credit` de fato pergunta.
+		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 120_000 });
+		const meta: ConversationMetadata = {
+			desireAsked: true,
+			desireAnswered: true,
+			currentCategory: "auto",
+		};
+		await analyzeAndMerge("Uns R$ 120.000", "rafael-auto", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBe(120_000);
+	});
+
+	it("bem+valor ANTES do desire ser sequer perguntado (desireAsked=false) continua REJEITADO — não regride o FIX-279", async () => {
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			detectedCategory: "imovel",
+			creditMax: 250_000,
+			desiredItem: "um apartamento",
+		});
+		const meta: ConversationMetadata = { desireAsked: false };
+		expect(nextGate(meta, { hasContactName: true })).toBe("desire");
+
+		await analyzeAndMerge("Um apartamento de uns 250 mil", "imovel", meta);
+
+		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
+	});
+});
+
 // FIX-236 (Fable r1, D3.1, gap P0 #1): o gate `lance` estava sendo PULADO no
 // funil real — trace mostrava experience→timeframe→lance-embutido, sem nunca
 // passar por `lance`. Causa raiz: `hasLance` era capturado de QUALQUER turno
@@ -580,6 +722,10 @@ describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", (
 			experiencePrev: "first",
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar até o timeframe (senão fica preso em "reco-consent").
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 120_000 },
 		};
 	}
@@ -625,6 +771,36 @@ describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", (
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, hasLance: "yes" });
 		await analyzeAndMerge("tenho uma reserva pra dar de lance", "auto", meta);
 		expect(meta.qualifyAnswers?.hasLance).toBe("yes");
+	});
+
+	// FIX-321 (rodada 10, veredito Sonnet A.4 — achado MÉDIA, dossiê Mario onda
+	// 4/10 ao vivo): "so_parcela" é uma RECUSA EXPLÍCITA e inequívoca — bem
+	// diferente do falso-positivo "no" do teste acima (que vem de uma frase
+	// AMBÍGUA tipo "não tenho grana agora"). Mas o guard FIX-236 barrava os DOIS
+	// do mesmo jeito: quando o usuário recusa lance ANTECIPADAMENTE, respondendo
+	// à pergunta de `timeframe` ("Não quero comprometer nada além da parcela"),
+	// a recusa explícita era DESCARTADA por `activeGateAtTurnStart !== "lance"`
+	// — nextGate() nunca via `hasLance === "so_parcela"` e o funil seguia pro
+	// gate `lance` normal (educação de embutido) em vez de ir direto pro
+	// two_paths. Achado ao vivo: two_paths NUNCA disparava pro Mario.
+	it("FIX-321 — resposta ao gate timeframe com so_parcela (recusa EXPLÍCITA) CAPTURA e roteia pra decision/two_paths", async () => {
+		const meta = postRevealAwaitingTimeframe();
+		// Confirma o estado de partida: o gate ativo AGORA é timeframe (assim como
+		// no teste do falso-positivo "no" acima) — prazoMeses ainda não respondido.
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			hasLance: "so_parcela",
+		});
+		await analyzeAndMerge("Não quero comprometer nada além da parcela", "auto", meta);
+
+		expect(meta.qualifyAnswers?.hasLance).toBe("so_parcela");
+		// prazoMeses segue sem resposta — nextGate ainda pede timeframe primeiro,
+		// mas assim que ele resolver, cai direto em decision/two_paths (não em
+		// "lance"), porque hasLance já está fechado.
+		meta.qualifyAnswers!.prazoMeses = 6;
+		expect(nextGate(meta, { hasContactName: true })).toBe("decision");
 	});
 });
 
@@ -675,6 +851,7 @@ describe("FIX-279 — creditMax só captura quando o gate `credit` está ativo",
 	it("resposta DIRETA ao gate `credit` já ativo → creditMax é setado normalmente (caminho legítimo preservado)", async () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "imovel",
 			identityCollected: true,
 		};
@@ -693,6 +870,10 @@ describe("FIX-279 — creditMax só captura quando o gate `credit` está ativo",
 			currentCategory: "auto",
 			identityCollected: true,
 			revealCompleted: true,
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar até o timeframe (senão fica preso em "reco-consent").
+			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			experiencePrev: "returning",
 			searchDispatched: true,
 			qualifyAnswers: { creditMax: 80_000 },

@@ -188,23 +188,55 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId }) =>
 			`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
 	},
-	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
-	// dados, antes do valor" + "Voltou a pedir o valor". O credit gate (value
-	// picker server-emitido) já respeita a ordem nova via qualify-state; esta é
-	// a 2ª linha de defesa se o MODELO chamar present_value_picker fora de ordem.
-	// PRÉ-reveal, suprime o value_picker quando: (a) a identidade ainda não foi
-	// coletada (dados ANTES do valor) OU (b) o valor já foi coletado (anti-
-	// repetição — confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-
-	// reveal o picker é legítimo (ajuste de valor) — não cai aqui.
+	// FIX-297 (rodada 10, 2026-07-12): reveal em DOIS TEMPOS com consentimento.
+	// No turno da busca ORIGINAL (revealCompleted ainda false), o hero
+	// (recommendation_card) e o `simulation_result` que o aprofunda ficam
+	// PENDENTES até o usuário consentir no gate `reco-consent` (pós-
+	// experience) — só a `comparison_table` (lista) sai imediata (FIX-290
+	// preservado, tipo diferente, não cai aqui). `single-option` acima já
+	// resolve o caso de 1 grupo só (sem hero, sem ceremônia de consentimento);
+	// `simulation_result` só é pendurado quando há 2+ grupos (senão ELE é o
+	// card único do reveal, precisa sair na hora). O runner.ts captura o
+	// payload coagido e persiste em `meta.pendingRecommendationCard`/
+	// `pendingSimulationResult` pra emissão determinística posterior
+	// (`emitServerCard`, nunca recalculado, nunca dependente de nova tool-call).
+	{
+		name: "hero-awaits-reco-consent",
+		applies: ({ artifactType, meta, discoveryCount }) => {
+			// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): a condição
+			// original só suprimia no turno ORIGINAL da busca (revealCompleted
+			// ainda false) — mas revealCompleted vira true assim que a busca
+			// termina, MUITO antes do usuário responder reco-consent. Qualquer
+			// turno DEPOIS do reveal (o LLM chamando a tool espontaneamente de
+			// novo) escapava do guard inteiro. A condição certa é o estado de
+			// consentimento em si — suprime enquanto `recoConsentAnswered` não
+			// for true, esteja o reveal recém-concluído ou não.
+			if (meta.recoConsentAnswered === true) return false;
+			if (artifactType === "recommendation_card") return true;
+			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;
+			return false;
+		},
+		logLine: ({ artifactType, conversationId }) =>
+			`[hero-awaits-reco-consent] guard: suprimindo ${artifactType} no reveal original — pendente até o gate reco-consent resolver (conv=${conversationId})`,
+	},
+	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19) — HISTÓRICO, ordem
+	// REVERTIDA pelo FIX-296 (rodada 10, 2026-07-12: "valor antes dos dados").
+	// O credit gate (value picker server-emitido) já respeita a ordem nova via
+	// qualify-state; esta é a 2ª linha de defesa se o MODELO chamar
+	// present_value_picker fora de ordem. PRÉ-reveal, suprime o value_picker
+	// quando: (a) o desire ainda não foi respondido (o credit ainda nem é o
+	// gate estrutural ativo) OU (b) o valor já foi coletado (anti-repetição —
+	// confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-reveal o
+	// picker é legítimo (ajuste de valor) — não cai aqui.
 	{
 		name: "value-picker-order",
 		applies: ({ artifactType, meta }) =>
 			artifactType === "value_picker" &&
 			meta.revealCompleted !== true &&
-			(meta.identityCollected !== true || meta.qualifyAnswers?.creditMax !== undefined),
+			(!meta.desireAsked || meta.qualifyAnswers?.creditMax !== undefined),
 		logLine: ({ meta, conversationId }) =>
 			`[value-picker-order] guard: suprimindo value_picker pré-reveal — ${
-				meta.identityCollected !== true ? "identidade ainda não coletada (dados antes do valor)" : "valor já coletado (anti-repetição)"
+				!meta.desireAsked ? "desire ainda não respondido (valor antes dos dados, mas ainda cedo demais)" : "valor já coletado (anti-repetição)"
 			} (conv=${conversationId})`,
 	},
 	// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no
@@ -220,6 +252,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			(turnArtifactTypes ?? []).includes("contemplation_dial"),
 		logLine: ({ conversationId }) =>
 			`[dial-dup-intraturn] guard: suprimindo contemplation_dial duplicado no mesmo turno (conv=${conversationId})`,
+	},
+	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): o
+	// print real mostrava um topic_picker com chips "a"/"b" no lugar do card
+	// "Esse plano faz sentido?" — o gate `decision` tecnicamente ainda é fase
+	// `reveal` (tool-policy.ts só bloqueia closing/terminal) até o directive
+	// marcar `decisionDispatched`, então essa é a 2ª linha que cobre o instante
+	// exato: o servidor JÁ vai emitir/já emitiu o card canônico da decisão, um
+	// menu de dúvidas do LLM ali é sempre ruído.
+	{
+		name: "topic-picker-server-gate",
+		applies: ({ artifactType, meta }) =>
+			artifactType === "topic_picker" && nextGate(meta) === "decision",
+		logLine: ({ conversationId }) =>
+			`[topic-picker-server-gate] guard: suprimindo topic_picker — gate decision já tem card canônico do servidor (conv=${conversationId})`,
 	},
 ];
 

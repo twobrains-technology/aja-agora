@@ -37,13 +37,21 @@ describe("FIX-280 — deriveWhatsappOptinStage colapsada (só locked/done — si
 
 describe("FIX-27 — shouldEmitWhatsappOptin suprime em retry de fechamento", () => {
 	it("NÃO emite quando há fechamento com erro Bevi pendente (assunto é re-tentar)", () => {
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true, contractRetryPending: true })).toBe(
-			false,
-		);
+		expect(
+			shouldEmitWhatsappOptin({
+				revealCompleted: true,
+				contractFormDispatched: true,
+				contractRetryPending: true,
+			}),
+		).toBe(false);
 	});
 
-	it("emite normalmente pós-reveal sem retry pendente", () => {
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
+	// FIX-303: o gatilho migrou de revealCompleted pro FECHO
+	// (contractFormDispatched) — sem retry pendente, no fecho, emite normal.
+	it("emite normalmente no fecho (proposta apresentada) sem retry pendente", () => {
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
 	});
 });
 

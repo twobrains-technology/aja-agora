@@ -1,0 +1,4 @@
+{
+  "setup": ["pnpm install --prefer-offline"],
+  "run": ["~/.claude/skills/local-dev/scripts/bootstrap-workspace.sh"]
+}

@@ -12,6 +12,7 @@ import {
 	nextGate,
 	shouldAskMotive,
 	shouldMarkDoubtsAddressed,
+	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
@@ -66,6 +67,7 @@ import {
 	type ToolCallRecord,
 	type ToolResultRecord,
 } from "./tool-io-log";
+import { resolveTopicPickerPayload } from "./topic-catalog";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -142,9 +144,21 @@ const REVEAL_ARTIFACTS = new Set([
  * do reveal produz cards e os turnos seguintes também (optin/decision), então
  * a oferta do simulador (docx passo 4: "na sequência" do reveal) nunca saía.
  * Exceção cirúrgica: o simulator-offer É elegível no MESMO turno que
- * apresentou os cards do reveal. Os demais gates seguem bloqueados. */
+ * apresentou os cards do reveal.
+ *
+ * FIX-320 (rodada 10, veredito Sonnet A.4): `nextGate()` calcula "experience"
+ * como o PRIMEIRO gate pós-reveal (qualify-state.ts) — no MESMO turno em que
+ * `revealCompleted` vira true. Sem esta mesma exceção, qualquer turno que
+ * reapresentasse um REVEAL_ARTIFACT (ex.: "Quero ver todas" reabrindo
+ * comparison_table) engolia a chance de "experience" disparar — e como toda a
+ * cascata pós-reveal fica bloqueada atrás dele, o gate nunca encontrava um
+ * turno "limpo" pra sair (achado ao vivo: nunca perguntado em nenhum dos 2
+ * dossiês). Os demais gates seguem bloqueados. */
 export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boolean {
-	return gate === "simulator-offer" && artifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+	return (
+		(gate === "simulator-offer" || gate === "experience") &&
+		artifactTypes.some((t) => REVEAL_ARTIFACTS.has(t))
+	);
 }
 
 function artifactTypeFor(toolName: string): ArtifactType {
@@ -278,6 +292,13 @@ export async function* runAgentTurn(args: {
 	// usuário nem chegou a ver o reveal. Sem esta força, o turno ficava
 	// inteiramente mudo (nem artifact, nem gate).
 	let prematureContractSuppressedThisTurn = false;
+	// FIX-297: hero (recommendation_card) e a simulação que o aprofunda ficam
+	// PENDENTES no reveal original (guard hero-awaits-reco-consent) — os
+	// payloads já COAGIDOS server-side (mesma coerção do caminho permitido)
+	// são guardados aqui pra persistir em meta.pendingRecommendationCard/
+	// pendingSimulationResult (emissão determinística mais tarde, pós-consent).
+	let pendingRecommendationPayload: Record<string, unknown> | null = null;
+	let pendingSimulationPayload: Record<string, unknown> | null = null;
 	// FIX-262: chunk `tool-error` observado neste turno (tool fora do toolset da
 	// fase) — a partir daqui, nenhum texto do modelo chega ao usuário (evita a
 	// negação de oferta real) e o orchestrator assume com fallback determinístico.
@@ -444,9 +465,13 @@ export async function* runAgentTurn(args: {
 				const blockId = (part as { id?: string }).id;
 				// FIX-182: fronteira de bloco (step diferente do turno multi-tool) →
 				// fecha a frase pendente do bloco anterior, com separador entre blocos.
+				// FIX-330: `flushPending()`, não `flush()` — essa fronteira NÃO é o
+				// fim real do turno; liberar a pergunta segurada aqui deixava ela
+				// escapar cedo demais quando o bloco SEGUINTE (ou o gate no fim do
+				// turno) também termina em pergunta (achado ao vivo, P4).
 				if (blockId !== lastTextBlockId && lastTextBlockId !== undefined) {
 					const blockSep = textBlockSeparator(lastTextBlockId, blockId, fullResponse);
-					const flushed = composeClean(ephemeralFilter.flush(), blockSep);
+					const flushed = composeClean(ephemeralFilter.flushPending(), blockSep);
 					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = blockId;
@@ -573,8 +598,12 @@ export async function* runAgentTurn(args: {
 				// ANTES de emitir o tool-call/artifact — o status real é o chip
 				// determinístico, não uma fala do modelo. Exceção: handoff (agente
 				// calado por design; o texto pendente some com o turno).
+				// FIX-330: `flushPending()` — pré-tool-call NÃO é o fim real do
+				// turno (mais tool-calls/texto podem vir depois); liberar a
+				// pergunta segurada aqui é a MESMA classe de escape prematuro do
+				// FIX-182 acima.
 				if (toolName !== "suggest_handoff") {
-					const flushed = composeClean(ephemeralFilter.flush());
+					const flushed = composeClean(ephemeralFilter.flushPending());
 					if (flushed) yield { type: "text-delta", text: flushed };
 				}
 				lastTextBlockId = undefined;
@@ -626,6 +655,26 @@ export async function* runAgentTurn(args: {
 						// turno, mesmo se decideShowGate/shouldAskMotive quiserem segurar.
 						if (guardVerdict.rule === "premature-contract") {
 							prematureContractSuppressedThisTurn = true;
+						}
+						// FIX-297: hero suprimido por falta de consentimento — computa o
+						// MESMO payload coagido que o caminho permitido usaria (Lei 1: os
+						// números vêm do grupo real do turno, nunca do texto do modelo) e
+						// guarda pra emissão determinística posterior (reco-consent).
+						if (guardVerdict.rule === "hero-awaits-reco-consent") {
+							if (artifactType === "recommendation_card") {
+								const requestedCreditValue =
+									meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax;
+								pendingRecommendationPayload = coerceRecommendationPayload(
+									input,
+									revealGroupsById,
+									await getAdministradoraLogos(),
+									requestedCreditValue,
+									await getKnownCreditValues(),
+								);
+							}
+							if (artifactType === "simulation_result") {
+								pendingSimulationPayload = coerceSimulationPayload(input, lastQuotaSimulation);
+							}
 						}
 					} else {
 						// FIX-6: o dial NUNCA mostra números divergentes da oferta
@@ -688,6 +737,28 @@ export async function* runAgentTurn(args: {
 												groupId: resolved.groupId,
 											},
 										});
+									}
+									// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A1): até
+									// aqui só o META era re-ancorado — o PAYLOAD do form (o que o
+									// usuário efetivamente VÊ e preenche) continuava com
+									// `input.administradora` cru do modelo. Achado ao vivo: form
+									// exibia "Canopus" (o que o usuário pediu) mas a proposta final
+									// (real_offer) fechava com "ITAÚ" (a âncora resolvida) — o
+									// cliente preenchia um pré-cadastro pra uma administradora e
+									// recebia reserva de outra. O form TEM que mostrar a MESMA
+									// administradora que vai fechar — nunca o texto livre do modelo.
+									payload = { ...(payload as Record<string, unknown>), administradora: resolved.administradora };
+								} else {
+									// FIX-316: resolução FALHOU (administradora citada não bate com
+									// nenhum grupo real exibido) — o form NUNCA pode mostrar uma
+									// administradora não-ancorada. Cai pro que já está ancorado
+									// (recommendedAdministradora), nunca o texto livre do modelo.
+									const refreshed = await reloadMeta(conversationId);
+									if (refreshed.recommendedAdministradora) {
+										payload = {
+											...(payload as Record<string, unknown>),
+											administradora: refreshed.recommendedAdministradora,
+										};
 									}
 								}
 							}
@@ -762,6 +833,14 @@ export async function* runAgentTurn(args: {
 						if (artifactType === "scarcity") {
 							payload = coerceScarcityPayload(input, revealGroupsById);
 						}
+						// FIX-300: `topics` chega como ids do catálogo (schema já rejeita
+						// qualquer outro valor) — resolve pro COPY canônico do chip aqui,
+						// nunca repassa o que a LLM mandou.
+						if (artifactType === "topic_picker") {
+							payload = resolveTopicPickerPayload(
+								input as { prompt?: string; topics: string[]; includeBackButton?: boolean },
+							);
+						}
 						artifacts.push({
 							type: artifactType,
 							payload,
@@ -827,6 +906,117 @@ export async function* runAgentTurn(args: {
 			prefixForNextGate: null,
 			discoveryFailedThisTurn: true,
 		};
+	}
+
+	// FIX-326 (rodada 10, veredito Sonnet A.5/A.6 — P4, teto explícito da r10):
+	// o flush abaixo libera a ÚLTIMA pergunta que o MODELO fez no turno
+	// (FIX-298) — mas o cálculo REAL de qual gate vai disparar
+	// (`nextGateToFire`, mais abaixo nesta função) só acontece DEPOIS. Sem
+	// isso, quando um gate com pergunta PRÓPRIA dispara no mesmo turno
+	// (experience/timeframe/reco-consent/etc.), a pergunta do modelo e a
+	// pergunta do gate colam no mesmo balão (achado sistemático, múltiplas
+	// recoletas ao vivo). Prevê aqui, com as MESMAS funções puras usadas no
+	// cálculo real mais abaixo (nunca duplica a lógica, só antecipa a
+	// chamada) e dado 100% local — sem esperar os `persistMeta` que só
+	// acontecem depois do flush — se um gate com pergunta própria vai
+	// disparar. Se sim, descarta a pergunta segurada do modelo: só a
+	// pergunta CANÔNICA do gate sobrevive (ela é sempre a estruturalmente
+	// correta; a do modelo é só uma reação de texto livre).
+	if (!isConcierge) {
+		const previewProducedArtifact = artifacts.length > 0;
+		const previewArtifactTypes = artifacts.map((a) => a.type);
+		const previewMayEvaluateGates =
+			!previewProducedArtifact || previewArtifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+		if (previewMayEvaluateGates) {
+			// Replica as mutações de meta que ESTA função já sabe que vai
+			// persistir mais abaixo, ANTES do cálculo real de nextGateToFire mas
+			// DEPOIS deste bloco — as que `nextGate()`/`decideShowGate()` leem:
+			// revealCompleted/searchDispatched (reveal completa NESTE turno),
+			// decisionDispatched (card de decisão aparece NESTE turno),
+			// doubtsAddressed (FIX-328 — shouldMarkDoubtsAddressed, achado ao
+			// vivo pelo veredito Sonnet A.7: sem isso, um turno que resolve
+			// "doubts" por texto livre previa "doubts-wait" — isento — quando o
+			// cálculo real já avança pra "reco-consent", que TEM pergunta
+			// própria, reproduzindo a MESMA colisão que este bloco existe pra
+			// evitar).
+			const previewRevealCompletesNow =
+				!meta.revealCompleted &&
+				(artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) ||
+					Boolean(pendingRecommendationPayload) ||
+					Boolean(pendingSimulationPayload));
+			const previewDecisionDispatchesNow =
+				!meta.decisionDispatched && artifacts.some((a) => a.type === "decision_prompt");
+			const previewUserReplied = fullResponse.length > 0;
+			const previewDoubtsAddressedNow = shouldMarkDoubtsAddressed({
+				meta,
+				producedArtifact: previewProducedArtifact,
+				userReplied: previewUserReplied,
+			});
+			// FIX-329 (rodada 10, veredito Sonnet A.8 — achado provado por sonda
+			// do juiz): `pendingFollowUp` (gate `consent`/"Entender mais antes",
+			// hoje vestigial — nada no funil novo mais SETA esse campo desde o
+			// FIX-274 — mas defesa-em-profundidade pra conversas legadas que
+			// ainda o carreguem persistido) é limpo em runtime na MESMA janela.
+			// Sem replicar, `nextGate()` previa "doubts-wait" (isento) enquanto o
+			// cálculo real, com o campo já limpo, avança pro próximo gate real.
+			const previewPendingFollowUpClearsNow =
+				isUserTurn && !previewProducedArtifact && Boolean(meta.pendingFollowUp) && previewUserReplied;
+			// FIX-328 (rodada 10, veredito Sonnet A.7 — hipótese de código, não
+			// reproduzida ao vivo, mas mesma classe do doubtsAddressed acima):
+			// FIX-68 re-snapshota `discoveredCreditTarget` quando o reveal
+			// re-completa numa faixa NOVA — sem replicar isso aqui,
+			// `revealValueTargetChanged()` (tool-policy.ts, lido por
+			// `nextGate()` ANTES do check de `experience`) poderia usar o valor
+			// ANTIGO e prever "search" (isento) quando o cálculo real, já
+			// resincronizado, avança pra "experience" (tem pergunta própria).
+			const previewDiscoveredCreditTargetResync =
+				meta.revealCompleted === true &&
+				artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) &&
+				typeof meta.qualifyAnswers?.creditMax === "number" &&
+				meta.qualifyAnswers.creditMax !== meta.discoveredCreditTarget
+					? meta.qualifyAnswers.creditMax
+					: undefined;
+			const previewMeta: ConversationMetadata = {
+				...meta,
+				...(previewRevealCompletesNow
+					? { revealCompleted: true, searchDispatched: true }
+					: {}),
+				...(previewDecisionDispatchesNow ? { decisionDispatched: true } : {}),
+				...(previewDoubtsAddressedNow ? { doubtsAddressed: true } : {}),
+				...(previewDiscoveredCreditTargetResync !== undefined
+					? { discoveredCreditTarget: previewDiscoveredCreditTargetResync }
+					: {}),
+				...(previewPendingFollowUpClearsNow ? { pendingFollowUp: false } : {}),
+			};
+			const { conversations: previewConversationsTable } = await import("@/db/schema");
+			const { eq: previewEq } = await import("drizzle-orm");
+			const previewConv = await db.query.conversations.findFirst({
+				where: previewEq(previewConversationsTable.id, conversationId),
+				columns: { contactName: true },
+			});
+			const previewGate = nextGate(previewMeta, {
+				hasContactName: Boolean(previewConv?.contactName),
+			});
+			const GATES_WITHOUT_OWN_QUESTION: ReadonlySet<Gate> = new Set([
+				"name",
+				"doubts-wait",
+				"search",
+				"decision",
+			]);
+			if (!GATES_WITHOUT_OWN_QUESTION.has(previewGate)) {
+				const previewShouldShow = decideShowGate({
+					gate: previewGate,
+					intent: userIntent,
+					meta: previewMeta,
+					isUserTurn,
+				});
+				const previewPassesArtifactGuard =
+					!previewProducedArtifact || allowGateWithArtifacts(previewGate, previewArtifactTypes);
+				if (previewShouldShow && previewPassesArtifactGuard) {
+					ephemeralFilter.discardHeldQuestion();
+				}
+			}
+		}
 	}
 
 	// FIX-188: libera a última frase pendente do stream (sucesso), também filtrada
@@ -936,8 +1126,14 @@ export async function* runAgentTurn(args: {
 	// MESMOS grupos indexados neste turno (revealGroupsById). Caso de borda: 1
 	// grupo único NUNCA força a tabela (regra do reveal — os dois só pulam
 	// juntos quando há 1 grupo só).
+	//
+	// FIX-297: `pendingRecommendationPayload` conta como "o modelo chamou
+	// present_recommendation_card" — o guard hero-awaits-reco-consent suprime a
+	// EMISSÃO do hero, não a INTENÇÃO do modelo; a tabela continua obrigatória
+	// no mesmo turno (nunca some, invariante do FIX-290 preservado mesmo com o
+	// hero pendente).
 	if (
-		artifacts.some((a) => a.type === "recommendation_card") &&
+		(artifacts.some((a) => a.type === "recommendation_card") || pendingRecommendationPayload) &&
 		!artifacts.some((a) => a.type === "comparison_table") &&
 		usableRevealGroupCount(revealGroupsById) >= 2
 	) {
@@ -1016,28 +1212,41 @@ export async function* runAgentTurn(args: {
 	// group_card (1), recommendation_card (destacado) ou simulation_result. Limitar
 	// a recommendation/simulation deixava a flag desligada quando o agent abria o
 	// reveal com group_card/comparison (visto no run real 2026-06-02).
-	if (artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) && !meta.revealCompleted) {
+	if (
+		(artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) ||
+			pendingRecommendationPayload ||
+			pendingSimulationPayload) &&
+		!meta.revealCompleted
+	) {
 		const refreshed = await reloadMeta(conversationId);
+		// FIX-297: hero (recommendation_card) e a simulação que o aprofunda podem
+		// ter sido SUPRIMIDOS deste turno (pendentes até reco-consent) — a âncora
+		// de administradora/oferta usa o payload PENDENTE quando o artifact
+		// visível não existe, senão o contexto do dial/decisão ficaria pobre
+		// (group_card, se houver, ou nada) enquanto o hero espera consentimento.
+		const recommendationPayload =
+			artifacts.find((a) => a.type === "recommendation_card")?.payload ??
+			pendingRecommendationPayload ??
+			undefined;
+		const simulationPayload =
+			artifacts.find((a) => a.type === "simulation_result")?.payload ??
+			pendingSimulationPayload ??
+			undefined;
+		const groupCardPayload = artifacts.find((a) => a.type === "group_card")?.payload;
 		// Captura a administradora do plano destacado pro contexto do card de
 		// decisão / passo 5. Prioridade: recommendation > simulation > group_card.
-		const anchor =
-			artifacts.find((a) => a.type === "recommendation_card") ??
-			artifacts.find((a) => a.type === "simulation_result") ??
-			artifacts.find((a) => a.type === "group_card");
+		const anchorPayload = recommendationPayload ?? simulationPayload ?? groupCardPayload;
 		const administradora =
-			typeof anchor?.payload?.administradora === "string"
-				? anchor.payload.administradora
+			typeof anchorPayload?.administradora === "string"
+				? anchorPayload.administradora
 				: refreshed.recommendedAdministradora;
 		// FIX-6: snapshot dos números da oferta âncora — fonte única do dial.
 		// BUG-SNAPSHOT-ANCHOR-POBRE (E2E real 2026-06-11): o snapshot precisa do
 		// artifact RICO — só o simulation_result carrega lanceScenario/embeddedBid
 		// (lance real + mês de referência + teto de embutido, FIX-C2). Usar o
 		// recommendation_card aqui deixava o dial sem calibração (31% vs 24%).
-		const snapshotAnchor =
-			artifacts.find((a) => a.type === "simulation_result") ??
-			artifacts.find((a) => a.type === "recommendation_card") ??
-			artifacts.find((a) => a.type === "group_card");
-		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchor?.payload);
+		const snapshotAnchorPayload = simulationPayload ?? recommendationPayload ?? groupCardPayload;
+		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchorPayload);
 		await persistMeta(conversationId, {
 			...refreshed,
 			revealCompleted: true,
@@ -1052,6 +1261,14 @@ export async function* runAgentTurn(args: {
 				? { discoveredCreditTarget: refreshed.qualifyAnswers.creditMax }
 				: {}),
 			...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
+			// FIX-297: hero e simulação pendentes (guard hero-awaits-reco-consent) —
+			// sobrevivem no meta pra emissão determinística quando reco-consent
+			// resolver, muitos turnos depois (revealGroupsById já não existe fora
+			// deste turno).
+			...(pendingRecommendationPayload
+				? { pendingRecommendationCard: pendingRecommendationPayload }
+				: {}),
+			...(pendingSimulationPayload ? { pendingSimulationResult: pendingSimulationPayload } : {}),
 		});
 	}
 
@@ -1215,6 +1432,13 @@ export async function* runAgentTurn(args: {
 		// com o estado ANTERIOR — a marcação só afeta o turno seguinte.
 		if (isUserTurn && shouldAskMotive(refreshed)) {
 			await persistMeta(conversationId, { ...refreshed, motivationAsked: true });
+		}
+		// FIX-296 — mesmo padrão acima, um turno depois: quando o motivo já
+		// chegou e o beat de espelho+objetivo segura o funil (shouldShow=false
+		// por shouldMirrorMotivation), marca motivationMirrored — o gate real
+		// (credit) dispara normalmente no turno SEGUINTE.
+		if (isUserTurn && shouldMirrorMotivation(refreshed)) {
+			await persistMeta(conversationId, { ...refreshed, motivationMirrored: true });
 		}
 		const passesArtifactGuard =
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);

@@ -24,23 +24,53 @@ describe("shouldEmitWhatsappOptin — pré-reveal NUNCA (BUG-OPTIN-ENGOLE-GATES)
 		expect(shouldEmitWhatsappOptin({ revealCompleted: false })).toBe(false);
 	});
 
-	it("emite pós-reveal quando ainda não mostrado", () => {
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(true);
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true, whatsappOptinShown: false })).toBe(
-			true,
-		);
+	it("emite no FECHO, quando reveal+contractFormDispatched e ainda não mostrado", () => {
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+		).toBe(true);
+		expect(
+			shouldEmitWhatsappOptin({
+				revealCompleted: true,
+				contractFormDispatched: true,
+				whatsappOptinShown: false,
+			}),
+		).toBe(true);
 	});
 });
 
-describe("shouldEmitWhatsappOptin — PF-07 guard de duplicação (pós-reveal)", () => {
+// FIX-303 (rodada r10 onda 2, 2026-07-12): "Continua o WhatsApp... Anotei seu
+// WhatsApp" aparecia logo após o reveal, sem o usuário ter pedido e ANTES de
+// qualquer proposta apresentada. A regra de produto é "optin no FECHO" (depois
+// do present_contract_form, passo 5) — revealCompleted sozinho não basta mais.
+describe("shouldEmitWhatsappOptin — FIX-303 só no FECHO (pós-proposta), nunca só pós-reveal", () => {
+	it("NÃO emite com revealCompleted=true mas SEM contractFormDispatched (bug original)", () => {
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(false);
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: false }),
+		).toBe(false);
+	});
+
+	it("NÃO emite com contractFormDispatched=true mas SEM revealCompleted (ordem inválida)", () => {
+		expect(
+			shouldEmitWhatsappOptin({ revealCompleted: false, contractFormDispatched: true }),
+		).toBe(false);
+	});
+});
+
+describe("shouldEmitWhatsappOptin — PF-07 guard de duplicação (pós-fecho)", () => {
 	it("NÃO emite quando meta.whatsappOptinShown é true", () => {
-		const meta: ConversationMetadata = { revealCompleted: true, whatsappOptinShown: true };
+		const meta: ConversationMetadata = {
+			revealCompleted: true,
+			contractFormDispatched: true,
+			whatsappOptinShown: true,
+		};
 		expect(shouldEmitWhatsappOptin(meta)).toBe(false);
 	});
 
 	it("NÃO emite mesmo se user já recusou (declined → shown=true)", () => {
 		const meta: ConversationMetadata = {
 			revealCompleted: true,
+			contractFormDispatched: true,
 			whatsappOptinShown: true,
 			whatsappOptinDeclined: true,
 		};

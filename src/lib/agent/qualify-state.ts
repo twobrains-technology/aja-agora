@@ -1,5 +1,6 @@
 import { revealValueTargetChanged } from "./orchestrator/tool-policy";
-import type { ConversationMetadata } from "./personas";
+import type { ConversationMetadata, QualifyAnswers } from "./personas";
+import { objetivoForPrazo } from "./qualify-config";
 
 export type Gate =
 	| "name"
@@ -13,6 +14,7 @@ export type Gate =
 	| "lance-embutido"
 	| "identify"
 	| "search"
+	| "reco-consent"
 	| "simulator-offer"
 	| "decision";
 
@@ -35,6 +37,133 @@ export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"lance-embutido",
 ]);
 
+/**
+ * FIX-305 (rodada 10, onda 3) — gates que podem ficar presos PARA SEMPRE em
+ * `nextGate()` quando o dado nunca é extraído do texto livre (modelo fraco,
+ * resposta vaga) e por isso ganham um ESCAPE por default após N tentativas
+ * sem progresso (`registerGateStuckTurn`). `COLLECTION_GATES` (acima) NÃO
+ * protege contra isso: aquele set só afeta `decideShowGate` (se o CARD volta
+ * a aparecer no turno), nunca `nextGate()` — a cascata que decide se o funil
+ * avança. Um `COLLECTION_GATE` cujo dado nunca é extraído tem o card
+ * re-exibido a cada turno, mas `nextGate()` continua devolvendo o MESMO gate
+ * pra sempre — mesma classe de bug do `timeframe`, só sem o sintoma visível
+ * de "IA muda" ([gate-skip]). Por isso a lista abaixo inclui os 3 gates de
+ * `COLLECTION_GATES` que vivem pós-reveal (`lance`/`lance-value`/
+ * `lance-embutido`) além do `timeframe` — decisão registrada em
+ * docs/decisoes/blocos/2026-07-13-bloco-r10-3-timeframe-stuck.md (D3).
+ * `credit`/`identify` ficam de fora: são pré-requisito de TUDO (busca/reveal)
+ * e já têm defesa própria (FIX-115 backstop determinístico + FIX-208 guard de
+ * turno-mudo) — assumir um valor de crédito no escuro seria fabricar dado
+ * financeiro, não um fallback de conveniência.
+ *
+ * FIX-307 (rodada 10, onda 4 — defesa em profundidade do FIX-306): `credit`
+ * continua fora deste set incondicional, mas ganha um escape CONDICIONAL —
+ * ver `registerGateStuckTurn` abaixo — quando `qualifyAnswers.
+ * creditMentionedAtDesire` já existe (o usuário JÁ disse o valor, só não foi
+ * promovido). Sem esse valor mencionado, `credit` segue travando pra sempre,
+ * como sempre foi.
+ */
+export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
+	"timeframe",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+]);
+
+/** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
+ * AskUserQuestion 2026-07-13: "~2-3 tentativas"; 3 é o valor já usado como
+ * exemplo na correção proposta do card fix-305 — dá a última chance possível
+ * dentro da faixa antes de assumir). */
+export const GATE_STUCK_ESCAPE_THRESHOLD = 3;
+
+/** FIX-305 — default de prazo (meses) quando `timeframe` nunca resolve. "12"
+ * é uma opção CANÔNICA já existente do produto (`TIMEFRAME_OPTIONS` em
+ * qualify-config.ts, token "12" = "1 ano, curto prazo") — não é um número
+ * novo. Mantém `objetivo` em "contemplacao_rapida" (objetivoForPrazo só vira
+ * "investimento" a partir de 120 meses), o eixo mais comum e o mais seguro
+ * pra assumir sem nenhum sinal do usuário. */
+const DEFAULT_STUCK_PRAZO_MESES = 12;
+
+/** FIX-305 — percentual de lance default quando `lance-value` nunca resolve
+ * (hasLance="yes" real, mas o valor em R$ nunca é extraído). Mesmo percentual
+ * do cenário "provável" já cravado em `scenarios.ts` (20% do crédito) — não é
+ * um número novo, é o ponto médio de mercado já usado no produto. */
+const DEFAULT_STUCK_LANCE_VALUE_PERCENT = 0.2;
+/** Fallback defensivo quando `creditMax` (inesperadamente) ainda não existe —
+ * não deveria ocorrer na prática: `credit` resolve bem antes de `lance-value`
+ * ser alcançável (nextGate() exige creditMax definido pra sair de "credit"). */
+const DEFAULT_STUCK_LANCE_VALUE_FALLBACK = 20_000;
+
+function stuckGateDefaultPatch(gate: Gate, meta: ConversationMetadata): Partial<QualifyAnswers> {
+	switch (gate) {
+		case "credit": {
+			// FIX-307 — só chega aqui quando `registerGateStuckTurn` já confirmou
+			// `creditMentionedAtDesire` definido (ver checagem condicional abaixo);
+			// promove o valor que o usuário JÁ disse, nunca fabrica um novo.
+			const mentioned = meta.qualifyAnswers?.creditMentionedAtDesire;
+			if (mentioned === undefined) return {};
+			return { creditMax: mentioned, creditMin: Math.round(mentioned * 0.9) };
+		}
+		case "timeframe":
+			return {
+				prazoMeses: DEFAULT_STUCK_PRAZO_MESES,
+				objetivo: objetivoForPrazo(DEFAULT_STUCK_PRAZO_MESES),
+			};
+		case "lance":
+			// "no" é uma resposta válida já suportada (não é um estado "hedge"
+			// novo) — pula lance-value, segue pra lance-embutido. Não assume
+			// "so_parcela" (pularia até o simulator-offer inteiro): mudança de
+			// jornada grande demais pra assumir sem nenhum sinal do usuário.
+			return { hasLance: "no" };
+		case "lance-value": {
+			const creditMax = meta.qualifyAnswers?.creditMax;
+			const value = creditMax
+				? Math.round(creditMax * DEFAULT_STUCK_LANCE_VALUE_PERCENT)
+				: DEFAULT_STUCK_LANCE_VALUE_FALLBACK;
+			return { lanceValue: value };
+		}
+		case "lance-embutido":
+			// Consent-minimization: lance embutido é opt-in explícito (mexe na
+			// simulação) — sem sinal claro, o default seguro é NÃO ativar.
+			return { lanceEmbutido: false };
+		default:
+			return {};
+	}
+}
+
+/**
+ * FIX-305 — chamado pelo orquestrador (`orchestrator/analyze.ts`) ao fim de
+ * cada turno de USUÁRIO em que o gate ativo NÃO mudou (mesmo gate antes e
+ * depois do merge do analyzer) — turno "sem progresso". Só age nos
+ * `STUCK_ESCAPE_GATES`; para os demais devolve `null` (nada a fazer). Pura:
+ * não muta `meta`, devolve o PATCH a aplicar (sem I/O, sem Date.now()).
+ *
+ * Abaixo do teto: só incrementa o contador. No teto (`GATE_STUCK_ESCAPE_THRESHOLD`):
+ * assume o default do gate (`stuckGateDefaultPatch`), marca `gateDefaultsAssumed`
+ * e reseta o contador — o gate avança e ele nunca mais é lido.
+ */
+export function registerGateStuckTurn(
+	meta: ConversationMetadata,
+	gate: Gate,
+): Partial<ConversationMetadata> | null {
+	// FIX-307 — escape CONDICIONAL do `credit`: só entra na mesma máquina dos
+	// `STUCK_ESCAPE_GATES` quando o usuário já mencionou um valor
+	// (`creditMentionedAtDesire`). Sem isso, `credit` segue de fora — nunca
+	// fabrica dado financeiro do zero (comportamento original preservado).
+	const conditionalCreditEscape =
+		gate === "credit" && meta.qualifyAnswers?.creditMentionedAtDesire !== undefined;
+	if (!STUCK_ESCAPE_GATES.has(gate) && !conditionalCreditEscape) return null;
+	const turns = (meta.gateStuckTurns?.[gate] ?? 0) + 1;
+	if (turns < GATE_STUCK_ESCAPE_THRESHOLD) {
+		return { gateStuckTurns: { ...meta.gateStuckTurns, [gate]: turns } };
+	}
+	return {
+		qualifyAnswers: { ...(meta.qualifyAnswers ?? {}), ...stuckGateDefaultPatch(gate, meta) },
+		gateStuckTurns: { ...meta.gateStuckTurns, [gate]: 0 },
+		gateDefaultsAssumed: { ...meta.gateDefaultsAssumed, [gate]: true },
+	};
+}
+
 export type UserIntent =
 	| "ready_to_proceed"
 	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
@@ -45,6 +174,15 @@ export type UserIntent =
 	| "asking_question"
 	| "providing_info"
 	| "expressing_doubt"
+	// FIX-301 correção (rodada 10): "confused" é DISTINTO de "expressing_doubt".
+	// expressing_doubt = hesitação sobre uma DECISÃO que o usuário entende
+	// ("tenho que pensar", "depende") — não deve interromper o fluxo natural.
+	// confused = o usuário não entendeu a PERGUNTA/CARD em si ("não entendi",
+	// "como assim?") — aí sim reancora no mesmo gate (Lei 4, sem inventar menu).
+	// Reusar expressing_doubt pra isso (tentativa original do FIX-301) quebrou
+	// o FIX-266 (r9): "deixa eu pensar aqui" é expressing_doubt por design
+	// (turn-analyzer.ts) e passou a ser hijackado pelo short-circuit de clarify.
+	| "confused"
 	| "off_topic"
 	| "neutral";
 
@@ -74,22 +212,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// mais antes" cedo demais (CK-2). O motivo ("por que agora") ganha turno próprio
 	// via `shouldAskMotive` (decideShowGate) pra nunca colidir com o próximo card.
 
-	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
-	// dados, antes do valor". O gate `identify` (CPF+celular+LGPD, cifrado, D1)
-	// — que era o ÚLTIMO da qualificação — sobe para ANTES do `credit` (seletor
-	// de valor / present_value_picker), logo após o consent. A Bevi exige
-	// CPF+celular+LGPD antes de simular de qualquer forma (D1), então coletar
-	// cedo só reforça D1. Os handlers de identidade (web/route + whatsapp/
-	// processor) NÃO disparam mais o reveal — despacham o próximo gate; o reveal
-	// segue sendo disparado por pipeSearchSummaryTurn no fim da qualificação.
-	if (!meta.identityCollected) return "identify";
-
+	// FIX-296 (rodada 10, loop-de-goal consórcio, 2026-07-12) — REVERSÃO
+	// CONSCIENTE do FIX-53: o mockup novo (docs/design/specs/assets/2026-07-12-
+	// aja-dois-cenarios.html, F1) pede rapport ANTES de dados — motivo→espelho+
+	// objetivo→valor do bem→SÓ ENTÃO CPF/WhatsApp ("pra eu trazer as ofertas
+	// reais das administradoras"). O invariante REAL nunca foi "identidade logo
+	// após o desire": é "identidade SEMPRE antes do search" (a Bevi exige
+	// CPF+celular+LGPD antes de simular, D1) — isso continua intacto abaixo, só
+	// a posição relativa ao `credit` muda. "Palavra nova vence" — a razão do
+	// FIX-53 era "dados antes do valor"; a intenção nova é confiança antes de
+	// dados, sem abrir mão do pré-requisito de identidade pro search.
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
-
-	// (FIX-53) O gate `identify` foi movido para ANTES do `credit` — ver acima.
-	// A busca real continua exigindo identidade (tripwire em pipeSearchSummaryTurn /
-	// runSearchSummaryWithOrchestrator); aqui ela já foi coletada cedo.
+	if (!meta.identityCollected) return "identify";
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
 	// `credit` (valor) pra `search` — a pergunta de lance ("Pretende dar um
@@ -131,6 +266,35 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (meta.revealCompleted) {
 		if (!meta.experiencePrev) return "experience";
 		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
+
+		// FIX-297 (rodada 10, 2026-07-12) — reveal em DOIS TEMPOS com
+		// consentimento: a lista (comparison_table) já apareceu no search
+		// (FIX-290 preservado), `experience` acabou de resolver — antes de
+		// avançar, pergunta "Posso te mostrar a opção que eu recomendo?" e só
+		// com resposta afirmativa o hero (recommendation_card) é liberado
+		// (server-forced em orchestrator/index.ts, nunca dependente de tool-call
+		// do LLM).
+		//
+		// FIX-308 (rodada 10, onda 4 — causa-raiz real da Madalena): acoplado a
+		// `recoConsentAnswered` (resposta REAL), não mais a `recoConsentDispatched`
+		// (a PERGUNTA ter sido feita). Antes, a cascata avançava pra
+		// timeframe/lance/decisão assim que a pergunta saía, mesmo sem resposta
+		// reconhecida — o fecho (contract_form/whatsapp_optin) chegava a disparar
+		// ANTES do hero aparecer, porque nada mais barrava o avanço. Enquanto a
+		// resposta não é reconhecida como consentimento (detectYesNoText/intent
+		// em index.ts), a cascata FICA parada aqui — mesmo padrão dos gates de
+		// coleta (credit/lance/lance-embutido, que também travam até o dado
+		// chegar). decideShowGate() evita re-perguntar em pergunta/dúvida/
+		// off-topic (o agente conversa à vontade enquanto o gate segura).
+		//
+		// FIX-314 (rodada 10, onda 4 — Rodada A.3, decisão de produto do Kairo):
+		// hero/reco-consent viram UNIVERSAIS — a exceção "PULA quando
+		// hasLance==='so_parcela'" foi REMOVIDA. Ela nunca era alcançável na
+		// prática: `hasLance` só é capturado no gate `lance` (linha ~310 abaixo),
+		// que roda DEPOIS de reco-consent/timeframe nesta MESMA cascata — nenhum
+		// usuário real chegava a "so_parcela" a tempo de pular o hero. A
+		// recomendação é útil independente de o usuário dar lance ou não.
+		if (!meta.recoConsentAnswered) return "reco-consent";
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural
@@ -181,6 +345,41 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 }
 
 /**
+ * FIX-301 (P7, loop-de-goal r10) — o usuário está CONFUSO ("não entendi") num
+ * turno em que já existe um gate REALMENTE aguardando resposta. Devolve o
+ * `Gate` a REANCORAR (mesmo gate, sem avançar nem inventar menu), ou `null`
+ * quando não há pergunta canônica re-apresentável agora.
+ *
+ * Caso especial: `decision`. `nextGate()` só devolve `"decision"` enquanto
+ * `!meta.decisionDispatched` — assim que o card é mostrado, o dispatch marca
+ * a flag e `nextGate()` avança pro terminal (`"search"`). Sem este caso à
+ * parte, o usuário confuso respondendo ao PRÓPRIO card de decisão não teria
+ * pra onde reancorar. Os demais gates (credit/lance/identify/…) continuam
+ * corretos via `nextGate()` puro — o DADO em si (não uma flag de "já
+ * mostrei") é que os mantém pendentes.
+ *
+ * `name`/`doubts-wait`/`search` não têm pergunta canônica re-apresentável
+ * (nome vem do texto de abertura; doubts-wait é um "aguarde"; search é ação,
+ * não pergunta) — devolve `null` pra esses.
+ */
+export function gateAwaitingReply(
+	meta: ConversationMetadata,
+	hasContactName: boolean,
+): Gate | null {
+	// Contrato fechado é SEMPRE terminal — nada a reancorar, independente de
+	// qual gate a cascata bruta de nextGate() calcularia (ex.: FIX-297 inseriu
+	// "reco-consent" mais cedo no funil; sem este corte, um fixture pós-fecho
+	// que não marcou aquele gate como resolvido vazava um gate "vivo" aqui).
+	if (meta.contractClosed === true) return null;
+	if (meta.revealCompleted && meta.decisionDispatched === true) {
+		return "decision";
+	}
+	const gate = nextGate(meta, { hasContactName });
+	if (gate === "name" || gate === "doubts-wait" || gate === "search") return null;
+	return gate;
+}
+
+/**
  * FIX-274 — o "por que agora" (motivo, 2ª pergunta do gate `desire`) tem turno
  * próprio: enquanto o cliente já RESPONDEU ao gate `desire` (`desireAnswered`)
  * mas ainda não deu o motivo, o funil SEGURA — o LLM pergunta o motivo
@@ -199,6 +398,25 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 export function shouldAskMotive(meta: ConversationMetadata): boolean {
 	const q = meta.qualifyAnswers ?? {};
 	return Boolean(meta.desireAnswered) && q.motivation === undefined && !meta.motivationAsked;
+}
+
+/**
+ * FIX-296 — depois que o motivo chega (`motivationAsked` já rodou e o texto do
+ * usuário trouxe `motivation`), o funil segura MAIS UM turno pra um beat de
+ * ESPELHO + OBJETIVO ("entendo bem — quando o carro dá trabalho, atrapalha
+ * tudo. Então o objetivo já fica claro: te colocar num Corolla novo…") — sem
+ * NENHUM card estruturado junto (mesmo anti-CK-1 do `shouldAskMotive`: o
+ * espelho não pode competir com um gate no mesmo balão). NÃO-bloqueante:
+ * `motivationMirrored` é marcado no runner quando o beat ativa (mesmo padrão
+ * de `motivationAsked`) — o gate seguinte (`credit`, pós FIX-296) dispara
+ * normalmente no turno DEPOIS deste. Sem `motivation` capturado (usuário
+ * ignorou a pergunta e mudou de assunto), não há o que espelhar — a função
+ * devolve false e o funil segue direto pro próximo gate estrutural, sem
+ * inserir um beat vazio. Função PURA (Camada 1).
+ */
+export function shouldMirrorMotivation(meta: ConversationMetadata): boolean {
+	const q = meta.qualifyAnswers ?? {};
+	return Boolean(meta.motivationAsked) && q.motivation !== undefined && !meta.motivationMirrored;
 }
 
 /**
@@ -253,22 +471,42 @@ export function decideShowGate(args: {
 	// LLM o pergunta e NENHUM card estruturado é emitido junto (anti CK-1, 2 perguntas
 	// no mesmo balão). Só em turno de usuário; server-authored avança normal abaixo.
 	if (isUserTurn && shouldAskMotive(meta)) return false;
-	// FIX-275 — depois que o beat do motivo já rodou (motivationAsked), a resposta do
-	// usuário (o "por que agora") quase sempre é uma QUEIXA — "cansei do carro velho,
-	// vive na oficina" — que o analyzer classifica como expressing_doubt/off_topic.
-	// Mas é a RESPOSTA ESPERADA, não um desvio: o `identify` tem que disparar no mesmo
-	// turno (espelho do motivo + card de CPF; o card NÃO é uma 2ª pergunta). Sem isto,
-	// o funil trava 1 turno até o usuário mandar "vamos" (provado no log: [gate-skip]
-	// gate=identify intent=expressing_doubt). Só uma pergunta EXPLÍCITA deixa o agente
-	// responder antes; o watchdog (FIX-207) re-cobra o identify se ele sumir.
-	if (isUserTurn && gate === "identify" && meta.motivationAsked && !meta.identityCollected) {
-		return intent !== "asking_question";
-	}
+	// FIX-296 — depois que o motivo chega, o funil segura MAIS UM turno pro beat de
+	// espelho+objetivo (shouldMirrorMotivation) — NENHUM gate estruturado compete com
+	// ele (mesma resposta costuma ser uma QUEIXA — "cansei do carro velho, vive na
+	// oficina" — que o analyzer classifica como expressing_doubt/off_topic; isso NÃO
+	// é um desvio, é a resposta esperada, mas aqui ela ganha só o espelho, sem card —
+	// reversão consciente do antigo FIX-275, que forçava o card de identidade no MESMO
+	// turno). O gate real (credit, pós FIX-296) dispara no turno SEGUINTE, quando
+	// shouldMirrorMotivation já for false.
+	if (isUserTurn && shouldMirrorMotivation(meta)) return false;
 	// Server-authored turns (button click, transition) are always followed by the
 	// next gate — that's the whole point of the directive flow. Por isso qualquer
 	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o
 	// próximo passo no mesmo turno, sem exigir "continua/vai" do usuário (FIX-206).
 	if (!isUserTurn) return true;
+
+	// FIX-317 (rodada 10, onda 4 — veredito Fable, achados A5/A6): `experience`/
+	// `identify` são perguntas ESTRUTURAIS mandatórias da cascata — não ancoram
+	// em nenhum grupo/oferta específico (ao contrário do que o FIX-183 logo
+	// abaixo protege). Precisa vir ANTES do blanket de `wants_more_options`:
+	// achado ao vivo — usuário diz "Quero ver todas" logo após o reveal, e a
+	// próxima pergunta MANDATÓRIA (`experience`) nunca aparecia, silenciando o
+	// funil inteiro sempre que essa frase (comum, natural) precedia uma
+	// pergunta de qualificação pendente. Todos os outros gates (incluindo
+	// `COLLECTION_GATES` — credit/lance/etc., já cobertos por teste explícito
+	// de regressão) continuam sob a trava original abaixo.
+	if (
+		(gate === "experience" || gate === "identify") &&
+		!(
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		)
+	) {
+		return true;
+	}
 
 	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais
 	// opções" NUNCA abre gate estruturado nem empurra o funil (decisão/simulador/
@@ -296,6 +534,14 @@ export function decideShowGate(args: {
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 
+	// "reco-consent" — FIX-297: "Posso te mostrar a opção que eu recomendo?"
+	// Mesmo critério de decision/simulator-offer: afirmativo avança (libera o
+	// hero), pergunta/dúvida deixa o agente conversar (o hero fica pendente,
+	// nunca é forçado sem consentimento).
+	if (gate === "reco-consent") {
+		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
 	// FIX-208 (Kairo, WhatsApp PROD 2026-07-02): responder DIRETO um gate de COLETA
 	// (valor/lance) dispara o gate mesmo em intent `neutral`. O bug: "Quanto custa o
 	// carro?" → usuário responde "200" → o analyzer cai em NEUTRAL_FALLBACK (timeout
@@ -307,7 +553,12 @@ export function decideShowGate(args: {
 	// watchdog FIX-207 re-engaja se ele sumir). Invariante em CÓDIGO (Lei 4), não
 	// regra-no-prompt. Server-authored já retornou true acima (FIX-206) — não colide.
 	if (COLLECTION_GATES.has(gate)) {
-		if (intent === "asking_question" || intent === "expressing_doubt" || intent === "off_topic") {
+		if (
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		) {
 			return false;
 		}
 		return true;
@@ -336,6 +587,7 @@ export function decideShowGate(args: {
 
 	if (intent === "asking_question") return false;
 	if (intent === "expressing_doubt") return false;
+	if (intent === "confused") return false;
 	if (intent === "off_topic") return false;
 
 	if (intent === "ready_to_proceed") return true;

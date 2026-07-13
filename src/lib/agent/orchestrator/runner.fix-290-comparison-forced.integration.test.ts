@@ -239,7 +239,7 @@ describeIfDb(
 			if (convId) await cleanup(convId);
 		});
 
-		it("2+ grupos, modelo chama só present_recommendation_card e para: comparison_table é forçado server-side", async () => {
+		it("2+ grupos, modelo chama só present_recommendation_card e para: comparison_table é forçado server-side (FIX-297: hero fica pendente até reco-consent, nunca some da tabela)", async () => {
 			convId = await seedConversation(FIRST_SEARCH_META);
 
 			const { events } = await drainUserTurn(convId, "Valor do bem: R$ 120.000");
@@ -251,7 +251,12 @@ describeIfDb(
 			const comparison = artifactEvents.find(
 				(e) => e.type === "artifact" && e.artifactType === "comparison_table",
 			);
-			expect(recommendation).toBeDefined();
+			// FIX-297 (rodada 10): o hero (recommendation_card) fica PENDENTE no
+			// reveal original — só é emitido depois que o usuário consentir no
+			// gate reco-consent (pós-experience). NUNCA aparece neste turno.
+			expect(recommendation).toBeUndefined();
+			// A tabela (comparison_table) continua SEMPRE imediata — o invariante
+			// do FIX-290 (nunca some) sobrevive mesmo com o hero suprimido.
 			expect(comparison).toBeDefined();
 			if (comparison && comparison.type === "artifact") {
 				const payload = comparison.payload as { groups?: Array<Record<string, unknown>> };
@@ -273,6 +278,14 @@ describeIfDb(
 				.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
 				.where(eq(messagesTable.conversationId, convId));
 			expect(rows.some((r) => r.type === "comparison_table")).toBe(true);
+			// FIX-297: o payload coagido do hero sobrevive no meta pra emissão
+			// determinística posterior (reco-consent), nunca perdido/descartado.
+			const conv = await db.query.conversations.findFirst({
+				where: eq(conversations.id, convId),
+			});
+			const persistedMeta = conv?.metadata as ConversationMetadata | undefined;
+			expect(persistedMeta?.pendingRecommendationCard).toBeDefined();
+			expect(persistedMeta?.pendingRecommendationCard?.creditValue).toBe(GROUP_A.creditValue);
 		});
 
 		it("caso de borda — 1 grupo único: NUNCA força comparison_table", async () => {

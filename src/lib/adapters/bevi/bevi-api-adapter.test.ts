@@ -226,6 +226,67 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 		expect(lastBody().ofertaId).toBe("O1");
 	});
 
+	// FIX-324 (rodada 10, veredito Sonnet A.5): achado ao vivo via docker logs —
+	// choose_offer_bevi_consorcio (o passo mais crítico do funil, o FECHO) tinha
+	// sucessos reais chegando a 10.6-14.5s, perigosamente perto do TIMEOUT_MS de
+	// 15s, e ZERO retry — assim que a Bevi ficou um pouco mais lenta durante a
+	// sessão, toda chamada seguinte estourou o teto (15003-15013ms) e o usuário
+	// via "Tive um problema ao gerar sua proposta" sem nenhuma segunda chance.
+	// callService só retryava erro DE NEGÓCIO (404 do simulate) — nunca
+	// timeout/erro de rede (o fetch() nem chega a resolver, então nunca havia
+	// envelope pra checar `env.code`).
+	it("chooseOffer: timeout na 1ª tentativa → retry → sucesso (FIX-324)", async () => {
+		let call = 0;
+		const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+			call += 1;
+			if (call === 1) throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+			calls.push({ url, init });
+			return { json: async () => okChoose } as Response;
+		});
+		globalThis.fetch = fetchMock as typeof fetch;
+
+		const r = await new BeviApiAdapter(CONFIG).chooseOffer({ proposalId: "P1", ofertaId: "O1" });
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(r.consortiumProposalLink).toContain("uselink.me");
+	});
+
+	it("chooseOffer: timeout em TODAS as tentativas → lança o erro do timeout (não trava, não finge sucesso)", async () => {
+		const timeoutErr = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+		const fetchMock = vi.fn(async () => {
+			throw timeoutErr;
+		});
+		globalThis.fetch = fetchMock as typeof fetch;
+
+		await expect(
+			new BeviApiAdapter(CONFIG).chooseOffer({ proposalId: "P1", ofertaId: "O1" }),
+		).rejects.toThrow(/timeout/i);
+		// retry limitado — não vira loop infinito nem chamadas descontroladas.
+		expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+		expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(3);
+	});
+
+	it("chooseOffer: usa timeout MAIOR que o default de 15s (margem de segurança pro passo mais crítico)", async () => {
+		const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+		mockFetchSequence(okChoose);
+		await new BeviApiAdapter(CONFIG).chooseOffer({ proposalId: "P1", ofertaId: "O1" });
+		expect(timeoutSpy).toHaveBeenCalled();
+		const usedTimeout = timeoutSpy.mock.calls[0][0];
+		expect(usedTimeout).toBeGreaterThan(15_000);
+	});
+
+	it("createProposal: continua com o timeout default (regressão — não afetado pelo FIX-324)", async () => {
+		const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+		mockFetchSequence(okInsert);
+		await new BeviApiAdapter(CONFIG).createProposal({
+			cpf: "12345678909",
+			celular: "11999998888",
+			termoLgpd: true,
+			consultaDados: true,
+		});
+		expect(timeoutSpy.mock.calls[0][0]).toBe(15_000);
+	});
+
 	it("getDocumentLinks: retorna os 2 links de upload", async () => {
 		mockFetchSequence(okDoclinks);
 		const r = await new BeviApiAdapter(CONFIG).getDocumentLinks("P1");

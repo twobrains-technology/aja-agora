@@ -82,7 +82,6 @@ const BASE = [
 	// que pode existir sem meta.contractClosed (eval FIX-14 pegou a regressão:
 	// policy sem a tool em qualify fez o agent negar proposta REAL de memória).
 	"check_proposal_status",
-	"present_topic_picker",
 	"save_contact_name",
 	"save_contact_whatsapp",
 	"suggest_handoff",
@@ -90,6 +89,10 @@ const BASE = [
 
 const QUALIFY_EXPECTED = [
 	...BASE,
+	// FIX-309: present_topic_picker SAIU do toolset em TODA fase (era só
+	// qualify/reveal desde o FIX-300) — emissão agora é SERVER-SIDE
+	// determinística (buildTopicPickerCard, orchestrator/index.ts). Ver
+	// describe FIX-309 abaixo.
 	// descoberta completa — o reveal (passo 3+4) acontece NESTA fase
 	"capture_lead",
 	"compare_with_financing",
@@ -112,6 +115,8 @@ const QUALIFY_EXPECTED = [
 
 const REVEAL_EXPECTED = [
 	...BASE,
+	// FIX-309: present_topic_picker SAIU também (era só closing/terminal desde
+	// o FIX-300; agora sai de toda fase). Ver describe FIX-309 abaixo.
 	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP).
 	// FIX-34: present_lead_form FORA — pós-reveal o avanço é decision → contract_form
 	// (jornada self-service), nunca captura de lead pra consultor humano.
@@ -142,6 +147,7 @@ const REVEAL_EXPECTED = [
 // agora é emissão SERVER-SIDE determinística (buildDecisionPromptCard), o
 // directive que fecha closing só narra (sem tool-call). Ver describe FIX-253
 // abaixo.
+//
 const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
@@ -282,6 +288,20 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 			{ ...REVEAL_META, decisionDispatched: true },
 		]) {
 			expect(allowedTools(meta)).not.toContain("present_decision_prompt");
+		}
+	});
+
+	// FIX-309 (rodada 10 onda 4, investigação de causa-raiz): present_topic_
+	// picker SAIU do toolset em TODA fase — o FIX-300 só tirava closing/
+	// terminal (o problema era o gate `decision` receber um menu alucinado),
+	// mas os dossiês limpos mostraram 0 emissões mesmo em qualify/reveal: o
+	// LLM nunca chamava a tool espontaneamente. Emissão agora é SERVER-SIDE
+	// determinística (buildTopicPickerCard, orchestrator/index.ts), mesma
+	// receita do FIX-246/253/280 — a tool NUNCA entra em allowedTools em
+	// nenhuma fase.
+	it("FIX-309 — present_topic_picker NUNCA entra no toolset do LLM, em NENHUMA fase", () => {
+		for (const meta of [QUALIFY_META, REVEAL_META, CLOSING_META, TERMINAL_META]) {
+			expect(allowedTools(meta)).not.toContain("present_topic_picker");
 		}
 	});
 });

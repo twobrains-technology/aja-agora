@@ -61,6 +61,33 @@ function extractFirstName(raw: string): string | null {
 	return null;
 }
 
+// FIX-299 (loop-de-goal r10, P9/P10 — Qwen 3.5 Fast, 2026-07-12): "Show,
+// kairo!" — o agente ecoou o nome em minúscula porque `contactName` é
+// salvo/ecoado como veio do usuário. Regra soft de capitalização no prompt não
+// segura sob modelo mais fraco (Lei 4) — normalização determinística no save.
+const NAME_PARTICLES = new Set(["de", "da", "do", "das", "dos"]);
+
+/** Title Case determinístico de um nome (ou nome composto), respeitando
+ * partículas comuns pt-BR ("de"/"da"/"do"/"das"/"dos" ficam minúsculas quando
+ * não são a primeira palavra) e capitalizando cada lado de nome hifenizado
+ * ("jean-luc" → "Jean-Luc"). Independe de como o usuário digitou
+ * (minúsculo/maiúsculo/misto). FIX-299. */
+export function capitalizeName(raw: string): string {
+	return raw
+		.trim()
+		.split(/\s+/)
+		.map((word, i) => capitalizeWord(word, i === 0))
+		.join(" ");
+}
+
+function capitalizeWord(word: string, isFirst: boolean): string {
+	if (!isFirst && NAME_PARTICLES.has(word.toLowerCase())) return word.toLowerCase();
+	return word
+		.split("-")
+		.map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part))
+		.join("-");
+}
+
 /**
  * Persiste o nome capturado conversacionalmente. Idempotente:
  *  - Cria lead novo se não existir (stage='novo')
@@ -85,10 +112,12 @@ export async function saveContactName(
 	if (!/^[\p{L}'-]+$/u.test(firstToken)) {
 		return { ok: false, error: "name_invalid" };
 	}
+	// FIX-299: capitalização determinística — independe de como o usuário digitou.
+	const displayName = capitalizeName(firstToken);
 
 	await db
 		.update(conversations)
-		.set({ contactName: firstToken, updatedAt: new Date() })
+		.set({ contactName: displayName, updatedAt: new Date() })
 		.where(eq(conversations.id, conversationId));
 
 	const existing = await db.query.leads.findFirst({
@@ -98,14 +127,14 @@ export async function saveContactName(
 	if (existing) {
 		await db
 			.update(leads)
-			.set({ name: firstToken, updatedAt: new Date() })
+			.set({ name: displayName, updatedAt: new Date() })
 			.where(eq(leads.id, existing.id));
 		return { ok: true, leadId: existing.id, created: false };
 	}
 
 	const { leadId } = await createLeadFromConversation({
 		conversationId,
-		name: firstToken,
+		name: displayName,
 		phone: null,
 		email: null,
 	});

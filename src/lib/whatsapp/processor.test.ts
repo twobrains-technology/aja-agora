@@ -132,11 +132,15 @@ describe("Gate identify determinístico e forçado (FIX-217)", () => {
 		mocks.isMesaAttendantPhoneMock.mockResolvedValue(false);
 	});
 
+	// FIX-296 (rodada 10, 2026-07-12): `credit` passou a preceder `identify` no
+	// funil (reversão consciente do FIX-53) — pra `nextGate` chegar
+	// genuinamente em `identify`, o valor do bem já precisa estar resolvido.
 	const IDENTIFY_META = {
 		desireAsked: true,
 		experiencePrev: "first",
 		qualifyConsented: true,
 		identityCollected: false,
+		qualifyAnswers: { creditMax: 80_000 },
 	} as ConversationMetadata;
 
 	it("texto que tenta pular a identidade ('acha logo os grupos') NUNCA chama o orchestrator — reemite o pedido de CPF", async () => {

@@ -60,3 +60,8 @@ playwright-report/
 test-results/
 .bakeoff/
 .processo/loop/evidencias-r9/dossies/
+.processo/loop/evidencias-r9/dossies-r9pos/
+.processo/loop/evidencias-r9/dossies-r9pos2/
+.processo/loop/evidencias-r9/dossies-r9pos3/
+.processo/loop/evidencias-r9/dossies-final-claude/
+.processo/loop/evidencias-r10/dossies/*/

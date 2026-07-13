@@ -106,10 +106,15 @@ export function reengageQuestionForGate(
 	// gateQuestion("credit", ...) pra a re-cobrança também confirmar em vez
 	// de perguntar do zero.
 	creditMentionedAtDesire?: number,
+	// FIX-302: canal da re-cobrança — o gate `identify` tem copy DISTINTA por
+	// canal (WhatsApp já conhece o celular via waId; web pede CPF+celular no
+	// form, ver gate-questions.ts). Default "whatsapp" preserva os chamadores
+	// pré-existentes (whatsapp/adapter.ts) sem precisar passar o argumento.
+	channel: "web" | "whatsapp" = "whatsapp",
 ): string | null {
 	if (!isMandatoryCollectionGate(gate)) return null;
 	if (attempt >= 4) return SPECIALIST_EXIT_OFFER;
-	const base = gateQuestion(gate, category ?? null, creditValue, undefined, creditMentionedAtDesire);
+	const base = gateQuestion(gate, category ?? null, creditValue, channel, creditMentionedAtDesire);
 	if (!base) return null;
 	if (attempt <= 1) return base;
 	if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;

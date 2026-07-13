@@ -3,10 +3,16 @@
 // disparava em mario-sem-lance turno 7 e não em madalena no mesmo ponto do
 // funil. Mesma receita do FIX-246/253: a tool SAI do toolset (tool-policy.ts)
 // e a emissão vira SERVER-SIDE determinística (buildWhatsappOptinCard,
-// orchestrator/index.ts+server-cards.ts), disparada logo após o reveal.
-// Integração (DB real): 2 conversas com meta IDÊNTICO, agente MOCADO nunca
-// chama present_whatsapp_optin (a tool nem está mais no toolset) — mesmo
-// assim, AMBAS emitem o artifact, no mesmo turno relativo, sempre.
+// orchestrator/index.ts+server-cards.ts). Integração (DB real): 2 conversas
+// com meta IDÊNTICO, agente MOCADO nunca chama present_whatsapp_optin (a tool
+// nem está mais no toolset).
+//
+// FIX-303 (rodada r10 onda 2, 2026-07-12): o PONTO de disparo migrou do
+// pós-reveal pro FECHO (pós present_contract_form) — o card soltava logo após
+// a recomendação, sem o usuário ter pedido e sem proposta nenhuma na tela
+// (achado do teste manual com Qwen 3.5 Fast). Os 2 testes abaixo agora
+// verificam a NEGATIVA (reveal sozinho não é gatilho); o teste do disparo no
+// fecho vive em index.fix-303-whatsapp-optin-fecho.integration.test.ts.
 
 import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -152,7 +158,7 @@ async function cleanup(convId: string): Promise<void> {
 }
 
 describeIfDb(
-	"FIX-280 — whatsapp_optin server-side determinístico (2 conversas, meta idêntico)",
+	"FIX-280/FIX-303 — whatsapp_optin server-side determinístico (2 conversas, meta idêntico)",
 	() => {
 		let convId: string;
 		beforeEach(() => {
@@ -163,7 +169,7 @@ describeIfDb(
 			if (convId) await cleanup(convId);
 		});
 
-		it("conversa A: emite recommendation_card + whatsapp_optin, nessa ordem, sem tool-call do LLM", async () => {
+		it("conversa A: reveal completo SEM proposta apresentada → whatsapp_optin NÃO aparece (FIX-303)", async () => {
 			callState.variant = "a";
 			const [c] = await db
 				.insert(conversations)
@@ -174,20 +180,25 @@ describeIfDb(
 			const events = await drain(convId, "Bora, quero ver as opções");
 
 			const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
-			expect(artifactTypes).toContain("recommendation_card");
-			expect(artifactTypes).toContain("whatsapp_optin");
-			expect(artifactTypes.indexOf("whatsapp_optin")).toBeGreaterThan(
-				artifactTypes.indexOf("recommendation_card"),
-			);
+			// FIX-297 (rodada 10): o hero fica pendente no reveal original — só sai
+			// depois que o usuário consentir no gate reco-consent (pós-experience).
+			expect(artifactTypes).not.toContain("recommendation_card");
+			// FIX-303: sem present_contract_form (proposta) neste turno, o optin
+			// não dispara mais — só reveal não é gatilho suficiente.
+			expect(artifactTypes).not.toContain("whatsapp_optin");
 
 			const [convRow] = await db
 				.select()
 				.from(conversations)
 				.where(eq(conversations.id, convId));
-			expect((convRow.metadata as ConversationMetadata).whatsappOptinShown).toBe(true);
+			const persistedMeta = convRow.metadata as ConversationMetadata;
+			expect(persistedMeta.whatsappOptinShown).not.toBe(true);
+			// O payload coagido do hero sobrevive no meta pra emissão determinística
+			// posterior (reco-consent), nunca perdido/descartado.
+			expect(persistedMeta.pendingRecommendationCard).toBeDefined();
 		});
 
-		it("conversa B: MESMO meta, texto do LLM totalmente diferente → MESMO resultado (determinismo, não LLM-discricionário)", async () => {
+		it("conversa B: MESMO meta, texto do LLM totalmente diferente → MESMO resultado (determinismo, whatsapp_optin ainda NÃO aparece)", async () => {
 			callState.variant = "b";
 			const [c] = await db
 				.insert(conversations)
@@ -198,8 +209,8 @@ describeIfDb(
 			const events = await drain(convId, "Show, pode seguir com a busca");
 
 			const artifactTypes = events.filter((e) => e.type === "artifact").map((e) => e.artifactType);
-			expect(artifactTypes).toContain("recommendation_card");
-			expect(artifactTypes).toContain("whatsapp_optin");
+			expect(artifactTypes).not.toContain("recommendation_card");
+			expect(artifactTypes).not.toContain("whatsapp_optin");
 
 			const rows = await db
 				.select({ id: messagesTable.id })
@@ -214,7 +225,7 @@ describeIfDb(
 						rows.map((r) => r.id),
 					),
 				);
-			expect(persisted.some((a) => a.type === "whatsapp_optin")).toBe(true);
+			expect(persisted.some((a) => a.type === "whatsapp_optin")).toBe(false);
 		});
 	},
 );

@@ -28,6 +28,7 @@ import {
 	joinSeparator,
 	normalizeGluedSentences,
 	splitSegments,
+	stripEmoji,
 	stripProcessPreamble,
 } from "./sanitizer";
 
@@ -615,5 +616,193 @@ describe("FIX-188 — joinSeparator evita colagem de falas distintas", () => {
 	it("nada a separar quando algum lado é vazio", () => {
 		expect(joinSeparator("", "Olha")).toBe("");
 		expect(joinSeparator("texto", "")).toBe("");
+	});
+});
+
+// FIX-298 (loop-de-goal r10, P4 — transcrição REAL com Qwen 3.5 Fast,
+// 2026-07-12): "Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ
+// mesmo? Você já fez consórcio antes?" — duas sentenças interrogativas no
+// mesmo balão; o usuário só conseguiu responder uma. A regra "nunca mais de
+// uma pergunta por mensagem" só existia como texto no system-prompt (Lei 4:
+// instruction-following degrada sob modelo mais fraco) — este é o invariante
+// em CÓDIGO. Cuidado de precisão: o corte é por SENTENÇA (delimitada por
+// . ! ? : \n), não por "pedido" — uma frase composta com um único "?" é uma
+// sentença válida e não pode ser cortada (mockup Mario, cenário F2).
+describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette real)", () => {
+	const BUG_TRANSCRIPT =
+		"Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo? Você já fez consórcio antes?";
+
+	it("stripProcessPreamble dropa a PRIMEIRA pergunta e mantém só a ÚLTIMA", () => {
+		const out = stripProcessPreamble(BUG_TRANSCRIPT);
+		const questionMarks = out.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(out).not.toContain("Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?");
+		expect(out).toContain("Você já fez consórcio antes?");
+	});
+
+	it("EphemeralTextFilter (stream frase-a-frase) também nunca deixa 2 perguntas passarem ao vivo", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		for (const delta of [
+			"Quer ajustar o valor do bem ",
+			"ou seguir com essa opção da ITAÚ mesmo? ",
+			"Você já fez consórcio ",
+			"antes?",
+		]) {
+			emitted += f.push(delta);
+		}
+		emitted += f.flush();
+		const questionMarks = emitted.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(emitted).not.toContain("seguir com essa opção da ITAÚ mesmo?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+
+	// Teste POSITIVO obrigatório: frase composta do mockup (Mario, F2) — UMA
+	// sentença, dois pedidos, um "?" só. NÃO pode ser cortada.
+	it("NÃO corta frase composta com dois pedidos e um único '?' (mockup Mario, F2)", () => {
+		const composta = "Que carro você tem em mente, e quanto custa mais ou menos?";
+		expect(stripProcessPreamble(composta)).toBe(composta);
+
+		const f = new EphemeralTextFilter();
+		let emitted = f.push(composta);
+		emitted += f.flush();
+		expect(emitted).toBe(composta);
+	});
+
+	it("texto com só 1 pergunta (comum) continua sobrevivendo normalmente", () => {
+		const input = "Boa! Olha as opções que separei. Você quer buscar em outra faixa?";
+		expect(stripProcessPreamble(input)).toBe(input);
+	});
+});
+
+// FIX-326 (rodada 10, veredito Sonnet A.5/A.6 — P4, teto explícito da r10):
+// o FIX-298 acima garante no máximo 1 pergunta do MODELO por balão — mas não
+// sabe que um GATE estrutural (com pergunta própria, ex. "Você já fez
+// consórcio antes?") vai disparar em seguida no MESMO turno. `runner.ts`
+// precisa de um jeito de DESCARTAR a pergunta segurada (sem emiti-la) quando
+// prevê que um gate vai anexar a PRÓPRIA pergunta — `discardHeldQuestion()` é
+// esse mecanismo: limpa o estado interno sem produzir texto nenhum.
+describe("FIX-326 — discardHeldQuestion() descarta a pergunta segurada sem emitir nada", () => {
+	it("depois de discardHeldQuestion(), flush() não emite a pergunta que estava segurada", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted.trim()).toBe("");
+	});
+
+	it("sem chamar discardHeldQuestion(), flush() continua emitindo a pergunta normalmente (regressão FIX-298)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		emitted += f.flush();
+		expect(emitted).toContain("Quer ajustar o valor do bem?");
+	});
+
+	it("discardHeldQuestion() não afeta texto NÃO-interrogativo pendente (só descarta a pergunta)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Perfeito, seguimos então. ");
+		emitted += f.push("Você já fez consórcio antes?");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).toContain("Perfeito, seguimos então.");
+		expect(emitted).not.toContain("Você já fez consórcio antes?");
+	});
+
+	it("chamar discardHeldQuestion() sem nenhuma pergunta segurada é no-op seguro (não lança, não quebra o resto)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Perfeito, seguimos então.");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).toBe("Perfeito, seguimos então.");
+	});
+});
+
+// FIX-330 (rodada 10, achado ao vivo pós-FIX-329 — 3ª variante de P4, distinta
+// do FIX-326/328/329): dossiê fresco Mario mostrou "Quer ajustar o valor do
+// bem? [...] Você já fez consórcio antes?" no MESMO turno — 2 perguntas reais,
+// vindas de blocos DIFERENTES da mesma resposta multi-tool-call. Causa: o
+// runner chama `flush()` em CADA fronteira de bloco/pré-tool-call (não só no
+// fim real do turno) — e `flush()` SEMPRE libera a pergunta segurada
+// (FIX-298), mesmo nessas fronteiras INTERMEDIÁRIAS. A pergunta do bloco 1
+// escapava ANTES do fim do turno, ANTES até de o runner saber se um gate ia
+// disparar depois (P4 escapando pela ponta CONTRÁRIA do que FIX-326 cobre).
+describe("FIX-330 — flushPending() nunca libera a pergunta segurada (só o fim REAL do turno pode)", () => {
+	it("flushPending() esvazia o pending mas MANTÉM a pergunta segurada (não libera)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		emitted += f.flushPending();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		// a pergunta continua segurada — surge só no flush() FINAL:
+		emitted += f.push("Você já fez consórcio antes?");
+		emitted += f.flush();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+
+	it("regressão — flushPending() continua liberando texto NÃO-interrogativo pendente normalmente", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("A parcela fica em R$ 1.635,21 por mês");
+		emitted += f.flushPending();
+		expect(emitted).toContain("A parcela fica em R$ 1.635,21 por mês");
+	});
+
+	it("cassette real reproduzido: 2 blocos, cada um terminando em pergunta, com flushPending() entre eles — só a ÚLTIMA sobrevive", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Aqui está o detalhamento completo da ITAÚ. Quer ajustar o valor do bem?");
+		emitted += f.flushPending(); // fronteira de bloco/pré-tool-call — NÃO libera
+		emitted += f.push("Essas são as melhores alternativas pro seu perfil. ");
+		emitted += f.push("Você já fez consórcio antes?");
+		emitted += f.flush(); // fim REAL do turno — libera só a última
+		const questionMarks = emitted.match(/\?/g) ?? [];
+		expect(questionMarks.length).toBe(1);
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted).toContain("Você já fez consórcio antes?");
+	});
+});
+
+// FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição): "Show, kairo!" (nome
+// em minúscula) e "Perfeito, kairo! ✅" (emoji fora da parcimônia esperada) com
+// Qwen 3.5 Fast. Casca determinística — independe do modelo obedecer ao prompt.
+describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () => {
+	it("stripEmoji remove emoji isolado sem tocar no resto do texto", () => {
+		expect(stripEmoji("Perfeito, kairo! ✅").trim()).toBe("Perfeito, kairo!");
+	});
+
+	it("stripEmoji remove múltiplos emoji em posições diferentes", () => {
+		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe("Sua reserva foi confirmada");
+	});
+
+	it("stripEmoji não mexe em acentuação pt-BR", () => {
+		const texto = "Você não vai perder a simulação, é rapidinho: informação, atenção.";
+		expect(stripEmoji(texto)).toBe(texto);
+	});
+
+	it("string vazia passa incólume", () => {
+		expect(stripEmoji("")).toBe("");
+	});
+
+	it("stripProcessPreamble também limpa emoji do texto final", () => {
+		const out = stripProcessPreamble("Perfeito, kairo! ✅ Vamos seguir com a simulação.");
+		expect(out).not.toContain("✅");
+		expect(out).toContain("Perfeito, kairo!");
+		expect(out).toContain("Vamos seguir com a simulação.");
+	});
+
+	it("EphemeralTextFilter nunca emite emoji ao vivo, em qualquer modelo", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Perfeito, kairo! ✅ Bora simular.");
+		emitted += f.flush();
+		expect(emitted).not.toContain("✅");
+		expect(emitted).toContain("Perfeito, kairo!");
+		expect(emitted).toContain("Bora simular.");
 	});
 });
