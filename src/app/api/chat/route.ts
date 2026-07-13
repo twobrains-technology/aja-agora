@@ -241,34 +241,56 @@ async function pipeClosingCeremony(args: {
 	// Mario): o modelo chamou a tool aqui mesmo, duplicando `contract_form` no
 	// MESMO turno HTTP. `forceToolChoice: "none"` proíbe QUALQUER tool-call
 	// nestes 2 sub-turnos em nível de API — nunca regra-no-prompt (Lei 4).
-	await pipeDirectiveTurn({
-		conversationId,
-		directive: buildScarcityDirective(),
-		contactName,
-		writer,
-		userKey,
-		suppressGate: true,
-		forceToolChoice: "none",
-	});
-	const scarcityCard = buildScarcityCard(meta);
-	if (scarcityCard) {
-		await pipeServerArtifact({
+	//
+	// FIX-323 (rodada 10, veredito Sonnet A.4): os 3 chamadores desta função
+	// (interest, simulator-offer yes/no) nunca verificavam `hasLance`
+	// "so_parcela" — só o clique estrutural do PRÓPRIO gate `lance` tratava
+	// esse caso (ramo `action.gate==="lance"` acima). Quem recusa lance por
+	// TEXTO LIVRE (FIX-321) e fecha via botão nunca via `two_paths` — mesma
+	// exceção que `orchestrator/index.ts` (`nextGateToFire==="decision"`) já
+	// aplica no caminho de texto livre, replicada aqui.
+	const isSoParcela = meta.qualifyAnswers?.hasLance === "so_parcela";
+	if (!isSoParcela) {
+		await pipeDirectiveTurn({
 			conversationId,
-			artifactType: "scarcity",
-			payload: scarcityCard.payload,
-			persona: meta.currentPersona ?? null,
+			directive: buildScarcityDirective(),
+			contactName,
 			writer,
+			userKey,
+			suppressGate: true,
+			forceToolChoice: "none",
 		});
+		const scarcityCard = buildScarcityCard(meta);
+		if (scarcityCard) {
+			await pipeServerArtifact({
+				conversationId,
+				artifactType: "scarcity",
+				payload: scarcityCard.payload,
+				persona: meta.currentPersona ?? null,
+				writer,
+			});
+		}
 	}
 	await pipeDirectiveTurn({
 		conversationId,
-		directive: buildDecisionPromptDirective(),
+		directive: isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective(),
 		contactName,
 		writer,
 		userKey,
 		suppressGate: true,
 		forceToolChoice: "none",
 	});
+	if (isSoParcela) {
+		await pipeServerArtifact({
+			conversationId,
+			artifactType: "two_paths",
+			payload: buildTwoPathsCard(meta).payload,
+			persona: meta.currentPersona ?? null,
+			writer,
+		});
+		await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, TWO_PATHS_FOLLOWUP_TEXT);
+		return;
+	}
 	await pipeServerArtifact({
 		conversationId,
 		artifactType: "decision_prompt",

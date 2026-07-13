@@ -216,7 +216,23 @@ export async function analyzeAndMerge(
 	// `!q.hasLance`), repetindo a MESMA educação de embutido em loop. A conversa
 	// de lance só existe PÓS-reveal (FIX-215) — restringir ao gate ativo não
 	// perde nenhum caminho legítimo.
-	if (analysis.hasLance && !q.hasLance && activeGateAtTurnStart === "lance") {
+	//
+	// FIX-321 (rodada 10, veredito Sonnet A.4): "so_parcela" é RECUSA EXPLÍCITA
+	// e inequívoca ("não quero comprometer nada além da parcela") — bem
+	// diferente do falso-positivo "no"/"yes"/"maybe" que o guard acima existe
+	// pra bloquear (frases ambíguas tipo "não tenho grana agora"). Sem exceção,
+	// um usuário que recusa lance ANTES do gate `lance` ficar ativo (ex.:
+	// respondendo `timeframe`) tinha a recusa descartada — two_paths nunca
+	// disparava (achado ao vivo, dossiê Mario). `so_parcela` é aceito em
+	// qualquer turno PÓS-reveal, não só com `lance` ativo — o texto em si já é
+	// inequívoco o bastante pra não precisar do gate certo pra confirmar.
+	const isExplicitLanceRefusal = analysis.hasLance === "so_parcela";
+	if (
+		analysis.hasLance &&
+		!q.hasLance &&
+		(activeGateAtTurnStart === "lance" ||
+			(isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
+	) {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;
 		metaChanged = true;

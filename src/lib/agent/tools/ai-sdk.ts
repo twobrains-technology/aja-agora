@@ -304,7 +304,20 @@ export const recommendGroupsSchema = z.object({
 		.describe("Categoria do bem: imovel, automovel ou servicos"),
 	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
-	budget: z.coerce.number().positive().describe("Orcamento mensal do usuario em reais"),
+	// FIX-322: o usuario quase nunca declara orcamento mensal (so o valor do
+	// bem) — recommendation.ts:10-17 (FIX-276) ja documenta que esse campo e
+	// "INVENTADO pelo LLM" quando falta o dado real, e monthlyFitScore ja trata
+	// budget<=0 graciosamente (contribui 0 no score, nao quebra). Exigir
+	// positive() forcava a LLM a chutar um numero OU falhar a chamada inteira
+	// (achado ao vivo: turno inteiro caia no fallback degradado). 0 = "sem
+	// dado" (mesmo padrao de desiredTermMonths abaixo) — NAO invente um valor.
+	budget: z.coerce
+		.number()
+		.min(0)
+		.default(0)
+		.describe(
+			"Orcamento mensal do usuario em reais. 0 = usuario nao informou (PADRAO — nao invente um valor).",
+		),
 	// FIX-103: o prazo NAO e mais coletado na entrada (gate timeframe removido).
 	// O usuario nao declara prazo desejado, entao este campo fica em 0 (sem
 	// preferencia) por padrao — o fator termMatch do score vira NEUTRO (0.5 igual

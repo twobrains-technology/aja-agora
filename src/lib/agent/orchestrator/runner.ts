@@ -144,9 +144,21 @@ const REVEAL_ARTIFACTS = new Set([
  * do reveal produz cards e os turnos seguintes também (optin/decision), então
  * a oferta do simulador (docx passo 4: "na sequência" do reveal) nunca saía.
  * Exceção cirúrgica: o simulator-offer É elegível no MESMO turno que
- * apresentou os cards do reveal. Os demais gates seguem bloqueados. */
+ * apresentou os cards do reveal.
+ *
+ * FIX-320 (rodada 10, veredito Sonnet A.4): `nextGate()` calcula "experience"
+ * como o PRIMEIRO gate pós-reveal (qualify-state.ts) — no MESMO turno em que
+ * `revealCompleted` vira true. Sem esta mesma exceção, qualquer turno que
+ * reapresentasse um REVEAL_ARTIFACT (ex.: "Quero ver todas" reabrindo
+ * comparison_table) engolia a chance de "experience" disparar — e como toda a
+ * cascata pós-reveal fica bloqueada atrás dele, o gate nunca encontrava um
+ * turno "limpo" pra sair (achado ao vivo: nunca perguntado em nenhum dos 2
+ * dossiês). Os demais gates seguem bloqueados. */
 export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boolean {
-	return gate === "simulator-offer" && artifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+	return (
+		(gate === "simulator-offer" || gate === "experience") &&
+		artifactTypes.some((t) => REVEAL_ARTIFACTS.has(t))
+	);
 }
 
 function artifactTypeFor(toolName: string): ArtifactType {

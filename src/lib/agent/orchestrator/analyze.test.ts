@@ -772,6 +772,36 @@ describe("FIX-236 — hasLance só captura quando o gate `lance` está ativo", (
 		await analyzeAndMerge("tenho uma reserva pra dar de lance", "auto", meta);
 		expect(meta.qualifyAnswers?.hasLance).toBe("yes");
 	});
+
+	// FIX-321 (rodada 10, veredito Sonnet A.4 — achado MÉDIA, dossiê Mario onda
+	// 4/10 ao vivo): "so_parcela" é uma RECUSA EXPLÍCITA e inequívoca — bem
+	// diferente do falso-positivo "no" do teste acima (que vem de uma frase
+	// AMBÍGUA tipo "não tenho grana agora"). Mas o guard FIX-236 barrava os DOIS
+	// do mesmo jeito: quando o usuário recusa lance ANTECIPADAMENTE, respondendo
+	// à pergunta de `timeframe` ("Não quero comprometer nada além da parcela"),
+	// a recusa explícita era DESCARTADA por `activeGateAtTurnStart !== "lance"`
+	// — nextGate() nunca via `hasLance === "so_parcela"` e o funil seguia pro
+	// gate `lance` normal (educação de embutido) em vez de ir direto pro
+	// two_paths. Achado ao vivo: two_paths NUNCA disparava pro Mario.
+	it("FIX-321 — resposta ao gate timeframe com so_parcela (recusa EXPLÍCITA) CAPTURA e roteia pra decision/two_paths", async () => {
+		const meta = postRevealAwaitingTimeframe();
+		// Confirma o estado de partida: o gate ativo AGORA é timeframe (assim como
+		// no teste do falso-positivo "no" acima) — prazoMeses ainda não respondido.
+		expect(nextGate(meta, { hasContactName: true })).toBe("timeframe");
+
+		vi.mocked(analyzeTurn).mockResolvedValue({
+			...NEUTRAL,
+			hasLance: "so_parcela",
+		});
+		await analyzeAndMerge("Não quero comprometer nada além da parcela", "auto", meta);
+
+		expect(meta.qualifyAnswers?.hasLance).toBe("so_parcela");
+		// prazoMeses segue sem resposta — nextGate ainda pede timeframe primeiro,
+		// mas assim que ele resolver, cai direto em decision/two_paths (não em
+		// "lance"), porque hasLance já está fechado.
+		meta.qualifyAnswers!.prazoMeses = 6;
+		expect(nextGate(meta, { hasContactName: true })).toBe("decision");
+	});
 });
 
 // FIX-279 (loop r9, baseline Sonnet 3/10, G3 — Funcional 5/10): o gate `credit`
