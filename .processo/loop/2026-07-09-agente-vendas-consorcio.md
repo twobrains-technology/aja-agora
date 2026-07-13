@@ -924,3 +924,39 @@ A9 (motivo/espelho — hipótese não confirmada), A10 (netCredit pós-embutido)
 duplicado, ordem do optin). Etapa B (10 cenários fictícios do Fable + Haiku via Chrome) não pode
 nem começar — depende inteiramente de LLM real. Bloqueio: budget da workspace Anthropic esgotado
 até 01/08/2026; gateway LiteLLM alternativo não configurável nesta sessão (VPN não identificada).
+
+### DESBLOQUEADO — túnel SSM pro gateway LiteLLM (2026-07-13, mesma sessão)
+Achado o caminho real (sem VPN client): `aws ssm start-session --target <instância ECS do
+tb-cluster> --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters
+'{"host":["10.30.1.225"],"portNumber":["4000"],"localPortNumber":["14000"]}'` — porta 4000 é o
+LiteLLM real (`litellm.tb.local`, A record fixo no Cloud Map, achado via
+`aws servicediscovery list-instances`). Container aponta `LITELLM_BASE_URL=http://
+host.docker.internal:14000` + `LITELLM_API_KEY` do secret `tb/dev/aja-agora/env` — via
+`docker-compose.override.yml` local (não commitado, apaga ao fim da sessão). Confirmado com
+chamada real ao Haiku (resposta coerente). **Esta é agora a rota oficial pra desbloquear
+verificação ao vivo quando a chave direta esgotar de novo** — registrar como referência.
+
+### FIX-318 — sub-turno de opt-in WhatsApp reabria gate pendente (corrigido, commit `0a70395b`)
+Achado ao vivo (dossiê Mario pós-túnel): `buildWhatsappOptinDirective` (orchestrator/index.ts)
+chamava `runTurn` sem `suppressGateEvent` — reco-consent ainda pendente (usuário nomeou
+administradora específica em vez de "sim" genérico) fazia esse sub-turno reanexar "Posso te
+mostrar a opção que eu recomendo?" no meio do pedido de WhatsApp do fecho. Corrigido (mesmo padrão
+do FIX-316). Verificado EMPIRICAMENTE via recoleta ao vivo (tentativas de teste unitário sintético
+não discriminaram fixed/unfixed — o gatilho real depende de mais estado do que o fixture
+modelava): antes, a repetição aparecia; depois, sumiu.
+
+### Recoleta ao vivo pós-FIX-317/318 (túnel LiteLLM) — resultado
+- **Madalena: 21/21 turnos limpos, 0 contaminados, 0 erros.** Cascata completa e correta:
+  credit(4,6)→identify(7)→search/reveal(8)→**experience(9, FIX-317 confirmado ao vivo!)**→
+  topic_picker(10)→hero+timeframe(12)→lance(13-16)→scarcity+decision_prompt(17)→
+  contract_form+whatsapp(18)→real_offer(20)→fecho(21). Golden path canônico funcionando
+  ponta-a-ponta.
+- **Mario: 13/13 turnos, 0 contaminados.** Melhorou (reco-consent não repete mais no turno 11),
+  mas AINDA tem `contract_form` disparando 2x no mesmo turno (turno 11), intercalado com
+  scarcity/decision_prompt numa ordem que não bate com a leitura linear de route.ts — mecanismo
+  NÃO diagnosticado (hipótese: 2 caminhos concorrentes levando a contract_form). **Item aberto pra
+  próxima rodada**, não bloqueado por falta de evidência — só não teve tempo de isolamento nesta
+  sessão.
+
+Total: 6 fixes reais e testados nesta sessão (FIX-313 a FIX-318). Escalando pra nova rodada de
+julgamento (Sonnet → Fable) com evidência fresca e 100% ao vivo.
