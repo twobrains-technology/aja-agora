@@ -146,6 +146,29 @@ describeIfDb("FIX-311 — cerimônia scarcity→decision_prompt no ramo FELIZ do
 		expect(meta?.decisionDispatched).toBe(true);
 	});
 
+	it("FIX-316 — reco-consent AINDA não respondido: a pergunta do gate aparece NO MÁXIMO 1x no turno de fechamento (não 3x)", async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({ contactName: "Kairo", channel: "web", metadata: POS_REVEAL_META })
+			.returning();
+		convId = c.id;
+
+		const res = await POST(
+			makeReq({
+				conversationId: convId,
+				messages: [{ role: "user", parts: [{ type: "text", text: "Tenho interesse!" }] }],
+				action: { kind: "interest", administradora: "CANOPUS", label: "Tenho interesse!" },
+			}),
+		);
+		const text = await res.text();
+
+		const occurrences = text.split("Posso te mostrar a op").length - 1;
+		expect(
+			occurrences,
+			`achado ao vivo (Fable): a pergunta de reco-consent repetia 3x no mesmo turno de fechamento — texto: ${text}`,
+		).toBeLessThanOrEqual(1);
+	});
+
 	it("gate simulator-offer='yes' (aceite do simulador, hoje só mostra o dial): scarcity e decision_prompt aparecem NESSA ORDEM no mesmo turno", async () => {
 		const [c] = await db
 			.insert(conversations)

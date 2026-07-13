@@ -225,12 +225,21 @@ async function pipeClosingCeremony(args: {
 	userKey: string | null;
 }): Promise<void> {
 	const { conversationId, meta, contactName, writer, userKey } = args;
+	// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): cada
+	// `pipeDirectiveTurn`/`runTurn` reavalia `nextGateToFire` de forma
+	// independente — 3 sub-turnos encadeados no MESMO turno HTTP (scarcity,
+	// decision_prompt, avanço) cada um re-anexava "Posso te mostrar a opção
+	// que eu recomendo?" quando reco-consent ainda não tinha sido respondido,
+	// resultando na pergunta repetida 3x no turno de fechamento (achado ao
+	// vivo). `suppressGate` nos 2 sub-turnos intermediários — só o avanço
+	// final (chamador desta função) deixa o gate aparecer, no máximo 1x.
 	await pipeDirectiveTurn({
 		conversationId,
 		directive: buildScarcityDirective(),
 		contactName,
 		writer,
 		userKey,
+		suppressGate: true,
 	});
 	const scarcityCard = buildScarcityCard(meta);
 	if (scarcityCard) {
@@ -248,6 +257,7 @@ async function pipeClosingCeremony(args: {
 		contactName,
 		writer,
 		userKey,
+		suppressGate: true,
 	});
 	await pipeServerArtifact({
 		conversationId,

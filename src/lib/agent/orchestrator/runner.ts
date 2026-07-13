@@ -718,6 +718,28 @@ export async function* runAgentTurn(args: {
 											},
 										});
 									}
+									// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A1): até
+									// aqui só o META era re-ancorado — o PAYLOAD do form (o que o
+									// usuário efetivamente VÊ e preenche) continuava com
+									// `input.administradora` cru do modelo. Achado ao vivo: form
+									// exibia "Canopus" (o que o usuário pediu) mas a proposta final
+									// (real_offer) fechava com "ITAÚ" (a âncora resolvida) — o
+									// cliente preenchia um pré-cadastro pra uma administradora e
+									// recebia reserva de outra. O form TEM que mostrar a MESMA
+									// administradora que vai fechar — nunca o texto livre do modelo.
+									payload = { ...(payload as Record<string, unknown>), administradora: resolved.administradora };
+								} else {
+									// FIX-316: resolução FALHOU (administradora citada não bate com
+									// nenhum grupo real exibido) — o form NUNCA pode mostrar uma
+									// administradora não-ancorada. Cai pro que já está ancorado
+									// (recommendedAdministradora), nunca o texto livre do modelo.
+									const refreshed = await reloadMeta(conversationId);
+									if (refreshed.recommendedAdministradora) {
+										payload = {
+											...(payload as Record<string, unknown>),
+											administradora: refreshed.recommendedAdministradora,
+										};
+									}
 								}
 							}
 						}

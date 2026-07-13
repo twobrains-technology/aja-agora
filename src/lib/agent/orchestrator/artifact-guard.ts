@@ -203,7 +203,15 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	{
 		name: "hero-awaits-reco-consent",
 		applies: ({ artifactType, meta, discoveryCount }) => {
-			if (meta.revealCompleted === true) return false;
+			// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): a condição
+			// original só suprimia no turno ORIGINAL da busca (revealCompleted
+			// ainda false) — mas revealCompleted vira true assim que a busca
+			// termina, MUITO antes do usuário responder reco-consent. Qualquer
+			// turno DEPOIS do reveal (o LLM chamando a tool espontaneamente de
+			// novo) escapava do guard inteiro. A condição certa é o estado de
+			// consentimento em si — suprime enquanto `recoConsentAnswered` não
+			// for true, esteja o reveal recém-concluído ou não.
+			if (meta.recoConsentAnswered === true) return false;
 			if (artifactType === "recommendation_card") return true;
 			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;
 			return false;

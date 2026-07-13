@@ -414,7 +414,7 @@ describe("FIX-20 — regra single-option (FIX-7: descoberta de opção única)",
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
-					meta: { searchDispatched: true, revealCompleted: true },
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
 					artifactType: "recommendation_card",
 					discoveryCount: 3,
 					isUserTurn: false,
@@ -427,7 +427,7 @@ describe("FIX-20 — regra single-option (FIX-7: descoberta de opção única)",
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
-					meta: { searchDispatched: true, revealCompleted: true },
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
 					artifactType: "recommendation_card",
 					discoveryCount: null,
 					isUserTurn: false,
@@ -474,11 +474,24 @@ describe("FIX-297 — regra hero-awaits-reco-consent (reveal em dois tempos com 
 		).toEqual({ allow: true });
 	});
 
-	it("PERMITE recommendation_card depois que revealCompleted já é true (emissão determinística pós-consentimento não passa pelo tool-call loop, mas o guard não deve interferir num turno hipotético subsequente)", () => {
+	it("SUPRIME recommendation_card mesmo com revealCompleted=true, SE reco-consent ainda não foi respondido (FIX-316, veredito Fable — achado real: o LLM chamava a tool de novo num turno pós-reveal, sem consentimento, e o guard antigo deixava passar por checar só revealCompleted)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { searchDispatched: true, revealCompleted: true },
+				artifactType: "recommendation_card",
+				discoveryCount: 3,
+				isUserTurn: false,
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("hero-awaits-reco-consent");
+	});
+
+	it("PERMITE recommendation_card num turno pós-reveal QUANDO reco-consent já foi respondido", () => {
 		expect(
 			evaluateArtifactGuards(
 				makeInput({
-					meta: { searchDispatched: true, revealCompleted: true },
+					meta: { searchDispatched: true, revealCompleted: true, recoConsentAnswered: true },
 					artifactType: "recommendation_card",
 					discoveryCount: 3,
 					isUserTurn: false,

@@ -6680,7 +6680,11 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		// Pós reco-consent já resolvido (revealCompleted=true), o mesmo cenário
 		// de 2+ grupos PASSA normalmente — não é mais opção única, nem pendente.
 		const verdictPostConsent = evaluateArtifactGuards({
-			meta: { currentCategory: "auto", revealCompleted: true } as ConversationMetadata,
+			meta: {
+				currentCategory: "auto",
+				revealCompleted: true,
+				recoConsentAnswered: true,
+			} as ConversationMetadata,
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
 			isUserTurn: false,
@@ -7995,7 +7999,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 
 		// Pós reco-consent já resolvido, o mesmo cenário passa normalmente.
 		const guardPostConsent = evaluateArtifactGuards({
-			meta: { revealCompleted: true },
+			meta: { revealCompleted: true, recoConsentAnswered: true },
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
 			isUserTurn: false,
