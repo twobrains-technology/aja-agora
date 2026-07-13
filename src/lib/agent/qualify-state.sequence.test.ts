@@ -151,6 +151,9 @@ describe("FIX-233 — 3ª saída do gate lance ('só a parcela') pula lance-valu
 		currentCategory: "auto",
 		identityCollected: true,
 		experiencePrev: "first",
+		// FIX-314: hero/reco-consent viram universais — fixture pós-hero (a 3ª
+		// saída do lance só faz sentido depois do reco-consent já resolvido).
+		recoConsentAnswered: true,
 		qualifyAnswers: { creditMax: 80_000, prazoMeses: 6 },
 		searchDispatched: true,
 		revealCompleted: true,

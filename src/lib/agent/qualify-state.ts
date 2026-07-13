@@ -273,9 +273,7 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// avançar, pergunta "Posso te mostrar a opção que eu recomendo?" e só
 		// com resposta afirmativa o hero (recommendation_card) é liberado
 		// (server-forced em orchestrator/index.ts, nunca dependente de tool-call
-		// do LLM). PULA quando o usuário já recusou a conversa de lance
-		// (hasLance="so_parcela", capturado oportunisticamente a qualquer
-		// momento) — não há o que recomendar pra quem só quer a parcela fixa.
+		// do LLM).
 		//
 		// FIX-308 (rodada 10, onda 4 — causa-raiz real da Madalena): acoplado a
 		// `recoConsentAnswered` (resposta REAL), não mais a `recoConsentDispatched`
@@ -288,7 +286,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// coleta (credit/lance/lance-embutido, que também travam até o dado
 		// chegar). decideShowGate() evita re-perguntar em pergunta/dúvida/
 		// off-topic (o agente conversa à vontade enquanto o gate segura).
-		if (q.hasLance !== "so_parcela" && !meta.recoConsentAnswered) return "reco-consent";
+		//
+		// FIX-314 (rodada 10, onda 4 — Rodada A.3, decisão de produto do Kairo):
+		// hero/reco-consent viram UNIVERSAIS — a exceção "PULA quando
+		// hasLance==='so_parcela'" foi REMOVIDA. Ela nunca era alcançável na
+		// prática: `hasLance` só é capturado no gate `lance` (linha ~310 abaixo),
+		// que roda DEPOIS de reco-consent/timeframe nesta MESMA cascata — nenhum
+		// usuário real chegava a "so_parcela" a tempo de pular o hero. A
+		// recomendação é útil independente de o usuário dar lance ou não.
+		if (!meta.recoConsentAnswered) return "reco-consent";
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural

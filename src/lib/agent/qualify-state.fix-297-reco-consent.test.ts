@@ -7,11 +7,14 @@ import { decideShowGate, nextGate } from "./qualify-state";
 // TEMPOS com consentimento. Mockup: search → lista (comparison_table, SEMPRE
 // server-side, preserva FIX-290) → gate `experience` → novo gate LEVE
 // `reco-consent` ("Posso te mostrar a opção que eu recomendo?") → só com
-// resposta afirmativa o hero (recommendation_card) aparece. Fluxos sem-lance
-// (hasLance="so_parcela") PULAM reco-consent/hero — não há o que recomendar
-// pra quem já recusou a conversa de lance (decisão registrada no ADR do
-// bloco: NÃO plugar sinal de auto-seleção de oferta, manter o mecanismo
-// simples — divergência consciente do mockup pro caminho Mario).
+// resposta afirmativa o hero (recommendation_card) aparece.
+//
+// FIX-314 (rodada 10, onda 4 — Rodada A.3, decisão de produto do Kairo):
+// hero/reco-consent viram UNIVERSAIS pra todo mundo pós-experience, mesmo
+// quem já disse hasLance="so_parcela". A exceção antiga nunca era alcançável
+// na prática: hasLance só é capturado no gate `lance`, que roda DEPOIS de
+// reco-consent/timeframe nesta mesma cascata — nenhum usuário real chegava a
+// "so_parcela" a tempo de pular o hero (achado da Rodada A.3, dossiê Mario).
 // ============================================================================
 
 function postExperienceMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
@@ -51,13 +54,12 @@ describe("FIX-297 — nextGate insere reco-consent entre experience e timeframe"
 		).toBe("timeframe");
 	});
 
-	it("caminho sem-lance (hasLance='so_parcela') PULA reco-consent — vai direto pro timeframe", () => {
+	it("FIX-314 — caminho sem-lance (hasLance='so_parcela') TAMBÉM passa por reco-consent (hero universal)", () => {
 		const meta = postExperienceMeta({
 			qualifyAnswers: { creditMax: 120_000, hasLance: "so_parcela" },
 		});
 		const gate = nextGate(meta, { hasContactName: true });
-		expect(gate).not.toBe("reco-consent");
-		expect(gate).toBe("timeframe");
+		expect(gate).toBe("reco-consent");
 	});
 
 	it("doubts-wait ainda tem precedência sobre reco-consent (experience='doubts' não endereçado)", () => {
