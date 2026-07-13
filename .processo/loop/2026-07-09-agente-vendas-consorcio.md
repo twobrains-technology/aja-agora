@@ -486,3 +486,30 @@ como dúvida aberta, não implementado (regra do bloco: não cravar fix sem conf
 **Próximo passo (antes da verificação Etapa A):** investigar e corrigir a causa-raiz do
 `simulator-offer` preso, porque rodar o planner+coletor+juiz (caro) contra uma regressão já
 conhecida e diagnosticada é desperdício — mais barato fechar agora numa onda cirúrgica.
+
+| 10.3 (onda 3) | r10-3-timeframe-stuck | ✅ 1/1 na base `integ/consorcio-r10` (pushado) | test:unit 3403/3403 verde | — | Fechado — ver abaixo |
+
+### Onda 3 — FIX-305 fechado (RED→GREEN provado, bakeoff recuperou parcialmente)
+
+Decisão do Kairo (`AskUserQuestion`): default após N tentativas, nunca trava. Implementado: **N=3**,
+default de prazo 12 meses (opção canônica já existente), campo novo `meta.gateStuckTurns`
+(distinto de `gateAttempts`, que é escalada por inatividade). **Estendido pra além do pedido
+original** (decisão técnica do executor, correta): `lance`/`lance-value`/`lance-embutido` tinham a
+MESMA classe de risco (confirmado no código, não assumido) — mesmo tratamento aplicado aos 4
+gates, cada um com default de produto sensato (lance="no", lance-value=20% do crédito,
+lance-embutido=false/consent-minimization), sempre avisando o usuário antes de seguir.
+
+**Bakeoff Qwen — 3 pontos agora:** baseline 0.774 → pós-onda-1 **0.68** → pós-onda-3 **0.734**.
+Recuperação real mas parcial (ressalva honesta do executor: n=1, essa execução específica não
+chegou a exercitar o mecanismo de escape — o Qwen respondeu prazo direto dessa vez). O que dá pra
+afirmar com confiança: a falha CATASTRÓFICA (simulator-offer nunca disparado) não se repetiu.
+
+**⚠️ Gap conhecido, FORA do escopo desta onda (não é achado novo, já estava diagnosticado no
+FIX-304):** 12/31 testes do eval seguem vermelhos sob Qwen — mesma classe: `tool_error` em
+`present_decision_prompt` chamado fora de fase (BUG-REVEAL-LOOP, `tool-policy.ts`) + desvio pro
+"especialista em cadastros" no fechamento em vez de self-service. Decisão: **não perseguir mais
+achados via bakeoff isolado** — a formação de onda-a-onda guiada só pela minha leitura de log
+arrisca rabbit hole sem o veredito de um verificador de verdade. Este gap vira input pro
+**planner da verificação Etapa A** decidir se sonda isso explicitamente, não uma onda 4 ad-hoc.
+
+## Etapa A — Verificação (planner Opus → coletor Haiku → juiz Sonnet/Fable) — 2026-07-13, ABERTA
