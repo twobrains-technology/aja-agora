@@ -1,7 +1,7 @@
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
-import { nextGate } from "@/lib/agent/qualify-state";
+import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 
 // FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
@@ -27,6 +27,11 @@ export type AnalyzeResult = {
 	analysis: TurnAnalysis;
 	metaChanged: boolean;
 	newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null;
+	/** FIX-305 — gate cujo default foi assumido NESTE turno (teto de tentativas
+	 * sem progresso atingido, `registerGateStuckTurn`). `null` quando nenhum
+	 * escape disparou (inclui os turnos "abaixo do teto", que só incrementam
+	 * o contador em silêncio). */
+	stuckGateDefaultApplied: Gate | null;
 };
 
 export async function analyzeAndMerge(
@@ -229,5 +234,22 @@ export async function analyzeAndMerge(
 		metaChanged = true;
 	}
 
-	return { analysis, metaChanged, newlyExtractedExperience };
+	// FIX-305 — turno "sem progresso": o gate ativo ANTES deste merge (linha
+	// 39) é o MESMO de agora (nenhum dos merges acima o resolveu). Conta como
+	// tentativa; no teto, assume um default e o funil avança (nunca trava).
+	// Só STUCK_ESCAPE_GATES agem aqui — os demais devolvem null (nada a fazer).
+	let stuckGateDefaultApplied: Gate | null = null;
+	const gateAfterMerge = nextGate(meta, { hasContactName: true });
+	if (gateAfterMerge === activeGateAtTurnStart) {
+		const stuckPatch = registerGateStuckTurn(meta, gateAfterMerge);
+		if (stuckPatch) {
+			Object.assign(meta, stuckPatch);
+			metaChanged = true;
+			if (stuckPatch.gateDefaultsAssumed) {
+				stuckGateDefaultApplied = gateAfterMerge;
+			}
+		}
+	}
+
+	return { analysis, metaChanged, newlyExtractedExperience, stuckGateDefaultApplied };
 }
