@@ -130,9 +130,10 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 			identityCollected: true,
 			searchDispatched: true,
 			revealCompleted: true,
-			// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar
-			// timeframe/lance até chegar em "simulator-offer".
+			// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate
+			// cruzar timeframe/lance até chegar em "simulator-offer".
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "no" },
 		} as ConversationMetadata;
 
@@ -153,6 +154,7 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 			searchDispatched: true,
 			revealCompleted: true,
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "yes", lanceValue: 30_000 },
 		} as ConversationMetadata;
 
@@ -176,6 +178,7 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 			searchDispatched: true,
 			revealCompleted: true,
 			recoConsentDispatched: true,
+			recoConsentAnswered: true,
 			qualifyAnswers: { creditMax: 200_000, prazoMeses: 0, hasLance: "no" },
 		} as ConversationMetadata;
 

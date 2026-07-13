@@ -104,7 +104,9 @@ const TIMEFRAME_PENDING_META: ConversationMetadata = {
 	searchDispatched: true,
 	revealCompleted: true,
 	experiencePrev: "first",
+	// FIX-308: reco-consent precisa estar RESPONDIDO pra nextGate cruzar até o timeframe.
 	recoConsentDispatched: true,
+	recoConsentAnswered: true,
 	qualifyAnswers: { creditMax: 80_000 },
 };
 

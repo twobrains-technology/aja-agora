@@ -39,9 +39,11 @@ function doubtsClickMeta(over: Partial<ConversationMetadata> = {}): Conversation
 		identityCollected: true,
 		searchDispatched: true,
 		revealCompleted: true,
-		// FIX-297: reco-consent precisa estar resolvido pra nextGate cruzar até
-		// o timeframe (senão insere "reco-consent" antes).
+		// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO (não só
+		// perguntado) pra nextGate cruzar até o timeframe (senão fica preso em
+		// "reco-consent").
 		recoConsentDispatched: true,
+		recoConsentAnswered: true,
 		qualifyAnswers: { creditMax: 300_000 },
 		experiencePrev: "doubts",
 		doubtsAddressed: false,
@@ -196,8 +198,9 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 				identityCollected: true,
 				searchDispatched: true,
 				revealCompleted: true,
-				// FIX-297: reco-consent precisa estar resolvido pra cruzar até o timeframe.
+				// FIX-297/FIX-308: reco-consent precisa estar RESPONDIDO pra cruzar até o timeframe.
 				recoConsentDispatched: true,
+				recoConsentAnswered: true,
 				experiencePrev: "first",
 				qualifyAnswers: { creditMax: 300_000 },
 			},
@@ -211,6 +214,7 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 				searchDispatched: true,
 				revealCompleted: true,
 				recoConsentDispatched: true,
+				recoConsentAnswered: true,
 				experiencePrev: "doubts",
 				doubtsAddressed: true,
 				qualifyAnswers: { creditMax: 300_000 },
@@ -226,6 +230,7 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 				searchDispatched: true,
 				revealCompleted: true,
 				recoConsentDispatched: true,
+				recoConsentAnswered: true,
 				experiencePrev: "first",
 				qualifyAnswers: { creditMax: 300_000, prazoMeses: 0, hasLance: "yes" },
 			},

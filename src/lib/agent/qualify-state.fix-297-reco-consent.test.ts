@@ -32,9 +32,22 @@ describe("FIX-297 — nextGate insere reco-consent entre experience e timeframe"
 		expect(nextGate(postExperienceMeta(), { hasContactName: true })).toBe("reco-consent");
 	});
 
-	it("reco-consent já dispatchado → segue pro timeframe normalmente", () => {
+	// FIX-308 (rodada 10, onda 4): esta asserção documentava o BUG real (hero 6
+	// turnos atrasado, fecho disparando antes dele) — dispatched sozinho NÃO
+	// avança mais a cascata. Ver qualify-state.fix-308-reco-consent-answered.test.ts
+	// pro conjunto completo de testes do novo acoplamento.
+	it("reco-consent dispatchado mas SEM resposta reconhecida → cascata FICA em reco-consent (não avança pro timeframe)", () => {
 		expect(
 			nextGate(postExperienceMeta({ recoConsentDispatched: true }), { hasContactName: true }),
+		).toBe("reco-consent");
+	});
+
+	it("reco-consent RESPONDIDO (recoConsentAnswered=true) → aí sim segue pro timeframe", () => {
+		expect(
+			nextGate(
+				postExperienceMeta({ recoConsentDispatched: true, recoConsentAnswered: true }),
+				{ hasContactName: true },
+			),
 		).toBe("timeframe");
 	});
 
