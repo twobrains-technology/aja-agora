@@ -1271,3 +1271,67 @@ respondendo normalmente (sem exceção/regressão de runtime). Commit `dabc0861`
 - **[Hipótese não reproduzida]** `discoveredCreditTarget`/`revealValueTargetChanged` — corrigido no
   código (FIX-328) mas sem teste live-fire dedicado (cenário de re-descoberta é caro de montar);
   verificado só por leitura de código + suíte completa sem regressão.
+
+## Rodada A.8 — veredito Sonnet pós-FIX-328: 7/10 — SEGUNDA SUBIDA CONSECUTIVA
+
+Juiz Sonnet reproduziu RED→GREEN do FIX-328 revertendo código de verdade, **escreveu e rodou sua
+própria sonda** confirmando um 3º campo (`pendingFollowUp`) não replicado na previsão — mas
+confirmou (via grep exaustivo em todo o código de produção) que esse campo é hoje VESTIGIAL: nada
+no funil novo mais o SETA desde o FIX-274 (que removeu o gate `consent`), só leitura/limpeza
+sobrevivem. Achado real, mas de baixo risco em conversas novas — recomendou replicar mesmo assim
+por defesa-em-profundidade (conversas legadas). Confirmou também que a correção do
+`discoveredCreditTarget` é logicamente equivalente ao problema, sem lacuna. Nota: Negócio 8,
+Funcional 7, Cálculo 8, **UX 7** (subiu de 6 — buraco provado da A.7 fechado), UI/Compliance 8, E2E
+8. Nota final 7/10 — 2ª subida consecutiva (2→6→7).
+
+### FIX-329 — pendingFollowUp replicado na previsão (fecha o achado da sonda do juiz A.8)
+TDD com o cenário exato da sonda (pendingFollowUp=true, credit ainda não respondido): RED→GREEN
+confirmado. Suíte completa: 374 unit/3453 + 90 integration/356 (+1 teste novo), 100% verde.
+
+### Investigação do achado Canopus/ITAÚ (turno 8, dossiê `mario-sem-lance-fix327`) — CONCLUÍDA
+Fui aos `docker logs` reais da conversa (`d3337e5a-...`): o modelo chamou `simulate_quota` com
+`groupId: "canopus-auto-90k"` — um ID FABRICADO (o formato real é hash tipo
+"6a3e6ceb419653c0a9993311"). O guard determinístico rejeitou corretamente ("grupo não foi exibido
+em tela"). O modelo então tentou `search_groups` de novo — mas essa tool está FORA do toolset da
+fase "reveal" → `tool-policy-violation` → `tool_error` real → `tool-error-recovery` assume o turno
+com o fallback determinístico (a frase "as opções que já apareceram... continuam valendo").
+
+Verifiquei que o mecanismo de PREVENÇÃO já existe e é forte: `resolveOfferMentionForConversation`
+(FIX-258) resolve a menção "Canopus" contra os grupos JÁ EXIBIDOS (havia exatamente 1 Canopus na
+tabela mostrada — resolução devia ser inequívoca) e `buildMentionedOfferDirective` injeta uma
+diretiva EXPLÍCITA no prompt ("Use ESSE groupId LITERAL... NÃO invente nem adivinhe outro
+id/sentinela"). O modelo ignorou a diretiva mesmo assim. **Conclusão: não-determinismo do modelo
+(Haiku 4.5), não bug de código** — a diretiva já é maximamente explícita, e a rede de segurança
+(tool-error-recovery) capturou e recuperou graciosamente, sem quebrar o funil. Recoletas
+subsequentes (fix329, fix330) NÃO reproduziram esse padrão no mesmo ponto do fluxo — reforça que é
+esporádico, não sistemático. Registrado como item de monitoramento, não bloqueio.
+
+### FIX-330 — 3ª variante do P4, achada na recoleta ao vivo pós-FIX-329 (causa DIFERENTE das 3 anteriores)
+Recoleta fresca (`madalena-junta-fix329`/`mario-sem-lance-fix329`) achou turno 6 do Mario com 2
+"?": "...Quer ajustar o valor do bem? [...] Você já fez consórcio antes?" — vindos de BLOCOS
+diferentes de uma resposta multi-tool-call (não é a mesma classe do FIX-326/328/329, que tratam o
+flush FINAL vs cálculo tardio do gate).
+
+Causa-raiz: `ephemeralFilter.flush()` era chamado em TODA fronteira de bloco/pré-tool-call
+(FIX-182/FIX-188), não só no fim real do turno — e `flush()` SEMPRE libera a pergunta segurada
+(FIX-298). A pergunta do bloco 1 escapava pro stream ANTES do bloco final (que também termina em
+pergunta) — P4 escapando pela ponta CONTRÁRIA da que os fixes anteriores cobrem (aqui a pergunta
+escapa ANTES do ponto de decisão sequer existir, não depois). Fix: novo método `flushPending()`
+(esvazia só o texto pendente, NUNCA libera a pergunta segurada) nas 2 fronteiras intermediárias;
+`flush()` (libera tudo) fica reservado ao fim REAL do turno. TDD: `sanitizer.test.ts` (+3 testes) +
+novo teste de integração reproduzindo o cassette real (2 blocos com tool-call no meio, cada um
+terminando em pergunta) — RED confirmado revertendo os 2 pontos de chamada, GREEN restaurado.
+Suíte completa: `test:unit` 374/3456, `test:integration` 91/357, 100% verde.
+
+**Verificado ao vivo pós-FIX-330** (após um episódio de cache Turbopack sujo — HTTP 500 puro,
+`docker restart` resolveu, confirmado com `esbuild` que o arquivo compila limpo): Madalena
+(`madalena-junta-fix330`, 21/21, 0 contaminados, 4º fecho consecutivo) e Mario
+(`mario-sem-lance-fix330`, 13/13, 0 contaminados, fecho completo) — **ZERO turnos com 2+ "?" em
+AMBOS**, inclusive no turno 6 que reproduzia o bug antes do fix.
+
+### Total desta rodada: 11 fixes reais (FIX-320 a FIX-330)
+Commits `78b7c970`, `c2fba801`, `acb8f0e2`, `f4cce631`, `dabc0861`, `c94ad7db`, `ec995093` em
+`integ/consorcio-r10`, todos pushados. P4 (o teto explícito da rubrica, travado por 2 rodadas)
+agora tem 3 causas-raiz distintas fechadas e ZERO violações confirmadas em 4 recoletas ao vivo
+consecutivas (2 Madalena + 2 Mario), incluindo o cenário que antes reproduzia o bug. Escalando pra
+nova rodada de julgamento.
