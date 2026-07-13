@@ -486,6 +486,28 @@ export function decideShowGate(args: {
 	// próximo passo no mesmo turno, sem exigir "continua/vai" do usuário (FIX-206).
 	if (!isUserTurn) return true;
 
+	// FIX-317 (rodada 10, onda 4 — veredito Fable, achados A5/A6): `experience`/
+	// `identify` são perguntas ESTRUTURAIS mandatórias da cascata — não ancoram
+	// em nenhum grupo/oferta específico (ao contrário do que o FIX-183 logo
+	// abaixo protege). Precisa vir ANTES do blanket de `wants_more_options`:
+	// achado ao vivo — usuário diz "Quero ver todas" logo após o reveal, e a
+	// próxima pergunta MANDATÓRIA (`experience`) nunca aparecia, silenciando o
+	// funil inteiro sempre que essa frase (comum, natural) precedia uma
+	// pergunta de qualificação pendente. Todos os outros gates (incluindo
+	// `COLLECTION_GATES` — credit/lance/etc., já cobertos por teste explícito
+	// de regressão) continuam sob a trava original abaixo.
+	if (
+		(gate === "experience" || gate === "identify") &&
+		!(
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		)
+	) {
+		return true;
+	}
+
 	// FIX-183 (Mirella, PROD conv 69a38af1, 2026-07-01): "quero ver todos/mais
 	// opções" NUNCA abre gate estruturado nem empurra o funil (decisão/simulador/
 	// busca). O usuário quer AMPLIAR o que já viu, não avançar sobre um grupo
