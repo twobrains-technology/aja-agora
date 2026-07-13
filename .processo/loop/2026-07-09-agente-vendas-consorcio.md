@@ -620,3 +620,49 @@ Trocar por `||` ou checagem explícita.
 independente do LLM — ex. a suíte `test:unit`/`test:integration`, que usa mocks e não foi afetada)
 **não são confiáveis**. A rodada A.1 é descartada como medição; **rodada A.2 recomeça do zero com
 ambiente limpo**, abaixo.
+
+### Rodada A.2 — re-coleta com ambiente confirmado limpo + juiz Sonnet
+
+Um coletor delegado (Haiku) relatou coleta bem-sucedida ("madalena-junta-v2", artifacts
+confirmados) mas **os arquivos nunca existiram no disco** (confirmado por `find` — 0 resultados;
+hallucinated success, registrado em
+[[feedback_loop_goal_coletor_hallucinated_success]]). Rodei os 4 roteiros EU MESMO, diretamente,
+verificando cada dossiê no disco antes de seguir:
+- `madalena-junta-v2`: 21 turnos, **0 contaminados**.
+- `mario-sem-lance-v2`: 11 turnos, **0 contaminados**.
+- `probe-p4-prod-v2`: 10 turnos, 1 contaminado (turno 8, marcado e descartado).
+- `probe-p7-prod-v2`: 13 turnos, 1 contaminado (turno 9, marcado e descartado).
+O guard de contaminação novo no driver funcionou exatamente como desenhado — pegou degradação
+residual em 2 turnos isolados sem precisar descartar o dossiê inteiro.
+
+### 🔴 VEREDITO A.2: **1/10 — MATADOR PRA PROD: NÃO** (`veredito-rodadaA2-sonnet.md`)
+
+Nota = MÍNIMO (Funcional 1 · UX 1 · UI/Compliance 1 · Negócio 3 · Cálculo 6 · E2E 3).
+
+**Achado epistêmico central:** a correção do ambiente NÃO resgatou o produto — os achados mais
+graves da A.1 **reproduzem-se identicamente em evidência limpa**, alguns até PIORES. "HTTP 200
+não significa turno saudável" (lição da invalidação) se estende: **"turno não-contaminado não
+significa funil correto"**. Confirmado por 2 métodos independentes (driver determinístico + o
+coletor visual ao vivo, cujo achado do Ponto 2 tinha sido descartado por engano — a nota de
+contaminação dele se baseava no dossiê ORIGINAL, não no v2 limpo; `NOTA-contaminacao-visual.md`
+**precisa de correção**, item #11 abaixo).
+
+**P1-P10 (resumo, ver arquivo completo pra evidência linha-a-linha):**
+FAIL: P1 (identify ausente em Mario), P3 (severo — 6 artifact types 100% ausentes coordenadamente:
+`gate:experience`/`gate:reco-consent`/`topic_picker`/`scarcity`/`decision_prompt`/`two_paths`),
+P4, P5 (Madalena — optin+contract_form prematuro T12), P7 (2/3 sondas reancoram gate errado), P10
+(severo — coladas sob Claude NATIVO, refuta hipótese "só gateway"). PASS qualificado: P2, P5
+(Mario), P8, P9. INCONCLUSIVO: P6 (agravado — topic_picker ausente até no golden path PROD, não
+só sob Qwen). NÃO MEDIDO: gap §4.
+
+**12 achados → onda 4** (arquivo tem evidência completa por item): coreografia pós-reveal ausente
+(P0 crítico) · optin prematuro (P0) · two_paths ausente no Mario (P0) · topic_picker ausente até
+sob PROD (alta) · identify ausente em Mario (alta) · credit em loop 3-4x (alta) · frases coladas
+sob Claude nativo (alta) · P4 mesma causa-raiz (alta) · P7 reancora gate errado (média) · "esse um
+Corolla" gramática (média) · nota de contaminação visual desatualizada (baixa/processo) · gap §4
+não medido (baixa).
+
+**Recomendação do juiz (adotada):** tratar como **investigação de causa-raiz ÚNICA** antes de
+montar a onda 4 item-a-item — 6 artifact types sumindo coordenadamente sugere um guard/condição
+comum suprimindo a cadeia inteira `experience→topic_picker→reco-consent`, não 6 bugs
+independentes. Próximo passo: dispatch de investigação dedicada.
