@@ -7,6 +7,7 @@ severidade: media
 projeto: aja-agora
 arquivos: [scripts/bakeoff.sh, src/lib/agent/orchestrator/sanitizer.ts, src/lib/llm/gateway-openai.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 2, bloco r10-2-bakeoff-regua — sequencial, depende dos fixes de código da onda 1)
+commit: (este commit — docs: re-roda regua de admissao do bakeoff pos onda 1)
 executado_em: 2026-07-13
 ---
 ## Palavras do operador
