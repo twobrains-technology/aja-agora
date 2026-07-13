@@ -1,12 +1,14 @@
 ---
 id: FIX-300
 titulo: "TopicPicker vira enum canônico fixo (mata o vetor de card alucinado)"
-status: todo
+status: done
 bloco: bloco-r10-1-topicpicker-clarify
 severidade: alta
 projeto: aja-agora
-arquivos: [src/lib/agent/tools/ai-sdk.ts, src/lib/agent/orchestrator/tool-policy.ts, src/lib/agent/orchestrator/artifact-guard.ts, src/components/chat/artifacts/topic-picker.tsx]
+arquivos: [src/lib/agent/tools/ai-sdk.ts, src/lib/agent/orchestrator/tool-policy.ts, src/lib/agent/orchestrator/artifact-guard.ts, src/lib/agent/orchestrator/topic-catalog.ts, src/lib/agent/orchestrator/runner.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-topicpicker-clarify — junto do FIX-301; risco de conflito parcial com bloco r10-1-funil-reveal em qualify-state.ts/orchestrator, revisar no merge)
+executado_em: 2026-07-12
+commit: (este commit — fix(consorcio) topics do topic-picker viram enum canonico)
 ---
 ## Palavras do operador
 > "de repente ele mostrou um componente que na verdade não precisa disso daqui, a ou b, totalmente

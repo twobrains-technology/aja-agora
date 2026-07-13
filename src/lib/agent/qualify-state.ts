@@ -46,6 +46,15 @@ export type UserIntent =
 	| "asking_question"
 	| "providing_info"
 	| "expressing_doubt"
+	// FIX-301 correção (rodada 10): "confused" é DISTINTO de "expressing_doubt".
+	// expressing_doubt = hesitação sobre uma DECISÃO que o usuário entende
+	// ("tenho que pensar", "depende") — não deve interromper o fluxo natural.
+	// confused = o usuário não entendeu a PERGUNTA/CARD em si ("não entendi",
+	// "como assim?") — aí sim reancora no mesmo gate (Lei 4, sem inventar menu).
+	// Reusar expressing_doubt pra isso (tentativa original do FIX-301) quebrou
+	// o FIX-266 (r9): "deixa eu pensar aqui" é expressing_doubt por design
+	// (turn-analyzer.ts) e passou a ser hijackado pelo short-circuit de clarify.
+	| "confused"
 	| "off_topic"
 	| "neutral";
 
@@ -187,6 +196,41 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (meta.revealCompleted && !meta.simulatorOfferDispatched) return "simulator-offer";
 	if (meta.revealCompleted && !meta.decisionDispatched) return "decision";
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
+}
+
+/**
+ * FIX-301 (P7, loop-de-goal r10) — o usuário está CONFUSO ("não entendi") num
+ * turno em que já existe um gate REALMENTE aguardando resposta. Devolve o
+ * `Gate` a REANCORAR (mesmo gate, sem avançar nem inventar menu), ou `null`
+ * quando não há pergunta canônica re-apresentável agora.
+ *
+ * Caso especial: `decision`. `nextGate()` só devolve `"decision"` enquanto
+ * `!meta.decisionDispatched` — assim que o card é mostrado, o dispatch marca
+ * a flag e `nextGate()` avança pro terminal (`"search"`). Sem este caso à
+ * parte, o usuário confuso respondendo ao PRÓPRIO card de decisão não teria
+ * pra onde reancorar. Os demais gates (credit/lance/identify/…) continuam
+ * corretos via `nextGate()` puro — o DADO em si (não uma flag de "já
+ * mostrei") é que os mantém pendentes.
+ *
+ * `name`/`doubts-wait`/`search` não têm pergunta canônica re-apresentável
+ * (nome vem do texto de abertura; doubts-wait é um "aguarde"; search é ação,
+ * não pergunta) — devolve `null` pra esses.
+ */
+export function gateAwaitingReply(
+	meta: ConversationMetadata,
+	hasContactName: boolean,
+): Gate | null {
+	// Contrato fechado é SEMPRE terminal — nada a reancorar, independente de
+	// qual gate a cascata bruta de nextGate() calcularia (ex.: FIX-297 inseriu
+	// "reco-consent" mais cedo no funil; sem este corte, um fixture pós-fecho
+	// que não marcou aquele gate como resolvido vazava um gate "vivo" aqui).
+	if (meta.contractClosed === true) return null;
+	if (meta.revealCompleted && meta.decisionDispatched === true) {
+		return "decision";
+	}
+	const gate = nextGate(meta, { hasContactName });
+	if (gate === "name" || gate === "doubts-wait" || gate === "search") return null;
+	return gate;
 }
 
 /**
@@ -341,7 +385,12 @@ export function decideShowGate(args: {
 	// watchdog FIX-207 re-engaja se ele sumir). Invariante em CÓDIGO (Lei 4), não
 	// regra-no-prompt. Server-authored já retornou true acima (FIX-206) — não colide.
 	if (COLLECTION_GATES.has(gate)) {
-		if (intent === "asking_question" || intent === "expressing_doubt" || intent === "off_topic") {
+		if (
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		) {
 			return false;
 		}
 		return true;
@@ -370,6 +419,7 @@ export function decideShowGate(args: {
 
 	if (intent === "asking_question") return false;
 	if (intent === "expressing_doubt") return false;
+	if (intent === "confused") return false;
 	if (intent === "off_topic") return false;
 
 	if (intent === "ready_to_proceed") return true;

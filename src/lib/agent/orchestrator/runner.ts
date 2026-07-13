@@ -67,6 +67,7 @@ import {
 	type ToolCallRecord,
 	type ToolResultRecord,
 } from "./tool-io-log";
+import { resolveTopicPickerPayload } from "./topic-catalog";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
@@ -789,6 +790,14 @@ export async function* runAgentTurn(args: {
 						// REAL (hash determinístico) — a LLM nunca escolhe o número.
 						if (artifactType === "scarcity") {
 							payload = coerceScarcityPayload(input, revealGroupsById);
+						}
+						// FIX-300: `topics` chega como ids do catálogo (schema já rejeita
+						// qualquer outro valor) — resolve pro COPY canônico do chip aqui,
+						// nunca repassa o que a LLM mandou.
+						if (artifactType === "topic_picker") {
+							payload = resolveTopicPickerPayload(
+								input as { prompt?: string; topics: string[]; includeBackButton?: boolean },
+							);
 						}
 						artifacts.push({
 							type: artifactType,

@@ -245,6 +245,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId }) =>
 			`[dial-dup-intraturn] guard: suprimindo contemplation_dial duplicado no mesmo turno (conv=${conversationId})`,
 	},
+	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): o
+	// print real mostrava um topic_picker com chips "a"/"b" no lugar do card
+	// "Esse plano faz sentido?" — o gate `decision` tecnicamente ainda é fase
+	// `reveal` (tool-policy.ts só bloqueia closing/terminal) até o directive
+	// marcar `decisionDispatched`, então essa é a 2ª linha que cobre o instante
+	// exato: o servidor JÁ vai emitir/já emitiu o card canônico da decisão, um
+	// menu de dúvidas do LLM ali é sempre ruído.
+	{
+		name: "topic-picker-server-gate",
+		applies: ({ artifactType, meta }) =>
+			artifactType === "topic_picker" && nextGate(meta) === "decision",
+		logLine: ({ conversationId }) =>
+			`[topic-picker-server-gate] guard: suprimindo topic_picker — gate decision já tem card canônico do servidor (conv=${conversationId})`,
+	},
 ];
 
 /** Avalia as regras NA ORDEM; a primeira que aplicar suprime e assina o log. */

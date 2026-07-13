@@ -1,12 +1,15 @@
 ---
 id: FIX-301
 titulo: "Transição determinística 'clarify' quando usuário está confuso (não deixa o LLM inventar menu)"
-status: todo
+status: done
 bloco: bloco-r10-1-topicpicker-clarify
 severidade: media
 projeto: aja-agora
-arquivos: [src/lib/agent/orchestrator/turn-analyzer.ts, src/lib/chat/types.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/orchestrator/gate-questions.ts]
+arquivos: [src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/orchestrator/gate-questions.ts]
 rodada: 2026-07-12 (loop-de-goal r10, onda 1, bloco r10-1-topicpicker-clarify — junto do FIX-300)
+commit: (este commit — fix(consorcio) reancora no mesmo gate quando o usuario esta confuso)
+executado_em: 2026-07-12
+decisao: docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-clarify.md
 ---
 ## Palavras do operador
 > "na entendi" ... "uai nao sei voce nao me perguntou nada" — o agente abre um menu genérico de
