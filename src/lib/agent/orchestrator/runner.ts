@@ -900,6 +900,76 @@ export async function* runAgentTurn(args: {
 		};
 	}
 
+	// FIX-326 (rodada 10, veredito Sonnet A.5/A.6 — P4, teto explícito da r10):
+	// o flush abaixo libera a ÚLTIMA pergunta que o MODELO fez no turno
+	// (FIX-298) — mas o cálculo REAL de qual gate vai disparar
+	// (`nextGateToFire`, mais abaixo nesta função) só acontece DEPOIS. Sem
+	// isso, quando um gate com pergunta PRÓPRIA dispara no mesmo turno
+	// (experience/timeframe/reco-consent/etc.), a pergunta do modelo e a
+	// pergunta do gate colam no mesmo balão (achado sistemático, múltiplas
+	// recoletas ao vivo). Prevê aqui, com as MESMAS funções puras usadas no
+	// cálculo real mais abaixo (nunca duplica a lógica, só antecipa a
+	// chamada) e dado 100% local — sem esperar os `persistMeta` que só
+	// acontecem depois do flush — se um gate com pergunta própria vai
+	// disparar. Se sim, descarta a pergunta segurada do modelo: só a
+	// pergunta CANÔNICA do gate sobrevive (ela é sempre a estruturalmente
+	// correta; a do modelo é só uma reação de texto livre).
+	if (!isConcierge) {
+		const previewProducedArtifact = artifacts.length > 0;
+		const previewArtifactTypes = artifacts.map((a) => a.type);
+		const previewMayEvaluateGates =
+			!previewProducedArtifact || previewArtifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
+		if (previewMayEvaluateGates) {
+			// Replica só as mutações de meta que ESTA função já sabe que vai
+			// persistir mais abaixo (revealCompleted/searchDispatched quando o
+			// reveal completa NESTE turno; decisionDispatched quando o card de
+			// decisão aparece NESTE turno) — as únicas duas que `nextGate()`
+			// lê e que mudam DEPOIS deste ponto mas ANTES do cálculo real.
+			const previewRevealCompletesNow =
+				!meta.revealCompleted &&
+				(artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) ||
+					Boolean(pendingRecommendationPayload) ||
+					Boolean(pendingSimulationPayload));
+			const previewDecisionDispatchesNow =
+				!meta.decisionDispatched && artifacts.some((a) => a.type === "decision_prompt");
+			const previewMeta: ConversationMetadata = {
+				...meta,
+				...(previewRevealCompletesNow
+					? { revealCompleted: true, searchDispatched: true }
+					: {}),
+				...(previewDecisionDispatchesNow ? { decisionDispatched: true } : {}),
+			};
+			const { conversations: previewConversationsTable } = await import("@/db/schema");
+			const { eq: previewEq } = await import("drizzle-orm");
+			const previewConv = await db.query.conversations.findFirst({
+				where: previewEq(previewConversationsTable.id, conversationId),
+				columns: { contactName: true },
+			});
+			const previewGate = nextGate(previewMeta, {
+				hasContactName: Boolean(previewConv?.contactName),
+			});
+			const GATES_WITHOUT_OWN_QUESTION: ReadonlySet<Gate> = new Set([
+				"name",
+				"doubts-wait",
+				"search",
+				"decision",
+			]);
+			if (!GATES_WITHOUT_OWN_QUESTION.has(previewGate)) {
+				const previewShouldShow = decideShowGate({
+					gate: previewGate,
+					intent: userIntent,
+					meta: previewMeta,
+					isUserTurn,
+				});
+				const previewPassesArtifactGuard =
+					!previewProducedArtifact || allowGateWithArtifacts(previewGate, previewArtifactTypes);
+				if (previewShouldShow && previewPassesArtifactGuard) {
+					ephemeralFilter.discardHeldQuestion();
+				}
+			}
+		}
+	}
+
 	// FIX-188: libera a última frase pendente do stream (sucesso), também filtrada
 	// — a cauda sem pontuação final ("...Vou buscar os grupos agora") é avaliada
 	// antes de virar bolha.

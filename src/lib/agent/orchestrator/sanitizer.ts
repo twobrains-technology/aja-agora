@@ -455,6 +455,15 @@ export class EphemeralTextFilter {
 		this.heldQuestion = "";
 		return held ? stripEmoji(held) : "";
 	}
+
+	/** FIX-326 — descarta a pergunta segurada SEM emiti-la. Usado quando o
+	 * runner prevê que um gate estrutural com pergunta própria vai disparar no
+	 * MESMO turno: a pergunta do MODELO perderia a corrida de qualquer jeito
+	 * (2 perguntas no mesmo balão, achado P4) — melhor nunca emitir a dele do
+	 * que deixar as duas colarem. No-op seguro quando não há pergunta segurada. */
+	discardHeldQuestion(): void {
+		this.heldQuestion = "";
+	}
 }
 
 /**

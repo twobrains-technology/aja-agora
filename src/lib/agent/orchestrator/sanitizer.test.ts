@@ -676,6 +676,53 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 	});
 });
 
+// FIX-326 (rodada 10, veredito Sonnet A.5/A.6 — P4, teto explícito da r10):
+// o FIX-298 acima garante no máximo 1 pergunta do MODELO por balão — mas não
+// sabe que um GATE estrutural (com pergunta própria, ex. "Você já fez
+// consórcio antes?") vai disparar em seguida no MESMO turno. `runner.ts`
+// precisa de um jeito de DESCARTAR a pergunta segurada (sem emiti-la) quando
+// prevê que um gate vai anexar a PRÓPRIA pergunta — `discardHeldQuestion()` é
+// esse mecanismo: limpa o estado interno sem produzir texto nenhum.
+describe("FIX-326 — discardHeldQuestion() descarta a pergunta segurada sem emitir nada", () => {
+	it("depois de discardHeldQuestion(), flush() não emite a pergunta que estava segurada", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
+		expect(emitted.trim()).toBe("");
+	});
+
+	it("sem chamar discardHeldQuestion(), flush() continua emitindo a pergunta normalmente (regressão FIX-298)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Quer ajustar o valor do bem? ");
+		emitted += f.flush();
+		expect(emitted).toContain("Quer ajustar o valor do bem?");
+	});
+
+	it("discardHeldQuestion() não afeta texto NÃO-interrogativo pendente (só descarta a pergunta)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Perfeito, seguimos então. ");
+		emitted += f.push("Você já fez consórcio antes?");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).toContain("Perfeito, seguimos então.");
+		expect(emitted).not.toContain("Você já fez consórcio antes?");
+	});
+
+	it("chamar discardHeldQuestion() sem nenhuma pergunta segurada é no-op seguro (não lança, não quebra o resto)", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = "";
+		emitted += f.push("Perfeito, seguimos então.");
+		f.discardHeldQuestion();
+		emitted += f.flush();
+		expect(emitted).toBe("Perfeito, seguimos então.");
+	});
+});
+
 // FIX-299 (loop-de-goal r10, P9/P10 — mesma transcrição): "Show, kairo!" (nome
 // em minúscula) e "Perfeito, kairo! ✅" (emoji fora da parcimônia esperada) com
 // Qwen 3.5 Fast. Casca determinística — independe do modelo obedecer ao prompt.
