@@ -3,23 +3,40 @@
 // Rede de segurança pra CAUDA não-determinística do FIX-206: quando um turno de
 // texto é classificado como dúvida/pergunta, `decideShowGate` suprime o próximo
 // gate LEGITIMAMENTE e, se o usuário some, o funil fica parado. Este worker faz
-// polling recorrente: varre conversas WhatsApp ativas com um gate do funil
-// pendente há mais que o teto de inatividade (GATE_REENGAGE_TIMEOUT_MS) e re-abre
-// o funil disparando o gate (fireGate). Espelha o proposal-status-poll (FIX-44):
-// o ciclo (`runReengageCycle`) é testável SEM Redis (injeta clock + dublê de
-// fireGate); o wiring BullMQ só é iniciado pelo entrypoint do worker.
+// polling recorrente: varre conversas ATIVAS (WhatsApp + web) com um gate do
+// funil pendente há mais que o teto de inatividade (GATE_REENGAGE_TIMEOUT_MS) e
+// re-abre o funil. Espelha o proposal-status-poll (FIX-44): o ciclo
+// (`runReengageCycle`) é testável SEM Redis (injeta clock + dublê de fireGate);
+// o wiring BullMQ só é iniciado pelo entrypoint do worker.
+//
+// Entrega por canal (FIX-302): WhatsApp dispara o gate via `fireGate` (Meta Cloud
+// API), sem mudança. Web não tem uma sessão SSE viva pra empurrar (o worker roda
+// num processo separado do app — scripts/proposal-worker.ts — então o
+// message-bus in-memory só entrega quando os dois processos coincidem; nunca
+// depende disso) — persiste a mensagem de reengajamento na MESMA tabela de
+// mensagens (`saveMessage`), disponível pro cliente no próximo GET
+// /api/chat/resume sem reload manual. Gates de coleta obrigatória reusam a
+// escada FIX-211 (`reengageQuestionForGate`) e RE-ARMAM o marcador até o teto de
+// 4 tentativas (a 4ª já é a saída pro especialista — não re-arma depois).
 //
 // Idempotência: LIMPA o marcador ao disparar → dispara no máximo uma vez por
-// pendência; só um novo turno de usuário re-marca. fireGate tem seus próprios
-// guards (consent → consentOffered etc.). Web fica fora deste worker (o push
-// server→client numa sessão SSE já fechada é PENDENTE-KAIRO — ver .done).
+// pendência (exceto o re-arme controlado da escada web); só um novo turno de
+// usuário ou o próprio re-arme re-marca. fireGate tem seus próprios guards
+// (consent → consentOffered etc.).
 
 import type { ConnectionOptions } from "bullmq";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import { NON_REENGAGE_GATES, shouldReengageGate } from "@/lib/agent/gate-reengage";
+import {
+	isMandatoryCollectionGate,
+	NON_REENGAGE_GATES,
+	reengageQuestionForGate,
+	shouldReengageGate,
+} from "@/lib/agent/gate-reengage";
+import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import type { fireGate as FireGate } from "@/lib/whatsapp/adapter";
 
@@ -32,19 +49,22 @@ export interface ReengageDeps {
 
 interface PendingConversationRow {
 	id: string;
+	channel: "whatsapp" | "web";
 	waId: string | null;
 	contactName: string | null;
 	metadata: unknown;
 }
 
 /**
- * Conversas WhatsApp ATIVAS com um gate do funil marcado como pendente (alvo do
- * watchdog). Filtra `pendingGateSince` no próprio jsonb — sem varrer a tabela toda.
+ * Conversas ATIVAS (qualquer canal) com um gate do funil marcado como pendente
+ * (alvo do watchdog). Filtra `pendingGateSince` no próprio jsonb — sem varrer a
+ * tabela toda.
  */
 export async function findPendingGateConversations(): Promise<PendingConversationRow[]> {
 	return db
 		.select({
 			id: conversations.id,
+			channel: conversations.channel,
 			waId: conversations.waId,
 			contactName: conversations.contactName,
 			metadata: conversations.metadata,
@@ -52,7 +72,6 @@ export async function findPendingGateConversations(): Promise<PendingConversatio
 		.from(conversations)
 		.where(
 			and(
-				eq(conversations.channel, "whatsapp"),
 				eq(conversations.status, "active"),
 				sql`${conversations.metadata} ->> 'pendingGateSince' IS NOT NULL`,
 			),
@@ -96,9 +115,74 @@ export async function runReengageCycle(deps: ReengageDeps = {}): Promise<{ reeng
 			await persistMeta(row.id, cleared);
 
 			if (NON_REENGAGE_GATES.has(gate)) continue;
-			if (!row.waId) continue;
 
-			await fire(row.waId, row.id, gate, cleared);
+			if (row.channel === "whatsapp") {
+				if (!row.waId) continue;
+				await fire(row.waId, row.id, gate, cleared);
+				reengaged += 1;
+				continue;
+			}
+
+			// channel === "web": sem sessão SSE viva pra empurrar (worker roda num
+			// processo separado do app) — persiste como mensagem normal do
+			// assistente, disponível no próximo /api/chat/resume.
+			const mandatory = isMandatoryCollectionGate(gate);
+			const attempt = (meta.gateAttempts?.[gate] ?? 0) + 1;
+			const text = mandatory
+				? reengageQuestionForGate(
+						gate,
+						meta.currentCategory ?? null,
+						attempt,
+						meta.recommendedOffer?.creditValue,
+						meta.qualifyAnswers?.creditMentionedAtDesire,
+						"web",
+					)
+				: gateQuestion(
+						gate,
+						meta.currentCategory ?? null,
+						meta.recommendedOffer?.creditValue,
+						"web",
+						meta.qualifyAnswers?.creditMentionedAtDesire,
+					);
+			if (!text) continue;
+
+			const messageId = await saveMessage(
+				row.id,
+				"assistant",
+				text,
+				"web",
+				cleared.currentPersona ?? null,
+			);
+			try {
+				const { publishMessage } = await import("@/lib/chat/message-bus");
+				publishMessage(row.id, {
+					id: messageId,
+					role: "assistant",
+					content: text,
+					createdAt: now.toISOString(),
+				});
+			} catch {
+				// Best-effort: sem assinante SSE vivo (processo separado do app) não
+				// quebra o ciclo — o cliente pega no próximo /api/chat/resume.
+			}
+
+			// Escada FIX-211: re-arma o marcador pra continuar cobrando até o teto
+			// de 4 tentativas (a 4ª já saiu como SPECIALIST_EXIT_OFFER — não re-arma
+			// depois, evita loop infinito).
+			if (mandatory && attempt < 4) {
+				await persistMeta(row.id, {
+					...cleared,
+					gateAttempts: { ...cleared.gateAttempts, [gate]: attempt },
+					pendingGateSince: now.getTime(),
+					pendingGate: gate,
+				});
+			} else if (mandatory) {
+				await persistMeta(row.id, {
+					...cleared,
+					gateAttempts: { ...cleared.gateAttempts, [gate]: attempt },
+				});
+			}
+
 			reengaged += 1;
 		} catch (err) {
 			console.error(
