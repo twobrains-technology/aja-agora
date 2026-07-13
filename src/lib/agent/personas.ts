@@ -91,6 +91,12 @@ export type ConversationMetadata = {
 	 * perguntar o motivo (`shouldAskMotive`). Torna o beat NÃO-bloqueante: se o motivo
 	 * não vier, o funil segue mesmo assim (mesmo padrão de `desireAsked`). */
 	motivationAsked?: boolean;
+	/** FIX-296 — o beat de ESPELHO+OBJETIVO ("entendo bem — quando o carro dá
+	 * trabalho, atrapalha tudo. Então o objetivo já fica claro...") já foi
+	 * ativado nesta conversa (`shouldMirrorMotivation`). Marcado no runner
+	 * quando o beat dispara — igual `motivationAsked`, torna o beat NÃO-
+	 * bloqueante e garante que ele rode UMA vez só, nunca a cada turno. */
+	motivationMirrored?: boolean;
 	/** FIX-285 — o gate `desire` já recebeu uma RESPOSTA do usuário nesta
 	 * conversa, independente de o item citado ter sido específico o bastante
 	 * pra virar `qualifyAnswers.desiredItem` (o analyzer devolve `desiredItem:

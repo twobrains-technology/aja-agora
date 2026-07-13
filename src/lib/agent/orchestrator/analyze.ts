@@ -40,6 +40,11 @@ export async function analyzeAndMerge(
 	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
 	// lance por baixo do pano).
 	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	// FIX-296: snapshot de `desireAnswered` ANTES de qualquer mutação deste
+	// turno (a marcação de `desireAnswered`, logo abaixo, pode acontecer NESTE
+	// MESMO turno — o guard de creditMax mais adiante precisa saber se o
+	// desire já tinha sido respondido ANTES deste turno começar).
+	const desireAnsweredBeforeThisTurn = Boolean(meta.desireAnswered);
 
 	let metaChanged = false;
 	let newlyExtractedExperience: ConversationMetadata["experiencePrev"] | null = null;
@@ -51,14 +56,14 @@ export async function analyzeAndMerge(
 	}
 	// FIX-285: marca que o gate `desire` recebeu uma RESPOSTA — independente do
 	// que o analyzer extraiu como `desiredItem` (que fica null por design na
-	// categoria genérica). Escopado à janela `identify` (ativo entre o desire
-	// já perguntado e a identidade ainda não coletada — exatamente o turno da
-	// resposta ao desire, FIX-53): sem esse escopo, qualquer turno POSTERIOR
-	// (ex.: respondendo o `credit`, muitos turnos depois) marcaria o campo
-	// retroativamente e `shouldAskMotive` passaria a segurar TODOS os gates
-	// dali em diante, não só o `identify` (regressão pega pelos cassettes de
-	// `agent-trajectory.test.ts`, FIX-208).
-	if (meta.desireAsked && !meta.desireAnswered && activeGateAtTurnStart === "identify") {
+	// categoria genérica). Escopado à janela `credit` (FIX-296: ativo entre o
+	// desire já perguntado e o valor ainda não coletado — exatamente o turno da
+	// resposta ao desire, agora que credit precede identify): sem esse escopo,
+	// qualquer turno POSTERIOR (ex.: respondendo o `identify`, muitos turnos
+	// depois) marcaria o campo retroativamente e `shouldAskMotive` passaria a
+	// segurar TODOS os gates dali em diante, não só o do turno certo
+	// (regressão pega pelos cassettes de `agent-trajectory.test.ts`, FIX-208).
+	if (meta.desireAsked && !meta.desireAnswered && activeGateAtTurnStart === "credit") {
 		meta.desireAnswered = true;
 		metaChanged = true;
 	}
@@ -89,12 +94,12 @@ export async function analyzeAndMerge(
 	// gate `credit` — aí um número NU ("200") vira valor (200 mil, clampado). Sem
 	// isso, parseAssetValue("200")=null por design e o funil fechava mudo no gate de
 	// valor. O contexto só é passado quando o gate credit está DE FATO pendente.
-	// FIX-274: o gate `consent` saiu do funil — o pré-requisito do `credit` agora é
-	// só identidade coletada (identify vem antes do credit desde o FIX-53).
+	// FIX-296 (reversão do FIX-53): o pré-requisito do `credit` agora é só o
+	// desire já respondido (o `credit` precede o `identify` desde a rodada 10).
 	const creditGatePending =
 		q.creditMax === undefined &&
 		Boolean(meta.currentCategory) &&
-		Boolean(meta.identityCollected) &&
+		Boolean(meta.desireAnswered) &&
 		!meta.pendingFollowUp;
 	const parsedCreditMax =
 		analysis.creditMax === null && q.creditMax === undefined
@@ -110,12 +115,20 @@ export async function analyzeAndMerge(
 	// `desire`, "Um apartamento de uns 250 mil"), ANTES de o gate `credit` (a
 	// agulha dedicada, P4 do canônico) ficar ativo. Como nextGate() só dispara
 	// o gate enquanto `creditMax === undefined`, o valor pré-preenchido fazia a
-	// agulha nunca aparecer. `isRevealRefit` continua como exceção legítima
-	// separada (troca de faixa pós-reveal é decisão do LLM, independe do gate
-	// ativo no momento).
+	// agulha nunca aparecer.
+	//
+	// FIX-296 (rodada 10): `activeGateAtTurnStart === "credit"` deixou de ser
+	// um sinal confiável — com o `credit` reordenado pra logo após o `desire`,
+	// nextGate() já devolve "credit" DESDE o próprio turno em que o desire está
+	// sendo respondido (exatamente o turno que este guard precisa excluir). O
+	// sinal correto agora é `meta.desireAnswered` ANTES deste turno (snapshot
+	// pré-mutação, `desireAnsweredBeforeThisTurn`) — só a partir do turno
+	// SEGUINTE ao que respondeu o desire o `credit` está genuinamente ativo.
+	// `isRevealRefit` continua como exceção legítima separada (troca de faixa
+	// pós-reveal é decisão do LLM, independe do gate ativo no momento).
 	if (
 		sourceCreditMax !== null &&
-		((q.creditMax === undefined && activeGateAtTurnStart === "credit") || isRevealRefit)
+		((q.creditMax === undefined && desireAnsweredBeforeThisTurn) || isRevealRefit)
 	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só

@@ -12,6 +12,7 @@ import {
 	nextGate,
 	shouldAskMotive,
 	shouldMarkDoubtsAddressed,
+	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
@@ -1215,6 +1216,13 @@ export async function* runAgentTurn(args: {
 		// com o estado ANTERIOR — a marcação só afeta o turno seguinte.
 		if (isUserTurn && shouldAskMotive(refreshed)) {
 			await persistMeta(conversationId, { ...refreshed, motivationAsked: true });
+		}
+		// FIX-296 — mesmo padrão acima, um turno depois: quando o motivo já
+		// chegou e o beat de espelho+objetivo segura o funil (shouldShow=false
+		// por shouldMirrorMotivation), marca motivationMirrored — o gate real
+		// (credit) dispara normalmente no turno SEGUINTE.
+		if (isUserTurn && shouldMirrorMotivation(refreshed)) {
+			await persistMeta(conversationId, { ...refreshed, motivationMirrored: true });
 		}
 		const passesArtifactGuard =
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);

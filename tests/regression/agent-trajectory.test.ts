@@ -6041,20 +6041,22 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 		expect(toolCalls.map((t) => t.toolName)).not.toContain("present_value_picker");
 	});
 
-	it("estrutural: nextGate coloca identify ANTES de credit (value picker)", () => {
+	it("estrutural: nextGate coloca credit ANTES de identify (reversão FIX-296)", () => {
 		const base: ConversationMetadata = {
 			desireAsked: true,
 			currentCategory: "auto",
 			experiencePrev: "first",
 			qualifyConsented: true,
 		};
-		expect(nextGate(base, { hasContactName: true })).toBe("identify");
-		expect(nextGate({ ...base, identityCollected: true }, { hasContactName: true })).toBe("credit");
+		expect(nextGate(base, { hasContactName: true })).toBe("credit");
+		expect(
+			nextGate({ ...base, qualifyAnswers: { creditMax: 80_000 } }, { hasContactName: true }),
+		).toBe("identify");
 	});
 
 	it("estrutural: o prompt proíbe re-pedir o valor e explica o enforcement do servidor", () => {
 		const p = SPECIALIST_BASE_PROMPT.toLowerCase();
-		expect(p).toMatch(/identidade antes do valor/);
+		expect(p).toMatch(/valor antes da identidade/);
 		expect(p).toMatch(/valor j[áa] coletado/);
 		expect(p).toMatch(/servidor/);
 		expect(p).toMatch(/voltou a pedir o valor/);
@@ -6063,7 +6065,7 @@ describe("FIX-53-DADOS-ANTES-VALOR — identidade antes do valor; não re-pedir 
 	it("estrutural: o artifact-guard tem a regra value-picker-order (2ª linha de defesa)", () => {
 		const src = readSource("src/lib/agent/orchestrator/artifact-guard.ts");
 		expect(src).toMatch(/value-picker-order/);
-		expect(src).toMatch(/dados antes do valor/);
+		expect(src).toMatch(/valor antes dos dados/);
 	});
 
 	it("estrutural: o handler de identidade (web/route) despacha o próximo gate, NÃO o reveal", () => {
@@ -6978,6 +6980,7 @@ describe("FIX-74 — orçamento mensal não vira prazo fabricado; funil segue se
 
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -8510,7 +8513,8 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 	const NOW = 1_800_000_000_000;
 
 	it("o orquestrador MARCA a pendência quando o gate real é suprimido num turno de usuário", () => {
-		// FIX-274: sem consent, identify é o 1º gate estrutural pós-desire.
+		// FIX-296: sem consent, credit é o 1º gate estrutural pós-desire
+		// (reversão do FIX-53 — valor antes dos dados).
 		expect(
 			pendingGateAfterTurn({
 				meta: pendingMeta(),
@@ -8518,7 +8522,7 @@ describe("FIX-207-WATCHDOG — funil parado num gate pendente re-engaja por inat
 				isUserTurn: true,
 				hasContactName: true,
 			}),
-		).toBe("identify");
+		).toBe("credit");
 	});
 
 	it("nunca marca em turno server-authored (FIX-206 já avança) nem quando o gate disparou", () => {
@@ -8605,6 +8609,12 @@ describe("FIX-208 — resposta ao gate de VALOR não fecha o turno mudo", () => 
 	function creditGateMeta(): ConversationMetadata {
 		return {
 			desireAsked: true,
+			desireAnswered: true,
+			// FIX-296: o beat de motivo/espelho já rodou — sem isso,
+			// shouldAskMotive/shouldMirrorMotivation segurariam o gate credit
+			// (comportamento correto, mas fora do escopo deste cassette FIX-208).
+			motivationAsked: true,
+			motivationMirrored: true,
 			currentPersona: "helena-auto",
 			currentCategory: "auto",
 			experiencePrev: "first",

@@ -188,23 +188,24 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId }) =>
 			`[single-option] guard: suprimindo recommendation_card — descoberta retornou opção única (conv=${conversationId})`,
 	},
-	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19): "Precisa pedir os
-	// dados, antes do valor" + "Voltou a pedir o valor". O credit gate (value
-	// picker server-emitido) já respeita a ordem nova via qualify-state; esta é
-	// a 2ª linha de defesa se o MODELO chamar present_value_picker fora de ordem.
-	// PRÉ-reveal, suprime o value_picker quando: (a) a identidade ainda não foi
-	// coletada (dados ANTES do valor) OU (b) o valor já foi coletado (anti-
-	// repetição — confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-
-	// reveal o picker é legítimo (ajuste de valor) — não cai aqui.
+	// FIX-53 (jornada2_revisão.docx — Bernardo, 2026-06-19) — HISTÓRICO, ordem
+	// REVERTIDA pelo FIX-296 (rodada 10, 2026-07-12: "valor antes dos dados").
+	// O credit gate (value picker server-emitido) já respeita a ordem nova via
+	// qualify-state; esta é a 2ª linha de defesa se o MODELO chamar
+	// present_value_picker fora de ordem. PRÉ-reveal, suprime o value_picker
+	// quando: (a) o desire ainda não foi respondido (o credit ainda nem é o
+	// gate estrutural ativo) OU (b) o valor já foi coletado (anti-repetição —
+	// confirma em 1 frase e segue, nunca re-mostra o picker). PÓS-reveal o
+	// picker é legítimo (ajuste de valor) — não cai aqui.
 	{
 		name: "value-picker-order",
 		applies: ({ artifactType, meta }) =>
 			artifactType === "value_picker" &&
 			meta.revealCompleted !== true &&
-			(meta.identityCollected !== true || meta.qualifyAnswers?.creditMax !== undefined),
+			(!meta.desireAsked || meta.qualifyAnswers?.creditMax !== undefined),
 		logLine: ({ meta, conversationId }) =>
 			`[value-picker-order] guard: suprimindo value_picker pré-reveal — ${
-				meta.identityCollected !== true ? "identidade ainda não coletada (dados antes do valor)" : "valor já coletado (anti-repetição)"
+				!meta.desireAsked ? "desire ainda não respondido (valor antes dos dados, mas ainda cedo demais)" : "valor já coletado (anti-repetição)"
 			} (conv=${conversationId})`,
 	},
 	// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no

@@ -5,15 +5,17 @@ import { decideShowGate, type Gate, nextGate } from "./qualify-state";
 // ============================================================================
 // Sequência canônica COMPLETA do funil (jornada-canonica.md passo 2 + FIX-53
 // + FIX-215/Refino Ata 2026-07-04 + FIX-233/handoff agente-vendas-consorcio,
-// 2026-07-09 + FIX-274/remoção do consent, 2026-07-11). Encadeia nextGate
-// respondendo cada gate como o usuário faria, e prova a ORDEM real ponta-a-ponta.
+// 2026-07-09 + FIX-274/remoção do consent, 2026-07-11 + FIX-296/reordena o
+// pré-reveal, rodada 10, 2026-07-12). Encadeia nextGate respondendo cada gate
+// como o usuário faria, e prova a ORDEM real ponta-a-ponta.
 //
 // Ordem ATUAL: gate `desire` (não bloqueante) entra logo após o nome; FIX-274
-// REMOVEU o gate `consent` (o "posso te fazer 3 perguntinhas" + "Entender mais
-// antes") — depois do desire vai direto pro `identify`. `experience` DESCE pra
-// depois do reveal (FIX-233 D2); `timeframe` REINTRODUZ pós-recomendação (D1).
-// FIX-53: identidade (CPF+celular) ANTES do valor. FIX-215 moveu lance/lance-
-// value/lance-embutido do PRÉ-search pro PÓS-reveal.
+// REMOVEU o gate `consent`. FIX-296 REVERTE conscientemente o FIX-53: `credit`
+// (valor do bem) volta pra ANTES do `identify` (CPF+celular) — a palavra nova
+// do mockup vence ("rapport antes de dados"); o invariante que não muda é
+// identidade SEMPRE antes do `search`. `experience` DESCE pra depois do reveal
+// (FIX-233 D2); `timeframe` REINTRODUZ pós-recomendação (D1). FIX-215 moveu
+// lance/lance-value/lance-embutido do PRÉ-search pro PÓS-reveal.
 // ============================================================================
 
 /** Percorre o funil do zero até `decision`, respondendo cada gate. */
@@ -69,14 +71,14 @@ function walkFunnel(opts: { hasLance: "yes" | "no" }): Gate[] {
 	return seq;
 }
 
-describe("funil — sequência canônica completa (FIX-53 + FIX-215 + FIX-233 + FIX-274 sem consent)", () => {
-	it("sem lance: desire→identify→credit→search→experience→timeframe→lance→lance-embutido→simulator-offer→decision", () => {
+describe("funil — sequência canônica completa (FIX-296 reordena pré-reveal + FIX-215 + FIX-233 + FIX-274 sem consent)", () => {
+	it("sem lance: desire→credit→identify→search→experience→timeframe→lance→lance-embutido→simulator-offer→decision", () => {
 		const seq = walkFunnel({ hasLance: "no" });
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"identify",
 			"credit",
+			"identify",
 			"search",
 			"experience",
 			"timeframe",
@@ -92,8 +94,8 @@ describe("funil — sequência canônica completa (FIX-53 + FIX-215 + FIX-233 + 
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"identify",
 			"credit",
+			"identify",
 			"search",
 			"experience",
 			"timeframe",
@@ -110,13 +112,13 @@ describe("funil — sequência canônica completa (FIX-53 + FIX-215 + FIX-233 + 
 		expect(walkFunnel({ hasLance: "yes" })).not.toContain("consent");
 	});
 
-	it("INVARIANTE FIX-53/FIX-215/FIX-233: identify < credit < search < experience < timeframe < lance", () => {
+	it("INVARIANTE FIX-296/FIX-215/FIX-233: credit < identify < search < experience < timeframe < lance", () => {
 		const seq = walkFunnel({ hasLance: "no" });
 		const idx = (g: Gate) => seq.indexOf(g);
-		// identidade antes do valor (FIX-53)
-		expect(idx("identify")).toBeLessThan(idx("credit"));
-		// valor antes da busca/reveal (Ata 2026-07-04: busca direto após o valor)
-		expect(idx("credit")).toBeLessThan(idx("search"));
+		// FIX-296 (reversão consciente do FIX-53): valor antes da identidade
+		expect(idx("credit")).toBeLessThan(idx("identify"));
+		// identidade SEMPRE antes da busca/reveal — invariante que não mudou
+		expect(idx("identify")).toBeLessThan(idx("search"));
 		// FIX-233 (D2): experience roda DEPOIS do reveal, não antes
 		expect(idx("search")).toBeLessThan(idx("experience"));
 		// FIX-233 (D1): timeframe reintroduzido, pós-experience e antes do lance
@@ -126,9 +128,9 @@ describe("funil — sequência canônica completa (FIX-53 + FIX-215 + FIX-233 + 
 });
 
 describe("FIX-233/FIX-274 — gate `desire` não bloqueia", () => {
-	it("usuário pula (nunca preenche desiredItem/motivation) → funil segue direto pro identify (sem consent)", () => {
+	it("usuário pula (nunca preenche desiredItem/motivation) → funil segue direto pro credit (sem consent, FIX-296)", () => {
 		const meta: ConversationMetadata = { desireAsked: true };
-		expect(nextGate(meta, { hasContactName: true })).toBe("identify");
+		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
 	});
 
 	it("sem desireAsked, é o próximo gate logo após o nome", () => {

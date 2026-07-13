@@ -91,6 +91,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -105,6 +106,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 150_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -122,6 +124,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -133,7 +136,7 @@ describe("FIX-33/FIX-218 — analyzeAndMerge NÃO capa mais o valor na faixa da 
 
 	it("sem categoria definida NÃO clampa (defensivo — sem faixa de referência)", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, creditMax: 5_000_000 });
-		const meta: ConversationMetadata = { desireAsked: true, identityCollected: true };
+		const meta: ConversationMetadata = { desireAsked: true, desireAnswered: true, identityCollected: true };
 		await analyzeAndMerge("5 milhoes", "concierge", meta);
 
 		expect(meta.qualifyAnswers?.creditMax).toBe(5_000_000);
@@ -213,6 +216,7 @@ describe("FIX-115 — valor por texto avança o funil mesmo com analyzer mudo (b
 	// ÚNICO gate pendente é `credit` (o valor). Reproduz o print do bug.
 	const atValueStep = (): ConversationMetadata => ({
 		desireAsked: true,
+		desireAnswered: true,
 		currentCategory: "auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
@@ -306,6 +310,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			identityCollected: true,
 			currentCategory: "auto",
 		};
@@ -376,6 +381,7 @@ describe("FIX-74 — guarda determinística: orçamento mensal nunca vira prazo"
 		});
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 			experiencePrev: "returning",
 			qualifyConsented: true,
@@ -514,11 +520,11 @@ describe("FIX-284 — captura oportunista do valor mencionado no desire (creditM
 		expect(meta.qualifyAnswers?.creditMax).toBeUndefined();
 	});
 
-	it("quando o gate credit está REALMENTE ativo, popula creditMax E creditMentionedAtDesire", async () => {
+	it("quando o gate credit está REALMENTE ativo (desireAnswered já true de um turno anterior), popula creditMax E creditMentionedAtDesire", async () => {
 		vi.mocked(analyzeTurn).mockResolvedValue({ ...NEUTRAL, detectedCategory: "auto", creditMax: 70_000 });
 		const meta: ConversationMetadata = {
 			desireAsked: true,
-			identityCollected: true,
+			desireAnswered: true,
 			currentCategory: "auto",
 		};
 		await analyzeAndMerge("uns 70 mil", "rafael-auto", meta);
@@ -675,6 +681,7 @@ describe("FIX-279 — creditMax só captura quando o gate `credit` está ativo",
 	it("resposta DIRETA ao gate `credit` já ativo → creditMax é setado normalmente (caminho legítimo preservado)", async () => {
 		const meta: ConversationMetadata = {
 			desireAsked: true,
+			desireAnswered: true,
 			currentCategory: "imovel",
 			identityCollected: true,
 		};

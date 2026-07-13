@@ -13,6 +13,39 @@
 > conflita com uma decisão técnica/ADR e a correção é **recalibrar com o stakeholder**, não
 > mudar o código no escuro.
 
+## Refino Rodada 10 2026-07-12 — reordena o funil pré-reveal (SUPERSEDE)
+
+> Decisão do Kairo (loop-de-goal consórcio, rodada 10 — mockup
+> `docs/design/specs/assets/2026-07-12-aja-dois-cenarios.html`). Onde conflitar com o "Refino
+> 2026-07-11" abaixo ou com os Passos, **esta seção vence** (palavra nova vence).
+> Implementação: **FIX-296** (reordena o funil) + **FIX-297** (recoreografa o reveal).
+
+1. **REVERSÃO CONSCIENTE do FIX-53: `credit` (valor do bem) volta pra ANTES do `identify`
+   (CPF+celular).** O mockup novo pede rapport antes de dados — motivo→espelho+objetivo→valor→só
+   então CPF/WhatsApp ("pra eu trazer as ofertas reais das administradoras"). O invariante que
+   NUNCA mudou: identidade continua SEMPRE obrigatória antes do `search` (a Bevi exige
+   CPF+celular+LGPD antes de simular, D1) — só a posição relativa ao `credit` mudou.
+2. **Novo beat "espelho + objetivo" em turno próprio, entre o motivo e o valor.** Depois que o
+   motivo ("por que agora") chega, o funil segura MAIS UM turno — sem NENHUM card — pro LLM
+   espelhar o motivo com empatia E declarar o objetivo na mesma frase (ex.: "entendo bem, quando o
+   carro dá trabalho, atrapalha tudo. Então o objetivo já fica claro: te colocar num Corolla
+   novo…"). NÃO-bloqueante (`motivationMirrored`, mesmo padrão de `motivationAsked`) — substitui o
+   antigo FIX-275 (que forçava o card de identidade no MESMO turno do motivo).
+3. **Copy do `credit` referencia o bem específico.** Com o bem já nomeado no `desire`
+   (`qualifyAnswers.desiredItem`), a pergunta do valor vira "E quanto custa esse {bem} hoje?" em
+   vez da genérica "qual valor do bem". Fallback genérico quando o bem não é específico.
+4. **Nova ordem:** `name → desire[carro] → desire[motivo] → [espelho+objetivo] → credit →
+   identify → search → experience → reco-consent → recommendation → timeframe → lance →
+   [lance-value] → lance-embutido → contemplation_dial → scarcity → proposal → decision →
+   whatsapp-handoff`. Fonte: `nextGate` em `src/lib/agent/qualify-state.ts`.
+5. **Reveal em dois tempos com consentimento (FIX-297).** Pós-`search`, a `comparison_table`
+   (lista, SEMPRE server-side, preserva FIX-290) aparece sozinha; o hero (`recommendation_card`)
+   só é emitido DEPOIS que o gate `experience` resolve e o usuário consente explicitamente
+   (novo gate `reco-consent`, "Posso te mostrar a opção que eu recomendo?"). Emissão do hero
+   continua 100% server-forced (nunca depende do LLM chamar tool) — sobrevive a modelo fraco.
+   Caminho sem-lance (`hasLance="so_parcela"`, resolvido a qualquer momento por texto livre)
+   PULA reco-consent/hero — não há o que recomendar pra quem já recusou a conversa de lance.
+
 ## Refino Ata 2026-07-04 — reunião de alinhamento com o cliente (SUPERSEDE)
 
 > Decisões da **Ata de 2026-07-04** (Kairo, Romulo × Bruna, Bernardo, Eduardo). Onde conflitar

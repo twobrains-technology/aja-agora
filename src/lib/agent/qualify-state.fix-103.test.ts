@@ -77,8 +77,8 @@ describe("FIX-103 revertido pelo FIX-233 â€” gate de prazo (timeframe) VOLTA, pÃ
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"identify",
 			"credit",
+			"identify",
 			"search",
 			"experience",
 			"timeframe",
@@ -95,8 +95,8 @@ describe("FIX-103 revertido pelo FIX-233 â€” gate de prazo (timeframe) VOLTA, pÃ
 		expect(seq).toEqual([
 			"name",
 			"desire",
-			"identify",
 			"credit",
+			"identify",
 			"search",
 			"experience",
 			"timeframe",

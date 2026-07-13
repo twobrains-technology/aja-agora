@@ -163,15 +163,16 @@ describe("FIX-206 varredura — nenhuma reação server-authored termina o turno
 	// (o que o directive daquele clique deixa no meta), + o gate esperado.
 	const cases: Array<{ nome: string; meta: ConversationMetadata; gateEsperado: string }> = [
 		{
-			// FIX-274: sem consent, o desire cai direto no identify.
-			nome: "após o desire → identify",
+			// FIX-296: sem consent, o desire cai direto no credit (reversão do FIX-53).
+			nome: "após o desire → credit",
 			meta: { ...base },
-			gateEsperado: "identify",
+			gateEsperado: "credit",
 		},
 		{
-			nome: "identidade coletada → credit",
-			meta: { ...base, identityCollected: true },
-			gateEsperado: "credit",
+			// FIX-296: valor coletado, sem identidade → identify (agora vem depois do valor).
+			nome: "valor coletado, sem identidade → identify",
+			meta: { ...base, qualifyAnswers: { creditMax: 300_000 } },
+			gateEsperado: "identify",
 		},
 		{
 			// FIX-215 (Ata 2026-07-04): lance saiu da entrada — valor informado vai
