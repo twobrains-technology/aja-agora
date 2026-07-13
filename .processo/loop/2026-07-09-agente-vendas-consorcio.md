@@ -1155,3 +1155,64 @@ Commits `78b7c970` (FIX-320-323) e `c2fba801` (FIX-324-325) em `integ/consorcio-
 Suíte: 373 unit / 3446 testes + 89 integration / 352 testes, 100% verde. Escalando pra nova rodada
 de julgamento (Sonnet) com evidência fresca — incluindo o primeiro fecho ponta-a-ponta completo
 desta campanha.
+
+## Rodada A.6 — veredito Sonnet pós-FIX-324/325: 2/10, "TROCA DE ÂNGULO" recomendada
+
+Juiz Sonnet reproduziu os testes ele mesmo (RED→GREEN real via reversão de código), confirmou os 2
+fixes sólidos tecnicamente, mas achou: (1) FIX-324 sem NENHUMA amostra ao vivo que exercitasse o
+timeout/retry de fato (as 2 chamadas pós-fix nunca chegaram perto do teto antigo); (2) causa-raiz
+EXATA do sequenciamento do `two_paths` isolada com log real: `nextGate()` trava em `timeframe` antes
+do atalho so_parcela; quando `timeframe` resolve, `decideShowGate()` exclui intent `providing_info`
+do gate `decision`, então o disparo natural nunca sai — só o clique independente fecha; (3) P4 (2+
+perguntas por turno) — **critério de TETO EXPLÍCITO da rubrica r10** ("ZERO turnos com 2+ perguntas,
+em QUALQUER modelo... TODOS precisam bater o teto pro Fable selar") — confirmado violado 3x nos
+dossiês frescos, ainda sem correção após 2 rodadas. Nota mínima = UX = 2 (P4). 2ª rodada CONSECUTIVA
+sem subir a nota mínima → juiz invoca o próprio critério de saída do loop do diário ("2 rodadas sem
+progresso → troca de ângulo obrigatória") e recomenda atacar a causa estrutural em vez de sintomas.
+
+### FIX-326 — pergunta do modelo colava com a pergunta do gate no mesmo turno (P4, causa estrutural atacada)
+Decisão: em vez de mais um fix incremental, atacar a causa-raiz do P4 que vinha sendo DELIBERADAMENTE
+adiada há 2 rodadas por risco de reordenação ampla. Causa-raiz confirmada: `EphemeralTextFilter`
+(sanitizer.ts, FIX-298) segura a ÚLTIMA pergunta do modelo até o flush final do turno (`runner.ts`)
+— que acontece ANTES do cálculo real de `nextGateToFire`, bem mais adiante na mesma função. Quando um
+gate com pergunta própria dispara no mesmo turno, as duas colam no mesmo balão.
+
+Fix CIRÚRGICO (não a reordenação ampla previamente cogitada, avaliada como risco alto demais):
+antes do flush, uma PREVISÃO local — usando as MESMAS funções puras (`nextGate`/`decideShowGate`/
+`allowGateWithArtifacts`, nunca duplicando lógica) com dado 100% disponível sem esperar os
+`persistMeta` que só rodam depois — decide se um gate com pergunta própria vai disparar. Se sim,
+`ephemeralFilter.discardHeldQuestion()` (novo método) descarta a pergunta segurada do modelo em vez
+de liberá-la. TDD: `sanitizer.test.ts` (+4 testes no filtro) e
+`runner.fix-326-p4-gate-question-collision.integration.test.ts` (2 testes: cenário real de colisão
+resolvido, regressão sem gate concorrente intacta) — RED→GREEN confirmado. **Suíte completa (373
+unit + 90 integration) rodada de novo — ZERO regressões** (nenhum teste dos MUITOS que cobrem
+gate-firing quebrou, forte evidência de segurança do fix cirúrgico vs. o reorder amplo descartado).
+
+### FIX-327 — copy do gate lance-embutido tinha 2 perguntas no PRÓPRIO texto canônico (achado incidental pós-FIX-326)
+Recoleta ao vivo pós-FIX-326 (Madalena, 21/21 limpo) achou 1 último caso de 2+ "?": não é colisão
+modelo×gate (FIX-326 já cobre isso) — é o PRÓPRIO texto do gate `lance-embutido` (WEB) que abre com
+uma pergunta retórica ("Você sabe o que é lance embutido?") antes da pergunta real ("Quer considerar
+esse tipo de lance nas suas simulações?"). Problema de copy, não de runtime. Fix: reescreve a
+abertura como afirmação ("Deixa eu te explicar o lance embutido rapidinho — fica tranquilo, a gente
+te ajuda."), preservando o tom acolhedor do docx (protegido por teste em `jornada-docx-copy.test.ts`,
+que continua passando). TDD: `gate-questions.fix-327-lance-embutido-uma-pergunta.test.ts` (RED→GREEN)
++ 1 teste de regressão pré-existente atualizado (`agent-trajectory.test.ts`, FIX-4-LANCE-EMBUTIDO —
+encodava a string antiga, atualizado pra nova, mesma intenção do teste preservada).
+
+### Verificado ao vivo pós-FIX-326/327: P4 caiu de 3+ violações sistemáticas pra 1 residual (causa DIFERENTE, já conhecida)
+Recoleta fresca Madalena (`madalena-junta-fix327`, 21/21, 0 contaminados, fecho completo até
+signature_handoff): **ZERO turnos com 2+ perguntas** — P4 zerado nesse fluxo. Recoleta fresca Mario
+(`mario-sem-lance-fix327`, 13/13, 0 contaminados, fecho completo até signature_handoff): 1 turno
+(11) ainda com 2 "?" — MAS não é colisão nova: é o `two_paths` (pergunta "qual dos dois combina mais
+com você?") bundlado no MESMO turno que o `whatsapp_optin` ("me compartilha seu WhatsApp?"), porque
+ambos vêm do fast-path de clique "Tenho interesse" que já dispara vários passos em sequência — é a
+MESMA causa-raiz do sequenciamento do `two_paths` já isolada pelo juiz na rodada A.6 (`nextGate()`
+travado em `timeframe`/`decideShowGate` excluindo `providing_info` do gate `decision`), não um
+achado novo. Registrado honestamente — não escondido.
+
+### Total desta rodada: 8 fixes reais (FIX-320 a FIX-327)
+Commits `78b7c970`, `c2fba801`, `acb8f0e2`, `f4cce631` em `integ/consorcio-r10`, todos pushados.
+Suíte: 374 unit/3453 testes + 90 integration/354 testes, 100% verde. Escalando pra nova rodada de
+julgamento com evidência fresca — 2 fechos ponta-a-ponta consecutivos confirmados em AMBOS os
+fluxos (Madalena e Mario) e P4 praticamente zerado (só o já-conhecido sequenciamento do two_paths
+resta, não uma colisão nova).
