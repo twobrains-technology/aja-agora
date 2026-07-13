@@ -56,6 +56,21 @@ services:
       S3_CLIENT_DOCS_BUCKET: ${S3_CLIENT_DOCS_BUCKET:-aja-client-docs}
       S3_CLIENT_DOCS_KMS_KEY_ID: ${S3_CLIENT_DOCS_KMS_KEY_ID:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      # FIX-209 adicionou AI_MODEL/roteamento LiteLLM no código (builder.ts) mas nunca
+      # foi repassado aqui — .env.local setava a var, mas o container SEMPRE via o
+      # default do código (claude-sonnet-5), nunca o que .env.local pedia. Achado
+      # investigando contaminação da verificação da rodada 10 (2026-07-13).
+      #
+      # ⚠️ NÃO adicione LITELLM_API_KEY/OPENAI_API_KEY/LITELLM_BASE_URL aqui com
+      # default vazio (${VAR:-}): src/lib/llm/gateway-anthropic.ts usa
+      # `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` — `??` só cai pro fallback em
+      # null/undefined, NUNCA em string vazia. Compose SEMPRE materializa a var
+      # (mesmo vazia) quando listada em `environment:`, então isso quebra a key
+      # real silenciosamente (achado real neste debug — virou item pra próxima
+      # onda: trocar `??` por checagem de truthy no código). Testar Qwen/LiteLLM
+      # aqui é rodar `pnpm vitest` direto no host/worktree com as vars inline no
+      # comando (como os blocos FIX-304/305 já validam), NÃO via este container.
+      AI_MODEL: ${AI_MODEL:-}
       # Memória cross-channel no Postgres (FIX-81 — Letta removido).
       MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
       MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
