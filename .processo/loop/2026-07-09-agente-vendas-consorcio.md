@@ -265,8 +265,8 @@ precisam bater o teto pro Fable selar (nenhum dos P1-P10 pode sobreviver, mesmo 
 
 | # | Critério de teto (P1-P10 do estudo) | Como o juiz checa |
 |---|---|---|
-| P1/P2 | Ordem pré-reveal bate o mockup: bem→motivo→espelho+objetivo→valor(contextual ao bem)→identidade(moldura "ofertas reais")→search. CPF nunca antes do valor. | dossiê madalena/mario turno-a-turno vs mockup |
-| P3 | Reveal em dois tempos: lista(comparison_table) → "já fez consórcio?" → explicação+chips (se 1ª vez) → **consentimento explícito** ("posso te mostrar a recomendada?") → hero. Nunca hero direto sem consentimento. | dossiê + transcript |
+| P1/P2 | **Invariante bi-fluxo** (não sequência única — o crítico ② provou que Mario não tem motivo/espelho/valor separado): (a) identidade NUNCA antes do valor ser conhecido; (b) identidade é sempre o ÚLTIMO gate antes do search; (c) quando o fluxo pergunta motivo, ele vem em turno próprio (nunca colado a outro pedido); (d) categoria vem antes do nome, com divider de especialista (D2: aprovado) | dossiê madalena/mario turno-a-turno — cada invariante checado nos DOIS fluxos, não uma sequência fixa |
+| P3 | **Condicional** (D1: coreografia adaptativa aprovada): quando o fluxo leva a uma recomendação hero (ex.: Madalena), a cadeia é lista(comparison_table)→"já fez consórcio?"→explicação+chips (se 1ª vez)→**consentimento explícito**→hero — nunca hero direto sem consentimento. Quando o fluxo NÃO leva a hero (ex.: Mario, sem-lance/sorteio), a cadeia pula pra lista→two_paths sem os gates de recomendação — isso é esperado, não reprovação | dossiê + transcript, avaliado por-fluxo |
 | P4 | ZERO turnos com 2+ perguntas no mesmo balão, em QUALQUER modelo testado (Claude E Qwen/modelo fraco) | grep de `?` por balão no transcript de ambos os dossiês |
 | P5 | WhatsApp opt-in só aparece no FECHO (pós-decisão aceita), nunca solto pós-reveal | dossiê: posição do card na timeline |
 | P6 | ZERO cards com conteúdo/labels não-ancorados (topic_picker só com catálogo canônico fixo); sondar ADVERSARIALMENTE pedindo o modelo fraco "confundir" o agente | probe adversarial dedicado no roteiro E2E + inspeção do payload do card |
@@ -275,41 +275,109 @@ precisam bater o teto pro Fable selar (nenhum dos P1-P10 pode sobreviver, mesmo 
 | P9 | Modelo candidato (se ainda em avaliação) só é considerado "admitido" se `scripts/bakeoff.sh` bate a régua (fluxoScore ≥ 0.85, sem falha de passo) | log do bakeoff re-rodado pós-fixes |
 | P10 | Sem frases coladas/emoji/capitalização errada em NENHUM gateway (Anthropic nativo E OpenAI-compat) | dossiê comparado nos dois caminhos |
 
-### Itens (r10) — a promover pro inbox após o crítico (②) confirmar
+### ② Veredito do crítico (Opus, contexto fresco) — RESOLVIDO
 
-- **ITEM S1 — Reordenar funil pré-reveal.** Root cause: `qualify-state.ts:77-88` (FIX-53 põe
-  `identify` antes de `credit`) + `qualify-state.ts:264-266` (força identidade no turno do motivo).
-  Correção: nova ordem em `nextGate()`; copy do `credit` referencia o bem (`gate-questions.ts`);
-  copy do `identify` com moldura "ofertas reais". Reverte FIX-53 conscientemente — registrar ADR.
-- **ITEM S2 — Reveal em dois tempos com consentimento.** Root cause: `recommendation-payload.ts:
-  252-259` (FIX-290 força hero+tabela juntos, sem beat de consentimento); `orchestrator/index.ts`
-  emite a cadeia sem pausa. Correção: recoreografar `search`→lista→`experience`→explicação/chips→
-  novo gate leve `reco-consent`→hero. Tudo server-side (`emitServerCard`), Lei 1 preservada.
-- **ITEM S3 — Invariante "1 pergunta por turno" em código.** Root cause: hoje é só
-  `system-prompt.ts:59,930` (regra-no-prompt); a única anti-colisão em código é
-  `shouldAskMotive`/`decideShowGate` (`qualify-state.ts:188-202,252-255`), específica do motivo.
-  Correção: generalizar no `sanitizer.ts`/`EphemeralTextFilter` — turno com gate/card do servidor
-  descarta pergunta livre do LLM; turno sem gate mantém só a ÚLTIMA interrogativa.
-- **ITEM S4 — Matar vetor TopicPicker texto-livre + fallback "clarify".** Root cause CONFIRMADA: o
-  print do card "a"/"b"/"Voltar" bate `topic-picker.tsx` — `present_topic_picker`
-  (`ai-sdk.ts:256-266`) é a única tool com `topics: z.array(z.string())` livre, liberada em toda
-  fase (`tool-policy.ts:45-51`). Correção: `topics` vira enum de catálogo canônico fixo em código;
-  restringir fase (fora de `decision`/closing); `artifact-guard` suprime se já há gate/card do
-  servidor no turno; nova transição determinística `clarify` (re-apresenta o gate corrente
-  simplificado quando intent=confused).
-- **ITEM S5 — WhatsApp opt-in pro fecho.** Root cause: `orchestrator/index.ts:699-717` +
-  `whatsapp-optin-guard.ts:17-23` disparam em `revealCompleted`. Correção: condição passa pra
-  pós-`decision=sim`/closing, integrado ao roteiro FECHO do mockup.
-- **ITEM S6 — Reengajamento proativo no web.** Root cause CONFIRMADA:
-  `gate-reengage-poll.ts:53-59` filtra `channel==="whatsapp"`; comentário `:14-15` já admite gap
-  web (PENDENTE-KAIRO histórico). Correção: reusar a escada existente (`gate-reengage.ts`), remover
-  o filtro de canal, entregar via mecanismo de resume/poll do cliente web já existente
-  (`web-resume`). Decisão do Kairo: timeout no web (90s como WhatsApp, ou maior) — perguntar.
-- **ITEM S7 — Régua de admissão de modelo + verificação de casca por-gateway.** Root cause:
-  `.bakeoff/qwen-jornada.log` mostra reprovação mecânica (fluxoScore 0.774 < 0.85) já hoje; P10
-  (frases coladas/emoji/capitalização) precisa confirmação por turn-trace antes de virar fix (não
-  cravar sem log). Correção: processo (bakeoff como gate de admissão, não código) + fix pontual de
-  capitalização determinística do `contactName` + investigação do chunking no `gateway-openai.ts`.
+O crítico confirmou a maioria das root causes mas achou **8 buracos reais**: 2 estruturais (rubrica
+P1/P3 não cabia no fluxo Mario; falso paralelismo de blocos — S1/S2/S5 colidem em
+`qualify-state.ts`+`orchestrator/index.ts`+`runner.ts`, S3/S7 colidem em `sanitizer.ts`), 4 de
+precisão (root cause de S2 mal localizada, S3 quebraria o próprio mockup se fosse "1 ask" em vez de
+"1 frase interrogativa", S4 depende de intent `confused` inexistente, S5 depende de flag
+`decisionAccepted` inexistente) e 2 de regressão r9 não endereçadas (S2 reescreve exatamente o
+FIX-290 que fechou "comparison_table nunca some"; S1+S5 tocam a zona do FIX-294/295, cujos 2 testes
+de integração têm que continuar verdes). Decisões D1/D2/D4 resolvidas pelo Kairo via
+`AskUserQuestion` (D3/D5 do crítico adotados por padrão, sem bloquear — ver abaixo). Itens
+reescritos com as correções abaixo, promovidos com **precisão de arquivo real**, e a execução vira
+**2 ondas sequenciais** (não 7 blocos soltos) por causa do acoplamento lógico real.
+
+**Decisões:**
+- **D1 (coreografia):** ADAPTATIVA (aprovado) — pula motivo/espelho/reveal-2-tempos quando o
+  usuário já deu a info ou está no caminho sem-lance/sorteio (fiel a Madalena × Mario).
+- **D2 (abertura):** IMPLEMENTAR categoria→divider de especialista→nome (aprovado) — novo tipo de
+  artifact `specialist_divider` (ou reaproveitar o mecanismo de troca de persona já existente em
+  `directives.ts:29` + um card leve).
+- **D4/timeout web:** 90s, igual WhatsApp (aprovado) — reusa `GATE_REENGAGE_TIMEOUT_MS` sem ajuste.
+- **D5 (admissão de modelo — adotado sem bloquear, não é decisão de produto):** endurecer os
+  invariantes em código e usar o bakeoff como gate de admissão, **sem prometer que o Qwen especificamente
+  vai passar** — se não passar mesmo após os fixes, o piso barato já medido é o Haiku 4.5.
+
+### Itens (r10) — corrigidos pelo crítico, promovidos por ONDA
+
+**ONDA 1 (paralela, mesma base) — 4 blocos:**
+
+- **BLOCO r10-1-funil-reveal (fusão S1+S2+D1+D2)** — mesma máquina de estados, tem que ser um bloco
+  só (o crítico provou que dividir cria risco de ordem inconsistente no `nextGate()`).
+  - S1: `qualify-state.ts:77-88` (FIX-53 põe `identify` antes de `credit`) +
+    `qualify-state.ts:264-266` (força identidade no turno do motivo). Nova ordem: categoria→nome
+    (D2, novo divider)→desire(bem)→motivo(turno próprio, SÓ quando aplicável — D1)→credit
+    (copy referencia `desiredItem` real; `gateQuestion()` precisa receber o item, hoje só recebe
+    `category`)→identify (moldura "ofertas reais")→search. Reverte FIX-53 conscientemente —
+    registrar ADR.
+  - S2: **root cause CORRIGIDA pelo crítico** — não é `recommendation-payload.ts:252-259` (isso é
+    só o builder), é **`runner.ts:939-959`** (FIX-290 força `comparison_table` junto do
+    `recommendation_card` quando há 2+ grupos) + `runner.ts:1043` (`revealCompleted`). Correção
+    **CONDICIONAL** (D1): só nos fluxos que levam a hero — `search`→lista(comparison_table,
+    SEMPRE server-side, preserva FIX-290)→`experience`→explicação/chips (catálogo canônico do
+    mockup: "o que é lance?", "como funciona o sorteio?", "e quando eu for contemplado?")→novo
+    gate leve `reco-consent`→hero (**server-forced, nunca dependente do LLM chamar tool** — é o que
+    faz sobreviver a modelo fraco). Fluxos sem hero (Mario) pulam direto pra
+    lista→`two_paths`. Tudo server-side (`emitServerCard`), Lei 1 preservada.
+  - ⚠️ **Preservar regressão r9:** FIX-294 (denylist `present_whatsapp_optin` em `builder.ts`) e
+    FIX-295 (re-emite `identify` na supressão de `contract_form` pré-reveal, `runner.ts`) — os 2
+    testes de `test:integration` da onda 5 do r9 têm que continuar verdes. Rodar
+    `test:integration` (não só `test:unit`) no gate deste bloco.
+
+- **BLOCO r10-1-sanitizer-invariantes (fusão S3+S7-casca)** — mesma zona de arquivo
+  (`sanitizer.ts`), agrupar.
+  - S3: hoje "1 pergunta por turno" é só `system-prompt.ts:59,930` (regra-no-prompt); única
+    anti-colisão em código é `shouldAskMotive`/`decideShowGate`
+    (`qualify-state.ts:188-202,252-255`), específica do motivo. **Correção precisa (crítico):** o
+    invariante é **"1 FRASE interrogativa por balão"**, não "1 pedido por balão" — o próprio
+    mockup tem "Que carro você tem em mente, **e quanto custa** mais ou menos?" (dois pedidos, uma
+    frase, um `?`) e isso é válido. No `EphemeralTextFilter`/`sanitizer.ts`: turno com
+    gate/card do servidor descarta qualquer sentença interrogativa livre do LLM; turno sem gate
+    mantém só a ÚLTIMA sentença terminada em `?`.
+  - S7-casca: strip de emoji (zero-emoji já é política) + capitalização determinística do
+    `contactName` no save — ambos no `sanitizer.ts`/save path, mesma zona.
+
+- **BLOCO r10-1-topicpicker-clarify (S4)** — ⚠️ risco de conflito parcial com o bloco funil-reveal
+  em `qualify-state.ts`/`orchestrator/index.ts` (revisar com cuidado no merge; git 3-way costuma
+  resolver regiões distintas, como em quase toda onda do r9).
+  - Root cause CONFIRMADA: print do card "a"/"b"/"Voltar" bate `topic-picker.tsx` —
+    `present_topic_picker` (`ai-sdk.ts:256-266`) é a única tool com `topics: z.array(z.string())`
+    livre, liberada em toda fase (`tool-policy.ts:45-51`). `topics` vira enum de catálogo canônico
+    fixo (o mesmo catálogo do mockup, ver acima); restringir fase (fora de `decision`/closing);
+    `artifact-guard` suprime se já há gate/card do servidor no turno.
+  - **Correção de dependência (crítico):** a intent `confused` **NÃO EXISTE** hoje no
+    `turn-analyzer`/type `UserIntent` (só `expressing_doubt`/`off_topic`) — precisa ser adicionada
+    OU mapeada a partir de `expressing_doubt` + existência de gate pendente. A transição `clarify`
+    não precisa virar um novo valor no enum `Gate`; pode ser um comportamento do orquestrador
+    (re-emite o MESMO gate pendente com copy simplificada) sem mexer no type.
+
+- **BLOCO r10-1-web-reengage (S6)** — único item verdadeiramente paralelo, sem colisão.
+  - Root cause CONFIRMADA: `gate-reengage-poll.ts:53-59` filtra `channel==="whatsapp"`; comentário
+    `:14-15` já admite o gap (PENDENTE-KAIRO histórico). Correção: remover o filtro de canal;
+    ramificar a entrega (WhatsApp continua via `fireGate`/Meta API; web persiste a mensagem de
+    reengajamento na conversa e o cliente puxa via o mecanismo de poll/resume já existente,
+    `/api/chat/resume`). Timeout 90s (D4, aprovado).
+
+**ONDA 2 (sequencial, depende da onda 1 integrada) — 2 blocos:**
+
+- **BLOCO r10-2-whatsapp-fecho (S5)** — precisa da estrutura final do branch de reveal/decision da
+  onda 1 antes de decidir o gatilho exato.
+  - Root cause: `orchestrator/index.ts:699-717` + `whatsapp-optin-guard.ts:17-23` disparam em
+    `revealCompleted`. **Correção de gatilho (crítico):** não existe flag `decisionAccepted` — usar
+    `contractFormDispatched`/apresentação do `real_offer` (a proposta co-branded), que é
+    exatamente onde o mockup põe o fecho (proposta → SÓ ENTÃO WhatsApp, com a 2ª persona
+    "especialista em cadastros" e os 3 balões `wa:true` do roteiro FECHO). `phaseFromMeta` (closing
+    = `decisionDispatched`) não é o corte certo — decisão MOSTRADA ≠ decisão ACEITA.
+
+- **BLOCO r10-2-bakeoff-regua (S7-processo)** — depende dos fixes de código estarem integrados
+  pra re-rodar o bakeoff com sentido.
+  - `.bakeoff/qwen-jornada.log` confirma reprovação mecânica (fluxoScore 0.774 < 0.85) hoje.
+    Re-rodar `scripts/bakeoff.sh` pós onda 1+2 pra medir se os invariantes em código melhoram a
+    nota (sem prometer que o Qwen especificamente vai passar — D5). Investigar o chunking de
+    frases no `gateway-openai.ts` via turn-trace ANTES de propor fix (não cravar sem log — a spec
+    já reconhecia isso).
 
 ### Model routing (r10)
 Segue o padrão do template: definir/criticar/planner E2E = Opus · blocos = pin barato
@@ -328,4 +396,5 @@ incompleto = rodada inválida, não *pass* por omissão.
 ### r10 — LEDGER
 | Rodada | Blocos lançados | Integrado | Determinístico | Score Fable | Achados novos |
 |---|---|---|---|---|---|
-| 10.0 (crítico) | — | — | — | — | ⏳ agent crítico (Opus, contexto fresco) revisando ITEM S1-S7 antes de promover pro inbox |
+| 10.0 (crítico) | — | — | — | — | ✅ 8 buracos reais achados (2 estruturais + 4 precisão + 2 regressão r9); D1/D2/D4 resolvidos pelo Kairo (`AskUserQuestion`); itens reescritos, execução vira onda 1 (4 blocos) + onda 2 (2 blocos, sequencial) |
+| 10.1 (onda 1) | r10-1-funil-reveal · r10-1-sanitizer-invariantes · r10-1-topicpicker-clarify · r10-1-web-reengage | ⏳ a lançar via `todo-blocks` | — | — | — |
