@@ -1,7 +1,8 @@
 ---
 id: FIX-301
 titulo: "Transição determinística 'clarify' quando usuário está confuso (não deixa o LLM inventar menu)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-topicpicker-clarify
 severidade: media
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/turn-analyzer.ts, src/lib/chat/types.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/orchestrator/gate-questions.ts]

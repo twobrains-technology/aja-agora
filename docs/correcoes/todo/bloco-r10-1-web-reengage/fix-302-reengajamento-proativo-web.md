@@ -1,7 +1,8 @@
 ---
 id: FIX-302
 titulo: "Reengajamento proativo no web quando o usuário some (hoje só existe no WhatsApp)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-web-reengage
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/workers/gate-reengage-poll.ts, src/lib/agent/gate-reengage.ts, src/app/api/chat/resume/route.ts]

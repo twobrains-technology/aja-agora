@@ -1,7 +1,8 @@
 ---
 id: FIX-297
 titulo: "Reveal condicional em dois tempos com consentimento (nunca hero direto sem pedir)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-funil-reveal
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/runner.ts, src/lib/agent/orchestrator/index.ts, src/lib/agent/orchestrator/recommendation-payload.ts, src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/gate-questions.ts]

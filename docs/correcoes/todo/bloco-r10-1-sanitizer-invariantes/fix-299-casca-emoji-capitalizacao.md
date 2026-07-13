@@ -1,7 +1,8 @@
 ---
 id: FIX-299
 titulo: "Casca determinística: strip de emoji + capitalização do contactName (independe de modelo)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-sanitizer-invariantes
 severidade: media
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/sanitizer.ts, src/lib/agent/orchestrator/turn-analyzer.ts]

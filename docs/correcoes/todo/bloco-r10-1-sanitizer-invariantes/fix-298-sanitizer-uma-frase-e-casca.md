@@ -1,7 +1,8 @@
 ---
 id: FIX-298
 titulo: "Invariante '1 frase interrogativa por balão' em código (não só no prompt)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-sanitizer-invariantes
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/orchestrator/sanitizer.ts, src/lib/agent/orchestrator/runner.ts]

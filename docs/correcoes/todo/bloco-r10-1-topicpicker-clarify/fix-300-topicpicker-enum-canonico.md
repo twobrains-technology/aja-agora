@@ -1,7 +1,8 @@
 ---
 id: FIX-300
 titulo: "TopicPicker vira enum canônico fixo (mata o vetor de card alucinado)"
-status: inbox
+status: todo
+bloco: bloco-r10-1-topicpicker-clarify
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/tools/ai-sdk.ts, src/lib/agent/orchestrator/tool-policy.ts, src/lib/agent/orchestrator/artifact-guard.ts, src/components/chat/artifacts/topic-picker.tsx]

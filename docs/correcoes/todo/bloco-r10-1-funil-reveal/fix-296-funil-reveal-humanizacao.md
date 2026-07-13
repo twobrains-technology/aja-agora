@@ -1,7 +1,8 @@
 ---
 id: FIX-296
 titulo: "Reordenar funil pré-reveal + abertura por categoria com divider de especialista"
-status: inbox
+status: todo
+bloco: bloco-r10-1-funil-reveal
 severidade: alta
 projeto: aja-agora
 arquivos: [src/lib/agent/qualify-state.ts, src/lib/agent/orchestrator/gate-questions.ts, src/lib/agent/orchestrator/directives.ts, src/lib/chat/types.ts, src/components/chat/artifact-renderer.tsx]
