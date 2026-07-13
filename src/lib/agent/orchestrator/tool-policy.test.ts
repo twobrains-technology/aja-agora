@@ -89,9 +89,10 @@ const BASE = [
 
 const QUALIFY_EXPECTED = [
 	...BASE,
-	// FIX-300: present_topic_picker só em qualify/reveal — some em closing/
-	// terminal (servidor já dirige com prompts canônicos nesses estados).
-	"present_topic_picker",
+	// FIX-309: present_topic_picker SAIU do toolset em TODA fase (era só
+	// qualify/reveal desde o FIX-300) — emissão agora é SERVER-SIDE
+	// determinística (buildTopicPickerCard, orchestrator/index.ts). Ver
+	// describe FIX-309 abaixo.
 	// descoberta completa — o reveal (passo 3+4) acontece NESTA fase
 	"capture_lead",
 	"compare_with_financing",
@@ -114,8 +115,8 @@ const QUALIFY_EXPECTED = [
 
 const REVEAL_EXPECTED = [
 	...BASE,
-	// FIX-300: ainda dentro (fase reveal) — só some em closing/terminal.
-	"present_topic_picker",
+	// FIX-309: present_topic_picker SAIU também (era só closing/terminal desde
+	// o FIX-300; agora sai de toda fase). Ver describe FIX-309 abaixo.
 	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP).
 	// FIX-34: present_lead_form FORA — pós-reveal o avanço é decision → contract_form
 	// (jornada self-service), nunca captura de lead pra consultor humano.
@@ -147,12 +148,7 @@ const REVEAL_EXPECTED = [
 // directive que fecha closing só narra (sem tool-call). Ver describe FIX-253
 // abaixo.
 //
-// FIX-300: present_topic_picker também SAI em closing — o servidor já dirige
-// com contract_form/status; um menu de dúvidas do LLM ali é sempre ruído.
-const CLOSING_EXPECTED = [
-	...REVEAL_EXPECTED.filter((t) => t !== "present_topic_picker"),
-	"present_contract_form",
-].sort();
+const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
 
@@ -295,16 +291,18 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		}
 	});
 
-	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`):
-	// present_topic_picker SAI de closing/terminal — nesses estados o servidor
-	// já dirige com prompts canônicos (contract_form/status), um menu de
-	// dúvidas do LLM é sempre ruído. Continua em qualify/reveal (ainda faz
-	// sentido oferecer atalhos de dúvida ali).
-	it("FIX-300 — present_topic_picker: presente em qualify/reveal, AUSENTE em closing/terminal", () => {
-		expect(allowedTools(QUALIFY_META)).toContain("present_topic_picker");
-		expect(allowedTools(REVEAL_META)).toContain("present_topic_picker");
-		expect(allowedTools(CLOSING_META)).not.toContain("present_topic_picker");
-		expect(allowedTools(TERMINAL_META)).not.toContain("present_topic_picker");
+	// FIX-309 (rodada 10 onda 4, investigação de causa-raiz): present_topic_
+	// picker SAIU do toolset em TODA fase — o FIX-300 só tirava closing/
+	// terminal (o problema era o gate `decision` receber um menu alucinado),
+	// mas os dossiês limpos mostraram 0 emissões mesmo em qualify/reveal: o
+	// LLM nunca chamava a tool espontaneamente. Emissão agora é SERVER-SIDE
+	// determinística (buildTopicPickerCard, orchestrator/index.ts), mesma
+	// receita do FIX-246/253/280 — a tool NUNCA entra em allowedTools em
+	// nenhuma fase.
+	it("FIX-309 — present_topic_picker NUNCA entra no toolset do LLM, em NENHUMA fase", () => {
+		for (const meta of [QUALIFY_META, REVEAL_META, CLOSING_META, TERMINAL_META]) {
+			expect(allowedTools(meta)).not.toContain("present_topic_picker");
+		}
 	});
 });
 

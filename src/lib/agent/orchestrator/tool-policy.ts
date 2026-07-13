@@ -49,20 +49,6 @@ const BASE = [
 	"check_proposal_status",
 ];
 
-/**
- * FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): `present_
- * topic_picker` SAI de `closing`/`terminal` — nesses estados o servidor já
- * dirige a conversa com prompts canônicos (contract_form, status da proposta),
- * então um menu de dúvidas escrito pelo LLM ali é sempre ruído (foi assim que o
- * Qwen chamou a tool no gate `decision` com chips "a"/"b" fabricados). Fica
- * disponível só em `qualify`/`reveal`, onde ainda faz sentido oferecer atalhos
- * de dúvida. 2ª linha de defesa em `artifact-guard.ts` cobre o instante exato
- * do gate `decision` (que tecnicamente ainda é fase `reveal` até o dispatch).
- */
-function topicPickerTools(phase: ToolPhase): string[] {
-	return phase === "closing" || phase === "terminal" ? [] : ["present_topic_picker"];
-}
-
 /** Descoberta completa + cards do reveal — o passo 3+4 acontece na fase
  * qualify (o turno do reveal roda com revealCompleted ainda false). */
 const DISCOVERY_AND_REVEAL_CARDS = [
@@ -147,9 +133,17 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// modelo nem consegue chamá-la cedo; o funil coleta a identidade (agora
 			// depois do credit — FIX-296, reversão do FIX-53) e só então libera a
 			// busca — o pré-requisito real é `identityCollected`, não a ordem.
+			//
+			// FIX-309 (rodada 10 onda 4, investigação de causa-raiz): present_
+			// topic_picker SAIU do toolset em TODA fase (era só closing/terminal
+			// desde o FIX-300) — 0 emissões em 2 dossiês limpos mostraram que o
+			// problema não era o LLM chamar fora de fase, era o LLM nunca chamar
+			// (mesma classe LLM-discricionária do FIX-246/253/280). Emissão agora
+			// é SERVER-SIDE determinística (buildTopicPickerCard,
+			// orchestrator/index.ts) — a tool NUNCA entra em allowedTools em
+			// nenhuma fase.
 			return [
 				...BASE,
-				...topicPickerTools(phase),
 				...(meta.identityCollected === true ? DISCOVERY_AND_REVEAL_CARDS : []),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
@@ -177,7 +171,6 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// como embedded_bid/two_paths/scarcity — o LLM nunca mais chama.
 			return [
 				...BASE,
-				...topicPickerTools(phase),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
@@ -203,18 +196,18 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 			// de USUÁRIO segue coberta pelo guard isDecisionDup (2ª linha).
 			return [
 				...BASE,
-				...topicPickerTools(phase),
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
 				// FIX-246: embedded_bid/two_paths/scarcity saíram do toolset do LLM
 				// em qualquer fase (emissão server-side determinística — ver "reveal").
 				"present_contract_form",
-				// FIX-280: present_whatsapp_optin saiu daqui também — ver "reveal".
+				// FIX-280/309: present_whatsapp_optin/present_topic_picker saíram
+				// daqui também — ver "reveal".
 			];
 		case "terminal":
 			// FIX-11: estado TERMINAL — re-descoberta/simulação/decisão NUNCA.
 			// Status respondido pela tool real (FIX-14, via BASE), resto é conversa.
-			return [...BASE, ...topicPickerTools(phase)];
+			return [...BASE];
 	}
 }
