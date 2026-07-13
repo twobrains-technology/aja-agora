@@ -200,4 +200,66 @@ describe("FIX-326 — pergunta do modelo NÃO cola com a pergunta do gate no mes
 			.join("");
 		expect(fullText).toContain("Quer seguir com a Canopus?");
 	});
+
+	// FIX-328 (rodada 10, veredito Sonnet A.7 — achado PROVADO pelo juiz, não
+	// hipótese): a previsão do FIX-326 só replicava revealCompleted/
+	// searchDispatched/decisionDispatched — mas `shouldMarkDoubtsAddressed`
+	// (qualify-state.ts) marca `meta.doubtsAddressed=true` NA MESMA janela
+	// (runner.ts, ANTES do cálculo real de nextGateToFire, DEPOIS do bloco de
+	// previsão) quando o usuário responde por texto livre a um `experience`
+	// respondido como "doubts". Sem replicar isso, a previsão calculava
+	// "doubts-wait" (isento, sem pergunta própria) enquanto o cálculo real,
+	// com doubtsAddressed já persistido, avançava pra "reco-consent" (TEM
+	// pergunta própria) — reproduzindo a MESMA colisão que o FIX-326 deveria
+	// ter fechado, só que por um caminho que os testes originais não cobriam.
+	it("FIX-328 — doubts→reco-consent no MESMO turno: pergunta do modelo some, só a do gate reco-consent sobrevive", async () => {
+		const [c] = await db
+			.insert(conversations)
+			.values({
+				contactName: "Mario",
+				channel: "web",
+				metadata: {
+					...AWAITING_TIMEFRAME_META,
+					experiencePrev: "doubts",
+					doubtsAddressed: false,
+					recoConsentDispatched: true,
+					recoConsentAnswered: undefined,
+				},
+			})
+			.returning();
+		convId = c.id;
+
+		const events: Array<{ type: string; text?: string; gate?: string }> = [];
+		const gen = runTurn({
+			channel: "web",
+			conversationId: convId,
+			userText: "Entendi, faz sentido",
+			isUserTurn: true,
+			contactName: "Mario",
+			skipLeadCollection: true,
+			skipAnalyzer: true,
+			userIntent: "neutral",
+			userKey: null,
+		});
+		for await (const ev of gen) {
+			if (ev.type === "text-delta") events.push({ type: ev.type, text: ev.text });
+			else if (ev.type === "gate") events.push({ type: ev.type, gate: ev.gate });
+			else events.push({ type: ev.type });
+		}
+
+		const fullText = events
+			.filter((e) => e.type === "text-delta")
+			.map((e) => e.text)
+			.join("");
+
+		expect(
+			events.some((e) => e.type === "gate" && e.gate === "reco-consent"),
+			`esperava o gate reco-consent disparar neste turno — eventos: ${JSON.stringify(events)}`,
+		).toBe(true);
+		expect(
+			fullText,
+			"a pergunta PRÓPRIA do modelo não pode sobreviver quando doubtsAddressed libera reco-consent no mesmo turno",
+		).not.toContain("Quer seguir com a Canopus?");
+		expect(fullText).toContain("Perfeito!");
+	});
 });

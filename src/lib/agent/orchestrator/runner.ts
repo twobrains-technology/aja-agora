@@ -920,11 +920,17 @@ export async function* runAgentTurn(args: {
 		const previewMayEvaluateGates =
 			!previewProducedArtifact || previewArtifactTypes.some((t) => REVEAL_ARTIFACTS.has(t));
 		if (previewMayEvaluateGates) {
-			// Replica só as mutações de meta que ESTA função já sabe que vai
-			// persistir mais abaixo (revealCompleted/searchDispatched quando o
-			// reveal completa NESTE turno; decisionDispatched quando o card de
-			// decisão aparece NESTE turno) — as únicas duas que `nextGate()`
-			// lê e que mudam DEPOIS deste ponto mas ANTES do cálculo real.
+			// Replica as mutações de meta que ESTA função já sabe que vai
+			// persistir mais abaixo, ANTES do cálculo real de nextGateToFire mas
+			// DEPOIS deste bloco — as que `nextGate()`/`decideShowGate()` leem:
+			// revealCompleted/searchDispatched (reveal completa NESTE turno),
+			// decisionDispatched (card de decisão aparece NESTE turno),
+			// doubtsAddressed (FIX-328 — shouldMarkDoubtsAddressed, achado ao
+			// vivo pelo veredito Sonnet A.7: sem isso, um turno que resolve
+			// "doubts" por texto livre previa "doubts-wait" — isento — quando o
+			// cálculo real já avança pra "reco-consent", que TEM pergunta
+			// própria, reproduzindo a MESMA colisão que este bloco existe pra
+			// evitar).
 			const previewRevealCompletesNow =
 				!meta.revealCompleted &&
 				(artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) ||
@@ -932,12 +938,36 @@ export async function* runAgentTurn(args: {
 					Boolean(pendingSimulationPayload));
 			const previewDecisionDispatchesNow =
 				!meta.decisionDispatched && artifacts.some((a) => a.type === "decision_prompt");
+			const previewDoubtsAddressedNow = shouldMarkDoubtsAddressed({
+				meta,
+				producedArtifact: previewProducedArtifact,
+				userReplied: fullResponse.length > 0,
+			});
+			// FIX-328 (rodada 10, veredito Sonnet A.7 — hipótese de código, não
+			// reproduzida ao vivo, mas mesma classe do doubtsAddressed acima):
+			// FIX-68 re-snapshota `discoveredCreditTarget` quando o reveal
+			// re-completa numa faixa NOVA — sem replicar isso aqui,
+			// `revealValueTargetChanged()` (tool-policy.ts, lido por
+			// `nextGate()` ANTES do check de `experience`) poderia usar o valor
+			// ANTIGO e prever "search" (isento) quando o cálculo real, já
+			// resincronizado, avança pra "experience" (tem pergunta própria).
+			const previewDiscoveredCreditTargetResync =
+				meta.revealCompleted === true &&
+				artifacts.some((a) => REVEAL_ARTIFACTS.has(a.type)) &&
+				typeof meta.qualifyAnswers?.creditMax === "number" &&
+				meta.qualifyAnswers.creditMax !== meta.discoveredCreditTarget
+					? meta.qualifyAnswers.creditMax
+					: undefined;
 			const previewMeta: ConversationMetadata = {
 				...meta,
 				...(previewRevealCompletesNow
 					? { revealCompleted: true, searchDispatched: true }
 					: {}),
 				...(previewDecisionDispatchesNow ? { decisionDispatched: true } : {}),
+				...(previewDoubtsAddressedNow ? { doubtsAddressed: true } : {}),
+				...(previewDiscoveredCreditTargetResync !== undefined
+					? { discoveredCreditTarget: previewDiscoveredCreditTargetResync }
+					: {}),
 			};
 			const { conversations: previewConversationsTable } = await import("@/db/schema");
 			const { eq: previewEq } = await import("drizzle-orm");
