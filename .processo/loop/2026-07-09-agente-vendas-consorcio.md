@@ -1,9 +1,11 @@
 ---
 loop: agente-vendas-consorcio
 iniciado: 2026-07-09
-status: em-andamento
+concluido: 2026-07-13
+status: concluido-por-decisao-do-kairo
 objetivo_macro: "Jornada do agente de vendas de consórcio (handoff validado) implementada e MATADORA pra prod — verificada por agent fable até 10/10."
-verificador: agent fable (claude-fable-5), independente, contexto fresco
+verificador: agent fable (claude-fable-5), independente, contexto fresco — NUNCA despachado nesta campanha (ver nota de encerramento)
+nota_final_sonnet: "7/10 (rodada A.9), MATADOR PRA PROD: NÃO — encerrado por decisão explícita do Kairo antes de atingir 10/10 ou despachar o Fable/Etapa B"
 ---
 
 # Loop de goal — agente de vendas de consórcio
@@ -1335,3 +1337,86 @@ Commits `78b7c970`, `c2fba801`, `acb8f0e2`, `f4cce631`, `dabc0861`, `c94ad7db`, 
 agora tem 3 causas-raiz distintas fechadas e ZERO violações confirmadas em 4 recoletas ao vivo
 consecutivas (2 Madalena + 2 Mario), incluindo o cenário que antes reproduzia o bug. Escalando pra
 nova rodada de julgamento.
+
+## Rodada A.9 — veredito Sonnet pós-FIX-329/330: 7/10 — TERCEIRA rodada de progresso
+
+Juiz Sonnet reverteu código de verdade (RED→GREEN reproduzido por ele mesmo, não alegado) e fez uma
+busca EXAUSTIVA por outros escapes de P4 (todo call-site de flush + toda mutação de meta na janela
+crítica) — não achou nenhum novo. Confirmou a investigação Canopus/ITAÚ (não-determinismo do
+modelo, rede de segurança funciona). **Provou matematicamente** (soma de "?" por bolha ≤ total do
+turno) que a métrica agregada do driver nunca esconde falso-negativo de P4 — "zero violações" nas
+recoletas é prova suficiente e definitiva, não uma aproximação. Nota: Negócio 8, **Funcional 7**
+(mínimo — achou que `decideShowGate` ainda exclui `providing_info` do gate `decision`, gap
+conhecido desde A.6, nunca antes verificado ao vivo), Cálculo 8, **UX 8** (P4 estruturalmente
+resolvido — "se fosse a única dimensão, UX estaria em 8"), UI/Compliance 8, E2E 8. Nota final 7/10
+— sinal direto do juiz: "a campanha está genuinamente mais perto... o caminho mais curto pra
+próxima subida é bem específico — testar (ou consertar) o fechamento por texto livre sem clique no
+gate decision, e a nota deve virar 8 quase mecanicamente."
+
+### FIX-331 — funil travava de vez depois do simulador quando o usuário confirmava por TEXTO LIVRE (fecha o item apontado pelo juiz A.9)
+Testei ao vivo o cenário exato que o juiz apontou como não-verificado: respondi ao
+`contemplation_dial` por texto livre ("Sim, quero ver como fica!") e depois confirmei o fechamento
+também por texto livre ("Perfeito, faz muito sentido pra mim. Quero seguir e fechar!"), sem clicar
+nenhum botão. **Reproduzido ao vivo, confirmado no Postgres real**: a conversa TRAVA DE VEZ — nenhum
+`contract_form`/`decision_prompt` jamais persistido, `docker logs` mostra o modelo tentando
+`present_contract_form`/`present_decision_prompt` (tools fora da fase "reveal", já que
+`decisionDispatched` nunca vira true por essa via) — `tool-policy-violation` → `tool_error` → o
+guard de tool-error-recovery **suprime TODA a computação de gate do turno**, então o funil nunca
+avança e o próximo turno reproduz o mesmo problema pra sempre.
+
+Causa-raiz: `decideShowGate` (`qualify-state.ts`) só mostra o gate `decision` quando o intent é
+`ready_to_proceed`/`neutral` — mas isso só é CHECADO no cálculo TARDIO (pós-modelo, em
+`runner.ts`). Antes desse cálculo rodar, o modelo já tenta avançar sozinho e trava o próprio
+mecanismo que o desbloquearia. Fix: extraída a lógica de disparo do card de decisão numa função
+própria (`dispatchDecisionCascade`) e adicionado um INTERCEPTO ANTES de chamar o modelo — mesmo
+padrão já usado pro simulator-offer (FIX-260)/reco-consent (FIX-297)/menção de administradora
+(FIX-325) — usando as MESMAS funções puras (`nextGate`/`decideShowGate`) que o cálculo tardio já
+usa, sem duplicar lógica de decisão nova. Quando a decisão já pode ser tomada deterministicamente,
+o modelo NUNCA chega a rodar nesse turno — zero risco de tool-error.
+
+TDD: novo teste de integração com agente mocado que tenta a tool fora de policy SE o intercepto não
+disparar antes (prova que o modelo nunca deveria ser chamado) — RED confirmado, GREEN após o fix.
+3 testes estruturais pré-existentes (FIX-237/268/272, que checavam o bloco inline por regex)
+atualizados para apontar pro corpo da função extraída, mesma intenção preservada. Suíte completa:
+`test:unit` 374/3456, `test:integration` 92/366, 100% verde, typecheck diferencial limpo.
+
+**Verificado ao vivo, pós-fix, no MESMO cenário que reproduzia o bug**: respondi ao dial por texto
+livre + confirmei o fechamento por texto livre de novo — turno final agora mostra
+`[scarcity, decision_prompt]` corretamente, confirmado no Postgres real (8 artifacts persistidos em
+sequência correta, terminando em `scarcity`→`decision_prompt`). Bug fechado.
+
+### Encerramento da campanha — autorizado diretamente pelo Kairo (2026-07-13)
+
+Kairo autorizou explicitamente encerrar aqui e levar pra produção, com as palavras: *"tá ótimo,
+vamos concluir assim então... digo, a [branch] do integ/consorcio-r10 traz pra dev e prod, depois
+exclui o workspace"* — isso SUBSTITUI a diretiva original de duas etapas (Etapa A: loop até Fable
+dar 10/10 no dossiê; Etapa B: 10 cenários fictícios também em 10/10). **Registro honesto: o Fable
+NUNCA foi despachado nesta sessão** — todas as 6 rodadas de julgamento (A.4 a A.9) foram do juiz
+Sonnet, com a nota subindo 2/10 → 2/10 → 3/10 → 2/10 → 6/10 → 7/10 → 7/10 ao longo de 12 fixes reais
+(FIX-320 a FIX-331), todos com TDD (RED→GREEN) e a maioria verificada ao vivo via túnel SSM contra o
+gateway LiteLLM compartilhado. A decisão de encerrar em 7/10 (não 10/10) e pular a Etapa B por
+completo foi uma escolha EXPLÍCITA do Kairo, não um desvio da campanha — "palavra nova vence".
+
+Progresso real e verificado desta campanha (rodadas A.4-A.9, todos os fixes com TDD):
+- P0s reais corrigidos: `gate:experience` nunca disparava, recusa de lance descartada, busca
+  falhando sem orçamento, `two_paths` nunca fechava, timeout/retry do fecho na Bevi, reco-consent
+  por menção de administradora, funil travando pós-simulador em texto livre.
+- P4 (2+ perguntas por balão, teto explícito da rubrica): 4 causas-raiz distintas fechadas
+  (colisão modelo×gate pós-decisão, 2 buracos na previsão — doubtsAddressed/discoveredCreditTarget/
+  pendingFollowUp —, escape prematuro em fronteiras intermediárias) — confirmado ZERO violações
+  reais (prova matemática do juiz A.9) em múltiplas recoletas ao vivo.
+- Ambos os fluxos (Madalena/junta-lance, Mario/sem-lance) fecharam ponta-a-ponta ao vivo repetidas
+  vezes (signature_handoff+document_upload), incluindo 2 rodadas consecutivas limpas cada.
+- Achados investigados e concluídos (não bugs de código): incoerência Canopus/ITAÚ é
+  não-determinismo do modelo Haiku 4.5 (rede de segurança já recupera graciosamente).
+
+Pendências conhecidas que NÃO foram atacadas (registradas para referência futura, não bloqueiam o
+deploy autorizado):
+- Narração mecânica empilhada nos reveals/fechamentos (múltiplas mini-frases processuais).
+- Espelho de motivação duplicado (achado pontual, Madalena).
+- Driver de coleta (`chat-client.mjs`/`run-scenario.mjs`) mede P4 por turno-HTTP agregado, não por
+  mensagem persistida — o juiz A.9 provou matematicamente que isso nunca esconde falso-negativo,
+  mas ainda vale corrigir por higiene de instrumentação futura.
+
+**Próximos passos**: merge `integ/consorcio-r10` → `develop` → `main` (prod), depois exclusão do
+workspace Superset, per instrução direta do Kairo.
