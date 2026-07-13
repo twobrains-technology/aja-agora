@@ -12,6 +12,7 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
 import type { RevealGroupIndex, RevealGroupLike } from "./recommendation-payload";
 import { coerceScarcityPayload } from "./scarcity-payload";
+import { CANONICAL_TOPIC_IDS, resolveTopicPickerPayload } from "./topic-catalog";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 
 export type ServerCard = { payload: Record<string, unknown> };
@@ -67,4 +68,14 @@ export function buildWhatsappOptinCard(meta: ConversationMetadata): ServerCard {
 			...(meta.contactPhone ? { knownPhone: meta.contactPhone } : {}),
 		},
 	};
+}
+
+/** FIX-309 (rodada 10 onda 4 — investigação de causa-raiz): `present_topic_
+ * picker` era 100% LLM-discricionário — 0 emissões em 2 dossiês limpos
+ * (Madalena/Mario), mesma classe de bug do FIX-246/253/280. Os 4 tópicos SÃO
+ * o catálogo canônico inteiro (topic-catalog.ts) — payload estático, sem
+ * dado de conversa nenhum, emitido no ponto pós-`experience` quando o
+ * usuário escolhe "tenho dúvidas" (orchestrator/index.ts). */
+export function buildTopicPickerCard(): ServerCard {
+	return { payload: resolveTopicPickerPayload({ topics: [...CANONICAL_TOPIC_IDS] }) };
 }

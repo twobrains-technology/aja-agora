@@ -115,6 +115,13 @@ export type ConversationMetadata = {
 	consentOffered?: boolean;
 	/** Set after specialist answers the user's question on the doubts path. */
 	doubtsAddressed?: boolean;
+	/** FIX-309 (rodada 10 onda 4) — idempotência do card `topic_picker` (menu de
+	 * dúvidas: lance/sorteio/contemplação/cartas variam). Marcado na EMISSÃO
+	 * (mesmo padrão de `recoConsentDispatched`/`simulatorOfferDispatched`),
+	 * disparada SERVER-SIDE (`emitServerCard`) no ponto pós-`experience` quando
+	 * `experiencePrev === "doubts"` — nunca mais dependente do LLM chamar
+	 * `present_topic_picker` (0 emissões medidas em 2 dossiês limpos, r10). */
+	topicPickerDispatched?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
 	/** FIX-207 (watchdog de inatividade) — epoch ms de quando um turno de usuário
