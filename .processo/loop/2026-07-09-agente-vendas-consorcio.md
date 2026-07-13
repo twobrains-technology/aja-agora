@@ -1216,3 +1216,58 @@ Suíte: 374 unit/3453 testes + 90 integration/354 testes, 100% verde. Escalando 
 julgamento com evidência fresca — 2 fechos ponta-a-ponta consecutivos confirmados em AMBOS os
 fluxos (Madalena e Mario) e P4 praticamente zerado (só o já-conhecido sequenciamento do two_paths
 resta, não uma colisão nova).
+
+## Rodada A.7 — veredito Sonnet pós-FIX-326/327: 6/10 — PRIMEIRA RODADA A SUBIR EM 2 TENTATIVAS
+
+Juiz Sonnet fez a verificação mais rigorosa até agora: reproduziu RED→GREEN do FIX-326 revertendo
+código de verdade, escreveu e RODOU seu próprio teste de sonda pra confirmar uma hipótese de
+divergência, consultou o Postgres real dos 2 dossiês frescos (não só o JSON agregado), e comparou
+`tsc --noEmit` completo antes/depois via `git stash`.
+
+**Achados principais:**
+- **FIX-327 confirmado sólido, sem ressalvas.**
+- **FIX-326 tem um buraco REAL, PROVADO** (não hipótese): a previsão só replicava
+  `revealCompleted`/`searchDispatched`/`decisionDispatched` — mas `shouldMarkDoubtsAddressed`
+  também muda `meta.doubtsAddressed` na MESMA janela. O juiz escreveu um teste reproduzindo
+  doubts→reco-consent no mesmo turno e confirmou a MESMA colisão de P4 que o FIX-326 deveria ter
+  fechado, só que por um caminho não coberto pelos 2 testes originais. Um 2º buraco (`discoveredCreditTarget`/
+  `revealValueTargetChanged`) foi levantado como hipótese não-reproduzida.
+- **Achado importante de METODOLOGIA**: o "1 residual de P4" que esta sessão reportou pro Mario NÃO
+  é uma violação real — o juiz foi ao Postgres, confirmou que as 2 perguntas do turno 11 estão em
+  **mensagens PERSISTIDAS DIFERENTES** (2,5s de intervalo, 2 mensagens do assistente no meio), e que
+  o front-end renderiza 1 bolha por `message.id` (sem coalescer) — ou seja, na tela real são bolhas
+  distintas, não "2 perguntas no mesmo balão". O `agentText` do dossiê (JSON agregado) concatena
+  TODO o texto de um turno-HTTP numa string só, divergindo do critério real da rubrica ("por
+  balão"). **P4 estava de fato ZERADO nos 2 dossiês frescos** — correção pra cima, não pra baixo.
+- **FIX-324 evidência fechada**: nos 2 dossiês frescos, o `elapsedMs` da chamada real
+  `choose_offer_bevi_consorcio` foi 15.592ms (Madalena) e 18.568ms (Mario) — AMBOS acima do teto
+  antigo de 15.000ms, AMBOS com sucesso. Prova direta de que o timeout maior (25s) foi decisivo.
+- **Achado NOVO**: turno 8 do Mario — o texto elogia "Canopus" mas o card real é da ITAÚ, com
+  fallback genérico ("as opções que já apareceram continuam valendo") — indício de tool-error/cap
+  disparado ao resolver menção de administradora. Não quebra o funil (se recupera), mas é
+  incoerência real, ainda não catalogada. Pendência aberta pra próxima rodada.
+
+**Nota: 6/10** (Negócio 8 · Funcional 7 · Cálculo 8 · UX 6 · UI/Compliance 8 · E2E 8 — mínimo = UX).
+Quebra o empate de 2 rodadas travadas em 2/10. MATADOR PRA PROD: ainda NÃO, mas progresso real e
+verificado pela primeira vez.
+
+### FIX-328 — buraco provado do FIX-326 fechado (doubtsAddressed + discoveredCreditTarget)
+Replicado `shouldMarkDoubtsAddressed` (mesma função pura) no bloco de previsão — TDD com o CENÁRIO
+EXATO que o juiz reproduziu (doubts→reco-consent no mesmo turno): RED confirmado, GREEN após o fix.
+Também adicionado defensivamente (não reproduzido ao vivo — hipótese do juiz, mas mesma classe de
+risco e fix igualmente barato): resync de `discoveredCreditTarget` na previsão, espelhando
+exatamente a mesma condição do código real (FIX-68). Suíte completa: `test:unit` 374/3453,
+`test:integration` 90/355 (+1 teste novo), 100% verde. Smoke rápido pós-deploy confirma a app
+respondendo normalmente (sem exceção/regressão de runtime). Commit `dabc0861`, pushado.
+
+### Pendências que ficam para a próxima rodada (não atacadas agora, registradas honestamente)
+- **[NOVO]** Incoerência Canopus/ITAÚ no turno 8 do Mario — provável causa em
+  `resolveOfferMentionForConversation`/tool-error ao resolver menção de administradora. Não
+  investigado ainda.
+- **[Correção de rota]** O driver de coleta (`evidencias-r9/driver/chat-client.mjs`/`run-scenario.mjs`)
+  concatena TODO o texto de um turno-HTTP numa string só (`agentText`) — a métrica de P4 precisa
+  contar "?" por MENSAGEM PERSISTIDA (ou por evento `text-start`/`text-end` do SSE), não por turno
+  agregado, senão seguirá com falso-positivo/negativo nas próximas coletas. Não corrigido ainda.
+- **[Hipótese não reproduzida]** `discoveredCreditTarget`/`revealValueTargetChanged` — corrigido no
+  código (FIX-328) mas sem teste live-fire dedicado (cenário de re-descoberta é caro de montar);
+  verificado só por leitura de código + suíte completa sem regressão.
