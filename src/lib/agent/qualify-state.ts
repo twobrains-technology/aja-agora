@@ -1,5 +1,6 @@
 import { revealValueTargetChanged } from "./orchestrator/tool-policy";
-import type { ConversationMetadata } from "./personas";
+import type { ConversationMetadata, QualifyAnswers } from "./personas";
+import { objetivoForPrazo } from "./qualify-config";
 
 export type Gate =
 	| "name"
@@ -35,6 +36,112 @@ export const COLLECTION_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"lance-value",
 	"lance-embutido",
 ]);
+
+/**
+ * FIX-305 (rodada 10, onda 3) — gates que podem ficar presos PARA SEMPRE em
+ * `nextGate()` quando o dado nunca é extraído do texto livre (modelo fraco,
+ * resposta vaga) e por isso ganham um ESCAPE por default após N tentativas
+ * sem progresso (`registerGateStuckTurn`). `COLLECTION_GATES` (acima) NÃO
+ * protege contra isso: aquele set só afeta `decideShowGate` (se o CARD volta
+ * a aparecer no turno), nunca `nextGate()` — a cascata que decide se o funil
+ * avança. Um `COLLECTION_GATE` cujo dado nunca é extraído tem o card
+ * re-exibido a cada turno, mas `nextGate()` continua devolvendo o MESMO gate
+ * pra sempre — mesma classe de bug do `timeframe`, só sem o sintoma visível
+ * de "IA muda" ([gate-skip]). Por isso a lista abaixo inclui os 3 gates de
+ * `COLLECTION_GATES` que vivem pós-reveal (`lance`/`lance-value`/
+ * `lance-embutido`) além do `timeframe` — decisão registrada em
+ * docs/decisoes/blocos/2026-07-13-bloco-r10-3-timeframe-stuck.md (D3).
+ * `credit`/`identify` ficam de fora: são pré-requisito de TUDO (busca/reveal)
+ * e já têm defesa própria (FIX-115 backstop determinístico + FIX-208 guard de
+ * turno-mudo) — assumir um valor de crédito no escuro seria fabricar dado
+ * financeiro, não um fallback de conveniência.
+ */
+export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
+	"timeframe",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+]);
+
+/** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
+ * AskUserQuestion 2026-07-13: "~2-3 tentativas"; 3 é o valor já usado como
+ * exemplo na correção proposta do card fix-305 — dá a última chance possível
+ * dentro da faixa antes de assumir). */
+export const GATE_STUCK_ESCAPE_THRESHOLD = 3;
+
+/** FIX-305 — default de prazo (meses) quando `timeframe` nunca resolve. "12"
+ * é uma opção CANÔNICA já existente do produto (`TIMEFRAME_OPTIONS` em
+ * qualify-config.ts, token "12" = "1 ano, curto prazo") — não é um número
+ * novo. Mantém `objetivo` em "contemplacao_rapida" (objetivoForPrazo só vira
+ * "investimento" a partir de 120 meses), o eixo mais comum e o mais seguro
+ * pra assumir sem nenhum sinal do usuário. */
+const DEFAULT_STUCK_PRAZO_MESES = 12;
+
+/** FIX-305 — percentual de lance default quando `lance-value` nunca resolve
+ * (hasLance="yes" real, mas o valor em R$ nunca é extraído). Mesmo percentual
+ * do cenário "provável" já cravado em `scenarios.ts` (20% do crédito) — não é
+ * um número novo, é o ponto médio de mercado já usado no produto. */
+const DEFAULT_STUCK_LANCE_VALUE_PERCENT = 0.2;
+/** Fallback defensivo quando `creditMax` (inesperadamente) ainda não existe —
+ * não deveria ocorrer na prática: `credit` resolve bem antes de `lance-value`
+ * ser alcançável (nextGate() exige creditMax definido pra sair de "credit"). */
+const DEFAULT_STUCK_LANCE_VALUE_FALLBACK = 20_000;
+
+function stuckGateDefaultPatch(gate: Gate, meta: ConversationMetadata): Partial<QualifyAnswers> {
+	switch (gate) {
+		case "timeframe":
+			return {
+				prazoMeses: DEFAULT_STUCK_PRAZO_MESES,
+				objetivo: objetivoForPrazo(DEFAULT_STUCK_PRAZO_MESES),
+			};
+		case "lance":
+			// "no" é uma resposta válida já suportada (não é um estado "hedge"
+			// novo) — pula lance-value, segue pra lance-embutido. Não assume
+			// "so_parcela" (pularia até o simulator-offer inteiro): mudança de
+			// jornada grande demais pra assumir sem nenhum sinal do usuário.
+			return { hasLance: "no" };
+		case "lance-value": {
+			const creditMax = meta.qualifyAnswers?.creditMax;
+			const value = creditMax
+				? Math.round(creditMax * DEFAULT_STUCK_LANCE_VALUE_PERCENT)
+				: DEFAULT_STUCK_LANCE_VALUE_FALLBACK;
+			return { lanceValue: value };
+		}
+		case "lance-embutido":
+			// Consent-minimization: lance embutido é opt-in explícito (mexe na
+			// simulação) — sem sinal claro, o default seguro é NÃO ativar.
+			return { lanceEmbutido: false };
+		default:
+			return {};
+	}
+}
+
+/**
+ * FIX-305 — chamado pelo orquestrador (`orchestrator/analyze.ts`) ao fim de
+ * cada turno de USUÁRIO em que o gate ativo NÃO mudou (mesmo gate antes e
+ * depois do merge do analyzer) — turno "sem progresso". Só age nos
+ * `STUCK_ESCAPE_GATES`; para os demais devolve `null` (nada a fazer). Pura:
+ * não muta `meta`, devolve o PATCH a aplicar (sem I/O, sem Date.now()).
+ *
+ * Abaixo do teto: só incrementa o contador. No teto (`GATE_STUCK_ESCAPE_THRESHOLD`):
+ * assume o default do gate (`stuckGateDefaultPatch`), marca `gateDefaultsAssumed`
+ * e reseta o contador — o gate avança e ele nunca mais é lido.
+ */
+export function registerGateStuckTurn(
+	meta: ConversationMetadata,
+	gate: Gate,
+): Partial<ConversationMetadata> | null {
+	if (!STUCK_ESCAPE_GATES.has(gate)) return null;
+	const turns = (meta.gateStuckTurns?.[gate] ?? 0) + 1;
+	if (turns < GATE_STUCK_ESCAPE_THRESHOLD) {
+		return { gateStuckTurns: { ...meta.gateStuckTurns, [gate]: turns } };
+	}
+	return {
+		qualifyAnswers: { ...(meta.qualifyAnswers ?? {}), ...stuckGateDefaultPatch(gate, meta) },
+		gateStuckTurns: { ...meta.gateStuckTurns, [gate]: 0 },
+		gateDefaultsAssumed: { ...meta.gateDefaultsAssumed, [gate]: true },
+	};
+}
 
 export type UserIntent =
 	| "ready_to_proceed"

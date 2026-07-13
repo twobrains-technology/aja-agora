@@ -40,7 +40,7 @@ import {
 	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
-import { CLARIFY_LEAD_IN } from "./gate-questions";
+import { CLARIFY_LEAD_IN, gateStuckDefaultNotice } from "./gate-questions";
 import { runLeadCollectionTurn } from "./lead-collection";
 import {
 	buildRecommendationCardFromRevealGroup,
@@ -182,6 +182,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			analysis,
 			metaChanged,
 			newlyExtractedExperience: extracted,
+			stuckGateDefaultApplied,
 		} = await analyzeAndMerge(userText, currentPersona, meta);
 		newlyExtractedExperience = extracted;
 		analyzedIntent = analysis.userIntent;
@@ -189,6 +190,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		if (metaChanged) {
 			await persistMeta(conversationId, meta);
 			yield { type: "meta-update", meta };
+		}
+
+		// FIX-305: o teto de tentativas sem progresso foi atingido neste turno —
+		// o default já foi assumido (persistido acima, junto com metaChanged) e o
+		// funil vai avançar pro próximo gate mais adiante nesta mesma função.
+		// Avisa o usuário ANTES do resto do turno, texto determinístico (mesmo
+		// padrão de TWO_PATHS_FOLLOWUP_TEXT/SPECIALIST_EXIT_OFFER) — nunca finge
+		// que o dado veio dele.
+		if (stuckGateDefaultApplied) {
+			const notice = gateStuckDefaultNotice(stuckGateDefaultApplied, meta.qualifyAnswers ?? {});
+			if (notice) {
+				yield { type: "text-delta", text: notice };
+				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
+				yield { type: "text-boundary" };
+			}
 		}
 
 		// FIX-260: gate lance-embutido respondido por TEXTO LIVRE não era

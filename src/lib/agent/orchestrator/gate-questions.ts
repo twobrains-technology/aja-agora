@@ -1,4 +1,4 @@
-import type { Category } from "@/lib/agent/personas";
+import type { Category, QualifyAnswers } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
 
 /** FIX-301 (P7, loop-de-goal r10) — lead-in universal quando o usuário sinaliza
@@ -169,6 +169,35 @@ export function gateQuestion(
 		case "decision":
 			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
 			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
+			return null;
+	}
+}
+
+/**
+ * FIX-305 — texto determinístico (fora do LLM, mesmo padrão de
+ * `TWO_PATHS_FOLLOWUP_TEXT`/`SPECIALIST_EXIT_OFFER`) emitido quando um gate
+ * atinge o teto de tentativas sem progresso e o orquestrador assume o default
+ * (`registerGateStuckTurn`, qualify-state.ts). Avisa o usuário do valor
+ * assumido e que pode ajustar depois — nunca finge que o dado veio dele.
+ * `patch` é o retalho de `qualifyAnswers` recém-aplicado (já mesclado no
+ * meta pelo chamador), usado só pra compor o número/valor na frase.
+ */
+export function gateStuckDefaultNotice(
+	gate: Gate,
+	patch: Pick<QualifyAnswers, "prazoMeses" | "lanceValue">,
+): string | null {
+	switch (gate) {
+		case "timeframe":
+			return `Vou considerar ${patch.prazoMeses} meses por enquanto — você pode ajustar isso depois.`;
+		case "lance":
+			return "Vou seguir sem considerar lance por enquanto — se quiser, a gente volta nesse assunto depois.";
+		case "lance-value":
+			return patch.lanceValue
+				? `Vou considerar um lance de ${formatCredit0(patch.lanceValue)} por enquanto — você pode ajustar depois.`
+				: "Vou considerar um lance moderado por enquanto — você pode ajustar depois.";
+		case "lance-embutido":
+			return "Vou seguir sem considerar o lance embutido por enquanto — se quiser, a gente volta nesse assunto depois.";
+		default:
 			return null;
 	}
 }
