@@ -18,6 +18,7 @@ import {
 	isBannedLexicon,
 	isCatalogResearchClaim,
 	isDocumentReceiptClaim,
+	isHallucinatedAdministradoraClaim,
 	isMechanismNarrationClaim,
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
@@ -1007,5 +1008,150 @@ describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () 
 		expect(emitted).not.toContain("✅");
 		expect(emitted).toContain("Perfeito, kairo!");
 		expect(emitted).toContain("Bora simular.");
+	});
+});
+
+// FIX-342 (P0, veredito Sonnet rodada 2, "P0.1 — alucinação de administradora
+// inexistente": o agente recomendou "Bradesco" (imóvel-web) e "Estrela"
+// (serviços-web) — nenhuma das duas jamais esteve entre as ofertas REAIS
+// retornadas pela Bevi nessas conversas; o usuário perseguiu a oferta
+// fantasma por 4 turnos. `ctx.shownAdministradoras` é o FATO (runner.ts —
+// união do histórico persistido via `listShownOffersForConversation`,
+// choose-offer.ts, com os grupos indexados NESTE turno) — nunca a narrativa
+// do LLM decide quais administradoras existem.
+describe("FIX-342 — isHallucinatedAdministradoraClaim (administradora do mercado fora das ofertas reais)", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("classifica 'recomendo a Bradesco' como alucinação quando as ofertas reais são [ITAÚ, ÂNCORA]", () => {
+		expect(
+			isHallucinatedAdministradoraClaim(
+				"A recomendada no topo (Bradesco) é a que melhor equilibra parcela e prazo.",
+				{
+					hasReceivedDocuments: false,
+					hasSearchToolCall: false,
+					hasProposal: false,
+					shownAdministradoras: OFERTAS_REAIS,
+				},
+			),
+		).toBe(true);
+	});
+
+	it("NÃO classifica 'recomendo a ITAÚ' — a administradora está entre as ofertas reais", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("Recomendo a ITAÚ, que encaixa bem no seu orçamento.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("NÃO classifica menção à segunda oferta real (ÂNCORA)", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("A ÂNCORA também é uma opção sólida pra você.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("classifica 'Estrela' como alucinação (dossiê servicos-web real) quando as ofertas são [Rodobens, Âncora]", () => {
+		expect(
+			isHallucinatedAdministradoraClaim(
+				"Essa que mostrei primeiro (a Estrela) tem uma compatibilidade ótima com o que você pediu.",
+				{
+					hasReceivedDocuments: false,
+					hasSearchToolCall: false,
+					hasProposal: false,
+					shownAdministradoras: ["Rodobens", "Âncora"],
+				},
+			),
+		).toBe(true);
+	});
+
+	it("sem shownAdministradoras no contexto, nunca classifica (compat retroativa)", () => {
+		expect(isHallucinatedAdministradoraClaim("Recomendo a Bradesco.")).toBe(false);
+		expect(
+			isHallucinatedAdministradoraClaim("Recomendo a Bradesco.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+			}),
+		).toBe(false);
+	});
+
+	it("segmento vazio nunca é alucinação", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("nome fora da lista fechada de administradoras do mercado nunca é bloqueado (falso-negativo aceitável)", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("A Cooperfumas tem uma proposta interessante.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+});
+
+describe("FIX-342 — stripProcessPreamble/EphemeralTextFilter dropam administradora fantasma sem mordaçar as ofertas reais", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("dropa a fala inteira sobre a Bradesco (dossiê imóvel-web real) quando as ofertas reais são [ITAÚ, ÂNCORA]", () => {
+		const input = "A recomendada no topo (Bradesco) é a que melhor equilibra parcela e prazo pra você.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		});
+		expect(out.toLowerCase()).not.toContain("bradesco");
+	});
+
+	it("PRESERVA a fala sobre a ITAÚ — não vira mordaça pras ofertas que EXISTEM", () => {
+		const input = "Recomendo a ITAÚ, que encaixa bem no seu orçamento.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		});
+		expect(out).toContain("ITAÚ");
+	});
+
+	it("EphemeralTextFilter dropa a administradora fantasma (Estrela) ao vivo, no meio do stream", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		}));
+		let emitted = f.push("Recomendo a Estrela, que fica ótima pra você.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("estrela");
+	});
+
+	it("EphemeralTextFilter PRESERVA a administradora real (ÂNCORA) ao vivo", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		}));
+		let emitted = f.push("A ÂNCORA também fica boa pra você, quer ver o detalhe?");
+		emitted += f.flush();
+		expect(emitted).toContain("ÂNCORA");
 	});
 });
