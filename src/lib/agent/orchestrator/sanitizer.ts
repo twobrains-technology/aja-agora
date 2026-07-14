@@ -69,11 +69,33 @@ export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
 	...PRODUCT_STEP_ANNOUNCEMENT_PATTERNS,
 ];
 
+// FIX-352 — para de brigar com LISTA DE FRASES.
+//
+// O guard de anúncio-de-passo era uma lista fechada de objetos vagos ("a mais
+// adequada", "a melhor opção", "as opções"…). O modelo escapava por variação: ao
+// vivo saiu "vou trazer a QUE MELHOR ENCAIXA com seu perfil" — objeto novo, não
+// listado. Gato-e-rato: três rodadas seguidas com o mesmo achado.
+//
+// Regra ESTRUTURAL, que não depende de adivinhar a frase:
+//   "vou/deixa eu + (mostrar|trazer|apresentar|simular|detalhar|recomendar|destacar)"
+//   SEM nenhum DADO CONCRETO na frase = anúncio de passo → dropa.
+//
+// Com dado concreto (número, valor, ou nome de administradora), é narração legítima
+// ("Vou simular a Rodobens com R$ 900 mil") e PASSA — o agente deve poder falar dos
+// números que já tem. O guard não pode virar mordaça.
+const ANNOUNCEMENT_VERB = /\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|trazer|apresentar|simular|detalhar|recomendar|destacar|aprofundar)\b/i;
+/** Sinal de que a frase carrega CONTEÚDO real (não é só anúncio): qualquer dígito
+ * (parcela, valor, prazo, quantidade) ou um nome próprio em CAIXA ALTA (as
+ * administradoras chegam assim da Bevi: ITAÚ, ÂNCORA, RODOBENS…). */
+const HAS_CONCRETE_DATA = /\d|\b\p{Lu}{3,}\b/u;
+
 /** Um segmento (frase) é preâmbulo de processo (efêmero) — não pode virar bolha. */
 export function isProcessPreamble(segment: string): boolean {
 	const s = segment.trim();
 	if (!s) return false;
-	return PROCESS_PREAMBLE_PATTERNS.some((rx) => rx.test(s));
+	if (PROCESS_PREAMBLE_PATTERNS.some((rx) => rx.test(s))) return true;
+	// Anúncio de apresentação sem nenhum dado concreto = log de pipeline.
+	return ANNOUNCEMENT_VERB.test(s) && !HAS_CONCRETE_DATA.test(s);
 }
 
 // FIX-190 — fallback técnico ("atualiza/recarregue a página", "dá um refresh"):
