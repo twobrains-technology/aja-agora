@@ -538,8 +538,29 @@ export function decideShowGate(args: {
 	// Mesmo critério de decision/simulator-offer: afirmativo avança (libera o
 	// hero), pergunta/dúvida deixa o agente conversar (o hero fica pendente,
 	// nunca é forçado sem consentimento).
+	// FIX-356 — o CONVITE do reveal não pode depender do humor do intent.
+	//
+	// Antes, `reco-consent` só aparecia com intent `ready_to_proceed`/`neutral`. Se o
+	// usuário respondia dando uma INFORMAÇÃO ("é a primeira vez", "tenho FGTS"), o
+	// intent virava `providing_info` e o convite ("Posso te mostrar a opção que eu
+	// recomendo?") simplesmente NUNCA era feito — ao vivo, em 2 de 4 jornadas web.
+	//
+	// Mas `reco-consent` não é coleta de dado: é um CONVITE. Segue a mesma regra de
+	// `experience`/`identify` — aparece sempre, MENOS quando o usuário está
+	// perguntando, em dúvida, confuso ou fora do assunto (aí o agente atende ele
+	// primeiro; o funil espera, e o gate volta no turno seguinte).
+	//
+	// Sem isso, o "reveal em dois tempos" (decisão do cliente, Rodada 10, e o que o
+	// mockup mostra) fica valendo só metade das vezes.
+	// (`wants_more_options` já foi filtrado acima — quem pede mais opções não leva
+	// convite de recomendação na cara.)
 	if (gate === "reco-consent") {
-		return intent === "ready_to_proceed" || intent === "neutral";
+		return !(
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		);
 	}
 
 	// FIX-208 (Kairo, WhatsApp PROD 2026-07-02): responder DIRETO um gate de COLETA
