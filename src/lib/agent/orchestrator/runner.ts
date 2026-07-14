@@ -959,15 +959,38 @@ export async function* runAgentTurn(args: {
 	// logo abaixo: NADA do que o modelo gerou é persistido/relayado, o
 	// orchestrator materializa o fallback fixo e finaliza (Lei 1/4).
 	if (toolErrorThisTurn || toolCallCapExceededThisTurn) {
+		// FIX-355 — o último resquício do "responde sempre a mesma coisa".
+		//
+		// Aqui a fala do modelo era JOGADA FORA (`fullResponse: ""`) sempre que ele
+		// errava uma tool, e o orquestrador cuspia um texto fixo ("as opções que já
+		// apareceram aqui pra você continuam valendo…"). Três ondas atacaram isso
+		// (FIX-332/343): a taxa caiu de 5/8 para 1/8, mas não zerou — o modelo ainda
+		// erra a tool de vez em quando, e quando erra, a conversa vira template.
+		//
+		// A regra que fecha o caso, sem depender de adivinhar QUAL tool ele vai errar:
+		// se ele JÁ DISSE algo útil, a fala dele VALE. Errar a tool é problema nosso,
+		// não do usuário — o texto que ele produziu não tem culpa. O fallback só tem
+		// função quando o modelo não disse nada (aí sim, evitar turno mudo).
+		//
+		// É o ADR 2026-07-13 levado até o fim: o servidor não fala no lugar do modelo,
+		// só cobre o silêncio dele. Os invariantes seguem intactos — nenhum artifact é
+		// emitido (`artifacts: []`), nenhum gate avança (`nextGateToFire: null`), e o
+		// sanitizer já limpou o texto (nada de número inventado ou narração de erro).
+		const falaDoModelo = composeClean(fullResponse).trim();
+		const modeloFalou = falaDoModelo.length > 0;
 		console.log(
 			`[tool-error-recovery] guard: ${
 				toolCallCapExceededThisTurn
 					? "cap de tool-calls excedido"
 					: "tool-error fora do toolset da fase"
-			} — fallback determinístico assume o turno (conv=${conversationId})`,
+			} — ${
+				modeloFalou
+					? "o modelo FALOU: mantendo a fala dele (sem fallback enlatado)"
+					: "o modelo ficou mudo: fallback determinístico assume o turno"
+			} (conv=${conversationId})`,
 		);
 		return {
-			fullResponse: "",
+			fullResponse: modeloFalou ? falaDoModelo : "",
 			artifacts: [],
 			handoffSignaled: false,
 			isConcierge,

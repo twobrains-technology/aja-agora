@@ -940,7 +940,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// não resolve e o ÚLTIMO turno do assistant já foi esse mesmo fallback
 	// genérico, troca pra variante que lista as opções concretas — nunca
 	// repete a frase idêntica 2× seguidas.
-	if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
+	// FIX-355 — o último resquício do "agente responde sempre a mesma coisa".
+	//
+	// Quando o modelo chama uma tool fora da fase, o servidor DESCARTAVA a fala dele
+	// e cuspia um texto fixo ("as opções que já apareceram aqui pra você continuam
+	// valendo…"). Três ondas atacaram isso (FIX-332/343) e a taxa caiu de 5/8 → 1/8,
+	// mas não zerou: o modelo ainda erra a tool de vez em quando, e quando erra, a
+	// conversa vira template.
+	//
+	// A regra que fecha o caso, sem depender de adivinhar QUAL tool ele vai errar:
+	// se o modelo JÁ DISSE algo útil neste turno, a fala dele vale — o erro de tool
+	// é problema nosso, não do usuário. Só quando ele não disse nada é que o
+	// fallback tem função (evitar turno mudo).
+	//
+	// Isto é o ADR 2026-07-13 aplicado até o fim: o servidor não fala no lugar do
+	// modelo. Ele só cobre o silêncio.
+	const modeloDisseAlgoUtil = (result.fullResponse ?? "").trim().length > 0;
+	if ((result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) && modeloDisseAlgoUtil) {
+		console.log(
+			`[tool-error-com-fala] guard: o modelo errou a tool MAS falou — mantendo a fala dele, sem fallback enlatado (conv=${conversationId})`,
+		);
+	} else if (result.toolErrorThisTurn || result.toolCallCapExceededThisTurn) {
 		// FIX-286 (P0, veredito Sonnet r9pos2 §3): a família FIX-262/266/282
 		// abaixo foi desenhada e testada só pro cenário de REPETIÇÃO pós-reveal
 		// (`meta.revealCompleted === true` — "as opções que já apareceram
