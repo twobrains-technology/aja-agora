@@ -358,8 +358,46 @@ describe("closingPresentation — FIX-265: copy condicional do fecho WhatsApp (e
 		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
 	});
 
-	it("sem opts (retrocompatível — callers que não migraram, ex. interactive-handlers.ts) mantém o texto de sempre", () => {
+	it("sem opts (canal omitido — default web) mantém o texto de sempre", () => {
 		const text = textOf(undefined);
 		expect(text).toContain("acabei de te mandar uma mensagenzinha no seu WhatsApp");
+	});
+});
+
+// FIX-344 (bloco-e-fallback-residual, rodada 2 — veredito Sonnet, P0 confirmado):
+// closingPresentation nunca soube distinguir "o canal ATUAL já é o WhatsApp" —
+// só "mandei agora" vs. "vou mandar quando a janela abrir" (FIX-265, acima).
+// interactive-handlers.ts (fecho por CLIQUE dentro do próprio WhatsApp) chamava
+// closingPresentation(res) sem NENHUM opts — a copy pedia pro cliente, que já
+// está na conversa de WhatsApp, "responder por lá com um oi" pra "salvar o
+// contato" e avisava "acabei de te mandar uma mensagenzinha", quando nenhuma
+// mensagem nova foi enviada. `channel` deixa esse beat (função técnica: abrir a
+// janela de 24h via mensagem NOVA) existir só onde faz sentido — o canal WEB,
+// que de fato depende de o cliente ir até o WhatsApp.
+describe("closingPresentation — FIX-344: beat de WhatsApp só existe fora do canal WhatsApp", () => {
+	const textOf = (channel?: "web" | "whatsapp") =>
+		closingPresentation(CONFIRM, channel ? { channel } : {})
+			.filter((i) => i.kind === "text")
+			.map((i) => i.text)
+			.join("\n");
+
+	it('canal "whatsapp" → NUNCA pede pro cliente responder "oi" nem menciona ter mandado mensagem no WhatsApp', () => {
+		const text = textOf("whatsapp");
+		expect(text).not.toMatch(/["“]oi["”]/);
+		expect(text.toLowerCase()).not.toMatch(/mensagenzinha/);
+		expect(text.toLowerCase()).not.toMatch(/whatsapp/);
+	});
+
+	it('canal "whatsapp" → mantém o resto do fecho (reservado, Parabéns, especialista chama em seguida)', () => {
+		const text = textOf("whatsapp");
+		expect(text.toLowerCase()).toMatch(/reserv/);
+		expect(text).toMatch(/Parabéns!/);
+		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
+	});
+
+	it('canal "web" → o beat continua existindo (é lá que ele faz sentido — o cliente precisa ir até o WhatsApp)', () => {
+		const text = textOf("web");
+		expect(text).toMatch(/["“]oi["”]/);
+		expect(text.toLowerCase()).toMatch(/whatsapp/);
 	});
 });

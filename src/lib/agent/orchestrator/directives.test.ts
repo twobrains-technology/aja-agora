@@ -162,9 +162,13 @@ describe("buildLanceSoParcelaDirective — 3ª saída do lance ('só a parcela')
 		expect(d).toMatch(/present_contemplation_dial/);
 	});
 
-	it("instrui a escrever SÓ a frase de introdução (o card + convite ficam por conta do sistema)", () => {
+	it("não duplica o card nem recomenda um caminho (o card + convite são do sistema)", () => {
+		// DESAMARRA (2026-07-13): antes exigia a string "APENAS UMA frase" — um teste
+		// que travava a CASTRAÇÃO do modelo. O invariante real é outro: o directive
+		// não pode mandar o LLM chamar a tool (o card é server-side) nem recomendar
+		// um caminho aqui. Quantas frases ele escreve é problema dele.
 		const d = buildLanceSoParcelaDirective();
-		expect(d).toMatch(/APENAS UMA frase/i);
+		expect(d).toMatch(/NÃO chame/i);
 		expect(d).not.toMatch(/recomendo|eu indicaria|melhor caminho/i);
 	});
 });
@@ -197,8 +201,8 @@ describe("buildEmbeddedBidDirective — card de lance embutido (antes órfão)",
 		expect(d).toMatch(/N[ÃA]O (invente|digita|calcula)/i);
 	});
 
-	it("instrui a escrever SÓ a frase de introdução", () => {
-		expect(buildEmbeddedBidDirective()).toMatch(/APENAS UMA frase/i);
+	it("não manda o LLM chamar a tool do card (emissão é server-side)", () => {
+		expect(buildEmbeddedBidDirective()).toMatch(/NÃO chame present_embedded_bid/i);
 	});
 
 	// FIX-268 (rodada 7, veredito Fable r6, residual D4): o directive instruía
@@ -228,8 +232,10 @@ describe("buildScarcityDirective — card de escassez (antes órfão)", () => {
 		expect(d.toLowerCase()).toMatch(/total de cotas/);
 	});
 
-	it("instrui a escrever SÓ a frase de transição", () => {
-		expect(buildScarcityDirective()).toMatch(/APENAS UMA frase/i);
+	it("não manda o LLM chamar a tool do card nem inventar o número de vagas", () => {
+		const d = buildScarcityDirective();
+		expect(d).toMatch(/NÃO chame present_scarcity/i);
+		expect(d).toMatch(/NÃO invente o número de vagas/i);
 	});
 });
 
@@ -262,9 +268,9 @@ describe("buildWhatsappOptinDirective — opt-in de WhatsApp (antes LLM-discrici
 		expect(d).not.toMatch(/me compartilha seu WhatsApp/i);
 	});
 
-	it("instrui a escrever SÓ a frase, em ambos os estágios", () => {
-		expect(buildWhatsappOptinDirective("open")).toMatch(/APENAS UMA frase/i);
-		expect(buildWhatsappOptinDirective("confirm")).toMatch(/APENAS UMA frase/i);
+	it("não manda o LLM chamar a tool do card, em ambos os estágios", () => {
+		expect(buildWhatsappOptinDirective("open")).toMatch(/NÃO chame present_whatsapp_optin/i);
+		expect(buildWhatsappOptinDirective("confirm")).toMatch(/NÃO chame present_whatsapp_optin/i);
 	});
 });
 

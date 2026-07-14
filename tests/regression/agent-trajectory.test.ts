@@ -869,53 +869,26 @@ describe("FIX-105 — qualificação híbrida (binárias=botão, valor=conversa)
 // Aqui solo assert do MOLDE LITERAL como presente no prompt fonte.
 // ============================================================================
 
-describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt", () => {
-	it("SPECIALIST_BASE_PROMPT contem o molde LITERAL da frase canonica B9", () => {
-		// Nota: o prompt usa "esta" (sem acento) — o assert refletir EXATAMENTE
-		// o que esta no source. Regex tolerante a "esta"/"está" pra evitar quebra
-		// quando alguem acentuar futuramente.
-		const moldeCanonico =
-			/Aqui est[áa] o detalhamento completo da \{admin\}\. Quer ajustar o valor do bem\?/;
-
-		expect(
-			moldeCanonico.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa conter o MOLDE EXATO da frase canonica B9: " +
-				"'Aqui esta o detalhamento completo da {admin}. Quer ajustar o valor do bem?'. " +
-				"Sem o molde literal, o LLM improvisa formulacoes — Bruna detecta e reprova.",
-		).toBe(true);
+describe("B9 — fechamento pós-detalhamento: SEM frase canônica (desamarra 2026-07-13)", () => {
+	// O prompt exigia uma frase IPSIS LITTERIS ("Aqui está o detalhamento completo
+	// da {admin}. Quer ajustar o valor do bem?") com a instrução "não improvise
+	// outras formulações". Era a receita do "agente responde sempre a mesma coisa"
+	// que o Kairo reportou. O ADR 2026-07-13 revogou a jornada soberana: a fala é
+	// do modelo; só o INVARIANTE é do código.
+	it("NÃO impõe frase canônica ipsis litteris no fechamento", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/esta frase é canônica/i);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/Não improvise outras formulações/i);
 	});
 
-	it("placeholder {admin} aparece imediatamente antes do '.' na frase canonica", () => {
-		// Defesa anti-regressao de placeholder errado (ex: alguem trocando por
-		// {adminName} ou {administradora} sem atualizar o ponto de injecao).
-		// Match deve achar literalmente "da {admin}." (com ponto final).
-		const placeholderColado = /da \{admin\}\./;
-		expect(
-			placeholderColado.test(SPECIALIST_BASE_PROMPT),
-			"Placeholder canonico e exatamente '{admin}' — colado a 'da ' e seguido de '.'. " +
-				"Se mudar pra {adminName}/{administradora}, atualize TAMBEM o consumer que injeta o nome.",
-		).toBe(true);
+	it("mantém a INTENÇÃO do fechamento (dizer de quem é o detalhamento + abrir o próximo passo)", () => {
+		// Invariante de conteúdo, não de frase: o agente tem que saber o que fazer
+		// depois do detalhamento — com as palavras dele.
+		const bloco = SPECIALIST_BASE_PROMPT.slice(
+			SPECIALIST_BASE_PROMPT.indexOf("Fechamento pós-detalhamento"),
+		).slice(0, 600);
+		expect(bloco).toMatch(/administradora/i);
+		expect(bloco).toMatch(/suas palavras|não existe frase pronta/i);
 	});
-
-	it("frase canonica B9 vive no mesmo bloco de present_simulation_result/present_recommendation_card", () => {
-		// Proximidade textual no prompt (<800 chars) — sem isso o LLM perde a
-		// associacao "apos detalhamento, use esta frase".
-		const blocoForward =
-			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
-		const blocoReverso =
-			/detalhamento completo[\s\S]{0,200}ajustar o valor[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
-
-		expect(
-			blocoForward.test(SPECIALIST_BASE_PROMPT) || blocoReverso.test(SPECIALIST_BASE_PROMPT),
-			"Frase canonica B9 precisa estar a <800 chars de present_simulation_result OU present_recommendation_card. " +
-				"Sem proximidade, agent associa errado e improvisa.",
-		).toBe(true);
-	});
-
-	// Cross-ref: src/lib/agent/system-prompt.lead-funnel.test.ts (Bug B) cobre
-	// as 4 dimensoes (substring 'detalhamento completo', 'ajustar o valor',
-	// proximidade e placeholder de admin). Aqui mantivemos os asserts mais
-	// criticos pra detectar regressao rapida.
 });
 
 // ============================================================================
@@ -3161,6 +3134,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		// E comportamental (mais forte que grep): o cenário exato do bug suprime.
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: postRevealMeta(),
 			artifactType: "comparison_table",
 			userIntent: "neutral", // "ta otimo"
@@ -3293,9 +3267,16 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 		expect(allowedTools(trocou)).toContain("search_groups");
 	});
 
-	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita search (anti BUG-REVEAL-LOOP)", () => {
-		// Mesmo valor-alvo (256k) da descoberta → continua sem descoberta na fase.
-		expect(allowedTools(postRevealMeta())).not.toContain("search_groups");
+	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita os CARDS de descoberta (anti BUG-REVEAL-LOOP)", () => {
+		// Mesmo valor-alvo (256k) da descoberta → os cards de re-apresentação
+		// (que reabririam o loop de re-mostrar o reveal inteiro) continuam fora.
+		expect(allowedTools(postRevealMeta())).not.toContain("present_comparison_table");
+		// FIX-332 (P0.1, veredito rodada 1 desamarra-agente): search_groups em si
+		// passou a ficar SEMPRE disponível em reveal (mesmo sem troca de faixa) —
+		// não re-busca a Bevi nesse caso (ai-sdk.ts intercepta com
+		// reuseShownGroupsOnly), só devolve os grupos já exibidos. Isso não reabre
+		// o BUG-REVEAL-LOOP porque não há re-busca nem re-apresentação de card.
+		expect(allowedTools(postRevealMeta())).toContain("search_groups");
 	});
 
 	it("acoplamento: o prompt manda RE-BUSCAR ao trocar de faixa e NUNCA fabricar groupId", () => {
@@ -4040,12 +4021,12 @@ describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", ()
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
 		// Cenário exato do run 1: reserva respondida, qualificação incompleta.
-		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } })).toBe(false);
+		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } }, "web")).toBe(false);
 		// FIX-303: revealCompleted sozinho não basta mais — só no fecho
 		// (contractFormDispatched), ver describe FIX-303 mais abaixo.
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(false);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true }, "web")).toBe(false);
 		expect(
-			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }, "web"),
 		).toBe(true);
 	});
 });
@@ -4086,6 +4067,7 @@ describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMI
 		// Comportamental: pós-Parabéns, contract_form re-apresentado é suprimido.
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: true, decisionDispatched: true, contractClosed: true },
 			artifactType: "contract_form",
 			userIntent: "ready_to_proceed",
@@ -4216,14 +4198,21 @@ describe("FIX-1-PAPEL-AJA-AGORA — explicação de 1ª vez omitia o papel da pl
 		expect(missesAjaAgoraRole(text)).toBe(false);
 	});
 
-	it("acoplamento: buildExperienceFirstDirective instrui o papel da Aja Agora", () => {
+	it("acoplamento: buildExperienceFirstDirective instrui o papel da Aja Agora (intenção, não frase)", () => {
+		// DESAMARRA (2026-07-13): antes exigia a string literal "encontrar o grupo"
+		// — copy do docx travada por regex, o cadeado que obrigava a re-amarrar o
+		// agente pra manter a suíte verde. Agora o assert é de INTENÇÃO: o directive
+		// tem que instruir o PAPEL da plataforma (achar o grupo com maior chance no
+		// prazo do usuário). Com que palavras é problema do modelo.
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
 		const m = directives.match(/buildExperienceFirstDirective[\s\S]{0,2000}?\n}/);
 		expect(m, "buildExperienceFirstDirective precisa existir em directives.ts").not.toBeNull();
 		const body = (m?.[0] ?? "").toLowerCase();
 		expect(body).toMatch(/papel/);
-		expect(body).toMatch(/encontrar o grupo/);
 		expect(body).toMatch(/maior chance/);
+		expect(body).toMatch(/prazo/);
+		// E NÃO pode voltar a ditar a frase pronta.
+		expect(body).not.toMatch(/fiel ao docx/);
 	});
 });
 
@@ -4376,15 +4365,18 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
 		expect(
-			shouldEmitWhatsappOptin({
-				revealCompleted: true,
-				contractFormDispatched: true,
-				contractRetryPending: true,
-			}),
+			shouldEmitWhatsappOptin(
+				{
+					revealCompleted: true,
+					contractFormDispatched: true,
+					contractRetryPending: true,
+				},
+				"web",
+			),
 		).toBe(false);
 		// FIX-303: o gatilho migrou pro fecho (contractFormDispatched).
 		expect(
-			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }, "web"),
 		).toBe(true);
 	});
 
@@ -4853,6 +4845,7 @@ describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda des
 		const meta = { revealCompleted: true, decisionDispatched: true, contractClosed: true };
 		for (const artifactType of ["recommendation_card", "simulation_result"] as const) {
 			const verdict = evaluateArtifactGuards({
+				channel: "web",
 				meta,
 				artifactType,
 				userIntent: "asking_question", // "qual status da proposta?"
@@ -4936,6 +4929,7 @@ describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do i
 		// Comportamental: o estado exato do bug (fim do qualify, sem reveal).
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { qualifyConsented: true },
 			artifactType: "contract_form",
 			userIntent: "ready_to_proceed",
@@ -6652,6 +6646,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		expect(discoveryCount).toBe(1);
 		// 2) …e o single-option guard suprime o recommendation_card duplicado.
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { currentCategory: "auto" } as ConversationMetadata,
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -6669,6 +6664,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
 		expect(discoveryCount).toBe(3);
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { currentCategory: "auto" } as ConversationMetadata,
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -6685,6 +6681,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		// Pós reco-consent já resolvido (revealCompleted=true), o mesmo cenário
 		// de 2+ grupos PASSA normalmente — não é mais opção única, nem pendente.
 		const verdictPostConsent = evaluateArtifactGuards({
+			channel: "web",
 			meta: {
 				currentCategory: "auto",
 				revealCompleted: true,
@@ -7966,6 +7963,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			"decision_prompt",
 		] as const) {
 			const verdict = evaluateArtifactGuards({
+				channel: "web",
 				meta: {},
 				artifactType,
 				userIntent: "neutral",
@@ -7989,6 +7987,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			}).allow,
 		).toBe(true);
 		const guard = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: false },
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -8007,6 +8006,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 
 		// Pós reco-consent já resolvido, o mesmo cenário passa normalmente.
 		const guardPostConsent = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: true, recoConsentAnswered: true },
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -8911,7 +8911,10 @@ describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", 
 	it("cassette puro: só gates de COLETA obrigatória entram na escada (identify/credit)", () => {
 		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
 		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
-		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
+		// FIX-351: `experience` PERGUNTA ("Você já fez consórcio antes?"), então o turno
+		// vazio RE-PERGUNTA em vez de dizer "Acho que me perdi". O que ele NÃO ganha é a
+		// ESCADA de cobrança (exclusiva dos gates de coleta) — é isso que este teste guarda.
+		expect(reengageQuestionForGate("experience", null, 1)).not.toMatch(/Só falta isso|sem compromisso/i);
 	});
 
 	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {

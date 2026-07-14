@@ -15,6 +15,7 @@ import {
 	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
+import type { ScoringInput } from "@/lib/agent/recommendation";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import {
@@ -23,6 +24,7 @@ import {
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -32,6 +34,7 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
 import {
 	isCreditValueMentioned,
+	listShownOffersForConversation,
 	resolveOfferForAdministradora,
 	resolveOfferMentionForConversation,
 } from "./choose-offer";
@@ -49,13 +52,16 @@ import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
+	pickBestRankedGroup,
 	type RevealGroupIndex,
 	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
 	EphemeralTextFilter,
+	type EphemeralDropReason,
 	joinSeparator,
 	normalizeGluedSentences,
+	type StateVerificationContext,
 	stripProcessPreamble,
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
@@ -78,6 +84,11 @@ export type RunAgentResult = {
 	isConcierge: boolean;
 	nextGateToFire: Gate | null;
 	prefixForNextGate: string | null;
+	/** O MODELO já fez a pergunta deste gate, com as palavras dele. O adapter
+	 * emite só o input (chips/slider/form) e não repete a pergunta canônica.
+	 * Substitui o antigo `discardHeldQuestion` (FIX-326), que calava o modelo
+	 * pra deixar o card falar — origem do tom robótico e repetitivo. */
+	modelAskedGateQuestion?: boolean;
 	/** FIX-186: a descoberta na Bevi falhou neste turno (após retry). O
 	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
 	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
@@ -97,6 +108,19 @@ export type RunAgentResult = {
 	 * tinha dados reais em mãos quando a apresentação falhou" (materializa o
 	 * card, Via A) de "nada foi buscado ainda" (fallback honesto, Via B). */
 	revealGroupsById?: RevealGroupIndex;
+	/** FIX-347: motivos (guards do sanitizer) que dropParam pelo menos 1
+	 * segmento de fala do modelo neste turno. Quando `fullResponse` termina
+	 * vazio E isto vem populado, o turno não ficou mudo porque o modelo nada
+	 * disse — ele disse algo e o sanitizer comeu tudo. O orchestrator usa isto
+	 * pra dar UMA segunda chance ao modelo, com o motivo, em vez do fallback
+	 * fixo de turno vazio. Vazio/ausente quando nada foi dropado. */
+	sanitizerDropReasons?: EphemeralDropReason[];
+	/** FIX-347: quantas tool-calls o modelo executou de fato neste turno. O
+	 * retry-com-motivo só é seguro quando isto é 0 — com tool já executada
+	 * (save_contact_name, search_groups etc.) repetir a chamada duplicaria
+	 * efeito colateral real (escrita no banco, nova busca), então o turno
+	 * segue o caminho normal (nunca retry). */
+	executedToolCount?: number;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
@@ -164,6 +188,21 @@ export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boo
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
+}
+
+/** FIX-334: mesmos parâmetros que o directive de busca passava pro
+ * `recommend_groups` (budget/desiredTermMonths/creditMax/hasLance) — pra
+ * `coerceRecommendationPayload` RECALCULAR score/scoreBreakdown do hero a
+ * partir do grupo real, já que o modelo não recebe mais o número cru.
+ * Exportada — também usada pelo fallback de tool-error (FIX-286, index.ts). */
+export function scoringInputFromMeta(meta: ConversationMetadata): ScoringInput {
+	const q = meta.qualifyAnswers ?? {};
+	return {
+		budget: q.monthlyBudget ?? 0,
+		desiredTermMonths: q.prazoMeses ?? 0,
+		creditMax: q.creditMax,
+		hasLance: q.hasLance === "yes",
+	};
 }
 
 /** Âncora de oferta do turno — MESMA busca usada pelo `contemplation_dial`
@@ -360,6 +399,21 @@ export async function* runAgentTurn(args: {
 	// é sempre falsa até existir um evento real equivalente. Nunca a narrativa
 	// do LLM (Lei 1).
 	const hasReceivedDocuments = (meta.documentSlotsSent?.length ?? 0) > 0;
+	// FIX-336: fonte REAL de "proposta existe" — `bevi_proposals` pra esta
+	// conversa (fato do banco, nunca a narrativa do LLM). Computado UMA vez no
+	// início do turno: a criação da proposta (startContract/fireContract) é
+	// SEMPRE um evento determinístico fora do stream do agente (captura
+	// textual/clique separada), nunca algo que acontece DURANTE este turno —
+	// mesma garantia que já vale pra hasReceivedDocuments acima.
+	const hasProposal = (await getLatestBeviProposal(conversationId)) !== null;
+	// FIX-342: administradoras REALMENTE exibidas em turnos ANTERIORES desta
+	// conversa (fato persistido nos artifacts do reveal, nunca a narrativa do
+	// LLM) — carregado uma vez no início do turno, mesmo padrão de
+	// `hasProposal` acima. Combinado em `stateVerificationContext()` com
+	// `revealGroupsById` (grupos indexados NESTE turno) pra cobrir os dois
+	// casos: alucinação citando oferta de um turno anterior E alucinação
+	// dentro do próprio turno em que a busca aconteceu.
+	const shownOffersFromHistory = await listShownOffersForConversation(conversationId);
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -435,10 +489,51 @@ export async function* runAgentTurn(args: {
 	// FIX-270: o getter é chamado a cada push/flush — `hasSearchToolCall` reflete
 	// as tool-calls JÁ processadas até o ponto corrente do stream (causal: uma
 	// claim "já busquei" só é verdadeira se a tool já rodou antes dela).
-	const ephemeralFilter = new EphemeralTextFilter(() => ({
-		hasReceivedDocuments,
-		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-	}));
+	// DESAMARRA (2026-07-13): o modelo fez a pergunta do gate com as palavras dele
+	// neste turno → o card não repete a canônica (só mostra o input).
+	let modelAskedGateQuestion = false;
+	// FIX-333: `pendingTopOffer` reflete o grupo de maior score JÁ INDEXADO neste
+	// turno (revealGroupsById, populado a partir do tool-result REAL de
+	// recommend_groups/search_groups — nunca a narrativa do LLM). Enquanto
+	// `reco-consent` não foi respondido, o sanitizer usa isso pra dropar
+	// qualquer menção à administradora/parcela do top-1 (ver sanitizer.ts).
+	// FIX-336: `hasProposal` é o FATO do banco (existe linha em bevi_proposals?) —
+	// sem ele o modelo afirmava "sua proposta já saiu" com zero proposta criada.
+	// FIX-342: `shownAdministradoras` une o histórico persistido
+	// (`shownOffersFromHistory`) com os grupos indexados NESTE turno
+	// (`revealGroupsById`) — sem isso o modelo recomendava uma administradora
+	// (ex.: "Bradesco") que nunca esteve entre as ofertas reais da conversa.
+	const stateVerificationContext = (): StateVerificationContext => {
+		const topOffer = pickBestRankedGroup(revealGroupsById);
+		const shownAdministradoras = [
+			...shownOffersFromHistory.map((o) => o.administradora),
+			...[...revealGroupsById.values()].map((g) => g.administradora),
+		].filter((a): a is string => typeof a === "string" && a.length > 0);
+		return {
+			hasReceivedDocuments,
+			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+			hasProposal,
+			recoConsentPending: meta.recoConsentAnswered !== true,
+			pendingTopOffer: topOffer
+				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
+				: null,
+			// FIX-349 (P1.2, veredito rodada 4): TODAS as ofertas já indexadas neste
+			// turno, mesmo antes de `recommend_groups` estabelecer o `rank` (o fluxo
+			// obrigatório do reveal chama `search_groups` e manda o modelo ANUNCIAR
+			// o resultado ANTES de `recommend_groups` rodar — `pendingTopOffer`
+			// fica `null` nessa janela, mas `search_groups` já devolve
+			// administradora/parcela reais por grupo). Sem isto, uma narração
+			// prematura baseada só em `search_groups` escapava do guard
+			// `isPrematureTopOfferClaim` (achado ao vivo: imovel-whatsapp t6 /
+			// servicos-whatsapp t6).
+			pendingOffers: [...revealGroupsById.values()].map((g) => ({
+				administradora: g.administradora,
+				monthlyPayment: g.monthlyPayment,
+			})),
+			shownAdministradoras,
+		};
+	};
+	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
 	const composeClean = (raw: string, blockSep = ""): string => {
@@ -631,6 +726,7 @@ export async function* runAgentTurn(args: {
 						artifactType,
 						userIntent,
 						isUserTurn,
+						channel,
 						discoveryCount,
 						// FIX-187: turno com descoberta falhada → guard dropa a família de
 						// proposta (o tool-result da busca falhada já passou neste ponto).
@@ -662,6 +758,7 @@ export async function* runAgentTurn(args: {
 									await getAdministradoraLogos(),
 									requestedCreditValue,
 									await getKnownCreditValues(),
+									scoringInputFromMeta(meta),
 								);
 							}
 							if (artifactType === "simulation_result") {
@@ -786,6 +883,7 @@ export async function* runAgentTurn(args: {
 								await getAdministradoraLogos(),
 								requestedCreditValue,
 								await getKnownCreditValues(),
+								scoringInputFromMeta(meta),
 							);
 						}
 						if (artifactType === "comparison_table") {
@@ -1004,8 +1102,14 @@ export async function* runAgentTurn(args: {
 				});
 				const previewPassesArtifactGuard =
 					!previewProducedArtifact || allowGateWithArtifacts(previewGate, previewArtifactTypes);
-				if (previewShouldShow && previewPassesArtifactGuard) {
-					ephemeralFilter.discardHeldQuestion();
+				// DESAMARRA (2026-07-13): antes, aqui a pergunta do modelo era
+				// DESCARTADA (`discardHeldQuestion`) porque o card ia perguntar. O
+				// modelo ficava mudo e o usuário ouvia sempre a mesma frase canônica.
+				// Agora a pergunta do MODELO vence: ela é emitida, e o card se cala
+				// (só mostra o input). A regra "1 pergunta por balão" segue de pé —
+				// mudou só quem faz a pergunta.
+				if (previewShouldShow && previewPassesArtifactGuard && ephemeralFilter.hasHeldQuestion()) {
+					modelAskedGateQuestion = true;
 				}
 			}
 		}
@@ -1024,11 +1128,11 @@ export async function* runAgentTurn(args: {
 	// persista e desgruda falas coladas — o filtro já limpou ao vivo com o
 	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
 	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
+	// `stateVerificationContext()` já carrega hasReceivedDocuments, hasSearchToolCall,
+	// hasProposal (FIX-336), recoConsentPending e pendingTopOffer (FIX-333) — os dois
+	// blocos da onda contribuíram campos pro MESMO contexto; aqui é um só.
 	fullResponse = normalizeGluedSentences(
-		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
-			hasReceivedDocuments,
-			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-		}),
+		stripProcessPreamble(collapseEchoedSegments(fullResponse), stateVerificationContext()),
 	).replace(/^\s+/, "");
 
 	try {
@@ -1455,5 +1559,8 @@ export async function* runAgentTurn(args: {
 		isConcierge,
 		nextGateToFire,
 		prefixForNextGate,
+		modelAskedGateQuestion,
+		sanitizerDropReasons: ephemeralFilter.droppedSegmentReasons(),
+		executedToolCount: executedToolNames.length,
 	};
 }

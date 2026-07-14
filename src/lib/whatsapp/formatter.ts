@@ -1,25 +1,47 @@
 import { gateQuestion, LANCE_EMBUTIDO_ASK } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+
+// FIX-337 (invariante I6, docs/jornada/decisoes-do-cliente.md): dado sensível
+// não pode trafegar em texto plano no WhatsApp. O modelo não tem nenhuma
+// barreira determinística que impeça ecoar o CPF do cliente na fala livre
+// (dossiê auto-whatsapp t10: "Perfeito, anotei seu CPF: 11 dígitos em claro").
+// Mesmo candidato de captura de identify-capture.ts (extractCpf): qualquer
+// sequência de dígitos, com ou sem pontuação, entre 9 e 17 chars. Só mascara
+// o que VALIDA como CPF (dígito verificador) — nunca outros números (valor,
+// data, telefone) que por acaso tenham 11 dígitos.
+const CPF_CANDIDATE_RE = /\d[\d.\-\s]{9,17}\d/g;
+
+/** Mascara qualquer sequência que valide como CPF real — barreira em CÓDIGO
+ * (Lei 1/4), não regra-no-prompt. Aplicada em TODO texto outbound do
+ * WhatsApp, independente de onde o dígito veio na fala do modelo. */
+export function scrubCpf(text: string): string {
+	return text.replace(CPF_CANDIDATE_RE, (match) => (isValidCpf(match) ? maskCpf(match) : match));
+}
 
 export function formatTextForWhatsApp(text: string): string {
 	return (
-		text
-			// Strip leaked system instructions ("[sistema: ...]" / "[contexto: ...]")
-			// that the AI sometimes echoes from conversation history.
-			.replace(/^\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "")
-			.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
-			// Strip hallucinated reproductions of the profile summary template.
-			.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
-			// Markdown headings → WhatsApp bold.
-			.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-			.replace(/\*\*(.+?)\*\*/g, "*$1*")
-			// Drop blockquote markers.
-			.replace(/^>\s+/gm, "")
-			// Bug QA 2026-07-03: o LLM quebra valores no separador de milhar/decimal
-			// ("R$ 100.\n\n000,00") por causa da regra "1-2 frases por mensagem" — lê o
-			// ponto como fim de frase. Um ponto OU vírgula ENTRE DÍGITOS é sempre
-			// separador numérico, nunca fim de frase: reúne o número (Lei 4, determinístico).
-			.replace(/(\d[.,])\s*\n\s*(\d)/g, "$1$2")
+		scrubCpf(
+			text
+				// Strip leaked system instructions ("[sistema: ...]" / "[contexto: ...]")
+				// that the AI sometimes echoes from conversation history.
+				.replace(/^\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "")
+				.replace(/\n\s*\[(?:sistema|contexto|fluxo|FLUXO[^\]]*?):[^\]]*\]\s*/gim, "\n")
+				// Strip hallucinated reproductions of the profile summary template.
+				.replace(/\*?Show!\s*Já\s*tenho\s*seu\s*perfil\s*pronto[\s\S]*$/i, "")
+				// Markdown headings → WhatsApp bold.
+				.replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+				.replace(/\*\*(.+?)\*\*/g, "*$1*")
+				// Drop blockquote markers.
+				.replace(/^>\s+/gm, "")
+				// Bug QA 2026-07-03: o LLM quebra valores no separador de milhar/decimal
+				// ("R$ 100.\n\n000,00") por causa da regra "1-2 frases por mensagem" — lê o
+				// ponto como fim de frase. Um ponto OU vírgula ENTRE DÍGITOS é sempre
+				// separador numérico, nunca fim de frase: reúne o número (Lei 4, determinístico).
+				// FIX-337 (I6): scrubCpf roda DEPOIS deste reagrupamento, pra pegar CPF
+				// partido em duas linhas pelo modelo.
+				.replace(/(\d[.,])\s*\n\s*(\d)/g, "$1$2"),
+		)
 			// Add missing space in "frase.Outra" → "frase. Outra".
 			.replace(/([.!?])([A-ZÀ-ÝÁÉÍÓÚÂÊÔÇÃÕ])/g, "$1 $2")
 			// "frase:Outra" → "frase: Outra" (only when stuck without space).
@@ -849,10 +871,7 @@ export function scenariosToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 			? `*3 cenários — ${administradora} • ${formatBRL(creditValue)}*`
 			: "*3 cenários de contemplação*";
 
-	const renderBlock = (
-		label: string,
-		s: Record<string, unknown> | undefined,
-	): string | null => {
+	const renderBlock = (label: string, s: Record<string, unknown> | undefined): string | null => {
 		if (!s) return null;
 		const lancePercent = s.lancePercent as number | undefined;
 		const months = s.expectedTermMonths as number | undefined;

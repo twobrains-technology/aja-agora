@@ -163,22 +163,32 @@ export async function pipeGatePrompt(args: {
 	conversationId: string;
 	gate: Gate;
 	writer: Writer;
+	/** O modelo já fez esta pergunta com as palavras dele → o card só mostra o
+	 * input, sem repetir a pergunta canônica. */
+	modelAsked?: boolean;
 }): Promise<void> {
-	const { conversationId, gate, writer } = args;
+	const { conversationId, gate, writer, modelAsked } = args;
 	const meta = await reloadMeta(conversationId);
 	const data = gatePartData(gate, meta);
 	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
 	// de "R$ 100 mil" na educação de lance embutido.
 	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): copy por canal — "web" pra
 	// não herdar a frase "eu já pego aqui do WhatsApp" (gate identify).
-	const question = gateQuestion(
-		gate,
-		meta.currentCategory,
-		meta.recommendedOffer?.creditValue,
-		"web",
-		meta.qualifyAnswers?.creditMentionedAtDesire,
-		meta.qualifyAnswers?.desiredItem,
-	);
+	//
+	// DESAMARRA (2026-07-13): quando o MODELO já perguntou (`modelAsked`), o card
+	// NÃO repete a pergunta canônica — emite só o input. Antes, a pergunta do
+	// modelo era descartada pra esta aqui sair sempre igual; era a origem do "o
+	// agente responde sempre a mesma coisa".
+	const question = modelAsked
+		? null
+		: gateQuestion(
+				gate,
+				meta.currentCategory,
+				meta.recommendedOffer?.creditValue,
+				"web",
+				meta.qualifyAnswers?.creditMentionedAtDesire,
+				meta.qualifyAnswers?.desiredItem,
+			);
 	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
 	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
@@ -299,14 +309,21 @@ export async function pipeOrchestratorToWriter(
 				const data = gatePartData(ev.gate, meta);
 				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
 				// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
-				const question = gateQuestion(
-					ev.gate,
-					meta.currentCategory,
-					meta.recommendedOffer?.creditValue,
-					"web",
-					meta.qualifyAnswers?.creditMentionedAtDesire,
-					meta.qualifyAnswers?.desiredItem,
-				);
+				//
+				// DESAMARRA (2026-07-13): se o MODELO já perguntou (`ev.modelAsked`), o
+				// card cala a pergunta canônica e mostra só o input. Antes era o
+				// contrário — a pergunta do modelo era descartada pra esta sair sempre
+				// idêntica, o que fazia o agente repetir a mesma frase pra sempre.
+				const question = ev.modelAsked
+					? null
+					: gateQuestion(
+							ev.gate,
+							meta.currentCategory,
+							meta.recommendedOffer?.creditValue,
+							"web",
+							meta.qualifyAnswers?.creditMentionedAtDesire,
+							meta.qualifyAnswers?.desiredItem,
+						);
 				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
 				if (data || question) {
 					emittedVisible = true;

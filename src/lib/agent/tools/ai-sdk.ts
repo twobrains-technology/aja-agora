@@ -18,10 +18,13 @@ import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
+import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
+import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { compareWithFinancing } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -149,7 +152,12 @@ export const recommendationSchema = z.object({
 	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
 	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
 	// real (>0). A LLM não digita mais número de contemplação — Lei 3/4.
-	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
+	// FIX-334: `score`/`scoreBreakdown` ficaram OPCIONAIS — o modelo não recebe mais
+	// o número cru no tool-result de recommend_groups (só `scoreLabel`, qualitativo),
+	// então não tem de onde copiar um valor real aqui. Nunca foram lidos deste input
+	// de qualquer forma: `coerceRecommendationPayload` sempre RECALCULA score/
+	// scoreBreakdown a partir do grupo real (scoreGroup), nunca do que a LLM digita.
+	score: z.number().min(0).max(1).optional().describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
 	scoreBreakdown: z
 		.object({
 			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
@@ -157,7 +165,8 @@ export const recommendationSchema = z.object({
 			adminFee: z.number().describe("Score de taxa de administracao 0-1"),
 			termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
 		})
-		.describe("Detalhamento do score por fator"),
+		.optional()
+		.describe("Detalhamento do score por fator (nao usado — ignorado pelo servidor)"),
 });
 
 // FIX-228 (docs/02-cards-novos.md CARD 1) — input mínimo: a LLM só escolhe o
@@ -353,6 +362,41 @@ const STATUS_NO_CONTEXT = {
 		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
+
+// FIX-332 (P0.1, veredito rodada 1 do loop desamarra-agente) — pós-reveal SEM
+// troca de faixa, search_groups/recommend_groups NÃO re-buscam a Bevi: devolvem
+// os grupos JÁ EXIBIDOS nesta conversa (mesma fonte de dado do
+// listShownOffersForConversation usado pelo fallback de tool-error,
+// choose-offer.ts). Isso dá ao modelo um resultado ACIONÁVEL (o groupId LITERAL
+// pra usar em simulate_quota/get_group_details) em vez de deixar a tool fora do
+// toolset — o que hoje vira NoSuchToolError e descarta a fala inteira do turno.
+function shownGroupsSearchResult(offers: ChosenOffer[]): {
+	groups: Array<{
+		id: string;
+		administradora?: string;
+		creditValue?: number;
+		termMonths?: number;
+		monthlyPayment?: number;
+	}>;
+	total: number;
+	note: string;
+} {
+	return {
+		groups: offers.map((o) => ({
+			id: o.groupId,
+			administradora: o.administradora,
+			creditValue: o.creditValue,
+			termMonths: o.termMonths,
+			monthlyPayment: o.monthlyPayment,
+		})),
+		total: offers.length,
+		note:
+			"Estes são os grupos JÁ EXIBIDOS nesta conversa — não é uma busca nova, a Bevi não foi " +
+			"consultada de novo. Use o id LITERAL direto em simulate_quota/get_group_details pra " +
+			"responder o pedido do usuário. NÃO chame present_comparison_table/present_recommendation_card " +
+			"de novo — a tela já mostra essas opções.",
+	};
+}
 
 // FIX-186 (Kairo 2026-07-01) — marcador do tool-result quando a descoberta na
 // Bevi falha (após retry silencioso, ou erro duro). O `runDiscovery` retorna
@@ -587,11 +631,19 @@ async function executeRecommendGroups(
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
 	return {
-		recommendations: ranked.map((r) => ({
+		recommendations: ranked.map((r, i) => ({
 			// FIX-23: dieta — `totalParticipants` morto fora do tool-result.
 			...toModelGroupSummary(r.group),
-			score: r.score,
-			scoreBreakdown: r.factors,
+			// FIX-334 (rodada 2, veredito Sonnet — "score de 73%" na fala): o score
+			// CRU (0-1) e o breakdown por fator NÃO saem mais pro modelo — só o
+			// rótulo qualitativo (mesma `recommendationFitLabel` do card, FIX-7). O
+			// card em si não perde nada: `coerceRecommendationPayload` RECALCULA
+			// score/scoreBreakdown a partir do grupo real (`scoreGroup`), nunca do
+			// que o modelo ecoou de volta. `rank` (posição ordinal, 0=melhor)
+			// substitui o score cru como sinal de "é o top-1" pro código server-side
+			// (pickBestRankedGroup) — seguro de expor, não é um número de "score".
+			rank: i,
+			scoreLabel: recommendationFitLabel(r.score, r.factors.monthlyFit),
 			alternativa: altById.get(r.group.id) ?? false,
 		})),
 		total: ranked.length,
@@ -691,7 +743,10 @@ export const consorcioTools = {
 			"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario.",
 		inputSchema: recommendationSchema,
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
-			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
+			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
+			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	}),
 
@@ -1095,6 +1150,12 @@ export type ConsorcioToolsContext = {
 	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
 	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
 	hasLance?: boolean;
+	/** FIX-332: pós-reveal SEM troca de faixa (meta.revealCompleted===true e
+	 * !revealValueTargetChanged(meta)) — search_groups/recommend_groups NÃO
+	 * re-buscam a Bevi, devolvem os grupos JÁ EXIBIDOS nos artifacts. Calculado
+	 * pelo chamador (builder.ts) a partir do meta; false/undefined preserva o
+	 * comportamento de busca real (pré-reveal ou troca legítima de faixa). */
+	reuseShownGroupsOnly?: boolean;
 };
 
 /**
@@ -1104,7 +1165,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId, hasLance } = ctx;
+	const { conversationId, hasLance, reuseShownGroupsOnly } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1228,7 +1289,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			});
 			if (!verdict.allow) return verdict.directive;
 			await markShown("recommendation_card", args);
-			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
+			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
+			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	});
 
@@ -1348,9 +1412,20 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	const search_groups = tool({
 		// FIX-70: opt-in `sweep` (varredura multi-faixa) só na tool por-request — a
 		// versão estática (registry) segue como sentinel sem contexto.
-		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais.`,
+		// FIX-332: pós-reveal sem troca de faixa, a tool não busca de novo — ver
+		// nota no corpo do execute.
+		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais. Pós-reveal, sem troca de faixa, devolve os grupos já exibidos nesta conversa em vez de buscar de novo.`,
 		inputSchema: searchGroupsSweepInput,
 		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
+			// FIX-332: pós-reveal com o MESMO valor-alvo, NÃO re-busca a Bevi (custo +
+			// write conflict, PROIBIDO pelo invariante) — devolve os grupos JÁ
+			// EXIBIDOS. Sem isso, search_groups ficava fora do toolset da fase reveal
+			// e o modelo tomava NoSuchToolError ao tentar detalhar/simular uma oferta
+			// já mostrada, descartando a fala inteira do turno pro fallback enlatado.
+			if (reuseShownGroupsOnly) {
+				if (!conversationId) return DISCOVERY_NO_CONTEXT;
+				return shownGroupsSearchResult(await listShownOffersForConversation(conversationId));
+			}
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			return runDiscovery("search_groups", async () => {
@@ -1411,9 +1486,15 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	});
 
 	const recommend_groups = tool({
-		description: consorcioTools.recommend_groups.description,
+		description: `${consorcioTools.recommend_groups.description} Pós-reveal, sem troca de faixa, devolve os grupos já exibidos nesta conversa em vez de buscar de novo.`,
 		inputSchema: recommendGroupsSchema,
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
+			// FIX-332: mesma interceptação de search_groups — pós-reveal com o
+			// MESMO valor-alvo, não re-busca a Bevi.
+			if (reuseShownGroupsOnly) {
+				if (!conversationId) return DISCOVERY_NO_CONTEXT;
+				return shownGroupsSearchResult(await listShownOffersForConversation(conversationId));
+			}
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			// FIX-289: reaproveita search_groups do MESMO turno se os parâmetros

@@ -37,6 +37,15 @@ const TRANSITION_PAUSE_MS = 1200;
 
 type PendingArtifact = { type: string; payload: Record<string, unknown> };
 
+/** Troca o corpo do interactive por um rótulo neutro — usado quando o MODELO já
+ * fez a pergunta em texto e o botão não deve repeti-la. Preserva a estrutura
+ * (action/botões); mexe só no `body.text`. */
+function withNeutralBody(interactive: Record<string, unknown>): Record<string, unknown> {
+	const body = interactive.body as { text?: string } | undefined;
+	if (!body || typeof body.text !== "string") return interactive;
+	return { ...interactive, body: { ...body, text: "Escolha uma opção:" } };
+}
+
 async function gateInteractive(
 	gate: Gate,
 	conversationId: string,
@@ -103,7 +112,42 @@ async function gateInteractive(
 // card interativo neste MVP — a recoreografia do reveal focou no canal web)
 // — a pergunta sai como texto e a resposta livre resolve via detectYesNoText
 // (orchestrator/index.ts), mesmo mecanismo do lance-embutido/simulator-offer.
-const WHATSAPP_TEXT_GATES = new Set<Gate>(["credit", "identify", "reco-consent"]);
+// `desire` entrou em 2026-07-14 — BUG DE PARIDADE achado no QA ao vivo: ele não
+// tem interactive e não estava aqui, então a pergunta ("Qual moto você tem em
+// mente?") simplesmente NÃO era entregue no WhatsApp. O agente respondia "Prazer,
+// Mario." e parava — turno morto, usuário sem saber o que dizer — enquanto o
+// directive de primeiro contato ainda promete que "o sistema pergunta o próximo
+// passo em seguida". Na web a pergunta saía normal. Travado em `paridade-gates.test.ts`.
+export const WHATSAPP_TEXT_GATES = new Set<Gate>([
+	"desire",
+	"credit",
+	"identify",
+	"reco-consent",
+]);
+
+// FIX-349 (P1.2, veredito rodada 4): subconjunto de `WHATSAPP_TEXT_GATES` SEM
+// NENHUM fallback estrutural (nem interactive, nem card) — a heurística
+// `modelAsked` (baseada em "o modelo terminou o turno com ALGUMA pergunta",
+// nunca checada contra o gate corrente) nunca pode apagar a entrega desses
+// gates: sem fallback, apagar o texto apaga o gate inteiro. `identify` tem o
+// beat de contexto fixo (gateContextBeat) como rede de segurança parcial;
+// `credit`/`desire` não são bloqueantes da mesma forma que `reco-consent`
+// (que trava a cascata inteira até responder — qualify-state.ts). Escopo
+// deliberadamente restrito ao gate com bug PROVADO (achado ao vivo,
+// `servicos-whatsapp`) — ver `consumeEvents` (case "gate").
+export const WHATSAPP_GATES_WITHOUT_FALLBACK = new Set<Gate>(["reco-consent"]);
+
+/** Gates entregues no WhatsApp como BOTÃO/lista (espelha os `case` de
+ * `gateInteractive` que devolvem payload). Existe pra que o teste de paridade
+ * consiga enxergar a cobertura real do canal. */
+export const WHATSAPP_INTERACTIVE_GATES = new Set<Gate>([
+	"experience",
+	"timeframe",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+	"simulator-offer",
+]);
 async function gateTextPrompt(
 	gate: Gate,
 	conversationId: string,
@@ -327,14 +371,39 @@ async function consumeEvents(
 				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
 				if (interactive) {
 					if (hasSent) await pauseBeforeNext();
-					await sendInteractiveMessage(from, interactive);
+					// DESAMARRA (2026-07-13): o modelo já fez a pergunta com as palavras
+					// dele (`ev.modelAsked`) — o corpo do botão não repete a canônica,
+					// vira só o rótulo do input. Sem isso o usuário lia a pergunta duas
+					// vezes (a humana e a enlatada) no mesmo balão.
+					await sendInteractiveMessage(
+						from,
+						ev.modelAsked ? withNeutralBody(interactive) : interactive,
+					);
 					lastWasInteractive = true;
 					hasSent = true;
 					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
-					const textPrompt = await gateTextPrompt(ev.gate, conversationId, undefined);
+					// DESAMARRA: se o modelo já perguntou, não repetimos a canônica.
+					//
+					// FIX-349 (P1.2, veredito rodada 4): `ev.modelAsked` vem de uma
+					// heurística CEGA (`EphemeralTextFilter.hasHeldQuestion()` — "a ÚLTIMA
+					// sentença do modelo terminou em ALGUMA pergunta", sem checar se ela
+					// tem qualquer relação com o gate corrente). Pra gates com interactive
+					// (acima), um falso positivo é inofensivo — o card ainda aparece com
+					// corpo neutro. Mas um gate SEM interactive nenhum não tem fallback: se
+					// o `modelAsked` apagar o textPrompt aqui, o gate inteiro AFUNDA —
+					// nem card, nem texto (achado ao vivo: `reco-consent` nunca apareceu na
+					// conversa inteira em `servicos-whatsapp`, rodada 4, porque o modelo
+					// fechou o turno anterior com uma pergunta genérica — "Bora ver essas
+					// opções?" — sem relação nenhuma com o consentimento). Gates nesta lista
+					// nunca deixam o `modelAsked` apagar a única entrega possível.
+					const textPrompt = WHATSAPP_GATES_WITHOUT_FALLBACK.has(ev.gate)
+						? await gateTextPrompt(ev.gate, conversationId, undefined)
+						: ev.modelAsked
+							? null
+							: await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);
@@ -508,12 +577,26 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
-	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 	// FIX-189 (pendura): a descoberta SEMPRE deve revelar algo — se o turno fechar
 	// só com o chip (0 texto, 0 artifact), o guardEmptyTurn emite o fallback em vez
 	// de deixar o usuário no silêncio até cutucar.
 	await runDirectiveWithOrchestrator({ from, conversationId, directive, guardEmptyTurn: true });
+	// FIX-339 (porte do FIX-291b, src/lib/web/adapter.ts:562-577): searchDispatched
+	// só é marcado DEPOIS de confirmar que a descoberta de fato completou
+	// (revealCompleted, setado pelo runner só com artifacts REAIS na tela —
+	// runner.ts). Antes, o marcador saía PREEMPTIVO (acima, antes do directive
+	// rodar) — uma busca que falhasse/degradasse travava searchDispatched=true
+	// PRA SEMPRE, e o "turno morto" pós-CPF (G1, veredito whatsapp rodada 1)
+	// nunca liberava retry num turno seguinte.
+	const postSearch = await reloadMeta(conversationId);
+	if (postSearch.revealCompleted) {
+		await persistMeta(conversationId, { ...postSearch, searchDispatched: true });
+	} else {
+		console.log(
+			`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+		);
+	}
 }
 
 export async function fireGate(

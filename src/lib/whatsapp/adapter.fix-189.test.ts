@@ -63,10 +63,17 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("FIX-189 — descoberta muda no WhatsApp recebe fallback, não silêncio", () => {
-	it("descoberta MUDA (só chip) => envia o fallback determinístico", async () => {
+	it("descoberta MUDA (só chip) => NUNCA fica em silêncio", async () => {
+		// FIX-351: o invariante do FIX-189 é "não deixar o usuário no vácuo" — não a
+		// frase específica. Antes, sem gate pendente reengajável, a única saída era o
+		// EMPTY_TURN_FALLBACK ("Acho que me perdi"). Agora, se HÁ um gate com pergunta
+		// pendente, o agente RE-PERGUNTA (conduzir > confessar confusão). O que não
+		// pode, em nenhuma hipótese, é o turno fechar mudo.
 		mocks.runTurn.mockReturnValue(muteDiscovery());
 		await runSearchSummaryWithOrchestrator({ from: WA, conversationId: "c1" });
-		expect(mocks.sendText).toHaveBeenCalledWith(WA, EMPTY_TURN_FALLBACK);
+		expect(mocks.sendText).toHaveBeenCalled();
+		const texto = mocks.sendText.mock.calls.at(-1)?.[1] ?? "";
+		expect(texto.length).toBeGreaterThan(0);
 	});
 
 	it("descoberta FALANTE => NÃO envia o fallback (sem duplicar resposta)", async () => {

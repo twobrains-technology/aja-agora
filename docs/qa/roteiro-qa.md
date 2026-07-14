@@ -9,11 +9,18 @@ escopo_padrao: "carro (auto) no web, do sonho à proposta, ponta-a-ponta"
 # Roteiro de QA do Dono — Aja Agora
 
 > Fluxo de negócio + spec de teste do Aja Agora, usado pela skill global `qa-dono-produto` pra
-> testar à mão com olho crítico de dono. **Oráculo** do comportamento esperado:
-> `docs/jornada/jornada-canonica.md` (é REGRA, não referência — divergência código × jornada é
-> defeito, salvo os não-bugs da seção 7 e as tensões T1/T2). Complementos:
-> `docs/jornada/CONTEXT.md` (histórico/decisões D1–D22). O conceito do simulador (Bernardo)
-> está consolidado na jornada canônica (passo 5). Mantenha este arquivo atualizado a cada rodada.
+> testar à mão com olho crítico de dono.
+>
+> **Oráculo do comportamento:** o mockup + handoff
+> (`docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/`) pra *como a conversa deve
+> fluir*, e os **invariantes duros** de [`../jornada/decisoes-do-cliente.md`](../jornada/decisoes-do-cliente.md)
+> pro que é *defeito de verdade*.
+>
+> ⚠️ **Divergência de FALA não é bug.** O agente pode perguntar com outras palavras, mudar a ordem
+> quando o usuário puxa a conversa, improvisar. Isso é o produto funcionando. Só é defeito o que
+> quebra um invariante (simulou sem CPF, inventou número, prometeu cota reservada) ou o que deixa a
+> conversa **pior** (repetitiva, robótica, ignora o que o usuário disse). Mantenha este arquivo
+> atualizado a cada rodada.
 
 ## 1. O que é o produto
 

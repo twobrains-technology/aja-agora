@@ -18,15 +18,21 @@ import {
 	isBannedLexicon,
 	isCatalogResearchClaim,
 	isDocumentReceiptClaim,
+	findUnavailableAdministradoraMention,
+	isHallucinatedAdministradoraClaim,
 	isMechanismNarrationClaim,
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
+	isPrematureTopOfferClaim,
 	isProactiveCallbackClaim,
 	isProcessPreamble,
+	isScorePercentageClaim,
+	isProposalCompletionClaim,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
+	scrubCpf,
 	splitSegments,
 	stripEmoji,
 	stripProcessPreamble,
@@ -68,6 +74,101 @@ describe("FIX-188 — isProcessPreamble reconhece preâmbulo de processo", () =>
 	it("segmento vazio não é preâmbulo", () => {
 		expect(isProcessPreamble("")).toBe(false);
 		expect(isProcessPreamble("   ")).toBe(false);
+	});
+});
+
+describe("FIX-335 — 'Agora vou <ação de produto>' é anúncio de passo (log de pipeline), entra na família de isProcessPreamble", () => {
+	// Frases EXATAS do veredito (rodada 1, 4/4 dossiês web) que soam como log de
+	// execução em vez de gente vendendo.
+	const ANUNCIOS_DE_PASSO = [
+		"Agora vou recomendar a melhor opção pra você:",
+		"Agora vou te mostrar a mais adequada pro seu perfil:",
+		"Agora deixa eu te mostrar como funciona em detalhes:",
+		"Vou recomendar a mais adequada pro seu perfil:",
+		"Agora deixa eu aprofundar os números dessa opção:",
+		"Vou destacar a mais adequada pro seu perfil agora:",
+		"Agora dá uma olhada no detalhe dessa opção:",
+		"Agora vou te recomendar a mais adequada:",
+		"Agora vou simular a melhor opção pra você:",
+		"Agora vou detalhar como fica sua simulação:",
+		"Agora deixa eu aprofundar a simulação com o cenário completo, incluindo lance:",
+	];
+
+	it("isProcessPreamble classifica como preâmbulo todos os anúncios de passo do veredito", () => {
+		for (const p of ANUNCIOS_DE_PASSO) {
+			expect(isProcessPreamble(p), `deveria dropar: "${p}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega narração legítima com conteúdo real (entidade/número nomeados)", () => {
+		expect(isProcessPreamble("Vou simular a Rodobens com R$ 900 mil:")).toBe(false);
+		expect(isProcessPreamble("Essa é a que eu indicaria pra alguém da minha família:")).toBe(false);
+		expect(isProcessPreamble("A parcela fica em R$ 2.778,34 por mês.")).toBe(false);
+	});
+
+	it("stripProcessPreamble remove o anúncio de passo mas preserva o resto do texto", () => {
+		const input =
+			"Encontramos 3 boas opções pra você! Agora vou te recomendar a mais adequada: essa é ótima pro seu perfil.";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("agora vou te recomendar");
+		expect(out).toContain("Encontramos 3 boas opções pra você!");
+	});
+});
+
+// FIX-348 (loop-de-goal desamarra, rodada 4, 3ª rodada seguida com o mesmo
+// achado): o FIX-335 cobre só "vou/deixa eu recomendar/destacar/detalhar/
+// aprofundar" — escapa a família "deixa eu (te) apresentar/trazer", "vou (te)
+// apresentar/trazer" (sempre risco de log de pipeline, nenhuma narração
+// legítima usa esses verbos com entidade concreta neste domínio) e "vou/
+// deixa eu (te) mostrar <objeto vago: as opções/o cenário completo/os
+// números exatos>" (mesma família de risco do "a mais adequada"/"a melhor
+// opção" já coberta — objeto CONCRETO continua imune, ver teste de não-regra
+// abaixo). Frases EXATAS do veredito rodada 4 (D1/D6).
+describe("FIX-348 — família 'deixa eu/vou (te) apresentar/trazer/mostrar <objeto vago>' entra em isProcessPreamble", () => {
+	const ANUNCIOS_DE_PASSO_FIX_348 = [
+		"Agora vou te mostrar o cenário completo:",
+		"vou te mostrar as opções pra você escolher",
+		"Agora vou te mostrar os números exatos dessa opção:",
+		"Deixa eu apresentar as opções pra você escolher uma e simular:",
+		"Vou apresentar as opções agora:",
+		"Deixa eu trazer as opções pra você:",
+	];
+
+	it("isProcessPreamble classifica como preâmbulo todos os anúncios de passo do veredito rodada 4", () => {
+		for (const p of ANUNCIOS_DE_PASSO_FIX_348) {
+			expect(isProcessPreamble(p), `deveria dropar: "${p}"`).toBe(true);
+		}
+	});
+
+	it("REGRESSÃO EXIGIDA pelo card: 'Deixa eu apresentar as opções pra você escolher uma e simular:' é dropado", () => {
+		expect(
+			isProcessPreamble("Deixa eu apresentar as opções pra você escolher uma e simular:"),
+		).toBe(true);
+	});
+
+	it("REGRESSÃO EXIGIDA pelo card: transição curta legítima ('Olha só o que encontrei:') PASSA", () => {
+		expect(isProcessPreamble("Olha só o que encontrei:")).toBe(false);
+	});
+
+	it("NÃO vira mordaça: mostrar/apresentar com entidade CONCRETA (nome/número) continua passando", () => {
+		expect(isProcessPreamble("Vou te mostrar a Rodobens com a parcela de R$ 900:")).toBe(false);
+		expect(isProcessPreamble("Deixa eu te apresentar a proposta da Itaú, R$ 1.200 por mês:")).toBe(
+			false,
+		);
+	});
+
+	it("NÃO vira mordaça: outras transições curtas e convites legítimos continuam passando", () => {
+		expect(isProcessPreamble("Bora ver o que encaixa na sua faixa:")).toBe(false);
+		expect(isProcessPreamble("Escolhe uma pra simular e ver como fica a parcela.")).toBe(false);
+		expect(isProcessPreamble("Show, esse plano encaixa bem no seu orçamento.")).toBe(false);
+	});
+
+	it("stripProcessPreamble remove o anúncio novo mas preserva o resto do texto", () => {
+		const input =
+			"Encontramos 2 boas opções pra você! Deixa eu apresentar as opções pra você escolher uma e simular: a primeira encaixa bem no seu perfil.";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("deixa eu apresentar");
+		expect(out).toContain("Encontramos 2 boas opções pra você!");
 	});
 });
 
@@ -149,6 +250,57 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+// regrediu): quando o sanitizer dropa TODOS os segmentos de um turno, o
+// texto final fica vazio e o guard de turno-vazio (empty-turn-guard.ts)
+// dispara o fallback enlatado "Acho que me perdi por aqui" — mesmo quando o
+// modelo respondeu de verdade e só foi barrado por um invariante. Sem
+// nenhuma instrumentação, é impossível distinguir "modelo não disse nada" de
+// "modelo disse algo e o sanitizer comeu tudo". `droppedSegmentReasons()`
+// expõe QUAL guard bloqueou, pra o runner poder dar ao modelo uma segunda
+// chance com o motivo — nunca relaxando o guard, nunca com texto fixo.
+describe("FIX-347 — EphemeralTextFilter expõe o MOTIVO de cada drop (turno vazio precisa saber por quê)", () => {
+	it("sem nenhum drop, a lista de motivos fica vazia", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Show, boa escolha!");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual([]);
+	});
+
+	it("preâmbulo de processo dropado registra o motivo 'process-preamble'", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("administradora fora das ofertas reais registra 'hallucinated-administradora'", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: ["ITAU CONSORCIOS"],
+		}));
+		f.push("A Bradesco tem uma parcela ótima pra você.");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["hallucinated-administradora"]);
+	});
+
+	it("turno com 2 segmentos dropados pelo MESMO motivo acumula só uma vez (sem duplicar)", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Vou buscar as opções certas pra você. Um segundo:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("segmento legítimo preservado não entra na lista de motivos", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você. Olha só o que encontrei:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
 	});
 });
 
@@ -326,6 +478,36 @@ describe("FIX-243 — 'taxa de contemplação' é PROIBIDA na fala (campo sem se
 	});
 });
 
+describe("FIX-334 — score/aderência em percentual é PROIBIDO na fala (regressão contra score-label.ts)", () => {
+	const SCORE_PERCENTAGE_SEGMENTS = [
+		"Você tem a Itaú em destaque com score de 73%.",
+		"Essa oferta tem 73% de aderência ao seu perfil.",
+		"O score de compatibilidade é 91%.",
+		"A aderência dessa oferta é de 60%.",
+		"Essa opção tem 85% de compatibilidade com o que você pediu.",
+	];
+
+	it("isScorePercentageClaim pega as frases que citam score/aderência/compatibilidade em %", () => {
+		for (const s of SCORE_PERCENTAGE_SEGMENTS) {
+			expect(isScorePercentageClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima (rótulo qualitativo, sem percentual de score)", () => {
+		expect(isScorePercentageClaim("Essa opção encaixa muito bem pra você.")).toBe(false);
+		expect(isScorePercentageClaim("É uma boa opção pro seu perfil.")).toBe(false);
+		expect(isScorePercentageClaim("A taxa de administração é de 13,46%.")).toBe(false);
+		expect(isScorePercentageClaim("Contempla 8 pessoas por mês.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de score percentual", () => {
+		const input = "Boa! Você tem a Itaú em destaque com score de 73%. Vamos seguir?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("score de 73%");
+		expect(out).toContain("Boa!");
+	});
+});
+
 describe("FIX-234 — léxico banido (tom consultivo, não 'brother')", () => {
 	const LEXICO_BANIDO_SEGMENTS = [
 		"Saco, né? Entendo bem.",
@@ -407,9 +589,9 @@ describe("FIX-283 — narração do próprio mecanismo interno é PROIBIDA (D23,
 		expect(
 			isMechanismNarrationClaim("O sistema vai te avisar quando a proposta mudar de status."),
 		).toBe(false);
-		expect(
-			isMechanismNarrationClaim("Sua parcela é debitada automaticamente todo mês."),
-		).toBe(false);
+		expect(isMechanismNarrationClaim("Sua parcela é debitada automaticamente todo mês.")).toBe(
+			false,
+		);
 		expect(isMechanismNarrationClaim("")).toBe(false);
 	});
 
@@ -523,6 +705,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out.toLowerCase()).not.toContain("recebidos");
 		expect(out).toContain("Boa!");
@@ -533,6 +716,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: true,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out).toContain("recebidos");
 	});
@@ -543,6 +727,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out.toLowerCase()).not.toContain("apareceu");
 		expect(out).toContain("Quer ver outra faixa?");
@@ -553,6 +738,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: true,
+			hasProposal: true,
 		});
 		expect(out).toContain("apareceu");
 	});
@@ -568,6 +754,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		}));
 		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
 		emitted += f.flush();
@@ -578,6 +765,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: true,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		}));
 		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
 		emitted += f.flush();
@@ -589,6 +777,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: false,
 			hasSearchToolCall: searchCalled,
+			hasProposal: true,
 		}));
 		// 1ª claim, ainda sem tool-call — deve ser dropada.
 		let emitted = f.push("Não apareceu nenhum grupo novo agora.");
@@ -600,6 +789,138 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		let emitted2 = f.push("Não apareceu nenhum grupo novo agora.");
 		emitted2 += f.flush();
 		expect(emitted2).toContain("apareceu");
+	});
+});
+
+describe("FIX-336 — isProposalCompletionClaim (afirmação de proposta pronta/já saiu)", () => {
+	const CLAIMS = [
+		"Sua proposta com a ITAÚ já saiu.",
+		"Sua proposta está pronta!",
+		"Sua proposta ficou pronta, é só assinar.",
+		"Vou processar seu interesse agora pra gente fechar tudo certinho.",
+		"Já está fechando a sua proposta.",
+		"Sua proposta real já foi criada.",
+	];
+
+	it("classifica como afirmação de proposta concluída todas as frases observadas", () => {
+		for (const c of CLAIMS) {
+			expect(isProposalCompletionClaim(c), `deveria classificar: "${c}"`).toBe(true);
+		}
+	});
+
+	it("NÃO classifica menção neutra a 'proposta' sem afirmar conclusão", () => {
+		expect(isProposalCompletionClaim("Quer que eu monte sua proposta?")).toBe(false);
+		expect(isProposalCompletionClaim("Assim que você confirmar, eu gero a proposta.")).toBe(false);
+	});
+
+	it("segmento vazio não é afirmação de proposta concluída", () => {
+		expect(isProposalCompletionClaim("")).toBe(false);
+	});
+});
+
+// FIX-336 (bloco-c-whatsapp-invariantes, invariante I4): dossiê auto-whatsapp
+// — o agente afirmou "Sua proposta com a ITAÚ já saiu" com `bevi_proposals`
+// vazio pra conversa (`SELECT count(*) FROM bevi_proposals WHERE
+// conversation_id='90b6c34f-…'` → 0). Mesmo padrão do FIX-270: o fato vem do
+// banco (hasProposal), nunca da narrativa do LLM.
+describe("FIX-336 — stripProcessPreamble/EphemeralTextFilter dropam promessa de proposta sem bevi_proposals real", () => {
+	it("dropa 'sua proposta já saiu' quando hasProposal=false (invariante I4)", () => {
+		const input = "Sua proposta com a ITAÚ já saiu.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		});
+		expect(out.toLowerCase()).not.toContain("já saiu");
+	});
+
+	it("PRESERVA 'sua proposta já saiu' quando hasProposal=true (bevi_proposals tem linha real)", () => {
+		const input = "Sua proposta com a ITAÚ já saiu.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: true,
+		});
+		expect(out).toContain("já saiu");
+	});
+
+	it("dossiê auto-whatsapp real: dropa a alucinação de fechamento sem derrubar o resto do balão", () => {
+		const input =
+			"Madalena, a gente já está fechando! Sua proposta com a ITAÚ já saiu — é só acompanhar pelo WhatsApp que você confirmou agora pouco.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		});
+		expect(out.toLowerCase()).not.toContain("já saiu");
+	});
+
+	it("EphemeralTextFilter dropa ao vivo quando o getter reporta hasProposal=false", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		}));
+		let emitted = f.push("Sua proposta está pronta! Já pode conferir.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("pronta");
+	});
+
+	it("EphemeralTextFilter PRESERVA quando o getter reporta hasProposal=true", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: true,
+		}));
+		let emitted = f.push("Sua proposta está pronta! Já pode conferir.");
+		emitted += f.flush();
+		expect(emitted).toContain("pronta");
+	});
+});
+
+// FIX-337 (bloco-c-whatsapp-invariantes, invariante I6): defesa em
+// profundidade — mesma barreira do formatter.ts (`scrubCpf` em
+// whatsapp/formatter.ts), aqui como segunda linha pro texto que sai da
+// stream do modelo. CPF de teste: 529.982.247-25 (mesmo de identity.test.ts).
+describe("FIX-337 — scrubCpf mascara CPF real (dígito verificador válido)", () => {
+	it("mascara CPF com pontuação", () => {
+		expect(scrubCpf("seu CPF é 529.982.247-25, certo?")).toBe("seu CPF é ***.***.247-25, certo?");
+	});
+
+	it("mascara CPF sem pontuação", () => {
+		expect(scrubCpf("seu CPF é 52998224725")).toBe("seu CPF é ***.***.247-25");
+	});
+
+	it("NÃO mascara sequência de 11 dígitos que falha o dígito verificador", () => {
+		expect(scrubCpf("pedido nº 12345678901")).toBe("pedido nº 12345678901");
+	});
+
+	it("texto sem CPF passa incólume", () => {
+		expect(scrubCpf("Show, vamos seguir com a simulação.")).toBe(
+			"Show, vamos seguir com a simulação.",
+		);
+	});
+
+	it("string vazia não quebra", () => {
+		expect(scrubCpf("")).toBe("");
+	});
+});
+
+describe("FIX-337 — stripProcessPreamble/EphemeralTextFilter mascaram CPF no texto final", () => {
+	it("stripProcessPreamble mascara CPF ecoado pelo modelo (dossiê auto-whatsapp t10)", () => {
+		const out = stripProcessPreamble(
+			"Perfeito, anotei seu CPF: 529.982.247-25. E qual é o celular?",
+		);
+		expect(out).not.toContain("529.982.247-25");
+		expect(out).toContain("***.***.247-25");
+	});
+
+	it("EphemeralTextFilter mascara CPF ao vivo, no meio do stream", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Perfeito, anotei seu CPF: 529.982.247-25.");
+		emitted += f.flush();
+		expect(emitted).not.toContain("529.982.247-25");
+		expect(emitted).toContain("***.***.247-25");
 	});
 });
 
@@ -636,7 +957,9 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 		const out = stripProcessPreamble(BUG_TRANSCRIPT);
 		const questionMarks = out.match(/\?/g) ?? [];
 		expect(questionMarks.length).toBe(1);
-		expect(out).not.toContain("Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?");
+		expect(out).not.toContain(
+			"Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?",
+		);
 		expect(out).toContain("Você já fez consórcio antes?");
 	});
 
@@ -683,43 +1006,32 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 // precisa de um jeito de DESCARTAR a pergunta segurada (sem emiti-la) quando
 // prevê que um gate vai anexar a PRÓPRIA pergunta — `discardHeldQuestion()` é
 // esse mecanismo: limpa o estado interno sem produzir texto nenhum.
-describe("FIX-326 — discardHeldQuestion() descarta a pergunta segurada sem emitir nada", () => {
-	it("depois de discardHeldQuestion(), flush() não emite a pergunta que estava segurada", () => {
+describe("hasHeldQuestion() — a pergunta do MODELO vence o card (desamarra 2026-07-13)", () => {
+	// Antes (FIX-326), `discardHeldQuestion()` JOGAVA FORA a pergunta do modelo
+	// quando um gate com pergunta canônica ia disparar: o modelo ficava mudo e o
+	// card falava sozinho, sempre a mesma frase. Agora a prioridade inverteu — a
+	// pergunta do modelo é emitida e o CARD é que se cala (`modelAsked`). A regra
+	// do cliente ("nunca 2 perguntas no mesmo balão") continua valendo.
+	it("acusa a pergunta segurada, pro runner saber que o card deve calar", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Quer ajustar o valor do bem? ");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
-		expect(emitted.trim()).toBe("");
+		f.push("Boa, anotado. ");
+		expect(f.hasHeldQuestion()).toBe(false);
+		f.push("Quanto custa esse Corolla hoje? ");
+		expect(f.hasHeldQuestion()).toBe(true);
 	});
 
-	it("sem chamar discardHeldQuestion(), flush() continua emitindo a pergunta normalmente (regressão FIX-298)", () => {
+	it("a pergunta segurada é EMITIDA no flush (nunca mais descartada)", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Quer ajustar o valor do bem? ");
-		emitted += f.flush();
-		expect(emitted).toContain("Quer ajustar o valor do bem?");
+		f.push("Perfeito. ");
+		f.push("Você já fez consórcio antes? ");
+		const out = f.push("") + f.flush();
+		expect(out).toMatch(/já fez consórcio antes\?/i);
 	});
 
-	it("discardHeldQuestion() não afeta texto NÃO-interrogativo pendente (só descarta a pergunta)", () => {
+	it("sem pergunta nenhuma, hasHeldQuestion é false", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Perfeito, seguimos então. ");
-		emitted += f.push("Você já fez consórcio antes?");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).toContain("Perfeito, seguimos então.");
-		expect(emitted).not.toContain("Você já fez consórcio antes?");
-	});
-
-	it("chamar discardHeldQuestion() sem nenhuma pergunta segurada é no-op seguro (não lança, não quebra o resto)", () => {
-		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Perfeito, seguimos então.");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).toBe("Perfeito, seguimos então.");
+		f.push("Show, vamos seguir. ");
+		expect(f.hasHeldQuestion()).toBe(false);
 	});
 });
 
@@ -778,7 +1090,9 @@ describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () 
 	});
 
 	it("stripEmoji remove múltiplos emoji em posições diferentes", () => {
-		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe("Sua reserva foi confirmada");
+		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe(
+			"Sua reserva foi confirmada",
+		);
 	});
 
 	it("stripEmoji não mexe em acentuação pt-BR", () => {
@@ -804,5 +1118,267 @@ describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () 
 		expect(emitted).not.toContain("✅");
 		expect(emitted).toContain("Perfeito, kairo!");
 		expect(emitted).toContain("Bora simular.");
+	});
+});
+
+// FIX-342 (P0, veredito Sonnet rodada 2, "P0.1 — alucinação de administradora
+// inexistente": o agente recomendou "Bradesco" (imóvel-web) e "Estrela"
+// (serviços-web) — nenhuma das duas jamais esteve entre as ofertas REAIS
+// retornadas pela Bevi nessas conversas; o usuário perseguiu a oferta
+// fantasma por 4 turnos. `ctx.shownAdministradoras` é o FATO (runner.ts —
+// união do histórico persistido via `listShownOffersForConversation`,
+// choose-offer.ts, com os grupos indexados NESTE turno) — nunca a narrativa
+// do LLM decide quais administradoras existem.
+describe("FIX-342 — isHallucinatedAdministradoraClaim (administradora do mercado fora das ofertas reais)", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("classifica 'recomendo a Bradesco' como alucinação quando as ofertas reais são [ITAÚ, ÂNCORA]", () => {
+		expect(
+			isHallucinatedAdministradoraClaim(
+				"A recomendada no topo (Bradesco) é a que melhor equilibra parcela e prazo.",
+				{
+					hasReceivedDocuments: false,
+					hasSearchToolCall: false,
+					hasProposal: false,
+					shownAdministradoras: OFERTAS_REAIS,
+				},
+			),
+		).toBe(true);
+	});
+
+	it("NÃO classifica 'recomendo a ITAÚ' — a administradora está entre as ofertas reais", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("Recomendo a ITAÚ, que encaixa bem no seu orçamento.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("NÃO classifica menção à segunda oferta real (ÂNCORA)", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("A ÂNCORA também é uma opção sólida pra você.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("classifica 'Estrela' como alucinação (dossiê servicos-web real) quando as ofertas são [Rodobens, Âncora]", () => {
+		expect(
+			isHallucinatedAdministradoraClaim(
+				"Essa que mostrei primeiro (a Estrela) tem uma compatibilidade ótima com o que você pediu.",
+				{
+					hasReceivedDocuments: false,
+					hasSearchToolCall: false,
+					hasProposal: false,
+					shownAdministradoras: ["Rodobens", "Âncora"],
+				},
+			),
+		).toBe(true);
+	});
+
+	it("sem shownAdministradoras no contexto, nunca classifica (compat retroativa)", () => {
+		expect(isHallucinatedAdministradoraClaim("Recomendo a Bradesco.")).toBe(false);
+		expect(
+			isHallucinatedAdministradoraClaim("Recomendo a Bradesco.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+			}),
+		).toBe(false);
+	});
+
+	it("segmento vazio nunca é alucinação", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+
+	it("nome fora da lista fechada de administradoras do mercado nunca é bloqueado (falso-negativo aceitável)", () => {
+		expect(
+			isHallucinatedAdministradoraClaim("A Cooperfumas tem uma proposta interessante.", {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: false,
+				hasProposal: false,
+				shownAdministradoras: OFERTAS_REAIS,
+			}),
+		).toBe(false);
+	});
+});
+
+describe("FIX-350(b) — findUnavailableAdministradoraMention (texto do USUÁRIO, não do modelo)", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("devolve o nome de mercado citado quando o usuário pede uma administradora fora das ofertas reais", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco", OFERTAS_REAIS)).toBe(
+			"Bradesco",
+		);
+		expect(findUnavailableAdministradoraMention("e a Caixa Econômica?", OFERTAS_REAIS)).toBe(
+			"Caixa",
+		);
+	});
+
+	it("devolve null quando a administradora citada JÁ está entre as ofertas reais (continência FIX-345)", () => {
+		expect(findUnavailableAdministradoraMention("quero ver a ITAÚ de novo", OFERTAS_REAIS)).toBeNull();
+		expect(findUnavailableAdministradoraMention("a ÂNCORA parece boa", OFERTAS_REAIS)).toBeNull();
+	});
+
+	it("devolve null sem shownAdministradoras no contexto (compat retroativa)", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco")).toBeNull();
+	});
+
+	it("devolve null pra texto sem nenhuma administradora do mercado", () => {
+		expect(findUnavailableAdministradoraMention("quero ver outras opções", OFERTAS_REAIS)).toBeNull();
+	});
+});
+
+describe("FIX-342 — stripProcessPreamble/EphemeralTextFilter dropam administradora fantasma sem mordaçar as ofertas reais", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("dropa a fala inteira sobre a Bradesco (dossiê imóvel-web real) quando as ofertas reais são [ITAÚ, ÂNCORA]", () => {
+		const input = "A recomendada no topo (Bradesco) é a que melhor equilibra parcela e prazo pra você.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		});
+		expect(out.toLowerCase()).not.toContain("bradesco");
+	});
+
+	it("PRESERVA a fala sobre a ITAÚ — não vira mordaça pras ofertas que EXISTEM", () => {
+		const input = "Recomendo a ITAÚ, que encaixa bem no seu orçamento.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		});
+		expect(out).toContain("ITAÚ");
+	});
+
+	it("EphemeralTextFilter dropa a administradora fantasma (Estrela) ao vivo, no meio do stream", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		}));
+		let emitted = f.push("Recomendo a Estrela, que fica ótima pra você.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("estrela");
+	});
+
+	it("EphemeralTextFilter PRESERVA a administradora real (ÂNCORA) ao vivo", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: OFERTAS_REAIS,
+		}));
+		let emitted = f.push("A ÂNCORA também fica boa pra você, quer ver o detalhe?");
+		emitted += f.flush();
+		expect(emitted).toContain("ÂNCORA");
+	});
+});
+
+describe("FIX-349 (P1.2, veredito rodada 4) — isPrematureTopOfferClaim cego ANTES de recommend_groups rodar", () => {
+	// Root cause provado (imovel-whatsapp t6 / servicos-whatsapp t6, veredito
+	// rodada 4): o fluxo obrigatório do reveal (directives.ts,
+	// buildSearchSummaryDirective) manda o modelo chamar `search_groups`
+	// PRIMEIRO e já ANUNCIAR o resultado — só DEPOIS chama `recommend_groups`
+	// (que é quem preenche `rank`, único campo que `pickBestRankedGroup`
+	// (recommendation-payload.ts) aceita). `search_groups` já devolve
+	// administradora/parcela por grupo (mesmo shape de `recommend_groups`,
+	// `toModelGroupSummary`) — se o modelo narrar a "melhor opção" nesse
+	// meio-tempo (antes do `recommend_groups` rodar), `pendingTopOffer` ainda
+	// está `null` (nenhum grupo tem `rank`) e `isPrematureTopOfferClaim`
+	// retorna `false` sem nem olhar o segmento — o vazamento passa direto.
+	//
+	// Fix: `pendingOffers` — TODAS as ofertas já indexadas neste turno (via
+	// `search_groups` OU `recommend_groups`), não só a de `rank` mínimo —
+	// fecha essa janela: enquanto o consentimento está pendente, NENHUMA
+	// administradora/parcela real (ranqueada ainda ou não) pode virar bolha.
+	const ANCORA_OFFER = { administradora: "ÂNCORA", monthlyPayment: 693.54 };
+
+	it("sem recommend_groups (pendingTopOffer null), mas ÂNCORA já indexada via search_groups — segmento é dropado", () => {
+		const segment =
+			"Na ÂNCORA, a parcela fica em R$ 693,54 por mês — e o prazo é bem tranquilo.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(true);
+	});
+
+	it("mesmo sem o valor de parcela, citar só o NOME da administradora pendente (ITAÚ) já é dropado", () => {
+		const segment =
+			"Você tem a opção ITAÚ em destaque com a melhor combinação de taxa de administração (16,04%).";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [{ administradora: "ITAÚ" }],
+			}),
+		).toBe(true);
+	});
+
+	it("regressão: pendingTopOffer sozinho (comportamento pré-existente, pós recommend_groups) continua funcionando", () => {
+		const segment = "Tá aí a ÂNCORA em destaque — parcela de R$ 693,54.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: ANCORA_OFFER,
+			}),
+		).toBe(true);
+	});
+
+	it("consentimento já dado (recoConsentPending=false) — nunca dropa, mesmo com pendingOffers", () => {
+		const segment = "Na ÂNCORA, a parcela fica em R$ 693,54 por mês.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: false,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(false);
+	});
+
+	it("PRESERVA texto que não cita nenhuma administradora pendente", () => {
+		const segment = "Encontramos 3 boas opções pra você — vou trazer a que melhor encaixa.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(false);
 	});
 });

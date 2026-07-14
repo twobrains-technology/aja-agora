@@ -19,6 +19,7 @@ function makeInput(over: Partial<ArtifactGuardInput> = {}): ArtifactGuardInput {
 		artifactType: "value_picker",
 		userIntent: "providing_info",
 		isUserTurn: true,
+		channel: "web",
 		discoveryCount: null,
 		conversationId: "conv-fix53",
 		turnArtifactTypes: [],

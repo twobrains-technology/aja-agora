@@ -1,3 +1,6 @@
+import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+import { normalizeAdministradora } from "./choose-offer";
+
 /**
  * FIX-188 — Camada de composição: texto EFÊMERO (preâmbulo de processo) × FINAL.
  *
@@ -18,14 +21,40 @@
  */
 
 // Ações de processo ("deixa eu buscar", "vou puxar", "preciso primeiro buscar",
-// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" — o prompt endossa
-// narrações legítimas com conteúdo ("Vou simular a Rodobens com R$ 900k:") e
-// dropá-las seria falso-positivo. Conservador de propósito.
+// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" sozinhos — o prompt
+// endossa narrações legítimas com conteúdo ("Vou simular a Rodobens com R$
+// 900k:") e dropá-las seria falso-positivo. Conservador de propósito.
 const PROCESS_ACTION_PATTERNS: RegExp[] = [
 	/\bdeixa\s+eu\s+(buscar|puxar|procurar|pegar|consultar|usar)\b/i,
 	/\bvou\s+(buscar|puxar|procurar|consultar)\b/i,
 	/\bvou\s+usar\s+a\s+ferramenta\b/i,
 	/\bpreciso\s+(primeiro\s+)?(buscar|puxar|procurar|consultar)\b/i,
+];
+
+// FIX-335 (rodada 2, veredito Sonnet — 4/4 dossiês web, "soam como log de
+// pipeline"): o prompt já proíbe narrar MECÂNICA de ferramenta ("vou
+// buscar"), mas "Agora vou <ação de produto>" escapa — não é mecânica, é
+// ANÚNCIO DE PASSO ("Agora vou te recomendar a mais adequada:", "Agora vou
+// detalhar como fica sua simulação:"). recomendar/destacar/detalhar/
+// aprofundar como preâmbulo "(agora) vou/deixa eu" quase nunca carregam
+// conteúdo por si (o modelo deveria só FAZER — dizer a recomendação direto,
+// não anunciar que vai recomendar). mostrar/simular são mais arriscados
+// (usados em narração legítima com entidade real, ver comentário acima) —
+// só entram quando seguidos de um objeto VAGO ("a mais adequada", "a melhor
+// opção", "como funciona em detalhes"), nunca um nome/número concreto.
+// FIX-348 (rodada 4, mesmo achado 3ª rodada seguida — "soam como log de
+// pipeline empilhado"): "apresentar"/"trazer" entram na família de risco de
+// "mostrar"/"simular" (objeto VAGO), não na incondicional — "Deixa eu te
+// apresentar a proposta da Itaú, R$ 1.200 por mês" É narração legítima com
+// entidade concreta, igual "Vou simular a Rodobens com R$ 900 mil". A lista
+// de objetos vagos ganha "as opções (pra você escolher)", "o cenário
+// completo", "os números exatos" — frases EXATAS do veredito rodada 4
+// (imovel-web t4, servicos-web t5, imovel-whatsapp t6) — mantendo a mesma
+// guarda: objeto CONCRETO (nome de administradora, valor) nunca cai aqui.
+const PRODUCT_STEP_ANNOUNCEMENT_PATTERNS: RegExp[] = [
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(recomendar|destacar|detalhar|aprofundar)\b/i,
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|simular|apresentar|trazer)\s+(a\s+mais\s+adequada|a\s+melhor\s+op[çc][ãa]o|como\s+funciona\s+em\s+detalhes|as\s+op[çc][õo]es|o\s+cen[áa]rio\s+completo|os\s+n[úu]meros\s+exatos)\b/i,
+	/\bagora\s+d[áa]\s+uma\s+olhada\s+no\s+detalhe\b/i,
 ];
 
 // Fillers de processo puros ("um segundo", "só um instante"). Ancorados no
@@ -37,6 +66,7 @@ const PROCESS_FILLER_PATTERNS: RegExp[] = [
 export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
 	...PROCESS_ACTION_PATTERNS,
 	...PROCESS_FILLER_PATTERNS,
+	...PRODUCT_STEP_ANNOUNCEMENT_PATTERNS,
 ];
 
 /** Um segmento (frase) é preâmbulo de processo (efêmero) — não pode virar bolha. */
@@ -125,6 +155,29 @@ export function isTaxaContemplacaoClaim(segment: string): boolean {
 	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-334 (rodada 2, veredito Sonnet — dossiê imóvel, "Você tem a Itaú em
+// destaque com score de 73%"): regressão contra decisão de produto já
+// registrada (FIX-7, `score-label.ts`) — o card NUNCA mostra o % numérico de
+// score, só o rótulo qualitativo ("boa compatibilidade"), porque "% numérico
+// baixo mina a confiança". `executeRecommendGroups` parou de mandar o score
+// cru pro modelo (ai-sdk.ts, só `scoreLabel`), mas essa é a barreira em CÓDIGO
+// (Lei 4) — se o modelo inventar/lembrar um percentual mesmo assim, o
+// segmento nunca chega ao usuário. Checa CO-OCORRÊNCIA na mesma sentença
+// (já isolada por `splitSegments`) em vez de distância fixa de caracteres —
+// "score"/"aderência"/"compatibilidade" + qualquer "N%" na mesma frase é
+// sinal forte o bastante (falso positivo aceitável, mesmo padrão de
+// conservadorismo do FIX-243/249 acima).
+const SCORE_WORD_PATTERN = /\b(score|ader[êe]ncia|compatibilidade)\b/i;
+const PERCENTAGE_PATTERN = /\d{1,3}\s*%/;
+
+/** Um segmento cita score/aderência/compatibilidade como PERCENTUAL numérico
+ * (proibido — FIX-7/FIX-334) — não pode virar bolha. */
+export function isScorePercentageClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return SCORE_WORD_PATTERN.test(s) && PERCENTAGE_PATTERN.test(s);
+}
+
 // FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
 // "brother". "carro-problema" mira o COMPOSTO pejorativo (não a menção neutra
 // de "problema no carro"); "na sua cabeça" mira a expressão de gíria completa
@@ -211,6 +264,32 @@ export function isCatalogResearchClaim(segment: string): boolean {
 	return CATALOG_RESEARCH_CLAIM_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-336 (bloco-c-whatsapp-invariantes, invariante I4 — "nunca prometer o que
+// não aconteceu"): o agente afirmou "Sua proposta com a ITAÚ já saiu" e
+// "Vou processar seu interesse agora pra gente fechar tudo certinho" sem
+// NENHUMA linha em `bevi_proposals` pra conversa — a promessa mais cara de
+// quebrar do produto. Mesma família do FIX-270 (Lei 1: o fato vem do banco,
+// nunca da narrativa do LLM). A copy determinística pós-evento real
+// (`signatureHandoffToWhatsApp`, "Sua proposta está pronta!... já está
+// gerada") NUNCA passa por este sanitizer — é enviada fora do stream do
+// modelo — então não há falso-positivo ali.
+const PROPOSAL_COMPLETION_CLAIM_PATTERNS: RegExp[] = [
+	/\bproposta\b[\s\S]{0,30}\bj[áa]\s+saiu\b/i,
+	/\bsua\s+proposta\s+(est[áa]|ficou|j[áa]\s+est[áa])\s+pronta\b/i,
+	/\bj[áa]\s+est[áa]\s+fechando\b[\s\S]{0,40}\bproposta\b/i,
+	/\bproposta\s+(real\s+)?(j[áa]\s+)?(foi\s+)?(criada|gerada|confirmada)\b/i,
+	/\bvou\s+processar\s+seu\s+interesse\b/i,
+];
+
+/** Um segmento afirma que a PROPOSTA já saiu/está pronta/foi criada (estado
+ * COMPLETO) — só pode virar bolha se existir de fato uma linha em
+ * `bevi_proposals` pra esta conversa. FIX-336. */
+export function isProposalCompletionClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PROPOSAL_COMPLETION_CLAIM_PATTERNS.some((rx) => rx.test(s));
+}
+
 // FIX-283 (P2, veredito Sonnet r9pos, G-D — viola D23, jornada-canonica.md):
 // o modelo parafraseou a instrução server-side do WhatsApp optin ("por conta
 // própria", "o SISTEMA [...] automaticamente, com card próprio",
@@ -285,6 +364,25 @@ export function stripEmoji(text: string): string {
 	return text.replace(EMOJI_PATTERN, "").replace(/[ \t]{2,}/g, " ");
 }
 
+// FIX-337 (invariante I6, docs/jornada/decisoes-do-cliente.md — "dado
+// sensível não trafega no WhatsApp"): defesa em profundidade da mesma
+// barreira do formatter.ts (`scrubCpf`, whatsapp/formatter.ts) — o modelo
+// pode ecoar o CPF em texto livre em qualquer canal ("Perfeito, anotei seu
+// CPF: 529.982.247-25", dossiê auto-whatsapp t10). Mesmo candidato de captura
+// de identify-capture.ts (extractCpf): qualquer sequência de dígitos, com ou
+// sem pontuação, entre 9 e 17 chars. Só mascara o que VALIDA como CPF real
+// (dígito verificador) — nunca outros números (valor, data, telefone).
+const CPF_CANDIDATE_PATTERN = /\d[\d.\-\s]{9,17}\d/g;
+
+/** Mascara qualquer sequência que valide como CPF real. Independe do modelo
+ * obedecer a regra de não ecoar dado sensível (Lei 1/4). FIX-337. */
+export function scrubCpf(text: string): string {
+	if (!text) return text;
+	return text.replace(CPF_CANDIDATE_PATTERN, (match) =>
+		isValidCpf(match) ? maskCpf(match) : match,
+	);
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -293,6 +391,41 @@ export type StateVerificationContext = {
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
 	 * rodou neste turno até o ponto corrente do stream. */
 	hasSearchToolCall: boolean;
+	/** FIX-333 (rodada 2, veredito Sonnet rodada 1, loop-de-goal desamarra):
+	 * true enquanto o gate `reco-consent` não foi respondido
+	 * (`meta.recoConsentAnswered !== true`) — o hero (recommendation_card)
+	 * ainda está pendente e o usuário não pode ver de qual oferta se trata. */
+	recoConsentPending?: boolean;
+	/** A oferta top-1 (maior score) já indexada NESTE turno a partir do
+	 * tool-result real de `recommend_groups`/`search_groups` — nunca a
+	 * narrativa do LLM. `null`/ausente enquanto a busca ainda não resolveu. */
+	pendingTopOffer?: { administradora?: string; monthlyPayment?: number } | null;
+	/** FIX-349 (P1.2, veredito rodada 4): TODAS as ofertas já indexadas neste
+	 * turno (via `search_groups` OU `recommend_groups`), não só a de maior
+	 * `rank`. O fluxo obrigatório do reveal chama `search_groups` e manda o
+	 * modelo ANUNCIAR o resultado ANTES de chamar `recommend_groups` (o único
+	 * que preenche `rank` — ver `pickBestRankedGroup`); nessa janela,
+	 * `pendingTopOffer` ainda é `null`, mas a administradora/parcela de cada
+	 * grupo JÁ é dado real (mesmo shape de `recommend_groups`). Sem esta
+	 * lista, `isPrematureTopOfferClaim` fica cego pra qualquer narração
+	 * baseada só no retorno de `search_groups` (achado ao vivo:
+	 * imovel-whatsapp t6 / servicos-whatsapp t6, rodada 4). */
+	pendingOffers?: Array<{ administradora?: string; monthlyPayment?: number }>;
+	/** true só quando existe pelo menos uma linha em `bevi_proposals` pra esta
+	 * conversa (fato do banco). FIX-336: o agente afirmou "Sua proposta com a
+	 * ITAÚ já saiu" com `bevi_proposals` VAZIO pra conversa (I4 quebrado,
+	 * dossiê auto-whatsapp t14/t17) — a criação da proposta é SEMPRE um evento
+	 * determinístico fora do turno do LLM (startContract/fireContract), nunca
+	 * a narrativa do próprio modelo. */
+	hasProposal: boolean;
+	/** FIX-342: administradoras REALMENTE exibidas nesta conversa até o ponto
+	 * corrente (runner.ts — união do histórico persistido via
+	 * `listShownOffersForConversation`, choose-offer.ts, com os grupos
+	 * indexados NESTE turno, `revealGroupsById`). Fonte pra
+	 * `isHallucinatedAdministradoraClaim` nunca confiar na narrativa do LLM pra
+	 * saber quais ofertas existem (Lei 1/3). Ausente → o detector nunca dropa
+	 * (compat retroativa). */
+	shownAdministradoras?: string[];
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -301,26 +434,208 @@ function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContex
 	if (!ctx) return false;
 	if (isDocumentReceiptClaim(segment) && !ctx.hasReceivedDocuments) return true;
 	if (isCatalogResearchClaim(segment) && !ctx.hasSearchToolCall) return true;
+	if (isProposalCompletionClaim(segment) && !ctx.hasProposal) return true;
 	return false;
+}
+
+// FIX-333 (rodada 2, veredito Sonnet rodada 1 — 4/4 dossiês web): o guard
+// `hero-awaits-reco-consent` (artifact-guard.ts) suprime o CARD
+// (recommendation_card) enquanto `reco-consent` não foi respondido — mas o
+// MODELO já viu administradora/parcela/score do top-1 no tool-result de
+// `recommend_groups` (mesmo turno) e narra em texto livre ("Tá aí a ITAÚ em
+// destaque — parcela de R$ 3.549,75..."), teatro do consentimento: o usuário
+// já sabe da recomendação antes de "ver" o card ou dizer sim. Regra-no-prompt
+// ("seu texto deve introduzir, não comentar atributos específicos") já existe
+// em directives.ts e é ignorada 4/4 vezes — barreira real é código (Lei 1/4):
+// dropa qualquer segmento que cite a administradora ou o valor de parcela da
+// oferta AINDA pendente de consentimento, goste o modelo ou não.
+function formatMoneyVariants(value: number): string[] {
+	const rounded = Math.round(value * 100) / 100;
+	const [intPart, centsPart = "00"] = rounded.toFixed(2).split(".");
+	const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+	return [`${withThousands},${centsPart}`, `${intPart},${centsPart}`];
+}
+
+// FIX-342 (P0, veredito Sonnet rodada 2, "P0.1 — alucinação de administradora
+// inexistente"): o agente RECOMENDOU "Bradesco" (imóvel-web t8/t10) e
+// "Estrela" (serviços-web t8-t12) — nenhuma das duas jamais esteve entre as
+// ofertas REAIS retornadas pela Bevi nessas conversas; o usuário perseguiu a
+// oferta fantasma por 4 turnos até o próprio agente admitir o erro. Os cards
+// já são coagidos server-side (`coerceRevealCota`), mas o TEXTO do modelo
+// não era — nada impedia a fala de citar uma administradora que não está nas
+// ofertas da conversa. Regra-no-prompt não segura invariante (mesma classe de
+// falha documentada em todo este arquivo, Lei 4) — a barreira real é código:
+// a fala só pode citar uma administradora do mercado se ela estiver de fato
+// em `ctx.shownAdministradoras` (runner.ts, fato — nunca a narrativa do LLM).
+// Lista fechada de administradoras do mercado (gatilho da detecção) — nome
+// fora dela nunca é bloqueado (falso-negativo aceitável, mesmo
+// conservadorismo do FIX-243/249 acima: dado real da Bevi pode trazer
+// administradora nova não listada aqui, e essa nunca deve ser barrada).
+const KNOWN_MARKET_ADMINISTRADORAS = [
+	"Bradesco",
+	"Itaú",
+	"Santander",
+	"Caixa",
+	"Porto",
+	"Rodobens",
+	"Âncora",
+	"Canopus",
+	"Embracon",
+	"Estrela",
+	"Tradição",
+	"Banco do Brasil",
+	"Magalu",
+	"HS",
+	"Servopa",
+];
+
+const KNOWN_MARKET_ADMINISTRADORA_PATTERNS = KNOWN_MARKET_ADMINISTRADORAS.map((name) => {
+	const normalized = normalizeAdministradora(name);
+	const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return { name, normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
+});
+
+/** Um segmento cita uma administradora do MERCADO (lista fechada acima) que
+ * NÃO está entre as ofertas REALMENTE exibidas nesta conversa
+ * (`ctx.shownAdministradoras`) — entidade fabricada, não pode virar bolha.
+ * Sem `shownAdministradoras` no contexto, nunca dropa (compat retroativa,
+ * mesmo padrão do FIX-270/336 acima). FIX-342. */
+export function isHallucinatedAdministradoraClaim(
+	segment: string,
+	ctx?: StateVerificationContext,
+): boolean {
+	if (!ctx?.shownAdministradoras) return false;
+	const s = segment.trim();
+	if (!s) return false;
+	return (
+		findUnavailableAdministradoraMention(s, ctx.shownAdministradoras) !== null
+	);
+}
+
+/** FIX-350(b) (P1.5, veredito rodada 4): o TEXTO DO USUÁRIO (não do modelo)
+ * cita uma administradora do MERCADO (lista fechada acima) que NÃO está entre
+ * as ofertas REALMENTE exibidas (`shownAdministradoras`) — devolve o nome de
+ * mercado citado (pra `system-context.ts` injetar o FATO), ou `null` quando
+ * nenhuma citação assim existe. Mesmo casamento por CONTINÊNCIA do FIX-345
+ * (`isHallucinatedAdministradoraClaim`, que agora reusa esta função) —
+ * reaproveita a MESMA lista fechada e a mesma normalização de acento. */
+export function findUnavailableAdministradoraMention(
+	text: string,
+	shownAdministradoras?: string[],
+): string | null {
+	if (!shownAdministradoras) return null;
+	const s = text.trim();
+	if (!s) return null;
+	const normalizedText = normalizeAdministradora(s);
+	const shown = shownAdministradoras.map(normalizeAdministradora);
+
+	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata (ver
+	// isHallucinatedAdministradoraClaim acima pro histórico completo).
+	const foiExibida = (nomeDeMercado: string) =>
+		shown.some((exibida) => exibida.includes(nomeDeMercado) || nomeDeMercado.includes(exibida));
+
+	const match = KNOWN_MARKET_ADMINISTRADORA_PATTERNS.find(
+		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedText),
+	);
+	return match?.name ?? null;
+}
+
+/** FIX-349: `\b` nativo do JS só entende `[A-Za-z0-9_]` como caractere de
+ * palavra — nomes reais de administradora com acento (ITAÚ, ÂNCORA, Tradição)
+ * têm a letra acentuada tratada como NÃO-palavra, e o boundary desaparece bem
+ * na borda do nome (ex.: `\bITAÚ\b` nunca fecha depois do "Ú"). Boundary
+ * manual via lookaround Unicode-aware (`\p{L}`/`\p{N}`) entende qualquer
+ * alfabeto e não deixa esses nomes escaparem do guard silenciosamente. */
+function wholeWordRegex(literal: string): RegExp {
+	const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/** Um segmento cita a administradora ou o valor de parcela de uma oferta REAL
+ * (`offer`) — usado tanto pra `pendingTopOffer` quanto pra cada item de
+ * `pendingOffers` (FIX-349). */
+function segmentClaimsOffer(
+	segment: string,
+	offer: { administradora?: string; monthlyPayment?: number },
+): boolean {
+	if (offer.administradora && wholeWordRegex(offer.administradora).test(segment)) return true;
+	if (typeof offer.monthlyPayment === "number" && offer.monthlyPayment > 0) {
+		if (formatMoneyVariants(offer.monthlyPayment).some((v) => segment.includes(v))) return true;
+	}
+	return false;
+}
+
+/** Um segmento cita a administradora ou o valor de parcela de QUALQUER oferta
+ * REAL já indexada neste turno ENQUANTO o consentimento (`reco-consent`)
+ * ainda está pendente — não pode virar bolha. Sem oferta pendente conhecida
+ * ou com consentimento já dado, nunca dropa (a comparison_table já mostra
+ * administradora+parcela de TODAS as opções por design — só a narração em
+ * texto corrido é vedada aqui).
+ *
+ * FIX-349: checa `pendingTopOffer` (a oferta de maior `rank`, quando
+ * `recommend_groups` já rodou) E `pendingOffers` (TODAS as ofertas indexadas
+ * até agora, mesmo só via `search_groups` — cobre a janela em que o modelo
+ * narra a "melhor opção" ANTES de `recommend_groups` estabelecer o rank). */
+export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificationContext): boolean {
+	if (!ctx?.recoConsentPending) return false;
+	if (ctx.pendingTopOffer && segmentClaimsOffer(segment, ctx.pendingTopOffer)) return true;
+	if (ctx.pendingOffers?.some((offer) => segmentClaimsOffer(segment, offer))) return true;
+	return false;
+}
+
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1): nome estável de cada guard
+// que pode dropar um segmento — usado pelo `EphemeralTextFilter` pra expor
+// POR QUE um turno fechou vazio (`droppedSegmentReasons()`). Sem isso, um
+// turno inteiramente filtrado é indistinguível de "o modelo não disse nada",
+// e o guard de turno-vazio (empty-turn-guard.ts) só tinha o fallback fixo
+// como saída — mesmo quando o modelo respondeu de verdade.
+export type EphemeralDropReason =
+	| "process-preamble"
+	| "technical-fallback"
+	| "prazo-reduction"
+	| "premature-reservation"
+	| "banned-lexicon"
+	| "taxa-contemplacao"
+	| "proactive-callback"
+	| "mechanism-narration"
+	| "fabricated-state"
+	| "premature-top-offer"
+	| "score-percentage"
+	| "hallucinated-administradora";
+
+/** Motivo (guard) que classifica este segmento como EFÊMERO, ou `null` se o
+ * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
+ * pro rastreio de motivos do `EphemeralTextFilter` (FIX-347) — nunca duas
+ * listas de guards que podem divergir. */
+function ephemeralSegmentReason(
+	segment: string,
+	ctx?: StateVerificationContext,
+): EphemeralDropReason | null {
+	if (isProcessPreamble(segment)) return "process-preamble";
+	if (isTechnicalFallback(segment)) return "technical-fallback";
+	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
+	if (isPrematureReservationClaim(segment)) return "premature-reservation";
+	if (isBannedLexicon(segment)) return "banned-lexicon";
+	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
+	if (isProactiveCallbackClaim(segment)) return "proactive-callback";
+	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
+	if (isFabricatedStateSegment(segment, ctx)) return "fabricated-state";
+	if (isPrematureTopOfferClaim(segment, ctx)) return "premature-top-offer";
+	if (isScorePercentageClaim(segment)) return "score-percentage";
+	if (isHallucinatedAdministradoraClaim(segment, ctx)) return "hallucinated-administradora";
+	return null;
 }
 
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
- * interno (FIX-283). Todos são dropados antes de virar mensagem. */
+ * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333),
+ * score/aderência em percentual numérico (FIX-334), administradora do
+ * mercado fora das ofertas reais (FIX-342). Todos são dropados antes de
+ * virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
-	return (
-		isProcessPreamble(segment) ||
-		isTechnicalFallback(segment) ||
-		isPrazoReductionClaim(segment) ||
-		isPrematureReservationClaim(segment) ||
-		isBannedLexicon(segment) ||
-		isTaxaContemplacaoClaim(segment) ||
-		isProactiveCallbackClaim(segment) ||
-		isMechanismNarrationClaim(segment) ||
-		isFabricatedStateSegment(segment, ctx)
-	);
+	return ephemeralSegmentReason(segment, ctx) !== null;
 }
 
 const SEGMENT_BOUNDARY_CHARS = new Set([".", "!", "?", ":", "\n"]);
@@ -374,8 +689,8 @@ export function stripProcessPreamble(text: string, ctx?: StateVerificationContex
 	const lastQuestion = lastInterrogativeIndex(survivors);
 	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
 	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
-	// regra de parcimônia do prompt.
-	return stripEmoji(kept.join(""));
+	// regra de parcimônia do prompt. FIX-337: scrub de CPF, mesma garantia.
+	return scrubCpf(stripEmoji(kept.join("")));
 }
 
 /** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
@@ -411,6 +726,11 @@ export class EphemeralTextFilter {
 	// uma delas chegar ao usuário (ao vivo, não dá pra "desmandar" uma frase já
 	// emitida — segurar é a única forma de garantir que só a última sobrevive).
 	private heldQuestion = "";
+	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
+	// turno — permite ao runner distinguir "o modelo não disse nada" de "o
+	// modelo disse algo e o sanitizer comeu tudo", pra dar uma segunda chance
+	// COM o motivo em vez de emitir o fallback fixo de turno vazio.
+	private readonly droppedReasons = new Set<EphemeralDropReason>();
 
 	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
@@ -452,35 +772,50 @@ export class EphemeralTextFilter {
 	}
 
 	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero, segura
-	 * a sentença interrogativa (FIX-298) e limpa emoji do que sobra (FIX-299). */
+	 * a sentença interrogativa (FIX-298), limpa emoji (FIX-299) e mascara CPF
+	 * (FIX-337) do que sobra. */
 	private filterComplete(complete: string): string {
 		const ctx = this.getContext?.();
 		const segments = splitSegments(complete);
 		let out = "";
 		for (const seg of segments) {
-			if (isEphemeralSegment(seg, ctx)) continue;
+			const reason = ephemeralSegmentReason(seg, ctx);
+			if (reason) {
+				this.droppedReasons.add(reason);
+				continue;
+			}
 			if (isInterrogativeSentence(seg)) {
 				this.heldQuestion = seg;
 				continue;
 			}
 			out += seg;
 		}
-		return stripEmoji(out);
+		return scrubCpf(stripEmoji(out));
 	}
 
 	private releaseHeldQuestion(): string {
 		const held = this.heldQuestion;
 		this.heldQuestion = "";
-		return held ? stripEmoji(held) : "";
+		return held ? scrubCpf(stripEmoji(held)) : "";
 	}
 
-	/** FIX-326 — descarta a pergunta segurada SEM emiti-la. Usado quando o
-	 * runner prevê que um gate estrutural com pergunta própria vai disparar no
-	 * MESMO turno: a pergunta do MODELO perderia a corrida de qualquer jeito
-	 * (2 perguntas no mesmo balão, achado P4) — melhor nunca emitir a dele do
-	 * que deixar as duas colarem. No-op seguro quando não há pergunta segurada. */
-	discardHeldQuestion(): void {
-		this.heldQuestion = "";
+	/** O modelo tem uma pergunta segurada pra este turno?
+	 *
+	 * SUBSTITUI o `discardHeldQuestion` (FIX-326), que JOGAVA FORA a pergunta do
+	 * modelo quando um gate com pergunta canônica ia disparar — o modelo ficava
+	 * mudo e o card falava sozinho, sempre com a mesma frase. Agora a prioridade é
+	 * a inversa: a pergunta do MODELO vence, e é o CARD que deixa de repetir a
+	 * dele (`modelAsked` no evento de gate). A regra do cliente ("nunca 2 perguntas
+	 * no mesmo balão") continua valendo — só mudou quem cala. */
+	hasHeldQuestion(): boolean {
+		return this.heldQuestion.trim().length > 0;
+	}
+
+	/** Motivos (guards) que dropParam pelo menos 1 segmento neste turno, na
+	 * ordem em que apareceram pela primeira vez, sem duplicar. Vazio quando
+	 * nada foi dropado. FIX-347. */
+	droppedSegmentReasons(): EphemeralDropReason[] {
+		return [...this.droppedReasons];
 	}
 }
 

@@ -251,12 +251,18 @@ describe("FIX-208 reengageQuestionForGate — a re-pergunta do gate pendente, n�
 		expect(reengageQuestionForGate("identify", "auto")).toMatch(/CPF/i);
 	});
 
-	it("gates FORA da coleta (experience/name/search/decision/doubts-wait) → null (fallback honesto)", () => {
-		// Restrito à mesma classe do decideShowGate (COLLECTION_GATES). experience
-		// tem card próprio dirigido por clique; name/search/decision não são coleta
-		// de dado. Preserva o EMPTY_TURN_FALLBACK do FIX-172 nesses casos.
-		for (const gate of ["experience", "name", "search", "decision", "doubts-wait"] as const) {
+	it("gates SEM pergunta própria (name/search/decision/doubts-wait) → null", () => {
+		// FIX-351: o critério mudou. Antes era "não é gate de coleta → null", e isso
+		// fazia o turno vazio com `reco-consent`/`experience` pendente cair no "Acho
+		// que me perdi" — com o usuário tendo respondido claramente. Agora o critério
+		// é ter PERGUNTA: se o gate pergunta, o turno vazio re-pergunta.
+		// Estes quatro não têm pergunta própria (gateQuestion devolve null).
+		for (const gate of ["name", "search", "decision", "doubts-wait"] as const) {
 			expect(reengageQuestionForGate(gate, "auto")).toBeNull();
 		}
+	});
+
+	it("gate COM pergunta fora da coleta (experience) → re-pergunta, nunca null (FIX-351)", () => {
+		expect(reengageQuestionForGate("experience", "auto")).toMatch(/já fez consórcio/i);
 	});
 });

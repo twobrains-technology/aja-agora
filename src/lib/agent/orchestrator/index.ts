@@ -16,6 +16,7 @@ import {
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { extractCpf } from "@/lib/whatsapp/identify-capture";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { listShownOffersForConversation, resolveOfferMentionForConversation } from "./choose-offer";
@@ -25,6 +26,7 @@ import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildEmptyTurnRetryDirective,
 	buildFirstRevealCardIntro,
 	buildFirstRevealRecoveryFallback,
 	buildLanceSoParcelaDirective,
@@ -40,14 +42,15 @@ import {
 	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
-import { CLARIFY_LEAD_IN, gateStuckDefaultNotice } from "./gate-questions";
+import { gateStuckDefaultNotice } from "./gate-questions";
 import { runLeadCollectionTurn } from "./lead-collection";
 import {
 	buildRecommendationCardFromRevealGroup,
 	pickBestRankedGroup,
 } from "./recommendation-payload";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
-import { runAgentTurn } from "./runner";
+import { runAgentTurn, scoringInputFromMeta } from "./runner";
+import { findUnavailableAdministradoraMention } from "./sanitizer";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
@@ -56,7 +59,7 @@ import {
 	buildTwoPathsCard,
 	buildWhatsappOptinCard,
 } from "./server-cards";
-import { buildSystemContext } from "./system-context";
+import { buildSystemContext, looksLikeIdentityResendComplaint } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
@@ -185,6 +188,16 @@ async function* dispatchDecisionCascade(args: {
 			contactName: knownName,
 			skipAnalyzer: true,
 			skipLeadCollection: true,
+			// FIX-343 (rodada 2, veredito Sonnet 3/10, D2=2/10): este sub-turno é
+			// PURAMENTE narrativo (o card sai server-side via emitServerCard logo
+			// abaixo) — o directive só proibia tool-call em TEXTO de prompt ("NÃO
+			// chame present_scarcity nem NENHUMA outra tool"), regra-no-prompt que
+			// o modelo por vezes desobedecia (tool-error → fallback enlatado vazando
+			// no meio da cascata, achado ao vivo em moto-web/auto-whatsapp/moto-
+			// whatsapp). Mesma correção já provada pelo FIX-319 no caminho irmão
+			// (pipeClosingCeremony, route.ts) — converte o invariante em código
+			// (Lei 4): "none" barra qualquer tool-call em nível de API.
+			forceToolChoice: "none",
 		});
 		const scarcityCard = buildScarcityCard(refreshed);
 		if (scarcityCard) {
@@ -214,6 +227,12 @@ async function* dispatchDecisionCascade(args: {
 		contactName: knownName,
 		skipAnalyzer: true,
 		skipLeadCollection: true,
+		// FIX-343: mesmo directive PURAMENTE narrativo do bloco acima — o card
+		// (two_paths OU decision_prompt) sai server-side logo abaixo, nunca por
+		// tool-call do LLM. "NÃO chame present_two_paths/present_decision_prompt
+		// nem NENHUMA tool" virava regra-no-prompt desobedecível; agora é
+		// impossível em nível de API.
+		forceToolChoice: "none",
 	});
 	if (isSoParcela) {
 		yield* emitServerCard({
@@ -446,6 +465,10 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					contactName: knownName,
 					skipAnalyzer: true,
 					skipLeadCollection: true,
+					// FIX-343: sub-turno narrativo — o hero sai server-side logo
+					// abaixo (emitServerCard), nunca por present_recommendation_card
+					// chamado pelo LLM. Mesma correção do dispatchDecisionCascade acima.
+					forceToolChoice: "none",
 				});
 				yield* emitServerCard({
 					conversationId,
@@ -542,9 +565,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// morto (promessa sem entrega, família FIX-206/207). Roteamento
 		// DETERMINÍSTICO: ready_to_proceed pós-decisão avança direto pro passo
 		// 5 — mesma directive do clique "Tenho interesse" (route.ts).
+		// FIX-346 (rodada 3): o formulário JÁ na tela deixa de ser intercepto.
+		//
+		// Antes, com `contractFormDispatched`, este bloco respondia com um texto
+		// FIXO ("Você já viu o formulário aqui em cima — é só preencher pra eu
+		// seguir!") sem nunca invocar o modelo — e saía byte-a-byte IGUAL em turnos
+		// consecutivos (auto-web t19/t20, imovel-web t23/t24). Era o antipadrão que
+		// o ADR 2026-07-13 revogou: o servidor falando no lugar do modelo.
+		//
+		// O invariante continua de pé — não despachamos um 2º `contract_form`, porque
+		// o bloco inteiro é pulado. Quem responde é o MODELO, que vê o formulário no
+		// histórico e fala com as palavras dele.
 		if (
 			meta.decisionDispatched === true &&
 			meta.contractClosed !== true &&
+			meta.contractFormDispatched !== true &&
 			analysis.userIntent === "ready_to_proceed"
 		) {
 			await saveMessage(conversationId, "user", userText, channel);
@@ -555,13 +590,8 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// `contractFormDispatched` já persiste assim que o 1º aparece
 			// (runner.ts:1244-1246) — reafirma o formulário JÁ mostrado em vez de
 			// pedir de novo.
-			if (meta.contractFormDispatched === true) {
-				const notice = "Você já viu o formulário aqui em cima — é só preencher pra eu seguir!";
-				yield { type: "text-delta", text: notice };
-				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
-				yield { type: "text-boundary" };
-				return;
-			}
+			// (O guard de `contractFormDispatched` subiu pra condição do bloco — ver
+			// FIX-346 acima. Aqui dentro, o formulário ainda NÃO foi mostrado.)
 			yield* runTurn({
 				channel,
 				conversationId,
@@ -581,56 +611,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
 
-	// FIX-301 (P7, loop-de-goal r10): usuário CONFUSO ("não entendi") com um gate
-	// REALMENTE pendente — reancora no MESMO gate/card com um lead-in
-	// simplificado, em vez de deixar a LLM narrar/inventar um menu genérico
-	// (P7: "uai nao sei voce nao me perguntou nada"). Curto-circuito ANTES de
-	// invocar a LLM (Lei 4) — se rodasse depois, o texto livre já teria
-	// streamado pro usuário.
-	// CORREÇÃO 1 (mesma rodada, achada no gate da onda 1): a decisão original
-	// (docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-clarify.md)
-	// reusava `expressing_doubt` "sem intent nova" — quebrou o FIX-266 (r9),
-	// porque "deixa eu pensar aqui"/"tenho que pensar" JÁ é expressing_doubt
-	// por design (turn-analyzer.ts) e passou a ser hijackado por este
-	// short-circuit, atropelando a recuperação de tool-error. `confused` é
-	// uma intent NOVA (turn-analyzer.ts), semanticamente distinta: não
-	// entendeu a PERGUNTA (confused) vs. entendeu mas está decidindo
-	// (expressing_doubt, que segue fluindo pra LLM normalmente).
-	// CORREÇÃO 2 (mesmo gate): mesmo com a intent nova, o analyzer (LLM, não-
-	// determinístico) ainda pode confundir "por que essa e não outra?" (pergunta
-	// de EXATIDÃO/CRITÉRIO sobre a recomendação, FIX-282/293) com "não entendi a
-	// pergunta". Blindagem em CÓDIGO (Lei 4, não confia só no prompt):
-	// `isExactnessOrCriteriaQuestion` é o MESMO regex determinístico que o
-	// FIX-282/293 já usa — se bater, cede passagem pra aquele caminho (resposta
-	// com números reais), nunca reancora aqui.
-	if (
-		isUserTurn &&
-		!skipAnalyzer &&
-		analyzedIntent === "confused" &&
-		!isExactnessOrCriteriaQuestion(userText)
-	) {
-		const clarifyGate = gateAwaitingReply(meta, Boolean(knownName));
-		if (clarifyGate === "decision") {
-			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
-			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "decision_prompt",
-				payload: buildDecisionPromptCard(meta).payload,
-			});
-			yield { type: "finish", reason: "clarify-reanchor" };
-			return;
-		}
-		if (clarifyGate) {
-			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
-			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
-			yield { type: "gate", gate: clarifyGate };
-			yield { type: "finish", reason: "clarify-reanchor" };
-			return;
-		}
-	}
+	// DESAMARRA (2026-07-13, ADR revoga-jornada-soberana): o antigo FIX-301
+	// CURTO-CIRCUITAVA o "não entendi" — respondia com um texto fixo
+	// (CLARIFY_LEAD_IN) e REPETIA a pergunta canônica do mesmo gate, sem nunca
+	// invocar o modelo. Era a causa direta do sintoma que o Kairo reportou: "o
+	// agente responde sempre a mesma coisa". Um usuário que não entendeu e
+	// recebe a MESMA frase de volta não é um produto — é um loop.
+	//
+	// Agora: o modelo responde, e o servidor só INFORMA o que ainda falta
+	// descobrir (`confusedAboutGate` → systemContext), pedindo que ele reformule
+	// de outro jeito. O invariante segue intacto — o gate continua pendente e o
+	// funil não avança sem o dado; só a FALA voltou a ser do modelo.
+	const confusedAboutGate =
+		isUserTurn && !skipAnalyzer && analyzedIntent === "confused"
+			? gateAwaitingReply(meta, Boolean(knownName))
+			: null;
 
 	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo
 	// ausente ANTES da tool-call): resolve a menção textual do usuário (nome de
@@ -678,45 +673,79 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		);
 	}
 
-	// FIX-293 (rodada r9 onda 4, veredito r9pos3 §3 P2 UX, probe-i2-justificativa
-	// turnos 8-9): a MESMA pergunta de exatidão/critério do FIX-282 (linha
-	// ~570 abaixo) acontecia de LONGE mais vezes FORA do caminho de
-	// tool-error/cap — usuário pergunta em texto livre normal, sem nenhum
-	// guard interceptando o turno. Checar isExactnessOrCriteriaQuestion só
-	// DEPOIS de `runAgentTurn` (como o FIX-282 faz) não resolveria esse caso:
-	// o `result` ali vem de `yield* runAgentTurn(...)`, que STREAMA cada
-	// text-delta pro consumidor em tempo real — na hora que `result` existe,
-	// o texto livre do modelo (o "cheio/pausado" fabricado do veredito) já
-	// chegou ao usuário. O short-circuit determinístico por isso tem que
-	// acontecer ANTES de invocar a LLM (Lei 4: invariante crítico em código,
-	// não filtro depois) — nunca chama `runAgentTurn` pra esse padrão de
-	// pergunta. Mesma resposta do FIX-282 (buildToolErrorRecoveryExactnessFallback),
-	// mesmo escopo estreito de isExactnessOrCriteriaQuestion (falso-negativo
-	// preferível a falso-positivo) — só dispara com reveal já completo e
-	// `recommendedOffer` conhecido (antes disso não há o que justificar).
-	if (
+	// DESAMARRA (2026-07-13): o antigo FIX-282/293 respondia "por que essa e não
+	// outra?" com um texto 100% PRÉ-FABRICADO, sem invocar o modelo. O medo era
+	// legítimo (o modelo fabricava números), mas a cura matou o paciente: a
+	// pergunta mais importante de uma venda consultiva recebia um template
+	// idêntico toda vez.
+	//
+	// A correção certa não é responder pelo modelo — é DAR A ELE OS NÚMEROS
+	// REAIS e deixá-lo redigir (`exactnessFacts` → systemContext). O invariante
+	// "nunca inventar número" continua garantido, porque o número vem do
+	// servidor; só a redação voltou pro modelo.
+	const exactnessFacts =
 		isUserTurn &&
 		meta.revealCompleted === true &&
 		isExactnessOrCriteriaQuestion(userText) &&
 		typeof meta.recommendedOffer?.creditValue === "number"
-	) {
-		const fallback = buildToolErrorRecoveryExactnessFallback({
-			name: knownName,
-			offer: meta.recommendedOffer,
-			rawCreditValue: meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
-		});
-		yield { type: "text-delta", text: fallback };
-		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
-		yield { type: "finish", reason: "exactness-criteria-answered" };
-		return;
+			? {
+					administradora: meta.recommendedOffer.administradora,
+					creditValue: meta.recommendedOffer.creditValue,
+					requestedValue:
+						meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
+				}
+			: null;
+
+	// FIX-350(b) (P1.5, veredito rodada 4): o usuário pediu uma administradora
+	// do MERCADO que não está entre as ofertas reais desta conversa ("me mostra
+	// a Bradesco", "e a Caixa?") — `resolveOfferMentionForConversation` (acima)
+	// só resolve ofertas REAIS, então `mentionedOffer` fica null aqui. O guard
+	// `isHallucinatedAdministradoraClaim` (sanitizer.ts) já impede o modelo de
+	// MENTIR que ela é uma oferta real, mas sem nenhum fato no contexto ele
+	// respondia de 3 jeitos ruins e inconsistentes (desconversa, promete
+	// simular e não cumpre, ou só às vezes redireciona certo). Mesmo padrão de
+	// exactnessFacts acima: dá o FATO (qual foi pedida + quais são as reais) e
+	// deixa o modelo redigir.
+	let unavailableAdministradoraFacts: { requested: string; realOffers: string[] } | null = null;
+	if (isUserTurn && !mentionedOffer && meta.revealCompleted === true) {
+		const shownOffers = await listShownOffersForConversation(conversationId);
+		const shownAdministradoras = shownOffers
+			.map((o) => o.administradora)
+			.filter((a): a is string => typeof a === "string" && a.length > 0);
+		const requested = findUnavailableAdministradoraMention(userText, shownAdministradoras);
+		if (requested) {
+			unavailableAdministradoraFacts = { requested, realOffers: [...new Set(shownAdministradoras)] };
+		}
 	}
 
 	const history = await loadConversationHistory(conversationId);
+	// DESAMARRA: o modelo passa a SABER o que o funil quer descobrir a seguir, e
+	// faz a pergunta com as palavras dele (o card então só mostra o input). Antes,
+	// o servidor perguntava e o modelo era proibido de perguntar.
+	const pendingGate = isUserTurn
+		? nextGate(meta, { hasContactName: Boolean(knownName) })
+		: null;
+	// FIX-340(a) (bloco-c-whatsapp-invariantes, dossiê auto-whatsapp t8-10): com
+	// a identidade já coletada, `captureIdentifyText` (WhatsApp) devolve
+	// handled:false e o texto cai livre aqui — sem NENHUM fato no contexto, o
+	// modelo às vezes fabricava uma desculpa técnica ("aqui no chat não
+	// consigo ver os dados anteriores") que não existe em código nenhum.
+	// Detecta o reenvio (CPF de novo OU reclamação "já mandei") e entrega o
+	// FATO — mesmo padrão de exactnessFacts acima, a fala continua do modelo.
+	const identityAlreadyCollected =
+		isUserTurn &&
+		meta.identityCollected === true &&
+		(extractCpf(userText) !== null || looksLikeIdentityResendComplaint(userText));
 	const systemContext = buildSystemContext({
 		knownName,
 		newlyExtractedExperience,
 		meta,
 		mentionedOffer,
+		confusedAboutGate,
+		exactnessFacts,
+		pendingGate,
+		identityAlreadyCollected,
+		unavailableAdministradoraFacts,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
@@ -789,7 +818,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		}
 	}
 
-	const result = yield* runAgentTurn({
+	let result = yield* runAgentTurn({
 		conversationId,
 		channel,
 		currentPersona,
@@ -801,6 +830,48 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		forceToolChoice,
 		systemContextBlocks,
 	});
+
+	// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+	// regrediu): root cause PROVADO em código — `EphemeralTextFilter`
+	// (sanitizer.ts) pode dropar 100% dos segmentos de um turno sem avisar
+	// ninguém; esse turno fica indistinguível de "o modelo não disse nada" e o
+	// guard de turno-vazio (`empty-turn-guard.ts`) dispara o fallback fixo
+	// "Acho que me perdi por aqui" mesmo quando o modelo respondeu de
+	// verdade. `result.sanitizerDropReasons` (populado pelo runner a partir de
+	// `ephemeralFilter.droppedSegmentReasons()`) prova qual guard bloqueou.
+	// Sem tool-call/artifact/gate neste turno (nenhum efeito colateral real
+	// aconteceu ainda — retry é seguro), dá ao modelo UMA chance de
+	// reformular, com o motivo do corte no contexto. NUNCA relaxa o guard que
+	// bloqueou, NUNCA emite texto fixo aqui — só uma segunda tentativa real. Se
+	// a retentativa também vier vazia, o turno segue o fluxo normal (a rede
+	// final é o fallback de turno-vazio do route.ts, que varia a frase quando
+	// já foi usada — nunca duas vezes seguidas).
+	const sanitizerDropReasons = result.sanitizerDropReasons ?? [];
+	if (
+		result.fullResponse.trim().length === 0 &&
+		result.artifacts.length === 0 &&
+		!result.handoffSignaled &&
+		!result.nextGateToFire &&
+		(result.executedToolCount ?? 0) === 0 &&
+		sanitizerDropReasons.length > 0
+	) {
+		const retryDirective = buildEmptyTurnRetryDirective(sanitizerDropReasons);
+		console.log(
+			`[empty-turn-retry] sanitizer dropou 100% do texto do turno (motivos=${sanitizerDropReasons.join(",")}) — dando 2a chance com o motivo (conv=${conversationId})`,
+		);
+		result = yield* runAgentTurn({
+			conversationId,
+			channel,
+			currentPersona,
+			meta,
+			messages: messagesForAgent,
+			isUserTurn,
+			userIntent: analyzedIntent,
+			memoryContext,
+			forceToolChoice,
+			systemContextBlocks: [...systemContextBlocks, retryDirective],
+		});
+	}
 
 	// FIX-186 (Kairo 2026-07-01): a descoberta na Bevi falhou neste turno (após
 	// retry silencioso). O runner suprimiu a narração crua do modelo; AQUI o
@@ -858,6 +929,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					bestGroup,
 					logos,
 					requestedCreditValue,
+					scoringInputFromMeta(meta),
 				);
 				const intro = buildFirstRevealCardIntro({ name: knownName });
 				yield { type: "text-delta", text: intro };
@@ -923,15 +995,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			fallback = buildToolErrorRecoveryResolvedFallback({ name: knownName, offer: mentionedOffer });
 		} else {
 			const generic = buildToolErrorRecoveryFallback({ name: knownName });
-			const lastAssistantText =
-				[...history].reverse().find((m) => m.role === "assistant")?.content ?? null;
-			fallback =
-				lastAssistantText === generic
-					? buildToolErrorRecoveryFallbackRepeat({
-							name: knownName,
-							offers: await listShownOffersForConversation(conversationId),
-						})
-					: generic;
+			// FIX-332 (P2.7, veredito rodada 1): o guard só comparava com o ÚLTIMO
+			// turno do assistant — com um turno diferente entre as duas ocorrências,
+			// a MESMA frase enlatada podia voltar não-consecutiva (auto t10/t15 do
+			// veredito). Agora varre TODO o histórico do assistant nesta conversa.
+			const genericAlreadyUsed = history.some(
+				(m) => m.role === "assistant" && m.content === generic,
+			);
+			fallback = genericAlreadyUsed
+				? buildToolErrorRecoveryFallbackRepeat({
+						name: knownName,
+						offers: await listShownOffersForConversation(conversationId),
+					})
+				: generic;
 		}
 		yield { type: "text-delta", text: fallback };
 		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
@@ -1010,7 +1086,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// escrita, que passa por reloadMeta/persistMeta internos ao runner).
 	if (result.artifacts.some((a) => a.type === "contract_form")) {
 		const postContract = await reloadMeta(conversationId);
-		if (shouldEmitWhatsappOptin(postContract)) {
+		if (shouldEmitWhatsappOptin(postContract, channel)) {
 			await persistMeta(conversationId, { ...postContract, whatsappOptinShown: true });
 			const stage = postContract.contactPhone ? "confirm" : "open";
 			// FIX-318 (rodada 10, onda 4 — achado ao vivo pós-túnel, dossiê Mario):
@@ -1028,6 +1104,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				skipAnalyzer: true,
 				skipLeadCollection: true,
 				suppressGateEvent: true,
+				// FIX-343: sub-turno narrativo — o card sai server-side logo abaixo
+				// (emitServerCard), nunca por present_whatsapp_optin chamado pelo LLM
+				// (aliás fora do toolset em toda fase desde o FIX-280). Mesma correção
+				// do dispatchDecisionCascade acima.
+				forceToolChoice: "none",
 			});
 			yield* emitServerCard({
 				conversationId,
@@ -1160,6 +1241,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				type: "gate",
 				gate: result.nextGateToFire,
 				prefix: result.prefixForNextGate ?? undefined,
+				modelAsked: result.modelAskedGateQuestion === true,
 			};
 		}
 	}

@@ -57,9 +57,17 @@ describe("FIX-211 — escada de cobrança: textos distintos por tentativa + saí
 		expect(reengageQuestionForGate("identify", null, 1)).toBe(wa);
 	});
 
-	it("gates NÃO obrigatórios retornam null em qualquer tentativa", () => {
+	it("a ESCADA de cobrança é exclusiva dos gates de COLETA (FIX-351)", () => {
+		// `experience` PERGUNTA, então é reengajável (FIX-351) — mas nunca ganha a
+		// escada ("só falta isso", "é seguro e sem compromisso") nem o exit-offer:
+		// insistir assim num gate que não é coleta de dado seria pressão indevida.
 		for (const attempt of [1, 2, 3, 4]) {
-			expect(reengageQuestionForGate("experience", null, attempt)).toBeNull();
+			const q = reengageQuestionForGate("experience", null, attempt);
+			expect(q).toMatch(/já fez consórcio/i);
+			expect(q).not.toMatch(/Só falta isso|sem compromisso/i);
+		}
+		// `name` não tem pergunta própria (sai no texto do agente) → null sempre.
+		for (const attempt of [1, 2, 3, 4]) {
 			expect(reengageQuestionForGate("name", null, attempt)).toBeNull();
 		}
 	});

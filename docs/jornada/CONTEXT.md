@@ -1,7 +1,12 @@
 # CONTEXT — Jornada × Bevi: histórico, diretivas e decisões
 
 > Atualizado: 2026-06-04 · Fonte das diretivas: Kairo (verbal, transcrito)
-> Documento canônico do fluxo (fonte soberana): [`jornada-canonica.md`](./jornada-canonica.md)
+>
+> ⚠️ **Documento histórico.** A referência viva do comportamento é o mockup + handoff
+> (`docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/`); as decisões do cliente e os
+> invariantes duros estão em [`decisoes-do-cliente.md`](./decisoes-do-cliente.md). O antigo dogma
+> "a jornada é soberana, divergência = defeito do código" foi **revogado em 2026-07-13** (engessou
+> o agente). Leia o que segue como registro do que se pensava então — não como regra.
 
 ## Histórico — como chegamos aqui
 
@@ -9,9 +14,12 @@
 2. **Bevi entrou.** A integração com a API de Parceiro da Bevi foi construída e validada end-to-end (spec em `docs/integracoes/bevi-api-parceiro-spec.md`), mas só foi plugada no **passo 5** (fechamento), atrás de `PROPOSAL_GATEWAY=bevi`. A descoberta continuou 100% mock — inclusive com guard que **impedia** Discovery via Bevi (`src/lib/adapters/index.ts`).
 3. **O cliente trouxe a visão dele.** A jornada que construímos era a NOSSA interpretação do fluxo ideal. O cliente criticou vários pontos e formalizou a visão dele no `jornada.docx`. **A visão deles prevalece sobre o que construímos.**
 
-## Diretivas do Kairo (2026-06-04) — REGRAS
+## Diretivas do Kairo (2026-06-04) — histórico
 
-1. **`jornada-canonica.md` é a regra de como o cliente quer.** Não é inspiração — é spec. Divergência = defeito.
+1. ~~**`jornada-canonica.md` é a regra de como o cliente quer.** Não é inspiração — é spec.
+   Divergência = defeito.~~ **REVOGADO em 2026-07-13.** Este dogma engessou o agente (copy travada
+   por regex, gates sem saída lateral). Hoje: o mockup é a referência, o código é a ordem, e só os
+   **invariantes duros** de [`decisoes-do-cliente.md`](./decisoes-do-cliente.md) são regra.
 2. **Mock de dados de produto será DESTRUÍDO.** Não pode existir arquivo de mock alimentando a jornada. Deletar `src/lib/adapters/mock/` (adapter + `groups.json`/`rates.json`/`contemplation.json`) e qualquer caminho de runtime que sirva dado fictício ao usuário.
 3. **O fluxo da Bevi tem que ser integrado DENTRO da jornada canônica.** Bevi é a fonte única de grupos, ofertas, simulações e fechamento.
 4. **Simulador (passo 4):** o Bernardo (stakeholder, dono do conceito do "simulador-agulha") ainda **não especificou** como ele deve ser. Nós propusemos primeiro; o conceito foi consolidado na [`jornada-canonica.md`](./jornada-canonica.md) (passo 5).

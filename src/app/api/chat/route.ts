@@ -68,7 +68,7 @@ import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { ChatAction } from "@/lib/chat/actions";
-import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "@/lib/chat/empty-turn-guard";
+import { EMPTY_TURN_FALLBACK, isTurnEmpty, pickEmptyTurnFallback } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
@@ -78,7 +78,7 @@ import {
 	maskPhoneForDisplay,
 	storeIdentity,
 } from "@/lib/conversation/identity";
-import { saveMessage } from "@/lib/conversation/messages";
+import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -951,7 +951,14 @@ export async function POST(req: NextRequest) {
 								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 								// (closing-presentation.ts — módulo único produção+eval).
 								await pipeAndSaveClosingItems(
-									closingPresentation(res, { whatsappChannel: fechoPedirOi.channel }),
+									// FIX-344: canal ATUAL é web — o beat "te mandei mensagem no
+									// WhatsApp, responde com um oi" segue fazendo sentido aqui
+									// (é o único canal em que o cliente de fato precisa ir até o
+									// WhatsApp pra continuar).
+									closingPresentation(res, {
+										whatsappChannel: fechoPedirOi.channel,
+										channel: "web",
+									}),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
@@ -1554,11 +1561,23 @@ export async function POST(req: NextRequest) {
 					const mentionedOffer = reengage
 						? null
 						: await resolveOfferMentionForConversation(conversationId, userText);
+					// FIX-347: rede final antes do "Acho que me perdi" — se ele JÁ
+					// apareceu antes nesta conversa, a mesma frase 2x soa quebrado
+					// (mesma classe do FIX-266/332, que já resolveu isso pro fallback
+					// de tool-error). Varre TODO o histórico do assistant, não só o
+					// último turno (mesmo motivo do FIX-332: dois turnos vazios não
+					// precisam ser consecutivos pra repetir a frase).
+					const emptyFallbackAlreadyUsed =
+						!reengage &&
+						!mentionedOffer &&
+						(await loadConversationHistory(conversationId)).some(
+							(m) => m.role === "assistant" && m.content === EMPTY_TURN_FALLBACK,
+						);
 					const fallbackText = reengage
 						? reengage
 						: mentionedOffer
 							? buildToolErrorRecoveryResolvedFallback({ name: contactName, offer: mentionedOffer })
-							: EMPTY_TURN_FALLBACK;
+							: pickEmptyTurnFallback(emptyFallbackAlreadyUsed);
 					await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, fallbackText);
 					trace.setFinish(
 						reengage

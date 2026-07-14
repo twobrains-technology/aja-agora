@@ -100,9 +100,13 @@ describe("FIX-2 — resumo oficial mantém o termo técnico COM aposto explicati
 });
 
 describe("FIX-2 — system prompt orienta vocabulário amigável", () => {
-	it("frase canônica pós-detalhamento pergunta 'ajustar o valor do bem'", () => {
+	it("usa 'valor do bem' (nunca 'carta de crédito') no vocabulário com o usuário", () => {
+		// DESAMARRA (2026-07-13): o assert exigia a frase canônica literal ("Quer
+		// ajustar o valor do bem?"). O invariante do FIX-2 nunca foi a FRASE — é o
+		// VOCABULÁRIO: falar "valor do bem" com o usuário, não o jargão "carta de
+		// crédito". A frase agora é do modelo; o vocabulário continua sendo regra.
 		const src = readSource("src/lib/agent/system-prompt.ts");
-		expect(src).toMatch(/Quer ajustar o valor do bem\?/);
+		expect(src).toMatch(/valor do bem/i);
 		expect(src).not.toMatch(/Quer ajustar a carta de credito\?/);
 	});
 

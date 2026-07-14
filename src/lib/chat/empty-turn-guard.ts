@@ -36,6 +36,25 @@ export type TurnEmissionRecord = {
  * (regra de copy sem cara de IA) e sem prometer nada — só recupera o diálogo. */
 export const EMPTY_TURN_FALLBACK = "Acho que me perdi por aqui. Pode mandar de novo, por favor?";
 
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+// regrediu): esta frase é a REDE FINAL, depois de o orchestrator já ter dado
+// ao modelo uma segunda chance com o motivo do corte (`buildEmptyTurnRetryDirective`,
+// orchestrator/directives.ts) e do reengage de gate/menção de oferta
+// (route.ts) não terem resolvido. Se ela disparar de novo na MESMA conversa,
+// repetir a frase idêntica soa quebrado (mesma classe do FIX-266/332, que já
+// resolveu isso pro fallback de tool-error). Variante — nunca a mesma frase
+// 2x seguidas na mesma conversa.
+export const EMPTY_TURN_FALLBACK_REPEAT =
+	"Deixa eu tentar de outro jeito: me conta com suas palavras o que você quer ver agora.";
+
+/** FIX-347 — escolhe entre `EMPTY_TURN_FALLBACK` e sua variante conforme o
+ * fallback original já ter sido usado antes NESTA conversa (route.ts varre o
+ * histórico do assistant, mesmo padrão do `genericAlreadyUsed` em index.ts).
+ * Função pura — nunca decide sozinha o que é "já usado", só a saída. */
+export function pickEmptyTurnFallback(alreadyUsedBefore: boolean): string {
+	return alreadyUsedBefore ? EMPTY_TURN_FALLBACK_REPEAT : EMPTY_TURN_FALLBACK;
+}
+
 /**
  * Turno "mudo" = fechou SEM nenhuma emissão VISÍVEL ao usuário.
  *
