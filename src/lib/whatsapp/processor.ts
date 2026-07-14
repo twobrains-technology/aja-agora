@@ -101,18 +101,11 @@ export async function processTextMessage(
 				IDENTIFY_CONFIRMED_REPLY,
 				IDENTIFY_CONTINUE_REPLY,
 				IDENTIFY_INVALID_CPF_REPLY,
-				IDENTIFY_WHATSAPP_PROMPT,
 			} = await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
 				if (capture.outcome === "invalid") {
 					await sendTextMessage(from, IDENTIFY_INVALID_CPF_REPLY);
-					return;
-				}
-				// FIX-217: qualquer desvio (pergunta, tentativa de pular) reemite o
-				// pedido do CPF — NUNCA passa pro pipeline geral do agente (Lei 4).
-				if (capture.outcome === "ask-cpf") {
-					await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
 					return;
 				}
 				const conv = await db.query.conversations.findFirst({
@@ -144,14 +137,8 @@ export async function processTextMessage(
 		// Passo 5 "Contratar" (FIX-25): fechamento ativo (contractCollection) →
 		// captura conversacional do aceite/recusa/CPF sem turno de agente.
 		{
-			const {
-				captureContractText,
-				fireContract,
-				CONTRACT_CPF_PROMPT,
-				CONTRACT_INVALID_CPF_REPLY,
-				CONTRACT_REPROMPT_CONFIRM,
-				CONTRACT_CANCELLED_REPLY,
-			} = await import("./contract-capture");
+			const { captureContractText, fireContract, CONTRACT_INVALID_CPF_REPLY, CONTRACT_CANCELLED_REPLY } =
+				await import("./contract-capture");
 			const capture = await captureContractText(from, text);
 			if (capture.handled) {
 				const conv = await db.query.conversations.findFirst({
@@ -164,10 +151,6 @@ export async function processTextMessage(
 					await processWithOrchestrator(from, "Quero ver outras opções", contactName);
 				} else if (capture.outcome === "invalid-cpf") {
 					await sendTextMessage(from, CONTRACT_INVALID_CPF_REPLY);
-				} else if (capture.outcome === "ask-cpf") {
-					await sendTextMessage(from, CONTRACT_CPF_PROMPT);
-				} else if (capture.outcome === "ask-confirm") {
-					await sendTextMessage(from, CONTRACT_REPROMPT_CONFIRM);
 				}
 				return;
 			}

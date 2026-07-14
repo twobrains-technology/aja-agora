@@ -44,18 +44,63 @@ export const CONTRACT_CPF_PROMPT =
 export const CONTRACT_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — confere os números e me manda de novo?";
 
-/** Re-pergunta de confirmação quando a resposta foi ambígua (não dispara proposta). */
-export const CONTRACT_REPROMPT_CONFIRM =
-	"Só pra confirmar: posso seguir e criar sua proposta com a administradora? " +
-	"Responde *sim* pra fechar ou *ver outras* pra comparar mais opções.";
-
 export const CONTRACT_CANCELLED_REPLY = "Tranquilo! Vou te mostrar outras opções então.";
 
-export type ContractCaptureOutcome = "fire" | "cancel" | "invalid-cpf" | "ask-cpf" | "ask-confirm";
+/** FIX-357 — `ask-confirm` e `ask-cpf` FORAM REMOVIDOS de propósito.
+ *
+ * Eram os dois desvios em que o servidor respondia por TEXTO FIXO, sem consultar o
+ * modelo: qualquer coisa que não batesse nos regex virava "Só pra confirmar: posso
+ * seguir?" (ask-confirm) ou o pedido de CPF de novo (ask-cpf). Ao vivo, a pergunta
+ * do cliente EVAPORAVA. Se você está aqui pra reintroduzir um desses, leia o
+ * CLAUDE.md ("Não engesse o agente") e o ADR 2026-07-13 antes.
+ *
+ * O que o código ainda decide (e deve continuar decidindo) é só a AÇÃO irreversível:
+ * criar a proposta faz consulta de bureau, então exige aceite EXPLÍCITO. A FALA é do
+ * modelo. */
+export type ContractCaptureOutcome = "fire" | "cancel" | "invalid-cpf";
 
 export type ContractCaptureResult =
 	| { handled: false }
 	| { handled: true; outcome: ContractCaptureOutcome };
+
+/** FIX-357 — a DECISÃO do estágio "confirm", isolada da I/O pra ser testável.
+ *
+ * Regra: só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau).
+ * Recusa cancela. E qualquer outra coisa — uma pergunta, uma dúvida — **NÃO é
+ * resposta à confirmação**: vai pro MODELO (`handled: false`).
+ *
+ * Antes, o "qualquer outra coisa" caía num texto FIXO ("Só pra confirmar: posso
+ * seguir e criar sua proposta?") sem nunca consultar o modelo. Ao vivo, em 3
+ * jornadas do WhatsApp, a pergunta do cliente EVAPORAVA:
+ *
+ *     USUÁRIO: tem Bradesco?
+ *     AGENTE:  Só pra confirmar: posso seguir e criar sua proposta...
+ *
+ * É o mesmo antipadrão que o ADR 2026-07-13 revogou: o servidor falando no lugar
+ * do modelo. Uma pergunta jamais fecha contrato — o invariante segue de pé. */
+export function decideConfirmStage(text: string): ContractCaptureResult {
+	if (isQuestion(text)) return { handled: false };
+	if (CANCEL_RE.test(text)) return { handled: true, outcome: "cancel" };
+	if (AFFIRM_RE.test(text)) return { handled: true, outcome: "fire" };
+	return { handled: false };
+}
+
+/** Uma PERGUNTA não é uma resposta — e por isso não pode ser lida nem como aceite
+ * nem como recusa. Este é o discriminador que faltava: sem ele, o CANCEL_RE varria
+ * "por que essa e não outra?" atrás das palavras soltas "não" e "outra" e CANCELAVA
+ * a contratação de um cliente que só queria uma explicação.
+ *
+ * É conservador de propósito, nos DOIS sentidos. Um falso "fire" faz consulta de
+ * bureau sem consentimento (problema de LGPD); um falso "cancel" derruba a venda.
+ * Na dúvida, ninguém decide por regex: quem responde é o modelo, e o passo continua
+ * pendente — o cliente ainda vai dizer "sim" no turno seguinte. */
+function isQuestion(text: string): boolean {
+	const s = (text ?? "").trim();
+	if (s.includes("?")) return true;
+	return /^(por\s?que|porqu[êe]|pq|qual|quais|quanto|quantos|quando|como|onde|quem|tem\s|teria|e\s+se|será|seria|d[áa]\s+pra|posso\s+saber)\b/i.test(
+		s,
+	);
+}
 
 // Recusa tem prioridade sobre aceite — "quero ver outras" contém "quero".
 const CANCEL_RE =
@@ -94,8 +139,9 @@ export async function captureContractText(
 	const cc = meta.contractCollection;
 	if (!cc) return { handled: false };
 
-	// Recusa explícita encerra o fechamento em qualquer stage.
-	if (CANCEL_RE.test(text)) {
+	// Recusa explícita encerra o fechamento em qualquer stage — mas só se for de fato
+	// uma recusa. "Tem outra opção?" é uma PERGUNTA (ver isQuestion).
+	if (!isQuestion(text) && CANCEL_RE.test(text)) {
 		const cleared: ConversationMetadata = { ...meta };
 		delete cleared.contractCollection;
 		await persistMeta(conv.id, cleared);
@@ -110,12 +156,15 @@ export async function captureContractText(
 			return { handled: true, outcome: "fire" };
 		}
 		if (looksLikeCpfAttempt(text)) return { handled: true, outcome: "invalid-cpf" };
-		return { handled: true, outcome: "ask-cpf" };
+		// Sem cara de CPF (uma pergunta, uma objeção) → o MODELO responde. O gate não
+		// cai: sem CPF, `fireContract` não cria proposta nenhuma.
+		return { handled: false };
 	}
 
-	// stage "confirm": só aceite EXPLÍCITO dispara a proposta (consulta de bureau).
-	if (AFFIRM_RE.test(text)) return { handled: true, outcome: "fire" };
-	return { handled: true, outcome: "ask-confirm" };
+	// stage "confirm" — a decisão vive em decideConfirmStage (pura, testável).
+	// Só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau); pergunta
+	// e dúvida vão pro MODELO.
+	return decideConfirmStage(text);
 }
 
 /** Disparo do fechamento: resolve identidade, cria a proposta real e apresenta a

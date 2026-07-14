@@ -88,23 +88,41 @@ describe("captureIdentifyText — CPF válido segue capturando normalmente", () 
 	});
 });
 
-describe("captureIdentifyText — FIX-217 gate forçado: nunca cai em handled:false durante o gate", () => {
-	it("tentativa de pular ('acha logo os grupos') → ask-cpf, NUNCA handled:false", async () => {
-		setMeta({ ...IDENTIFY_READY });
-		const r = await captureIdentifyText(WA, "acha logo os grupos pra mim");
-		expect(r).toEqual({ handled: true, outcome: "ask-cpf" });
-	});
+// FIX-357 — REVOGA o `ask-cpf` do FIX-217 (os testes abaixo eram o contrário disto).
+//
+// O FIX-217 mandava interceptar TODO texto durante o gate e reemitir o pedido do CPF
+// sem nunca chamar o LLM. O teste que morava aqui chegava a se chamar "pergunta livre
+// → ask-cpf, NÃO ABRE CONVERSA LIVRE": era um cadeado testando o cadeado. Ao vivo, o
+// cliente perguntava e levava o mesmo pedido de CPF na cara — o agente bitolado.
+//
+// A Lei 4 foi invocada pro alvo errado. O invariante é sobre a AÇÃO ("não simule sem
+// CPF"), não sobre a FALA ("não deixe o cliente perguntar") — e a ação JÁ está blindada
+// em código, sem este regex: `tool-policy.ts` só entrega `search_groups` e os cards do
+// reveal ao modelo quando `identityCollected === true`. Sem CPF o modelo não tem a
+// ferramenta; não é regra que ele possa desobedecer.
+describe("captureIdentifyText — o que NÃO é CPF vai pro MODELO (a fala é do modelo)", () => {
+	const NAO_SAO_CPF = [
+		"por que vocês precisam do meu CPF?",
+		"isso é seguro? vocês guardam meus dados?",
+		"acha logo os grupos pra mim",
+		"oi",
+	];
 
-	it("pergunta livre ('por que precisam disso?') → ask-cpf, não abre conversa livre", async () => {
-		setMeta({ ...IDENTIFY_READY });
-		const r = await captureIdentifyText(WA, "por que vocês precisam do meu CPF?");
-		expect(r).toEqual({ handled: true, outcome: "ask-cpf" });
-	});
+	for (const texto of NAO_SAO_CPF) {
+		it(`"${texto}" → handled:false (quem responde é o agente, não um texto fixo)`, async () => {
+			setMeta({ ...IDENTIFY_READY });
+			const r = await captureIdentifyText(WA, texto);
+			expect(
+				r,
+				"reemitir o pedido do CPF em cima de qualquer desvio é o antipadrão que o ADR 2026-07-13 revogou: o servidor falando no lugar do modelo",
+			).toEqual({ handled: false });
+		});
+	}
 
-	it("texto vazio/curto sem cara de CPF → ask-cpf", async () => {
+	it("o CPF continua sendo capturado — o gate não virou sugestão", async () => {
 		setMeta({ ...IDENTIFY_READY });
-		const r = await captureIdentifyText(WA, "oi");
-		expect(r).toEqual({ handled: true, outcome: "ask-cpf" });
+		const r = await captureIdentifyText(WA, `meu cpf é ${CPF_VALIDO}`);
+		expect(r).toEqual({ handled: true, outcome: "captured" });
 	});
 });
 

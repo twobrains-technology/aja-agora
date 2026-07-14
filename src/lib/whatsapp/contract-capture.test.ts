@@ -162,10 +162,24 @@ describe("captureContractText — interceptação do turno (CA-3, CA-4, CA-5)", 
 		expect(mocks.metaStore[CONV_ID].contractCollection).toBeUndefined();
 	});
 
-	it("stage confirm + ambíguo → outcome 'ask-confirm' (NÃO dispara proposta)", async () => {
+	// FIX-357 — era `ask-confirm` (texto FIXO "Só pra confirmar: posso seguir?").
+	// A pergunta do cliente evaporava. Pergunta não é resposta: vai pro MODELO.
+	it("stage confirm + PERGUNTA → handled:false (o agente responde; NÃO dispara proposta)", async () => {
 		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
 		const r = await captureContractText(WA, "quanto fica por mês mesmo?");
-		expect(r).toEqual({ handled: true, outcome: "ask-confirm" });
+		expect(r).toEqual({ handled: false });
+	});
+
+	// O bug exato do dossiê: "não" e "outra" soltos dentro de uma PERGUNTA faziam o
+	// CANCEL_RE cancelar a contratação de quem só queria uma explicação.
+	it("stage confirm + 'por que essa e não outra?' → NÃO cancela (é pergunta, não recusa)", async () => {
+		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
+		const r = await captureContractText(WA, "por que essa e não outra?");
+		expect(r).toEqual({ handled: false });
+		expect(
+			mocks.metaStore[CONV_ID].contractCollection,
+			"o fechamento não pode ser derrubado por uma pergunta — o passo continua pendente",
+		).toEqual({ stage: "confirm" });
 	});
 
 	it("stage cpf + CPF válido → storeIdentity (cifrado) e outcome 'fire'; CPF nunca em claro", async () => {
@@ -192,13 +206,15 @@ describe("captureContractText — interceptação do turno (CA-3, CA-4, CA-5)", 
 		expect(r).toEqual({ handled: true, outcome: "invalid-cpf" });
 	});
 
-	it("stage cpf + texto curto que não parece CPF → outcome 'ask-cpf' (re-pede)", async () => {
+	// FIX-357 — era `ask-cpf` (re-pedia o CPF por texto fixo, sem chamar o modelo).
+	// Sem CPF, `fireContract` não cria proposta nenhuma: o invariante não depende disto.
+	it("stage cpf + texto que não é CPF → handled:false (o agente responde)", async () => {
 		setMeta({
 			revealCompleted: true,
 			contractCollection: { stage: "cpf" },
 		} as ConversationMetadata);
 		const r = await captureContractText(WA, "tá");
-		expect(r).toEqual({ handled: true, outcome: "ask-cpf" });
+		expect(r).toEqual({ handled: false });
 	});
 });
 

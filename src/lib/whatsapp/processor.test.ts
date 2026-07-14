@@ -117,10 +117,15 @@ describe("WhatsApp processor — paridade web + early-return 'voltar' (bug #06 #
 	});
 });
 
-// FIX-217 (Ata 2026-07-04, item 9 + inbox 2026-07-01-whatsapp-identify-gate) —
-// no gate identify, texto sem CPF (tentativa de pular, pergunta) NUNCA pode
-// cair no pipeline geral do agente: o gate é DETERMINÍSTICO e FORÇADO (Lei 4).
-describe("Gate identify determinístico e forçado (FIX-217)", () => {
+// FIX-357 — REVOGA o FIX-217, que travava o gate identify no processor: qualquer
+// texto sem CPF (inclusive uma PERGUNTA) era interceptado e respondido por texto fixo,
+// sem nunca chamar o LLM. Era o agente bitolado, e o teste que morava aqui exigia isso
+// ("sem abrir conversa livre") — um cadeado testando o cadeado.
+//
+// O invariante é sobre a AÇÃO, não sobre a FALA — e a ação já está blindada em código:
+// `tool-policy.ts` só entrega `search_groups`/cards do reveal ao modelo quando
+// `identityCollected === true`. Sem CPF, o modelo NÃO TEM a ferramenta de busca.
+describe("Gate identify: a pergunta do cliente chega no agente (FIX-357)", () => {
 	// Describe irmão do bloco acima — NÃO herda o beforeEach dele. Reseta aqui
 	// pra não vazar isMesaAttendantPhoneMock=true deixado por um teste anterior
 	// (achado real: sem isto, "acha logo os grupos" roteava pro copiloto de mesa
@@ -143,35 +148,47 @@ describe("Gate identify determinístico e forçado (FIX-217)", () => {
 		qualifyAnswers: { creditMax: 80_000 },
 	} as ConversationMetadata;
 
-	it("texto que tenta pular a identidade ('acha logo os grupos') NUNCA chama o orchestrator — reemite o pedido de CPF", async () => {
+	it("tentativa de pular ('acha logo os grupos') → o AGENTE responde (não um texto fixo)", async () => {
 		vi.mocked(db.query.conversations.findFirst).mockResolvedValueOnce({
-			id: "conv-identify-fix217",
+			id: "conv-identify-fix357",
 			metadata: IDENTIFY_META,
 		} as never);
 		vi.mocked(metaOf).mockReturnValueOnce(IDENTIFY_META);
 
 		await processTextMessage("5562999998888", "acha logo os grupos pra mim", "Op", "msgID1");
 
-		// Invariante dura: sem identidade, o agente NUNCA roda (search_groups vive
-		// atrás do orchestrator) — a trava acontece ANTES, aqui no processor.
-		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
-		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
-		const sentText = (mocks.sendTextMock.mock.calls[0]?.[1] as string).toLowerCase();
-		expect(sentText).toMatch(/cpf/);
-		// Nunca narra avanço/busca sem o CPF coletado (o achado real do inbox).
-		expect(sentText).not.toMatch(/bora ver|vou buscar|encontrei|opç(õ|o)es reais|encaixa na sua faixa/);
+		expect(
+			mocks.processOrchestratorMock,
+			"o cliente pediu algo — quem responde é o modelo; a busca segue impossível sem CPF (tool-policy)",
+		).toHaveBeenCalled();
+		expect(mocks.sendTextMock).not.toHaveBeenCalled();
 	});
 
-	it("pergunta livre ('por que precisam disso?') também reemite o CPF, sem abrir conversa livre", async () => {
+	it("pergunta livre ('por que precisam do meu CPF?') → o AGENTE responde a dúvida", async () => {
 		vi.mocked(db.query.conversations.findFirst).mockResolvedValueOnce({
-			id: "conv-identify-fix217",
+			id: "conv-identify-fix357",
 			metadata: IDENTIFY_META,
 		} as never);
 		vi.mocked(metaOf).mockReturnValueOnce(IDENTIFY_META);
 
 		await processTextMessage("5562999998888", "por que vocês precisam do meu CPF?", "Op", "msgID2");
 
+		expect(
+			mocks.processOrchestratorMock,
+			"reemitir o pedido de CPF em cima da pergunta é o agente bitolado — o cliente pergunta e leva a mesma coisa na cara",
+		).toHaveBeenCalled();
+		expect(mocks.sendTextMock).not.toHaveBeenCalled();
+	});
+
+	it("o CPF continua sendo capturado — o gate não virou sugestão", async () => {
+		vi.mocked(db.query.conversations.findFirst).mockResolvedValue({
+			id: "conv-identify-fix357",
+			metadata: IDENTIFY_META,
+		} as never);
+		vi.mocked(metaOf).mockReturnValue(IDENTIFY_META);
+
+		await processTextMessage("5562999998888", "meu cpf é 529.982.247-25", "Op", "msgID3");
+
 		expect(mocks.processOrchestratorMock).not.toHaveBeenCalled();
-		expect(mocks.sendTextMock).toHaveBeenCalledTimes(1);
 	});
 });
