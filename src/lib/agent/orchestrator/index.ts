@@ -26,6 +26,7 @@ import {
 	buildAdvanceToContractDirective,
 	buildDecisionPromptDirective,
 	buildDiscoveryFailedFallback,
+	buildEmptyTurnRetryDirective,
 	buildFirstRevealCardIntro,
 	buildFirstRevealRecoveryFallback,
 	buildLanceSoParcelaDirective,
@@ -793,7 +794,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		}
 	}
 
-	const result = yield* runAgentTurn({
+	let result = yield* runAgentTurn({
 		conversationId,
 		channel,
 		currentPersona,
@@ -805,6 +806,48 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		forceToolChoice,
 		systemContextBlocks,
 	});
+
+	// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+	// regrediu): root cause PROVADO em código — `EphemeralTextFilter`
+	// (sanitizer.ts) pode dropar 100% dos segmentos de um turno sem avisar
+	// ninguém; esse turno fica indistinguível de "o modelo não disse nada" e o
+	// guard de turno-vazio (`empty-turn-guard.ts`) dispara o fallback fixo
+	// "Acho que me perdi por aqui" mesmo quando o modelo respondeu de
+	// verdade. `result.sanitizerDropReasons` (populado pelo runner a partir de
+	// `ephemeralFilter.droppedSegmentReasons()`) prova qual guard bloqueou.
+	// Sem tool-call/artifact/gate neste turno (nenhum efeito colateral real
+	// aconteceu ainda — retry é seguro), dá ao modelo UMA chance de
+	// reformular, com o motivo do corte no contexto. NUNCA relaxa o guard que
+	// bloqueou, NUNCA emite texto fixo aqui — só uma segunda tentativa real. Se
+	// a retentativa também vier vazia, o turno segue o fluxo normal (a rede
+	// final é o fallback de turno-vazio do route.ts, que varia a frase quando
+	// já foi usada — nunca duas vezes seguidas).
+	const sanitizerDropReasons = result.sanitizerDropReasons ?? [];
+	if (
+		result.fullResponse.trim().length === 0 &&
+		result.artifacts.length === 0 &&
+		!result.handoffSignaled &&
+		!result.nextGateToFire &&
+		(result.executedToolCount ?? 0) === 0 &&
+		sanitizerDropReasons.length > 0
+	) {
+		const retryDirective = buildEmptyTurnRetryDirective(sanitizerDropReasons);
+		console.log(
+			`[empty-turn-retry] sanitizer dropou 100% do texto do turno (motivos=${sanitizerDropReasons.join(",")}) — dando 2a chance com o motivo (conv=${conversationId})`,
+		);
+		result = yield* runAgentTurn({
+			conversationId,
+			channel,
+			currentPersona,
+			meta,
+			messages: messagesForAgent,
+			isUserTurn,
+			userIntent: analyzedIntent,
+			memoryContext,
+			forceToolChoice,
+			systemContextBlocks: [...systemContextBlocks, retryDirective],
+		});
+	}
 
 	// FIX-186 (Kairo 2026-07-01): a descoberta na Bevi falhou neste turno (após
 	// retry silencioso). O runner suprimiu a narração crua do modelo; AQUI o

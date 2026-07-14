@@ -113,6 +113,63 @@ describe("FIX-335 — 'Agora vou <ação de produto>' é anúncio de passo (log 
 	});
 });
 
+// FIX-348 (loop-de-goal desamarra, rodada 4, 3ª rodada seguida com o mesmo
+// achado): o FIX-335 cobre só "vou/deixa eu recomendar/destacar/detalhar/
+// aprofundar" — escapa a família "deixa eu (te) apresentar/trazer", "vou (te)
+// apresentar/trazer" (sempre risco de log de pipeline, nenhuma narração
+// legítima usa esses verbos com entidade concreta neste domínio) e "vou/
+// deixa eu (te) mostrar <objeto vago: as opções/o cenário completo/os
+// números exatos>" (mesma família de risco do "a mais adequada"/"a melhor
+// opção" já coberta — objeto CONCRETO continua imune, ver teste de não-regra
+// abaixo). Frases EXATAS do veredito rodada 4 (D1/D6).
+describe("FIX-348 — família 'deixa eu/vou (te) apresentar/trazer/mostrar <objeto vago>' entra em isProcessPreamble", () => {
+	const ANUNCIOS_DE_PASSO_FIX_348 = [
+		"Agora vou te mostrar o cenário completo:",
+		"vou te mostrar as opções pra você escolher",
+		"Agora vou te mostrar os números exatos dessa opção:",
+		"Deixa eu apresentar as opções pra você escolher uma e simular:",
+		"Vou apresentar as opções agora:",
+		"Deixa eu trazer as opções pra você:",
+	];
+
+	it("isProcessPreamble classifica como preâmbulo todos os anúncios de passo do veredito rodada 4", () => {
+		for (const p of ANUNCIOS_DE_PASSO_FIX_348) {
+			expect(isProcessPreamble(p), `deveria dropar: "${p}"`).toBe(true);
+		}
+	});
+
+	it("REGRESSÃO EXIGIDA pelo card: 'Deixa eu apresentar as opções pra você escolher uma e simular:' é dropado", () => {
+		expect(
+			isProcessPreamble("Deixa eu apresentar as opções pra você escolher uma e simular:"),
+		).toBe(true);
+	});
+
+	it("REGRESSÃO EXIGIDA pelo card: transição curta legítima ('Olha só o que encontrei:') PASSA", () => {
+		expect(isProcessPreamble("Olha só o que encontrei:")).toBe(false);
+	});
+
+	it("NÃO vira mordaça: mostrar/apresentar com entidade CONCRETA (nome/número) continua passando", () => {
+		expect(isProcessPreamble("Vou te mostrar a Rodobens com a parcela de R$ 900:")).toBe(false);
+		expect(isProcessPreamble("Deixa eu te apresentar a proposta da Itaú, R$ 1.200 por mês:")).toBe(
+			false,
+		);
+	});
+
+	it("NÃO vira mordaça: outras transições curtas e convites legítimos continuam passando", () => {
+		expect(isProcessPreamble("Bora ver o que encaixa na sua faixa:")).toBe(false);
+		expect(isProcessPreamble("Escolhe uma pra simular e ver como fica a parcela.")).toBe(false);
+		expect(isProcessPreamble("Show, esse plano encaixa bem no seu orçamento.")).toBe(false);
+	});
+
+	it("stripProcessPreamble remove o anúncio novo mas preserva o resto do texto", () => {
+		const input =
+			"Encontramos 2 boas opções pra você! Deixa eu apresentar as opções pra você escolher uma e simular: a primeira encaixa bem no seu perfil.";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("deixa eu apresentar");
+		expect(out).toContain("Encontramos 2 boas opções pra você!");
+	});
+});
+
 describe("FIX-188 — stripProcessPreamble limpa o texto composto", () => {
 	it("dropa o segmento de preâmbulo e preserva a saudação/resultado colados", () => {
 		const input =
@@ -191,6 +248,57 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 		expect(emitted).toBe(""); // incompleto, segurado
 		emitted += f.flush(); // trailing → filtrado (é preâmbulo) → dropado
 		expect(emitted).toBe("");
+	});
+});
+
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+// regrediu): quando o sanitizer dropa TODOS os segmentos de um turno, o
+// texto final fica vazio e o guard de turno-vazio (empty-turn-guard.ts)
+// dispara o fallback enlatado "Acho que me perdi por aqui" — mesmo quando o
+// modelo respondeu de verdade e só foi barrado por um invariante. Sem
+// nenhuma instrumentação, é impossível distinguir "modelo não disse nada" de
+// "modelo disse algo e o sanitizer comeu tudo". `droppedSegmentReasons()`
+// expõe QUAL guard bloqueou, pra o runner poder dar ao modelo uma segunda
+// chance com o motivo — nunca relaxando o guard, nunca com texto fixo.
+describe("FIX-347 — EphemeralTextFilter expõe o MOTIVO de cada drop (turno vazio precisa saber por quê)", () => {
+	it("sem nenhum drop, a lista de motivos fica vazia", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Show, boa escolha!");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual([]);
+	});
+
+	it("preâmbulo de processo dropado registra o motivo 'process-preamble'", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("administradora fora das ofertas reais registra 'hallucinated-administradora'", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: ["ITAU CONSORCIOS"],
+		}));
+		f.push("A Bradesco tem uma parcela ótima pra você.");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["hallucinated-administradora"]);
+	});
+
+	it("turno com 2 segmentos dropados pelo MESMO motivo acumula só uma vez (sem duplicar)", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Vou buscar as opções certas pra você. Um segundo:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("segmento legítimo preservado não entra na lista de motivos", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você. Olha só o que encontrei:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
 	});
 });
 

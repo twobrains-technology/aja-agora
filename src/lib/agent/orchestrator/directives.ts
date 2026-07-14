@@ -1,6 +1,7 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
 import type { ChosenOffer } from "./choose-offer";
+import type { EphemeralDropReason } from "./sanitizer";
 
 // ---- Transition ----
 
@@ -353,10 +354,10 @@ CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom
 FLUXO OBRIGATÓRIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaque):
 1. Chame search_groups com category="${category}"${filters} ANTES de anunciar qualquer coisa.
 2. Anuncie conforme o RESULTADO REAL da busca (honestidade > template — FIX-7):
-   - 3 ou mais grupos: algo como "Encontramos 3 boas opções pra você!" ou "Separei as melhores opções pro seu perfil:" (número real).
+   - 3 ou mais grupos: algo como "Encontramos 3 boas opções pra você!" (número real).
    - 2 grupos: anuncie "2 boas opções" (número real).
    - apenas 1 grupo: anuncie que encontrou UMA opção forte pra ele — NÃO anuncie "3 boas opções", NÃO use plural ("boas opções") nem prometa comparação/curadoria que não existe.
-   Em 1-2 frases curtas NO SEU TOM. NÃO use bullets/checkboxes (✅), NÃO use template, NÃO descreva números específicos dos grupos. NÃO anuncie o PRÓXIMO passo ("agora vou recomendar/detalhar/destacar a mais adequada", "agora vou te mostrar") — isso soa como log de execução, não como gente vendendo (FIX-335). Só anuncie o que JÁ encontrou; o que vem depois, você FAZ, não anuncia.
+   Em 1-2 frases curtas NO SEU TOM. NÃO use bullets/checkboxes (✅), NÃO use template, NÃO descreva números específicos dos grupos. NÃO anuncie o PRÓXIMO passo — nem "agora vou recomendar/detalhar/destacar a mais adequada", nem variações como "vou/deixa eu te apresentar as opções", "vou te mostrar o cenário completo/os números exatos", "separei as melhores pra você conferir" — isso soa como log de execução empilhado, não como gente vendendo (FIX-335/FIX-348). Escreva UMA transição, nunca 2-3 frases dizendo a MESMA coisa de jeitos diferentes. Só anuncie o que JÁ encontrou; o que vem depois, você FAZ, não anuncia.
 3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com o id da PRIMEIRA opção retornada (já vem ordenada, é a de maior score) — administradora, category, creditValue, monthlyPayment, termMonths. NÃO digite número de contemplação nem score/scoreBreakdown (FIX-334: recommend_groups não devolve mais esses números crus, só um scoreLabel qualitativo): o sistema coage os números do card (parcela, valor, prazo, contemplados/mês, score) a partir do grupo REAL da busca — você só ancora pelo id (FIX-191). SE retornou apenas 1 grupo: NÃO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card único do reveal e a simulação abaixo); seu texto faz o papel da recomendação.
 4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result — aprofunda a opção que o card acabou de mostrar (cenário com lance, correção prevista). OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variação com/sem lance e com lance embutido — exigência literal do docx); omiti-los é defeito.
 5. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups — por ÚLTIMO, como convite pra comparar depois de já ter visto a opção completa (FIX-224, Ata 2026-07-04) — SEM destacar nenhuma opção como preferencial (FIX-220: a 1ª lista é NEUTRA, mesmo peso pra todas — ainda não há dado de lance pra recomendar nada). SE retornou apenas 1 grupo: NÃO chame present_comparison_table (só ha uma opção).
@@ -435,6 +436,48 @@ export function buildDiscoveryFailedFallback(args: { name?: string | null }): st
 		"não do seu perfil. Me manda uma mensagem daqui a pouco que eu já trago as opções " +
 		"certas pra você. Se preferir, também posso te conectar com um especialista da Aja " +
 		"pra seguir com você."
+	);
+}
+
+// ---- Turno esvaziado pelo sanitizer (FIX-347) — segunda chance COM o motivo ----
+
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+// regrediu): rótulo curto em pt-BR pra cada guard do sanitizer que pode
+// dropar um segmento. Usado só pra explicar ao MODELO por que a resposta
+// anterior não saiu — a reformulação continua livre (CLAUDE.md: conversa é
+// do modelo, só o invariante vira código). Nunca relaxa o guard.
+const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
+	"process-preamble": "narrou o que ia fazer (\"vou buscar\", \"deixa eu usar a ferramenta\") em vez de responder direto",
+	"technical-fallback": "pediu pro usuário atualizar ou recarregar a página",
+	"prazo-reduction": "prometeu reduzir o PRAZO do consórcio (o lance só reduz a parcela, nunca o prazo)",
+	"premature-reservation": "afirmou que a cota já está reservada ou garantida antes da contratação",
+	"banned-lexicon": "usou uma gíria fora do tom da conversa",
+	"taxa-contemplacao": "citou \"taxa de contemplação\", que não existe nos dados reais",
+	"proactive-callback": "prometeu retornar ou entrar em contato depois (este canal não tem esse recurso)",
+	"mechanism-narration": "narrou o próprio mecanismo interno do sistema em vez de responder ao usuário",
+	"fabricated-state": "afirmou um estado que ainda não aconteceu de fato (documento recebido, nova busca no catálogo, proposta pronta)",
+	"premature-top-offer": "revelou a administradora ou o valor da recomendação antes do usuário confirmar que quer ver",
+	"score-percentage": "citou o score/compatibilidade como número percentual (só o rótulo qualitativo pode aparecer)",
+	"hallucinated-administradora": "citou uma administradora que não está entre as ofertas reais desta conversa",
+};
+
+/**
+ * FIX-347 — a resposta anterior do modelo foi 100% filtrada pelo sanitizer
+ * (nenhum segmento sobreviveu) e o turno fecharia mudo. Root cause provado em
+ * código: `EphemeralTextFilter` dropa segmento por segmento sem avisar
+ * ninguém — um turno onde TODOS os segmentos caem em algum guard fica
+ * indistinguível de "o modelo não disse nada" (`empty-turn-guard.ts`
+ * dispararia o fallback fixo "Acho que me perdi por aqui" nos dois casos).
+ * Em vez de emitir texto fixo ou relaxar o guard que bloqueou, o orchestrator
+ * dá ao modelo UMA chance de reformular no mesmo turno — com o motivo REAL do
+ * corte no contexto. O resto da resposta continua do modelo.
+ */
+export function buildEmptyTurnRetryDirective(reasons: EphemeralDropReason[]): string {
+	const motivos = [...new Set(reasons)].map((r) => EMPTY_TURN_RETRY_REASON_LABELS[r]).join("; ");
+	return (
+		`[sistema] Sua resposta anterior não pôde ser enviada porque ela ${motivos}. ` +
+		"Responda de novo à última mensagem do usuário sem repetir esse problema — o resto da " +
+		"resposta é livre, use suas próprias palavras."
 	);
 }
 

@@ -6,7 +6,12 @@
 // espera e nada; só "destrava" no input seguinte. `isTurnEmpty` detecta isso a
 // partir do registro do TurnTrace pra o route emitir um fallback honesto.
 import { describe, expect, it } from "vitest";
-import { EMPTY_TURN_FALLBACK, isTurnEmpty } from "./empty-turn-guard";
+import {
+	EMPTY_TURN_FALLBACK,
+	EMPTY_TURN_FALLBACK_REPEAT,
+	isTurnEmpty,
+	pickEmptyTurnFallback,
+} from "./empty-turn-guard";
 
 const base = {
 	textChars: 0,
@@ -148,5 +153,27 @@ describe("FIX-189 — descoberta NÃO é emissão visível por si (a pendura 'Bu
 		expect(
 			isTurnEmpty({ ...base, toolCount: 2, toolsCalled: ["save_contact_name", "search_groups"] }),
 		).toBe(true);
+	});
+});
+
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1) — "Regressão exigida": o
+// fallback de turno-vazio nunca pode aparecer 2× na mesma conversa (mesma
+// classe do FIX-266/332, que já resolveu isso pro fallback de tool-error).
+// `pickEmptyTurnFallback` é a função PURA que decide entre a frase original
+// e a variante — o route.ts só precisa saber SE `EMPTY_TURN_FALLBACK` já
+// apareceu no histórico do assistant desta conversa.
+describe("FIX-347 — pickEmptyTurnFallback nunca repete a MESMA frase 2x", () => {
+	it("primeira vez (nunca usado antes) => frase original", () => {
+		expect(pickEmptyTurnFallback(false)).toBe(EMPTY_TURN_FALLBACK);
+	});
+
+	it("já usado antes nesta conversa => variante, NUNCA a frase original", () => {
+		expect(pickEmptyTurnFallback(true)).toBe(EMPTY_TURN_FALLBACK_REPEAT);
+	});
+
+	it("a variante é uma frase PT-BR honesta, diferente da original, sem cara de IA", () => {
+		expect(EMPTY_TURN_FALLBACK_REPEAT.length).toBeGreaterThan(0);
+		expect(EMPTY_TURN_FALLBACK_REPEAT).not.toBe(EMPTY_TURN_FALLBACK);
+		expect(EMPTY_TURN_FALLBACK_REPEAT).not.toMatch(/[—–]/);
 	});
 });
