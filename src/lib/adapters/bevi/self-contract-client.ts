@@ -199,7 +199,7 @@ export class BeviSelfContractClient {
 	): Promise<T> {
 		// Toda chamada entra na fila da PROPOSTA — nunca duas em voo no mesmo hash.
 		// É a causa-raiz do "write conflict" que matava a jornada no reveal.
-		return serializarPorProposta(this.config.hash, () => this.callSerialized<T>(path, opts));
+		return serializarPorProposta(this.config.storeHash, () => this.callSerialized<T>(path, opts));
 	}
 
 	private async callSerialized<T>(
