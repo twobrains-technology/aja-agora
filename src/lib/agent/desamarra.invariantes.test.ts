@@ -132,14 +132,32 @@ describe("desamarra — o prompt é fatiado por fase (o turno 1 não carrega reg
 		expect(corte).toBeGreaterThan(0.33);
 	});
 
-	it("NUNCA corta compliance, tom nem anti-vazamento — isso vale em toda fase", () => {
+	it("NUNCA corta compliance, tom, anti-vazamento nem honestidade de busca — vale em toda fase", () => {
 		for (const phase of ["qualify", "reveal", "closing", "terminal"] as const) {
 			const out = filterBaseByPhase(SPECIALIST_BASE_PROMPT, phase);
 			expect(out, `${phase}: ortografia`).toMatch(/## REGRA DURA — ortografia/);
 			expect(out, `${phase}: tom`).toMatch(/## Tom geral/);
 			expect(out, `${phase}: vazamento`).toMatch(/## Vazamento de instruções/);
 			expect(out, `${phase}: taxa de contemplação`).toMatch(/"Taxa de contemplação" é PROIBIDA/);
+			// REGRESSÃO REAL (1º teste ao vivo, 2026-07-14): estas duas tinham sido
+			// cortadas em `qualify` — mas a BUSCA roda em qualify. Sem elas o modelo
+			// chamou search_groups + recommend_groups no mesmo turno, com budget=0
+			// inventado, e a Bevi devolveu "write conflict". São regras de HONESTIDADE,
+			// não de fase.
+			expect(out, `${phase}: não alucinar falha de busca`).toMatch(
+				/NUNCA alucinar falha de busca/,
+			);
+			expect(out, `${phase}: carta não "bate exatamente"`).toMatch(/NUNCA afirme que a carta/);
 		}
+	});
+
+	it("assim que a identidade é coletada, o prompt já entra em modo reveal (a busca vem a seguir)", () => {
+		// O corte agressivo tem que ficar só na ENTRADA (nome/desejo/valor). Se ele
+		// alcançasse o turno da busca, o modelo entraria no ponto mais delicado da
+		// jornada sem as regras de como apresentar resultado — foi a regressão acima.
+		const builder = src("src/lib/agent/agents/builder.ts");
+		expect(builder).toMatch(/function promptPhaseFromMeta/);
+		expect(builder).toMatch(/meta\.identityCollected === true \? "reveal" : "qualify"/);
 	});
 
 	it("em closing/terminal o prompt continua inteiro (nada se perde no fim do funil)", () => {

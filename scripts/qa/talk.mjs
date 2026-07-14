@@ -7,19 +7,34 @@
 // Imprime também os CARDS emitidos e o gate, que é evidência que o juiz precisa.
 
 const BASE = process.env.AJA_BASE_URL ?? "http://aja-refactor-desamarra-agente.orb.local";
-const [, , conversationId, text] = process.argv;
+const [, , conversationId, arg2, arg3] = process.argv;
 
-if (!conversationId || !text) {
+// Dois modos:
+//   texto: node talk.mjs <conv> "quero um Corolla"
+//   ação:  node talk.mjs <conv> --action '{"kind":"gate","gate":"experience","value":"first","label":"É a primeira vez"}'
+// A AÇÃO é o que a UI manda quando o usuário clica num botão ou envia um form.
+// Sem ela alguns gates não avançam — na web o CPF vem de um FORM, não de texto.
+const isAction = arg2 === "--action";
+const text = isAction ? null : arg2;
+const action = isAction ? JSON.parse(arg3) : null;
+
+if (!conversationId || (!text && !action)) {
 	console.error('uso: node scripts/qa/talk.mjs <conversationId> "<mensagem>"');
+	console.error("      node scripts/qa/talk.mjs <conversationId> --action '<json>'");
 	process.exit(2);
 }
+
+const userText = text ?? action.label ?? "(ação)";
 
 const res = await fetch(`${BASE}/api/chat`, {
 	method: "POST",
 	headers: { "content-type": "application/json" },
 	body: JSON.stringify({
 		conversationId,
-		messages: [{ id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text }] }],
+		messages: [
+			{ id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text: userText }] },
+		],
+		...(action ? { action } : {}),
 	}),
 	signal: AbortSignal.timeout(180_000),
 });

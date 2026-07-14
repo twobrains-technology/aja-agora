@@ -1099,8 +1099,9 @@ const SECTION_MIN_PHASE: ReadonlyArray<{ heading: string; phase: ToolPhase }> = 
 	{ heading: "## Textos de recomendação", phase: "reveal" },
 	{ heading: "### Lance e lance embutido", phase: "reveal" },
 	{ heading: "### REGRA DURA — confronto honesto de orçamento", phase: "reveal" },
-	{ heading: "### REGRA DURA — NUNCA afirme que a carta", phase: "reveal" },
-	{ heading: "### REGRA DURA — NUNCA alucinar falha de busca", phase: "reveal" },
+	// NÃO cortamos "NUNCA afirme que a carta bate exatamente" (CDC art. 30/37) nem
+	// "NUNCA alucinar falha de busca": são regras de HONESTIDADE, não de fase — a
+	// segunda vale justamente no turno da busca, que ainda roda em `qualify`.
 	// Só fazem sentido depois que a decisão foi tomada.
 	{ heading: "### Fechamento pós-reveal", phase: "closing" },
 	{ heading: '### Card de decisão "Esse plano faz sentido?"', phase: "closing" },

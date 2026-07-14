@@ -4,7 +4,26 @@ import { createGatewayOpenAI } from "@/lib/llm/gateway-openai";
 import { isNativeAnthropicModel } from "@/lib/llm/model-provider";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
-import { allowedTools, phaseFromMeta } from "../orchestrator/tool-policy";
+import { allowedTools, phaseFromMeta, type ToolPhase } from "../orchestrator/tool-policy";
+
+/** Fase do PROMPT — não é a mesma coisa que a fase das TOOLS.
+ *
+ * A busca (`search_groups` → apresentação dos grupos) acontece ainda dentro da
+ * fase `qualify`: assim que a identidade é coletada, o próximo turno já revela as
+ * ofertas. Se cortássemos as seções de reveal enquanto `phaseFromMeta` diz
+ * "qualify", o modelo entraria no turno mais delicado da jornada SEM as regras de
+ * como apresentar resultado — e foi exatamente o que aconteceu no 1º teste ao
+ * vivo (2026-07-14): ele chamou `search_groups` e `recommend_groups` no mesmo
+ * turno, com `budget: 0` inventado, e a Bevi devolveu "write conflict".
+ *
+ * Então: coletou identidade → o prompt já entra em modo `reveal`. O corte agressivo
+ * fica só na ENTRADA da conversa (nome/desejo/valor), que é onde o excesso de
+ * regra realmente sufoca o modelo e onde nada de reveal/fechamento é necessário. */
+function promptPhaseFromMeta(meta: ConversationMetadata): ToolPhase {
+	const phase = phaseFromMeta(meta);
+	if (phase !== "qualify") return phase;
+	return meta.identityCollected === true ? "reveal" : "qualify";
+}
 import type { ConversationMetadata } from "../personas";
 import {
 	buildConciergePrompt,
@@ -163,7 +182,7 @@ export function buildAgent(
 				// DESAMARRA (2026-07-13): fatia o prompt base pela fase — o turno de
 				// qualificação não carrega as regras de reveal/fechamento. Sem meta
 				// (paths ad-hoc), cai no default "terminal" = prompt inteiro.
-				opts.meta ? phaseFromMeta(opts.meta) : undefined,
+				opts.meta ? promptPhaseFromMeta(opts.meta) : undefined,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,
