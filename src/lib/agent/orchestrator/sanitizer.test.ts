@@ -28,6 +28,7 @@ import {
 	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
+	scrubCpf,
 	splitSegments,
 	stripEmoji,
 	stripProcessPreamble,
@@ -694,6 +695,52 @@ describe("FIX-336 — stripProcessPreamble/EphemeralTextFilter dropam promessa d
 		let emitted = f.push("Sua proposta está pronta! Já pode conferir.");
 		emitted += f.flush();
 		expect(emitted).toContain("pronta");
+	});
+});
+
+// FIX-337 (bloco-c-whatsapp-invariantes, invariante I6): defesa em
+// profundidade — mesma barreira do formatter.ts (`scrubCpf` em
+// whatsapp/formatter.ts), aqui como segunda linha pro texto que sai da
+// stream do modelo. CPF de teste: 529.982.247-25 (mesmo de identity.test.ts).
+describe("FIX-337 — scrubCpf mascara CPF real (dígito verificador válido)", () => {
+	it("mascara CPF com pontuação", () => {
+		expect(scrubCpf("seu CPF é 529.982.247-25, certo?")).toBe("seu CPF é ***.***.247-25, certo?");
+	});
+
+	it("mascara CPF sem pontuação", () => {
+		expect(scrubCpf("seu CPF é 52998224725")).toBe("seu CPF é ***.***.247-25");
+	});
+
+	it("NÃO mascara sequência de 11 dígitos que falha o dígito verificador", () => {
+		expect(scrubCpf("pedido nº 12345678901")).toBe("pedido nº 12345678901");
+	});
+
+	it("texto sem CPF passa incólume", () => {
+		expect(scrubCpf("Show, vamos seguir com a simulação.")).toBe(
+			"Show, vamos seguir com a simulação.",
+		);
+	});
+
+	it("string vazia não quebra", () => {
+		expect(scrubCpf("")).toBe("");
+	});
+});
+
+describe("FIX-337 — stripProcessPreamble/EphemeralTextFilter mascaram CPF no texto final", () => {
+	it("stripProcessPreamble mascara CPF ecoado pelo modelo (dossiê auto-whatsapp t10)", () => {
+		const out = stripProcessPreamble(
+			"Perfeito, anotei seu CPF: 529.982.247-25. E qual é o celular?",
+		);
+		expect(out).not.toContain("529.982.247-25");
+		expect(out).toContain("***.***.247-25");
+	});
+
+	it("EphemeralTextFilter mascara CPF ao vivo, no meio do stream", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Perfeito, anotei seu CPF: 529.982.247-25.");
+		emitted += f.flush();
+		expect(emitted).not.toContain("529.982.247-25");
+		expect(emitted).toContain("***.***.247-25");
 	});
 });
 

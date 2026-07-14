@@ -1,3 +1,5 @@
+import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+
 /**
  * FIX-188 — Camada de composição: texto EFÊMERO (preâmbulo de processo) × FINAL.
  *
@@ -311,6 +313,25 @@ export function stripEmoji(text: string): string {
 	return text.replace(EMOJI_PATTERN, "").replace(/[ \t]{2,}/g, " ");
 }
 
+// FIX-337 (invariante I6, docs/jornada/decisoes-do-cliente.md — "dado
+// sensível não trafega no WhatsApp"): defesa em profundidade da mesma
+// barreira do formatter.ts (`scrubCpf`, whatsapp/formatter.ts) — o modelo
+// pode ecoar o CPF em texto livre em qualquer canal ("Perfeito, anotei seu
+// CPF: 529.982.247-25", dossiê auto-whatsapp t10). Mesmo candidato de captura
+// de identify-capture.ts (extractCpf): qualquer sequência de dígitos, com ou
+// sem pontuação, entre 9 e 17 chars. Só mascara o que VALIDA como CPF real
+// (dígito verificador) — nunca outros números (valor, data, telefone).
+const CPF_CANDIDATE_PATTERN = /\d[\d.\-\s]{9,17}\d/g;
+
+/** Mascara qualquer sequência que valide como CPF real. Independe do modelo
+ * obedecer a regra de não ecoar dado sensível (Lei 1/4). FIX-337. */
+export function scrubCpf(text: string): string {
+	if (!text) return text;
+	return text.replace(CPF_CANDIDATE_PATTERN, (match) =>
+		isValidCpf(match) ? maskCpf(match) : match,
+	);
+}
+
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
@@ -408,8 +429,8 @@ export function stripProcessPreamble(text: string, ctx?: StateVerificationContex
 	const lastQuestion = lastInterrogativeIndex(survivors);
 	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
 	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
-	// regra de parcimônia do prompt.
-	return stripEmoji(kept.join(""));
+	// regra de parcimônia do prompt. FIX-337: scrub de CPF, mesma garantia.
+	return scrubCpf(stripEmoji(kept.join("")));
 }
 
 /** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
@@ -486,7 +507,8 @@ export class EphemeralTextFilter {
 	}
 
 	/** Filtra um trecho COMPLETO (1+ segmentos fechados): dropa efêmero, segura
-	 * a sentença interrogativa (FIX-298) e limpa emoji do que sobra (FIX-299). */
+	 * a sentença interrogativa (FIX-298), limpa emoji (FIX-299) e mascara CPF
+	 * (FIX-337) do que sobra. */
 	private filterComplete(complete: string): string {
 		const ctx = this.getContext?.();
 		const segments = splitSegments(complete);
@@ -499,13 +521,13 @@ export class EphemeralTextFilter {
 			}
 			out += seg;
 		}
-		return stripEmoji(out);
+		return scrubCpf(stripEmoji(out));
 	}
 
 	private releaseHeldQuestion(): string {
 		const held = this.heldQuestion;
 		this.heldQuestion = "";
-		return held ? stripEmoji(held) : "";
+		return held ? scrubCpf(stripEmoji(held)) : "";
 	}
 
 	/** O modelo tem uma pergunta segurada pra este turno?

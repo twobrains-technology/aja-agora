@@ -1,12 +1,13 @@
 ---
 id: FIX-337
 titulo: "P0 — CPF ecoado em texto plano no WhatsApp (invariante I6)"
-status: todo
+status: done
 bloco: bloco-c-whatsapp-invariantes
 arquivos:
   - src/lib/whatsapp/formatter.ts
-  - src/lib/whatsapp/identify-capture.ts
+  - src/lib/agent/orchestrator/sanitizer.ts
 rodada: 2026-07-14 — loop-de-goal desamarra, rodada 1
+executado_em: 2026-07-14
 ---
 
 # FIX-337 — CPF em claro no balão do WhatsApp
@@ -30,3 +31,23 @@ Invariante I6 de `docs/jornada/decisoes-do-cliente.md`: **dado sensível não tr
 ## Regressão exigida
 - Unit: `formatTextForWhatsApp("seu CPF 12345678901")` → mascarado.
 - Unit: CPF com pontuação e sem pontuação, ambos mascarados.
+
+## Execução (2026-07-14)
+
+`formatTextForWhatsApp` (`formatter.ts`) ganhou `scrubCpf`: mesmo candidato de captura do
+`extractCpf` (identify-capture.ts) — `/\d[\d.\-\s]{9,17}\d/g` — mas só mascara o que VALIDA
+como CPF real (`isValidCpf`, dígito verificador módulo 11) via `maskCpf` (ambos de
+`@/lib/conversation/identity`), nunca qualquer sequência de 11 dígitos por acaso (evita
+falso-positivo em valores/pedidos/telefones). `identify-capture.ts` não precisou de mudança —
+o scrub é 100% output-side, cobre CPF vindo de QUALQUER lugar da fala do modelo.
+
+Defesa em profundidade em `sanitizer.ts` (mesma função duplicada ali, evitando import cruzado
+`agent/orchestrator` → `whatsapp/`): aplicada onde `stripEmoji` já rodava
+(`stripProcessPreamble` + `EphemeralTextFilter`), channel-agnóstico (mascarar CPF nunca é
+regressão em canal nenhum).
+
+Nota: o exemplo do card ("12345678901") NÃO é um CPF válido (falha o 2º dígito verificador) —
+os testes usam o CPF de teste real do projeto (529.982.247-25, mesmo de identity.test.ts).
+
+Testes: `formatter.fix-337-cpf-scrub.test.ts` (novo) + `sanitizer.test.ts` (2 describes novos).
+TDD confirmado via `git stash` do arquivo de produção (RED → GREEN) nos dois casos.
