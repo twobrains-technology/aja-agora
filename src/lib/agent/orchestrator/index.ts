@@ -563,9 +563,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		// morto (promessa sem entrega, família FIX-206/207). Roteamento
 		// DETERMINÍSTICO: ready_to_proceed pós-decisão avança direto pro passo
 		// 5 — mesma directive do clique "Tenho interesse" (route.ts).
+		// FIX-346 (rodada 3): o formulário JÁ na tela deixa de ser intercepto.
+		//
+		// Antes, com `contractFormDispatched`, este bloco respondia com um texto
+		// FIXO ("Você já viu o formulário aqui em cima — é só preencher pra eu
+		// seguir!") sem nunca invocar o modelo — e saía byte-a-byte IGUAL em turnos
+		// consecutivos (auto-web t19/t20, imovel-web t23/t24). Era o antipadrão que
+		// o ADR 2026-07-13 revogou: o servidor falando no lugar do modelo.
+		//
+		// O invariante continua de pé — não despachamos um 2º `contract_form`, porque
+		// o bloco inteiro é pulado. Quem responde é o MODELO, que vê o formulário no
+		// histórico e fala com as palavras dele.
 		if (
 			meta.decisionDispatched === true &&
 			meta.contractClosed !== true &&
+			meta.contractFormDispatched !== true &&
 			analysis.userIntent === "ready_to_proceed"
 		) {
 			await saveMessage(conversationId, "user", userText, channel);
@@ -576,13 +588,8 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// `contractFormDispatched` já persiste assim que o 1º aparece
 			// (runner.ts:1244-1246) — reafirma o formulário JÁ mostrado em vez de
 			// pedir de novo.
-			if (meta.contractFormDispatched === true) {
-				const notice = "Você já viu o formulário aqui em cima — é só preencher pra eu seguir!";
-				yield { type: "text-delta", text: notice };
-				await saveMessage(conversationId, "assistant", notice, channel, currentPersona);
-				yield { type: "text-boundary" };
-				return;
-			}
+			// (O guard de `contractFormDispatched` subiu pra condição do bloco — ver
+			// FIX-346 acima. Aqui dentro, o formulário ainda NÃO foi mostrado.)
 			yield* runTurn({
 				channel,
 				conversationId,

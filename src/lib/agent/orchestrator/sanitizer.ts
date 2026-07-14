@@ -488,9 +488,24 @@ export function isHallucinatedAdministradoraClaim(
 	const s = segment.trim();
 	if (!s) return false;
 	const normalizedSegment = normalizeAdministradora(s);
-	const shown = new Set(ctx.shownAdministradoras.map(normalizeAdministradora));
+	const shown = ctx.shownAdministradoras.map(normalizeAdministradora);
+
+	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata.
+	//
+	// A Bevi devolve os nomes como "ITAU CONSORCIOS" / "ANCORA ADMINISTRADORA",
+	// e o mercado (e o usuário) chama de "ITAÚ" / "Âncora". Com `Set.has("ITAU")`
+	// contra `{"ITAU CONSORCIOS"}` o resultado era `false` — e o guard DROPAVA a
+	// citação VÁLIDA da ITAÚ. Ao vivo (rodada 3, servicos-web) o agente ficou mudo
+	// sobre a própria recomendação e inventou uma desculpa ("tive um probleminha
+	// pra renderizar os dados aqui"): o fix tinha trocado um bug por uma mentira.
+	//
+	// Uma administradora está "exibida" se o nome do mercado aparece DENTRO do
+	// nome que a Bevi devolveu, ou vice-versa.
+	const foiExibida = (nomeDeMercado: string) =>
+		shown.some((exibida) => exibida.includes(nomeDeMercado) || nomeDeMercado.includes(exibida));
+
 	return KNOWN_MARKET_ADMINISTRADORA_PATTERNS.some(
-		({ normalized, pattern }) => !shown.has(normalized) && pattern.test(normalizedSegment),
+		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedSegment),
 	);
 }
 
