@@ -11,15 +11,18 @@ melhor ("suprassumo"), onde ela está hoje, e o caminho entre os dois. É o luga
 jornada inteira — do anúncio ao consorciado contemplado — é pensada como negócio, antes
 de virar plano de implementação.
 
-## Hierarquia de autoridade (não inverter)
+## Onde cada coisa manda
 
-1. **[`../jornada/jornada-canonica.md`](../jornada/jornada-canonica.md)** — REGRA. Visão
-   do cliente (origem `jornada.docx`). Divergência código×docx = defeito do código.
-2. **[`../jornada/CONTEXT.md`](../jornada/CONTEXT.md)** — decisões tomadas (D1-D18),
-   desvios de entendimento registrados (DES-1) e fatos técnicos da Bevi.
-3. **`docs/visao/` (esta pasta)** — north star + gaps + specs propostas. **Propõe, não
-   sobrepõe.** Quando a visão daqui conflitar com o docx, o caminho é recalibrar com o
-   cliente (padrão DES-1) — nunca tratar o docx como errado por conta própria.
+1. **[`../design/specs/2026-07-09-handoff-agente-vendas-consorcio/`](../design/specs/2026-07-09-handoff-agente-vendas-consorcio/)**
+   — o mockup e o handoff: a **referência viva** de como o produto se comporta.
+2. **O código** (`nextGate` em `src/lib/agent/qualify-state.ts`) — a ordem real dos gates.
+3. **[`../jornada/decisoes-do-cliente.md`](../jornada/decisoes-do-cliente.md)** — histórico das
+   decisões do cliente + a lista fechada de **invariantes duros** (o que É regra de código).
+4. **`docs/visao/` (esta pasta)** — north star + gaps + specs propostas. Propõe.
+
+> Não existe mais "hierarquia de autoridade" com um documento soberano sobre o código. Aquilo
+> (herança do `jornada.docx`) engessou o agente e foi revogado em 2026-07-13 — ver
+> `decisoes-do-cliente.md` e a seção "Não engesse o agente" no `CLAUDE.md`.
 
 ## Mapa dos documentos
 
