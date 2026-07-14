@@ -138,6 +138,43 @@ const SIM_RETRY_DELAY_MS = 400;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const onlyDigits = (s: string) => (s ?? "").replace(/\D/g, "");
 
+// ── Write conflict (achado no QA ao vivo, 2026-07-14) ──────────────────────
+// A Bevi de homologação usa UM único proposal-hash pra todas as conversas. Duas
+// escritas concorrentes no mesmo proposal fazem a API devolver "Write conflict
+// during plan execution... Please retry your operation". No turno do reveal o
+// modelo chama search_groups + recommend_groups (+ simulate_quota) — todas
+// batendo no mesmo proposal — e a jornada morria INTERMITENTEMENTE com "não
+// consegui carregar as opções agora".
+//
+// Duas defesas, porque uma só não basta:
+//   1. SERIALIZA as chamadas por proposta (fila) — ataca a causa: sem escrita
+//      concorrente, não há conflito.
+//   2. RETENTA com backoff quando o conflito acontece mesmo assim (outro
+//      processo/sessão batendo no mesmo hash — inevitável enquanto o hash for
+//      compartilhado). A própria mensagem da API pede isso.
+const WRITE_CONFLICT_RETRY = 4;
+const WRITE_CONFLICT_BACKOFF_MS = 250;
+
+function isWriteConflict(message?: string): boolean {
+	return /write conflict/i.test(message ?? "");
+}
+
+/** Fila por proposta: garante UMA chamada em voo por hash. A chave é o hash da
+ * proposta (compartilhado em homologação) — em produção, um hash por conversa
+ * faz a fila virar praticamente no-op. */
+const filaPorProposta = new Map<string, Promise<unknown>>();
+
+function serializarPorProposta<T>(chave: string, tarefa: () => Promise<T>): Promise<T> {
+	const anterior = filaPorProposta.get(chave) ?? Promise.resolve();
+	// A fila nunca "quebra": um erro numa chamada não pode travar as seguintes.
+	const atual = anterior.catch(() => {}).then(tarefa);
+	filaPorProposta.set(
+		chave,
+		atual.catch(() => {}),
+	);
+	return atual;
+}
+
 /** Erro de timeout (AbortSignal.timeout → DOMException TimeoutError) ou abort. */
 function isTimeoutError(err: unknown): boolean {
 	return err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
@@ -156,12 +193,23 @@ export class BeviSelfContractClient {
 
 	/** Chamada com envelope: parseia, lança erro tipado em success:false.
 	 * `retryOn404` só pro step de simulação (estado ainda não materializado). */
-	private async call<T>(
+	private call<T>(
+		path: string,
+		opts: { method?: string; body?: unknown; retryOn404?: boolean; timeoutMs?: number } = {},
+	): Promise<T> {
+		// Toda chamada entra na fila da PROPOSTA — nunca duas em voo no mesmo hash.
+		// É a causa-raiz do "write conflict" que matava a jornada no reveal.
+		return serializarPorProposta(this.config.hash, () => this.callSerialized<T>(path, opts));
+	}
+
+	private async callSerialized<T>(
 		path: string,
 		opts: { method?: string; body?: unknown; retryOn404?: boolean; timeoutMs?: number } = {},
 	): Promise<T> {
 		const { method = "GET", body, retryOn404 = false, timeoutMs = TIMEOUT_MS } = opts;
-		const maxAttempts = retryOn404 ? SIM_RETRY : 1;
+		// O teto de tentativas cobre os dois casos: 404 transitório da simulação
+		// (retryOn404) e write conflict (que pode acontecer em QUALQUER chamada).
+		const maxAttempts = Math.max(retryOn404 ? SIM_RETRY : 1, WRITE_CONFLICT_RETRY);
 
 		// Observabilidade de trilho: toda chamada self-contract é TRILHO B.
 		const started = Date.now();
@@ -179,11 +227,12 @@ export class BeviSelfContractClient {
 						signal: AbortSignal.timeout(timeoutMs),
 					});
 				} catch (err) {
-					// TimeoutError do cold-start: retenta DENTRO do loop que a simulação já
-					// tem (maxAttempts>1). Chamadas leves (maxAttempts=1) sobem o erro direto
-					// — nada de mascarar lentidão crônica num retry silencioso.
+					// TimeoutError do cold-start: retenta SÓ na simulação (retryOn404).
+					// Chamadas leves sobem o erro direto — nada de mascarar lentidão
+					// crônica num retry silencioso. (O teto `maxAttempts` subiu por causa
+					// do write conflict; ele NÃO pode passar a retentar timeout de graça.)
 					lastErr = err;
-					if (attempt < maxAttempts && isTimeoutError(err)) {
+					if (retryOn404 && attempt < SIM_RETRY && isTimeoutError(err)) {
 						await sleep(SIM_RETRY_DELAY_MS);
 						continue;
 					}
@@ -204,6 +253,14 @@ export class BeviSelfContractClient {
 					return env.data;
 				}
 
+				// Write conflict: a própria API manda retentar ("Please retry your
+				// operation"). Backoff crescente — outro processo pode estar escrevendo
+				// no mesmo hash compartilhado, e insistir na mesma janela só colide de novo.
+				if (isWriteConflict(env.message) && attempt < maxAttempts) {
+					lastErr = toBeviError(env.code, env.message ?? "", env.data);
+					await sleep(WRITE_CONFLICT_BACKOFF_MS * attempt);
+					continue;
+				}
 				if (retryOn404 && env.code === 404 && attempt < maxAttempts) {
 					lastErr = toBeviError(env.code, env.message ?? "", env.data);
 					await sleep(SIM_RETRY_DELAY_MS);
