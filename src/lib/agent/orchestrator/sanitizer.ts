@@ -42,9 +42,18 @@ const PROCESS_ACTION_PATTERNS: RegExp[] = [
 // (usados em narração legítima com entidade real, ver comentário acima) —
 // só entram quando seguidos de um objeto VAGO ("a mais adequada", "a melhor
 // opção", "como funciona em detalhes"), nunca um nome/número concreto.
+// FIX-348 (rodada 4, mesmo achado 3ª rodada seguida — "soam como log de
+// pipeline empilhado"): "apresentar"/"trazer" entram na família de risco de
+// "mostrar"/"simular" (objeto VAGO), não na incondicional — "Deixa eu te
+// apresentar a proposta da Itaú, R$ 1.200 por mês" É narração legítima com
+// entidade concreta, igual "Vou simular a Rodobens com R$ 900 mil". A lista
+// de objetos vagos ganha "as opções (pra você escolher)", "o cenário
+// completo", "os números exatos" — frases EXATAS do veredito rodada 4
+// (imovel-web t4, servicos-web t5, imovel-whatsapp t6) — mantendo a mesma
+// guarda: objeto CONCRETO (nome de administradora, valor) nunca cai aqui.
 const PRODUCT_STEP_ANNOUNCEMENT_PATTERNS: RegExp[] = [
 	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(recomendar|destacar|detalhar|aprofundar)\b/i,
-	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|simular)\s+(a\s+mais\s+adequada|a\s+melhor\s+op[çc][ãa]o|como\s+funciona\s+em\s+detalhes)\b/i,
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|simular|apresentar|trazer)\s+(a\s+mais\s+adequada|a\s+melhor\s+op[çc][ãa]o|como\s+funciona\s+em\s+detalhes|as\s+op[çc][õo]es|o\s+cen[áa]rio\s+completo|os\s+n[úu]meros\s+exatos)\b/i,
 	/\bagora\s+d[áa]\s+uma\s+olhada\s+no\s+detalhe\b/i,
 ];
 
