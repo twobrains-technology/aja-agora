@@ -58,6 +58,7 @@ import {
 } from "./recommendation-payload";
 import {
 	EphemeralTextFilter,
+	type EphemeralDropReason,
 	joinSeparator,
 	normalizeGluedSentences,
 	type StateVerificationContext,
@@ -107,6 +108,19 @@ export type RunAgentResult = {
 	 * tinha dados reais em mãos quando a apresentação falhou" (materializa o
 	 * card, Via A) de "nada foi buscado ainda" (fallback honesto, Via B). */
 	revealGroupsById?: RevealGroupIndex;
+	/** FIX-347: motivos (guards do sanitizer) que dropParam pelo menos 1
+	 * segmento de fala do modelo neste turno. Quando `fullResponse` termina
+	 * vazio E isto vem populado, o turno não ficou mudo porque o modelo nada
+	 * disse — ele disse algo e o sanitizer comeu tudo. O orchestrator usa isto
+	 * pra dar UMA segunda chance ao modelo, com o motivo, em vez do fallback
+	 * fixo de turno vazio. Vazio/ausente quando nada foi dropado. */
+	sanitizerDropReasons?: EphemeralDropReason[];
+	/** FIX-347: quantas tool-calls o modelo executou de fato neste turno. O
+	 * retry-com-motivo só é seguro quando isto é 0 — com tool já executada
+	 * (save_contact_name, search_groups etc.) repetir a chamada duplicaria
+	 * efeito colateral real (escrita no banco, nova busca), então o turno
+	 * segue o caminho normal (nunca retry). */
+	executedToolCount?: number;
 };
 
 const LEAD_STAGE_BY_TOOL: Record<string, "engajado" | "qualificado"> = {
@@ -1533,5 +1547,7 @@ export async function* runAgentTurn(args: {
 		nextGateToFire,
 		prefixForNextGate,
 		modelAskedGateQuestion,
+		sanitizerDropReasons: ephemeralFilter.droppedSegmentReasons(),
+		executedToolCount: executedToolNames.length,
 	};
 }

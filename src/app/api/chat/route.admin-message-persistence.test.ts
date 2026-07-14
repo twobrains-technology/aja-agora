@@ -38,7 +38,16 @@
  * As asserts abaixo foram atualizadas pra a composição INTENCIONAL atual (marker +
  * fallback), determinística, SEM afrouxar a garantia central (anti-ghosting): todo
  * turno do usuário tem ≥1 assistant depois dele e o admin devolve EXATAMENTE o que
- * está no DB (nada perdido). Se um dia o produto deduplicar o marker+fallback (é uma
+ * está no DB (nada perdido).
+ *
+ * FIX-347 (loop-de-goal desamarra, rodada 4, P1.1): o texto do fallback NÃO é
+ * mais sempre `EMPTY_TURN_FALLBACK` — a partir da 2a ocorrência NA MESMA
+ * conversa, `route.ts` troca pra `EMPTY_TURN_FALLBACK_REPEAT` (nunca repete a
+ * frase idêntica 2x). As asserts contam a FAMÍLIA (as duas constantes), não
+ * mais a igualdade estrita com `EMPTY_TURN_FALLBACK` — a contagem total (N
+ * fallbacks) continua intacta.
+ *
+ * Se um dia o produto deduplicar o marker+fallback (é uma
  * decisão de produto/UX — reconciliar BUG-ADMIN-MESSAGE-MISSING × FIX-172, fora do
  * escopo deste card), estas contagens exatas quebram e forçam uma revisão consciente.
  *
@@ -57,7 +66,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, messages as messagesTable } from "@/db/schema";
-import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
+import { EMPTY_TURN_FALLBACK, EMPTY_TURN_FALLBACK_REPEAT } from "@/lib/chat/empty-turn-guard";
 
 vi.mock("@/lib/middleware/rate-limit", () => ({
 	checkRateLimit: () => ({ allowed: true }),
@@ -305,14 +314,24 @@ describe("BUG-ADMIN-MESSAGE-MISSING / FIX-185 — admin GET devolve TODAS as mes
 		const userMsgs = body.messages.filter((m) => m.role === "user");
 		const asstMsgs = body.messages.filter((m) => m.role === "assistant");
 		const markerMsgs = asstMsgs.filter((m) => m.content === "[tool: save_contact_name]");
-		const fallbackMsgs = asstMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK);
+		// FIX-347: o fallback de turno-vazio nunca repete a MESMA frase 2x na
+		// mesma conversa (route.ts, `pickEmptyTurnFallback`) — a 1a ocorrência é
+		// `EMPTY_TURN_FALLBACK`, as demais são a variante `EMPTY_TURN_FALLBACK_REPEAT`.
+		// O invariante desta suíte (N mensagens da FAMÍLIA fallback, nunca perdidas)
+		// continua de pé; só o texto literal passou a variar.
+		const fallbackMsgs = asstMsgs.filter(
+			(m) => m.content === EMPTY_TURN_FALLBACK || m.content === EMPTY_TURN_FALLBACK_REPEAT,
+		);
 
 		// Anti-ghost: cada user turn tem assistant depois (o bug original era 0).
 		assertNoGhostedUserTurn(body.messages);
 		expect(userMsgs.length).toBe(N);
 		// Composição INTENCIONAL determinística: N markers + N fallbacks.
 		expect(markerMsgs.length, "esperava N markers [tool: save_contact_name]").toBe(N);
-		expect(fallbackMsgs.length, "esperava N EMPTY_TURN_FALLBACK").toBe(N);
+		expect(fallbackMsgs.length, "esperava N mensagens da família EMPTY_TURN_FALLBACK").toBe(N);
+		// FIX-347: nunca a MESMA frase 2x — só a 1a ocorrência é a original.
+		expect(fallbackMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK)).toHaveLength(1);
+		expect(fallbackMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK_REPEAT)).toHaveLength(N - 1);
 		expect(asstMsgs.length).toBe(2 * N);
 		expect(body.messages.length).toBe(3 * N);
 		// Admin devolve EXATAMENTE o que está no DB — nada perdido, contagem estável.
@@ -331,13 +350,19 @@ describe("BUG-ADMIN-MESSAGE-MISSING / FIX-185 — admin GET devolve TODAS as mes
 		const userMsgs = body.messages.filter((m) => m.role === "user");
 		const asstMsgs = body.messages.filter((m) => m.role === "assistant");
 		const markerMsgs = asstMsgs.filter((m) => m.content === "[tool: save_contact_name]");
-		const fallbackMsgs = asstMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK);
+		// FIX-347: mesma família fallback (original + variante), nunca a mesma
+		// frase repetida — ver comentário no teste "36 rows" acima.
+		const fallbackMsgs = asstMsgs.filter(
+			(m) => m.content === EMPTY_TURN_FALLBACK || m.content === EMPTY_TURN_FALLBACK_REPEAT,
+		);
 
 		assertNoGhostedUserTurn(body.messages);
 		expect(userMsgs.length).toBe(N);
 		// 3 turnos silenciosos → 3 markers + 3 fallbacks; 9 turnos de texto → 9 asst.
 		expect(markerMsgs.length).toBe(3);
 		expect(fallbackMsgs.length).toBe(3);
+		expect(fallbackMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK)).toHaveLength(1);
+		expect(fallbackMsgs.filter((m) => m.content === EMPTY_TURN_FALLBACK_REPEAT)).toHaveLength(2);
 		expect(asstMsgs.length).toBe(15);
 		expect(body.messages.length).toBe(27);
 		expect(dbCount).toBe(27);

@@ -194,6 +194,57 @@ describe("FIX-188 — EphemeralTextFilter (stream por frase, nada vaza ao vivo)"
 	});
 });
 
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
+// regrediu): quando o sanitizer dropa TODOS os segmentos de um turno, o
+// texto final fica vazio e o guard de turno-vazio (empty-turn-guard.ts)
+// dispara o fallback enlatado "Acho que me perdi por aqui" — mesmo quando o
+// modelo respondeu de verdade e só foi barrado por um invariante. Sem
+// nenhuma instrumentação, é impossível distinguir "modelo não disse nada" de
+// "modelo disse algo e o sanitizer comeu tudo". `droppedSegmentReasons()`
+// expõe QUAL guard bloqueou, pra o runner poder dar ao modelo uma segunda
+// chance com o motivo — nunca relaxando o guard, nunca com texto fixo.
+describe("FIX-347 — EphemeralTextFilter expõe o MOTIVO de cada drop (turno vazio precisa saber por quê)", () => {
+	it("sem nenhum drop, a lista de motivos fica vazia", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Show, boa escolha!");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual([]);
+	});
+
+	it("preâmbulo de processo dropado registra o motivo 'process-preamble'", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("administradora fora das ofertas reais registra 'hallucinated-administradora'", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+			shownAdministradoras: ["ITAU CONSORCIOS"],
+		}));
+		f.push("A Bradesco tem uma parcela ótima pra você.");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["hallucinated-administradora"]);
+	});
+
+	it("turno com 2 segmentos dropados pelo MESMO motivo acumula só uma vez (sem duplicar)", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Vou buscar as opções certas pra você. Um segundo:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+
+	it("segmento legítimo preservado não entra na lista de motivos", () => {
+		const f = new EphemeralTextFilter();
+		f.push("Deixa eu buscar as opções certas pra você. Olha só o que encontrei:");
+		f.flush();
+		expect(f.droppedSegmentReasons()).toEqual(["process-preamble"]);
+	});
+});
+
 // FIX-248 (rodada 3, Fable r2, N1 P0): "Juntando R$ 4." | "000,00 por mês" —
 // o splitter tratava o PONTO DE MILHAR como fim de frase e quebrava o valor
 // monetário em 2 bolhas ao vivo. Superfície criada pela narração de dinheiro

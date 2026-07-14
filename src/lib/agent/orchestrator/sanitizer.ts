@@ -529,6 +529,49 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
 	return false;
 }
 
+// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1): nome estável de cada guard
+// que pode dropar um segmento — usado pelo `EphemeralTextFilter` pra expor
+// POR QUE um turno fechou vazio (`droppedSegmentReasons()`). Sem isso, um
+// turno inteiramente filtrado é indistinguível de "o modelo não disse nada",
+// e o guard de turno-vazio (empty-turn-guard.ts) só tinha o fallback fixo
+// como saída — mesmo quando o modelo respondeu de verdade.
+export type EphemeralDropReason =
+	| "process-preamble"
+	| "technical-fallback"
+	| "prazo-reduction"
+	| "premature-reservation"
+	| "banned-lexicon"
+	| "taxa-contemplacao"
+	| "proactive-callback"
+	| "mechanism-narration"
+	| "fabricated-state"
+	| "premature-top-offer"
+	| "score-percentage"
+	| "hallucinated-administradora";
+
+/** Motivo (guard) que classifica este segmento como EFÊMERO, ou `null` se o
+ * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
+ * pro rastreio de motivos do `EphemeralTextFilter` (FIX-347) — nunca duas
+ * listas de guards que podem divergir. */
+function ephemeralSegmentReason(
+	segment: string,
+	ctx?: StateVerificationContext,
+): EphemeralDropReason | null {
+	if (isProcessPreamble(segment)) return "process-preamble";
+	if (isTechnicalFallback(segment)) return "technical-fallback";
+	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
+	if (isPrematureReservationClaim(segment)) return "premature-reservation";
+	if (isBannedLexicon(segment)) return "banned-lexicon";
+	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
+	if (isProactiveCallbackClaim(segment)) return "proactive-callback";
+	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
+	if (isFabricatedStateSegment(segment, ctx)) return "fabricated-state";
+	if (isPrematureTopOfferClaim(segment, ctx)) return "premature-top-offer";
+	if (isScorePercentageClaim(segment)) return "score-percentage";
+	if (isHallucinatedAdministradoraClaim(segment, ctx)) return "hallucinated-administradora";
+	return null;
+}
+
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
@@ -538,20 +581,7 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
  * mercado fora das ofertas reais (FIX-342). Todos são dropados antes de
  * virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
-	return (
-		isProcessPreamble(segment) ||
-		isTechnicalFallback(segment) ||
-		isPrazoReductionClaim(segment) ||
-		isPrematureReservationClaim(segment) ||
-		isBannedLexicon(segment) ||
-		isTaxaContemplacaoClaim(segment) ||
-		isProactiveCallbackClaim(segment) ||
-		isMechanismNarrationClaim(segment) ||
-		isFabricatedStateSegment(segment, ctx) ||
-		isPrematureTopOfferClaim(segment, ctx) ||
-		isScorePercentageClaim(segment) ||
-		isHallucinatedAdministradoraClaim(segment, ctx)
-	);
+	return ephemeralSegmentReason(segment, ctx) !== null;
 }
 
 const SEGMENT_BOUNDARY_CHARS = new Set([".", "!", "?", ":", "\n"]);
@@ -642,6 +672,11 @@ export class EphemeralTextFilter {
 	// uma delas chegar ao usuário (ao vivo, não dá pra "desmandar" uma frase já
 	// emitida — segurar é a única forma de garantir que só a última sobrevive).
 	private heldQuestion = "";
+	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
+	// turno — permite ao runner distinguir "o modelo não disse nada" de "o
+	// modelo disse algo e o sanitizer comeu tudo", pra dar uma segunda chance
+	// COM o motivo em vez de emitir o fallback fixo de turno vazio.
+	private readonly droppedReasons = new Set<EphemeralDropReason>();
 
 	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
@@ -690,7 +725,11 @@ export class EphemeralTextFilter {
 		const segments = splitSegments(complete);
 		let out = "";
 		for (const seg of segments) {
-			if (isEphemeralSegment(seg, ctx)) continue;
+			const reason = ephemeralSegmentReason(seg, ctx);
+			if (reason) {
+				this.droppedReasons.add(reason);
+				continue;
+			}
 			if (isInterrogativeSentence(seg)) {
 				this.heldQuestion = seg;
 				continue;
@@ -716,6 +755,13 @@ export class EphemeralTextFilter {
 	 * no mesmo balão") continua valendo — só mudou quem cala. */
 	hasHeldQuestion(): boolean {
 		return this.heldQuestion.trim().length > 0;
+	}
+
+	/** Motivos (guards) que dropParam pelo menos 1 segmento neste turno, na
+	 * ordem em que apareceram pela primeira vez, sem duplicar. Vazio quando
+	 * nada foi dropado. FIX-347. */
+	droppedSegmentReasons(): EphemeralDropReason[] {
+		return [...this.droppedReasons];
 	}
 }
 
