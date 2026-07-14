@@ -293,6 +293,15 @@ export type StateVerificationContext = {
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
 	 * rodou neste turno até o ponto corrente do stream. */
 	hasSearchToolCall: boolean;
+	/** FIX-333 (rodada 2, veredito Sonnet rodada 1, loop-de-goal desamarra):
+	 * true enquanto o gate `reco-consent` não foi respondido
+	 * (`meta.recoConsentAnswered !== true`) — o hero (recommendation_card)
+	 * ainda está pendente e o usuário não pode ver de qual oferta se trata. */
+	recoConsentPending?: boolean;
+	/** A oferta top-1 (maior score) já indexada NESTE turno a partir do
+	 * tool-result real de `recommend_groups`/`search_groups` — nunca a
+	 * narrativa do LLM. `null`/ausente enquanto a busca ainda não resolveu. */
+	pendingTopOffer?: { administradora?: string; monthlyPayment?: number } | null;
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -304,11 +313,50 @@ function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContex
 	return false;
 }
 
+// FIX-333 (rodada 2, veredito Sonnet rodada 1 — 4/4 dossiês web): o guard
+// `hero-awaits-reco-consent` (artifact-guard.ts) suprime o CARD
+// (recommendation_card) enquanto `reco-consent` não foi respondido — mas o
+// MODELO já viu administradora/parcela/score do top-1 no tool-result de
+// `recommend_groups` (mesmo turno) e narra em texto livre ("Tá aí a ITAÚ em
+// destaque — parcela de R$ 3.549,75..."), teatro do consentimento: o usuário
+// já sabe da recomendação antes de "ver" o card ou dizer sim. Regra-no-prompt
+// ("seu texto deve introduzir, não comentar atributos específicos") já existe
+// em directives.ts e é ignorada 4/4 vezes — barreira real é código (Lei 1/4):
+// dropa qualquer segmento que cite a administradora ou o valor de parcela da
+// oferta AINDA pendente de consentimento, goste o modelo ou não.
+function formatMoneyVariants(value: number): string[] {
+	const rounded = Math.round(value * 100) / 100;
+	const [intPart, centsPart = "00"] = rounded.toFixed(2).split(".");
+	const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+	return [`${withThousands},${centsPart}`, `${intPart},${centsPart}`];
+}
+
+/** Um segmento cita a administradora ou o valor de parcela da oferta top-1
+ * ENQUANTO o consentimento (`reco-consent`) ainda está pendente — não pode
+ * virar bolha. Sem oferta pendente conhecida ou com consentimento já dado,
+ * nunca dropa (a comparison_table já mostra administradora+parcela de TODAS
+ * as opções por design — só o destaque/confirmação do top-1 é vedado aqui). */
+export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificationContext): boolean {
+	if (!ctx?.recoConsentPending) return false;
+	const offer = ctx.pendingTopOffer;
+	if (!offer) return false;
+	const s = segment;
+	if (offer.administradora) {
+		const escaped = offer.administradora.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		if (new RegExp(`\\b${escaped}\\b`, "i").test(s)) return true;
+	}
+	if (typeof offer.monthlyPayment === "number" && offer.monthlyPayment > 0) {
+		if (formatMoneyVariants(offer.monthlyPayment).some((v) => s.includes(v))) return true;
+	}
+	return false;
+}
+
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
- * interno (FIX-283). Todos são dropados antes de virar mensagem. */
+ * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333).
+ * Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -319,7 +367,8 @@ function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): bo
 		isTaxaContemplacaoClaim(segment) ||
 		isProactiveCallbackClaim(segment) ||
 		isMechanismNarrationClaim(segment) ||
-		isFabricatedStateSegment(segment, ctx)
+		isFabricatedStateSegment(segment, ctx) ||
+		isPrematureTopOfferClaim(segment, ctx)
 	);
 }
 

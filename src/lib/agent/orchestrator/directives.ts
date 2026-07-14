@@ -366,7 +366,9 @@ A ORDEM dos cards no reveal (FIX-224, Ata 2026-07-04 — resolve a confusão dos
 
 REGRA DURA — present_recommendation_card e present_comparison_table são INSEPARÁVEIS no ramo 2+ grupos (FIX-78, bug real conv a9c5effa 2026-06-25): se você chamou present_recommendation_card, é porque a busca devolveu 2+ grupos — então present_comparison_table com TODOS os grupos É OBRIGATÓRIO no MESMO turno (mesmo saindo por ÚLTIMO na ordem — ver acima). Emitir um sem o outro é DEFEITO: o usuário fica só com a proposta recomendada e PERDE o carrossel comparativo das demais (foi o que aconteceu — recommendation_card saiu, comparison_table sumiu). NUNCA emita um sem o outro no ramo 2+ grupos. (Só pulam os DOIS juntos quando a busca devolveu 1 grupo único — aí nenhum dos dois é chamado.)
 
-O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, não comentar atributos específicos de cada grupo.`;
+O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, não comentar atributos específicos de cada grupo.
+
+FIX-333: o hero (recommendation_card) só é REVELADO depois que o usuário consentir no próximo gate ("Posso te mostrar a opção que eu recomendo?") — até lá, seu texto CONVIDA a ver a recomendação, nunca a entrega. NUNCA cite neste turno a administradora, a parcela ou o score da opção recomendada em texto corrido (nem "em destaque", nem "essa é a que eu indicaria") — isso é teatro de consentimento. O sistema também dropa automaticamente qualquer menção assim, mas a ideia é você nem tentar.`;
 }
 
 // ---- Reco-consent (FIX-297, rodada 10) — hero liberado após consentimento ----

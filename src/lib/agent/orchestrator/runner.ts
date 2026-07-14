@@ -49,6 +49,7 @@ import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
+	pickBestRankedGroup,
 	type RevealGroupIndex,
 	usableRevealGroupCount,
 } from "./recommendation-payload";
@@ -56,6 +57,7 @@ import {
 	EphemeralTextFilter,
 	joinSeparator,
 	normalizeGluedSentences,
+	type StateVerificationContext,
 	stripProcessPreamble,
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
@@ -443,10 +445,23 @@ export async function* runAgentTurn(args: {
 	// DESAMARRA (2026-07-13): o modelo fez a pergunta do gate com as palavras dele
 	// neste turno → o card não repete a canônica (só mostra o input).
 	let modelAskedGateQuestion = false;
-	const ephemeralFilter = new EphemeralTextFilter(() => ({
-		hasReceivedDocuments,
-		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-	}));
+	// FIX-333: `pendingTopOffer` reflete o grupo de maior score JÁ INDEXADO neste
+	// turno (revealGroupsById, populado a partir do tool-result REAL de
+	// recommend_groups/search_groups — nunca a narrativa do LLM). Enquanto
+	// `reco-consent` não foi respondido, o sanitizer usa isso pra dropar
+	// qualquer menção à administradora/parcela do top-1 (ver sanitizer.ts).
+	const stateVerificationContext = (): StateVerificationContext => {
+		const topOffer = pickBestRankedGroup(revealGroupsById);
+		return {
+			hasReceivedDocuments,
+			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+			recoConsentPending: meta.recoConsentAnswered !== true,
+			pendingTopOffer: topOffer
+				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
+				: null,
+		};
+	};
+	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
 	const composeClean = (raw: string, blockSep = ""): string => {
@@ -1039,10 +1054,7 @@ export async function* runAgentTurn(args: {
 	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
 	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
 	fullResponse = normalizeGluedSentences(
-		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
-			hasReceivedDocuments,
-			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-		}),
+		stripProcessPreamble(collapseEchoedSegments(fullResponse), stateVerificationContext()),
 	).replace(/^\s+/, "");
 
 	try {
