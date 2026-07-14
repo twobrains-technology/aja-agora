@@ -1,13 +1,15 @@
 ---
 id: FIX-332
 titulo: "Fallback enlatado em loop: search_groups pós-reveal vira tool-error e o servidor descarta a fala do modelo"
-status: todo
+status: done
+commit: 7fca5d71
+executado_em: 2026-07-14
 bloco: bloco-a-fallback-enlatado
 arquivos:
   - src/lib/agent/orchestrator/tool-policy.ts
   - src/lib/agent/tools/ai-sdk.ts
   - src/lib/agent/orchestrator/index.ts
-  - src/lib/agent/orchestrator/directives.ts
+  - src/lib/agent/agents/builder.ts
 rodada: 2026-07-14 — loop-de-goal desamarra, rodada 1 (juiz Sonnet, web 4/10 + whatsapp 3/10)
 ---
 
