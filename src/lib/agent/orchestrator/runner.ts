@@ -34,6 +34,7 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { evaluateArtifactGuards } from "./artifact-guard";
 import {
 	isCreditValueMentioned,
+	listShownOffersForConversation,
 	resolveOfferForAdministradora,
 	resolveOfferMentionForConversation,
 } from "./choose-offer";
@@ -391,6 +392,14 @@ export async function* runAgentTurn(args: {
 	// textual/clique separada), nunca algo que acontece DURANTE este turno —
 	// mesma garantia que já vale pra hasReceivedDocuments acima.
 	const hasProposal = (await getLatestBeviProposal(conversationId)) !== null;
+	// FIX-342: administradoras REALMENTE exibidas em turnos ANTERIORES desta
+	// conversa (fato persistido nos artifacts do reveal, nunca a narrativa do
+	// LLM) — carregado uma vez no início do turno, mesmo padrão de
+	// `hasProposal` acima. Combinado em `stateVerificationContext()` com
+	// `revealGroupsById` (grupos indexados NESTE turno) pra cobrir os dois
+	// casos: alucinação citando oferta de um turno anterior E alucinação
+	// dentro do próprio turno em que a busca aconteceu.
+	const shownOffersFromHistory = await listShownOffersForConversation(conversationId);
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -476,8 +485,16 @@ export async function* runAgentTurn(args: {
 	// qualquer menção à administradora/parcela do top-1 (ver sanitizer.ts).
 	// FIX-336: `hasProposal` é o FATO do banco (existe linha em bevi_proposals?) —
 	// sem ele o modelo afirmava "sua proposta já saiu" com zero proposta criada.
+	// FIX-342: `shownAdministradoras` une o histórico persistido
+	// (`shownOffersFromHistory`) com os grupos indexados NESTE turno
+	// (`revealGroupsById`) — sem isso o modelo recomendava uma administradora
+	// (ex.: "Bradesco") que nunca esteve entre as ofertas reais da conversa.
 	const stateVerificationContext = (): StateVerificationContext => {
 		const topOffer = pickBestRankedGroup(revealGroupsById);
+		const shownAdministradoras = [
+			...shownOffersFromHistory.map((o) => o.administradora),
+			...[...revealGroupsById.values()].map((g) => g.administradora),
+		].filter((a): a is string => typeof a === "string" && a.length > 0);
 		return {
 			hasReceivedDocuments,
 			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
@@ -486,6 +503,7 @@ export async function* runAgentTurn(args: {
 			pendingTopOffer: topOffer
 				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
 				: null,
+			shownAdministradoras,
 		};
 	};
 	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);

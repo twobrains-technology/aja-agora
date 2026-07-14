@@ -1,4 +1,5 @@
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+import { normalizeAdministradora } from "./choose-offer";
 
 /**
  * FIX-188 — Camada de composição: texto EFÊMERO (preâmbulo de processo) × FINAL.
@@ -397,6 +398,14 @@ export type StateVerificationContext = {
 	 * determinístico fora do turno do LLM (startContract/fireContract), nunca
 	 * a narrativa do próprio modelo. */
 	hasProposal: boolean;
+	/** FIX-342: administradoras REALMENTE exibidas nesta conversa até o ponto
+	 * corrente (runner.ts — união do histórico persistido via
+	 * `listShownOffersForConversation`, choose-offer.ts, com os grupos
+	 * indexados NESTE turno, `revealGroupsById`). Fonte pra
+	 * `isHallucinatedAdministradoraClaim` nunca confiar na narrativa do LLM pra
+	 * saber quais ofertas existem (Lei 1/3). Ausente → o detector nunca dropa
+	 * (compat retroativa). */
+	shownAdministradoras?: string[];
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -427,6 +436,64 @@ function formatMoneyVariants(value: number): string[] {
 	return [`${withThousands},${centsPart}`, `${intPart},${centsPart}`];
 }
 
+// FIX-342 (P0, veredito Sonnet rodada 2, "P0.1 — alucinação de administradora
+// inexistente"): o agente RECOMENDOU "Bradesco" (imóvel-web t8/t10) e
+// "Estrela" (serviços-web t8-t12) — nenhuma das duas jamais esteve entre as
+// ofertas REAIS retornadas pela Bevi nessas conversas; o usuário perseguiu a
+// oferta fantasma por 4 turnos até o próprio agente admitir o erro. Os cards
+// já são coagidos server-side (`coerceRevealCota`), mas o TEXTO do modelo
+// não era — nada impedia a fala de citar uma administradora que não está nas
+// ofertas da conversa. Regra-no-prompt não segura invariante (mesma classe de
+// falha documentada em todo este arquivo, Lei 4) — a barreira real é código:
+// a fala só pode citar uma administradora do mercado se ela estiver de fato
+// em `ctx.shownAdministradoras` (runner.ts, fato — nunca a narrativa do LLM).
+// Lista fechada de administradoras do mercado (gatilho da detecção) — nome
+// fora dela nunca é bloqueado (falso-negativo aceitável, mesmo
+// conservadorismo do FIX-243/249 acima: dado real da Bevi pode trazer
+// administradora nova não listada aqui, e essa nunca deve ser barrada).
+const KNOWN_MARKET_ADMINISTRADORAS = [
+	"Bradesco",
+	"Itaú",
+	"Santander",
+	"Caixa",
+	"Porto",
+	"Rodobens",
+	"Âncora",
+	"Canopus",
+	"Embracon",
+	"Estrela",
+	"Tradição",
+	"Banco do Brasil",
+	"Magalu",
+	"HS",
+	"Servopa",
+];
+
+const KNOWN_MARKET_ADMINISTRADORA_PATTERNS = KNOWN_MARKET_ADMINISTRADORAS.map((name) => {
+	const normalized = normalizeAdministradora(name);
+	const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return { normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
+});
+
+/** Um segmento cita uma administradora do MERCADO (lista fechada acima) que
+ * NÃO está entre as ofertas REALMENTE exibidas nesta conversa
+ * (`ctx.shownAdministradoras`) — entidade fabricada, não pode virar bolha.
+ * Sem `shownAdministradoras` no contexto, nunca dropa (compat retroativa,
+ * mesmo padrão do FIX-270/336 acima). FIX-342. */
+export function isHallucinatedAdministradoraClaim(
+	segment: string,
+	ctx?: StateVerificationContext,
+): boolean {
+	if (!ctx?.shownAdministradoras) return false;
+	const s = segment.trim();
+	if (!s) return false;
+	const normalizedSegment = normalizeAdministradora(s);
+	const shown = new Set(ctx.shownAdministradoras.map(normalizeAdministradora));
+	return KNOWN_MARKET_ADMINISTRADORA_PATTERNS.some(
+		({ normalized, pattern }) => !shown.has(normalized) && pattern.test(normalizedSegment),
+	);
+}
+
 /** Um segmento cita a administradora ou o valor de parcela da oferta top-1
  * ENQUANTO o consentimento (`reco-consent`) ainda está pendente — não pode
  * virar bolha. Sem oferta pendente conhecida ou com consentimento já dado,
@@ -452,8 +519,9 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
  * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333),
- * score/aderência em percentual numérico (FIX-334). Todos são dropados antes
- * de virar mensagem. */
+ * score/aderência em percentual numérico (FIX-334), administradora do
+ * mercado fora das ofertas reais (FIX-342). Todos são dropados antes de
+ * virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -466,7 +534,8 @@ function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): bo
 		isMechanismNarrationClaim(segment) ||
 		isFabricatedStateSegment(segment, ctx) ||
 		isPrematureTopOfferClaim(segment, ctx) ||
-		isScorePercentageClaim(segment)
+		isScorePercentageClaim(segment) ||
+		isHallucinatedAdministradoraClaim(segment, ctx)
 	);
 }
 
