@@ -74,6 +74,16 @@ export function buildSystemContext(args: {
 	 * anteriores"). Mesmo padrão de exactnessFacts: entrega o FATO, o modelo
 	 * decide a fala. */
 	identityAlreadyCollected?: boolean;
+	/** FIX-350(b) (P1.5, veredito rodada 4): o usuário pediu uma administradora
+	 * do MERCADO que não está entre as ofertas reais desta conversa (ex.: "me
+	 * mostra a Bradesco", quando só ITAÚ/ÂNCORA foram exibidas). O guard
+	 * `isHallucinatedAdministradoraClaim` (sanitizer.ts) já impede o modelo de
+	 * MENTIR que ela é uma oferta real — mas sem nenhum fato no contexto, ele
+	 * respondia de 3 jeitos ruins e inconsistentes: desconversa (não-sequitur),
+	 * promete simular e não cumpre, ou (só às vezes) redireciona certo. Mesmo
+	 * padrão de exactnessFacts/identityAlreadyCollected: entrega o FATO (qual
+	 * foi pedida + quais são as reais), o modelo decide a fala. */
+	unavailableAdministradoraFacts?: { requested: string; realOffers: string[] } | null;
 }): ChatMessage[] {
 	const {
 		knownName,
@@ -84,6 +94,7 @@ export function buildSystemContext(args: {
 		exactnessFacts,
 		pendingGate,
 		identityAlreadyCollected,
+		unavailableAdministradoraFacts,
 	} = args;
 	const out: ChatMessage[] = [];
 
@@ -147,6 +158,21 @@ export function buildSystemContext(args: {
 				`limitação técnica que impeça você de "ver dados anteriores" (NUNCA alegue isso, é ` +
 				`falso). Reconheça que já está tudo certo, sem pedir o CPF de novo e sem inventar ` +
 				`nenhuma explicação técnica pra justificar.`,
+		});
+	}
+
+	if (unavailableAdministradoraFacts) {
+		const { requested, realOffers } = unavailableAdministradoraFacts;
+		const lista = realOffers.join(", ");
+		out.push({
+			role: "system",
+			content:
+				`Ele pediu pra ver a ${requested} — ela NÃO existe entre as ofertas reais desta busca. ` +
+				`As reais são: ${lista}. Responda com honestidade, redirecionando pra essas opções reais ` +
+				`(com suas próprias palavras). NUNCA invente que a ${requested} é uma das opções, NUNCA ` +
+				`prometa simulá-la ou mostrá-la (você não vai cumprir), e NUNCA desconverse pra outro ` +
+				`assunto sem responder o pedido dele — reconheça que ela não está disponível agora e ` +
+				`convide pra ver as reais.`,
 		});
 	}
 

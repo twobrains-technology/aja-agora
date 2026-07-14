@@ -18,10 +18,12 @@ import {
 	isBannedLexicon,
 	isCatalogResearchClaim,
 	isDocumentReceiptClaim,
+	findUnavailableAdministradoraMention,
 	isHallucinatedAdministradoraClaim,
 	isMechanismNarrationClaim,
 	isPrazoReductionClaim,
 	isPrematureReservationClaim,
+	isPrematureTopOfferClaim,
 	isProactiveCallbackClaim,
 	isProcessPreamble,
 	isScorePercentageClaim,
@@ -1214,6 +1216,32 @@ describe("FIX-342 — isHallucinatedAdministradoraClaim (administradora do merca
 	});
 });
 
+describe("FIX-350(b) — findUnavailableAdministradoraMention (texto do USUÁRIO, não do modelo)", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("devolve o nome de mercado citado quando o usuário pede uma administradora fora das ofertas reais", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco", OFERTAS_REAIS)).toBe(
+			"Bradesco",
+		);
+		expect(findUnavailableAdministradoraMention("e a Caixa Econômica?", OFERTAS_REAIS)).toBe(
+			"Caixa",
+		);
+	});
+
+	it("devolve null quando a administradora citada JÁ está entre as ofertas reais (continência FIX-345)", () => {
+		expect(findUnavailableAdministradoraMention("quero ver a ITAÚ de novo", OFERTAS_REAIS)).toBeNull();
+		expect(findUnavailableAdministradoraMention("a ÂNCORA parece boa", OFERTAS_REAIS)).toBeNull();
+	});
+
+	it("devolve null sem shownAdministradoras no contexto (compat retroativa)", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco")).toBeNull();
+	});
+
+	it("devolve null pra texto sem nenhuma administradora do mercado", () => {
+		expect(findUnavailableAdministradoraMention("quero ver outras opções", OFERTAS_REAIS)).toBeNull();
+	});
+});
+
 describe("FIX-342 — stripProcessPreamble/EphemeralTextFilter dropam administradora fantasma sem mordaçar as ofertas reais", () => {
 	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
 
@@ -1261,5 +1289,96 @@ describe("FIX-342 — stripProcessPreamble/EphemeralTextFilter dropam administra
 		let emitted = f.push("A ÂNCORA também fica boa pra você, quer ver o detalhe?");
 		emitted += f.flush();
 		expect(emitted).toContain("ÂNCORA");
+	});
+});
+
+describe("FIX-349 (P1.2, veredito rodada 4) — isPrematureTopOfferClaim cego ANTES de recommend_groups rodar", () => {
+	// Root cause provado (imovel-whatsapp t6 / servicos-whatsapp t6, veredito
+	// rodada 4): o fluxo obrigatório do reveal (directives.ts,
+	// buildSearchSummaryDirective) manda o modelo chamar `search_groups`
+	// PRIMEIRO e já ANUNCIAR o resultado — só DEPOIS chama `recommend_groups`
+	// (que é quem preenche `rank`, único campo que `pickBestRankedGroup`
+	// (recommendation-payload.ts) aceita). `search_groups` já devolve
+	// administradora/parcela por grupo (mesmo shape de `recommend_groups`,
+	// `toModelGroupSummary`) — se o modelo narrar a "melhor opção" nesse
+	// meio-tempo (antes do `recommend_groups` rodar), `pendingTopOffer` ainda
+	// está `null` (nenhum grupo tem `rank`) e `isPrematureTopOfferClaim`
+	// retorna `false` sem nem olhar o segmento — o vazamento passa direto.
+	//
+	// Fix: `pendingOffers` — TODAS as ofertas já indexadas neste turno (via
+	// `search_groups` OU `recommend_groups`), não só a de `rank` mínimo —
+	// fecha essa janela: enquanto o consentimento está pendente, NENHUMA
+	// administradora/parcela real (ranqueada ainda ou não) pode virar bolha.
+	const ANCORA_OFFER = { administradora: "ÂNCORA", monthlyPayment: 693.54 };
+
+	it("sem recommend_groups (pendingTopOffer null), mas ÂNCORA já indexada via search_groups — segmento é dropado", () => {
+		const segment =
+			"Na ÂNCORA, a parcela fica em R$ 693,54 por mês — e o prazo é bem tranquilo.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(true);
+	});
+
+	it("mesmo sem o valor de parcela, citar só o NOME da administradora pendente (ITAÚ) já é dropado", () => {
+		const segment =
+			"Você tem a opção ITAÚ em destaque com a melhor combinação de taxa de administração (16,04%).";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [{ administradora: "ITAÚ" }],
+			}),
+		).toBe(true);
+	});
+
+	it("regressão: pendingTopOffer sozinho (comportamento pré-existente, pós recommend_groups) continua funcionando", () => {
+		const segment = "Tá aí a ÂNCORA em destaque — parcela de R$ 693,54.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: ANCORA_OFFER,
+			}),
+		).toBe(true);
+	});
+
+	it("consentimento já dado (recoConsentPending=false) — nunca dropa, mesmo com pendingOffers", () => {
+		const segment = "Na ÂNCORA, a parcela fica em R$ 693,54 por mês.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: false,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(false);
+	});
+
+	it("PRESERVA texto que não cita nenhuma administradora pendente", () => {
+		const segment = "Encontramos 3 boas opções pra você — vou trazer a que melhor encaixa.";
+		expect(
+			isPrematureTopOfferClaim(segment, {
+				hasReceivedDocuments: false,
+				hasSearchToolCall: true,
+				hasProposal: false,
+				recoConsentPending: true,
+				pendingTopOffer: null,
+				pendingOffers: [ANCORA_OFFER],
+			}),
+		).toBe(false);
 	});
 });

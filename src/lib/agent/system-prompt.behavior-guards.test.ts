@@ -172,24 +172,34 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 		"olha ai",
 	];
 
-	it("REGRA DURA aparece no SPECIALIST_BASE_PROMPT acoplada a present_topic_picker", () => {
-		// Bloco da regra: marker REGRA DURA + frase + present_topic_picker
-		// dentro de ate 800 chars (mesmo paragrafo).
-		const blocoRegraDura = SPECIALIST_BASE_PROMPT.match(
-			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker/i,
-		);
+	// FIX-350(a) (P1.3, veredito rodada 4): `present_topic_picker` saiu do
+	// toolset em TODA fase (FIX-309, tool-policy.ts) — é emissão 100%
+	// SERVER-SIDE, o modelo nunca mais chama essa tool (chamar dá
+	// NoSuchToolError e dispara o fallback enlatado). A REGRA DURA que
+	// ancorava esta proteção não pode mais prometer "chame a tool" como
+	// resolução — o ancoramento agora é só "nunca prometa UI que você não
+	// controla", sem amarrar a um nome de tool que não existe mais no seu
+	// toolset.
+	it("REGRA DURA aparece no SPECIALIST_BASE_PROMPT, na seção de atalhos (present_topic_picker é 100% server-side)", () => {
+		// Bloco da regra: marker REGRA DURA dentro dos 800 chars seguintes à
+		// seção "Atalhos com topicos curtos" (mesmo parágrafo/seção).
+		const secaoIdx = SPECIALIST_BASE_PROMPT.indexOf("Atalhos com topicos curtos");
+		expect(secaoIdx, "Seção 'Atalhos com topicos curtos' não encontrada no SPECIALIST_BASE_PROMPT.").toBeGreaterThan(-1);
+		const secao = SPECIALIST_BASE_PROMPT.slice(secaoIdx, secaoIdx + 1200);
 		expect(
-			blocoRegraDura,
-			"SPECIALIST_BASE_PROMPT precisa ter UM bloco 'REGRA DURA ... present_topic_picker' " +
-				"em ate 800 chars. Esse e o ancoramento estrutural do BUG-TOPIC-PICKER.",
-		).not.toBeNull();
+			secao,
+			"A seção de atalhos precisa ter um bloco '**REGRA DURA**' em até 1200 chars. " +
+				"Esse é o ancoramento estrutural do BUG-TOPIC-PICKER.",
+		).toMatch(/\*\*REGRA DURA\*\*/i);
 	});
 
 	it("o bloco da REGRA DURA lista TODAS as variantes da promessa de UI", () => {
-		// Pega o bloco da REGRA DURA acoplada a present_topic_picker.
-		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
-			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker[\s\S]{0,400}/i,
-		);
+		// Pega o bloco da REGRA DURA dentro da seção de atalhos.
+		const secaoIdx = SPECIALIST_BASE_PROMPT.indexOf("Atalhos com topicos curtos");
+		const blocoMatch =
+			secaoIdx > -1
+				? SPECIALIST_BASE_PROMPT.slice(secaoIdx, secaoIdx + 1200).match(/\*\*REGRA DURA\*\*[\s\S]{0,800}/i)
+				: null;
 		expect(blocoMatch).not.toBeNull();
 		if (!blocoMatch) return;
 
@@ -229,11 +239,13 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 		// SPECIALIST_BASE_PROMPT e compartilhado pelas 4 personas
 		// (auto/imovel/moto/servicos). A regra dura tem que estar nesse bloco
 		// compartilhado — nao em prompt-customization por persona.
-		// Assert: a sentencao que ancora a regra do present_topic_picker NAO pode
+		// Assert: a sentenca que ancora a regra da seção de atalhos NAO pode
 		// citar uma persona/categoria especifica (sem viés).
-		const blocoMatch = SPECIALIST_BASE_PROMPT.match(
-			/\*\*REGRA DURA\*\*[\s\S]{0,800}present_topic_picker/i,
-		);
+		const secaoIdx = SPECIALIST_BASE_PROMPT.indexOf("Atalhos com topicos curtos");
+		const blocoMatch =
+			secaoIdx > -1
+				? SPECIALIST_BASE_PROMPT.slice(secaoIdx, secaoIdx + 1200).match(/\*\*REGRA DURA\*\*[\s\S]{0,800}/i)
+				: null;
 		expect(blocoMatch).not.toBeNull();
 		if (!blocoMatch) return;
 
@@ -258,19 +270,24 @@ describe("BUG-TOPIC-PICKER-VARIANTS — regra dura cobre TODAS as variantes da p
 describe("BUG-TOOL-DUPLICATION — prompt tem guard contra repetir tools idempotentes", () => {
 	it("tem regra dura: tools de captura/picker chamadas NO MÁXIMO 1x por conversa", () => {
 		expect(SPECIALIST_BASE_PROMPT).toMatch(
-			/(N(Ã|A)O|nunca).{0,150}(repita|chame.{0,30}mais.{0,30}uma|chame.{0,30}duas|reaproveite).{0,150}(save_contact|present_value_picker|present_topic_picker)/i,
+			/(N(Ã|A)O|nunca).{0,150}(repita|chame.{0,30}mais.{0,30}uma|chame.{0,30}duas|reaproveite).{0,150}(save_contact|present_value_picker)/i,
 		);
 	});
 
-	it("a regra cobre as 6 tools idempotentes conhecidas (save_contact_name, save_contact_whatsapp, present_value_picker, present_topic_picker, present_whatsapp_optin, present_lead_form)", () => {
+	// FIX-350(a) (P1.3, veredito rodada 4): `present_topic_picker` e
+	// `present_whatsapp_optin` saíram desta lista — as duas viraram emissão
+	// 100% SERVER-SIDE (FIX-309/FIX-280, tool-policy.ts) e o modelo NUNCA mais
+	// as chama (chamar dá NoSuchToolError, que disparava o fallback enlatado
+	// residual — a "regra de não-repetir" que as amarrava aqui era ela mesma
+	// uma instrução pra chamar algo que não existe mais no toolset). Só as 4
+	// tools que o modelo ainda chama de fato continuam nesta lista.
+	it("a regra cobre as 4 tools idempotentes que o modelo ainda chama (save_contact_name, save_contact_whatsapp, present_value_picker, present_lead_form)", () => {
 		// Cada tool precisa aparecer na lista próxima da regra dura. Pega o
-		// bloco da regra (até 600 chars) e confere todas as 6.
+		// bloco da regra (até 600 chars) e confere todas as 4.
 		const tools = [
 			"save_contact_name",
 			"save_contact_whatsapp",
 			"present_value_picker",
-			"present_topic_picker",
-			"present_whatsapp_optin",
 			"present_lead_form",
 		];
 

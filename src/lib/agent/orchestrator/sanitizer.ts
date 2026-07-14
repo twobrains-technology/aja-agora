@@ -400,6 +400,17 @@ export type StateVerificationContext = {
 	 * tool-result real de `recommend_groups`/`search_groups` — nunca a
 	 * narrativa do LLM. `null`/ausente enquanto a busca ainda não resolveu. */
 	pendingTopOffer?: { administradora?: string; monthlyPayment?: number } | null;
+	/** FIX-349 (P1.2, veredito rodada 4): TODAS as ofertas já indexadas neste
+	 * turno (via `search_groups` OU `recommend_groups`), não só a de maior
+	 * `rank`. O fluxo obrigatório do reveal chama `search_groups` e manda o
+	 * modelo ANUNCIAR o resultado ANTES de chamar `recommend_groups` (o único
+	 * que preenche `rank` — ver `pickBestRankedGroup`); nessa janela,
+	 * `pendingTopOffer` ainda é `null`, mas a administradora/parcela de cada
+	 * grupo JÁ é dado real (mesmo shape de `recommend_groups`). Sem esta
+	 * lista, `isPrematureTopOfferClaim` fica cego pra qualquer narração
+	 * baseada só no retorno de `search_groups` (achado ao vivo:
+	 * imovel-whatsapp t6 / servicos-whatsapp t6, rodada 4). */
+	pendingOffers?: Array<{ administradora?: string; monthlyPayment?: number }>;
 	/** true só quando existe pelo menos uma linha em `bevi_proposals` pra esta
 	 * conversa (fato do banco). FIX-336: o agente afirmou "Sua proposta com a
 	 * ITAÚ já saiu" com `bevi_proposals` VAZIO pra conversa (I4 quebrado,
@@ -481,7 +492,7 @@ const KNOWN_MARKET_ADMINISTRADORAS = [
 const KNOWN_MARKET_ADMINISTRADORA_PATTERNS = KNOWN_MARKET_ADMINISTRADORAS.map((name) => {
 	const normalized = normalizeAdministradora(name);
 	const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return { normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
+	return { name, normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
 });
 
 /** Um segmento cita uma administradora do MERCADO (lista fechada acima) que
@@ -496,45 +507,79 @@ export function isHallucinatedAdministradoraClaim(
 	if (!ctx?.shownAdministradoras) return false;
 	const s = segment.trim();
 	if (!s) return false;
-	const normalizedSegment = normalizeAdministradora(s);
-	const shown = ctx.shownAdministradoras.map(normalizeAdministradora);
-
-	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata.
-	//
-	// A Bevi devolve os nomes como "ITAU CONSORCIOS" / "ANCORA ADMINISTRADORA",
-	// e o mercado (e o usuário) chama de "ITAÚ" / "Âncora". Com `Set.has("ITAU")`
-	// contra `{"ITAU CONSORCIOS"}` o resultado era `false` — e o guard DROPAVA a
-	// citação VÁLIDA da ITAÚ. Ao vivo (rodada 3, servicos-web) o agente ficou mudo
-	// sobre a própria recomendação e inventou uma desculpa ("tive um probleminha
-	// pra renderizar os dados aqui"): o fix tinha trocado um bug por uma mentira.
-	//
-	// Uma administradora está "exibida" se o nome do mercado aparece DENTRO do
-	// nome que a Bevi devolveu, ou vice-versa.
-	const foiExibida = (nomeDeMercado: string) =>
-		shown.some((exibida) => exibida.includes(nomeDeMercado) || nomeDeMercado.includes(exibida));
-
-	return KNOWN_MARKET_ADMINISTRADORA_PATTERNS.some(
-		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedSegment),
+	return (
+		findUnavailableAdministradoraMention(s, ctx.shownAdministradoras) !== null
 	);
 }
 
-/** Um segmento cita a administradora ou o valor de parcela da oferta top-1
- * ENQUANTO o consentimento (`reco-consent`) ainda está pendente — não pode
- * virar bolha. Sem oferta pendente conhecida ou com consentimento já dado,
- * nunca dropa (a comparison_table já mostra administradora+parcela de TODAS
- * as opções por design — só o destaque/confirmação do top-1 é vedado aqui). */
+/** FIX-350(b) (P1.5, veredito rodada 4): o TEXTO DO USUÁRIO (não do modelo)
+ * cita uma administradora do MERCADO (lista fechada acima) que NÃO está entre
+ * as ofertas REALMENTE exibidas (`shownAdministradoras`) — devolve o nome de
+ * mercado citado (pra `system-context.ts` injetar o FATO), ou `null` quando
+ * nenhuma citação assim existe. Mesmo casamento por CONTINÊNCIA do FIX-345
+ * (`isHallucinatedAdministradoraClaim`, que agora reusa esta função) —
+ * reaproveita a MESMA lista fechada e a mesma normalização de acento. */
+export function findUnavailableAdministradoraMention(
+	text: string,
+	shownAdministradoras?: string[],
+): string | null {
+	if (!shownAdministradoras) return null;
+	const s = text.trim();
+	if (!s) return null;
+	const normalizedText = normalizeAdministradora(s);
+	const shown = shownAdministradoras.map(normalizeAdministradora);
+
+	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata (ver
+	// isHallucinatedAdministradoraClaim acima pro histórico completo).
+	const foiExibida = (nomeDeMercado: string) =>
+		shown.some((exibida) => exibida.includes(nomeDeMercado) || nomeDeMercado.includes(exibida));
+
+	const match = KNOWN_MARKET_ADMINISTRADORA_PATTERNS.find(
+		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedText),
+	);
+	return match?.name ?? null;
+}
+
+/** FIX-349: `\b` nativo do JS só entende `[A-Za-z0-9_]` como caractere de
+ * palavra — nomes reais de administradora com acento (ITAÚ, ÂNCORA, Tradição)
+ * têm a letra acentuada tratada como NÃO-palavra, e o boundary desaparece bem
+ * na borda do nome (ex.: `\bITAÚ\b` nunca fecha depois do "Ú"). Boundary
+ * manual via lookaround Unicode-aware (`\p{L}`/`\p{N}`) entende qualquer
+ * alfabeto e não deixa esses nomes escaparem do guard silenciosamente. */
+function wholeWordRegex(literal: string): RegExp {
+	const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/** Um segmento cita a administradora ou o valor de parcela de uma oferta REAL
+ * (`offer`) — usado tanto pra `pendingTopOffer` quanto pra cada item de
+ * `pendingOffers` (FIX-349). */
+function segmentClaimsOffer(
+	segment: string,
+	offer: { administradora?: string; monthlyPayment?: number },
+): boolean {
+	if (offer.administradora && wholeWordRegex(offer.administradora).test(segment)) return true;
+	if (typeof offer.monthlyPayment === "number" && offer.monthlyPayment > 0) {
+		if (formatMoneyVariants(offer.monthlyPayment).some((v) => segment.includes(v))) return true;
+	}
+	return false;
+}
+
+/** Um segmento cita a administradora ou o valor de parcela de QUALQUER oferta
+ * REAL já indexada neste turno ENQUANTO o consentimento (`reco-consent`)
+ * ainda está pendente — não pode virar bolha. Sem oferta pendente conhecida
+ * ou com consentimento já dado, nunca dropa (a comparison_table já mostra
+ * administradora+parcela de TODAS as opções por design — só a narração em
+ * texto corrido é vedada aqui).
+ *
+ * FIX-349: checa `pendingTopOffer` (a oferta de maior `rank`, quando
+ * `recommend_groups` já rodou) E `pendingOffers` (TODAS as ofertas indexadas
+ * até agora, mesmo só via `search_groups` — cobre a janela em que o modelo
+ * narra a "melhor opção" ANTES de `recommend_groups` estabelecer o rank). */
 export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificationContext): boolean {
 	if (!ctx?.recoConsentPending) return false;
-	const offer = ctx.pendingTopOffer;
-	if (!offer) return false;
-	const s = segment;
-	if (offer.administradora) {
-		const escaped = offer.administradora.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		if (new RegExp(`\\b${escaped}\\b`, "i").test(s)) return true;
-	}
-	if (typeof offer.monthlyPayment === "number" && offer.monthlyPayment > 0) {
-		if (formatMoneyVariants(offer.monthlyPayment).some((v) => s.includes(v))) return true;
-	}
+	if (ctx.pendingTopOffer && segmentClaimsOffer(segment, ctx.pendingTopOffer)) return true;
+	if (ctx.pendingOffers?.some((offer) => segmentClaimsOffer(segment, offer))) return true;
 	return false;
 }
 

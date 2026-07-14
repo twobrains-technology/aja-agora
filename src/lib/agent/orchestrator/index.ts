@@ -50,6 +50,7 @@ import {
 } from "./recommendation-payload";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
 import { runAgentTurn, scoringInputFromMeta } from "./runner";
+import { findUnavailableAdministradoraMention } from "./sanitizer";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
@@ -695,6 +696,28 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				}
 			: null;
 
+	// FIX-350(b) (P1.5, veredito rodada 4): o usuário pediu uma administradora
+	// do MERCADO que não está entre as ofertas reais desta conversa ("me mostra
+	// a Bradesco", "e a Caixa?") — `resolveOfferMentionForConversation` (acima)
+	// só resolve ofertas REAIS, então `mentionedOffer` fica null aqui. O guard
+	// `isHallucinatedAdministradoraClaim` (sanitizer.ts) já impede o modelo de
+	// MENTIR que ela é uma oferta real, mas sem nenhum fato no contexto ele
+	// respondia de 3 jeitos ruins e inconsistentes (desconversa, promete
+	// simular e não cumpre, ou só às vezes redireciona certo). Mesmo padrão de
+	// exactnessFacts acima: dá o FATO (qual foi pedida + quais são as reais) e
+	// deixa o modelo redigir.
+	let unavailableAdministradoraFacts: { requested: string; realOffers: string[] } | null = null;
+	if (isUserTurn && !mentionedOffer && meta.revealCompleted === true) {
+		const shownOffers = await listShownOffersForConversation(conversationId);
+		const shownAdministradoras = shownOffers
+			.map((o) => o.administradora)
+			.filter((a): a is string => typeof a === "string" && a.length > 0);
+		const requested = findUnavailableAdministradoraMention(userText, shownAdministradoras);
+		if (requested) {
+			unavailableAdministradoraFacts = { requested, realOffers: [...new Set(shownAdministradoras)] };
+		}
+	}
+
 	const history = await loadConversationHistory(conversationId);
 	// DESAMARRA: o modelo passa a SABER o que o funil quer descobrir a seguir, e
 	// faz a pergunta com as palavras dele (o card então só mostra o input). Antes,
@@ -722,6 +745,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		exactnessFacts,
 		pendingGate,
 		identityAlreadyCollected,
+		unavailableAdministradoraFacts,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────

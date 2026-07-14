@@ -125,6 +125,18 @@ export const WHATSAPP_TEXT_GATES = new Set<Gate>([
 	"reco-consent",
 ]);
 
+// FIX-349 (P1.2, veredito rodada 4): subconjunto de `WHATSAPP_TEXT_GATES` SEM
+// NENHUM fallback estrutural (nem interactive, nem card) — a heurística
+// `modelAsked` (baseada em "o modelo terminou o turno com ALGUMA pergunta",
+// nunca checada contra o gate corrente) nunca pode apagar a entrega desses
+// gates: sem fallback, apagar o texto apaga o gate inteiro. `identify` tem o
+// beat de contexto fixo (gateContextBeat) como rede de segurança parcial;
+// `credit`/`desire` não são bloqueantes da mesma forma que `reco-consent`
+// (que trava a cascata inteira até responder — qualify-state.ts). Escopo
+// deliberadamente restrito ao gate com bug PROVADO (achado ao vivo,
+// `servicos-whatsapp`) — ver `consumeEvents` (case "gate").
+export const WHATSAPP_GATES_WITHOUT_FALLBACK = new Set<Gate>(["reco-consent"]);
+
 /** Gates entregues no WhatsApp como BOTÃO/lista (espelha os `case` de
  * `gateInteractive` que devolvem payload). Existe pra que o teste de paridade
  * consiga enxergar a cobertura real do canal. */
@@ -374,9 +386,24 @@ async function consumeEvents(
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
 					// DESAMARRA: se o modelo já perguntou, não repetimos a canônica.
-					const textPrompt = ev.modelAsked
-						? null
-						: await gateTextPrompt(ev.gate, conversationId, undefined);
+					//
+					// FIX-349 (P1.2, veredito rodada 4): `ev.modelAsked` vem de uma
+					// heurística CEGA (`EphemeralTextFilter.hasHeldQuestion()` — "a ÚLTIMA
+					// sentença do modelo terminou em ALGUMA pergunta", sem checar se ela
+					// tem qualquer relação com o gate corrente). Pra gates com interactive
+					// (acima), um falso positivo é inofensivo — o card ainda aparece com
+					// corpo neutro. Mas um gate SEM interactive nenhum não tem fallback: se
+					// o `modelAsked` apagar o textPrompt aqui, o gate inteiro AFUNDA —
+					// nem card, nem texto (achado ao vivo: `reco-consent` nunca apareceu na
+					// conversa inteira em `servicos-whatsapp`, rodada 4, porque o modelo
+					// fechou o turno anterior com uma pergunta genérica — "Bora ver essas
+					// opções?" — sem relação nenhuma com o consentimento). Gates nesta lista
+					// nunca deixam o `modelAsked` apagar a única entrega possível.
+					const textPrompt = WHATSAPP_GATES_WITHOUT_FALLBACK.has(ev.gate)
+						? await gateTextPrompt(ev.gate, conversationId, undefined)
+						: ev.modelAsked
+							? null
+							: await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);
