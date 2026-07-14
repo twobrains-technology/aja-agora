@@ -133,6 +133,20 @@ sem LLM não há loop. Destravado **sem VPN**:
 | 0 | cirurgia (desamarra runtime + troca cadeados) | — | suíte 3.449 verde; 17 invariantes anti-re-amarra |
 | 0.1 | **regressão própria, pega no 1º teste ao vivo** | — | o corte por fase removia "Apresentando resultados" e "NUNCA alucinar falha de busca" da fase `qualify` — **mas a BUSCA roda em qualify**. O modelo chamou `search_groups` + `recommend_groups` no mesmo turno com `budget:0` inventado → Bevi devolveu *write conflict* → usuário via "não consegui carregar as opções". Fix: `promptPhaseFromMeta` (identidade coletada ⇒ prompt já entra em reveal) + as 2 regras de honestidade saem do corte. Teste trava a regressão. |
 
+| 1 | **QA ao vivo — 4 tipos × web** (coletor Haiku) | — | 4 jornadas completas (17-19 turnos), todas até proposta/contrato |
+| 1 | **BUG REAL corrigido: WhatsApp comia a pergunta do gate `desire`** | — | Sem botão e fora de `WHATSAPP_TEXT_GATES` → a pergunta "Qual moto você tem em mente?" **nunca era entregue**. O agente dizia "Prazer, Mario." e parava (turno morto), enquanto o directive prometia que "o sistema pergunta em seguida". Na web saía normal. Fix + teste de paridade que cobre o INVARIANTE (qualquer gate futuro esquecido no WhatsApp quebra). |
+
+### Lições de instrumentação (o coletor mentiu duas vezes)
+
+1. **Coletor reportou "as 4 jornadas do WhatsApp travaram" — era FALSO.** O banco provou que o
+   agente respondia normalmente (11 mensagens de assistente). O helper tinha timeout de 120s e
+   desistia antes. **Instrumento ruim vira bug fantasma** — e se eu tivesse repassado ao juiz, ele
+   reprovaria o WhatsApp por um bug que não existe.
+2. **O helper lia do banco e perdia as perguntas de gate** (o outbound do WhatsApp não vai todo pra
+   `messages`). Passou a ler os balões reais do canal (`[whatsapp-out:*]`).
+3. Confirma a memória `feedback_loop_goal_coletor_hallucinated_success`: **checar o disco/DB antes de
+   acreditar no coletor**, sempre.
+
 ### Achados preliminares (a confirmar pelo juiz)
 
 - ✅ **"não entendi" não repete mais**: o modelo reformulou ("Pra eu saber como me dirigir a você.
