@@ -99,20 +99,26 @@ function looksLikeCpfAttempt(text: string): boolean {
 
 export type IdentifyCaptureResult =
 	| { handled: false }
-	| { handled: true; outcome: "captured" | "invalid" | "ask-cpf" };
+	| { handled: true; outcome: "captured" | "invalid" };
 
 /** Captura textual do CPF quando o funil está no gate identify.
- * Retorna handled=false só quando o gate identify NÃO está ativo (conversa
- * inexistente, identidade já coletada, ou nextGate ainda não chegou aqui) —
- * nesse caso o turno segue pro agente normalmente.
  *
- * FIX-217 (Ata 2026-07-04, item 9): enquanto o gate identify ESTÁ ativo, o
- * texto do usuário é SEMPRE interceptado — CPF válido (captured), CPF-like
- * inválido (invalid) ou qualquer outra coisa (ask-cpf, reemite o pedido). Antes,
- * texto sem cara de CPF (pergunta, tentativa de pular) caía em handled:false e
- * seguia pro pipeline geral do agente, que podia narrar avanço/busca sem o CPF
- * coletado — o gate virava sugestão, não trava (Lei 4: invariante crítico vira
- * código, não regra-no-prompt). Espelha o padrão exaustivo de contract-capture. */
+ * Só intercepta o que É um CPF: válido (captured) ou uma tentativa de CPF com os
+ * dígitos errados (invalid). **Qualquer outra coisa — uma pergunta, uma objeção,
+ * um "por que você precisa disso?" — segue pro MODELO.**
+ *
+ * FIX-357 (revoga o `ask-cpf` do FIX-217). O FIX-217 fazia o gate interceptar TODO
+ * texto e reemitir o pedido do CPF em cima de qualquer desvio, sem nunca chamar o
+ * LLM. Ao vivo isso é o agente bitolado: o cliente pergunta uma coisa e leva o mesmo
+ * pedido de CPF na cara, de novo. Ele invocou a Lei 4 ("invariante vira código") —
+ * mas aplicou ao alvo errado: o invariante é sobre a AÇÃO ("não simule sem CPF"),
+ * nunca sobre a FALA ("não deixe o cliente perguntar").
+ *
+ * E a AÇÃO já estava blindada em código, sem depender deste regex: `tool-policy.ts`
+ * só coloca `search_groups` e os cards do reveal no toolset quando
+ * `identityCollected === true`. Sem CPF o modelo NÃO TEM a ferramenta de busca —
+ * não é uma regra que ele possa desobedecer. O gate segue pendente (`nextGate`) e é
+ * recobrado no turno seguinte. */
 export async function captureIdentifyText(
 	from: string,
 	text: string,
@@ -138,5 +144,7 @@ export async function captureIdentifyText(
 	if (looksLikeCpfAttempt(text)) {
 		return { handled: true, outcome: "invalid" };
 	}
-	return { handled: true, outcome: "ask-cpf" };
+	// Não é CPF nem tentativa de CPF → não é uma resposta a este gate. É OUTRA COISA,
+	// e quem responde outra coisa é o modelo.
+	return { handled: false };
 }
