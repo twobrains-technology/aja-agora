@@ -8911,7 +8911,10 @@ describe("FIX-211-ESCADA-COBRANCA — cobrança escalada de dado obrigatório", 
 	it("cassette puro: só gates de COLETA obrigatória entram na escada (identify/credit)", () => {
 		expect(reengageQuestionForGate("identify", null, 1)).toBeTruthy();
 		expect(reengageQuestionForGate("credit", "auto", 1)).toBeTruthy();
-		expect(reengageQuestionForGate("experience", null, 1)).toBeNull();
+		// FIX-351: `experience` PERGUNTA ("Você já fez consórcio antes?"), então o turno
+		// vazio RE-PERGUNTA em vez de dizer "Acho que me perdi". O que ele NÃO ganha é a
+		// ESCADA de cobrança (exclusiva dos gates de coleta) — é isso que este teste guarda.
+		expect(reengageQuestionForGate("experience", null, 1)).not.toMatch(/Só falta isso|sem compromisso/i);
 	});
 
 	it("cassette estrutural: o adapter re-cobra no DESVIO (gate obrigatório pendente, não só mudo)", () => {

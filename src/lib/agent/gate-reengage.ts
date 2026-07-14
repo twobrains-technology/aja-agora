@@ -112,10 +112,25 @@ export function reengageQuestionForGate(
 	// pré-existentes (whatsapp/adapter.ts) sem precisar passar o argumento.
 	channel: "web" | "whatsapp" = "whatsapp",
 ): string | null {
-	if (!isMandatoryCollectionGate(gate)) return null;
-	if (attempt >= 4) return SPECIALIST_EXIT_OFFER;
+	// FIX-351 (rodada 5, ao vivo): o reengage cobria SÓ os gates de coleta
+	// (credit/lance/.../identify). Quando o turno fechava mudo com OUTRO gate
+	// pendente — `reco-consent`, `experience`, `timeframe`, `desire`,
+	// `simulator-offer` — devolvia null e o servidor respondia "Acho que me perdi
+	// por aqui", com o usuário tendo dito algo claríssimo ("pode sim").
+	//
+	// Reproduzido: turn-trace com `finishReason: "empty-turn-fallback"`, zero tools,
+	// zero artifacts e `suppressed: []` — o modelo simplesmente não gerou texto, e
+	// o gate pendente era `reco-consent`.
+	//
+	// Regra nova: QUALQUER gate com pergunta própria é reengajável. Se há uma
+	// pergunta pendente, o agente re-pergunta — conduzir vale mais do que confessar
+	// confusão. (A ESCADA de cobrança — "só falta isso", "é seguro e sem
+	// compromisso" — continua exclusiva dos gates de COLETA: insistir assim num
+	// convite como "posso te mostrar a que eu recomendo?" seria pressão indevida.)
+	if (attempt >= 4 && isMandatoryCollectionGate(gate)) return SPECIALIST_EXIT_OFFER;
 	const base = gateQuestion(gate, category ?? null, creditValue, channel, creditMentionedAtDesire);
 	if (!base) return null;
+	if (!isMandatoryCollectionGate(gate)) return base;
 	if (attempt <= 1) return base;
 	if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;
 	return `${base}\n\nÉ seguro e sem compromisso. Só preciso disso pra continuar.`;
