@@ -6,6 +6,19 @@ import type { ChatMessage } from "./types";
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
+// FIX-340(a) (bloco-c-whatsapp-invariantes): o turno atual reclama que já
+// mandou um dado ("já te mandei meu CPF", "já enviei", "já passei"). Não
+// checa CPF em si (index.ts já faz isso via extractCpf, mais preciso —
+// dígito verificador real) — só a QUEIXA em texto livre.
+const IDENTITY_RESEND_COMPLAINT_RE = /\bj[áa]\s+(te\s+)?(mandei|enviei|passei|dei)\b/i;
+
+/** O turno reclama textualmente que já enviou um dado antes ("já te mandei
+ * meu CPF"). Usado em conjunto com `extractCpf(userText) !== null` (index.ts)
+ * pra detectar reenvio de identidade já coletada — FIX-340(a). */
+export function looksLikeIdentityResendComplaint(text: string): boolean {
+	return IDENTITY_RESEND_COMPLAINT_RE.test(text);
+}
+
 /** O que cada gate precisa descobrir — em INTENÇÃO, não em frase pronta. O
  * modelo escolhe as palavras; nós só dizemos o que falta saber. */
 const GATE_INTENT: Record<string, string> = {
@@ -54,6 +67,13 @@ export function buildSystemContext(args: {
 	 * proibido de perguntar ("NÃO faça pergunta") — o que deixava a conversa
 	 * idêntica em toda sessão. */
 	pendingGate?: Gate | null;
+	/** FIX-340(a) (bloco-c-whatsapp-invariantes): a identidade (CPF) JÁ foi
+	 * coletada e o turno atual reenvia o CPF ou reclama que já mandou. Sem
+	 * nenhum fato no contexto, o modelo fabricava uma desculpa técnica que não
+	 * existe em código nenhum ("aqui no chat não consigo ver os dados
+	 * anteriores"). Mesmo padrão de exactnessFacts: entrega o FATO, o modelo
+	 * decide a fala. */
+	identityAlreadyCollected?: boolean;
 }): ChatMessage[] {
 	const {
 		knownName,
@@ -63,6 +83,7 @@ export function buildSystemContext(args: {
 		confusedAboutGate,
 		exactnessFacts,
 		pendingGate,
+		identityAlreadyCollected,
 	} = args;
 	const out: ChatMessage[] = [];
 
@@ -115,6 +136,17 @@ export function buildSystemContext(args: {
 				`O critério da recomendação foi prazo, parcela e chance de contemplação combinados — ` +
 				`não só o valor de crédito isolado. NÃO invente nenhum outro número, score ou ` +
 				`porcentagem: use apenas os valores acima e os que já estão na tela.`,
+		});
+	}
+
+	if (identityAlreadyCollected) {
+		out.push({
+			role: "system",
+			content:
+				`A identidade dele (CPF) JÁ está registrada nesta conversa — não existe nenhuma ` +
+				`limitação técnica que impeça você de "ver dados anteriores" (NUNCA alegue isso, é ` +
+				`falso). Reconheça que já está tudo certo, sem pedir o CPF de novo e sem inventar ` +
+				`nenhuma explicação técnica pra justificar.`,
 		});
 	}
 

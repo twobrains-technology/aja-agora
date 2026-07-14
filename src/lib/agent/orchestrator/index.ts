@@ -16,6 +16,7 @@ import {
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { extractCpf } from "@/lib/whatsapp/identify-capture";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import { analyzeAndMerge } from "./analyze";
 import { listShownOffersForConversation, resolveOfferMentionForConversation } from "./choose-offer";
@@ -56,7 +57,7 @@ import {
 	buildTwoPathsCard,
 	buildWhatsappOptinCard,
 } from "./server-cards";
-import { buildSystemContext } from "./system-context";
+import { buildSystemContext, looksLikeIdentityResendComplaint } from "./system-context";
 import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
@@ -673,6 +674,17 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const pendingGate = isUserTurn
 		? nextGate(meta, { hasContactName: Boolean(knownName) })
 		: null;
+	// FIX-340(a) (bloco-c-whatsapp-invariantes, dossiê auto-whatsapp t8-10): com
+	// a identidade já coletada, `captureIdentifyText` (WhatsApp) devolve
+	// handled:false e o texto cai livre aqui — sem NENHUM fato no contexto, o
+	// modelo às vezes fabricava uma desculpa técnica ("aqui no chat não
+	// consigo ver os dados anteriores") que não existe em código nenhum.
+	// Detecta o reenvio (CPF de novo OU reclamação "já mandei") e entrega o
+	// FATO — mesmo padrão de exactnessFacts acima, a fala continua do modelo.
+	const identityAlreadyCollected =
+		isUserTurn &&
+		meta.identityCollected === true &&
+		(extractCpf(userText) !== null || looksLikeIdentityResendComplaint(userText));
 	const systemContext = buildSystemContext({
 		knownName,
 		newlyExtractedExperience,
@@ -681,6 +693,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		confusedAboutGate,
 		exactnessFacts,
 		pendingGate,
+		identityAlreadyCollected,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
