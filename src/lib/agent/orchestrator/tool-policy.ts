@@ -174,11 +174,30 @@ export function allowedTools(meta: ConversationMetadata, _channel?: "web" | "wha
 				...WHAT_IF_AND_DETAIL,
 				...LEAD_CAPTURE,
 				"present_contemplation_dial",
+				// FIX-332 (P0.1, veredito rodada 1 do loop desamarra-agente):
+				// search_groups/recommend_groups ficam SEMPRE disponíveis pós-reveal,
+				// mesmo sem troca de faixa — mas NÃO reabrem busca real na Bevi (ver
+				// ai-sdk.ts, buildConsorcioTools com `reuseShownGroupsOnly`): só
+				// devolvem os grupos JÁ EXIBIDOS nos artifacts. Sem isso, o modelo
+				// tentava a tool ao pedir pra detalhar/simular uma oferta já
+				// mostrada, tomava NoSuchToolError (fora do toolset) e o runner
+				// descartava a fala inteira do turno pro fallback enlatado — o
+				// sintoma-mor que a cirurgia deveria ter matado, sobrevivendo aqui.
+				"search_groups",
+				"recommend_groups",
 				// FIX-246 (rodada 3, Fable r2): embedded_bid/two_paths/scarcity SAÍRAM
 				// do toolset do LLM — 0 emissões ao vivo mesmo com directive
 				// instruindo a tool-call (invariante no prompt, não em código, Lei
 				// 1/2/4). Emissão agora é SERVER-SIDE determinística
 				// (server-cards.ts) — o LLM nunca mais precisa (nem pode) chamá-las.
+				//
+				// FIX-68 (exceção cirúrgica, ainda vale pros CARDS de apresentação):
+				// só quando o usuário TROCA de faixa de valor é que
+				// present_group_card/present_comparison_table/present_recommendation_card
+				// voltam — re-apresentar cards da MESMA faixa reabriria o
+				// BUG-REVEAL-LOOP. search_groups/recommend_groups (acima) não têm
+				// esse risco: pós-FIX-332 eles não re-buscam nem re-apresentam nada,
+				// só devolvem dado pro modelo responder em texto.
 				...(revealValueTargetChanged(meta) ? DISCOVERY_AND_REVEAL_CARDS : []),
 				// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU também — mesmo
 				// toolset, mesmo estado, disparava num fluxo e não em outro

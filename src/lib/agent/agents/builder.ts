@@ -4,7 +4,12 @@ import { createGatewayOpenAI } from "@/lib/llm/gateway-openai";
 import { isNativeAnthropicModel } from "@/lib/llm/model-provider";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
-import { allowedTools, phaseFromMeta, type ToolPhase } from "../orchestrator/tool-policy";
+import {
+	allowedTools,
+	phaseFromMeta,
+	revealValueTargetChanged,
+	type ToolPhase,
+} from "../orchestrator/tool-policy";
 
 /** Fase do PROMPT — não é a mesma coisa que a fase das TOOLS.
  *
@@ -196,6 +201,12 @@ export function buildAgent(
 		// FIX-193: perfil de lance → desempate de tipoOferta no recommend_groups
 		// (critério interno). Vem do meta, nunca da LLM.
 		hasLance: opts.meta?.qualifyAnswers?.hasLance === "yes",
+		// FIX-332: pós-reveal SEM troca de faixa, search_groups/recommend_groups
+		// não re-buscam a Bevi — devolvem os grupos já exibidos. Com troca real de
+		// faixa (revealValueTargetChanged), a busca continua real (FIX-68).
+		reuseShownGroupsOnly: Boolean(
+			opts.meta && opts.meta.revealCompleted === true && !revealValueTargetChanged(opts.meta),
+		),
 	});
 
 	// Specialists always have suggest_handoff + as ferramentas de captura

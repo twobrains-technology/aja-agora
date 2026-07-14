@@ -3266,9 +3266,16 @@ describe("FIX-68 — troca de faixa pos-reveal re-busca em vez de fabricar id", 
 		expect(allowedTools(trocou)).toContain("search_groups");
 	});
 
-	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita search (anti BUG-REVEAL-LOOP)", () => {
-		// Mesmo valor-alvo (256k) da descoberta → continua sem descoberta na fase.
-		expect(allowedTools(postRevealMeta())).not.toContain("search_groups");
+	it("estrutural: afirmativo curto na MESMA faixa NAO reabilita os CARDS de descoberta (anti BUG-REVEAL-LOOP)", () => {
+		// Mesmo valor-alvo (256k) da descoberta → os cards de re-apresentação
+		// (que reabririam o loop de re-mostrar o reveal inteiro) continuam fora.
+		expect(allowedTools(postRevealMeta())).not.toContain("present_comparison_table");
+		// FIX-332 (P0.1, veredito rodada 1 desamarra-agente): search_groups em si
+		// passou a ficar SEMPRE disponível em reveal (mesmo sem troca de faixa) —
+		// não re-busca a Bevi nesse caso (ai-sdk.ts intercepta com
+		// reuseShownGroupsOnly), só devolve os grupos já exibidos. Isso não reabre
+		// o BUG-REVEAL-LOOP porque não há re-busca nem re-apresentação de card.
+		expect(allowedTools(postRevealMeta())).toContain("search_groups");
 	});
 
 	it("acoplamento: o prompt manda RE-BUSCAR ao trocar de faixa e NUNCA fabricar groupId", () => {
