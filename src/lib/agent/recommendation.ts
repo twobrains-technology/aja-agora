@@ -156,6 +156,37 @@ export interface ScoredGroup {
 }
 
 /**
+ * Score UM grupo — fatores + composite ponderado (WEIGHTS). Pura,
+ * determinística. Extraída de `rankGroups` (FIX-334) pra ser reutilizável
+ * fora do ranking em lote: `coerceRecommendationPayload` a usa pra
+ * RECALCULAR o score do hero a partir do grupo REAL já indexado, sem
+ * depender do número que o modelo ecoou (que deixou de receber o score cru
+ * no tool-result — Lei 4, `docs/correcoes/done/fix-334-*.md`).
+ */
+export function scoreGroup(group: GroupSummary, input: ScoringInput): ScoredGroup {
+	const factors = {
+		creditProximity: creditProximityScore(group.creditValue, input.creditMax),
+		monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
+		contemplation: contemplationScore(group.contemplationRate),
+		adminFee: adminFeeScore(group.adminFeePercent, group.category),
+		termMatch: termMatchScore(group.termMonths, input.desiredTermMonths),
+	};
+
+	const score =
+		factors.creditProximity * WEIGHTS.creditProximity +
+		factors.monthlyFit * WEIGHTS.monthlyFit +
+		factors.contemplation * WEIGHTS.contemplation +
+		factors.adminFee * WEIGHTS.adminFee +
+		factors.termMatch * WEIGHTS.termMatch;
+
+	return {
+		group,
+		score: Math.round(score * 10000) / 10000, // 4 decimal precision
+		factors,
+	};
+}
+
+/**
  * Score and rank ALL groups by weighted multi-factor analysis — sem teto, nunca
  * descarta grupo (Kairo, 2026-07-01: "não pode limitar"). `topN`, se passado,
  * é só um corte de exibição opcional — o comportamento default é devolver tudo.
@@ -168,28 +199,7 @@ export function rankGroups(
 	input: ScoringInput,
 	topN = Number.POSITIVE_INFINITY,
 ): ScoredGroup[] {
-	const scored: ScoredGroup[] = groups.map((group) => {
-		const factors = {
-			creditProximity: creditProximityScore(group.creditValue, input.creditMax),
-			monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
-			contemplation: contemplationScore(group.contemplationRate),
-			adminFee: adminFeeScore(group.adminFeePercent, group.category),
-			termMatch: termMatchScore(group.termMonths, input.desiredTermMonths),
-		};
-
-		const score =
-			factors.creditProximity * WEIGHTS.creditProximity +
-			factors.monthlyFit * WEIGHTS.monthlyFit +
-			factors.contemplation * WEIGHTS.contemplation +
-			factors.adminFee * WEIGHTS.adminFee +
-			factors.termMatch * WEIGHTS.termMatch;
-
-		return {
-			group,
-			score: Math.round(score * 10000) / 10000, // 4 decimal precision
-			factors,
-		};
-	});
+	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, input));
 
 	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
 	// candidatas de embutido ("com") que violam netCredit >= valorDoBem são

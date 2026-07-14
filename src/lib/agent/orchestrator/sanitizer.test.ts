@@ -23,6 +23,7 @@ import {
 	isPrematureReservationClaim,
 	isProactiveCallbackClaim,
 	isProcessPreamble,
+	isScorePercentageClaim,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
 	joinSeparator,
@@ -322,6 +323,36 @@ describe("FIX-243 — 'taxa de contemplação' é PROIBIDA na fala (campo sem se
 			"Boa! A ITAÚ se destaca pela boa taxa de contemplação e uma taxa de administração de 13,46%. Vamos seguir?";
 		const out = stripProcessPreamble(input);
 		expect(out.toLowerCase()).not.toContain("taxa de contemplação");
+		expect(out).toContain("Boa!");
+	});
+});
+
+describe("FIX-334 — score/aderência em percentual é PROIBIDO na fala (regressão contra score-label.ts)", () => {
+	const SCORE_PERCENTAGE_SEGMENTS = [
+		"Você tem a Itaú em destaque com score de 73%.",
+		"Essa oferta tem 73% de aderência ao seu perfil.",
+		"O score de compatibilidade é 91%.",
+		"A aderência dessa oferta é de 60%.",
+		"Essa opção tem 85% de compatibilidade com o que você pediu.",
+	];
+
+	it("isScorePercentageClaim pega as frases que citam score/aderência/compatibilidade em %", () => {
+		for (const s of SCORE_PERCENTAGE_SEGMENTS) {
+			expect(isScorePercentageClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima (rótulo qualitativo, sem percentual de score)", () => {
+		expect(isScorePercentageClaim("Essa opção encaixa muito bem pra você.")).toBe(false);
+		expect(isScorePercentageClaim("É uma boa opção pro seu perfil.")).toBe(false);
+		expect(isScorePercentageClaim("A taxa de administração é de 13,46%.")).toBe(false);
+		expect(isScorePercentageClaim("Contempla 8 pessoas por mês.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de score percentual", () => {
+		const input = "Boa! Você tem a Itaú em destaque com score de 73%. Vamos seguir?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("score de 73%");
 		expect(out).toContain("Boa!");
 	});
 });

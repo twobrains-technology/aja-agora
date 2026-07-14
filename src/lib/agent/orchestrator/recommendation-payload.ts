@@ -15,11 +15,13 @@
 // o seletor emitir `choose_offer` com o grupo já resolvido. `tipoOferta` é
 // critério INTERNO de ranking/dedup (FIX-193): NUNCA entra no payload de UI.
 
+import type { ConsorcioCategory } from "@/lib/adapters/types";
 import { matchAdministradoraLogo } from "@/lib/consorcio/administradora-logo";
+import { scoreGroup, type ScoringInput } from "../recommendation";
 import type { KnownGroupValue } from "../tools/known-credit-values";
 
 /** Grupo real (model-facing) capturado do tool-result de recommend/search. É o
- * `toModelGroupSummary` (+ score/scoreBreakdown no recommend). */
+ * `toModelGroupSummary` (+ rank no recommend, FIX-334). */
 export interface RevealGroupLike {
 	id: string;
 	administradora?: string;
@@ -32,8 +34,12 @@ export interface RevealGroupLike {
 	contemplationRate?: number;
 	/** UUID de sessão da oferta (Bevi) — campo do CONTRATO, quando propagado. */
 	ofertaId?: string;
-	score?: number;
-	scoreBreakdown?: Record<string, number>;
+	/** FIX-334: posição ordinal no ranking de `recommend_groups` (0 = melhor) —
+	 * substitui `score` cru como sinal de "é o top-1" (o modelo não recebe mais
+	 * o número, só a posição relativa via ordem + `scoreLabel` qualitativo).
+	 * `score`/`scoreBreakdown` REAIS são recalculados sob demanda por
+	 * `scoreGroup` (recommendation.ts), nunca lidos daqui. */
+	rank?: number;
 	/** FIX-223: lance médio do grupo (R$), quando a fonte o traz. */
 	avgBidValue?: number;
 }
@@ -167,15 +173,35 @@ export function coerceRecommendationPayload(
 	requestedCreditValue?: number,
 	/** FIX-287/FIX-292: ver `coerceRevealCota`. */
 	knownCreditValueByGroupId?: ReadonlyMap<string, KnownGroupValue>,
+	/** FIX-334: input de scoring (budget/desiredTermMonths/creditMax/hasLance)
+	 * pra RECALCULAR score/scoreBreakdown a partir do grupo real — desde que
+	 * `recommend_groups` parou de devolver o score cru pro modelo (só
+	 * `scoreLabel`, ver ai-sdk.ts), `group.score`/`group.scoreBreakdown` não
+	 * chegam mais indexados. Ausente → card sai sem score (degradação
+	 * graciosa, caminho legado/sem contexto de scoring). */
+	scoringInput?: ScoringInput,
 ): Record<string, unknown> {
 	const id = typeof input.id === "string" ? input.id : undefined;
 	const group = id ? index.get(id) : undefined;
 	const out = coerceRevealCota(input, group, logosByAdministradora, knownCreditValueByGroupId);
-	if (isUsableGroup(group)) {
-		if (typeof group.score === "number") out.score = group.score;
-		if (group.scoreBreakdown && typeof group.scoreBreakdown === "object") {
-			out.scoreBreakdown = group.scoreBreakdown;
-		}
+	if (isUsableGroup(group) && scoringInput) {
+		const scored = scoreGroup(
+			{
+				id: group.id,
+				administradora: group.administradora ?? "",
+				category: (group.category ?? "auto") as ConsorcioCategory,
+				creditValue: group.creditValue as number,
+				monthlyPayment: group.monthlyPayment as number,
+				adminFeePercent: group.adminFeePercent ?? 0,
+				termMonths: group.termMonths as number,
+				totalParticipants: 0,
+				availableSlots: group.availableSlots ?? 0,
+				contemplationRate: group.contemplationRate ?? 0,
+			},
+			scoringInput,
+		);
+		out.score = scored.score;
+		out.scoreBreakdown = scored.factors;
 	}
 	// FIX-220 (Ata 2026-07-04): a 1ª lista é SEMPRE neutra — ainda não existe
 	// nenhum caminho de produto que colete dado de lance/recurso próprio antes do
@@ -201,18 +227,20 @@ export function coerceRecommendationPayload(
 // FIX-286 (P0, veredito Sonnet r9pos2, guard tool-error suprime reveal
 // legítimo): quando o guard de tool-error (FIX-262) interrompe o turno DEPOIS
 // de `recommend_groups` já ter retornado grupos reais (ranqueados
-// server-side por `rankGroups`, nunca a LLM), o grupo de maior `score` É a
-// mesma recomendação que `present_recommendation_card` teria mostrado — a
-// escolha não depende de nenhum julgamento adicional do modelo. Considera só
-// entradas com `score` definido (só `recommend_groups` o preenche;
+// server-side por `rankGroups`, nunca a LLM), o grupo de `rank` 0 É a mesma
+// recomendação que `present_recommendation_card` teria mostrado — a escolha
+// não depende de nenhum julgamento adicional do modelo. Considera só
+// entradas com `rank` definido (só `recommend_groups` o preenche;
 // `search_groups` sozinho não basta pra materializar o hero, ver
 // `buildFirstRevealRecoveryFallback` em `directives.ts` pro caso sem ranking).
+// FIX-334: usava `score` cru — desde que o modelo parou de receber esse
+// número (só `scoreLabel`), a posição ordinal (`rank`) é o sinal que sobra.
 export function pickBestRankedGroup(index: RevealGroupIndex): RevealGroupLike | null {
 	let best: RevealGroupLike | null = null;
 	for (const group of index.values()) {
-		if (typeof group.score !== "number") continue;
+		if (typeof group.rank !== "number") continue;
 		if (!isUsableGroup(group)) continue;
-		if (!best || group.score > (best.score ?? -Infinity)) best = group;
+		if (!best || group.rank < (best.rank ?? Number.POSITIVE_INFINITY)) best = group;
 	}
 	return best;
 }
@@ -226,16 +254,24 @@ export function buildRecommendationCardFromRevealGroup(
 	group: RevealGroupLike,
 	logosByAdministradora?: ReadonlyMap<string, string>,
 	requestedCreditValue?: number,
+	/** FIX-334: ver `coerceRecommendationPayload` — sem isso, o card sai sem
+	 * score/scoreBreakdown (degradação graciosa, não quebra o fluxo). */
+	scoringInput?: ScoringInput,
 ): Record<string, unknown> {
 	const input: Record<string, unknown> = {
 		id: group.id,
 		administradora: group.administradora,
 		category: group.category,
-		score: group.score,
-		scoreBreakdown: group.scoreBreakdown,
 	};
 	const index: RevealGroupIndex = new Map([[group.id, group]]);
-	return coerceRecommendationPayload(input, index, logosByAdministradora, requestedCreditValue);
+	return coerceRecommendationPayload(
+		input,
+		index,
+		logosByAdministradora,
+		requestedCreditValue,
+		undefined,
+		scoringInput,
+	);
 }
 
 /** FIX-290: quantos grupos REAIS (não o shape de erro) estão indexados neste

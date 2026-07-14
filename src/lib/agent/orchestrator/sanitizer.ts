@@ -125,6 +125,29 @@ export function isTaxaContemplacaoClaim(segment: string): boolean {
 	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-334 (rodada 2, veredito Sonnet — dossiê imóvel, "Você tem a Itaú em
+// destaque com score de 73%"): regressão contra decisão de produto já
+// registrada (FIX-7, `score-label.ts`) — o card NUNCA mostra o % numérico de
+// score, só o rótulo qualitativo ("boa compatibilidade"), porque "% numérico
+// baixo mina a confiança". `executeRecommendGroups` parou de mandar o score
+// cru pro modelo (ai-sdk.ts, só `scoreLabel`), mas essa é a barreira em CÓDIGO
+// (Lei 4) — se o modelo inventar/lembrar um percentual mesmo assim, o
+// segmento nunca chega ao usuário. Checa CO-OCORRÊNCIA na mesma sentença
+// (já isolada por `splitSegments`) em vez de distância fixa de caracteres —
+// "score"/"aderência"/"compatibilidade" + qualquer "N%" na mesma frase é
+// sinal forte o bastante (falso positivo aceitável, mesmo padrão de
+// conservadorismo do FIX-243/249 acima).
+const SCORE_WORD_PATTERN = /\b(score|ader[êe]ncia|compatibilidade)\b/i;
+const PERCENTAGE_PATTERN = /\d{1,3}\s*%/;
+
+/** Um segmento cita score/aderência/compatibilidade como PERCENTUAL numérico
+ * (proibido — FIX-7/FIX-334) — não pode virar bolha. */
+export function isScorePercentageClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return SCORE_WORD_PATTERN.test(s) && PERCENTAGE_PATTERN.test(s);
+}
+
 // FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
 // "brother". "carro-problema" mira o COMPOSTO pejorativo (não a menção neutra
 // de "problema no carro"); "na sua cabeça" mira a expressão de gíria completa
@@ -355,8 +378,9 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
- * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333).
- * Todos são dropados antes de virar mensagem. */
+ * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333),
+ * score/aderência em percentual numérico (FIX-334). Todos são dropados antes
+ * de virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -368,7 +392,8 @@ function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): bo
 		isProactiveCallbackClaim(segment) ||
 		isMechanismNarrationClaim(segment) ||
 		isFabricatedStateSegment(segment, ctx) ||
-		isPrematureTopOfferClaim(segment, ctx)
+		isPrematureTopOfferClaim(segment, ctx) ||
+		isScorePercentageClaim(segment)
 	);
 }
 

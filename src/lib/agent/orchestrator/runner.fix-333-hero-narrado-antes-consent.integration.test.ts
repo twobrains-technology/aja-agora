@@ -76,19 +76,11 @@ vi.mock("@/lib/agent/agents", () => {
 						toolName: "recommend_groups",
 						toolCallId: "tc-recommend",
 						output: {
+							// FIX-334: recommend_groups não devolve mais score/scoreBreakdown
+							// crus pro modelo — rank (posição ordinal) + scoreLabel qualitativo.
 							recommendations: [
-								{
-									...GROUP_TOP,
-									score: 0.73,
-									scoreBreakdown: { monthlyFit: 0.7, contemplation: 0.8, adminFee: 0.75, termMatch: 0.68 },
-									alternativa: false,
-								},
-								{
-									...GROUP_OTHER,
-									score: 0.6,
-									scoreBreakdown: { monthlyFit: 0.6, contemplation: 0.55, adminFee: 0.65, termMatch: 0.6 },
-									alternativa: true,
-								},
+								{ ...GROUP_TOP, rank: 0, scoreLabel: "Boa compatibilidade", alternativa: false },
+								{ ...GROUP_OTHER, rank: 1, scoreLabel: "Compatível com seu perfil", alternativa: true },
 							],
 							total: 2,
 							expansionUsed: false,
@@ -108,8 +100,6 @@ vi.mock("@/lib/agent/agents", () => {
 							creditValue: GROUP_TOP.creditValue,
 							monthlyPayment: GROUP_TOP.monthlyPayment,
 							termMonths: GROUP_TOP.termMonths,
-							score: 0.73,
-							scoreBreakdown: { monthlyFit: 0.7, contemplation: 0.8, adminFee: 0.75, termMatch: 0.68 },
 						},
 						toolCallId: "tc-recommendation",
 					};

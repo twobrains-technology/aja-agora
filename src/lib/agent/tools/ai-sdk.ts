@@ -22,6 +22,7 @@ import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
+import { recommendationFitLabel } from "@/lib/consorcio/score-label";
 import { compareWithFinancing } from "@/lib/finance/pmt";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import {
@@ -149,7 +150,12 @@ export const recommendationSchema = z.object({
 	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
 	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
 	// real (>0). A LLM não digita mais número de contemplação — Lei 3/4.
-	score: z.number().min(0).max(1).describe("Score de compatibilidade 0-1"),
+	// FIX-334: `score`/`scoreBreakdown` ficaram OPCIONAIS — o modelo não recebe mais
+	// o número cru no tool-result de recommend_groups (só `scoreLabel`, qualitativo),
+	// então não tem de onde copiar um valor real aqui. Nunca foram lidos deste input
+	// de qualquer forma: `coerceRecommendationPayload` sempre RECALCULA score/
+	// scoreBreakdown a partir do grupo real (scoreGroup), nunca do que a LLM digita.
+	score: z.number().min(0).max(1).optional().describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
 	scoreBreakdown: z
 		.object({
 			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
@@ -157,7 +163,8 @@ export const recommendationSchema = z.object({
 			adminFee: z.number().describe("Score de taxa de administracao 0-1"),
 			termMatch: z.number().describe("Score de adequacao ao prazo 0-1"),
 		})
-		.describe("Detalhamento do score por fator"),
+		.optional()
+		.describe("Detalhamento do score por fator (nao usado — ignorado pelo servidor)"),
 });
 
 // FIX-228 (docs/02-cards-novos.md CARD 1) — input mínimo: a LLM só escolhe o
@@ -587,11 +594,19 @@ async function executeRecommendGroups(
 	// Re-anota alternativa flag no resultado ranqueado (rankGroups preserva grupos).
 	const altById = new Map(fallbackResult.groups.map((g) => [g.id, g.alternativa]));
 	return {
-		recommendations: ranked.map((r) => ({
+		recommendations: ranked.map((r, i) => ({
 			// FIX-23: dieta — `totalParticipants` morto fora do tool-result.
 			...toModelGroupSummary(r.group),
-			score: r.score,
-			scoreBreakdown: r.factors,
+			// FIX-334 (rodada 2, veredito Sonnet — "score de 73%" na fala): o score
+			// CRU (0-1) e o breakdown por fator NÃO saem mais pro modelo — só o
+			// rótulo qualitativo (mesma `recommendationFitLabel` do card, FIX-7). O
+			// card em si não perde nada: `coerceRecommendationPayload` RECALCULA
+			// score/scoreBreakdown a partir do grupo real (`scoreGroup`), nunca do
+			// que o modelo ecoou de volta. `rank` (posição ordinal, 0=melhor)
+			// substitui o score cru como sinal de "é o top-1" pro código server-side
+			// (pickBestRankedGroup) — seguro de expor, não é um número de "score".
+			rank: i,
+			scoreLabel: recommendationFitLabel(r.score, r.factors.monthlyFit),
 			alternativa: altById.get(r.group.id) ?? false,
 		})),
 		total: ranked.length,
@@ -691,7 +706,10 @@ export const consorcioTools = {
 			"Apresenta a recomendacao final de consorcio com score de compatibilidade e botao de acao. Use apos chamar recommend_groups quando voce identificar o melhor grupo para o usuario.",
 		inputSchema: recommendationSchema,
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
-			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
+			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
+			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	}),
 
@@ -1228,7 +1246,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			});
 			if (!verdict.allow) return verdict.directive;
 			await markShown("recommendation_card", args);
-			return `[Recomendacao apresentada: ${args.administradora} - ${args.category} - Score ${(args.score * 100).toFixed(0)}%]`;
+			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
+			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
+			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	});
 

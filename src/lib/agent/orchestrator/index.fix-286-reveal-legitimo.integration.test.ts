@@ -63,13 +63,11 @@ vi.mock("@/lib/agent/agents", () => {
 							recommendations: [
 								{
 									...REAL_GROUP,
-									score: 0.91,
-									scoreBreakdown: {
-										monthlyFit: 0.9,
-										contemplation: 0.85,
-										adminFee: 0.95,
-										termMatch: 0.88,
-									},
+									// FIX-334: recommend_groups não devolve mais score/scoreBreakdown
+									// crus pro modelo — rank (posição ordinal) é o sinal que
+									// pickBestRankedGroup usa pra achar o top-1.
+									rank: 0,
+									scoreLabel: "Ótima compatibilidade",
 									alternativa: false,
 								},
 							],
