@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { scoreGroup, type ScoringInput } from "../recommendation";
 import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
@@ -10,8 +11,11 @@ import {
 
 const readSource = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf-8");
 
-// Grupo real como sai de recommend_groups (toModelGroupSummary + score). O
-// availableSlots aqui é o monthlyAwardedQuotas coagido (FIX-192).
+const SCORING_INPUT: ScoringInput = { budget: 5500, desiredTermMonths: 72, creditMax: 300000 };
+
+// Grupo real como sai de recommend_groups (toModelGroupSummary + rank/
+// scoreLabel, FIX-334 — score cru NÃO sai mais pro modelo). O availableSlots
+// aqui é o monthlyAwardedQuotas coagido (FIX-192).
 function realGroup(over: Partial<Record<string, unknown>> = {}) {
 	return {
 		id: "6a3e6ceb419653c0a99932af",
@@ -24,8 +28,7 @@ function realGroup(over: Partial<Record<string, unknown>> = {}) {
 		availableSlots: 0,
 		contemplationRate: 0,
 		ofertaId: "49c2b15f-6f4a-42bc-b01e-f680cf7d553e",
-		score: 0.7237,
-		scoreBreakdown: { monthlyFit: 0.2, contemplation: 0.5, adminFee: 0.1, termMatch: 0.5 },
+		rank: 0,
 		...over,
 	};
 }
@@ -36,6 +39,9 @@ describe("FIX-191 — coerção server-side do recommendation_card (hero)", () =
 		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
 
 		// A LLM digitou um payload fabricado (o bug real: 36/mês, score inflado, parcela errada).
+		// FIX-334: score/scoreBreakdown nem chegam mais no input da LLM (schema
+		// ficou opcional) — mas mesmo se algum caminho legado ainda os enviasse,
+		// seguem 100% ignorados (a coerção RECALCULA a partir do grupo real).
 		const llmInput = {
 			id: "6a3e6ceb419653c0a99932af",
 			administradora: "BANCO DO BRASIL",
@@ -59,11 +65,50 @@ describe("FIX-191 — coerção server-side do recommendation_card (hero)", () =
 		expect(out.creditValue).toBe(300000);
 		expect(out.monthlyPayment).toBe(5404.2);
 		expect(out.termMonths).toBe(71);
-		expect(out.score).toBe(0.7237);
+		// FIX-334: sem `scoringInput`, o score sai OMITIDO (nunca o 0.99 fabricado
+		// pela LLM) — degradação graciosa do caminho legado.
+		expect(out.score).toBeUndefined();
+		expect(out.scoreBreakdown).toBeUndefined();
 		// CONTRATO com bloco-b: groupId/quotaId/ofertaId presentes e reais.
 		expect(out.groupId).toBe("6a3e6ceb419653c0a99932af");
 		expect(out.quotaId).toBe("6a3e6ceb419653c0a99932af");
 		expect(out.ofertaId).toBe("49c2b15f-6f4a-42bc-b01e-f680cf7d553e");
+	});
+
+	// FIX-334: com `scoringInput`, o hero recalcula score/scoreBreakdown a partir
+	// do GRUPO REAL (nunca do que a LLM ecoou — ela nem recebe mais o número).
+	it("§FIX-334 — com scoringInput, score/scoreBreakdown são RECALCULADOS do grupo real (nunca ecoados da LLM)", () => {
+		const index: RevealGroupIndex = new Map();
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup()] });
+
+		const out = coerceRecommendationPayload(
+			{ id: realGroup().id, score: 0.99, scoreBreakdown: { monthlyFit: 1, contemplation: 1, adminFee: 1, termMatch: 1 } },
+			index,
+			undefined,
+			undefined,
+			undefined,
+			SCORING_INPUT,
+		);
+
+		const expected = scoreGroup(
+			{
+				id: realGroup().id as string,
+				administradora: "BANCO DO BRASIL",
+				category: "auto",
+				creditValue: 300000,
+				monthlyPayment: 5404.2,
+				adminFeePercent: 24.9,
+				termMonths: 71,
+				totalParticipants: 0,
+				availableSlots: 0,
+				contemplationRate: 0,
+			},
+			SCORING_INPUT,
+		);
+		expect(out.score).toBe(expected.score);
+		expect(out.scoreBreakdown).toEqual(expected.factors);
+		// Nunca o 0.99 fabricado pela LLM.
+		expect(out.score).not.toBe(0.99);
 	});
 
 	it("§7.1 — availableSlots ausente/0 → nenhuma linha de contemplação (contempladosMes omitido)", () => {
@@ -194,11 +239,11 @@ describe("FIX-191 — coerção do seletor (comparison_table) + tipoOferta invis
 });
 
 describe("FIX-191 — indexRevealGroups: recommend sobrescreve search; ignora shape de erro", () => {
-	it("recommend_groups sobrescreve a entrada do search_groups (traz score)", () => {
+	it("recommend_groups sobrescreve a entrada do search_groups (traz rank)", () => {
 		const index: RevealGroupIndex = new Map();
-		indexRevealGroups(index, "search_groups", { groups: [realGroup({ score: undefined })] });
-		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup({ score: 0.9 })] });
-		expect(index.get(realGroup().id)?.score).toBe(0.9);
+		indexRevealGroups(index, "search_groups", { groups: [realGroup({ rank: undefined })] });
+		indexRevealGroups(index, "recommend_groups", { recommendations: [realGroup({ rank: 0 })] });
+		expect(index.get(realGroup().id)?.rank).toBe(0);
 	});
 
 	it("tool sem contexto ({error}) → no-op (não quebra)", () => {

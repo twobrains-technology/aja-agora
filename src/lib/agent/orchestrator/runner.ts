@@ -15,6 +15,7 @@ import {
 	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
+import type { ScoringInput } from "@/lib/agent/recommendation";
 import { renderPersonaExamplesBlock } from "@/lib/agent/system-prompt";
 import { isDiscoveryFailedResult, PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import {
@@ -49,6 +50,7 @@ import {
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
 	indexRevealGroups,
+	pickBestRankedGroup,
 	type RevealGroupIndex,
 	usableRevealGroupCount,
 } from "./recommendation-payload";
@@ -56,6 +58,7 @@ import {
 	EphemeralTextFilter,
 	joinSeparator,
 	normalizeGluedSentences,
+	type StateVerificationContext,
 	stripProcessPreamble,
 } from "./sanitizer";
 import { coerceScarcityPayload } from "./scarcity-payload";
@@ -169,6 +172,21 @@ export function allowGateWithArtifacts(gate: Gate, artifactTypes: string[]): boo
 function artifactTypeFor(toolName: string): ArtifactType {
 	const short = toolName.replace("present_", "");
 	return short as ArtifactType;
+}
+
+/** FIX-334: mesmos parâmetros que o directive de busca passava pro
+ * `recommend_groups` (budget/desiredTermMonths/creditMax/hasLance) — pra
+ * `coerceRecommendationPayload` RECALCULAR score/scoreBreakdown do hero a
+ * partir do grupo real, já que o modelo não recebe mais o número cru.
+ * Exportada — também usada pelo fallback de tool-error (FIX-286, index.ts). */
+export function scoringInputFromMeta(meta: ConversationMetadata): ScoringInput {
+	const q = meta.qualifyAnswers ?? {};
+	return {
+		budget: q.monthlyBudget ?? 0,
+		desiredTermMonths: q.prazoMeses ?? 0,
+		creditMax: q.creditMax,
+		hasLance: q.hasLance === "yes",
+	};
 }
 
 /** Âncora de oferta do turno — MESMA busca usada pelo `contemplation_dial`
@@ -443,10 +461,23 @@ export async function* runAgentTurn(args: {
 	// DESAMARRA (2026-07-13): o modelo fez a pergunta do gate com as palavras dele
 	// neste turno → o card não repete a canônica (só mostra o input).
 	let modelAskedGateQuestion = false;
-	const ephemeralFilter = new EphemeralTextFilter(() => ({
-		hasReceivedDocuments,
-		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-	}));
+	// FIX-333: `pendingTopOffer` reflete o grupo de maior score JÁ INDEXADO neste
+	// turno (revealGroupsById, populado a partir do tool-result REAL de
+	// recommend_groups/search_groups — nunca a narrativa do LLM). Enquanto
+	// `reco-consent` não foi respondido, o sanitizer usa isso pra dropar
+	// qualquer menção à administradora/parcela do top-1 (ver sanitizer.ts).
+	const stateVerificationContext = (): StateVerificationContext => {
+		const topOffer = pickBestRankedGroup(revealGroupsById);
+		return {
+			hasReceivedDocuments,
+			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+			recoConsentPending: meta.recoConsentAnswered !== true,
+			pendingTopOffer: topOffer
+				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
+				: null,
+		};
+	};
+	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
 	const composeClean = (raw: string, blockSep = ""): string => {
@@ -670,6 +701,7 @@ export async function* runAgentTurn(args: {
 									await getAdministradoraLogos(),
 									requestedCreditValue,
 									await getKnownCreditValues(),
+									scoringInputFromMeta(meta),
 								);
 							}
 							if (artifactType === "simulation_result") {
@@ -794,6 +826,7 @@ export async function* runAgentTurn(args: {
 								await getAdministradoraLogos(),
 								requestedCreditValue,
 								await getKnownCreditValues(),
+								scoringInputFromMeta(meta),
 							);
 						}
 						if (artifactType === "comparison_table") {
@@ -1039,10 +1072,7 @@ export async function* runAgentTurn(args: {
 	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
 	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
 	fullResponse = normalizeGluedSentences(
-		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
-			hasReceivedDocuments,
-			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
-		}),
+		stripProcessPreamble(collapseEchoedSegments(fullResponse), stateVerificationContext()),
 	).replace(/^\s+/, "");
 
 	try {

@@ -47,7 +47,7 @@ import {
 	pickBestRankedGroup,
 } from "./recommendation-payload";
 import { decideRouting, resolveIntraCategorySwitch } from "./routing";
-import { runAgentTurn } from "./runner";
+import { runAgentTurn, scoringInputFromMeta } from "./runner";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
@@ -822,6 +822,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					bestGroup,
 					logos,
 					requestedCreditValue,
+					scoringInputFromMeta(meta),
 				);
 				const intro = buildFirstRevealCardIntro({ name: knownName });
 				yield { type: "text-delta", text: intro };

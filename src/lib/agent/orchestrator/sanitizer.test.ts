@@ -23,6 +23,7 @@ import {
 	isPrematureReservationClaim,
 	isProactiveCallbackClaim,
 	isProcessPreamble,
+	isScorePercentageClaim,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
 	joinSeparator,
@@ -68,6 +69,44 @@ describe("FIX-188 — isProcessPreamble reconhece preâmbulo de processo", () =>
 	it("segmento vazio não é preâmbulo", () => {
 		expect(isProcessPreamble("")).toBe(false);
 		expect(isProcessPreamble("   ")).toBe(false);
+	});
+});
+
+describe("FIX-335 — 'Agora vou <ação de produto>' é anúncio de passo (log de pipeline), entra na família de isProcessPreamble", () => {
+	// Frases EXATAS do veredito (rodada 1, 4/4 dossiês web) que soam como log de
+	// execução em vez de gente vendendo.
+	const ANUNCIOS_DE_PASSO = [
+		"Agora vou recomendar a melhor opção pra você:",
+		"Agora vou te mostrar a mais adequada pro seu perfil:",
+		"Agora deixa eu te mostrar como funciona em detalhes:",
+		"Vou recomendar a mais adequada pro seu perfil:",
+		"Agora deixa eu aprofundar os números dessa opção:",
+		"Vou destacar a mais adequada pro seu perfil agora:",
+		"Agora dá uma olhada no detalhe dessa opção:",
+		"Agora vou te recomendar a mais adequada:",
+		"Agora vou simular a melhor opção pra você:",
+		"Agora vou detalhar como fica sua simulação:",
+		"Agora deixa eu aprofundar a simulação com o cenário completo, incluindo lance:",
+	];
+
+	it("isProcessPreamble classifica como preâmbulo todos os anúncios de passo do veredito", () => {
+		for (const p of ANUNCIOS_DE_PASSO) {
+			expect(isProcessPreamble(p), `deveria dropar: "${p}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega narração legítima com conteúdo real (entidade/número nomeados)", () => {
+		expect(isProcessPreamble("Vou simular a Rodobens com R$ 900 mil:")).toBe(false);
+		expect(isProcessPreamble("Essa é a que eu indicaria pra alguém da minha família:")).toBe(false);
+		expect(isProcessPreamble("A parcela fica em R$ 2.778,34 por mês.")).toBe(false);
+	});
+
+	it("stripProcessPreamble remove o anúncio de passo mas preserva o resto do texto", () => {
+		const input =
+			"Encontramos 3 boas opções pra você! Agora vou te recomendar a mais adequada: essa é ótima pro seu perfil.";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("agora vou te recomendar");
+		expect(out).toContain("Encontramos 3 boas opções pra você!");
 	});
 });
 
@@ -322,6 +361,36 @@ describe("FIX-243 — 'taxa de contemplação' é PROIBIDA na fala (campo sem se
 			"Boa! A ITAÚ se destaca pela boa taxa de contemplação e uma taxa de administração de 13,46%. Vamos seguir?";
 		const out = stripProcessPreamble(input);
 		expect(out.toLowerCase()).not.toContain("taxa de contemplação");
+		expect(out).toContain("Boa!");
+	});
+});
+
+describe("FIX-334 — score/aderência em percentual é PROIBIDO na fala (regressão contra score-label.ts)", () => {
+	const SCORE_PERCENTAGE_SEGMENTS = [
+		"Você tem a Itaú em destaque com score de 73%.",
+		"Essa oferta tem 73% de aderência ao seu perfil.",
+		"O score de compatibilidade é 91%.",
+		"A aderência dessa oferta é de 60%.",
+		"Essa opção tem 85% de compatibilidade com o que você pediu.",
+	];
+
+	it("isScorePercentageClaim pega as frases que citam score/aderência/compatibilidade em %", () => {
+		for (const s of SCORE_PERCENTAGE_SEGMENTS) {
+			expect(isScorePercentageClaim(s), `deveria dropar: "${s}"`).toBe(true);
+		}
+	});
+
+	it("NÃO pega copy legítima (rótulo qualitativo, sem percentual de score)", () => {
+		expect(isScorePercentageClaim("Essa opção encaixa muito bem pra você.")).toBe(false);
+		expect(isScorePercentageClaim("É uma boa opção pro seu perfil.")).toBe(false);
+		expect(isScorePercentageClaim("A taxa de administração é de 13,46%.")).toBe(false);
+		expect(isScorePercentageClaim("Contempla 8 pessoas por mês.")).toBe(false);
+	});
+
+	it("stripProcessPreamble também remove o segmento de score percentual", () => {
+		const input = "Boa! Você tem a Itaú em destaque com score de 73%. Vamos seguir?";
+		const out = stripProcessPreamble(input);
+		expect(out.toLowerCase()).not.toContain("score de 73%");
 		expect(out).toContain("Boa!");
 	});
 });

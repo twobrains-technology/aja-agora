@@ -108,16 +108,14 @@ describe("FIX-23 — dieta dos tool-results de descoberta (shape enxuto pro mode
 		);
 		assertNoRawBeviLeak(r, "recommend_groups[0]");
 		// Campos essenciais do card de recomendação preservados.
-		for (const k of [
-			"id",
-			"administradora",
-			"creditValue",
-			"monthlyPayment",
-			"score",
-			"scoreBreakdown",
-		]) {
+		for (const k of ["id", "administradora", "creditValue", "monthlyPayment", "rank", "scoreLabel"]) {
 			expect(r, `recomendação perdeu campo essencial '${k}'`).toHaveProperty(k);
 		}
+		// FIX-334: score/scoreBreakdown crus (0-1) NÃO saem mais pro modelo — só
+		// rank (posição ordinal) e scoreLabel (qualitativo). O card recalcula os
+		// números reais server-side (coerceRecommendationPayload/scoreGroup).
+		expect(r, "score cru não pode vazar pro modelo").not.toHaveProperty("score");
+		expect(r, "scoreBreakdown cru não pode vazar pro modelo").not.toHaveProperty("scoreBreakdown");
 	});
 
 	it("simulate_quota: output enxuto e sem campos crus (mas mantém o breakdown que o card coage)", async () => {

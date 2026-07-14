@@ -18,14 +18,31 @@
  */
 
 // Ações de processo ("deixa eu buscar", "vou puxar", "preciso primeiro buscar",
-// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" — o prompt endossa
-// narrações legítimas com conteúdo ("Vou simular a Rodobens com R$ 900k:") e
-// dropá-las seria falso-positivo. Conservador de propósito.
+// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" sozinhos — o prompt
+// endossa narrações legítimas com conteúdo ("Vou simular a Rodobens com R$
+// 900k:") e dropá-las seria falso-positivo. Conservador de propósito.
 const PROCESS_ACTION_PATTERNS: RegExp[] = [
 	/\bdeixa\s+eu\s+(buscar|puxar|procurar|pegar|consultar|usar)\b/i,
 	/\bvou\s+(buscar|puxar|procurar|consultar)\b/i,
 	/\bvou\s+usar\s+a\s+ferramenta\b/i,
 	/\bpreciso\s+(primeiro\s+)?(buscar|puxar|procurar|consultar)\b/i,
+];
+
+// FIX-335 (rodada 2, veredito Sonnet — 4/4 dossiês web, "soam como log de
+// pipeline"): o prompt já proíbe narrar MECÂNICA de ferramenta ("vou
+// buscar"), mas "Agora vou <ação de produto>" escapa — não é mecânica, é
+// ANÚNCIO DE PASSO ("Agora vou te recomendar a mais adequada:", "Agora vou
+// detalhar como fica sua simulação:"). recomendar/destacar/detalhar/
+// aprofundar como preâmbulo "(agora) vou/deixa eu" quase nunca carregam
+// conteúdo por si (o modelo deveria só FAZER — dizer a recomendação direto,
+// não anunciar que vai recomendar). mostrar/simular são mais arriscados
+// (usados em narração legítima com entidade real, ver comentário acima) —
+// só entram quando seguidos de um objeto VAGO ("a mais adequada", "a melhor
+// opção", "como funciona em detalhes"), nunca um nome/número concreto.
+const PRODUCT_STEP_ANNOUNCEMENT_PATTERNS: RegExp[] = [
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(recomendar|destacar|detalhar|aprofundar)\b/i,
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|simular)\s+(a\s+mais\s+adequada|a\s+melhor\s+op[çc][ãa]o|como\s+funciona\s+em\s+detalhes)\b/i,
+	/\bagora\s+d[áa]\s+uma\s+olhada\s+no\s+detalhe\b/i,
 ];
 
 // Fillers de processo puros ("um segundo", "só um instante"). Ancorados no
@@ -37,6 +54,7 @@ const PROCESS_FILLER_PATTERNS: RegExp[] = [
 export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
 	...PROCESS_ACTION_PATTERNS,
 	...PROCESS_FILLER_PATTERNS,
+	...PRODUCT_STEP_ANNOUNCEMENT_PATTERNS,
 ];
 
 /** Um segmento (frase) é preâmbulo de processo (efêmero) — não pode virar bolha. */
@@ -123,6 +141,29 @@ export function isTaxaContemplacaoClaim(segment: string): boolean {
 	const s = segment.trim();
 	if (!s) return false;
 	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
+}
+
+// FIX-334 (rodada 2, veredito Sonnet — dossiê imóvel, "Você tem a Itaú em
+// destaque com score de 73%"): regressão contra decisão de produto já
+// registrada (FIX-7, `score-label.ts`) — o card NUNCA mostra o % numérico de
+// score, só o rótulo qualitativo ("boa compatibilidade"), porque "% numérico
+// baixo mina a confiança". `executeRecommendGroups` parou de mandar o score
+// cru pro modelo (ai-sdk.ts, só `scoreLabel`), mas essa é a barreira em CÓDIGO
+// (Lei 4) — se o modelo inventar/lembrar um percentual mesmo assim, o
+// segmento nunca chega ao usuário. Checa CO-OCORRÊNCIA na mesma sentença
+// (já isolada por `splitSegments`) em vez de distância fixa de caracteres —
+// "score"/"aderência"/"compatibilidade" + qualquer "N%" na mesma frase é
+// sinal forte o bastante (falso positivo aceitável, mesmo padrão de
+// conservadorismo do FIX-243/249 acima).
+const SCORE_WORD_PATTERN = /\b(score|ader[êe]ncia|compatibilidade)\b/i;
+const PERCENTAGE_PATTERN = /\d{1,3}\s*%/;
+
+/** Um segmento cita score/aderência/compatibilidade como PERCENTUAL numérico
+ * (proibido — FIX-7/FIX-334) — não pode virar bolha. */
+export function isScorePercentageClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return SCORE_WORD_PATTERN.test(s) && PERCENTAGE_PATTERN.test(s);
 }
 
 // FIX-234 — léxico banido (docs/04-copy-fluxos.md): tom consultivo, não
@@ -293,6 +334,15 @@ export type StateVerificationContext = {
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
 	 * rodou neste turno até o ponto corrente do stream. */
 	hasSearchToolCall: boolean;
+	/** FIX-333 (rodada 2, veredito Sonnet rodada 1, loop-de-goal desamarra):
+	 * true enquanto o gate `reco-consent` não foi respondido
+	 * (`meta.recoConsentAnswered !== true`) — o hero (recommendation_card)
+	 * ainda está pendente e o usuário não pode ver de qual oferta se trata. */
+	recoConsentPending?: boolean;
+	/** A oferta top-1 (maior score) já indexada NESTE turno a partir do
+	 * tool-result real de `recommend_groups`/`search_groups` — nunca a
+	 * narrativa do LLM. `null`/ausente enquanto a busca ainda não resolveu. */
+	pendingTopOffer?: { administradora?: string; monthlyPayment?: number } | null;
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -304,11 +354,51 @@ function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContex
 	return false;
 }
 
+// FIX-333 (rodada 2, veredito Sonnet rodada 1 — 4/4 dossiês web): o guard
+// `hero-awaits-reco-consent` (artifact-guard.ts) suprime o CARD
+// (recommendation_card) enquanto `reco-consent` não foi respondido — mas o
+// MODELO já viu administradora/parcela/score do top-1 no tool-result de
+// `recommend_groups` (mesmo turno) e narra em texto livre ("Tá aí a ITAÚ em
+// destaque — parcela de R$ 3.549,75..."), teatro do consentimento: o usuário
+// já sabe da recomendação antes de "ver" o card ou dizer sim. Regra-no-prompt
+// ("seu texto deve introduzir, não comentar atributos específicos") já existe
+// em directives.ts e é ignorada 4/4 vezes — barreira real é código (Lei 1/4):
+// dropa qualquer segmento que cite a administradora ou o valor de parcela da
+// oferta AINDA pendente de consentimento, goste o modelo ou não.
+function formatMoneyVariants(value: number): string[] {
+	const rounded = Math.round(value * 100) / 100;
+	const [intPart, centsPart = "00"] = rounded.toFixed(2).split(".");
+	const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+	return [`${withThousands},${centsPart}`, `${intPart},${centsPart}`];
+}
+
+/** Um segmento cita a administradora ou o valor de parcela da oferta top-1
+ * ENQUANTO o consentimento (`reco-consent`) ainda está pendente — não pode
+ * virar bolha. Sem oferta pendente conhecida ou com consentimento já dado,
+ * nunca dropa (a comparison_table já mostra administradora+parcela de TODAS
+ * as opções por design — só o destaque/confirmação do top-1 é vedado aqui). */
+export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificationContext): boolean {
+	if (!ctx?.recoConsentPending) return false;
+	const offer = ctx.pendingTopOffer;
+	if (!offer) return false;
+	const s = segment;
+	if (offer.administradora) {
+		const escaped = offer.administradora.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		if (new RegExp(`\\b${escaped}\\b`, "i").test(s)) return true;
+	}
+	if (typeof offer.monthlyPayment === "number" && offer.monthlyPayment > 0) {
+		if (formatMoneyVariants(offer.monthlyPayment).some((v) => s.includes(v))) return true;
+	}
+	return false;
+}
+
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
  * (FIX-190), redução de prazo/reserva prematura/léxico banido (FIX-234),
  * taxa de contemplação (FIX-243), promessa de retorno proativo (FIX-249),
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
- * interno (FIX-283). Todos são dropados antes de virar mensagem. */
+ * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333),
+ * score/aderência em percentual numérico (FIX-334). Todos são dropados antes
+ * de virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return (
 		isProcessPreamble(segment) ||
@@ -319,7 +409,9 @@ function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): bo
 		isTaxaContemplacaoClaim(segment) ||
 		isProactiveCallbackClaim(segment) ||
 		isMechanismNarrationClaim(segment) ||
-		isFabricatedStateSegment(segment, ctx)
+		isFabricatedStateSegment(segment, ctx) ||
+		isPrematureTopOfferClaim(segment, ctx) ||
+		isScorePercentageClaim(segment)
 	);
 }
 
