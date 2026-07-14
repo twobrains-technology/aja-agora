@@ -18,14 +18,31 @@
  */
 
 // Ações de processo ("deixa eu buscar", "vou puxar", "preciso primeiro buscar",
-// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" — o prompt endossa
-// narrações legítimas com conteúdo ("Vou simular a Rodobens com R$ 900k:") e
-// dropá-las seria falso-positivo. Conservador de propósito.
+// "vou usar a ferramenta"). NÃO incluímos "simular"/"ver" sozinhos — o prompt
+// endossa narrações legítimas com conteúdo ("Vou simular a Rodobens com R$
+// 900k:") e dropá-las seria falso-positivo. Conservador de propósito.
 const PROCESS_ACTION_PATTERNS: RegExp[] = [
 	/\bdeixa\s+eu\s+(buscar|puxar|procurar|pegar|consultar|usar)\b/i,
 	/\bvou\s+(buscar|puxar|procurar|consultar)\b/i,
 	/\bvou\s+usar\s+a\s+ferramenta\b/i,
 	/\bpreciso\s+(primeiro\s+)?(buscar|puxar|procurar|consultar)\b/i,
+];
+
+// FIX-335 (rodada 2, veredito Sonnet — 4/4 dossiês web, "soam como log de
+// pipeline"): o prompt já proíbe narrar MECÂNICA de ferramenta ("vou
+// buscar"), mas "Agora vou <ação de produto>" escapa — não é mecânica, é
+// ANÚNCIO DE PASSO ("Agora vou te recomendar a mais adequada:", "Agora vou
+// detalhar como fica sua simulação:"). recomendar/destacar/detalhar/
+// aprofundar como preâmbulo "(agora) vou/deixa eu" quase nunca carregam
+// conteúdo por si (o modelo deveria só FAZER — dizer a recomendação direto,
+// não anunciar que vai recomendar). mostrar/simular são mais arriscados
+// (usados em narração legítima com entidade real, ver comentário acima) —
+// só entram quando seguidos de um objeto VAGO ("a mais adequada", "a melhor
+// opção", "como funciona em detalhes"), nunca um nome/número concreto.
+const PRODUCT_STEP_ANNOUNCEMENT_PATTERNS: RegExp[] = [
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(recomendar|destacar|detalhar|aprofundar)\b/i,
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|simular)\s+(a\s+mais\s+adequada|a\s+melhor\s+op[çc][ãa]o|como\s+funciona\s+em\s+detalhes)\b/i,
+	/\bagora\s+d[áa]\s+uma\s+olhada\s+no\s+detalhe\b/i,
 ];
 
 // Fillers de processo puros ("um segundo", "só um instante"). Ancorados no
@@ -37,6 +54,7 @@ const PROCESS_FILLER_PATTERNS: RegExp[] = [
 export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
 	...PROCESS_ACTION_PATTERNS,
 	...PROCESS_FILLER_PATTERNS,
+	...PRODUCT_STEP_ANNOUNCEMENT_PATTERNS,
 ];
 
 /** Um segmento (frase) é preâmbulo de processo (efêmero) — não pode virar bolha. */
