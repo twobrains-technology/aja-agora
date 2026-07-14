@@ -252,12 +252,26 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// turnArtifactTypes já trazia os artifacts emitidos ANTES neste turno
 	// (runner.ts) — só faltava uma regra que consumisse.
 	{
-		name: "dial-dup-intraturn",
+		// FIX-353 (rodada 6, servicos-web t15): a regra era só pro contemplation_dial,
+		// mas duplicar card é defeito para QUALQUER tipo. Ao vivo, a cascata de decisão
+		// saiu inteira em dobro —
+		//
+		//     CARDS: scarcity, decision_prompt, scarcity, decision_prompt
+		//
+		// e o turno seguinte, com o usuário dizendo "tá bom, quero fazer", virou "Acho
+		// que me perdi" + um LOOP de 3× "Deixa eu tentar de outro jeito". A jornada
+		// morreu ali.
+		//
+		// Causa: `dispatchDecisionCascade` tem DOIS pontos de chamada (pré e pós-modelo,
+		// index.ts) e o guard de idempotência lê `decisionDispatched` do BANCO — se os
+		// dois caminhos rodam no mesmo turno HTTP, a leitura acontece antes da escrita
+		// do outro e a cascata sai duas vezes. Esta é a rede intra-turno, em memória,
+		// que não depende do timing da persistência.
+		name: "card-dup-intraturn",
 		applies: ({ artifactType, turnArtifactTypes }) =>
-			artifactType === "contemplation_dial" &&
-			(turnArtifactTypes ?? []).includes("contemplation_dial"),
-		logLine: ({ conversationId }) =>
-			`[dial-dup-intraturn] guard: suprimindo contemplation_dial duplicado no mesmo turno (conv=${conversationId})`,
+			(turnArtifactTypes ?? []).includes(artifactType),
+		logLine: ({ artifactType, conversationId }) =>
+			`[card-dup-intraturn] guard: suprimindo ${artifactType} duplicado no mesmo turno (conv=${conversationId})`,
 	},
 	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): o
 	// print real mostrava um topic_picker com chips "a"/"b" no lugar do card

@@ -61,7 +61,7 @@ describe("FIX-20 — ordem EXPLÍCITA das regras (era semântica implícita dos 
 			"value-picker-order",
 			// FIX-260 (rodada 5, veredito Fable r4, R5): contemplation_dial duplicado
 			// no mesmo turno (2 tool-calls) — dedup intra-turno via turnArtifactTypes.
-			"dial-dup-intraturn",
+			"card-dup-intraturn",
 			// FIX-300: topic_picker no instante exato do gate decision (2ª linha,
 			// cobre a janela em que a fase ainda é "reveal" pro tool-policy).
 			"topic-picker-server-gate",
@@ -611,8 +611,8 @@ describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada n
 		);
 		expect(v.allow).toBe(false);
 		if (!v.allow) {
-			expect(v.rule).toBe("dial-dup-intraturn");
-			expect(v.logLine).toMatch(/dial-dup-intraturn/);
+			expect(v.rule).toBe("card-dup-intraturn");
+			expect(v.logLine).toMatch(/card-dup-intraturn/);
 		}
 	});
 
@@ -627,7 +627,11 @@ describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada n
 		expect(v.allow).toBe(true);
 	});
 
-	it("NÃO afeta outros artifacts mesmo repetidos no mesmo turno (regra escopada a contemplation_dial)", () => {
+	it("FIX-353: a regra passou a valer pra QUALQUER card repetido no mesmo turno (não só o dial)", () => {
+		// Antes era escopada ao contemplation_dial. Ao vivo (rodada 6, servicos-web
+		// t15) a cascata de decisão saiu em dobro — "scarcity, decision_prompt,
+		// scarcity, decision_prompt" — e a jornada travou num loop. Duplicar card é
+		// defeito para qualquer tipo.
 		const v = evaluateArtifactGuards(
 			makeInput({
 				meta: POST_REVEAL,
@@ -635,7 +639,8 @@ describe("FIX-260 — regra dial-dup-intraturn (contemplation_dial 2ª chamada n
 				turnArtifactTypes: ["scarcity"],
 			}),
 		);
-		expect(v.allow).toBe(true);
+		expect(v.allow).toBe(false);
+		expect(v.rule).toBe("card-dup-intraturn");
 	});
 });
 
