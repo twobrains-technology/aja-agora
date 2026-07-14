@@ -186,6 +186,16 @@ async function* dispatchDecisionCascade(args: {
 			contactName: knownName,
 			skipAnalyzer: true,
 			skipLeadCollection: true,
+			// FIX-343 (rodada 2, veredito Sonnet 3/10, D2=2/10): este sub-turno é
+			// PURAMENTE narrativo (o card sai server-side via emitServerCard logo
+			// abaixo) — o directive só proibia tool-call em TEXTO de prompt ("NÃO
+			// chame present_scarcity nem NENHUMA outra tool"), regra-no-prompt que
+			// o modelo por vezes desobedecia (tool-error → fallback enlatado vazando
+			// no meio da cascata, achado ao vivo em moto-web/auto-whatsapp/moto-
+			// whatsapp). Mesma correção já provada pelo FIX-319 no caminho irmão
+			// (pipeClosingCeremony, route.ts) — converte o invariante em código
+			// (Lei 4): "none" barra qualquer tool-call em nível de API.
+			forceToolChoice: "none",
 		});
 		const scarcityCard = buildScarcityCard(refreshed);
 		if (scarcityCard) {
@@ -215,6 +225,12 @@ async function* dispatchDecisionCascade(args: {
 		contactName: knownName,
 		skipAnalyzer: true,
 		skipLeadCollection: true,
+		// FIX-343: mesmo directive PURAMENTE narrativo do bloco acima — o card
+		// (two_paths OU decision_prompt) sai server-side logo abaixo, nunca por
+		// tool-call do LLM. "NÃO chame present_two_paths/present_decision_prompt
+		// nem NENHUMA tool" virava regra-no-prompt desobedecível; agora é
+		// impossível em nível de API.
+		forceToolChoice: "none",
 	});
 	if (isSoParcela) {
 		yield* emitServerCard({
@@ -447,6 +463,10 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					contactName: knownName,
 					skipAnalyzer: true,
 					skipLeadCollection: true,
+					// FIX-343: sub-turno narrativo — o hero sai server-side logo
+					// abaixo (emitServerCard), nunca por present_recommendation_card
+					// chamado pelo LLM. Mesma correção do dispatchDecisionCascade acima.
+					forceToolChoice: "none",
 				});
 				yield* emitServerCard({
 					conversationId,
@@ -1010,6 +1030,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				skipAnalyzer: true,
 				skipLeadCollection: true,
 				suppressGateEvent: true,
+				// FIX-343: sub-turno narrativo — o card sai server-side logo abaixo
+				// (emitServerCard), nunca por present_whatsapp_optin chamado pelo LLM
+				// (aliás fora do toolset em toda fase desde o FIX-280). Mesma correção
+				// do dispatchDecisionCascade acima.
+				forceToolChoice: "none",
 			});
 			yield* emitServerCard({
 				conversationId,

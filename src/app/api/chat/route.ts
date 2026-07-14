@@ -951,7 +951,14 @@ export async function POST(req: NextRequest) {
 								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 								// (closing-presentation.ts — módulo único produção+eval).
 								await pipeAndSaveClosingItems(
-									closingPresentation(res, { whatsappChannel: fechoPedirOi.channel }),
+									// FIX-344: canal ATUAL é web — o beat "te mandei mensagem no
+									// WhatsApp, responde com um oi" segue fazendo sentido aqui
+									// (é o único canal em que o cliente de fato precisa ir até o
+									// WhatsApp pra continuar).
+									closingPresentation(res, {
+										whatsappChannel: fechoPedirOi.channel,
+										channel: "web",
+									}),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
