@@ -112,7 +112,30 @@ async function gateInteractive(
 // card interativo neste MVP — a recoreografia do reveal focou no canal web)
 // — a pergunta sai como texto e a resposta livre resolve via detectYesNoText
 // (orchestrator/index.ts), mesmo mecanismo do lance-embutido/simulator-offer.
-const WHATSAPP_TEXT_GATES = new Set<Gate>(["credit", "identify", "reco-consent"]);
+// `desire` entrou em 2026-07-14 — BUG DE PARIDADE achado no QA ao vivo: ele não
+// tem interactive e não estava aqui, então a pergunta ("Qual moto você tem em
+// mente?") simplesmente NÃO era entregue no WhatsApp. O agente respondia "Prazer,
+// Mario." e parava — turno morto, usuário sem saber o que dizer — enquanto o
+// directive de primeiro contato ainda promete que "o sistema pergunta o próximo
+// passo em seguida". Na web a pergunta saía normal. Travado em `paridade-gates.test.ts`.
+export const WHATSAPP_TEXT_GATES = new Set<Gate>([
+	"desire",
+	"credit",
+	"identify",
+	"reco-consent",
+]);
+
+/** Gates entregues no WhatsApp como BOTÃO/lista (espelha os `case` de
+ * `gateInteractive` que devolvem payload). Existe pra que o teste de paridade
+ * consiga enxergar a cobertura real do canal. */
+export const WHATSAPP_INTERACTIVE_GATES = new Set<Gate>([
+	"experience",
+	"timeframe",
+	"lance",
+	"lance-value",
+	"lance-embutido",
+	"simulator-offer",
+]);
 async function gateTextPrompt(
 	gate: Gate,
 	conversationId: string,

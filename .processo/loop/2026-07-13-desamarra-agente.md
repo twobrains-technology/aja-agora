@@ -111,8 +111,38 @@ Ao voltar pra develop: **deletar workspaces vazias**.
 - **QA de WhatsApp não roda em prod** (simulador é 404 por design) — usar DEV/local.
 - Gate de merge da onda = `pnpm test:unit` (tsc whole-repo já é vermelho na develop por dívida).
 
+## Ambiente do loop (resolvido 2026-07-14)
+
+A `ANTHROPIC_API_KEY` do `.env.local` está com a **cota do workspace estourada** (volta 01/08) —
+sem LLM não há loop. Destravado **sem VPN**:
+
+1. Túnel **SSM port-forward** pro EC2 que hospeda o LiteLLM (`i-08d456699dab4222c`, porta 4000):
+   `aws ssm start-session --target <ec2> --document-name AWS-StartPortForwardingSession …`
+2. A virtual key é a **`LITELLM_API_KEY`** (não a `ANTHROPIC_API_KEY`) — vive em
+   `tb/prod/aja-agora/env`. Budget próprio, separado do workspace estourado.
+3. `.env.local`: `LITELLM_BASE_URL=http://host.docker.internal:4000` + `LITELLM_API_KEY=…`
+   (o container alcança o túnel do host).
+
+⚠️ **A Bevi de homologação usa um único proposal-hash** (`BEVI_SELFCONTRACT_HASH`) — duas jornadas
+**simultâneas** dão `write conflict` e produzem falha FALSA. **Coletores rodam em SÉRIE.**
+
 ## LEDGER
 
 | Rodada | O que entrou | Score | Achados |
 |---|---|---|---|
-| 0 | cirurgia (desamarra runtime + troca cadeados) | — | — |
+| 0 | cirurgia (desamarra runtime + troca cadeados) | — | suíte 3.449 verde; 17 invariantes anti-re-amarra |
+| 0.1 | **regressão própria, pega no 1º teste ao vivo** | — | o corte por fase removia "Apresentando resultados" e "NUNCA alucinar falha de busca" da fase `qualify` — **mas a BUSCA roda em qualify**. O modelo chamou `search_groups` + `recommend_groups` no mesmo turno com `budget:0` inventado → Bevi devolveu *write conflict* → usuário via "não consegui carregar as opções". Fix: `promptPhaseFromMeta` (identidade coletada ⇒ prompt já entra em reveal) + as 2 regras de honestidade saem do corte. Teste trava a regressão. |
+
+### Achados preliminares (a confirmar pelo juiz)
+
+- ✅ **"não entendi" não repete mais**: o modelo reformulou ("Pra eu saber como me dirigir a você.
+  Qual é o seu nome?") em vez da frase fixa + mesma pergunta.
+- ✅ **`modelAsked` funciona**: o modelo perguntou "Quanto custa esse Corolla que você tem em mente?"
+  (formulação dele) e o card **não repetiu** a canônica.
+- ✅ **Espelho + objetivo** (mockup r10) presente: "quando o carro dá trabalho, atrapalha tudo. Então
+  o objetivo já fica claro: te colocar num Corolla novo".
+- ⚠️ **Meta-narrativa** no reveal: "Agora vou te recomendar a mais adequada", "Agora vou detalhar
+  como fica sua simulação" — o prompt proíbe narrar os próprios passos.
+- ⚠️ **Texto órfão do hero**: o agente disse "Tá aí a ITAÚ em destaque — parcela de R$ 3.549,75"
+  mas o `recommendation_card` **não foi emitido** (suprimido pelo guard do `reco-consent`, correto
+  pelo mockup). O modelo narra um card que não está na tela.
