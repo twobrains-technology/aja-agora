@@ -106,6 +106,29 @@ function detectYesNoText(text: string, intent: UserIntent): boolean | null {
  * espelha `pipeServerArtifact` do adapter web, mas em generator (o consumidor
  * de cada canal já sabe tratar `TurnEvent` do tipo "artifact" uniformemente).
  * Nunca depende de o LLM chamar `present_X`. */
+/** FIX-354 — dedup de card server-side DENTRO do mesmo turno.
+ *
+ * Os cards server-side (`scarcity`, `decision_prompt`, `contract_form`…) são
+ * escritos DIRETO no stream por `emitServerCard` e NÃO passam pelo
+ * `artifact-guard` — por isso a regra `card-dup-intraturn` (FIX-353) nunca os
+ * alcançava (0 disparos no log, com a duplicação acontecendo ao vivo).
+ *
+ * Ao vivo (rodada 6/7): a cascata de decisão saiu em dobro —
+ * `scarcity, decision_prompt, scarcity, decision_prompt` — e o `contract_form`
+ * chegou a sair 3× seguidas. Numa das jornadas isso matou a conversa (o turno
+ * seguinte virou "Acho que me perdi" e entrou em loop).
+ *
+ * A causa é timing: `dispatchDecisionCascade` tem dois pontos de chamada (pré e
+ * pós-modelo) e o guard de idempotência lê `decisionDispatched` do BANCO — a
+ * leitura de um caminho pode acontecer antes da escrita do outro. Esta rede é em
+ * MEMÓRIA e não depende da persistência: o mesmo tipo de card não sai duas vezes
+ * no mesmo turno, ponto. É limpa a cada turno novo do usuário (`resetTurnCards`). */
+const cardsDoTurno = new Map<string, Set<ArtifactType>>();
+
+function resetTurnCards(conversationId: string): void {
+	cardsDoTurno.delete(conversationId);
+}
+
 async function* emitServerCard(args: {
 	conversationId: string;
 	channel: Channel;
@@ -114,6 +137,17 @@ async function* emitServerCard(args: {
 	payload: Record<string, unknown>;
 }): AsyncGenerator<TurnEvent> {
 	const { conversationId, channel, persona, artifactType, payload } = args;
+
+	const jaSaiu = cardsDoTurno.get(conversationId) ?? new Set<ArtifactType>();
+	if (jaSaiu.has(artifactType)) {
+		console.log(
+			`[card-dup-intraturn] guard: suprimindo ${artifactType} duplicado no mesmo turno (conv=${conversationId})`,
+		);
+		return;
+	}
+	jaSaiu.add(artifactType);
+	cardsDoTurno.set(conversationId, jaSaiu);
+
 	const messageId = await saveMessage(
 		conversationId,
 		"assistant",
@@ -278,6 +312,11 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	if (!conversationId) {
 		throw new Error("[orchestrator] conversationId is required");
 	}
+
+	// FIX-354: turno NOVO do usuário → zera a lista de cards já emitidos. O dedup
+	// de `emitServerCard` vale DENTRO do turno (evita a cascata sair em dobro);
+	// entre turnos, o mesmo card pode legitimamente reaparecer.
+	if (isUserTurn) resetTurnCards(conversationId);
 
 	if (channel === "whatsapp" && contactName) {
 		const existing = await db.query.conversations.findFirst({
