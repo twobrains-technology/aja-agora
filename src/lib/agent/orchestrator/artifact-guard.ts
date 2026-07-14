@@ -2,6 +2,7 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { revealValueTargetChanged } from "./tool-policy";
+import type { Channel } from "./types";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
 
 /**
@@ -38,6 +39,9 @@ export type ArtifactGuardInput = {
 	artifactType: ArtifactType;
 	userIntent: UserIntent;
 	isUserTurn: boolean;
+	/** FIX-338: canal da conversa — o opt-in de WhatsApp só existe no canal
+	 * web (o WhatsApp já É o canal ativo, o número já é o `waId`). */
+	channel: Channel;
 	/** Tamanho da descoberta DESTE turno (tool-results de search/recommend);
 	 * null = nenhuma descoberta rodou no turno. */
 	discoveryCount: number | null;
@@ -95,10 +99,10 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// duplicado → suprime (regra determinística em whatsapp-optin-guard.ts).
 	{
 		name: "whatsapp-optin",
-		applies: ({ artifactType, meta }) =>
-			artifactType === "whatsapp_optin" && !shouldEmitWhatsappOptin(meta),
-		logLine: ({ conversationId }) =>
-			`[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=${conversationId})`,
+		applies: ({ artifactType, meta, channel }) =>
+			artifactType === "whatsapp_optin" && !shouldEmitWhatsappOptin(meta, channel),
+		logLine: ({ conversationId, channel }) =>
+			`[whatsapp-optin] guard: suprimindo artifact (canal=${channel}, pré-reveal ou duplicado) (conv=${conversationId})`,
 	},
 	// FIX-11 (rodada 2026-06-05 tarde): pós-fechamento, "qual status da
 	// proposta?" re-rodava a descoberta e emitia recommendation_card +
@@ -236,7 +240,9 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			(!meta.desireAsked || meta.qualifyAnswers?.creditMax !== undefined),
 		logLine: ({ meta, conversationId }) =>
 			`[value-picker-order] guard: suprimindo value_picker pré-reveal — ${
-				!meta.desireAsked ? "desire ainda não respondido (valor antes dos dados, mas ainda cedo demais)" : "valor já coletado (anti-repetição)"
+				!meta.desireAsked
+					? "desire ainda não respondido (valor antes dos dados, mas ainda cedo demais)"
+					: "valor já coletado (anti-repetição)"
 			} (conv=${conversationId})`,
 	},
 	// FIX-260 (rodada 5, veredito Fable r4, R5): "contemplation_dial DUPLICADO no

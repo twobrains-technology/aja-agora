@@ -648,6 +648,7 @@ export async function* runAgentTurn(args: {
 						artifactType,
 						userIntent,
 						isUserTurn,
+						channel,
 						discoveryCount,
 						// FIX-187: turno com descoberta falhada → guard dropa a família de
 						// proposta (o tool-result da busca falhada já passou neste ponto).

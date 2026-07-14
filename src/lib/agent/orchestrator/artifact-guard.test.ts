@@ -24,6 +24,7 @@ function makeInput(over: Partial<ArtifactGuardInput> = {}): ArtifactGuardInput {
 		artifactType: "recommendation_card",
 		userIntent: "neutral",
 		isUserTurn: true,
+		channel: "web",
 		discoveryCount: null,
 		conversationId: "conv-test",
 		turnArtifactTypes: [],
@@ -102,9 +103,25 @@ describe("FIX-20 — regra whatsapp-optin (PF-07 + BUG-OPTIN-ENGOLE-GATES)", () 
 		if (!verdict.allow) {
 			expect(verdict.rule).toBe("whatsapp-optin");
 			expect(verdict.logLine).toBe(
-				"[whatsapp-optin] guard: suprimindo artifact (pré-reveal ou duplicado) (conv=conv-test)",
+				"[whatsapp-optin] guard: suprimindo artifact (canal=web, pré-reveal ou duplicado) (conv=conv-test)",
 			);
 		}
+	});
+
+	// FIX-338 (bloco-c-whatsapp-invariantes): mesmo com TODAS as outras condições
+	// satisfeitas (reveal + contractFormDispatched, o card estaria liberado no
+	// web), o canal whatsapp NUNCA emite — o opt-in pede "seu WhatsApp" dentro do
+	// próprio WhatsApp, absurdo de contexto confirmado em 3 das 4 jornadas.
+	it("SUPRIME: canal whatsapp, mesmo com reveal+contractFormDispatched (condições que liberariam no web)", () => {
+		const verdict = evaluateArtifactGuards(
+			makeInput({
+				meta: { ...POST_REVEAL, contractFormDispatched: true },
+				artifactType: "whatsapp_optin",
+				channel: "whatsapp",
+			}),
+		);
+		expect(verdict.allow).toBe(false);
+		if (!verdict.allow) expect(verdict.rule).toBe("whatsapp-optin");
 	});
 
 	it("SUPRIME: optin duplicado (whatsappOptinShown=true)", () => {

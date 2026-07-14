@@ -1,3 +1,4 @@
+import type { Channel } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 /**
@@ -18,8 +19,17 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
  * logo após a recomendação, sem o usuário ter pedido e antes de qualquer
  * proposta. A regra de produto real é "optin no FECHO" (depois do card de
  * contratação, passo 5) — exige revealCompleted E contractFormDispatched.
+ *
+ * FIX-338 (invariante de contexto — bloco-c-whatsapp-invariantes): o opt-in
+ * pede "seu WhatsApp" pra continuar o atendimento — só faz sentido no canal
+ * web (o WhatsApp já É o canal ativo, o número já é o `waId` da conversa).
+ * Nenhum dos guards acima checava `channel`; o card disparava idêntico
+ * dentro do próprio WhatsApp, produzindo o absurdo "me compartilha seu
+ * WhatsApp?" seguido, no mesmo turno, de "já que você está no WhatsApp..."
+ * (3 das 4 jornadas que fecham, veredito rodada 1).
  */
-export function shouldEmitWhatsappOptin(meta: ConversationMetadata): boolean {
+export function shouldEmitWhatsappOptin(meta: ConversationMetadata, channel: Channel): boolean {
+	if (channel === "whatsapp") return false;
 	if (meta.revealCompleted !== true) return false;
 	// FIX-303 (rodada r10 onda 2, 2026-07-12): o gatilho migrou de
 	// revealCompleted pro FECHO — "Continua o WhatsApp... Anotei seu WhatsApp"

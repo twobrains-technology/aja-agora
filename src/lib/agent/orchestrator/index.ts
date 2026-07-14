@@ -974,7 +974,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// escrita, que passa por reloadMeta/persistMeta internos ao runner).
 	if (result.artifacts.some((a) => a.type === "contract_form")) {
 		const postContract = await reloadMeta(conversationId);
-		if (shouldEmitWhatsappOptin(postContract)) {
+		if (shouldEmitWhatsappOptin(postContract, channel)) {
 			await persistMeta(conversationId, { ...postContract, whatsappOptinShown: true });
 			const stage = postContract.contactPhone ? "confirm" : "open";
 			// FIX-318 (rodada 10, onda 4 — achado ao vivo pós-túnel, dossiê Mario):
