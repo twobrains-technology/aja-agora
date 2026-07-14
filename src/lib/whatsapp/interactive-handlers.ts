@@ -166,7 +166,11 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		const admin = res.administradora ?? "";
 		const sentTexts: string[] = [];
 		const templatedKeys = new Set<string>();
-		for (const item of closingPresentation(res)) {
+		// FIX-344: o cliente JÁ está nesta conversa de WhatsApp (fecho por clique
+		// no botão do real_offer) — o beat "acabei de te mandar mensagem no seu
+		// WhatsApp, responde com um oi" não faz sentido nenhum aqui (não existe
+		// mensagem nova nenhuma, é o mesmo canal). Some só nesse canal.
+		for (const item of closingPresentation(res, { channel: "whatsapp" })) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
 			let usageKey = "confirmacao_contratacao";
 			if (item.kind === "text") wa = { type: "text", text: item.text };

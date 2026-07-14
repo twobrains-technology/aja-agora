@@ -115,17 +115,41 @@ export function realOfferPresentation(
  * aprovado) — mentira observável em dev. `whatsappChannel` (resultado real de
  * `resolveAndSend`, já conhecido pelo caller ANTES de montar esta copy) decide
  * entre "mandei" (free_text/template — aconteceu agora) e "vou te mandar"
- * (queued — ainda não chegou). Sem opts (callers que não migraram, ex.
- * interactive-handlers.ts), mantém o texto de sempre — retrocompatível. */
+ * (queued — ainda não chegou). Sem opts, mantém o texto de sempre —
+ * retrocompatível (default = canal web).
+ *
+ * FIX-344 (bloco-e-fallback-residual, rodada 2 — veredito Sonnet, P0): a
+ * função nunca soube distinguir "vou mandar mensagem NOVA no WhatsApp" de "o
+ * canal atual JÁ É o WhatsApp" — interactive-handlers.ts (fecho por clique
+ * DENTRO do WhatsApp) chamava sem opts e herdava um beat que só faz sentido
+ * pro canal WEB ("acabei de te mandar... responde por lá com um oi" — dito a
+ * um cliente que já está exatamente nessa conversa). `channel: "whatsapp"`
+ * remove os dois itens desse beat inteiro (a função técnica de abrir a janela
+ * de 24h com uma mensagem NOVA não existe quando não há mensagem nova — o
+ * cliente já respondeu o botão na janela aberta). O resto do fecho
+ * (reserva/Parabéns/especialista chama em seguida) não depende de canal. */
 export function closingPresentation(
 	res: ConfirmOfferResult,
-	opts: { whatsappChannel?: "free_text" | "template" | "queued" } = {},
+	opts: {
+		whatsappChannel?: "free_text" | "template" | "queued";
+		channel?: "web" | "whatsapp";
+	} = {},
 ): ClosingItem[] {
 	const administradora = res.administradora ?? "administradora";
 	const pedirOiText =
 		opts.whatsappChannel === "queued"
 			? "Pra gente seguir, olha só: assim que a janela abrir, eu te mando uma mensagenzinha no seu WhatsApp."
 			: "Pra gente seguir, olha só: acabei de te mandar uma mensagenzinha no seu WhatsApp.";
+	const whatsappPingBeat: ClosingItem[] =
+		opts.channel === "whatsapp"
+			? []
+			: [
+					{ kind: "text", text: pedirOiText },
+					{
+						kind: "text",
+						text: 'Me responde por lá com um "oi"? É só pra você já salvar o nosso contato.',
+					},
+				];
 	return [
 		{
 			kind: "text",
@@ -164,14 +188,8 @@ export function closingPresentation(
 		// foi enviada, mas nada foi contratado só com isso. O "oi" tem função
 		// TÉCNICA (abre a janela de 24h do WhatsApp, whatsapp/window.ts) — sem ele,
 		// o envio da especialista cai na fila de template.
-		{
-			kind: "text",
-			text: pedirOiText,
-		},
-		{
-			kind: "text",
-			text: 'Me responde por lá com um "oi"? É só pra você já salvar o nosso contato.',
-		},
+		// FIX-344: só existe fora do canal WhatsApp — ver whatsappPingBeat acima.
+		...whatsappPingBeat,
 		{
 			kind: "text",
 			text: "Daí, em alguns minutos, a nossa especialista em cadastros te chama pra pedir seus dados e os documentos pra dar entrada na administradora.",
