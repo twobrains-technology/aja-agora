@@ -18,6 +18,7 @@ import {
 	isBannedLexicon,
 	isCatalogResearchClaim,
 	isDocumentReceiptClaim,
+	findUnavailableAdministradoraMention,
 	isHallucinatedAdministradoraClaim,
 	isMechanismNarrationClaim,
 	isPrazoReductionClaim,
@@ -1104,6 +1105,32 @@ describe("FIX-342 — isHallucinatedAdministradoraClaim (administradora do merca
 				shownAdministradoras: OFERTAS_REAIS,
 			}),
 		).toBe(false);
+	});
+});
+
+describe("FIX-350(b) — findUnavailableAdministradoraMention (texto do USUÁRIO, não do modelo)", () => {
+	const OFERTAS_REAIS = ["ITAÚ", "ÂNCORA"];
+
+	it("devolve o nome de mercado citado quando o usuário pede uma administradora fora das ofertas reais", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco", OFERTAS_REAIS)).toBe(
+			"Bradesco",
+		);
+		expect(findUnavailableAdministradoraMention("e a Caixa Econômica?", OFERTAS_REAIS)).toBe(
+			"Caixa",
+		);
+	});
+
+	it("devolve null quando a administradora citada JÁ está entre as ofertas reais (continência FIX-345)", () => {
+		expect(findUnavailableAdministradoraMention("quero ver a ITAÚ de novo", OFERTAS_REAIS)).toBeNull();
+		expect(findUnavailableAdministradoraMention("a ÂNCORA parece boa", OFERTAS_REAIS)).toBeNull();
+	});
+
+	it("devolve null sem shownAdministradoras no contexto (compat retroativa)", () => {
+		expect(findUnavailableAdministradoraMention("me mostra a Bradesco")).toBeNull();
+	});
+
+	it("devolve null pra texto sem nenhuma administradora do mercado", () => {
+		expect(findUnavailableAdministradoraMention("quero ver outras opções", OFERTAS_REAIS)).toBeNull();
 	});
 });
 

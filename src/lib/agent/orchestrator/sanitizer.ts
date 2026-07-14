@@ -483,7 +483,7 @@ const KNOWN_MARKET_ADMINISTRADORAS = [
 const KNOWN_MARKET_ADMINISTRADORA_PATTERNS = KNOWN_MARKET_ADMINISTRADORAS.map((name) => {
 	const normalized = normalizeAdministradora(name);
 	const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return { normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
+	return { name, normalized, pattern: new RegExp(`\\b${escaped}\\b`) };
 });
 
 /** Um segmento cita uma administradora do MERCADO (lista fechada acima) que
@@ -498,26 +498,37 @@ export function isHallucinatedAdministradoraClaim(
 	if (!ctx?.shownAdministradoras) return false;
 	const s = segment.trim();
 	if (!s) return false;
-	const normalizedSegment = normalizeAdministradora(s);
-	const shown = ctx.shownAdministradoras.map(normalizeAdministradora);
+	return (
+		findUnavailableAdministradoraMention(s, ctx.shownAdministradoras) !== null
+	);
+}
 
-	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata.
-	//
-	// A Bevi devolve os nomes como "ITAU CONSORCIOS" / "ANCORA ADMINISTRADORA",
-	// e o mercado (e o usuário) chama de "ITAÚ" / "Âncora". Com `Set.has("ITAU")`
-	// contra `{"ITAU CONSORCIOS"}` o resultado era `false` — e o guard DROPAVA a
-	// citação VÁLIDA da ITAÚ. Ao vivo (rodada 3, servicos-web) o agente ficou mudo
-	// sobre a própria recomendação e inventou uma desculpa ("tive um probleminha
-	// pra renderizar os dados aqui"): o fix tinha trocado um bug por uma mentira.
-	//
-	// Uma administradora está "exibida" se o nome do mercado aparece DENTRO do
-	// nome que a Bevi devolveu, ou vice-versa.
+/** FIX-350(b) (P1.5, veredito rodada 4): o TEXTO DO USUÁRIO (não do modelo)
+ * cita uma administradora do MERCADO (lista fechada acima) que NÃO está entre
+ * as ofertas REALMENTE exibidas (`shownAdministradoras`) — devolve o nome de
+ * mercado citado (pra `system-context.ts` injetar o FATO), ou `null` quando
+ * nenhuma citação assim existe. Mesmo casamento por CONTINÊNCIA do FIX-345
+ * (`isHallucinatedAdministradoraClaim`, que agora reusa esta função) —
+ * reaproveita a MESMA lista fechada e a mesma normalização de acento. */
+export function findUnavailableAdministradoraMention(
+	text: string,
+	shownAdministradoras?: string[],
+): string | null {
+	if (!shownAdministradoras) return null;
+	const s = text.trim();
+	if (!s) return null;
+	const normalizedText = normalizeAdministradora(s);
+	const shown = shownAdministradoras.map(normalizeAdministradora);
+
+	// FIX-345 — casar por CONTINÊNCIA, não por igualdade exata (ver
+	// isHallucinatedAdministradoraClaim acima pro histórico completo).
 	const foiExibida = (nomeDeMercado: string) =>
 		shown.some((exibida) => exibida.includes(nomeDeMercado) || nomeDeMercado.includes(exibida));
 
-	return KNOWN_MARKET_ADMINISTRADORA_PATTERNS.some(
-		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedSegment),
+	const match = KNOWN_MARKET_ADMINISTRADORA_PATTERNS.find(
+		({ normalized, pattern }) => !foiExibida(normalized) && pattern.test(normalizedText),
 	);
+	return match?.name ?? null;
 }
 
 /** FIX-349: `\b` nativo do JS só entende `[A-Za-z0-9_]` como caractere de
