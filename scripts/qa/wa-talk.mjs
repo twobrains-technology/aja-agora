@@ -114,12 +114,26 @@ if (!res.ok) {
 	process.exit(1);
 }
 
-// 3) espera os balões chegarem E pararem (turno com busca Bevi passa de 60s)
+// 3) espera os balões chegarem E pararem.
+//
+// ⚠️ A janela de silêncio precisa ser MAIOR que a busca na Bevi (~60-90s). Com 9s,
+// o script desistia logo depois do "Perfeito, recebido! Já vou buscar as melhores
+// opções." e o coletor concluía "o agente parou após o CPF" — em 4 de 4 jornadas.
+// Era FALSO: o log mostrava a busca completando e o gate `experience` (que só vem
+// pós-reveal) sendo entregue segundos depois. Instrumento impaciente = bug fantasma.
+//
+// Se o último balão PROMETE uma busca, esperamos ainda mais.
 const TETO_MS = 290_000;
+const SILENCIO_PADRAO_MS = 20_000;
+const SILENCIO_POS_BUSCA_MS = 120_000;
 const inicio = Date.now();
 while (Date.now() - inicio < TETO_MS) {
 	await new Promise((r) => setTimeout(r, 1000));
-	if (baloes.length && Date.now() - ultimoEm > 9000) break; // 9s sem balão novo → fim do turno
+	if (!baloes.length) continue;
+	const ultimoTexto = JSON.stringify(baloes[baloes.length - 1] ?? {});
+	const prometeuBuscar = /vou buscar|buscar as melhores|procurar as op/i.test(ultimoTexto);
+	const limite = prometeuBuscar ? SILENCIO_POS_BUSCA_MS : SILENCIO_PADRAO_MS;
+	if (Date.now() - ultimoEm > limite) break;
 }
 ac.abort();
 
