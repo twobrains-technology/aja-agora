@@ -503,6 +503,19 @@ export async function* runAgentTurn(args: {
 			pendingTopOffer: topOffer
 				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
 				: null,
+			// FIX-349 (P1.2, veredito rodada 4): TODAS as ofertas já indexadas neste
+			// turno, mesmo antes de `recommend_groups` estabelecer o `rank` (o fluxo
+			// obrigatório do reveal chama `search_groups` e manda o modelo ANUNCIAR
+			// o resultado ANTES de `recommend_groups` rodar — `pendingTopOffer`
+			// fica `null` nessa janela, mas `search_groups` já devolve
+			// administradora/parcela reais por grupo). Sem isto, uma narração
+			// prematura baseada só em `search_groups` escapava do guard
+			// `isPrematureTopOfferClaim` (achado ao vivo: imovel-whatsapp t6 /
+			// servicos-whatsapp t6).
+			pendingOffers: [...revealGroupsById.values()].map((g) => ({
+				administradora: g.administradora,
+				monthlyPayment: g.monthlyPayment,
+			})),
 			shownAdministradoras,
 		};
 	};
