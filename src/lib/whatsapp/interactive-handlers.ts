@@ -509,12 +509,44 @@ async function handlePicker(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
+// FIX-340(c) (bloco-c-whatsapp-invariantes): clique de botão é a ÚNICA fonte
+// verdadeiramente determinística de "qual grupo o usuário escolheu" — nunca
+// depende de heurística de texto (a re-âncora de runner.ts, isExploratoryWhatIf,
+// existe pra distinguir um what-if hipotético do modelo de uma escolha real do
+// usuário, mas o clique de botão NÃO É um what-if hipotético; é a decisão
+// explícita). Persistir a âncora AQUI, no momento do clique, evita o gap:
+// dossiê serviços — usuário clicou no grupo ÂNCORA (simulação mostrou R$45.000),
+// mas a heurística de texto (o "texto" do clique era só o nome "ÂNCORA", sem
+// menção ao valor) classificou a re-simulação como exploratória e MANTEVE o
+// snapshot antigo (R$30.000, de uma recomendação anterior) — a proposta real
+// fechou com o número velho, divergente do que a simulação acabou de mostrar.
+async function anchorRecommendedOffer(
+	conversationId: string,
+	details: { administradora: string; category?: Category; creditValue: number; termMonths: number; monthlyPayment: number },
+	groupId: string,
+): Promise<void> {
+	const meta = await loadMeta(conversationId);
+	await persistMeta(conversationId, {
+		...meta,
+		recommendedAdministradora: details.administradora,
+		recommendedOffer: {
+			...meta.recommendedOffer,
+			administradora: details.administradora,
+			creditValue: details.creditValue,
+			termMonths: details.termMonths,
+			monthlyPayment: details.monthlyPayment,
+			groupId,
+		},
+	});
+}
+
 async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("group_", "");
 	try {
 		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
+		await anchorRecommendedOffer(conversationId, details, groupId);
 		await runAgentDirective(
 			from,
 			conversationId,
@@ -541,6 +573,9 @@ async function handleSimulate(ctx: Ctx): Promise<boolean> {
 	try {
 		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
+		// FIX-340(c): mesma âncora determinística de handleGroupSelected — este
+		// botão ("Simular") também é clique real, não what-if hipotético.
+		await anchorRecommendedOffer(conversationId, details, groupId);
 		await runAgentDirective(
 			from,
 			conversationId,

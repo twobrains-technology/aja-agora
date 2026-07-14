@@ -24,10 +24,12 @@ import {
 	isProactiveCallbackClaim,
 	isProcessPreamble,
 	isScorePercentageClaim,
+	isProposalCompletionClaim,
 	isTaxaContemplacaoClaim,
 	isTechnicalFallback,
 	joinSeparator,
 	normalizeGluedSentences,
+	scrubCpf,
 	splitSegments,
 	stripEmoji,
 	stripProcessPreamble,
@@ -476,9 +478,9 @@ describe("FIX-283 — narração do próprio mecanismo interno é PROIBIDA (D23,
 		expect(
 			isMechanismNarrationClaim("O sistema vai te avisar quando a proposta mudar de status."),
 		).toBe(false);
-		expect(
-			isMechanismNarrationClaim("Sua parcela é debitada automaticamente todo mês."),
-		).toBe(false);
+		expect(isMechanismNarrationClaim("Sua parcela é debitada automaticamente todo mês.")).toBe(
+			false,
+		);
 		expect(isMechanismNarrationClaim("")).toBe(false);
 	});
 
@@ -592,6 +594,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out.toLowerCase()).not.toContain("recebidos");
 		expect(out).toContain("Boa!");
@@ -602,6 +605,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: true,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out).toContain("recebidos");
 	});
@@ -612,6 +616,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		});
 		expect(out.toLowerCase()).not.toContain("apareceu");
 		expect(out).toContain("Quer ver outra faixa?");
@@ -622,6 +627,7 @@ describe("FIX-270 — stripProcessPreamble com contexto dropa estado sem lastro 
 		const out = stripProcessPreamble(input, {
 			hasReceivedDocuments: false,
 			hasSearchToolCall: true,
+			hasProposal: true,
 		});
 		expect(out).toContain("apareceu");
 	});
@@ -637,6 +643,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: false,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		}));
 		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
 		emitted += f.flush();
@@ -647,6 +654,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: true,
 			hasSearchToolCall: false,
+			hasProposal: true,
 		}));
 		let emitted = f.push("Os documentos já foram recebidos pela administradora.");
 		emitted += f.flush();
@@ -658,6 +666,7 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		const f = new EphemeralTextFilter(() => ({
 			hasReceivedDocuments: false,
 			hasSearchToolCall: searchCalled,
+			hasProposal: true,
 		}));
 		// 1ª claim, ainda sem tool-call — deve ser dropada.
 		let emitted = f.push("Não apareceu nenhum grupo novo agora.");
@@ -669,6 +678,138 @@ describe("FIX-270 — EphemeralTextFilter com getContext dropa estado fabricado 
 		let emitted2 = f.push("Não apareceu nenhum grupo novo agora.");
 		emitted2 += f.flush();
 		expect(emitted2).toContain("apareceu");
+	});
+});
+
+describe("FIX-336 — isProposalCompletionClaim (afirmação de proposta pronta/já saiu)", () => {
+	const CLAIMS = [
+		"Sua proposta com a ITAÚ já saiu.",
+		"Sua proposta está pronta!",
+		"Sua proposta ficou pronta, é só assinar.",
+		"Vou processar seu interesse agora pra gente fechar tudo certinho.",
+		"Já está fechando a sua proposta.",
+		"Sua proposta real já foi criada.",
+	];
+
+	it("classifica como afirmação de proposta concluída todas as frases observadas", () => {
+		for (const c of CLAIMS) {
+			expect(isProposalCompletionClaim(c), `deveria classificar: "${c}"`).toBe(true);
+		}
+	});
+
+	it("NÃO classifica menção neutra a 'proposta' sem afirmar conclusão", () => {
+		expect(isProposalCompletionClaim("Quer que eu monte sua proposta?")).toBe(false);
+		expect(isProposalCompletionClaim("Assim que você confirmar, eu gero a proposta.")).toBe(false);
+	});
+
+	it("segmento vazio não é afirmação de proposta concluída", () => {
+		expect(isProposalCompletionClaim("")).toBe(false);
+	});
+});
+
+// FIX-336 (bloco-c-whatsapp-invariantes, invariante I4): dossiê auto-whatsapp
+// — o agente afirmou "Sua proposta com a ITAÚ já saiu" com `bevi_proposals`
+// vazio pra conversa (`SELECT count(*) FROM bevi_proposals WHERE
+// conversation_id='90b6c34f-…'` → 0). Mesmo padrão do FIX-270: o fato vem do
+// banco (hasProposal), nunca da narrativa do LLM.
+describe("FIX-336 — stripProcessPreamble/EphemeralTextFilter dropam promessa de proposta sem bevi_proposals real", () => {
+	it("dropa 'sua proposta já saiu' quando hasProposal=false (invariante I4)", () => {
+		const input = "Sua proposta com a ITAÚ já saiu.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		});
+		expect(out.toLowerCase()).not.toContain("já saiu");
+	});
+
+	it("PRESERVA 'sua proposta já saiu' quando hasProposal=true (bevi_proposals tem linha real)", () => {
+		const input = "Sua proposta com a ITAÚ já saiu.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: true,
+		});
+		expect(out).toContain("já saiu");
+	});
+
+	it("dossiê auto-whatsapp real: dropa a alucinação de fechamento sem derrubar o resto do balão", () => {
+		const input =
+			"Madalena, a gente já está fechando! Sua proposta com a ITAÚ já saiu — é só acompanhar pelo WhatsApp que você confirmou agora pouco.";
+		const out = stripProcessPreamble(input, {
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		});
+		expect(out.toLowerCase()).not.toContain("já saiu");
+	});
+
+	it("EphemeralTextFilter dropa ao vivo quando o getter reporta hasProposal=false", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: false,
+		}));
+		let emitted = f.push("Sua proposta está pronta! Já pode conferir.");
+		emitted += f.flush();
+		expect(emitted.toLowerCase()).not.toContain("pronta");
+	});
+
+	it("EphemeralTextFilter PRESERVA quando o getter reporta hasProposal=true", () => {
+		const f = new EphemeralTextFilter(() => ({
+			hasReceivedDocuments: false,
+			hasSearchToolCall: false,
+			hasProposal: true,
+		}));
+		let emitted = f.push("Sua proposta está pronta! Já pode conferir.");
+		emitted += f.flush();
+		expect(emitted).toContain("pronta");
+	});
+});
+
+// FIX-337 (bloco-c-whatsapp-invariantes, invariante I6): defesa em
+// profundidade — mesma barreira do formatter.ts (`scrubCpf` em
+// whatsapp/formatter.ts), aqui como segunda linha pro texto que sai da
+// stream do modelo. CPF de teste: 529.982.247-25 (mesmo de identity.test.ts).
+describe("FIX-337 — scrubCpf mascara CPF real (dígito verificador válido)", () => {
+	it("mascara CPF com pontuação", () => {
+		expect(scrubCpf("seu CPF é 529.982.247-25, certo?")).toBe("seu CPF é ***.***.247-25, certo?");
+	});
+
+	it("mascara CPF sem pontuação", () => {
+		expect(scrubCpf("seu CPF é 52998224725")).toBe("seu CPF é ***.***.247-25");
+	});
+
+	it("NÃO mascara sequência de 11 dígitos que falha o dígito verificador", () => {
+		expect(scrubCpf("pedido nº 12345678901")).toBe("pedido nº 12345678901");
+	});
+
+	it("texto sem CPF passa incólume", () => {
+		expect(scrubCpf("Show, vamos seguir com a simulação.")).toBe(
+			"Show, vamos seguir com a simulação.",
+		);
+	});
+
+	it("string vazia não quebra", () => {
+		expect(scrubCpf("")).toBe("");
+	});
+});
+
+describe("FIX-337 — stripProcessPreamble/EphemeralTextFilter mascaram CPF no texto final", () => {
+	it("stripProcessPreamble mascara CPF ecoado pelo modelo (dossiê auto-whatsapp t10)", () => {
+		const out = stripProcessPreamble(
+			"Perfeito, anotei seu CPF: 529.982.247-25. E qual é o celular?",
+		);
+		expect(out).not.toContain("529.982.247-25");
+		expect(out).toContain("***.***.247-25");
+	});
+
+	it("EphemeralTextFilter mascara CPF ao vivo, no meio do stream", () => {
+		const f = new EphemeralTextFilter();
+		let emitted = f.push("Perfeito, anotei seu CPF: 529.982.247-25.");
+		emitted += f.flush();
+		expect(emitted).not.toContain("529.982.247-25");
+		expect(emitted).toContain("***.***.247-25");
 	});
 });
 
@@ -705,7 +846,9 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 		const out = stripProcessPreamble(BUG_TRANSCRIPT);
 		const questionMarks = out.match(/\?/g) ?? [];
 		expect(questionMarks.length).toBe(1);
-		expect(out).not.toContain("Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?");
+		expect(out).not.toContain(
+			"Quer ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo?",
+		);
 		expect(out).toContain("Você já fez consórcio antes?");
 	});
 
@@ -836,7 +979,9 @@ describe("FIX-299 — strip de emoji determinístico (independe do modelo)", () 
 	});
 
 	it("stripEmoji remove múltiplos emoji em posições diferentes", () => {
-		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe("Sua reserva foi confirmada");
+		expect(stripEmoji("🎉 Sua reserva foi confirmada 🎉").trim()).toBe(
+			"Sua reserva foi confirmada",
+		);
 	});
 
 	it("stripEmoji não mexe em acentuação pt-BR", () => {

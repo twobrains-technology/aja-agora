@@ -24,6 +24,7 @@ import {
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -383,6 +384,13 @@ export async function* runAgentTurn(args: {
 	// é sempre falsa até existir um evento real equivalente. Nunca a narrativa
 	// do LLM (Lei 1).
 	const hasReceivedDocuments = (meta.documentSlotsSent?.length ?? 0) > 0;
+	// FIX-336: fonte REAL de "proposta existe" — `bevi_proposals` pra esta
+	// conversa (fato do banco, nunca a narrativa do LLM). Computado UMA vez no
+	// início do turno: a criação da proposta (startContract/fireContract) é
+	// SEMPRE um evento determinístico fora do stream do agente (captura
+	// textual/clique separada), nunca algo que acontece DURANTE este turno —
+	// mesma garantia que já vale pra hasReceivedDocuments acima.
+	const hasProposal = (await getLatestBeviProposal(conversationId)) !== null;
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -466,11 +474,14 @@ export async function* runAgentTurn(args: {
 	// recommend_groups/search_groups — nunca a narrativa do LLM). Enquanto
 	// `reco-consent` não foi respondido, o sanitizer usa isso pra dropar
 	// qualquer menção à administradora/parcela do top-1 (ver sanitizer.ts).
+	// FIX-336: `hasProposal` é o FATO do banco (existe linha em bevi_proposals?) —
+	// sem ele o modelo afirmava "sua proposta já saiu" com zero proposta criada.
 	const stateVerificationContext = (): StateVerificationContext => {
 		const topOffer = pickBestRankedGroup(revealGroupsById);
 		return {
 			hasReceivedDocuments,
 			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+			hasProposal,
 			recoConsentPending: meta.recoConsentAnswered !== true,
 			pendingTopOffer: topOffer
 				? { administradora: topOffer.administradora, monthlyPayment: topOffer.monthlyPayment }
@@ -670,6 +681,7 @@ export async function* runAgentTurn(args: {
 						artifactType,
 						userIntent,
 						isUserTurn,
+						channel,
 						discoveryCount,
 						// FIX-187: turno com descoberta falhada → guard dropa a família de
 						// proposta (o tool-result da busca falhada já passou neste ponto).
@@ -1071,6 +1083,9 @@ export async function* runAgentTurn(args: {
 	// persista e desgruda falas coladas — o filtro já limpou ao vivo com o
 	// estado PARCIAL do stream; esta é a rede final com o estado COMPLETO do
 	// turno (executedToolNames fechado), antes de persistência/prefixo do gate.
+	// `stateVerificationContext()` já carrega hasReceivedDocuments, hasSearchToolCall,
+	// hasProposal (FIX-336), recoConsentPending e pendingTopOffer (FIX-333) — os dois
+	// blocos da onda contribuíram campos pro MESMO contexto; aqui é um só.
 	fullResponse = normalizeGluedSentences(
 		stripProcessPreamble(collapseEchoedSegments(fullResponse), stateVerificationContext()),
 	).replace(/^\s+/, "");

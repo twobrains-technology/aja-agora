@@ -15,10 +15,12 @@ import { db } from "@/db";
 import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
+import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { runDirectiveWithOrchestrator } from "./adapter";
 import { sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
@@ -51,8 +53,17 @@ async function sendToAttendant(
 const INTEREST_RE =
 	/^\s*(tenho\s+interesse|tô\s+interessad[oa]|estou\s+interessad[oa]|quero\s+(?:esse|este|essa|esta|fechar|isso|essa\s+opcao)|me\s+interessa|fechar|bora\s+fechar|vamos\s+fechar|topo|topei|fechado)\s*[!.?]*\s*$/i;
 
+/** Testa se ALGUM segmento do texto (separado por vírgula/ponto/exclamação/
+ * interrogação/ponto-e-vírgula) é, sozinho, uma expressão de interesse —
+ * cobre frases reais do dossiê de QA ("bora, tenho interesse", "tenho
+ * interesse, quero fechar") sem abrir mão da âncora (evita falso-positivo
+ * tipo "tenho interesse em saber sobre lance"). FIX-336. */
 function isInterestExpression(text: string): boolean {
-	return INTEREST_RE.test(text);
+	const segments = text
+		.split(/[,;.!?]+/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+	return segments.some((seg) => INTEREST_RE.test(seg));
 }
 
 /**
@@ -131,11 +142,7 @@ export async function startInterestHandoff(
  *   2. If qualification finished and the user expresses interest, start handoff.
  * Returns true if handled (caller should stop); false to continue with AI flow.
  */
-export async function handlePendingHandoffText(
-	from: string,
-	text: string,
-	contactName: string | undefined,
-): Promise<boolean> {
+export async function handlePendingHandoffText(from: string, text: string): Promise<boolean> {
 	const handoff = await getHandoffState(from);
 	if (!handoff?.conversationId) return false;
 
@@ -164,10 +171,35 @@ export async function handlePendingHandoffText(
 	}
 
 	const typedMeta = meta as ConversationMetadata | null;
-	if (typedMeta?.searchDispatched && isInterestExpression(text)) {
-		const storedName = contactName ?? conv?.contactName ?? null;
-		const handled = await startInterestHandoff(from, handoff.conversationId, storedName);
-		if (handled) return true;
+	// FIX-336: "tenho interesse" por TEXTO LIVRE segue o MESMO caminho
+	// determinístico do clique do botão (handleInterest, interactive-
+	// handlers.ts — FIX-117) — NUNCA handoff humano por sinal de interesse.
+	// Este ramo chamava startInterestHandoff (resíduo de um refactor que só
+	// corrigiu o clique, nunca o texto — ver histórico do commit e9b25776);
+	// sem isso, um usuário que digita em vez de clicar (dossiê auto-whatsapp,
+	// t14) caía no LLM livre, que aluciná a confirmação da proposta (I4).
+	// Guardas: exige reveal feito (searchDispatched) e não pode atropelar uma
+	// captura textual já em andamento (contractCollection) nem pós-fechamento
+	// (contractClosed) — esses casos são de `captureContractText`.
+	if (
+		typedMeta?.searchDispatched &&
+		!typedMeta.contractCollection &&
+		typedMeta.contractClosed !== true &&
+		isInterestExpression(text)
+	) {
+		await saveMessage(handoff.conversationId, "user", text, "whatsapp");
+		if (!typedMeta.decisionDispatched) {
+			await persistMeta(handoff.conversationId, { ...typedMeta, decisionDispatched: true });
+		}
+		await runDirectiveWithOrchestrator({
+			from,
+			conversationId: handoff.conversationId,
+			directive: buildAdvanceToContractDirective({
+				administradora: typedMeta.recommendedAdministradora,
+			}),
+			guardEmptyTurn: true,
+		});
+		return true;
 	}
 
 	return false;

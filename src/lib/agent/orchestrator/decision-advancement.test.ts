@@ -119,6 +119,7 @@ describe("runner.ts — guard anti-re-reveal + flag revealCompleted", () => {
 		// Comportamental: decision_prompt duplicado num turno de usuário é suprimido.
 		const { evaluateArtifactGuards } = await import("./artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: true, decisionDispatched: true },
 			artifactType: "decision_prompt",
 			userIntent: "neutral",

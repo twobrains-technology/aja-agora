@@ -3134,6 +3134,7 @@ describe("BUG-REVEAL-LOOP — re-apresentar o reveal a cada afirmativo", () => {
 		// E comportamental (mais forte que grep): o cenário exato do bug suprime.
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: postRevealMeta(),
 			artifactType: "comparison_table",
 			userIntent: "neutral", // "ta otimo"
@@ -4020,12 +4021,12 @@ describe("E2E-REAL — optin pré-reveal suprimido (BUG-OPTIN-ENGOLE-GATES)", ()
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
 		// Cenário exato do run 1: reserva respondida, qualificação incompleta.
-		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } })).toBe(false);
+		expect(shouldEmitWhatsappOptin({ qualifyAnswers: { hasLance: "yes" } }, "web")).toBe(false);
 		// FIX-303: revealCompleted sozinho não basta mais — só no fecho
 		// (contractFormDispatched), ver describe FIX-303 mais abaixo.
-		expect(shouldEmitWhatsappOptin({ revealCompleted: true })).toBe(false);
+		expect(shouldEmitWhatsappOptin({ revealCompleted: true }, "web")).toBe(false);
 		expect(
-			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }, "web"),
 		).toBe(true);
 	});
 });
@@ -4066,6 +4067,7 @@ describe("E2E-REAL — pós-fechamento é terminal (BUG-POS-FECHAMENTO-NAO-TERMI
 		// Comportamental: pós-Parabéns, contract_form re-apresentado é suprimido.
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: true, decisionDispatched: true, contractClosed: true },
 			artifactType: "contract_form",
 			userIntent: "ready_to_proceed",
@@ -4363,15 +4365,18 @@ describe("FIX-27 — opt-in não re-coleta o telefone já informado", () => {
 			"@/lib/agent/orchestrator/whatsapp-optin-guard"
 		);
 		expect(
-			shouldEmitWhatsappOptin({
-				revealCompleted: true,
-				contractFormDispatched: true,
-				contractRetryPending: true,
-			}),
+			shouldEmitWhatsappOptin(
+				{
+					revealCompleted: true,
+					contractFormDispatched: true,
+					contractRetryPending: true,
+				},
+				"web",
+			),
 		).toBe(false);
 		// FIX-303: o gatilho migrou pro fecho (contractFormDispatched).
 		expect(
-			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }),
+			shouldEmitWhatsappOptin({ revealCompleted: true, contractFormDispatched: true }, "web"),
 		).toBe(true);
 	});
 
@@ -4840,6 +4845,7 @@ describe("FIX-11-POS-FECHAMENTO-AMNESICO — agent nega fechamento e re-roda des
 		const meta = { revealCompleted: true, decisionDispatched: true, contractClosed: true };
 		for (const artifactType of ["recommendation_card", "simulation_result"] as const) {
 			const verdict = evaluateArtifactGuards({
+				channel: "web",
 				meta,
 				artifactType,
 				userIntent: "asking_question", // "qual status da proposta?"
@@ -4923,6 +4929,7 @@ describe("FIX-12-CONTRACT-FORM-SEQUESTRA-IDENTIFY — fechamento no momento do i
 		// Comportamental: o estado exato do bug (fim do qualify, sem reveal).
 		const { evaluateArtifactGuards } = await import("@/lib/agent/orchestrator/artifact-guard");
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { qualifyConsented: true },
 			artifactType: "contract_form",
 			userIntent: "ready_to_proceed",
@@ -6639,6 +6646,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		expect(discoveryCount).toBe(1);
 		// 2) …e o single-option guard suprime o recommendation_card duplicado.
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { currentCategory: "auto" } as ConversationMetadata,
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -6656,6 +6664,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		const discoveryCount = extractDiscoveryCount("search_groups", searchGroupsOutput(3));
 		expect(discoveryCount).toBe(3);
 		const verdict = evaluateArtifactGuards({
+			channel: "web",
 			meta: { currentCategory: "auto" } as ConversationMetadata,
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -6672,6 +6681,7 @@ describe("REV-A-SINGLE-OPTION-SEARCH-GROUPS — guard de opção única no camin
 		// Pós reco-consent já resolvido (revealCompleted=true), o mesmo cenário
 		// de 2+ grupos PASSA normalmente — não é mais opção única, nem pendente.
 		const verdictPostConsent = evaluateArtifactGuards({
+			channel: "web",
 			meta: {
 				currentCategory: "auto",
 				revealCompleted: true,
@@ -7953,6 +7963,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			"decision_prompt",
 		] as const) {
 			const verdict = evaluateArtifactGuards({
+				channel: "web",
 				meta: {},
 				artifactType,
 				userIntent: "neutral",
@@ -7976,6 +7987,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 			}).allow,
 		).toBe(true);
 		const guard = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: false },
 			artifactType: "recommendation_card",
 			userIntent: "neutral",
@@ -7994,6 +8006,7 @@ describe("FIX-187 — descoberta falhada bloqueia proposta/recomendação/simula
 
 		// Pós reco-consent já resolvido, o mesmo cenário passa normalmente.
 		const guardPostConsent = evaluateArtifactGuards({
+			channel: "web",
 			meta: { revealCompleted: true, recoConsentAnswered: true },
 			artifactType: "recommendation_card",
 			userIntent: "neutral",

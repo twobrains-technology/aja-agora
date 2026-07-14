@@ -550,12 +550,26 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	}
 	const category = refreshed.currentCategory;
 	if (!category) return;
-	await persistMeta(conversationId, { ...refreshed, searchDispatched: true });
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });
 	// FIX-189 (pendura): a descoberta SEMPRE deve revelar algo — se o turno fechar
 	// só com o chip (0 texto, 0 artifact), o guardEmptyTurn emite o fallback em vez
 	// de deixar o usuário no silêncio até cutucar.
 	await runDirectiveWithOrchestrator({ from, conversationId, directive, guardEmptyTurn: true });
+	// FIX-339 (porte do FIX-291b, src/lib/web/adapter.ts:562-577): searchDispatched
+	// só é marcado DEPOIS de confirmar que a descoberta de fato completou
+	// (revealCompleted, setado pelo runner só com artifacts REAIS na tela —
+	// runner.ts). Antes, o marcador saía PREEMPTIVO (acima, antes do directive
+	// rodar) — uma busca que falhasse/degradasse travava searchDispatched=true
+	// PRA SEMPRE, e o "turno morto" pós-CPF (G1, veredito whatsapp rodada 1)
+	// nunca liberava retry num turno seguinte.
+	const postSearch = await reloadMeta(conversationId);
+	if (postSearch.revealCompleted) {
+		await persistMeta(conversationId, { ...postSearch, searchDispatched: true });
+	} else {
+		console.log(
+			`[discovery-degraded] guard: busca falhou/degradou — searchDispatched NAO marcado, retry liberado num turno seguinte (conv=${conversationId})`,
+		);
+	}
 }
 
 export async function fireGate(
