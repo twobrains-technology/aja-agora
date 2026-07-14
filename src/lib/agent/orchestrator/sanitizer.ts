@@ -211,6 +211,32 @@ export function isCatalogResearchClaim(segment: string): boolean {
 	return CATALOG_RESEARCH_CLAIM_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX-336 (bloco-c-whatsapp-invariantes, invariante I4 — "nunca prometer o que
+// não aconteceu"): o agente afirmou "Sua proposta com a ITAÚ já saiu" e
+// "Vou processar seu interesse agora pra gente fechar tudo certinho" sem
+// NENHUMA linha em `bevi_proposals` pra conversa — a promessa mais cara de
+// quebrar do produto. Mesma família do FIX-270 (Lei 1: o fato vem do banco,
+// nunca da narrativa do LLM). A copy determinística pós-evento real
+// (`signatureHandoffToWhatsApp`, "Sua proposta está pronta!... já está
+// gerada") NUNCA passa por este sanitizer — é enviada fora do stream do
+// modelo — então não há falso-positivo ali.
+const PROPOSAL_COMPLETION_CLAIM_PATTERNS: RegExp[] = [
+	/\bproposta\b[\s\S]{0,30}\bj[áa]\s+saiu\b/i,
+	/\bsua\s+proposta\s+(est[áa]|ficou|j[áa]\s+est[áa])\s+pronta\b/i,
+	/\bj[áa]\s+est[áa]\s+fechando\b[\s\S]{0,40}\bproposta\b/i,
+	/\bproposta\s+(real\s+)?(j[áa]\s+)?(foi\s+)?(criada|gerada|confirmada)\b/i,
+	/\bvou\s+processar\s+seu\s+interesse\b/i,
+];
+
+/** Um segmento afirma que a PROPOSTA já saiu/está pronta/foi criada (estado
+ * COMPLETO) — só pode virar bolha se existir de fato uma linha em
+ * `bevi_proposals` pra esta conversa. FIX-336. */
+export function isProposalCompletionClaim(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return PROPOSAL_COMPLETION_CLAIM_PATTERNS.some((rx) => rx.test(s));
+}
+
 // FIX-283 (P2, veredito Sonnet r9pos, G-D — viola D23, jornada-canonica.md):
 // o modelo parafraseou a instrução server-side do WhatsApp optin ("por conta
 // própria", "o SISTEMA [...] automaticamente, com card próprio",
@@ -293,6 +319,13 @@ export type StateVerificationContext = {
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
 	 * rodou neste turno até o ponto corrente do stream. */
 	hasSearchToolCall: boolean;
+	/** true só quando existe pelo menos uma linha em `bevi_proposals` pra esta
+	 * conversa (fato do banco). FIX-336: o agente afirmou "Sua proposta com a
+	 * ITAÚ já saiu" com `bevi_proposals` VAZIO pra conversa (I4 quebrado,
+	 * dossiê auto-whatsapp t14/t17) — a criação da proposta é SEMPRE um evento
+	 * determinístico fora do turno do LLM (startContract/fireContract), nunca
+	 * a narrativa do próprio modelo. */
+	hasProposal: boolean;
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -301,6 +334,7 @@ function isFabricatedStateSegment(segment: string, ctx?: StateVerificationContex
 	if (!ctx) return false;
 	if (isDocumentReceiptClaim(segment) && !ctx.hasReceivedDocuments) return true;
 	if (isCatalogResearchClaim(segment) && !ctx.hasSearchToolCall) return true;
+	if (isProposalCompletionClaim(segment) && !ctx.hasProposal) return true;
 	return false;
 }
 

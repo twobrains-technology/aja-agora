@@ -23,6 +23,7 @@ import {
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
 import type { ArtifactType } from "@/lib/chat/types";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -365,6 +366,13 @@ export async function* runAgentTurn(args: {
 	// é sempre falsa até existir um evento real equivalente. Nunca a narrativa
 	// do LLM (Lei 1).
 	const hasReceivedDocuments = (meta.documentSlotsSent?.length ?? 0) > 0;
+	// FIX-336: fonte REAL de "proposta existe" — `bevi_proposals` pra esta
+	// conversa (fato do banco, nunca a narrativa do LLM). Computado UMA vez no
+	// início do turno: a criação da proposta (startContract/fireContract) é
+	// SEMPRE um evento determinístico fora do stream do agente (captura
+	// textual/clique separada), nunca algo que acontece DURANTE este turno —
+	// mesma garantia que já vale pra hasReceivedDocuments acima.
+	const hasProposal = (await getLatestBeviProposal(conversationId)) !== null;
 
 	const isConcierge = !meta.currentCategory;
 	// FIX-19: policy de tools da fase atual — espelho do filtro aplicado no
@@ -446,6 +454,7 @@ export async function* runAgentTurn(args: {
 	const ephemeralFilter = new EphemeralTextFilter(() => ({
 		hasReceivedDocuments,
 		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+		hasProposal,
 	}));
 	// Compõe o texto LIMPO em fullResponse (com separador anti-colagem, FIX-189) e
 	// devolve o que deve ir pro stream. Fecha o buraco de "duas falas coladas".
@@ -1042,6 +1051,7 @@ export async function* runAgentTurn(args: {
 		stripProcessPreamble(collapseEchoedSegments(fullResponse), {
 			hasReceivedDocuments,
 			hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
+			hasProposal,
 		}),
 	).replace(/^\s+/, "");
 

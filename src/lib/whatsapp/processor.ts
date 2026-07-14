@@ -85,7 +85,7 @@ export async function processTextMessage(
 			return;
 		}
 
-		if (await handlePendingHandoffText(from, text, contactName)) return;
+		if (await handlePendingHandoffText(from, text)) return;
 
 		// Intent textual "voltar" — early-return sem chamar o agent (#06 Bruna v1 review).
 		if (detectBackIntent(text)) {
