@@ -25,7 +25,13 @@ export type TurnEvent =
 			payload: Record<string, unknown>;
 			toolCallId: string;
 	  }
-	| { type: "gate"; gate: Gate; prefix?: string }
+	// `modelAsked` (2026-07-13, ADR revoga-jornada-soberana): o MODELO já fez a
+	// pergunta deste gate neste turno, com as palavras dele. O adapter então emite
+	// só o INPUT (chips/slider/form) e NÃO repete a pergunta canônica — mantém a
+	// regra do cliente ("1 pergunta por balão") sem calar o modelo. Antes, o runner
+	// DESCARTAVA a pergunta do modelo (`discardHeldQuestion`) e deixava o card
+	// perguntar sozinho, o que deixava a conversa robótica e sempre igual.
+	| { type: "gate"; gate: Gate; prefix?: string; modelAsked?: boolean }
 	| {
 			type: "transition";
 			fromPersona: Persona | null;

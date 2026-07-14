@@ -651,13 +651,11 @@ Sequência correta da apresentação (FIX-224, Ata 2026-07-04 — resolve a conf
 4. SE 2+ grupos: present_comparison_table — por ÚLTIMO, como convite pra comparar depois de já ter visto a opção completa (NÃO obriga simular cada uma; comparativo serve pra usuário escolher — quando ele escolher uma adm específica, aí sim simule + present_simulation_result dela).
 5. UMA frase curta de fechamento
 
-### Frase canônica de transição pós-detalhamento (B9)
+### Fechamento pós-detalhamento (B9)
 
-Após chamar present_simulation_result (e present_recommendation_card quando aplicável), sua frase de fechamento do turno DEVE seguir EXATAMENTE este molde, substituindo {admin} pelo nome real da administradora do grupo simulado:
+Após chamar present_simulation_result (e present_recommendation_card quando aplicável), feche o turno em UMA frase curta: diga de quem é o detalhamento que está na tela (o nome real da administradora) e abra espaço pro próximo passo (ajustar o valor do bem, ou o que fizer mais sentido no que ele acabou de dizer).
 
-"Aqui está o detalhamento completo da {admin}. Quer ajustar o valor do bem?"
-
-Não improvise outras formulações — esta frase é canônica para alinhar com o próximo gate do funil.
+Use as SUAS palavras — varie conforme a conversa. Não existe frase canônica aqui.
 
 NÃO chame recommend_groups quando: o usuário já clicou num grupo específico ou já simulou — ele já escolheu uma direção, respeite isso. Se ele só simulou ou só olhou opções após o reveal, **continue a conversa normalmente**, não despeje recomendação de novo.
 
@@ -717,6 +715,7 @@ Exemplos:
 
 import type { InferSelectModel } from "drizzle-orm";
 import type { personas } from "@/db/schema";
+import type { ToolPhase } from "@/lib/agent/orchestrator/tool-policy";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { CATEGORY_META } from "./categories";
 
@@ -1076,6 +1075,68 @@ function buildSpecialistDynamicBlocks(
 		.join("\n\n");
 }
 
+/** Fase mínima em que cada seção do prompt base passa a fazer sentido.
+ *
+ * DESAMARRA (2026-07-13, ADR revoga-jornada-soberana): o `SPECIALIST_BASE_PROMPT`
+ * (648 linhas / ~78 KB) era injetado INTEIRO em todo turno, em toda fase. No turno
+ * 1 — quando o agente só precisa dizer "oi, como posso te chamar?" — ele já
+ * carregava as regras de fechamento de contrato, status de proposta e simulação.
+ * ~19,5k tokens de restrição contra ~20 tokens de contexto útil, o que deixa o
+ * modelo defensivo e robótico.
+ *
+ * Aqui cada seção declara a fase MÍNIMA em que passa a ser injetada. Tudo que não
+ * está listado é universal (tom, ortografia, compliance, anti-vazamento) e vale
+ * sempre. O corte é conservador: só remove o que é de fase POSTERIOR — nunca
+ * antecipa nem apaga regra de compliance. */
+const SECTION_MIN_PHASE: ReadonlyArray<{ heading: string; phase: ToolPhase }> = [
+	// Só fazem sentido depois que os grupos apareceram na tela.
+	{ heading: "### Simulador de contemplação", phase: "reveal" },
+	{ heading: "### Apresentando resultados", phase: "reveal" },
+	{ heading: "### Quando o usuário menciona um grupo pelo nome", phase: "reveal" },
+	{ heading: "### Após simulação, NUNCA simule de novo o mesmo grupo", phase: "reveal" },
+	{ heading: "### Recomendação final", phase: "reveal" },
+	{ heading: "### Fechamento pós-detalhamento (B9)", phase: "reveal" },
+	{ heading: "## Textos de recomendação", phase: "reveal" },
+	{ heading: "### Lance e lance embutido", phase: "reveal" },
+	{ heading: "### REGRA DURA — confronto honesto de orçamento", phase: "reveal" },
+	{ heading: "### REGRA DURA — NUNCA afirme que a carta", phase: "reveal" },
+	{ heading: "### REGRA DURA — NUNCA alucinar falha de busca", phase: "reveal" },
+	// Só fazem sentido depois que a decisão foi tomada.
+	{ heading: "### Fechamento pós-reveal", phase: "closing" },
+	{ heading: '### Card de decisão "Esse plano faz sentido?"', phase: "closing" },
+	{ heading: '### Passo 5 "Contratar"', phase: "closing" },
+	{ heading: "### Status da proposta", phase: "closing" },
+	{ heading: "### Oferta real / proposta já registrada", phase: "closing" },
+];
+
+const PHASE_RANK: Record<ToolPhase, number> = {
+	qualify: 0,
+	reveal: 1,
+	closing: 2,
+	terminal: 3,
+};
+
+/** Corta do prompt base as seções que pertencem a uma fase POSTERIOR à atual. */
+export function filterBaseByPhase(base: string, phase: ToolPhase): string {
+	const lines = base.split("\n");
+	const out: string[] = [];
+	let skipUntilNextHeading: string | null = null;
+
+	for (const line of lines) {
+		const isHeading = /^#{2,3} /.test(line);
+		if (isHeading) {
+			// Uma seção nova sempre encerra o skip anterior.
+			skipUntilNextHeading = null;
+			const rule = SECTION_MIN_PHASE.find((s) => line.startsWith(s.heading));
+			if (rule && PHASE_RANK[phase] < PHASE_RANK[rule.phase]) {
+				skipUntilNextHeading = line;
+			}
+		}
+		if (skipUntilNextHeading === null) out.push(line);
+	}
+	return out.join("\n").replace(/\n{4,}/g, "\n\n\n");
+}
+
 export function buildSpecialistPrompt(
 	row: PersonaRow,
 	expertise: ExpertiseLevel,
@@ -1096,6 +1157,11 @@ export function buildSpecialistPrompt(
 	// ter sido extraído) — default false (comportamento atual em paths que
 	// não derivam do meta).
 	desireAnswered = false,
+	// DESAMARRA (2026-07-13): fase da conversa. O prompt base é fatiado — as
+	// seções de fase POSTERIOR não são injetadas (o turno 1 não carrega regra de
+	// contrato). Default "terminal" = tudo, preservando o comportamento de
+	// qualquer chamador que não passe a fase (testes, admin, paths antigos).
+	phase: ToolPhase = "terminal",
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1142,7 +1208,7 @@ Você SEMPRE atua dentro de ${categoryLabel}.
 </specialty>
 
 <flow_rules>
-${SPECIALIST_BASE_PROMPT}
+${filterBaseByPhase(SPECIALIST_BASE_PROMPT, phase)}
 </flow_rules>
 
 <active_campaigns>

@@ -474,13 +474,16 @@ export class EphemeralTextFilter {
 		return held ? stripEmoji(held) : "";
 	}
 
-	/** FIX-326 — descarta a pergunta segurada SEM emiti-la. Usado quando o
-	 * runner prevê que um gate estrutural com pergunta própria vai disparar no
-	 * MESMO turno: a pergunta do MODELO perderia a corrida de qualquer jeito
-	 * (2 perguntas no mesmo balão, achado P4) — melhor nunca emitir a dele do
-	 * que deixar as duas colarem. No-op seguro quando não há pergunta segurada. */
-	discardHeldQuestion(): void {
-		this.heldQuestion = "";
+	/** O modelo tem uma pergunta segurada pra este turno?
+	 *
+	 * SUBSTITUI o `discardHeldQuestion` (FIX-326), que JOGAVA FORA a pergunta do
+	 * modelo quando um gate com pergunta canônica ia disparar — o modelo ficava
+	 * mudo e o card falava sozinho, sempre com a mesma frase. Agora a prioridade é
+	 * a inversa: a pergunta do MODELO vence, e é o CARD que deixa de repetir a
+	 * dele (`modelAsked` no evento de gate). A regra do cliente ("nunca 2 perguntas
+	 * no mesmo balão") continua valendo — só mudou quem cala. */
+	hasHeldQuestion(): boolean {
+		return this.heldQuestion.trim().length > 0;
 	}
 }
 

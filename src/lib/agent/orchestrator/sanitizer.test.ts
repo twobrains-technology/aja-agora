@@ -683,43 +683,32 @@ describe("FIX-298 — no máximo 1 sentença interrogativa por balão (cassette 
 // precisa de um jeito de DESCARTAR a pergunta segurada (sem emiti-la) quando
 // prevê que um gate vai anexar a PRÓPRIA pergunta — `discardHeldQuestion()` é
 // esse mecanismo: limpa o estado interno sem produzir texto nenhum.
-describe("FIX-326 — discardHeldQuestion() descarta a pergunta segurada sem emitir nada", () => {
-	it("depois de discardHeldQuestion(), flush() não emite a pergunta que estava segurada", () => {
+describe("hasHeldQuestion() — a pergunta do MODELO vence o card (desamarra 2026-07-13)", () => {
+	// Antes (FIX-326), `discardHeldQuestion()` JOGAVA FORA a pergunta do modelo
+	// quando um gate com pergunta canônica ia disparar: o modelo ficava mudo e o
+	// card falava sozinho, sempre a mesma frase. Agora a prioridade inverteu — a
+	// pergunta do modelo é emitida e o CARD é que se cala (`modelAsked`). A regra
+	// do cliente ("nunca 2 perguntas no mesmo balão") continua valendo.
+	it("acusa a pergunta segurada, pro runner saber que o card deve calar", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Quer ajustar o valor do bem? ");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).not.toContain("Quer ajustar o valor do bem?");
-		expect(emitted.trim()).toBe("");
+		f.push("Boa, anotado. ");
+		expect(f.hasHeldQuestion()).toBe(false);
+		f.push("Quanto custa esse Corolla hoje? ");
+		expect(f.hasHeldQuestion()).toBe(true);
 	});
 
-	it("sem chamar discardHeldQuestion(), flush() continua emitindo a pergunta normalmente (regressão FIX-298)", () => {
+	it("a pergunta segurada é EMITIDA no flush (nunca mais descartada)", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Quer ajustar o valor do bem? ");
-		emitted += f.flush();
-		expect(emitted).toContain("Quer ajustar o valor do bem?");
+		f.push("Perfeito. ");
+		f.push("Você já fez consórcio antes? ");
+		const out = f.push("") + f.flush();
+		expect(out).toMatch(/já fez consórcio antes\?/i);
 	});
 
-	it("discardHeldQuestion() não afeta texto NÃO-interrogativo pendente (só descarta a pergunta)", () => {
+	it("sem pergunta nenhuma, hasHeldQuestion é false", () => {
 		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Perfeito, seguimos então. ");
-		emitted += f.push("Você já fez consórcio antes?");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).toContain("Perfeito, seguimos então.");
-		expect(emitted).not.toContain("Você já fez consórcio antes?");
-	});
-
-	it("chamar discardHeldQuestion() sem nenhuma pergunta segurada é no-op seguro (não lança, não quebra o resto)", () => {
-		const f = new EphemeralTextFilter();
-		let emitted = "";
-		emitted += f.push("Perfeito, seguimos então.");
-		f.discardHeldQuestion();
-		emitted += f.flush();
-		expect(emitted).toBe("Perfeito, seguimos então.");
+		f.push("Show, vamos seguir. ");
+		expect(f.hasHeldQuestion()).toBe(false);
 	});
 });
 

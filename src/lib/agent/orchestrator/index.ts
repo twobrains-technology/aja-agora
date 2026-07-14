@@ -40,7 +40,7 @@ import {
 	isExactnessOrCriteriaQuestion,
 	TWO_PATHS_FOLLOWUP_TEXT,
 } from "./directives";
-import { CLARIFY_LEAD_IN, gateStuckDefaultNotice } from "./gate-questions";
+import { gateStuckDefaultNotice } from "./gate-questions";
 import { runLeadCollectionTurn } from "./lead-collection";
 import {
 	buildRecommendationCardFromRevealGroup,
@@ -581,56 +581,21 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
 
-	// FIX-301 (P7, loop-de-goal r10): usuário CONFUSO ("não entendi") com um gate
-	// REALMENTE pendente — reancora no MESMO gate/card com um lead-in
-	// simplificado, em vez de deixar a LLM narrar/inventar um menu genérico
-	// (P7: "uai nao sei voce nao me perguntou nada"). Curto-circuito ANTES de
-	// invocar a LLM (Lei 4) — se rodasse depois, o texto livre já teria
-	// streamado pro usuário.
-	// CORREÇÃO 1 (mesma rodada, achada no gate da onda 1): a decisão original
-	// (docs/decisoes/blocos/2026-07-12-bloco-r10-1-topicpicker-clarify.md)
-	// reusava `expressing_doubt` "sem intent nova" — quebrou o FIX-266 (r9),
-	// porque "deixa eu pensar aqui"/"tenho que pensar" JÁ é expressing_doubt
-	// por design (turn-analyzer.ts) e passou a ser hijackado por este
-	// short-circuit, atropelando a recuperação de tool-error. `confused` é
-	// uma intent NOVA (turn-analyzer.ts), semanticamente distinta: não
-	// entendeu a PERGUNTA (confused) vs. entendeu mas está decidindo
-	// (expressing_doubt, que segue fluindo pra LLM normalmente).
-	// CORREÇÃO 2 (mesmo gate): mesmo com a intent nova, o analyzer (LLM, não-
-	// determinístico) ainda pode confundir "por que essa e não outra?" (pergunta
-	// de EXATIDÃO/CRITÉRIO sobre a recomendação, FIX-282/293) com "não entendi a
-	// pergunta". Blindagem em CÓDIGO (Lei 4, não confia só no prompt):
-	// `isExactnessOrCriteriaQuestion` é o MESMO regex determinístico que o
-	// FIX-282/293 já usa — se bater, cede passagem pra aquele caminho (resposta
-	// com números reais), nunca reancora aqui.
-	if (
-		isUserTurn &&
-		!skipAnalyzer &&
-		analyzedIntent === "confused" &&
-		!isExactnessOrCriteriaQuestion(userText)
-	) {
-		const clarifyGate = gateAwaitingReply(meta, Boolean(knownName));
-		if (clarifyGate === "decision") {
-			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
-			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
-			yield* emitServerCard({
-				conversationId,
-				channel,
-				persona: currentPersona,
-				artifactType: "decision_prompt",
-				payload: buildDecisionPromptCard(meta).payload,
-			});
-			yield { type: "finish", reason: "clarify-reanchor" };
-			return;
-		}
-		if (clarifyGate) {
-			yield { type: "text-delta", text: CLARIFY_LEAD_IN };
-			await saveMessage(conversationId, "assistant", CLARIFY_LEAD_IN, channel, currentPersona);
-			yield { type: "gate", gate: clarifyGate };
-			yield { type: "finish", reason: "clarify-reanchor" };
-			return;
-		}
-	}
+	// DESAMARRA (2026-07-13, ADR revoga-jornada-soberana): o antigo FIX-301
+	// CURTO-CIRCUITAVA o "não entendi" — respondia com um texto fixo
+	// (CLARIFY_LEAD_IN) e REPETIA a pergunta canônica do mesmo gate, sem nunca
+	// invocar o modelo. Era a causa direta do sintoma que o Kairo reportou: "o
+	// agente responde sempre a mesma coisa". Um usuário que não entendeu e
+	// recebe a MESMA frase de volta não é um produto — é um loop.
+	//
+	// Agora: o modelo responde, e o servidor só INFORMA o que ainda falta
+	// descobrir (`confusedAboutGate` → systemContext), pedindo que ele reformule
+	// de outro jeito. O invariante segue intacto — o gate continua pendente e o
+	// funil não avança sem o dado; só a FALA voltou a ser do modelo.
+	const confusedAboutGate =
+		isUserTurn && !skipAnalyzer && analyzedIntent === "confused"
+			? gateAwaitingReply(meta, Boolean(knownName))
+			: null;
 
 	// FIX-258 (P1, veredito Fable r4 §P1 #1 — FIX-252 "NÃO", rota nome→grupo
 	// ausente ANTES da tool-call): resolve a menção textual do usuário (nome de
@@ -678,45 +643,44 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 		);
 	}
 
-	// FIX-293 (rodada r9 onda 4, veredito r9pos3 §3 P2 UX, probe-i2-justificativa
-	// turnos 8-9): a MESMA pergunta de exatidão/critério do FIX-282 (linha
-	// ~570 abaixo) acontecia de LONGE mais vezes FORA do caminho de
-	// tool-error/cap — usuário pergunta em texto livre normal, sem nenhum
-	// guard interceptando o turno. Checar isExactnessOrCriteriaQuestion só
-	// DEPOIS de `runAgentTurn` (como o FIX-282 faz) não resolveria esse caso:
-	// o `result` ali vem de `yield* runAgentTurn(...)`, que STREAMA cada
-	// text-delta pro consumidor em tempo real — na hora que `result` existe,
-	// o texto livre do modelo (o "cheio/pausado" fabricado do veredito) já
-	// chegou ao usuário. O short-circuit determinístico por isso tem que
-	// acontecer ANTES de invocar a LLM (Lei 4: invariante crítico em código,
-	// não filtro depois) — nunca chama `runAgentTurn` pra esse padrão de
-	// pergunta. Mesma resposta do FIX-282 (buildToolErrorRecoveryExactnessFallback),
-	// mesmo escopo estreito de isExactnessOrCriteriaQuestion (falso-negativo
-	// preferível a falso-positivo) — só dispara com reveal já completo e
-	// `recommendedOffer` conhecido (antes disso não há o que justificar).
-	if (
+	// DESAMARRA (2026-07-13): o antigo FIX-282/293 respondia "por que essa e não
+	// outra?" com um texto 100% PRÉ-FABRICADO, sem invocar o modelo. O medo era
+	// legítimo (o modelo fabricava números), mas a cura matou o paciente: a
+	// pergunta mais importante de uma venda consultiva recebia um template
+	// idêntico toda vez.
+	//
+	// A correção certa não é responder pelo modelo — é DAR A ELE OS NÚMEROS
+	// REAIS e deixá-lo redigir (`exactnessFacts` → systemContext). O invariante
+	// "nunca inventar número" continua garantido, porque o número vem do
+	// servidor; só a redação voltou pro modelo.
+	const exactnessFacts =
 		isUserTurn &&
 		meta.revealCompleted === true &&
 		isExactnessOrCriteriaQuestion(userText) &&
 		typeof meta.recommendedOffer?.creditValue === "number"
-	) {
-		const fallback = buildToolErrorRecoveryExactnessFallback({
-			name: knownName,
-			offer: meta.recommendedOffer,
-			rawCreditValue: meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
-		});
-		yield { type: "text-delta", text: fallback };
-		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
-		yield { type: "finish", reason: "exactness-criteria-answered" };
-		return;
-	}
+			? {
+					administradora: meta.recommendedOffer.administradora,
+					creditValue: meta.recommendedOffer.creditValue,
+					requestedValue:
+						meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
+				}
+			: null;
 
 	const history = await loadConversationHistory(conversationId);
+	// DESAMARRA: o modelo passa a SABER o que o funil quer descobrir a seguir, e
+	// faz a pergunta com as palavras dele (o card então só mostra o input). Antes,
+	// o servidor perguntava e o modelo era proibido de perguntar.
+	const pendingGate = isUserTurn
+		? nextGate(meta, { hasContactName: Boolean(knownName) })
+		: null;
 	const systemContext = buildSystemContext({
 		knownName,
 		newlyExtractedExperience,
 		meta,
 		mentionedOffer,
+		confusedAboutGate,
+		exactnessFacts,
+		pendingGate,
 	});
 
 	// ─── Memory layer (Letta sidecar) ───────────────────────────────────────
@@ -1160,6 +1124,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 				type: "gate",
 				gate: result.nextGateToFire,
 				prefix: result.prefixForNextGate ?? undefined,
+				modelAsked: result.modelAskedGateQuestion === true,
 			};
 		}
 	}

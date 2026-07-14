@@ -1,6 +1,27 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import type { Gate } from "@/lib/agent/qualify-state";
 import { buildMentionedOfferDirective, type ChosenOffer } from "./choose-offer";
 import type { ChatMessage } from "./types";
+
+const brl = (n: number) =>
+	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/** O que cada gate precisa descobrir — em INTENÇÃO, não em frase pronta. O
+ * modelo escolhe as palavras; nós só dizemos o que falta saber. */
+const GATE_INTENT: Record<string, string> = {
+	name: "como ele quer ser chamado",
+	desire: "qual bem específico ele tem em mente, e por que agora",
+	credit: "quanto custa o bem que ele quer",
+	identify: "o CPF e o celular dele (a administradora exige pra trazer ofertas reais)",
+	experience: "se ele já fez consórcio antes",
+	"reco-consent": "se ele topa ver a opção que a gente recomenda",
+	timeframe: "em quanto tempo ele quer estar com o bem",
+	lance: "se ele teria como dar um lance pra antecipar a contemplação",
+	"lance-value": "quanto ele pensa em dar de lance",
+	"lance-embutido": "se ele quer considerar lance embutido (usar parte da própria carta)",
+	"simulator-offer": "se ele quer simular a parcela em diferentes meses de contemplação",
+	decision: "se o plano faz sentido pra ele",
+};
 
 export function buildSystemContext(args: {
 	knownName: string | null;
@@ -10,12 +31,91 @@ export function buildSystemContext(args: {
 	 * as já exibidas em tela (resolveOfferMentionForConversation) — rota
 	 * ANTES da tool-call, nunca depende da LLM adivinhar o groupId. */
 	mentionedOffer?: ChosenOffer | null;
+	/** O usuário sinalizou que não entendeu, e este gate segue pendente.
+	 * Substitui o antigo curto-circuito CLARIFY_LEAD_IN (FIX-301), que respondia
+	 * por texto fixo SEM invocar o modelo e repetia a mesma pergunta — a causa
+	 * direta do "o agente responde sempre a mesma coisa". Agora o modelo
+	 * reformula; nós só informamos o que ainda falta descobrir. */
+	confusedAboutGate?: Gate | null;
+	/** O usuário questionou a exatidão do valor da carta ou o critério da
+	 * recomendação. Substitui o fallback pré-fabricado (FIX-282/293): em vez de
+	 * o servidor RESPONDER, ele entrega os NÚMEROS REAIS e o modelo redige. O
+	 * invariante ("nunca inventar número") continua garantido — o número vem
+	 * daqui, não da cabeça do modelo. */
+	exactnessFacts?: {
+		administradora?: string;
+		creditValue: number;
+		requestedValue?: number;
+	} | null;
+	/** O gate que o funil quer resolver a seguir. Informamos a INTENÇÃO (o que
+	 * falta descobrir) — não a frase. O modelo pergunta com as palavras dele, e o
+	 * card que vem depois mostra só o input (`modelAsked`). Isso substitui o
+	 * modelo antigo, em que o servidor fazia a pergunta canônica e o modelo era
+	 * proibido de perguntar ("NÃO faça pergunta") — o que deixava a conversa
+	 * idêntica em toda sessão. */
+	pendingGate?: Gate | null;
 }): ChatMessage[] {
-	const { knownName, newlyExtractedExperience, meta, mentionedOffer } = args;
+	const {
+		knownName,
+		newlyExtractedExperience,
+		meta,
+		mentionedOffer,
+		confusedAboutGate,
+		exactnessFacts,
+		pendingGate,
+	} = args;
 	const out: ChatMessage[] = [];
+
+	// O gate pendente vira INTENÇÃO no contexto, nunca frase pronta. Se o modelo
+	// já vai perguntar por conta própria (confusedAboutGate cobre o caso do "não
+	// entendi"), não duplicamos a instrução.
+	if (pendingGate && !confusedAboutGate) {
+		const intent = GATE_INTENT[pendingGate];
+		if (intent) {
+			out.push({
+				role: "system",
+				content:
+					`Próximo passo do funil: descobrir ${intent}. Se fizer sentido no fluxo da ` +
+					`conversa, faça VOCÊ essa pergunta, com as suas palavras — o sistema mostra o ` +
+					`campo/os botões logo depois e NÃO vai repetir a pergunta. Se o usuário puxar ` +
+					`o assunto pra outro lado, atenda ele primeiro; o funil espera.`,
+			});
+		}
+	}
 
 	if (mentionedOffer) {
 		out.push({ role: "system", content: buildMentionedOfferDirective(mentionedOffer) });
+	}
+
+	if (confusedAboutGate) {
+		const intent = GATE_INTENT[confusedAboutGate];
+		out.push({
+			role: "system",
+			content:
+				`O usuário sinalizou que NÃO ENTENDEU. ` +
+				(intent ? `O que você ainda precisa descobrir: ${intent}. ` : "") +
+				`Reformule de um jeito DIFERENTE do que você já tentou — mais simples, com um exemplo ` +
+				`concreto, ou explicando antes por que você está perguntando. ` +
+				`NUNCA repita a mesma frase que ele não entendeu.`,
+		});
+	}
+
+	if (exactnessFacts) {
+		const marca = exactnessFacts.administradora ? ` (${exactnessFacts.administradora})` : "";
+		const ajuste =
+			typeof exactnessFacts.requestedValue === "number" &&
+			exactnessFacts.requestedValue !== exactnessFacts.creditValue
+				? `Ele PEDIU ${brl(exactnessFacts.requestedValue)} e a carta real ficou em ${brl(exactnessFacts.creditValue)} — houve ajuste, e ele merece saber disso com honestidade.`
+				: `A carta bate exatamente com o valor que ele pediu: ${brl(exactnessFacts.creditValue)}.`;
+		out.push({
+			role: "system",
+			content:
+				`Ele está questionando o VALOR da carta ou o CRITÉRIO da recomendação. Responda com ` +
+				`honestidade usando SÓ estes números reais${marca}: ${ajuste} ` +
+				`O critério da recomendação foi prazo, parcela e chance de contemplação combinados — ` +
+				`não só o valor de crédito isolado. NÃO invente nenhum outro número, score ou ` +
+				`porcentagem: use apenas os valores acima e os que já estão na tela.`,
+		});
 	}
 
 	if (knownName) {

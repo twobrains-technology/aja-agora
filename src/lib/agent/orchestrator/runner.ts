@@ -78,6 +78,11 @@ export type RunAgentResult = {
 	isConcierge: boolean;
 	nextGateToFire: Gate | null;
 	prefixForNextGate: string | null;
+	/** O MODELO já fez a pergunta deste gate, com as palavras dele. O adapter
+	 * emite só o input (chips/slider/form) e não repete a pergunta canônica.
+	 * Substitui o antigo `discardHeldQuestion` (FIX-326), que calava o modelo
+	 * pra deixar o card falar — origem do tom robótico e repetitivo. */
+	modelAskedGateQuestion?: boolean;
 	/** FIX-186: a descoberta na Bevi falhou neste turno (após retry). O
 	 * orchestrator materializa a mensagem amigável FIXA em vez de deixar o modelo
 	 * narrar erro cru; e o gate de proposta (FIX-187) fica bloqueado. */
@@ -435,6 +440,9 @@ export async function* runAgentTurn(args: {
 	// FIX-270: o getter é chamado a cada push/flush — `hasSearchToolCall` reflete
 	// as tool-calls JÁ processadas até o ponto corrente do stream (causal: uma
 	// claim "já busquei" só é verdadeira se a tool já rodou antes dela).
+	// DESAMARRA (2026-07-13): o modelo fez a pergunta do gate com as palavras dele
+	// neste turno → o card não repete a canônica (só mostra o input).
+	let modelAskedGateQuestion = false;
 	const ephemeralFilter = new EphemeralTextFilter(() => ({
 		hasReceivedDocuments,
 		hasSearchToolCall: executedToolNames.some((t) => CATALOG_SEARCH_TOOL_NAMES.has(t)),
@@ -1004,8 +1012,14 @@ export async function* runAgentTurn(args: {
 				});
 				const previewPassesArtifactGuard =
 					!previewProducedArtifact || allowGateWithArtifacts(previewGate, previewArtifactTypes);
-				if (previewShouldShow && previewPassesArtifactGuard) {
-					ephemeralFilter.discardHeldQuestion();
+				// DESAMARRA (2026-07-13): antes, aqui a pergunta do modelo era
+				// DESCARTADA (`discardHeldQuestion`) porque o card ia perguntar. O
+				// modelo ficava mudo e o usuário ouvia sempre a mesma frase canônica.
+				// Agora a pergunta do MODELO vence: ela é emitida, e o card se cala
+				// (só mostra o input). A regra "1 pergunta por balão" segue de pé —
+				// mudou só quem faz a pergunta.
+				if (previewShouldShow && previewPassesArtifactGuard && ephemeralFilter.hasHeldQuestion()) {
+					modelAskedGateQuestion = true;
 				}
 			}
 		}
@@ -1455,5 +1469,6 @@ export async function* runAgentTurn(args: {
 		isConcierge,
 		nextGateToFire,
 		prefixForNextGate,
+		modelAskedGateQuestion,
 	};
 }

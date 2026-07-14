@@ -4,7 +4,7 @@ import { createGatewayOpenAI } from "@/lib/llm/gateway-openai";
 import { isNativeAnthropicModel } from "@/lib/llm/model-provider";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
-import { allowedTools } from "../orchestrator/tool-policy";
+import { allowedTools, phaseFromMeta } from "../orchestrator/tool-policy";
 import type { ConversationMetadata } from "../personas";
 import {
 	buildConciergePrompt,
@@ -160,6 +160,10 @@ export function buildAgent(
 				// FIX-285: o gate `desire` foi respondido mesmo sem item
 				// específico — variante genérica da pergunta do motivo.
 				opts.meta?.desireAnswered ?? false,
+				// DESAMARRA (2026-07-13): fatia o prompt base pela fase — o turno de
+				// qualificação não carrega as regras de reveal/fechamento. Sem meta
+				// (paths ad-hoc), cai no default "terminal" = prompt inteiro.
+				opts.meta ? phaseFromMeta(opts.meta) : undefined,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,

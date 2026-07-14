@@ -78,44 +78,13 @@ describe("FIX-34 — sinal de avanço pós-reveal NÃO vira present_lead_form/co
  * Bug B — frase canônica B9 'detalhamento completo / ajustar o valor do bem'
  * (mantida — não tem relação com o lead_form; é a transição pós-detalhamento).
  */
-describe("Bug B — frase canônica B9 'detalhamento completo / ajustar o valor do bem'", () => {
-	it("SPECIALIST_BASE_PROMPT contém a substring 'detalhamento completo' como frase canônica", () => {
-		expect(
-			SPECIALIST_BASE_PROMPT,
-			"Bruna pediu frase canônica B9: 'Aqui está o detalhamento completo da {admin}. Quer ajustar o valor do bem?' — substring 'detalhamento completo' precisa aparecer literal no prompt pro modelo ancorar.",
-		).toMatch(/detalhamento completo/i);
-	});
-
-	it("SPECIALIST_BASE_PROMPT contém a substring 'ajustar o valor' como frase canônica", () => {
-		expect(
-			SPECIALIST_BASE_PROMPT,
-			"Frase canônica B9 termina em pergunta de ajuste: 'Quer ajustar o valor do bem?'. Substring 'ajustar o valor' precisa estar literal no prompt.",
-		).toMatch(/ajustar o valor/i);
-	});
-
-	it("frase canônica B9 está colocada no MESMO bloco que present_simulation_result OU present_recommendation_card", () => {
-		const blocoEsperado =
-			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
-		const blocoEsperadoReverso =
-			/detalhamento completo[\s\S]{0,200}ajustar o valor[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
-
-		expect(
-			blocoEsperado.test(SPECIALIST_BASE_PROMPT) ||
-				blocoEsperadoReverso.test(SPECIALIST_BASE_PROMPT),
-			"Frase canônica B9 ('detalhamento completo' + 'ajustar o valor') precisa estar a < 800 chars de present_simulation_result OU present_recommendation_card. Sem proximidade no prompt, o agent improvisa.",
-		).toBe(true);
-	});
-
-	it("frase canônica B9 contém placeholder pro nome da administradora", () => {
-		const placeholder =
-			/detalhamento completo[\s\S]{0,80}(\{admin\}|\{admin(istradora)?_name\}|\{group(_admin)?\}|da \{|do \{|<admin>|<administradora>)/i;
-		const placeholderAlternativo =
-			/detalhamento completo[\s\S]{0,80}(nome da admin|nome da administradora|administradora|admin)/i;
-
-		expect(
-			placeholder.test(SPECIALIST_BASE_PROMPT) ||
-				placeholderAlternativo.test(SPECIALIST_BASE_PROMPT),
-			"Frase canônica B9 deve incluir referência ao nome da administradora (placeholder {admin} ou indicação 'nome da administradora') pra forçar o LLM a usar o nome real do grupo.",
-		).toBe(true);
+describe("B9 — fechamento pós-detalhamento SEM frase canônica (desamarra 2026-07-13)", () => {
+	// O prompt exigia a frase "Aqui está o detalhamento completo da {admin}. Quer
+	// ajustar o valor do bem?" IPSIS LITTERIS ("não improvise outras formulações").
+	// Era a causa direta do "agente responde sempre a mesma coisa". ADR
+	// 2026-07-13 (revoga-jornada-soberana): a fala é do modelo.
+	it("não impõe frase canônica nem proíbe o modelo de improvisar", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/esta frase é canônica/i);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/Não improvise outras formulações/i);
 	});
 });

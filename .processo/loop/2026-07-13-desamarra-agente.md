@@ -60,6 +60,31 @@ atropelariam.
 5. ⏳ Mata a frase canônica *ipsis litteris* e os directives de "1 frase"
 6. ⏳ Troca os 45 cadeados de copy por testes de invariante; reescreve a rubrica do judge
 
+### Item novo (Kairo, 2026-07-13) — realinhar as raias do funil
+
+O Kairo definiu as raias e os critérios de transição:
+
+| Raia | Critério (palavra dele) |
+|---|---|
+| Novo | clicou o anúncio |
+| Engajado | abriu conversa, mas deu "Oi" |
+| Qualificado | entendendo a necessidade/cliente; **mostra as opções dos grupos** |
+| Em Negociação | definição do grupo a ser adquirido — **pediu proposta** |
+| Na Administradora | **aprovado pelo cliente**, aguardando aprovação da adm |
+| Em Atendimento | **adm deu ok**, fazendo envio de documentação nos portais |
+| Aguardando Pagamento | pagamento da 1ª parcela |
+| Fechado Ganho | — |
+
+**Delta vs. o código de hoje** (`src/lib/admin/lead-stages.ts:8`): o `STAGE_ORDER` atual tem **9**
+raias — inclui `proposta_enviada` entre `em_negociacao` e `na_administradora`, que **não existe** na
+lista dele (é absorvida pelo "pediu proposta" de Em Negociação). E a semântica de `na_administradora`
+/ `em_atendimento` muda (hoje `na_administradora` dispara o transbordo automático; na definição nova
+ela significa "cliente aprovou, esperando a adm").
+
+⚠️ **PENDENTE-KAIRO:** remover `proposta_enviada` é migration de enum + backfill dos leads que
+estiverem nessa raia. Confirmar antes de executar. Bloco próprio na rodada 1 (não entra na cirurgia
+do runtime — é mesa/Kanban).
+
 ### Rodadas 1..N — o loop
 Coletor **Haiku** (dossiê factual, não julga) → juiz **Sonnet** (conhece o mockup, pontua) →
 achados viram cards → blocos `todo-blocks` → merge na base → re-verifica. Fable sela o marco.

@@ -869,53 +869,26 @@ describe("FIX-105 — qualificação híbrida (binárias=botão, valor=conversa)
 // Aqui solo assert do MOLDE LITERAL como presente no prompt fonte.
 // ============================================================================
 
-describe("BUG-B9 — frase canonica de transicao pos-detalhamento esta no prompt", () => {
-	it("SPECIALIST_BASE_PROMPT contem o molde LITERAL da frase canonica B9", () => {
-		// Nota: o prompt usa "esta" (sem acento) — o assert refletir EXATAMENTE
-		// o que esta no source. Regex tolerante a "esta"/"está" pra evitar quebra
-		// quando alguem acentuar futuramente.
-		const moldeCanonico =
-			/Aqui est[áa] o detalhamento completo da \{admin\}\. Quer ajustar o valor do bem\?/;
-
-		expect(
-			moldeCanonico.test(SPECIALIST_BASE_PROMPT),
-			"SPECIALIST_BASE_PROMPT precisa conter o MOLDE EXATO da frase canonica B9: " +
-				"'Aqui esta o detalhamento completo da {admin}. Quer ajustar o valor do bem?'. " +
-				"Sem o molde literal, o LLM improvisa formulacoes — Bruna detecta e reprova.",
-		).toBe(true);
+describe("B9 — fechamento pós-detalhamento: SEM frase canônica (desamarra 2026-07-13)", () => {
+	// O prompt exigia uma frase IPSIS LITTERIS ("Aqui está o detalhamento completo
+	// da {admin}. Quer ajustar o valor do bem?") com a instrução "não improvise
+	// outras formulações". Era a receita do "agente responde sempre a mesma coisa"
+	// que o Kairo reportou. O ADR 2026-07-13 revogou a jornada soberana: a fala é
+	// do modelo; só o INVARIANTE é do código.
+	it("NÃO impõe frase canônica ipsis litteris no fechamento", () => {
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/esta frase é canônica/i);
+		expect(SPECIALIST_BASE_PROMPT).not.toMatch(/Não improvise outras formulações/i);
 	});
 
-	it("placeholder {admin} aparece imediatamente antes do '.' na frase canonica", () => {
-		// Defesa anti-regressao de placeholder errado (ex: alguem trocando por
-		// {adminName} ou {administradora} sem atualizar o ponto de injecao).
-		// Match deve achar literalmente "da {admin}." (com ponto final).
-		const placeholderColado = /da \{admin\}\./;
-		expect(
-			placeholderColado.test(SPECIALIST_BASE_PROMPT),
-			"Placeholder canonico e exatamente '{admin}' — colado a 'da ' e seguido de '.'. " +
-				"Se mudar pra {adminName}/{administradora}, atualize TAMBEM o consumer que injeta o nome.",
-		).toBe(true);
+	it("mantém a INTENÇÃO do fechamento (dizer de quem é o detalhamento + abrir o próximo passo)", () => {
+		// Invariante de conteúdo, não de frase: o agente tem que saber o que fazer
+		// depois do detalhamento — com as palavras dele.
+		const bloco = SPECIALIST_BASE_PROMPT.slice(
+			SPECIALIST_BASE_PROMPT.indexOf("Fechamento pós-detalhamento"),
+		).slice(0, 600);
+		expect(bloco).toMatch(/administradora/i);
+		expect(bloco).toMatch(/suas palavras|não existe frase pronta/i);
 	});
-
-	it("frase canonica B9 vive no mesmo bloco de present_simulation_result/present_recommendation_card", () => {
-		// Proximidade textual no prompt (<800 chars) — sem isso o LLM perde a
-		// associacao "apos detalhamento, use esta frase".
-		const blocoForward =
-			/(present_simulation_result|present_recommendation_card)[\s\S]{0,800}detalhamento completo[\s\S]{0,200}ajustar o valor/i;
-		const blocoReverso =
-			/detalhamento completo[\s\S]{0,200}ajustar o valor[\s\S]{0,800}(present_simulation_result|present_recommendation_card)/i;
-
-		expect(
-			blocoForward.test(SPECIALIST_BASE_PROMPT) || blocoReverso.test(SPECIALIST_BASE_PROMPT),
-			"Frase canonica B9 precisa estar a <800 chars de present_simulation_result OU present_recommendation_card. " +
-				"Sem proximidade, agent associa errado e improvisa.",
-		).toBe(true);
-	});
-
-	// Cross-ref: src/lib/agent/system-prompt.lead-funnel.test.ts (Bug B) cobre
-	// as 4 dimensoes (substring 'detalhamento completo', 'ajustar o valor',
-	// proximidade e placeholder de admin). Aqui mantivemos os asserts mais
-	// criticos pra detectar regressao rapida.
 });
 
 // ============================================================================
@@ -4216,14 +4189,21 @@ describe("FIX-1-PAPEL-AJA-AGORA — explicação de 1ª vez omitia o papel da pl
 		expect(missesAjaAgoraRole(text)).toBe(false);
 	});
 
-	it("acoplamento: buildExperienceFirstDirective instrui o papel da Aja Agora", () => {
+	it("acoplamento: buildExperienceFirstDirective instrui o papel da Aja Agora (intenção, não frase)", () => {
+		// DESAMARRA (2026-07-13): antes exigia a string literal "encontrar o grupo"
+		// — copy do docx travada por regex, o cadeado que obrigava a re-amarrar o
+		// agente pra manter a suíte verde. Agora o assert é de INTENÇÃO: o directive
+		// tem que instruir o PAPEL da plataforma (achar o grupo com maior chance no
+		// prazo do usuário). Com que palavras é problema do modelo.
 		const directives = readSource("src/lib/agent/orchestrator/directives.ts");
 		const m = directives.match(/buildExperienceFirstDirective[\s\S]{0,2000}?\n}/);
 		expect(m, "buildExperienceFirstDirective precisa existir em directives.ts").not.toBeNull();
 		const body = (m?.[0] ?? "").toLowerCase();
 		expect(body).toMatch(/papel/);
-		expect(body).toMatch(/encontrar o grupo/);
 		expect(body).toMatch(/maior chance/);
+		expect(body).toMatch(/prazo/);
+		// E NÃO pode voltar a ditar a frase pronta.
+		expect(body).not.toMatch(/fiel ao docx/);
 	});
 });
 

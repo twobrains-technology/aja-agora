@@ -37,6 +37,15 @@ const TRANSITION_PAUSE_MS = 1200;
 
 type PendingArtifact = { type: string; payload: Record<string, unknown> };
 
+/** Troca o corpo do interactive por um rótulo neutro — usado quando o MODELO já
+ * fez a pergunta em texto e o botão não deve repeti-la. Preserva a estrutura
+ * (action/botões); mexe só no `body.text`. */
+function withNeutralBody(interactive: Record<string, unknown>): Record<string, unknown> {
+	const body = interactive.body as { text?: string } | undefined;
+	if (!body || typeof body.text !== "string") return interactive;
+	return { ...interactive, body: { ...body, text: "Escolha uma opção:" } };
+}
+
 async function gateInteractive(
 	gate: Gate,
 	conversationId: string,
@@ -327,14 +336,24 @@ async function consumeEvents(
 				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
 				if (interactive) {
 					if (hasSent) await pauseBeforeNext();
-					await sendInteractiveMessage(from, interactive);
+					// DESAMARRA (2026-07-13): o modelo já fez a pergunta com as palavras
+					// dele (`ev.modelAsked`) — o corpo do botão não repete a canônica,
+					// vira só o rótulo do input. Sem isso o usuário lia a pergunta duas
+					// vezes (a humana e a enlatada) no mesmo balão.
+					await sendInteractiveMessage(
+						from,
+						ev.modelAsked ? withNeutralBody(interactive) : interactive,
+					);
 					lastWasInteractive = true;
 					hasSent = true;
 					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
-					const textPrompt = await gateTextPrompt(ev.gate, conversationId, undefined);
+					// DESAMARRA: se o modelo já perguntou, não repetimos a canônica.
+					const textPrompt = ev.modelAsked
+						? null
+						: await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
 						await sendTextMessage(from, textPrompt);

@@ -1,12 +1,12 @@
 import type { Category, QualifyAnswers } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
 
-/** FIX-301 (P7, loop-de-goal r10) — lead-in universal quando o usuário sinaliza
- * confusão ("não entendi") com um gate REALMENTE pendente. Reconhece a dúvida
- * em 1 frase e deixa a pergunta/card canônico do MESMO gate seguir — nunca um
- * menu novo nem uma dissertação livre. Usado por `orchestrator/index.ts`
- * (curto-circuito ANTES de invocar a LLM, Lei 4). */
-export const CLARIFY_LEAD_IN = "Sem problemas, deixa eu simplificar:";
+// REMOVIDO em 2026-07-13 (ADR revoga-jornada-soberana): `CLARIFY_LEAD_IN`
+// ("Sem problemas, deixa eu simplificar:") era emitido num curto-circuito ANTES
+// de invocar o modelo e vinha seguido da MESMA pergunta canônica do gate. O
+// usuário dizia "não entendi" e recebia a frase que ele não entendeu, de novo.
+// Hoje quem reformula é o modelo — o servidor só informa, via systemContext, o
+// que ainda falta descobrir (`confusedAboutGate`, orchestrator/system-context.ts).
 
 /** FIX-212 (split 2 tempos) — a EDUCAÇÃO do lance embutido e a PERGUNTA são
  * constantes separadas. Preserva as âncoras do docx (própria carta / R$ 100 mil /
