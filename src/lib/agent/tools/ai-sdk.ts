@@ -18,6 +18,8 @@ import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
+import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
+import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
@@ -353,6 +355,41 @@ const STATUS_NO_CONTEXT = {
 		"[Status indisponivel neste contexto: sem conversationId nao ha proposta pra consultar. " +
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
+
+// FIX-332 (P0.1, veredito rodada 1 do loop desamarra-agente) — pós-reveal SEM
+// troca de faixa, search_groups/recommend_groups NÃO re-buscam a Bevi: devolvem
+// os grupos JÁ EXIBIDOS nesta conversa (mesma fonte de dado do
+// listShownOffersForConversation usado pelo fallback de tool-error,
+// choose-offer.ts). Isso dá ao modelo um resultado ACIONÁVEL (o groupId LITERAL
+// pra usar em simulate_quota/get_group_details) em vez de deixar a tool fora do
+// toolset — o que hoje vira NoSuchToolError e descarta a fala inteira do turno.
+function shownGroupsSearchResult(offers: ChosenOffer[]): {
+	groups: Array<{
+		id: string;
+		administradora?: string;
+		creditValue?: number;
+		termMonths?: number;
+		monthlyPayment?: number;
+	}>;
+	total: number;
+	note: string;
+} {
+	return {
+		groups: offers.map((o) => ({
+			id: o.groupId,
+			administradora: o.administradora,
+			creditValue: o.creditValue,
+			termMonths: o.termMonths,
+			monthlyPayment: o.monthlyPayment,
+		})),
+		total: offers.length,
+		note:
+			"Estes são os grupos JÁ EXIBIDOS nesta conversa — não é uma busca nova, a Bevi não foi " +
+			"consultada de novo. Use o id LITERAL direto em simulate_quota/get_group_details pra " +
+			"responder o pedido do usuário. NÃO chame present_comparison_table/present_recommendation_card " +
+			"de novo — a tela já mostra essas opções.",
+	};
+}
 
 // FIX-186 (Kairo 2026-07-01) — marcador do tool-result quando a descoberta na
 // Bevi falha (após retry silencioso, ou erro duro). O `runDiscovery` retorna
@@ -1095,6 +1132,12 @@ export type ConsorcioToolsContext = {
 	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
 	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
 	hasLance?: boolean;
+	/** FIX-332: pós-reveal SEM troca de faixa (meta.revealCompleted===true e
+	 * !revealValueTargetChanged(meta)) — search_groups/recommend_groups NÃO
+	 * re-buscam a Bevi, devolvem os grupos JÁ EXIBIDOS nos artifacts. Calculado
+	 * pelo chamador (builder.ts) a partir do meta; false/undefined preserva o
+	 * comportamento de busca real (pré-reveal ou troca legítima de faixa). */
+	reuseShownGroupsOnly?: boolean;
 };
 
 /**
@@ -1104,7 +1147,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId, hasLance } = ctx;
+	const { conversationId, hasLance, reuseShownGroupsOnly } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1348,9 +1391,20 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	const search_groups = tool({
 		// FIX-70: opt-in `sweep` (varredura multi-faixa) só na tool por-request — a
 		// versão estática (registry) segue como sentinel sem contexto.
-		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais.`,
+		// FIX-332: pós-reveal sem troca de faixa, a tool não busca de novo — ver
+		// nota no corpo do execute.
+		description: `${consorcioTools.search_groups.description} Passe sweep=true pra varrer varias faixas de valor de uma vez e montar um comparativo com alternativas reais. Pós-reveal, sem troca de faixa, devolve os grupos já exibidos nesta conversa em vez de buscar de novo.`,
 		inputSchema: searchGroupsSweepInput,
 		execute: async (args: z.infer<typeof searchGroupsSweepInput>) => {
+			// FIX-332: pós-reveal com o MESMO valor-alvo, NÃO re-busca a Bevi (custo +
+			// write conflict, PROIBIDO pelo invariante) — devolve os grupos JÁ
+			// EXIBIDOS. Sem isso, search_groups ficava fora do toolset da fase reveal
+			// e o modelo tomava NoSuchToolError ao tentar detalhar/simular uma oferta
+			// já mostrada, descartando a fala inteira do turno pro fallback enlatado.
+			if (reuseShownGroupsOnly) {
+				if (!conversationId) return DISCOVERY_NO_CONTEXT;
+				return shownGroupsSearchResult(await listShownOffersForConversation(conversationId));
+			}
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			return runDiscovery("search_groups", async () => {
@@ -1411,9 +1465,15 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	});
 
 	const recommend_groups = tool({
-		description: consorcioTools.recommend_groups.description,
+		description: `${consorcioTools.recommend_groups.description} Pós-reveal, sem troca de faixa, devolve os grupos já exibidos nesta conversa em vez de buscar de novo.`,
 		inputSchema: recommendGroupsSchema,
 		execute: async (args: z.infer<typeof recommendGroupsSchema>) => {
+			// FIX-332: mesma interceptação de search_groups — pós-reveal com o
+			// MESMO valor-alvo, não re-busca a Bevi.
+			if (reuseShownGroupsOnly) {
+				if (!conversationId) return DISCOVERY_NO_CONTEXT;
+				return shownGroupsSearchResult(await listShownOffersForConversation(conversationId));
+			}
 			const adapter = discovery();
 			if (!adapter) return DISCOVERY_NO_CONTEXT;
 			// FIX-289: reaproveita search_groups do MESMO turno se os parâmetros

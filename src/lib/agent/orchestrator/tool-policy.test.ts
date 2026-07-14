@@ -117,7 +117,7 @@ const REVEAL_EXPECTED = [
 	...BASE,
 	// FIX-309: present_topic_picker SAIU também (era só closing/terminal desde
 	// o FIX-300; agora sai de toda fase). Ver describe FIX-309 abaixo.
-	// what-if e detalhe são legítimos; RE-descoberta não (BUG-REVEAL-LOOP).
+	// what-if e detalhe são legítimos; RE-descoberta (cards) não (BUG-REVEAL-LOOP).
 	// FIX-34: present_lead_form FORA — pós-reveal o avanço é decision → contract_form
 	// (jornada self-service), nunca captura de lead pra consultor humano.
 	"capture_lead",
@@ -138,6 +138,14 @@ const REVEAL_EXPECTED = [
 	// FIX-280 (loop r9, G4): present_whatsapp_optin SAIU também — mesma
 	// receita do FIX-246/253, emissão SERVER-SIDE (server-cards.ts). Ver
 	// describe FIX-280 abaixo.
+	// FIX-332 (P0.1, veredito rodada 1 desamarra-agente): search_groups/
+	// recommend_groups VOLTAM ao toolset pós-reveal — mas não re-buscam a Bevi
+	// (ai-sdk.ts intercepta com reuseShownGroupsOnly), só devolvem os grupos
+	// JÁ EXIBIDOS. Sem eles, o modelo tomava NoSuchToolError ao tentar
+	// detalhar/simular uma oferta já mostrada, e o runner descartava a fala
+	// inteira do turno pro fallback enlatado. Ver describe FIX-332 abaixo.
+	"recommend_groups",
+	"search_groups",
 	"simulate_contemplation",
 	"simulate_quota",
 ].sort();
@@ -148,7 +156,14 @@ const REVEAL_EXPECTED = [
 // directive que fecha closing só narra (sem tool-call). Ver describe FIX-253
 // abaixo.
 //
-const CLOSING_EXPECTED = [...REVEAL_EXPECTED, "present_contract_form"].sort();
+// FIX-332: search_groups/recommend_groups voltam SÓ em reveal (escopo do
+// fix — closing já tem decisão tomada, "detalhar oferta já exibida" não é o
+// cenário que o bug cobre) — por isso removidos aqui em vez de herdados de
+// REVEAL_EXPECTED.
+const CLOSING_EXPECTED = [
+	...REVEAL_EXPECTED.filter((t) => t !== "search_groups" && t !== "recommend_groups"),
+	"present_contract_form",
+].sort();
 
 const TERMINAL_EXPECTED = [...BASE].sort();
 
@@ -248,11 +263,24 @@ describe("FIX-19 — allowedTools: matriz fase × tool", () => {
 		expect(allowedTools(TERMINAL_META)).not.toContain("present_lead_form");
 	});
 
-	it("descoberta (search/recommend): AUSENTE em toda fase pós-reveal", () => {
-		for (const meta of [REVEAL_META, CLOSING_META, TERMINAL_META]) {
+	// FIX-332: search_groups/recommend_groups voltam ao toolset em reveal (não
+	// re-buscam — ai-sdk.ts intercepta com reuseShownGroupsOnly), mas continuam
+	// FORA em closing/terminal (fases em que nem faz sentido "detalhar oferta
+	// já exibida" — closing já decidiu, terminal já fechou).
+	it("FIX-332: search_groups/recommend_groups voltam em reveal, mas continuam AUSENTES em closing/terminal", () => {
+		const revealAllowed = allowedTools(REVEAL_META);
+		expect(revealAllowed).toContain("search_groups");
+		expect(revealAllowed).toContain("recommend_groups");
+		for (const meta of [CLOSING_META, TERMINAL_META]) {
 			const allowed = allowedTools(meta);
 			expect(allowed).not.toContain("search_groups");
 			expect(allowed).not.toContain("recommend_groups");
+		}
+	});
+
+	it("cards de apresentação da descoberta (recommendation/comparison/group_card): AUSENTES em toda fase pós-reveal sem troca de faixa", () => {
+		for (const meta of [REVEAL_META, CLOSING_META, TERMINAL_META]) {
+			const allowed = allowedTools(meta);
 			expect(allowed).not.toContain("present_recommendation_card");
 			expect(allowed).not.toContain("present_comparison_table");
 			expect(allowed).not.toContain("present_group_card");
@@ -418,7 +446,7 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		expect(tools).toContain("present_value_picker");
 	});
 
-	it("reveal: dial entra, decision/optin (FIX-253/FIX-280, server-side) e re-descoberta/contract_form ficam fora", () => {
+	it("reveal: dial entra, decision/optin (FIX-253/FIX-280, server-side) ficam fora; search/recommend VOLTAM (FIX-332), cards de apresentação/contract_form continuam fora", () => {
 		const agent = buildAgent(makePersonaRow(), "neutro", { meta: REVEAL_META });
 		const tools = exposedTools(agent);
 		expect(tools).toContain("present_contemplation_dial");
@@ -427,8 +455,12 @@ describe("FIX-19 — builder filtra o toolset pela policy da fase", () => {
 		// SERVER-SIDE determinística (buildWhatsappOptinCard, server-cards.ts).
 		expect(tools).not.toContain("present_whatsapp_optin");
 		expect(tools).toContain("simulate_quota"); // what-if legítimo
-		expect(tools).not.toContain("search_groups");
-		expect(tools).not.toContain("recommend_groups");
+		// FIX-332: search_groups/recommend_groups voltam pós-reveal — não pra
+		// re-buscar (ai-sdk.ts intercepta com reuseShownGroupsOnly), mas pra
+		// existir e o modelo não tomar tool-error ao mencionar uma oferta já
+		// mostrada.
+		expect(tools).toContain("search_groups");
+		expect(tools).toContain("recommend_groups");
 		expect(tools).not.toContain("present_recommendation_card");
 		expect(tools).not.toContain("present_contract_form");
 		expect(tools).not.toContain("present_lead_form"); // FIX-34: avanço é decision→contract
@@ -550,16 +582,25 @@ describe("FIX-68 — allowedTools(reveal): search VOLTA na troca de faixa, FICA 
 		expect(allowed).not.toContain("present_decision_prompt");
 	});
 
-	it("MESMA faixa (afirmativo): descoberta CONTINUA fora (BUG-REVEAL-LOOP não regride)", () => {
+	it("MESMA faixa (afirmativo): cards de apresentação da descoberta CONTINUAM fora (BUG-REVEAL-LOOP não regride); search/recommend ficam disponíveis (FIX-332, só leem o já exibido)", () => {
 		const allowed = allowedTools(REVEAL_MESMA_FAIXA);
-		for (const tool of REVEAL_DISCOVERY_TOOLS) {
+		const presentationCards = REVEAL_DISCOVERY_TOOLS.filter(
+			(t) => t !== "search_groups" && t !== "recommend_groups",
+		);
+		for (const tool of presentationCards) {
 			expect(allowed).not.toContain(tool);
 		}
+		// FIX-332: diferente dos cards de apresentação, search_groups/recommend_groups
+		// SEMPRE ficam disponíveis em reveal — não re-buscam (ai-sdk.ts intercepta),
+		// então não têm o risco de re-abrir o BUG-REVEAL-LOOP.
+		expect(allowed).toContain("search_groups");
+		expect(allowed).toContain("recommend_groups");
 	});
 
-	it("sem baseline: descoberta fora (fail-safe — só reabre com sinal positivo de troca)", () => {
+	it("sem baseline: cards de apresentação da descoberta ficam fora (fail-safe); search/recommend disponíveis mesmo assim (FIX-332)", () => {
 		const allowed = allowedTools(REVEAL_SEM_BASELINE);
-		expect(allowed).not.toContain("search_groups");
+		expect(allowed).not.toContain("present_recommendation_card");
+		expect(allowed).toContain("search_groups");
 	});
 
 	it("troca de faixa NÃO antecipa o passo 5 — contract_form/lead_form continuam fora", () => {

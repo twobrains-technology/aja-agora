@@ -887,15 +887,19 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			fallback = buildToolErrorRecoveryResolvedFallback({ name: knownName, offer: mentionedOffer });
 		} else {
 			const generic = buildToolErrorRecoveryFallback({ name: knownName });
-			const lastAssistantText =
-				[...history].reverse().find((m) => m.role === "assistant")?.content ?? null;
-			fallback =
-				lastAssistantText === generic
-					? buildToolErrorRecoveryFallbackRepeat({
-							name: knownName,
-							offers: await listShownOffersForConversation(conversationId),
-						})
-					: generic;
+			// FIX-332 (P2.7, veredito rodada 1): o guard só comparava com o ÚLTIMO
+			// turno do assistant — com um turno diferente entre as duas ocorrências,
+			// a MESMA frase enlatada podia voltar não-consecutiva (auto t10/t15 do
+			// veredito). Agora varre TODO o histórico do assistant nesta conversa.
+			const genericAlreadyUsed = history.some(
+				(m) => m.role === "assistant" && m.content === generic,
+			);
+			fallback = genericAlreadyUsed
+				? buildToolErrorRecoveryFallbackRepeat({
+						name: knownName,
+						offers: await listShownOffersForConversation(conversationId),
+					})
+				: generic;
 		}
 		yield { type: "text-delta", text: fallback };
 		await saveMessage(conversationId, "assistant", fallback, channel, currentPersona);
