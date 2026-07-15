@@ -107,5 +107,42 @@ destravada, o agente respondeu com contexto em TODOS os turnos:
 - **LIÇÃO PRO LOOP:** depois de editar `src/`, SEMPRE recriar o container e conferir
   compilação limpa ANTES de disparar o coletor — senão o cache stale come uma rodada.
 
+### Rodada 3b (deep run até o fim) — lance embutido VALIDADO + 1 bug real
+
+Coletor percorreu a jornada COMPLETA: Automóvel → nome → motivo → valor → CPF real
+(homolog) → **23 ofertas reais da Bevi** → educação de consórcio → prazo → lance →
+lance-value → **lance embutido** → oferta do simulador. Turn-trace confirma os gates
+e artifacts (experience→comparison_table; timeframe→recommendation_card+simulation_
+result; lance-embutido→embedded_bid), todos server-side.
+
+- **Pedido original da sessão RESOLVIDO:** o momento do lance embutido APARECE
+  pós-reveal, com o número REAL da carta ("na sua carta de R$ 131.156") + a pergunta
+  "Quer considerar esse tipo de lance nas suas simulações?". Confirma que a "falta do
+  lance embutido" era sintoma da infra quebrada (a jornada nunca chegava lá), não bug
+  de fluxo. Matemática do embutido consistente (39.347 = 30% de 131.156; recebe
+  91.809 = carta − embutido).
+
+- **ISSUE "7 contemplados/mês" → REJEITADO (evidência).** Suspeita da memória
+  `tela_recomendacao_dados_reais` ("X/mês fabricado"). Mas o "36/mês" já foi corrigido
+  (FIX-191/192): `recommendation-payload.ts:139` seta `contempladosMes` SÓ do dado
+  real (`group.availableSlots>0`); input da LLM removido (`ai-sdk.ts:151`); card só
+  renderiza `>0`. "7 por mês" = availableSlots real do grupo Itaú. Não é fabricado.
+
+### FIX-C — pedido de CPF DUPLICADO no mesmo balão
+- **Sintoma (coletor, turno do valor→CPF, LITERAL):** "Boa, 120 mil então. Agora
+  preciso do seu CPF e celular pra trazer as ofertas reais das administradoras. Pra
+  eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular." — a
+  mesma coisa duas vezes.
+- **Causa (código):** o pedido de identidade é DETERMINÍSTICO
+  (`web/adapter.ts:549 pipeGatePrompt(identify)` → `gateQuestion('identify','web')`).
+  Mas o system-prompt (linhas 322 e 341) VAZAVA ao LLM a frase exata do sistema ("pra
+  trazer as ofertas reais das administradoras, preciso do seu CPF e celular") — o LLM
+  papagaiava e o sistema repetia. Overlap prompt×código: o código já é dono do pedido.
+- **Fix (regra do projeto: código assumiu o invariante → remove a regra-no-prompt):**
+  tirei a cópia vazada das duas linhas e proíbi o LLM de antecipar/reproduzir o pedido
+  ("no turno do valor, só confirma o valor e para; o sistema pede sozinho"). NÃO
+  engessa — a confirmação do valor segue no tom do modelo. Commit: ver abaixo.
+- **Status:** aplicado; a validar no loop (próximo coletor confere se o CPF sai UMA vez).
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
