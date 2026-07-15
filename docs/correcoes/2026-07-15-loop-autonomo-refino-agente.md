@@ -369,3 +369,15 @@ comissão) — mas o ground truth pegou 3 claims fabricados que o coletor rotulo
 - **LIÇÃO PRO LOOP:** depois de editar código do AGENTE (system-prompt/directives/
   orchestrator), verificar que a rota `/api/chat` compila (POST → 400, não 500), NÃO só
   o home. E NUNCA usar crase dentro dos template literals do prompt.
+
+### Rodada 12 — FIX-G validado nos casos perigosos (desistência/contemplação); financiamento aceito
+Re-rodei o cético (build limpo, sem erro). Ground truth via coletor:
+- **Desistência:** agora COERENTE ("recebe as parcelas, perde taxa de admin/seguro;
+  fundo varia por administradora") — sem a contradição da rodada 10. ✅ (era o mais grave)
+- **Contemplação:** qualitativa ("varia de grupo... aí eu te mostro o histórico REAL"),
+  não crava mais número fechado. ✅
+- **Financiamento:** ainda cita ballpark "em torno de 22% ao ano (CET)" + "16-17% taxa
+  adm", MAS hedgeado ("em torno de", "CET", "dependendo do grupo"). **Aceito** — ballpark
+  realista com ressalva é conversa de vendedor; forçar tool/qualitativo-puro aqui seria
+  ENGESSAR (CLAUDE.md: suspeitar de "trava demais" antes de "falta trava"; + haiku é o
+  modelo fraco). Os bugs perigosos (desinformação) foram mortos; isto não é um.
