@@ -3,6 +3,7 @@ import {
 	DeleteObjectCommand,
 	GetObjectCommand,
 	HeadBucketCommand,
+	HeadObjectCommand,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -127,6 +128,20 @@ export async function putObject(
 				: {}),
 		}),
 	);
+}
+
+/** Existe o objeto? (HEAD). Usado antes de assinar URL de download pra não
+ * devolver link que estoura 404 (ex.: geração best-effort que falhou). */
+export async function objectExists(
+	key: string,
+	cfg: StorageConfig = getStorageConfig(),
+): Promise<boolean> {
+	try {
+		await getClient(cfg).send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }));
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** Lê um objeto inteiro em memória. */

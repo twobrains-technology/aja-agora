@@ -67,6 +67,7 @@ import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import { generateAndStoreProposalPdf } from "@/lib/proposal/store";
 import type { ChatAction } from "@/lib/chat/actions";
 import { EMPTY_TURN_FALLBACK, isTurnEmpty, pickEmptyTurnFallback } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
@@ -889,7 +890,10 @@ export async function POST(req: NextRequest) {
 											administradoraChanged,
 											previousAdministradora,
 										},
-										{ declaredLanceValue: meta.qualifyAnswers?.lanceValue },
+										{
+											declaredLanceValue: meta.qualifyAnswers?.lanceValue,
+											clientName: contactName,
+										},
 									),
 									writer,
 									conversationId,
@@ -936,6 +940,15 @@ export async function POST(req: NextRequest) {
 						if (body.action?.kind === "offer-confirm") {
 							try {
 								const res = await confirmOffer(conversationId);
+								// Proposta co-branded em PDF → S3 (bucket de docs de cliente) pra
+								// aparecer no card do atendimento (back office). Best-effort: o
+								// PDF NUNCA derruba o fechamento (mesmo padrão do sendFechoPedirOi).
+								void generateAndStoreProposalPdf(conversationId).catch((err) => {
+									console.error(
+										`[offer-confirm] geração da proposta PDF falhou (conv=${conversationId})`,
+										err,
+									);
+								});
 								// Estado TERMINAL: pós-confirmação o fechamento está feito — o
 								// agente não re-apresenta contract_form (merge sobre meta atual).
 								const fresh = await reloadMeta(conversationId);
