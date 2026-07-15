@@ -417,3 +417,20 @@ variação, depende do grupo" — hedgeado, mais conservador, SEM "posso garanti
   meses/por mês" pré-reveal — mas isso é blast radius (pode cortar texto legítimo) +
   decisão de compliance (o que exatamente bloquear). Fica pra você decidir; o modelo de
   prod (mais forte que o haiku de dev) também deve segurar melhor sozinho.
+
+### Rodada 15 (tudo de uma vez) — FIX-I: agente re-pergunta o NOME já dado na 1ª mensagem
+Usuário: "oi, sou o Ricardo, quero um carro de uns 90 mil pra usar no trabalho, primeira
+vez". O agente respondeu "como posso te chamar?" — **re-perguntando o nome que ele acabou
+de dar**. Burrice/usabilidade clássica.
+- **Causa (código):** `transition.ts:86` calcula `nameHint` de `conv.contactName`, que no
+  primeiro contato é null → `buildTransitionFirstContactDirective` (directives.ts:17)
+  afirma "você ainda NÃO sabe o nome" e FORÇA o pedido, mesmo com o nome na mensagem. Não
+  é o analyzer falhando; é a directive com premissa falsa (existia pro PF-08: forçar o
+  nome pra o agente não pular). O ground truth confirma `contactName` vazio.
+- **Fix (baixo risco, sem mexer no fluxo, preserva PF-08):** a directive virou CONDICIONAL
+  — "cheque se o nome JÁ veio nesta mensagem; se sim, save_contact_name + cumprimenta, NÃO
+  pergunta de novo; se NÃO veio, pede o nome antes de tudo (PF-08 intacto)".
+- **Nota:** a re-pergunta do VALOR no Turno 3 ("90 mil que você falou, ou variou?") é
+  confirmação borderline (referencia "que você falou") — deixei, não é fresh ask.
+- **Status:** aplicado, build verificado (`/api/chat`→400); validar re-rodando "tudo de
+  uma vez".
