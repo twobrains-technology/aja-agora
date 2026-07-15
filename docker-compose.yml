@@ -70,7 +70,13 @@ services:
       # onda: trocar `??` por checagem de truthy no código). Testar Qwen/LiteLLM
       # aqui é rodar `pnpm vitest` direto no host/worktree com as vars inline no
       # comando (como os blocos FIX-304/305 já validam), NÃO via este container.
-      AI_MODEL: ${AI_MODEL:-}
+      # Default EXPLÍCITO (nunca vazio): `${AI_MODEL:-}` virava "" quando a var não
+      # está no shell/.env, e o código faz `process.env.AI_MODEL ?? "claude-sonnet-5"`
+      # — `??` NÃO pega string vazia, então o app roteava com model VAZIO pro provider
+      # OpenAI-compat (/responses → 400 "Invalid model name" → turno vazio → fallback
+      # "me perdi"). Mesma armadilha `${VAR:-}` × `??` que o comentário acima descreve.
+      # haiku é o modelo de dev (bakeoff FIX-304). Override: `AI_MODEL=X docker compose up`.
+      AI_MODEL: ${AI_MODEL:-claude-haiku-4-5}
       # Memória cross-channel no Postgres (FIX-81 — Letta removido).
       MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
       MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
