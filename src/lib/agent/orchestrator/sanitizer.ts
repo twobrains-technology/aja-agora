@@ -343,6 +343,51 @@ export function isMechanismNarrationClaim(segment: string): boolean {
 	return MECHANISM_NARRATION_PATTERNS.some((rx) => rx.test(s));
 }
 
+// FIX (2026-07-15, Kairo ao vivo — reveal): o modelo às vezes PAPAGAIA os nomes
+// de tool do directive ("Agora vou chamar recommend_groups e em seguida
+// apresentar a recomendação com a simulação:") — os `PRODUCT_STEP_ANNOUNCEMENT`
+// acima não pegam porque o verbo é "chamar" (não mostrar/recomendar). Nome de
+// tool interno NUNCA pode chegar ao usuário, em nenhum contexto — barreira em
+// CÓDIGO (Lei 4), independe de qual frase o modelo escolher. Mira só os
+// identificadores literais das tools (snake_case do toolset), então não pega
+// copy legítima em português.
+const INTERNAL_TOOL_LEAK_PATTERN =
+	/\b(present_[a-z_]+|search_groups|recommend_groups|simulate_quota|save_contact_name|suggest_handoff|create_lead|update_lead)\b/i;
+
+/** Um segmento cita o nome literal de uma tool interna (ex.: "vou chamar
+ * recommend_groups") — vazamento de pipeline, nunca pode virar bolha. */
+export function isInternalToolLeak(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return INTERNAL_TOOL_LEAK_PATTERN.test(s);
+}
+
+// FIX (2026-07-15, Kairo ao vivo — reveal em dois tempos): NO TURNO DO REVEAL
+// (`hasSearchToolCall`), o agente só apresenta as cartas e pergunta a
+// familiaridade ("já fez consórcio?"); o cenário de contemplação (lance,
+// quantos meses pra contemplar, sorteio) é do card de simulação/agulha, que só
+// aparece DEPOIS que o usuário pede a recomendação (mockup). O directive pede
+// isso, mas o Haiku desobedece de forma não-determinística (achado ao vivo:
+// "com um lance de R$ 52.600, você consegue ser contemplado lá no 6º mês" saiu
+// ANTES da familiaridade). Invariante em CÓDIGO (Lei 4). ESCOPO ESTREITO: só
+// vale quando uma tool de busca rodou NESTE turno (o reveal). A explicação do
+// novato pós-familiaridade ("contemplação acontece por sorteio ou lance") é
+// turno SEM search — `hasSearchToolCall` é false lá, então NÃO é tocada. Os
+// atributos dos cards ("lance médio R$ X") são payload, não texto do agente.
+const REVEAL_CONTEMPLATION_SCENARIO_PATTERN =
+	/\b(com\s+(um\s+)?lance|dar\s+(um\s+)?lance|lance\s+forte)\b|\bcontemplad[oa]\b|\bcontempla[çc][ãa]o\b|\b(por|pelo|no)\s+sorteio\b|\bcen[áa]rio\b/i;
+
+/** Um segmento narra o cenário de contemplação (lance/meses/sorteio) DENTRO do
+ * turno de reveal (`ctx.hasSearchToolCall`) — prematuro, o reveal só abre a
+ * porta e pergunta familiaridade. Fora do turno de reveal, não toca (o lance é
+ * legítimo na recomendação/agulha/gate lance). */
+export function isPrematureRevealScenario(segment: string, ctx?: StateVerificationContext): boolean {
+	if (ctx?.hasSearchToolCall !== true) return false;
+	const s = segment.trim();
+	if (!s) return false;
+	return REVEAL_CONTEMPLATION_SCENARIO_PATTERN.test(s);
+}
+
 // FIX-298 (loop-de-goal r10, P4 — transcrição real com Qwen 3.5 Fast): "Quer
 // ajustar o valor do bem ou seguir com essa opção da ITAÚ mesmo? Você já fez
 // consórcio antes?" — duas sentenças interrogativas no mesmo balão, usuário só
@@ -623,7 +668,9 @@ export type EphemeralDropReason =
 	| "fabricated-state"
 	| "premature-top-offer"
 	| "score-percentage"
-	| "hallucinated-administradora";
+	| "hallucinated-administradora"
+	| "internal-tool-leak"
+	| "premature-reveal-scenario";
 
 /** Motivo (guard) que classifica este segmento como EFÊMERO, ou `null` se o
  * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
@@ -641,6 +688,8 @@ function ephemeralSegmentReason(
 	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
 	if (isProactiveCallbackClaim(segment)) return "proactive-callback";
 	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
+	if (isInternalToolLeak(segment)) return "internal-tool-leak";
+	if (isPrematureRevealScenario(segment, ctx)) return "premature-reveal-scenario";
 	if (isFabricatedStateSegment(segment, ctx)) return "fabricated-state";
 	if (isPrematureTopOfferClaim(segment, ctx)) return "premature-top-offer";
 	if (isScorePercentageClaim(segment)) return "score-percentage";
