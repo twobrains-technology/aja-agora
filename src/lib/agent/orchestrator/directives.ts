@@ -461,6 +461,8 @@ const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
 	"premature-top-offer": "revelou a administradora ou o valor da recomendação antes do usuário confirmar que quer ver",
 	"score-percentage": "citou o score/compatibilidade como número percentual (só o rótulo qualitativo pode aparecer)",
 	"hallucinated-administradora": "citou uma administradora que não está entre as ofertas reais desta conversa",
+	"internal-tool-leak": "escreveu o nome de uma ferramenta interna (ex.: recommend_groups) em vez de falar com o usuário",
+	"premature-reveal-scenario": "narrou o cenário de lance/contemplação/sorteio no reveal, antes de perguntar se o usuário já conhece consórcio",
 };
 
 /**
