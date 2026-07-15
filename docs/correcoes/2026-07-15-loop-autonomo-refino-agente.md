@@ -434,3 +434,17 @@ de dar**. Burrice/usabilidade clássica.
   confirmação borderline (referencia "que você falou") — deixei, não é fresh ask.
 - **Status:** aplicado, build verificado (`/api/chat`→400); validar re-rodando "tudo de
   uma vez".
+
+### Rodada 16 (valida FIX-I) — FIX-I OK, mas revelou FIX-J: espelho FABRICA o motivo
+FIX-I confirmado: "Boa, Ricardo!" sem re-perguntar nome/valor/carro. ✅ MAS o Turno 2
+trouxe bug novo — o espelho disse "Entendo bem — quando o carro **dá trabalho**, atrapalha
+tudo", só que o motivo REAL (ground truth: `qualifyAnswers.motivation`) era **"usar no
+trabalho"** (usar PARA trabalhar). O agente papagaiou o EXEMPLO hardcoded de
+`motivationMirrorSection:1022` ("quando o carro dá trabalho") em vez de espelhar o motivo
+real — e "carro dá trabalho" (carro quebra) é o OPOSTO de "usar no trabalho". Fabricou um
+motivo que o cliente nunca deu. Mesma classe do FIX-D/E (exemplo do prompt papagaiado).
+- **Fix (FIX-J):** o espelho passa a mandar refletir o motivo REAL (o texto já interpolado
+  entre aspas), adaptando as palavras ao que ELE disse; o exemplo entre parênteses é só
+  TOM, nunca copiado literal — com o caso explícito "usar no trabalho" ≠ "o carro dá
+  trabalho".
+- **Status:** aplicado, build verificado (`/api/chat`→400); validar.
