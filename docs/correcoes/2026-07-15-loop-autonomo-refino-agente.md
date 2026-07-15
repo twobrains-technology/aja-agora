@@ -181,5 +181,24 @@ que o coletor suavizou:
   quebra do texto é secundária (path menos usado + modelo fraco). Reavaliar se
   reproduzir no slider ou com modelo de prod.
 
+### Rodada 5 (slider, moto) — FIX-C e FIX-D VALIDADOS no ground truth
+
+Caminho slider (o dominante da web, onde a duplicação real acontecia). Li as mensagens
+persistidas (não confiei no relato):
+- Pós-nome: **"Prazer, João!"** — SEM promessa de opções/faixa. ✅ FIX-D confirmado.
+- Valor: **"Boa, 30 mil então."** (balão próprio) + o pedido de CPF determinístico
+  **"Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."**
+  UMA vez. ✅ FIX-C confirmado (o LLM só confirmou o valor e parou).
+
+**Dois "defeitos" de português REJEITADOS (ground truth):** o coletor relatou "Prazer,
+Joao!" (sem ã) e "Quanto custo a moto" ("custo"). No banco: **"João"** (com ã) e
+**"custa"** — corretos. Era o coletor comendo acento/errando na transcrição. Confirma a
+regra: português se valida no DB, nunca no relato do coletor.
+
+**Cache .next stale (BuildError cosmético):** o `chat-input.tsx:132 eof` reaparecia no
+console de todo coletor mesmo com o arquivo íntegro e recreate — o volume `.next`
+persiste entre recreates e o dev server servia o cache sujo. Fix: `rm -rf /app/.next/
+{cache,server,static}` + recreate → recompila do zero. Console limpo.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
