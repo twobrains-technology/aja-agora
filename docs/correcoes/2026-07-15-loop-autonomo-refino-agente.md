@@ -200,5 +200,33 @@ console de todo coletor mesmo com o arquivo íntegro e recreate — o volume `.n
 persiste entre recreates e o dev server servia o cache sujo. Fix: `rm -rf /app/.next/
 {cache,server,static}` + recreate → recompila do zero. Console limpo.
 
+### Rodada 6 (dúvidas + só-a-parcela) — 1 bug real, 2 refutados; coleta bloqueou
+
+Coletor tentou explorar branches pós-reveal mas se atrapalhou na pilotagem (navegou
+pra landing no meio). Mesmo assim o ground truth deu 1 bug real:
+
+### FIX-E — agente troca o TIPO do bem no objetivo ("moto" numa jornada de carro)
+- **Sintoma (ground truth, conversa `8ded0434`, categoria=auto):** "Entendo bem —
+  quando o **carro** dá trabalho, atrapalha tudo. Então o objetivo já fica claro: te
+  colocar numa **moto** nova…" — espelho certo (carro), objetivo errado (moto), no
+  mesmo balão.
+- **Causa (código):** `motivationMirrorSection(motivation)` (system-prompt.ts:1012)
+  recebia SÓ o motivo — nem categoria nem bem. Os exemplos são todos de carro; sem o
+  bem na mão o LLM (haiku) chuta o substantivo e às vezes erra o tipo.
+- **Fix:** a seção passa a receber `desiredItem` (já disponível no call site) e usá-lo
+  quando presente; + trava explícita: "o bem do objetivo é SEMPRE o mesmo TIPO que o
+  cliente veio buscar — NUNCA troque (se quer carro, é carro, jamais moto/imóvel)".
+  Backward-compatible (chamadas de 1 arg seguem válidas). Commit: ver abaixo.
+- **Status:** aplicado; validar no loop.
+
+**REFUTADOS:**
+- "Checkbox LGPD resetou a conversa" → só 1 conversa da rodada no DB (não criou nova);
+  o turno seguinte continua nela. Foi mis-click do coletor (navegou pra landing), não
+  reset de dados. Sem bug de produto.
+- "BuildError crítico de `chat-input.tsx` trava a UI" → PROVADO STALE: `ts.transpile
+  Module` reporta ZERO erro de sintaxe no arquivo, e as jornadas das rodadas 4/5/6
+  renderizaram o chat e rodaram. Era cache HMR sujo do Turbopack. Wipe TOTAL do
+  `/app/.next` + recreate. É cosmético — não bloqueia; coletores devem ignorar.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->

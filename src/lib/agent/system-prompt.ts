@@ -1009,10 +1009,16 @@ REGRAS DURAS deste estado:
  * Como o bloco é reconstruído a cada turno a partir do meta (sem flag própria
  * de "já espelhado"), a instrução se apoia no histórico visível ao modelo:
  * ele reconhece se já mencionou o motivo antes e não repete. */
-export function motivationMirrorSection(motivation: string | null | undefined): string {
+export function motivationMirrorSection(
+	motivation: string | null | undefined,
+	desiredItem?: string | null,
+): string {
 	if (!motivation || !motivation.trim()) return "";
+	const bemHint = desiredItem?.trim()
+		? ` O bem que ELE já disse querer é "${desiredItem.trim()}" — é ESSE que vai no objetivo.`
+		: "";
 	return `## Motivação do cliente (contexto do gate "desire")
-O cliente mencionou este motivo pra querer o bem agora: "${motivation}". FIX-296 (rodada 10): quando este for o PRIMEIRO turno depois dele contar o motivo (confira o histórico — se você ainda não reagiu a ele), sua ÚNICA mensagem espelha o motivo com empatia UMA VEZ (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo") E declara o objetivo em seguida na MESMA frase/balão (ex.: "Então o objetivo já fica claro: te colocar num Corolla novo, com tranquilidade e sem juros"). NÃO faça pergunta, NÃO peça CPF nem valor, NÃO chame NENHUMA tool neste turno — o sistema dispara o próximo passo (valor do bem) sozinho, no turno seguinte. Se você já espelhou esse motivo em algum turno anterior, NÃO repita — siga a conversa normalmente.`;
+O cliente mencionou este motivo pra querer o bem agora: "${motivation}". FIX-296 (rodada 10): quando este for o PRIMEIRO turno depois dele contar o motivo (confira o histórico — se você ainda não reagiu a ele), sua ÚNICA mensagem espelha o motivo com empatia UMA VEZ (ex.: "entendo bem — quando o carro dá trabalho, atrapalha tudo") E declara o objetivo em seguida na MESMA frase/balão (ex.: "Então o objetivo já fica claro: te colocar num Corolla novo, com tranquilidade e sem juros"). ⚠️ O bem do objetivo é SEMPRE o mesmo TIPO que o cliente veio buscar nesta conversa (a categoria dele) — NUNCA troque o tipo do bem: se ele quer um CARRO, o objetivo é um carro, jamais "moto" ou "imóvel".${bemHint} NÃO faça pergunta, NÃO peça CPF nem valor, NÃO chame NENHUMA tool neste turno — o sistema dispara o próximo passo (valor do bem) sozinho, no turno seguinte. Se você já espelhou esse motivo em algum turno anterior, NÃO repita — siga a conversa normalmente.`;
 }
 
 /** FIX-238 (Fable r1, D3.3, gap P1 #5) — a 2ª pergunta do gate `desire` ("o
@@ -1062,7 +1068,7 @@ function buildSpecialistDynamicBlocks(
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
-		motivationMirrorSection(motivation),
+		motivationMirrorSection(motivation, desiredItem),
 		desireFollowUpSection(desiredItem, motivation, desireAnswered),
 	]
 		.filter(Boolean)
