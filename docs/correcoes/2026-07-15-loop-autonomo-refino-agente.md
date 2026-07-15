@@ -291,5 +291,19 @@ troca de produto. Português correto (todos os "erros" do coletor eram transcri�
 3. BuildError `chat-input.tsx` no console = cache Turbopack/virtiofs — PROVADO stale
    (TS parse OK), cosmético, não bloqueia. Não vale mais perseguir.
 
+### Rodada 9 (card de decisão) — bloqueio foi PILOTAGEM do coletor, não produto
+
+FIX-E validado 3ª vez ("te colocar num carro novo"). Coletor travou no submit do CPF
+("Buscar minhas ofertas" em loading, 40s). **Ground truth:** container up (home 200),
+logs mostram name→credit→identify todos `ok`/POST 200, mas **NENHUM POST do submit de
+CPF depois** e `identityCollected=null` — o submit nunca chegou ao backend. Como o form
+funcionou nas rodadas 3b e 7 (busca real), é falha de pilotagem do Haiku no formulário
+(campos+checkbox+botão), NÃO bug de produto. 2 de 3 full-Bevi (6,9) morreram na
+pilotagem → o gargalo agora é a confiabilidade do coletor, não bug do agente.
+
+**Pivô de tática:** o card de decisão e o fechamento passam a ser verificados por
+CÓDIGO (invariantes determinísticos: sem número fabricado, sem "cota reservada" pré-
+contratação, payload coagido server-side) em vez de depender do coletor alcançar lá.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
