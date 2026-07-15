@@ -340,6 +340,27 @@ topo deste doc. Nada com push (aguarda o Kairo).
 
 ## Loop REABERTO (refino contínuo, não pausa)
 
+> ### ⚠️ PENDENTE-KAIRO CONSOLIDADO — classe "número fabricado na conversa" (decisão sua)
+> Recorrente em várias rodadas (10, 13, 14, 18, 22): o haiku FABRICA número quando não tem
+> dado real, especialmente em objeção pré-reveal — taxa de financiamento ("~22% CET"),
+> contagem de contemplados ("8-10 por mês"), PRAZO de contemplação ("a maioria em 6-12
+> meses", "grupos em 2-3 meses") e até PREÇO do bem ("HB20 em torno de 20 mil" — errado, é
+> ~70-90k). FIX-G e FIX-H (regras-no-prompt) só seguram PARCIALMENTE; o haiku dribla.
+> **NÃO empilhei mais regra-no-prompt** (CLAUDE.md: isso foi o que quebrou o agente;
+> invariante verificável vira CÓDIGO). O fix durável é um **guard no sanitizer** que
+> detecte número + contexto de contemplação/prazo/preço/taxa PRÉ-reveal e suprima/reescreva
+> — mas isso é (a) blast radius (pode cortar número legítimo pós-reveal), (b) decisão de
+> compliance (o que exatamente bloquear). **Sua decisão.** Alternativa: o modelo de PROD
+> (mais forte que o haiku de dev) fabrica bem menos — vale medir com ele antes de codar o
+> guard. Os casos individuais estão nas rodadas abaixo.
+
+### Rodada 22 (usuário quer sair) — venda responsável PASSOU; número fabricado (classe acima)
+Hesitação, querer-pensar e recusa firme: todos respeitados com dignidade, SEM pressão nem
+urgência falsa ("Tudo bem, Sônia. Sem problema. Qualquer momento que mudar de ideia, volta
+aqui"). ✅ Venda responsável sólida. O ÚNICO defeito foi na resposta à hesitação: re-surfou
+a classe "número fabricado" ("grupos em 2, 3 meses" + "HB20 em torno de 20 mil") — mesma
+classe do PENDENTE consolidado acima, NÃO um bug novo. Não adicionei regra.
+
 ### Rodada 10 (usuário cético/objeções) — FIX-G: agente FABRICAVA números na objeção
 Cenário: cético que chama consórcio de furada, compara com financiamento, teme
 desistência, questiona comissão. TOM bom (honesto, sem "contemplação garantida", admitiu
