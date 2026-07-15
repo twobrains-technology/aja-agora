@@ -228,5 +228,34 @@ pra landing no meio). Mesmo assim o ground truth deu 1 bug real:
   renderizaram o chat e rodaram. Era cache HMR sujo do Turbopack. Wipe TOTAL do
   `/app/.next` + recreate. É cosmético — não bloqueia; coletores devem ignorar.
 
+### Rodada 7 (CONTA2, carro) — FIX-E validado + dúvidas/two_paths OK + 1 bug real
+
+- **FIX-E validado (ground truth):** "te colocar num **carro novo**" — não trocou pra
+  moto/imóvel. ✅
+- **Fluxo dúvidas:** "Tenho dúvidas" → resposta contextual completa, voltou a conduzir.
+  Sem menu de tópicos (respondeu direto). ✅
+- **Só-a-parcela → two_paths:** card apareceu, respeitou a escolha (lance como OPCIONAL,
+  não empurrou), + `TWO_PATHS_FOLLOWUP_TEXT`. ✅
+- **BuildError chat-input:** ainda aparece no console MESMO após wipe total do `.next`.
+  Provado stale (TS parse OK, jornadas rodam, coletor confirmou "elemento funcional").
+  É quirk do Turbopack sobre virtiofs — cosmético, NÃO bloqueia. PAREI de perseguir.
+
+### FIX-F — card two_paths exibia "paga só a parcela de R$ 0,00"
+- **Sintoma (coletor + ground truth):** no caminho só-a-parcela, o card two_paths
+  mostrou "Esperar o sorteio — paga só a parcela de **R$ 0,00**".
+- **Causa (código + DB):** `buildTwoPathsCard` usa `coerceTwoPathsPayload({}, meta.
+  recommendedOffer)`. No DB, `recommendedOffer` estava **NULL** (o caminho de DÚVIDAS
+  desviou e o hero de recomendação não ancorou antes do two_paths). Coerção:
+  `offer?.monthlyPayment ?? Number(undefined) ?? 0` = **NaN** (o `??` não pega NaN) →
+  card renderiza R$ 0,00.
+- **Fix (seguro, sem tocar o fluxo):** (1) `two-paths.tsx` degrada com dignidade —
+  sem parcela válida (`> 0`), omite o valor ("paga só a parcela mensal") em vez de
+  exibir R$ 0,00; (2) coerção filtra NaN → 0. Commit: ver abaixo.
+- **Status:** aplicado (visível resolvido). **PENDENTE-KAIRO (raiz):** o
+  `recommendedOffer` não é ancorado quando o usuário passa por DÚVIDAS antes do lance —
+  a parcela real some do two_paths. Ancorar o hero nesse caminho mexe no fluxo do
+  reveal/recomendação (blast radius) e é decisão de jornada; deixei pra você decidir em
+  vez de refatorar o orquestrador sozinho.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
