@@ -305,5 +305,33 @@ pilotagem → o gargalo agora é a confiabilidade do coletor, não bug do agente
 CÓDIGO (invariantes determinísticos: sem número fabricado, sem "cota reservada" pré-
 contratação, payload coagido server-side) em vez de depender do coletor alcançar lá.
 
-<!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
-     (com evidência determinística) → fix → commit → status. -->
+### Auditoria por código do FECHAMENTO (card de decisão) — 3 invariantes OK
+
+Como o coletor não alcança o card de decisão de forma confiável, verifiquei por código
+(Explore read-only):
+1. **Números coagidos server-side:** o `decision_prompt` NÃO tem campo numérico (só
+   `administradora`, de `meta.recommendedAdministradora`, ancorada da oferta real) —
+   imune ao bug 0/NaN do two_paths por construção (`types.ts:234`, `server-cards.ts:49`,
+   `index.ts:290`). ✅
+2. **Sem "cota reservada/garantida" pré-contrato:** guard no `sanitizer.ts:149` casa os
+   termos proibidos; o "reservar/reserva" restante é a terminologia sancionada de
+   booking (decisoes-do-cliente.md:97-98). Sem violação. ✅
+3. **PT-BR na copy fixa:** correto (`types.ts:241-253`, `contract-form.tsx`). ✅
+   - Não-defeitos (não corrigidos, de propósito): drift de rótulo "reservar agora" em 2
+     descrições de tool (1 dead code, 1 não exposta ao LLM); acentos legados no TEXTO DE
+     INSTRUÇÃO do prompt (não renderizado ao usuário; o modelo produz PT-BR acentuado).
+
+---
+
+## FECHAMENTO DO LOOP (2026-07-15)
+
+Jornada web do cliente **comprehensivamente validada** — entrada, nome, espelho do
+motivo, valor, CPF, reveal com ofertas reais da Bevi, lance, **lance embutido (pedido
+original) com número real da carta**, dúvidas, só-a-parcela/two_paths, edge-cases (troca
+de produto, valor terso, mudança de valor) e invariantes do fechamento (por código).
+
+Rodadas 8-9 pararam de achar bug de produto (round 8 = nada novo; 9 = pilotagem do
+coletor). Diminishing returns atingido: o gargalo virou a confiabilidade de pilotagem do
+Haiku no formulário de CPF, não bug do agente. **8 fixes reais** entregues, **8+ falsos-
+positivos** rejeitados com ground truth, **3 PENDENTE-KAIRO** (decisões de jornada) no
+topo deste doc. Nada com push (aguarda o Kairo).
