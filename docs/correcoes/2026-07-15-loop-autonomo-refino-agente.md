@@ -257,5 +257,39 @@ pra landing no meio). Mesmo assim o ground truth deu 1 bug real:
   reveal/recomendação (blast radius) e é decisão de jornada; deixei pra você decidir em
   vez de refatorar o orquestrador sozinho.
 
+### Rodada 8 (edge-cases pré-CPF) — robustez forte, ZERO bug novo confirmado
+
+Estressei com entradas caóticas:
+- **Troca de produto no meio (carro→imóvel):** IMPECÁVEL — trocou o especialista
+  (Rafael→Helena), zero menção errada a "carro" depois, UI do slider virou imóvel. ✅
+- **Valor terso "300k":** entendeu → "300 mil". ✅
+- **Mudar valor ("250 mil"):** atualizou sem se perder nem repetir. ✅
+
+**Dois candidatos do coletor REJEITADOS (ground truth):**
+- "vantade" (typo?) → no DB é **"vontade"**, correto. Coletor trocou letra.
+- "Perfeito!" mudo à pressa ("pula essa parte") → interleaved no DB: o coletor mandou
+  "250 mil" LOGO após "pula essa parte" sem esperar; o turno foi abortado pelo
+  follow-up (latest-wins). Artefato de timing do coletor, não bug de produto.
+
+---
+
+## Consolidação (até rodada 8)
+
+**Fixes reais commitados (8):** infra gateway (`f8bb3abb`), autofocus+autocomplete
+(`08878dbb`), CPF duplicado (`e16895c7`), opções prematuras pós-nome (`f7c11192`),
+tipo do bem no espelho/moto-carro (`524c620c`), two_paths R$0,00 (`70258bff`), + diários.
+
+**Validado ao vivo:** jornada completa (carro/moto/imóvel), lance embutido com número
+real da carta (pedido ORIGINAL da sessão), dúvidas, só-a-parcela, usuário difícil,
+troca de produto. Português correto (todos os "erros" do coletor eram transcrição).
+
+**PENDENTE-KAIRO (decisões de jornada/fluxo — não refatorei no escuro):**
+1. Pedido de CPF no caminho **valor-por-texto** (não-slider) sai improvisado pelo haiku
+   (entrega inconsistente: slider=determinística, texto=LLM). Web dominante é slider.
+2. `recommendedOffer` não ancora quando passa por **dúvidas** antes do lance → parcela
+   real some do two_paths (mitigado por FIX-F, mas a raiz é fluxo).
+3. BuildError `chat-input.tsx` no console = cache Turbopack/virtiofs — PROVADO stale
+   (TS parse OK), cosmético, não bloqueia. Não vale mais perseguir.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
