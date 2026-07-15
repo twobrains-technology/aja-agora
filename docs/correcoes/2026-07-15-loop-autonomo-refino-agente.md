@@ -92,5 +92,20 @@ destravada, o agente respondeu com contexto em TODOS os turnos:
   (mata o dropdown de autofill que confundiu o coletor). Commit: ver abaixo.
 - **Status:** aplicado; a validar com humano (o coletor não distingue).
 
+### Incidente de infra — BuildError falso do Turbopack (cache virtiofs stale)
+
+- **Sintoma:** rodada 3 (deep run) abortou no turno 0 — coletor viu BuildError do
+  Turbopack em `chat-input.tsx:132` ("Expected '</', got '<eof>'").
+- **Juiz:** LI o arquivo inteiro — JSX 100% balanceado, função fecha certo, linha
+  132 é só um `className={cn(...)}` válido. Arquivo ÍNTEGRO → o FIX-B não quebrou
+  nada. É a assinatura do cache virtiofs sujo do Turbopack (memória
+  `project_turbopack_virtiofs_stale`): erro "eof" em arquivo bom após HMR sobre o
+  bind mount do OrbStack.
+- **Fix:** `docker compose up -d --force-recreate app` (next dev fresco). Pós-recreate:
+  home HTTP 200, "✓ Ready", 0 sinais de erro no HTML. (`docker restart` direto é
+  bloqueado pelo hook local-dev; a forma compose passa.)
+- **LIÇÃO PRO LOOP:** depois de editar `src/`, SEMPRE recriar o container e conferir
+  compilação limpa ANTES de disparar o coletor — senão o cache stale come uma rodada.
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->
