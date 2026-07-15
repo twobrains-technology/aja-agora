@@ -56,21 +56,31 @@ services:
       S3_CLIENT_DOCS_BUCKET: ${S3_CLIENT_DOCS_BUCKET:-aja-client-docs}
       S3_CLIENT_DOCS_KMS_KEY_ID: ${S3_CLIENT_DOCS_KMS_KEY_ID:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
-      # FIX-209 adicionou AI_MODEL/roteamento LiteLLM no código (builder.ts) mas nunca
-      # foi repassado aqui — .env.local setava a var, mas o container SEMPRE via o
-      # default do código (claude-sonnet-5), nunca o que .env.local pedia. Achado
-      # investigando contaminação da verificação da rodada 10 (2026-07-13).
+      # Roteamento LiteLLM (FIX-209 no código, builder.ts + gateway-anthropic.ts) —
+      # AGORA REPASSADO ao container. Motivo (2026-07-15): a ANTHROPIC_API_KEY do
+      # workspace está com COTA ESTOURADA até 2026-08-01 ("workspace API usage
+      # limits"), então chamar api.anthropic.com direto retorna 400 e a jornada
+      # trava em "Processando…". Em local, rotear pelo gateway shared (via túnel SSM
+      # na porta 4000, alcançado pelo container como host.docker.internal:4000)
+      # deixou de ser opcional. .env.local já traz os dois valores:
+      #   LITELLM_BASE_URL=http://host.docker.internal:4000   (host-reachable)
+      #   LITELLM_API_KEY=sk-...                               (virtual key do projeto)
+      # Sem eles setados, resolveGatewayHost() retorna null e cai no Anthropic direto
+      # (fallback antigo — quebrado enquanto a cota estiver estourada).
       #
-      # ⚠️ NÃO adicione LITELLM_API_KEY/OPENAI_API_KEY/LITELLM_BASE_URL aqui com
-      # default vazio (${VAR:-}): src/lib/llm/gateway-anthropic.ts usa
-      # `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` — `??` só cai pro fallback em
-      # null/undefined, NUNCA em string vazia. Compose SEMPRE materializa a var
-      # (mesmo vazia) quando listada em `environment:`, então isso quebra a key
-      # real silenciosamente (achado real neste debug — virou item pra próxima
-      # onda: trocar `??` por checagem de truthy no código). Testar Qwen/LiteLLM
-      # aqui é rodar `pnpm vitest` direto no host/worktree com as vars inline no
-      # comando (como os blocos FIX-304/305 já validam), NÃO via este container.
-      AI_MODEL: ${AI_MODEL:-}
+      # ⚠️ Footgun histórico (empty-string × `??`): compose materializa a var mesmo
+      # vazia; `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` NÃO cai pro fallback em "".
+      # Neutralizado na FONTE: gateway-anthropic.ts agora usa `?.trim() ||` (trata
+      # string vazia como ausente). Por isso `${LITELLM_API_KEY:-}` aqui é seguro.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      # Default EXPLÍCITO (nunca vazio): `${AI_MODEL:-}` virava "" quando a var não
+      # está no shell/.env, e o código faz `process.env.AI_MODEL ?? "claude-sonnet-5"`
+      # — `??` NÃO pega string vazia, então o app roteava com model VAZIO pro provider
+      # OpenAI-compat (/responses → 400 "Invalid model name" → turno vazio → fallback
+      # "me perdi"). Mesma armadilha `${VAR:-}` × `??` que o comentário acima descreve.
+      # haiku é o modelo de dev (bakeoff FIX-304). Override: `AI_MODEL=X docker compose up`.
+      AI_MODEL: ${AI_MODEL:-claude-haiku-4-5}
       # Memória cross-channel no Postgres (FIX-81 — Letta removido).
       MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
       MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}

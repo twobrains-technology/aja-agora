@@ -471,15 +471,17 @@ export function decideShowGate(args: {
 	// LLM o pergunta e NENHUM card estruturado é emitido junto (anti CK-1, 2 perguntas
 	// no mesmo balão). Só em turno de usuário; server-authored avança normal abaixo.
 	if (isUserTurn && shouldAskMotive(meta)) return false;
-	// FIX-296 — depois que o motivo chega, o funil segura MAIS UM turno pro beat de
-	// espelho+objetivo (shouldMirrorMotivation) — NENHUM gate estruturado compete com
-	// ele (mesma resposta costuma ser uma QUEIXA — "cansei do carro velho, vive na
-	// oficina" — que o analyzer classifica como expressing_doubt/off_topic; isso NÃO
-	// é um desvio, é a resposta esperada, mas aqui ela ganha só o espelho, sem card —
-	// reversão consciente do antigo FIX-275, que forçava o card de identidade no MESMO
-	// turno). O gate real (credit, pós FIX-296) dispara no turno SEGUINTE, quando
-	// shouldMirrorMotivation já for false.
-	if (isUserTurn && shouldMirrorMotivation(meta)) return false;
+	// FIX-296 dava `return false` aqui: segurava o funil no turno do espelho, então
+	// o gate real (valor/identidade) só disparava no turno SEGUINTE — na prática o
+	// chat "morria" no espelho, sem próxima pergunta, e o usuário ficava sem saber o
+	// que fazer (bug de UX reportado ao vivo, 2026-07-15; decisão do Kairo: o beat
+	// deve CONDUZIR). Agora FORÇA o gate seguinte a disparar JUNTO com a fala de
+	// espelho+objetivo, no mesmo balão — o modelo emenda a ponte pro próximo passo
+	// (system-prompt passo 3) e o sistema anexa o card. Força mesmo quando o motivo
+	// (queixa emocional: "meu carro vive na oficina") foi classificado como
+	// expressing_doubt/off_topic — aqui não é desvio, é o momento de avançar.
+	// motivationMirrored continua marcado no runner (não re-espelha no turno seguinte).
+	if (isUserTurn && shouldMirrorMotivation(meta)) return true;
 	// Server-authored turns (button click, transition) are always followed by the
 	// next gate — that's the whole point of the directive flow. Por isso qualquer
 	// reação da qualificação (experiência/consent/valor/lance) SEMPRE mostra o

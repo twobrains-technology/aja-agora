@@ -24,6 +24,12 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 		void sendUserMessage(label);
 	};
 
+	// Degrada com dignidade: sem parcela real ancorada (ex.: recommendedOffer não
+	// setado quando o card dispara pós-dúvidas), NÃO exibe "R$ 0,00" — omite o
+	// valor em vez de mentir um número quebrado.
+	const hasParcela = Number.isFinite(payload.monthlyPayment) && payload.monthlyPayment > 0;
+	const parcelaLabel = hasParcela ? ` de ${formatBRL(payload.monthlyPayment)}` : " mensal";
+
 	return (
 		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
@@ -38,7 +44,7 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 						className="justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2.5 rounded-[13px] w-full border border-border"
 						onClick={() =>
 							choose(
-								`Vou de sorteio mesmo, sem pressa — pago só a parcela de ${formatBRL(payload.monthlyPayment)}`,
+								`Vou de sorteio mesmo, sem pressa — pago só a parcela${parcelaLabel}`,
 							)
 						}
 						disabled={isStreaming}
@@ -46,7 +52,7 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 					>
 						<Clock3 className="size-4 shrink-0" />
 						<span>
-							<b>Esperar o sorteio</b> — paga só a parcela de {formatBRL(payload.monthlyPayment)}{" "}
+							<b>Esperar o sorteio</b> — paga só a parcela{parcelaLabel}{" "}
 							e concorre todo mês, sem custo extra. Ideal pra quem não tem pressa.
 						</span>
 					</Button>

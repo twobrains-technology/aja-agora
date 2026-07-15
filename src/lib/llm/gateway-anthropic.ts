@@ -58,7 +58,9 @@ const gatewayFetch: typeof globalThis.fetch = async (input, init) => {
 
 export function createGatewayAnthropic() {
 	return createAnthropic({
-		apiKey: process.env.LITELLM_API_KEY ?? process.env.ANTHROPIC_API_KEY,
+		// `?.trim() ||` (não `??`): compose materializa a var mesmo vazia; string
+		// vazia tem que cair pro fallback, senão o gateway recebe key vazia e 401.
+		apiKey: process.env.LITELLM_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY,
 		fetch: gatewayFetch,
 	});
 }

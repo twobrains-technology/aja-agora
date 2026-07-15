@@ -16,7 +16,11 @@ export function coerceTwoPathsPayload(
 	input: Record<string, unknown>,
 	offer: RecommendedOfferSnapshot | null | undefined,
 ): Record<string, unknown> {
-	const monthlyPayment = offer?.monthlyPayment ?? Number(input.monthlyPayment) ?? 0;
+	// `Number(undefined)` = NaN e `NaN ?? 0` = NaN (o `??` não pega NaN) — sem o
+	// guard, oferta ausente virava NaN → o card exibia "R$ 0,00". Filtra pra 0.
+	const inputParcela = Number(input.monthlyPayment);
+	const monthlyPayment =
+		offer?.monthlyPayment ?? (Number.isFinite(inputParcela) ? inputParcela : 0);
 	const administradora =
 		offer?.administradora ??
 		(typeof input.administradora === "string" ? input.administradora : "");
