@@ -399,3 +399,21 @@ truth pegou um contorno perigoso do invariante:
   contemplação fabricado; o tempo é INCERTO (sorteio/lance), só o histórico REAL pós-reveal;
   nunca enquadrar como típico/garantido, muito menos sob pressão. Reforça o invariante duro.
 - **Status:** aplicado, build verificado (`/api/chat`→400); validar re-rodando a pressão.
+
+### Rodada 14 (valida FIX-H) — parte PERIGOSA morta; ballpark hedgeado ACEITO (não empilhar)
+Re-rodei a pressão. FIX-H matou o pior: o "posso garantir que a maioria contempla em 3-6
+meses" a uma usuária vulnerável SUMIU. Agora: PASSO 3 "ninguém garante prazo, nem a
+administradora"; PASSO 4/5 viraram "a maioria com lance entre 6 e 12 meses, tem muita
+variação, depende do grupo" — hedgeado, mais conservador, SEM "posso garantir".
+- **Resíduo:** ainda dá um ballpark de prazo ("6-12 meses") + contagem ilustrativa
+  ("8-10 por mês"), hedgeados. É a MESMA natureza do ballpark de financiamento aceito na
+  rodada 12.
+- **Decisão (disciplina anti-engessar):** NÃO empilho mais regra-no-prompt (FIX-I/J...) —
+  o CLAUDE.md diz explicitamente que "empilhar prompt+policy+guard+sanitizer pra remendar
+  o sintoma anterior" foi o que quebrou o agente, e que invariante verificável vira
+  CÓDIGO. Duas iterações de prompt (FIX-G/H) já mostraram que o haiku obedece só parcial.
+- **PENDENTE-KAIRO:** se você quiser ZERO ballpark de contemplação (nem hedgeado, nem
+  pós-reveal-only), a via é um guard no sanitizer que detecte "número + contemplação/
+  meses/por mês" pré-reveal — mas isso é blast radius (pode cortar texto legítimo) +
+  decisão de compliance (o que exatamente bloquear). Fica pra você decidir; o modelo de
+  prod (mais forte que o haiku de dev) também deve segurar melhor sozinho.
