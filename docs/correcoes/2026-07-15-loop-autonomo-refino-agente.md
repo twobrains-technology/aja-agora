@@ -541,3 +541,15 @@ inventar cotação ✅. MAS a META 1 falhou GRAVE:
   Rafael (masc.) copiou pra "Sou a Rafael" (artigo errado). Ajustei o exemplo pra mostrar
   a concordância explícita ("o Rafael"/"a Helena", nunca troque) + exemplo masculino, pra
   não induzir o slip. Build verificado.
+
+### Rodada 24 (conversa longa/divagante) — PASSE LIMPO; coerência+memória excelentes
+Tangentes (Corolla do pai anos 90; gasolina/elétrico) acompanhadas com empatia e volta ao
+foco. Memória: lembrou apelido "Guto" e uso "trabalhar de app" quando testado no fim; zero
+contradição (Guto/Corolla/130mil/app consistentes). Espelho do passo 5 "carro dá trabalho"
+CASOU com o motivo real ("meu tá dando problema") — FIX-J/K OK. Zero bug novo.
+
+> **Saturação:** 3 rodadas seguidas sem bug novo (22 conhecida-classe, 23 e 24 limpas). A
+> conversa pré-CPF está bem refinada nas dimensões cobertas (feliz, cético, pressão,
+> correção, meta/IA, saída, indeciso, longa). Bugs novos ficaram raros; classe recorrente
+> (número fabricado) consolidada como PENDENTE-KAIRO. Continuo variando ângulo (usuário
+> hostil, etc.), mas o grosso do refino de conversa está feito.
