@@ -335,3 +335,26 @@ coletor). Diminishing returns atingido: o gargalo virou a confiabilidade de pilo
 Haiku no formulário de CPF, não bug do agente. **8 fixes reais** entregues, **8+ falsos-
 positivos** rejeitados com ground truth, **3 PENDENTE-KAIRO** (decisões de jornada) no
 topo deste doc. Nada com push (aguarda o Kairo).
+
+---
+
+## Loop REABERTO (refino contínuo, não pausa)
+
+### Rodada 10 (usuário cético/objeções) — FIX-G: agente FABRICAVA números na objeção
+Cenário: cético que chama consórcio de furada, compara com financiamento, teme
+desistência, questiona comissão. TOM bom (honesto, sem "contemplação garantida", admitiu
+comissão) — mas o ground truth pegou 3 claims fabricados que o coletor rotulou "EXCELENTE":
+- **"a taxa sai em torno de 22% ao ano pra carro"** — taxa de financiamento INVENTADA.
+- **"grupos que liberam 10, 15 pessoas por mês"** — contagem de contemplados fabricada,
+  ANTES de qualquer oferta real.
+- **Desistência contraditória:** "você não perde o que pagou... recebe de volta o que
+  colocou menos: as parcelas que você já pagou (isso fica com o grupo)" — se ficam com o
+  grupo, não há reembolso; a lógica se contradiz e desinforma.
+- **Causa:** "Nunca invente" (linha 37) cobria só os números da OFERTA; nada travava
+  inventar taxa/contemplação/desistência na objeção pré-reveal. `compare_with_financing`
+  existe no toolset (não é drift) — o haiku só não chamou e improvisou.
+- **Fix:** regra de honestidade na seção "Sobre Dados Financeiros" — pré-reveal sem dado
+  real = QUALITATIVO, proibido cravar número inventado; financiamento só via tool,
+  contemplação só a real pós-reveal, desistência honesta e geral. Trava de honestidade
+  (invariante "número nunca é inventado"), não script.
+- **Status:** aplicado; validar re-rodando o cético.
