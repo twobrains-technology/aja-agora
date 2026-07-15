@@ -460,3 +460,27 @@ trabalho faz diferença no dia a dia" (bate), SEM fabricar "carro dá trabalho".
 **Padrão observado (FIX-D/E/J):** o haiku papagaia EXEMPLOS hardcoded do prompt em vez de
 adaptar ao contexto real. Rodando auditoria proativa (Explore) por outros exemplos
 papagaiáveis — mais alavancado que descobrir um por rodada.
+
+### FIX-K — auditoria proativa: travar as cópias paralelas do vetor papagaiável
+O Explore varreu prompt+directives e achou cópias DESPROTEGIDAS do mesmo conteúdo que já
+gerou FIX-D/E/J (o lock só estava no `motivationMirrorSection`). Corrigidos:
+- **system-prompt.ts:321** (passo "espelho+objetivo" da ordem de coleta): tinha "carro dá
+  trabalho" + "Corolla" SEM trava — a cópia paralela exata do FIX-J. Adicionei o lock
+  (motivo/bem REAL, exemplo é só tom).
+- **system-prompt.ts:145** (léxico banido): apresentava "quando o carro dá trabalho" como
+  a resposta "SIM/correta" — trocado por "espelhe o que ELE disse, sem frase enlatada".
+- **directives.ts:386** (`buildRecoConsentAcceptedDirective`): a claim "a parcela mais
+  leve entre as opções" é FALSEÁVEL (a recomendação vem de SCORE combinado, não da menor
+  parcela) → trocada por "a que melhor equilibra parcela/prazo/contemplação" + trava
+  explícita contra "a mais barata". Risco de coerência/CDC eliminado.
+- **Status:** aplicado, build verificado (`/api/chat`→400); validar.
+
+### Rodada 18 (valor fora de faixa) — bom senso OK; PENDENTE-KAIRO no roteamento por valor
+Agente tratou bem os absurdos: "3 mil" → corrigiu ("consórcio pra carro a partir de
+R$ 20-30 mil"); "5 milhões" → escalou (teto R$ 1M). Bom senso correto.
+- **PENDENTE-KAIRO (edge case de roteamento):** o "5 milhões" re-roteou a categoria pra
+  IMÓVEL (Helena) — e ao corrigir pra "80 mil" (valor de carro), NÃO voltou pra auto
+  (Rafael); ground truth: `currentCategory=imovel` travado (handoffState vazio — o coletor
+  confundiu troca de especialista com handoff humano). Trap: valor de outra categoria
+  troca o especialista e corrigir não volta. Fix mexe na lógica de roteamento por valor
+  (blast radius) + é decisão de jornada — não refatoro sozinho.

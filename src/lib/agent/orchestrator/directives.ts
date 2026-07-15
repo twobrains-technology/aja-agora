@@ -383,7 +383,7 @@ FIX-333: o hero (recommendation_card) só é REVELADO depois que o usuário cons
  * padrão de `buildScarcityDirective`/`buildEmbeddedBidDirective`.
  */
 export function buildRecoConsentAcceptedDirective(): string {
-	return `Escreva 1-2 frases introduzindo a recomendação NO SEU TOM (ex.: "Essa é a que eu indicaria pra alguém da minha família — a parcela mais leve entre as opções:"). NÃO descreva números (parcela/valor/lance) em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os dados REAIS. NÃO chame present_recommendation_card nem NENHUMA outra tool neste turno.`;
+	return `Escreva 1-2 frases introduzindo a recomendação NO SEU TOM (ex.: "Essa é a que eu indicaria — a que melhor equilibra parcela, prazo e chance de contemplação pro seu caso:"). NÃO afirme que é "a mais barata" nem "a de menor parcela" — a recomendação vem de um SCORE combinado (prazo/parcela/contemplação), NÃO necessariamente tem a menor parcela; cravar isso pode ser falso. NÃO descreva números (parcela/valor/lance) em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os dados REAIS. NÃO chame present_recommendation_card nem NENHUMA outra tool neste turno.`;
 }
 
 // ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
