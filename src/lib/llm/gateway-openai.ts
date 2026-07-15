@@ -57,7 +57,8 @@ const gatewayFetch: typeof globalThis.fetch = async (input, init) => {
 
 export function createGatewayOpenAI() {
 	return createOpenAI({
-		apiKey: process.env.LITELLM_API_KEY ?? process.env.OPENAI_API_KEY,
+		// `?.trim() ||`: string vazia (compose materializa var vazia) cai pro fallback.
+		apiKey: process.env.LITELLM_API_KEY?.trim() || process.env.OPENAI_API_KEY,
 		baseURL: `http://${process.env.LITELLM_SRV_NAME ?? "litellm-srv.tb.local:4000"}/v1`,
 		fetch: gatewayFetch,
 	});
