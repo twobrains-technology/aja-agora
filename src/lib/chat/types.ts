@@ -294,6 +294,13 @@ export interface RealOfferPayload {
 	 * → aviso "você pediu ~R$ X — a carta real ficou em R$ Y" (FIX-277). Ausente →
 	 * sem aviso. */
 	rawCreditValue?: number;
+	/** Nome do cliente pra o cabeçalho do documento de proposta (ProposalDoc).
+	 * Enriquecido server-side a partir de `conversations.contactName`. Ausente →
+	 * o documento só omite a linha "Cliente" (nunca inventa nome). */
+	clientName?: string;
+	/** Logo da administradora (URL cadastrada) — quando presente, o header
+	 * co-branded usa a imagem; ausente cai no fallback de iniciais. */
+	logoUrl?: string;
 }
 
 /** Encaminhamento pra assinatura digital da administradora (sem "trocar de

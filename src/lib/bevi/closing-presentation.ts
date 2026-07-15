@@ -33,7 +33,7 @@ function bidPositionText(declaredLance: number, avgBid: number): string {
  * `declaredLanceValue` (lance da qualificação) habilita a frase de posição do FIX-40. */
 export function realOfferPresentation(
 	result: StartContractResult,
-	opts: { declaredLanceValue?: number } = {},
+	opts: { declaredLanceValue?: number; clientName?: string | null } = {},
 ): ClosingItem[] {
 	if (result.noOffer || !result.offer) {
 		return [
@@ -84,6 +84,9 @@ export function realOfferPresentation(
 				Math.round(result.requestedCreditValue as number) !== Math.round(offer.creditValue)
 					? { rawCreditValue: result.requestedCreditValue }
 					: {}),
+				// Nome pro cabeçalho do documento (ProposalDoc). Só quando temos
+				// o dado — nunca inventa (D11); ausente omite a linha "Cliente".
+				...(opts.clientName?.trim() ? { clientName: opts.clientName.trim() } : {}),
 			},
 		},
 	];

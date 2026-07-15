@@ -6,7 +6,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Headset, Smartphone } from "lucide-react";
+import { FileDown, Globe, Headset, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,6 +143,29 @@ export function ContactDetailPanel({
 	const [detail, setDetail] = useState<ContactDetail | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [transbordoOpen, setTransbordoOpen] = useState(false);
+	// Estado do download da proposta co-branded (PDF) por linha. A geração é
+	// best-effort no fechamento → "unavailable" quando ainda não existe no S3.
+	const [proposalPdf, setProposalPdf] = useState<Record<string, "loading" | "unavailable">>({});
+
+	async function openProposalPdf(proposalRowId: string) {
+		setProposalPdf((s) => ({ ...s, [proposalRowId]: "loading" }));
+		try {
+			const r = await fetch(`/api/admin/proposals/${proposalRowId}/download`);
+			if (!r.ok) {
+				setProposalPdf((s) => ({ ...s, [proposalRowId]: "unavailable" }));
+				return;
+			}
+			const { url } = await r.json();
+			setProposalPdf((s) => {
+				const next = { ...s };
+				delete next[proposalRowId];
+				return next;
+			});
+			if (url) window.open(url, "_blank", "noopener");
+		} catch {
+			setProposalPdf((s) => ({ ...s, [proposalRowId]: "unavailable" }));
+		}
+	}
 
 	useEffect(() => {
 		if (!contactId || !open) return;
@@ -262,14 +285,34 @@ export function ContactDetailPanel({
 										{formatCurrency(p.monthlyPayment)} · Status{" "}
 										{getProposalStatusLabel(p.proposalStatus)}
 									</div>
+									{/* Proposta co-branded Aja Agora (PDF gerado no fechamento, salvo no
+									    S3). Distinta do link de assinatura da administradora abaixo. */}
+									<div className="mt-2 flex flex-wrap items-center gap-2">
+										<Button
+											variant="outline"
+											size="sm"
+											className="h-7 gap-1.5 text-xs"
+											onClick={() => openProposalPdf(p.id)}
+											disabled={proposalPdf[p.id] === "loading"}
+											data-testid={`proposal-pdf-download-${p.id}`}
+										>
+											<FileDown className="size-3.5" />
+											{proposalPdf[p.id] === "loading" ? "Abrindo…" : "Baixar proposta (PDF)"}
+										</Button>
+										{proposalPdf[p.id] === "unavailable" && (
+											<span className="text-[11px] text-muted-foreground">
+												Ainda não disponível
+											</span>
+										)}
+									</div>
 									{p.consortiumProposalLink && (
 										<a
 											href={p.consortiumProposalLink}
 											target="_blank"
 											rel="noreferrer"
-											className="text-xs text-blue-600 underline"
+											className="mt-1 inline-block text-xs text-blue-600 underline"
 										>
-											Abrir PDF da proposta
+											Abrir link de assinatura (administradora)
 										</a>
 									)}
 								</div>
