@@ -361,6 +361,14 @@ aqui"). ✅ Venda responsável sólida. O ÚNICO defeito foi na resposta à hesi
 a classe "número fabricado" ("grupos em 2, 3 meses" + "HB20 em torno de 20 mil") — mesma
 classe do PENDENTE consolidado acima, NÃO um bug novo. Não adicionei regra.
 
+### Rodada 23 (usuário indeciso/passivo) — PASSE LIMPO
+Usuário jogou tudo pro agente ("você que entende, me indica"; motivo vago; valor deferido).
+Conduziu bem: recusou a deferência com educação ("consórcio funciona com o bem que VOCÊ
+quer, não o que a gente escolhe"), reenquadrou o valor em "parcela mensal" e ofereceu o
+slider — SEM inventar carro nem valor. Avançou sem loop, sem fallback, português correto.
+Contraste com a rodada 22: na coleta de valor (vs objeção), ele defere pro slider em vez de
+fabricar. Zero bug novo.
+
 ### Rodada 10 (usuário cético/objeções) — FIX-G: agente FABRICAVA números na objeção
 Cenário: cético que chama consórcio de furada, compara com financiamento, teme
 desistência, questiona comissão. TOM bom (honesto, sem "contemplação garantida", admitiu
