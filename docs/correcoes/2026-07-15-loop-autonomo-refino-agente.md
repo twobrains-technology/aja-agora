@@ -54,5 +54,43 @@ Conta de teste: CONTA1 (Kairo) — homologação Bevi.
   3 passa a instruir a emenda da ponte pro próximo passo. Commit `367c3846`.
 - **Status:** aplicado; a validar no loop.
 
+### Rodada 2 (pós-infra) — conversa pré-CPF LIMPA + 2 achados rejeitados
+
+Coletor Haiku percorreu início → nome → motivo → valor → gate de CPF. Com a infra
+destravada, o agente respondeu com contexto em TODOS os turnos:
+- **FIX-A validado ao vivo:** no motivo, o agente deu o espelho E emendou a próxima
+  pergunta no mesmo fôlego ("Entendo bem — quando o carro dá trabalho, atrapalha
+  tudo. Então o objetivo já fica claro: te colocar num carro novo… Qual valor do bem
+  faz mais sentido pra você?"). Não morreu seco. Turn-trace: gate `credit` logo após,
+  `finishReason:ok`.
+- **Copy do identify correta na web:** "Pra trazer as ofertas reais das
+  administradoras, preciso do seu CPF e celular." SEM a frase de WhatsApp. (a que eu
+  tinha visto no print pré-fix era artefato do LLM quebrado, confirmado.)
+- Zero erro de console; funil avançou liso até o card de CPF.
+
+**Dois achados do coletor REJEITADOS como juiz (evidência determinística):**
+- **OBS-1 "me perdi" na 1ª mensagem** → REJEITADO. Turn-trace: só 1 conversa, 4
+  turnos, TODOS `finishReason:ok`; o `EMPTY_TURN_FALLBACK` (empty-turn-guard.ts) não
+  disparou (nenhum turno com os ~48 chars da frase). Era **scrollback velho da rodada
+  1** (infra quebrada → todo turno caía no "me perdi"), restaurado na tela. Fantasma.
+- **OBS-2 chips "Pode me chamar de Kairo"/"quero trocar de carro"** → REJEITADO.
+  Nenhum código emite esses chips (welcome só tem Imóvel/Automóvel/Moto; card do gate
+  `name` é INPUT, não chips; a frase só existe como EXEMPLO no system-prompt.ts). Era
+  o **dropdown nativo de autofill do Chrome** (o input de nome tem
+  `autoComplete="given-name"`), lido pelo coletor como "botão do app".
+
+### FIX-B — foco do input após a resposta (pedido do Kairo) + autofill do chat
+- **Sintoma (Kairo):** "após cada resposta deixe o foco no componente ou no chat pra
+  o usuário responder imediatamente". O coletor não pega isso (a ferramenta de
+  pilotagem foca sozinha) — vale o pedido + a prova no código.
+- **Causa (código):** `chat-input.tsx` tinha `disabled={isStreaming}` no textarea
+  (perde o foco no streaming) e NENHUM efeito devolvia o foco quando o streaming
+  termina. Só focava no mount.
+- **Fix:** `useEffect([isStreaming])` que refoca o textarea quando `isStreaming` vira
+  false, com guarda `requestAnimationFrame`+`document.activeElement` pra NÃO roubar o
+  foco de um card de gate auto-focado (CPF/nome). + `autoComplete="off"` no textarea
+  (mata o dropdown de autofill que confundiu o coletor). Commit: ver abaixo.
+- **Status:** aplicado; a validar com humano (o coletor não distingue).
+
 <!-- Próximos achados do loop entram aqui, um bloco por bug: sintoma → causa
      (com evidência determinística) → fix → commit → status. -->

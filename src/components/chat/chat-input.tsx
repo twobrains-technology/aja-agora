@@ -17,9 +17,27 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 	const [value, setValue] = useState("");
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+	// Devolve o foco ao input assim que o agente TERMINA de responder (streaming
+	// vira false) — pra o usuário digitar a próxima mensagem sem precisar clicar
+	// (pedido do Kairo). O textarea fica `disabled` no streaming e perde o foco;
+	// re-habilitar não o devolve sozinho. Cobre também o mount (isStreaming começa
+	// false). rAF + checagem de activeElement evita ROUBAR o foco de um card de
+	// gate que já se auto-focou (name-prompt/gate-identity-form usam autoFocus).
 	useEffect(() => {
-		textareaRef.current?.focus();
-	}, []);
+		if (isStreaming) return;
+		const id = requestAnimationFrame(() => {
+			const active = document.activeElement;
+			const outroCampoJaFocado =
+				active instanceof HTMLElement &&
+				active !== document.body &&
+				active !== textareaRef.current &&
+				(active.tagName === "INPUT" ||
+					active.tagName === "TEXTAREA" ||
+					active.isContentEditable);
+			if (!outroCampoJaFocado) textareaRef.current?.focus();
+		});
+		return () => cancelAnimationFrame(id);
+	}, [isStreaming]);
 
 	const handleInput = useCallback(() => {
 		const textarea = textareaRef.current;
@@ -85,6 +103,9 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 					}}
 					onKeyDown={handleKeyDown}
 					inputMode="text"
+					// Chat livre: sem autofill do browser (evita o dropdown nativo
+					// sugerindo mensagens antigas fora de contexto no campo).
+					autoComplete="off"
 					placeholder={isTheater ? "Escreva sua mensagem…" : "Diga o que você quer realizar..."}
 					disabled={isStreaming}
 					rows={1}
