@@ -120,20 +120,24 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 
 						{/* Details — NÃO exibir taxa (assusta o leigo) */}
 						{/* Bernardo 2026-06-11: sem "Taxa" no carrossel — composição completa na proposta (PDF). Ver CONTEXT.md (D14). */}
+						{/* FIX-358 — fluxo inline "Parcela <b>{valor}</b>/mês" (mockup canônico
+						    .grp .parcela): num chip de ~124px úteis, parcela de 4 dígitos
+						    estourava o justify-between e colava no label ("ParcelaR$ 3.134,55").
+						    O fluxo inline garante o espaço e nunca trunca o número. */}
 						<div className="flex flex-col gap-1">
-							<div className="flex items-center justify-between text-xs">
-								<span className="text-muted-foreground">Parcela</span>
+							<p className="text-xs text-muted-foreground">
+								Parcela{" "}
 								<b
 									data-testid={`comparison-chip-secondary-payment-${group.id}`}
-									className="aja-num font-semibold"
+									className="aja-num font-semibold text-foreground"
 								>
-									{formatBRL2(group.monthlyPayment)}/mês
+									{formatBRL2(group.monthlyPayment)}
 								</b>
-							</div>
-							<div className="flex items-center justify-between text-xs">
-								<span className="text-muted-foreground">Prazo</span>
-								<b className="aja-num font-semibold">{group.termMonths}m</b>
-							</div>
+								/mês
+							</p>
+							<p className="text-xs text-muted-foreground">
+								Prazo <b className="aja-num font-semibold text-foreground">{group.termMonths}m</b>
+							</p>
 						</div>
 
 						{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
@@ -271,15 +275,22 @@ function QuotaChip({
 			<div className="h-px bg-border" />
 
 			{/* Details — sem Taxa (Bernardo 2026-06-11); composição na proposta (PDF) */}
+			{/* FIX-358 — mesmo fluxo inline do carrossel: garante o espaço entre
+			    "Parcela" e o valor e nunca trunca a parcela de 4 dígitos. */}
 			<div className="flex flex-col gap-1">
-				<div className="flex items-center justify-between text-xs">
-					<span className="text-muted-foreground">Parcela</span>
-					<b className="aja-num font-semibold">{formatBRL2(cota.monthlyPayment)}/mês</b>
-				</div>
-				<div className="flex items-center justify-between text-xs">
-					<span className="text-muted-foreground">Prazo</span>
-					<b className="aja-num font-semibold">{cota.termMonths}m</b>
-				</div>
+				<p className="text-xs text-muted-foreground">
+					Parcela{" "}
+					<b
+						data-testid={`quota-chip-secondary-payment-${cota.groupId}`}
+						className="aja-num font-semibold text-foreground"
+					>
+						{formatBRL2(cota.monthlyPayment)}
+					</b>
+					/mês
+				</p>
+				<p className="text-xs text-muted-foreground">
+					Prazo <b className="aja-num font-semibold text-foreground">{cota.termMonths}m</b>
+				</p>
 			</div>
 
 			{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
