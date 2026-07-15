@@ -358,3 +358,14 @@ comissão) — mas o ground truth pegou 3 claims fabricados que o coletor rotulo
   contemplação só a real pós-reveal, desistência honesta e geral. Trava de honestidade
   (invariante "número nunca é inventado"), não script.
 - **Status:** aplicado; validar re-rodando o cético.
+
+### Incidente — FIX-G quebrou o build (crase em template literal) + lição de verificação
+- A 1ª versão do FIX-G escreveu `` `compare_with_financing` `` com CRASES dentro do
+  template literal do `system-prompt.ts` → fechou a string → "Expected a semicolon"
+  em `system-prompt.ts:38`. A rodada 11 (coletor) pegou: build error, jornada bloqueada.
+- **Por que passou batido:** eu verifiquei só o `home` (200) pós-recreate — mas o home
+  NÃO importa `system-prompt.ts`; só a rota `/api/chat` importa. O erro só aparece ao
+  compilar a rota. Corrigido (crases → texto puro, `43ef8520`).
+- **LIÇÃO PRO LOOP:** depois de editar código do AGENTE (system-prompt/directives/
+  orchestrator), verificar que a rota `/api/chat` compila (POST → 400, não 500), NÃO só
+  o home. E NUNCA usar crase dentro dos template literals do prompt.
