@@ -8,7 +8,7 @@ import { EmbeddedBid } from "./artifacts/embedded-bid";
 import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
-import { RealOffer } from "./artifacts/real-offer";
+import { ProposalDoc } from "./artifacts/proposal-doc";
 import { RecommendationCard } from "./artifacts/recommendation-card";
 import { Scarcity } from "./artifacts/scarcity";
 import { Scenarios } from "./artifacts/scenarios";
@@ -74,7 +74,9 @@ function renderArtifact(artifact: Artifact) {
 		case "contract_form":
 			return <ContractForm payload={artifact.payload} />;
 		case "real_offer":
-			return <RealOffer payload={artifact.payload} />;
+			// Apresentação substituída pelo documento co-branded (ProposalDoc);
+			// contrato de dados (RealOfferPayload/proposalId) preservado.
+			return <ProposalDoc payload={artifact.payload} />;
 		case "signature_handoff":
 			return <SignatureHandoff payload={artifact.payload} />;
 		case "document_upload":
