@@ -484,3 +484,8 @@ R$ 20-30 mil"); "5 milhões" → escalou (teto R$ 1M). Bom senso correto.
   confundiu troca de especialista com handoff humano). Trap: valor de outra categoria
   troca o especialista e corrigir não volta. Fix mexe na lógica de roteamento por valor
   (blast radius) + é decisão de jornada — não refatoro sozinho.
+
+### Rodada 19 (correções mid-conversa) — PASSE LIMPO, zero bug
+Nome Fábio→Fabinho, bem Corolla→Civic, valor 130→120: todas as 3 correções atualizadas
+corretamente, sem reter dado velho nem misturar. No Turno 5 o objetivo usou "Civic" sem
+papagaiar "Corolla" — valida de tabela o FIX-K (linha 321). Carry-over de estado robusto.
