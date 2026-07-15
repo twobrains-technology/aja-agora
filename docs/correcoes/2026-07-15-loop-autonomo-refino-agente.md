@@ -448,3 +448,15 @@ motivo que o cliente nunca deu. Mesma classe do FIX-D/E (exemplo do prompt papag
   TOM, nunca copiado literal — com o caso explícito "usar no trabalho" ≠ "o carro dá
   trabalho".
 - **Status:** aplicado, build verificado (`/api/chat`→400); validar.
+
+### Rodada 17 (valida FIX-J) — FIX-J OK; "a Rafael" = slip 1/13 do haiku (rejeitado)
+FIX-J confirmado: motivo "usar no trabalho/vendedor" → espelho "ter o carro certo pro
+trabalho faz diferença no dia a dia" (bate), SEM fabricar "carro dá trabalho". ✅
+- **"Aqui é a Rafael"** (artigo feminino, nome masculino): ground truth mostra **12/13**
+  auto-anúncios com "o Rafael" (certo), só 1 com "a". Slip de 1/13 do haiku, não bug
+  sistemático — persona é masculina. REJEITADO como bug de produto (fixar seria
+  over-engineering; modelo de prod acerta). Anotado como variabilidade do modelo fraco.
+
+**Padrão observado (FIX-D/E/J):** o haiku papagaia EXEMPLOS hardcoded do prompt em vez de
+adaptar ao contexto real. Rodando auditoria proativa (Explore) por outros exemplos
+papagaiáveis — mais alavancado que descobrir um por rodada.
