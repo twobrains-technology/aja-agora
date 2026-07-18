@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
+import { KvContainer } from "@/components/kv/ui/kv-container";
 
 const KV = "/kv";
 
@@ -165,7 +166,7 @@ export function KvConfianca() {
 
 			{/* DESKTOP (≥lg) */}
 			<div className="hidden lg:block">
-				<div className="relative mx-auto max-w-[1280px] px-6 py-20 md:px-8 md:py-28">
+				<KvContainer className="max-w-[1280px] py-20 md:py-28">
 					{/* Painel coral: headline + subtítulo. Figma: banner 1234x242 (r:12), título
 					    844px de largura quebrando em 2 linhas ("Como a AJA compara as melhores /
 					    alternativas para você...."), padding topo ~37 / base ~11. */}
@@ -284,7 +285,7 @@ export function KvConfianca() {
 						height={512}
 						className="pointer-events-none absolute top-[215px] right-8 z-30 h-auto w-[46%] max-w-[600px]"
 					/>
-				</div>
+				</KvContainer>
 			</div>
 		</section>
 	);
