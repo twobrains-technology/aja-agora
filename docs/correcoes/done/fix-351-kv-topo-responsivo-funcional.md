@@ -1,8 +1,10 @@
 ---
 id: FIX-351
 titulo: "KV topo de funil (Menu, Hero, Tipos) — responsivo + componentizado + CTA funcional"
-status: todo
+status: done
 bloco: bloco-a-kv-topo-conversao
+commit: 6de9c423
+executado_em: 2026-07-18
 arquivos:
   - src/components/kv/kv-menu.tsx
   - src/components/kv/kv-hero.tsx
