@@ -1,7 +1,10 @@
 import type { SVGProps } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 
 // Ícones de marca (o lucide-react do projeto não exporta social icons por
 // questão de trademark). SVGs inline, currentColor.
@@ -57,6 +60,8 @@ const RESOURCE_LINKS = [
 	{ label: "Blog", href: "#" },
 ];
 
+// TODO: URL real das redes sociais da Aja Agora — placeholder até o operador
+// confirmar os perfis (FIX-353).
 const SOCIALS = [
 	{ icon: InstagramIcon, label: "Instagram", href: "#" },
 	{ icon: FacebookIcon, label: "Facebook", href: "#" },
@@ -64,32 +69,37 @@ const SOCIALS = [
 	{ icon: YouTubeIcon, label: "YouTube", href: "#" },
 ];
 
+interface KvFooterProps {
+	onOpenChat: TheaterOpener;
+}
+
 // Frame 'CTA Final + Footer' (1440x615): CTA sobre fundo claro (headline +
 // 2 botões) seguido do rodapé navy (marca, navegação, contato, redes sociais
 // e linha legal). Todo o bloco é o landmark <footer> da página.
-export function KvFooter() {
+export function KvFooter({ onOpenChat }: KvFooterProps) {
 	return (
 		<footer className="bg-[#FAFAF3]">
 			{/* CTA Final */}
-			<div className="mx-auto flex max-w-[1240px] flex-col gap-8 px-6 pb-12 pt-8 md:px-8 md:pb-16 md:pt-4 lg:flex-row lg:items-center lg:justify-between lg:px-0">
+			<KvContainer className="flex max-w-[1240px] flex-col gap-8 pb-12 pt-8 md:pb-16 md:pt-4 lg:flex-row lg:items-center lg:justify-between lg:px-0">
 				<h2 className="max-w-[815px] font-[family-name:var(--font-merriweather)] text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[62px]">
 					Busque a melhor <Em>alternativa</Em>
 				</h2>
 				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
-					<button
-						type="button"
-						className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#F2404F] px-8 text-[16px] font-semibold text-white transition-[filter] hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
+					<KvCtaButton
+						onClick={(e) => onOpenChat("", e.currentTarget)}
+						className="focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
 					>
 						Fale com a AJA
-					</button>
-					<button
-						type="button"
-						className="inline-flex h-[52px] items-center justify-center rounded-full border-2 border-[#021628] px-8 text-[16px] font-semibold text-[#021628] transition-colors hover:text-[#F2404F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#021628] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
+					</KvCtaButton>
+					<KvCtaButton
+						variant="outline"
+						onClick={(e) => onOpenChat("", e.currentTarget)}
+						className="border-2 hover:bg-transparent hover:text-[#F2404F] focus-visible:ring-2 focus-visible:ring-[#021628] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
 					>
 						Escolha o seu consórcio
-					</button>
+					</KvCtaButton>
 				</div>
-			</div>
+			</KvContainer>
 
 			{/* Footer */}
 			<div className="bg-[#021628] px-6 pb-8 pt-12 text-[#F2F2F2] md:px-16 lg:pb-[191px]">
