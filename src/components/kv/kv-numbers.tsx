@@ -1,6 +1,8 @@
 import { Building2, DollarSign, TrendingUp, Users } from "lucide-react";
 
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 type Metric = {
 	icon: typeof DollarSign;
@@ -78,12 +80,12 @@ export function KvNumbers() {
 					className="pointer-events-none absolute -right-[160px] -top-[100px] size-[450px] rounded-full bg-[#0C3357] opacity-30 blur-[100px]"
 				/>
 
-				<div className="relative mx-auto max-w-[1240px] px-6 pb-16 pt-16 lg:px-0 md:pb-[119px] md:pt-[114px]">
+				<KvContainer className="max-w-[1240px] pb-16 pt-16 md:px-6 lg:px-0 md:pb-[119px] md:pt-[114px]">
 					{/* Header */}
 					<div className="mx-auto flex flex-col items-center gap-4 text-center">
-						<span className="mx-auto max-w-[762px] text-[12px] font-semibold uppercase leading-4 tracking-[0.15em] text-[#F2404F]">
+						<KvEyebrow className="mx-auto max-w-[762px] tracking-[0.15em]">
 							qual a sua Propósito
-						</span>
+						</KvEyebrow>
 						<h2 className="text-[32px] font-normal leading-[1.2] text-[#FAFAF3] md:text-[40px] md:leading-[48px]">
 							O setor de <Em>consórcio não para</Em> de crescer
 						</h2>
@@ -122,7 +124,7 @@ export function KvNumbers() {
 							</div>
 						))}
 					</div>
-				</div>
+				</KvContainer>
 			</section>
 
 			{/* Marquee Ticker */}

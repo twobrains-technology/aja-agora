@@ -3,6 +3,8 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 import { cn } from "@/lib/utils";
 
 const KV = "/kv";
@@ -169,14 +171,18 @@ function PathCard({ path, className }: { path: Path; className?: string }) {
 export function KvContemplacao() {
 	return (
 		<section className="relative overflow-hidden bg-[#FAFAF3]">
-			{/* Blob coral desfocado atrás do header/1º card (só mobile) */}
-			<div className="pointer-events-none absolute left-[43%] top-[357px] size-[300px] -translate-x-1/2 rounded-full bg-[#FFE0E3] opacity-70 blur-[100px] lg:hidden" />
+			{/* Blob coral desfocado atrás do header/1º card (mobile + tablet, até o breakpoint em que a colagem desktop assume) */}
+			<div className="pointer-events-none absolute left-[43%] top-[357px] size-[300px] -translate-x-1/2 rounded-full bg-[#FFE0E3] opacity-70 blur-[100px] xl:hidden" />
 
-			<div className="relative mx-auto max-w-[1240px] px-5 pb-16 pt-2 md:px-8 lg:py-24">
-				<div className="lg:relative lg:min-h-[880px]">
+			<KvContainer className="max-w-[1240px] px-5 pb-16 pt-2 md:px-8 lg:py-24">
+				{/* Colagem absoluta (foto + card "Por Lance" flutuando) só cabe fiel ao
+				    Figma a partir de xl (1280px) — entre 1024-1279px ela vazava (card
+				    passava da borda, foto sobrepunha o texto). Abaixo de xl mantém o
+				    empilhamento vertical, que já é responsivo. */}
+				<div className="relative xl:min-h-[880px]">
 					{/* Grafismos corais diagonais de fundo (só desktop) */}
 					<svg
-						className="pointer-events-none absolute left-[-150px] top-0 z-0 hidden h-full w-[560px] lg:block"
+						className="pointer-events-none absolute left-[-150px] top-0 z-0 hidden h-full w-[560px] xl:block"
 						viewBox="0 0 560 880"
 						preserveAspectRatio="xMinYMin slice"
 						role="presentation"
@@ -195,7 +201,7 @@ export function KvContemplacao() {
 						    numa máscara 291x278 → mostra a faixa central/direita (casal+cachorro),
 						    corretora quase fora do quadro. Reproduzido via imagem sobredimensionada
 						    (230% da largura do container) + offset absoluto, não object-position. */}
-						<div className="relative mx-auto mb-3 mt-[39px] aspect-[291/278] w-full max-w-[291px] overflow-hidden rounded-[9px] lg:mt-0 lg:hidden">
+						<div className="relative mx-auto mb-3 mt-[39px] aspect-[291/278] w-full max-w-[291px] overflow-hidden rounded-[9px] xl:mt-0 xl:hidden">
 							<Image
 								src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.jpg`}
 								alt="Casal feliz apertando a mão de corretor após ser contemplado"
@@ -206,9 +212,9 @@ export function KvContemplacao() {
 							/>
 						</div>
 
-						<span className="text-[11px] font-semibold uppercase leading-4 tracking-[0.18em] text-[#F2404F] lg:text-[12px]">
+						<KvEyebrow className="text-[11px] tracking-[0.18em] lg:text-[12px]">
 							COMO FUNCIONA
-						</span>
+						</KvEyebrow>
 						<h2 className="mt-3 text-[28px] font-normal leading-[36px] text-[#021628] lg:mt-4 lg:text-[44px] lg:leading-[1]">
 							Momento da <Em>contemplação</Em>
 						</h2>
@@ -222,12 +228,12 @@ export function KvContemplacao() {
 					{/* Foto retrato — só desktop, ancorada à direita. Altura dominante (aspect-ratio
 					    638/814 calcula a largura) pra ficar grande o bastante do card Por Lance
 					    caber CONTIDO sobre ela, como no Figma (foto desce além da base do card). */}
-					<div className="absolute right-0 top-0 z-0 hidden aspect-[638/814] h-[700px] overflow-hidden rounded-[12px] lg:block">
+					<div className="absolute right-0 top-0 z-0 hidden aspect-[638/814] h-[700px] overflow-hidden rounded-[12px] xl:block">
 						<Image
 							src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.jpg`}
 							alt="Casal feliz apertando a mão de corretor após ser contemplado"
 							fill
-							sizes="(min-width: 1024px) 549px, 100vw"
+							sizes="(min-width: 1280px) 549px, 100vw"
 							className="object-cover object-[68%_center]"
 						/>
 					</div>
@@ -237,17 +243,17 @@ export function KvContemplacao() {
 					    (capado a 580, como o Figma) e o lance flutua ancorado 262px abaixo do topo
 					    do sorteio, com a borda esquerda invadindo só a área vazia abaixo das tags —
 					    nenhum texto do sorteio fica oculto. */}
-					<div className="relative z-10 mt-8 lg:mt-10 lg:max-w-[580px]">
+					<div className="relative z-10 mt-8 xl:mt-10 xl:max-w-[580px]">
 						<PathCard path={paths[0]} />
 
 						<PathCard
 							path={paths[1]}
-							className="mt-6 lg:absolute lg:left-[404px] lg:top-[262px] lg:z-20 lg:mt-0 lg:w-[580px]"
+							className="mt-6 xl:absolute xl:left-[404px] xl:top-[262px] xl:z-20 xl:mt-0 xl:w-[580px]"
 						/>
 					</div>
 
 					{/* Diferencial — texto plano com chevron coral, base da seção (só desktop) */}
-					<div className="hidden items-start gap-3 lg:absolute lg:bottom-0 lg:left-0 lg:flex lg:pl-[140px]">
+					<div className="hidden items-start gap-3 xl:absolute xl:bottom-0 xl:left-0 xl:flex xl:pl-[140px]">
 						<BrandChevron className="h-[52px] w-auto self-start" />
 						<div>
 							<p className="text-[13px] font-semibold uppercase tracking-wide text-[#F2404F]">
@@ -259,8 +265,8 @@ export function KvContemplacao() {
 						</div>
 					</div>
 
-					{/* Diferencial — card navy (só mobile, frame Platform-Highlight) */}
-					<div className="mt-8 rounded-[14px] bg-[#021628] p-5 lg:hidden">
+					{/* Diferencial — card navy (mobile + tablet, até xl assumir a colagem desktop) */}
+					<div className="mt-8 rounded-[14px] bg-[#021628] p-5 xl:hidden">
 						<div className="flex items-center gap-2">
 							<ChevronRight className="size-3 shrink-0 text-[#F2404F]" strokeWidth={2.5} />
 							<p className="text-[11px] font-semibold uppercase leading-4 tracking-wide text-[#F2404F]">
@@ -274,7 +280,7 @@ export function KvContemplacao() {
 						</p>
 					</div>
 				</div>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }
