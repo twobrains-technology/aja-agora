@@ -1,4 +1,12 @@
+"use client";
+
+import { Menu, X } from "lucide-react";
+import { useState } from "react";
+
 import { Wordmark } from "@/components/brand/wordmark";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 
 // Menu (Figma: frame 'Menu' navy #052440, altura 120, conteúdo 1256 centrado).
 const NAV = [
@@ -8,10 +16,16 @@ const NAV = [
 	{ label: "Dúvidas", href: "#faq" },
 ];
 
-export function KvMenu() {
+interface KvMenuProps {
+	onOpenChat: TheaterOpener;
+}
+
+export function KvMenu({ onOpenChat }: KvMenuProps) {
+	const [mobileOpen, setMobileOpen] = useState(false);
+
 	return (
-		<header className="w-full bg-[#052440]">
-			<div className="mx-auto flex h-[120px] w-full max-w-[1440px] items-center justify-between px-4 lg:pl-[109px] lg:pr-[75px]">
+		<header className="relative w-full bg-[#052440]">
+			<KvContainer className="flex h-[120px] max-w-[1440px] items-center justify-between px-4 md:px-4 lg:pl-[109px] lg:pr-[75px]">
 				<Wordmark className="h-[56px] w-auto text-white" />
 
 				<nav className="hidden items-center gap-[48px] lg:flex xl:gap-[61px]">
@@ -27,20 +41,47 @@ export function KvMenu() {
 				</nav>
 
 				<div className="flex items-center gap-[13px]">
-					<button
-						type="button"
-						className="rounded-full bg-[#F2404F] px-4 py-2 text-[12px] font-semibold leading-4 text-white transition-[filter] hover:brightness-105"
-					>
+					<KvCtaButton size="sm" onClick={(e) => onOpenChat("", e.currentTarget)}>
 						Comparar agora
-					</button>
-					<button
-						type="button"
-						className="hidden rounded-full border border-white px-4 py-2 text-[12px] font-semibold leading-4 text-white transition-colors hover:text-white/75 sm:block"
+					</KvCtaButton>
+					{/* FIX-351: não existe fluxo de login de cliente hoje (só admin em
+					    /admin/login) — inerte/desabilitado até a jornada de login existir. */}
+					<KvCtaButton
+						variant="outline-light"
+						size="sm"
+						disabled
+						title="Login do cliente ainda não disponível"
+						className="hidden sm:inline-flex"
 					>
 						Entrar
+					</KvCtaButton>
+					<button
+						type="button"
+						aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+						aria-expanded={mobileOpen}
+						aria-controls="kv-menu-mobile-nav"
+						onClick={() => setMobileOpen((open) => !open)}
+						className="flex size-9 items-center justify-center text-white lg:hidden"
+					>
+						{mobileOpen ? <X className="size-6" /> : <Menu className="size-6" />}
 					</button>
 				</div>
-			</div>
+			</KvContainer>
+
+			{mobileOpen ? (
+				<nav id="kv-menu-mobile-nav" className="border-t border-white/10 bg-[#052440] lg:hidden">
+					{NAV.map((item) => (
+						<a
+							key={item.label}
+							href={item.href}
+							onClick={() => setMobileOpen(false)}
+							className="block px-6 py-3 text-[16px] font-normal text-white transition-colors hover:text-white/75"
+						>
+							{item.label}
+						</a>
+					))}
+				</nav>
+			) : null}
 		</header>
 	);
 }
