@@ -3,6 +3,8 @@ import Image from "next/image";
 
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 const KV = "/kv";
 
@@ -121,11 +123,9 @@ function Medalhao({
 export function KvComparacao() {
 	return (
 		<section aria-labelledby="comparacao-heading" className="bg-[#FAFAF3]">
-			<div className="mx-auto max-w-[1120px] px-6 py-16 md:px-8 md:py-24">
+			<KvContainer className="max-w-[1120px] py-16 md:py-24">
 				<div className="mx-auto max-w-[700px] text-center">
-					<span className="text-[12px] font-semibold uppercase leading-[16px] tracking-[0.16em] text-[#F2404F]">
-						COMO FUNCIONA
-					</span>
+					<KvEyebrow className="tracking-[0.16em]">COMO FUNCIONA</KvEyebrow>
 					<h2
 						id="comparacao-heading"
 						className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:text-[44px] md:leading-[62px]"
@@ -202,7 +202,7 @@ export function KvComparacao() {
 						</ul>
 					</div>
 				</div>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }

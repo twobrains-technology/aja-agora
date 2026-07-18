@@ -1,7 +1,11 @@
 import { Quote, Star } from "lucide-react";
 import Image from "next/image";
 
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 const KV = "/kv";
 
@@ -36,20 +40,22 @@ const testimonials: Testimonial[] = [
 	},
 ];
 
+interface KvDepoimentosProps {
+	onOpenChat: TheaterOpener;
+}
+
 // Seção "Depoimentos" (Figma: Group 122 / depoimentos-section). Header centralizado +
 // grid de 3 cards de depoimento + bloco de CTA final.
-export function KvDepoimentos() {
+export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 	return (
 		<section className="relative overflow-hidden bg-[#FAFAF3]">
 			{/* Blob decorativo desfocado */}
 			<div className="pointer-events-none absolute -left-52 top-36 size-[450px] rounded-full bg-[#FFE0E3] opacity-70 blur-[100px]" />
 
-			<div className="relative mx-auto max-w-[1440px] px-6 pt-14 pb-12 md:px-20 md:pt-[92px] md:pb-12">
+			<KvContainer className="max-w-[1440px] pt-14 pb-12 md:px-20 md:pt-[92px] md:pb-12">
 				{/* Header */}
 				<div className="text-center">
-					<span className="text-[12px] font-semibold leading-4 tracking-wide text-[#F2404F]">
-						CONFIANÇA E RESULTADO
-					</span>
+					<KvEyebrow>CONFIANÇA E RESULTADO</KvEyebrow>
 					<h2 className="mt-4 text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[53px]">
 						Quem planeja com a AJA<Em>, conquista</Em>
 					</h2>
@@ -111,14 +117,9 @@ export function KvDepoimentos() {
 					<p className="text-[24px] font-normal text-[#021628] md:text-[32px]">
 						Quer ser o próximo a realizar o <Em w="black">seu sonho?</Em>
 					</p>
-					<button
-						type="button"
-						className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#F2404F] px-8 text-[16px] font-semibold text-white transition-[filter] hover:brightness-105"
-					>
-						Fale com a AJA
-					</button>
+					<KvCtaButton onClick={(e) => onOpenChat("", e.currentTarget)}>Fale com a AJA</KvCtaButton>
 				</div>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }
