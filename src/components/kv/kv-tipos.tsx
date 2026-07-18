@@ -1,7 +1,11 @@
-import Image from "next/image";
+"use client";
 
+import Image from "next/image";
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 
 const KV = "/kv";
 
@@ -16,6 +20,8 @@ type TipoCard = {
 	 *  (card Moto no Figma: "Saia da moto alugada," quebra antes de "escape do trânsito"). */
 	descriptionBreakAfterLead?: boolean;
 	button: string;
+	/** Seed enviado ao abrir o chat (onOpenChat) — categoria já expressa como frase. */
+	seed: string;
 	tags: string[];
 	image: {
 		src: string;
@@ -35,6 +41,7 @@ const CARDS: TipoCard[] = [
 		descriptionLead: "Para gerar renda",
 		descriptionRestLines: [", ganhar mobilidade ou conquistar o carro que faz sentido para você."],
 		button: "Compara opções",
+		seed: "Quero comprar um carro.",
 		tags: ["Viagens", "Primeiro carro", "Autonomia"],
 		image: {
 			src: "image-3.png",
@@ -51,6 +58,7 @@ const CARDS: TipoCard[] = [
 			"patrimônio e saia do Aluguel.",
 		],
 		button: "Buscar alternativas",
+		seed: "Quero comprar um imóvel.",
 		tags: ["Sair do aluguel", "Casa própria", "Patrimônio"],
 		image: {
 			src: "image-1.png",
@@ -64,6 +72,7 @@ const CARDS: TipoCard[] = [
 		descriptionBreakAfterLead: true,
 		descriptionRestLines: ["escape do trânsito ou realize", "o sonho da moto própria."],
 		button: "Simular ofertas",
+		seed: "Quero comprar uma moto.",
 		tags: ["Trânsito", "Economia", "Mobilidade"],
 		image: {
 			src: "image-2.png",
@@ -72,7 +81,11 @@ const CARDS: TipoCard[] = [
 	},
 ];
 
-export function KvTipos() {
+interface KvTiposProps {
+	onOpenChat: TheaterOpener;
+}
+
+export function KvTipos({ onOpenChat }: KvTiposProps) {
 	return (
 		// Painel navy FULL-BLEED: largura total da tela, cantos retos, sem margem cream
 		// em volta (Figma: Rectangle 85 1442x963, x≈0). Só o CONTEÚDO fica no container
@@ -91,7 +104,7 @@ export function KvTipos() {
 				className="pointer-events-none absolute -bottom-[8%] right-[6%] z-0 h-[28%] w-[20%] rounded-t-[64px] bg-[#1C2E3E] md:right-[8%] md:w-[19%]"
 			/>
 
-			<div className="relative z-10 mx-auto max-w-[1320px] px-6 py-16 md:px-8 md:py-24">
+			<KvContainer className="z-10 max-w-[1320px] py-16 md:py-24">
 				<div className="mx-auto max-w-[820px] text-center">
 					<span className="text-[12px] font-semibold uppercase leading-[16px] tracking-wide text-[#F2404F]">
 						qual a sua Propósito
@@ -152,13 +165,14 @@ export function KvTipos() {
 										</span>
 									))}
 								</p>
-								<button
-									type="button"
-									className="mt-6 inline-flex min-h-[40px] items-center justify-center rounded-full bg-[#F2404F] px-5 py-2.5 text-[12px] font-semibold leading-[16px] text-white transition-[filter] hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2"
+								<KvCtaButton
+									size="sm"
+									onClick={(e) => onOpenChat(card.seed, e.currentTarget)}
+									className="mt-6 min-h-[40px] px-5 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2"
 								>
 									{card.button}
-								</button>
-								<div className="mt-6 flex flex-nowrap items-center justify-center gap-1.5">
+								</KvCtaButton>
+								<div className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
 									{card.tags.map((tag) => (
 										<span
 											key={tag}
@@ -172,7 +186,7 @@ export function KvTipos() {
 						</article>
 					))}
 				</div>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }
