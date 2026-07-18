@@ -1,13 +1,15 @@
 ---
 id: FIX-352
 titulo: "KV narrativa central (Journey, Contemplação, Numbers) — responsivo + componentizado"
-status: todo
+status: done
 bloco: bloco-b-kv-narrativa-jornada
 arquivos:
   - src/components/kv/kv-journey.tsx
   - src/components/kv/kv-contemplacao.tsx
   - src/components/kv/kv-numbers.tsx
 rodada: 2026-07-18 — goal "substituir a landing de produção pela réplica /kv"
+commit: 3e3b4386
+executado_em: 2026-07-18
 ---
 
 ## Palavras do operador

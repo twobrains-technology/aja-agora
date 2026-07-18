@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { SunMark } from "@/components/brand/sun-mark";
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 type JourneyStep = {
 	eyebrow: string;
@@ -217,12 +219,10 @@ export function KvJourney() {
 				className="pointer-events-none absolute -left-28 top-[60%] size-[300px] rounded-full bg-[#FFE0E3] opacity-60 blur-[80px] lg:hidden"
 			/>
 
-			<div className="relative mx-auto max-w-[1240px] px-6 md:px-8">
+			<KvContainer className="max-w-[1240px]">
 				{/* Cabeçalho centralizado (eyebrow + título) */}
 				<div className="mx-auto max-w-[815px] text-center">
-					<p className="text-[12px] font-semibold uppercase tracking-wide text-[#F2404F]">
-						Como funciona
-					</p>
+					<KvEyebrow>Como funciona</KvEyebrow>
 					<h2 className="mt-3 text-[32px] font-normal leading-[44px] text-[#021628] lg:text-[44px] lg:leading-[62px]">
 						Uma jornada em poucos <Em>Movimentos</Em>
 					</h2>
@@ -328,7 +328,7 @@ export function KvJourney() {
 						</div>
 					))}
 				</div>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }
