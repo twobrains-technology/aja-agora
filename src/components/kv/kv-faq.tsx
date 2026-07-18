@@ -3,6 +3,8 @@
 import { useId, useState } from "react";
 
 import { Em } from "@/components/kv/em";
+import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 const FAQ_ITEMS = [
 	{
@@ -64,11 +66,11 @@ export function KvFaq() {
 				<rect width="566" height="815" fill={`url(#${patternId})`} opacity="0.35" />
 			</svg>
 
-			<div className="relative mx-auto max-w-[1437px] px-6 md:px-12 lg:px-[102px]">
+			<KvContainer className="max-w-[1437px] md:px-12 lg:px-[102px]">
 				<div className="relative max-w-[500px]">
-					<span className="text-[12px] font-semibold uppercase leading-4 tracking-[0.2em] text-[#F2404F]">
+					<KvEyebrow className="tracking-[0.2em]">
 						dúvidas para quem tá começando a jornada
-					</span>
+					</KvEyebrow>
 					<h2 className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:text-[44px] md:leading-[62px]">
 						<Em>Perguntas</Em> Frequentes
 					</h2>
@@ -126,7 +128,7 @@ export function KvFaq() {
 						);
 					})}
 				</ul>
-			</div>
+			</KvContainer>
 		</section>
 	);
 }
