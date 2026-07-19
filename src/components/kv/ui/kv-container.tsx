@@ -10,3 +10,9 @@ import { cn } from "@/lib/utils";
 export function KvContainer({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 	return <div className={cn("relative mx-auto w-full px-6 md:px-8", className)} {...props} />;
 }
+
+// Sombra de card "oficial" do design system AJA (Figma) — mesmo par
+// elevação-curta/elevação-longa em todo card com fundo branco/off-white
+// (search-card do Hero, cards de tipo/depoimento/confiança, StepCircle da
+// jornada). Token único — não redeclarar por arquivo.
+export const CARD_SHADOW = "shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]";

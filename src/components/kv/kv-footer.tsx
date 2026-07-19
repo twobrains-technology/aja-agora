@@ -60,6 +60,32 @@ const RESOURCE_LINKS = [
 	{ label: "Blog", href: "#" },
 ];
 
+type FooterLink = { label: string; href: string };
+
+// Coluna de links do rodapé (título uppercase + lista) — Navegação e Recursos
+// têm a mesma estrutura, só o array de links e o aria-label mudam.
+function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[] }) {
+	return (
+		<nav aria-label={title} className="lg:w-[226px]">
+			<h3 className="text-[12px] font-semibold uppercase leading-none tracking-wide text-[#F2F2F2]/60">
+				{title}
+			</h3>
+			<ul className="mt-[10px] flex flex-col gap-[10px]">
+				{links.map((link) => (
+					<li key={link.label}>
+						<a
+							href={link.href}
+							className="text-[14px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
+						>
+							{link.label}
+						</a>
+					</li>
+				))}
+			</ul>
+		</nav>
+	);
+}
+
 // TODO: URL real das redes sociais da Aja Agora — placeholder até o operador
 // confirmar os perfis (FIX-353).
 const SOCIALS = [
@@ -115,41 +141,8 @@ export function KvFooter({ onOpenChat }: KvFooterProps) {
 
 						{/* Navegação + Recursos */}
 						<div className="flex flex-col gap-10 sm:flex-row sm:gap-12 lg:w-[500px]">
-							<nav aria-label="Navegação" className="lg:w-[226px]">
-								<h3 className="text-[12px] font-semibold uppercase leading-none tracking-wide text-[#F2F2F2]/60">
-									Navegação
-								</h3>
-								<ul className="mt-[10px] flex flex-col gap-[10px]">
-									{NAV_LINKS.map((link) => (
-										<li key={link.label}>
-											<a
-												href={link.href}
-												className="text-[14px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
-											>
-												{link.label}
-											</a>
-										</li>
-									))}
-								</ul>
-							</nav>
-
-							<nav aria-label="Recursos" className="lg:w-[226px]">
-								<h3 className="text-[12px] font-semibold uppercase leading-none tracking-wide text-[#F2F2F2]/60">
-									Recursos
-								</h3>
-								<ul className="mt-[10px] flex flex-col gap-[10px]">
-									{RESOURCE_LINKS.map((link) => (
-										<li key={link.label}>
-											<a
-												href={link.href}
-												className="text-[14px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
-											>
-												{link.label}
-											</a>
-										</li>
-									))}
-								</ul>
-							</nav>
+							<FooterLinkColumn title="Navegação" links={NAV_LINKS} />
+							<FooterLinkColumn title="Recursos" links={RESOURCE_LINKS} />
 						</div>
 
 						{/* Contato */}

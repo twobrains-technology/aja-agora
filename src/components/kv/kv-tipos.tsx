@@ -4,8 +4,9 @@ import Image from "next/image";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
+import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 const KV = "/kv";
 
@@ -106,9 +107,7 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 
 			<KvContainer className="z-10 max-w-[1320px] py-16 md:py-24">
 				<div className="mx-auto max-w-[820px] text-center">
-					<span className="text-[12px] font-semibold uppercase leading-[16px] tracking-wide text-[#F2404F]">
-						qual a sua Propósito
-					</span>
+					<KvEyebrow>QUAL É O SEU OBJETIVO</KvEyebrow>
 					<h2
 						id="tipos-consorcio-heading"
 						className="mt-3 text-[32px] font-normal leading-[1.15] text-white md:text-[44px] md:leading-[62px]"
@@ -121,7 +120,7 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 					{CARDS.map((card) => (
 						<article
 							key={card.id}
-							className="flex h-full flex-col overflow-hidden rounded-[12px] bg-[#FAFAF3] shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]"
+							className={`flex h-full flex-col overflow-hidden rounded-[12px] bg-[#FAFAF3] ${CARD_SHADOW}`}
 						>
 							{card.image ? (
 								<div className={IMAGE_AREA_CLASS}>

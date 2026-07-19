@@ -3,7 +3,7 @@ import Image from "next/image";
 
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
@@ -70,7 +70,7 @@ export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 					{testimonials.map((testimonial) => (
 						<div
 							key={testimonial.name}
-							className="flex min-h-[380px] flex-col rounded-[16px] bg-white p-8 shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]"
+							className={`flex min-h-[380px] flex-col rounded-[16px] bg-white p-8 ${CARD_SHADOW}`}
 						>
 							<div className="flex items-center justify-between">
 								<div className="flex items-center gap-1">

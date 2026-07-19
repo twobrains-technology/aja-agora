@@ -149,6 +149,8 @@ export function KvComparacao() {
 							objectPosition="55% 15%"
 							zoom={0.7}
 						/>
+						{/* Cinza (não KvEyebrow — o átomo é hardcoded vermelho; aqui a cor é
+						    semântica: lado negativo da comparação, não o eyebrow de seção). */}
 						<span className="text-[12px] font-semibold uppercase leading-[16px] tracking-[0.16em] text-[#6B6B66]">
 							sem planejamento
 						</span>
@@ -184,9 +186,7 @@ export function KvComparacao() {
 							objectPosition="55% 15%"
 							zoom={0.7}
 						/>
-						<span className="text-[12px] font-semibold uppercase leading-[16px] tracking-[0.16em] text-[#F2404F]">
-							pode organizar a jornada
-						</span>
+						<KvEyebrow className="tracking-[0.16em]">pode organizar a jornada</KvEyebrow>
 						<h3 className="mt-2 text-[28px] font-normal leading-[1.15] text-[#052440] md:text-[32px] md:leading-[38px]">
 							Consórcio Ideal para você
 						</h3>

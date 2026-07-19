@@ -3,7 +3,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { Em } from "@/components/kv/em";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 import { cn } from "@/lib/utils";
 
@@ -84,9 +84,6 @@ const paths: Path[] = [
 		],
 	},
 ];
-
-// Sombra oficial de card AJA (token de marca).
-const CARD_SHADOW = "shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]";
 
 /**
  * Card de caminho (sorteio/lance). Duas linguagens cromáticas por breakpoint:
@@ -256,9 +253,9 @@ export function KvContemplacao() {
 					<div className="hidden items-start gap-3 xl:absolute xl:bottom-0 xl:left-0 xl:flex xl:pl-[140px]">
 						<BrandChevron className="h-[52px] w-auto self-start" />
 						<div>
-							<p className="text-[13px] font-semibold uppercase tracking-wide text-[#F2404F]">
+							<KvEyebrow className="text-[13px] leading-normal">
 								Diferencial da nossa plataforma
-							</p>
+							</KvEyebrow>
 							<p className="mt-1 max-w-[340px] text-[16px] font-medium leading-6 text-[#021628]">
 								Aja Agora te mostra o <Em>lance médio</Em> dos clientes para contemplação rápida.
 							</p>
@@ -269,9 +266,7 @@ export function KvContemplacao() {
 					<div className="mt-8 rounded-[14px] bg-[#021628] p-5 xl:hidden">
 						<div className="flex items-center gap-2">
 							<ChevronRight className="size-3 shrink-0 text-[#F2404F]" strokeWidth={2.5} />
-							<p className="text-[11px] font-semibold uppercase leading-4 tracking-wide text-[#F2404F]">
-								DIFERENCIAL DA PLATAFORMA
-							</p>
+							<KvEyebrow className="text-[11px]">DIFERENCIAL DA PLATAFORMA</KvEyebrow>
 						</div>
 						<p className="mt-3 max-w-[340px] text-[14px] font-medium leading-[20px] text-[#FAFAF3]">
 							Aja Agora te mostra o lance médio

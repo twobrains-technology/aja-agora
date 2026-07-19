@@ -84,7 +84,7 @@ export function KvNumbers() {
 					{/* Header */}
 					<div className="mx-auto flex flex-col items-center gap-4 text-center">
 						<KvEyebrow className="mx-auto max-w-[762px] tracking-[0.15em]">
-							qual a sua Propósito
+							O SETOR EM NÚMEROS
 						</KvEyebrow>
 						<h2 className="text-[32px] font-normal leading-[1.2] text-[#FAFAF3] md:text-[40px] md:leading-[48px]">
 							O setor de <Em>consórcio não para</Em> de crescer

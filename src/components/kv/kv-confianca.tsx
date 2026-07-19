@@ -3,7 +3,7 @@ import Image from "next/image";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 
 const KV = "/kv";
 
@@ -89,6 +89,50 @@ const CRITERIOS_MOBILE: CriterioCard[] = [
 	},
 ];
 
+// Card de critério (ícone circular + emoji + título Merriweather + descrição).
+// Mesma estrutura no mobile (3 itens, ícone sólido) e no desktop (6 itens no
+// carrossel, ícone tintado) — só tamanho/padding mudam entre os 2 frames do
+// Figma (breakpoint `size`).
+function CriterioCardItem({ criterio, size }: { criterio: CriterioCard; size: "sm" | "lg" }) {
+	if (size === "sm") {
+		return (
+			<li className={`flex flex-col gap-4 rounded-[16px] bg-[#FFFFFF] p-6 ${CARD_SHADOW}`}>
+				<span
+					className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#F2404F]"
+					aria-hidden="true"
+				>
+					<span className="text-[22px] leading-none">{criterio.emoji}</span>
+				</span>
+				<div className="flex flex-col gap-1.5">
+					<h3 className="font-[family-name:var(--font-merriweather)] text-[18px] font-bold leading-[26px] text-[#021628]">
+						{criterio.title}
+					</h3>
+					<p className="text-[14px] leading-[20px] text-[#4B5563]">{criterio.description}</p>
+				</div>
+			</li>
+		);
+	}
+
+	return (
+		<li
+			className={`flex w-[280px] shrink-0 snap-start flex-col gap-5 rounded-[16px] bg-[#FFFFFF] p-8 ${CARD_SHADOW}`}
+		>
+			<span
+				className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#F2404F]/[0.06]"
+				aria-hidden="true"
+			>
+				<span className="text-[28px] leading-none">{criterio.emoji}</span>
+			</span>
+			<div className="flex flex-col gap-2">
+				<h3 className="font-[family-name:var(--font-merriweather)] text-[20px] font-semibold leading-[28px] text-[#000000]">
+					{criterio.title}
+				</h3>
+				<p className="text-[16px] leading-[22px] text-[#000000]">{criterio.description}</p>
+			</div>
+		</li>
+	);
+}
+
 export function KvConfianca() {
 	return (
 		<section aria-labelledby="confianca-heading" className="bg-[#FAFAF3]">
@@ -113,23 +157,7 @@ export function KvConfianca() {
 					className="flex flex-col gap-4 px-6 pt-8 pb-10"
 				>
 					{CRITERIOS_MOBILE.map((criterio) => (
-						<li
-							key={criterio.id}
-							className="flex flex-col gap-4 rounded-[16px] bg-[#FFFFFF] p-6 shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]"
-						>
-							<span
-								className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#F2404F]"
-								aria-hidden="true"
-							>
-								<span className="text-[22px] leading-none">{criterio.emoji}</span>
-							</span>
-							<div className="flex flex-col gap-1.5">
-								<h3 className="font-[family-name:var(--font-merriweather)] text-[18px] font-bold leading-[26px] text-[#021628]">
-									{criterio.title}
-								</h3>
-								<p className="text-[14px] leading-[20px] text-[#4B5563]">{criterio.description}</p>
-							</div>
-						</li>
+						<CriterioCardItem key={criterio.id} criterio={criterio} size="sm" />
 					))}
 				</ul>
 
@@ -199,25 +227,7 @@ export function KvConfianca() {
 								className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 							>
 								{CRITERIOS.map((criterio) => (
-									<li
-										key={criterio.id}
-										className="flex w-[280px] shrink-0 snap-start flex-col gap-5 rounded-[16px] bg-[#FFFFFF] p-8 shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]"
-									>
-										<span
-											className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#F2404F]/[0.06]"
-											aria-hidden="true"
-										>
-											<span className="text-[28px] leading-none">{criterio.emoji}</span>
-										</span>
-										<div className="flex flex-col gap-2">
-											<h3 className="font-[family-name:var(--font-merriweather)] text-[20px] font-semibold leading-[28px] text-[#000000]">
-												{criterio.title}
-											</h3>
-											<p className="text-[16px] leading-[22px] text-[#000000]">
-												{criterio.description}
-											</p>
-										</div>
-									</li>
+									<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
 								))}
 							</ul>
 						</div>

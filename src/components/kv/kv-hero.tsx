@@ -7,7 +7,7 @@ import { type FormEvent, useRef, useState } from "react";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { SunBurst } from "@/components/kv/sun-burst";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 
 const KV = "/kv";
@@ -86,7 +86,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					<form
 						ref={formRef}
 						onSubmit={submit}
-						className="mt-8 max-w-[514px] rounded-[12px] bg-white px-6 pb-3 pt-3 shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]"
+						className={`mt-8 max-w-[514px] rounded-[12px] bg-white px-6 pb-3 pt-3 ${CARD_SHADOW}`}
 					>
 						<div className="flex items-center gap-2.5 pt-1">
 							<span className="flex size-[31px] items-center justify-center rounded-full bg-[#021628]">

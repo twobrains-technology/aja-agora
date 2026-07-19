@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { SunMark } from "@/components/brand/sun-mark";
 import { Em } from "@/components/kv/em";
-import { KvContainer } from "@/components/kv/ui/kv-container";
+import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
 type JourneyStep = {
@@ -36,9 +36,6 @@ type JourneyStep = {
 	/** Último passo: o burst direito sangra pra baixo da coluna (sem translate). */
 	rightBurstBleedsDown?: boolean;
 };
-
-// Sombra de card oficial do design system AJA (token único).
-const CARD_SHADOW = "shadow-[0_4px_16px_0_#00000014,0_12px_32px_-4px_#0000000A]";
 
 // Canvas do desktop (largura x altura) sobre o qual as coordenadas do Figma
 // (frame 1440) foram escaladas por 0.861 e reposicionadas. Ícones e texto são
@@ -256,9 +253,7 @@ export function KvJourney() {
 								<StepCircle step={step} size={80} />
 							</div>
 							<div className="relative z-10 mt-4 max-w-[320px]">
-								<p className="text-[11px] font-semibold uppercase tracking-wide text-[#F2404F]">
-									{step.eyebrow}
-								</p>
+								<KvEyebrow className="text-[11px] leading-normal">{step.eyebrow}</KvEyebrow>
 								<h3 className="mt-2 text-[22px] font-normal leading-[28px] text-[#021628]">
 									{step.title}
 								</h3>
@@ -316,9 +311,7 @@ export function KvJourney() {
 								width: `${(step.textW / CANVAS_W) * 100}%`,
 							}}
 						>
-							<p className="text-[12px] font-semibold uppercase tracking-wide text-[#F2404F]">
-								{step.eyebrow}
-							</p>
+							<KvEyebrow className="leading-normal">{step.eyebrow}</KvEyebrow>
 							<h3 className="mt-2 whitespace-nowrap text-[27px] font-normal leading-[32px] text-[#052440]">
 								{step.title}
 							</h3>
