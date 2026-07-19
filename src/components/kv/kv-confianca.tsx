@@ -211,7 +211,7 @@ export function KvConfianca() {
 							<br className="hidden md:block" /> alternativas para você....
 						</h2>
 						<p className="mt-3 max-w-[705px] text-[14px] leading-[22px] text-[#FFFFFF] md:text-[16px] md:leading-[26px]">
-							Não basta comparar parcelas, Também avaliamos: taxa de administração, prazo, histórico
+							Não basta comparar parcelas. Também avaliamos: taxa de administração, prazo, histórico
 							de contemplação, lance médio, regras do grupo, condições da carta.
 						</p>
 					</div>
