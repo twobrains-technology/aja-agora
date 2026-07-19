@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useRef } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
@@ -133,6 +136,35 @@ function CriterioCardItem({ criterio, size }: { criterio: CriterioCard; size: "s
 	);
 }
 
+// Largura do card (280px) + gap (16px) do carrossel desktop — usado pra abrir
+// a janela já deslocada 1 card (ver useEffect abaixo).
+const CARROSSEL_CARD_STEP = 280 + 16;
+
+// Carrossel desktop dos 6 critérios. Abre com scroll já deslocado 1 card: a
+// janela ('Mask group' 66% da faixa) mostra "Lance médio" (cortado à esquerda),
+// "Diversas administradoras" e "Prazo" inteiros — batendo com o recorte do
+// Figma, que não abre no primeiro card (senão os pingos do regador caem no
+// vazio depois de "Diversas administradoras" em vez de molhar "Prazo").
+function CriteriosCarousel() {
+	const listRef = useRef<HTMLUListElement>(null);
+
+	useEffect(() => {
+		listRef.current?.scrollTo({ left: CARROSSEL_CARD_STEP });
+	}, []);
+
+	return (
+		<ul
+			ref={listRef}
+			aria-label="Critérios que a AJA compara"
+			className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+		>
+			{CRITERIOS.map((criterio) => (
+				<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
+			))}
+		</ul>
+	);
+}
+
 export function KvConfianca() {
 	return (
 		<section aria-labelledby="confianca-heading" className="bg-[#FAFAF3]">
@@ -222,14 +254,7 @@ export function KvConfianca() {
 					    direito, deixando o terço direito livre pro regador pousar sem cobrir texto. */}
 					<div className="mt-8 rounded-[12px] bg-[#F1F1DA] px-4 py-8 sm:px-6 md:mt-10 md:px-8 md:py-10">
 						<div className="w-[66%] overflow-hidden">
-							<ul
-								aria-label="Critérios que a AJA compara"
-								className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-							>
-								{CRITERIOS.map((criterio) => (
-									<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
-								))}
-							</ul>
+							<CriteriosCarousel />
 						</div>
 					</div>
 
