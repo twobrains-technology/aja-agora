@@ -1,4 +1,4 @@
-// Fontes de acento da landing Key Visual (a partir do Figma).
+// Fontes de acento da landing (design "Key Visual", a partir do Figma).
 // Poppins (principal) já é carregada no layout raiz como --font-sans.
 // Merriweather = serif de ÊNFASE dos títulos (palavra-chave em itálico bold/black),
 // títulos de card, citações e headline do CTA. Lato = balões de chat do hero.
