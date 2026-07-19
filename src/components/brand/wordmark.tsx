@@ -10,7 +10,10 @@ import { cn } from "@/lib/utils";
 export function Wordmark({ className, ...props }: SVGProps<SVGSVGElement>) {
 	return (
 		<svg
-			viewBox="0 0 1360.35 685.11"
+			// viewBox recortado ao bounding-box real dos glifos (medido via getBBox:
+			// x169 y142 1017x377). O viewBox antigo "0 0 1360 685" tinha ~45% de
+			// margem morta, fazendo `h-[Npx]` renderizar o logo em ~metade do tamanho.
+			viewBox="169 142 1017 377"
 			xmlns="http://www.w3.org/2000/svg"
 			fill="currentColor"
 			role="img"

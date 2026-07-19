@@ -69,7 +69,7 @@ const RAYS = [
 	},
 ] as const;
 
-type SunMarkVariant = "white" | "blue" | "color" | "navy";
+type SunMarkVariant = "white" | "blue" | "color" | "navy" | "coral";
 
 interface SunMarkProps extends Omit<SVGProps<SVGSVGElement>, "fill"> {
 	variant?: SunMarkVariant;
@@ -93,6 +93,9 @@ export function SunMark({
 	const fillFor = (ray: (typeof RAYS)[number]) => {
 		if (variant === "white") return "#fff";
 		if (variant === "blue") return "var(--aja-blue, #036eff)";
+		// Sunburst "Forma 04" — todos os raios coral (usado como decoração atrás de
+		// fotos/ícones no Key Visual). A opacidade fica a cargo do chamador (className).
+		if (variant === "coral") return "#F2404F";
 		return ray.navy ? "#052440" : `url(#${gradId})`;
 	};
 

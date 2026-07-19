@@ -21,11 +21,13 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Aja Agora | Seu consórcio, resolvido numa conversa",
+	title: "Aja Agora | Compare consórcios entre diversas administradoras",
 	description:
-		"Consultoria de consórcio independente. Diga o que você quer conquistar e receba uma recomendação personalizada, sem juros, sem formulário e sem corretor.",
+		"Parceria independente de consórcio. Compare administradoras num único lugar e receba uma recomendação personalizada, sem juros, sem formulário e sem corretor.",
 	keywords: [
 		"consórcio",
+		"comparar consórcio",
+		"comparação de consórcio",
 		"consórcio digital",
 		"consórcio sem juros",
 		"consórcio online",
@@ -33,9 +35,9 @@ export const metadata: Metadata = {
 		"simulação consórcio",
 	],
 	openGraph: {
-		title: "Aja Agora | Consórcio sem juros, parcela que cabe no seu mês",
+		title: "Aja Agora | Compare consórcios entre diversas administradoras",
 		description:
-			"Diga o que você quer realizar e receba recomendações de consórcio com a parcela ideal pro seu mês. Sem juros, sem corretor, sem formulário.",
+			"Comparar tudo sozinho leva tempo e aumenta a chance de uma escolha ruim. A Aja reúne as administradoras num único lugar para facilitar sua decisão.",
 		type: "website",
 		locale: "pt_BR",
 	},
