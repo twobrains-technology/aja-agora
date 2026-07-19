@@ -77,6 +77,23 @@ import { resolveTopicPickerPayload } from "./topic-catalog";
 import { coerceTwoPathsPayload } from "./two-paths-payload";
 import type { Channel, ChatMessage, ProducedArtifact, TurnEvent } from "./types";
 
+/**
+ * FIX (2026-07-15, Kairo ao vivo — slider web): o modelo ANTECIPA o pedido de
+ * identidade (CPF + celular) no turno do valor, mesmo o system-prompt (linha 324)
+ * proibindo — o Haiku (modelo de dev/prod) desobedece a regra-no-prompt. Como o
+ * pedido é AFIRMATIVO ("Agora preciso do seu CPF e celular…"), o `hasHeldQuestion()`
+ * do sanitizer — que só pega frases terminando em "?" — não o detectava, e a
+ * pergunta canônica determinística (`gateQuestion('identify')`) saía POR CIMA da
+ * fala do modelo → pedido DUPLICADO no mesmo balão. Invariante em CÓDIGO (Lei 4):
+ * se o modelo já pediu identidade, a canônica se cala (mesma disciplina do
+ * DESAMARRA — a fala do modelo vence, o card mostra só o input). Robusto por
+ * construção: só olha CPF + um canal de contato, e só é consultado quando o gate a
+ * disparar É o `identify` — se o modelo NÃO pediu, a canônica sai (fallback, o
+ * pedido nunca some). NÃO engessa a conversa: a confirmação do valor segue livre. */
+export function modelAlreadyAskedIdentity(text: string): boolean {
+	return /\bCPF\b/i.test(text) && /(celular|whatsapp|telefone)/i.test(text);
+}
+
 export type RunAgentResult = {
 	fullResponse: string;
 	artifacts: ProducedArtifact[];
@@ -1563,6 +1580,13 @@ export async function* runAgentTurn(args: {
 			!producedArtifact || allowGateWithArtifacts(gate, turnArtifactTypes);
 		if (shouldShow && passesArtifactGuard) {
 			nextGateToFire = gate;
+			// Anti-duplicação do pedido de identidade (ver `modelAlreadyAskedIdentity`
+			// no topo): se o modelo já antecipou "preciso do seu CPF e celular" neste
+			// turno, a pergunta canônica do gate `identify` se cala — o card mostra só
+			// os inputs (CPF/celular/LGPD), sem repetir o pedido em texto.
+			if (gate === "identify" && !modelAskedGateQuestion && modelAlreadyAskedIdentity(fullResponse)) {
+				modelAskedGateQuestion = true;
+			}
 			// Com artifacts no turno, o texto já foi escrito no stream — sem prefixo.
 			// FIX-17: o gate "name" também NÃO leva prefix — gateInteractive('name') é
 			// null no WhatsApp; com prefix, o adapter limparia o textBuffer e a

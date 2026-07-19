@@ -2,14 +2,18 @@
 
 import { ChatTheater } from "@/components/chat/theater/chat-theater";
 import { TheaterProvider, useTheater } from "@/components/chat/theater/theater-context";
-import { BrandFooter } from "@/components/landing/brand-footer";
-import { BrandNav } from "@/components/landing/brand-nav";
-import { Closing } from "@/components/landing/closing";
-import { Demo } from "@/components/landing/demo";
-import { Hero } from "@/components/landing/hero";
-import { Institutional } from "@/components/landing/institutional";
-import { Process } from "@/components/landing/process";
-import { Trust } from "@/components/landing/trust";
+import { lato, manrope, merriweather } from "@/components/kv/fonts";
+import { KvComparacao } from "@/components/kv/kv-comparacao";
+import { KvConfianca } from "@/components/kv/kv-confianca";
+import { KvContemplacao } from "@/components/kv/kv-contemplacao";
+import { KvDepoimentos } from "@/components/kv/kv-depoimentos";
+import { KvFaq } from "@/components/kv/kv-faq";
+import { KvFooter } from "@/components/kv/kv-footer";
+import { KvHero } from "@/components/kv/kv-hero";
+import { KvJourney } from "@/components/kv/kv-journey";
+import { KvMenu } from "@/components/kv/kv-menu";
+import { KvNumbers } from "@/components/kv/kv-numbers";
+import { KvTipos } from "@/components/kv/kv-tipos";
 
 export default function LandingPage() {
 	return (
@@ -25,15 +29,28 @@ function LandingShell() {
 	const { openTheater } = useTheater();
 
 	return (
-		<main className="flex min-h-screen flex-col bg-[#fbfbf9]">
-			<BrandNav onStart={openTheater} />
-			<Hero onOpenChat={openTheater} />
-			<Trust />
-			<Process />
-			<Demo />
-			<Institutional />
-			<Closing onStart={openTheater} />
-			<BrandFooter onStart={openTheater} />
+		<main
+			className={`${merriweather.variable} ${lato.variable} ${manrope.variable} flex min-h-screen flex-col bg-[#FAFAF3] font-sans text-[#021628] antialiased`}
+		>
+			<KvMenu onOpenChat={openTheater} />
+			<div id="hero" className="scroll-mt-24">
+				<KvHero onOpenChat={openTheater} />
+			</div>
+			<div id="como-funciona" className="scroll-mt-24">
+				<KvJourney />
+			</div>
+			<KvTipos onOpenChat={openTheater} />
+			<KvContemplacao />
+			<div id="faq" className="scroll-mt-24">
+				<KvFaq />
+			</div>
+			<KvNumbers />
+			<KvDepoimentos onOpenChat={openTheater} />
+			<div id="confianca" className="scroll-mt-24">
+				<KvConfianca />
+			</div>
+			<KvComparacao />
+			<KvFooter onOpenChat={openTheater} />
 		</main>
 	);
 }
