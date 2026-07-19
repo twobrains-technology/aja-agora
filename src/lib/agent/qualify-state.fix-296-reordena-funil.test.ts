@@ -68,14 +68,20 @@ describe("FIX-296 — beat de espelho+objetivo segura o funil UMA vez após o mo
 		expect(shouldMirrorMotivation(posMotivo({ motivationMirrored: true }))).toBe(false);
 	});
 
-	it("decideShowGate segura o gate credit (nenhum card) enquanto o beat não rodou — mesmo em intent de queixa", () => {
+	// FIX-A (2026-07-15, commit 367c3846, ADR
+	// docs/decisoes/blocos/2026-07-18-bloco-d-regressao-gates-agente.md): o
+	// `credit` deixou de segurar por 1 turno inteiro enquanto o beat de espelho
+	// não rodou — segurar deixava o chat "morto" sem próxima pergunta (bug real
+	// reportado ao vivo). Agora dispara JUNTO com a fala de espelho, mesmo em
+	// intent de queixa — o modelo emenda a ponte pro próximo passo no mesmo balão.
+	it("decideShowGate dispara o gate credit JUNTO com a fala de espelho (mesmo balão) — mesmo em intent de queixa (FIX-A)", () => {
 		const meta = posMotivo();
 		expect(nextGate(meta, { hasContactName: true })).toBe("credit");
 		for (const intent of ["expressing_doubt", "off_topic", "neutral", "providing_info"] as const) {
 			expect(
 				decideShowGate({ gate: "credit", intent, meta, isUserTurn: true }),
 				`intent=${intent}`,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 

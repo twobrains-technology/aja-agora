@@ -10,14 +10,27 @@ import { SPECIALIST_BASE_PROMPT } from "./system-prompt";
 // mantém o nome (histórico do FIX-53) mas a premissa se INVERTEU: prova que o
 // prompt agora fixa a ordem NOVA (valor ANTES da identidade), mantendo a
 // anti-repetição do valor e o reforço do SERVIDOR.
+//
+// FIX-C (2026-07-15, loop autônomo de refino — commit e16895c7, ADR
+// docs/decisoes/blocos/2026-07-18-bloco-d-regressao-gates-agente.md) remove a
+// citação LITERAL da frase de pedido ("preciso do seu CPF e celular") do
+// prompt: o LLM estava papagaiando essa locução exata do sistema, duplicando
+// o pedido de identidade no mesmo balão (bug real reportado ao vivo). O
+// invariante vigente não é mais "o prompt cita a frase exata" — é "o prompt
+// proíbe o LLM de reproduzir/antecipar o pedido, deixando-o exclusivo do
+// sistema".
 // ============================================================================
 
-describe("FIX-53/FIX-296 — system-prompt: valor antes da identidade + anti-repetição", () => {
+describe("FIX-53/FIX-296/FIX-C — system-prompt: valor antes da identidade + anti-repetição", () => {
 	const p = SPECIALIST_BASE_PROMPT.toLowerCase();
 
 	it("ordem: valor vem ANTES da identidade (CPF/celular) — reversão FIX-296", () => {
 		expect(p).toMatch(/valor antes da identidade/);
-		expect(p).toMatch(/cpf e celular/);
+		expect(p).toMatch(/cpf \+ celular/);
+	});
+
+	it("anti-duplicação: o LLM NÃO reproduz/antecipa o pedido de CPF/celular — é exclusivo do sistema (FIX-C)", () => {
+		expect(p).toMatch(/não reproduz.*antecipa esse pedido|sistema pede sozinho/);
 	});
 
 	it("anti-repetição: valor já coletado → confirma e segue, NUNCA re-pergunta/re-mostra o picker", () => {

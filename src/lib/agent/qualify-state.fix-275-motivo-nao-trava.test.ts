@@ -17,11 +17,19 @@ import { decideShowGate, nextGate } from "./qualify-state";
 //
 // FIX-296 (rodada 10, 2026-07-12) SUBSTITUI a solução original (que forçava o
 // card de identidade no MESMO turno do motivo) por um beat de ESPELHO+OBJETIVO
-// dedicado (`shouldMirrorMotivation`): a resposta ao motivo NUNCA mais dispara
-// um card no mesmo turno — ela ganha só o espelho (sem competir com nenhum
-// gate, seja identify OU credit). O gate REAL (credit, pós-FIX-296) dispara no
-// turno SEGUINTE, quando `motivationMirrored` já estiver true. Este arquivo
-// prova que o não-travamento se mantém com o novo mecanismo.
+// dedicado (`shouldMirrorMotivation`): a resposta ao motivo ganha o espelho, e
+// o gate real (credit) segurava pro turno SEGUINTE (`motivationMirrored`
+// ainda false → `decideShowGate` devolvia `false`).
+//
+// FIX-A (2026-07-15, loop autônomo de refino — commit 367c3846, ADR
+// docs/decisoes/blocos/2026-07-18-bloco-d-regressao-gates-agente.md) REVERTE
+// esse detalhe: segurar o gate por 1 turno inteiro deixava o chat "morto" (sem
+// próxima pergunta visível) até o beat seguinte — bug reportado ao vivo por
+// Kairo. A correção faz `credit` disparar JUNTO com a fala de espelho (mesmo
+// balão) — o modelo emenda a ponte pro próximo passo (system-prompt passo 3)
+// em vez de a UI ficar esperando um turno extra. Validado ao vivo no mesmo
+// diário ("FIX-A validado: espelho + próxima pergunta no mesmo fôlego").
+// Este arquivo prova que o não-travamento se mantém com o mecanismo VIGENTE.
 // ============================================================================
 
 const posMotivo = (over: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
@@ -39,13 +47,13 @@ describe("FIX-275/FIX-296 — resposta ao motivo NUNCA trava o funil, mesmo clas
 		expect(nextGate(posMotivo(), { hasContactName: true })).toBe("credit");
 	});
 
-	it("ANTES do beat de espelho rodar (motivationMirrored ausente), o funil SEGURA o credit — mesmo em intent de queixa (não é trava, é o beat pendente)", () => {
+	it("ANTES do beat de espelho rodar (motivationMirrored ausente), credit dispara JUNTO com a fala de espelho — mesmo em intent de queixa (FIX-A: o beat CONDUZ, não trava)", () => {
 		const meta = posMotivo();
 		for (const intent of ["expressing_doubt", "off_topic", "neutral", "providing_info"] as const) {
 			expect(
 				decideShowGate({ gate: "credit", intent, meta, isUserTurn: true }),
 				`intent=${intent}`,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 

@@ -1,14 +1,25 @@
 ---
 id: FIX-354
 titulo: "Corrigir regressão em 4 testes de comportamento do agente já dados como fixados (FIX-53, FIX-212, FIX-275, FIX-296)"
-status: todo
+status: done
 bloco: bloco-d-regressao-gates-agente
 arquivos:
   - src/lib/agent/qualify-state.ts
   - src/lib/agent/system-prompt.ts
   - src/lib/whatsapp/adapter.ts
 rodada: 2026-07-18 — achado colateral durante execução do bloco-a-kv-topo-conversao (FIX-351, campanha /kv), promovido do inbox
+commit: 3fd1bce2 (ADR), c68e98fa (fix-275/fix-296), 56be2cb8 (system-prompt.fix53), d53ee2a8 (emoji real fix)
+executado_em: 2026-07-18
 ---
+
+## Resultado da investigação (não era regressão em 3 dos 4 sintomas)
+
+Ver ADR completo em `docs/decisoes/blocos/2026-07-18-bloco-d-regressao-gates-agente.md`.
+Resumo: itens 1-2 (qualify-state) e item 3 (system-prompt "cpf e celular") eram
+comportamento INTENCIONAL — mudanças deliberadas de 2026-07-15 (commits `367c3846`
+FIX-A e `e16895c7` FIX-C), já validadas ao vivo no loop autônomo de refino, que os
+testes antigos não acompanharam. Os testes foram atualizados pro invariante vigente
+(não o produto revertido). Item 4 (emoji) era bug real — corrigido em código.
 
 ## Palavras do operador
 
