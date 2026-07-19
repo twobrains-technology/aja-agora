@@ -194,18 +194,15 @@ export function KvContemplacao() {
 
 					<div className="relative z-10 lg:max-w-[633px]">
 						{/* Foto — topo no mobile; no desktop vive na direita (abaixo).
-						    Crop do Figma (blueprint mobile-full): imagem 670x447 @(-304,-47)
-						    numa máscara 291x278 → mostra a faixa central/direita (casal+cachorro),
-						    corretora quase fora do quadro. Reproduzido via imagem sobredimensionada
-						    (230% da largura do container) + offset absoluto, não object-position. */}
+						    Cutout transparente (585x715, retrato) — object-cover simples numa
+						    máscara quase quadrada (291x278), sem offset manual de crop cru. */}
 						<div className="relative mx-auto mb-3 mt-[39px] aspect-[291/278] w-full max-w-[291px] overflow-hidden rounded-[9px] xl:mt-0 xl:hidden">
 							<Image
-								src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.jpg`}
+								src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.png`}
 								alt="Casal feliz apertando a mão de corretor após ser contemplado"
-								width={670}
-								height={447}
+								fill
 								sizes="291px"
-								className="absolute left-[-104.5%] top-[-16.9%] h-auto w-[230%] max-w-none"
+								className="object-cover object-[center_20%]"
 							/>
 						</div>
 
@@ -227,7 +224,7 @@ export function KvContemplacao() {
 					    caber CONTIDO sobre ela, como no Figma (foto desce além da base do card). */}
 					<div className="absolute right-0 top-0 z-0 hidden aspect-[638/814] h-[700px] overflow-hidden rounded-[12px] xl:block">
 						<Image
-							src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.jpg`}
+							src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.png`}
 							alt="Casal feliz apertando a mão de corretor após ser contemplado"
 							fill
 							sizes="(min-width: 1280px) 549px, 100vw"

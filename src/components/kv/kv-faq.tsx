@@ -9,23 +9,33 @@ import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 const FAQ_ITEMS = [
 	{
 		question: "Consórcio é seguro?",
-		summary: "Autorizada pelo Banco Central...",
+		summary: "Regulamentado e fiscalizado pelo Banco Central desde 2008.",
+		answer:
+			"Sim. O consórcio é regulamentado pela Lei 11.795/2008 e fiscalizado pelo Banco Central do Brasil, que autoriza e supervisiona as administradoras — uma fiscalização semelhante à de bancos.",
 	},
 	{
 		question: "Quanto tempo demora para ser contemplado?",
-		summary: "Autorizada pelo Banco Central...",
+		summary: "Depende do grupo e da estratégia — sorteio mensal ou lance antecipam.",
+		answer:
+			"Varia conforme o grupo, o valor do crédito e a estratégia usada. Todo mês há sorteio entre os participantes, e quem oferece lance aumenta as chances de ser contemplado antes do fim do prazo do plano.",
 	},
 	{
 		question: "Posso usar FGTS no consórcio?",
-		summary: "Descubra em quais situações o FGTS pode ser utilizado...",
+		summary: "Sim, em consórcio de imóvel — para lance ou amortização.",
+		answer:
+			"Sim, para consórcio de imóvel residencial: o FGTS pode ser usado tanto para dar lance quanto para amortizar ou quitar o saldo devedor após a contemplação, seguindo as regras da Caixa Econômica Federal. Para consórcio de veículo, o FGTS não pode ser usado.",
 	},
 	{
 		question: "Atrasei uma parcela do consórcio. E agora?",
-		summary: "Descubra em quais situações o FGTS pode ser utilizado...",
+		summary: "Gera multa e juros, mas dá pra negociar com a administradora.",
+		answer:
+			"O atraso gera multa e juros conforme o contrato, mas não cancela sua participação automaticamente — é possível negociar diretamente com a administradora. Atrasos recorrentes podem levar à exclusão do grupo, com devolução dos valores pagos conforme as regras contratuais e da assembleia.",
 	},
 	{
 		question: "Posso vender minha carta de crédito?",
-		summary: "Entenda quando é possível transferir...",
+		summary: "A cota pode ser transferida a outra pessoa, com aprovação da administradora.",
+		answer:
+			"A carta de crédito em si não é vendida — ela representa o direito de uso vinculado ao seu CPF. O que é possível é transferir a cota (sua posição no grupo) para outra pessoa, mediante aprovação da administradora e assinatura de um termo de transferência.",
 	},
 ] as const;
 
