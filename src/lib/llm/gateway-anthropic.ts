@@ -11,7 +11,9 @@ import dns from "node:dns/promises";
 const SRV_CACHE_TTL_MS = 30_000;
 let _cache: { host: string; expiresAt: number } | null = null;
 
-async function resolveGatewayHost(): Promise<string | null> {
+/** Exportado (FIX-356) pro provider LangGraph reusar a MESMA resolução de host
+ * (SRV dinâmico via Cloud Map) — nunca uma base URL fixa. */
+export async function resolveGatewayHost(): Promise<string | null> {
 	const srv = process.env.LITELLM_SRV_NAME?.trim();
 	if (!srv) {
 		const direct = process.env.LITELLM_BASE_URL?.trim();
@@ -41,7 +43,10 @@ export function resetGatewayHostCache(): void {
 	_cache = null;
 }
 
-const gatewayFetch: typeof globalThis.fetch = async (input, init) => {
+/** Exportado (FIX-356) — o provider LangGraph (`clientOptions.fetch` do
+ * `ChatAnthropic`) reusa este MESMO fetch (reescreve só o host, mantém o path
+ * /v1/messages) em vez de duplicar a lógica de rewrite. */
+export const gatewayFetch: typeof globalThis.fetch = async (input, init) => {
 	const host = await resolveGatewayHost();
 	if (!host) return fetch(input, init);
 	const original =
