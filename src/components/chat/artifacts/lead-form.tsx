@@ -102,9 +102,9 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		<AnimatePresence mode="wait">
 			{submitted ? (
 				<motion.div key="success" {...anim}>
-					<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-[rgba(3,110,255,0.03)] p-[18px] shadow-lg">
+					<div className="w-full max-w-sm rounded-[18px] border border-primary/30 bg-primary/[0.03] p-[18px] shadow-lg">
 						<div className="flex flex-col items-center gap-[10px] py-2 text-center">
-							<span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eafaf2]">
+							<span className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
 								<Check className="size-6 text-success" />
 							</span>
 							<p className="text-base font-semibold text-foreground">Dados recebidos!</p>
@@ -114,10 +114,10 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 				</motion.div>
 			) : (
 				<motion.div key="form" {...anim}>
-					<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+					<div className="w-full max-w-sm rounded-[18px] border border-primary/30 bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 						{/* header */}
 						<div className="flex flex-col gap-[2px]">
-							<span className="inline-flex h-6 w-fit items-center rounded-full bg-[var(--neutral-100)] px-[11px] text-[11px] font-semibold tracking-[0.02em] text-muted-foreground">
+							<span className="inline-flex h-6 w-fit items-center rounded-full bg-muted px-[11px] text-[11px] font-semibold tracking-[0.02em] text-muted-foreground">
 								Seus dados
 							</span>
 							<p className="mt-1 text-xs text-muted-foreground">Para prosseguir com o consórcio</p>
@@ -142,7 +142,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 										placeholder={field.placeholder}
 										autoFocus={idx === 0 && field.autoFocus}
 										className={cn(
-											"h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20",
+											"h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20",
 											errors[field.key] && "border-destructive",
 										)}
 										{...register(field.key)}

@@ -146,7 +146,7 @@ function TheaterStage({ settled, children }: { settled: boolean; children?: Reac
 	return (
 		<div
 			className={cn(
-				"flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-card to-[#f7f9fc] transition-opacity duration-300",
+				"flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-card to-muted transition-opacity duration-300",
 				settled ? "opacity-100" : "opacity-0",
 			)}
 		>

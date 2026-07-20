@@ -65,7 +65,7 @@ export function GateIdentityForm({
 	};
 
 	return (
-		<div className="w-full max-w-[340px] bg-card border border-[#bcd3ff] rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
+		<div className="w-full max-w-[340px] bg-card border border-primary/30 rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
 			<p className="text-sm font-semibold text-foreground">Pra buscar suas ofertas reais</p>
 
 			{/* CPF */}

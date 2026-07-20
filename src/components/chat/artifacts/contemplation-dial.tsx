@@ -229,7 +229,7 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 
 				{/* Antes → depois: as duas parcelas que importam */}
 				<div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
-					<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
+					<div className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-border bg-muted px-3 py-2.5">
 						<span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
 							Até contemplar
 						</span>

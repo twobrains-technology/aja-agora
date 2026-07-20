@@ -127,7 +127,7 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 							className={cn(
 								"flex w-full items-center gap-[10px] h-[46px] rounded-[12px] border px-[14px] text-sm font-medium cursor-pointer transition-colors",
 								sent[slot]?.ok
-									? "bg-[#eafaf2] border-[rgba(31,157,99,0.3)] text-success"
+									? "bg-success/10 border-success/30 text-success"
 									: "bg-card border-border text-foreground hover:bg-muted",
 								(isStreaming || busy === slot || finished) && "opacity-60 cursor-not-allowed",
 							)}

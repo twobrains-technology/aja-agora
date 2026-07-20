@@ -24,18 +24,22 @@ type JourneyStep = {
 	textY: number;
 	/** Desktop: largura da coluna de texto (escala do Figma) no mesmo canvas. */
 	textW: number;
-	/** Mobile: sunburst coral sangrando pela borda esquerda atrás do passo. */
-	edgeBurst?: boolean;
-	/**
-	 * Mobile: sunburst coral sangrando pela borda DIREITA atrás do passo
-	 * (offset vertical em px dentro do `<li>`, combinado com `-translate-y-1/2`
-	 * salvo indicação contrária). Espelha o ritmo alternado esquerda/direita
-	 * do blueprint (Groups 45/47/49).
-	 */
-	rightBurstTop?: number;
-	/** Último passo: o burst direito sangra pra baixo da coluna (sem translate). */
-	rightBurstBleedsDown?: boolean;
 };
+
+// Mobile: sunburst coral — 1 SVG só (journey-burst.svg), reusado em cadeia
+// como uma "minhoca": um raio por vão entre passos consecutivos (exceto o
+// último passo, que só recebe o sangramento do penúltimo), alternando de lado
+// a cada vão, colado na borda da tela (left-0/right-0). O TOPO do SVG começa
+// no centro do ícone do passo atual e estica pra baixo em direção ao próximo
+// ícone — não fica centralizado num ícone só. Ajuste `JOURNEY_BURST_HEIGHT`/
+// `JOURNEY_BURST_WIDTH` à mão pra afinar o encaixe entre os ícones.
+const JOURNEY_BURST_COUNT = 5;
+const JOURNEY_BURST_WIDTH = 160;
+const JOURNEY_BURST_HEIGHT = 350;
+/** Centro do círculo (80px) dentro do `<li>`: sem conector (1º passo) = metade
+ *  do círculo; com conector (h-16 = 64px) antes do círculo = 64 + metade. */
+const BURST_CENTER_NO_CONNECTOR = 40;
+const BURST_CENTER_WITH_CONNECTOR = 104;
 
 // Canvas do desktop (largura x altura) sobre o qual as coordenadas do Figma
 // (frame 1440) foram escaladas por 0.861 e reposicionadas. Ícones e texto são
@@ -53,7 +57,6 @@ const STEPS: JourneyStep[] = [
 		title: "Inicia a jornada",
 		description: "Tudo começa pelo seu objetivo e pelo valor que faz sentido o seu bolso.",
 		emoji: "🎯",
-		rightBurstTop: 220,
 		iconX: 200,
 		iconY: 300,
 		// Figma (Frame 111, auto V gap:15): o texto fica ACIMA do ícone com
@@ -69,7 +72,6 @@ const STEPS: JourneyStep[] = [
 			"Analisamos taxas, prazos, regras e condições para encontrar o que é mais adequado para você! Depois, é só você escolher!",
 		emphasis: "adequado",
 		brand: true,
-		edgeBurst: true,
 		iconX: 310,
 		iconY: 432,
 		textY: 488,
@@ -91,7 +93,6 @@ const STEPS: JourneyStep[] = [
 		title: "Sorteio ou Lance",
 		description: "Com a contemplação, você recebe a carta de crédito para negociar sua compra.",
 		emoji: "🚀",
-		rightBurstTop: 60,
 		iconX: 726,
 		iconY: 456,
 		textY: 511,
@@ -113,9 +114,6 @@ const STEPS: JourneyStep[] = [
 		description: "Pronto! Você conquistou seu Sonho com transparência e segurança!",
 		emphasis: "Sonho",
 		emoji: "🏆",
-		edgeBurst: true,
-		rightBurstTop: 280,
-		rightBurstBleedsDown: true,
 		iconX: 1030,
 		iconY: 356,
 		textY: 426,
@@ -188,12 +186,12 @@ function StepCircle({ step, size }: { step: JourneyStep; size: number }) {
 	);
 }
 
-// Caminho serpentina (onda em S) que liga os 6 passos — reproduz o motivo dos
-// raios coral do Figma como uma faixa tracejada grossa (cada traço = um raio),
-// passando ATRÁS dos círculos. Threading determinístico pelos centros dos ícones.
-const WAVE_PATH =
-	"M 200 300 C 255 300 255 432 310 432 C 412 432 412 217 515 217 " +
-	"C 620 217 620 456 726 456 C 828 456 828 178 931 178 C 980 178 980 356 1030 356";
+// Faixa coral serpentina (raios) que liga os 6 passos, ATRÁS dos círculos —
+// SVG dedicado (journey-wave.svg) com os raios já desenhados pelo Figma, no
+// lugar da antiga aproximação por stroke tracejado. journey-wave.svg está na
+// escala NATIVA do Figma (não pré-escalada) — mesma escala 0.861 usada nos
+// ícones (ver comentário de CANVAS_W acima) reposiciona o desenho no canvas.
+const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 
 // Jornada - Como Funciona: eyebrow + título centralizados, seguidos dos 6 passos.
 //
@@ -229,23 +227,27 @@ export function KvJourney() {
 				<ol className="relative mt-10 flex flex-col items-center lg:hidden">
 					{STEPS.map((step, index) => (
 						<li key={step.title} className="relative flex flex-col items-center text-center">
-							{step.edgeBurst && (
-								<SunMark
-									variant="coral"
+							{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+							{index < JOURNEY_BURST_COUNT && (
+								<img
+									src="/kv/journey-burst.svg"
+									alt=""
 									aria-hidden="true"
-									preserveAspectRatio="none"
-									className="pointer-events-none absolute left-[-155px] top-[80px] h-[391px] w-[203px] -translate-y-1/2 opacity-20 lg:hidden"
-								/>
-							)}
-							{step.rightBurstTop !== undefined && (
-								<SunMark
-									variant="coral"
-									aria-hidden="true"
-									preserveAspectRatio="none"
-									className={`pointer-events-none absolute right-[-155px] h-[391px] w-[203px] opacity-20 lg:hidden ${
-										step.rightBurstBleedsDown ? "" : "-translate-y-1/2"
+									className={`pointer-events-none absolute lg:hidden ${
+										index % 2 === 0 ? "" : "-scale-x-100"
 									}`}
-									style={{ top: `${step.rightBurstTop}px` }}
+									style={{
+										width: JOURNEY_BURST_WIDTH,
+										height: JOURNEY_BURST_HEIGHT,
+										top: index === 0 ? BURST_CENTER_NO_CONNECTOR : BURST_CENTER_WITH_CONNECTOR,
+										// `<li>` não tem a largura da viewport (encolhe pro conteúdo, ~320px
+										// centralizado) — left-0/right-0 ficariam presos na borda do <li>, não
+										// na borda real da tela. Esse calc quebra pra fora até a borda real,
+										// desde que o <li> esteja centralizado na viewport (flex items-center).
+										...(index % 2 === 0
+											? { right: "calc(50% - 50vw)" }
+											: { left: "calc(50% - 50vw)" }),
+									}}
 								/>
 							)}
 							{index > 0 && <span aria-hidden="true" className="h-16 w-px bg-[#F2404F]/25" />}
@@ -271,20 +273,19 @@ export function KvJourney() {
 					style={{ aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
 				>
 					{/* Faixa coral serpentina (raios) atrás dos círculos */}
-					<svg
-						viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
+					{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+					<img
+						src="/kv/journey-wave.svg"
+						alt=""
 						aria-hidden="true"
-						className="pointer-events-none absolute inset-0 h-full w-full"
-					>
-						<path
-							d={WAVE_PATH}
-							fill="none"
-							stroke="#F2404F"
-							strokeWidth={54}
-							strokeDasharray="16 22"
-							strokeLinecap="butt"
-						/>
-					</svg>
+						className="pointer-events-none absolute"
+						style={{
+							left: `${(WAVE_BOX.left / CANVAS_W) * 100}%`,
+							top: `${(WAVE_BOX.top / CANVAS_H) * 100}%`,
+							width: `${(WAVE_BOX.width / CANVAS_W) * 100}%`,
+							height: `${(WAVE_BOX.height / CANVAS_H) * 100}%`,
+						}}
+					/>
 
 					{/* Círculos dos passos (sobre a faixa) */}
 					{STEPS.map((step) => (

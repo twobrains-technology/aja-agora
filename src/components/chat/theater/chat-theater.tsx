@@ -199,8 +199,8 @@ export function ChatTheater() {
 							<div className="text-base font-semibold leading-[1.1] tracking-[-0.01em] text-foreground">
 								Aja Agora
 							</div>
-							<div className="mt-px flex items-center gap-1.5 text-xs font-medium text-[#28c081]">
-								<span className="size-1.5 rounded-full bg-[#28c081]" />
+							<div className="mt-px flex items-center gap-1.5 text-xs font-medium text-success">
+								<span className="size-1.5 rounded-full bg-success" />
 								online agora
 							</div>
 						</div>
@@ -210,7 +210,7 @@ export function ChatTheater() {
 						onClick={closeTheater}
 						aria-label="Fechar conversa"
 						data-testid="theater-close"
-						className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-card text-muted-foreground transition-colors hover:border-[#c9d2dc] hover:bg-[#f7f9fc] hover:text-foreground"
+						className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					>
 						<X className="size-[18px]" />
 					</button>

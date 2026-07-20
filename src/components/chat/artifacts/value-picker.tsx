@@ -85,7 +85,7 @@ export function ValuePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff] overflow-hidden">
+			<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-primary/30 overflow-hidden">
 				<CardContent className="space-y-4 p-[18px]">
 					<div className="space-y-2">
 						<div className="flex items-baseline justify-between gap-2.5">
