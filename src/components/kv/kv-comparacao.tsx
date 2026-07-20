@@ -2,7 +2,6 @@ import { Check, X } from "lucide-react";
 import Image from "next/image";
 
 import { Em } from "@/components/kv/em";
-import { SunBurst } from "@/components/kv/sun-burst";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
@@ -22,16 +21,18 @@ const FINANCIAMENTO_ITEMS: { text: string; positive: boolean }[] = [
 	{ text: "Parcelas mais altas devido aos juros.", positive: false },
 ];
 
+/** Respiro entre a aresta reta do leque (burstSrc) e a foto — evita colar direto. */
+const BURST_GAP = 10;
+/** Tamanho do leque relativo ao diâmetro do medalhão (1 = mesma altura da foto). */
+const BURST_SCALE = 0.80;
+
 /**
  * Medalhão da coluna (Figma 'Group 106/107') — foto clipada em MEIA-LUA (a
- * metade direita de um círculo, com a aresta reta à esquerda) e o SunBurst
- * "Forma 04" atrás dela, desenhado como um SEMICÍRCULO de raios (arcSpan 180)
- * espelhando o próprio half-disc da foto: a aresta reta/aberta do leque fica
- * do lado da foto, os raios afinados fanam pro lado oposto (em volta da curva
- * externa), e os dois half-discs (foto + leque) juntos fecham a silhueta
- * circular — sem nenhum raio cruzando por cima do corte reto da foto. `color`
- * pinta os raios — coral `#F2404F` no lado Consórcio, Grafite/500 `#6B6B66`
- * no lado Financiamento. Sem anel branco nem sombra (máscara direta, igual ao
+ * metade direita de um círculo, com a aresta reta à esquerda) e um SVG
+ * dedicado de leque atrás dela (`burstSrc` — semicírculo de raios já com a
+ * aresta reta embutida no próprio arquivo, coral no lado Consórcio, cinza no
+ * lado Financiamento), reproduzindo o Figma sem raio nenhum cruzando por cima
+ * do corte reto da foto. Sem anel branco nem sombra (máscara direta, igual ao
  * Figma).
  *
  * A foto é renderizada num box "estourado" (maior que a janela visível,
@@ -45,24 +46,20 @@ const FINANCIAMENTO_ITEMS: { text: string; positive: boolean }[] = [
  */
 function Medalhao({
 	src,
-	color,
+	burstSrc,
 	diameter,
 	topOffset = 0,
 	objectPosition,
 	zoom = 1,
 }: {
 	src: string;
-	color: string;
+	burstSrc: string;
 	diameter: number;
 	topOffset?: number;
 	objectPosition: string;
 	zoom?: number;
 }) {
-	const burst = Math.round(diameter * 0.84);
 	const half = diameter / 2;
-	// Gap entre a ponta dos raios verticais (12h/6h, que têm alguma largura na
-	// base) e a aresta reta da foto — evita o "toco" clipado sobre o corte.
-	const gap = Math.round(burst * 0.05) + 4;
 	// object-fit:cover só depende da proporção da caixa — escalar largura E
 	// altura igualmente não muda o corte (mesma razão de aspecto). Pra
 	// "zoom out" de verdade, alarga só a LARGURA (o container já é
@@ -76,15 +73,16 @@ function Medalhao({
 				className="absolute left-1/2 -translate-x-1/2"
 				style={{ width: diameter, height: diameter, top: topOffset }}
 			>
-				<SunBurst
-					color={color}
-					rays={12}
-					inner={46}
-					outer={98}
-					arcSpan={180}
-					arcStart={180}
-					className="pointer-events-none absolute top-1/2 -translate-y-1/2"
-					style={{ width: burst, height: burst, left: half - burst / 2 - gap }}
+				{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+				<img
+					src={burstSrc}
+					alt=""
+					aria-hidden="true"
+					// Aresta reta do leque já é a borda direita do próprio SVG — alinhada
+					// com `right-1/2` (= `half`, a mesma linha onde a foto começa) mais um
+					// respiro (BURST_GAP) pra não colar direto na foto.
+					className="pointer-events-none absolute top-1/2 w-auto -translate-y-1/2"
+					style={{ right: `calc(50% + ${BURST_GAP}px)`, height: diameter * BURST_SCALE }}
 				/>
 				<div
 					className="absolute right-0 top-0 overflow-hidden rounded-r-full"
@@ -143,7 +141,7 @@ export function KvComparacao() {
 					<div className="flex flex-col items-center text-center">
 						<Medalhao
 							src={`${KV}/smiling-young-caucasian-woman-holds-paint-brush-2.jpg`}
-							color="#6B6B66"
+							burstSrc={`${KV}/consorcio-burst-cinza.svg`}
 							diameter={221}
 							topOffset={21}
 							objectPosition="55% 15%"
@@ -157,7 +155,7 @@ export function KvComparacao() {
 						<h3 className="mt-2 text-[28px] font-normal leading-[1.15] text-[#052440] md:text-[32px] md:leading-[38px]">
 							Financiamento
 						</h3>
-						<ul className="mt-8 flex flex-col items-center gap-4">
+						<ul className="mt-8 flex flex-col items-start gap-4 md:items-center">
 							{FINANCIAMENTO_ITEMS.map((item) => (
 								<li key={item.text} className="flex w-fit items-center gap-3.5">
 									<span
@@ -171,7 +169,9 @@ export function KvComparacao() {
 											<X className="size-3.5 text-white" strokeWidth={3} />
 										)}
 									</span>
-									<p className="text-left text-[16px] leading-[24px] text-[#052440]">{item.text}</p>
+									<p className="text-left text-[16px] leading-[24px] text-[#052440]">
+										{item.text}
+									</p>
 								</li>
 							))}
 						</ul>
@@ -181,7 +181,7 @@ export function KvComparacao() {
 					<div className="flex flex-col items-center text-center">
 						<Medalhao
 							src={`${KV}/hispanic-young-man-smiling-wearing-headphones-un.jpg`}
-							color="#F2404F"
+							burstSrc={`${KV}/consorcio-burst-vermelho.svg`}
 							diameter={260}
 							objectPosition="55% 15%"
 							zoom={0.7}
@@ -190,13 +190,15 @@ export function KvComparacao() {
 						<h3 className="mt-2 text-[28px] font-normal leading-[1.15] text-[#052440] md:text-[32px] md:leading-[38px]">
 							Consórcio Ideal para você
 						</h3>
-						<ul className="mt-8 flex flex-col items-center gap-4">
+						<ul className="mt-8 flex flex-col items-start gap-4 md:items-center">
 							{CONSORCIO_ITEMS.map((item) => (
 								<li key={item} className="flex w-fit items-center gap-3.5">
 									<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#22B464]">
 										<Check className="size-3.5 text-white" strokeWidth={3} />
 									</span>
-									<p className="text-left text-[16px] leading-[24px] text-[#052440]">{item}</p>
+									<p className="text-left text-[16px] leading-[24px] text-[#052440]">
+										{item}
+									</p>
 								</li>
 							))}
 						</ul>

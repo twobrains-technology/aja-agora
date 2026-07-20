@@ -84,7 +84,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 
 	return (
 		<div
-			className="w-full max-w-[480px] overflow-hidden rounded-[18px] border border-[#bcd3ff] bg-card shadow-lg"
+			className="w-full max-w-[480px] overflow-hidden rounded-[18px] border border-primary/30 bg-card shadow-lg"
 			data-testid="proposal-doc"
 		>
 			{/* ── 1 · Header co-branded ── */}
@@ -153,12 +153,12 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 			{/* ── 3 · Banner "A sua vantagem" (só com cálculo real + premissa) ── */}
 			{economiaTotal != null && (
 				<div className="px-5 pb-1">
-					<div className="flex items-center justify-between gap-4 rounded-2xl border border-[#cfe0ff] bg-[linear-gradient(120deg,#eef5ff,#e2edff)] px-4 py-3.5">
+					<div className="flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 px-4 py-3.5">
 						<div>
 							<div className="text-[11px] font-semibold uppercase tracking-wide text-primary">
 								A sua vantagem
 							</div>
-							<div className="mt-1 text-lg font-bold leading-tight text-[var(--aja-navy)]">
+							<div className="mt-1 text-lg font-bold leading-tight text-foreground">
 								Economia estimada de <span className="text-primary">~{brl0(economiaTotal)}</span> vs
 								financiamento
 							</div>
@@ -169,7 +169,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 								</div>
 							)}
 						</div>
-						<div className="shrink-0 rounded-xl border border-[#cfe0ff] bg-white px-4 py-2.5 text-center">
+						<div className="shrink-0 rounded-xl border border-primary/30 bg-card px-4 py-2.5 text-center">
 							<div className="text-2xl font-extrabold leading-none text-primary">0%</div>
 							<div className="mt-1 text-[11px] text-muted-foreground">de juros</div>
 						</div>
@@ -182,7 +182,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 				{/* Parcela CHEIA em destaque — a que o cliente paga até ser contemplada.
 				    Sem fabricar a pós-contemplação (handoff, correção #1). */}
 				{hasPayment && (
-					<div className="mb-4 rounded-2xl border border-[#cfe0ff] bg-primary/5 px-4 py-3.5">
+					<div className="mb-4 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
 						<div className="text-xs font-semibold text-primary">Parcela mensal</div>
 						<div className="aja-num mt-0.5 text-2xl font-semibold tracking-tight text-primary">
 							{brl2(payload.monthlyPayment as number)}
@@ -266,7 +266,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 							Você participa dos sorteios mensais até ser contemplado.
 						</div>
 					</div>
-					<div className="rounded-2xl border border-[#cfe0ff] bg-primary/5 px-4 py-3.5">
+					<div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
 						<div className="text-sm font-bold text-primary">Com lance</div>
 						<div className="mt-1.5 text-xs leading-relaxed text-foreground">
 							Com recursos próprios ou embutido, você antecipa a aquisição.

@@ -106,7 +106,7 @@ export function StreamingDots({ tool }: { tool?: string } = {}) {
 		// Tool status: pill branca com borda + ícone azul + texto + dots
 		return (
 			<output
-				className="inline-flex items-center gap-[9px] rounded-full border border-border bg-white px-[14px] py-[9px] text-xs font-medium text-muted-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
+				className="inline-flex items-center gap-[9px] rounded-full border border-border bg-card px-[14px] py-[9px] text-xs font-medium text-muted-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
 				aria-label={`${label.text}…`}
 			>
 				<AnimatePresence mode="wait">

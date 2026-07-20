@@ -90,7 +90,7 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 				className={cn(
 					"mx-auto flex items-end",
 					isTheater
-						? "max-w-[720px] gap-2.5 rounded-[15px] border border-border bg-[#f7f9fc] py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-[#bcd3ff] focus-within:bg-card"
+						? "max-w-[720px] gap-2.5 rounded-[15px] border border-border bg-muted py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-primary/30 focus-within:bg-card"
 						: "max-w-3xl gap-2 px-4 py-3",
 				)}
 			>

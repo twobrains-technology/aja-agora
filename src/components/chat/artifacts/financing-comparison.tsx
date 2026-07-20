@@ -20,7 +20,7 @@ export function FinancingComparison({ payload }: { payload: FinancingComparisonP
 				<div className="grid grid-cols-2 gap-3">
 					{/* Coluna vencedora — consórcio */}
 					<div
-						className="rounded-xl border border-[#bcd3ff] bg-primary/[0.04] p-3"
+						className="rounded-xl border border-primary/30 bg-primary/[0.04] p-3"
 						data-testid="comparison-consorcio"
 					>
 						<p className="aja-eyebrow mb-1">Consórcio</p>

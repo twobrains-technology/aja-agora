@@ -28,7 +28,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	return (
-		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-[#bcd3ff]">
+		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-primary/30">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
 				{/* FIX-232 — header co-branded: Aja Agora + administradora */}
 				<div className="flex items-center justify-between gap-2 pb-1">

@@ -30,7 +30,7 @@ export function Scenarios({ payload }: { payload: ScenariosPayload }) {
 							key={key}
 							className={
 								isProvavel
-									? "rounded-xl border border-[#bcd3ff] bg-primary/[0.04] p-3"
+									? "rounded-xl border border-primary/30 bg-primary/[0.04] p-3"
 									: "rounded-xl border border-border bg-card p-3"
 							}
 							data-testid={`scenario-${key}`}
