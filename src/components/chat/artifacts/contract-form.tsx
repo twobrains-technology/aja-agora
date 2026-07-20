@@ -65,7 +65,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	};
 
 	return (
-		<div className="w-full max-w-sm rounded-[18px] border border-[#bcd3ff] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+		<div className="w-full max-w-sm rounded-[18px] border border-primary/30 bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 			{/* header */}
 			<div className="flex flex-col gap-[2px]">
 				<p className="text-sm font-semibold text-foreground">Vamos confirmar seu plano</p>
@@ -77,7 +77,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 			{useStored ? (
 				/* FIX-9: confirmação dos dados já coletados — sem re-digitação. */
 				<div
-					className="rounded-[12px] bg-[#fbfbf9] border border-border px-[14px] py-[12px] flex flex-col gap-[7px]"
+					className="rounded-[12px] bg-muted border border-border px-[14px] py-[12px] flex flex-col gap-[7px]"
 					data-testid="contract-stored"
 				>
 					<div className="flex justify-between text-sm">
@@ -113,7 +113,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 							disabled={isStreaming}
 							// FIX-17: autofocus padronizado nos forms do funil (mobile-first).
 							autoFocus
-							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
+							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
 							data-testid="contract-cpf"
 						/>
 					</div>
@@ -129,7 +129,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 							value={phone}
 							onChange={(e) => setPhone(maskPhone(e.target.value))}
 							disabled={isStreaming}
-							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
+							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
 							data-testid="contract-phone"
 						/>
 					</div>

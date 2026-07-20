@@ -136,7 +136,7 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 							onChange={(e) => setMasked(formatPhoneMask(e.target.value))}
 							placeholder="(11) 98765-4321"
 							disabled={state !== "idle"}
-							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-[#9aa7b6] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 w-full"
+							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 w-full"
 						/>
 
 						{/* actions */}

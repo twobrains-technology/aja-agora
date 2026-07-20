@@ -42,9 +42,9 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 	}, []);
 
 	return (
-		<div className="flex h-dvh flex-col overflow-x-hidden bg-[#fbfbf9]">
+		<div className="flex h-dvh flex-col overflow-x-hidden bg-background">
 			{/* Header — identidade + status à esquerda, ação à direita */}
-			<header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-white px-4 shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
+			<header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
 				{/* Identidade: avatar-sol + nome + status online */}
 				<div className="flex items-center gap-[11px]">
 					<span
@@ -78,7 +78,7 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 							type="button"
 							onClick={onReset}
 							aria-label="Nova conversa"
-							className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-white text-muted-foreground transition-colors hover:bg-[#fbfbf9] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
 							<RefreshCw className="size-[18px]" />
 						</button>

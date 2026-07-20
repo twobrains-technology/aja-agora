@@ -97,15 +97,16 @@ function PathCard({ path, className }: { path: Path; className?: string }) {
 	return (
 		<div
 			className={cn(
-				"rounded-[16px] bg-white p-6",
+				"rounded-[16px] border-2 bg-white p-6",
+				path.tagStyle === "coral" ? "border-[#F2404F]" : "border-[#052440]",
 				CARD_SHADOW,
-				"lg:rounded-[12px] lg:border-2 lg:border-[#052440] lg:p-8",
+				"lg:rounded-[12px] lg:border-[#052440] lg:p-8",
 				className,
 			)}
 		>
 			<div className="flex items-center gap-3 lg:gap-4">
-				<span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-[#F2404F] lg:size-12 lg:rounded-[12px] lg:bg-[#F2404F]/[0.08]">
-					<Icon className="size-5 text-white lg:size-6 lg:text-[#021628]" strokeWidth={2} />
+				<span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-[#F2404F]/[0.08] lg:size-12 lg:rounded-[12px]">
+					<Icon className="size-5 text-[#021628] lg:size-6" strokeWidth={2} />
 				</span>
 				<div>
 					<p
@@ -130,14 +131,14 @@ function PathCard({ path, className }: { path: Path; className?: string }) {
 				<span className="hidden lg:inline">{path.descriptionDesktop}</span>
 			</p>
 
-			{/* Tags — mobile: 2, coral sólido, Poppins 11px */}
+			{/* Tags — mobile: 2, coral tint, Poppins 11px */}
 			<div className="mt-4 flex flex-wrap gap-2 lg:hidden">
 				{path.benefitsMobile.map((label) => (
 					<span
 						key={label}
-						className="inline-flex items-center gap-1 rounded-[6px] bg-[#F2404F] px-2.5 py-1 text-[11px] leading-none text-[#021628]"
+						className="inline-flex items-center gap-1 rounded-[6px] bg-[#F2404F]/[0.07] px-2.5 py-1 text-[11px] leading-none text-[#021628]"
 					>
-						<Check className="size-3 shrink-0 text-[#021628]" strokeWidth={2.5} />
+						<Check className="size-3 shrink-0 text-[#F2404F]" strokeWidth={2.5} />
 						{label}
 					</span>
 				))}
@@ -192,7 +193,7 @@ export function KvContemplacao() {
 						<path fill="#F2404F" d="M70,210 L130,210 L70,340 Z" />
 					</svg>
 
-					<div className="relative z-10 lg:max-w-[633px]">
+					<div className="relative z-10 text-center lg:max-w-[633px] lg:text-left">
 						{/* Foto — topo no mobile; no desktop vive na direita (abaixo).
 						    Cutout transparente (585x715, retrato) — object-cover simples numa
 						    máscara quase quadrada (291x278), sem offset manual de crop cru. */}
@@ -212,7 +213,7 @@ export function KvContemplacao() {
 						<h2 className="mt-3 text-[28px] font-normal leading-[36px] text-[#021628] lg:mt-4 lg:text-[44px] lg:leading-[1]">
 							Momento da <Em>contemplação</Em>
 						</h2>
-						<p className="mt-3 max-w-[540px] text-[14px] leading-[22px] text-[#021628] lg:mt-4 lg:max-w-[633px] lg:text-[16px] lg:leading-[2] lg:text-[#2D2D2D]">
+						<p className="mx-auto mt-3 max-w-[540px] text-[14px] leading-[22px] text-[#021628] lg:mx-0 lg:mt-4 lg:max-w-[633px] lg:text-[16px] lg:leading-[2] lg:text-[#2D2D2D]">
 							<span className="lg:font-semibold">Existem duas formas</span> principais de ser
 							contemplado em um consórcio. Você escolhe a estratégia que faz mais sentido para o seu
 							momento.

@@ -145,7 +145,7 @@ export function PlanEstimatePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="overflow-hidden rounded-[18px] border-[#bcd3ff] shadow-lg">
+			<Card className="overflow-hidden rounded-[18px] border-primary/30 shadow-lg">
 				<CardContent className="space-y-3.5 p-3.5">
 					<p className="flex items-center gap-2 text-sm font-medium">
 						<span className="flex size-[26px] items-center justify-center rounded-full bg-[var(--surface-ink)] p-1.5">
@@ -178,7 +178,7 @@ export function PlanEstimatePicker({
 						<div
 							role="radiogroup"
 							aria-label="O que mais importa pra você agora?"
-							className="grid grid-cols-3 gap-1 rounded-xl bg-[#eef2f7] p-1"
+							className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
 						>
 							{INTENTS.map((opt) => (
 								<button
@@ -241,7 +241,7 @@ export function PlanEstimatePicker({
 								onChange={setLanceValue}
 								testId="plan-lance"
 							/>
-							<div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-[#fbfbf9] px-3 py-2.5">
+							<div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted px-3 py-2.5">
 								<div className="min-w-0">
 									<span className="text-xs font-medium">Somar lance embutido</span>
 									<p className="text-[11px] text-muted-foreground">

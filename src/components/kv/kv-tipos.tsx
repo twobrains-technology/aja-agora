@@ -3,7 +3,6 @@
 import Image from "next/image";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
-import { SunBurst } from "@/components/kv/sun-burst";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
@@ -28,6 +27,16 @@ type TipoCard = {
 		src: string;
 		alt: string;
 	} | null;
+	/** Decoração coral atrás do cutout — SVG dedicado ao tipo (Imóvel: fita
+	 *  diagonal; Moto: anel), como em Home.png. Sem `decoration` (Carro, ainda
+	 *  sem forma própria no Figma) → nenhuma decoração, só o fundo do card. */
+	decoration?: {
+		src: string;
+		className: string;
+		/** Alinhamento do wrapper que centraliza a decoração (Figma: Imóvel cola
+		 *  à esquerda, Moto cola no topo do card) — default é centro nos 2 eixos. */
+		align?: string;
+	};
 };
 
 // Área da imagem: altura fixa nos 3 cards pra título/botão/chips caírem na mesma
@@ -48,6 +57,11 @@ const CARDS: TipoCard[] = [
 			src: "image-3.png",
 			alt: "Carro em estrada ao entardecer",
 		},
+		decoration: {
+			src: "tipo-carro.svg",
+			className: "h-[100%] w-auto shrink-0",
+			align: "items-center justify-start",
+		},
 	},
 	{
 		id: "imovel",
@@ -65,6 +79,11 @@ const CARDS: TipoCard[] = [
 			src: "image-1.png",
 			alt: "Casa própria conquistada",
 		},
+		decoration: {
+			src: "tipo-imovel.svg",
+			className: "h-[100%] w-auto shrink-0",
+			align: "items-center justify-end",
+		},
 	},
 	{
 		id: "moto",
@@ -78,6 +97,11 @@ const CARDS: TipoCard[] = [
 		image: {
 			src: "image-2.png",
 			alt: "Motocicleta em destaque",
+		},
+		decoration: {
+			src: "tipo-moto.svg",
+			className: "w-[70%] h-auto shrink-0",
+			align: "items-start justify-center",
 		},
 	},
 ];
@@ -124,14 +148,21 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 						>
 							{card.image ? (
 								<div className={IMAGE_AREA_CLASS}>
-									{/* SunBurst coral ATRÁS do cutout — raios grossos (rays 10) irradiando
-									    ao redor do objeto inteiro, como no Figma. Clipado pelo overflow. */}
-									<div
-										aria-hidden="true"
-										className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center"
-									>
-										<SunBurst rays={10} barWidth={22} className="aspect-square h-[130%] shrink-0" />
-									</div>
+									{/* Decoração coral ATRÁS do cutout, clipada pelo overflow do card — forma
+									    dedicada do Figma por tipo (Carro e Imóvel: fita diagonal; Moto: anel). */}
+									{card.decoration ? (
+										<div
+											aria-hidden="true"
+											className={`pointer-events-none absolute inset-0 z-0 flex ${card.decoration.align ?? "items-center justify-center"}`}
+										>
+											{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+											<img
+												src={`${KV}/${card.decoration.src}`}
+												alt=""
+												className={card.decoration.className}
+											/>
+										</div>
+									) : null}
 									{/* Cutout transparente FLUTUANDO sobre o coral: object-contain, sem caixa
 									    retangular, sem crop. */}
 									<div className="absolute inset-x-6 inset-y-4 z-10">

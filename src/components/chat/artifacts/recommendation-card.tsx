@@ -148,7 +148,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				"w-full max-w-sm bg-card overflow-hidden",
 				"rounded-[18px]",
 				// borda azul destacada (rec) + sombra card
-				"border border-[#bcd3ff]",
+				"border border-primary/30",
 				"shadow-[0_0_0_1px_rgba(3,110,255,.18),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
 			)}
 		>

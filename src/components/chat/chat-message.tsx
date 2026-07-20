@@ -270,7 +270,7 @@ export function ChatMessage({
 					)}
 
 					{isStreamingEmpty && (
-						<div className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-white px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
+						<div className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
 							<StreamingDots tool={currentTool} />
 						</div>
 					)}
@@ -522,7 +522,7 @@ function TextBubble({
 			initial={reducedMotion ? false : { opacity: 0, y: 6 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.3, ease: "easeOut" }}
-			className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-white px-[14px] py-[10px] text-sm leading-[1.5] text-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
+			className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] text-sm leading-[1.5] text-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
 		>
 			<div className={cursor ? `${proseClass} streaming-text` : proseClass}>
 				<ReactMarkdown>{smoothed}</ReactMarkdown>

@@ -1,11 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
-import { SunBurst } from "@/components/kv/sun-burst";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 
 const KV = "/kv";
@@ -96,10 +95,21 @@ const CRITERIOS_MOBILE: CriterioCard[] = [
 // Mesma estrutura no mobile (3 itens, ícone sólido) e no desktop (6 itens no
 // carrossel, ícone tintado) — só tamanho/padding mudam entre os 2 frames do
 // Figma (breakpoint `size`).
-function CriterioCardItem({ criterio, size }: { criterio: CriterioCard; size: "sm" | "lg" }) {
+function CriterioCardItem({
+	criterio,
+	size,
+	"aria-hidden": ariaHidden,
+}: {
+	criterio: CriterioCard;
+	size: "sm" | "lg";
+	"aria-hidden"?: boolean;
+}) {
 	if (size === "sm") {
 		return (
-			<li className={`flex flex-col gap-4 rounded-[16px] bg-[#FFFFFF] p-6 ${CARD_SHADOW}`}>
+			<li
+				aria-hidden={ariaHidden}
+				className={`flex flex-col gap-4 rounded-[16px] bg-[#FFFFFF] p-6 ${CARD_SHADOW}`}
+			>
 				<span
 					className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#F2404F]"
 					aria-hidden="true"
@@ -118,6 +128,7 @@ function CriterioCardItem({ criterio, size }: { criterio: CriterioCard; size: "s
 
 	return (
 		<li
+			aria-hidden={ariaHidden}
 			className={`flex w-[280px] shrink-0 snap-start flex-col gap-5 rounded-[16px] bg-[#FFFFFF] p-8 ${CARD_SHADOW}`}
 		>
 			<span
@@ -137,29 +148,111 @@ function CriterioCardItem({ criterio, size }: { criterio: CriterioCard; size: "s
 }
 
 // Largura do card (280px) + gap (16px) do carrossel desktop — usado pra abrir
-// a janela já deslocada 1 card (ver useEffect abaixo).
+// a janela já deslocada 1 card (ver useEffect abaixo) e pra avançar o autoplay
+// um card por vez.
 const CARROSSEL_CARD_STEP = 280 + 16;
+
+// Intervalo do autoplay entre um card e o próximo.
+const CARROSSEL_AUTOPLAY_MS = 2200;
 
 // Carrossel desktop dos 6 critérios. Abre com scroll já deslocado 1 card: a
 // janela ('Mask group' 66% da faixa) mostra "Lance médio" (cortado à esquerda),
 // "Diversas administradoras" e "Prazo" inteiros — batendo com o recorte do
 // Figma, que não abre no primeiro card (senão os pingos do regador caem no
 // vazio depois de "Diversas administradoras" em vez de molhar "Prazo").
+//
+// Autoplay: avança um card por vez sempre pra frente, em loop contínuo; pausa
+// no hover (sem controles visíveis, o scroll manual continua funcionando a
+// qualquer momento via overflow-x-auto).
+//
+// Pra "voltar" do último card ao primeiro sem o scroll animar de trás pra
+// frente (glitch de reverso), a lista renderiza os critérios duas vezes: o
+// autoplay sempre avança (nunca usa `% length` pra decidir o destino do
+// scroll), e ao entrar no trecho clonado — visualmente idêntico ao original —
+// espera o scroll assentar e salta sem animação de volta pra posição
+// equivalente no trecho original. O salto é imperceptível porque os dois
+// trechos são pixel-a-pixel iguais.
+//
+// O "esperar assentar" é feito checando `scrollLeft` direto via rAF (não
+// pelo evento `scrollend`): esse evento pode não disparar em todo navegador/
+// contexto, e se não disparar o reset nunca acontece — o autoplay então
+// segue avançando só pra frente até bater no fim físico do conteúdo clonado
+// e travar no último card (foi exatamente o sintoma visto: parava em
+// "Histórico dos grupos" e não continuava).
+function waitForScrollSettle(el: HTMLElement, onSettle: () => void, signal: AbortSignal) {
+	let lastLeft = el.scrollLeft;
+	let stableFrames = 0;
+
+	const check = () => {
+		if (signal.aborted) return;
+		if (el.scrollLeft === lastLeft) {
+			stableFrames += 1;
+			if (stableFrames >= 2) {
+				onSettle();
+				return;
+			}
+		} else {
+			stableFrames = 0;
+			lastLeft = el.scrollLeft;
+		}
+		requestAnimationFrame(check);
+	};
+
+	requestAnimationFrame(check);
+}
+
 function CriteriosCarousel() {
 	const listRef = useRef<HTMLUListElement>(null);
+	const [isHovered, setIsHovered] = useState(false);
 
 	useEffect(() => {
 		listRef.current?.scrollTo({ left: CARROSSEL_CARD_STEP });
 	}, []);
 
+	useEffect(() => {
+		if (isHovered) return;
+		const list = listRef.current;
+		if (!list) return;
+
+		const controller = new AbortController();
+		const id = window.setInterval(() => {
+			const currentIndex = Math.round(list.scrollLeft / CARROSSEL_CARD_STEP);
+			const nextIndex = currentIndex + 1;
+			list.scrollTo({ left: nextIndex * CARROSSEL_CARD_STEP, behavior: "smooth" });
+
+			if (nextIndex >= CRITERIOS.length) {
+				waitForScrollSettle(
+					list,
+					() => {
+						list.scrollTo({
+							left: (nextIndex - CRITERIOS.length) * CARROSSEL_CARD_STEP,
+							behavior: "instant",
+						});
+					},
+					controller.signal,
+				);
+			}
+		}, CARROSSEL_AUTOPLAY_MS);
+
+		return () => {
+			window.clearInterval(id);
+			controller.abort();
+		};
+	}, [isHovered]);
+
 	return (
 		<ul
 			ref={listRef}
 			aria-label="Critérios que a AJA compara"
+			onMouseEnter={() => setIsHovered(true)}
+			onMouseLeave={() => setIsHovered(false)}
 			className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 		>
 			{CRITERIOS.map((criterio) => (
 				<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
+			))}
+			{CRITERIOS.map((criterio) => (
+				<CriterioCardItem key={`${criterio.id}-clone`} criterio={criterio} size="lg" aria-hidden />
 			))}
 		</ul>
 	);
@@ -193,10 +286,10 @@ export function KvConfianca() {
 					))}
 				</ul>
 
-				<div className="bg-[#021628] px-6 py-12">
+				<div className="bg-[#021628] px-6 pt-12">
 					{/* Figma 'Dark Logo Container' al:CENTER — logo branca centrada na faixa navy */}
 					<Wordmark className="mx-auto block h-[58px] w-auto text-[#FAFAF3]" />
-					<div className="mt-8">
+					<div className="mt-8 text-center">
 						<p className="text-[28px] leading-[36px] text-[#FAFAF3]">Saúde financeira</p>
 						<p className="mt-3 text-[15px] leading-[24px] text-[#FAFAF3]">
 							Nosso objetivo não é vender qualquer consórcio.{" "}
@@ -204,14 +297,15 @@ export function KvConfianca() {
 							para conquistar seu objetivo sem comprometer seu orçamento mensal.
 						</p>
 					</div>
-					{/* Muda transparente sobre os raios navy (Figma 'Group 43'): sunburst radial tom navy,
-					    centralizado atrás da muda, recortado no semicírculo superior (linha das moedas) */}
+					{/* Muda transparente sobre os raios navy (Figma 'Group 43'): sunburst radial branco,
+					    centralizado atrás da muda, recortado no semicírculo superior (linha das moedas). */}
 					<div className="relative mt-8 aspect-[59/32] w-full overflow-hidden">
-						<SunBurst
+						{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+						<img
+							src={`${KV}/saude-financeira-burst.svg`}
+							alt=""
 							aria-hidden="true"
-							rays={20}
-							color="#1C2E3E"
-							className="pointer-events-none absolute bottom-[-25%] left-1/2 z-0 h-[150%] w-auto -translate-x-1/2 opacity-90"
+							className="pointer-events-none absolute bottom-[-14%] left-1/2 z-0 w-[150%] -translate-x-1/2 opacity-90"
 						/>
 						<Image
 							src={`${KV}/image-5.png`}
@@ -253,8 +347,10 @@ export function KvConfianca() {
 					    alinhada à esquerda — só ~2,5 cards aparecem, o próximo espiando no corte
 					    direito, deixando o terço direito livre pro regador pousar sem cobrir texto. */}
 					<div className="mt-8 rounded-[12px] bg-[#F1F1DA] px-4 py-8 sm:px-6 md:mt-10 md:px-8 md:py-10">
-						<div className="w-[66%] overflow-hidden">
+						<div className="relative w-[66%] overflow-hidden">
+							<div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-[#F1F1DA] to-transparent" />
 							<CriteriosCarousel />
+							<div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-[#F1F1DA] to-transparent" />
 						</div>
 					</div>
 
@@ -264,15 +360,15 @@ export function KvConfianca() {
 					    própria altura pra faixa bege acima (gesto-assinatura do Figma). */}
 					<div className="relative mt-8 md:mt-10">
 						<div className="relative flex flex-col gap-8 rounded-[12px] bg-[#021628] px-8 py-10 md:flex-row md:items-center md:gap-10 md:px-12 md:py-14">
-							{/* Raios navy sutis (Group 43 = leque estreito 192x386 atrás da muda),
-							    recortados ao retângulo #021628: leque discreto, não dominante —
-							    tom navy só um pouco acima do #021628 e opacidade baixa. */}
+							{/* Raios brancos sutis (mesmo SVG do mobile) atrás da muda, recortados
+							    ao retângulo #021628: leque discreto, não dominante. */}
 							<div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[12px]">
-								<SunBurst
+								{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+								<img
+									src={`${KV}/saude-financeira-burst.svg`}
+									alt=""
 									aria-hidden="true"
-									rays={20}
-									color="#1C2E3E"
-									className="absolute bottom-[-42%] left-[46%] h-[120%] w-auto -translate-x-1/2 opacity-50"
+									className="absolute bottom-[12%] left-[46%] w-[30%] -translate-x-1/2 opacity-50"
 								/>
 							</div>
 
