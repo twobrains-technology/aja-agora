@@ -230,21 +230,41 @@ export function createConverseNode(model: BaseChatModel) {
 		// comparação não existia no contexto dele, só no card. Um vendedor faz essa
 		// conta na hora e é ela que abre o embutido de forma natural. Comparação
 		// numérica é invariante → nasce aqui; a fala continua sendo dele.
-		const lanceDele = state.funnel.qualifyAnswers.lanceValue;
+		const lanceDele = state.funnel.qualifyAnswers.lanceValue ?? 0;
 		const lanceMedio = oferta?.avgBidValue;
+		// O embutido É lance: sai da própria carta e entra na disputa junto com o
+		// dinheiro do bolso. Comparar só o que o cliente tem guardado contra o lance
+		// médio subestimava a posição dele e, pior, deixava o agente vender
+		// "contemplação rápida" sem saber se a conta fecha. Só conta quando ele
+		// ACEITOU usar embutido — antes disso é hipótese, não recurso.
+		const embutidoDisponivel =
+			state.funnel.qualifyAnswers.lanceEmbutido === true && oferta?.creditValue
+				? Math.round(oferta.creditValue * (pctEmbutido / 100))
+				: 0;
+		const lanceTotal = lanceDele + embutidoDisponivel;
 		const blocoLance =
-			lanceDele && lanceMedio
-				? lanceDele >= lanceMedio
-					? `O lance que ele tem (${brl(lanceDele)}) JÁ ALCANÇA o lance médio desse grupo ` +
-						`(${brl(lanceMedio)}). Diga isso com clareza — é a posição dele, não uma promessa de ` +
-						`contemplação, que ninguém pode garantir.`
-					: `ATENÇÃO, o fato mais importante deste momento: o lance que ele tem ` +
-						`(${brl(lanceDele)}) NÃO alcança o lance médio desse grupo (${brl(lanceMedio)}) — ` +
-						`faltam ${brl(lanceMedio - lanceDele)}. Não elogie o valor dele e siga em frente como ` +
-						`se estivesse resolvido: diga onde ele está, sem drama, e mostre a saída — é ` +
-						`exatamente para isso que existe o lance embutido, que completa a diferença usando ` +
-						`parte da própria carta, sem ele tirar mais nada do bolso. Nunca prometa ` +
-						`contemplação: lance médio é posição, não garantia.`
+			lanceTotal > 0 && lanceMedio
+				? lanceTotal >= lanceMedio
+					? `O lance dele ALCANÇA o lance médio desse grupo (${brl(lanceMedio)}): ` +
+						(embutidoDisponivel > 0
+							? `${brl(lanceDele)} do bolso + ${brl(embutidoDisponivel)} de embutido = ` +
+								`${brl(lanceTotal)}. `
+							: `${brl(lanceTotal)}. `) +
+						`Diga isso com clareza — é a posição dele, não uma promessa de contemplação, que ` +
+						`ninguém pode garantir.`
+					: `ATENÇÃO, o fato mais importante deste momento: o lance dele NÃO alcança o lance ` +
+						`médio desse grupo (${brl(lanceMedio)}). ` +
+						(embutidoDisponivel > 0
+							? `Somando tudo — ${brl(lanceDele)} do bolso + ${brl(embutidoDisponivel)} de ` +
+								`embutido — dá ${brl(lanceTotal)}, e ainda faltam ${brl(lanceMedio - lanceTotal)}. ` +
+								`Diga isso com todas as letras, mesmo sendo desconfortável: é PROIBIDO vender ` +
+								`contemplação rápida quando a conta não fecha. Ofereça as saídas reais — juntar ` +
+								`a diferença, mirar um prazo maior, ou olhar um grupo com lance médio menor.`
+							: `Faltam ${brl(lanceMedio - lanceTotal)}. Não elogie o valor dele e siga em ` +
+								`frente como se estivesse resolvido: diga onde ele está, sem drama, e mostre a ` +
+								`saída — é exatamente para isso que existe o lance embutido, que completa a ` +
+								`diferença usando parte da própria carta, sem ele tirar mais nada do bolso.`) +
+						` Nunca prometa contemplação: lance médio é posição, não garantia.`
 				: null;
 
 		// Basta a oferta EXISTIR no estado — a busca já rodou em ALGUM turno. Antes
@@ -270,13 +290,21 @@ export function createConverseNode(model: BaseChatModel) {
 					`${brl(oferta.creditValue)}, parcela de ${brl(oferta.monthlyPayment)} em ` +
 					`${oferta.termMonths} meses. Apresente como um vendedor de consórcio experiente: ` +
 					`diga o que encontrou, aponte o que chama atenção nesses números e por quê. ` +
-					`NUNCA diga que vai buscar ou que "já já traz" — a busca já aconteceu.`
+					`NUNCA diga que vai buscar ou que "já já traz" — a busca já aconteceu.` +
+					(oferta.groupId
+						? ` Pra simular ESSA cota você NÃO precisa de nada do cliente: o identificador ` +
+							`dela é ${oferta.groupId} — chame \`simulate_quota\` com ele e traga os números. ` +
+							`É PROIBIDO pedir pro cliente "tocar", "clicar" ou "selecionar" um card pra você ` +
+							`conseguir seguir: quem faz o trabalho é você, nunca ele. Também nunca diga que ` +
+							`trouxe um card se você não chamou a ferramenta que o desenha.`
+						: "")
 				: null;
 		const montarSystem = (conducao: string | null) =>
 			new SystemMessage({
 				content: [
 					cacheableSystemBlock(leanSystemPrompt()),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoLance ? [{ type: "text" as const, text: blocoLance }] : []),
 					...(blocoEmbutido ? [{ type: "text" as const, text: blocoEmbutido }] : []),
 					...(conducao ? [{ type: "text" as const, text: conducao }] : []),
@@ -316,6 +344,22 @@ export function createConverseNode(model: BaseChatModel) {
 					}`,
 				);
 		const newMessages: BaseMessage[] = [turnMessage];
+		// ── FECHAMENTO: o que acontece DEPOIS que o cliente confirma ──
+		// A adesão na administradora é feita por um atendente humano, e o canal do
+		// contato muda conforme onde a conversa aconteceu. São fatos operacionais
+		// (quem faz, por onde, qual número) — viram contexto; a fala continua dele.
+		const blocoFechamento = state.baseMeta.contractClosed
+			? `O fechamento JÁ está feito. Agora diga, com as suas palavras, o que vem a seguir: ` +
+				`um atendente da Aja Agora vai entrar em contato em breve pra fazer a ADESÃO na ` +
+				`${state.funnel.recommendedAdministradora ?? "administradora escolhida"}. ` +
+				(state.channel === "whatsapp"
+					? `Como vocês já estão no WhatsApp, peça que ele fique de olho neste mesmo número — ` +
+						`o contato vem por aqui.`
+					: `Peça que ele mande uma mensagem no WhatsApp oficial da Aja Agora, ` +
+						`+55 11 95502-0229, pra você conseguir dar sequência com ele por lá.`) +
+				` Nunca prometa prazo de contemplação nem diga que a cota está reservada.`
+			: null;
+
 		const systemBeat1 = montarSystem(
 			revealEmDoisTempos
 				? `Esta MENSAGEM é só a apresentação. ${

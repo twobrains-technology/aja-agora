@@ -42,6 +42,9 @@ export interface RevealGroupLike {
 	rank?: number;
 	/** FIX-223: lance médio do grupo (R$), quando a fonte o traz. */
 	avgBidValue?: number;
+	/** Código HUMANO do grupo ("70035"), quando a administradora o traz. O card
+	 * de escassez mostrava o ObjectId cru pro cliente. */
+	groupCode?: string;
 }
 
 export type RevealGroupIndex = Map<string, RevealGroupLike>;

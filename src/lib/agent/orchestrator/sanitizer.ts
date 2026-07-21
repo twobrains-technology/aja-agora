@@ -916,12 +916,41 @@ export class EphemeralTextFilter {
 	push(delta: string): string {
 		// Normaliza ANTES de procurar fronteira/segmentar: emoji-como-pontuação
 		// corrompia `splitSegments` e desligava os guards silenciosamente.
-		this.pending = normalizeEmojiToPunctuation(this.pending + delta);
+		this.pending = this.semRaciocinio(normalizeEmojiToPunctuation(this.pending + delta));
 		const idx = lastBoundaryIndex(this.pending);
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);
 		this.pending = this.pending.slice(idx + 1);
 		return this.filterComplete(complete);
+	}
+
+	/** Remove o raciocínio interno que o modelo às vezes escreve como TEXTO (não
+	 * como bloco nativo): `<thinking>…</thinking>`. Vazou inteiro pro cliente no
+	 * WhatsApp — "O usuário (sistema) está me instruindo para fazer a próxima
+	 * pergunta em uma mensagem separada…" —, expondo a mecânica do produto e o
+	 * fato de que existe um sistema por trás instruindo o agente. Como o texto
+	 * chega em pedaços, um `<thinking>` sem fechamento segura tudo o que vier
+	 * depois até o `</thinking>` aparecer; nada de raciocínio escapa pela borda
+	 * do chunk. Um bloco fechado some por inteiro. */
+	private descartandoRaciocinio = false;
+
+	private semRaciocinio(texto: string): string {
+		let out = texto;
+		if (this.descartandoRaciocinio) {
+			const fim = out.search(/<\/thinking>/i);
+			if (fim < 0) return "";
+			this.descartandoRaciocinio = false;
+			out = out.slice(fim).replace(/^<\/thinking>/i, "");
+		}
+		// Blocos completos, quantos vierem.
+		out = out.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+		// Sobrou uma abertura sem par → segura daqui pra frente.
+		const abertura = out.search(/<thinking>/i);
+		if (abertura >= 0) {
+			this.descartandoRaciocinio = true;
+			out = out.slice(0, abertura);
+		}
+		return out;
 	}
 
 	/** Fim REAL do turno: libera a cauda (última frase sem delimitador), também

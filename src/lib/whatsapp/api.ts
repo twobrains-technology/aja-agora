@@ -108,6 +108,30 @@ export async function sendTextMessage(to: string, text: string) {
 	});
 }
 
+/** Envia um DOCUMENTO (a proposta em PDF) por link. A Meta baixa o arquivo da
+ * URL, então ela precisa ser pública ou pré-assinada — o caller usa a URL
+ * assinada do S3. Na conversa simulada não há Meta pra buscar o arquivo: cai
+ * como texto com o link, que é o que dá pra fazer e não finge envio. */
+export async function sendDocumentMessage(
+	to: string,
+	link: string,
+	filename: string,
+	caption?: string,
+) {
+	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
+	console.log(`[whatsapp-out:document] to=${maskedTo} filename=${JSON.stringify(filename)}`);
+	if (isSimulatedWaId(to)) {
+		publishToClient(to, { type: "text", text: `${caption ?? filename}\n${link}` });
+		return simulatedAck();
+	}
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, {
+		to,
+		type: "document",
+		document: { link, filename, ...(caption ? { caption } : {}) },
+	});
+}
+
 export async function sendReplyButtons(
 	to: string,
 	body: string,

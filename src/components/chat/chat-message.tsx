@@ -185,11 +185,15 @@ export function ChatMessage({
 		// biome-ignore lint/correctness/useExhaustiveDependencies: `parts` deriva de `message` (recomputado a cada render); a message é a fonte estável
 		[message],
 	);
-	// FIX-49: interativo só no TURNO ATIVO. Mensagem hidratada da retomada
-	// (`metadata.resumed`) é histórico — artifacts/gates selados, mesmo sendo a
-	// última (até o usuário mandar a próxima mensagem). Fecha a duplicação (FIX-48).
+	// FIX-49 selava TODA mensagem hidratada da retomada — inclusive a ÚLTIMA. Ao
+	// vivo isso virou beco: o cliente voltava, o único card da tela estava com o
+	// botão desabilitado, e o agente ficava pedindo "clica no card" pra algo que
+	// não dava pra clicar. O histórico continua selado; só o ÚLTIMO card volta a
+	// responder, que é onde a conversa de fato está. A duplicação que o FIX-48
+	// temia hoje é coberta pelo `dup-click-guard` do route.ts.
 	const isResumed = message.metadata?.resumed === true;
-	const isInteractive = isLast && !isResumed;
+	const isInteractive = isLast;
+	void isResumed;
 	const [completedTextIds, setCompletedTextIds] = useState<Set<string>>(() => new Set());
 	const handleTextComplete = useCallback((id: string) => {
 		setCompletedTextIds((prev) => {

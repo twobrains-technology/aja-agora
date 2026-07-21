@@ -238,7 +238,22 @@ export async function pipeGatePrompt(args: {
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
 	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
 	// virando turno morto ("Prazer, Madalena!" e nada mais).
-	if (!data && !question) return;
+	// Gate sem card E sem pergunta canônica = nada a mostrar. Sair aqui deixava o
+	// turno MUDO: o cliente respondia e recebia zero (`textChars: 0`,
+	// `durationMs: 8` no trace, visto ao vivo no fim do funil). Quem não tem card
+	// tem conversa — devolve o turno pro modelo, que fala com o que sabe.
+	if (!data && !question) {
+		await pipeDirectiveTurn({
+			conversationId,
+			directive:
+				"Não há card nem próximo passo estruturado agora. Converse: retome o que ficou " +
+				"pendente com este cliente, responda o que ele acabou de dizer e conduza para o " +
+				"próximo passo com as suas palavras. Nunca termine sem um próximo passo.",
+			contactName: null,
+			writer,
+		});
+		return;
+	}
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });

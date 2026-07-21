@@ -996,6 +996,28 @@ export async function POST(req: NextRequest) {
 									conversationId,
 									meta.currentPersona ?? null,
 								);
+								// A PROPOSTA em PDF também na WEB: link de download no próprio
+								// chat. O PDF já era gerado acima, mas só ia pro S3 do back
+								// office — o cliente ouvia "você vai receber um email" e não
+								// recebia nada onde estava conversando. Best-effort: falhou, o
+								// fecho segue; nunca se diz que mandou sem ter mandado.
+								try {
+									const { prepararPropostaParaEnvio } = await import("@/lib/proposal/entrega");
+									const proposta = await prepararPropostaParaEnvio(conversationId);
+									if (proposta) {
+										const texto = `Sua proposta em PDF, com a carta, a parcela e o prazo que combinamos: ${proposta.url}`;
+										const id = crypto.randomUUID();
+										writer.write({ type: "text-start", id });
+										writer.write({ type: "text-delta", id, delta: texto });
+										writer.write({ type: "text-end", id });
+										await saveMessage(conversationId, "assistant", texto, "web");
+									}
+								} catch (err) {
+									console.error(
+										`[offer-confirm] envio da proposta PDF na web falhou (conv=${conversationId})`,
+										err,
+									);
+								}
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);
@@ -1110,6 +1132,25 @@ export async function POST(req: NextRequest) {
 								experiencePrev: choice,
 								doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
 							});
+							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+							// frente quem conduz é o GRAFO. Os despachos abaixo são da era
+							// Vercel — montam card e copy sem passar pelo modelo (turnos de
+							// 8-11ms, `textChars: 0`) e ignoram os nós que hoje carregam a
+							// inteligência do funil (`advance`, `discovery`, `converse`). Um
+							// turno de servidor faz o grafo recalcular o gate, emitir o card
+							// certo e o modelo FALAR sobre o que o cliente acabou de escolher.
+							// O rótulo do clique já foi salvo como fala do usuário (linha ~484),
+							// por isso aqui é directive e não `pipeUserTurn` — senão duplicaria.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							const directive =
 								choice === "first"
 									? buildExperienceFirstDirective(action.label)
@@ -1160,6 +1201,18 @@ export async function POST(req: NextRequest) {
 								...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							// LANGGRAPH: valor guardado, o grafo conduz (mesma razão dos demais
+							// gates — o caminho abaixo é da era Vercel e não passa pelo modelo).
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente informou o valor do bem (${action.label ?? "valor enviado no card"}). Reaja e siga o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							// Picker novo SEMPRE manda intenção → sempre é plan submit (o agente
 							// confirma o plano como vendedor, sem re-perguntar).
 							const isPlanSubmit = v.intent != null || typeof v.targetMonth === "number";
@@ -1191,6 +1244,25 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
+							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+							// frente quem conduz é o GRAFO. Os despachos abaixo são da era
+							// Vercel — montam card e copy sem passar pelo modelo (turnos de
+							// 8-11ms, `textChars: 0`) e ignoram os nós que hoje carregam a
+							// inteligência do funil (`advance`, `discovery`, `converse`). Um
+							// turno de servidor faz o grafo recalcular o gate, emitir o card
+							// certo e o modelo FALAR sobre o que o cliente acabou de escolher.
+							// O rótulo do clique já foi salvo como fala do usuário (linha ~484),
+							// por isso aqui é directive e não `pipeUserTurn` — senão duplicaria.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							await pipeDirectiveTurn({
 								conversationId,
 								directive: buildTimeframeReactionDirective(action.label),
@@ -1208,6 +1280,25 @@ export async function POST(req: NextRequest) {
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
 							if (!meta.currentCategory) return;
+							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+							// frente quem conduz é o GRAFO. Os despachos abaixo são da era
+							// Vercel — montam card e copy sem passar pelo modelo (turnos de
+							// 8-11ms, `textChars: 0`) e ignoram os nós que hoje carregam a
+							// inteligência do funil (`advance`, `discovery`, `converse`). Um
+							// turno de servidor faz o grafo recalcular o gate, emitir o card
+							// certo e o modelo FALAR sobre o que o cliente acabou de escolher.
+							// O rótulo do clique já foi salvo como fala do usuário (linha ~484),
+							// por isso aqui é directive e não `pipeUserTurn` — senão duplicaria.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							// Jornada do doc (passo 2, FIX-4): a educação de lance embutido vale
 							// pra QUALQUER resposta (Sim/Não/Talvez) — o próprio texto mira quem
 							// NÃO tem o valor do lance hoje. "yes" reage primeiro (e segue pro
@@ -1304,6 +1395,25 @@ export async function POST(req: NextRequest) {
 								simulatorOfferAnswered: true,
 							};
 							await persistMeta(conversationId, refreshed);
+							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+							// frente quem conduz é o GRAFO. Os despachos abaixo são da era
+							// Vercel — montam card e copy sem passar pelo modelo (turnos de
+							// 8-11ms, `textChars: 0`) e ignoram os nós que hoje carregam a
+							// inteligência do funil (`advance`, `discovery`, `converse`). Um
+							// turno de servidor faz o grafo recalcular o gate, emitir o card
+							// certo e o modelo FALAR sobre o que o cliente acabou de escolher.
+							// O rótulo do clique já foi salvo como fala do usuário (linha ~484),
+							// por isso aqui é directive e não `pipeUserTurn` — senão duplicaria.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							if (action.value === "yes") {
 								// FIX-241 (âncora de dinheiro): quando o usuário declarou
 								// poupança mensal, narra o mês em que o BOLSO alcança o
@@ -1391,6 +1501,25 @@ export async function POST(req: NextRequest) {
 							// qualificação (o tripwire de identidade agora sempre passa). Se a
 							// qualificação já estava completa (dados volunteered), nextGate=search
 							// e revelamos direto.
+							// LANGGRAPH: identidade guardada, o grafo assume. Ele já dispara a
+							// descoberta sozinho quando identidade + valor estão prontos
+							// (`readyForDiscovery`), emite o status de busca AO VIVO e
+							// apresenta as ofertas em dois tempos. O caminho abaixo
+							// (`pipeSearchSummaryTurn`/`pipeGatePrompt`) é da era Vercel e
+							// duplicaria essa condução, com copy fixa ("Perfeito, recebido!")
+							// no lugar da fala.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive:
+										"O cliente acabou de enviar CPF e celular com o aceite de LGPD. " +
+										"Siga o próximo passo do funil com as suas palavras.",
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							const afterIdentity = await reloadMeta(conversationId);
 							const nextAfterIdentity = nextGate(afterIdentity, {
 								hasContactName: Boolean(contactName),
@@ -1418,6 +1547,25 @@ export async function POST(req: NextRequest) {
 								lanceValue: action.value.lanceValue,
 							};
 							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+							// frente quem conduz é o GRAFO. Os despachos abaixo são da era
+							// Vercel — montam card e copy sem passar pelo modelo (turnos de
+							// 8-11ms, `textChars: 0`) e ignoram os nós que hoje carregam a
+							// inteligência do funil (`advance`, `discovery`, `converse`). Um
+							// turno de servidor faz o grafo recalcular o gate, emitir o card
+							// certo e o modelo FALAR sobre o que o cliente acabou de escolher.
+							// O rótulo do clique já foi salvo como fala do usuário (linha ~484),
+							// por isso aqui é directive e não `pipeUserTurn` — senão duplicaria.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+									contactName,
+									writer,
+									userKey,
+								});
+								return;
+							}
 							// FIX-237 (Fable r1, D2.1 gap #3): mesma wiring do ramo no/maybe do
 							// gate `lance` acima — embedded_bid antes do texto+chips.
 							// FIX-246: card emitido SERVER-SIDE, nunca por tool-call do LLM.

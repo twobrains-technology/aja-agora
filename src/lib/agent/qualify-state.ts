@@ -414,9 +414,33 @@ export function gateAwaitingReply(
  * determinístico de "o gate desire recebeu uma resposta", independente do que
  * o analyzer conseguiu extrair.
  */
+/** A "motivação" registrada é MESMO um motivo, ou só a repetição do que ele quer
+ * comprar? O analyzer preenchia `motivation: "trocar de carro"` a partir da
+ * primeira frase ("quero um carro"), e como `shouldAskMotive` só olhava se o
+ * campo estava vazio, a pergunta que abre a venda — *por que agora?* — nunca
+ * acontecia. Motivo é narrativa ("meu carro vive na oficina", "vem bebê"), tem
+ * mais de três palavras e não é o próprio objeto do desejo. */
+export function motivacaoEhNarrativa(
+	motivation: string | undefined,
+	desiredItem: string | undefined,
+): boolean {
+	const m = motivation?.trim().toLowerCase();
+	if (!m) return false;
+	if (m.split(/\s+/).filter(Boolean).length < 4) return false;
+	const item = desiredItem?.trim().toLowerCase();
+	if (item && (m === item || m.includes(item)) && m.length <= item.length + 12) return false;
+	// "comprar/trocar de carro" é a categoria com um verbo na frente, não motivo.
+	if (/^(comprar|trocar|adquirir|ter)\b/.test(m) && m.length < 40) return false;
+	return true;
+}
+
 export function shouldAskMotive(meta: ConversationMetadata): boolean {
 	const q = meta.qualifyAnswers ?? {};
-	return Boolean(meta.desireAnswered) && q.motivation === undefined && !meta.motivationAsked;
+	return (
+		Boolean(meta.desireAnswered) &&
+		!motivacaoEhNarrativa(q.motivation, q.desiredItem) &&
+		!meta.motivationAsked
+	);
 }
 
 /**

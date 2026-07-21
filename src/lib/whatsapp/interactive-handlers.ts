@@ -214,6 +214,31 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+
+		// A PROPOSTA em PDF — a peça do fechamento — vai pro cliente aqui. Antes o
+		// PDF era gerado e ficava só no S3 do back office, enquanto o agente dizia
+		// "você vai receber um email com os detalhes" e nada chegava no canal em que
+		// a conversa aconteceu. Best-effort: falhou, o fecho segue e o log registra
+		// — nunca se diz que enviou sem ter enviado.
+		try {
+			const { prepararPropostaParaEnvio } = await import("@/lib/proposal/entrega");
+			const proposta = await prepararPropostaParaEnvio(conversationId);
+			if (proposta) {
+				const { sendDocumentMessage } = await import("./api");
+				await sendDocumentMessage(
+					from,
+					proposta.url,
+					proposta.nomeArquivo,
+					"Sua proposta, com a carta, a parcela e o prazo que combinamos.",
+				);
+				await saveMessage(conversationId, "assistant", "[proposta enviada em PDF]", "whatsapp");
+			}
+		} catch (err) {
+			console.error(
+				`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`,
+				err,
+			);
+		}
 		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
 		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
 		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
