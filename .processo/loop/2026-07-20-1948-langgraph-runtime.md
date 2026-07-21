@@ -161,6 +161,17 @@ Evidências em `.processo/loop/2026-07-20-1948-langgraph-runtime/evidencias/roda
 | 0 (spec) | 2026-07-20 | crítico Opus | — | veredito: passa-com-ajustes; ALTA-1..6 + MÉDIA-7..10 fechados na spec; decisões do Kairo capturadas | 4 investigadores + crítico |
 | 0 (fundação) | 2026-07-20 | bloco-fundacao-langgraph (FIX-355..358, Sonnet) | — | ✅ INTEGRADO — walking skeleton: flag+dispatcher (consistência por-conversa), provider SRV-fetch, contrato estado/tool-adapter/14-eventos, grafo analyze→route→converse→discovery→emitCard→persist. 28 testes novos + test:unit 404/404 (verificado por mim) + build verde. Vercel intacto. **Gaps→R1:** streaming ao vivo (invoke→stream), funil completo (rapport/experience/timeframe/lance/simulator), guards de artifact, WhatsApp validado. **Spike 0A: gateway SSM bloqueado (loopback do SSM Agent) — PENDENTE, provider isolado/swappable.** | ~50min bloco |
 
+## Achados da validação ao vivo (2026-07-20, Kairo validando local)
+
+- **🐛 BUG CRÍTICO achado + corrigido: `converse.ts` engolia o texto do modelo.** `const delta =
+  typeof chunk.content === "string" ? chunk.content : ""` — o `ChatAnthropic` streama `content` como
+  ARRAY de blocos `[{type:"text",text}]`, não string → `delta=""` → turno vazio → `empty-turn-fallback`
+  ("Acho que me perdi"). Corrigido pra extrair de string OU array. **A FIX-360 do agente (b15291cc)
+  AINDA TEM O BUG** — a correção TEM que entrar na integração final (patch salvo em
+  `scratchpad/FIX-converse-content-array.patch`). Vira card na Rodada 2 se não entrar antes.
+- ✅ Runtime langgraph PROVADO ativo no container (marcador `[RUNTIME-PROOF]` + AI_RUNTIME=langgraph).
+- ✅ Spike 0A: tool-calling nativo via gateway PASSOU. Budget dev+prod → $100. Túnel SSM consertado (IP privado).
+
 ## Riscos e gaps honestos
 - **Validação exige gateway alcançável** (túnel SSM; cota Anthropic direta estourada até 01/08). Fallback: invariantes.
 - **Bevi homologação = proposal-hash compartilhado** → QA conversacional NUNCA em paralelo (coletor serial).
