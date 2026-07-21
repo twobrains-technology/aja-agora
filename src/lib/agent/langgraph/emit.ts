@@ -76,6 +76,14 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			lanceValue: funnel.qualifyAnswers.lanceValue,
 			lanceEmbutido: funnel.qualifyAnswers.lanceEmbutido,
 			lanceEmbutidoPercent: funnel.qualifyAnswers.lanceEmbutidoPercent,
+			// Faltavam na projeção: o grafo os escrevia e a persistência os perdia.
+			// `valorDoBemAlvo` é o preço do BEM (o que o cliente pediu) quando o
+			// alvo da busca vira `bem ÷ (1 − pct)` pelo embutido — sem ele, o aviso
+			// de divergência do fechamento dizia "você pediu R$ 428.571" a quem
+			// tinha pedido R$ 300 mil, apresentando a conta interna como fala do
+			// cliente. `embeddedBidDispatched` guarda a idempotência do card.
+			valorDoBemAlvo: funnel.qualifyAnswers.valorDoBemAlvo,
+			embeddedBidDispatched: funnel.qualifyAnswers.embeddedBidDispatched,
 		},
 	};
 }

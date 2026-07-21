@@ -38,7 +38,17 @@ function bidPositionText(declaredLance: number, avgBid: number): string {
  * `declaredLanceValue` (lance da qualificação) habilita a frase de posição do FIX-40. */
 export function realOfferPresentation(
 	result: StartContractResult,
-	opts: { declaredLanceValue?: number; clientName?: string | null } = {},
+	opts: {
+		declaredLanceValue?: number;
+		clientName?: string | null;
+		/** A oferta que o cliente VIU e aprovou. A carta real da administradora
+		 * pode voltar com outra parcela e outro prazo (o grupo disponível não é o
+		 * mesmo que foi simulado) — e ele decidiu olhando os números antigos. Sem
+		 * isso, dizia sim a 48 meses e assinava 55, sem uma palavra. */
+		ofertaVista?: { monthlyPayment?: number; termMonths?: number } | null;
+		/** O cliente aceitou lance embutido: a carta maior que o bem é intencional. */
+		cartaMaiorPorEmbutido?: boolean;
+	} = {},
 ): ClosingItem[] {
 	if (result.noOffer || !result.offer) {
 		return [
@@ -92,6 +102,20 @@ export function realOfferPresentation(
 				// Nome pro cabeçalho do documento (ProposalDoc). Só quando temos
 				// o dado — nunca inventa (D11); ausente omite a linha "Cliente".
 				...(opts.clientName?.trim() ? { clientName: opts.clientName.trim() } : {}),
+				...(opts.cartaMaiorPorEmbutido ? { cartaMaiorPorEmbutido: true } : {}),
+				// O que ele VIU antes de dizer sim — só quando DIVERGE do que a
+				// administradora devolveu (sem divergência não há o que avisar).
+				...(Number.isFinite(opts.ofertaVista?.monthlyPayment) &&
+				Number.isFinite(offer.monthlyPayment) &&
+				Math.round(opts.ofertaVista?.monthlyPayment as number) !==
+					Math.round(offer.monthlyPayment as number)
+					? { parcelaVista: opts.ofertaVista?.monthlyPayment }
+					: {}),
+				...(Number.isFinite(opts.ofertaVista?.termMonths) &&
+				Number.isFinite(offer.termMonths) &&
+				opts.ofertaVista?.termMonths !== offer.termMonths
+					? { prazoVisto: opts.ofertaVista?.termMonths }
+					: {}),
 			},
 		},
 	];

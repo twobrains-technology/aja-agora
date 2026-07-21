@@ -241,6 +241,21 @@ export async function fireContract(from: string, conversationId: string): Promis
 			termMonths: offer.termMonths,
 			avgBidValue: offer.avgBidValue,
 			rawCreditValue: requestedCreditValue,
+			// A carta MAIOR que o bem é intencional quando ele aceitou embutido.
+			...(meta.qualifyAnswers?.lanceEmbutido === true ? { cartaMaiorPorEmbutido: true } : {}),
+			// O plano que ele aprovou — o card avisa se a carta real voltou com
+			// outra parcela/prazo (ele decidiu olhando os números antigos).
+			...(Number.isFinite(meta.recommendedOffer?.monthlyPayment) &&
+			Number.isFinite(offer.monthlyPayment) &&
+			Math.round(meta.recommendedOffer?.monthlyPayment as number) !==
+				Math.round(offer.monthlyPayment as number)
+				? { parcelaVista: meta.recommendedOffer?.monthlyPayment }
+				: {}),
+			...(Number.isFinite(meta.recommendedOffer?.termMonths) &&
+			Number.isFinite(offer.termMonths) &&
+			meta.recommendedOffer?.termMonths !== offer.termMonths
+				? { prazoVisto: meta.recommendedOffer?.termMonths }
+				: {}),
 			previousAdministradora: administradoraChanged ? previousAdministradora : undefined,
 		});
 		if (wa.type === "interactive" && wa.interactive) {
