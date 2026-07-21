@@ -98,7 +98,15 @@ export function createConverseNode(model: BaseChatModel) {
 			let merged: AIMessageChunk | undefined;
 			for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
 				merged = merged ? merged.concat(chunk) : chunk;
-				const delta = typeof chunk.content === "string" ? chunk.content : "";
+				// FIX — achado na validação ao vivo (Kairo, gateway real): o
+				// `ChatAnthropic` streama `content` como ARRAY de blocos
+				// (`[{type:"text",text}]`), não string. `typeof chunk.content
+				// === "string"` sempre falhava contra o modelo REAL (só passava
+				// nos testes, que usam `FakeStreamingChatModel` com content
+				// string) — turno inteiro engolido, virava
+				// empty-turn-fallback. `chunk.text` (getter nativo do
+				// LangChain, base.js) trata os dois formatos.
+				const delta = chunk.text;
 				if (!delta) continue;
 				const clean = filter.push(delta);
 				if (clean) {
