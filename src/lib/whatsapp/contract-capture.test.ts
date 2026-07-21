@@ -219,7 +219,7 @@ describe("captureContractText — interceptação do turno (CA-3, CA-4, CA-5)", 
 });
 
 describe("fireContract — disparo do startContract (CA-2, CA-6, CA-8)", () => {
-	it("dispara startContract 1x com input derivado + apresenta real_offer; limpa estado", async () => {
+	it("dispara startContract 1x com input derivado + apresenta real_offer; fica aguardando o aceite", async () => {
 		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
 		await fireContract(WA, CONV_ID);
 
@@ -235,8 +235,10 @@ describe("fireContract — disparo do startContract (CA-2, CA-6, CA-8)", () => {
 		});
 		// real_offer renderizado como interactive (botões offer_confirm/reject)
 		expect(mocks.sendInteractive).toHaveBeenCalledTimes(1);
-		// estado limpo após disparo
-		expect(mocks.metaStore[CONV_ID].contractCollection).toBeUndefined();
+		// O passo NÃO acaba aqui: a carta real está com o cliente esperando o
+		// aceite, e ele pode responder por TEXTO em vez de tocar no botão. Antes o
+		// estado era zerado e essa resposta caía no vazio — a venda não fechava.
+		expect(mocks.metaStore[CONV_ID].contractCollection).toEqual({ stage: "offer-confirm" });
 		assertNoCpfLeak();
 	});
 
@@ -268,7 +270,12 @@ describe("fireContract — disparo do startContract (CA-2, CA-6, CA-8)", () => {
 		expect(text).not.toMatch(/contempl|garant|chance/i);
 	});
 
-	it("idempotência: 2º fireContract não re-chama startContract (estado já limpo)", async () => {
+	// Regressão: quando o estágio `offer-confirm` foi criado (pra aceitar a
+	// confirmação por texto), `contractCollection` deixou de ser zerado após o
+	// disparo — e a guarda de idempotência, que só olhava a AUSÊNCIA do objeto,
+	// passou a deixar o 2º disparo criar uma proposta DUPLICADA na administradora,
+	// com nova consulta de bureau. Este teste é o que pegou.
+	it("idempotência: 2º fireContract não re-chama startContract (já aguardando aceite)", async () => {
 		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
 		await fireContract(WA, CONV_ID);
 		await fireContract(WA, CONV_ID);

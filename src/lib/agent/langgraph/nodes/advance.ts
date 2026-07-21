@@ -133,6 +133,30 @@ export async function advanceFunnelNode(
 		if (daResposta) funnel = { ...funnel, experiencePrev: daResposta };
 	}
 
+	// ── RECUSA EXPLÍCITA DO EMBUTIDO, FORA DO GATE ──
+	// A captura abaixo só escuta quando o gate `lance-embutido` está aberto. Só
+	// que o cliente costuma recusar ANTES, no turno em que o agente menciona o
+	// mecanismo ("pera, não quero lance embutido não, só o meu dinheiro"). A
+	// recusa não era registrada, o gate abria depois, e o "beleza, mostra aí"
+	// seguinte era lido como ACEITE — o contrato saiu com embutido para quem o
+	// tinha recusado duas mensagens antes (visto ao vivo, 2026-07-21).
+	//
+	// Só a RECUSA é capturada aqui, nunca o aceite: aceitar muda o alvo da busca
+	// e o tamanho da carta, então continua exigindo o gate. Assimetria de
+	// propósito — errar pra menos devolve a pergunta, errar pra mais vende
+	// diferente do combinado. E só vale quando ele NOMEIA o mecanismo.
+	if (
+		state.gate !== "lance-embutido" &&
+		funnel.qualifyAnswers.lanceEmbutido === undefined &&
+		/embutid/i.test(state.userText ?? "") &&
+		detectYesNoText(state.userText, intent) === false
+	) {
+		funnel = {
+			...funnel,
+			qualifyAnswers: { ...funnel.qualifyAnswers, lanceEmbutido: false },
+		};
+	}
+
 	// ── lance-embutido: educa + opt-in por texto livre ──
 	if (state.gate === "lance-embutido" && funnel.qualifyAnswers.lanceEmbutido === undefined) {
 		const answer = detectYesNoText(state.userText, intent);
@@ -200,6 +224,9 @@ export async function advanceFunnelNode(
 	// runtime Vercel (`resolveOfferMentionForConversation`) e nunca foi ligada
 	// aqui. Só re-ancora quando a menção resolve pra UMA oferta REAL já exibida
 	// nesta conversa — nunca adivinha, nunca inventa grupo.
+	/** O cliente nomeou uma cota já exibida NESTE turno — ancoragem determinística
+	 * (nunca classificação de intenção), e portanto uma escolha feita. */
+	let escolhaPorMencao = false;
 	if (funnel.revealCompleted && state.userText?.trim()) {
 		const mencionada = await resolveAdministradoraMentionForConversation(
 			state.conversationId,
@@ -209,17 +236,87 @@ export async function advanceFunnelNode(
 			mencionada?.administradora &&
 			mencionada.administradora !== funnel.recommendedOffer?.administradora;
 		if (mencionada && mudou) {
+			// SUBSTITUIÇÃO, nunca merge. Os campos de uma cota viajam juntos: trocou
+			// de grupo, campo que a cota nova não confirmou NÃO sobrevive do grupo
+			// velho. O merge (`...funnel.recommendedOffer`) herdava o `avgBidValue`
+			// do grupo anterior, e o lance médio errado atravessava a conversa até o
+			// fecho — "ainda falta R$ 106.013" numa cota onde faltavam ~R$ 23.000.
+			const trocouDeGrupo = Boolean(
+				mencionada.groupId && mencionada.groupId !== funnel.recommendedOffer?.groupId,
+			);
+			const herdado = trocouDeGrupo ? undefined : funnel.recommendedOffer;
 			funnel = {
 				...funnel,
 				recommendedAdministradora: mencionada.administradora ?? funnel.recommendedAdministradora,
 				recommendedOffer: {
-					...funnel.recommendedOffer,
-					...(mencionada.groupId ? { groupId: mencionada.groupId } : {}),
-					administradora: mencionada.administradora ?? funnel.recommendedOffer?.administradora,
-					creditValue: mencionada.creditValue ?? funnel.recommendedOffer?.creditValue,
-					termMonths: mencionada.termMonths ?? funnel.recommendedOffer?.termMonths,
-					monthlyPayment: mencionada.monthlyPayment ?? funnel.recommendedOffer?.monthlyPayment,
+					...(mencionada.groupId
+						? { groupId: mencionada.groupId }
+						: herdado?.groupId
+							? { groupId: herdado.groupId }
+							: {}),
+					...(herdado?.category ? { category: herdado.category } : {}),
+					administradora: mencionada.administradora ?? herdado?.administradora,
+					creditValue: mencionada.creditValue ?? herdado?.creditValue,
+					termMonths: mencionada.termMonths ?? herdado?.termMonths,
+					monthlyPayment: mencionada.monthlyPayment ?? herdado?.monthlyPayment,
+					// Só o da cota resolvida. Ausente é melhor que errado: sem ele o
+					// `blocoLance` não é montado e o modelo não cita lance médio nenhum.
+					avgBidValue: mencionada.avgBidValue,
 				} as FunnelState["recommendedOffer"],
+			};
+			escolhaPorMencao = true;
+		}
+	}
+
+	// ── A ESCOLHA É UM FATO, NÃO UMA PERGUNTA EM ABERTO ──
+	// O gate `decision` só se dava por resolvido quando o CARD de decisão saía —
+	// e o card é suprimido justamente quando o cliente responde com informação
+	// ("quero a de menor parcela", "pode ser a que você recomendou"). O funil não
+	// registrava nada, o gate seguia ativo e o sistema mandava o modelo perguntar
+	// de novo: três confirmações da MESMA cota em três turnos seguidos.
+	//
+	// Aqui a escolha vira estado quando ela é VERIFICÁVEL — nunca adivinhada:
+	// (a) o cliente nomeou uma cota que já foi exibida (resolvida acima), ou
+	// (b) o critério que decide já está capturado no funil e existe uma única
+	//     oferta ancorada — não há o que perguntar.
+	// Como a fala disso é feita, com que palavra, continua sendo do modelo.
+	if (funnel.revealCompleted && funnel.recommendedOffer && !meta.contractClosed) {
+		const perguntaAberta =
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic" ||
+			intent === "wants_more_options";
+		const criterioJaCapturado =
+			funnel.qualifyAnswers.objetivo !== undefined || funnel.qualifyAnswers.prazoMeses !== undefined;
+		const origem: NonNullable<FunnelState["escolha"]>["origem"] | null = escolhaPorMencao
+			? "mencao"
+			: funnel.escolha
+				? null // já registrada — não reescreve por inércia
+				: // "Bora, pode seguir com a contratação" sobre uma oferta ancorada é
+					// uma decisão tomada, não uma etapa a cumprir. Sem isto o funil
+					// continuava cobrando o prazo desejado e o cliente pedia pra fechar
+					// três vezes ouvindo que ainda não havia proposta nenhuma.
+					intent === "ready_to_proceed"
+					? "afirmacao"
+					: !perguntaAberta && criterioJaCapturado
+						? "criterio"
+						: null;
+		if (origem) {
+			funnel = {
+				...funnel,
+				escolha: {
+					...(funnel.recommendedOffer.groupId ? { groupId: funnel.recommendedOffer.groupId } : {}),
+					administradora: funnel.recommendedOffer.administradora,
+					creditValue: funnel.recommendedOffer.creditValue,
+					termMonths: funnel.recommendedOffer.termMonths,
+					monthlyPayment: funnel.recommendedOffer.monthlyPayment,
+					origem,
+				},
+				// Coerência de fase: `phaseFromMeta` (tool-policy.ts) vira `closing`
+				// por este flag. Resolver a decisão sem marcá-lo deixaria a política
+				// de tools presa no regime de `reveal`, com o funil já no fecho.
+				decisionDispatched: true,
 			};
 		}
 	}

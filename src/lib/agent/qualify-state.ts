@@ -334,7 +334,12 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// pro simulador de contemplação (contemplation_dial). Perguntar antes da
 		// recomendação desperdiçava a pergunta (o usuário ainda não tinha visto
 		// nenhuma oferta real pra ancorar a resposta).
-		if (q.prazoMeses === undefined) return "timeframe";
+		// Quem JÁ escolheu e pediu pra fechar não precisa responder isto: o prazo
+		// desejado alimenta o SIMULADOR de contemplação, não a contratação (o
+		// prazo que vale é o da cota, `recommendedOffer.termMonths`). Segurar o
+		// fecho aqui foi o que fez o cliente pedir "bora contratar" três turnos
+		// seguidos enquanto o agente respondia que ainda não havia proposta.
+		if (!meta.escolha && q.prazoMeses === undefined) return "timeframe";
 	}
 
 	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +
@@ -374,7 +379,13 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 			// meses — que tal?") ANTES do card de decisão.
 			if (!meta.simulatorOfferDispatched) return "simulator-offer";
 		}
-		if (!meta.decisionDispatched) return "decision";
+		// A escolha já está FEITA e ancorada (`meta.escolha`, gravada no `advance`
+		// quando o cliente nomeou uma cota exibida ou quando o critério que decide
+		// já está no funil). Abrir o gate `decision` aqui seria perguntar o que ele
+		// acabou de responder — foi assim que o agente pediu confirmação da MESMA
+		// cota três turnos seguidos. Com a escolha em estado, o próximo passo é
+		// fechar.
+		if (!meta.escolha && !meta.decisionDispatched) return "decision";
 		// O funil NÃO termina num estado mudo. Enquanto o formulário de
 		// contratação não apareceu (e o contrato não fechou), o próximo passo É
 		// ele — sem isto, a cascata caía em "search" (sem card, sem condução) e o

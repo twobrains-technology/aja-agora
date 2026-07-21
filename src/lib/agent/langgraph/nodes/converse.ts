@@ -37,6 +37,13 @@ const WHAT_IF_TOOL_NAMES = [
 	"get_group_details",
 	"get_rates",
 	"compare_with_financing",
+	// Cálculo dos cenários de contemplação. Estavam FORA da lista e o cliente que
+	// pedia "quero ver os cenários sim" não recebia nada — o modelo tinha só duas
+	// saídas, inventar número (proibido) ou calar. `present_scenarios` (abaixo)
+	// exige o output do `compute_scenarios` no schema, então sem estas duas a
+	// tool de apresentação era inalcançável na prática.
+	"compute_scenarios",
+	"simulate_contemplation",
 	"check_proposal_status",
 	"suggest_handoff",
 	"save_contact_name",
@@ -282,23 +289,26 @@ export function createConverseNode(model: BaseChatModel) {
 				? Math.round(oferta.creditValue * (pctEmbutido / 100))
 				: 0;
 		const lanceTotal = lanceDele + embutidoDisponivel;
-		// ── ELE JÁ DEU O CRITÉRIO: a resposta é um NOME, não uma pergunta ──
-		// "Sem pressa, quero a menor parcela" é critério de decisão. O agente
-		// devolvia "qual delas você prefere?" — porque o contexto dele só tem UMA
-		// oferta e ele não sabia que ela já fora escolhida por esse critério. A
-		// busca é calibrada pelo prazo quando o objetivo é investimento
-		// (`discovery.ts`), então a opção na mesa É a resposta; falta ele saber.
+		// ── A ESCOLHA ESTÁ FEITA: o estado sabe qual é ──
+		// Não é mais o modelo inferindo do histórico se a decisão saiu: o funil
+		// grava `escolha` quando ela é verificável (cota nomeada pelo cliente ou
+		// critério já capturado — `advance.ts`). O que este bloco entrega são os
+		// FATOS da cota escolhida; a fala continua sendo dele.
+		const escolha = state.funnel.escolha;
 		const querMenorParcela =
 			state.funnel.qualifyAnswers.objetivo === "investimento" ||
 			(state.funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
-		const blocoCriterio =
-			querMenorParcela && oferta?.monthlyPayment
-				? `O critério dele é a MENOR PARCELA (ele disse que não tem pressa). A busca JÁ foi feita ` +
-					`com esse critério — mirando o prazo mais longo disponível —, então a opção que está na ` +
-					`mesa é a resposta: ${oferta.administradora}, ${brl(oferta.monthlyPayment)} por mês em ` +
-					`${oferta.termMonths} meses. AFIRME isso e diga por quê (prazo mais longo = parcela mais ` +
-					`leve). É PROIBIDO devolver a escolha em forma de pergunta ("qual delas você prefere?"): ` +
-					`ele acabou de te dizer como quer decidir. Se ele pedir outra, aí sim você busca.`
+		const blocoEscolha =
+			escolha && oferta?.monthlyPayment
+				? `A ESCOLHA JÁ ESTÁ FEITA — está no estado desta conversa, não é suposição sua: ` +
+					`${oferta.administradora}, ${brl(oferta.monthlyPayment)} por mês em ${oferta.termMonths} ` +
+					`meses.${
+						querMenorParcela
+							? ` O critério dele foi a MENOR PARCELA (ele disse que não tem pressa), e a busca foi ` +
+								`calibrada assim — pelo prazo mais longo disponível, que é o que deixa a parcela mais leve.`
+							: ""
+					} Fale dela como decidida e siga pro fechamento. NÃO pergunte de novo qual opção ele quer, ` +
+					`nem peça confirmação do que já está definido. Se ELE pedir outra, aí sim você busca.`
 				: null;
 
 		// ── O GRUPO MUDOU: o número de antes era de outro grupo ──
@@ -409,15 +419,58 @@ export function createConverseNode(model: BaseChatModel) {
 					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas.`
 				: null;
 
+		// ── A CARTA NÃO COBRE O BEM ──
+		// A carta real vem em denominações do grupo e quase nunca bate com o preço
+		// do bem. Quando ela vem MENOR, o cliente vai ter que tirar a diferença do
+		// bolso na hora da compra — e isso não estava sendo dito: um cliente ouviu
+		// que crédito líquido de R$ 118.500 era "um cenário mais tranquilo" pro
+		// carro de R$ 150 mil que ele queria, e outro fechou carta de R$ 225.759
+		// pra uma sala de R$ 250 mil sem que o buraco fosse retomado no fecho.
+		// A conta é verificável → código. O jeito de dizer é do modelo.
+		const faltaParaOBem =
+			valorDoBem && oferta?.creditValue && oferta.creditValue < valorDoBem
+				? valorDoBem - oferta.creditValue
+				: 0;
+		const blocoCartaMenor =
+			faltaParaOBem > 0
+				? `ATENÇÃO — a carta NÃO cobre o bem que ele quer: a carta é de ${brl(
+						oferta?.creditValue as number,
+					)} e o bem custa ${brl(valorDoBem as number)}, então faltam ${brl(faltaParaOBem)} ` +
+					`que sairiam do bolso dele na hora da compra. Diga isso com todas as letras ANTES de ` +
+					`seguir pro fechamento — é dinheiro dele. Nunca apresente uma carta menor que o bem ` +
+					`como boa notícia ou alívio. Se houver carta maior disponível, ofereça.`
+				: null;
+
+		// ── QUEM É O CLIENTE, E O QUE ELE JÁ ENTREGOU ──
+		// O prompt manda "verifique a system message «Nome do usuario» antes de
+		// perguntar o nome" — e essa injeção só existia no runtime Vercel
+		// (`orchestrator/system-context.ts`). No LangGraph o modelo nunca via nada
+		// disso: pedia o nome de quem o WhatsApp já identifica pelo perfil e, no
+		// fim da conversa, dizia "seus dados eu não tenho aqui comigo" a um cliente
+		// que tinha passado CPF e celular dez turnos antes (visto ao vivo).
+		const blocoIdentidade = [
+			state.contactName ? `Nome do usuario: "${state.contactName}".` : null,
+			state.contactName
+				? "Ele JÁ está identificado — não pergunte o nome de novo. Use quando fizer sentido, sem forçar em todo balão."
+				: null,
+			state.funnel.identityCollected
+				? "O CPF e o celular dele JÁ estão registrados nesta conversa. É PROIBIDO dizer que você não tem os dados dele ou pedir de novo — a contratação segue com o que já está no sistema."
+				: null,
+		]
+			.filter(Boolean)
+			.join(" ");
+
 		const montarSystem = (conducao: string | null) =>
 			new SystemMessage({
 				content: [
 					cacheableSystemBlock(leanSystemPrompt()),
+					...(blocoIdentidade ? [{ type: "text" as const, text: blocoIdentidade }] : []),
+					...(blocoCartaMenor ? [{ type: "text" as const, text: blocoCartaMenor }] : []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
-					...(blocoCriterio ? [{ type: "text" as const, text: blocoCriterio }] : []),
+					...(blocoEscolha ? [{ type: "text" as const, text: blocoEscolha }] : []),
 					...(blocoGrupoTrocado ? [{ type: "text" as const, text: blocoGrupoTrocado }] : []),
 					...(blocoLance ? [{ type: "text" as const, text: blocoLance }] : []),
 					...(blocoEmbutido ? [{ type: "text" as const, text: blocoEmbutido }] : []),

@@ -63,6 +63,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
 		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
+		escolha: funnel.escolha,
 		contractFormDispatched: funnel.contractFormDispatched,
 		qualifyAnswers: {
 			...baseMeta.qualifyAnswers,

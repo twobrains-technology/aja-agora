@@ -741,13 +741,17 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 	) {
 		meta.recommendedAdministradora =
 			mentionedOffer.administradora ?? meta.recommendedAdministradora;
+		// SUBSTITUIÇÃO, não merge (paridade com o nó `advance` do LangGraph): o
+		// espalhamento do objeto anterior herdava o `avgBidValue` do grupo velho
+		// pro grupo novo, e o lance médio errado seguia até o fecho.
 		meta.recommendedOffer = {
-			...meta.recommendedOffer,
+			...(meta.recommendedOffer?.category ? { category: meta.recommendedOffer.category } : {}),
 			administradora: mentionedOffer.administradora ?? meta.recommendedOffer?.administradora,
 			creditValue: mentionedOffer.creditValue,
 			termMonths: mentionedOffer.termMonths,
 			monthlyPayment: mentionedOffer.monthlyPayment,
 			groupId: mentionedOffer.groupId,
+			avgBidValue: mentionedOffer.avgBidValue,
 		};
 		await persistMeta(conversationId, meta);
 		console.log(

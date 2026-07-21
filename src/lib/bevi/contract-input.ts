@@ -25,6 +25,44 @@ export interface ContractLinkInput {
 	leadId?: string | null;
 }
 
+/** Re-ancora o estado na cota REAL que a administradora devolveu no fechamento.
+ *
+ * Até aqui o `recommendedOffer` continuava sendo a cota SIMULADA mesmo depois do
+ * contrato criado — e a carta real volta com outro grupo, outra parcela, outro
+ * prazo e outro lance médio. O agente seguia conversando com os números velhos:
+ * dizia "ainda falta R$ 106.013 pro lance médio" quando, na cota efetivamente
+ * contratada, faltavam ~R$ 23.000. Depois do fecho, a cota real é a única
+ * verdade — o card já mostra a divergência, o estado também tem que virar.
+ *
+ * Substituição total (nunca merge): campo que a cota real não trouxe não pode
+ * sobreviver da simulada. `category` fica porque é do cliente, não da cota. */
+export function ancorarOfertaReal(
+	meta: ConversationMetadata,
+	offer: {
+		administradora?: string | null;
+		grupo?: string | null;
+		creditValue?: number;
+		monthlyPayment?: number;
+		termMonths?: number;
+		avgBidValue?: number;
+	},
+): Pick<ConversationMetadata, "recommendedOffer" | "recommendedAdministradora"> {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) ? v : undefined;
+	return {
+		recommendedAdministradora: offer.administradora ?? meta.recommendedAdministradora,
+		recommendedOffer: {
+			...(meta.currentCategory ? { category: meta.currentCategory } : {}),
+			...(offer.grupo ? { groupId: offer.grupo } : {}),
+			administradora: offer.administradora ?? undefined,
+			creditValue: num(offer.creditValue) as number,
+			monthlyPayment: num(offer.monthlyPayment) as number,
+			termMonths: num(offer.termMonths) as number,
+			avgBidValue: num(offer.avgBidValue),
+		},
+	};
+}
+
 /** Monta o input do `startContract` a partir do estado da conversa + identidade.
  * Os defaults (valor 50000, objetivo rápido, lance "nenhum") espelham o web. */
 export function buildStartContractInput(

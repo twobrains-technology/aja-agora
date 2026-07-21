@@ -18,6 +18,11 @@ export interface ChosenOffer {
 	creditValue?: number;
 	termMonths?: number;
 	monthlyPayment?: number;
+	/** Lance médio DO GRUPO — viaja junto com o resto da cota. Ficava de fora, e
+	 * como a re-âncora por menção fazia merge, o lance médio do grupo ANTIGO era
+	 * herdado pelo novo: daí "ainda falta R$ 106.013" numa cota onde faltavam
+	 * ~R$ 23.000. Campo de cota não pode existir só no card. */
+	avgBidValue?: number;
 }
 
 interface ArtifactRow {
@@ -38,6 +43,7 @@ function pickOffer(p: Record<string, unknown>, groupId: string): ChosenOffer {
 		creditValue: typeof p.creditValue === "number" ? p.creditValue : undefined,
 		termMonths: typeof p.termMonths === "number" ? p.termMonths : undefined,
 		monthlyPayment: typeof p.monthlyPayment === "number" ? p.monthlyPayment : undefined,
+		avgBidValue: typeof p.avgBidValue === "number" ? p.avgBidValue : undefined,
 	};
 }
 

@@ -107,6 +107,8 @@ export type FunnelState = {
 	simulatorOfferDispatched?: boolean;
 	simulatorOfferAnswered?: boolean;
 	decisionDispatched: boolean;
+	/** A cota que o cliente escolheu — ver `ConversationMetadata.escolha`. */
+	escolha?: ConversationMetadata["escolha"];
 	/** Passo 5 — o formulário de contratação já apareceu. Idempotência do card
 	 * (nunca duas vezes) e pré-requisito do handler `contract-submit`
 	 * (route.ts, defesa em profundidade da família FIX-12). */
@@ -158,6 +160,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
 		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,
+		escolha: meta.escolha,
 		contractFormDispatched: meta.contractFormDispatched,
 	};
 }

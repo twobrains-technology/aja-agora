@@ -13,6 +13,7 @@ import { dispatchInteractiveReply } from "./interactive-handlers";
 import { isMesaClaimReply } from "./mesa/claim";
 import { handleMesaClaim, handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
 import { claimButtonClick } from "./once";
+import { saveMessage } from "./session";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -169,8 +170,20 @@ async function processTextMessageSerialized(
 				const conv = await db.query.conversations.findFirst({
 					where: eq(conversations.waId, from),
 				});
+				// A fala do cliente SEMPRE fica registrada, inclusive quando o turno é
+				// resolvido deterministicamente aqui e nunca chega ao modelo. Sem isto
+				// o "confirmado, pode seguir" evaporava: a conversa mostrava a pergunta
+				// "confirma essa carta?" seguida direto do fechamento, como se ninguém
+				// tivesse consentido — péssimo pro atendente que lê depois, e pior
+				// ainda como registro do aceite.
+				if (conv) await saveMessage(conv.id, "user", text);
 				if (capture.outcome === "fire" && conv) {
 					await withSimulatorClockIfNeeded(conv, () => fireContract(from, conv.id));
+				} else if (capture.outcome === "finalize" && conv) {
+					// O cliente aceitou a carta REAL por texto — mesmo terminal do botão
+					// (confirmOffer → contractClosed → Parabéns → proposta em PDF).
+					const { finalizarOfertaReal } = await import("./interactive-handlers");
+					await withSimulatorClockIfNeeded(conv, () => finalizarOfertaReal(from, conv.id));
 				} else if (capture.outcome === "cancel") {
 					await sendTextMessage(from, CONTRACT_CANCELLED_REPLY);
 					await processWithOrchestrator(from, "Quero ver outras opções", contactName);

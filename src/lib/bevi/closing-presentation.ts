@@ -201,8 +201,13 @@ export function closingPresentation(
 		{
 			kind: "text",
 			text:
-				`Perfeito! Sua cota da ${administradora} está reservada, escolhida pela Aja Agora ` +
-				"para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
+				// "Sua cota está reservada" era MENTIRA e violava a regra dura do
+				// produto: nada de cota reservada antes da contratação. Neste ponto
+				// existe uma PROPOSTA registrada na administradora — a adesão ainda vai
+				// ser feita pelo atendente. Prometer reserva cria expectativa que a
+				// empresa não controla e vira passivo quando o grupo não confirma.
+				`Perfeito! Sua proposta na ${administradora} está registrada, com a cota que a Aja Agora ` +
+				"escolheu para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
 				"Você não paga nada agora: a primeira parcela só vence quando o boleto chegar na sua casa.",
 		},
 		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.

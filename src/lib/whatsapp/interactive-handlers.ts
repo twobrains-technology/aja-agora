@@ -158,7 +158,20 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 // (closing-presentation.ts, copy única produção+eval) → resumo por WhatsApp.
 async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
-	const { from, conversationId } = ctx;
+	await finalizarOfertaReal(ctx.from, ctx.conversationId);
+	return true;
+}
+
+/** O TERMINAL do fechamento: confirma a cota na administradora, marca o estado
+ * terminal e entrega o fecho (Parabéns, proposta em PDF, resumo, pedido de oi).
+ *
+ * Extraído do handler do BOTÃO porque era só dele — e no WhatsApp metade das
+ * pessoas responde "confirmado, pode seguir" em vez de tocar no botão. Quem
+ * respondia por texto nunca fechava: `confirmOffer` não rodava, `contractClosed`
+ * não virava true, o turno não tinha o que entregar (saía o "Acho que me perdi
+ * por aqui") e o modelo ainda improvisava uma fala de fechamento que não tinha
+ * acontecido. Agora os dois caminhos chamam exatamente o mesmo código. */
+export async function finalizarOfertaReal(from: string, conversationId: string): Promise<void> {
 	try {
 		const res = await confirmOffer(conversationId);
 		// Estado TERMINAL: pós-confirmação o agente não re-apresenta contract_form.
@@ -257,7 +270,6 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 			"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
 		);
 	}
-	return true;
 }
 
 async function handleOfferReject(ctx: Ctx): Promise<boolean> {

@@ -61,6 +61,7 @@ import {
 } from "@/lib/bevi/closing-presentation";
 import {
 	administradoraConflictsWithRegisteredProposal,
+	ancorarOfertaReal,
 	buildStartContractInput,
 } from "@/lib/bevi/contract-input";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
@@ -941,6 +942,10 @@ export async function POST(req: NextRequest) {
 									...okMeta,
 									contactPhone: maskPhoneForDisplay(celular),
 									contractRetryPending: false,
+									// A cota REAL passa a ser a âncora: o meta guardava a simulada e
+									// o agente seguia citando lance médio/prazo do grupo que não é
+									// o contratado.
+									...(offer ? ancorarOfertaReal(okMeta, offer) : {}),
 								});
 							} catch (err) {
 								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,

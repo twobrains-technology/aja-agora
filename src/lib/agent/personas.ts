@@ -256,6 +256,30 @@ export type ConversationMetadata = {
 		 * contemplação — só comparação factual de posição. */
 		avgBidValue?: number;
 	};
+	/** A ESCOLHA está feita: o cliente já resolveu qual cota quer.
+	 *
+	 * Existe porque o funil não tinha onde registrar isso. `decisionDispatched` só
+	 * virava true quando o CARD de decisão aparecia — e o card é suprimido quando
+	 * a resposta do cliente é classificada como `providing_info` ("quero a de
+	 * menor parcela", "pode ser a que você recomendou"). Resultado: o cliente
+	 * escolhia, nada era registrado, e o gate `decision` continuava ativo mandando
+	 * o agente perguntar de novo. Três confirmações seguidas da MESMA cota, visto
+	 * ao vivo (2026-07-21).
+	 *
+	 * Nunca é adivinhado: só é gravado quando uma cota REAL já exibida foi
+	 * resolvida (menção) ou quando o critério que decide já está capturado no
+	 * estado. Não é write-once — nova menção resolvida substitui (o cliente pode
+	 * mudar de ideia); imutável só depois de `contractClosed`. */
+	escolha?: {
+		groupId?: string;
+		administradora?: string;
+		creditValue?: number;
+		termMonths?: number;
+		monthlyPayment?: number;
+		/** Como o sistema soube: cota nomeada pelo cliente, critério já capturado
+		 * no funil, ou afirmação de avanço sobre uma âncora única. */
+		origem: "mencao" | "criterio" | "afirmacao";
+	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
 	contractSummaryPending?: boolean;
@@ -292,7 +316,10 @@ export type ConversationMetadata = {
 	 * Limpo após o disparo (real_offer apresentado) ou recusa. WhatsApp-only — o web
 	 * fecha via POST de form (route.ts). */
 	contractCollection?: {
-		stage: "confirm" | "cpf";
+		/** `offer-confirm` = a carta REAL já foi apresentada e aguarda o aceite.
+		 * Existia só como clique no botão do `real_offer`; quem respondia "pode
+		 * seguir" por texto — o normal no WhatsApp — não fechava contrato nenhum. */
+		stage: "confirm" | "cpf" | "offer-confirm";
 	};
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */

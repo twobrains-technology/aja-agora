@@ -25,7 +25,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { querAntecipar } from "@/lib/agent/qualify-state";
-import { buildStartContractInput } from "@/lib/bevi/contract-input";
+import { ancorarOfertaReal, buildStartContractInput } from "@/lib/bevi/contract-input";
 import { startContract } from "@/lib/bevi/fulfillment";
 import { loadIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -58,7 +58,7 @@ export const CONTRACT_CANCELLED_REPLY = "Tranquilo! Vou te mostrar outras opçõ
  * O que o código ainda decide (e deve continuar decidindo) é só a AÇÃO irreversível:
  * criar a proposta faz consulta de bureau, então exige aceite EXPLÍCITO. A FALA é do
  * modelo. */
-export type ContractCaptureOutcome = "fire" | "cancel" | "invalid-cpf";
+export type ContractCaptureOutcome = "fire" | "cancel" | "invalid-cpf" | "finalize";
 
 export type ContractCaptureResult =
 	| { handled: false }
@@ -121,7 +121,10 @@ export async function beginContractCollection(
 	payload: Record<string, unknown>,
 ): Promise<"confirm" | "cpf"> {
 	const meta = await reloadMeta(conversationId);
-	if (meta.contractClosed) return meta.contractCollection?.stage ?? "confirm";
+	if (meta.contractClosed) {
+		const atual = meta.contractCollection?.stage;
+		return atual === "cpf" ? "cpf" : "confirm";
+	}
 	const hasIdentity = meta.identityCollected === true || payload.identityOnFile === true;
 	const stage: "confirm" | "cpf" = hasIdentity ? "confirm" : "cpf";
 	await persistMeta(conversationId, { ...meta, contractCollection: { stage } });
@@ -162,6 +165,18 @@ export async function captureContractText(
 		return { handled: false };
 	}
 
+	// stage "offer-confirm" — a carta REAL está na tela dele esperando o aceite.
+	// O botão do `real_offer` sempre funcionou; o texto não existia, então quem
+	// respondia "confirmado, pode seguir" (o normal no WhatsApp) ficava preso: o
+	// turno não tinha o que entregar e o modelo improvisava um fechamento que não
+	// tinha acontecido. Mesmo discriminador conservador do `confirm`: pergunta e
+	// dúvida vão pro modelo, só aceite explícito finaliza.
+	if (cc.stage === "offer-confirm") {
+		const decisao = decideConfirmStage(text);
+		if (!decisao.handled || decisao.outcome !== "fire") return decisao;
+		return { handled: true, outcome: "finalize" };
+	}
+
 	// stage "confirm" — a decisão vive em decideConfirmStage (pura, testável).
 	// Só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau); pergunta
 	// e dúvida vão pro MODELO.
@@ -175,6 +190,13 @@ export async function fireContract(from: string, conversationId: string): Promis
 	const meta = await reloadMeta(conversationId);
 	if (meta.contractClosed) return; // terminal — já fechou
 	if (!meta.contractCollection) return; // nada pendente (idempotência)
+	// `offer-confirm` significa que a proposta JÁ foi criada e a carta real já
+	// está com o cliente aguardando aceite — não é um fechamento pendente. Sem
+	// esta guarda, o estágio que eu reabri pra aceitar a confirmação por texto
+	// fazia o segundo `fireContract` passar direto e criar uma proposta DUPLICADA
+	// na administradora (com nova consulta de bureau). Pego pelo teste de
+	// idempotência, não em produção.
+	if (meta.contractCollection.stage === "offer-confirm") return;
 
 	// Defesa em profundidade (espelha FIX-12 web): sem reveal, NUNCA cria proposta.
 	if (meta.revealCompleted !== true) {
@@ -260,6 +282,19 @@ export async function fireContract(from: string, conversationId: string): Promis
 				: {}),
 			previousAdministradora: administradoraChanged ? previousAdministradora : undefined,
 		});
+
+		// Depois do fecho, a cota REAL é a âncora. Sem isso o estado seguia com a
+		// simulada e o agente continuava conversando com lance médio e prazo de um
+		// grupo que não é o contratado. Feito DEPOIS do `realOfferToWhatsApp`, que
+		// precisa da cota vista pra montar o aviso de divergência.
+		await persistMeta(conversationId, {
+			...(await reloadMeta(conversationId).catch(() => cleared)),
+			...ancorarOfertaReal(meta, offer),
+			// A carta real está na mão dele aguardando aceite. Sem reabrir este
+			// estágio, "confirmado, pode seguir" caía no vazio: só o botão fechava.
+			contractCollection: { stage: "offer-confirm" },
+		});
+
 		if (wa.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);
 			// Persiste o TEXTO QUE O CLIENTE VIU, não um resumo. O resumo antigo
