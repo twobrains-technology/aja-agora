@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
+import { runTurnLangGraph } from "@/lib/agent/langgraph/run-turn";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
@@ -15,6 +16,7 @@ import {
 	resolveIdentityForTurn,
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { extractCpf } from "@/lib/whatsapp/identify-capture";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
@@ -214,7 +216,7 @@ async function* dispatchDecisionCascade(args: {
 	// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
 	// de tool-call do LLM.
 	if (!isSoParcela) {
-		yield* runTurn({
+		yield* runTurnVercel({
 			channel,
 			conversationId,
 			userText: buildScarcityDirective(),
@@ -253,7 +255,7 @@ async function* dispatchDecisionCascade(args: {
 		yield { type: "text-boundary" };
 	}
 	const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
-	yield* runTurn({
+	yield* runTurnVercel({
 		channel,
 		conversationId,
 		userText: directive,
@@ -293,7 +295,13 @@ async function* dispatchDecisionCascade(args: {
 	}
 }
 
-export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
+/** Corpo original do orquestrador (Vercel AI SDK) — rename mecânico de
+ * `runTurn` (FIX-355, dispatcher por `AI_RUNTIME`). Comportamento IDÊNTICO ao
+ * de antes; as chamadas recursivas internas (`dispatchDecisionCascade`,
+ * `runTransitionAndContinue`, os `yield* runTurn` inline acima) viraram
+ * `yield* runTurnVercel` — mantém a conversa Vercel no MESMO runtime do
+ * início ao fim (fix ALTA-1, sem mistura de cerimônias entre runtimes). */
+async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const {
 		channel,
 		conversationId: providedConversationId,
@@ -432,7 +440,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					lanceValue: meta.qualifyAnswers?.lanceValue,
 					fgtsValue: meta.qualifyAnswers?.fgtsValue,
 				}) ?? undefined;
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildSimulatorDialDirective({
@@ -496,7 +504,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			await persistMeta(conversationId, meta);
 			await saveMessage(conversationId, "user", userText, channel);
 			if (meta.pendingRecommendationCard) {
-				yield* runTurn({
+				yield* runTurnVercel({
 					channel,
 					conversationId,
 					userText: buildRecoConsentAcceptedDirective(),
@@ -631,7 +639,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// pedir de novo.
 			// (O guard de `contractFormDispatched` subiu pra condição do bloco — ver
 			// FIX-346 acima. Aqui dentro, o formulário ainda NÃO foi mostrado.)
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildAdvanceToContractDirective({
@@ -1154,7 +1162,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// ainda pendente, re-anexava "Posso te mostrar a opção que eu
 			// recomendo?" NO MEIO do pedido de WhatsApp do fecho. `suppressGateEvent`
 			// impede isso (mesmo padrão já usado noutros sub-turnos de fecho).
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildWhatsappOptinDirective(stage),
@@ -1196,7 +1204,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 		const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-		yield* runTurn({
+		yield* runTurnVercel({
 			channel,
 			conversationId,
 			userText: directive,
@@ -1338,6 +1346,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	yield { type: "finish", reason: "ok" };
 }
 
+/**
+ * Dispatcher por `AI_RUNTIME` (FIX-355) — a costura que os dois canais (web +
+ * WhatsApp) consomem. Default `vercel` (comportamento idêntico ao de sempre).
+ * `langgraph` delega pro segundo runtime (campanha
+ * `.processo/loop/2026-07-20-1948-langgraph-runtime.md`), ainda sem paridade
+ * completa nesta rodada (walking skeleton — ver `lib/agent/langgraph/`).
+ *
+ * Consistência por-conversa: como o dispatch acontece por TURNO (não por
+ * conversa), a garantia de "mesma conversa = mesmo runtime do início ao fim"
+ * vem de fora — a flag é de AMBIENTE (não por-conversa), então trocar
+ * `AI_RUNTIME` no meio de uma conversa é uma operação de deploy, não algo que
+ * o dispatcher precisa detectar/bloquear.
+ */
+export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
+	if (runtimeFlavor() === "langgraph") {
+		yield* runTurnLangGraph(input);
+		return;
+	}
+	yield* runTurnVercel(input);
+}
+
 async function* runTransitionAndContinue(args: {
 	conversationId: string;
 	fromPersona: Persona;
@@ -1360,7 +1389,7 @@ async function* runTransitionAndContinue(args: {
 		toCategory: plan.toCategory,
 		bridgeText: plan.bridgeText,
 	};
-	yield* runTurn({
+	yield* runTurnVercel({
 		channel,
 		conversationId,
 		userText: plan.directive,

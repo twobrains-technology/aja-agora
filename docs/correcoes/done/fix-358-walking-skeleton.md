@@ -1,13 +1,15 @@
 ---
 id: FIX-358
 titulo: "Walking skeleton: grafo mínimo end-to-end + persistência-projeção"
-status: todo
+status: done
 bloco: bloco-fundacao-langgraph
 arquivos:
   - src/lib/agent/langgraph/graph.ts
   - src/lib/agent/langgraph/run-turn.ts
   - src/lib/agent/langgraph/nodes/
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 0
+commit: df57ed4d
+executado_em: 2026-07-20
 ---
 
 ## Palavras do operador
