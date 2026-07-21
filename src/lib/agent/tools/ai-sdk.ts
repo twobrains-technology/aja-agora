@@ -1674,6 +1674,55 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		},
 	});
 
+	// A ESCOLHA DA COTA VEM DO MODELO, A VERIFICAÇÃO É DO CÓDIGO.
+	//
+	// Entender que "quero a de menor parcela", "essa mesma", "a segunda que você
+	// mostrou" e "pode ser a do banco" apontam pra uma cota específica é
+	// COMPREENSÃO DE CONVERSA — o modelo faz isso bem, e provou: falou os números
+	// certos da cota escolhida três vezes seguidas. O servidor tentava re-derivar
+	// o mesmo fato por conta própria (regex de critério + classificação de
+	// intenção) e as duas leituras divergiam — o cliente escolhia uma carta de
+	// R$ 120 mil com parcela de R$ 1.289 e o contrato saía com outra, de R$ 132
+	// mil e R$ 3.375. Ele mesmo percebeu: "pera, não era essa que eu falei".
+	//
+	// Duas fontes de verdade pro mesmo fato é o defeito; esta tool colapsa pra
+	// uma. O invariante que continua sendo CÓDIGO é o que dá pra verificar: a
+	// cota tem que ser uma das REALMENTE exibidas nesta conversa. Grupo que o
+	// modelo inventar não ancora nada.
+	const escolher_cota = tool({
+		description:
+			"Chame SEMPRE que o cliente escolher uma das cotas que você mostrou — seja pelo nome da administradora, por característica ('a de menor parcela', 'a de prazo mais longo') ou por referência ('essa mesma', 'a primeira'). Passe o groupId da cota escolhida. É isto que faz a contratação sair com a cota certa: sem esta chamada, o sistema segue ancorado na cota anterior e o contrato fecha errado. Nunca invente groupId — use um dos que apareceram nos cards.",
+		inputSchema: z.object({
+			groupId: z
+				.string()
+				.min(1)
+				.describe("O groupId exato da cota que o cliente escolheu, como veio no card"),
+		}),
+		execute: async (args: { groupId: string }) => {
+			if (!conversationId) return { erro: "Sem conversa ativa para registrar a escolha." };
+			const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
+			const cota = exibidas.find((o) => o.groupId === args.groupId);
+			if (!cota) {
+				return {
+					erro: "Esse grupo não está entre as cotas que você mostrou nesta conversa. Confira o groupId nos cards e chame de novo — não siga com uma cota que o cliente não viu.",
+					gruposDisponiveis: exibidas.map((o) => o.groupId).filter(Boolean),
+				};
+			}
+			// Quem GRAVA é o nó `converse`, pelo estado do grafo — a persistência do
+			// grafo apagaria o que fosse escrito daqui (mesmo padrão do
+			// `ajustar_por_parcela` e do `suggest_handoff`).
+			return {
+				confirmada: true,
+				administradora: cota.administradora,
+				creditValue: cota.creditValue,
+				termMonths: cota.termMonths,
+				monthlyPayment: cota.monthlyPayment,
+				aviso:
+					"Cota registrada. Fale os números DESTA cota daqui pra frente — é ela que vai pro contrato.",
+			};
+		},
+	});
+
 	// Mesma ancoragem do `simulate_contemplation`: os cenários saem da oferta
 	// real, então o lance que o card mostra pro mês X é o MESMO que a conversa
 	// responde quando ele pergunta pelo mês X.
@@ -1744,5 +1793,8 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		compute_scenarios,
 		// A resposta pra "essa parcela não cabe pra mim".
 		ajustar_por_parcela,
+		// O cliente escolheu uma cota — quem entende qual é o modelo, quem confere
+		// que ela existe é o código.
+		escolher_cota,
 	};
 }

@@ -14,6 +14,7 @@ import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
+import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
@@ -48,6 +49,11 @@ const WHAT_IF_TOOL_NAMES = [
 	// "essa parcela não cabe pra mim" → reposiciona a busca pra uma carta que
 	// caiba no bolso dele. Sem ela, a objeção de preço não tinha resposta.
 	"ajustar_por_parcela",
+	// O cliente escolheu uma das cotas mostradas. Quem entende QUAL é o modelo
+	// (por nome, por característica ou por referência); o código só confere que
+	// ela foi mesmo exibida. Sem isto o servidor tentava adivinhar sozinho e
+	// fechava contrato numa cota diferente da que o cliente falou.
+	"escolher_cota",
 	"check_proposal_status",
 	"suggest_handoff",
 	"save_contact_name",
@@ -241,6 +247,9 @@ export function createConverseNode(model: BaseChatModel) {
 		const novaFaixaRef: {
 			faixa: { creditMax: number; creditMin: number; parcelaAlvo: number } | null;
 		} = { faixa: null };
+		/** A cota que o cliente escolheu, dita pelo modelo e conferida contra as
+		 * que de fato apareceram em card nesta conversa. */
+		const escolhaRef: { cota: ChosenOffer | null } = { cota: null };
 
 		// Contexto do gate ATUAL (state.gate, calculado pelo `routeFinal` ANTES
 		// deste nó) vai como um BLOCO no MESMO system message (a Anthropic só
@@ -338,14 +347,22 @@ export function createConverseNode(model: BaseChatModel) {
 						.slice(0, 8)
 						.map(
 							(o) =>
-								`- ${o.administradora ?? "?"}: carta ${o.creditValue ? brl(o.creditValue) : "?"}, ` +
+								`- [${o.groupId ?? "sem-id"}] ${o.administradora ?? "?"}: ` +
+								`carta ${o.creditValue ? brl(o.creditValue) : "?"}, ` +
 								`parcela ${o.monthlyPayment ? brl(o.monthlyPayment) : "?"}` +
 								`${o.termMonths ? ` em ${o.termMonths} meses` : ""}`,
 						)
 						.join("\n") +
 					`\nQuando ele descrever uma delas por característica ("a de menor parcela", "a de prazo ` +
 					`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
-					`a identificação pra ele.`
+					`a identificação pra ele.\n` +
+					// Falar os números certos NÃO basta: sem esta chamada o sistema segue
+					// ancorado na cota anterior e a contratação fecha errada. Foi assim
+					// que um cliente escolheu a carta de R$ 120 mil com parcela de
+					// R$ 1.289 e recebeu a proposta de outra, de R$ 132 mil e R$ 3.375.
+					`ASSIM QUE ele escolher uma, chame \`escolher_cota\` com o id entre colchetes — é essa ` +
+					`chamada que faz a contratação sair com a cota certa. O id é interno: nunca fale ele ` +
+					`pro cliente.`
 				: null;
 
 		// ── O LANCE DELE ALCANÇA? ──
@@ -800,6 +817,21 @@ export function createConverseNode(model: BaseChatModel) {
 						}
 					}
 
+					// O modelo diz QUAL cota o cliente escolheu; aqui só se confere que
+					// ela foi realmente exibida nesta conversa e ela vira a âncora. Grupo
+					// que não apareceu em card nenhum não ancora nada — a tool já devolve
+					// erro ao modelo, e aqui a escolha simplesmente não acontece.
+					if (call.name === "escolher_cota") {
+						const gid = (call.args as { groupId?: unknown })?.groupId;
+						if (typeof gid === "string" && gid.trim()) {
+							const exibidas = await listShownOffersForConversation(state.conversationId).catch(
+								() => [],
+							);
+							const cota = exibidas.find((o) => o.groupId === gid);
+							if (cota) escolhaRef.cota = cota;
+						}
+					}
+
 					if (call.name === "suggest_handoff") {
 						const motivo =
 							typeof (call.args as { reason?: unknown })?.reason === "string"
@@ -971,7 +1003,11 @@ export function createConverseNode(model: BaseChatModel) {
 			events,
 			modelAskedQuestion,
 			streamedArtifactIds,
-			...(deveExplicarComoFunciona || handoffRef.pedido || ancoraRef.nova || novaFaixaRef.faixa
+			...(deveExplicarComoFunciona ||
+			handoffRef.pedido ||
+			ancoraRef.nova ||
+			novaFaixaRef.faixa ||
+			escolhaRef.cota
 				? {
 						funnel: {
 							...state.funnel,
@@ -1009,6 +1045,40 @@ export function createConverseNode(model: BaseChatModel) {
 										...(ancoraRef.nova.administradora
 											? { recommendedAdministradora: ancoraRef.nova.administradora }
 											: {}),
+									}
+								: {}),
+							// DEPOIS da âncora do card, de propósito: quando o cliente escolhe
+							// explicitamente, a escolha dele ganha do que o servidor tinha
+							// apresentado. Era ao contrário na prática — ele escolhia a carta
+							// de R$ 120 mil e o contrato saía com a de R$ 132 mil que o
+							// sistema havia recomendado antes.
+							...(escolhaRef.cota
+								? {
+										recommendedOffer: {
+											...(escolhaRef.cota.groupId ? { groupId: escolhaRef.cota.groupId } : {}),
+											...(state.funnel.currentCategory
+												? { category: state.funnel.currentCategory }
+												: {}),
+											administradora: escolhaRef.cota.administradora,
+											creditValue: escolhaRef.cota.creditValue,
+											termMonths: escolhaRef.cota.termMonths,
+											monthlyPayment: escolhaRef.cota.monthlyPayment,
+											// Só o da cota escolhida. Ausente é melhor que errado: herdar o
+											// lance médio do grupo anterior fazia a conversa citar um número
+											// que não pertencia a esta cota.
+											avgBidValue: escolhaRef.cota.avgBidValue,
+										} as FunnelState["recommendedOffer"],
+										...(escolhaRef.cota.administradora
+											? { recommendedAdministradora: escolhaRef.cota.administradora }
+											: {}),
+										escolha: {
+											...(escolhaRef.cota.groupId ? { groupId: escolhaRef.cota.groupId } : {}),
+											administradora: escolhaRef.cota.administradora,
+											creditValue: escolhaRef.cota.creditValue,
+											termMonths: escolhaRef.cota.termMonths,
+											monthlyPayment: escolhaRef.cota.monthlyPayment,
+											origem: "mencao" as const,
+										},
 									}
 								: {}),
 						},

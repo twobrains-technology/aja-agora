@@ -36,6 +36,34 @@ export async function analyzeNode(
 		ultimaFalaDoAgente || null,
 	);
 
+	// ── O DINHEIRO QUE ELE TEM NÃO É O PREÇO DO QUE ELE QUER ──
+	// "Tenho uns 80 mil guardado, podia dar de lance" saía do analyzer como
+	// lanceValue=80.000 E creditMax=80.000 ao mesmo tempo: o alvo da busca, que
+	// era R$ 250 mil (o caminhão), virava R$ 80 mil. A partir daí tudo desandou em
+	// silêncio — a busca voltou com cartas de R$ 80 mil, o lance embutido esticou
+	// o alvo pra R$ 114 mil (80.000 ÷ 0,7), e o contrato fechou numa carta de
+	// R$ 160.746 pra um caminhão de R$ 250 mil. O cliente viu: "pera, isso tá
+	// errado, cadê a carta de 251 mil que a gente combinou?"
+	//
+	// O invariante é verificável e não depende de interpretar intenção: um mesmo
+	// número não pode ser, no MESMO turno, o lance que ele oferece e o preço do
+	// bem que ele quer. Quando colidem, o alvo da busca que já estava firmado
+	// permanece — o lance fica com o valor, que é o papel dele. Errar aqui pra
+	// menos só devolve uma pergunta; errar pra mais vende o caminhão errado.
+	const antes = state.funnel.qualifyAnswers;
+	const depois = meta.qualifyAnswers;
+	if (
+		depois?.lanceValue !== undefined &&
+		depois.creditMax === depois.lanceValue &&
+		antes.creditMax !== undefined &&
+		antes.creditMax !== depois.creditMax
+	) {
+		console.log(
+			`[analyze] lance R$ ${depois.lanceValue} tentou virar o alvo da busca; mantido R$ ${antes.creditMax}`,
+		);
+		meta.qualifyAnswers = { ...depois, creditMax: antes.creditMax, creditMin: antes.creditMin };
+	}
+
 	// ROTEAMENTO concierge → specialist. Sem isto o grafo ficava preso no
 	// concierge para sempre: `currentCategory` nunca era setada, e como
 	// `readyForDiscovery` exige categoria, a descoberta NUNCA disparava — o
