@@ -159,7 +159,7 @@ Evidências em `.processo/loop/2026-07-20-1948-langgraph-runtime/evidencias/roda
 | Rodada | Data | Blocos | Evidências | Score juiz (por dimensão) | Achados → próxima | Custo |
 |---|---|---|---|---|---|---|
 | 0 (spec) | 2026-07-20 | crítico Opus | — | veredito: passa-com-ajustes; ALTA-1..6 + MÉDIA-7..10 fechados na spec; decisões do Kairo capturadas | 4 investigadores + crítico |
-| 0 (fundação) | 2026-07-20 | bloco-fundacao-langgraph (FIX-355..358, Sonnet) | — | lançado — walking skeleton serial (flag+dispatcher, provider SRV-fetch, contrato estado/tool-adapter/14-eventos, grafo mínimo) | — |
+| 0 (fundação) | 2026-07-20 | bloco-fundacao-langgraph (FIX-355..358, Sonnet) | — | ✅ INTEGRADO — walking skeleton: flag+dispatcher (consistência por-conversa), provider SRV-fetch, contrato estado/tool-adapter/14-eventos, grafo analyze→route→converse→discovery→emitCard→persist. 28 testes novos + test:unit 404/404 (verificado por mim) + build verde. Vercel intacto. **Gaps→R1:** streaming ao vivo (invoke→stream), funil completo (rapport/experience/timeframe/lance/simulator), guards de artifact, WhatsApp validado. **Spike 0A: gateway SSM bloqueado (loopback do SSM Agent) — PENDENTE, provider isolado/swappable.** | ~50min bloco |
 
 ## Riscos e gaps honestos
 - **Validação exige gateway alcançável** (túnel SSM; cota Anthropic direta estourada até 01/08). Fallback: invariantes.
