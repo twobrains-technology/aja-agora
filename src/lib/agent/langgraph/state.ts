@@ -79,6 +79,12 @@ export type FunnelState = {
 	// (`reco-consent`) e resposta reconhecida.
 	recoConsentDispatched?: boolean;
 	recoConsentAnswered?: boolean;
+	// FIX-361 — payload JÁ coagido (I3) do hero, guardado por `discoveryNode`
+	// quando `evaluateArtifactGuards` (regra `hero-awaits-reco-consent`)
+	// suprime a emissão imediata — `emitCardNode` libera assim que
+	// `recoConsentAnswered` virar true, nunca recalculado.
+	pendingRecommendationCard?: ConversationMetadata["pendingRecommendationCard"];
+	pendingSimulationResult?: ConversationMetadata["pendingSimulationResult"];
 	// FIX-360 — convite do simulador de contemplação pós-lance.
 	simulatorOfferDispatched?: boolean;
 	simulatorOfferAnswered?: boolean;
@@ -120,6 +126,8 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,
+		pendingRecommendationCard: meta.pendingRecommendationCard,
+		pendingSimulationResult: meta.pendingSimulationResult,
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
 		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,

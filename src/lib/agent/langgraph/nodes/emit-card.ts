@@ -3,7 +3,9 @@
 // estruturado do gate ativo) + os cards server-side da coreografia
 // (FIX-360/361) — sempre via builder determinístico (`server-cards.ts`),
 // NUNCA dependente de tool-call do LLM (crítico "tool sumida",
-// FIX-246/253/280/309).
+// FIX-246/253/280/309). FIX-361: toda emissão passa por
+// `evaluateArtifactGuards` (`guarded-artifact.ts`) — 2ª linha de defesa
+// contra pós-fechamento/re-reveal/duplicação intra-turno.
 //
 // TODO(rodada-2): `contract_form`/`real_offer`/cerimônia de fechamento —
 // fora do escopo desta rodada (fork de pesquisa: sem lógica visível além do
@@ -22,10 +24,26 @@ import {
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
+import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStateType> {
 	const events: TurnEvent[] = [];
 	let funnel = state.funnel;
+
+	// Artifacts já emitidos ANTES neste turno (nó `discovery`) — alimenta a
+	// regra `card-dup-intraturn` (nunca o mesmo tipo 2x no mesmo turno).
+	const turnArtifactTypes = state.events
+		.filter((ev): ev is Extract<TurnEvent, { type: "artifact" }> => ev.type === "artifact")
+		.map((ev) => ev.artifactType);
+	const guardCtx: GuardContext = {
+		meta: projectToMeta(state),
+		userIntent: state.intent ?? "neutral",
+		isUserTurn: state.isUserTurn,
+		channel: state.channel,
+		discoveryCount: null,
+		conversationId: state.conversationId,
+		turnArtifactTypes,
+	};
 
 	if (state.gate) {
 		// TODO(rodada-2): `modelAsked` real — precisa saber se a fala do
@@ -37,6 +55,26 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 		events.push({ type: "gate", gate: state.gate, modelAsked: false });
 	}
 
+	// FIX-361 — libera o hero PENDENTE (`discoveryNode` guardou quando
+	// `hero-awaits-reco-consent` suprimiu a emissão imediata) assim que o
+	// consentimento chega — payload JÁ coagido (I3), nunca recalculado. NÃO
+	// passa por `artifactAllowed` de novo: o guard já autorizou este payload
+	// especificamente A ESPERAR (é o que "pendente" significa); rodar o MESMO
+	// guard aqui bateria em `reveal-loop` (que suprime recommendation_card
+	// pós-reveal em qualquer turno de usuário sem troca de faixa) e o hero
+	// NUNCA sairia — o release é a resolução do hold, não um card novo.
+	if (funnel.recoConsentAnswered && funnel.pendingRecommendationCard) {
+		events.push({ type: "text-boundary" });
+		events.push({
+			type: "artifact",
+			artifactType: "recommendation_card",
+			payload: funnel.pendingRecommendationCard,
+			toolCallId: crypto.randomUUID(),
+		});
+		turnArtifactTypes.push("recommendation_card");
+		funnel = { ...funnel, pendingRecommendationCard: undefined };
+	}
+
 	// FIX-360 — `topic_picker`: card ÚNICO pro usuário novato, assim que
 	// `experience` resolve (experiencePrev==="first") — independente do gate
 	// ativo NESTE turno. `topicPickerDispatched` garante emissão única; sem
@@ -46,19 +84,26 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 	// computar o próximo gate) — a janela do Vercel nunca seria alcançável
 	// aqui.
 	if (funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
-		events.push({
-			type: "artifact",
-			artifactType: "topic_picker",
-			payload: buildTopicPickerCard().payload,
-			toolCallId: crypto.randomUUID(),
-		});
+		if (artifactAllowed(guardCtx, "topic_picker")) {
+			events.push({
+				type: "artifact",
+				artifactType: "topic_picker",
+				payload: buildTopicPickerCard().payload,
+				toolCallId: crypto.randomUUID(),
+			});
+			turnArtifactTypes.push("topic_picker");
+		}
 		funnel = { ...funnel, topicPickerDispatched: true };
 	}
 
 	// FIX-360 — `embedded_bid`: educação + opt-in do lance embutido, emitido
 	// enquanto o gate segue sem resposta (o nó `advance` já consome a
 	// resposta de texto livre ANTES deste nó rodar — sem loop, FIX-260).
-	if (state.gate === "lance-embutido" && funnel.qualifyAnswers.lanceEmbutido === undefined) {
+	if (
+		state.gate === "lance-embutido" &&
+		funnel.qualifyAnswers.lanceEmbutido === undefined &&
+		artifactAllowed(guardCtx, "embedded_bid")
+	) {
 		const meta = projectToMeta({ ...state, funnel });
 		events.push({ type: "text-boundary" });
 		events.push({
@@ -67,6 +112,7 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 			payload: buildEmbeddedBidCard(meta).payload,
 			toolCallId: crypto.randomUUID(),
 		});
+		turnArtifactTypes.push("embedded_bid");
 	}
 
 	if (state.gate === "decision" && !funnel.decisionDispatched) {
@@ -79,7 +125,7 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 		// devolve `null` sem `groupId` ancorado — nunca fabrica.
 		if (!soParcela) {
 			const scarcity = buildScarcityCard(meta);
-			if (scarcity) {
+			if (scarcity && artifactAllowed(guardCtx, "scarcity")) {
 				events.push({ type: "text-boundary" });
 				events.push({
 					type: "artifact",
@@ -87,16 +133,22 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 					payload: scarcity.payload,
 					toolCallId: crypto.randomUUID(),
 				});
+				turnArtifactTypes.push("scarcity");
 			}
 		}
 
-		events.push({ type: "text-boundary" });
-		events.push({
-			type: "artifact",
-			artifactType: soParcela ? "two_paths" : "decision_prompt",
-			payload: soParcela ? buildTwoPathsCard(meta).payload : buildDecisionPromptCard(meta).payload,
-			toolCallId: crypto.randomUUID(),
-		});
+		const finalArtifactType = soParcela ? "two_paths" : "decision_prompt";
+		if (artifactAllowed(guardCtx, finalArtifactType)) {
+			events.push({ type: "text-boundary" });
+			events.push({
+				type: "artifact",
+				artifactType: finalArtifactType,
+				payload: soParcela
+					? buildTwoPathsCard(meta).payload
+					: buildDecisionPromptCard(meta).payload,
+				toolCallId: crypto.randomUUID(),
+			});
+		}
 		funnel = { ...funnel, decisionDispatched: true };
 	}
 

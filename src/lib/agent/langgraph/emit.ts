@@ -56,6 +56,8 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		topicPickerDispatched: funnel.topicPickerDispatched,
 		recoConsentDispatched: funnel.recoConsentDispatched,
 		recoConsentAnswered: funnel.recoConsentAnswered,
+		pendingRecommendationCard: funnel.pendingRecommendationCard,
+		pendingSimulationResult: funnel.pendingSimulationResult,
 		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
 		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
@@ -75,6 +77,35 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 }
 
 /**
+ * ArtifactType (chat/types.ts, 19 tipos) — cobertura server-side no runtime
+ * LangGraph (FIX-360/361). Emitido = builder determinístico (`server-cards.ts`
+ * / `recommendation-payload.ts`), nunca dependente de tool-call do LLM.
+ *
+ *  ✓ comparison_table      — discoveryNode (reveal)
+ *  ✓ recommendation_card   — discoveryNode; PENDENTE até `reco-consent`
+ *                            responder (hero em dois tempos, hold/release
+ *                            em `funnel.pendingRecommendationCard`)
+ *  ✓ topic_picker          — emitCardNode (novato, emissão única)
+ *  ✓ embedded_bid          — emitCardNode (gate lance-embutido)
+ *  ✓ scarcity              — emitCardNode (antes do decision_prompt)
+ *  ✓ two_paths             — emitCardNode (ramo hasLance="so_parcela")
+ *  ✓ decision_prompt       — emitCardNode (gate decision)
+ *  — simulation_result      TODO(rodada-2): tool_call what-if (simulate_quota)
+ *                            não vira card ainda — precisa da ponte
+ *                            tool-result→artifact (coerção própria)
+ *  — group_card/scenarios/financing_comparison/value_picker/lead_form/
+ *    quick_reply             TODO(rodada-2): cards do "what-if" avulso,
+ *                            fora do funil determinístico desta rodada
+ *  — whatsapp_optin/contract_form/real_offer/signature_handoff/
+ *    document_upload/contemplation_dial
+ *                            TODO(rodada-2): cerimônia de fechamento — fora
+ *                            de escopo (fork de pesquisa: sem lógica visível
+ *                            além do disparo do contract_form em index.ts)
+ *
+ * `whatsapp/formatter.ts` (`artifactToWhatsApp`) já mapeia os 19 tipos —
+ * canal WhatsApp consome os 7 emitidos acima SEM mudança (contrato
+ * `TurnEvent` idêntico ao runtime Vercel).
+ *
  * Os 14 `TurnEvent` que `pipeOrchestratorToWriter` (web/adapter.ts:278-426) e
  * `consumeEvents`/`artifactToWhatsApp` (whatsapp/adapter.ts) consomem —
  * checklist de cobertura desta fundação (FIX-358 decide QUANDO cada um
@@ -83,8 +114,9 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
  *
  *  ✓ text-delta            — nó `converse`, token a token (model.stream)
  *  ✓ tool-call             — nó `converse`, what-if via bindTools/ToolNode
- *  ✓ artifact              — nó `discovery`/`emitCard` (comparison_table +
- *                             recommendation_card no reveal, decision_prompt)
+ *  ✓ artifact              — nó `discovery`/`emitCard` (todos os 7 tipos
+ *                             acima, cada emissão passando por
+ *                             `evaluateArtifactGuards`, FIX-361)
  *  ✓ gate                  — nó `route`, quando o gate ativo pede input
  *  — welcome-categories     TODO(rodada-1): boas-vindas/menu inicial fora do
  *                            slice (name→desire→credit→identify→discovery→

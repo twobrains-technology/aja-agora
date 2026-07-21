@@ -125,7 +125,7 @@ describeIfDb("FIX-358 — walking skeleton: runTurnLangGraph end-to-end (modelo 
 		expect(meta.searchDispatched).not.toBe(true);
 	});
 
-	it("identidade+valor prontos → discovery dispara, emite comparison_table + recommendation_card, persiste a projeção", async () => {
+	it("identidade+valor prontos → discovery dispara, emite comparison_table na hora; recommendation_card fica PENDENTE (reco-consent, FIX-361)", async () => {
 		const adapter = fixtureDiscoveryAdapter();
 		__setDiscoveryAdapterFactoryForTests(() => adapter);
 
@@ -156,7 +156,10 @@ describeIfDb("FIX-358 — walking skeleton: runTurnLangGraph end-to-end (modelo 
 		);
 		const artifactTypes = artifacts.map((ev) => ev.artifactType);
 		expect(artifactTypes).toContain("comparison_table");
-		expect(artifactTypes).toContain("recommendation_card");
+		// FIX-361 — "hero-awaits-reco-consent" (artifact-guard.ts): o hero SÓ
+		// sai depois que o usuário consentir no gate reco-consent (que ainda
+		// nem foi perguntado nesta conversa — recoConsentAnswered undefined).
+		expect(artifactTypes).not.toContain("recommendation_card");
 
 		// 0 NoSuchToolError / exceção vazando pro chamador — o drain acima já
 		// teria lançado; reforça que o turno terminou com "finish".
@@ -169,6 +172,9 @@ describeIfDb("FIX-358 — walking skeleton: runTurnLangGraph end-to-end (modelo 
 		expect(meta.revealCompleted).toBe(true);
 		expect(meta.recommendedOffer).toBeDefined();
 		expect(meta.recommendedOffer?.creditValue).toBeGreaterThan(0);
+		// O payload JÁ coagido (I3) fica pendente — nunca recalculado quando o
+		// consentimento chegar.
+		expect(meta.pendingRecommendationCard).toBeDefined();
 
 		// messages/artifacts no banco (mesmo shape que emitServerCard grava no
 		// runtime Vercel — 1 message marcador + 1 artifact row por card).
@@ -179,7 +185,7 @@ describeIfDb("FIX-358 — walking skeleton: runTurnLangGraph end-to-end (modelo 
 			.where(eq(messagesTable.conversationId, conversationId));
 		const persistedTypes = persistedArtifacts.map((r) => r.artifacts.type);
 		expect(persistedTypes).toContain("comparison_table");
-		expect(persistedTypes).toContain("recommendation_card");
+		expect(persistedTypes).not.toContain("recommendation_card");
 	});
 
 	it("2ª busca no mesmo turno pronto NÃO redispara (idempotência — searchDispatched já true)", async () => {

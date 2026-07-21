@@ -98,7 +98,7 @@ describe("FIX-360 — emitCardNode: embedded_bid (educação + opt-in)", () => {
 	});
 });
 
-describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two_paths)", () => {
+describe("FIX-360/361 — emitCardNode: decision (scarcity → decision_prompt | two_paths)", () => {
 	const offer: ConversationMetadata["recommendedOffer"] = {
 		administradora: "CANOPUS",
 		category: "auto",
@@ -108,14 +108,26 @@ describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two
 		groupId: "grupo-real-abc",
 	};
 
+	// FIX-361 — o guard `premature-decision` (artifact-guard.ts) checa
+	// `nextGate(meta) === "decision"` de verdade — o funnel precisa refletir
+	// TODA a qualificação pós-reveal já resolvida (experience/reco-consent/
+	// timeframe/lance/lance-embutido), não só `gate: "decision"` isolado.
+	const DECIDED_FUNNEL: FunnelState = {
+		...BASE_FUNNEL,
+		experiencePrev: "returning",
+		recoConsentDispatched: true,
+		recoConsentAnswered: true,
+		simulatorOfferDispatched: true,
+	};
+
 	it("caminho normal: emite scarcity ANTES do decision_prompt", () => {
 		const state = fakeState({
 			gate: "decision",
 			funnel: {
-				...BASE_FUNNEL,
+				...DECIDED_FUNNEL,
 				recommendedAdministradora: "CANOPUS",
 				recommendedOffer: offer,
-				qualifyAnswers: { hasLance: "no" },
+				qualifyAnswers: { creditMax: 90_000, prazoMeses: 72, hasLance: "no", lanceEmbutido: false },
 			},
 		});
 		const result = emitCardNode(state);
@@ -130,10 +142,10 @@ describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two
 		const state = fakeState({
 			gate: "decision",
 			funnel: {
-				...BASE_FUNNEL,
+				...DECIDED_FUNNEL,
 				recommendedAdministradora: "CANOPUS",
 				recommendedOffer: offer,
-				qualifyAnswers: { hasLance: "so_parcela" },
+				qualifyAnswers: { creditMax: 90_000, prazoMeses: 72, hasLance: "so_parcela" },
 			},
 		});
 		const result = emitCardNode(state);
@@ -147,10 +159,10 @@ describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two
 		const state = fakeState({
 			gate: "decision",
 			funnel: {
-				...BASE_FUNNEL,
+				...DECIDED_FUNNEL,
 				recommendedAdministradora: "CANOPUS",
 				recommendedOffer: undefined,
-				qualifyAnswers: { hasLance: "no" },
+				qualifyAnswers: { creditMax: 90_000, prazoMeses: 72, hasLance: "no", lanceEmbutido: false },
 			},
 		});
 		const result = emitCardNode(state);
@@ -163,8 +175,24 @@ describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two
 		const state = fakeState({
 			gate: "decision",
 			funnel: {
-				...BASE_FUNNEL,
+				...DECIDED_FUNNEL,
 				decisionDispatched: true,
+				recommendedAdministradora: "CANOPUS",
+				recommendedOffer: offer,
+				qualifyAnswers: { creditMax: 90_000, prazoMeses: 72, hasLance: "no", lanceEmbutido: false },
+			},
+		});
+		const result = emitCardNode(state);
+		const types = artifactTypes(result.events ?? []);
+		expect(types).not.toContain("decision_prompt");
+		expect(types).not.toContain("scarcity");
+	});
+
+	it("FIX-361 — qualificação pós-reveal NÃO resolvida (guard premature-decision) → suprime, mesmo com gate='decision' isolado", () => {
+		const state = fakeState({
+			gate: "decision",
+			funnel: {
+				...BASE_FUNNEL,
 				recommendedAdministradora: "CANOPUS",
 				recommendedOffer: offer,
 				qualifyAnswers: { hasLance: "no" },
@@ -173,6 +201,41 @@ describe("FIX-360 — emitCardNode: decision (scarcity → decision_prompt | two
 		const result = emitCardNode(state);
 		const types = artifactTypes(result.events ?? []);
 		expect(types).not.toContain("decision_prompt");
-		expect(types).not.toContain("scarcity");
+	});
+});
+
+describe("FIX-361 — emitCardNode: libera o hero pendente (reco-consent, reveal em dois tempos)", () => {
+	it("recoConsentAnswered vira true + pendingRecommendationCard existe → libera o hero (payload nunca recalculado)", () => {
+		const pendingPayload = { administradora: "CANOPUS", creditValue: 90_000, monthlyPayment: 812 };
+		const state = fakeState({
+			funnel: {
+				...BASE_FUNNEL,
+				recoConsentDispatched: true,
+				recoConsentAnswered: true,
+				pendingRecommendationCard: pendingPayload,
+			},
+		});
+		const result = emitCardNode(state);
+		const artifact = (result.events ?? []).find(
+			(ev): ev is Extract<TurnEvent, { type: "artifact" }> =>
+				ev.type === "artifact" && ev.artifactType === "recommendation_card",
+		);
+		expect(artifact?.payload).toEqual(pendingPayload);
+		expect(result.funnel?.pendingRecommendationCard).toBeUndefined();
+	});
+
+	it("recoConsentAnswered ainda false → NÃO libera (fica pendente)", () => {
+		const pendingPayload = { administradora: "CANOPUS" };
+		const state = fakeState({
+			funnel: {
+				...BASE_FUNNEL,
+				recoConsentDispatched: true,
+				pendingRecommendationCard: pendingPayload,
+			},
+		});
+		const result = emitCardNode(state);
+		const types = artifactTypes(result.events ?? []);
+		expect(types).not.toContain("recommendation_card");
+		expect(result.funnel?.pendingRecommendationCard).toEqual(pendingPayload);
 	});
 });
