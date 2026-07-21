@@ -12,8 +12,8 @@
 // `emit.ts`. TODO(rodada-1): nós de funil completos (ITEM D do goal doc)
 // devem estender `FunnelState` conforme cobrem mais gates.
 import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
-import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import type { Channel, TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
+import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import type { Gate, UserIntent } from "@/lib/agent/qualify-state";
 
 /** O contrato que `runTurnLangGraph` cumpre — mesma assinatura de
@@ -30,18 +30,64 @@ export type FunnelQualifyAnswers = {
 	creditMax?: number;
 	desiredItem?: string;
 	motivation?: string;
+	// FIX-360 (funil completo, Rodada 1) — campos dos gates pós-reveal
+	// (timeframe/lance/lance-value/lance-embutido). Mesmos nomes/tipos de
+	// `QualifyAnswers` (personas.ts) de propósito — `projectToMeta` faz merge
+	// raso sem transformação.
+	prazoMeses?: number;
+	hasLance?: "yes" | "maybe" | "no" | "so_parcela";
+	lanceValue?: number;
+	lanceEmbutido?: boolean;
+	lanceEmbutidoPercent?: 30 | 50;
 };
 
 export type FunnelState = {
 	currentPersona: Persona;
 	currentCategory?: Category;
 	desireAsked: boolean;
+	// FIX-360 — marca que o gate `desire` recebeu RESPOSTA (independente do que
+	// o analyzer extraiu como `desiredItem`) — já setado por `analyzeAndMerge`
+	// (reusado tal-e-qual, ver `nodes/analyze.ts`); só precisava sobreviver ao
+	// turno via `funnelFromMeta`/`projectToMeta`.
+	desireAnswered?: boolean;
 	qualifyAnswers: FunnelQualifyAnswers;
 	identityCollected: boolean;
 	searchDispatched: boolean;
+	// FIX-360 — snapshot do `creditMax` efetivamente buscado na última
+	// descoberta (equivalente a `discoveredCreditTarget` do runtime Vercel,
+	// tool-policy.ts `revealValueTargetChanged`) — permite ao `route` decidir
+	// re-disparar a descoberta quando o usuário pede uma faixa de valor NOVA
+	// pós-reveal, sem re-buscar em afirmativos curtos na MESMA faixa.
+	discoveredCreditTarget?: number;
 	revealCompleted: boolean;
 	recommendedAdministradora?: string;
 	recommendedOffer?: ConversationMetadata["recommendedOffer"];
+	// FIX-360 — rapport (motivo + espelho, `qualify-state.ts` `shouldAskMotive`/
+	// `shouldMirrorMotivation`, reusados tal-e-qual): marca que o beat de cada
+	// turno-próprio já rodou, pra não repetir a pergunta/o espelho.
+	motivationAsked?: boolean;
+	motivationMirrored?: boolean;
+	// FIX-360 — pós-reveal (`experience`/`doubts-wait`, D2 do ADR
+	// agente-vendas-consorcio): experiência do usuário com consórcio +
+	// resolução do beat de dúvidas.
+	experiencePrev?: ExperiencePrev;
+	doubtsAddressed?: boolean;
+	// FIX-360 — card único (`topic_picker`) pro usuário novato logo após
+	// `experience` resolver, antes do convite de recomendação.
+	topicPickerDispatched?: boolean;
+	// FIX-360 — "reveal em dois tempos": convite de recomendação
+	// (`reco-consent`) e resposta reconhecida.
+	recoConsentDispatched?: boolean;
+	recoConsentAnswered?: boolean;
+	// FIX-361 — payload JÁ coagido (I3) do hero, guardado por `discoveryNode`
+	// quando `evaluateArtifactGuards` (regra `hero-awaits-reco-consent`)
+	// suprime a emissão imediata — `emitCardNode` libera assim que
+	// `recoConsentAnswered` virar true, nunca recalculado.
+	pendingRecommendationCard?: ConversationMetadata["pendingRecommendationCard"];
+	pendingSimulationResult?: ConversationMetadata["pendingSimulationResult"];
+	// FIX-360 — convite do simulador de contemplação pós-lance.
+	simulatorOfferDispatched?: boolean;
+	simulatorOfferAnswered?: boolean;
 	decisionDispatched: boolean;
 };
 
@@ -55,17 +101,35 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		currentPersona: meta.currentPersona ?? "concierge",
 		currentCategory: meta.currentCategory,
 		desireAsked: meta.desireAsked ?? false,
+		desireAnswered: meta.desireAnswered,
 		qualifyAnswers: {
 			creditMin: meta.qualifyAnswers?.creditMin,
 			creditMax: meta.qualifyAnswers?.creditMax,
 			desiredItem: meta.qualifyAnswers?.desiredItem,
 			motivation: meta.qualifyAnswers?.motivation,
+			prazoMeses: meta.qualifyAnswers?.prazoMeses,
+			hasLance: meta.qualifyAnswers?.hasLance,
+			lanceValue: meta.qualifyAnswers?.lanceValue,
+			lanceEmbutido: meta.qualifyAnswers?.lanceEmbutido,
+			lanceEmbutidoPercent: meta.qualifyAnswers?.lanceEmbutidoPercent,
 		},
 		identityCollected: meta.identityCollected ?? false,
 		searchDispatched: meta.searchDispatched ?? false,
+		discoveredCreditTarget: meta.discoveredCreditTarget,
 		revealCompleted: meta.revealCompleted ?? false,
 		recommendedAdministradora: meta.recommendedAdministradora,
 		recommendedOffer: meta.recommendedOffer,
+		motivationAsked: meta.motivationAsked,
+		motivationMirrored: meta.motivationMirrored,
+		experiencePrev: meta.experiencePrev,
+		doubtsAddressed: meta.doubtsAddressed,
+		topicPickerDispatched: meta.topicPickerDispatched,
+		recoConsentDispatched: meta.recoConsentDispatched,
+		recoConsentAnswered: meta.recoConsentAnswered,
+		pendingRecommendationCard: meta.pendingRecommendationCard,
+		pendingSimulationResult: meta.pendingSimulationResult,
+		simulatorOfferDispatched: meta.simulatorOfferDispatched,
+		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,
 	};
 }

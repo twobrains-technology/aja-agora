@@ -12,11 +12,13 @@
 // streamam ao vivo. `run-turn.ts` drena os demais tipos de
 // `state.events` do ESTADO FINAL do grafo (depois deste nó já ter rodado),
 // nunca do stream ao vivo — garantia por TOPOLOGIA, não por timing.
-import { artifacts as artifactsTable } from "@/db/schema";
+
 import { db } from "@/db";
+import { artifacts as artifactsTable } from "@/db/schema";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
-import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
@@ -24,8 +26,26 @@ import type { AgentGraphStateType } from "../state";
 export async function persistNode(
 	state: AgentGraphStateType,
 ): Promise<Partial<AgentGraphStateType>> {
-	const { conversationId, channel, funnel, isUserTurn, userText } = state;
+	const { conversationId, channel, isUserTurn, userText } = state;
+	let funnel = state.funnel;
 	const persona = funnel.currentPersona;
+
+	// FIX-360 — `doubtsAddressed`: o beat de dúvidas (`experiencePrev ===
+	// "doubts"`) resolveu neste turno quando NENHUM artifact saiu (puramente
+	// conversacional) e o usuário de fato respondeu. Calculado por ÚLTIMO
+	// (precisa do turno inteiro: `state.events` já tem tudo que `converse`/
+	// `discovery`/`emitCard` produziram) — só afeta `nextGate` em turnos
+	// FUTUROS, nunca o gate já decidido neste.
+	const producedArtifact = state.events.some((ev) => ev.type === "artifact");
+	if (
+		shouldMarkDoubtsAddressed({
+			meta: { experiencePrev: funnel.experiencePrev, doubtsAddressed: funnel.doubtsAddressed },
+			producedArtifact,
+			userReplied: isUserTurn,
+		})
+	) {
+		funnel = { ...funnel, doubtsAddressed: true };
+	}
 
 	// Salva o turno do usuário e a fala completa do modelo (reconstruída dos
 	// text-delta acumulados por `converse` — mesma reconstrução que
@@ -62,7 +82,7 @@ export async function persistNode(
 		});
 	}
 
-	const meta = projectToMeta(state);
+	const meta = projectToMeta({ ...state, funnel });
 	await persistMeta(conversationId, meta);
 
 	const events: TurnEvent[] = [];
@@ -75,5 +95,5 @@ export async function persistNode(
 	events.push({ type: "meta-update", meta });
 	events.push({ type: "finish", reason: "ok" });
 
-	return { events };
+	return { funnel, events };
 }

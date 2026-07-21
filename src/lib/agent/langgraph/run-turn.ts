@@ -1,18 +1,26 @@
-// `runTurnLangGraph` — o `RuntimeAdapter` real (FIX-358, walking skeleton).
-// Carrega o estado da conversa (reloadMeta→funnel), roda o grafo mínimo
-// (analyze→route→converse→[discovery?]→emitCard→persist) e devolve os
-// TurnEvent acumulados.
+// `runTurnLangGraph` — o `RuntimeAdapter` real (FIX-358 walking skeleton +
+// FIX-359 streaming ao vivo). Carrega o estado da conversa (reloadMeta→
+// funnel), roda o grafo (analyze→route→converse→[discovery?]→emitCard→
+// persist) via `graph.stream(..., { streamMode: ["custom", "values"] })` e
+// devolve os TurnEvent.
 //
-// DECISÃO DE DESIGN (documentar no .done/): esta fundação roda o grafo
-// INTEIRO via `graph.invoke()` (não `graph.stream()`) e só emite os
-// TurnEvent DEPOIS que o turno inteiro — persistência incluída — terminou.
-// Sacrifica o streaming de token ao vivo (UX) em troca de simplicidade e da
-// garantia de ordem "persistMeta antes de qualquer 'gate'" por TOPOLOGIA
-// (nenhum evento sai antes do fim). Os nós já chamam `config.writer(...)`
-// pros tipos sem dependência de leitura fresca do banco (`text-delta`,
-// `tool-call` — ver `nodes/converse.ts`) — infraestrutura pronta pra Rodada 1
-// trocar `invoke` por `stream(..., { streamMode: ["custom", "values"] })` e
-// ligar o streaming ao vivo de verdade sem tocar nos nós.
+// DECISÃO DE DESIGN (FIX-359): dois canais de streaming, drenados na MESMA
+// ordem em que o LangGraph os entrega:
+//  - "custom" — o que os nós empurram via `config.writer(...)` (hoje só
+//    `nodes/converse.ts`: `text-delta`/`tool-call`) — sai AO VIVO, evento a
+//    evento, enquanto o nó ainda está rodando (prova: run-turn.streaming.
+//    test.ts — ≥2 text-delta chegam ao chamador ANTES do nó `persist`
+//    gravar no banco).
+//  - "values" — o estado completo após CADA superstep; guardamos só o
+//    ÚLTIMO (pós-`persist`, garantido por ser o nó final da topologia) e, ao
+//    fim do stream, emitimos `state.events` FILTRANDO os tipos que já
+//    saíram ao vivo (`text-delta`/`tool-call` — `LIVE_EVENT_TYPES` abaixo) —
+//    sem isso, duplicaria: o node `converse` empilha esses eventos tanto no
+//    `config.writer` quanto no `state.events` que ele devolve (persist.ts
+//    precisa deles ali pra reconstruir `assistantText`).
+// Ordem "persistMeta antes de qualquer gate/artifact" continua garantida
+// por TOPOLOGIA (persist é sempre o último nó a contribuir pro "values"
+// final) — nunca por timing.
 import { eq } from "drizzle-orm";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
@@ -27,6 +35,11 @@ import { type AgentGraphStateType, funnelFromMeta } from "./state";
 function toBaseMessage(m: { role: "user" | "assistant"; content: string }): BaseMessage {
 	return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
 }
+
+/** Tipos que os nós já empurram via `config.writer` (streaming ao vivo,
+ * canal "custom") — ao drenar `state.events` do "values" final, estes
+ * ficam de fora pra não duplicar o que o chamador já recebeu ao vivo. */
+const LIVE_EVENT_TYPES: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta", "tool-call"]);
 
 /** Factory — injeta um `model` (default `makeLangGraphModel()`, real) pro
  * grafo. O walking skeleton testa com `FakeStreamingChatModel`
@@ -64,9 +77,26 @@ export function createRunTurnLangGraph(deps?: {
 			events: [],
 		};
 
-		const finalState = await graph.invoke(initialState);
+		const stream = await graph.stream(initialState, {
+			streamMode: ["custom", "values"],
+		});
+
+		let finalState: AgentGraphStateType | undefined;
+		for await (const [mode, chunk] of stream as AsyncIterable<
+			["custom", TurnEvent] | ["values", AgentGraphStateType]
+		>) {
+			if (mode === "custom") {
+				yield chunk as TurnEvent;
+			} else {
+				finalState = chunk as AgentGraphStateType;
+			}
+		}
+		if (!finalState) {
+			throw new Error("[langgraph] graph.stream() terminou sem estado final (values)");
+		}
 
 		for (const ev of finalState.events as TurnEvent[]) {
+			if (LIVE_EVENT_TYPES.has(ev.type)) continue;
 			yield ev;
 		}
 	};

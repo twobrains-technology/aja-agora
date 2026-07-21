@@ -1,13 +1,14 @@
 ---
 id: FIX-361
 titulo: "Cards restantes + evaluateArtifactGuards + coerção completa (I3)"
-status: todo
+status: done
 bloco: bloco-funil-completo-langgraph
 arquivos:
   - src/lib/agent/langgraph/nodes/emit-card.ts
   - src/lib/agent/langgraph/nodes/discovery.ts
   - src/lib/agent/langgraph/emit.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 1
+executado_em: 2026-07-20
 ---
 
 ## Cenário

@@ -2,8 +2,9 @@
 // pros 14 `TurnEvent` que os dois channel adapters consomem (FIX-357, fix
 // MÉDIA-7 do crítico). Contrato de interface — a implementação viva do
 // walking skeleton (quando/como cada evento é emitido) é o FIX-358.
-import type { ConversationMetadata } from "@/lib/agent/personas";
+
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { AgentGraphStateType, FunnelState } from "./state";
 
 /**
@@ -41,11 +42,24 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		currentPersona: funnel.currentPersona,
 		currentCategory: funnel.currentCategory,
 		desireAsked: funnel.desireAsked,
+		desireAnswered: funnel.desireAnswered,
 		identityCollected: funnel.identityCollected,
 		searchDispatched: funnel.searchDispatched,
+		discoveredCreditTarget: funnel.discoveredCreditTarget,
 		revealCompleted: funnel.revealCompleted,
 		recommendedAdministradora: funnel.recommendedAdministradora,
 		recommendedOffer: funnel.recommendedOffer,
+		motivationAsked: funnel.motivationAsked,
+		motivationMirrored: funnel.motivationMirrored,
+		experiencePrev: funnel.experiencePrev,
+		doubtsAddressed: funnel.doubtsAddressed,
+		topicPickerDispatched: funnel.topicPickerDispatched,
+		recoConsentDispatched: funnel.recoConsentDispatched,
+		recoConsentAnswered: funnel.recoConsentAnswered,
+		pendingRecommendationCard: funnel.pendingRecommendationCard,
+		pendingSimulationResult: funnel.pendingSimulationResult,
+		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
+		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
 		qualifyAnswers: {
 			...baseMeta.qualifyAnswers,
@@ -53,11 +67,45 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			creditMax: funnel.qualifyAnswers.creditMax,
 			desiredItem: funnel.qualifyAnswers.desiredItem,
 			motivation: funnel.qualifyAnswers.motivation,
+			prazoMeses: funnel.qualifyAnswers.prazoMeses,
+			hasLance: funnel.qualifyAnswers.hasLance,
+			lanceValue: funnel.qualifyAnswers.lanceValue,
+			lanceEmbutido: funnel.qualifyAnswers.lanceEmbutido,
+			lanceEmbutidoPercent: funnel.qualifyAnswers.lanceEmbutidoPercent,
 		},
 	};
 }
 
 /**
+ * ArtifactType (chat/types.ts, 19 tipos) — cobertura server-side no runtime
+ * LangGraph (FIX-360/361). Emitido = builder determinístico (`server-cards.ts`
+ * / `recommendation-payload.ts`), nunca dependente de tool-call do LLM.
+ *
+ *  ✓ comparison_table      — discoveryNode (reveal)
+ *  ✓ recommendation_card   — discoveryNode; PENDENTE até `reco-consent`
+ *                            responder (hero em dois tempos, hold/release
+ *                            em `funnel.pendingRecommendationCard`)
+ *  ✓ topic_picker          — emitCardNode (novato, emissão única)
+ *  ✓ embedded_bid          — emitCardNode (gate lance-embutido)
+ *  ✓ scarcity              — emitCardNode (antes do decision_prompt)
+ *  ✓ two_paths             — emitCardNode (ramo hasLance="so_parcela")
+ *  ✓ decision_prompt       — emitCardNode (gate decision)
+ *  — simulation_result      TODO(rodada-2): tool_call what-if (simulate_quota)
+ *                            não vira card ainda — precisa da ponte
+ *                            tool-result→artifact (coerção própria)
+ *  — group_card/scenarios/financing_comparison/value_picker/lead_form/
+ *    quick_reply             TODO(rodada-2): cards do "what-if" avulso,
+ *                            fora do funil determinístico desta rodada
+ *  — whatsapp_optin/contract_form/real_offer/signature_handoff/
+ *    document_upload/contemplation_dial
+ *                            TODO(rodada-2): cerimônia de fechamento — fora
+ *                            de escopo (fork de pesquisa: sem lógica visível
+ *                            além do disparo do contract_form em index.ts)
+ *
+ * `whatsapp/formatter.ts` (`artifactToWhatsApp`) já mapeia os 19 tipos —
+ * canal WhatsApp consome os 7 emitidos acima SEM mudança (contrato
+ * `TurnEvent` idêntico ao runtime Vercel).
+ *
  * Os 14 `TurnEvent` que `pipeOrchestratorToWriter` (web/adapter.ts:278-426) e
  * `consumeEvents`/`artifactToWhatsApp` (whatsapp/adapter.ts) consomem —
  * checklist de cobertura desta fundação (FIX-358 decide QUANDO cada um
@@ -66,8 +114,9 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
  *
  *  ✓ text-delta            — nó `converse`, token a token (model.stream)
  *  ✓ tool-call             — nó `converse`, what-if via bindTools/ToolNode
- *  ✓ artifact              — nó `discovery`/`emitCard` (comparison_table +
- *                             recommendation_card no reveal, decision_prompt)
+ *  ✓ artifact              — nó `discovery`/`emitCard` (todos os 7 tipos
+ *                             acima, cada emissão passando por
+ *                             `evaluateArtifactGuards`, FIX-361)
  *  ✓ gate                  — nó `route`, quando o gate ativo pede input
  *  — welcome-categories     TODO(rodada-1): boas-vindas/menu inicial fora do
  *                            slice (name→desire→credit→identify→discovery→
@@ -121,10 +170,9 @@ export const TURN_EVENT_TYPES: ReadonlyArray<TurnEvent["type"]> = [
 
 /** Helper de conveniência pro nó `persist`/`run-turn.ts`: monta o evento
  * `meta-update` a partir do estado atual do grafo. */
-export function metaUpdateEvent(state: AgentGraphStateType): Extract<
-	TurnEvent,
-	{ type: "meta-update" }
-> {
+export function metaUpdateEvent(
+	state: AgentGraphStateType,
+): Extract<TurnEvent, { type: "meta-update" }> {
 	return { type: "meta-update", meta: projectToMeta(state) };
 }
 
