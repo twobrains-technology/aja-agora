@@ -157,7 +157,12 @@ export const recommendationSchema = z.object({
 	// então não tem de onde copiar um valor real aqui. Nunca foram lidos deste input
 	// de qualquer forma: `coerceRecommendationPayload` sempre RECALCULA score/
 	// scoreBreakdown a partir do grupo real (scoreGroup), nunca do que a LLM digita.
-	score: z.number().min(0).max(1).optional().describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
+	score: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
 	scoreBreakdown: z
 		.object({
 			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
@@ -526,7 +531,10 @@ export function looksLikeFabricatedGroupId(groupId: string): boolean {
  * pelas duas tools (simulate_quota / get_group_details). Degradacao graciosa
  * preservada — guidance pra retomar, nunca loop.
  */
-function rebuscaDirective(groupId: string, allowedToolNames?: readonly string[]): { error: string } {
+function rebuscaDirective(
+	groupId: string,
+	allowedToolNames?: readonly string[],
+): { error: string } {
 	// Mesma armadilha do `naoExibidoDirective`: mandar "refaça search_groups"
 	// numa fase em que a policy escondeu a tool faz o modelo tomar
 	// NoSuchToolError, o runner abortar a geração e o cliente receber o fallback
@@ -598,7 +606,8 @@ export async function executeSimulateQuota(
 	} catch (err) {
 		// FIX-72 (rede de seguranca): id fora do conjunto real (qualquer formato —
 		// hex inventado, oferta expirada) → diretiva de re-busca, nunca erro cru.
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId, allowedToolNames);
+		if (err instanceof GroupNotInDiscoveryError)
+			return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -626,7 +635,8 @@ export async function executeGetGroupDetails(
 	try {
 		return await adapter.getGroupDetails(args);
 	} catch (err) {
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId, allowedToolNames);
+		if (err instanceof GroupNotInDiscoveryError)
+			return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -768,7 +778,8 @@ export const consorcioTools = {
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
 			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
 			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
-			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			const scoreSuffix =
+				typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	}),
@@ -1319,7 +1330,8 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			await markShown("recommendation_card", args);
 			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
 			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
-			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			const scoreSuffix =
+				typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	});
@@ -1483,7 +1495,9 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args, allowedToolNames));
+			return runDiscovery("simulate_quota", () =>
+				executeSimulateQuota(adapter, args, allowedToolNames),
+			);
 		},
 	});
 
@@ -1511,7 +1525,9 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args, allowedToolNames));
+			return runDiscovery("get_group_details", () =>
+				executeGetGroupDetails(adapter, args, allowedToolNames),
+			);
 		},
 	});
 
@@ -1623,7 +1639,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		}),
 		execute: async (args: { parcelaDesejada: number }) => {
 			if (!conversationId) return SIMULACAO_SEM_OFERTA;
-			const { reloadMeta, persistMeta } = await import("@/lib/conversation/meta");
+			const { reloadMeta } = await import("@/lib/conversation/meta");
 			const meta = await reloadMeta(conversationId).catch(() => null);
 			const offer = meta?.recommendedOffer;
 			if (!meta || !offer?.creditValue || !offer.monthlyPayment) return SIMULACAO_SEM_OFERTA;

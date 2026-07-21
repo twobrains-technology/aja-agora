@@ -121,6 +121,70 @@ export type FunnelState = {
 	contractFormDispatched?: boolean;
 };
 
+/**
+ * REGISTRO DOS CAMPOS DO SLICE — existe pra trocar disciplina por código.
+ *
+ * O estado do funil atravessa o turno por uma PROJEÇÃO MANUAL em dois sentidos
+ * (`funnelFromMeta` na entrada, `projectToMeta` na saída) e `persistMeta`
+ * SUBSTITUI a coluna `metadata` inteira. Consequência: um campo novo no
+ * `FunnelState` que alguém esqueça de espalhar nas duas funções **some sem erro
+ * nenhum** — o grafo escreve, a persistência não leva, e o sintoma aparece
+ * turnos depois como o agente repetindo uma pergunta já respondida. Aconteceu
+ * três vezes (`valorDoBemAlvo`, `parcelaAlvo`, `embeddedBidDispatched`).
+ *
+ * O `satisfies` abaixo faz o `tsc` recusar campo novo não registrado aqui, e o
+ * teste de ida-e-volta (`state.projecao.test.ts`) itera estas chaves pra provar
+ * que cada uma sobrevive ao ciclo. Juntos, tornam a classe impossível em vez de
+ * dependerem de alguém lembrar.
+ */
+export const FUNNEL_QUALIFY_KEYS = {
+	creditMin: true,
+	creditMax: true,
+	desiredItem: true,
+	motivation: true,
+	prazoMeses: true,
+	objetivo: true,
+	hasLance: true,
+	lanceValue: true,
+	lanceEmbutido: true,
+	lanceEmbutidoPercent: true,
+	valorDoBemAlvo: true,
+	parcelaAlvo: true,
+	embeddedBidDispatched: true,
+} satisfies Record<keyof FunnelQualifyAnswers, true>;
+
+export const FUNNEL_KEYS = {
+	currentPersona: true,
+	currentCategory: true,
+	desireAsked: true,
+	desireAnswered: true,
+	qualifyAnswers: true,
+	identityCollected: true,
+	searchDispatched: true,
+	discoveredCreditTarget: true,
+	revealCompleted: true,
+	recommendedAdministradora: true,
+	recommendedOffer: true,
+	motivationAsked: true,
+	motivationMirrored: true,
+	experiencePrev: true,
+	doubtsAddressed: true,
+	explicouComoFunciona: true,
+	topicPickerDispatched: true,
+	recoConsentDispatched: true,
+	recoConsentAnswered: true,
+	recoConsentDeclined: true,
+	pendingRecommendationCard: true,
+	pendingSimulationResult: true,
+	simulatorOfferDispatched: true,
+	simulatorOfferAnswered: true,
+	decisionDispatched: true,
+	escolha: true,
+	handoffSuggested: true,
+	handoffReason: true,
+	contractFormDispatched: true,
+} satisfies Record<keyof FunnelState, true>;
+
 /** Constrói o `FunnelState` inicial a partir do `ConversationMetadata`
  * persistido (carregado do banco no início do turno) — projeção INVERSA de
  * `projectToMeta` (emit.ts). Só lê os campos do slice; o resto do meta
