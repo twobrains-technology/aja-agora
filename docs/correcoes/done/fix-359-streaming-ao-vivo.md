@@ -1,12 +1,13 @@
 ---
 id: FIX-359
 titulo: "Streaming de token ao vivo no runtime LangGraph (invoke → stream)"
-status: todo
+status: done
 bloco: bloco-funil-completo-langgraph
 arquivos:
   - src/lib/agent/langgraph/run-turn.ts
   - src/lib/agent/langgraph/nodes/converse.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 1
+executado_em: 2026-07-20
 ---
 
 ## Palavras do operador
