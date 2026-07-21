@@ -1,11 +1,13 @@
 ---
 id: FIX-362
 titulo: "WhatsApp validado + invariantes I3/I4/D6 + sondas de não-engessar"
-status: todo
+status: done
 bloco: bloco-funil-completo-langgraph
 arquivos:
   - src/lib/agent/langgraph/
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 1
+commit: 2107845b
+executado_em: 2026-07-20
 ---
 
 ## Cenário
