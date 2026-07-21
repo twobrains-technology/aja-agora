@@ -88,6 +88,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			// tinha pedido R$ 300 mil, apresentando a conta interna como fala do
 			// cliente. `embeddedBidDispatched` guarda a idempotência do card.
 			valorDoBemAlvo: funnel.qualifyAnswers.valorDoBemAlvo,
+			parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo,
 			embeddedBidDispatched: funnel.qualifyAnswers.embeddedBidDispatched,
 		},
 	};

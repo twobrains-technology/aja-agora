@@ -237,6 +237,10 @@ export function createConverseNode(model: BaseChatModel) {
 		const handoffRef: { pedido: { reason: string } | null } = { pedido: null };
 		/** Cota efetivamente apresentada neste turno — vira a âncora do estado. */
 		const ancoraRef: { nova: FunnelState["recommendedOffer"] | null } = { nova: null };
+		/** Faixa de busca reposicionada por pedido de parcela menor. */
+		const novaFaixaRef: {
+			faixa: { creditMax: number; creditMin: number; parcelaAlvo: number } | null;
+		} = { faixa: null };
 
 		// Contexto do gate ATUAL (state.gate, calculado pelo `routeFinal` ANTES
 		// deste nó) vai como um BLOCO no MESMO system message (a Anthropic só
@@ -774,6 +778,28 @@ export function createConverseNode(model: BaseChatModel) {
 					// esperando um atendente que nunca vinha (visto ao vivo, com uma
 					// cliente travada num recálculo que o sistema não conseguia fazer).
 					// Prometer atendimento e não abrir o chamado é pior que não oferecer.
+					// "Essa parcela não cabe" → reposiciona a FAIXA DE BUSCA pelo estado
+					// do grafo. A tool só calcula e narra; quem escreve é aqui, senão o
+					// nó de persistência apaga logo em seguida e a busca nunca roda.
+					if (call.name === "ajustar_por_parcela") {
+						const desejada = Number((call.args as { parcelaDesejada?: unknown })?.parcelaDesejada);
+						const atual = state.funnel.recommendedOffer;
+						if (
+							Number.isFinite(desejada) &&
+							desejada > 0 &&
+							atual?.creditValue &&
+							atual.monthlyPayment &&
+							desejada < atual.monthlyPayment
+						) {
+							const alvo = Math.round(atual.creditValue * (desejada / atual.monthlyPayment));
+							novaFaixaRef.faixa = {
+								creditMax: alvo,
+								creditMin: Math.round(alvo * 0.9),
+								parcelaAlvo: desejada,
+							};
+						}
+					}
+
 					if (call.name === "suggest_handoff") {
 						const motivo =
 							typeof (call.args as { reason?: unknown })?.reason === "string"
@@ -946,10 +972,23 @@ export function createConverseNode(model: BaseChatModel) {
 			events,
 			modelAskedQuestion,
 			streamedArtifactIds,
-			...(deveExplicarComoFunciona || handoffRef.pedido || ancoraRef.nova
+			...(deveExplicarComoFunciona || handoffRef.pedido || ancoraRef.nova || novaFaixaRef.faixa
 				? {
 						funnel: {
 							...state.funnel,
+							...(novaFaixaRef.faixa
+								? {
+										// Zera o snapshot da última busca pra a descoberta rodar de
+										// novo na faixa nova (mesmo mecanismo do lance embutido).
+										discoveredCreditTarget: undefined,
+										qualifyAnswers: {
+											...state.funnel.qualifyAnswers,
+											creditMax: novaFaixaRef.faixa.creditMax,
+											creditMin: novaFaixaRef.faixa.creditMin,
+											parcelaAlvo: novaFaixaRef.faixa.parcelaAlvo,
+										},
+									}
+								: {}),
 							...(deveExplicarComoFunciona ? { explicouComoFunciona: true } : {}),
 							...(handoffRef.pedido
 								? { handoffSuggested: true, handoffReason: handoffRef.pedido.reason }

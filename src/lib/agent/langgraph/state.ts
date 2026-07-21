@@ -48,6 +48,8 @@ export type FunnelQualifyAnswers = {
 	lanceEmbutido?: boolean;
 	lanceEmbutidoPercent?: 30 | 50;
 	valorDoBemAlvo?: number;
+	/** Parcela que o cliente disse que cabe no bolso — reposiciona a faixa de busca. */
+	parcelaAlvo?: number;
 	embeddedBidDispatched?: boolean;
 };
 
@@ -142,6 +144,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 			lanceEmbutido: meta.qualifyAnswers?.lanceEmbutido,
 			lanceEmbutidoPercent: meta.qualifyAnswers?.lanceEmbutidoPercent,
 			valorDoBemAlvo: meta.qualifyAnswers?.valorDoBemAlvo,
+			parcelaAlvo: meta.qualifyAnswers?.parcelaAlvo,
 			embeddedBidDispatched: meta.qualifyAnswers?.embeddedBidDispatched,
 		},
 		identityCollected: meta.identityCollected ?? false,

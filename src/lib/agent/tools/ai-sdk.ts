@@ -1638,21 +1638,13 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			const creditoAlvo = Math.round(
 				offer.creditValue * (args.parcelaDesejada / offer.monthlyPayment),
 			);
-			await persistMeta(conversationId, {
-				...meta,
-				qualifyAnswers: {
-					...meta.qualifyAnswers,
-					creditMax: creditoAlvo,
-					creditMin: Math.round(creditoAlvo * 0.9),
-					// O bem continua sendo o que ele quer — some daqui pra não conflitar
-					// com a nova faixa, mas o agente deve avisar que a carta menor não
-					// cobre o bem inteiro (o contexto do turno seguinte cobra isso).
-					parcelaAlvo: args.parcelaDesejada,
-				},
-				// Zera o snapshot da última busca pra a descoberta rodar de novo na
-				// faixa nova (mesmo mecanismo do lance embutido).
-				discoveredCreditTarget: undefined,
-			});
+			// NÃO persiste daqui. Esta tool roda DENTRO do nó de conversa, e o nó de
+			// persistência do grafo grava o estado dele logo depois — apagando o que
+			// fosse escrito por fora. Foi exatamente o que aconteceu: a busca nunca
+			// via a faixa nova e o agente ficava repetindo "as opções já vão aparecer"
+			// sem nada aparecer, travando o funil de quem pediu parcela menor.
+			// Quem aplica a mudança é o `converse`, pelo estado do grafo (mesmo
+			// padrão do `suggest_handoff`).
 			return {
 				creditoAlvo,
 				parcelaDesejada: args.parcelaDesejada,
