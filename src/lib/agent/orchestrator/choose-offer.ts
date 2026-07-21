@@ -391,6 +391,59 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
  * a melhor cota DENTRO da marca é o mesmo critério que o sistema já usou pra
  * recomendar. `null` quando ele não nomeou nenhuma das exibidas.
  */
+/** O cliente escolheu por CARACTERÍSTICA, não por nome.
+ *
+ * "Prefiro a de prazo mais longo", "quero a de menor parcela" — o cliente
+ * raramente decora o nome da administradora, ele aponta pelo que importa pra
+ * ele. A resolução por nome não cobre isso, então o estado continuava ancorado
+ * na recomendação original: um cliente escolheu a Canopus (R$ 2.792 em 116
+ * meses), ouviu o agente confirmar esses números CINCO vezes, e o contrato saiu
+ * Itaú com parcela de R$ 6.467 em 49 meses — 2,3× mais caro, sem uma palavra
+ * sobre a troca (visto ao vivo, 2026-07-21).
+ *
+ * Ordenar a lista real por parcela/prazo/carta é determinístico — não é
+ * adivinhar intenção, é aplicar o critério que ele nomeou sobre as cotas que
+ * ele viu. Sem critério reconhecido, devolve null e nada se ancora. */
+export function resolveOfertaPorCriterio(
+	offers: ChosenOffer[],
+	text: string,
+): ChosenOffer | null {
+	const t = (text ?? "").toLowerCase();
+	if (offers.length === 0) return null;
+	const com = <K extends keyof ChosenOffer>(k: K) => offers.filter((o) => typeof o[k] === "number");
+
+	const menorParcela = /\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b.{0,20}\bparcela|\bparcela\b.{0,20}\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b/.test(
+		t,
+	);
+	const maiorPrazo = /\b(prazo|prazos?)\b.{0,20}\b(mais longo|maior|mais longa)\b|\b(mais longo|maior)\b.{0,10}\bprazo\b/.test(
+		t,
+	);
+	const menorPrazo = /\b(prazo|prazos?)\b.{0,20}\b(mais curto|menor)\b|\b(mais curto|menor)\b.{0,10}\bprazo\b/.test(
+		t,
+	);
+	const maiorCarta = /\b(maior|mais alta)\b.{0,20}\bcarta\b|\bcarta\b.{0,20}\b(maior|mais alta)\b/.test(
+		t,
+	);
+
+	if (menorParcela) {
+		const c = com("monthlyPayment");
+		return c.length ? c.reduce((a, b) => (b.monthlyPayment! < a.monthlyPayment! ? b : a)) : null;
+	}
+	if (maiorPrazo) {
+		const c = com("termMonths");
+		return c.length ? c.reduce((a, b) => (b.termMonths! > a.termMonths! ? b : a)) : null;
+	}
+	if (menorPrazo) {
+		const c = com("termMonths");
+		return c.length ? c.reduce((a, b) => (b.termMonths! < a.termMonths! ? b : a)) : null;
+	}
+	if (maiorCarta) {
+		const c = com("creditValue");
+		return c.length ? c.reduce((a, b) => (b.creditValue! > a.creditValue! ? b : a)) : null;
+	}
+	return null;
+}
+
 export function resolveAdministradoraMention(
 	offers: ChosenOffer[],
 	text: string,
@@ -427,7 +480,9 @@ export async function resolveAdministradoraMentionForConversation(
 	text: string,
 ): Promise<ChosenOffer | null> {
 	const rows = await loadArtifactRows(conversationId);
-	return resolveAdministradoraMention(listShownOffers(rows), text);
+	const ofertas = listShownOffers(rows);
+	// Nome primeiro (mais específico); característica só quando ele não nomeou.
+	return resolveAdministradoraMention(ofertas, text) ?? resolveOfertaPorCriterio(ofertas, text);
 }
 
 // FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente

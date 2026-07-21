@@ -14,6 +14,7 @@ import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -311,6 +312,36 @@ export function createConverseNode(model: BaseChatModel) {
 		// nunca da cabeça dele; a APRESENTAÇÃO é dele.
 		const oferta = state.funnel.recommendedOffer;
 
+		// ── O QUE ELE JÁ VIU NA TELA ──
+		// O contexto só carregava a oferta RECOMENDADA, então o modelo não sabia
+		// quais outras opções tinham sido exibidas — e, quando o cliente falava
+		// delas ("vamos de prazo mais curto", "aquela do Itaú"), ele devolvia o
+		// trabalho: "pode me confirmar a administradora ou o valor da parcela dela
+		// pra eu não errar o grupo?". O cliente respondeu o óbvio ("não decorei os
+		// valores"), e numa das conversas isso travou a venda inteira: três
+		// pedidos seguidos pra ela repetir o que estava no card acima.
+		// Quem tem a proposta na mão é o vendedor.
+		const ofertasExibidas = state.funnel.revealCompleted
+			? await listShownOffersForConversation(state.conversationId).catch(() => [])
+			: [];
+		const blocoOpcoesNaTela =
+			ofertasExibidas.length > 1
+				? `OPÇÕES QUE ELE JÁ VIU nesta conversa (você TEM esta lista — nunca peça pra ele repetir ` +
+					`valor, administradora ou prazo de algo que já está na tela):\n` +
+					ofertasExibidas
+						.slice(0, 8)
+						.map(
+							(o) =>
+								`- ${o.administradora ?? "?"}: carta ${o.creditValue ? brl(o.creditValue) : "?"}, ` +
+								`parcela ${o.monthlyPayment ? brl(o.monthlyPayment) : "?"}` +
+								`${o.termMonths ? ` em ${o.termMonths} meses` : ""}`,
+						)
+						.join("\n") +
+					`\nQuando ele descrever uma delas por característica ("a de menor parcela", "a de prazo ` +
+					`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
+					`a identificação pra ele.`
+				: null;
+
 		// ── O LANCE DELE ALCANÇA? ──
 		// O cliente diz "tenho 100 mil", o card mostra lance médio de R$ 183 mil, e
 		// o agente respondia "baita empurrão!" sem ligar os dois pontos — porque a
@@ -550,6 +581,7 @@ export function createConverseNode(model: BaseChatModel) {
 						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
 					...(blocoEscolha ? [{ type: "text" as const, text: blocoEscolha }] : []),
