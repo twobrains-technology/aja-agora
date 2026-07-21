@@ -112,7 +112,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 							>
 								{formatBRL(group.creditValue)}
 							</p>
-							<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+							<p className="text-[10px] text-muted-foreground mt-0.5">Carta de crédito</p>
 						</div>
 
 						{/* Divider */}
@@ -255,7 +255,7 @@ function QuotaChip({
 				>
 					{formatBRL(cota.creditValue)}
 				</p>
-				<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+				<p className="text-[10px] text-muted-foreground mt-0.5">Carta de crédito</p>
 				{/* FIX-287 — aviso discreto: esse grupo não aceitou o valor pedido
 				    (nominal real já provado por uma simulação nesta conversa). */}
 				{showAdjustNotice && cota.rawCreditValue != null && (

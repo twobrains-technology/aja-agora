@@ -39,12 +39,14 @@ import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { Category } from "@/lib/agent/personas";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 export async function discoveryNode(
 	state: AgentGraphStateType,
+	config?: LangGraphRunnableConfig,
 ): Promise<Partial<AgentGraphStateType>> {
 	const { funnel, conversationId, channel, isUserTurn } = state;
 	const category = funnel.currentCategory;
@@ -135,6 +137,10 @@ export async function discoveryNode(
 			groupId: best.id,
 		};
 	}
+
+	// NÃO emite aqui — quem entrega é o `persist`, depois de `persistMeta`
+	// (o adapter relê a meta do banco pra montar o card).
+	void config;
 
 	return {
 		funnel: {

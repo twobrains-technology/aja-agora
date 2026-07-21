@@ -15,11 +15,17 @@ import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
+import { shouldAskMotive } from "@/lib/agent/qualify-state";
+import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
 import type { AgentGraphStateType } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
+import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import type { ArtifactType } from "@/lib/chat/types";
+import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 /** Toolset WHAT-IF (goal doc — fix ALTA-4): o modelo escolhe livremente
  * chamar OU não. `search_groups`/`recommend_groups` ficam FORA de propósito
@@ -34,6 +40,17 @@ const WHAT_IF_TOOL_NAMES = [
 	"suggest_handoff",
 	"save_contact_name",
 	"save_contact_whatsapp",
+	// Tools de APRESENTAÇÃO — é o que faz card aparecer na tela. Estavam de fora
+	// do toolset do runtime LangGraph, então o modelo dizia "dá uma conferida nos
+	// números da simulação aí no card" e NENHUM card existia. `search_groups`/
+	// `recommend_groups` seguem fora (a descoberta é o nó `discovery`,
+	// determinística) — estas aqui só DESENHAM o que já foi apurado.
+	"present_simulation_result",
+	"present_group_card",
+	"present_comparison_table",
+	"present_financing_comparison",
+	"present_contemplation_dial",
+	"present_scenarios",
 ] as const;
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
@@ -74,15 +91,19 @@ function toBaseMessage(m: { role: "user" | "assistant"; content: string }): Base
  * etapa. Reusa `GATE_INTENT` (fonte canônica, `system-context.ts`) e espelha a
  * instrução do `buildSystemContext` do runtime Vercel. Gate ausente (usuário
  * desviou / `decideShowGate` suprimiu) → null: o modelo conversa livre. */
-function buildGateContextText(gate: string | undefined): string | null {
+function buildGateContextText(gate: string | undefined, temCard: boolean): string | null {
 	if (!gate) return null;
 	const intent = GATE_INTENT[gate];
 	if (!intent) return null;
 	return (
 		`Próximo passo do funil: descobrir ${intent}. Faça VOCÊ essa pergunta, com as suas ` +
-		`palavras e de forma calorosa — o sistema mostra o campo/os botões logo depois e NÃO vai ` +
-		`repetir a pergunta. Faça UMA pergunta só, sobre ISSO; não pule etapas nem pergunte sobre ` +
-		`outra coisa. Se o usuário puxar o assunto pra outro lado, atenda ele primeiro; o funil espera.`
+		`palavras e de forma calorosa — ` +
+		(temCard
+			? `o sistema mostra o campo/os botões logo depois e NÃO vai repetir a pergunta. `
+			: `NÃO vai aparecer nenhum botão nem campo na tela: quem conduz é a sua fala. `) +
+		`Faça UMA pergunta só, sobre ISSO; não pule etapas nem pergunte sobre ` +
+		`outra coisa. Se o usuário puxar o assunto pra outro lado, atenda ele primeiro e emende a ` +
+		`pergunta no fim — o turno NUNCA termina sem um próximo passo pro cliente.`
 	);
 }
 
@@ -94,6 +115,12 @@ export function createConverseNode(model: BaseChatModel) {
 		const tools = buildLangGraphTools({
 			conversationId: state.conversationId,
 			channel: state.channel,
+			hasLance: state.funnel.qualifyAnswers?.hasLance === "yes",
+			// Paridade com o runtime Vercel: as diretivas de recuperação (grupo não
+			// exibido / id fabricado) só podem citar tool que existe nesta fase —
+			// citar uma escondida faz o modelo tomar NoSuchToolError e o turno cair
+			// no fallback enlatado.
+			allowedToolNames: WHAT_IF_TOOL_NAMES,
 		});
 		const whatIfTools = WHAT_IF_TOOL_NAMES.map((name) => tools[name]).filter(
 			(t): t is NonNullable<typeof t> => Boolean(t),
@@ -110,10 +137,71 @@ export function createConverseNode(model: BaseChatModel) {
 		// runtime Vercel) e injeta a INTENÇÃO, NUNCA a frase pronta — o modelo
 		// pergunta com as palavras dele (lei-mãe "não engessar"); o bloco do gate
 		// NÃO é cacheado (muda a cada turno), fica DEPOIS do bloco estável.
-		const gateContextText = buildGateContextText(state.gate);
+		// O gate que o FUNIL aguarda — `state.gate` é só o card que vai aparecer.
+		// `decideShowGate` suprime o card em vários intents, e antes isso também
+		// suprimia a CONDUÇÃO: o modelo ficava cego sobre o próximo passo e o turno
+		// morria numa fala social sem pergunta ("Show, Kairo! Prazer em te ajudar")
+		// — o beco sem saída reportado ao vivo. O card pode sumir; a condução, não.
+		const gateAtivo = state.gate ?? state.answeredGate;
+		// Beat do MOTIVO — turno próprio, logo depois do bem. Sem isto o gate
+		// `desire` pedia bem + motivo no mesmo balão e o cliente respondia só um.
+		const pedirMotivo = state.isUserTurn && shouldAskMotive(projectToMeta(state));
+		const gateContextText = pedirMotivo
+			? `Próximo passo do funil: descobrir por que ele quer isso AGORA — o que mudou, o ` +
+				`que está pesando. Faça VOCÊ essa pergunta, com as suas palavras, UMA pergunta só; ` +
+				`o sistema mostra os atalhos de resposta logo depois e NÃO vai repetir a pergunta.`
+			: buildGateContextText(gateAtivo, Boolean(state.gate));
+
+		const brl = (n: number) => `R$ ${n.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+
+		// ── LANCE EMBUTIDO: a conta que faz o vendedor parecer vendedor ──
+		// O embutido sai DA PRÓPRIA CARTA (até 30%), então o crédito recebido cai.
+		// Quem quer o bem de R$ X e não tem dinheiro pra lance NÃO deve mirar uma
+		// carta de R$ X — tem que mirar `X / (1 - pct)`, senão contempla e falta
+		// dinheiro. O agente explicava o embutido sobre a carta atual ("usa uma
+		// fatia dos R$ 92.902"), que é justamente o conselho errado. A conta é
+		// invariante → vive aqui, em código; a venda é do modelo.
+		const pctEmbutido =
+			state.funnel.qualifyAnswers.lanceEmbutidoPercent ?? LANCE_EMBUTIDO_DEFAULT_PERCENT;
+		const valorDoBem = state.funnel.qualifyAnswers.creditMax;
+		const blocoEmbutido = valorDoBem
+			? `Regra do lance embutido (fato, não opinião): o embutido sai DA PRÓPRIA CARTA, até ` +
+				`${pctEmbutido}% dela — então o crédito que o cliente recebe DIMINUI nessa proporção. ` +
+				`O bem que ele quer custa ${brl(valorDoBem)}. Se ele usar o teto de ${pctEmbutido}% de ` +
+				`embutido, uma carta de ${brl(valorDoBem)} deixaria só ` +
+				`${brl(Math.round(valorDoBem * (1 - pctEmbutido / 100)))} na mão dele — não dá pra comprar ` +
+				`o bem. Pra ele RECEBER ${brl(valorDoBem)} líquidos usando o embutido, a carta precisa ser ` +
+				`de aproximadamente ${brl(Math.round(valorDoBem / (1 - pctEmbutido / 100)))}. É assim que ` +
+				`um vendedor bom resolve o caso de quem não tem dinheiro pro lance: sobe a carta, não ` +
+				`corta o crédito. Use esses números quando o assunto for lance/embutido; nunca invente outros.`
+			: null;
+
+		// A busca já rodou (nó `discovery`, agora ANTES deste) — os cards com as
+		// ofertas REAIS já estão montados. Sem este bloco o modelo não sabia disso e
+		// prometia "só um segundo que já te trago", como se a busca ainda fosse
+		// acontecer. Os NÚMEROS vêm daqui (do estado, coagidos contra o grupo real),
+		// nunca da cabeça dele; a APRESENTAÇÃO é dele.
+		const oferta = state.funnel.recommendedOffer;
+		const temCardsDeOferta = state.events.some((ev) => ev.type === "artifact");
+		// Critério VERIFICÁVEL da recomendação — o cliente consegue conferir na
+		// lista que acabou de ver. O card hero vinha MUDO: aparecia sem nenhuma
+		// frase dizendo em QUÊ aquela opção é a melhor, e o cliente tinha que abrir
+		// um acordeão pra descobrir. "Melhor opção" sem dizer melhor em quê não
+		// vende — e, pior, soa a truque.
+		const blocoOfertas =
+			temCardsDeOferta && oferta
+				? `As ofertas REAIS das administradoras já foram buscadas e os cards aparecem na ` +
+					`tela logo abaixo da sua fala. A que melhor atende: ${oferta.administradora} — carta de ` +
+					`${brl(oferta.creditValue)}, parcela de ${brl(oferta.monthlyPayment)} em ` +
+					`${oferta.termMonths} meses. Apresente como um vendedor de consórcio experiente: ` +
+					`diga o que encontrou, aponte o que chama atenção nesses números e por quê. ` +
+					`NUNCA diga que vai buscar ou que "já já traz" — a busca já aconteceu.`
+				: null;
 		const systemMessage = new SystemMessage({
 			content: [
 				cacheableSystemBlock(leanSystemPrompt()),
+				...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+				...(blocoEmbutido ? [{ type: "text" as const, text: blocoEmbutido }] : []),
 				...(gateContextText ? [{ type: "text" as const, text: gateContextText }] : []),
 			],
 		});
@@ -121,7 +209,39 @@ export function createConverseNode(model: BaseChatModel) {
 		const newMessages: BaseMessage[] = state.isUserTurn ? [new HumanMessage(state.userText)] : [];
 		let loopMessages: BaseMessage[] = [systemMessage, ...state.messages, ...newMessages];
 
-		const filter = new EphemeralTextFilter();
+		// O filtro PRECISA do contexto de fatos. Sem ele, TODOS os guards de
+		// verdade retornam cedo (`if (!ctx) return false`): o agente podia dizer
+		// "a Bradesco é a melhor" sem Bradesco existir (FIX-342) e "sua proposta já
+		// saiu" com `bevi_proposals` vazio (FIX-336) — enquanto os guards de ESTILO
+		// continuavam ativos. Era o pior dos dois mundos: mentira liberada, fala
+		// podada. O `state.funnel` é a autoridade de fato do grafo, então é dele
+		// que o contexto nasce.
+		const ctxDeFatos = () => {
+			// As administradoras REAIS desta conversa: a recomendada + a do hero já
+			// coagido. Nunca a narrativa do modelo — é justamente isso que o guard
+			// `isHallucinatedAdministradoraClaim` existe pra checar.
+			const reais = [
+				state.funnel.recommendedAdministradora,
+				state.funnel.recommendedOffer?.administradora,
+				state.funnel.pendingRecommendationCard?.administradora,
+			].filter((a): a is string => typeof a === "string" && a.length > 0);
+			return {
+				hasReceivedDocuments: (state.baseMeta.documentSlotsSent?.length ?? 0) > 0,
+				// O `converse` NÃO chama busca (a descoberta é nó determinístico, fora
+				// do toolset dele) — então nenhum turno deste nó é "o turno do reveal".
+				hasSearchToolCall: false,
+				// No runtime Vercel `hasProposal` vem de uma query em `bevi_proposals`;
+				// aqui não há esse fato no estado, então usamos o proxy CONSERVADOR
+				// (contrato fechado ⇒ existe proposta). Erra pro lado seguro: no
+				// máximo bloqueia um "reservado" legítimo, nunca libera um indevido.
+				hasProposal: state.baseMeta.contractClosed === true,
+				contractClosed: state.baseMeta.contractClosed === true,
+				channel: state.channel,
+				recoConsentPending: state.funnel.recoConsentAnswered !== true,
+				shownAdministradoras: reais,
+			};
+		};
+		const filter = new EphemeralTextFilter(ctxDeFatos);
 		const events: TurnEvent[] = [];
 
 		for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
@@ -162,6 +282,41 @@ export function createConverseNode(model: BaseChatModel) {
 				};
 				config.writer?.(ev);
 				events.push(ev);
+
+				// Tool de apresentação → CARD. O payload é o INPUT da tool (mesma
+				// convenção do runtime Vercel, `artifactTypeFor` em runner.ts:206):
+				// a tool valida os números, o artifact desenha. Sem isto o modelo
+				// chamava a tool, ela executava, e nada aparecia na tela.
+				if (PRESENTATION_TOOLS.has(call.name)) {
+					const artifactType = call.name.replace("present_", "") as ArtifactType;
+					const guardCtx: GuardContext = {
+						meta: projectToMeta(state),
+						userIntent: state.intent ?? "neutral",
+						isUserTurn: state.isUserTurn,
+						channel: state.channel,
+						discoveryCount: null,
+						conversationId: state.conversationId,
+						turnArtifactTypes: events
+							.filter((e): e is Extract<TurnEvent, { type: "artifact" }> => e.type === "artifact")
+							.map((e) => e.artifactType),
+						// Simulação rodada NESTE turno = conteúdo novo (o usuário escolheu
+						// um grupo), não re-reveal. Sem isso o guard `reveal-loop` engolia
+						// o card sempre que o intent saía `neutral` (ex.: o cliente digita
+						// só "ITAÚ") e o agente falava de uma simulação inexistente.
+						freshSimulationThisTurn: events.some(
+							(e) => e.type === "tool-call" && e.toolName === "simulate_quota",
+						),
+					};
+					if (artifactAllowed(guardCtx, artifactType)) {
+						events.push({ type: "text-boundary" });
+						events.push({
+							type: "artifact",
+							artifactType,
+							payload: call.args,
+							toolCallId: call.id ?? crypto.randomUUID(),
+						});
+					}
+				}
 			}
 			// ToolNode NUNCA lança em tool desconhecida — devolve ToolMessage de
 			// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
@@ -172,6 +327,8 @@ export function createConverseNode(model: BaseChatModel) {
 			newMessages.push(...toolMessages);
 		}
 
+		// ANTES do flush: `flush()` libera e zera a pergunta segurada.
+		const modelAskedQuestion = filter.hasHeldQuestion();
 		const tail = filter.flush();
 		if (tail) {
 			const ev: TurnEvent = { type: "text-delta", text: tail };
@@ -179,7 +336,7 @@ export function createConverseNode(model: BaseChatModel) {
 			events.push(ev);
 		}
 
-		return { messages: newMessages, events };
+		return { messages: newMessages, events, modelAskedQuestion };
 	};
 }
 

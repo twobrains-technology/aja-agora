@@ -23,10 +23,14 @@ import {
 } from "@/lib/agent/orchestrator/server-cards";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { projectToMeta } from "../emit";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType } from "../state";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
-export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStateType> {
+export function emitCardNode(
+	state: AgentGraphStateType,
+	config?: LangGraphRunnableConfig,
+): Partial<AgentGraphStateType> {
 	const events: TurnEvent[] = [];
 	let funnel = state.funnel;
 
@@ -45,6 +49,12 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 		turnArtifactTypes,
 	};
 
+	// Emissão AO VIVO via `config.writer`. Antes estes eventos só viviam em
+	// `state.events` e dependiam do drain do `values` final no `run-turn.ts` —
+	// mas o grafo PAUSA no `human` (interrupt) e esse `values` final nunca chega
+	// ao chamador. Resultado: o cliente recebia só `text-delta`/`tool-call` (que
+	// já iam pelo writer) e NENHUM card jamais renderizava. O writer entrega na
+	// ordem em que é chamado, então a ordem do turno é preservada.
 	if (state.gate) {
 		// `modelAsked`: o `converse` agora é CIENTE do gate (via `GATE_INTENT`) e
 		// faz a pergunta com as palavras dele. Se produziu texto neste turno, o
@@ -52,8 +62,12 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 		// vira DUAS perguntas (a do modelo + a do card). Se o modelo ficou mudo
 		// (turno vazio), fica `false` → o card injeta a pergunta como rede (nunca
 		// cala a pergunta). O `text-boundary`/persist a jusante mantêm a ordem.
-		const modelSpoke = state.events.some((ev) => ev.type === "text-delta");
-		events.push({ type: "gate", gate: state.gate, modelAsked: modelSpoke });
+		// `modelAsked` = o modelo FEZ UMA PERGUNTA (sinal real do sanitizer,
+		// `hasHeldQuestion`), não "emitiu algum caractere". Com o proxy antigo, uma
+		// fala social sem pergunta ("Prazer em te ajudar!") calava a pergunta
+		// canônica do card — as duas redes caíam juntas e o turno terminava sem
+		// ninguém perguntando nada.
+		events.push({ type: "gate", gate: state.gate, modelAsked: state.modelAskedQuestion });
 	}
 
 	// FIX-361 — libera o hero PENDENTE (`discoveryNode` guardou quando
@@ -84,7 +98,12 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 	// no MESMO turno (analyze funde `experiencePrev` antes de `route`
 	// computar o próximo gate) — a janela do Vercel nunca seria alcançável
 	// aqui.
-	if (funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
+	// Nunca no MESMO turno de um gate: o picker de tópicos é um convite lateral e
+	// competia com a pergunta do funil ("Posso te mostrar a opção que recomendo?"
+	// + "Escolha uma opção: Ver tópicos", os dois juntos). Sem gate no turno, ele
+	// sai normal; com gate, espera — `topicPickerDispatched` só é marcado quando
+	// de fato saiu.
+	if (!state.gate && funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
 		if (artifactAllowed(guardCtx, "topic_picker")) {
 			events.push({
 				type: "artifact",
@@ -153,5 +172,11 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 		funnel = { ...funnel, decisionDispatched: true };
 	}
 
+	// NÃO emite aqui. Quem entrega "gate"/"artifact" ao cliente é o `persist`,
+	// DEPOIS de `persistMeta` — os adapters releem a meta fresca do banco pra
+	// montar o card (`reloadMeta`, web/adapter.ts:308). Emitir antes da escrita
+	// fazia `gatePartData("credit", metaVelha)` cair no `if (!category) return
+	// null` e NENHUM card aparecia na tela. Ordem é contrato, não detalhe.
+	void config;
 	return { funnel, events };
 }

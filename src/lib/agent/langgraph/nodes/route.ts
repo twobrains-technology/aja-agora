@@ -6,7 +6,7 @@
 // `readyForDiscovery` é o invariante I1 desta fundação — "descoberta nunca
 // dispara sem identidade + valor" — vira PREDICADO PURO exportado pra teste
 // direto (TDD strict), não side-effect escondido dentro do nó.
-import { decideShowGate, nextGate } from "@/lib/agent/qualify-state";
+import { decideShowGate, nextGate, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
@@ -30,6 +30,13 @@ export function readyForDiscovery(funnel: FunnelState): boolean {
 
 export function routeNode(state: AgentGraphStateType): Partial<AgentGraphStateType> {
 	const meta = projectToMeta(state);
+	// Beat do MOTIVO tem turno próprio (`shouldAskMotive`), e nele o card é os
+	// ATALHOS DE RESPOSTA da pergunta que o modelo acabou de fazer — não uma
+	// segunda pergunta competindo no mesmo balão (que é o que `decideShowGate`
+	// suprime). Por isso ele é forçado aqui, e só ele.
+	if (state.isUserTurn && shouldAskMotive(meta)) {
+		return { gate: "desire", answeredGate: "desire" };
+	}
 	const gate = nextGate(meta, { hasContactName: Boolean(state.contactName) });
 	const showGate = decideShowGate({
 		gate,
@@ -37,12 +44,18 @@ export function routeNode(state: AgentGraphStateType): Partial<AgentGraphStateTy
 		meta,
 		isUserTurn: state.isUserTurn,
 	});
-	return { gate: showGate ? gate : undefined };
+	console.log(
+		`[route-debug] gate=${gate} show=${showGate} intent=${state.intent} isUserTurn=${state.isUserTurn} contactName=${state.contactName} desireAsked=${meta.desireAsked} creditMax=${meta.qualifyAnswers?.creditMax}`,
+	);
+	// `answeredGate` guarda o gate COMPUTADO (o que o funil aguarda), mesmo quando
+	// o card é suprimido — é o que o `capture` lê no turno seguinte.
+	return { gate: showGate ? gate : undefined, answeredGate: gate };
 }
 
-/** Aresta condicional pós-`converse`: dispara `discovery` quando o slice
- * está pronto (I1); senão pula direto pro `emitCard` (aresta de escape —
- * usuário desviou, gate não pronto, ou já buscado neste turno). */
-export function routeAfterConverse(state: AgentGraphStateType): "discovery" | "emitCard" {
-	return readyForDiscovery(state.funnel) ? "discovery" : "emitCard";
+/** Aresta condicional pós-`advance`: dispara `discovery` quando o slice está
+ * pronto (I1); senão vai direto pro `routeFinal`. A busca acontece ANTES de o
+ * modelo falar — ele apresenta números que já existem, nunca promete "já te
+ * trago". */
+export function routeToDiscovery(state: AgentGraphStateType): "discovery" | "routeFinal" {
+	return readyForDiscovery(state.funnel) ? "discovery" : "routeFinal";
 }

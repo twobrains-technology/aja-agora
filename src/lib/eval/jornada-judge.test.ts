@@ -39,6 +39,12 @@ const fakeResult: JornadaJudgeResult = {
 		faltaramReforcos: false,
 		faltouParabens: false,
 		faltouResumoContratacao: false,
+		// v3 (2026-07-20): a rubrica passou a medir competência de conversa —
+		// conduziu, reagiu ao que o cliente trouxe, tratou objeção, variou o
+		// fraseado — em vez de fidelidade ao roteiro do docx revogado.
+		naoReagiuAoCliente: false,
+		falaRepetida: false,
+		naoTratouObjecao: false,
 	},
 	topIssues: [],
 	topStrengths: ["fechou em contrato"],

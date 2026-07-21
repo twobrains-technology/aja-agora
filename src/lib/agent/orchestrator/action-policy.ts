@@ -32,6 +32,12 @@ export type ActionPreconditionContext = {
 	 * true, nenhuma proposta/recomendação/simulação pode ancorar em dado que não
 	 * carregou — regra INVIOLÁVEL do CLAUDE.md #2 (Bevi fonte única). */
 	discoveryFailedThisTurn?: boolean;
+	/** Tools que a policy REALMENTE expôs nesta fase (`allowedTools(meta, channel)`).
+	 * As diretivas de recuperação só podem nomear tool desta lista — nomear uma que
+	 * a policy escondeu faz o modelo tomar NoSuchToolError, o runner abortar a
+	 * geração e o cliente receber o fallback enlatado. Ausente → comportamento
+	 * antigo (nomeia todas), pra compat de chamador que ainda não passa. */
+	allowedTools?: readonly string[];
 };
 
 export type PreconditionVerdict =
@@ -48,16 +54,39 @@ export type PreconditionVerdict =
  * sem-saída, o run inteiro morreu). Reforço explícito: nunca negar a
  * entidade, nunca prometer retorno, sempre re-apresentar AGORA.
  */
-export function naoExibidoDirective(groupId: string): string {
-	return (
+export function naoExibidoDirective(groupId: string, allowed?: readonly string[]): string {
+	// A diretiva NUNCA pode nomear tool que a policy escondeu nesta fase: o modelo
+	// obedece, toma NoSuchToolError, o runner aborta a geração e o cliente recebe o
+	// fallback enlatado — foi assim que um deslize recuperável virou turno
+	// descartado (raiz dos FIX-262/266/282/332/343/355). Na fase `reveal`/`closing`
+	// as tools de reapresentação estão FORA do toolset, então lá a saída correta é
+	// conversacional, não uma tool-call impossível.
+	const REAPRESENTACAO = [
+		"present_comparison_table",
+		"present_group_card",
+		"present_recommendation_card",
+	];
+	const disponiveis = allowed
+		? REAPRESENTACAO.filter((t) => allowed.includes(t))
+		: REAPRESENTACAO;
+	const comum =
 		`O grupo "${groupId}" nao foi exibido em tela pro usuario nesta conversa. ` +
-		"Apresente-o primeiro via present_comparison_table, present_group_card ou present_recommendation_card " +
-		"antes de simular, detalhar ou propor decisao sobre ele. NUNCA pule direto pra simulacao/decisao " +
-		"sobre um grupo que so voce viu no resultado da busca — reapresente o comparativo. " +
 		"PROIBIDO neste turno: negar que a administradora/opcao existe (se o usuario a citou pelo nome, " +
-		"ela pode estar na tabela — reapresente e deixe o usuario escolher de novo); PROIBIDO tambem " +
+		"ela pode estar na tabela — nunca diga que nao existe); PROIBIDO tambem " +
 		"prometer 'te retorno', 'entro em contato depois' ou qualquer retorno futuro — este canal (web) " +
-		"nao tem mensagem proativa, essa promessa nunca se cumpre. Resolva AGORA, no proprio turno."
+		"nao tem mensagem proativa, essa promessa nunca se cumpre. Resolva AGORA, no proprio turno.";
+	if (disponiveis.length === 0) {
+		// Sem tool de reapresentação nesta fase: resolve na conversa.
+		return (
+			`${comum} Voce NAO tem tool de reapresentacao disponivel agora — ` +
+			"entao resolva FALANDO: peca ao usuario, com as suas palavras, qual das opcoes que ja " +
+			"apareceram na tela ele quer ver, e siga a partir da escolha dele. Nao tente chamar tool de card."
+		);
+	}
+	return (
+		`${comum} Apresente-o primeiro via ${disponiveis.join(" ou ")} ` +
+		"antes de simular, detalhar ou propor decisao sobre ele — nunca pule direto pra simulacao " +
+		"sobre um grupo que so voce viu no resultado da busca."
 	);
 }
 
@@ -115,7 +144,7 @@ function compose(
 function requireShownGroupId(ctx: ActionPreconditionContext): PreconditionVerdict {
 	const groupId = typeof ctx.args.groupId === "string" ? ctx.args.groupId : "";
 	if (!ctx.shown.ids.has(groupId)) {
-		return { allow: false, directive: naoExibidoDirective(groupId) };
+		return { allow: false, directive: naoExibidoDirective(groupId, ctx.allowedTools) };
 	}
 	return { allow: true };
 }

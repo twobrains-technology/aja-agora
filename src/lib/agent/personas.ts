@@ -196,6 +196,10 @@ export type ConversationMetadata = {
 	 * hero em turnos seguintes com intent afirmativo/neutro. Espelha
 	 * `simulatorOfferAnswered`. */
 	recoConsentAnswered?: boolean;
+	/** O convite do reco-consent foi RECUSADO ("prefiro comparar sozinho"). O
+	 * funil segue normalmente (o gate é convite, não coleta), só sem impor o
+	 * hero. Serve pra telemetria e pra calibrar o tom — nunca pra travar. */
+	recoConsentDeclined?: boolean;
 	/** FIX-297 — hero (recommendation_card) computado no turno da busca original
 	 * mas SUPRIMIDO até o usuário consentir (`hero-awaits-reco-consent` em
 	 * artifact-guard.ts) — o payload já coagido server-side (Lei 1) fica aqui

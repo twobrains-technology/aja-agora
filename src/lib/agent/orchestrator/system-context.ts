@@ -23,10 +23,16 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
  * modelo escolhe as palavras; nós só dizemos o que falta saber. */
 export const GATE_INTENT: Record<string, string> = {
 	name: "como ele quer ser chamado",
-	desire: "qual bem específico ele tem em mente, e por que agora",
+	// UMA coisa só. Pedir bem + motivo no mesmo balão fazia o agente disparar duas
+	// perguntas de uma vez e o cliente responder só uma — o motivo tem turno
+	// próprio (`shouldAskMotive`), logo depois.
+	desire:
+		"qual bem específico ele tem em mente — o modelo, só isso. NÃO pergunte versão/ano (não muda nada no consórcio) e NÃO presuma nada que ele não disse (se ele não falou \"novo\" ou \"zero\", não diga)",
 	credit: "quanto custa o bem que ele quer",
-	identify: "o CPF e o celular dele (a administradora exige pra trazer ofertas reais)",
-	experience: "se ele já fez consórcio antes",
+	identify:
+		"o CPF e o celular dele — diga POR QUE precisa (a administradora exige pra trazer as ofertas reais) e que os dados ficam protegidos pela LGPD, numa frase só, sem soar burocrático",
+	experience:
+		"se ele já fez consórcio antes. Se ele disser que é a primeira vez, EXPLIQUE o mecanismo no MESMO turno (grupo de pessoas, parcela sem juros, contemplação por sorteio ou lance, carta pra comprar à vista) — nunca prometa \"te explico no caminho\" e siga pro pitch",
 	"reco-consent": "se ele topa ver a opção que a gente recomenda",
 	timeframe: "em quanto tempo ele quer estar com o bem",
 	lance: "se ele teria como dar um lance pra antecipar a contemplação",
@@ -183,19 +189,19 @@ export function buildSystemContext(args: {
 	if (newlyExtractedExperience === "first") {
 		out.push({
 			role: "system",
-			content: `O usuario acabou de revelar nesta mensagem que e a PRIMEIRA VEZ dele com consorcio. FLUXO IMPORTANTE: na sua resposta agora, reaja brevemente E EM SEGUIDA dê uma explicação curta (3-4 frases) sobre o essencial: grupo de pessoas que paga parcelas mensais sem juros, contemplacao por sorteio ou lance, diferenca de financiamento. Tom acolhedor, sem jargao tecnico (nada de cota/lance livre/fundo reserva). Termine sem pergunta — o sistema dispara a proxima etapa.`,
+			content: `O usuário acabou de revelar que é a PRIMEIRA VEZ dele com consórcio. Reaja a isso e explique o essencial de forma curta e acolhedora: grupo de pessoas que paga parcelas mensais sem juros, contemplação por sorteio ou lance, e a diferença pro financiamento. Sem jargão (nada de cota/lance livre/fundo de reserva). Depois siga a conversa naturalmente — se couber uma pergunta sua, faça.`,
 		});
 	} else if (newlyExtractedExperience === "returning") {
 		out.push({
 			role: "system",
-			content: `O usuario acabou de revelar que ja tem familiaridade com consorcio. FLUXO: reaja em UMA frase curta tipo "Show, vamos direto ao ponto entao." NAO explique o produto, NAO faca pergunta. O sistema dispara a proxima etapa em seguida.`,
+			content: `O usuário já tem familiaridade com consórcio — não explique o produto do zero, vá direto ao ponto e trate ele como quem já entende. Se ele tiver dito algo que merece resposta, responda.`,
 		});
 	}
 
 	if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) {
 		out.push({
 			role: "system",
-			content: `O usuario clicou "Tenho duvidas" anteriormente e agora esta perguntando algo especifico. Responda a duvida dele de forma direta e CLARA, em 2-4 frases. NAO termine com "tem mais alguma duvida?", "ficou claro?", "alguma outra pergunta?" ou similar — o sistema dispara automaticamente a transicao com botoes pra ele decidir se quer seguir ou pedir mais info. Voce so precisa entregar a resposta e parar.`,
+			content: `O usuario clicou "Tenho duvidas" anteriormente e agora esta perguntando algo especifico. Responda a duvida dele de forma direta e CLARA, em 2-4 frases. NAO termine com "tem mais alguma duvida?", "ficou claro?", "alguma outra pergunta?" ou similar — o sistema dispara automaticamente a transicao com botões pra ele decidir se quer seguir ou pedir mais info. Voce so precisa entregar a resposta e parar.`,
 		});
 	}
 

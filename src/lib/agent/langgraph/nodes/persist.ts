@@ -21,10 +21,20 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType } from "../state";
+
+/** Texto com cara de directive interno (nunca é o cliente digitando). */
+export function pareceDirectiveDeServidor(texto: string): boolean {
+	if (texto.length < 400) return false;
+	return /\bFLUXO\b|\bFIX-\d+|present_[a-z_]+|simulate_quota|search_groups|NÃO chame|tool-call/i.test(
+		texto,
+	);
+}
 
 export async function persistNode(
 	state: AgentGraphStateType,
+	config?: LangGraphRunnableConfig,
 ): Promise<Partial<AgentGraphStateType>> {
 	const { conversationId, channel, isUserTurn, userText } = state;
 	let funnel = state.funnel;
@@ -36,6 +46,19 @@ export async function persistNode(
 	// (precisa do turno inteiro: `state.events` já tem tudo que `converse`/
 	// `discovery`/`emitCard` produziram) — só afeta `nextGate` em turnos
 	// FUTUROS, nunca o gate já decidido neste.
+	// `desireAsked` — marcado na EMISSÃO (mesmo padrão de
+	// `consentOffered`/`simulatorOfferDispatched`, e o que o runtime Vercel faz
+	// em orchestrator/index.ts:1290). NINGUÉM marcava isto no grafo: `nextGate`
+	// batia em `if (!meta.desireAsked) return "desire"` PARA SEMPRE, o funil
+	// congelava no `desire` (que não tem card) e nunca chegava em credit →
+	// identify → search. Nenhum card, nenhuma busca, nenhuma oferta: a venda
+	// inteira morria depois do nome. Marcado AQUI, no último nó, pra só valer
+	// nos turnos SEGUINTES — marcar antes do `routeFinal` faria o card do
+	// próximo gate atropelar a pergunta do `desire` no mesmo balão.
+	if (state.gate === "desire" && !funnel.desireAsked) {
+		funnel = { ...funnel, desireAsked: true };
+	}
+
 	const producedArtifact = state.events.some((ev) => ev.type === "artifact");
 	if (
 		shouldMarkDoubtsAddressed({
@@ -51,7 +74,12 @@ export async function persistNode(
 	// text-delta acumulados por `converse` — mesma reconstrução que
 	// `runner.ts` faz com `fullResponse`) ANTES dos cards, espelhando a ordem
 	// de leitura da UI (texto, depois artifact).
-	if (isUserTurn && userText) {
+	// Nunca grave prompt de servidor como fala do cliente. `isUserTurn` já é a
+	// governança primária; isto é a 2ª linha, porque o custo do furo é altíssimo:
+	// o texto contaminado volta em `loadConversationHistory` e o MODELO passa a
+	// ler o próprio prompt como se o cliente tivesse dito. Directive tem
+	// assinatura reconhecível (tamanho + vocabulário interno) e nunca é digitado.
+	if (isUserTurn && userText && !pareceDirectiveDeServidor(userText)) {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
 	const assistantText = state.events
@@ -94,6 +122,18 @@ export async function persistNode(
 	if (funnel.identityCollected) events.push({ type: "lead-stage", stage: "qualificado" });
 	events.push({ type: "meta-update", meta });
 	events.push({ type: "finish", reason: "ok" });
+
+	// AO VIVO, e SÓ AQUI. O grafo pausa no `human` logo depois deste nó, então o
+	// `values` final nunca chega ao `run-turn.ts` — tudo que não sair pelo writer
+	// se perde. Mas "gate"/"artifact" só podem sair DEPOIS do `persistMeta` acima:
+	// os adapters releem a meta fresca do banco pra montar o card, e emitir antes
+	// da escrita fazia `gatePartData` ler meta velha e devolver `null` (nenhum card
+	// na tela). `text-delta`/`tool-call` já saíram ao vivo no `converse`.
+	const JA_EMITIDOS: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta", "tool-call"]);
+	for (const ev of state.events) {
+		if (!JA_EMITIDOS.has(ev.type)) config?.writer?.(ev);
+	}
+	for (const ev of events) config?.writer?.(ev);
 
 	return { funnel, events };
 }

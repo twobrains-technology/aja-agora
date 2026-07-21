@@ -22,33 +22,12 @@ import {
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
-/** Heurística determinística de sim/não em texto livre — mesmo papel de
- * `detectYesNoText` (orchestrator/index.ts): consome os gates
- * reco-consent/simulator-offer/lance-embutido quando a resposta vem
- * digitada. Duplicada aqui (não importada) de propósito — módulo
- * `langgraph/` é ownership isolado desta onda; `index.ts` está sob mudança
- * paralela em outros blocos. Mesma lista de marcadores, mesmo filtro de
- * intent (pergunta/dúvida/confuso/off-topic/quer-mais-opções nunca contam). */
-const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
-const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
-
-export function detectYesNoText(text: string, intent: UserIntent): boolean | null {
-	if (
-		intent === "asking_question" ||
-		intent === "expressing_doubt" ||
-		intent === "confused" ||
-		intent === "off_topic" ||
-		intent === "wants_more_options"
-	) {
-		return null;
-	}
-	const t = text.trim();
-	if (!t) return null;
-	if (NO_TEXT_MARKERS.test(t)) return false;
-	if (YES_TEXT_MARKERS.test(t)) return true;
-	return null;
-}
+/** Sim/não em texto livre — FONTE ÚNICA, importada do orchestrator. Era
+ * duplicada aqui, e a cópia ficou para trás: mantinha o bug em que o "não"
+ * ganhava sempre por ser testado primeiro, então "não sei, pode mostrar sim"
+ * virava recusa. Duas cópias da mesma heurística = uma delas sempre desatualiza.
+ */
+import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 
 export function advanceFunnelNode(state: AgentGraphStateType): Partial<AgentGraphStateType> {
 	if (!state.isUserTurn) return {};
@@ -71,8 +50,16 @@ export function advanceFunnelNode(state: AgentGraphStateType): Partial<AgentGrap
 	if (state.gate === "reco-consent") {
 		if (!funnel.recoConsentDispatched) {
 			funnel = { ...funnel, recoConsentDispatched: true };
-		} else if (!funnel.recoConsentAnswered && detectYesNoText(state.userText, intent) === true) {
-			funnel = { ...funnel, recoConsentAnswered: true };
+		} else if (!funnel.recoConsentAnswered) {
+			// O convite aceita SIM e NÃO — os dois resolvem o gate. Só o SIM
+			// resolvia, então "não quero" congelava o funil para sempre (nunca vinha
+			// decisão, nunca vinha contrato) e a venda morria em silêncio.
+			const resposta = detectYesNoText(state.userText, intent);
+			if (resposta === true) {
+				funnel = { ...funnel, recoConsentAnswered: true };
+			} else if (resposta === false) {
+				funnel = { ...funnel, recoConsentAnswered: true, recoConsentDeclined: true };
+			}
 		}
 	}
 

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { detectYesNoText } from "./yes-no";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
@@ -8,7 +9,11 @@ import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
-import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
+import {
+	loadConversationHistory,
+	loadLastAssistantText,
+	saveMessage,
+} from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
 	loadMemoryContextForTurn,
@@ -83,25 +88,7 @@ export type { TurnEvent, TurnInput } from "./types";
 // Madalena provou não estarem cobertas (o hero só liberou 6 turnos depois,
 // em "quero"). Risco de falso-positivo de "pode" sozinho é mitigado pelo
 // filtro de `intent` acima (pergunta/dúvida nunca chegam no regex).
-const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
-const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
-function detectYesNoText(text: string, intent: UserIntent): boolean | null {
-	if (
-		intent === "asking_question" ||
-		intent === "expressing_doubt" ||
-		intent === "off_topic" ||
-		intent === "wants_more_options"
-	) {
-		return null;
-	}
-	const t = text.trim();
-	if (!t) return null;
-	if (NO_TEXT_MARKERS.test(t)) return false;
-	if (YES_TEXT_MARKERS.test(t)) return true;
-	return null;
-}
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
@@ -372,7 +359,13 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			metaChanged,
 			newlyExtractedExperience: extracted,
 			stuckGateDefaultApplied,
-		} = await analyzeAndMerge(userText, currentPersona, meta);
+		} = await analyzeAndMerge(
+			userText,
+			currentPersona,
+			meta,
+			// Âncora do classificador: a que pergunta esta mensagem responde.
+			await loadLastAssistantText(conversationId).catch(() => null),
+		);
 		newlyExtractedExperience = extracted;
 		analyzedIntent = analysis.userIntent;
 
@@ -494,6 +487,27 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			recoConsentGatePending && !excludedIntentForConsent
 				? await resolveOfferMentionForConversation(conversationId, userText)
 				: null;
+		// O reco-consent é um CONVITE ("posso te mostrar a que eu recomendo?"), não
+		// coleta de dado — então a RECUSA também é resposta válida e tem que
+		// destravar o funil. Antes, só o SIM gravava `recoConsentAnswered`: quem
+		// dizia "não, prefiro comparar sozinho" congelava a cascata para sempre
+		// (nunca vinha timeframe, lance, decisão nem contrato — a venda morria em
+		// silêncio). O gate não está em STUCK_ESCAPE_GATES e o watchdog não re-arma,
+		// então não havia NENHUMA outra saída.
+		const consentDeclined =
+			recoConsentGatePending &&
+			mentionedOfferForConsent === null &&
+			analyzedIntent !== "ready_to_proceed" &&
+			detectYesNoText(userText, analyzedIntent) === false;
+		if (consentDeclined) {
+			meta.recoConsentAnswered = true;
+			// Só telemetria/tom: o hero não é imposto a quem recusou.
+			meta.recoConsentDeclined = true;
+			await persistMeta(conversationId, meta);
+			console.log(
+				`[reco-consent] conv=${conversationId} recusado — seguindo o funil sem o hero`,
+			);
+		}
 		if (
 			recoConsentGatePending &&
 			(detectYesNoText(userText, analyzedIntent) === true ||
@@ -533,6 +547,27 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 						payload: meta.pendingSimulationResult,
 					});
 				}
+			} else {
+				// O cliente ACEITOU ver a recomendação e não há hero pendente pra
+				// materializar. Sem este ramo o turno terminava 100% MUDO: ele dizia
+				// "pode sim!" e recebia a pergunta do gate seguinte, como se ninguém
+				// tivesse ouvido — no exato instante em que ele se abriu. Nunca
+				// respondemos por texto pré-fabricado: entregamos o FATO ao modelo e
+				// ele conduz com as palavras dele.
+				console.log(
+					`[reco-consent] conv=${conversationId} aceito SEM hero pendente — devolvendo o turno ao modelo`,
+				);
+				yield* runTurnVercel({
+					channel,
+					conversationId,
+					userText:
+						"[sistema: o cliente acabou de aceitar ver a opção que você recomenda, mas a recomendação ainda não está pronta pra mostrar. Assuma o compromisso com ele, seja honesto de que vai levantar isso agora, e siga a conversa — sem prometer prazo nem inventar oferta.]",
+					isUserTurn: false,
+					contactName: knownName,
+					skipAnalyzer: true,
+					skipLeadCollection: true,
+					forceToolChoice: "none",
+				});
 			}
 			return;
 		}

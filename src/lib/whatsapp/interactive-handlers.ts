@@ -113,6 +113,16 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId === "show_others") return handleShowOthers(ctx);
 	if (replyId === "decision_outras") return handleDecisionOutras(ctx);
+	// Os outros dois botões do card de decisão (`DECISION_PROMPT_OPTIONS`) eram
+	// EMITIDOS pelo formatter e não tinham handler nenhum: o clique caía no
+	// fallback de texto (`processTextMessage(replyTitle)`) e "Seguir agora" nem
+	// casa com `INTEREST_RE` — ou seja, o CTA principal do momento de maior
+	// intenção de compra da jornada virava texto solto pro LLM, sem
+	// `decisionDispatched`, sem avanço determinístico. "Seguir agora" reusa o
+	// MESMO caminho do "Tenho interesse"; "Falar c/ consultor" é handoff humano
+	// explícito (o único gatilho legítimo de handoff — pedido do cliente).
+	if (replyId === "decision_contratar") return handleInterest(ctx);
+	if (replyId === "decision_especialista") return handleDecisionEspecialista(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
 	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
 	if (replyId === "contract_cancel") return handleContractCancel(ctx);
@@ -181,7 +191,8 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 			if (wa?.type === "text" && wa.text) {
 				if (templatedKeys.has(usageKey)) continue;
 				const text = wa.text;
-				const link = (item.kind === "artifact" && (item.payload.consortiumProposalLink as string)) || "";
+				const link =
+					(item.kind === "artifact" && (item.payload.consortiumProposalLink as string)) || "";
 				const result = await resolveAndSend({
 					to: from,
 					conversationId,
@@ -526,7 +537,13 @@ async function handlePicker(ctx: Ctx): Promise<boolean> {
 // fechou com o número velho, divergente do que a simulação acabou de mostrar.
 async function anchorRecommendedOffer(
 	conversationId: string,
-	details: { administradora: string; category?: Category; creditValue: number; termMonths: number; monthlyPayment: number },
+	details: {
+		administradora: string;
+		category?: Category;
+		creditValue: number;
+		termMonths: number;
+		monthlyPayment: number;
+	},
 	groupId: string,
 ): Promise<void> {
 	const meta = await loadMeta(conversationId);
@@ -663,6 +680,21 @@ async function handleDecisionOutras(ctx: Ctx): Promise<boolean> {
 			"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
 		);
 	}
+	return true;
+}
+
+/** "Falar c/ consultor" do card de decisão — pedido EXPLÍCITO de humano, o único
+ * gatilho legítimo de handoff. Mesmo caminho determinístico do
+ * `handleHandoffConfirm`, sem passar pelo modelo. */
+async function handleDecisionEspecialista(ctx: Ctx): Promise<boolean> {
+	const { from, conversationId, contactName } = ctx;
+	await recordUserClick(ctx);
+	const handoff = await getHandoffState(from);
+	if (handoff?.isHandedOff) return true;
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+	});
+	await startInterestHandoff(from, conversationId, contactName ?? conv?.contactName ?? null);
 	return true;
 }
 

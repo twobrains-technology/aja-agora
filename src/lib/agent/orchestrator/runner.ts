@@ -51,6 +51,7 @@ import {
 	buildComparisonTableFromRevealGroups,
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
+	coerceRevealCota,
 	indexRevealGroups,
 	pickBestRankedGroup,
 	type RevealGroupIndex,
@@ -548,6 +549,13 @@ export async function* runAgentTurn(args: {
 				monthlyPayment: g.monthlyPayment,
 			})),
 			shownAdministradoras,
+			// Com a contratação concluída, afirmar a reserva é VERDADE — e é o que
+			// o system-prompt manda dizer no estado terminal. Sem este fato o guard
+			// apagava a confirmação e o turno da venda fechada caía no enlatado.
+			contractClosed: meta.contractClosed === true,
+			// Guards escritos pra web (ex.: "te aviso quando sair") não valem no
+			// WhatsApp, onde o retorno proativo existe de fato.
+			channel,
 		};
 	};
 	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);
@@ -903,6 +911,28 @@ export async function* runAgentTurn(args: {
 								scoringInputFromMeta(meta),
 							);
 						}
+						// O group_card era o ÚNICO card do reveal sem coerção nenhuma: o
+						// schema pede creditValue/monthlyPayment/adminFeePercent/termMonths/
+						// availableSlots/contemplationRate à LLM e o payload ia cru pra tela
+						// — inclusive o "N por mês" que o FIX-191/315 já tinha matado no hero.
+						// Número que nenhuma tool devolveu, e o cliente decide em cima dele.
+						// Mesma allowlist das outras cotas: só identidade vem do modelo.
+						if (artifactType === "group_card") {
+							const rawId =
+								typeof input === "object" && input !== null
+									? (input as Record<string, unknown>).id
+									: undefined;
+							const group =
+								typeof rawId === "string" ? revealGroupsById.get(rawId) : undefined;
+							payload = coerceRevealCota(
+								(typeof input === "object" && input !== null
+									? input
+									: {}) as Record<string, unknown>,
+								group,
+								await getAdministradoraLogos(),
+								await getKnownCreditValues(),
+							);
+						}
 						if (artifactType === "comparison_table") {
 							payload = coerceComparisonPayload(
 								input,
@@ -1006,6 +1036,19 @@ export async function* runAgentTurn(args: {
 					: "o modelo ficou mudo: fallback determinístico assume o turno"
 			} (conv=${conversationId})`,
 		);
+		// A fala vai pro cliente pelo stream, mas este ramo dá `return` ANTES do
+		// bloco de persistência lá embaixo — então ela nunca era gravada. Efeito
+		// real: o agente ESQUECE o que acabou de dizer (não volta no histórico do
+		// próximo turno, some do admin e desaparece da tela num refresh). Entregar
+		// sem persistir é pior que não entregar: a conversa fica inconsistente
+		// entre o que o cliente leu e o que o sistema sabe.
+		if (modeloFalou) {
+			try {
+				await saveMessage(conversationId, "assistant", falaDoModelo, channel, currentPersona);
+			} catch (err) {
+				console.error(`[tool-error-recovery] falha ao persistir a fala (conv=${conversationId})`, err);
+			}
+		}
 		return {
 			fullResponse: modeloFalou ? falaDoModelo : "",
 			artifacts: [],

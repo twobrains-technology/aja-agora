@@ -39,6 +39,16 @@ const mocks = vi.hoisted(() => ({
 	sendInteractive: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendText,
 	sendInteractiveMessage: mocks.sendInteractive,
@@ -157,7 +167,13 @@ describe("BUG WhatsApp: artifacts orfaos no canal WhatsApp (apresentacao 13h)", 
 			scenarios: { scenarios: {} },
 			financing_comparison: { consorcio: {}, financing: {}, diff: {} },
 			whatsapp_optin: {},
-			embedded_bid: { maxEmbutidoPct: 30, creditValue: 120_000, embeddedBidValue: 36_000, netCredit: 84_000, disclaimer: "x" },
+			embedded_bid: {
+				maxEmbutidoPct: 30,
+				creditValue: 120_000,
+				embeddedBidValue: 36_000,
+				netCredit: 84_000,
+				disclaimer: "x",
+			},
 			two_paths: { monthlyPayment: 812, administradora: "X", disclaimer: "x" },
 			scarcity: { groupCode: "g1", administradora: "X", availableSlots: 3 },
 		};

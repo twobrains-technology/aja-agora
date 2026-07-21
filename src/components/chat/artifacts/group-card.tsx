@@ -31,13 +31,23 @@ const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; cla
 		},
 	};
 
-const formatBRL = (value: number): string =>
-	new Intl.NumberFormat("pt-BR", {
-		style: "currency",
-		currency: "BRL",
-	}).format(value);
+// Defensivo por decisão: desde que o `group_card` passou a ser coagido
+// server-side (allowlist estrita — só identidade vem do modelo), um payload sem
+// grupo ancorado chega SEM os campos financeiros. Antes o número era inventado
+// pela LLM e sempre "existia"; agora ele pode faltar legitimamente, e um
+// `Intl.format(undefined)` renderiza "R$ NaN" enquanto `undefined.toFixed()`
+// derruba o card em runtime. Faltando o dado, não se mostra o campo — nunca um
+// número errado.
+const formatBRL = (value: number | undefined | null): string | null =>
+	typeof value === "number" && Number.isFinite(value)
+		? new Intl.NumberFormat("pt-BR", {
+				style: "currency",
+				currency: "BRL",
+			}).format(value)
+		: null;
 
-const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
+const formatPercent = (value: number | undefined | null): string | null =>
+	typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : null;
 
 const cardSpring = { type: "spring" as const, stiffness: 400, damping: 17 };
 
@@ -105,48 +115,58 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 				{/* Body */}
 				<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
 					{/* Credit value — hero (é o que o cliente compra) */}
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
-						<p
-							data-testid="group-card-hero-credit"
-							className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]"
-						>
-							{formatBRL(payload.creditValue)}
-						</p>
-					</div>
+					{formatBRL(payload.creditValue) && (
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
+							<p
+								data-testid="group-card-hero-credit"
+								className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]"
+							>
+								{formatBRL(payload.creditValue)}
+							</p>
+						</div>
+					)}
 
 					{/* Monthly payment — discreta, logo abaixo da carta */}
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
-						<p
-							data-testid="group-card-secondary-payment"
-							className="aja-num text-xl font-semibold leading-tight text-foreground mt-0.5"
-						>
-							{formatBRL(payload.monthlyPayment)}
-						</p>
-					</div>
+					{formatBRL(payload.monthlyPayment) && (
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Parcela mensal</p>
+							<p
+								data-testid="group-card-secondary-payment"
+								className="aja-num text-xl font-semibold leading-tight text-foreground mt-0.5"
+							>
+								{formatBRL(payload.monthlyPayment)}
+							</p>
+						</div>
+					)}
 
 					{/* 2×2 metrics grid */}
 					<div className="grid grid-cols-2 gap-x-4 gap-y-3">
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Taxa adm.</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">
-								{formatPercent(payload.adminFeePercent)}
-							</p>
-						</div>
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Prazo</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
-						</div>
-						<div>
-							<p className="text-xs text-muted-foreground m-0">Vagas</p>
-							<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
-						</div>
+						{formatPercent(payload.adminFeePercent) && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Taxa adm.</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">
+									{formatPercent(payload.adminFeePercent)}
+								</p>
+							</div>
+						)}
+						{typeof payload.termMonths === "number" && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Prazo</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
+							</div>
+						)}
+						{typeof payload.availableSlots === "number" && (
+							<div>
+								<p className="text-xs text-muted-foreground m-0">Vagas</p>
+								<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
+							</div>
+						)}
 						{/* FIX-231: `contemplationRate` é, na origem, `monthlyAwardedQuotas`
 						    (contagem real de contemplados/mês, offer-mapper.ts:132-133) — NUNCA
 						    uma fração. Mostrar como "%" era enganoso; segue o mesmo padrão de
 						    contagem do recommendation-card. Ausente/0 → linha omitida. */}
-						{payload.contemplationRate > 0 && (
+						{(payload.contemplationRate ?? 0) > 0 && (
 							<div>
 								<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
 								<p className="aja-num text-sm font-semibold mt-0.5">

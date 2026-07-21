@@ -106,7 +106,7 @@ export const turnAnalysisSchema = z.object({
 			"neutral",
 		])
 		.describe(
-			"Intenção da mensagem atual, usada pra decidir se mostra botoes estruturados ou deixa fluir conversa livre. " +
+			"Intenção da mensagem atual, usada pra decidir se mostra botões estruturados ou deixa fluir conversa livre. " +
 				"ready_to_proceed = quer AVANÇAR no funil / prosseguir pra próxima etapa ('bora', 'vamos', 'pode ir', 'ok seguir', 'quero começar'). " +
 				"wants_more_options = quer ver MAIS/TODAS/OUTRAS opções ALÉM das que já foram mostradas ('quero ver todos', 'ver todas as opções', 'tem mais opções?', 'mostra as outras', 'quero ver mais', 'só essas?'). NÃO confundir com ready_to_proceed: aqui o usuário NÃO quer decidir/avançar, quer AMPLIAR o que viu. Só use quando já houve uma apresentação de opções antes. " +
 				"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
@@ -215,6 +215,18 @@ export async function analyzeTurn(
 	text: string,
 	currentPersona: string,
 	meta: ConversationMetadata,
+	/** O que o agente REALMENTE acabou de perguntar. Sem isto o classificador
+	 * adivinha a que pergunta a mensagem responde — e erra: "não" respondido ao
+	 * lance virava resposta do prazo, "uns 70 mil" dito de passagem virava o
+	 * crédito. Cada um desses erros virou um guard em analyze.ts pra DESFAZER a
+	 * extração errada (FIX-74/236/279/296/306/310). Ancorar na pergunta real é o
+	 * conserto na causa; os guards são o sintoma. */
+	turnAnchor?: {
+		/** Gate ativo no início do turno (`nextGate(meta)`). */
+		activeGate?: string | null;
+		/** Última fala do assistente — a pergunta a que o usuário está respondendo. */
+		lastAssistantText?: string | null;
+	},
 ): Promise<TurnAnalysis> {
 	const q = meta.qualifyAnswers ?? {};
 	const allFilled =
@@ -225,7 +237,7 @@ export async function analyzeTurn(
 
 	const missing: string[] = [];
 	if (!allFilled) {
-		if (!meta.experiencePrev) missing.push("experiência previa (first/returning/doubts)");
+		if (!meta.experiencePrev) missing.push("experiência prévia (first/returning/doubts)");
 		if (q.creditMax === undefined) missing.push("faixa de crédito");
 		if (q.prazoMeses === undefined) missing.push("prazo desejado em meses");
 		if (!q.hasLance) missing.push("reserva pra lance (yes/maybe/no)");
@@ -235,6 +247,23 @@ export async function analyzeTurn(
 		missing.length > 0 && missing.length < 4
 			? `\n\nContexto: o sistema acabou de perguntar ao usuário sobre estes campos pendentes: ${missing.join(", ")}. A mensagem dele provavelmente e resposta direta a uma dessas perguntas — preencha o campo correspondente quando o sinal for plausível mesmo que curto.`
 			: "";
+
+	// A ÂNCORA do turno: a que pergunta esta mensagem está respondendo. Vem antes
+	// do resto porque é o dado que mais muda a classificação de uma resposta curta
+	// ("não", "uns 70 mil", "pode ser") — que fora de contexto é ambígua e dentro
+	// de contexto é óbvia.
+	const anchorLines: string[] = [];
+	if (turnAnchor?.lastAssistantText?.trim()) {
+		anchorLines.push(
+			`O agente acabou de dizer: "${turnAnchor.lastAssistantText.trim().slice(0, 400)}"`,
+		);
+	}
+	if (turnAnchor?.activeGate) {
+		anchorLines.push(
+			`O funil está aguardando: ${turnAnchor.activeGate}. Uma resposta curta ("não", "pode ser", um número solto) responde MUITO provavelmente a ISSO — não a outro campo. Só preencha campo de outro gate quando o usuário for explícito sobre ele.`,
+		);
+	}
+	const anchorHint = anchorLines.length > 0 ? `\n${anchorLines.join("\n")}` : "";
 
 	const subTopics = await listExpertisesByCategory().catch(() => ({
 		imovel: [],
@@ -251,7 +280,7 @@ export async function analyzeTurn(
 			model: anthropic(ANALYZER_MODEL),
 			schema: turnAnalysisSchema,
 			system: BASE_SYSTEM_INSTRUCTION + renderSubTopicSection(subTopics),
-			prompt: `Persona ativa atualmente: ${currentPersona}
+			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}
 Mensagem do usuário: "${text}"${contextHint}
 
 Analise conforme o schema. Use null em campos sem sinal claro.`,

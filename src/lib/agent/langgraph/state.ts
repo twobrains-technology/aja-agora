@@ -79,6 +79,9 @@ export type FunnelState = {
 	// (`reco-consent`) e resposta reconhecida.
 	recoConsentDispatched?: boolean;
 	recoConsentAnswered?: boolean;
+	/** O convite foi RECUSADO ("prefiro comparar sozinho"). O funil segue igual —
+	 * só não impõe o hero. Existe pra telemetria/tom, nunca pra travar. */
+	recoConsentDeclined?: boolean;
 	// FIX-361 — payload JÁ coagido (I3) do hero, guardado por `discoveryNode`
 	// quando `evaluateArtifactGuards` (regra `hero-awaits-reco-consent`)
 	// suprime a emissão imediata — `emitCardNode` libera assim que
@@ -126,6 +129,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,
+		recoConsentDeclined: meta.recoConsentDeclined,
 		pendingRecommendationCard: meta.pendingRecommendationCard,
 		pendingSimulationResult: meta.pendingSimulationResult,
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
@@ -155,13 +159,37 @@ export const AgentGraphState = Annotation.Root({
 	// ── Produzido pelo nó `route` — guarda a decisão de roteamento do turno. ──
 	gate: Annotation<Gate | undefined>(),
 
+	// O gate que o funil está AGUARDANDO, independente de o card ser exibido.
+	// `gate` é zerado sempre que `decideShowGate` suprime o card — e no LangGraph
+	// gravar `undefined` APAGA o canal. Sem este canal separado, o turno seguinte
+	// chegava no `capture` sem saber o que o usuário está respondendo, e a captura
+	// determinística (o nome) não acontecia.
+	answeredGate: Annotation<Gate | undefined>({
+		reducer: (a, b) => b ?? a,
+		default: () => undefined,
+	}),
+
+	/** O modelo de fato FEZ uma pergunta neste turno (`hasHeldQuestion` do
+	 * sanitizer), não "emitiu algum caractere". É o que decide se o card cala a
+	 * pergunta canônica: com o proxy antigo (`events.some(text-delta)`) uma fala
+	 * social sem pergunta desligava a rede de segurança e o turno acabava sem
+	 * ninguém perguntando nada. */
+	modelAskedQuestion: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
 	// ── Autoridade do fluxo (mutado pelos nós conforme o turno avança) ──
 	funnel: Annotation<FunnelState>(),
 
 	// ── TurnEvents acumulados pelos nós (persist os lê no fim; run-turn.ts
 	// também os re-emite via streaming em tempo real — ver `emit.ts`) ──
-	events: Annotation<TurnEvent[]>({
-		reducer: (a, b) => a.concat(b),
+	// `null` como Update é sentinela de RESET (o nó `human` manda no começo de
+	// cada turno) — sem isso os TurnEvents acumulariam pra sempre no checkpointer
+	// e o guard intra-turno do `emitCard` acharia que cards de turnos passados
+	// saíram AGORA. Update normal (`TurnEvent[]`) concatena.
+	events: Annotation<TurnEvent[], TurnEvent[] | null>({
+		reducer: (a, b) => (b === null ? [] : a.concat(b)),
 		default: () => [],
 	}),
 });

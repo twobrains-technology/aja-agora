@@ -1,23 +1,34 @@
 // Rubric do LLM-as-judge da JORNADA CANÔNICA — Camada 3 (nightly).
 //
-// Fonte de verdade: docs/jornada/jornada-canonica.md (jornada.docx do cliente).
-// Avalia a EXPERIÊNCIA da jornada por passo (1→5) + o tom da escritora — o que
-// regex/toContain estrutural não consegue medir (auditoria 2026-06-04). A
-// rubric genérica (rubric.ts) mede qualidade de conversa com sucesso=lead; a
-// jornada canônica fecha em CONTRATAÇÃO — por isso rubric dedicada.
+// Fonte de verdade (2026-07-20): o mockup + handoff em
+// docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/ e a ordem REAL do
+// código (`nextGate`, qualify-state.ts). O `jornada.docx` foi REVOGADO em
+// 2026-07-13 por ter engessado o agente — esta rubric parou de medir aderência
+// literal ao roteiro e passou a medir o que importa: a conversa é competente e
+// soa humana? (Um juiz que premia recitar roteiro produz o agente bitolado que a
+// revogação existiu pra matar.)
+//
+// A rubric genérica (rubric.ts) mede qualidade de conversa com sucesso=lead; esta
+// fecha em CONTRATAÇÃO — por isso é dedicada.
 
 import { z } from "zod";
 
-export const JORNADA_RUBRIC_VERSION = "v2";
+// v3 (2026-07-20): deixou de medir fidelidade ao docx revogado e passou a medir
+// competência de conversa (conduziu? reagiu? tratou objeção? variou o fraseado?).
+export const JORNADA_RUBRIC_VERSION = "v3";
 
 const stepEvalSchema = z.object({
 	presente: z.boolean().describe("O passo aconteceu na conversa?"),
-	ordemCorreta: z.boolean().describe("Aconteceu na posição certa da jornada?"),
+	ordemCorreta: z
+		.boolean()
+		.describe(
+			"Aconteceu numa posição que fez sentido pro cliente? (só false quando a posição PREJUDICOU — não por diferir de um passo-a-passo ideal)",
+		),
 	fidelidade: z
 		.number()
 		.min(0)
 		.max(1)
-		.describe("0-1: o quanto o passo entregou o que o docx pede (conteúdo + espírito)"),
+		.describe("0-1: o quanto o passo cumpriu seu PAPEL na conversa (não aderência a copy)"),
 	reasoning: z.string().describe("1-2 linhas em PT-BR citando evidência do transcript"),
 });
 
@@ -102,6 +113,24 @@ export const jornadaJudgeResultSchema = z.object({
 		faltouResumoContratacao: z
 			.boolean()
 			.describe("v2: o resumo da contratação (WhatsApp) não foi enviado nem sinalizado"),
+		naoReagiuAoCliente: z
+			.boolean()
+			.default(false)
+			.describe(
+				"v3: coletou campo sem reagir ao CONTEÚDO das respostas — o motivo/sonho que o cliente contou nunca reaparece na conversa. É o sintoma de formulário disfarçado de conversa.",
+			),
+		falaRepetida: z
+			.boolean()
+			.default(false)
+			.describe(
+				"v3: repetiu a MESMA frase em pontos diferentes, ou respondeu a duas dúvidas parecidas com texto igual byte a byte. É o sintoma do agente bitolado (ADR 2026-07-13).",
+			),
+		naoTratouObjecao: z
+			.boolean()
+			.default(false)
+			.describe(
+				"v3: o cliente levantou objeção clássica de consórcio ('demora', 'e se eu não for contemplado', 'melhor financiamento', 'taxa cara') e o agente desconversou, ignorou ou repetiu argumento anterior em vez de responder com substância.",
+			),
 	}),
 	topIssues: z.array(z.string()).describe("Até 3 problemas mais graves; strings curtas"),
 	topStrengths: z.array(z.string()).describe("Até 3 pontos fortes; strings curtas"),
@@ -254,15 +283,44 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   "vou usar uma ferramenta", "directive", "tool", "card vai aparecer").
 - faltaramReforcos / faltouParabens / faltouResumoContratacao: ver passo 5.
 
+## Soa humano e entende de consórcio? (peso alto)
+
+O alvo NÃO é recitar um roteiro — é uma conversa de vendedor consultivo que entende
+do produto. Avalie explicitamente:
+
+- **Conduziu ou só coletou?** Vendedor conduz: reage ao que a pessoa disse, conecta
+  com o motivo dela, faz a ponte pro próximo assunto. Sequência de perguntas soltas,
+  sem reagir ao conteúdo das respostas, é formulário — nota baixa.
+- **Reagiu ao que o cliente trouxe?** O motivo ("o carro vive quebrando", "vai nascer
+  meu filho") tem que reaparecer na conversa. Ignorar o que a pessoa contou e seguir
+  o script = flag naoReagiuAoCliente.
+- **Tratou objeção?** "é demorado", "e se eu não for contemplado", "melhor um
+  financiamento", "essa taxa de administração é cara" — o bom vendedor responde com
+  substância e honestidade, não desconversa nem repete o argumento anterior.
+- **Explicou o produto como quem entende?** Lance embutido/livre/fixo, assembleia,
+  contemplação, carta, fundo de reserva — no nível do interlocutor, sem jargão cru e
+  sem erro conceitual.
+- **Variou o fraseado?** Repetir a MESMA frase em pontos diferentes (ou entre
+  conversas) é o sintoma do agente bitolado — flag falaRepetida. Duas respostas
+  iguais byte a byte pra dúvidas parecidas = nota baixa em tom.
+
 ## Regras
 
-- Avalie APENAS contra o docx acima — não contra o que "parece razoável".
-- ordemCorreta importa tanto quanto presente: passo essencial fora de ordem quebra
-  o fluxo do docx (o score de fluxo trava baixo).
+- Avalie a EXPERIÊNCIA e a competência da conversa, não a aderência literal a um
+  roteiro. Copy diferente da esperada NÃO é defeito se a conversa cumpriu o papel
+  melhor; frase decorada repetida É defeito mesmo quando "bate com o roteiro".
+- A ORDEM é responsabilidade do servidor, não do modelo. Só penalize ordem quando o
+  desvio prejudicou o cliente de fato (ex.: pedir dado antes de estabelecer valor,
+  revelar oferta sem identidade) — nunca por diferir de um passo-a-passo ideal.
+- O cliente puxar o assunto pro lado e o agente acompanhar e depois retomar é ACERTO,
+  não quebra de fluxo. Agente que ignora o desvio pra cumprir etapa perde ponto.
 - Reasoning curto (1-2 linhas, PT-BR) com evidência do transcript.
 - Números citados no texto devem estar ancorados nos cards descritos — número
   solto sem card é problema (topIssues).
-- Seja rigoroso: nota alta exige a EXPERIÊNCIA do docx, não só as tools certas.`;
+- Invariantes duros continuam valendo como falha grave: prometer contemplação
+  garantida ou prazo de contemplação, dizer "cota reservada" antes da contratação,
+  citar "taxa de contemplação", ou inventar número/administradora que não veio de
+  uma busca real.`;
 
 export function buildJornadaJudgePrompt(args: { transcript: string }): string {
 	return `Avalie a conversa abaixo contra a jornada canônica (os 5 passos do seu system prompt).

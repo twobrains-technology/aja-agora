@@ -25,6 +25,16 @@ const mocks = vi.hoisted(() => ({
 	runTurn: vi.fn(),
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendText,
 	sendInteractiveMessage: mocks.sendInteractive,
@@ -58,9 +68,14 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("FIX-210 — cadência 2-tempos: contexto e pedido em balões SEPARADOS", () => {
-	it("gate identify → 2 balões (contexto docx+LGPD, depois pedido do CPF), não 1 bolha", async () => {
-		// A reação do LLM é SUBSTITUÍDA pelo contexto fixo (o gancho docx nunca some).
-		const reacaoLLM = "REACAO_DO_LLM_DESCARTAVEL_XYZ";
+	it("gate identify com fala do modelo → a fala do modelo SOBREVIVE e o contexto+pedido saem em balões próprios", async () => {
+		// 2026-07-20 (auditoria multicanal): este ramo APAGAVA o texto do modelo
+		// (`textBuffer = ""`) pra colar o beat fixo. O cliente perguntava "por que
+		// você precisa do meu CPF?", o modelo escrevia a explicação, e o canal
+		// jogava a explicação fora e mandava os mesmos 2 balões enlatados de sempre.
+		// Invariante novo: a fala do modelo nunca é apagada; o beat determinístico
+		// (LGPD) continua saindo, mas UMA vez por conversa e SEM comer a conversa.
+		const reacaoLLM = "Claro! Te explico: é pra eu conseguir consultar as simulações reais.";
 		mocks.runTurn.mockReturnValue(
 			emit([
 				{ type: "text-delta", text: reacaoLLM },
@@ -69,23 +84,20 @@ describe("FIX-210 — cadência 2-tempos: contexto e pedido em balões SEPARADOS
 			]),
 		);
 
-		await processWithOrchestrator(WA, "Bora!");
+		await processWithOrchestrator(WA, "por que você precisa do meu CPF?");
 
-		// DOIS balões deliberados — contexto e pedido em bolhas separadas.
-		expect(mocks.sendText).toHaveBeenCalledTimes(2);
-		const balao1 = mocks.sendText.mock.calls[0]?.[1] as string;
-		const balao2 = mocks.sendText.mock.calls[1]?.[1] as string;
-		// Balão 1: contexto fixo com o gancho docx + LGPD (garantido, não do LLM).
-		expect(balao1).toMatch(/administradoras/i);
-		expect(balao1).toMatch(/aderentes ao seu perfil/i);
-		expect(balao1).toMatch(/lgpd/i);
-		// Balão 2: o pedido do CPF sai como beat PRÓPRIO — sem o contexto colado.
-		expect(balao2).toMatch(/cpf/i);
-		expect(balao2).not.toMatch(/administradoras/i);
-		// A reação do LLM foi descartada — não vira uma 3ª bolha.
-		for (const call of mocks.sendText.mock.calls) {
-			expect(call[1]).not.toContain(reacaoLLM);
-		}
+		const baloes = mocks.sendText.mock.calls.map((c) => c[1] as string);
+		// A fala do modelo saiu — não foi substituída por texto enlatado.
+		expect(baloes[0]).toContain(reacaoLLM);
+		// O contexto fixo (gancho docx + LGPD) continua sendo entregue, em balão próprio.
+		const contexto = baloes.find((t) => /lgpd/i.test(t));
+		expect(contexto).toBeDefined();
+		expect(contexto).toMatch(/administradoras/i);
+		expect(contexto).toMatch(/aderentes ao seu perfil/i);
+		// E o pedido do CPF é um beat PRÓPRIO — nunca colado no contexto.
+		const pedido = baloes.at(-1) as string;
+		expect(pedido).toMatch(/cpf/i);
+		expect(pedido).not.toMatch(/administradoras/i);
 	});
 
 	it("gate identify sem reação do LLM → ainda 2 balões (contexto fixo + pedido)", async () => {

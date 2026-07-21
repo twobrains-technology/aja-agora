@@ -517,12 +517,21 @@ export function looksLikeFabricatedGroupId(groupId: string): boolean {
  * pelas duas tools (simulate_quota / get_group_details). Degradacao graciosa
  * preservada — guidance pra retomar, nunca loop.
  */
-function rebuscaDirective(groupId: string): { error: string } {
+function rebuscaDirective(groupId: string, allowedToolNames?: readonly string[]): { error: string } {
+	// Mesma armadilha do `naoExibidoDirective`: mandar "refaça search_groups"
+	// numa fase em que a policy escondeu a tool faz o modelo tomar
+	// NoSuchToolError, o runner abortar a geração e o cliente receber o fallback
+	// enlatado. Em `closing`, por exemplo, `search_groups` NÃO está no toolset.
+	// Só citamos a tool quando ela realmente existe agora.
+	const podeRebuscar = (allowedToolNames ?? ["search_groups"]).includes("search_groups");
+	const saida = podeRebuscar
+		? "Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado."
+		: "Voce NAO tem a busca disponivel agora — entao pergunte ao usuario, com as suas palavras, qual das opcoes ja mostradas em tela ele quer, e siga pela escolha dele.";
 	return {
 		error:
 			`O groupId "${groupId}" nao existe na descoberta atual (nao e um id real retornado por search_groups/recommend_groups). ` +
 			"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
-			"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.",
+			`${saida} NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.`,
 	};
 }
 
@@ -540,11 +549,14 @@ function rebuscaDirective(groupId: string): { error: string } {
 export async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof simulateQuotaInput>,
+	/** Tools expostas na fase — a diretiva de re-busca só pode citar `search_groups`
+	 * quando ela existe agora (senão vira NoSuchToolError → fallback enlatado). */
+	allowedToolNames?: readonly string[],
 ) {
 	// FIX-72 (fast-path): id com cara de slug fabricado (marcador de valor-em-k)
 	// NUNCA existe na descoberta — nem chama a Bevi, devolve guidance acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return rebuscaDirective(args.groupId);
+		return rebuscaDirective(args.groupId, allowedToolNames);
 	}
 	try {
 		const [details, simulation] = await Promise.all([
@@ -577,7 +589,7 @@ export async function executeSimulateQuota(
 	} catch (err) {
 		// FIX-72 (rede de seguranca): id fora do conjunto real (qualquer formato —
 		// hex inventado, oferta expirada) → diretiva de re-busca, nunca erro cru.
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -593,17 +605,19 @@ async function executeGetRates(
 export async function executeGetGroupDetails(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof getGroupDetailsInput>,
+	/** Ver `executeSimulateQuota`. */
+	allowedToolNames?: readonly string[],
 ) {
 	// FIX-72: mesma resolucao robusta de simulate_quota — o get_group_details
 	// recebia id fabricado (`auto-180k-kairo` no log) e devolvia erro cru. Fast-path
 	// pro slug + rede do GroupNotInDiscoveryError → diretiva de re-busca acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return rebuscaDirective(args.groupId);
+		return rebuscaDirective(args.groupId, allowedToolNames);
 	}
 	try {
 		return await adapter.getGroupDetails(args);
 	} catch (err) {
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -1156,6 +1170,11 @@ export type ConsorcioToolsContext = {
 	 * pelo chamador (builder.ts) a partir do meta; false/undefined preserva o
 	 * comportamento de busca real (pré-reveal ou troca legítima de faixa). */
 	reuseShownGroupsOnly?: boolean;
+	/** Tools que a policy REALMENTE expôs nesta fase. As diretivas de recuperação
+	 * (naoExibidoDirective) só podem nomear tool desta lista — nomear uma que a
+	 * policy escondeu faz o modelo tomar NoSuchToolError e o turno inteiro cair no
+	 * fallback enlatado. Ausente → comportamento antigo. */
+	allowedToolNames?: readonly string[];
 };
 
 /**
@@ -1165,7 +1184,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId, hasLance, reuseShownGroupsOnly } = ctx;
+	const { conversationId, hasLance, reuseShownGroupsOnly, allowedToolNames } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1452,9 +1471,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			const verdict = evaluateActionPrecondition("simulate_quota", {
 				shown,
 				args: args as Record<string, unknown>,
+				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
+			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args, allowedToolNames));
 		},
 	});
 
@@ -1479,9 +1499,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			const verdict = evaluateActionPrecondition("get_group_details", {
 				shown,
 				args: args as Record<string, unknown>,
+				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
+			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args, allowedToolNames));
 		},
 	});
 

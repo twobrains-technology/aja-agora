@@ -8,9 +8,11 @@ import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
+import { withConversationLock } from "./conversation-lock";
 import { dispatchInteractiveReply } from "./interactive-handlers";
 import { isMesaClaimReply } from "./mesa/claim";
 import { handleMesaClaim, handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
+import { claimButtonClick } from "./once";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -38,7 +40,26 @@ async function handleBackIntent(from: string): Promise<void> {
 	await sendTextMessage(from, popped ? "Voltando ao passo anterior." : "Você já está no início.");
 }
 
+/**
+ * Ponto de entrada do texto inbound. SERIALIZADO por conversa: duas mensagens
+ * seguidas do mesmo contato (padrão no WhatsApp — "quero um carro" / "uns 90
+ * mil") rodavam dois turnos em paralelo sobre o mesmo metadata, e o segundo
+ * apagava o que o primeiro escreveu (`persistMeta` é read-modify-write do
+ * objeto inteiro). O lease é reentrante: o caminho clique → texto não trava.
+ * Ver src/lib/whatsapp/conversation-lock.ts.
+ */
 export async function processTextMessage(
+	from: string,
+	text: string,
+	contactName?: string,
+	messageId?: string,
+): Promise<void> {
+	return withConversationLock(from, () =>
+		processTextMessageSerialized(from, text, contactName, messageId),
+	);
+}
+
+async function processTextMessageSerialized(
 	from: string,
 	text: string,
 	contactName?: string,
@@ -137,8 +158,12 @@ export async function processTextMessage(
 		// Passo 5 "Contratar" (FIX-25): fechamento ativo (contractCollection) →
 		// captura conversacional do aceite/recusa/CPF sem turno de agente.
 		{
-			const { captureContractText, fireContract, CONTRACT_INVALID_CPF_REPLY, CONTRACT_CANCELLED_REPLY } =
-				await import("./contract-capture");
+			const {
+				captureContractText,
+				fireContract,
+				CONTRACT_INVALID_CPF_REPLY,
+				CONTRACT_CANCELLED_REPLY,
+			} = await import("./contract-capture");
 			const capture = await captureContractText(from, text);
 			if (capture.handled) {
 				const conv = await db.query.conversations.findFirst({
@@ -184,6 +209,8 @@ export async function processTextMessage(
 	}
 }
 
+/** Ponto de entrada do clique inbound — mesma serialização por conversa do
+ * caminho de texto (o clique também roda um turno inteiro e escreve metadata). */
 export async function processInteractiveReply(
 	from: string,
 	replyId: string,
@@ -191,6 +218,30 @@ export async function processInteractiveReply(
 	contactName?: string,
 	messageId?: string,
 ): Promise<void> {
+	return withConversationLock(from, () =>
+		processInteractiveReplySerialized(from, replyId, replyTitle, contactName, messageId),
+	);
+}
+
+async function processInteractiveReplySerialized(
+	from: string,
+	replyId: string,
+	replyTitle: string,
+	contactName?: string,
+	messageId?: string,
+): Promise<void> {
+	// Guard de clique duplo (paridade com o FIX-272 do web, que só existia lá).
+	// Botão do WhatsApp NÃO desabilita depois do clique e o adapter dorme ~1,8s
+	// entre balões — o cliente clica "Sim, considerar", não vê nada acontecer e
+	// clica de novo. Sem isto o gate seguinte disparava DUAS vezes (dois cards
+	// colados) ou o segundo caía num gate que já avançou e fechava o turno mudo.
+	// Idempotência por ESTADO (o mesmo botão, na mesma conversa, numa janela de
+	// segundos), uma vez só — não um `if` copiado em cada um dos 12 handlers.
+	if (!(await claimButtonClick(from, replyId))) {
+		console.log(`[whatsapp-processor] Clique duplo ignorado: ${replyId} de ${from}`);
+		return;
+	}
+
 	// Mesa de operação (FIX-124): número de um atendente de mesa clicando um botão vai
 	// pra MESA, nunca pro funil de cliente — espelha a precedência do caminho de texto
 	// (isMesaAttendantPhone → handleMesaCopilot). O clique "Vou atender"
