@@ -97,8 +97,36 @@ export async function persistNode(
 		}
 	}
 
+	// CARD NENHUM CONTRADIZ A COTA ANCORADA.
+	//
+	// O hero é montado na descoberta, pelo ranking. Quando o cliente escolhe outra
+	// cota no MESMO turno, o card já estava na fila: a fala dizia "essa é a sua
+	// cota, R$ 1.289 em 116 meses" e logo acima ficava um card de outra
+	// administradora, R$ 3.203, com o botão "Tenho interesse" ativo — um clique
+	// ali levava pra cota que ele não escolheu (visto ao vivo no web).
+	//
+	// Compara com `recommendedOffer` (a âncora ATUAL) e não com `escolha`: a
+	// âncora é o que discovery e `escolher_cota` mantêm em dia, então uma busca
+	// nova continua podendo apresentar seu próprio hero.
+	const ancora = funnel.recommendedOffer?.administradora;
+	const contradizAncora = (ev: TurnEvent): boolean => {
+		if (ev.type !== "artifact") return false;
+		if (ev.artifactType !== "recommendation_card" && ev.artifactType !== "simulation_result") {
+			return false;
+		}
+		if (!ancora) return false;
+		const doCard = (ev.payload as { administradora?: unknown } | null)?.administradora;
+		return typeof doCard === "string" && doCard.toLowerCase() !== ancora.toLowerCase();
+	};
+
 	for (const ev of state.events) {
 		if (ev.type !== "artifact") continue;
+		if (contradizAncora(ev)) {
+			console.log(
+				`[persist] card de ${(ev.payload as { administradora?: string })?.administradora} descartado — a cota ancorada é ${ancora}`,
+			);
+			continue;
+		}
 		// Mesmo padrão de `emitServerCard` (orchestrator/index.ts): 1 message
 		// marcador `[card: tipo]` por artifact, pra o log do admin nunca perder
 		// o turno mesmo quando não há texto (BUG-ADMIN-MESSAGE-MISSING).
@@ -179,6 +207,10 @@ export async function persistNode(
 	for (const ev of state.events) {
 		if (JA_EMITIDOS.has(ev.type)) continue;
 		if (ev.type === "artifact" && jaNaTela.has(ev.toolCallId)) continue;
+		// Mesmo descarte da gravação acima: o card que contradiz a âncora não pode
+		// ir pra tela nem pelo banco nem ao vivo — é o botão "Tenho interesse" da
+		// cota errada que o cliente clicaria.
+		if (contradizAncora(ev)) continue;
 		config?.writer?.(ev);
 	}
 	for (const ev of events) config?.writer?.(ev);
