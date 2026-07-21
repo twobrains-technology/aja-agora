@@ -14,8 +14,9 @@
 // nunca do stream ao vivo — garantia por TOPOLOGIA, não por timing.
 
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { artifacts as artifactsTable } from "@/db/schema";
+import { artifacts as artifactsTable, conversations as conversationsTable } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
@@ -172,6 +173,33 @@ export async function persistNode(
 		delete meta.pendingGate;
 	}
 	await persistMeta(conversationId, meta);
+
+	// O NOME CAPTURADO PRECISA SOBREVIVER AO TURNO.
+	//
+	// O nó `capture` extrai o nome do texto e devolve `{ contactName }` — mas isso
+	// vive só no canal do grafo, e `run-turn.ts` re-hidrata `contactName` da COLUNA
+	// do banco a cada turno. Como só a tool `save_contact_name` escrevia essa
+	// coluna, bastava o modelo não chamá-la pra o nome evaporar: no turno seguinte
+	// `nextGate` via `hasContactName: false` e pedia o nome DE NOVO, a quem tinha
+	// acabado de dizer. Visto ao vivo em produção.
+	//
+	// É a mesma família dos outros sumiços de estado, numa terceira variante: nem
+	// escrita fora do grafo, nem campo fora da projeção — um canal do grafo que
+	// ninguém persistia. Por isso mora aqui, junto do resto da persistência.
+	//
+	// Isto também é o que permite parar de depender da regra-no-prompt: capturar o
+	// nome é invariante verificável, e invariante verificável é código.
+	// `isNull` na cláusula: grava só quando a coluna ainda está vazia. Uma
+	// instrução, idempotente, sem reescrever a cada turno e sem atropelar um nome
+	// que a tool (ou o usuário, pelo card) já tenha confirmado.
+	if (state.contactName) {
+		await db
+			.update(conversationsTable)
+			.set({ contactName: state.contactName, updatedAt: simulatorNow() })
+			.where(
+				and(eq(conversationsTable.id, conversationId), isNull(conversationsTable.contactName)),
+			);
+	}
 
 	const events: TurnEvent[] = [];
 	// Proxy determinístico de `lead-stage` (TODO rodada-1: paridade fina com

@@ -95,7 +95,15 @@ export function parseAssetValue(
 	ctx?: AssetValueContext,
 ): number | null {
 	if (!text) return null;
-	const t = text.toLowerCase();
+	// UM CPF NÃO É DINHEIRO. Escrito no formato brasileiro ele é indistinguível
+	// de um valor: "529.982.247-25" casa com a regra de separador de milhar
+	// (o "-25" do dígito verificador conta como fronteira de palavra) e vira uma
+	// carta de R$ 529.982.247. Visto ao vivo: a cliente mandou nome + CPF +
+	// celular numa frase só, a busca rodou com meio bilhão de crédito e ela
+	// recebeu na tela 15 grupos com cartas de R$ 530 MILHÕES. Some o CPF antes de
+	// qualquer regra numérica — inclusive da contagem de números do
+	// `bareNumberAsValue`, que também se confundia com ele.
+	const t = text.toLowerCase().replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, " ");
 	if (MONTHLY_MARKER.test(t)) return null;
 
 	// 1) Magnitude "milhão/milhões/mi": "1 milhão", "1,5 milhão", "2 mi".

@@ -45,23 +45,50 @@ export async function analyzeNode(
 	// R$ 160.746 pra um caminhão de R$ 250 mil. O cliente viu: "pera, isso tá
 	// errado, cadê a carta de 251 mil que a gente combinou?"
 	//
-	// O invariante é verificável e não depende de interpretar intenção: um mesmo
-	// número não pode ser, no MESMO turno, o lance que ele oferece e o preço do
-	// bem que ele quer. Quando colidem, o alvo da busca que já estava firmado
-	// permanece — o lance fica com o valor, que é o papel dele. Errar aqui pra
-	// menos só devolve uma pergunta; errar pra mais vende o caminhão errado.
+	// O invariante é verificável e não depende de interpretar intenção: o dinheiro
+	// que o cliente TEM e o preço do bem que ele QUER não podem ser o mesmo número.
+	// Ninguém dá de lance próprio o valor inteiro da carta — quando os dois campos
+	// batem, é erro de extração, não fato.
+	//
+	// A colisão acontece nas DUAS direções, e as duas já apareceram ao vivo:
+	//   - lance vira o alvo da busca: caminhão de R$ 250 mil virou carta de
+	//     R$ 160.746 e o cliente reclamou ("cadê a carta de 251 mil?");
+	//   - o alvo vira o lance: o cliente disse "80 mil" três vezes, o agente falou
+	//     80 mil em todas as contas, e o estado guardou R$ 250 mil. Esse é o mais
+	//     perigoso — `dinheiroDeclaradoPeloCliente` devolveria a carta inteira como
+	//     dinheiro dele e a simulação diria que a contemplação é quase imediata.
+	//     Mentir pra mais é o erro que VENDE.
+	//
+	// Nos dois casos o remédio é o mesmo: nenhum campo aceita o valor do outro;
+	// cada um mantém o que já estava firmado. Errar pra menos devolve uma
+	// pergunta ao cliente, que é barato.
 	const antes = state.funnel.qualifyAnswers;
 	const depois = meta.qualifyAnswers;
 	if (
 		depois?.lanceValue !== undefined &&
-		depois.creditMax === depois.lanceValue &&
-		antes.creditMax !== undefined &&
-		antes.creditMax !== depois.creditMax
+		depois.creditMax !== undefined &&
+		depois.creditMax === depois.lanceValue
 	) {
-		console.log(
-			`[analyze] lance R$ ${depois.lanceValue} tentou virar o alvo da busca; mantido R$ ${antes.creditMax}`,
-		);
-		meta.qualifyAnswers = { ...depois, creditMax: antes.creditMax, creditMin: antes.creditMin };
+		const alvoMudou = antes.creditMax !== undefined && antes.creditMax !== depois.creditMax;
+		const lanceMudou = antes.lanceValue !== depois.lanceValue;
+		if (alvoMudou) {
+			console.log(
+				`[analyze] lance R$ ${depois.lanceValue} tentou virar o alvo da busca; mantido R$ ${antes.creditMax}`,
+			);
+			meta.qualifyAnswers = { ...meta.qualifyAnswers, creditMax: antes.creditMax };
+			if (antes.creditMin !== undefined) meta.qualifyAnswers.creditMin = antes.creditMin;
+		} else if (lanceMudou) {
+			// O alvo continua certo; quem foi contaminado é o lance. Volta pro valor
+			// anterior (ou some) — o gate `lance-value` pergunta de novo se precisar,
+			// e perguntar é infinitamente melhor que simular com dinheiro que ele
+			// não tem.
+			console.log(
+				`[analyze] alvo R$ ${depois.creditMax} tentou virar o lance; lance devolvido a ${antes.lanceValue ?? "vazio"}`,
+			);
+			meta.qualifyAnswers = { ...meta.qualifyAnswers };
+			if (antes.lanceValue === undefined) delete meta.qualifyAnswers.lanceValue;
+			else meta.qualifyAnswers.lanceValue = antes.lanceValue;
+		}
 	}
 
 	// ROTEAMENTO concierge → specialist. Sem isto o grafo ficava preso no
