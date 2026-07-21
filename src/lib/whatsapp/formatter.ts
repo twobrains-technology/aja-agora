@@ -1053,13 +1053,31 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma
 	// silenciosamente. Copy corrigida (pedido × carta real, sem inversão).
 	const rawCreditValue = Number(payload.rawCreditValue);
+	const cartaMaiorPorEmbutido = payload.cartaMaiorPorEmbutido === true;
 	const adjustmentLine =
 		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
-			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
+			? cartaMaiorPorEmbutido
+				? `\n\n_O bem que você quer custa ~${brlWa(rawCreditValue)}; a carta é maior (${brlWa(credit)}) de propósito, porque o lance embutido sai dela._`
+				: `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
 			: "";
 	// FIX-259 (P1, veredito Fable r4): paridade com o card web — quando o
 	// fechamento trocou a administradora confirmada, avisa explicitamente as
 	// duas marcas em vez de "Confirmado com a X" liso.
+	// A carta real pode voltar com parcela e prazo diferentes dos que o cliente
+	// aprovou — ele disse sim a 48 meses e assinava 55, calado. Avisar é o mesmo
+	// dever do aviso de carta logo acima (CDC art. 30: o que foi ofertado vincula).
+	const parcelaVista = Number(payload.parcelaVista);
+	const prazoVisto = Number(payload.prazoVisto);
+	const mudancaParcela = Number.isFinite(parcelaVista)
+		? `a parcela passou de ${brlWa(parcelaVista)} para ${brlWa(parcela)}`
+		: "";
+	const mudancaPrazo = Number.isFinite(prazoVisto)
+		? `o prazo passou de ${prazoVisto} para ${termMonths} meses`
+		: "";
+	const mudancas = [mudancaParcela, mudancaPrazo].filter(Boolean).join(" e ");
+	const planChangeLine = mudancas
+		? `\n\n_Atenção: essa cota não é a mesma que eu simulei — ${mudancas}._`
+		: "";
 	const previousAdministradora = payload.previousAdministradora as string | undefined;
 	const swapLine = previousAdministradora
 		? `\n\n_A ${previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${admin}._`
@@ -1072,7 +1090,7 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		interactive: {
 			type: "button",
 			body: {
-				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}${planChangeLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [

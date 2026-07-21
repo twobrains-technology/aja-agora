@@ -285,6 +285,16 @@ export interface RealOfferPayload {
 	 * passou a trazê-lo (gap do FIX-13 acabou). Opcional: shape antigo não tinha e
 	 * a API pode voltar atrás → ausente mantém a copy de fallback do card. */
 	termMonths?: number;
+	/** A carta é maior que o pedido DE PROPÓSITO: o cliente aceitou lance
+	 * embutido, e o embutido sai da própria carta — mirar o tamanho do bem
+	 * deixaria faltar dinheiro. Sem isso, o aviso de divergência ("você pediu
+	 * 300 mil, a carta real ficou 435 mil") lia como erro do sistema. */
+	cartaMaiorPorEmbutido?: boolean;
+	/** A parcela/prazo que o cliente VIU e aprovou, quando a carta real voltou
+	 * diferente. Presença = o card avisa a mudança; ausência = não mudou nada.
+	 * Sem isso o cliente dizia sim a 48 meses e assinava 55, sem uma palavra. */
+	parcelaVista?: number;
+	prazoVisto?: number;
 	/** FIX-40: lance médio do grupo (R$) — rótulo LITERAL do campo `lanceMedio` da
 	 * API nova. Opcional; exibido só com fonte (D11). NUNCA prometer contemplação a
 	 * partir dele (semântica não confirmada — só comparação factual de posição). */

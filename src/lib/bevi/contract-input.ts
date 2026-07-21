@@ -70,7 +70,8 @@ export function buildStartContractInput(
 	// "você pediu uma carta de ~R$ 428.571" sem nunca ter dito esse número — a
 	// conta interna do embutido apresentada como fala dele. `valorDoBemAlvo`
 	// guarda o preço do bem, que é o que ele efetivamente pediu.
-	const originalRequestedCreditValue = q.creditClampedFrom ?? q.valorDoBemAlvo ?? q.creditMax;
+	const originalRequestedCreditValue =
+		q.creditClampedFrom ?? q.valorDoBemAlvo ?? q.creditMentionedAtDesire ?? q.creditMax;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {

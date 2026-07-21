@@ -225,6 +225,44 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 	});
 });
 
+// A carta real da administradora pode voltar com OUTRA parcela e OUTRO prazo —
+// o cliente decidiu olhando os números simulados. Confirmar em silêncio é
+// exatamente o que o aviso de carta (FIX-240, CDC art. 30) já impede pro valor;
+// parcela e prazo tinham ficado de fora, e ao vivo alguém disse sim a 48 meses
+// e assinou 55 (2026-07-21).
+describe("realOfferPresentation — mudança de plano entre o sim e a assinatura", () => {
+	const VISTA = { monthlyPayment: 10_689.51, termMonths: 48 };
+	const REAL = {
+		...START_OK,
+		offer: { ...START_OK.offer, monthlyPayment: 9_879, termMonths: 55 },
+	};
+
+	it("parcela e prazo diferentes do aprovado → payload carrega os dois valores vistos", () => {
+		const items = realOfferPresentation(REAL, { ofertaVista: VISTA });
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(card.payload.parcelaVista).toBe(10_689.51);
+		expect(card.payload.prazoVisto).toBe(48);
+	});
+
+	it("plano IGUAL ao aprovado → nada a avisar (sem ruído no card)", () => {
+		const items = realOfferPresentation(REAL, {
+			ofertaVista: { monthlyPayment: 9_879, termMonths: 55 },
+		});
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("parcelaVista" in card.payload).toBe(false);
+		expect("prazoVisto" in card.payload).toBe(false);
+	});
+
+	it("sem a oferta vista (fluxo antigo) → comportamento de sempre", () => {
+		const items = realOfferPresentation(REAL);
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("parcelaVista" in card.payload).toBe(false);
+	});
+});
+
 describe("closingPresentation — o fecho (passo 5.2)", () => {
 	const PROPOSTA = "https://docs.aja.test/proposta.pdf";
 	const items = closingPresentation(CONFIRM, { channel: "web", propostaUrl: PROPOSTA });

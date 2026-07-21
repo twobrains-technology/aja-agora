@@ -70,15 +70,24 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 			consorcioMonthlyPayment: monthly,
 			consorcioTotalCost: monthly * term,
 		});
-	}, [hasPayment, hasTerm, payload.creditValue, payload.termMonths, payload.category, payload.monthlyPayment]);
+	}, [
+		hasPayment,
+		hasTerm,
+		payload.creditValue,
+		payload.termMonths,
+		payload.category,
+		payload.monthlyPayment,
+	]);
 
 	// Economia só é "vantagem" quando o consórcio sai mais barato (delta negativo).
-	const economiaTotal = financing && financing.diff.totalDelta < 0 ? -financing.diff.totalDelta : null;
+	const economiaTotal =
+		financing && financing.diff.totalDelta < 0 ? -financing.diff.totalDelta : null;
 	const economiaMensal =
 		financing && financing.diff.monthlyDelta < 0 ? -financing.diff.monthlyDelta : null;
 
 	const geradaEm = useMemo(
-		() => new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }),
+		() =>
+			new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }),
 		[],
 	);
 
@@ -121,7 +130,9 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 				{payload.clientName ? (
 					<div>
 						<div className="text-xs text-muted-foreground">Cliente</div>
-						<div className="mt-0.5 text-lg font-bold text-[var(--aja-navy)]">{payload.clientName}</div>
+						<div className="mt-0.5 text-lg font-bold text-[var(--aja-navy)]">
+							{payload.clientName}
+						</div>
 					</div>
 				) : (
 					<span />
@@ -144,11 +155,46 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 						<span>
-							Você pediu uma carta de ~{brl0(payload.rawCreditValue)} — a carta real ficou em{" "}
-							{brl0(payload.creditValue)}.
+							{payload.cartaMaiorPorEmbutido ? (
+								<>
+									O bem que você quer custa ~{brl0(payload.rawCreditValue)}; a carta é maior (
+									{brl0(payload.creditValue)}) de propósito, porque o lance embutido sai dela.
+								</>
+							) : (
+								<>
+									Você pediu uma carta de ~{brl0(payload.rawCreditValue)} — a carta real ficou em{" "}
+									{brl0(payload.creditValue)}.
+								</>
+							)}
 						</span>
 					</p>
 				)}
+
+			{/* A carta real pode voltar com parcela/prazo diferentes dos que o cliente
+			    aprovou — ele decidiu olhando os números antigos. Avisar é o mesmo
+			    dever do aviso de carta acima (CDC art. 30). */}
+			{(payload.parcelaVista != null || payload.prazoVisto != null) && (
+				<p
+					data-testid="plan-change-notice"
+					className="flex items-start gap-1.5 px-5 pb-1 text-[11px] leading-snug text-muted-foreground"
+				>
+					<Info className="mt-0.5 size-3 shrink-0 text-primary" />
+					<span>
+						Atenção: essa cota não é a mesma que eu simulei —{" "}
+						{[
+							payload.parcelaVista != null && payload.monthlyPayment != null
+								? `a parcela passou de ${brl0(payload.parcelaVista)} para ${brl0(payload.monthlyPayment)}`
+								: null,
+							payload.prazoVisto != null && payload.termMonths != null
+								? `o prazo passou de ${payload.prazoVisto} para ${payload.termMonths} meses`
+								: null,
+						]
+							.filter(Boolean)
+							.join(" e ")}
+						.
+					</span>
+				</p>
+			)}
 
 			{/* ── 3 · Banner "A sua vantagem" (só com cálculo real + premissa) ── */}
 			{economiaTotal != null && (
@@ -225,7 +271,9 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 							<CmpRow label="Entrada" a="Opcional (lance)" b="Obrigatória" />
 						</div>
 					</div>
-					<p className="mt-2 text-[11px] leading-snug text-muted-foreground">{financing.disclaimer}</p>
+					<p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+						{financing.disclaimer}
+					</p>
 				</PSection>
 			)}
 
@@ -299,8 +347,8 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 				</div>
 				<div className="text-[11px] leading-relaxed text-muted-foreground">
 					Os valores são estimativas e podem sofrer alterações. A contemplação não é garantida —
-					depende de sorteio ou lance. A contratação está sujeita à disponibilidade de vagas no grupo
-					e à aprovação da administradora. O reajuste do crédito segue as regras do grupo.
+					depende de sorteio ou lance. A contratação está sujeita à disponibilidade de vagas no
+					grupo e à aprovação da administradora. O reajuste do crédito segue as regras do grupo.
 				</div>
 			</div>
 

@@ -919,6 +919,15 @@ export async function POST(req: NextRequest) {
 										{
 											declaredLanceValue: meta.qualifyAnswers?.lanceValue,
 											clientName: contactName,
+											cartaMaiorPorEmbutido: meta.qualifyAnswers?.lanceEmbutido === true,
+											// O plano que ele aprovou — pro card avisar se a carta real
+											// voltou com outra parcela/prazo.
+											ofertaVista: meta.recommendedOffer
+												? {
+														monthlyPayment: meta.recommendedOffer.monthlyPayment,
+														termMonths: meta.recommendedOffer.termMonths,
+													}
+												: null,
 										},
 									),
 									writer,
