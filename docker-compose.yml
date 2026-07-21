@@ -92,8 +92,15 @@ services:
       MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
       MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
-      BETTER_AUTH_URL: http://aja-${WORKSPACE_NAME}.orb.local
-      APP_URL: http://aja-${WORKSPACE_NAME}.orb.local
+      # O host do OrbStack vem do `container_name` (`aja-app-${WORKSPACE_NAME}`),
+      # não de `aja-${WORKSPACE_NAME}` — e o browser abre em HTTPS. Com a URL
+      # errada, o Better Auth recusava o login com "Invalid origin" (a origem do
+      # request não batia com a baseURL configurada).
+      # `WORKSPACE_NAME` também vai pro app: `origensConfiaveis()` (auth.ts) monta
+      # a lista de hosts aceitos a partir dele.
+      WORKSPACE_NAME: ${WORKSPACE_NAME}
+      BETTER_AUTH_URL: https://aja-app-${WORKSPACE_NAME}.orb.local
+      APP_URL: https://aja-app-${WORKSPACE_NAME}.orb.local
       WHATSAPP_AGENT_PHONES: ${WHATSAPP_AGENT_PHONES:-}
       WHATSAPP_AGENT_NAMES: ${WHATSAPP_AGENT_NAMES:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required (set in .env.local)}

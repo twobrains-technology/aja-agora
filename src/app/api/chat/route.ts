@@ -400,6 +400,19 @@ export async function POST(req: NextRequest) {
 	} else if (conv) {
 		conversationId = conv.id;
 		contactName = conv.contactName ?? null;
+		// BACKFILL do vínculo com o cookie. O `webCookie` só era gravado na
+		// CRIAÇÃO — e quando a conversa nascia antes de o `aja_uid` existir no
+		// browser (primeira visita, aba nova), ela ficava órfã pra sempre: o
+		// resume filtra por esse campo, então "Voltar à conversa" pulava todas as
+		// conversas recentes e caía sempre na última que por acaso tinha cookie.
+		// Só preenche quando está VAZIO — nunca rouba conversa de outro device.
+		const cookieAtual = (conv.metadata as { webCookie?: string } | null)?.webCookie;
+		if (!cookieAtual && userKey) {
+			await db
+				.update(conversations)
+				.set({ metadata: { ...(conv.metadata as object), webCookie: userKey } })
+				.where(eq(conversations.id, conv.id));
+		}
 	} else {
 		const [created] = await db
 			.insert(conversations)
@@ -1443,6 +1456,29 @@ export async function POST(req: NextRequest) {
 								console.log(
 									`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
 								);
+								return;
+							}
+							// LANGGRAPH: o clique vira TURNO DE USUÁRIO e o grafo conduz. Este
+							// handler é da era Vercel e grava a resposta direto no meta, pulando
+							// o nó `advance` — onde mora a regra de que aceitar o embutido MUDA
+							// O ALVO DA BUSCA (carta maior). Resultado ao vivo: o cliente
+							// aceitava, o card dizia "carta a procurar ~R$ 371 mil" e o sistema
+							// seguia mostrando a recomendação da carta velha, porque a re-busca
+							// nunca acontecia ("nunca re-dispara a busca", diz o comentário
+							// abaixo). Pelo turno normal, o `advance` troca o alvo, o
+							// `readyForDiscovery` re-dispara a descoberta sozinho e o modelo
+							// apresenta os grupos da faixa nova.
+							if (runtimeFlavor() === "langgraph") {
+								await pipeUserTurn({
+									conversationId,
+									userText:
+										action.value === "yes"
+											? "Sim, considerar lance embutido"
+											: "Não, prefiro sem lance embutido",
+									contactName,
+									writer,
+									userKey,
+								});
 								return;
 							}
 							const considera = action.value === "yes";
