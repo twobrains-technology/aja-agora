@@ -282,6 +282,40 @@ export function createConverseNode(model: BaseChatModel) {
 				? Math.round(oferta.creditValue * (pctEmbutido / 100))
 				: 0;
 		const lanceTotal = lanceDele + embutidoDisponivel;
+		// ── ELE JÁ DEU O CRITÉRIO: a resposta é um NOME, não uma pergunta ──
+		// "Sem pressa, quero a menor parcela" é critério de decisão. O agente
+		// devolvia "qual delas você prefere?" — porque o contexto dele só tem UMA
+		// oferta e ele não sabia que ela já fora escolhida por esse critério. A
+		// busca é calibrada pelo prazo quando o objetivo é investimento
+		// (`discovery.ts`), então a opção na mesa É a resposta; falta ele saber.
+		const querMenorParcela =
+			state.funnel.qualifyAnswers.objetivo === "investimento" ||
+			(state.funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
+		const blocoCriterio =
+			querMenorParcela && oferta?.monthlyPayment
+				? `O critério dele é a MENOR PARCELA (ele disse que não tem pressa). A busca JÁ foi feita ` +
+					`com esse critério — mirando o prazo mais longo disponível —, então a opção que está na ` +
+					`mesa é a resposta: ${oferta.administradora}, ${brl(oferta.monthlyPayment)} por mês em ` +
+					`${oferta.termMonths} meses. AFIRME isso e diga por quê (prazo mais longo = parcela mais ` +
+					`leve). É PROIBIDO devolver a escolha em forma de pergunta ("qual delas você prefere?"): ` +
+					`ele acabou de te dizer como quer decidir. Se ele pedir outra, aí sim você busca.`
+				: null;
+
+		// ── O GRUPO MUDOU: o número de antes era de outro grupo ──
+		// Quando o cliente aceita embutido, o sistema busca cartas MAIORES e a
+		// oferta ancorada troca — junto com ela troca o lance médio. O agente
+		// continuava citando o número antigo em algum ponto da conversa, e o
+		// cliente via três "lance médio deste grupo" diferentes, sem nada explicar
+		// (visto ao vivo, 2026-07-21). O fato é do código; a frase é dele.
+		const blocoGrupoTrocado =
+			jaAceitouEmbutido && oferta?.avgBidValue
+				? `A oferta na mesa MUDOU quando ele aceitou o embutido: o sistema foi atrás de cartas ` +
+					`maiores, e o grupo é outro. Qualquer lance médio que você tenha citado ANTES era de ` +
+					`outro grupo e não vale mais. O número que vale agora é ${brl(oferta.avgBidValue)}. Se ` +
+					`for falar disso de novo, diga que o grupo mudou — nunca deixe dois números diferentes ` +
+					`no ar como se fossem do mesmo grupo.`
+				: null;
+
 		const blocoLance =
 			lanceTotal > 0 && lanceMedio
 				? lanceTotal >= lanceMedio
@@ -336,7 +370,11 @@ export function createConverseNode(model: BaseChatModel) {
 							`dela é ${oferta.groupId} — chame \`simulate_quota\` com ele e traga os números. ` +
 							`É PROIBIDO pedir pro cliente "tocar", "clicar" ou "selecionar" um card pra você ` +
 							`conseguir seguir: quem faz o trabalho é você, nunca ele. Também nunca diga que ` +
-							`trouxe um card se você não chamou a ferramenta que o desenha.`
+							`trouxe um card se você não chamou a ferramenta que o desenha.` +
+							` Quando ele te der um CRITÉRIO ("quero a menor parcela", "o mais rápido"), ` +
+							`NÃO devolva a escolha em forma de pergunta ("qual delas você quer?"): você tem ` +
+							`os números, então DIGA qual atende o critério dele e por quê. Devolver a decisão ` +
+							`pra quem acabou de dizer como quer decidir é o oposto de vender.`
 						: "")
 				: null;
 		// ── PRIMEIRA VEZ: a pergunta que não pode morrer sem resposta ──
@@ -379,6 +417,8 @@ export function createConverseNode(model: BaseChatModel) {
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
+					...(blocoCriterio ? [{ type: "text" as const, text: blocoCriterio }] : []),
+					...(blocoGrupoTrocado ? [{ type: "text" as const, text: blocoGrupoTrocado }] : []),
 					...(blocoLance ? [{ type: "text" as const, text: blocoLance }] : []),
 					...(blocoEmbutido ? [{ type: "text" as const, text: blocoEmbutido }] : []),
 					...(conducao ? [{ type: "text" as const, text: conducao }] : []),

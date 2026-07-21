@@ -1045,9 +1045,13 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const termMonths = Number(payload.termMonths);
 	const avgBidValue = Number(payload.avgBidValue);
 	const prazoLine = Number.isFinite(termMonths) ? `\n*Prazo:* ${termMonths} meses` : "";
-	const lanceLine = Number.isFinite(avgBidValue)
-		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
-		: "";
+	// Lance médio só pra quem entrou na conversa de lance. Pra quem disse "sem
+	// pressa" e nunca ouviu o que é lance médio, o número aparecia solto no
+	// resumo da assinatura — R$ 199 mil sem nenhum significado, ao lado da carta.
+	const lanceLine =
+		Number.isFinite(avgBidValue) && payload.mostrarLanceMedio === true
+			? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
+			: "";
 	// FIX-240/FIX-247 (CDC art. 30, rodada 3 — Fable r2 N3): paridade com o
 	// aviso de ajuste do card web (real-offer.tsx) — quando a carta fechada
 	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma

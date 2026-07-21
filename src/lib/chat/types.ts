@@ -290,6 +290,9 @@ export interface RealOfferPayload {
 	 * deixaria faltar dinheiro. Sem isso, o aviso de divergência ("você pediu
 	 * 300 mil, a carta real ficou 435 mil") lia como erro do sistema. */
 	cartaMaiorPorEmbutido?: boolean;
+	/** O cliente entrou na conversa de lance — só então o lance médio do grupo
+	 * significa alguma coisa pra ele. Ausente = o número não aparece. */
+	mostrarLanceMedio?: boolean;
 	/** A parcela/prazo que o cliente VIU e aprovou, quando a carta real voltou
 	 * diferente. Presença = o card avisa a mudança; ausência = não mudou nada.
 	 * Sem isso o cliente dizia sim a 48 meses e assinava 55, sem uma palavra. */

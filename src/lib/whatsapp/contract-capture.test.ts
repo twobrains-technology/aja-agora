@@ -246,7 +246,13 @@ describe("fireContract — disparo do startContract (CA-2, CA-6, CA-8)", () => {
 			offer: { ...OFFER_RESULT.offer, termMonths: 72, avgBidValue: 69_361.27 },
 			noOffer: false,
 		});
-		setMeta({ ...REVEAL_DONE, contractCollection: { stage: "confirm" } });
+		// O lance médio só aparece pra quem entrou na conversa de lance — pra quem
+		// nunca falou disso ele era um número solto ao lado da assinatura.
+		setMeta({
+			...REVEAL_DONE,
+			contractCollection: { stage: "confirm" },
+			qualifyAnswers: { ...REVEAL_DONE.qualifyAnswers, hasLance: "yes" },
+		});
 		await fireContract(WA, CONV_ID);
 
 		expect(mocks.sendInteractive).toHaveBeenCalledTimes(1);
