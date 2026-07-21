@@ -235,6 +235,8 @@ export function createConverseNode(model: BaseChatModel) {
 		 * retorno do nó, pra o encaminhamento existir de fato. Objeto (e não `let`)
 		 * porque a escrita acontece dentro da closure do beat. */
 		const handoffRef: { pedido: { reason: string } | null } = { pedido: null };
+		/** Cota efetivamente apresentada neste turno — vira a âncora do estado. */
+		const ancoraRef: { nova: FunnelState["recommendedOffer"] | null } = { nova: null };
 
 		// Contexto do gate ATUAL (state.gate, calculado pelo `routeFinal` ANTES
 		// deste nó) vai como um BLOCO no MESMO system message (a Anthropic só
@@ -808,13 +810,52 @@ export function createConverseNode(model: BaseChatModel) {
 							),
 						};
 						if (artifactAllowed(guardCtx, artifactType)) {
+							const payloadFinal = coagirContraEscolha(
+								artifactType,
+								call.args,
+								state.funnel.escolha,
+							);
 							events.push({ type: "text-boundary" });
 							events.push({
 								type: "artifact",
 								artifactType,
-								payload: coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
+								payload: payloadFinal,
 								toolCallId: call.id ?? crypto.randomUUID(),
 							});
+							// A COTA NA TELA É A COTA ANCORADA.
+							//
+							// O estado guardava a PRIMEIRA simulação e nunca acompanhava a
+							// recomendação que o agente apresentou depois e o cliente
+							// aceitou. Consequência: uma cliente escolheu R$ 1.798/148m,
+							// recebeu exatamente isso no contrato — e mesmo assim leu
+							// "atenção: essa cota não é a mesma que eu simulei", porque o
+							// aviso comparava com a simulação de R$ 5.377 que ela tinha
+							// REJEITADO. O aviso de divergência virou ruído: falava onde
+							// não havia divergência e calava onde havia 2,3x na parcela.
+							const p = payloadFinal as Record<string, unknown>;
+							const num = (v: unknown) =>
+								typeof v === "number" && Number.isFinite(v) ? v : undefined;
+							const credito = num(p.creditValue);
+							const parcela = num(p.monthlyPayment);
+							const prazo = num(p.termMonths);
+							if (
+								(artifactType === "recommendation_card" ||
+									artifactType === "simulation_result") &&
+								credito &&
+								parcela &&
+								prazo
+							) {
+								ancoraRef.nova = {
+									...(typeof p.administradora === "string"
+										? { administradora: p.administradora }
+										: {}),
+									creditValue: credito,
+									monthlyPayment: parcela,
+									termMonths: prazo,
+									...(typeof p.groupId === "string" ? { groupId: p.groupId } : {}),
+									...(num(p.avgBidValue) != null ? { avgBidValue: num(p.avgBidValue) } : {}),
+								};
+							}
 						}
 					}
 				}
@@ -905,13 +946,21 @@ export function createConverseNode(model: BaseChatModel) {
 			events,
 			modelAskedQuestion,
 			streamedArtifactIds,
-			...(deveExplicarComoFunciona || handoffRef.pedido
+			...(deveExplicarComoFunciona || handoffRef.pedido || ancoraRef.nova
 				? {
 						funnel: {
 							...state.funnel,
 							...(deveExplicarComoFunciona ? { explicouComoFunciona: true } : {}),
 							...(handoffRef.pedido
 								? { handoffSuggested: true, handoffReason: handoffRef.pedido.reason }
+								: {}),
+							...(ancoraRef.nova
+								? {
+										recommendedOffer: ancoraRef.nova,
+										...(ancoraRef.nova.administradora
+											? { recommendedAdministradora: ancoraRef.nova.administradora }
+											: {}),
+									}
 								: {}),
 						},
 					}
