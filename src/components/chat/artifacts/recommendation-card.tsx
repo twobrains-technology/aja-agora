@@ -202,7 +202,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
 				{/* Hero — carta em destaque (FIX-231: é o que o cliente compra) */}
 				<div>
-					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 					<p
 						data-testid="recommendation-hero-credit"
 						className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap"

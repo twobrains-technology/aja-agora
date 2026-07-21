@@ -207,6 +207,12 @@ export function buildAgent(
 		reuseShownGroupsOnly: Boolean(
 			opts.meta && opts.meta.revealCompleted === true && !revealValueTargetChanged(opts.meta),
 		),
+		// Fecha o drift prompt×policy nas diretivas de recuperação: elas só podem
+		// nomear tool que a policy REALMENTE expôs nesta fase. Sem isto, a diretiva
+		// mandava reapresentar via present_comparison_table numa fase em que essa
+		// tool está fora do toolset → NoSuchToolError → turno descartado → fallback
+		// enlatado (a raiz dos FIX-262/266/282/332/343/355).
+		allowedToolNames: opts.meta ? allowedTools(opts.meta, opts.channel) : undefined,
 	});
 
 	// Specialists always have suggest_handoff + as ferramentas de captura

@@ -21,6 +21,21 @@ vi.mock("@/db", () => ({
 	},
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
+// Serialização por conversa (lease no Postgres) — passthrough no unitário; o que
+// se prova aqui é o roteamento do processor, não o lease.
+vi.mock("./conversation-lock", () => ({
+	withConversationLock: <T>(_waId: string, fn: () => Promise<T>) => fn(),
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendTextMock,
 	sendTypingIndicator: vi.fn().mockResolvedValue(undefined),

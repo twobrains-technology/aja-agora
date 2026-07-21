@@ -27,10 +27,59 @@ import {
 	timeframeQuestionToWhatsApp,
 	welcomeButtonsToWhatsApp,
 } from "./formatter";
+import { claimContextBeat } from "./once";
 import { getOrCreateConversation } from "./session";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const typingDelay = (chars: number) => Math.min(1500, 200 + chars * 6);
+
+/** A borda mais cara do produto era a mais cega: falha de envio pra Meta era
+ * engolida e o turno ainda se marcava como "falei". Aqui o resultado é OLHADO —
+ * `false` significa que o cliente NÃO recebeu, e quem chama não pode contar esse
+ * envio como entrega (o guard de turno mudo volta a cobrir o caso). Timeout não
+ * é re-tentado: a mensagem pode ter saído, e um segundo envio duplicaria o balão
+ * na conversa do cliente. */
+async function sendText(to: string, text: string): Promise<boolean> {
+	const res = await sendTextMessage(to, text).catch((err) => ({ error: String(err) }));
+	const error = (res as { error?: string } | undefined)?.error;
+	if (!error) return true;
+	if (/timeout/i.test(error)) {
+		console.error(`[whatsapp-send-failed] texto NÃO entregue (timeout, sem retry): ${error}`);
+		return false;
+	}
+	console.warn(`[whatsapp-send-failed] texto falhou, tentando 1× de novo: ${error}`);
+	const retry = await sendTextMessage(to, text).catch((err) => ({ error: String(err) }));
+	const retryError = (retry as { error?: string } | undefined)?.error;
+	if (retryError) {
+		console.error(`[whatsapp-send-failed] texto NÃO entregue após retry: ${retryError}`);
+		return false;
+	}
+	return true;
+}
+
+/** Espelho de `sendText` pros cards/botões. */
+async function sendInteractive(to: string, interactive: Record<string, unknown>): Promise<boolean> {
+	const res = await sendInteractiveMessage(to, interactive).catch((err) => ({
+		error: String(err),
+	}));
+	const error = (res as { error?: string } | undefined)?.error;
+	if (!error) return true;
+	if (/timeout/i.test(error)) {
+		console.error(`[whatsapp-send-failed] card NÃO entregue (timeout, sem retry): ${error}`);
+		return false;
+	}
+	console.warn(`[whatsapp-send-failed] card falhou, tentando 1× de novo: ${error}`);
+	const retry = await sendInteractiveMessage(to, interactive).catch((err) => ({
+		error: String(err),
+	}));
+	const retryError = (retry as { error?: string } | undefined)?.error;
+	if (retryError) {
+		console.error(`[whatsapp-send-failed] card NÃO entregue após retry: ${retryError}`);
+		return false;
+	}
+	return true;
+}
+
 const ARTIFACT_PAUSE_MS = 500;
 const POST_INTERACTIVE_PAUSE_MS = 1800;
 const TRANSITION_PAUSE_MS = 1200;
@@ -80,8 +129,8 @@ async function gateInteractive(
 			// docx passo 4: oferta do simulador (botões Quero ver! / Agora não).
 			return simulatorOfferToWhatsApp(prefix).interactive ?? null;
 		case "reco-consent":
-			// FIX-297: fora de escopo desta rodada (só coreografia web) — cai no
-			// caminho textual (WHATSAPP_TEXT_GATES abaixo), sem card interativo.
+		// FIX-297: fora de escopo desta rodada (só coreografia web) — cai no
+		// caminho textual (WHATSAPP_TEXT_GATES abaixo), sem card interativo.
 		case "name":
 		case "desire":
 		case "identify":
@@ -118,24 +167,28 @@ async function gateInteractive(
 // Mario." e parava — turno morto, usuário sem saber o que dizer — enquanto o
 // directive de primeiro contato ainda promete que "o sistema pergunta o próximo
 // passo em seguida". Na web a pergunta saía normal. Travado em `paridade-gates.test.ts`.
-export const WHATSAPP_TEXT_GATES = new Set<Gate>([
-	"desire",
-	"credit",
-	"identify",
-	"reco-consent",
-]);
+export const WHATSAPP_TEXT_GATES = new Set<Gate>(["desire", "credit", "identify", "reco-consent"]);
 
 // FIX-349 (P1.2, veredito rodada 4): subconjunto de `WHATSAPP_TEXT_GATES` SEM
 // NENHUM fallback estrutural (nem interactive, nem card) — a heurística
 // `modelAsked` (baseada em "o modelo terminou o turno com ALGUMA pergunta",
 // nunca checada contra o gate corrente) nunca pode apagar a entrega desses
 // gates: sem fallback, apagar o texto apaga o gate inteiro. `identify` tem o
-// beat de contexto fixo (gateContextBeat) como rede de segurança parcial;
+// beat de contexto fixo (gateContextBeat) como rede de segurança parcial — só
+// na PRIMEIRA vez, já que desde 2026-07-20 o beat sai uma vez por conversa;
+// depois disso a entrega é a fala do modelo, que agora nunca é apagada;
 // `credit`/`desire` não são bloqueantes da mesma forma que `reco-consent`
 // (que trava a cascata inteira até responder — qualify-state.ts). Escopo
 // deliberadamente restrito ao gate com bug PROVADO (achado ao vivo,
 // `servicos-whatsapp`) — ver `consumeEvents` (case "gate").
-export const WHATSAPP_GATES_WITHOUT_FALLBACK = new Set<Gate>(["reco-consent"]);
+// VAZIO desde 2026-07-21. A exceção existia porque `modelAsked` era uma
+// heurística fraca ("o modelo terminou com ALGUMA pergunta"). Agora ele é o
+// sinal REAL do sanitizer (`hasHeldQuestion`), então manter `reco-consent` aqui
+// só produzia o balão duplicado visto ao vivo: o modelo perguntava "Curtiu a
+// ideia?" e o canal colava "Posso te mostrar a opção que eu recomendo?" logo
+// abaixo. Gate não respondido volta no turno seguinte — perder um texto é
+// recuperável; empilhar duas perguntas no mesmo balão, não.
+export const WHATSAPP_GATES_WITHOUT_FALLBACK = new Set<Gate>([]);
 
 /** Gates entregues no WhatsApp como BOTÃO/lista (espelha os `case` de
  * `gateInteractive` que devolvem payload). Existe pra que o teste de paridade
@@ -156,7 +209,20 @@ async function gateTextPrompt(
 	if (!WHATSAPP_TEXT_GATES.has(gate)) return null;
 	const meta = await reloadMeta(conversationId);
 	// `credit` usa a categoria no texto; `identify` é fixo — gateQuestion aceita null.
-	const question = gateQuestion(gate, meta.currentCategory ?? null, meta.recommendedOffer?.creditValue, "whatsapp", meta.qualifyAnswers?.creditMentionedAtDesire);
+	// Os dois últimos argumentos (FIX-296 `desiredItem`, FIX-312 `attempt`) faltavam
+	// AQUI e só o canal web os passava: sem `desiredItem` o gate `credit` caía na
+	// pergunta genérica ("Qual valor do bem faz mais sentido pra você?") em vez de
+	// "E quanto custa esse Corolla hoje?", e sem `attempt` a 2ª cobrança repetia a
+	// frase byte a byte. O canal que mais precisa soar humano era o mais robô.
+	const question = gateQuestion(
+		gate,
+		meta.currentCategory ?? null,
+		meta.recommendedOffer?.creditValue,
+		"whatsapp",
+		meta.qualifyAnswers?.creditMentionedAtDesire,
+		meta.qualifyAnswers?.desiredItem,
+		(meta.gateAttempts?.[gate] ?? 0) + 1,
+	);
 	if (!question) return null;
 	return prefix ? `${prefix}\n\n${question}` : question;
 }
@@ -224,9 +290,9 @@ async function consumeEvents(
 				const wait = lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : typingDelay(chunk.length);
 				await sleep(wait);
 			}
-			await sendTextMessage(from, chunk);
+			const ok = await sendText(from, chunk);
 			lastWasInteractive = false;
-			hasSent = true;
+			hasSent = hasSent || ok;
 		}
 	};
 
@@ -263,14 +329,15 @@ async function consumeEvents(
 				continue;
 			}
 			if (hasSent) await pauseBeforeNext();
+			let ok = false;
 			if (wa.type === "text" && wa.text) {
-				await sendTextMessage(from, wa.text);
+				ok = await sendText(from, wa.text);
 				lastWasInteractive = false;
 			} else if (wa.type === "interactive" && wa.interactive) {
-				await sendInteractiveMessage(from, wa.interactive);
+				ok = await sendInteractive(from, wa.interactive);
 				lastWasInteractive = true;
 			}
-			hasSent = true;
+			hasSent = hasSent || ok;
 		}
 	};
 
@@ -306,9 +373,9 @@ async function consumeEvents(
 				await flushText();
 				await flushArtifacts();
 				if (hasSent) await pauseBeforeNext();
-				await sendTextMessage(from, ev.bridgeText);
+				const ok = await sendText(from, ev.bridgeText);
 				lastWasInteractive = false;
-				hasSent = true;
+				hasSent = hasSent || ok;
 				await sleep(TRANSITION_PAUSE_MS);
 				break;
 			}
@@ -316,9 +383,9 @@ async function consumeEvents(
 				await flushText();
 				await flushArtifacts();
 				if (hasSent) await pauseBeforeNext();
-				await sendTextMessage(from, ev.text);
+				const ok = await sendText(from, ev.text);
 				lastWasInteractive = false;
-				hasSent = true;
+				hasSent = hasSent || ok;
 				break;
 			}
 			case "handoff": {
@@ -328,9 +395,9 @@ async function consumeEvents(
 				if (hasSent) await pauseBeforeNext();
 				const r = handoffConfirmationToWhatsApp();
 				if (r.interactive) {
-					await sendInteractiveMessage(from, r.interactive);
+					const ok = await sendInteractive(from, r.interactive);
 					lastWasInteractive = true;
-					hasSent = true;
+					hasSent = hasSent || ok;
 				}
 				break;
 			}
@@ -340,9 +407,9 @@ async function consumeEvents(
 				if (hasSent) await pauseBeforeNext();
 				const w = welcomeButtonsToWhatsApp();
 				if (w.interactive) {
-					await sendInteractiveMessage(from, w.interactive);
+					const ok = await sendInteractive(from, w.interactive);
 					lastWasInteractive = true;
-					hasSent = true;
+					hasSent = hasSent || ok;
 				}
 				break;
 			}
@@ -353,20 +420,34 @@ async function consumeEvents(
 				// É decisão de RENDER do WhatsApp (channel-aware C5) — não toca a web.
 				//
 				// Gates com CONTEXTO fixo (gateContextBeat: identify tem gancho docx + LGPD,
-				// lance-embutido tem a educação): o beat de contexto é determinístico —
-				// substituímos a reação do LLM pelo contexto fixo (o gancho nunca some).
-				// Demais gates: o contexto vem do texto do LLM (buffer via flushText).
+				// lance-embutido tem a educação): o beat de contexto é determinístico.
+				//
+				// 2026-07-20 — a FALA DO MODELO NUNCA É APAGADA. Até aqui este ramo fazia
+				// `textBuffer = ""` e mandava o beat fixo no lugar: o cliente perguntava
+				// "por que você precisa do meu CPF?", o modelo escrevia a explicação, e o
+				// canal JOGAVA FORA a explicação pra colar os mesmos dois balões enlatados
+				// — byte a byte iguais toda vez que o gate reaparecia. É o agente bitolado
+				// que o CLAUDE.md proíbe, ressuscitado na camada de canal.
+				//
+				// O invariante REAL é de ESTADO, não de fala: o cliente precisa ter visto o
+				// aviso (LGPD no identify; a educação do embutido) antes do pedido — UMA
+				// vez. Isso virou `claimContextBeat` (idempotência determinística por
+				// conversa+gate, src/lib/whatsapp/once.ts). A partir daí quem conduz é o
+				// modelo, com as palavras dele. A não-duplicação do PEDIDO continua no
+				// `ev.modelAsked` mais abaixo, como já era.
 				const contextBeat = await gateContextBeat(ev.gate, conversationId);
-				if (contextBeat) {
-					textBuffer = ""; // reação do LLM substituída pelo contexto fixo (gancho garantido)
-					await flushArtifacts();
+				await flushText();
+				await flushArtifacts();
+				// Se o MODELO já fez o pedido com as palavras dele, o beat fixo vira um
+				// segundo balão dizendo a mesma coisa — foi o que apareceu ao vivo:
+				// "preciso confirmar seu CPF e celular — pode ser?" seguido de "preciso
+				// confirmar quem é você". O aviso (LGPD) entra na fala do modelo pelo
+				// contexto do gate; o beat fica como rede pra quando ele não pedir.
+				if (!ev.modelAsked && contextBeat && (await claimContextBeat(conversationId, ev.gate))) {
 					if (hasSent) await pauseBeforeNext();
-					await sendTextMessage(from, contextBeat);
+					const ok = await sendText(from, contextBeat);
 					lastWasInteractive = false;
-					hasSent = true;
-				} else {
-					await flushText();
-					await flushArtifacts();
+					hasSent = hasSent || ok;
 				}
 				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
 				if (interactive) {
@@ -375,12 +456,12 @@ async function consumeEvents(
 					// dele (`ev.modelAsked`) — o corpo do botão não repete a canônica,
 					// vira só o rótulo do input. Sem isso o usuário lia a pergunta duas
 					// vezes (a humana e a enlatada) no mesmo balão.
-					await sendInteractiveMessage(
+					const ok = await sendInteractive(
 						from,
 						ev.modelAsked ? withNeutralBody(interactive) : interactive,
 					);
 					lastWasInteractive = true;
-					hasSent = true;
+					hasSent = hasSent || ok;
 					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
@@ -406,9 +487,9 @@ async function consumeEvents(
 							: await gateTextPrompt(ev.gate, conversationId, undefined);
 					if (textPrompt) {
 						if (hasSent) await pauseBeforeNext();
-						await sendTextMessage(from, textPrompt);
+						const ok = await sendText(from, textPrompt);
 						lastWasInteractive = false;
-						hasSent = true;
+						hasSent = hasSent || ok;
 						console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=text`);
 					} else {
 						// Nenhuma entrega pro gate no WhatsApp → o turno pode fechar MUDO.
@@ -444,7 +525,8 @@ async function consumeEvents(
 			// até stepCountIs, ou o valor respondido e nada emitido). Re-cobra o gate de
 			// coleta pendente (escalado, FIX-211) em vez do "me perdi"; demais gates caem
 			// no fallback honesto. Nunca deixa o usuário no silêncio.
-			const attempt = mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
+			const attempt =
+				mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
 			// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
 			const reengage = reengageQuestionForGate(
 				ng,
@@ -456,28 +538,25 @@ async function consumeEvents(
 			console.warn(
 				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
 			);
-			await sendTextMessage(from, reengage ?? EMPTY_TURN_FALLBACK);
+			await sendText(from, reengage ?? EMPTY_TURN_FALLBACK);
 		} else if (mandatory && !gateFiredThisTurn && !paused) {
-			// FIX-211 — o usuário DESVIOU: o turno FALOU (respondeu uma dúvida, o LLM
-			// reagiu) mas o gate de coleta obrigatória segue pendente e NÃO foi disparado
-			// neste turno. Re-cobra ESCALADO em vez de esperar o watchdog de 90s. Teto de
-			// 3 tentativas + saída pro especialista (anti-armadilha, reengageQuestionForGate).
-			const attempt = await bumpGateAttempt(conversationId, guardMeta, ng);
-			// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
-			const reengage = reengageQuestionForGate(
-				ng,
-				guardMeta.currentCategory,
-				attempt,
-				guardMeta.recommendedOffer?.creditValue,
-				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
+			// O usuário DESVIOU: o turno FALOU (o modelo respondeu a dúvida dele) e o
+			// gate de coleta segue pendente.
+			//
+			// 2026-07-20 — este ramo COLAVA uma cobrança enlatada escalonada no fim de
+			// um turno que já tinha falado ("Só falta isso pra eu seguir — é rapidinho."
+			// / "É seguro e sem compromisso."). O cliente perguntava "consórcio tem
+			// juros?", o modelo explicava bem, e logo abaixo chegava um balão de
+			// formulário cobrando. A web NUNCA fez isso (lá o fallback só existe pra
+			// turno vazio) e a mesma conversa flui natural.
+			//
+			// Retomar o assunto pendente é do CÉREBRO, não do canal: o `systemContext`
+			// já informa o gate pendente como INTENÇÃO (não frase pronta) e o modelo
+			// retoma com as palavras dele no próprio turno seguinte; se o cliente sumir,
+			// o watchdog de inatividade continua cobrindo. Aqui fica só o rastro.
+			console.warn(
+				`[gate-collect-desvio] conv=${conversationId} gate=${ng} segue pendente após turno que FALOU — retomada é do modelo (systemContext), sem cobrança enlatada`,
 			);
-			if (reengage) {
-				console.warn(
-					`[gate-collect-reengage] conv=${conversationId} DESVIO no gate=${ng} tentativa=${attempt}`,
-				);
-				await pauseBeforeNext();
-				await sendTextMessage(from, reengage);
-			}
 		}
 	}
 }
@@ -553,10 +632,10 @@ export async function runTransitionWithOrchestrator(args: {
 	const { from, conversationId, fromPersona, toCategory, expertiseHint } = args;
 	const plan = await planTransition({ conversationId, fromPersona, toCategory, expertiseHint });
 	if (plan.kind === "abort") {
-		await sendTextMessage(from, plan.apologyText);
+		await sendText(from, plan.apologyText);
 		return;
 	}
-	await sendTextMessage(from, plan.bridgeText);
+	await sendText(from, plan.bridgeText);
 	await sleep(TRANSITION_PAUSE_MS);
 	await runDirectiveWithOrchestrator({ from, conversationId, directive: plan.directive });
 }
@@ -572,7 +651,7 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	// Sem ela, pede o CPF por texto (celular = o próprio waId) — nunca buscar.
 	if (!refreshed.identityCollected) {
 		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
-		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		await sendText(from, IDENTIFY_WHATSAPP_PROMPT);
 		return;
 	}
 	const category = refreshed.currentCategory;
@@ -607,24 +686,32 @@ export async function fireGate(
 	prefix?: string,
 ): Promise<void> {
 	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos
-	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro.
+	// — contexto (gancho docx + LGPD) num balão, pedido do CPF em outro. O beat de
+	// contexto sai UMA vez por conversa (claimContextBeat) — o PEDIDO continua
+	// saindo sempre, porque este caminho é server-authored (clique/retomada), sem
+	// texto do modelo pra entregar o gate.
 	if (gate === "identify") {
-		const { IDENTIFY_CONTEXT_WHATSAPP, IDENTIFY_WHATSAPP_PROMPT } =
-			await import("./identify-capture");
-		await sendTextMessage(from, IDENTIFY_CONTEXT_WHATSAPP);
-		await sendTextMessage(from, IDENTIFY_WHATSAPP_PROMPT);
+		const { IDENTIFY_CONTEXT_WHATSAPP, IDENTIFY_WHATSAPP_PROMPT } = await import(
+			"./identify-capture"
+		);
+		if (await claimContextBeat(conversationId, gate)) {
+			await sendText(from, IDENTIFY_CONTEXT_WHATSAPP);
+		}
+		await sendText(from, IDENTIFY_WHATSAPP_PROMPT);
 		return;
 	}
 	// FIX-212 (split 2 tempos): gates com contexto fixo (lance-embutido: educação)
 	// emitem o beat de contexto ANTES do card, também no caminho de clique/fireGate.
 	const contextBeat = await gateContextBeat(gate, conversationId);
-	if (contextBeat) await sendTextMessage(from, contextBeat);
+	if (contextBeat && (await claimContextBeat(conversationId, gate))) {
+		await sendText(from, contextBeat);
+	}
 	// FIX-120: gates conversacionais (credit) saem como TEXTO, espelhando o identify.
 	const textPrompt = await gateTextPrompt(gate, conversationId, prefix);
 	if (textPrompt) {
-		await sendTextMessage(from, textPrompt);
+		await sendText(from, textPrompt);
 		return;
 	}
 	const interactive = await gateInteractive(gate, conversationId, prefix);
-	if (interactive) await sendInteractiveMessage(from, interactive);
+	if (interactive) await sendInteractive(from, interactive);
 }

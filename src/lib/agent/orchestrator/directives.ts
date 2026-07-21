@@ -38,11 +38,16 @@ export function buildTransitionCrossSpecialistDirective(): string {
  * FIX-238 (Fable r1): comentário e texto do directive citavam "gate de
  * experience em seguida" — STALE desde o FIX-233 (2026-07-09), que moveu
  * `experience` pra pós-reveal e inseriu o gate `desire` (não bloqueante) logo
- * após o nome. A pergunta do `desire` ("qual carro você tem em mente?") sai
- * pelo mecanismo determinístico de gate (gateQuestion, `web/adapter.ts`), não
- * por este directive — por isso ele segue "PARE após a saudação". */
+ * após o nome.
+ *
+ * O "PARE após a saudação" SAIU (2026-07-21). Ele mandava o modelo calar
+ * prometendo que "o sistema pergunta o próximo passo" — mas o gate `desire`
+ * NÃO tem card (`gatePartData` devolve null, web/adapter.ts:59) e, com
+ * `modelAsked`, a pergunta canônica também não sai. Ninguém perguntava nada: o
+ * turno morria em "Prazer, Kairo!" e a venda acabava ali. Directive não manda
+ * o modelo calar — quem conduz é a fala dele. */
 export function buildNameCapturedDirective(name: string): string {
-	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. FLUXO: escreva 1-2 frases e calorosa de saudação usando o nome ("Prazer, ${name}!" / "Boa, ${name}!" / "Show, ${name}!"). NÃO chame tools, NÃO prometa "perguntas rápidas". PARE após a saudação — o sistema pergunta o próximo passo (gate "desire") em seguida.`;
+	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. Cumprimente pelo nome e emende no próximo passo do funil na MESMA mensagem — nunca termine só na saudação.`;
 }
 
 // ---- Experience choices ----
@@ -91,11 +96,11 @@ export function buildPlanReactionDirective(args: {
 }
 
 export function buildCreditReactionDirective(rangeTitle: string): string {
-	return `Usuário escolheu faixa de crédito "${rangeTitle}" via botao. FLUXO: escreva 1-2 frases de reação tipo "Boa, anotado." ou "Show, faixa que gira bem." NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
+	return `Usuário escolheu faixa de crédito "${rangeTitle}" via botão. FLUXO: escreva 1-2 frases de reação tipo "Boa, anotado." ou "Show, faixa que gira bem." NÃO chame tools. O sistema vai mandar logo em seguida os botões da próxima etapa.`;
 }
 
 export function buildTimeframeReactionDirective(rangeTitle: string): string {
-	return `Usuário escolheu prazo "${rangeTitle}" via botao. FLUXO: escreva 1-2 frases de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO chame tools. O sistema vai mandar logo em seguida os botoes da próxima etapa.`;
+	return `Usuário escolheu prazo "${rangeTitle}" via botão. FLUXO: escreva 1-2 frases de reação adaptada ao prazo (ex: "Boa, prazo que gira bem.", "Show, dá pra fazer um lance forte.", "Tranquilo, sem pressa funciona pra parcela mais leve."). NÃO chame tools. O sistema vai mandar logo em seguida os botões da próxima etapa.`;
 }
 
 // FIX-272 (rodada 8, veredito Fable r7, D4 residual): esta instrução dizia
@@ -195,7 +200,7 @@ export function buildGroupSelectedDirective(
 	creditValue: number,
 	termMonths: number,
 ): string {
-	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Beleza, dá uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botoes "Tenho interesse!" e "Ajustar valor".`;
+	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Beleza, dá uma olhada na simulação da ${administradora}:" — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botões "Tenho interesse!" e "Ajustar valor".`;
 }
 
 export function buildSimulateDirective(
@@ -203,7 +208,7 @@ export function buildSimulateDirective(
 	groupId: string,
 	creditValue: number,
 ): string {
-	return `Usuário quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Show, vai aparecer aqui:" ou "Olha só:" — proibido "vou simular", proibido afirmar que o resultado JÁ está na tela ("aqui tá a simulação", "aqui estao os números") ANTES de simulate_quota retornar, e proibido descrever números em texto. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result. O card já tem botoes "Tenho interesse!" e "Ajustar valor". NÃO simule de novo o mesmo grupo.`;
+	return `Usuário quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Show, vai aparecer aqui:" ou "Olha só:" — proibido "vou simular", proibido afirmar que o resultado JÁ está na tela ("aqui tá a simulação", "aqui estao os números") ANTES de simulate_quota retornar, e proibido descrever números em texto. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) chame present_simulation_result. O card já tem botões "Tenho interesse!" e "Ajustar valor". NÃO simule de novo o mesmo grupo.`;
 }
 
 export function buildWhatIfDirective(administradora: string, currentCreditValue: number): string {
@@ -323,7 +328,7 @@ export function buildSearchSummaryDirective(args: {
 	const confrontoBudget = hasBudget
 		? `
 
-CONFRONTO DE VIABILIDADE (orçamento declarado R$ ${q.monthlyBudget}/mês): a busca filtra pela FAIXA DE CRÉDITO — a parcela real pode vir ACIMA do orçamento. ANTES de celebrar, compare a parcela da opção recomendada com R$ ${q.monthlyBudget}/mês. SE a parcela ESTOURA o orçamento (claramente acima), NÃO comemore nem diga que "ficou próximo do objetivo": confronte com honestidade em UMA frase — diga a parcela real, reconheca que ficou acima do orçamento de R$ ${q.monthlyBudget}/mês e ofereca ajustar o valor do bem pra caber no que ele pode pagar. Tom de guia que defende o objetivo do usuário, NUNCA de empurrar a venda. SE a parcela cabe no orçamento, siga a celebração normal.`
+CONFRONTO DE VIABILIDADE (orçamento declarado R$ ${q.monthlyBudget}/mês): a busca filtra pela FAIXA DE CRÉDITO — a parcela real pode vir ACIMA do orçamento. ANTES de celebrar, compare a parcela da opção recomendada com R$ ${q.monthlyBudget}/mês. SE a parcela ESTOURA o orçamento (claramente acima), NÃO comemore nem diga que "ficou próximo do objetivo": confronte com honestidade em UMA frase — diga a parcela real, reconheça que ficou acima do orçamento de R$ ${q.monthlyBudget}/mês e ofereça ajustar o valor do bem pra caber no que ele pode pagar. Tom de guia que defende o objetivo do usuário, NUNCA de empurrar a venda. SE a parcela cabe no orçamento, siga a celebração normal.`
 		: "";
 
 	// FIX-33: o valor do bem pedido por texto livre estourou a faixa da categoria
@@ -341,7 +346,7 @@ CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom
 	// docx passos 3-4: mostrar PRIMEIRO o "Plano recomendado pela Aja Agora" em
 	// DESTAQUE + o detalhamento E o carrossel das opções lado a lado.
 	// Teste manual Kairo (2026-06-11): "disse que tinha 3 opções mas mostrou só
-	// uma" — o reveal anunciava 3 mas escondia as outras 2 atrás de um botao. Agora
+	// uma" — o reveal anunciava 3 mas escondia as outras 2 atrás de um botão. Agora
 	// o carrossel (present_comparison_table, a recomendada destacada) aparece NO
 	// reveal. Mais fiel ao docx (linha 32 "Encontramos 3 boas opções" + linha 37
 	// "ver outras opções pra comparação"). Ver CONTEXT.md (D15).
@@ -365,7 +370,7 @@ FLUXO OBRIGATÓRIO neste turno (ordem do docx — recomendado PRIMEIRO, em desta
 
 SEU TEXTO NESTE TURNO: as tools acima rodam em silêncio (o cliente vê os cards). Todo o seu texto do turno são só 2-3 frases curtas, no seu tom, nesta forma: [convite pra olhar carta e parcela] + [a pergunta de familiaridade que fecha]. Ex.: "Encontrei ótimas opções na sua faixa! Repara na carta e na parcela de cada uma. E me conta: você já fez consórcio antes?". NÃO narre o que você "vai/precisa" fazer (apresentar, montar, mostrar, simular, detalhar, buscar) nem escreva "agora você vê/veja a recomendação e a tabela"; NÃO cite lance, meses pra contemplar, sorteio, nem qual é a melhor opção — isso vem só depois que ele responder a familiaridade.${confrontoBudget}${confrontoFaixa}
 
-A ORDEM dos cards no reveal (FIX-224, Ata 2026-07-04 — resolve a confusão dos 3 blocos soltos): recommendation_card (a opção completa: parcela, logo, lance médio, antes/depois da contemplação) → simulation_result (aprofunda: cenário com lance, correção prevista) → comparison_table (convite pra comparar com as outras opções, por último, mesmo peso pra todas). As "outras opções" também seguem acessíveis depois pelo botao do card de decisão.
+A ORDEM dos cards no reveal (FIX-224, Ata 2026-07-04 — resolve a confusão dos 3 blocos soltos): recommendation_card (a opção completa: parcela, logo, lance médio, antes/depois da contemplação) → simulation_result (aprofunda: cenário com lance, correção prevista) → comparison_table (convite pra comparar com as outras opções, por último, mesmo peso pra todas). As "outras opções" também seguem acessíveis depois pelo botão do card de decisão.
 
 REGRA DURA — present_recommendation_card e present_comparison_table são INSEPARÁVEIS no ramo 2+ grupos (FIX-78, bug real conv a9c5effa 2026-06-25): se você chamou present_recommendation_card, é porque a busca devolveu 2+ grupos — então present_comparison_table com TODOS os grupos É OBRIGATÓRIO no MESMO turno (mesmo saindo por ÚLTIMO na ordem — ver acima). Emitir um sem o outro é DEFEITO: o usuário fica só com a proposta recomendada e PERDE o carrossel comparativo das demais (foi o que aconteceu — recommendation_card saiu, comparison_table sumiu). NUNCA emita um sem o outro no ramo 2+ grupos. (Só pulam os DOIS juntos quando a busca devolveu 1 grupo único — aí nenhum dos dois é chamado.)
 

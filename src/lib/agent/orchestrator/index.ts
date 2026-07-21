@@ -1,13 +1,19 @@
 import { eq } from "drizzle-orm";
+import { detectYesNoText } from "./yes-no";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
+import { runTurnLangGraph } from "@/lib/agent/langgraph/run-turn";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
-import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
+import {
+	loadConversationHistory,
+	loadLastAssistantText,
+	saveMessage,
+} from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import {
 	loadMemoryContextForTurn,
@@ -15,6 +21,7 @@ import {
 	resolveIdentityForTurn,
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { extractCpf } from "@/lib/whatsapp/identify-capture";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
@@ -81,25 +88,7 @@ export type { TurnEvent, TurnInput } from "./types";
 // Madalena provou não estarem cobertas (o hero só liberou 6 turnos depois,
 // em "quero"). Risco de falso-positivo de "pode" sozinho é mitigado pelo
 // filtro de `intent` acima (pergunta/dúvida nunca chegam no regex).
-const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|isso mesmo|show|beleza|claro|positivo|certo|ok)\b/i;
-const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
-function detectYesNoText(text: string, intent: UserIntent): boolean | null {
-	if (
-		intent === "asking_question" ||
-		intent === "expressing_doubt" ||
-		intent === "off_topic" ||
-		intent === "wants_more_options"
-	) {
-		return null;
-	}
-	const t = text.trim();
-	if (!t) return null;
-	if (NO_TEXT_MARKERS.test(t)) return false;
-	if (YES_TEXT_MARKERS.test(t)) return true;
-	return null;
-}
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
@@ -214,7 +203,7 @@ async function* dispatchDecisionCascade(args: {
 	// é emissão SERVER-SIDE determinística (emitServerCard), nunca depende
 	// de tool-call do LLM.
 	if (!isSoParcela) {
-		yield* runTurn({
+		yield* runTurnVercel({
 			channel,
 			conversationId,
 			userText: buildScarcityDirective(),
@@ -253,7 +242,7 @@ async function* dispatchDecisionCascade(args: {
 		yield { type: "text-boundary" };
 	}
 	const directive = isSoParcela ? buildLanceSoParcelaDirective() : buildDecisionPromptDirective();
-	yield* runTurn({
+	yield* runTurnVercel({
 		channel,
 		conversationId,
 		userText: directive,
@@ -293,7 +282,13 @@ async function* dispatchDecisionCascade(args: {
 	}
 }
 
-export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
+/** Corpo original do orquestrador (Vercel AI SDK) — rename mecânico de
+ * `runTurn` (FIX-355, dispatcher por `AI_RUNTIME`). Comportamento IDÊNTICO ao
+ * de antes; as chamadas recursivas internas (`dispatchDecisionCascade`,
+ * `runTransitionAndContinue`, os `yield* runTurn` inline acima) viraram
+ * `yield* runTurnVercel` — mantém a conversa Vercel no MESMO runtime do
+ * início ao fim (fix ALTA-1, sem mistura de cerimônias entre runtimes). */
+async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 	const {
 		channel,
 		conversationId: providedConversationId,
@@ -364,7 +359,13 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			metaChanged,
 			newlyExtractedExperience: extracted,
 			stuckGateDefaultApplied,
-		} = await analyzeAndMerge(userText, currentPersona, meta);
+		} = await analyzeAndMerge(
+			userText,
+			currentPersona,
+			meta,
+			// Âncora do classificador: a que pergunta esta mensagem responde.
+			await loadLastAssistantText(conversationId).catch(() => null),
+		);
 		newlyExtractedExperience = extracted;
 		analyzedIntent = analysis.userIntent;
 
@@ -432,7 +433,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 					lanceValue: meta.qualifyAnswers?.lanceValue,
 					fgtsValue: meta.qualifyAnswers?.fgtsValue,
 				}) ?? undefined;
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildSimulatorDialDirective({
@@ -486,6 +487,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			recoConsentGatePending && !excludedIntentForConsent
 				? await resolveOfferMentionForConversation(conversationId, userText)
 				: null;
+		// O reco-consent é um CONVITE ("posso te mostrar a que eu recomendo?"), não
+		// coleta de dado — então a RECUSA também é resposta válida e tem que
+		// destravar o funil. Antes, só o SIM gravava `recoConsentAnswered`: quem
+		// dizia "não, prefiro comparar sozinho" congelava a cascata para sempre
+		// (nunca vinha timeframe, lance, decisão nem contrato — a venda morria em
+		// silêncio). O gate não está em STUCK_ESCAPE_GATES e o watchdog não re-arma,
+		// então não havia NENHUMA outra saída.
+		const consentDeclined =
+			recoConsentGatePending &&
+			mentionedOfferForConsent === null &&
+			analyzedIntent !== "ready_to_proceed" &&
+			detectYesNoText(userText, analyzedIntent) === false;
+		if (consentDeclined) {
+			meta.recoConsentAnswered = true;
+			// Só telemetria/tom: o hero não é imposto a quem recusou.
+			meta.recoConsentDeclined = true;
+			await persistMeta(conversationId, meta);
+			console.log(
+				`[reco-consent] conv=${conversationId} recusado — seguindo o funil sem o hero`,
+			);
+		}
 		if (
 			recoConsentGatePending &&
 			(detectYesNoText(userText, analyzedIntent) === true ||
@@ -496,7 +518,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			await persistMeta(conversationId, meta);
 			await saveMessage(conversationId, "user", userText, channel);
 			if (meta.pendingRecommendationCard) {
-				yield* runTurn({
+				yield* runTurnVercel({
 					channel,
 					conversationId,
 					userText: buildRecoConsentAcceptedDirective(),
@@ -525,6 +547,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 						payload: meta.pendingSimulationResult,
 					});
 				}
+			} else {
+				// O cliente ACEITOU ver a recomendação e não há hero pendente pra
+				// materializar. Sem este ramo o turno terminava 100% MUDO: ele dizia
+				// "pode sim!" e recebia a pergunta do gate seguinte, como se ninguém
+				// tivesse ouvido — no exato instante em que ele se abriu. Nunca
+				// respondemos por texto pré-fabricado: entregamos o FATO ao modelo e
+				// ele conduz com as palavras dele.
+				console.log(
+					`[reco-consent] conv=${conversationId} aceito SEM hero pendente — devolvendo o turno ao modelo`,
+				);
+				yield* runTurnVercel({
+					channel,
+					conversationId,
+					userText:
+						"[sistema: o cliente acabou de aceitar ver a opção que você recomenda, mas a recomendação ainda não está pronta pra mostrar. Assuma o compromisso com ele, seja honesto de que vai levantar isso agora, e siga a conversa — sem prometer prazo nem inventar oferta.]",
+					isUserTurn: false,
+					contactName: knownName,
+					skipAnalyzer: true,
+					skipLeadCollection: true,
+					forceToolChoice: "none",
+				});
 			}
 			return;
 		}
@@ -631,7 +674,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// pedir de novo.
 			// (O guard de `contractFormDispatched` subiu pra condição do bloco — ver
 			// FIX-346 acima. Aqui dentro, o formulário ainda NÃO foi mostrado.)
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildAdvanceToContractDirective({
@@ -1154,7 +1197,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// ainda pendente, re-anexava "Posso te mostrar a opção que eu
 			// recomendo?" NO MEIO do pedido de WhatsApp do fecho. `suppressGateEvent`
 			// impede isso (mesmo padrão já usado noutros sub-turnos de fecho).
-			yield* runTurn({
+			yield* runTurnVercel({
 				channel,
 				conversationId,
 				userText: buildWhatsappOptinDirective(stage),
@@ -1196,7 +1239,7 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 			return;
 		}
 		const directive = buildSearchSummaryDirective({ category, meta: refreshed });
-		yield* runTurn({
+		yield* runTurnVercel({
 			channel,
 			conversationId,
 			userText: directive,
@@ -1338,6 +1381,27 @@ export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
 	yield { type: "finish", reason: "ok" };
 }
 
+/**
+ * Dispatcher por `AI_RUNTIME` (FIX-355) — a costura que os dois canais (web +
+ * WhatsApp) consomem. Default `vercel` (comportamento idêntico ao de sempre).
+ * `langgraph` delega pro segundo runtime (campanha
+ * `.processo/loop/2026-07-20-1948-langgraph-runtime.md`), ainda sem paridade
+ * completa nesta rodada (walking skeleton — ver `lib/agent/langgraph/`).
+ *
+ * Consistência por-conversa: como o dispatch acontece por TURNO (não por
+ * conversa), a garantia de "mesma conversa = mesmo runtime do início ao fim"
+ * vem de fora — a flag é de AMBIENTE (não por-conversa), então trocar
+ * `AI_RUNTIME` no meio de uma conversa é uma operação de deploy, não algo que
+ * o dispatcher precisa detectar/bloquear.
+ */
+export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
+	if (runtimeFlavor() === "langgraph") {
+		yield* runTurnLangGraph(input);
+		return;
+	}
+	yield* runTurnVercel(input);
+}
+
 async function* runTransitionAndContinue(args: {
 	conversationId: string;
 	fromPersona: Persona;
@@ -1360,7 +1424,7 @@ async function* runTransitionAndContinue(args: {
 		toCategory: plan.toCategory,
 		bridgeText: plan.bridgeText,
 	};
-	yield* runTurn({
+	yield* runTurnVercel({
 		channel,
 		conversationId,
 		userText: plan.directive,

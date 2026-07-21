@@ -1,60 +1,44 @@
-# Aja Agora — instruções do projeto
+# Aja Agora
 
-> Só ponteiros e invioláveis curtos. O detalhe vive na documentação — não reescreva aqui o que já está lá.
+Agente conversacional de **vendas de consórcio**, em dois canais: web (chat com cards) e WhatsApp.
+Ele conversa, qualifica, busca ofertas reais na administradora (Bevi) e fecha contrato.
 
-## Onde está cada coisa (documentação)
+## O alvo
 
-O mapa macro completo está em **[`docs/README.md`](./docs/README.md)** — comece por ele pra achar o resto.
+Um **vendedor humano que entende de consórcio**: consultivo, conduz a conversa, reage ao que a
+pessoa contou, trata objeção ("é demorado", "e se eu não for contemplado", "melhor financiamento"),
+explica lance/contemplação/taxa como quem sabe, e fecha. Não é um formulário com balões.
 
-| Precisa de… | Vá em |
+## A única regra que importa
+
+**Invariante verificável vira código. Conversa é do modelo.**
+
+- Verificável (a Bevi exige CPF antes de simular; número vem de tool, nunca da cabeça do modelo;
+  nada de "cota reservada" antes da contratação; nada de prometer contemplação garantida ou prazo)
+  → **código determinístico**.
+- Todo o resto — como perguntar, com que palavra, com que empatia, em que ordem quando o cliente
+  puxa pro lado — → **é do modelo**. Não vira regra-no-prompt, não vira texto fixo no servidor,
+  não vira teste de regex.
+
+O agente já foi engessado uma vez e virou um robô que respondia sempre a mesma coisa. Se a conversa
+sair ruim, a primeira hipótese é **prompt/contexto ruim ou trava demais** — não "falta uma trava".
+
+## Português correto
+
+Todo texto que o cliente vê (agente, UI, botão, erro, e-mail, template) em português com acento,
+cedilha e til. Acento faltando é defeito de entrega.
+
+## Onde as coisas estão
+
+| O quê | Onde |
 |---|---|
-| **Como o produto se COMPORTA (referência viva)** | [`docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/`](./docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/) — o mockup HTML + o handoff |
-| **A ordem real dos gates** | o CÓDIGO: `nextGate` em `src/lib/agent/qualify-state.ts` |
-| Decisões do cliente (histórico) + invariantes duros | [`docs/jornada/decisoes-do-cliente.md`](./docs/jornada/decisoes-do-cliente.md) |
-| Contexto da jornada × Bevi | [`docs/jornada/CONTEXT.md`](./docs/jornada/CONTEXT.md) |
-| Por quê (ADRs) | `docs/decisoes/` (`blocos/`) |
-| Desenho de feature antes de codar | `docs/design/specs/` |
-| O que foi entregue | `docs/entregas/` |
-| Bugs (inbox → todo → done) | `docs/correcoes/` |
-| Roteiro de QA da jornada | `docs/qa/roteiro-qa.md` |
-| Integração Bevi/AGX (dossiê) | `docs/integracoes/` |
-| Visão de produto | `docs/visao/` |
-| Guias temáticos + domínio | `docs/referencia/` |
+| Runtime em uso | `AI_RUNTIME` (`src/lib/llm/runtime.ts`) — `langgraph` ou `vercel` |
+| Grafo (LangGraph) | `src/lib/agent/langgraph/` — `graph.ts` é a topologia |
+| Runtime Vercel AI SDK | `src/lib/agent/orchestrator/` |
+| Ordem do funil | `nextGate` em `src/lib/agent/qualify-state.ts` — **o código é a fonte** |
+| Tools por fase | `src/lib/agent/orchestrator/tool-policy.ts` |
+| Prompt | `src/lib/agent/system-prompt.ts` |
+| Sonda de variância de fala | `pnpm sonda:variancia` |
 
-## Inviolável — NÃO engesse o agente
-
-O produto é uma **conversa de vendas**, não um formulário com balões. O agente já foi engessado uma
-vez (roteiro do `jornada.docx` travado em copy literal, gates sem saída lateral, sanitizer comendo
-as perguntas do modelo) e o resultado foi um agente **bitolado, que respondia sempre a mesma coisa**.
-Rebaixamos aquilo em 2026-07-13. Não reconstrua.
-
-**A regra que separa o que é código do que é conversa:**
-
-- **Invariante verificável** (a Bevi exige CPF antes de simular; número nunca é inventado; nunca
-  prometer "cota reservada" antes da contratação) → **vira código determinístico.** Lista fechada em
-  [`docs/jornada/decisoes-do-cliente.md`](./docs/jornada/decisoes-do-cliente.md).
-- **Todo o resto** (como perguntar, em que palavra, com que empatia, em que ordem quando o usuário
-  puxa pra outro lado) → **é do MODELO.** Não vire regra-no-prompt, não vire regex de teste, não
-  vire texto fixo no servidor.
-
-**PROIBIDO** (foi exatamente isso que quebrou o agente):
-
-- Responder por **texto pré-fabricado sem consultar o LLM** porque "o modelo pode errar". Se o
-  usuário diz "não entendi", quem responde é o modelo — não um `const` repetindo a mesma pergunta.
-- **Frase canônica obrigatória** ("não improvise outras formulações"). Nenhuma.
-- **Teste que trava a copy** por regex literal (`/r\$ 100 mil/`). Teste **invariante**, nunca script
-  de fala.
-- **Directive que reduz o modelo a "escreva 1 frase e não chame tool"** como padrão do turno.
-- Empilhar uma camada nova (prompt + policy + guard + sanitizer) pra remendar o sintoma da camada
-  anterior. Quando o código assume um invariante, **remova a regra-no-prompt correspondente** — não
-  deixe as duas.
-
-Falha de QA na conversa? A primeira hipótese é **prompt/contexto ruim ou trava demais**, não "falta
-uma trava". Só se o dado provar o contrário é que se aperta — e aí num invariante, não numa frase.
-
-## Inviolável — português correto em todo texto voltado ao usuário
-
-Todo texto que o **usuário final vê** — mensagem do agente (web e WhatsApp), copy de UI, label,
-botão, placeholder, toast, erro, e-mail, template — tem que estar em **português correto, com todas
-as acentuações, cedilhas e til**. Acento faltando é **defeito de entrega**. Zero ASCII-fication
-("voce"/"nao"/"informacoes"). Exceção: identificador de código, chave técnica ou inglês intencional.
+Documentação em `docs/` é **histórico, não lei**. ADR antigo que não faz sentido hoje: ignore ou
+apague. O código manda.

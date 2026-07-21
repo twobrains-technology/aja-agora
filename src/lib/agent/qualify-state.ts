@@ -68,6 +68,13 @@ export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"lance",
 	"lance-value",
 	"lance-embutido",
+	// `reco-consent` é um CONVITE ("posso te mostrar a que eu recomendo?"), não
+	// coleta de dado — e era o único gate sem NENHUMA saída: só o SIM o resolvia,
+	// então qualquer resposta que o classificador não entendesse congelava a
+	// venda para sempre (nunca vinha decisão, nunca vinha contrato, e ninguém
+	// percebia porque o agente seguia conversando educadamente). Com o teto de
+	// tentativas, o funil segue sem impor o hero — quem quiser ver, pede.
+	"reco-consent",
 ]);
 
 /** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
@@ -161,6 +168,11 @@ export function registerGateStuckTurn(
 		qualifyAnswers: { ...(meta.qualifyAnswers ?? {}), ...stuckGateDefaultPatch(gate, meta) },
 		gateStuckTurns: { ...meta.gateStuckTurns, [gate]: 0 },
 		gateDefaultsAssumed: { ...meta.gateDefaultsAssumed, [gate]: true },
+		// `reco-consent` não mora em `qualifyAnswers` — o default dele é um campo
+		// do próprio metadata. Sem isto, o gate entraria em STUCK_ESCAPE_GATES,
+		// zeraria o contador a cada teto e continuaria pendente para sempre: o
+		// escape existiria no papel e não no funil.
+		...(gate === "reco-consent" ? { recoConsentAnswered: true, recoConsentDeclined: true } : {}),
 	};
 }
 

@@ -239,6 +239,13 @@
       "when": 1783209023554,
       "tag": "0033_administradoras_logo_url",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784599272707,
+      "tag": "0034_whatsapp_idempotencia_lock",
+      "breakpoints": true
     }
   ]
 }

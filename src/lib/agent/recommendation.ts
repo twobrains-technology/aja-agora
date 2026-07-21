@@ -199,7 +199,24 @@ export function rankGroups(
 	input: ScoringInput,
 	topN = Number.POSITIVE_INFINITY,
 ): ScoredGroup[] {
-	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, input));
+	// PARCELA VOLTA A DECIDIR. Sem orçamento declarado (`budget = 0`, que é o
+	// caso NORMAL — o cliente informa o valor do bem, nunca quanto pode pagar por
+	// mês), `monthlyFitScore` devolvia 0 pra TODOS os candidatos: o peso da
+	// parcela virava zero e a recomendação saía pela taxa/contemplação. Ao vivo
+	// isso recomendou a parcela MAIS CARA da mesa (R$ 3.728,90 quando existia
+	// R$ 2.025,62 na mesma carta) exibindo "Orçamento 0%" na tela. Num consórcio
+	// a parcela é a variável nº 1 da decisão. Sem orçamento, o parâmetro passa a
+	// ser RELATIVO ao conjunto: a menor parcela entre os candidatos vale 1.0 e as
+	// demais são penalizadas na proporção em que passam dela.
+	const menorParcela = groups.reduce(
+		(min, g) => (g.monthlyPayment > 0 && g.monthlyPayment < min ? g.monthlyPayment : min),
+		Number.POSITIVE_INFINITY,
+	);
+	const inputEfetivo: ScoringInput =
+		input.budget > 0 || !Number.isFinite(menorParcela)
+			? input
+			: { ...input, budget: menorParcela };
+	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, inputEfetivo));
 
 	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
 	// candidatas de embutido ("com") que violam netCredit >= valorDoBem são

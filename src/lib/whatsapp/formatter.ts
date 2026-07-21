@@ -276,10 +276,17 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	};
 }
 
+// Invariante I4 (docs/jornada/decisoes-do-cliente.md): NUNCA prometer reserva
+// antes da contratação real. Esta copy dizia "Para reservar essa opção" e o
+// `present_lead_form` está liberado na fase PRÉ-reveal (tool-policy.ts) — ou
+// seja, o cliente lia uma promessa de reserva ainda na qualificação, sem CPF e
+// sem busca feita. O guard de sanitização (PREMATURE_RESERVATION_PATTERNS) não
+// pegava: casa o particípio ("reservado/reservada"), não o infinitivo — e texto
+// de card do canal nem passa por ele.
 export function leadFormToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Ótimo! Para reservar essa opção, preciso de alguns dados.\n\n*Qual seu nome completo?*",
+		text: "Ótimo! Pra eu seguir com você, preciso de alguns dados.\n\n*Qual seu nome completo?*",
 	};
 }
 
@@ -1334,12 +1341,12 @@ export function artifactToWhatsApp(
 	}
 }
 
-/** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
- * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
- * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
- * irmãos "Reservar agora"/"Falar c/ consultor" (decision_contratar/
- * decision_especialista) ainda caem no processamento de texto (contratar →
- * reserva, especialista → handoff) — fora do escopo da D22. */
+/** Card de decisão (jornada do .docx etapa 4). 3 botões, TODOS com handler
+ * determinístico em `dispatchInteractiveReply`: "Ver outras opções"
+ * (decision_outras → buildOtherOptions, FIX-119/D22), "Seguir agora"
+ * (decision_contratar → mesmo caminho do "Tenho interesse") e "Falar c/
+ * consultor" (decision_especialista → handoff humano). Até 2026-07-20 só o
+ * primeiro tinha handler: os outros dois viravam texto solto pro LLM. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

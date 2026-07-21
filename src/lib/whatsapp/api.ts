@@ -20,9 +20,7 @@ const GRAPH_TIMEOUT_MS = 15_000;
  * lança um DOMException `TimeoutError`; alguns runtimes usam `AbortError`).
  */
 function isTimeoutError(err: unknown): boolean {
-	return (
-		err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")
-	);
+	return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
 function getConfig() {
@@ -184,16 +182,21 @@ export async function sendListMessage(
 	});
 }
 
+/** Devolve o resultado do envio (`error` preenchido = a Meta recusou ou o egress
+ * estourou). Antes era `Promise<void>`: o adapter marcava "já enviei" sem olhar
+ * o resultado, então um turno em que TODOS os envios falharam era indistinguível
+ * de um turno entregue — e nenhuma rede (guard de turno mudo, watchdog) resgatava
+ * o cliente, que simplesmente não recebia nada. */
 export async function sendInteractiveMessage(
 	to: string,
 	interactive: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ messageId?: string; error?: string }> {
 	if (isSimulatedWaId(to)) {
 		publishToClient(to, { type: "interactive", interactive });
-		return;
+		return simulatedAck();
 	}
 	const { accessToken, phoneNumberId } = getConfig();
-	await callApi(phoneNumberId, accessToken, {
+	return callApi(phoneNumberId, accessToken, {
 		to,
 		type: "interactive",
 		interactive,
@@ -347,9 +350,7 @@ export type CreateTemplateResult = {
  * a Meta responder erro (4xx/5xx) — NUNCA persiste um PENDING falso. Não tem
  * branch de waId simulado: criar template não é por-destinatário.
  */
-export async function createTemplate(
-	input: CreateTemplateInput,
-): Promise<CreateTemplateResult> {
+export async function createTemplate(input: CreateTemplateInput): Promise<CreateTemplateResult> {
 	const { accessToken, wabaId } = getWabaConfig();
 	const url = `${GRAPH_API}/${wabaId}/message_templates`;
 	let res: Response;

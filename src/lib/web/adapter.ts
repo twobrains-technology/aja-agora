@@ -14,7 +14,7 @@ import {
 	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
-import type { Gate } from "@/lib/agent/qualify-state";
+import { type Gate, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import type { ArtifactType } from "@/lib/chat/types";
 import type {
@@ -23,6 +23,7 @@ import type {
 	GatePartData,
 	GatePartOption,
 	SliderField,
+	ToolStatusPartData,
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
@@ -48,6 +49,31 @@ const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
 	label: t.title,
 }));
 
+/** Atalhos do "por que agora" (gate `desire`), por categoria. São ATALHOS, não
+ * um formulário: o campo de texto segue aberto e quem quiser contar a história
+ * inteira digita. O clique manda o rótulo como mensagem normal — o motivo entra
+ * pelo mesmo caminho de sempre (analyzer sobre texto livre). */
+const DESIRE_MOTIVE_OPTIONS: Partial<Record<Category, GatePartOption[]>> = {
+	auto: [
+		{ value: "primeiro", label: "É meu primeiro carro" },
+		{ value: "troca", label: "Vou trocar o que tenho" },
+		{ value: "trabalho", label: "Preciso pra trabalhar" },
+		{ value: "familia", label: "A família cresceu" },
+	],
+	moto: [
+		{ value: "primeira", label: "É minha primeira moto" },
+		{ value: "troca", label: "Vou trocar a que tenho" },
+		{ value: "trabalho", label: "Preciso pra trabalhar" },
+		{ value: "economia", label: "Pra economizar no dia a dia" },
+	],
+	imovel: [
+		{ value: "primeiro", label: "É meu primeiro imóvel" },
+		{ value: "sair-aluguel", label: "Quero sair do aluguel" },
+		{ value: "investimento", label: "É investimento" },
+		{ value: "familia", label: "A família cresceu" },
+	],
+};
+
 /** Monta o card de um gate a partir do meta da conversa. PURO (exportado pra
  * Camada 1 validar a copy do docx sem DB). */
 export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartData | null {
@@ -56,10 +82,21 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
 			// texto do agente (gateQuestion('name')=null), o card só complementa.
 			return { kind: "name", gate: "name" };
-		case "desire":
-			// FIX-233: gate não bloqueante, sem card — as duas perguntas (bem
-			// específico + motivo) são conversa livre; o texto sai no directive.
-			return null;
+		case "desire": {
+			// Gate FANTASMA até 2026-07-21: devolvia `null` e o `desire` ficava sem
+			// nenhum pixel na tela. Toda pergunta do funil oferece resposta em um
+			// toque — o motivo ("por que agora") são os atalhos mais comuns por
+			// categoria; quem quiser contar a história inteira continua digitando.
+			// O chip manda o rótulo como TEXTO comum (o analyzer extrai `motivation`
+			// do texto livre, igual a digitar) — nenhum handler novo no servidor.
+			// Os atalhos são do MOTIVO ("por que agora"), não do bem — só aparecem no
+			// turno em que o agente pergunta o motivo. No turno do bem ("qual carro?")
+			// não há card: a resposta é aberta.
+			if (!shouldAskMotive(meta)) return null;
+			const opcoes = DESIRE_MOTIVE_OPTIONS[meta.currentCategory ?? "auto"];
+			if (!opcoes) return null;
+			return { kind: "chips", gate: "desire", options: opcoes };
+		}
 		case "experience":
 			return {
 				kind: "chips",
@@ -146,10 +183,18 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				],
 			};
 		case "reco-consent":
-			// FIX-297: gate leve, sem card — só a pergunta em texto (gateQuestion),
-			// resolvido por texto livre (sim/não), mesmo mecanismo de simulator-
-			// offer/lance-embutido em orchestrator/index.ts (detectYesNoText).
-			// "mecanismo mais simples que funciona" (decisão do bloco).
+			// Micro-compromisso mais importante do funil — e até 2026-07-21 era o
+			// ÚNICO sim/não sem botão de "sim": o cliente tinha que DIGITAR pra
+			// aceitar ver a recomendação. Atrito puro. Os chips mandam o rótulo como
+			// texto normal (mesmo caminho de sempre, `detectYesNoText` resolve).
+			return {
+				kind: "chips",
+				gate: "reco-consent",
+				options: [
+					{ value: "sim", label: "Sim, quero ver" },
+					{ value: "nao", label: "Agora não" },
+				],
+			};
 		case "doubts-wait":
 		case "search":
 		case "decision":
@@ -273,6 +318,28 @@ export async function pipeOrchestratorToWriter(
 		}
 	};
 
+	// BATIMENTO. Entre o início do turno e a primeira palavra do modelo a stream
+	// fica em silêncio absoluto — e desde que a busca passou a rodar ANTES da
+	// fala, esse silêncio chega a 30s+. Proxy nenhum aguenta: o OrbStack corta
+	// com EOF e o cliente leva 502 no meio da conversa (aconteceu no clique de
+	// "Seguir com ITAÚ", o botão de fechar negócio). Um data-part transitório a
+	// cada 8s mantém a conexão viva; a UI ignora `data-heartbeat`.
+	const batimento = setInterval(() => {
+		try {
+			// Reusa o part de tool "transiente" que a UI já sabe descartar — nenhum
+			// tipo novo no protocolo só pra manter a conexão viva.
+			writer.write({
+				type: "data-tool",
+				id: crypto.randomUUID(),
+				data: { tool: "keepalive" } as unknown as ToolStatusPartData,
+				transient: true,
+			});
+		} catch {
+			// stream já fechada — o clearInterval do finally cuida do resto
+		}
+	}, 8000);
+
+	try {
 	for await (const ev of events) {
 		switch (ev.type) {
 			case "text-delta":
@@ -430,6 +497,9 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				break;
 		}
+	}
+	} finally {
+		clearInterval(batimento);
 	}
 
 	closeTextIfOpen();

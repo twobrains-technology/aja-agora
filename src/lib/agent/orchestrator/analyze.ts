@@ -38,13 +38,24 @@ export async function analyzeAndMerge(
 	text: string,
 	currentPersona: Persona,
 	meta: ConversationMetadata,
+	/** Última fala do assistente — a pergunta que o usuário está respondendo.
+	 * Ancora o classificador (ver `analyzeTurn`). Opcional: sem ela o
+	 * comportamento é o de antes. */
+	lastAssistantText?: string | null,
 ): Promise<AnalyzeResult> {
-	const analysis = await analyzeTurn(text, currentPersona, meta);
 	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
 	// de qualquer merge desta função alterar o estado (ver guard de hasLance
 	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
 	// lance por baixo do pano).
+	// Subiu pra ANTES do analyzeTurn: o gate ativo é a âncora que diz ao
+	// classificador a que pergunta a mensagem responde. Sem ela, "não" respondido
+	// ao lance virava resposta do prazo — e cada erro desses virou um guard nesta
+	// função pra desfazer a extração errada.
 	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	const analysis = await analyzeTurn(text, currentPersona, meta, {
+		activeGate: activeGateAtTurnStart,
+		lastAssistantText,
+	});
 	// FIX-296: snapshot de `desireAnswered` ANTES de qualquer mutação deste
 	// turno (a marcação de `desireAnswered`, logo abaixo, pode acontecer NESTE
 	// MESMO turno — o guard de creditMax mais adiante precisa saber se o

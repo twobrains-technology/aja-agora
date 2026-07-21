@@ -18,8 +18,14 @@ interface TheaterChatProps {
 
 type ResumePayload = {
 	conversationId: string;
-	messages: { id: string; role: "user" | "assistant"; content: string }[];
+	messages: {
+		id: string;
+		role: "user" | "assistant";
+		content: string;
+		artifact?: { type: string; payload: unknown };
+	}[];
 	messageCount: number;
+	gate?: { kind: string } | null;
 	lastActivityAt: string;
 	meaningfulProgress: boolean;
 };
@@ -42,12 +48,42 @@ function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
 			({
 				id: m.id,
 				role: m.role,
-				parts: [{ type: "text", text: m.content }],
+				// Card volta como CARD. Antes tudo virava `text`, então ao retomar/dar
+				// refresh o cliente via a linha marcadora "[card: tipo]" em vez do
+				// componente.
+				parts: [
+					...(m.content ? [{ type: "text", text: m.content }] : []),
+					...(m.artifact
+						? [
+								{
+									type: "data-artifact",
+									id: `${m.id}-artifact`,
+									data: { type: m.artifact.type, payload: m.artifact.payload },
+								},
+							]
+						: []),
+				],
 				// FIX-49: marca o histórico hidratado — a UI ancora o scroll, mostra a
 				// âncora "Você voltou" e sela artifacts/gates antigos.
 				metadata: { resumed: true },
 			}) as AjaUIMessage,
 	);
+}
+
+/** Card do gate pendente, devolvido pelo resume, como última mensagem do
+ * assistente. Sem ele a retomada volta muda: o agente repete a pergunta e
+ * nenhum componente de input aparece. */
+function comGatePendente(conv: ResumePayload, msgs: AjaUIMessage[]): AjaUIMessage[] {
+	if (!conv.gate) return msgs;
+	return [
+		...msgs,
+		{
+			id: `${conv.conversationId}-gate-retomada`,
+			role: "assistant",
+			parts: [{ type: "data-gate", id: `${conv.conversationId}-gate`, data: conv.gate }],
+			metadata: { resumed: true },
+		} as unknown as AjaUIMessage,
+	];
 }
 
 /**
@@ -81,14 +117,14 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 						setResume({
 							phase: "prompt",
 							conversationId: conv.conversationId,
-							messages: toResumedMessages(conv),
+							messages: comGatePendente(conv, toResumedMessages(conv)),
 							lastActivityAt: conv.lastActivityAt,
 						});
 					} else {
 						setResume({
 							phase: "ready",
 							conversationId: conv.conversationId,
-							messages: toResumedMessages(conv),
+							messages: comGatePendente(conv, toResumedMessages(conv)),
 						});
 					}
 				} else {
@@ -136,7 +172,14 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 
 	return (
 		<ChatProvider initialConversationId={resume.conversationId} initialMessages={resume.messages}>
-			<TheaterChatBody seed={seed} settled={settled} />
+			{/* Retomada sem nada digitado: o cliente anuncia que voltou. Sem esse
+			    sinal o agente ficava mudo esperando, sem chance de retomar o fio
+			    ("você estava vendo a ITAÚ, quer seguir daí?") — reusa o MESMO
+			    caminho do seed, então é mensagem de verdade, não turno fantasma. */}
+			<TheaterChatBody
+				seed={seed.trim() || (resume.messages?.length ? "Voltei" : "")}
+				settled={settled}
+			/>
 		</ChatProvider>
 	);
 }

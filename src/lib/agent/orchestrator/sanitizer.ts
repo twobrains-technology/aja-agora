@@ -152,11 +152,39 @@ const PREMATURE_RESERVATION_PATTERNS: RegExp[] = [
 	/\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i,
 ];
 
-/** Um segmento afirma reserva/garantia prematura (proibido, invariante #9) —
- * não pode virar bolha. */
-export function isPrematureReservationClaim(segment: string): boolean {
+/** Afirma que a RESERVA/GARANTIA da cota dele já aconteceu — o objeto é a
+ * cota/plano/vaga (nossa entrega), não o dinheiro que ele guardou. Também pega
+ * o pretérito com possessivo ("já deixei sua cota reservada") e a afirmação
+ * disfarçada de pergunta ("sua cota está garantida, ok?"). */
+const AFFIRMS_OUR_RESERVATION =
+	/\b(sua|seu|a sua|o seu)\s+(cota|vaga|plano|consórcio|consorcio|grupo)\b[\s\S]{0,40}\b(reservad[ao]|garantid[ao])\b|\b(reservei|deixei|garanti)\b[\s\S]{0,30}\b(sua|seu)\s+(cota|vaga|plano)\b|\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i;
+
+/** Um segmento afirma reserva/garantia PREMATURA — proibido só ENQUANTO nada
+ * foi contratado. O invariante #9 é "não prometer reserva ANTES da
+ * contratação", não "nunca dizer reservado": com proposta real criada
+ * (`hasProposal`) ou contrato fechado (`contractClosed`), afirmar a reserva é
+ * VERDADE — e é o que o próprio system-prompt manda dizer no estado terminal
+ * ("NUNCA negue que a reserva aconteceu"). Sem o estado, o guard apagava a
+ * comemoração da venda e o turno caía no fallback enlatado. */
+export function isPrematureReservationClaim(
+	segment: string,
+	ctx?: StateVerificationContext,
+): boolean {
 	const s = segment.trim();
 	if (!s) return false;
+	if (ctx?.hasProposal === true || ctx?.contractClosed === true) return false;
+	// CLAIM é AFIRMAÇÃO. "Você teria um valor reservado pra dar de lance?" não
+	// promete cota nenhuma — é a pergunta canônica do gate de lance, e dropá-la
+	// zerava o turno e devolvia o card à copy fixa (o FIX-268 chegou a REESCREVER
+	// a pergunta do produto só pra fugir deste guard).
+	//
+	// Mas o critério NÃO é "termina com ?": afirmação disfarçada de pergunta
+	// ("Sua cota já está garantida, ok?") continua sendo a mesma promessa
+	// proibida — isentar por pontuação abriria o invariante I3 com um caractere.
+	// O que separa os dois é o SUJEITO: reserva do dinheiro DELE (pergunta
+	// legítima) vs. reserva da cota/plano DELE feita por NÓS (promessa vedada
+	// antes da contratação).
+	if (isInterrogativeSentence(s) && !AFFIRMS_OUR_RESERVATION.test(s)) return false;
 	return PREMATURE_RESERVATION_PATTERNS.some((rx) => rx.test(s));
 }
 
@@ -374,18 +402,31 @@ export function isInternalToolLeak(segment: string): boolean {
 // novato pós-familiaridade ("contemplação acontece por sorteio ou lance") é
 // turno SEM search — `hasSearchToolCall` é false lá, então NÃO é tocada. Os
 // atributos dos cards ("lance médio R$ X") são payload, não texto do agente.
-const REVEAL_CONTEMPLATION_SCENARIO_PATTERN =
-	/\b(com\s+(um\s+)?lance|dar\s+(um\s+)?lance|lance\s+forte)\b|\bcontemplad[oa]\b|\bcontempla[çc][ãa]o\b|\b(por|pelo|no)\s+sorteio\b|\bcen[áa]rio\b/i;
+// O que é PREMATURO é o CENÁRIO CONCRETO ("com um lance de R$ 52.600 você é
+// contemplado no 6º mês") — número que só o card de simulação/agulha pode
+// afirmar. A PALAVRA "contemplação" não é o problema: ela é o vocabulário
+// central do produto, e proibi-la no turno do reveal apagava a apresentação
+// inteira (o cliente recebia "Acho que me perdi" na hora de ver as ofertas).
+// Além de censurar demais, o padrão antigo cobria de menos — o plural
+// ("contemplados") escapava do `\b` do singular.
+//
+// Agora o guard exige as DUAS coisas no mesmo segmento: o conceito E um número
+// concreto (valor de lance ou mês de contemplação). Falar do mecanismo passa;
+// cravar o cenário numérico não.
+const REVEAL_CONTEMPLATION_CONCEPT =
+	/\blance\b|\bcontemplad|\bcontempla[çc][ãa]o\b|\b(por|pelo|no)\s+sorteio\b/i;
+const CONCRETE_SCENARIO_NUMBER =
+	/R\$\s*[\d.,]+|\b\d+\s*(º|o\b|ª|a\b)?\s*(m[êe]s|meses|assembleia)|\bno\s+\d+\s*º/i;
 
-/** Um segmento narra o cenário de contemplação (lance/meses/sorteio) DENTRO do
- * turno de reveal (`ctx.hasSearchToolCall`) — prematuro, o reveal só abre a
- * porta e pergunta familiaridade. Fora do turno de reveal, não toca (o lance é
- * legítimo na recomendação/agulha/gate lance). */
+/** Um segmento crava um CENÁRIO NUMÉRICO de contemplação (valor de lance / mês
+ * de contemplação) DENTRO do turno de reveal (`ctx.hasSearchToolCall`) — esse
+ * número é do card, não da narrativa do modelo. Explicar o mecanismo sem número
+ * é livre, aqui e em qualquer turno. */
 export function isPrematureRevealScenario(segment: string, ctx?: StateVerificationContext): boolean {
 	if (ctx?.hasSearchToolCall !== true) return false;
 	const s = segment.trim();
 	if (!s) return false;
-	return REVEAL_CONTEMPLATION_SCENARIO_PATTERN.test(s);
+	return REVEAL_CONTEMPLATION_CONCEPT.test(s) && CONCRETE_SCENARIO_NUMBER.test(s);
 }
 
 // FIX-298 (loop-de-goal r10, P4 — transcrição real com Qwen 3.5 Fast): "Quer
@@ -422,13 +463,41 @@ function lastInterrogativeIndex(segments: string[]): number {
 const EMOJI_PATTERN =
 	/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu;
 
-/** Remove emoji de um texto de forma determinística (independe do modelo
- * obedecer a regra de parcimônia do prompt). Colapsa o espaço duplo deixado
- * pelo emoji removido, sem tocar em espaçamento de borda (join entre blocos).
- * FIX-299. */
+const EMOJI_RUN = new RegExp(`[ \\t]*(?:${EMOJI_PATTERN.source})+[ \\t]*`, "gu");
+
+/**
+ * Emoji NUNCA sai sem repor a pontuação que ele estava substituindo.
+ *
+ * O modelo usa emoji COMO PONTUAÇÃO ("...80 mil de crédito 🚗 Já tô
+ * preparando..."). Remover cru deixava a frase sem ponto e o balão parecia
+ * "cortado no meio" — o defeito reportado ao vivo 4 vezes. Repor o ponto na
+ * SAÍDA não bastava: `splitSegments` roda ANTES, então enquanto o emoji está
+ * no texto a segmentação sai errada e os guards (preâmbulo, 1-pergunta-por-
+ * balão) simplesmente não disparam. Por isso esta normalização acontece na
+ * ENTRADA do filtro, antes de qualquer segmentação.
+ *
+ * Nunca toca espaçamento de borda — é o único separador que o `converse` tem
+ * entre blocos; mexer ali colava as frases ("pra você.Antes de mais nada").
+ */
+export function normalizeEmojiToPunctuation(text: string): string {
+	if (!text) return text;
+	return text.replace(EMOJI_RUN, (m: string, offset: number, full: string) => {
+		const after = full.slice(offset + m.length);
+		const prev = full.slice(0, offset).replace(/[ \t]+$/, "").slice(-1);
+		if (!prev) return ""; // emoji no início do texto — nada a pontuar
+		if (/[.!?:;,…]/.test(prev)) return after === "" || /^\s/.test(after) ? "" : " ";
+		if (/^[ \t]*[.!?:;,…]/.test(after)) return ""; // pontuação já vem depois
+		if (after === "" || /^\n/.test(after)) return "."; // fechava a frase
+		return ". "; // separava duas frases
+	});
+}
+
+/** Rede RESIDUAL: tira o que sobrou de emoji depois da normalização. Não
+ * colapsa espaço nem apara borda — quem repõe pontuação é
+ * `normalizeEmojiToPunctuation`. FIX-299. */
 export function stripEmoji(text: string): string {
 	if (!text) return text;
-	return text.replace(EMOJI_PATTERN, "").replace(/[ \t]{2,}/g, " ");
+	return text.replace(EMOJI_PATTERN, "");
 }
 
 // FIX-337 (invariante I6, docs/jornada/decisoes-do-cliente.md — "dado
@@ -493,6 +562,16 @@ export type StateVerificationContext = {
 	 * saber quais ofertas existem (Lei 1/3). Ausente → o detector nunca dropa
 	 * (compat retroativa). */
 	shownAdministradoras?: string[];
+	/** true quando a contratação já se completou (`meta.contractClosed`). É o
+	 * mesmo fato que o artifact-guard já lê. Sem ele, o guard de reserva
+	 * apagava a confirmação legítima no estado terminal — o pior instante
+	 * possível pro agente parecer quebrado (o cliente acabou de fechar). */
+	contractClosed?: boolean;
+	/** Canal da conversa. Guards escritos pra web (ex.: "te aviso quando sair",
+	 * que na web é promessa vazia) NÃO valem no WhatsApp, onde o retorno
+	 * proativo EXISTE (template HSM + mesa de operação). Ausente → o detector
+	 * se comporta como antes. */
+	channel?: "web" | "whatsapp";
 };
 
 /** Um segmento afirma estado (documento recebido / re-busca) sem o evento
@@ -676,17 +755,19 @@ export type EphemeralDropReason =
  * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
  * pro rastreio de motivos do `EphemeralTextFilter` (FIX-347) — nunca duas
  * listas de guards que podem divergir. */
-function ephemeralSegmentReason(
+/** Guards de FATO — protegem uma afirmação VERIFICÁVEL contra o estado real:
+ * estado fabricado, administradora que não existe, oferta antes do consent,
+ * proposta que não saiu, campo proibido, vazamento de tool interna. Podem
+ * dropar qualquer segmento, inclusive interrogativo (perguntar "sua proposta
+ * com a ITAÚ já saiu?" carrega a mesma mentira que afirmar). */
+function factualDropReason(
 	segment: string,
 	ctx?: StateVerificationContext,
 ): EphemeralDropReason | null {
-	if (isProcessPreamble(segment)) return "process-preamble";
 	if (isTechnicalFallback(segment)) return "technical-fallback";
 	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
-	if (isPrematureReservationClaim(segment)) return "premature-reservation";
-	if (isBannedLexicon(segment)) return "banned-lexicon";
+	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
 	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
-	if (isProactiveCallbackClaim(segment)) return "proactive-callback";
 	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
 	if (isInternalToolLeak(segment)) return "internal-tool-leak";
 	if (isPrematureRevealScenario(segment, ctx)) return "premature-reveal-scenario";
@@ -695,6 +776,32 @@ function ephemeralSegmentReason(
 	if (isScorePercentageClaim(segment)) return "score-percentage";
 	if (isHallucinatedAdministradoraClaim(segment, ctx)) return "hallucinated-administradora";
 	return null;
+}
+
+/** Guards de ESTILO — protegem TOM, não fato. NUNCA podem apagar uma pergunta:
+ * a pergunta é o insumo do funil (vira `heldQuestion` → `modelAskedGateQuestion`
+ * → o card NÃO repete a copy fixa). Apagá-la devolve o agente ao "bitolado que
+ * responde sempre a mesma coisa" que o CLAUDE.md proíbe. Ficou provado que
+ * `isPrematureReservationClaim("Tem um dinheiro reservado pra isso?")` matava a
+ * pergunta canônica do gate de lance. */
+function styleDropReason(segment: string, ctx?: StateVerificationContext): EphemeralDropReason | null {
+	// process-preamble fica por razão ESTRUTURAL, não estética: em multi-step o
+	// "deixa eu buscar" viraria bolha persistida ANTES do retorno da tool.
+	if (isProcessPreamble(segment)) return "process-preamble";
+	// proactive-callback só na WEB — no WhatsApp o retorno proativo existe de
+	// verdade (template HSM + mesa), então a frase é fato, não promessa vazia.
+	if (ctx?.channel !== "whatsapp" && isProactiveCallbackClaim(segment)) return "proactive-callback";
+	return null;
+}
+
+function ephemeralSegmentReason(
+	segment: string,
+	ctx?: StateVerificationContext,
+): EphemeralDropReason | null {
+	const factual = factualDropReason(segment, ctx);
+	if (factual) return factual;
+	if (isInterrogativeSentence(segment)) return null;
+	return styleDropReason(segment, ctx);
 }
 
 /** Segmento EFÊMERO: preâmbulo de processo (FIX-188), fallback técnico
@@ -807,7 +914,9 @@ export class EphemeralTextFilter {
 
 	/** Alimenta um delta; devolve o texto LIMPO pronto pra emitir agora. */
 	push(delta: string): string {
-		this.pending += delta;
+		// Normaliza ANTES de procurar fronteira/segmentar: emoji-como-pontuação
+		// corrompia `splitSegments` e desligava os guards silenciosamente.
+		this.pending = normalizeEmojiToPunctuation(this.pending + delta);
 		const idx = lastBoundaryIndex(this.pending);
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);

@@ -96,7 +96,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 				    é disclosed no PDF da proposta (signature_handoff "Ver minha proposta")
 				    ANTES da assinatura — ver docs/jornada/CONTEXT.md. */}
 				<div>
-					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 					<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(payload.creditValue)}</p>
 				</div>
 

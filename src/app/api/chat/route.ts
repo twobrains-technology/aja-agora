@@ -54,6 +54,7 @@ import {
 	prazoMesesForIntent,
 } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import {
 	type ClosingItem,
 	closingPresentation,
@@ -226,6 +227,12 @@ async function pipeClosingCeremony(args: {
 	userKey: string | null;
 }): Promise<void> {
 	const { conversationId, meta, contactName, writer, userKey } = args;
+	// No runtime LangGraph quem emite a cascata de decisão (scarcity +
+	// decision_prompt) é o nó `emitCard` do grafo, com os guards de idempotência
+	// dele (`decisionDispatched`). Esta função é o funil PARALELO da era Vercel:
+	// rodando junto, cada clique produzia scarcity e "Esse plano faz sentido?"
+	// DUAS vezes no mesmo turno (visto ao vivo). Um funil por runtime.
+	if (runtimeFlavor() === "langgraph") return;
 	// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): cada
 	// `pipeDirectiveTurn`/`runTurn` reavalia `nextGateToFire` de forma
 	// independente — 3 sub-turnos encadeados no MESMO turno HTTP (scarcity,

@@ -40,6 +40,16 @@ const mocks = vi.hoisted(() => ({
 	runTurn: vi.fn(),
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendText,
 	sendInteractiveMessage: mocks.sendInteractive,

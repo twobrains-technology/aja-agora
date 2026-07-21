@@ -2,12 +2,14 @@
 
 > Doc humano de referência das regras críticas do produto.
 >
-> **Sincronia obrigatória** com `src/lib/agent/system-prompt.ts` e os cassettes em
-> `tests/regression/agent-trajectory.test.ts`. Quem mexer em prompt ou cassette
-> atualiza este doc **no mesmo commit**.
+> **Sincronia obrigatória** com `src/lib/agent/system-prompt.ts`. Quem mexer no
+> prompt atualiza este doc **no mesmo commit**.
 >
-> O teste `src/lib/agent/HARD_RULES.test.ts` trava essa sincronia — falha de PR
-> se o doc rotou.
+> 2026-07-20: os cassettes de `tests/regression/agent-trajectory.test.ts` e o
+> teste-espelho `HARD_RULES.test.ts` foram REMOVIDOS no expurgo do cimento de
+> copy (eram grep de código-fonte, não comportamento). Este doc deixou de ter
+> guarda automática — trate-o como referência humana e confirme no CÓDIGO antes
+> de aplicar qualquer regra daqui.
 
 ---
 
@@ -158,6 +160,8 @@ Só a **resposta de RESULTADO** vira bolha. A **barreira REAL é código** — o
 
 Substitutos ✅: "entendo bem" / "antecipar a contemplação" / descrever a situação sem rótulo / "qual carro você tem em mente".
 
+2026-07-20: isto é GUIA DE TOM pra `voiceTone`/`examples` da persona — deixou de ser bloqueio em runtime. O guard `banned-lexicon` do sanitizer foi APOSENTADO: policiar gíria apagando a fala do modelo no meio do stream deixava o balão truncado e empurrava o turno pro fallback enlatado, sem proteger nenhum fato verificável. Tom se corrige com prompt, exemplo e rubrica de avaliação — não com regex de produção.
+
 ### 1.10. "Taxa de contemplação" é campo PROIBIDO na fala (FIX-243, spec 05-compliance-e-dados.md)
 
 `taxaContemplacao` é um campo da Bevi com **semântica não documentada** — PROIBIDO citá-lo como argumento de venda, mesmo com número. A fonte permitida de sinal de contemplação é a contagem REAL de contemplados por mês (`contempladosMes`/`monthlyAwardedQuotas`), nunca uma "taxa". Frase proibida real (B2 T5, veredito Fable r1):
@@ -179,17 +183,13 @@ Quando o usuário responde com o nome, **a primeira ação** do agent no turn DE
 
 `voiceTone` da persona **não pode** instruir "cumprimente assim que entrar" ou "saúde primeiro" — colide com BUG-SAVE-CONTACT-NAME-MUST-FIRE.
 
-### 2.2. O agent NÃO dirige o funil; o orchestrator dispara cada gate na ordem (BUG-AUTO-SKIPS-PRE-VALUE-GATES)
+### 2.2. A ORDEM é do servidor; a CONVERSA é do agent
 
-Após capturar nome, o agent **NUNCA** antecipa nenhuma etapa nem chama `present_value_picker`/`search_groups` por conta própria — o orchestrator dispara cada gate na ordem (revisão 2, alinhada ao docx "dados antes do valor"; FIX-103: prazo removido):
+Quem decide QUAL assunto vem agora é o `nextGate` (`qualify-state.ts`) — o agent não antecipa etapa nem chama `present_value_picker`/`search_groups` por conta própria (a tool-policy já impede: `search_groups` só entra no toolset com `identityCollected`). Mas PERGUNTAR, reagir e conduzir a conversa É do agent: ele formula com as palavras dele, e o card só repete a pergunta quando o modelo não perguntou.
 
-1. **experience** — usuário já fez consórcio antes?
-2. **consent** — após a explicação de primeira vez
-3. **identidade** — CPF + celular + LGPD (os dados vêm **ANTES** do valor — FIX-53)
-4. **valor do bem** — coletado na entrada (**DEPOIS** da identidade)
-5. **lance** — pretende dar lance (**DEPOIS** do valor)
+**A ordem real vive no CÓDIGO** (`nextGate`), não neste doc — não decore sequência aqui, ela já mudou várias vezes (o gate `consent` foi REMOVIDO no FIX-274/275; o valor voltou a vir ANTES da identidade no FIX-296, revertendo o FIX-53; o prazo saiu no FIX-103). Prova determinística: `qualify-state.sequence.test.ts`.
 
-O gate de **prazo de contemplação saiu da qualificação (FIX-103)** — `nextGate` nunca mais o emite e o agent nunca pergunta prazo na entrada. Antecipar o valor (pular experience/consent/identidade) ou re-pedir um valor já dado = `PROIBIDO`. `voiceTone`/`examples` da persona **não podem** instruir o agent a antecipar/pular etapas. Prova determinística da ordem: `qualify-state.sequence.test.ts` + `qualify-state.fix-103.test.ts`.
+`voiceTone`/`examples` da persona **não podem** instruir o agent a pular etapas nem a re-pedir um valor já dado. E **não podem** proibir o agent de perguntar — isso o engessa (ADR 2026-07-13) e é justamente o que produziu o agente que respondia sempre a mesma coisa.
 
 ### 2.3. Tools idempotentes — nunca repetir na mesma conversa
 
@@ -204,14 +204,11 @@ Cada uma destas só pode ser chamada **uma vez** por conversa:
 
 `voiceTone`/`examples` não podem instruir "pergunte o WhatsApp toda vez" ou similar.
 
-### 2.4. Coleta antes de busca
+### 2.4. Busca real só depois da identidade
 
-Durante a fase de coleta (gates pré-valor), agent **NUNCA** chama `search_groups`, `recommend_groups`, ou qualquer `present_*` tool. Só:
-- Reage com 1 frase ao input
-- Responde dúvida pontual em 1-2 frases
-- Destrava em 1 frase quando perdido
+A administradora exige CPF + celular pra simular, então `search_groups`/`recommend_groups` só existem no toolset depois de `identityCollected` — isso é garantido em CÓDIGO (`tool-policy.ts`), não pela boa vontade do modelo. Na fase de coleta o agent conversa livremente: reage, explica, tira dúvida e pergunta o que falta com as palavras dele.
 
-`examples` da persona não podem mostrar agent chamando search/recommend antes dos 3 gates.
+`examples` da persona não podem mostrar o agent chamando search/recommend antes da identidade — nem instruir que ele responda só em uma frase.
 
 ---
 
