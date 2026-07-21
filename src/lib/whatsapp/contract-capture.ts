@@ -24,6 +24,7 @@ import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { querAntecipar } from "@/lib/agent/qualify-state";
 import { buildStartContractInput } from "@/lib/bevi/contract-input";
 import { startContract } from "@/lib/bevi/fulfillment";
 import { loadIdentity, storeIdentity } from "@/lib/conversation/identity";
@@ -241,6 +242,7 @@ export async function fireContract(from: string, conversationId: string): Promis
 			termMonths: offer.termMonths,
 			avgBidValue: offer.avgBidValue,
 			rawCreditValue: requestedCreditValue,
+			...(querAntecipar(meta.qualifyAnswers ?? {}) ? { mostrarLanceMedio: true } : {}),
 			// A carta MAIOR que o bem é intencional quando ele aceitou embutido.
 			...(meta.qualifyAnswers?.lanceEmbutido === true ? { cartaMaiorPorEmbutido: true } : {}),
 			// O plano que ele aprovou — o card avisa se a carta real voltou com

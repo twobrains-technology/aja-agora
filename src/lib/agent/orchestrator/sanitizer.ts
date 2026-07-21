@@ -868,6 +868,14 @@ export function emendar(esquerda: string, direita: string): string {
 	return precisaEspaco ? `${esquerda} ${alvo}` : esquerda + alvo;
 }
 
+/** O trecho ANUNCIA a próxima frase em vez de dizer algo por si ("olha só:",
+ * "me confirma:"). Termina em dois-pontos e é curto — frase longa terminada em
+ * ":" costuma ser uma lista, que se sustenta sozinha. */
+export function ehGancho(segmento: string): boolean {
+	const t = segmento.trim();
+	return t.endsWith(":") && t.length <= 90;
+}
+
 export function splitSegments(text: string): string[] {
 	const out: string[] = [];
 	let start = 0;
@@ -937,6 +945,12 @@ export class EphemeralTextFilter {
 	// emitida — segurar é a única forma de garantir que só a última sobrevive).
 	/** Já saiu UMA pergunta neste turno (a segunda em diante é dropada). */
 	private jaPerguntou = false;
+	/** Trecho que ANUNCIA a próxima frase ("me confirma:") e ainda não pôde
+	 * sair — só é emitido junto com o que ele anuncia. */
+	private gancho = "";
+	/** Último caractere já entregue ao cliente — o `emendar` precisa dele pra
+	 * não colar duas chamadas ("Show, Rodrigo!" + "Fechado nos números"). */
+	private ultimoEmitido = "";
 	/** Nenhuma pergunta pode sair (1º beat do reveal: só apresentação). */
 	private perguntasProibidas = false;
 	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
@@ -995,7 +1009,10 @@ export class EphemeralTextFilter {
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
-		return rest ? this.filterComplete(rest) : "";
+		const out = rest ? this.filterComplete(rest) : "";
+		// Gancho que sobrou no fim do turno não anuncia nada — descarta.
+		this.gancho = "";
+		return out;
 	}
 
 	/** FIX-330 — mesma coisa que `flush()`, mas NUNCA libera a pergunta
@@ -1022,9 +1039,24 @@ export class EphemeralTextFilter {
 		const segments = splitSegments(complete);
 		let out = "";
 		for (const seg of segments) {
+			// GANCHO PENDURADO: um trecho que termina em ":" ou "," não é uma frase,
+			// é a abertura da próxima ("Rodrigo, me confirma:"). Se o que vinha
+			// depois for dropado (pergunta extra, preâmbulo), o gancho fica sozinho
+			// no balão e o turno termina prometendo uma pergunta que não existe —
+			// visto ao vivo em 2 conversas (2026-07-21). Segura o gancho: ele só sai
+			// acompanhado do que ele anuncia.
+			if (this.gancho) {
+				const gancho = this.gancho;
+				this.gancho = "";
+				out = emendar(out, gancho);
+			}
 			const reason = ephemeralSegmentReason(seg, ctx);
 			if (reason) {
 				this.droppedReasons.add(reason);
+				continue;
+			}
+			if (ehGancho(seg)) {
+				this.gancho = seg;
 				continue;
 			}
 			if (isInterrogativeSentence(seg)) {
@@ -1045,7 +1077,14 @@ export class EphemeralTextFilter {
 			}
 			out = emendar(out, seg);
 		}
-		return scrubCpf(stripEmoji(out));
+		const limpo = scrubCpf(stripEmoji(out));
+		if (!limpo) return "";
+		const emendado = emendar(this.ultimoEmitido, limpo);
+		// `emendar` devolve o texto INTEIRO (anterior + atual); o cliente já tem o
+		// anterior, então só o delta sai — mas com o separador/caixa corrigidos.
+		const delta = emendado.slice(this.ultimoEmitido.length);
+		this.ultimoEmitido = emendado.slice(-2);
+		return delta;
 	}
 
 	/** DESCARTA a pergunta segurada. Existe pra fronteira do reveal em dois

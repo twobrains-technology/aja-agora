@@ -337,9 +337,13 @@ describe("closingPresentation — o fecho (passo 5.2)", () => {
 		expect(idxParabens).toBeGreaterThan(idxSig);
 	});
 
-	it("NUNCA diz 'garantido/você já está no grupo' (nada de contemplação prometida)", () => {
-		expect(allText.toLowerCase()).not.toMatch(/garantid[ao]/);
+	it("NUNCA promete contemplação — e diz explicitamente que não há data garantida", () => {
+		// "garantida" aparece SÓ na ressalva ("não tem data garantida"), nunca como
+		// promessa. O que continua proibido é afirmar contemplação/vaga como fato.
+		expect(allText.toLowerCase()).toMatch(/n[ãa]o tem data garantida/);
+		expect(allText.toLowerCase()).not.toMatch(/contempla[çc][ãa]o garantida/);
 		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
+		expect(allText.toLowerCase()).not.toMatch(/ser[áa] contemplad[ao]/);
 	});
 });
 

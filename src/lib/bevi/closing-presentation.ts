@@ -226,6 +226,14 @@ export function closingPresentation(
 			kind: "text",
 			text: "Parabéns! Agora você está oficialmente mais perto da sua conquista!",
 		},
+		// A ressalva que o mockup traz e que faltava para quem nunca falou de
+		// lance: quem passou pela conversa de lance ouve isso do agente, quem não
+		// passou terminava a jornada sem nunca saber que não existe data. É fato
+		// regulatório do produto, não conversa — por isso é copy determinística.
+		{
+			kind: "text",
+			text: "Só pra deixar claro desde já: a contemplação acontece por sorteio ou lance, e não tem data garantida — ninguém pode prometer isso. O que a gente garante é te acompanhar até lá.",
+		},
 		// O "oi" no WhatsApp tem função TÉCNICA (abre a janela de 24h,
 		// whatsapp/window.ts) — sem ele, o envio do atendente cai na fila de
 		// template. Por isso o handoff é um card com botão, não um número solto
