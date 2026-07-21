@@ -1,12 +1,15 @@
 ---
 id: FIX-356
 titulo: "Provider ChatAnthropic → gateway LiteLLM via SRV-fetch + spike de tool-call"
-status: todo
+status: done
 bloco: bloco-fundacao-langgraph
 arquivos:
   - src/lib/agent/langgraph/provider.ts
   - src/lib/llm/gateway-anthropic.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 0
+commit: 7ba16efa
+executado_em: 2026-07-20
+nota: "spike SKIPPED — gateway não alcançável no ambiente do bloco (túnel SSM reaberto com a instância/porta corretas, mas o SSM Agent falhou em alcançar o próprio hostPort local; PENDENTE-KAIRO, ver memória project_aja_llm_local_via_tunel_ssm)."
 ---
 
 ## Palavras do operador

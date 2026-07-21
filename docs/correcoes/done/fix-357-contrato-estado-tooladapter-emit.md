@@ -1,13 +1,15 @@
 ---
 id: FIX-357
 titulo: "Contrato: estado do grafo + adapter AI-SDK-tool→LangChain + mapeamento dos 14 TurnEvent"
-status: todo
+status: done
 bloco: bloco-fundacao-langgraph
 arquivos:
   - src/lib/agent/langgraph/state.ts
   - src/lib/agent/langgraph/tool-adapter.ts
   - src/lib/agent/langgraph/emit.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 0
+commit: 7ce8b5e7
+executado_em: 2026-07-20
 ---
 
 ## Cenário

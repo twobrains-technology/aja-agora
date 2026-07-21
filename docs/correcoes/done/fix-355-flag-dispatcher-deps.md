@@ -1,13 +1,15 @@
 ---
 id: FIX-355
 titulo: "Flag AI_RUNTIME + dispatcher no runTurn + deps LangChain"
-status: todo
+status: done
 bloco: bloco-fundacao-langgraph
 arquivos:
   - package.json
   - src/lib/llm/runtime.ts
   - src/lib/agent/orchestrator/index.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 0
+commit: 71b5358f
+executado_em: 2026-07-20
 ---
 
 ## Palavras do operador
