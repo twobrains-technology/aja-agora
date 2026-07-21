@@ -238,12 +238,47 @@ export function coerceRecommendationPayload(
 // `buildFirstRevealRecoveryFallback` em `directives.ts` pro caso sem ranking).
 // FIX-334: usava `score` cru — desde que o modelo parou de receber esse
 // número (só `scoreLabel`), a posição ordinal (`rank`) é o sinal que sobra.
-export function pickBestRankedGroup(index: RevealGroupIndex): RevealGroupLike | null {
-	let best: RevealGroupLike | null = null;
+export function pickBestRankedGroup(
+	index: RevealGroupIndex,
+	/** Teto de parcela que o cliente DECLAROU ("só consigo uns 1.800 por mês").
+	 * Diferente do `budget` do scoring, que o modelo inventa — este a pessoa
+	 * disse, então é limite, não preferência. */
+	parcelaMaxima?: number,
+): RevealGroupLike | null {
+	const candidatas: RevealGroupLike[] = [];
 	for (const group of index.values()) {
 		if (typeof group.rank !== "number") continue;
 		if (!isUsableGroup(group)) continue;
-		if (!best || group.rank < (best.rank ?? Number.POSITIVE_INFINITY)) best = group;
+		candidatas.push(group);
+	}
+	if (candidatas.length === 0) return null;
+
+	// NUNCA RECOMENDAR PARCELA ACIMA DO QUE ELE DISSE QUE CABE.
+	//
+	// `monthlyFit` pesa só 0.12 no score — e por um bom motivo: o "orçamento" ali
+	// é inventado pelo modelo (ver WEIGHTS, recommendation.ts). Mas quando o
+	// cliente DECLARA o teto, isso deixa de ser preferência e vira limite.
+	//
+	// Sem isto: a cliente disse "consigo pagar no máximo uns 1.800 por mês", o
+	// agente respondeu "com uma parcela de até R$ 1.800/mês..." e o card
+	// recomendado veio com R$ 1.847,80 — com o próprio score interno marcando
+	// `monthlyFit: 0`, ou seja, o sistema SABIA que não cabia e recomendou assim
+	// mesmo. É o número que ela mais olha, e o agente afirmou o contrário dele.
+	//
+	// Se NADA couber, devolve a mais barata em vez de travar o reveal: melhor
+	// mostrar a de menor parcela (e deixar o modelo dizer que estourou) do que não
+	// mostrar nada.
+	const cabem =
+		typeof parcelaMaxima === "number" && parcelaMaxima > 0
+			? candidatas.filter(
+					(g) => typeof g.monthlyPayment === "number" && g.monthlyPayment <= parcelaMaxima,
+				)
+			: candidatas;
+	const pool = cabem.length > 0 ? cabem : candidatas;
+
+	let best: RevealGroupLike | null = null;
+	for (const group of pool) {
+		if (!best || (group.rank ?? 0) < (best.rank ?? Number.POSITIVE_INFINITY)) best = group;
 	}
 	return best;
 }

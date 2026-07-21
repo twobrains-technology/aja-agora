@@ -132,7 +132,8 @@ export async function discoveryNode(
 		turnArtifactTypes.push("comparison_table");
 	}
 
-	const best = pickBestRankedGroup(index);
+	// O teto que ele DECLAROU manda no hero — ver `pickBestRankedGroup`.
+	const best = pickBestRankedGroup(index, funnel.qualifyAnswers.parcelaAlvo);
 	let recommendedAdministradora = funnel.recommendedAdministradora;
 	let recommendedOffer = funnel.recommendedOffer;
 	let pendingRecommendationCard: FunnelState["pendingRecommendationCard"] =
