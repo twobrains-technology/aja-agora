@@ -98,7 +98,25 @@ export function createConverseNode(model: BaseChatModel) {
 			let merged: AIMessageChunk | undefined;
 			for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
 				merged = merged ? merged.concat(chunk) : chunk;
-				const delta = typeof chunk.content === "string" ? chunk.content : "";
+				// ChatAnthropic streama `content` como STRING ou ARRAY de blocos
+				// ([{type:"text",text}]) — extrair texto dos dois casos, senão o
+				// turno sai VAZIO (bug: `typeof === "string"` engolia o array →
+				// empty-turn-fallback). Achado na validação ao vivo 2026-07-20.
+				const rawContent = chunk.content as unknown;
+				const delta =
+					typeof rawContent === "string"
+						? rawContent
+						: Array.isArray(rawContent)
+							? rawContent
+									.map((b) =>
+										typeof b === "string"
+											? b
+											: b && typeof b === "object" && typeof (b as { text?: unknown }).text === "string"
+												? (b as { text: string }).text
+												: "",
+									)
+									.join("")
+							: "";
 				if (!delta) continue;
 				const clean = filter.push(delta);
 				if (clean) {
