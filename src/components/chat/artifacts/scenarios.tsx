@@ -14,7 +14,7 @@ const SCENARIO_META = [
 
 export function Scenarios({ payload }: { payload: ScenariosPayload }) {
 	return (
-		<Card className="w-full max-w-[360px] rounded-[18px] shadow-lg overflow-hidden">
+		<Card className="w-full max-w-[360px] rounded-[12px] shadow-lg overflow-hidden">
 			<CardHeader className="pb-0 pt-4 px-4">
 				<p className="aja-eyebrow">
 					3 cenários · {payload.administradora} ·{" "}
@@ -30,7 +30,7 @@ export function Scenarios({ payload }: { payload: ScenariosPayload }) {
 							key={key}
 							className={
 								isProvavel
-									? "rounded-xl border border-primary/30 bg-primary/[0.04] p-3"
+									? "rounded-xl border border-[color:var(--border-strong)] bg-primary/[0.04] p-3"
 									: "rounded-xl border border-border bg-card p-3"
 							}
 							data-testid={`scenario-${key}`}

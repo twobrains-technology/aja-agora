@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Mono, Poppins } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "next-themes";
+import { merriweather } from "@/components/kv/fonts";
 import "./globals.css";
 
 // Tags do time de anúncio (IDs públicos, não são segredo).
@@ -55,7 +56,7 @@ export default function RootLayout({
 	return (
 		<html
 			lang="pt-BR"
-			className={`${poppins.variable} ${dmMono.variable} h-full antialiased`}
+			className={`${poppins.variable} ${dmMono.variable} ${merriweather.variable} h-full antialiased`}
 			suppressHydrationWarning
 		>
 			<head>

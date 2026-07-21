@@ -102,7 +102,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 		<AnimatePresence mode="wait">
 			{submitted ? (
 				<motion.div key="success" {...anim}>
-					<div className="w-full max-w-sm rounded-[18px] border border-primary/30 bg-primary/[0.03] p-[18px] shadow-lg">
+					<div className="w-full max-w-sm rounded-[12px] border border-[color:var(--border-strong)] bg-primary/[0.03] p-[18px] shadow-lg">
 						<div className="flex flex-col items-center gap-[10px] py-2 text-center">
 							<span className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
 								<Check className="size-6 text-success" />
@@ -114,7 +114,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 				</motion.div>
 			) : (
 				<motion.div key="form" {...anim}>
-					<div className="w-full max-w-sm rounded-[18px] border border-primary/30 bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+					<div className="w-full max-w-sm rounded-[12px] border border-[color:var(--border-strong)] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 						{/* header */}
 						<div className="flex flex-col gap-[2px]">
 							<span className="inline-flex h-6 w-fit items-center rounded-full bg-muted px-[11px] text-[11px] font-semibold tracking-[0.02em] text-muted-foreground">
@@ -156,7 +156,7 @@ export function LeadForm({ payload }: { payload: LeadFormPayload }) {
 							<Button
 								type="submit"
 								disabled={isSubmitting}
-								className="h-[46px] w-full rounded-[13px] bg-primary text-sm font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105 min-h-[44px]"
+								className="h-[46px] w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105 min-h-[44px]"
 							>
 								{isSubmitting ? "Enviando..." : "Enviar dados"}
 							</Button>

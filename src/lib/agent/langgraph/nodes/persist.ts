@@ -82,12 +82,18 @@ export async function persistNode(
 	if (isUserTurn && userText && !pareceDirectiveDeServidor(userText)) {
 		await saveMessage(conversationId, "user", userText, channel);
 	}
-	const assistantText = state.events
-		.filter((ev): ev is Extract<TurnEvent, { type: "text-delta" }> => ev.type === "text-delta")
-		.map((ev) => ev.text)
-		.join("");
-	if (assistantText.trim().length > 0) {
-		await saveMessage(conversationId, "assistant", assistantText, channel, persona);
+	// Um turno pode render MAIS DE UM balão (o reveal fala, mostra os cards e
+	// volta a falar) — `text-boundary` é a fronteira. Salvar tudo concatenado
+	// fazia a retomada devolver os dois balões colados num só.
+	const balloes: string[] = [""];
+	for (const ev of state.events) {
+		if (ev.type === "text-boundary") balloes.push("");
+		else if (ev.type === "text-delta") balloes[balloes.length - 1] += ev.text;
+	}
+	for (const texto of balloes) {
+		if (texto.trim().length > 0) {
+			await saveMessage(conversationId, "assistant", texto, channel, persona);
+		}
 	}
 
 	for (const ev of state.events) {
@@ -129,9 +135,18 @@ export async function persistNode(
 	// os adapters releem a meta fresca do banco pra montar o card, e emitir antes
 	// da escrita fazia `gatePartData` ler meta velha e devolver `null` (nenhum card
 	// na tela). `text-delta`/`tool-call` já saíram ao vivo no `converse`.
-	const JA_EMITIDOS: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta", "tool-call"]);
+	const JA_EMITIDOS: ReadonlySet<TurnEvent["type"]> = new Set([
+		"text-delta",
+		"tool-call",
+		"text-boundary",
+	]);
+	// Cards que o `converse` já jogou na tela ENTRE os dois balões do reveal —
+	// reemitir aqui duplicaria a lista inteira embaixo da segunda fala.
+	const jaNaTela = new Set(state.streamedArtifactIds ?? []);
 	for (const ev of state.events) {
-		if (!JA_EMITIDOS.has(ev.type)) config?.writer?.(ev);
+		if (JA_EMITIDOS.has(ev.type)) continue;
+		if (ev.type === "artifact" && jaNaTela.has(ev.toolCallId)) continue;
+		config?.writer?.(ev);
 	}
 	for (const ev of events) config?.writer?.(ev);
 

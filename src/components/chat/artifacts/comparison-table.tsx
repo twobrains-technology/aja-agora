@@ -108,7 +108,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						<div>
 							<p
 								data-testid={`comparison-chip-hero-credit-${group.id}`}
-								className="aja-num text-lg font-bold leading-none text-primary"
+								className="aja-num text-lg font-bold leading-none text-figure"
 							>
 								{formatBRL(group.creditValue)}
 							</p>
@@ -251,7 +251,7 @@ function QuotaChip({
 			<div>
 				<p
 					data-testid={`quota-chip-hero-credit-${cota.groupId}`}
-					className="aja-num text-lg font-bold leading-none text-primary"
+					className="aja-num text-lg font-bold leading-none text-figure"
 				>
 					{formatBRL(cota.creditValue)}
 				</p>

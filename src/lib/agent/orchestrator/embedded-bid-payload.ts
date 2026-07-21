@@ -22,6 +22,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export function coerceEmbeddedBidPayload(
 	input: Record<string, unknown>,
 	offer: RecommendedOfferSnapshot | null | undefined,
+	/** O que o cliente precisa RECEBER — o preço do bem que ele quer comprar. */
+	valorDoBem?: number,
 ): Record<string, unknown> {
 	if (!offer) {
 		return { ...input, disclaimer: EMBEDDED_BID_DISCLAIMER };
@@ -35,6 +37,15 @@ export function coerceEmbeddedBidPayload(
 		creditValue,
 		embeddedBidValue,
 		netCredit,
+		valorDoBem,
+		// A conta que separa vendedor de folheto: o embutido sai DA PRÓPRIA carta
+		// (Res. BCB 285/2023, art. 13), então quem quer receber R$ X e não tem
+		// dinheiro pro lance NÃO deve mirar uma carta de R$ X — tem que mirar
+		// `X / (1 - pct)`, senão contempla e falta dinheiro pra comprar o bem.
+		cartaNecessaria:
+			valorDoBem && maxEmbutidoPct < 100
+				? Math.round(valorDoBem / (1 - maxEmbutidoPct / 100))
+				: undefined,
 		disclaimer: EMBEDDED_BID_DISCLAIMER,
 	};
 }

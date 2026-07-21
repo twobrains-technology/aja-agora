@@ -306,7 +306,14 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// que roda DEPOIS de reco-consent/timeframe nesta MESMA cascata — nenhum
 		// usuário real chegava a "so_parcela" a tempo de pular o hero. A
 		// recomendação é útil independente de o usuário dar lance ou não.
-		if (!meta.recoConsentAnswered) return "reco-consent";
+		// 2026-07-21 (decisão do Kairo, validando ao vivo): o CONVITE saiu do funil.
+		// "Posso te mostrar a que eu recomendo?" custava um clique e um turno inteiro
+		// pra perguntar o que o cliente já pediu ao entrar aqui — e era justamente
+		// nesse turno-ponte que o agente se enrolava ("só um instante que vou
+		// confirmar com a administradora"), sem nada a confirmar. Vendedor bom não
+		// pede licença pra recomendar: mostra e diz POR QUÊ. O gate `reco-consent`
+		// segue existindo no tipo (conversas antigas, WhatsApp, telemetria), só não
+		// é mais exigido pela cascata.
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural

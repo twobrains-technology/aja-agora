@@ -146,10 +146,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 		<div
 			className={cn(
 				"w-full max-w-sm bg-card overflow-hidden",
-				"rounded-[18px]",
+				"rounded-[12px]",
 				// borda azul destacada (rec) + sombra card
-				"border border-primary/30",
-				"shadow-[0_0_0_1px_rgba(3,110,255,.18),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+				"border border-[color:var(--border-strong)]",
+				"shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_18%,transparent),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
 			)}
 		>
 			{/* Header */}
@@ -205,7 +205,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 					<p
 						data-testid="recommendation-hero-credit"
-						className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap"
+						className="aja-num text-[1.625rem] font-bold leading-none text-figure mt-1 tracking-[-0.02em] whitespace-nowrap"
 					>
 						{formatBRL(creditValue)}
 					</p>
@@ -324,8 +324,8 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				    legado (card isolado): "Tenho interesse" (avanço no funil). */}
 				<Button
 					className={cn(
-						"w-full min-h-[46px] rounded-[13px] font-semibold text-sm gap-2",
-						"shadow-[0_6px_16px_-6px_rgba(3,110,255,.5)]",
+						"w-full min-h-[46px] rounded-full font-semibold text-sm gap-2",
+						"shadow-[0_6px_16px_-6px_color-mix(in_oklab,var(--primary)_50%,transparent)]",
 						"hover:brightness-[1.06] transition-filter",
 					)}
 					size="lg"

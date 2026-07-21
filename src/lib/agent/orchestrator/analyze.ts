@@ -114,6 +114,18 @@ export async function analyzeAndMerge(
 		analysis.userIntent === "providing_info" &&
 		analysis.creditMax !== null &&
 		analysis.creditMax !== lastRequested;
+	// CORREÇÃO do próprio cliente ("na verdade é 260k"), a qualquer momento —
+	// não só depois do reveal. Antes, uma vez preenchido, o `creditMax` só podia
+	// mudar no refit pós-reveal: quem corrigia ANTES da busca era reconhecido na
+	// FALA ("Entendido, R$ 260.000 então!") e ignorado no ESTADO — a busca saía
+	// com o valor velho e o cliente via 180 mil depois de ter dito 260 mil
+	// (validação ao vivo, 2026-07-21). Só o ANALYZER pode corrigir (ele lê o
+	// contexto da frase); o backstop de parse segue restrito à coleta inicial,
+	// pra número solto no meio de uma dúvida não virar valor do bem.
+	const isCorrecaoDoValor =
+		q.creditMax !== undefined &&
+		analysis.creditMax !== null &&
+		analysis.creditMax !== lastRequested;
 	// FIX-115 (PROD 2026-06-30): backstop DETERMINÍSTICO do valor do bem. O valor é
 	// coletado por conversa (FIX-104) e depende do analyzer LLM extrair o creditMax
 	// — que cai em NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem
@@ -169,7 +181,8 @@ export async function analyzeAndMerge(
 	if (
 		sourceCreditMax !== null &&
 		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
-			isRevealRefit)
+			isRevealRefit ||
+			isCorrecaoDoValor)
 	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só

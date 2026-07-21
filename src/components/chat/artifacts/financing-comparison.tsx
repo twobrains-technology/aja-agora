@@ -9,7 +9,7 @@ const formatBRL = (value: number): string =>
 export function FinancingComparison({ payload }: { payload: FinancingComparisonPayload }) {
 	const consorcioBest = payload.diff.monthlyDelta < 0 || payload.diff.totalDelta < 0;
 	return (
-		<Card className="w-full max-w-[360px] rounded-[18px] shadow-lg overflow-hidden">
+		<Card className="w-full max-w-[360px] rounded-[12px] shadow-lg overflow-hidden">
 			<CardHeader className="pb-0 pt-4 px-4">
 				<p className="aja-eyebrow">
 					Consórcio × Financiamento ·{" "}
@@ -20,7 +20,7 @@ export function FinancingComparison({ payload }: { payload: FinancingComparisonP
 				<div className="grid grid-cols-2 gap-3">
 					{/* Coluna vencedora — consórcio */}
 					<div
-						className="rounded-xl border border-primary/30 bg-primary/[0.04] p-3"
+						className="rounded-xl border border-[color:var(--border-strong)] bg-primary/[0.04] p-3"
 						data-testid="comparison-consorcio"
 					>
 						<p className="aja-eyebrow mb-1">Consórcio</p>

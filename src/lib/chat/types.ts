@@ -356,6 +356,12 @@ export interface EmbeddedBidPayload {
 	embeddedBidValue: number;
 	netCredit: number;
 	disclaimer: string;
+	/** O que o cliente precisa RECEBER (o preço do bem que ele quer). */
+	valorDoBem?: number;
+	/** Carta que entrega `valorDoBem` líquido usando o embutido no teto:
+	 * `valorDoBem / (1 - pct)`. É a jogada que um vendedor bom faz — em vez de
+	 * cortar o crédito de quem não tem dinheiro pro lance, ele sobe a carta. */
+	cartaNecessaria?: number;
 }
 
 // ---- Card dois caminhos, sem lance (FIX-229, docs/02-cards-novos.md CARD 3) ----

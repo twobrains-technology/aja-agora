@@ -24,25 +24,43 @@ export function EmbeddedBid({ payload }: { payload: EmbeddedBidPayload }) {
 					Lance embutido — sem tirar do bolso
 				</p>
 				<p className="text-sm leading-snug text-muted-foreground">
-					Você usa parte da própria carta como lance e antecipa a contemplação, sem
-					desembolsar. O embutido sai da carta, então o crédito recebido diminui um pouco.
+					Você usa parte da própria carta como lance e antecipa a contemplação, sem tirar do
+					bolso. Como o lance sai da carta, o crédito que você recebe diminui — por isso a
+					gente procura um grupo de carta maior, pra que sobre exatamente o que você precisa.
 				</p>
 
-				<div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Lance embutido</p>
-						<b className="aja-num text-sm font-semibold">{formatBRL(payload.embeddedBidValue)}</b>
+				{payload.valorDoBem && payload.cartaNecessaria ? (
+					<div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Você precisa receber</p>
+							<b className="aja-num text-sm font-semibold">{formatBRL(payload.valorDoBem)}</b>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">
+								Carta a procurar (embutido de {payload.maxEmbutidoPct}%)
+							</p>
+							<b className="aja-num text-sm font-semibold">
+								~{formatBRL(payload.cartaNecessaria)}
+							</b>
+						</div>
 					</div>
-					<div>
-						<p className="text-xs text-muted-foreground m-0">Valor que você recebe</p>
-						<b className="aja-num text-sm font-semibold">{formatBRL(payload.netCredit)}</b>
+				) : (
+					<div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Lance embutido</p>
+							<b className="aja-num text-sm font-semibold">{formatBRL(payload.embeddedBidValue)}</b>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground m-0">Valor que você recebe</p>
+							<b className="aja-num text-sm font-semibold">{formatBRL(payload.netCredit)}</b>
+						</div>
 					</div>
-				</div>
+				)}
 
 				<p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
 					<Info className="mt-0.5 size-3 shrink-0 text-primary" />
-					Usar o lance embutido significa que o crédito recebido diminui (estimativa, não
-					garantia).
+					O embutido sai da carta, então o crédito recebido diminui — a carta maior é o que
+					compensa isso (estimativa a partir das ofertas reais, não garantia).
 				</p>
 			</CardContent>
 		</Card>

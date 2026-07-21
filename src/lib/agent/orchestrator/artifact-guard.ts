@@ -226,6 +226,12 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			// novo) escapava do guard inteiro. A condição certa é o estado de
 			// consentimento em si — suprime enquanto `recoConsentAnswered` não
 			// for true, esteja o reveal recém-concluído ou não.
+			// 2026-07-21: o portão deixou de ser o CONVITE e passou a ser a
+			// EXPERIÊNCIA. O reveal continua em dois tempos — a lista sai na hora, o
+			// hero espera o cliente responder se já fez consórcio antes (é o que
+			// muda COMO a recomendação é explicada) — só que agora, respondida a
+			// experiência, o hero sai direto, sem pedir licença. Ver `nextGate`.
+			if (meta.experiencePrev !== undefined) return false;
 			if (meta.recoConsentAnswered === true) return false;
 			if (artifactType === "recommendation_card") return true;
 			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;

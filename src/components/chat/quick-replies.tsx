@@ -37,7 +37,7 @@ export function QuickReplies({ payload, onSelect, disabled }: QuickRepliesProps)
 					whileTap={disabled ? undefined : { scale: 0.97 }}
 					onClick={() => !disabled && onSelect(option.value)}
 					disabled={disabled}
-					className="inline-flex items-center gap-[9px] h-[40px] px-4 border border-border rounded-[13px] bg-card text-sm font-semibold text-foreground cursor-pointer transition-colors hover:border-primary/30 hover:bg-primary/[.05] disabled:cursor-default disabled:opacity-50"
+					className="inline-flex items-center gap-[9px] h-[36px] px-[12px] border border-[rgb(5_36_64/.4)] rounded-full bg-transparent text-sm font-semibold text-[var(--aja-ink)] cursor-pointer transition-colors hover:bg-[var(--aja-sand)] disabled:cursor-default disabled:opacity-50"
 				>
 					{option.emoji && <span className="text-[17px] leading-none">{option.emoji}</span>}
 					<span>{option.label}</span>

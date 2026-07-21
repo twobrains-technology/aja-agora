@@ -28,7 +28,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	return (
-		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-primary/30">
+		<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg border-[color:var(--border-strong)]">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
 				{/* FIX-232 — header co-branded: Aja Agora + administradora */}
 				<div className="flex items-center justify-between gap-2 pb-1">
@@ -128,7 +128,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 				<div className="flex flex-col gap-2 pt-0.5">
 					<Button
 						type="button"
-						className="w-full min-h-[44px] rounded-[13px] gap-2 shadow-[var(--shadow-primary)]"
+						className="w-full min-h-[44px] rounded-full gap-2"
 						onClick={() =>
 							!isStreaming && void sendAction({ kind: "offer-confirm" }, "Confirmo essa carta")
 						}
@@ -142,7 +142,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="w-full rounded-[13px] min-h-[44px]"
+						className="w-full rounded-full min-h-[44px]"
 						onClick={() => !isStreaming && void sendUserMessage("Quero ver outras opções")}
 						disabled={isStreaming}
 						data-testid="offer-reject"

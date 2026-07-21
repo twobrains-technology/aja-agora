@@ -31,7 +31,7 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 	const parcelaLabel = hasParcela ? ` de ${formatBRL(payload.monthlyPayment)}` : " mensal";
 
 	return (
-		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg">
+		<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
 				<p className="text-sm font-semibold leading-snug">
 					Dois caminhos possíveis — sem lance
@@ -41,7 +41,7 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2.5 rounded-[13px] w-full border border-border"
+						className="justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2.5 rounded-full w-full border border-border"
 						onClick={() =>
 							choose(
 								`Vou de sorteio mesmo, sem pressa — pago só a parcela${parcelaLabel}`,
@@ -60,7 +60,7 @@ export function TwoPaths({ payload }: { payload: TwoPathsPayload }) {
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2.5 rounded-[13px] w-full border border-border"
+						className="justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2.5 rounded-full w-full border border-border"
 						onClick={() => choose("Prefiro deixar em aberto um lance pequeno lá na frente")}
 						disabled={isStreaming}
 						data-testid="two-paths-lance-pequeno"

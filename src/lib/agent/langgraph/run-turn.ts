@@ -100,6 +100,8 @@ export function createRunTurnLangGraph(deps?: {
 				gate: undefined,
 				answeredGate: undefined,
 				modelAskedQuestion: false,
+			apresentaOfertaNesteTurno: false,
+			streamedArtifactIds: [],
 				funnel: funnelFromMeta(baseMeta),
 				events: [],
 			} satisfies AgentGraphStateType;

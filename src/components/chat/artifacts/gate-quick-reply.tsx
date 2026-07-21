@@ -102,7 +102,7 @@ export function GateQuickReply({
 					type="button"
 					onClick={() => onSelect(opt)}
 					disabled={isStreaming}
-					className="inline-flex items-center gap-[7px] h-[34px] px-[14px] border border-primary/[.28] rounded-full bg-primary/[.05] text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-primary/10 disabled:cursor-default disabled:opacity-50"
+					className="inline-flex items-center gap-[7px] h-[30px] px-[12px] border border-[rgb(5_36_64/.4)] rounded-full bg-transparent text-xs font-semibold text-[var(--aja-ink)] cursor-pointer transition-colors hover:bg-[var(--aja-sand)] disabled:cursor-default disabled:opacity-50"
 				>
 					{opt.label}
 				</button>

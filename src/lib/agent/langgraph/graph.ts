@@ -46,6 +46,11 @@ function humanNode(_state: AgentGraphStateType): Command {
 			// digitado. Quem sabe se o turno é do usuário é o chamador (`run-turn`),
 			// que passa o valor no `update` do Command de resume.
 			events: null, // sentinela: reseta os TurnEvents pro novo turno (ver state.ts)
+			// Marcas do turno ANTERIOR — sem o reset, o turno seguinte acharia que a
+			// busca acabou de rodar (e falaria em dois tempos de novo, sobre cards
+			// velhos) e o `persist` engoliria artifacts novos como "já na tela".
+			apresentaOfertaNesteTurno: false,
+			streamedArtifactIds: null,
 			intent: undefined,
 			// `gate` NÃO é resetado — o `capture` (próximo nó) precisa saber qual
 			// gate o usuário está respondendo. `route`/`routeFinal` sobrescrevem.

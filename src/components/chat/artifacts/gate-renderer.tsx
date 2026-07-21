@@ -46,7 +46,8 @@ export function GateRenderer({
 		return <GateIdentityForm prefilledPhone={payload.prefilledPhone} active={active} />;
 	}
 
-	// FIX-115: gate credit = AGULHA SIMPLES do valor do bem (kind "slider", 1k em 1k).
+	// FIX-115: gate credit = AGULHA SIMPLES do valor do bem (kind "slider"). O passo
+	// vem da categoria (`CREDIT_BOUNDS`), não é fixo aqui.
 	// Sem `onSubmit`, a agulha manda o valor como TEXTO no chat (valor por conversa,
 	// FIX-104); o backstop `parseAssetValue` garante o avanço do funil. Prazo/parcela
 	// saíram da entrada (FIX-103/104), então a agulha carrega só o campo de valor.

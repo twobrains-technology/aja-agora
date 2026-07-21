@@ -19,6 +19,8 @@ import {
 	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
@@ -29,12 +31,49 @@ import type { AgentGraphStateType, FunnelState } from "../state";
  */
 import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 
-export function advanceFunnelNode(state: AgentGraphStateType): Partial<AgentGraphStateType> {
+export function advanceFunnelNode(
+	state: AgentGraphStateType,
+	config?: LangGraphRunnableConfig,
+): Partial<AgentGraphStateType> {
 	if (!state.isUserTurn) return {};
 
 	const meta = projectToMeta(state);
 	const intent: UserIntent = state.intent ?? "neutral";
 	let funnel: FunnelState = state.funnel;
+	const events: TurnEvent[] = [];
+
+	// ── Libera o hero PENDENTE (a descoberta o guardou coagido contra o grupo
+	// REAL) assim que a experiência foi respondida. Isto acontece AQUI, antes do
+	// `converse`, de propósito: enquanto a liberação vivia no `emitCard` — que
+	// roda DEPOIS de o modelo falar — o turno em que o cliente respondia a
+	// experiência já pulava pro gate seguinte, o agente perguntava o PRAZO e a
+	// recomendação caía embaixo, órfã, como se fosse um anexo. Recomendar é o
+	// assunto do turno; o prazo vem depois. Não passa por `artifactAllowed` de
+	// novo: o guard já autorizou este payload especificamente A ESPERAR — o
+	// release é a resolução daquele hold, não um card novo.
+	const liberaHero =
+		Boolean(funnel.pendingRecommendationCard) &&
+		(funnel.experiencePrev !== undefined || funnel.recoConsentAnswered === true);
+	if (liberaHero && funnel.pendingRecommendationCard) {
+		// Anuncia AO VIVO que a recomendação está sendo montada. Este turno faz
+		// DOIS beats de modelo e chega a durar quase um minuto sem chamar tool
+		// nenhuma — o cliente ficava encarando três pontinhos mudos, sem saber se
+		// o agente morreu. A UI já sabe rotular este evento ("Selecionando
+		// recomendação"); é o mesmo mecanismo que a busca usa.
+		config?.writer?.({
+			type: "tool-call",
+			toolName: "present_recommendation_card",
+			input: {},
+			toolCallId: crypto.randomUUID(),
+		});
+		events.push({
+			type: "artifact",
+			artifactType: "recommendation_card",
+			payload: funnel.pendingRecommendationCard,
+			toolCallId: crypto.randomUUID(),
+		});
+		funnel = { ...funnel, pendingRecommendationCard: undefined };
+	}
 
 	// ── Rapport: motivo (turno próprio) → espelho (turno seguinte) ──
 	// Reusa os predicados PUROS do runtime Vercel tal-e-qual (mesma
@@ -75,16 +114,64 @@ export function advanceFunnelNode(state: AgentGraphStateType): Partial<AgentGrap
 		funnel = { ...funnel, simulatorOfferDispatched: true };
 	}
 
+	// ── experience: captura DETERMINÍSTICA da resposta ao card ──
+	// O rótulo do chip é a resposta, não uma frase a interpretar. Enquanto isso
+	// dependeu só do analyzer LLM extrair `experiencePrev`, houve turno em que
+	// ele não extraiu: o gate voltou como `experience` de novo e o card de
+	// recomendação — que fica pendurado esperando exatamente esta resposta —
+	// nunca saiu. O cliente respondeu e a jornada parou de andar. Texto livre
+	// continua com o analyzer; o que veio de card é dado.
+	if (state.gate === "experience" && funnel.experiencePrev === undefined) {
+		const t = (state.userText ?? "").trim().toLowerCase();
+		const daResposta: FunnelState["experiencePrev"] | undefined = /primeira vez/.test(t)
+			? "first"
+			: /j[áa] conhe[çc]o|j[áa] fiz|j[áa] tive/.test(t)
+				? "returning"
+				: /tenho d[úu]vidas/.test(t)
+					? "doubts"
+					: undefined;
+		if (daResposta) funnel = { ...funnel, experiencePrev: daResposta };
+	}
+
 	// ── lance-embutido: educa + opt-in por texto livre ──
 	if (state.gate === "lance-embutido" && funnel.qualifyAnswers.lanceEmbutido === undefined) {
 		const answer = detectYesNoText(state.userText, intent);
 		if (answer !== null) {
+			const pct = LANCE_EMBUTIDO_DEFAULT_PERCENT;
+			// Aceitar o embutido MUDA O ALVO DA BUSCA. O embutido sai da própria
+			// carta: numa carta do tamanho do bem, o cliente contempla e falta
+			// dinheiro. Então o certo não é encolher o que ele já escolheu — é ir
+			// atrás de GRUPOS DE VALOR MAIOR e deixar o embutido encolher aquilo até
+			// entregar exatamente o que ele precisa. `creditMax` (alvo da busca)
+			// passa a ser `bem / (1 - pct)`, e `valorDoBemAlvo` guarda o preço do bem
+			// pra não se perder. Trocar o alvo já re-dispara a descoberta sozinho
+			// (`readyForDiscovery` compara com `discoveredCreditTarget`), então a
+			// recomendação seguinte nasce de grupos REAIS daquela faixa — nunca de
+			// uma carta hipotética calculada na fala.
+			const bem = funnel.qualifyAnswers.valorDoBemAlvo ?? funnel.qualifyAnswers.creditMax;
+			const alvoComEmbutido =
+				answer && bem ? Math.round(bem / (1 - pct / 100)) : funnel.qualifyAnswers.creditMax;
+			// O PISO da faixa sobe junto. Mexer só no teto deixava a busca aberta de
+			// R$ 162 mil a R$ 257 mil — os grupos do tamanho do bem continuariam no
+			// resultado e o ranking podia recomendar exatamente a carta que NÃO
+			// serve pra quem vai usar embutido. Mesma proporção (90%) que o analyzer
+			// usa ao derivar o `creditMin` do valor informado.
+			const pisoComEmbutido = alvoComEmbutido
+				? Math.round(alvoComEmbutido * 0.9)
+				: funnel.qualifyAnswers.creditMin;
 			funnel = {
 				...funnel,
 				qualifyAnswers: {
 					...funnel.qualifyAnswers,
 					lanceEmbutido: answer,
-					lanceEmbutidoPercent: answer ? LANCE_EMBUTIDO_DEFAULT_PERCENT : undefined,
+					lanceEmbutidoPercent: answer ? pct : undefined,
+					...(answer && bem
+						? {
+								valorDoBemAlvo: bem,
+								creditMax: alvoComEmbutido,
+								creditMin: pisoComEmbutido,
+							}
+						: {}),
 				},
 			};
 		}
@@ -106,5 +193,7 @@ export function advanceFunnelNode(state: AgentGraphStateType): Partial<AgentGrap
 		}
 	}
 
-	return { funnel };
+	return liberaHero
+		? { funnel, events, apresentaOfertaNesteTurno: true }
+		: { funnel };
 }

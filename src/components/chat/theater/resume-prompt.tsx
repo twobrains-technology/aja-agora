@@ -2,12 +2,13 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { SunMark } from "@/components/brand/sun-mark";
+import { Em } from "@/components/kv/em";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
@@ -47,22 +48,45 @@ export function ResumePrompt({ lastActivityAt, onResume, onFresh }: ResumePrompt
 			    palco vazio do teatro cobre o popup e o usuário de retorno fica preso
 			    num modal de chat vazio (BUG-RESUME-ATRAS-DO-THEATER, QA 2026-06-21).
 			    O design pretendido é "palco atrás + popup por cima" (theater-chat.tsx). */}
-			<DialogContent showCloseButton={false} className="z-[110] max-w-sm">
-				<DialogHeader>
-					<DialogTitle>Continuar de onde você parou?</DialogTitle>
-					<DialogDescription>
+			<DialogContent
+				showCloseButton={false}
+				className="z-[110] gap-0 rounded-[20px] border border-border bg-card p-0 text-foreground ring-0 shadow-[0_50px_130px_-30px_rgba(8,20,34,0.55)] sm:max-w-[380px]"
+			>
+				<DialogHeader className="items-center gap-3 px-6 pt-7 text-center">
+					<span className="flex size-[46px] items-center justify-center rounded-full bg-[var(--surface-ink)] p-2.5">
+						<SunMark variant="white" className="size-full" />
+					</span>
+					<DialogTitle className="text-[19px] font-semibold leading-[1.3] tracking-[-0.01em] text-foreground">
+						Continuar de onde você <Em>parou</Em>?
+					</DialogTitle>
+					<DialogDescription className="text-[14px] leading-[1.55] text-muted-foreground">
 						Você tem uma conversa em andamento por aqui. Quer voltar pra ela ou começar do zero?
-						{when ? ` Última atividade ${when}.` : ""}
 					</DialogDescription>
 				</DialogHeader>
-				<DialogFooter>
-					<Button type="button" variant="outline" className="min-h-11" onClick={onFresh}>
-						Começar nova
-					</Button>
-					<Button type="button" className="min-h-11" onClick={onResume}>
+
+				{when && (
+					<p className="mt-3 text-center text-[12px] font-medium text-muted-foreground">
+						Última atividade {when}
+					</p>
+				)}
+
+				<div className="flex flex-col gap-2 px-6 pt-6 pb-6">
+					<Button
+						type="button"
+						className="min-h-11 w-full rounded-[10px] text-[15px] font-medium"
+						onClick={onResume}
+					>
 						Voltar à conversa
 					</Button>
-				</DialogFooter>
+					<Button
+						type="button"
+						variant="outline"
+						className="min-h-11 w-full rounded-[10px] border-[color:var(--border-strong)] bg-transparent text-[15px] font-medium text-foreground hover:bg-[var(--aja-paper)]"
+						onClick={onFresh}
+					>
+						Começar nova
+					</Button>
+				</div>
 			</DialogContent>
 		</Dialog>
 	);
