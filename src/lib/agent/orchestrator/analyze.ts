@@ -109,11 +109,20 @@ export async function analyzeAndMerge(
 	// (conversa a8b0a80d, 2026-06-22). Compara contra o valor ORIGINAL pedido
 	// (creditClampedFrom, quando clampado) pra não re-disparar por causa do clamp.
 	const lastRequested = q.creditClampedFrom ?? q.creditMax;
+	// Nos gates de LANCE, todo número que o cliente fala é o LANCE — não o preço
+	// do bem. O corte precisa valer aqui TAMBÉM: eu tinha barrado só a correção
+	// de valor, e o refit pós-reveal (esta condição) continuou aceitando — então
+	// "100k" respondido a "você teria como dar um lance?" voltou a virar carta de
+	// R$ 100.000, com direito ao aviso "você pediu ~R$ 270.000, a carta real
+	// ficou em R$ 100.000". Duas portas para o mesmo erro; agora as duas fecham.
+	const GATES_DE_LANCE = new Set(["lance", "lance-value", "lance-embutido"]);
+	const emConversaDeLance = GATES_DE_LANCE.has(activeGateAtTurnStart);
 	const isRevealRefit =
 		meta.revealCompleted === true &&
 		analysis.userIntent === "providing_info" &&
 		analysis.creditMax !== null &&
-		analysis.creditMax !== lastRequested;
+		analysis.creditMax !== lastRequested &&
+		!emConversaDeLance;
 	// CORREÇÃO do próprio cliente ("na verdade é 260k"), a qualquer momento —
 	// não só depois do reveal. Antes, uma vez preenchido, o `creditMax` só podia
 	// mudar no refit pós-reveal: quem corrigia ANTES da busca era reconhecido na
@@ -129,12 +138,11 @@ export async function analyzeAndMerge(
 	// real ficou em R$ 100.000". A correção de valor existe pro cliente consertar
 	// o PREÇO DO BEM ("na verdade é 260k"), e isso acontece fora da conversa de
 	// lance.
-	const GATES_DE_LANCE = new Set(["lance", "lance-value", "lance-embutido"]);
 	const isCorrecaoDoValor =
 		q.creditMax !== undefined &&
 		analysis.creditMax !== null &&
 		analysis.creditMax !== lastRequested &&
-		!GATES_DE_LANCE.has(activeGateAtTurnStart);
+		!emConversaDeLance;
 	// FIX-115 (PROD 2026-06-30): backstop DETERMINÍSTICO do valor do bem. O valor é
 	// coletado por conversa (FIX-104) e depende do analyzer LLM extrair o creditMax
 	// — que cai em NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem

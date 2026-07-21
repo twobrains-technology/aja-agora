@@ -4,12 +4,12 @@
 // (guarda de rota do nó `route`) e funde o que o analyzer extraiu
 // (categoria, valor do bem, motivo etc.) de volta no `funnel`.
 import { analyzeAndMerge } from "@/lib/agent/orchestrator/analyze";
-import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { decideRouting } from "@/lib/agent/orchestrator/routing";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
 import { projectToMeta } from "../emit";
-import { funnelFromMeta } from "../state";
 import type { AgentGraphStateType } from "../state";
+import { funnelFromMeta } from "../state";
 
 export async function analyzeNode(
 	state: AgentGraphStateType,

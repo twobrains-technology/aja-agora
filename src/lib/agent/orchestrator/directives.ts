@@ -1,7 +1,18 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import type { ChosenOffer } from "./choose-offer";
 import type { EphemeralDropReason } from "./sanitizer";
+
+/** Quem desenha o formulário de contratação depende do runtime: no LangGraph é
+ * o nó `emitCard` (gate `contract`, determinístico — `present_contract_form`
+ * nem existe no toolset), no Vercel é a tool-call do modelo. Mandar o modelo
+ * chamar uma tool que não está no toolset dele é receita de turno perdido. */
+function instrucaoDoFormularioDeContrato(adminCtx: string): string {
+	return runtimeFlavor() === "langgraph"
+		? `O sistema pede os dados logo depois da sua fala (formulário na web, mensagem no WhatsApp) — você NÃO chama ferramenta nenhuma pra isso e NUNCA pede CPF por texto. Não descreva a interface ("na tela", "no card"): só conduza.`
+		: `e chame present_contract_form (proposta real${adminCtx}).`;
+}
 
 // ---- Transition ----
 
@@ -18,7 +29,12 @@ export function buildTransitionFirstContactDirective(
 		: " IMPORTANTE sobre o nome: PRIMEIRO cheque se o usuário JÁ disse o próprio nome NESTA mensagem (ex.: 'sou o Ricardo', 'me chamo Ana', 'aqui é o João'). SE JÁ DISSE: chame save_contact_name com esse nome e cumprimente por ele ('Boa, Ricardo!') — NÃO pergunte o nome de novo (perguntar o que ele acabou de dizer é burrice). SE NÃO DISSE: reaja em 1 frase curta ao objetivo dele E em SEGUIDA pergunte como pode chamá-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'), e quando ele responder chame save_contact_name imediatamente. Em qualquer caso: NÃO pergunte sobre experiência prévia nem antecipe outros gates — só o nome (usar o que veio, ou pedir).";
 	// docx passo 1 (linha 14): a ponte literal pro passo 2 — dita o texto que o
 	// agente usa logo após saber o nome, antes da pergunta de experiência.
-	const bridgeInstruction = ` PONTE DO PASSO 1 (docx): assim que souber o nome, sua resposta usa a ponte "Perfeito, [nome]! Precisamos fazer mais algumas perguntinhas pra buscar o melhor consórcio pra um(a) ${categoryLabel.toLowerCase()}" — e SE o usuário já tiver mencionado um valor, inclua "de cerca de R$ X" com o valor dele. NÃO invente valor se ele não disse.`;
+	// A ponte do passo 1 era uma FRASE PRONTA ("Precisamos fazer mais algumas
+	// perguntinhas pra buscar o melhor consórcio pra um automóvel") — o agente
+	// anunciava o formulário antes de fazer a primeira pergunta, que é
+	// exatamente o "formulário com balões" que este produto não quer ser.
+	// Agora a instrução diz o OBJETIVO; a frase é do modelo.
+	const bridgeInstruction = ` PONTE DO PASSO 1: assim que souber o nome, reaja em UMA frase curta ao que ele quer (${categoryLabel.toLowerCase()}) e emende direto a PRÓXIMA pergunta, com as suas palavras. NUNCA anuncie que vem um questionário ("preciso te fazer algumas perguntas", "vou fazer umas perguntinhas", "responde umas coisinhas") — pergunte logo. SE ele já mencionou um valor, cite o valor DELE ao reagir; NÃO invente valor que ele não disse.`;
 	return `[sistema acabou de te conectar com o usuário que pediu pra falar sobre ${categoryLabel}]${nameInstruction}${bridgeInstruction}`;
 }
 
@@ -67,7 +83,6 @@ export function buildExperienceReturningDirective(replyTitle: string): string {
 export function buildExperienceDoubtsDirective(replyTitle: string): string {
 	return `Usuário escolheu "${replyTitle}" — ele tem dúvidas sobre consórcio. IMPORTANTE: o sistema JÁ te apresentou no turno anterior — NÃO se apresente de novo, NÃO diga "Aqui é Helena/Rafael/Camila", NÃO mencione "anos de experiência/mercado/especialidade". Va DIRETO ao conteúdo. FLUXO: escreva UMA mensagem (4-5 frases) explicando o essencial do produto com SUAS palavras: e um grupo de pessoas que paga parcelas mensais sem juros, contemplação acontece por sorteio ou lance, prazo flexível, diferença de financiamento. Após a explicação, EM UMA frase curta convide o usuário a perguntar algo específico se quiser ("se ficou alguma dúvida específica, manda aqui que eu respondo"). Tom acolhedor e didático, sem jargão técnico (cota, lance livre, fundo reserva). NÃO chame tools.`;
 }
-
 
 /** Benefício a reforçar conforme a INTENÇÃO escolhida no segmented control do
  * "Planeje sua conquista" (re-UX por intenção). */
@@ -259,7 +274,7 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). NUNCA inicie captura de lead nem prometa atendente humano — é self-service, direto na plataforma. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato(adminCtx)} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -273,7 +288,7 @@ export function buildChooseOfferDirective(args: { administradora?: string }): st
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") e chame present_contract_form (proposta real${adminCtx}). PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead nem prometa atendente/consultor humano — é self-service, direto na plataforma.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato(adminCtx)} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
@@ -454,20 +469,31 @@ export function buildDiscoveryFailedFallback(args: { name?: string | null }): st
 // anterior não saiu — a reformulação continua livre (CLAUDE.md: conversa é
 // do modelo, só o invariante vira código). Nunca relaxa o guard.
 const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
-	"process-preamble": "narrou o que ia fazer (\"vou buscar\", \"deixa eu usar a ferramenta\") em vez de responder direto",
+	"process-preamble":
+		'narrou o que ia fazer ("vou buscar", "deixa eu usar a ferramenta") em vez de responder direto',
 	"technical-fallback": "pediu pro usuário atualizar ou recarregar a página",
-	"prazo-reduction": "prometeu reduzir o PRAZO do consórcio (o lance só reduz a parcela, nunca o prazo)",
+	"pergunta-extra": "fez mais de uma pergunta no mesmo turno (só a primeira vale)",
+	"prazo-reduction":
+		"prometeu reduzir o PRAZO do consórcio (o lance só reduz a parcela, nunca o prazo)",
 	"premature-reservation": "afirmou que a cota já está reservada ou garantida antes da contratação",
 	"banned-lexicon": "usou uma gíria fora do tom da conversa",
-	"taxa-contemplacao": "citou \"taxa de contemplação\", que não existe nos dados reais",
-	"proactive-callback": "prometeu retornar ou entrar em contato depois (este canal não tem esse recurso)",
-	"mechanism-narration": "narrou o próprio mecanismo interno do sistema em vez de responder ao usuário",
-	"fabricated-state": "afirmou um estado que ainda não aconteceu de fato (documento recebido, nova busca no catálogo, proposta pronta)",
-	"premature-top-offer": "revelou a administradora ou o valor da recomendação antes do usuário confirmar que quer ver",
-	"score-percentage": "citou o score/compatibilidade como número percentual (só o rótulo qualitativo pode aparecer)",
-	"hallucinated-administradora": "citou uma administradora que não está entre as ofertas reais desta conversa",
-	"internal-tool-leak": "escreveu o nome de uma ferramenta interna (ex.: recommend_groups) em vez de falar com o usuário",
-	"premature-reveal-scenario": "narrou o cenário de lance/contemplação/sorteio no reveal, antes de perguntar se o usuário já conhece consórcio",
+	"taxa-contemplacao": 'citou "taxa de contemplação", que não existe nos dados reais',
+	"proactive-callback":
+		"prometeu retornar ou entrar em contato depois (este canal não tem esse recurso)",
+	"mechanism-narration":
+		"narrou o próprio mecanismo interno do sistema em vez de responder ao usuário",
+	"fabricated-state":
+		"afirmou um estado que ainda não aconteceu de fato (documento recebido, nova busca no catálogo, proposta pronta)",
+	"premature-top-offer":
+		"revelou a administradora ou o valor da recomendação antes do usuário confirmar que quer ver",
+	"score-percentage":
+		"citou o score/compatibilidade como número percentual (só o rótulo qualitativo pode aparecer)",
+	"hallucinated-administradora":
+		"citou uma administradora que não está entre as ofertas reais desta conversa",
+	"internal-tool-leak":
+		"escreveu o nome de uma ferramenta interna (ex.: recommend_groups) em vez de falar com o usuário",
+	"premature-reveal-scenario":
+		"narrou o cenário de lance/contemplação/sorteio no reveal, antes de perguntar se o usuário já conhece consórcio",
 };
 
 /**
@@ -680,9 +706,7 @@ export function buildToolErrorRecoveryFallbackRepeat(args: {
 	const lista = args.offers
 		.map((o) => {
 			const detalhes = formatOfferDetails(o);
-			return o.administradora
-				? `${o.administradora}${detalhes ? ` (${detalhes})` : ""}`
-				: detalhes;
+			return o.administradora ? `${o.administradora}${detalhes ? ` (${detalhes})` : ""}` : detalhes;
 		})
 		.filter((s) => s.length > 0)
 		.join("; ");

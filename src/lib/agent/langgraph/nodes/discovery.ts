@@ -39,6 +39,13 @@ import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { Category } from "@/lib/agent/personas";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
+
+/** Prazo-alvo (meses) de quem quer a MENOR PARCELA. Não é um número novo: é o
+ * mesmo horizonte da opção "Sem pressa, quero menor parcela"
+ * (`TIMEFRAME_OPTIONS`, qualify-config.ts). Serve só pra inclinar o ranking pro
+ * prazo mais longo que a administradora de fato tiver — nunca inventa prazo. */
+const PRAZO_ALVO_MENOR_PARCELA = 120;
+
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
@@ -64,17 +71,30 @@ export async function discoveryNode(
 	config?.writer?.({
 		type: "tool-call",
 		toolName: "recommend_groups",
-		input: { category, creditMin: funnel.qualifyAnswers.creditMin, creditMax: funnel.qualifyAnswers.creditMax },
+		input: {
+			category,
+			creditMin: funnel.qualifyAnswers.creditMin,
+			creditMax: funnel.qualifyAnswers.creditMax,
+		},
 		toolCallId: crypto.randomUUID(),
 	});
 
 	const tools = buildLangGraphTools({ conversationId, channel });
+	// "Sem pressa, quero a menor parcela" é um pedido de PRAZO MAIOR — parcela
+	// menor não existe sem prazo mais longo. O ranking recebia `desiredTermMonths:
+	// 0` (sem preferência) sempre, então o cliente pedia parcela leve e o agente
+	// fechava no prazo mais curto disponível, prometendo um ajuste que nunca fazia
+	// (visto ao vivo, 2026-07-21). Quem tem pressa continua neutro: aí o que pesa
+	// é a contemplação, não o prazo.
+	const querMenorParcela =
+		funnel.qualifyAnswers.objetivo === "investimento" ||
+		(funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
 	const result = await tools.recommend_groups.invoke({
 		category,
 		creditMin: funnel.qualifyAnswers.creditMin,
 		creditMax: funnel.qualifyAnswers.creditMax,
 		budget: 0,
-		desiredTermMonths: 0,
+		desiredTermMonths: querMenorParcela ? PRAZO_ALVO_MENOR_PARCELA : 0,
 	});
 
 	const index: RevealGroupIndex = new Map();

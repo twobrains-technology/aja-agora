@@ -4,11 +4,11 @@ import { ExternalLink, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SignatureHandoffPayload } from "@/lib/chat/types";
 
-// DESVIO-ASSINATURA (docs/jornada/CONTEXT.md, DES-1): o jornada.docx assume
-// "assinatura digital no fechamento", mas o `consortiumProposalLink` da API de
-// Parceiro é o PDF da PROPOSTA de consórcio (não um portal de assinatura). A
-// assinatura/efetivação é etapa posterior da mesa. O card apresenta a proposta
-// pronta + a continuidade da Aja Agora — sem o cliente sentir que mudou de empresa.
+// A proposta que este card abre é a NOSSA (PDF co-branded, `lib/proposal/`), não
+// mais o PDF da administradora hospedado em domínio de terceiro — o cliente
+// clicava em "Ver minha proposta" e caía num useme.link, saindo da Aja Agora pra
+// ver o próprio plano (abolido pelo Kairo em 2026-07-21). A assinatura/efetivação
+// é etapa posterior, feita pelo atendente; aqui é só a proposta pronta.
 export function SignatureHandoff({ payload }: { payload: SignatureHandoffPayload }) {
 	return (
 		<div className="w-full max-w-sm rounded-[12px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
@@ -19,16 +19,15 @@ export function SignatureHandoff({ payload }: { payload: SignatureHandoffPayload
 			</div>
 
 			<p className="text-xs text-muted-foreground leading-relaxed">
-				Sua proposta de consórcio da {payload.administradora || "administradora"}, escolhida pela
-				Aja Agora pro seu perfil, já está gerada. A gente segue com você daqui pra frente, até a
-				contemplação.
+				O documento com a carta, a parcela e o prazo que combinamos com a{" "}
+				{payload.administradora || "administradora"} — é seu, pode guardar.
 			</p>
 
 			<Button
 				type="button"
 				className="w-full h-[46px] min-h-[44px] gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105"
 				data-testid="signature-link"
-				onClick={() => window.open(payload.consortiumProposalLink, "_blank", "noopener,noreferrer")}
+				onClick={() => window.open(payload.proposalUrl, "_blank", "noopener,noreferrer")}
 			>
 				<ExternalLink className="size-4" />
 				Ver minha proposta

@@ -5,8 +5,8 @@
 // pós-fechamento, re-reveal, duplicação intra-turno e o hold de
 // reco-consent que nenhum desses dois cobre sozinho.
 import {
-	evaluateArtifactGuards,
 	type ArtifactGuardInput,
+	evaluateArtifactGuards,
 } from "@/lib/agent/orchestrator/artifact-guard";
 
 export type GuardContext = Omit<ArtifactGuardInput, "artifactType">;

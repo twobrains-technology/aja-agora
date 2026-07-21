@@ -9,8 +9,12 @@ import type { RevealGroupIndex } from "./recommendation-payload";
 
 const SCARCITY_DISCLAIMER = "Número estimado, apenas indicativo.";
 
-/** Hash determinístico (djb2) do id do grupo → 1..6. Mesmo id SEMPRE produz o
- * mesmo número — não usar Math.random()/Date.now() aqui. */
+/** @deprecated NÃO USE. Derivava "vagas restantes" de um hash do id do grupo —
+ * um número inventado, sem relação nenhuma com a administradora. Ao vivo chegou
+ * a contradizer o card ao lado na MESMA tela: a recomendação do mesmo grupo
+ * trazia `availableSlots: 8` (dado real da Bevi) e a escassez dizia 4. Escassez
+ * falsa é o que separa venda de enganação — e é risco de CDC art. 37. Mantido
+ * só pra não quebrar import antigo; o coerce abaixo não o chama mais. */
 export function stableSlotFromId(id: string): number {
 	let hash = 5381;
 	for (let i = 0; i < id.length; i++) {
@@ -41,10 +45,18 @@ export function coerceScarcityPayload(
 			disclaimer: SCARCITY_DISCLAIMER,
 		};
 	}
+	// SÓ o número REAL da oferta. Sem ele, `availableSlots` fica indefinido e o
+	// componente não renderiza — melhor card nenhum que número inventado.
+	const vagasReais =
+		typeof group?.availableSlots === "number" && group.availableSlots > 0
+			? group.availableSlots
+			: undefined;
 	return {
-		groupCode: anchorId,
+		// Código humano do grupo quando a oferta traz; nunca o ObjectId cru, que
+		// o cliente via como "6a5a74e7794e4df2921e88b6" e não significa nada.
+		groupCode: group?.groupCode ?? anchorId,
 		administradora,
-		availableSlots: stableSlotFromId(anchorId),
+		availableSlots: vagasReais,
 		disclaimer: SCARCITY_DISCLAIMER,
 	};
 }

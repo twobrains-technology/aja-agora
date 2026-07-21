@@ -208,10 +208,15 @@ describe("FIX-11 — handlers do fechamento persistem a mensagem assistant", () 
 
 		const arts = await artifactsOf(assistants.map((m) => m.id));
 		const types = arts.map((a) => a.type);
+		// O fecho termina no handoff pro atendente (card com botão de WhatsApp) —
+		// é ele que diz ao cliente o que acontece depois. `signature_handoff` (a
+		// nossa proposta em PDF) só aparece quando o PDF de fato existe, o que não
+		// acontece neste ambiente de teste (sem S3/proposta gerada); `document_upload`
+		// saiu do fecho (quem pede documento é o atendente).
 		expect(types, "artifacts do fechamento precisam ficar vinculados à message").toContain(
-			"signature_handoff",
+			"atendimento_handoff",
 		);
-		expect(types).toContain("document_upload");
+		expect(types).not.toContain("document_upload");
 	});
 
 	it("contract-submit (sucesso): 'Confirmei com a CANOPUS…' + artifact real_offer persistidos", async () => {

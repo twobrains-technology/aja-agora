@@ -7,13 +7,18 @@
 // `evaluateArtifactGuards` (`guarded-artifact.ts`) — 2ª linha de defesa
 // contra pós-fechamento/re-reveal/duplicação intra-turno.
 //
-// TODO(rodada-2): `contract_form`/`real_offer`/cerimônia de fechamento —
-// fora do escopo desta rodada (fork de pesquisa: sem lógica visível além do
-// disparo do contract_form em index.ts; tratar como funil de PÓS-venda).
+// O `contract_form` (passo 5) TAMBÉM nasce aqui — ficou de fora da rodada 1 e
+// isso abriu o buraco do fecho: o funil terminava mudo e quem dizia "bora
+// fechar" ouvia "fico por aqui então". `real_offer`/`signature_handoff` e o
+// resto da cerimônia seguem no handler de `offer-confirm` (route.ts), que roda
+// depois do submit do formulário.
 //
 // NÃO empurra via `config.writer` (mesma nota de `discovery.ts`) — "gate"
 // dispara `reloadMeta` fresco no adapter (web/adapter.ts:308); só é seguro
 // entregar depois que `persist` gravar. `run-turn.ts` drena do estado final.
+
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { enrichContractFormPayload } from "@/lib/agent/orchestrator/contract-form-prefill";
 import {
 	buildDecisionPromptCard,
 	buildEmbeddedBidCard,
@@ -22,15 +27,15 @@ import {
 	buildTwoPathsCard,
 } from "@/lib/agent/orchestrator/server-cards";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { loadIdentity } from "@/lib/conversation/identity";
 import { projectToMeta } from "../emit";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType } from "../state";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
-export function emitCardNode(
+export async function emitCardNode(
 	state: AgentGraphStateType,
 	config?: LangGraphRunnableConfig,
-): Partial<AgentGraphStateType> {
+): Promise<Partial<AgentGraphStateType>> {
 	const events: TurnEvent[] = [];
 	let funnel = state.funnel;
 
@@ -159,6 +164,38 @@ export function emitCardNode(
 			});
 		}
 		funnel = { ...funnel, decisionDispatched: true };
+	}
+
+	// PASSO 5 — o formulário que cria a proposta REAL. Era o buraco do fecho: no
+	// runtime LangGraph nenhum nó o emitia e a tool `present_contract_form` está
+	// fora do toolset (de propósito — ordem de funil é código). Resultado ao
+	// vivo: o cliente dizia "bora fechar", o agente respondia "só preciso de uns
+	// dados rápidos" e NADA aparecia na tela. A identidade já foi coletada no
+	// gate `identify`, então o card vem como CONFIRMAÇÃO (CPF mascarado — o
+	// número completo nunca volta pro browser).
+	if (
+		state.gate === "contract" &&
+		!funnel.contractFormDispatched &&
+		artifactAllowed(guardCtx, "contract_form")
+	) {
+		const identity = await loadIdentity(state.conversationId).catch(() => null);
+		events.push({ type: "text-boundary" });
+		events.push({
+			type: "artifact",
+			artifactType: "contract_form",
+			payload: enrichContractFormPayload(
+				{
+					conversationId: state.conversationId,
+					...(funnel.recommendedAdministradora
+						? { administradora: funnel.recommendedAdministradora }
+						: {}),
+				},
+				identity,
+			),
+			toolCallId: crypto.randomUUID(),
+		});
+		turnArtifactTypes.push("contract_form");
+		funnel = { ...funnel, contractFormDispatched: true };
 	}
 
 	// NÃO emite aqui. Quem entrega "gate"/"artifact" ao cliente é o `persist`,

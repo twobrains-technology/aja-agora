@@ -22,22 +22,6 @@ const formatCredit0 = (n: number) =>
  * a carta REAL que o cliente está vendo na tela. Um consultor de verdade usa
  * o número do cliente, não um exemplo genérico. Sem carta real (chamador que
  * ainda não tem o snapshot) → mantém o exemplo honesto de "R$ 100 mil". */
-export function lanceEmbutidoEdu(creditValue?: number): string {
-	const cartaPhrase =
-		creditValue != null && Number.isFinite(creditValue) && creditValue > 0
-			? `na sua carta de ${formatCredit0(creditValue)}`
-			: "numa carta de R$ 100 mil";
-	return (
-		"Deixa eu te explicar o lance embutido rapidinho — fica tranquilo, a gente te ajuda. " +
-		`É usar parte da própria carta de crédito como lance — ${cartaPhrase}, por exemplo, ` +
-		"você usa uma fatia desse valor pra aumentar suas chances de contemplação, " +
-		"sem precisar ter todo o lance em dinheiro hoje."
-	);
-}
-/** @deprecated Use `lanceEmbutidoEdu(creditValue)` pra usar a carta REAL do
- * cliente — este const mantém só o fallback genérico, pra quem ainda não
- * repassou o valor real. */
-export const LANCE_EMBUTIDO_EDU = lanceEmbutidoEdu();
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
 
 /** FIX-312 — "esse"/"essa" concordando com o `desiredItem` referenciado no
@@ -174,12 +158,11 @@ export function gateQuestion(
 			// docx passo 2 (linha 21-22): se "sim" → "Qual valor aproximado?"
 			return "Boa! E qual valor aproximado você pensa em dar de lance?";
 		case "lance-embutido":
-			// FIX-212: educação + pergunta compostas (a WEB usa o card completo). No
-			// WhatsApp o adapter usa lanceEmbutidoEdu()/LANCE_EMBUTIDO_ASK separados
-			// (educação num balão, card só com a pergunta) — split 2 tempos.
-			// FIX-245: creditValue (carta REAL, pós-reveal) substitui o exemplo
-			// genérico de "R$ 100 mil" quando disponível.
-			return `${lanceEmbutidoEdu(creditValue)}\n\n${LANCE_EMBUTIDO_ASK}`;
+			// Só a PERGUNTA. A educação saiu daqui: o texto fixo ensinava a usar uma
+			// fatia da carta que o cliente já escolheu, que é o conselho errado — a
+			// carta precisa ser MAIOR. Explicar é conversa, e conversa é do modelo,
+			// que recebe a conta certa por contexto (`blocoEmbutido`, converse.ts).
+			return LANCE_EMBUTIDO_ASK;
 		case "identify":
 			// FIX-210 (reforma de conversa WhatsApp): a copy do identify foi UNIFICADA
 			// e encurtada — aqui vive só o PEDIDO (beat 2 da cadência 2-tempos). O
@@ -222,6 +205,11 @@ export function gateQuestion(
 		case "decision":
 			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
 			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
+			return null;
+		case "contract":
+			// Passo 5: quem pede os dados é o card `contract_form`, e a fala que o
+			// antecede é do modelo — nunca uma pergunta canônica do servidor (CPF
+			// JAMAIS é pedido por texto).
 			return null;
 	}
 }

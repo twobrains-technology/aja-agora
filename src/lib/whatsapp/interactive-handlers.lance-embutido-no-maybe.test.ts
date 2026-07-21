@@ -141,7 +141,10 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 
 		expect(mocks.runSearchSummary).not.toHaveBeenCalled();
 		expect(mocks.fireGate).toHaveBeenCalledTimes(1);
-		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("simulator-offer");
+		// 2026-07-21 (Kairo, validando ao vivo): quem respondeu "não" ao lance NÃO
+		// leva o simulador de contemplação atrás — ele existe pra quem quer
+		// ANTECIPAR. Depois da recusa, o próximo passo é a DECISÃO.
+		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("decision");
 	});
 
 	it("'Sim, considerar' pós-reveal → também despacha simulator-offer, não a busca", async () => {
@@ -168,7 +171,7 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 	// AQUI (handleLanceEmbutido), e não via index.ts, precisa MARCAR o dispatch —
 	// senão, se o usuário responder o card por TEXTO, nextGate recomputaria
 	// simulator-offer com a flag ainda false e o card sairia 2× (o "sim" ignorado).
-	it("idempotência: ao despachar simulator-offer, persiste simulatorOfferDispatched=true e passa a flag pro fireGate", async () => {
+	it("idempotência: ao despachar o gate, persiste a flag de dispatch e a passa pro fireGate", async () => {
 		mocks.meta = {
 			desireAsked: true,
 			currentCategory: "auto",
@@ -184,11 +187,11 @@ describe("FIX-215 — lance-embutido pós-reveal despacha o PRÓXIMO gate, nunca
 
 		await dispatch("lanceembutido_no", "Sem lance embutido");
 
-		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("simulator-offer");
+		expect(mocks.fireGate.mock.calls[0]?.[2]).toBe("decision");
 		const firedMeta = mocks.fireGate.mock.calls[0]?.[3] as ConversationMetadata;
-		expect(firedMeta?.simulatorOfferDispatched).toBe(true);
+		expect(firedMeta?.decisionDispatched).toBe(true);
 		const persistedWithFlag = mocks.persistMeta.mock.calls.some(
-			(c) => (c[1] as ConversationMetadata)?.simulatorOfferDispatched === true,
+			(c) => (c[1] as ConversationMetadata)?.decisionDispatched === true,
 		);
 		expect(persistedWithFlag).toBe(true);
 	});

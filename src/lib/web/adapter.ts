@@ -34,10 +34,20 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
-const creditSlider = (category: Category): SliderField => {
+const creditSlider = (category: Category, valorJaDito?: number): SliderField => {
 	const b: Bounds = CREDIT_BOUNDS[category];
+	// A agulha nasce ANCORADA no valor que o cliente já disse ("quero um carro de
+	// 260 mil"). Antes vinha sempre no default da categoria (R$ 80 mil pra auto):
+	// quem já tinha dito o preço via a agulha apontando pra outro número e, se
+	// tocasse nela por engano, o valor que ele mesmo declarou era substituído pelo
+	// default — a busca inteira saía na faixa errada (visto ao vivo, 2026-07-21).
+	// Clampado à faixa da categoria, senão o slider nasce fora do próprio range.
+	const ancora =
+		typeof valorJaDito === "number" && Number.isFinite(valorJaDito)
+			? Math.min(Math.max(valorJaDito, b.min), b.max)
+			: b.default;
 	// FIX-2: label amigável — o id interno continua "credit" (contrato da API).
-	return { id: "credit", label: "Valor do bem", format: "currency", ...b };
+	return { id: "credit", label: "Valor do bem", format: "currency", ...b, default: ancora };
 };
 
 // FIX-115: termSlider removido do adapter — o prazo saiu da entrada (FIX-103) e a
@@ -121,7 +131,12 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				kind: "slider",
 				gate: "credit",
 				category,
-				fields: [creditSlider(category)],
+				fields: [
+					creditSlider(
+						category,
+						meta.qualifyAnswers?.creditMax ?? meta.qualifyAnswers?.creditMentionedAtDesire,
+					),
+				],
 			};
 		}
 		case "timeframe": {
@@ -198,6 +213,10 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 		case "doubts-wait":
 		case "search":
 		case "decision":
+		// O passo 5 não tem card de GATE: quem desenha o formulário de
+		// contratação é o artifact `contract_form` (payload com a identidade já
+		// mascarada), emitido pelo grafo no mesmo turno.
+		case "contract":
 			return null;
 	}
 }
@@ -238,7 +257,22 @@ export async function pipeGatePrompt(args: {
 	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
 	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
 	// virando turno morto ("Prazer, Madalena!" e nada mais).
-	if (!data && !question) return;
+	// Gate sem card E sem pergunta canônica = nada a mostrar. Sair aqui deixava o
+	// turno MUDO: o cliente respondia e recebia zero (`textChars: 0`,
+	// `durationMs: 8` no trace, visto ao vivo no fim do funil). Quem não tem card
+	// tem conversa — devolve o turno pro modelo, que fala com o que sabe.
+	if (!data && !question) {
+		await pipeDirectiveTurn({
+			conversationId,
+			directive:
+				"Não há card nem próximo passo estruturado agora. Converse: retome o que ficou " +
+				"pendente com este cliente, responda o que ele acabou de dizer e conduza para o " +
+				"próximo passo com as suas palavras. Nunca termine sem um próximo passo.",
+			contactName: null,
+			writer,
+		});
+		return;
+	}
 	if (question) {
 		const id = crypto.randomUUID();
 		writer.write({ type: "text-start", id });
@@ -340,164 +374,167 @@ export async function pipeOrchestratorToWriter(
 	}, 8000);
 
 	try {
-	for await (const ev of events) {
-		switch (ev.type) {
-			case "text-delta":
-				if (ev.text) emittedVisible = true;
-				writer.write({ type: "text-delta", id: ensureTextStarted(), delta: ev.text });
-				break;
+		for await (const ev of events) {
+			switch (ev.type) {
+				case "text-delta":
+					if (ev.text) emittedVisible = true;
+					writer.write({ type: "text-delta", id: ensureTextStarted(), delta: ev.text });
+					break;
 
-			case "lead-collection-prompt": {
-				// Bloco de texto isolado e FECHADO — um único id que abre, recebe o
-				// delta e fecha. (Antes: um text-start órfão com id aleatório + outro
-				// id do ensureTextStarted pro delta → 2 starts, 1 end no stream.)
-				closeTextIfOpen();
-				emittedVisible = true;
-				const id = crypto.randomUUID();
-				writer.write({ type: "text-start", id });
-				writer.write({ type: "text-delta", id, delta: ev.text });
-				writer.write({ type: "text-end", id });
-				break;
-			}
-
-			case "artifact":
-				closeTextIfOpen();
-				emittedVisible = true;
-				writer.write({
-					type: "data-artifact",
-					id: ev.toolCallId,
-					data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
-				});
-				break;
-
-			case "gate": {
-				closeTextIfOpen();
-				const meta = await reloadMeta(conversationId);
-				const data = gatePartData(ev.gate, meta);
-				// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
-				// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
-				//
-				// DESAMARRA (2026-07-13): se o MODELO já perguntou (`ev.modelAsked`), o
-				// card cala a pergunta canônica e mostra só o input. Antes era o
-				// contrário — a pergunta do modelo era descartada pra esta sair sempre
-				// idêntica, o que fazia o agente repetir a mesma frase pra sempre.
-				const question = ev.modelAsked
-					? null
-					: gateQuestion(
-							ev.gate,
-							meta.currentCategory,
-							meta.recommendedOffer?.creditValue,
-							"web",
-							meta.qualifyAnswers?.creditMentionedAtDesire,
-							meta.qualifyAnswers?.desiredItem,
-						);
-				// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
-				if (data || question) {
+				case "lead-collection-prompt": {
+					// Bloco de texto isolado e FECHADO — um único id que abre, recebe o
+					// delta e fecha. (Antes: um text-start órfão com id aleatório + outro
+					// id do ensureTextStarted pro delta → 2 starts, 1 end no stream.)
+					closeTextIfOpen();
 					emittedVisible = true;
-					if (question) {
-						const id = crypto.randomUUID();
-						writer.write({ type: "text-start", id });
-						writer.write({ type: "text-delta", id, delta: question });
-						writer.write({ type: "text-end", id });
-					}
-					if (data) {
-						writer.write({
-							type: "data-gate",
-							id: crypto.randomUUID(),
-							data,
-						});
-					}
+					const id = crypto.randomUUID();
+					writer.write({ type: "text-start", id });
+					writer.write({ type: "text-delta", id, delta: ev.text });
+					writer.write({ type: "text-end", id });
+					break;
 				}
-				break;
+
+				case "artifact":
+					closeTextIfOpen();
+					emittedVisible = true;
+					writer.write({
+						type: "data-artifact",
+						id: ev.toolCallId,
+						data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
+					});
+					break;
+
+				case "gate": {
+					closeTextIfOpen();
+					const meta = await reloadMeta(conversationId);
+					const data = gatePartData(ev.gate, meta);
+					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
+					// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
+					//
+					// DESAMARRA (2026-07-13): se o MODELO já perguntou (`ev.modelAsked`), o
+					// card cala a pergunta canônica e mostra só o input. Antes era o
+					// contrário — a pergunta do modelo era descartada pra esta sair sempre
+					// idêntica, o que fazia o agente repetir a mesma frase pra sempre.
+					const question = ev.modelAsked
+						? null
+						: gateQuestion(
+								ev.gate,
+								meta.currentCategory,
+								meta.recommendedOffer?.creditValue,
+								"web",
+								meta.qualifyAnswers?.creditMentionedAtDesire,
+								meta.qualifyAnswers?.desiredItem,
+							);
+					// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
+					if (data || question) {
+						emittedVisible = true;
+						if (question) {
+							const id = crypto.randomUUID();
+							writer.write({ type: "text-start", id });
+							writer.write({ type: "text-delta", id, delta: question });
+							writer.write({ type: "text-end", id });
+						}
+						if (data) {
+							writer.write({
+								type: "data-gate",
+								id: crypto.randomUUID(),
+								data,
+							});
+						}
+					}
+					break;
+				}
+
+				case "transition": {
+					closeTextIfOpen();
+					emittedVisible = true;
+					const data: TransitionPartData = {
+						toPersona: ev.toPersona,
+						toPersonaName: ev.toPersonaName,
+						toCategory: ev.toCategory,
+						bridgeText: ev.bridgeText,
+					};
+					writer.write({
+						type: "data-transition",
+						id: crypto.randomUUID(),
+						data,
+					});
+					break;
+				}
+
+				case "welcome-categories":
+					closeTextIfOpen();
+					emittedVisible = true;
+					writer.write({
+						type: "data-welcome",
+						id: crypto.randomUUID(),
+						data: { options: WELCOME_OPTIONS },
+					});
+					break;
+
+				case "handoff":
+					closeTextIfOpen();
+					emittedVisible = true;
+					writer.write({
+						type: "data-handoff",
+						id: crypto.randomUUID(),
+						data: { reason: ev.reason },
+					});
+					break;
+
+				case "lead-stage":
+					await recordStageReached(
+						conversationId,
+						ev.stage as "engajado" | "qualificado" | "em_negociacao",
+					);
+					break;
+
+				case "tool-call":
+					closeTextIfOpen();
+					writer.write({
+						type: "data-tool",
+						id: ev.toolCallId,
+						data: { tool: ev.toolName },
+					});
+					break;
+
+				case "suppression":
+					// FIX-250 (rodada 3, Fable r2, N7): suppression NUNCA vira UI part
+					// (não é pro usuário ver) — mas precisa chegar no turn-trace, senão
+					// `suppressed` fica sempre [] no canal web (gap de observabilidade,
+					// Lei 5). getTraceForWriter recupera o trace pelo writer já
+					// instrumentado por route.ts, sem mudar nenhuma assinatura.
+					getTraceForWriter(writer)?.addSuppression(ev.artifactType);
+					break;
+
+				case "usage":
+					getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
+					break;
+
+				// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
+				// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
+				// nunca chegava ao trace no canal web — este case era agrupado como
+				// no-op puro (era FIX-24), então route.ts sempre aplicava o default
+				// "ok" por cima, mascarando turnos CONTIDOS como se fossem normais.
+				// Mesmo padrão de suppression/usage: getTraceForWriter recupera o
+				// trace pelo writer já instrumentado, sem mudar assinatura nenhuma.
+				case "finish":
+					getTraceForWriter(writer)?.setFinish(ev.reason);
+					break;
+
+				case "meta-update":
+					// FIX-24: telemetria interna — consumida pelo turn-trace, não
+					// vira UI part. No-op no funil de SSE da web.
+					break;
+
+				case "text-boundary":
+					// FIX-268: força o fechamento do balão de texto aberto — sem
+					// isso, 2 directives seguidos sem artifact/gate no meio colam o
+					// texto num balão só ("1 balão = 1 ideia" violado).
+					closeTextIfOpen();
+					break;
 			}
-
-			case "transition": {
-				closeTextIfOpen();
-				emittedVisible = true;
-				const data: TransitionPartData = {
-					toPersona: ev.toPersona,
-					toPersonaName: ev.toPersonaName,
-					toCategory: ev.toCategory,
-					bridgeText: ev.bridgeText,
-				};
-				writer.write({
-					type: "data-transition",
-					id: crypto.randomUUID(),
-					data,
-				});
-				break;
-			}
-
-			case "welcome-categories":
-				closeTextIfOpen();
-				emittedVisible = true;
-				writer.write({
-					type: "data-welcome",
-					id: crypto.randomUUID(),
-					data: { options: WELCOME_OPTIONS },
-				});
-				break;
-
-			case "handoff":
-				closeTextIfOpen();
-				emittedVisible = true;
-				writer.write({
-					type: "data-handoff",
-					id: crypto.randomUUID(),
-					data: { reason: ev.reason },
-				});
-				break;
-
-			case "lead-stage":
-				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
-				break;
-
-			case "tool-call":
-				closeTextIfOpen();
-				writer.write({
-					type: "data-tool",
-					id: ev.toolCallId,
-					data: { tool: ev.toolName },
-				});
-				break;
-
-			case "suppression":
-				// FIX-250 (rodada 3, Fable r2, N7): suppression NUNCA vira UI part
-				// (não é pro usuário ver) — mas precisa chegar no turn-trace, senão
-				// `suppressed` fica sempre [] no canal web (gap de observabilidade,
-				// Lei 5). getTraceForWriter recupera o trace pelo writer já
-				// instrumentado por route.ts, sem mudar nenhuma assinatura.
-				getTraceForWriter(writer)?.addSuppression(ev.artifactType);
-				break;
-
-			case "usage":
-				getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
-				break;
-
-			// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
-			// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
-			// nunca chegava ao trace no canal web — este case era agrupado como
-			// no-op puro (era FIX-24), então route.ts sempre aplicava o default
-			// "ok" por cima, mascarando turnos CONTIDOS como se fossem normais.
-			// Mesmo padrão de suppression/usage: getTraceForWriter recupera o
-			// trace pelo writer já instrumentado, sem mudar assinatura nenhuma.
-			case "finish":
-				getTraceForWriter(writer)?.setFinish(ev.reason);
-				break;
-
-			case "meta-update":
-				// FIX-24: telemetria interna — consumida pelo turn-trace, não
-				// vira UI part. No-op no funil de SSE da web.
-				break;
-
-			case "text-boundary":
-				// FIX-268: força o fechamento do balão de texto aberto — sem
-				// isso, 2 directives seguidos sem artifact/gate no meio colam o
-				// texto num balão só ("1 balão = 1 ideia" violado).
-				closeTextIfOpen();
-				break;
 		}
-	}
 	} finally {
 		clearInterval(batimento);
 	}

@@ -8,10 +8,7 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import type { Tool as AiSdkTool } from "ai";
 import type { z } from "zod";
-import {
-	buildConsorcioTools,
-	type ConsorcioToolsContext,
-} from "@/lib/agent/tools/ai-sdk";
+import { buildConsorcioTools, type ConsorcioToolsContext } from "@/lib/agent/tools/ai-sdk";
 
 /** `ToolExecutionOptions` mínimo (AI SDK) pra chamar `execute` fora do loop
  * de streaming do SDK — nenhuma das tools de negócio lê `abortSignal`/

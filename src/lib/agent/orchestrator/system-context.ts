@@ -27,12 +27,12 @@ export const GATE_INTENT: Record<string, string> = {
 	// perguntas de uma vez e o cliente responder só uma — o motivo tem turno
 	// próprio (`shouldAskMotive`), logo depois.
 	desire:
-		"qual bem específico ele tem em mente — o modelo, só isso. NÃO pergunte versão/ano (não muda nada no consórcio) e NÃO presuma nada que ele não disse (se ele não falou \"novo\" ou \"zero\", não diga)",
+		'qual bem específico ele tem em mente — o modelo, só isso. NÃO pergunte versão/ano (não muda nada no consórcio) e NÃO presuma nada que ele não disse (se ele não falou "novo" ou "zero", não diga)',
 	credit: "quanto custa o bem que ele quer",
 	identify:
 		"o CPF e o celular dele — diga POR QUE precisa (a administradora exige pra trazer as ofertas reais) e que os dados ficam protegidos pela LGPD, numa frase só, sem soar burocrático",
 	experience:
-		"se ele já fez consórcio antes. Se ele disser que é a primeira vez, EXPLIQUE o mecanismo no MESMO turno (grupo de pessoas, parcela sem juros, contemplação por sorteio ou lance, carta pra comprar à vista) — nunca prometa \"te explico no caminho\" e siga pro pitch",
+		'se ele já fez consórcio antes. Se ele disser que é a primeira vez, EXPLIQUE o mecanismo no MESMO turno (grupo de pessoas, parcela sem juros, contemplação por sorteio ou lance, carta pra comprar à vista) — nunca prometa "te explico no caminho" e siga pro pitch',
 	"reco-consent": "se ele topa ver a opção que a gente recomenda",
 	timeframe: "em quanto tempo ele quer estar com o bem",
 	lance: "se ele teria como dar um lance pra antecipar a contemplação",
@@ -40,6 +40,8 @@ export const GATE_INTENT: Record<string, string> = {
 	"lance-embutido": "se ele quer considerar lance embutido (usar parte da própria carta)",
 	"simulator-offer": "se ele quer simular a parcela em diferentes meses de contemplação",
 	decision: "se o plano faz sentido pra ele",
+	contract:
+		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa quando o boleto chegar). O formulário com os dados aparece logo abaixo da sua fala — NUNCA peça CPF ou celular por texto, e nunca diga que a cota está reservada nem prometa prazo de contemplação",
 };
 
 export function buildSystemContext(args: {

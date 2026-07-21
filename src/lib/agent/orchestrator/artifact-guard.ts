@@ -216,6 +216,16 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// `pendingSimulationResult` pra emissão determinística posterior
 	// (`emitServerCard`, nunca recalculado, nunca dependente de nova tool-call).
 	{
+		// Teto de 2 cards por turno. Ao vivo saíram QUATRO de uma vez (comparativo +
+		// recomendação + escassez + decisão) e o cliente rolava uma parede sem saber
+		// o que decidir. O reveal legítimo usa dois (lista + hero); do terceiro em
+		// diante é avalanche — o card espera o próximo turno.
+		name: "teto-de-cards-por-turno",
+		applies: ({ turnArtifactTypes }) => (turnArtifactTypes?.length ?? 0) >= 2,
+		logLine: ({ artifactType, conversationId }) =>
+			`[teto-de-cards-por-turno] guard: suprimindo ${artifactType} — já saíram 2 cards neste turno (conv=${conversationId})`,
+	},
+	{
 		name: "hero-awaits-reco-consent",
 		applies: ({ artifactType, meta, discoveryCount }) => {
 			// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): a condição

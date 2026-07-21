@@ -173,6 +173,15 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// aprovar. `templatedKeys` evita reenviar o mesmo template por chave (os vários
 		// textos de `confirmacao_contratacao` viram UM template fora da janela).
 		const { resolveAndSend } = await import("./template-dispatch");
+		// A NOSSA proposta em PDF, preparada ANTES da copy: ela é o beat "Sua
+		// proposta está pronta" (com link) e, logo abaixo, o documento anexado.
+		// Best-effort — sem ela o fecho segue sem esse beat.
+		const proposta = await import("@/lib/proposal/entrega")
+			.then((m) => m.prepararPropostaParaEnvio(conversationId))
+			.catch((err) => {
+				console.error(`[offer-confirm] preparo da proposta falhou (conv=${conversationId})`, err);
+				return null;
+			});
 		const admin = res.administradora ?? "";
 		const sentTexts: string[] = [];
 		const templatedKeys = new Set<string>();
@@ -180,7 +189,10 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// no botão do real_offer) — o beat "acabei de te mandar mensagem no seu
 		// WhatsApp, responde com um oi" não faz sentido nenhum aqui (não existe
 		// mensagem nova nenhuma, é o mesmo canal). Some só nesse canal.
-		for (const item of closingPresentation(res, { channel: "whatsapp" })) {
+		for (const item of closingPresentation(res, {
+			channel: "whatsapp",
+			propostaUrl: proposta?.url ?? null,
+		})) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
 			let usageKey = "confirmacao_contratacao";
 			if (item.kind === "text") wa = { type: "text", text: item.text };
@@ -191,8 +203,7 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 			if (wa?.type === "text" && wa.text) {
 				if (templatedKeys.has(usageKey)) continue;
 				const text = wa.text;
-				const link =
-					(item.kind === "artifact" && (item.payload.consortiumProposalLink as string)) || "";
+				const link = (item.kind === "artifact" && (item.payload.proposalUrl as string)) || "";
 				const result = await resolveAndSend({
 					to: from,
 					conversationId,
@@ -214,6 +225,28 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+
+		// A PROPOSTA em PDF — a peça do fechamento — vai pro cliente aqui. Antes o
+		// PDF era gerado e ficava só no S3 do back office, enquanto o agente dizia
+		// "você vai receber um email com os detalhes" e nada chegava no canal em que
+		// a conversa aconteceu. Best-effort: falhou, o fecho segue e o log registra
+		// — nunca se diz que enviou sem ter enviado.
+		try {
+			if (proposta) {
+				const { sendDocumentMessage } = await import("./api");
+				await sendDocumentMessage(
+					from,
+					// A Meta baixa o arquivo NA HORA — aqui vale a URL assinada direta
+					// (o link curto redireciona, e o fetch da Meta não segue 302).
+					proposta.urlAssinada,
+					proposta.nomeArquivo,
+					"Sua proposta, com a carta, a parcela e o prazo que combinamos.",
+				);
+				await saveMessage(conversationId, "assistant", "[proposta enviada em PDF]", "whatsapp");
+			}
+		} catch (err) {
+			console.error(`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`, err);
+		}
 		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
 		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
 		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
@@ -470,12 +503,17 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 	const gate = nextGate(updated);
 	if (gate === "search") {
 		await runSearchSummaryWithOrchestrator({ from, conversationId });
-	} else if (gate === "simulator-offer") {
-		// Idempotência (FIX-215): despachando o simulator-offer por AQUI (e não via
-		// index.ts), marca o dispatch — senão, se o usuário responder o card por
-		// TEXTO, nextGate recomputaria simulator-offer com a flag ainda false e o
-		// card sairia 2× (o "sim" do usuário não seria honrado).
-		const dispatched = { ...updated, simulatorOfferDispatched: true };
+	} else if (gate === "simulator-offer" || gate === "decision") {
+		// Idempotência (FIX-215): despachando o gate por AQUI (e não via index.ts),
+		// marca o dispatch — senão, se o usuário responder o card por TEXTO,
+		// nextGate recomputaria o MESMO gate com a flag ainda false e o card sairia
+		// 2× (o "sim" do usuário não seria honrado). Vale pros dois gates que este
+		// ramo pode alcançar: quem topa antecipar cai no simulador; quem recusou o
+		// lance vai direto pra decisão.
+		const dispatched =
+			gate === "simulator-offer"
+				? { ...updated, simulatorOfferDispatched: true }
+				: { ...updated, decisionDispatched: true };
 		await persistMeta(conversationId, dispatched);
 		await fireGate(from, conversationId, gate, dispatched);
 	} else {

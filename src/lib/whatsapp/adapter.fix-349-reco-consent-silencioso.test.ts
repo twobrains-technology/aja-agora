@@ -85,8 +85,13 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
-describe("FIX-349 — reco-consent nunca fica mudo no WhatsApp mesmo com modelAsked (falso positivo)", () => {
-	it("modelAsked=true (heurística de pergunta genérica) ainda assim entrega a pergunta canônica de reco-consent", async () => {
+// 2026-07-21 — REVERSÃO CONSCIENTE do FIX-349 (ver `WHATSAPP_GATES_WITHOUT_FALLBACK`,
+// hoje vazio): `modelAsked` deixou de ser heurística ("terminou com ALGUMA
+// pergunta") e passou a ser o sinal REAL do sanitizer. Com o sinal confiável,
+// colar a pergunta canônica por cima da pergunta do modelo só produzia o balão
+// duplicado visto ao vivo. Gate não respondido volta no turno seguinte.
+describe("WhatsApp — a pergunta do modelo não é duplicada pela canônica do gate", () => {
+	it("modelAsked=true → o canal NÃO cola a pergunta canônica em cima da do modelo", async () => {
 		mocks.runTurn.mockReturnValue(
 			emit([
 				{
@@ -101,7 +106,8 @@ describe("FIX-349 — reco-consent nunca fica mudo no WhatsApp mesmo com modelAs
 		await processWithOrchestrator(WA, "É a primeira vez");
 
 		const allText = mocks.sendText.mock.calls.map((c) => c[1] as string).join(" | ");
-		expect(allText).toMatch(/posso te mostrar a opção que eu recomendo/i);
+		expect(allText).toMatch(/bora ver essas três opções/i);
+		expect(allText).not.toMatch(/posso te mostrar a opção que eu recomendo/i);
 	});
 
 	it("modelAsked=false segue funcionando normalmente (canônica sai, sem regressão)", async () => {

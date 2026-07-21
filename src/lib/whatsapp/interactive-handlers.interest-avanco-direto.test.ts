@@ -99,7 +99,14 @@ describe("FIX-117 — WhatsApp 'Tenho interesse' = avanço direto ao contract (p
 		expect(mocks.runDirective).toHaveBeenCalledTimes(1);
 		const directive = mocks.runDirective.mock.calls[0]?.[0]?.directive as string;
 		// buildAdvanceToContractDirective → present_contract_form (fechamento direto)
-		expect(directive).toContain("present_contract_form");
+		// A diretiva não cita mais a TOOL: no runtime LangGraph o formulário é
+		// emitido pelo grafo (gate `contract`) e `present_contract_form` nem existe
+		// no toolset do modelo — mandá-lo chamar uma tool inexistente era turno
+		// perdido. O que importa é o AVANÇO pro passo 5 (pré-cadastro), não o nome
+		// da ferramenta.
+		expect(directive).toMatch(/pré-cadastro|dados rápidos/i);
+		// e segue proibindo o desvio pro caminho de lead humano
+		expect(directive).toMatch(/NUNCA inicie captura de lead/i);
 		// NÃO o card de decisão (buildDecisionPromptDirective → present_decision_prompt)
 		expect(directive).not.toContain("present_decision_prompt");
 	});
@@ -132,7 +139,14 @@ describe("FIX-117 — WhatsApp 'Tenho interesse' = avanço direto ao contract (p
 		await dispatch("interest_g1");
 		expect(mocks.runDirective).toHaveBeenCalledTimes(1);
 		const directive = mocks.runDirective.mock.calls[0]?.[0]?.directive as string;
-		expect(directive).toContain("present_contract_form");
+		// A diretiva não cita mais a TOOL: no runtime LangGraph o formulário é
+		// emitido pelo grafo (gate `contract`) e `present_contract_form` nem existe
+		// no toolset do modelo — mandá-lo chamar uma tool inexistente era turno
+		// perdido. O que importa é o AVANÇO pro passo 5 (pré-cadastro), não o nome
+		// da ferramenta.
+		expect(directive).toMatch(/pré-cadastro|dados rápidos/i);
+		// e segue proibindo o desvio pro caminho de lead humano
+		expect(directive).toMatch(/NUNCA inicie captura de lead/i);
 		expect(directive).not.toContain("present_decision_prompt");
 	});
 

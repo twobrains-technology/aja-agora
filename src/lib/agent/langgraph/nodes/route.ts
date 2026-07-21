@@ -44,8 +44,11 @@ export function routeNode(state: AgentGraphStateType): Partial<AgentGraphStateTy
 		meta,
 		isUserTurn: state.isUserTurn,
 	});
+	// Uma linha por decisão de rota — é o que permite ler no log POR QUE o funil
+	// parou onde parou (o "travou e não seguiu" sempre nasce aqui). Barato e sem
+	// PII: só o nome do gate e as flags que o decidem.
 	console.log(
-		`[route-debug] gate=${gate} show=${showGate} intent=${state.intent} isUserTurn=${state.isUserTurn} contactName=${state.contactName} desireAsked=${meta.desireAsked} creditMax=${meta.qualifyAnswers?.creditMax}`,
+		`[route] gate=${gate} show=${showGate} intent=${state.intent} isUserTurn=${state.isUserTurn} reveal=${meta.revealCompleted} decision=${meta.decisionDispatched} form=${meta.contractFormDispatched}`,
 	);
 	// `answeredGate` guarda o gate COMPUTADO (o que o funil aguarda), mesmo quando
 	// o card é suprimido — é o que o `capture` lê no turno seguinte.

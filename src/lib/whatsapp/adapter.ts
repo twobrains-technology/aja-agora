@@ -137,6 +137,9 @@ async function gateInteractive(
 		case "doubts-wait":
 		case "search":
 		case "decision":
+		// "contract" (passo 5) não tem interactive: no WhatsApp a contratação é
+		// captura textual (contract-capture.ts), igual ao `identify`.
+		case "contract":
 			// FIX-17: "name" degrada pra texto no WhatsApp — a pergunta do nome já
 			// sai no texto do directive de primeiro contato; o card não existe aqui.
 			// "identify" não tem interactive — é coleta textual de CPF (fireGate
@@ -237,14 +240,14 @@ async function gateContextBeat(gate: Gate, conversationId: string): Promise<stri
 		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
 		return IDENTIFY_CONTEXT_WHATSAPP;
 	}
-	if (gate === "lance-embutido") {
-		// FIX-212 (split 2 tempos): a educação do lance embutido sai como balão de
-		// contexto ANTES do card, que fica só com a pergunta curta + botões.
-		// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
-		const { lanceEmbutidoEdu } = await import("@/lib/agent/orchestrator/gate-questions");
-		const meta = await reloadMeta(conversationId);
-		return lanceEmbutidoEdu(meta.recommendedOffer?.creditValue);
-	}
+	// O `lance-embutido` NÃO tem mais beat fixo. O texto que existia aqui
+	// (`lanceEmbutidoEdu`) ensinava o conselho ERRADO — "na sua carta de
+	// R$ 261.973, você usa uma fatia desse valor" —, que é o oposto da regra que
+	// vale: o embutido sai da carta, então quem vai usá-lo precisa de uma carta
+	// MAIOR, não de uma fatia da que já escolheu. Pior: como era copy do servidor,
+	// ela ocupava o lugar da fala e o modelo nunca chegava a explicar direito no
+	// WhatsApp — com todo o contexto certo (`blocoEmbutido`, converse.ts) parado.
+	// Educação é conversa, e conversa é do modelo (CLAUDE.md).
 	return null;
 }
 
@@ -272,6 +275,7 @@ async function consumeEvents(
 	let dropped = false;
 	let hasSent = false;
 	let lastWasInteractive = false;
+	let avisouDaBusca = false;
 	// FIX-211: um gate FOI entregue neste turno? Se sim, o usuário acabou de ver o
 	// pedido — não conta como "desvio" (não re-cobra ao fim do turno).
 	let gateFiredThisTurn = false;
@@ -284,7 +288,10 @@ async function consumeEvents(
 		const formatted = formatTextForWhatsApp(textBuffer);
 		textBuffer = "";
 		if (!formatted) return;
-		const chunks = splitMessage(formatted);
+		// Fragmento não é mensagem. Saíram balões com "..", ")" e sobras do
+		// sanitizer — cada um vibrando o celular do cliente. Um balão precisa ter
+		// pelo menos uma palavra; o resto é resíduo de corte de stream.
+		const chunks = splitMessage(formatted).filter((c) => /\p{L}{2,}/u.test(c));
 		for (const chunk of chunks) {
 			if (hasSent) {
 				const wait = lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : typingDelay(chunk.length);
@@ -315,11 +322,28 @@ async function consumeEvents(
 			// máquina de estado do fechamento (confirm/cpf). O turno seguinte do
 			// usuário cai em captureContractText (processor) e os botões em
 			// interactive-handlers; o disparo do startContract é o aceite.
+			let payloadDoArtifact = artifact.payload;
 			if (artifact.type === "contract_form") {
+				// A identidade JÁ foi coletada lá no começo — o fechamento não pode
+				// pedir CPF de novo. O enriquecimento só existia no runtime Vercel
+				// (`runner.ts`), então no LangGraph o card chegava sem
+				// `identityOnFile` e o WhatsApp caía no ramo "não tenho seus dados":
+				// o cliente mandava o CPF, avançava a jornada inteira e no fecho o
+				// agente pedia o mesmo CPF outra vez. Enriquecer aqui, na hora de
+				// desenhar, cobre qualquer origem do card.
+				const [{ enrichContractFormPayload }, { loadIdentity }] = await Promise.all([
+					import("@/lib/agent/orchestrator/contract-form-prefill"),
+					import("@/lib/conversation/identity"),
+				]);
+				const identity = await loadIdentity(conversationId).catch(() => null);
+				payloadDoArtifact = enrichContractFormPayload(
+					artifact.payload as Record<string, unknown>,
+					identity,
+				);
 				const { beginContractCollection } = await import("./contract-capture");
-				await beginContractCollection(conversationId, artifact.payload).catch(() => {});
+				await beginContractCollection(conversationId, payloadDoArtifact).catch(() => {});
 			}
-			const wa = artifactToWhatsApp(artifact.type, artifact.payload);
+			const wa = artifactToWhatsApp(artifact.type, payloadDoArtifact);
 			if (!wa) {
 				// Visibilidade: artifact sem mapper cai em silêncio. Se um tipo
 				// novo for adicionado a PRESENTATION_TOOLS sem mapping WA, o
@@ -352,7 +376,10 @@ async function consumeEvents(
 				pendingArtifacts.push({ type: ev.artifactType, payload: ev.payload });
 				break;
 			case "lead-stage":
-				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
+				await recordStageReached(
+					conversationId,
+					ev.stage as "engajado" | "qualificado" | "em_negociacao",
+				);
 				break;
 			case "tool-call":
 				// No WhatsApp não existe chip de progresso: se a busca na
@@ -361,7 +388,14 @@ async function consumeEvents(
 				// (determinística, sem promessa e sem número) faz o papel do
 				// indicador que a web desenha. Só na busca; nas outras tools o turno
 				// responde rápido e uma linha dessas viraria ruído.
-				if (ev.toolName === "recommend_groups" || ev.toolName === "search_groups") {
+				if (
+					!avisouDaBusca &&
+					(ev.toolName === "recommend_groups" || ev.toolName === "search_groups")
+				) {
+					// UMA vez por turno. A descoberta pode rodar em duas tentativas (faixa
+					// alvo + vizinha) e o cliente recebia "Consultando as administradoras
+					// agora — só um instante." duplicado, colado.
+					avisouDaBusca = true;
 					await flushText();
 					const ok = await sendText(from, "Consultando as administradoras agora — só um instante.");
 					hasSent = hasSent || ok;

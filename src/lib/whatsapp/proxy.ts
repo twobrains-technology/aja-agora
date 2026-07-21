@@ -188,14 +188,50 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 		isInterestExpression(text)
 	) {
 		await saveMessage(handoff.conversationId, "user", text, "whatsapp");
-		if (!typedMeta.decisionDispatched) {
-			await persistMeta(handoff.conversationId, { ...typedMeta, decisionDispatched: true });
+		// "A da Canopus me atende, bora fechar" — o cliente NOMEIA uma opção e
+		// fecha na mesma frase. Este atalho não passa pelo grafo (é
+		// determinístico de propósito), então a re-âncora por menção precisa
+		// acontecer AQUI: sem ela o fechamento saía com a administradora que o
+		// sistema tinha recomendado, calado, contra a escolha explícita do
+		// cliente (visto ao vivo, 2026-07-21). Só re-ancora contra oferta REAL
+		// já exibida nesta conversa.
+		const { resolveAdministradoraMentionForConversation } = await import(
+			"@/lib/agent/orchestrator/choose-offer"
+		);
+		const escolhida = await resolveAdministradoraMentionForConversation(
+			handoff.conversationId,
+			text,
+		).catch(() => null);
+		const trocouDeAdministradora =
+			escolhida?.administradora &&
+			escolhida.administradora !== typedMeta.recommendedOffer?.administradora;
+		const metaAncorado: ConversationMetadata =
+			escolhida && trocouDeAdministradora
+				? {
+						...typedMeta,
+						recommendedAdministradora: escolhida.administradora,
+						recommendedOffer: {
+							...typedMeta.recommendedOffer,
+							...(escolhida.groupId ? { groupId: escolhida.groupId } : {}),
+							administradora: escolhida.administradora,
+							creditValue: escolhida.creditValue ?? typedMeta.recommendedOffer?.creditValue,
+							termMonths: escolhida.termMonths ?? typedMeta.recommendedOffer?.termMonths,
+							monthlyPayment:
+								escolhida.monthlyPayment ?? typedMeta.recommendedOffer?.monthlyPayment,
+						} as ConversationMetadata["recommendedOffer"],
+					}
+				: typedMeta;
+		if (!metaAncorado.decisionDispatched || metaAncorado !== typedMeta) {
+			await persistMeta(handoff.conversationId, {
+				...metaAncorado,
+				decisionDispatched: true,
+			});
 		}
 		await runDirectiveWithOrchestrator({
 			from,
 			conversationId: handoff.conversationId,
 			directive: buildAdvanceToContractDirective({
-				administradora: typedMeta.recommendedAdministradora,
+				administradora: metaAncorado.recommendedAdministradora,
 			}),
 			guardEmptyTurn: true,
 		});

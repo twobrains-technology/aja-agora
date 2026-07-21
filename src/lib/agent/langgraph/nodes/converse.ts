@@ -8,23 +8,24 @@
 //
 // Sanitização reusa `EphemeralTextFilter` (sanitizer.ts) — MESMA máquina de
 // compliance (I4/I5/D7) do runtime Vercel, alimentada token a token.
+
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
-import { shouldAskMotive } from "@/lib/agent/qualify-state";
-import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
+import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import type { ArtifactType } from "@/lib/chat/types";
 import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
 import type { AgentGraphStateType } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
-import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
-import type { ArtifactType } from "@/lib/chat/types";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 /** Toolset WHAT-IF (goal doc — fix ALTA-4): o modelo escolhe livremente
@@ -136,8 +137,34 @@ function semBlocosDeThinkingIncompletos<T>(content: T): T {
 		if (b.type === "redacted_thinking") return typeof b.data === "string" && b.data.length > 0;
 		return true;
 	});
-	// Content vazio também é 400 ("all messages must have non-empty content").
-	return (limpo.length > 0 ? limpo : content) as T;
+	// Content vazio também é 400 ("all messages must have non-empty content") — mas
+	// devolver o ORIGINAL aqui (o que esta função fazia antes) reintroduzia
+	// exatamente o bloco quebrado que ela existe pra remover, e o 400 voltava dois
+	// turnos depois, quando aquela mensagem já era histórico. Um placeholder mínimo
+	// satisfaz a API sem carregar lixo: o cliente nunca vê este texto.
+	return (limpo.length > 0 ? limpo : [{ type: "text", text: "…" }]) as T;
+}
+
+/** O histórico que vai pro modelo, seguro contra os dois 400 que já mataram a
+ * conversa inteira de um turno pro outro:
+ *  1. bloco `thinking` pela metade (o acúmulo do streaming produz um bloco com o
+ *     tipo e sem o campo) — limpa TODA mensagem, não só a que este turno cria: a
+ *     de ontem vira histórico hoje;
+ *  2. histórico que começa numa fala do agente — a Anthropic exige que a conversa
+ *     comece no usuário. Corta só o PREFIXO, nunca o miolo (senão separa
+ *     `tool_call` do `tool_result`, que precisam ficar adjacentes). */
+function historicoSeguro(msgs: BaseMessage[]): BaseMessage[] {
+	const limpas = msgs.map((m) => {
+		if (!Array.isArray(m.content)) return m;
+		const content = semBlocosDeThinkingIncompletos(m.content);
+		if (content === m.content) return m;
+		if (m.getType() === "ai") {
+			const ai = m as AIMessage;
+			return new AIMessage({ content, tool_calls: ai.tool_calls, id: ai.id });
+		}
+		return m;
+	});
+	return apartirDaPrimeiraFalaDoUsuario(limpas);
 }
 
 export function createConverseNode(model: BaseChatModel) {
@@ -199,23 +226,36 @@ export function createConverseNode(model: BaseChatModel) {
 		const valorDoBem =
 			state.funnel.qualifyAnswers.valorDoBemAlvo ?? state.funnel.qualifyAnswers.creditMax;
 		const jaAceitouEmbutido = state.funnel.qualifyAnswers.lanceEmbutido === true;
-		const blocoEmbutido = valorDoBem
-			? `Regra do lance embutido (fato, não opinião): o embutido sai DA PRÓPRIA CARTA, até ` +
-				`${pctEmbutido}% dela — então o crédito que o cliente recebe DIMINUI nessa proporção. ` +
-				`O bem que ele quer custa ${brl(valorDoBem)}. É por isso que a carta do tamanho do bem ` +
-				`NÃO serve pra quem vai usar embutido: ela deixaria só ` +
-				`${brl(Math.round(valorDoBem * (1 - pctEmbutido / 100)))} na mão dele. ` +
-				(jaAceitouEmbutido
-					? `Ele ACEITOU usar embutido, então o sistema foi buscar GRUPOS DE VALOR MAIOR — cartas ` +
-						`em torno de ${brl(Math.round(valorDoBem / (1 - pctEmbutido / 100)))} — pra que, depois ` +
-						`do embutido, sobrem os ${brl(valorDoBem)} que ele precisa. As ofertas na tela já são ` +
-						`dessa faixa nova: fale delas, não da carta antiga.`
-					: `A saída de um vendedor bom é procurar grupos de carta MAIOR, em torno de ` +
-						`${brl(Math.round(valorDoBem / (1 - pctEmbutido / 100)))}, e deixar o embutido encolher ` +
-						`aquilo até os ${brl(valorDoBem)} que ele precisa — nunca cortar o crédito da carta que ` +
-						`ele já escolheu. Se ele topar, o sistema busca esses grupos maiores automaticamente.`) +
-				` Use esses números quando o assunto for lance/embutido; nunca invente outros.`
-			: null;
+		// Este bloco entra SÓ quando o lance está em jogo. Ele estava sendo injetado
+		// em todo turno pós-valor, e um contexto que explica embutido em detalhe é um
+		// convite pro modelo puxar o assunto: o cliente respondia "sem pressa, quero
+		// menor parcela" e no turno seguinte ouvia "quer que eu te explique o lance
+		// embutido?" — justamente o que ele acabou de dispensar. A ordem do funil é
+		// código (`nextGate`), mas o CONTEXTO também precisa respeitá-la.
+		const lanceEstaEmJogo =
+			gateAtivo === "lance" ||
+			gateAtivo === "lance-value" ||
+			gateAtivo === "lance-embutido" ||
+			querAntecipar(state.funnel.qualifyAnswers) ||
+			/\blance|embutid|antecip|contempla[çc]/i.test(state.userText ?? "");
+		const blocoEmbutido =
+			valorDoBem && lanceEstaEmJogo
+				? `Regra do lance embutido (fato, não opinião): o embutido sai DA PRÓPRIA CARTA, até ` +
+					`${pctEmbutido}% dela — então o crédito que o cliente recebe DIMINUI nessa proporção. ` +
+					`O bem que ele quer custa ${brl(valorDoBem)}. É por isso que a carta do tamanho do bem ` +
+					`NÃO serve pra quem vai usar embutido: ela deixaria só ` +
+					`${brl(Math.round(valorDoBem * (1 - pctEmbutido / 100)))} na mão dele. ` +
+					(jaAceitouEmbutido
+						? `Ele ACEITOU usar embutido, então o sistema foi buscar GRUPOS DE VALOR MAIOR — cartas ` +
+							`em torno de ${brl(Math.round(valorDoBem / (1 - pctEmbutido / 100)))} — pra que, depois ` +
+							`do embutido, sobrem os ${brl(valorDoBem)} que ele precisa. As ofertas na tela já são ` +
+							`dessa faixa nova: fale delas, não da carta antiga.`
+						: `A saída de um vendedor bom é procurar grupos de carta MAIOR, em torno de ` +
+							`${brl(Math.round(valorDoBem / (1 - pctEmbutido / 100)))}, e deixar o embutido encolher ` +
+							`aquilo até os ${brl(valorDoBem)} que ele precisa — nunca cortar o crédito da carta que ` +
+							`ele já escolheu. Se ele topar, o sistema busca esses grupos maiores automaticamente.`) +
+					` Use esses números quando o assunto for lance/embutido; nunca invente outros.`
+				: null;
 
 		// A busca já rodou (nó `discovery`, agora ANTES deste) — os cards com as
 		// ofertas REAIS já estão montados. Sem este bloco o modelo não sabia disso e
@@ -230,21 +270,41 @@ export function createConverseNode(model: BaseChatModel) {
 		// comparação não existia no contexto dele, só no card. Um vendedor faz essa
 		// conta na hora e é ela que abre o embutido de forma natural. Comparação
 		// numérica é invariante → nasce aqui; a fala continua sendo dele.
-		const lanceDele = state.funnel.qualifyAnswers.lanceValue;
+		const lanceDele = state.funnel.qualifyAnswers.lanceValue ?? 0;
 		const lanceMedio = oferta?.avgBidValue;
+		// O embutido É lance: sai da própria carta e entra na disputa junto com o
+		// dinheiro do bolso. Comparar só o que o cliente tem guardado contra o lance
+		// médio subestimava a posição dele e, pior, deixava o agente vender
+		// "contemplação rápida" sem saber se a conta fecha. Só conta quando ele
+		// ACEITOU usar embutido — antes disso é hipótese, não recurso.
+		const embutidoDisponivel =
+			state.funnel.qualifyAnswers.lanceEmbutido === true && oferta?.creditValue
+				? Math.round(oferta.creditValue * (pctEmbutido / 100))
+				: 0;
+		const lanceTotal = lanceDele + embutidoDisponivel;
 		const blocoLance =
-			lanceDele && lanceMedio
-				? lanceDele >= lanceMedio
-					? `O lance que ele tem (${brl(lanceDele)}) JÁ ALCANÇA o lance médio desse grupo ` +
-						`(${brl(lanceMedio)}). Diga isso com clareza — é a posição dele, não uma promessa de ` +
-						`contemplação, que ninguém pode garantir.`
-					: `ATENÇÃO, o fato mais importante deste momento: o lance que ele tem ` +
-						`(${brl(lanceDele)}) NÃO alcança o lance médio desse grupo (${brl(lanceMedio)}) — ` +
-						`faltam ${brl(lanceMedio - lanceDele)}. Não elogie o valor dele e siga em frente como ` +
-						`se estivesse resolvido: diga onde ele está, sem drama, e mostre a saída — é ` +
-						`exatamente para isso que existe o lance embutido, que completa a diferença usando ` +
-						`parte da própria carta, sem ele tirar mais nada do bolso. Nunca prometa ` +
-						`contemplação: lance médio é posição, não garantia.`
+			lanceTotal > 0 && lanceMedio
+				? lanceTotal >= lanceMedio
+					? `O lance dele ALCANÇA o lance médio desse grupo (${brl(lanceMedio)}): ` +
+						(embutidoDisponivel > 0
+							? `${brl(lanceDele)} do bolso + ${brl(embutidoDisponivel)} de embutido = ` +
+								`${brl(lanceTotal)}. `
+							: `${brl(lanceTotal)}. `) +
+						`Diga isso com clareza — é a posição dele, não uma promessa de contemplação, que ` +
+						`ninguém pode garantir.`
+					: `ATENÇÃO, o fato mais importante deste momento: o lance dele NÃO alcança o lance ` +
+						`médio desse grupo (${brl(lanceMedio)}). ` +
+						(embutidoDisponivel > 0
+							? `Somando tudo — ${brl(lanceDele)} do bolso + ${brl(embutidoDisponivel)} de ` +
+								`embutido — dá ${brl(lanceTotal)}, e ainda faltam ${brl(lanceMedio - lanceTotal)}. ` +
+								`Diga isso com todas as letras, mesmo sendo desconfortável: é PROIBIDO vender ` +
+								`contemplação rápida quando a conta não fecha. Ofereça as saídas reais — juntar ` +
+								`a diferença, mirar um prazo maior, ou olhar um grupo com lance médio menor.`
+							: `Faltam ${brl(lanceMedio - lanceTotal)}. Não elogie o valor dele e siga em ` +
+								`frente como se estivesse resolvido: diga onde ele está, sem drama, e mostre a ` +
+								`saída — é exatamente para isso que existe o lance embutido, que completa a ` +
+								`diferença usando parte da própria carta, sem ele tirar mais nada do bolso.`) +
+						` Nunca prometa contemplação: lance médio é posição, não garantia.`
 				: null;
 
 		// Basta a oferta EXISTIR no estado — a busca já rodou em ALGUM turno. Antes
@@ -270,13 +330,55 @@ export function createConverseNode(model: BaseChatModel) {
 					`${brl(oferta.creditValue)}, parcela de ${brl(oferta.monthlyPayment)} em ` +
 					`${oferta.termMonths} meses. Apresente como um vendedor de consórcio experiente: ` +
 					`diga o que encontrou, aponte o que chama atenção nesses números e por quê. ` +
-					`NUNCA diga que vai buscar ou que "já já traz" — a busca já aconteceu.`
+					`NUNCA diga que vai buscar ou que "já já traz" — a busca já aconteceu.` +
+					(oferta.groupId
+						? ` Pra simular ESSA cota você NÃO precisa de nada do cliente: o identificador ` +
+							`dela é ${oferta.groupId} — chame \`simulate_quota\` com ele e traga os números. ` +
+							`É PROIBIDO pedir pro cliente "tocar", "clicar" ou "selecionar" um card pra você ` +
+							`conseguir seguir: quem faz o trabalho é você, nunca ele. Também nunca diga que ` +
+							`trouxe um card se você não chamou a ferramenta que o desenha.`
+						: "")
 				: null;
+		// ── PRIMEIRA VEZ: a pergunta que não pode morrer sem resposta ──
+		// O funil pergunta "já fez consórcio antes?", o cliente responde "é a
+		// primeira vez"… e o agente seguia direto pra pergunta seguinte. Coletar
+		// e não usar é o comportamento de formulário que este produto combateu.
+		// Só no turno em que a resposta CHEGA (o gate já resolveu, mas a fala
+		// ainda não aconteceu) — depois disso o assunto não volta.
+		// Guiado por FLAG, não por "aconteceu neste turno": amarrar no turno exato
+		// era frágil (quando o `converse` roda, o `route` já avançou o gate) e, se
+		// o modelo ignorasse a instrução uma vez, a explicação sumia pra sempre. Com
+		// a flag, ela insiste até acontecer — e acontece uma vez só.
+		const deveExplicarComoFunciona =
+			state.funnel.experiencePrev === "first" && !state.funnel.explicouComoFunciona;
+		const blocoNovato = deveExplicarComoFunciona
+			? `Ele acabou de dizer que é a PRIMEIRA VEZ dele com consórcio. Antes de seguir pro ` +
+				`próximo passo, explique o mecanismo em 2 ou 3 frases suas, sem jargão: entra num grupo, ` +
+				`paga a parcela (sem juros, só a taxa da administradora), e todo mês alguém é contemplado ` +
+				`— por sorteio ou por lance —, recebendo a carta pra comprar à vista. Só DEPOIS disso ` +
+				`emende a próxima pergunta. Não diga "te explico no caminho": explique agora.`
+			: null;
+
+		// ── O CANAL NÃO TEM TELA ──
+		// No WhatsApp não existe card, botão nem "aqui em cima": tudo é mensagem.
+		// O agente dizia "das opções que você viu na tela" e "aqui na minha tela
+		// preciso que você confirme", e o cliente não tinha tela nenhuma.
+		const blocoCanal =
+			state.channel === "whatsapp"
+				? `Vocês estão conversando pelo WHATSAPP: não existe tela, card, botão nem "aqui em cima". ` +
+					`É PROIBIDO dizer "na tela", "no card", "clica em", "aqui na minha tela" ou pedir que ele ` +
+					`role/toque em algo — fale como quem fala ao telefone. Isso é só sobre COMO você escreve; ` +
+					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas.`
+				: null;
+
 		const montarSystem = (conducao: string | null) =>
 			new SystemMessage({
 				content: [
 					cacheableSystemBlock(leanSystemPrompt()),
+					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
+					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
 					...(blocoLance ? [{ type: "text" as const, text: blocoLance }] : []),
 					...(blocoEmbutido ? [{ type: "text" as const, text: blocoEmbutido }] : []),
 					...(conducao ? [{ type: "text" as const, text: conducao }] : []),
@@ -316,6 +418,25 @@ export function createConverseNode(model: BaseChatModel) {
 					}`,
 				);
 		const newMessages: BaseMessage[] = [turnMessage];
+		// ── FECHAMENTO: o que acontece DEPOIS que o cliente confirma ──
+		// A adesão na administradora é feita por um atendente humano, e o canal do
+		// contato muda conforme onde a conversa aconteceu. São fatos operacionais
+		// (quem faz, por onde, qual número) — viram contexto; a fala continua dele.
+		const blocoFechamento = state.baseMeta.contractClosed
+			? `O fechamento JÁ está feito, e o sistema JÁ mostrou na tela os cards do fecho: a ` +
+				`proposta em PDF e ` +
+				(state.channel === "whatsapp"
+					? `o aviso de que um atendente da Aja Agora vai chamar por este mesmo número pra fazer ` +
+						`a ADESÃO na ${state.funnel.recommendedAdministradora ?? "administradora escolhida"}.`
+					: `o card com o botão do WhatsApp oficial, por onde um atendente da Aja Agora vai ` +
+						`continuar com ele pra fazer a ADESÃO na ` +
+						`${state.funnel.recommendedAdministradora ?? "administradora escolhida"}.`) +
+				` Você NÃO precisa repetir nada disso: não escreva o número de telefone, não peça pra ` +
+				`ele clicar em botão nenhum e não liste os próximos passos de novo. Se ele falar com ` +
+				`você, responda o que ele perguntar, com naturalidade. Nunca prometa prazo de ` +
+				`contemplação nem diga que a cota está reservada.`
+			: null;
+
 		const systemBeat1 = montarSystem(
 			revealEmDoisTempos
 				? `Esta MENSAGEM é só a apresentação. ${
@@ -332,7 +453,11 @@ export function createConverseNode(model: BaseChatModel) {
 						`Seja breve.`
 				: gateContextText,
 		);
-		let loopMessages: BaseMessage[] = [systemBeat1, ...state.messages, turnMessage];
+		let loopMessages: BaseMessage[] = [
+			systemBeat1,
+			...historicoSeguro(state.messages),
+			turnMessage,
+		];
 
 		// O filtro PRECISA do contexto de fatos. Sem ele, TODOS os guards de
 		// verdade retornam cedo (`if (!ctx) return false`): o agente podia dizer
@@ -373,110 +498,115 @@ export function createConverseNode(model: BaseChatModel) {
 		 * mesma máquina do turno inteiro — o reveal só a executa duas vezes, com
 		 * contextos diferentes. */
 		const executarBeat = async (comTools = true) => {
-		for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
-			// O segundo beat do reveal é UMA pergunta curta — não precisa de tool
-			// nenhuma. Mandar o toolset inteiro ali dobrava o custo do turno à toa:
-			// os turnos de reveal chegaram a 53s ao vivo, tempo em que o cliente vê
-			// tela parada e acha que o agente morreu. Sem tools o modelo também não
-			// tem como se distrair chamando algo no meio da pergunta.
-			const stream = await (comTools ? boundModel : model).stream(loopMessages);
-			let merged: AIMessageChunk | undefined;
-			for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
-				merged = merged ? merged.concat(chunk) : chunk;
-				// FIX — achado na validação ao vivo (Kairo, gateway real): o
-				// `ChatAnthropic` streama `content` como ARRAY de blocos
-				// (`[{type:"text",text}]`), não string. `typeof chunk.content
-				// === "string"` sempre falhava contra o modelo REAL (só passava
-				// nos testes, que usam `FakeStreamingChatModel` com content
-				// string) — turno inteiro engolido, virava
-				// empty-turn-fallback. `chunk.text` (getter nativo do
-				// LangChain, base.js) trata os dois formatos.
-				const delta = chunk.text;
-				if (!delta) continue;
-				const clean = filter.push(delta);
-				if (clean) {
-					const ev: TurnEvent = { type: "text-delta", text: clean };
-					config.writer?.(ev);
-					events.push(ev);
-				}
-			}
-			if (!merged) break;
-			// Telemetria de CACHE. O `usage` só era emitido no runtime Vercel, então
-			// no LangGraph o trace registrava `cacheRead: null` em todo turno — e
-			// isso foi lido (por mim, inclusive) como "o cache não está pegando",
-			// quando na verdade ninguém estava medindo. Agora o número é o número.
-			const uso = merged.usage_metadata?.input_token_details;
-			if (uso) {
-				config.writer?.({
-					type: "usage",
-					cacheRead: typeof uso.cache_read === "number" ? uso.cache_read : null,
-					cacheWrite: typeof uso.cache_creation === "number" ? uso.cache_creation : null,
-				});
-			}
-			const aiMessage = new AIMessage({
-				content: semBlocosDeThinkingIncompletos(merged.content),
-				tool_calls: merged.tool_calls,
-			});
-			loopMessages = [...loopMessages, aiMessage];
-			newMessages.push(aiMessage);
-
-			if (!aiMessage.tool_calls || aiMessage.tool_calls.length === 0) break;
-
-			for (const call of aiMessage.tool_calls) {
-				const ev: TurnEvent = {
-					type: "tool-call",
-					toolName: call.name,
-					input: call.args,
-					toolCallId: call.id ?? crypto.randomUUID(),
-				};
-				config.writer?.(ev);
-				events.push(ev);
-
-				// Tool de apresentação → CARD. O payload é o INPUT da tool (mesma
-				// convenção do runtime Vercel, `artifactTypeFor` em runner.ts:206):
-				// a tool valida os números, o artifact desenha. Sem isto o modelo
-				// chamava a tool, ela executava, e nada aparecia na tela.
-				if (PRESENTATION_TOOLS.has(call.name)) {
-					const artifactType = call.name.replace("present_", "") as ArtifactType;
-					const guardCtx: GuardContext = {
-						meta: projectToMeta(state),
-						userIntent: state.intent ?? "neutral",
-						isUserTurn: state.isUserTurn,
-						channel: state.channel,
-						discoveryCount: null,
-						conversationId: state.conversationId,
-						turnArtifactTypes: events
-							.filter((e): e is Extract<TurnEvent, { type: "artifact" }> => e.type === "artifact")
-							.map((e) => e.artifactType),
-						// Simulação rodada NESTE turno = conteúdo novo (o usuário escolheu
-						// um grupo), não re-reveal. Sem isso o guard `reveal-loop` engolia
-						// o card sempre que o intent saía `neutral` (ex.: o cliente digita
-						// só "ITAÚ") e o agente falava de uma simulação inexistente.
-						freshSimulationThisTurn: events.some(
-							(e) => e.type === "tool-call" && e.toolName === "simulate_quota",
-						),
-					};
-					if (artifactAllowed(guardCtx, artifactType)) {
-						events.push({ type: "text-boundary" });
-						events.push({
-							type: "artifact",
-							artifactType,
-							payload: call.args,
-							toolCallId: call.id ?? crypto.randomUUID(),
-						});
+			for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
+				// O segundo beat do reveal é UMA pergunta curta — não precisa de tool
+				// nenhuma. Mandar o toolset inteiro ali dobrava o custo do turno à toa:
+				// os turnos de reveal chegaram a 53s ao vivo, tempo em que o cliente vê
+				// tela parada e acha que o agente morreu. Sem tools o modelo também não
+				// tem como se distrair chamando algo no meio da pergunta.
+				const stream = await (comTools ? boundModel : model).stream(loopMessages);
+				let merged: AIMessageChunk | undefined;
+				for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
+					merged = merged ? merged.concat(chunk) : chunk;
+					// FIX — achado na validação ao vivo (Kairo, gateway real): o
+					// `ChatAnthropic` streama `content` como ARRAY de blocos
+					// (`[{type:"text",text}]`), não string. `typeof chunk.content
+					// === "string"` sempre falhava contra o modelo REAL (só passava
+					// nos testes, que usam `FakeStreamingChatModel` com content
+					// string) — turno inteiro engolido, virava
+					// empty-turn-fallback. `chunk.text` (getter nativo do
+					// LangChain, base.js) trata os dois formatos.
+					const delta = chunk.text;
+					if (!delta) continue;
+					const clean = filter.push(delta);
+					if (clean) {
+						const ev: TurnEvent = { type: "text-delta", text: clean };
+						config.writer?.(ev);
+						events.push(ev);
 					}
 				}
+				if (!merged) break;
+				// Telemetria de CACHE. O `usage` só era emitido no runtime Vercel, então
+				// no LangGraph o trace registrava `cacheRead: null` em todo turno — e
+				// isso foi lido (por mim, inclusive) como "o cache não está pegando",
+				// quando na verdade ninguém estava medindo. Agora o número é o número.
+				const uso = merged.usage_metadata?.input_token_details;
+				if (uso) {
+					config.writer?.({
+						type: "usage",
+						cacheRead: typeof uso.cache_read === "number" ? uso.cache_read : null,
+						cacheWrite: typeof uso.cache_creation === "number" ? uso.cache_creation : null,
+					});
+				}
+				const aiMessage = new AIMessage({
+					content: semBlocosDeThinkingIncompletos(merged.content),
+					tool_calls: merged.tool_calls,
+				});
+				loopMessages = [...loopMessages, aiMessage];
+				newMessages.push(aiMessage);
+
+				if (!aiMessage.tool_calls || aiMessage.tool_calls.length === 0) break;
+
+				for (const call of aiMessage.tool_calls) {
+					const ev: TurnEvent = {
+						type: "tool-call",
+						toolName: call.name,
+						input: call.args,
+						toolCallId: call.id ?? crypto.randomUUID(),
+					};
+					config.writer?.(ev);
+					events.push(ev);
+
+					// Tool de apresentação → CARD. O payload é o INPUT da tool (mesma
+					// convenção do runtime Vercel, `artifactTypeFor` em runner.ts:206):
+					// a tool valida os números, o artifact desenha. Sem isto o modelo
+					// chamava a tool, ela executava, e nada aparecia na tela.
+					if (PRESENTATION_TOOLS.has(call.name)) {
+						const artifactType = call.name.replace("present_", "") as ArtifactType;
+						const guardCtx: GuardContext = {
+							meta: projectToMeta(state),
+							userIntent: state.intent ?? "neutral",
+							isUserTurn: state.isUserTurn,
+							channel: state.channel,
+							discoveryCount: null,
+							conversationId: state.conversationId,
+							turnArtifactTypes: events
+								.filter((e): e is Extract<TurnEvent, { type: "artifact" }> => e.type === "artifact")
+								.map((e) => e.artifactType),
+							// Simulação rodada NESTE turno = conteúdo novo (o usuário escolheu
+							// um grupo), não re-reveal. Sem isso o guard `reveal-loop` engolia
+							// o card sempre que o intent saía `neutral` (ex.: o cliente digita
+							// só "ITAÚ") e o agente falava de uma simulação inexistente.
+							freshSimulationThisTurn: events.some(
+								(e) => e.type === "tool-call" && e.toolName === "simulate_quota",
+							),
+						};
+						if (artifactAllowed(guardCtx, artifactType)) {
+							events.push({ type: "text-boundary" });
+							events.push({
+								type: "artifact",
+								artifactType,
+								payload: call.args,
+								toolCallId: call.id ?? crypto.randomUUID(),
+							});
+						}
+					}
+				}
+				// ToolNode NUNCA lança em tool desconhecida — devolve ToolMessage de
+				// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
+				// desta fundação (crítico ALTA-2): o toolset what-if é fechado e
+				// pequeno, mas mesmo uma alucinação de nome de tool não derruba o turno.
+				const { messages: toolMessages } = await toolNode.invoke({ messages: [aiMessage] });
+				loopMessages = [...loopMessages, ...toolMessages];
+				newMessages.push(...toolMessages);
 			}
-			// ToolNode NUNCA lança em tool desconhecida — devolve ToolMessage de
-			// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
-			// desta fundação (crítico ALTA-2): o toolset what-if é fechado e
-			// pequeno, mas mesmo uma alucinação de nome de tool não derruba o turno.
-			const { messages: toolMessages } = await toolNode.invoke({ messages: [aiMessage] });
-			loopMessages = [...loopMessages, ...toolMessages];
-			newMessages.push(...toolMessages);
-		}
 		};
 
+		// No reveal em dois tempos, o PRIMEIRO beat só apresenta — nenhuma pergunta
+		// pode sair nele (ela é o segundo balão, depois dos cards). Como a pergunta
+		// agora sai na ORDEM em que o modelo escreve (e não guardada pro fim), o
+		// bloqueio precisa estar ligado ANTES do beat, não depois.
+		if (revealEmDoisTempos) filter.descartarPerguntaSegurada();
 		await executarBeat();
 
 		const streamedArtifactIds: string[] = [];
@@ -497,7 +627,6 @@ export function createConverseNode(model: BaseChatModel) {
 				config.writer?.(ev);
 				events.push(ev);
 			}
-			filter.descartarPerguntaSegurada();
 			config.writer?.({ type: "text-boundary" });
 			events.push({ type: "text-boundary" });
 			for (const ev of state.events) {
@@ -513,6 +642,8 @@ export function createConverseNode(model: BaseChatModel) {
 				"[instrução do sistema — o cliente NÃO vê este texto, não o repita] Siga para a " +
 					"pergunta, em mensagem separada.",
 			);
+			// Segundo balão: aqui a pergunta é justamente o ponto.
+			filter.liberarPerguntas();
 			newMessages.push(deixaDoSegundoBeat);
 			loopMessages = [
 				montarSystem(
@@ -543,7 +674,15 @@ export function createConverseNode(model: BaseChatModel) {
 			events.push(ev);
 		}
 
-		return { messages: newMessages, events, modelAskedQuestion, streamedArtifactIds };
+		return {
+			messages: newMessages,
+			events,
+			modelAskedQuestion,
+			streamedArtifactIds,
+			...(deveExplicarComoFunciona
+				? { funnel: { ...state.funnel, explicouComoFunciona: true } }
+				: {}),
+		};
 	};
 }
 
