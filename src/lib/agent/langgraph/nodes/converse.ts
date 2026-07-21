@@ -120,6 +120,26 @@ function buildGateContextText(gate: string | undefined, temCard: boolean): strin
 	);
 }
 
+/** Remove blocos `thinking`/`redacted_thinking` que o acúmulo do streaming
+ * deixou pela metade. O `concat` dos chunks pode produzir um bloco com o tipo
+ * mas SEM o campo `thinking` preenchido; ao reenviar esse histórico no turno
+ * seguinte a Anthropic devolve `400 messages.N.content.0.thinking.thinking:
+ * Field required` e a conversa inteira morre — de um turno pro outro, sem nada
+ * ter mudado na jornada. Bloco de raciocínio não é fala nem ferramenta: nada do
+ * que o cliente vê depende dele, então descartar o pela-metade é seguro. */
+function semBlocosDeThinkingIncompletos<T>(content: T): T {
+	if (!Array.isArray(content)) return content;
+	const limpo = content.filter((bloco) => {
+		if (!bloco || typeof bloco !== "object") return true;
+		const b = bloco as { type?: string; thinking?: unknown; data?: unknown };
+		if (b.type === "thinking") return typeof b.thinking === "string" && b.thinking.length > 0;
+		if (b.type === "redacted_thinking") return typeof b.data === "string" && b.data.length > 0;
+		return true;
+	});
+	// Content vazio também é 400 ("all messages must have non-empty content").
+	return (limpo.length > 0 ? limpo : content) as T;
+}
+
 export function createConverseNode(model: BaseChatModel) {
 	return async function converseNode(
 		state: AgentGraphStateType,
@@ -393,7 +413,10 @@ export function createConverseNode(model: BaseChatModel) {
 					cacheWrite: typeof uso.cache_creation === "number" ? uso.cache_creation : null,
 				});
 			}
-			const aiMessage = new AIMessage({ content: merged.content, tool_calls: merged.tool_calls });
+			const aiMessage = new AIMessage({
+				content: semBlocosDeThinkingIncompletos(merged.content),
+				tool_calls: merged.tool_calls,
+			});
 			loopMessages = [...loopMessages, aiMessage];
 			newMessages.push(aiMessage);
 

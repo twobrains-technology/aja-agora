@@ -122,10 +122,19 @@ export async function analyzeAndMerge(
 	// (validação ao vivo, 2026-07-21). Só o ANALYZER pode corrigir (ele lê o
 	// contexto da frase); o backstop de parse segue restrito à coleta inicial,
 	// pra número solto no meio de uma dúvida não virar valor do bem.
+	// Nos gates de LANCE, todo número que o cliente fala é o LANCE dele — não o
+	// preço do bem. Sem este corte, "só tenho 100k" (resposta a "você teria como
+	// dar um lance?") reescrevia o valor da carta pra R$ 100.000, re-disparava a
+	// busca nessa faixa e o card ainda avisava "você pediu ~R$ 260.000, a carta
+	// real ficou em R$ 100.000". A correção de valor existe pro cliente consertar
+	// o PREÇO DO BEM ("na verdade é 260k"), e isso acontece fora da conversa de
+	// lance.
+	const GATES_DE_LANCE = new Set(["lance", "lance-value", "lance-embutido"]);
 	const isCorrecaoDoValor =
 		q.creditMax !== undefined &&
 		analysis.creditMax !== null &&
-		analysis.creditMax !== lastRequested;
+		analysis.creditMax !== lastRequested &&
+		!GATES_DE_LANCE.has(activeGateAtTurnStart);
 	// FIX-115 (PROD 2026-06-30): backstop DETERMINÍSTICO do valor do bem. O valor é
 	// coletado por conversa (FIX-104) e depende do analyzer LLM extrair o creditMax
 	// — que cai em NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem
