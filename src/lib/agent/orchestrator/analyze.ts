@@ -301,7 +301,18 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	if (analysis.fgtsValue !== null && q.fgtsValue === undefined) {
+	// FGTS só existe se o cliente FALAR "FGTS". O prompt do analyzer já pede
+	// exatamente isso, e mesmo assim ele preencheu R$ 40.000 de FGTS pra uma
+	// cliente que disse "tenho 40 mil de reserva" — a palavra FGTS não aparece uma
+	// única vez na conversa dela. E FGTS não é dinheiro qualquer: tem regra própria
+	// (uso restrito, liberação pela administradora, só imóvel residencial). Anotar
+	// poupança livre como FGTS produz uma simulação de lance que ela NÃO CONSEGUE
+	// executar — e o agente devolve o número pra ela como se fosse dinheiro na mão.
+	//
+	// A palavra está no texto ou não está: invariante verificável é código, não
+	// instrução no prompt.
+	const falouFgts = /\bfgts\b/i.test(text ?? "");
+	if (analysis.fgtsValue !== null && q.fgtsValue === undefined && falouFgts) {
 		q.fgtsValue = analysis.fgtsValue;
 		meta.qualifyAnswers = q;
 		metaChanged = true;
