@@ -612,6 +612,19 @@ export function decideShowGate(args: {
 	// você recomendou" virava `providing_info`, o form não saía, e o agente ficava
 	// dando voltas perguntando de novo qual opção — visto ao vivo em 2026-07-21.
 	if (gate === "contract") {
+		// Com a ESCOLHA já registrada, perguntar "e agora, o que eu preciso fazer?"
+		// / "preciso assinar alguma coisa?" NÃO é dúvida que adia — é o pedido do
+		// formulário, e a resposta certa é mostrá-lo. Suprimir aí criou um
+		// deadlock: a cliente perguntou três vezes o que fazer, o agente respondeu
+		// "os próximos passos já vão aparecer pra você" e o card nunca vinha,
+		// porque a própria pergunta é que o bloqueava (visto ao vivo, 2026-07-21).
+		if (meta.escolha) {
+			return !(
+				intent === "expressing_doubt" ||
+				intent === "confused" ||
+				intent === "off_topic"
+			);
+		}
 		return !(
 			intent === "asking_question" ||
 			intent === "expressing_doubt" ||

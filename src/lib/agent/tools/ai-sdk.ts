@@ -363,6 +363,15 @@ const STATUS_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+/** Sem oferta ancorada não existe cenário: os números do simulador saem do
+ * grupo REAL (carta, prazo, parcela, lance médio). Nunca fabricar um cenário
+ * "de exemplo" — ele seria narrado ao cliente como se fosse a cota dele. */
+const SIMULACAO_SEM_OFERTA = {
+	error:
+		"[Sem oferta ancorada nesta conversa: não há grupo real de onde tirar carta, prazo e lance " +
+		"médio. Apresente uma opção real antes de simular cenário de contemplação.]",
+} as const;
+
 // FIX-332 (P0.1, veredito rodada 1 do loop desamarra-agente) — pós-reveal SEM
 // troca de faixa, search_groups/recommend_groups NÃO re-buscam a Bevi: devolvem
 // os grupos JÁ EXIBIDOS nesta conversa (mesma fonte de dado do
@@ -1536,6 +1545,155 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// proposalId NUNCA vem do modelo: resolve via getLatestBeviProposal
 	// (conversationId via closure). checkProposalStatus nunca lança — erros viram
 	// { ok:false, userMessage } honesto com log estruturado proprio.
+	// A CURVA DO CÁLCULO NÃO É DO MODELO.
+	//
+	// O schema conversacional aceitava `creditValue`, `termMonths`,
+	// `historicalWinningBidPct`, `referenceMonth` e `maxEmbutidoPct` vindos da
+	// LLM e despejava tudo cru no motor. Resultado: o MESMO mês-alvo respondia
+	// números diferentes conforme o turno — "pra contemplar no mês 17 o lance é
+	// 37%" e, dois turnos depois, "46%" pra exatamente a mesma carta. O lance
+	// necessário é propriedade do GRUPO e do mês, não da origem do dinheiro;
+	// tirar o embutido muda só a REPARTIÇÃO (quem paga), nunca o total.
+	//
+	// A web nunca teve esse problema porque `coerceDialPayload` descarta o que o
+	// modelo manda e reancora na oferta real. Aqui é a mesma regra: o modelo
+	// escolhe O QUE perguntar (o mês, e se entra embutido); os números vêm da
+	// oferta ancorada. Sem oferta, não se fabrica cenário.
+	const simulate_contemplation = tool({
+		description: consorcioTools.simulate_contemplation.description,
+		inputSchema: z.object({
+			targetMonth: z
+				.number()
+				.int()
+				.positive()
+				.describe("Mês-alvo de contemplação que o usuário quer simular"),
+			usarLanceEmbutido: z
+				.boolean()
+				.optional()
+				.describe(
+					"false quando o cliente RECUSOU lance embutido (quer usar só dinheiro próprio). Muda apenas a repartição do lance, nunca o total necessário.",
+				),
+		}),
+		execute: async (args: { targetMonth: number; usarLanceEmbutido?: boolean }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!offer?.creditValue || !offer.termMonths || !offer.monthlyPayment) {
+				return SIMULACAO_SEM_OFERTA;
+			}
+			return computeContemplationDial({
+				creditValue: offer.creditValue,
+				termMonths: offer.termMonths,
+				monthlyPayment: offer.monthlyPayment,
+				targetMonth: args.targetMonth,
+				// Fonte preferencial do motor (contemplation-dial.ts) — não era nem
+				// exposta no schema conversacional, então nunca chegava.
+				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
+				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
+				// O que ele declarou ter guardado entra antes de comer a carta.
+				...(meta?.qualifyAnswers?.lanceValue != null
+					? { ownCashAvailable: meta.qualifyAnswers.lanceValue }
+					: {}),
+			});
+		},
+	});
+
+	// "ESSA PARCELA NÃO CABE PRA MIM" PRECISA TER RESPOSTA.
+	//
+	// Faltava o caminho inteiro: uma cliente disse que R$ 4.384 pesava no
+	// orçamento, pediu algo perto de R$ 2.500, o agente reconheceu certo — e
+	// então não existia nada pra fazer. Cinco tentativas de recalcular, cinco
+	// falhas, handoff, venda perdida. E é o perfil mais comum: quem tem orçamento
+	// apertado é justamente quem mais precisa de consórcio.
+	//
+	// A conta é determinística e sai da cota REAL ancorada (parcela e crédito que
+	// a administradora devolveu): crédito-alvo = crédito × (parcela desejada ÷
+	// parcela atual). Nenhum número é inventado — isto só reposiciona a FAIXA DE
+	// BUSCA; quem devolve as cotas continua sendo a administradora, no nó de
+	// descoberta, que re-dispara sozinho ao ver o alvo novo.
+	const ajustar_por_parcela = tool({
+		description:
+			"Use quando o cliente disser que a parcela está alta e indicar quanto caberia por mês ('só consigo uns 2500', 'no máximo 1800'). Reposiciona a busca para cartas cuja parcela caiba nesse valor e devolve o novo crédito-alvo. NÃO invente o valor da nova carta: apresente o que a busca seguinte trouxer.",
+		inputSchema: z.object({
+			parcelaDesejada: z
+				.number()
+				.positive()
+				.describe("Quanto o cliente disse que consegue pagar por mês, em reais"),
+		}),
+		execute: async (args: { parcelaDesejada: number }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta, persistMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!meta || !offer?.creditValue || !offer.monthlyPayment) return SIMULACAO_SEM_OFERTA;
+			if (args.parcelaDesejada >= offer.monthlyPayment) {
+				return {
+					jaCabe: true,
+					parcelaAtual: offer.monthlyPayment,
+					mensagem:
+						"A parcela atual já está dentro do que ele falou — não há o que reduzir; siga com a cota atual.",
+				};
+			}
+			const creditoAlvo = Math.round(
+				offer.creditValue * (args.parcelaDesejada / offer.monthlyPayment),
+			);
+			await persistMeta(conversationId, {
+				...meta,
+				qualifyAnswers: {
+					...meta.qualifyAnswers,
+					creditMax: creditoAlvo,
+					creditMin: Math.round(creditoAlvo * 0.9),
+					// O bem continua sendo o que ele quer — some daqui pra não conflitar
+					// com a nova faixa, mas o agente deve avisar que a carta menor não
+					// cobre o bem inteiro (o contexto do turno seguinte cobra isso).
+					parcelaAlvo: args.parcelaDesejada,
+				},
+				// Zera o snapshot da última busca pra a descoberta rodar de novo na
+				// faixa nova (mesmo mecanismo do lance embutido).
+				discoveredCreditTarget: undefined,
+			});
+			return {
+				creditoAlvo,
+				parcelaDesejada: args.parcelaDesejada,
+				parcelaAtual: offer.monthlyPayment,
+				creditoAtual: offer.creditValue,
+				aviso:
+					"Busca reposicionada. As cartas reais dessa faixa vêm no próximo passo — não antecipe valores. Diga a ele que a carta menor cobre menos do bem, com o número exato quando a busca voltar.",
+			};
+		},
+	});
+
+	// Mesma ancoragem do `simulate_contemplation`: os cenários saem da oferta
+	// real, então o lance que o card mostra pro mês X é o MESMO que a conversa
+	// responde quando ele pergunta pelo mês X.
+	const compute_scenarios = tool({
+		description: consorcioTools.compute_scenarios.description,
+		inputSchema: z.object({
+			usarLanceEmbutido: z
+				.boolean()
+				.optional()
+				.describe("false quando o cliente recusou lance embutido"),
+		}),
+		execute: async (args: { usarLanceEmbutido?: boolean }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!offer?.creditValue || !offer.termMonths) return SIMULACAO_SEM_OFERTA;
+			return computeScenarios({
+				creditValue: offer.creditValue,
+				termMonths: offer.termMonths,
+				...(offer.monthlyPayment != null ? { monthlyPayment: offer.monthlyPayment } : {}),
+				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
+				...(meta?.qualifyAnswers?.lanceValue != null
+					? { ownCashAvailable: meta.qualifyAnswers.lanceValue }
+					: {}),
+				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
+			});
+		},
+	});
+
 	const check_proposal_status = tool({
 		description: consorcioTools.check_proposal_status.description,
 		inputSchema: z.object({}),
@@ -1569,5 +1727,11 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,
+		// Overrides — cenário de contemplação ancorado na oferta real (a LLM não
+		// calibra a curva; ver comentário na definição).
+		simulate_contemplation,
+		compute_scenarios,
+		// A resposta pra "essa parcela não cabe pra mim".
+		ajustar_por_parcela,
 	};
 }

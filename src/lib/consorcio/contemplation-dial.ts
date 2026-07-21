@@ -51,6 +51,15 @@ export interface ContemplationDialInput {
 	monthlyPayment?: number;
 	/** Teto do lance embutido aceito pelo grupo (default 30%). */
 	maxEmbutidoPct?: number;
+	/** Dinheiro que o cliente JÁ TEM pra dar de lance (R$). Quando informado, ele
+	 * é usado PRIMEIRO e o embutido cobre só o que faltar.
+	 *
+	 * Sem isto o embutido era sempre esgotado antes, mesmo pra quem tinha o
+	 * dinheiro na mão: um cliente com R$ 25 mil guardados recebia `ownCash: 0` e
+	 * via o crédito líquido cair de R$ 131.156 pra R$ 112.794 — a carta dele
+	 * sendo comida por um lance que ele podia pagar do bolso — enquanto o agente
+	 * dizia "você já tem os R$ 25 mil, então sobra folga". */
+	ownCashAvailable?: number;
 	/** FIX-225: taxa de administração (%, 0-100) — incide sobre a carta cheia,
 	 * inclusive o embutido que o cliente não recebe. Ausente no Trilho A
 	 * (D11: nunca fabricar) → `admSobreEmbutido` sai `undefined`. */
@@ -131,7 +140,18 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 
 	const mode: DialMode = requiredLancePct <= SORTEIO_THRESHOLD_PCT ? "sorteio" : "lance";
 
-	const embeddedBidPct = Math.min(requiredLancePct, maxEmbutido);
+	// O dinheiro do cliente entra PRIMEIRO; o embutido cobre só o que faltar —
+	// é o que um vendedor humano faria, e o que ele pede quando diz "não quero
+	// tirar nada da carta". Sem `ownCashAvailable` o comportamento é o antigo
+	// (embutido primeiro), que é o certo pra quem não declarou reserva nenhuma.
+	const bolsoDisponivelPct =
+		input.ownCashAvailable != null && carta > 0
+			? clamp((input.ownCashAvailable / carta) * 100, 0, requiredLancePct)
+			: null;
+	const embeddedBidPct =
+		bolsoDisponivelPct != null
+			? Math.min(requiredLancePct - bolsoDisponivelPct, maxEmbutido)
+			: Math.min(requiredLancePct, maxEmbutido);
 	const ownCashPct = Math.max(0, requiredLancePct - embeddedBidPct);
 
 	const embeddedBidValue = round2((carta * embeddedBidPct) / 100);

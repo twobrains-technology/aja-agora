@@ -98,9 +98,21 @@ export function decideConfirmStage(text: string): ContractCaptureResult {
 function isQuestion(text: string): boolean {
 	const s = (text ?? "").trim();
 	if (s.includes("?")) return true;
-	return /^(por\s?que|porqu[êe]|pq|qual|quais|quanto|quantos|quando|como|onde|quem|tem\s|teria|e\s+se|será|seria|d[áa]\s+pra|posso\s+saber)\b/i.test(
-		s,
-	);
+	if (
+		/^(por\s?que|porqu[êe]|pq|qual|quais|quanto|quantos|quando|como|onde|quem|tem\s|teria|e\s+se|será|seria|d[áa]\s+pra|posso\s+saber)\b/i.test(
+			s,
+		)
+	) {
+		return true;
+	}
+	// A interrogativa NO MEIO da frase contava como aceite, porque o teste só
+	// olhava o começo. "Pera, antes de fechar cadastro QUERO entender direito. E
+	// se eu quisesse contemplar no mês 20, QUANTO precisaria de lance?" bateu no
+	// `\bquero\b` do AFFIRM_RE e criou proposta real na administradora — consulta
+	// de bureau disparada por uma dúvida (visto ao vivo, 2026-07-21).
+	if (/\b(quanto|quantos|qual|quais|como fica|e\s+se|será que|seria)\b/i.test(s)) return true;
+	// Pedido explícito de PAUSA — quem diz "pera" está freando, não aceitando.
+	return /\b(pera[ií]?|espera|calma|antes de|só um|aguenta|segura)\b/i.test(s);
 }
 
 // Recusa tem prioridade sobre aceite — "quero ver outras" contém "quero".

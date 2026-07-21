@@ -24,7 +24,7 @@ import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
-import type { AgentGraphStateType } from "../state";
+import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
@@ -44,6 +44,9 @@ const WHAT_IF_TOOL_NAMES = [
 	// tool de apresentação era inalcançável na prática.
 	"compute_scenarios",
 	"simulate_contemplation",
+	// "essa parcela não cabe pra mim" → reposiciona a busca pra uma carta que
+	// caiba no bolso dele. Sem ela, a objeção de preço não tinha resposta.
+	"ajustar_por_parcela",
 	"check_proposal_status",
 	"suggest_handoff",
 	"save_contact_name",
@@ -174,6 +177,39 @@ function historicoSeguro(msgs: BaseMessage[]): BaseMessage[] {
 	return apartirDaPrimeiraFalaDoUsuario(limpas);
 }
 
+/** O CARD NÃO PODE CONTRADIZER A ESCOLHA DO CLIENTE.
+ *
+ * O payload do card é o input da tool, ou seja, escrito pelo modelo. Quando o
+ * cliente trocou de cota, o modelo às vezes narra a nova no texto e repete a
+ * ANTERIOR no card: um cliente escolheu a Canopus, leu "Canopus fechada em
+ * R$ 3.007/mês" e viu na tela um card do Itaú com R$ 6.873 (2026-07-21). O
+ * texto é do modelo, mas o número na tela é fato — e o fato está no estado.
+ *
+ * Só age quando há escolha REGISTRADA e o card fala de outra administradora;
+ * cards de comparação (que mostram várias de propósito) ficam de fora. */
+function coagirContraEscolha(
+	artifactType: string,
+	payload: Record<string, unknown>,
+	escolha: FunnelState["escolha"],
+): Record<string, unknown> {
+	if (!escolha?.administradora) return payload;
+	if (!["recommendation_card", "group_card", "simulation_result"].includes(artifactType)) {
+		return payload;
+	}
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+	const p = payload;
+	const doModelo = typeof p.administradora === "string" ? p.administradora : null;
+	if (!doModelo || doModelo.toUpperCase() === escolha.administradora.toUpperCase()) return payload;
+	return {
+		...p,
+		administradora: escolha.administradora,
+		...(escolha.creditValue != null ? { creditValue: escolha.creditValue } : {}),
+		...(escolha.monthlyPayment != null ? { monthlyPayment: escolha.monthlyPayment } : {}),
+		...(escolha.termMonths != null ? { termMonths: escolha.termMonths } : {}),
+		...(escolha.groupId ? { groupId: escolha.groupId } : {}),
+	};
+}
+
 export function createConverseNode(model: BaseChatModel) {
 	return async function converseNode(
 		state: AgentGraphStateType,
@@ -194,6 +230,10 @@ export function createConverseNode(model: BaseChatModel) {
 		);
 		const boundModel = model.bindTools ? model.bindTools(whatIfTools) : model;
 		const toolNode = new ToolNode(whatIfTools);
+		/** Preenchido quando o modelo chama `suggest_handoff` — vira estado no
+		 * retorno do nó, pra o encaminhamento existir de fato. Objeto (e não `let`)
+		 * porque a escrita acontece dentro da closure do beat. */
+		const handoffRef: { pedido: { reason: string } | null } = { pedido: null };
 
 		// Contexto do gate ATUAL (state.gate, calculado pelo `routeFinal` ANTES
 		// deste nó) vai como um BLOCO no MESMO system message (a Anthropic só
@@ -419,6 +459,44 @@ export function createConverseNode(model: BaseChatModel) {
 					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas.`
 				: null;
 
+		// ── O FORMULÁRIO ESTÁ ABERTO E ESPERANDO ELE ──
+		// No web a contratação se conclui com o cliente confirmando os dados no
+		// formulário (é ali que o consentimento acontece). Quando ele responde por
+		// texto — "pode confirmar sim" —, o modelo achava que estava feito e
+		// respondia "seus dados já estão confirmados no sistema, o pré-cadastro
+		// segue direto": afirmação de uma ação que NÃO aconteceu, e o cliente
+		// ficava esperando ("cadê o passo de contratação? não apareceu nada").
+		// Nunca dar por concluído o que depende dele; e nunca nomear botão (a
+		// mecânica da tela continua invisível).
+		const aguardandoConfirmacaoDoFormulario =
+			state.channel === "web" &&
+			state.funnel.contractFormDispatched === true &&
+			!state.baseMeta.contractClosed;
+		const blocoFormularioAberto = aguardandoConfirmacaoDoFormulario
+			? `A contratação está aberta AGUARDANDO A CONFIRMAÇÃO DELE — ela ainda NÃO aconteceu. É ` +
+				`PROIBIDO dizer que os dados "já estão confirmados", que o cadastro "seguiu" ou que o ` +
+				`próximo passo "vai aparecer": nada avança sem ele confirmar. Se ele disser que confirma, ` +
+				`peça com naturalidade que conclua a confirmação dos dados pra você seguir — sem nomear ` +
+				`botão, campo ou card, e sem dizer que já está feito.`
+			: null;
+
+		// ── A BUSCA NÃO TROUXE NADA ──
+		// O contexto só falava quando HAVIA oferta. Quando a administradora falhava
+		// (timeout, HTML no lugar de JSON — acontece), o modelo ficava sem
+		// informação nenhuma e preenchia o vazio com otimismo: anunciou "Encontrei
+		// ótimas opções aí na sua faixa de R$ 190 mil!" sem ter encontrado nada, e
+		// dois turnos depois teve que se desculpar ("ainda não te mostrei nada").
+		// Afirmar achado que não existe é a pior mentira possível numa venda.
+		const buscaJaTentada = state.funnel.searchDispatched === true;
+		const blocoBuscaVazia =
+			buscaJaTentada && !oferta
+				? `A busca de ofertas JÁ foi tentada nesta conversa e NÃO há nenhuma oferta ancorada agora ` +
+					`— nenhum card de oferta está na tela. É PROIBIDO dizer que encontrou opções, que "achei ` +
+					`ótimas opções", que elas "estão aí" ou pedir que ele escolha entre opções que ele não ` +
+					`viu. Se ele perguntar pelas opções, seja honesto: você ainda não tem os números pra ` +
+					`mostrar e está atrás deles. Nunca invente carta, parcela ou administradora.`
+				: null;
+
 		// ── A CARTA NÃO COBRE O BEM ──
 		// A carta real vem em denominações do grupo e quase nunca bate com o preço
 		// do bem. Quando ela vem MENOR, o cliente vai ter que tirar a diferença do
@@ -466,6 +544,10 @@ export function createConverseNode(model: BaseChatModel) {
 					cacheableSystemBlock(leanSystemPrompt()),
 					...(blocoIdentidade ? [{ type: "text" as const, text: blocoIdentidade }] : []),
 					...(blocoCartaMenor ? [{ type: "text" as const, text: blocoCartaMenor }] : []),
+					...(blocoBuscaVazia ? [{ type: "text" as const, text: blocoBuscaVazia }] : []),
+					...(blocoFormularioAberto
+						? [{ type: "text" as const, text: blocoFormularioAberto }]
+						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
@@ -650,6 +732,25 @@ export function createConverseNode(model: BaseChatModel) {
 					config.writer?.(ev);
 					events.push(ev);
 
+					// HANDOFF PROMETIDO TEM QUE ACONTECER.
+					// A tool estava no toolset mas o evento nunca era emitido neste
+					// runtime (o TODO em `emit.ts` admitia). O modelo chamava, dizia ao
+					// cliente "já encaminhei pra alguém te ajudar" — e ninguém era
+					// encaminhado: `handoff` seguia false no estado e a pessoa ficava
+					// esperando um atendente que nunca vinha (visto ao vivo, com uma
+					// cliente travada num recálculo que o sistema não conseguia fazer).
+					// Prometer atendimento e não abrir o chamado é pior que não oferecer.
+					if (call.name === "suggest_handoff") {
+						const motivo =
+							typeof (call.args as { reason?: unknown })?.reason === "string"
+								? ((call.args as { reason: string }).reason ?? "")
+								: "";
+						handoffRef.pedido = { reason: motivo };
+						const hv: TurnEvent = { type: "handoff", reason: motivo };
+						config.writer?.(hv);
+						events.push(hv);
+					}
+
 					// Tool de apresentação → CARD. O payload é o INPUT da tool (mesma
 					// convenção do runtime Vercel, `artifactTypeFor` em runner.ts:206):
 					// a tool valida os números, o artifact desenha. Sem isto o modelo
@@ -679,7 +780,7 @@ export function createConverseNode(model: BaseChatModel) {
 							events.push({
 								type: "artifact",
 								artifactType,
-								payload: call.args,
+								payload: coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
 								toolCallId: call.id ?? crypto.randomUUID(),
 							});
 						}
@@ -772,8 +873,16 @@ export function createConverseNode(model: BaseChatModel) {
 			events,
 			modelAskedQuestion,
 			streamedArtifactIds,
-			...(deveExplicarComoFunciona
-				? { funnel: { ...state.funnel, explicouComoFunciona: true } }
+			...(deveExplicarComoFunciona || handoffRef.pedido
+				? {
+						funnel: {
+							...state.funnel,
+							...(deveExplicarComoFunciona ? { explicouComoFunciona: true } : {}),
+							...(handoffRef.pedido
+								? { handoffSuggested: true, handoffReason: handoffRef.pedido.reason }
+								: {}),
+						},
+					}
 				: {}),
 		};
 	};

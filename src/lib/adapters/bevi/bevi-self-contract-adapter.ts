@@ -23,6 +23,7 @@ import { DuplicatedProposalError } from "./bevi-errors";
 import {
 	type BeviOffer,
 	beviOfferToGroupSummary,
+	ofertaEhCoerente,
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
 	categoryToBeviSegment,
@@ -178,7 +179,26 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		const offers = params.sweep
 			? await this.sweepOffers(segment, value, prefs.embeddedPercentage)
 			: await this.offersForValue(segment, value, prefs.embeddedPercentage);
-		return offers.map(beviOfferToGroupSummary);
+		// Oferta aritmeticamente impossível não chega ao cliente (ver
+		// `ofertaEhCoerente`): uma carta de R$ 190 mil com parcela que somava
+		// R$ 168 mil no total foi apresentada e defendida na conversa.
+		const coerentes = offers.filter((o) => {
+			if (ofertaEhCoerente(o)) return true;
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "bevi-offer-guard",
+					event: "oferta_incoerente_descartada",
+					quotaId: o.quotaId,
+					carta: o.finalValue,
+					parcela: o.importedInstallmentValue ?? o.installmentValue,
+					prazo: o.term,
+					totalPaid: o.totalPaid,
+				}),
+			);
+			return false;
+		});
+		return coerentes.map(beviOfferToGroupSummary);
 	}
 
 	async simulateQuota(params: SimulateQuotaParams): Promise<QuotaSimulation> {

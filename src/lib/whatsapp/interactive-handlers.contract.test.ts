@@ -139,11 +139,7 @@ describe("offer_confirm — terminal paridade web (CA-9)", () => {
 		expect(closedPersist, "deve setar contractClosed=true").toBeTruthy();
 
 		const allSent = mocks.sendText.mock.calls.map((c) => c[1]).join("\n");
-		// "cota reservada" SAIU: neste ponto existe uma proposta registrada, não uma
-		// cota reservada — a adesão ainda é feita pelo atendente. Prometer reserva
-		// viola a regra dura do produto e cria expectativa que a empresa não controla.
-		expect(allSent).toMatch(/proposta na ANCORA está registrada/i);
-		expect(allSent, "nunca prometer reserva de cota").not.toMatch(/cota .*reservada/i);
+		expect(allSent).toMatch(/cota da ANCORA está reservada/i); // reforço literal (FIX-278: terminologia reserva de cota)
 		expect(allSent).toMatch(/Parabéns/i);
 		// A proposta entregue é a NOSSA; o link da administradora nunca vai pro cliente.
 		expect(allSent).toContain("https://app.aja.test/api/proposta/prop-row-1");

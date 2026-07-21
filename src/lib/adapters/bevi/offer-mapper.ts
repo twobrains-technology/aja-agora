@@ -131,6 +131,36 @@ function parseBeviAcceptPercent(v: string | number | undefined | null): number |
 	return n <= 1 ? round2(n * 100) : round2(n);
 }
 
+/** A oferta é ARITMETICAMENTE POSSÍVEL?
+ *
+ * Num consórcio o cliente sempre paga MAIS que a carta (carta + taxa de
+ * administração + fundo de reserva). Uma oferta chegou com carta de R$ 190.000,
+ * parcela de R$ 759,98 e 222 meses: R$ 168.716 no total, 11% MENOS que a carta —
+ * e o `totalPaid` da própria oferta dizia R$ 264.796 (parcela coerente seria
+ * R$ 1.192,77). O número passou por todo o caminho e foi narrado a uma cliente,
+ * que quase fechou em cima dele.
+ *
+ * Nunca "corrige" o valor — inventar parcela é pior que descartar a oferta.
+ * Oferta incoerente sai do conjunto e o log registra, porque isso é problema da
+ * fonte e alguém precisa ver. Invariante verificável → código.
+ */
+export function ofertaEhCoerente(offer: BeviOffer): boolean {
+	const parcela = Number(offer.importedInstallmentValue ?? offer.installmentValue ?? 0);
+	const prazo = Number(offer.term ?? 0);
+	const carta = Number(offer.finalValue ?? 0);
+	if (!(parcela > 0) || !(prazo > 0) || !(carta > 0)) return false;
+	const totalPelaParcela = parcela * prazo;
+	if (totalPelaParcela <= carta) return false;
+	// Quando a oferta traz o total que ela mesma calcula, os dois têm que fechar.
+	// Tolerância larga (15%) de propósito: seguro/parcelas escalonadas variam.
+	const totalDaOferta = Number(offer.totalPaid ?? 0);
+	if (totalDaOferta > 0) {
+		const desvio = Math.abs(totalPelaParcela - totalDaOferta) / totalDaOferta;
+		if (desvio > 0.15) return false;
+	}
+	return true;
+}
+
 /** Oferta Bevi → GroupSummary (card de busca/comparação). */
 export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 	const category = beviSegmentToCategory(offer.productType ?? "");

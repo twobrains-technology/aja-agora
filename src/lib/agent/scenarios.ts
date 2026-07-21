@@ -10,9 +10,21 @@
  * em cada cenário (CDC art. 30/37).
  */
 
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
+
 export interface ScenarioInput {
 	creditValue: number;
 	termMonths: number;
+	/** Parcela da oferta real. Quando presente (junto com os demais dados do
+	 * grupo), o lance de cada cenário passa a sair do MESMO motor que o
+	 * simulador de contemplação usa — ver `computeScenarios`. */
+	monthlyPayment?: number;
+	/** Lance médio do grupo em R$ (fonte preferencial da curva). */
+	averageBid?: number;
+	/** Dinheiro que o cliente já tem pra lance. */
+	ownCashAvailable?: number;
+	/** Teto de embutido do grupo; 0 quando o cliente recusou embutido. */
+	maxEmbutidoPct?: number;
 }
 
 export interface Scenario {
@@ -43,6 +55,62 @@ export function computeScenarios(input: ScenarioInput): ScenariosResult {
 	const { creditValue, termMonths } = input;
 	const provavelMonths = Math.max(1, Math.ceil(termMonths * 0.6));
 	const aceleradoMonths = Math.max(1, Math.ceil(termMonths * 0.35));
+
+	// MESMO MÊS, MESMO LANCE — os dois caminhos falam o mesmo número.
+	//
+	// Estes cenários usavam percentuais cravados (20% no provável, 30% no
+	// acelerado) enquanto o simulador de contemplação calculava pela curva real
+	// do grupo. O cliente ouvia "pro mês 30 o lance é 20% (R$ 26.231)" e, no
+	// turno seguinte, "pro mês 30 o lance é 14% (R$ 18.361,84)" — mesma carta,
+	// mesmo mês, dois motores. Com os dados da oferta real na mão, o lance de
+	// cada cenário passa a sair do motor único; sem eles (chamador legado), o
+	// comportamento cravado continua valendo.
+	const doMotor = (targetMonth: number): { pct: number; lance: number; bolso: number } | null => {
+		if (!input.monthlyPayment) return null;
+		const d = computeContemplationDial({
+			creditValue,
+			termMonths,
+			monthlyPayment: input.monthlyPayment,
+			targetMonth,
+			...(input.averageBid != null ? { averageBid: input.averageBid } : {}),
+			...(input.ownCashAvailable != null ? { ownCashAvailable: input.ownCashAvailable } : {}),
+			...(input.maxEmbutidoPct != null ? { maxEmbutidoPct: input.maxEmbutidoPct } : {}),
+		});
+		return { pct: d.requiredLancePct, lance: d.requiredLanceValue, bolso: d.ownCashValue };
+	};
+	const provavel = doMotor(provavelMonths);
+	const acelerado = doMotor(aceleradoMonths);
+
+	if (provavel && acelerado) {
+		return {
+			conservador: {
+				lancePercent: 0,
+				lanceValue: 0,
+				ownResourcesValue: 0,
+				expectedTermMonths: termMonths,
+				strategy:
+					"Sem lance — contemplação por sorteio. Mais cauteloso, mas pode demorar até o fim do prazo.",
+				disclaimer: DISCLAIMER,
+			},
+			provavel: {
+				lancePercent: provavel.pct,
+				lanceValue: provavel.lance,
+				ownResourcesValue: provavel.bolso,
+				expectedTermMonths: provavelMonths,
+				strategy: `Lance de ${provavel.pct}% da carta — equilíbrio entre velocidade e custo inicial.`,
+				disclaimer: DISCLAIMER,
+			},
+			acelerado: {
+				lancePercent: acelerado.pct,
+				lanceValue: acelerado.lance,
+				ownResourcesValue: acelerado.bolso,
+				expectedTermMonths: aceleradoMonths,
+				strategy: `Lance de ${acelerado.pct}% da carta — maior chance de contemplar nos primeiros meses.`,
+				disclaimer: DISCLAIMER,
+			},
+		};
+	}
+
 	return {
 		conservador: {
 			lancePercent: 0,

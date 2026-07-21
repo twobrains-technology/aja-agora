@@ -488,9 +488,12 @@ function HandoffPrompt({ data }: { data: HandoffPartData }) {
 				<p className="text-xs font-medium leading-[1.5] text-foreground">
 					Pra esse caso, recomendo conversar direto com nosso consultor humano.
 				</p>
-				{data.reason && (
-					<p className="text-[11px] leading-[1.5] text-muted-foreground">Motivo: {data.reason}</p>
-				)}
+				{/* O `reason` é diagnóstico INTERNO, escrito pelo modelo pra quem vai
+				    assumir a conversa — e vazava cru na tela do cliente: "Motivo:
+				    Cliente confirmou fechamento e dados, mas a proposta não foi criada
+				    no sistema (check_proposal_status retornou sem proposta)". Nome de
+				    função interna na cara de quem está comprando. Quem precisa do
+				    motivo é o atendente, e ele o lê no painel. */}
 			</div>
 		</div>
 	);

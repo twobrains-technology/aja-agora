@@ -48,6 +48,11 @@ export type QualifyAnswers = {
 	 * embutido sai da própria carta, então a carta tem que comportar o bem + o
 	 * lance). Sem este campo o valor original se perdia na primeira re-busca. */
 	valorDoBemAlvo?: number;
+	/** Quanto o cliente disse que consegue pagar POR MÊS, quando reagiu à parcela
+	 * como alta. É o que reposiciona a faixa de busca pra uma carta que caiba no
+	 * bolso dele — antes disso, "essa parcela é pesada pra mim" não tinha
+	 * nenhuma resposta possível no produto e a venda simplesmente morria. */
+	parcelaAlvo?: number;
 	/** O card educativo do embutido já foi mostrado nesta conversa. Sem isto ele
 	 * reaparecia a cada turno em que o gate seguia sem resposta — na validação ao
 	 * vivo saíram dois cards idênticos empilhados. */

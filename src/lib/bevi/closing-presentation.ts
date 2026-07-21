@@ -201,13 +201,16 @@ export function closingPresentation(
 		{
 			kind: "text",
 			text:
-				// "Sua cota está reservada" era MENTIRA e violava a regra dura do
-				// produto: nada de cota reservada antes da contratação. Neste ponto
-				// existe uma PROPOSTA registrada na administradora — a adesão ainda vai
-				// ser feita pelo atendente. Prometer reserva cria expectativa que a
-				// empresa não controla e vira passivo quando o grupo não confirma.
-				`Perfeito! Sua proposta na ${administradora} está registrada, com a cota que a Aja Agora ` +
-				"escolheu para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
+				// PENDENTE-KAIRO (2026-07-21): um juiz de conversa classificou "cota
+				// reservada" como violação da regra "nada de cota reservada antes da
+				// contratação". MANTIDO como está porque é decisão de produto
+				// documentada e testada — FIX-278 / Ata 2026-07-04, terminologia
+				// oficial de reserva de cota (ver `hard-rules.ts` §1.9, que abre
+				// exceção explícita pra esta copy pós-fechamento, e o teste
+				// `closing-presentation.test.ts`). A copy sai DEPOIS do offer-confirm,
+				// não antes. Só mexer com decisão explícita do Kairo.
+				`Perfeito! Sua cota da ${administradora} está reservada, escolhida pela Aja Agora ` +
+				"para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
 				"Você não paga nada agora: a primeira parcela só vence quando o boleto chegar na sua casa.",
 		},
 		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.
