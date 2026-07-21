@@ -46,13 +46,14 @@ export function emitCardNode(state: AgentGraphStateType): Partial<AgentGraphStat
 	};
 
 	if (state.gate) {
-		// TODO(rodada-2): `modelAsked` real — precisa saber se a fala do
-		// `converse` deste turno já fez a pergunta do gate (heurística do
-		// runner Vercel, `discardHeldQuestion`/ADR revoga-jornada-soberana).
-		// Sempre `false` — o adapter web/WhatsApp então injeta a pergunta
-		// canônica (`gateQuestion`) junto do card, comportamento seguro (nunca
-		// cala a pergunta), só não-otimizado ainda.
-		events.push({ type: "gate", gate: state.gate, modelAsked: false });
+		// `modelAsked`: o `converse` agora é CIENTE do gate (via `GATE_INTENT`) e
+		// faz a pergunta com as palavras dele. Se produziu texto neste turno, o
+		// adapter NÃO deve reinjetar a pergunta canônica (`gateQuestion`) — senão
+		// vira DUAS perguntas (a do modelo + a do card). Se o modelo ficou mudo
+		// (turno vazio), fica `false` → o card injeta a pergunta como rede (nunca
+		// cala a pergunta). O `text-boundary`/persist a jusante mantêm a ordem.
+		const modelSpoke = state.events.some((ev) => ev.type === "text-delta");
+		events.push({ type: "gate", gate: state.gate, modelAsked: modelSpoke });
 	}
 
 	// FIX-361 — libera o hero PENDENTE (`discoveryNode` guardou quando

@@ -21,7 +21,7 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
 
 /** O que cada gate precisa descobrir — em INTENÇÃO, não em frase pronta. O
  * modelo escolhe as palavras; nós só dizemos o que falta saber. */
-const GATE_INTENT: Record<string, string> = {
+export const GATE_INTENT: Record<string, string> = {
 	name: "como ele quer ser chamado",
 	desire: "qual bem específico ele tem em mente, e por que agora",
 	credit: "quanto custa o bem que ele quer",

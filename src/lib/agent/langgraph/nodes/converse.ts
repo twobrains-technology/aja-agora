@@ -14,6 +14,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
+import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { cacheableSystemBlock } from "../provider";
@@ -68,6 +69,23 @@ function toBaseMessage(m: { role: "user" | "assistant"; content: string }): Base
 	return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
 }
 
+/** Injeta a INTENÇÃO do gate ativo (o que o funil quer descobrir AGORA) pro
+ * modelo perguntar com as palavras dele — UMA pergunta, sobre ISSO, sem pular
+ * etapa. Reusa `GATE_INTENT` (fonte canônica, `system-context.ts`) e espelha a
+ * instrução do `buildSystemContext` do runtime Vercel. Gate ausente (usuário
+ * desviou / `decideShowGate` suprimiu) → null: o modelo conversa livre. */
+function buildGateContextText(gate: string | undefined): string | null {
+	if (!gate) return null;
+	const intent = GATE_INTENT[gate];
+	if (!intent) return null;
+	return (
+		`Próximo passo do funil: descobrir ${intent}. Faça VOCÊ essa pergunta, com as suas ` +
+		`palavras e de forma calorosa — o sistema mostra o campo/os botões logo depois e NÃO vai ` +
+		`repetir a pergunta. Faça UMA pergunta só, sobre ISSO; não pule etapas nem pergunte sobre ` +
+		`outra coisa. Se o usuário puxar o assunto pra outro lado, atenda ele primeiro; o funil espera.`
+	);
+}
+
 export function createConverseNode(model: BaseChatModel) {
 	return async function converseNode(
 		state: AgentGraphStateType,
@@ -83,8 +101,21 @@ export function createConverseNode(model: BaseChatModel) {
 		const boundModel = model.bindTools ? model.bindTools(whatIfTools) : model;
 		const toolNode = new ToolNode(whatIfTools);
 
+		// Contexto do gate ATUAL (state.gate, calculado pelo `routeFinal` ANTES
+		// deste nó) vai como um BLOCO no MESMO system message (a Anthropic só
+		// aceita UM system, no início — dois SystemMessage quebram). Sem isto o
+		// converse fica CEGO ao funil e pergunta a coisa errada — ex.: no gate
+		// `name` o modelo pedia o VALOR do carro enquanto o card pedia o nome
+		// (duas perguntas, desalinhadas). Reusa `GATE_INTENT` (mesma fonte do
+		// runtime Vercel) e injeta a INTENÇÃO, NUNCA a frase pronta — o modelo
+		// pergunta com as palavras dele (lei-mãe "não engessar"); o bloco do gate
+		// NÃO é cacheado (muda a cada turno), fica DEPOIS do bloco estável.
+		const gateContextText = buildGateContextText(state.gate);
 		const systemMessage = new SystemMessage({
-			content: [cacheableSystemBlock(leanSystemPrompt())],
+			content: [
+				cacheableSystemBlock(leanSystemPrompt()),
+				...(gateContextText ? [{ type: "text" as const, text: gateContextText }] : []),
+			],
 		});
 
 		const newMessages: BaseMessage[] = state.isUserTurn ? [new HumanMessage(state.userText)] : [];
