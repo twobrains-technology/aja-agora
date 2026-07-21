@@ -1045,15 +1045,28 @@ export class EphemeralTextFilter {
 			// no balão e o turno termina prometendo uma pergunta que não existe —
 			// visto ao vivo em 2 conversas (2026-07-21). Segura o gancho: ele só sai
 			// acompanhado do que ele anuncia.
+			// A checagem de descarte vem ANTES de soltar o gancho, de propósito: o
+			// gancho anuncia justamente o segmento que está sendo avaliado agora. Se
+			// esse segmento cai, o gancho cai junto — ele não anuncia mais nada.
+			//
+			// Enquanto o gancho era solto primeiro, ele grudava no PRÓXIMO segmento
+			// que sobrevivesse, e o resultado saía trocando o sentido da frase. Visto
+			// ao vivo, na pergunta que decide a venda: o cliente perguntou por que
+			// faria consórcio em vez de financiamento e leu
+			// "A diferença principal é o custo: A desvantagem é que você não sai com
+			// o caminhão na hora" — a VANTAGEM foi descartada no meio e o gancho
+			// passou a anunciar a desvantagem do próprio produto que ele vende.
+			const reason = ephemeralSegmentReason(seg, ctx);
+			if (reason) {
+				this.droppedReasons.add(reason);
+				// O gancho vai junto (mesma razão de descarte já registrada acima).
+				this.gancho = "";
+				continue;
+			}
 			if (this.gancho) {
 				const gancho = this.gancho;
 				this.gancho = "";
 				out = emendar(out, gancho);
-			}
-			const reason = ephemeralSegmentReason(seg, ctx);
-			if (reason) {
-				this.droppedReasons.add(reason);
-				continue;
 			}
 			if (ehGancho(seg)) {
 				this.gancho = seg;
