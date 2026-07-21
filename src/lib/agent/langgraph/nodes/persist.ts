@@ -16,6 +16,7 @@
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { db } from "@/db";
 import { artifacts as artifactsTable } from "@/db/schema";
+import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -116,7 +117,32 @@ export async function persistNode(
 		});
 	}
 
-	const meta = projectToMeta({ ...state, funnel });
+	const projetado = projectToMeta({ ...state, funnel });
+
+	// FIX-207 (watchdog) — o marcador que o worker `gate-reengage-poll` procura.
+	// Ele era escrito SÓ no runtime Vercel (orchestrator/index.ts), e o dispatcher
+	// desvia pro grafo antes daquele bloco: sob `AI_RUNTIME=langgraph` nenhum
+	// caminho gravava `pendingGateSince`, então o `WHERE ... IS NOT NULL` do worker
+	// nunca casava. Quem abandonava a conversa num gate pendente jamais era
+	// cobrado de volta — e sem erro em log nenhum, porque não havia escrita pra
+	// falhar. Mora AQUI e não no `FunnelState` de propósito: nada em `nextGate`/
+	// `tool-policy` lê esses campos, só o worker; entrar no slice seria dar-lhes
+	// uma autoridade sobre o fluxo que eles não têm.
+	const meta = { ...projetado };
+	const pendingGate = pendingGateAfterTurn({
+		meta: projetado,
+		gateFired: Boolean(state.gate),
+		isUserTurn,
+		hasContactName: Boolean(state.contactName),
+	});
+	if (pendingGate) {
+		// Reseta o relógio a cada turno de usuário que deixa o funil pendente.
+		meta.pendingGateSince = simulatorNow().getTime();
+		meta.pendingGate = pendingGate;
+	} else {
+		delete meta.pendingGateSince;
+		delete meta.pendingGate;
+	}
 	await persistMeta(conversationId, meta);
 
 	const events: TurnEvent[] = [];
