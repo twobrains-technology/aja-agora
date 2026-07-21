@@ -21,6 +21,7 @@ import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-poli
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
+import { dinheiroDeclaradoPeloCliente } from "@/lib/agent/qualify-state";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
@@ -1607,9 +1608,10 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				// exposta no schema conversacional, então nunca chegava.
 				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
 				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
-				// O que ele declarou ter guardado entra antes de comer a carta.
-				...(meta?.qualifyAnswers?.lanceValue != null
-					? { ownCashAvailable: meta.qualifyAnswers.lanceValue }
+				// O que ele DECLAROU ter guardado entra antes de comer a carta — valor
+				// assumido pelo funil não conta como dinheiro do cliente.
+				...(meta && dinheiroDeclaradoPeloCliente(meta) != null
+					? { ownCashAvailable: dinheiroDeclaradoPeloCliente(meta) }
 					: {}),
 			});
 		},
@@ -1694,8 +1696,9 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				termMonths: offer.termMonths,
 				...(offer.monthlyPayment != null ? { monthlyPayment: offer.monthlyPayment } : {}),
 				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
-				...(meta?.qualifyAnswers?.lanceValue != null
-					? { ownCashAvailable: meta.qualifyAnswers.lanceValue }
+				// Só o que o cliente DECLAROU — ver `dinheiroDeclaradoPeloCliente`.
+				...(meta && dinheiroDeclaradoPeloCliente(meta) != null
+					? { ownCashAvailable: dinheiroDeclaradoPeloCliente(meta) }
 					: {}),
 				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
 			});

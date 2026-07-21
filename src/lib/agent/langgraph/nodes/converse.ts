@@ -865,8 +865,7 @@ export function createConverseNode(model: BaseChatModel) {
 							const parcela = num(p.monthlyPayment);
 							const prazo = num(p.termMonths);
 							if (
-								(artifactType === "recommendation_card" ||
-									artifactType === "simulation_result") &&
+								(artifactType === "recommendation_card" || artifactType === "simulation_result") &&
 								credito &&
 								parcela &&
 								prazo
@@ -978,9 +977,20 @@ export function createConverseNode(model: BaseChatModel) {
 							...state.funnel,
 							...(novaFaixaRef.faixa
 								? {
-										// Zera o snapshot da última busca pra a descoberta rodar de
-										// novo na faixa nova (mesmo mecanismo do lance embutido).
-										discoveredCreditTarget: undefined,
+										// NÃO zere `discoveredCreditTarget` aqui. Ele é o snapshot da
+										// faixa REALMENTE buscada da última vez, e `deveDescobrir`
+										// (route.ts) só reabre a busca quando ele EXISTE e diverge do
+										// `creditMax` novo — `undefined` é o fail-safe anti-loop, que
+										// tranca a descoberta em vez de liberá-la.
+										//
+										// Zerei numa primeira versão achando que "limpar o snapshot"
+										// forçaria a re-busca; faz o contrário. Custou uma venda ao
+										// vivo: a cliente disse que só cabia R$ 1.800/mês, o funil
+										// gravou a faixa nova certinho, o agente prometeu QUATRO vezes
+										// que as cartas iam aparecer, nenhuma apareceu, e ela saiu
+										// dizendo "o que cabe no meu bolso vocês não têm de verdade".
+										// Deixando o valor antigo, `creditMax !== discoveredCreditTarget`
+										// vira true e a descoberta roda na faixa nova.
 										qualifyAnswers: {
 											...state.funnel.qualifyAnswers,
 											creditMax: novaFaixaRef.faixa.creditMax,

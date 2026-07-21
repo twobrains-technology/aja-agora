@@ -224,6 +224,16 @@ export async function advanceFunnelNode(
 	// runtime Vercel (`resolveOfferMentionForConversation`) e nunca foi ligada
 	// aqui. Só re-ancora quando a menção resolve pra UMA oferta REAL já exibida
 	// nesta conversa — nunca adivinha, nunca inventa grupo.
+	/** Este turno é uma pergunta/dúvida em aberto, não uma decisão. Vale pros DOIS
+	 * usos abaixo: nem re-ancorar a oferta, nem registrar escolha. Quem classifica
+	 * é o modelo (`intent`) — o servidor só obedece. */
+	const perguntaAberta =
+		intent === "asking_question" ||
+		intent === "expressing_doubt" ||
+		intent === "confused" ||
+		intent === "off_topic" ||
+		intent === "wants_more_options";
+
 	/** O cliente nomeou uma cota já exibida NESTE turno — ancoragem determinística
 	 * (nunca classificação de intenção), e portanto uma escolha feita. */
 	let escolhaPorMencao = false;
@@ -231,6 +241,19 @@ export async function advanceFunnelNode(
 		const mencionada = await resolveAdministradoraMentionForConversation(
 			state.conversationId,
 			state.userText,
+			// Resolver POR CARACTERÍSTICA ("a de menor parcela") só quando o turno é
+			// uma decisão. A resolução em si é determinística e continua sendo — o
+			// que NÃO pode ser determinístico é decidir se a pessoa está escolhendo:
+			// isso é intenção, e intenção é do modelo.
+			//
+			// Visto ao vivo: o cliente disse "quero entender essa história da CARTA
+			// MAIOR com o pessoal antes de decidir" — pedindo atendimento humano
+			// sobre uma ESTRATÉGIA que o próprio agente tinha proposto — e o funil
+			// leu "carta maior" como escolha da maior carta da lista, ancorou numa
+			// cota de R$ 320 mil que ele nunca pediu e ainda gravou `origem: "mencao"`,
+			// afirmando que ele a nomeara. Nomear marca continua valendo em qualquer
+			// turno (é verificável: ou a palavra está lá, ou não está).
+			{ permitirCriterio: !perguntaAberta },
 		).catch(() => null);
 		const mudou =
 			mencionada?.administradora &&
@@ -281,14 +304,9 @@ export async function advanceFunnelNode(
 	//     oferta ancorada — não há o que perguntar.
 	// Como a fala disso é feita, com que palavra, continua sendo do modelo.
 	if (funnel.revealCompleted && funnel.recommendedOffer && !meta.contractClosed) {
-		const perguntaAberta =
-			intent === "asking_question" ||
-			intent === "expressing_doubt" ||
-			intent === "confused" ||
-			intent === "off_topic" ||
-			intent === "wants_more_options";
 		const criterioJaCapturado =
-			funnel.qualifyAnswers.objetivo !== undefined || funnel.qualifyAnswers.prazoMeses !== undefined;
+			funnel.qualifyAnswers.objetivo !== undefined ||
+			funnel.qualifyAnswers.prazoMeses !== undefined;
 		const origem: NonNullable<FunnelState["escolha"]>["origem"] | null = escolhaPorMencao
 			? "mencao"
 			: funnel.escolha

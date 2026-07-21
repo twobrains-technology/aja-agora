@@ -236,7 +236,10 @@ function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set
 		const normalizedClause = normalizeAdministradora(clause);
 		if (!NEGATION_TRIGGER.test(normalizedClause)) continue;
 		for (const o of offers) {
-			if (o.administradora && normalizedClause.includes(normalizeAdministradora(o.administradora))) {
+			if (
+				o.administradora &&
+				normalizedClause.includes(normalizeAdministradora(o.administradora))
+			) {
 				negated.add(normalizeAdministradora(o.administradora));
 			}
 		}
@@ -295,7 +298,9 @@ function extractMonthlyPaymentMentions(text: string): number[] {
 		const n = parsePtBrNumber(m[1]);
 		if (n !== null) out.push(n);
 	}
-	for (const m of text.matchAll(/(?:R\$\s*)?([\d.,]+)\s*(?:por\s*m[eê]s|\/\s*m[eê]s|mensais?)\b/gi)) {
+	for (const m of text.matchAll(
+		/(?:R\$\s*)?([\d.,]+)\s*(?:por\s*m[eê]s|\/\s*m[eê]s|mensais?)\b/gi,
+	)) {
 		const n = parsePtBrNumber(m[1]);
 		if (n !== null) out.push(n);
 	}
@@ -359,7 +364,8 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
 	// exibidos, unidos ao conjunto de matches por valor (mesma semântica de
 	// "resolve determinístico se casa um grupo exibido", nunca desiste).
 	const monthlyMentions = extractMonthlyPaymentMentions(text);
-	const monthlyMatches = monthlyMentions.length > 0 ? matchMonthlyPaymentMentions(offers, monthlyMentions) : [];
+	const monthlyMatches =
+		monthlyMentions.length > 0 ? matchMonthlyPaymentMentions(offers, monthlyMentions) : [];
 
 	const termMentions = extractTermMentions(text);
 	const termMatches = termMentions.length > 0 ? matchTermMentions(offers, termMentions) : [];
@@ -404,43 +410,45 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
  * Ordenar a lista real por parcela/prazo/carta é determinístico — não é
  * adivinhar intenção, é aplicar o critério que ele nomeou sobre as cotas que
  * ele viu. Sem critério reconhecido, devolve null e nada se ancora. */
-export function resolveOfertaPorCriterio(
-	offers: ChosenOffer[],
-	text: string,
-): ChosenOffer | null {
+export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): ChosenOffer | null {
 	const t = (text ?? "").toLowerCase();
 	if (offers.length === 0) return null;
-	const com = <K extends keyof ChosenOffer>(k: K) => offers.filter((o) => typeof o[k] === "number");
+	/** Extremo (menor/maior) de um campo NUMÉRICO entre as cotas que têm o campo.
+	 * Devolve o valor junto com a cota pra o comparador nunca precisar reafirmar
+	 * que o campo existe — quem filtrou já provou. */
+	const extremo = (
+		campo: "monthlyPayment" | "termMonths" | "creditValue",
+		lado: "menor" | "maior",
+	): ChosenOffer | null => {
+		const candidatas = offers.flatMap((o) => {
+			const v = o[campo];
+			return typeof v === "number" ? [{ oferta: o, valor: v }] : [];
+		});
+		if (candidatas.length === 0) return null;
+		return candidatas.reduce((a, b) =>
+			lado === "menor" ? (b.valor < a.valor ? b : a) : b.valor > a.valor ? b : a,
+		).oferta;
+	};
 
-	const menorParcela = /\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b.{0,20}\bparcela|\bparcela\b.{0,20}\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b/.test(
-		t,
-	);
-	const maiorPrazo = /\b(prazo|prazos?)\b.{0,20}\b(mais longo|maior|mais longa)\b|\b(mais longo|maior)\b.{0,10}\bprazo\b/.test(
-		t,
-	);
-	const menorPrazo = /\b(prazo|prazos?)\b.{0,20}\b(mais curto|menor)\b|\b(mais curto|menor)\b.{0,10}\bprazo\b/.test(
-		t,
-	);
-	const maiorCarta = /\b(maior|mais alta)\b.{0,20}\bcarta\b|\bcarta\b.{0,20}\b(maior|mais alta)\b/.test(
-		t,
-	);
+	const menorParcela =
+		/\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b.{0,20}\bparcela|\bparcela\b.{0,20}\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b/.test(
+			t,
+		);
+	const maiorPrazo =
+		/\b(prazo|prazos?)\b.{0,20}\b(mais longo|maior|mais longa)\b|\b(mais longo|maior)\b.{0,10}\bprazo\b/.test(
+			t,
+		);
+	const menorPrazo =
+		/\b(prazo|prazos?)\b.{0,20}\b(mais curto|menor)\b|\b(mais curto|menor)\b.{0,10}\bprazo\b/.test(
+			t,
+		);
+	const maiorCarta =
+		/\b(maior|mais alta)\b.{0,20}\bcarta\b|\bcarta\b.{0,20}\b(maior|mais alta)\b/.test(t);
 
-	if (menorParcela) {
-		const c = com("monthlyPayment");
-		return c.length ? c.reduce((a, b) => (b.monthlyPayment! < a.monthlyPayment! ? b : a)) : null;
-	}
-	if (maiorPrazo) {
-		const c = com("termMonths");
-		return c.length ? c.reduce((a, b) => (b.termMonths! > a.termMonths! ? b : a)) : null;
-	}
-	if (menorPrazo) {
-		const c = com("termMonths");
-		return c.length ? c.reduce((a, b) => (b.termMonths! < a.termMonths! ? b : a)) : null;
-	}
-	if (maiorCarta) {
-		const c = com("creditValue");
-		return c.length ? c.reduce((a, b) => (b.creditValue! > a.creditValue! ? b : a)) : null;
-	}
+	if (menorParcela) return extremo("monthlyPayment", "menor");
+	if (maiorPrazo) return extremo("termMonths", "maior");
+	if (menorPrazo) return extremo("termMonths", "menor");
+	if (maiorCarta) return extremo("creditValue", "maior");
 	return null;
 }
 
@@ -478,11 +486,19 @@ export async function resolveOfferMentionForConversation(
 export async function resolveAdministradoraMentionForConversation(
 	conversationId: string,
 	text: string,
+	// A resolução por CARACTERÍSTICA precisa saber se o turno é uma decisão — e
+	// isso quem sabe é o modelo, não uma regex. "Carta maior" numa pergunta é a
+	// pessoa falando do CONCEITO; numa decisão é ela escolhendo a cota. Default
+	// `true` preserva os chamadores que já resolvem isso por conta própria.
+	opts: { permitirCriterio?: boolean } = {},
 ): Promise<ChosenOffer | null> {
 	const rows = await loadArtifactRows(conversationId);
 	const ofertas = listShownOffers(rows);
 	// Nome primeiro (mais específico); característica só quando ele não nomeou.
-	return resolveAdministradoraMention(ofertas, text) ?? resolveOfertaPorCriterio(ofertas, text);
+	const porNome = resolveAdministradoraMention(ofertas, text);
+	if (porNome) return porNome;
+	if (opts.permitirCriterio === false) return null;
+	return resolveOfertaPorCriterio(ofertas, text);
 }
 
 // FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente
@@ -490,7 +506,9 @@ export async function resolveAdministradoraMentionForConversation(
 // ocorrência, o orchestrator precisa da lista de cotas JÁ EXIBIDAS pra montar
 // uma opção concreta (buildToolErrorRecoveryFallbackRepeat) — mesma fonte
 // determinística (`listShownOffers`), só faltava o wrapper async.
-export async function listShownOffersForConversation(conversationId: string): Promise<ChosenOffer[]> {
+export async function listShownOffersForConversation(
+	conversationId: string,
+): Promise<ChosenOffer[]> {
 	const rows = await loadArtifactRows(conversationId);
 	return listShownOffers(rows);
 }
@@ -513,7 +531,9 @@ export function buildMentionedOfferDirective(offer: ChosenOffer): string {
 	const detalhes: string[] = [`groupId="${offer.groupId}"`];
 	if (offer.administradora) detalhes.push(`administradora=${offer.administradora}`);
 	if (typeof offer.creditValue === "number") {
-		detalhes.push(`crédito=${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+		detalhes.push(
+			`crédito=${offer.creditValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+		);
 	}
 	if (typeof offer.termMonths === "number") detalhes.push(`prazo=${offer.termMonths}m`);
 	return (

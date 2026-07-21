@@ -181,6 +181,28 @@ export function registerGateStuckTurn(
 	};
 }
 
+/**
+ * O dinheiro que o cliente DE FATO disse ter — nunca o que o funil assumiu por
+ * ele.
+ *
+ * Quando o gate `lance-value` trava, `stuckGateDefaultPatch` grava 20% da carta
+ * pra o funil não parar. Isso destrava a jornada, mas o número é do SISTEMA, não
+ * do cliente: usá-lo como "o que você tem guardado" faz a conta da contemplação
+ * mentir com a cara de quem repete o que ouviu. Visto ao vivo — o cliente disse
+ * três vezes que tinha R$ 80 mil, o estado guardou R$ 50 mil assumidos, e a
+ * simulação passou a calcular em cima do valor inventado.
+ *
+ * Mesmo princípio do FIX-307 no gate `credit`: promover o que o usuário já disse
+ * é legítimo; fabricar dado financeiro do zero, não.
+ */
+export function dinheiroDeclaradoPeloCliente(
+	meta: Pick<ConversationMetadata, "qualifyAnswers" | "gateDefaultsAssumed">,
+): number | undefined {
+	if (meta.gateDefaultsAssumed?.["lance-value"]) return undefined;
+	const valor = meta.qualifyAnswers?.lanceValue;
+	return typeof valor === "number" && Number.isFinite(valor) ? valor : undefined;
+}
+
 export type UserIntent =
 	| "ready_to_proceed"
 	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
@@ -619,11 +641,7 @@ export function decideShowGate(args: {
 		// "os próximos passos já vão aparecer pra você" e o card nunca vinha,
 		// porque a própria pergunta é que o bloqueava (visto ao vivo, 2026-07-21).
 		if (meta.escolha) {
-			return !(
-				intent === "expressing_doubt" ||
-				intent === "confused" ||
-				intent === "off_topic"
-			);
+			return !(intent === "expressing_doubt" || intent === "confused" || intent === "off_topic");
 		}
 		return !(
 			intent === "asking_question" ||
