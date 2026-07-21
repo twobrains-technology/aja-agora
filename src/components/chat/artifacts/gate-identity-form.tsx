@@ -65,7 +65,7 @@ export function GateIdentityForm({
 	};
 
 	return (
-		<div className="w-full max-w-[340px] bg-card border border-primary/30 rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
+		<div className="w-full max-w-[340px] bg-card border border-[color:var(--border-strong)] rounded-[12px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
 			<p className="text-sm font-semibold text-foreground">Pra buscar suas ofertas reais</p>
 
 			{/* CPF */}
@@ -85,7 +85,7 @@ export function GateIdentityForm({
 					// biome-ignore lint/a11y/noAutofocus: intencional — só quando active=true, não rouba foco de cards históricos
 					autoFocus={active}
 					data-testid="identify-cpf"
-					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-primary focus:shadow-[0_0_0_3px_rgba(3,110,255,.18)] disabled:opacity-50 disabled:cursor-not-allowed"
+					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-[var(--ring)] focus:shadow-[var(--shadow-focus)] disabled:opacity-50 disabled:cursor-not-allowed"
 				/>
 			</div>
 
@@ -102,7 +102,7 @@ export function GateIdentityForm({
 					onChange={(e) => setPhone(maskPhone(e.target.value))}
 					disabled={isStreaming || submitted}
 					data-testid="identify-phone"
-					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-primary focus:shadow-[0_0_0_3px_rgba(3,110,255,.18)] disabled:opacity-50 disabled:cursor-not-allowed"
+					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-[var(--ring)] focus:shadow-[var(--shadow-focus)] disabled:opacity-50 disabled:cursor-not-allowed"
 				/>
 			</div>
 
@@ -129,7 +129,7 @@ export function GateIdentityForm({
 				onClick={submit}
 				disabled={!valid}
 				data-testid="identify-submit"
-				className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-[13px] bg-primary text-primary-foreground text-sm font-semibold shadow-[var(--shadow-primary)] transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+				className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
 			>
 				<ShieldCheck className="size-4" />
 				Buscar minhas ofertas

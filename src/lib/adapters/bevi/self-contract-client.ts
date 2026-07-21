@@ -280,6 +280,11 @@ export class BeviSelfContractClient {
 				phase: "error",
 				ok: false,
 				ms: Date.now() - started,
+				// Sem a MENSAGEM não dá pra distinguir "Duplicated Hash" (proposta
+				// ativa pro device — retomada normal, absorvida pelo adapter) de uma
+				// falha de verdade. O log dizia só `ok:false` e isso virou diagnóstico
+				// errado: "a Bevi falha em 100% das chamadas".
+				erro: err instanceof Error ? err.message : String(err),
 			});
 			throw err;
 		}

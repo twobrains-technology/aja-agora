@@ -11,7 +11,7 @@ import type { SignatureHandoffPayload } from "@/lib/chat/types";
 // pronta + a continuidade da Aja Agora — sem o cliente sentir que mudou de empresa.
 export function SignatureHandoff({ payload }: { payload: SignatureHandoffPayload }) {
 	return (
-		<div className="w-full max-w-sm rounded-[18px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+		<div className="w-full max-w-sm rounded-[12px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 			{/* header */}
 			<div className="flex items-center gap-2 text-primary">
 				<ShieldCheck className="size-[17px]" />
@@ -26,7 +26,7 @@ export function SignatureHandoff({ payload }: { payload: SignatureHandoffPayload
 
 			<Button
 				type="button"
-				className="w-full h-[46px] min-h-[44px] gap-2 rounded-[13px] bg-primary text-sm font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105"
+				className="w-full h-[46px] min-h-[44px] gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105"
 				data-testid="signature-link"
 				onClick={() => window.open(payload.consortiumProposalLink, "_blank", "noopener,noreferrer")}
 			>

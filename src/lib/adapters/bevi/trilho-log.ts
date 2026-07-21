@@ -29,6 +29,9 @@ export interface TrilhoLogInput {
 	/** Duração em ms, quando houver (fase response/error). */
 	ms?: number;
 	ok?: boolean;
+	/** Mensagem do erro (fase error). Sem ela o log não distingue retomada
+	 * ("Duplicated Hash", absorvido pelo adapter) de falha real. Sem PII. */
+	erro?: string;
 }
 
 /** Linha JSON estruturada (grepável). Pura — testável sem tocar console. */
@@ -44,6 +47,7 @@ export function buildTrilhoLogLine(input: TrilhoLogInput): string {
 		...(input.status !== undefined ? { status: input.status } : {}),
 		...(input.ok !== undefined ? { ok: input.ok } : {}),
 		...(input.ms !== undefined ? { ms: input.ms } : {}),
+		...(input.erro !== undefined ? { erro: input.erro } : {}),
 	});
 }
 

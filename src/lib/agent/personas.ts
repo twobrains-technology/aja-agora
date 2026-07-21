@@ -42,6 +42,16 @@ export type QualifyAnswers = {
 	lanceEmbutido?: boolean;
 	/** Percentual do lance embutido aceito (Bevi aceita 30 ou 50). Default 30. */
 	lanceEmbutidoPercent?: 30 | 50;
+	/** O preço do BEM que o cliente quer — o que precisa cair na mão dele.
+	 * Separado do `creditMax` porque, quando ele aceita o lance embutido, o alvo
+	 * da BUSCA deixa de ser o preço do bem e passa a ser uma carta MAIOR (o
+	 * embutido sai da própria carta, então a carta tem que comportar o bem + o
+	 * lance). Sem este campo o valor original se perdia na primeira re-busca. */
+	valorDoBemAlvo?: number;
+	/** O card educativo do embutido já foi mostrado nesta conversa. Sem isto ele
+	 * reaparecia a cada turno em que o gate seguia sem resposta — na validação ao
+	 * vivo saíram dois cards idênticos empilhados. */
+	embeddedBidDispatched?: boolean;
 	/** FIX-233 — gate `desire` (não bloqueante): bem específico que o usuário
 	 * tem em mente ("um Corolla", "apê de 2 quartos"). Espelhado no card/copy
 	 * de forma livre, não normalizado. */
@@ -239,6 +249,12 @@ export type ConversationMetadata = {
 		 * reveal, sem depender de um `RevealGroupIndex` de turno). Nunca
 		 * fabricado — ausente quando o artifact-âncora não o carrega. */
 		groupId?: string;
+		/** Lance médio do grupo (campo `lanceMedio` da administradora). Sem ele no
+		 * estado, o agente ficava sem o único número que dá sentido à conversa de
+		 * lance: o cliente dizia "tenho 100 mil", o card mostrava lance médio de
+		 * R$ 183 mil e ninguém ligava os dois pontos. Nunca vira promessa de
+		 * contemplação — só comparação factual de posição. */
+		avgBidValue?: number;
 	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */

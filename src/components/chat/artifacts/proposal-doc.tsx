@@ -84,11 +84,11 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 
 	return (
 		<div
-			className="w-full max-w-[480px] overflow-hidden rounded-[18px] border border-primary/30 bg-card shadow-lg"
+			className="w-full max-w-[480px] overflow-hidden rounded-[12px] border border-[color:var(--border-strong)] bg-card shadow-lg"
 			data-testid="proposal-doc"
 		>
 			{/* ── 1 · Header co-branded ── */}
-			<div className="relative bg-[linear-gradient(120deg,var(--aja-navy)_0%,var(--blue-600)_62%,var(--aja-blue)_100%)] px-5 py-5 text-white">
+			<div className="relative bg-[linear-gradient(120deg,var(--aja-ink)_0%,var(--aja-ink-soft)_100%)] px-5 py-5 text-white">
 				<div className="flex items-center justify-between gap-3">
 					<div className="flex items-center gap-2">
 						<SunMark variant="white" className="size-8" />
@@ -128,7 +128,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 				)}
 				<div className="text-right">
 					<div className="text-xs text-muted-foreground">Carta de crédito</div>
-					<div className="aja-num mt-0.5 text-2xl font-semibold text-primary">
+					<div className="aja-num mt-0.5 text-2xl font-semibold text-figure">
 						{brl2(payload.creditValue)}
 					</div>
 				</div>
@@ -153,7 +153,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 			{/* ── 3 · Banner "A sua vantagem" (só com cálculo real + premissa) ── */}
 			{economiaTotal != null && (
 				<div className="px-5 pb-1">
-					<div className="flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 px-4 py-3.5">
+					<div className="flex items-center justify-between gap-4 rounded-2xl border border-[color:var(--border-strong)] bg-gradient-to-br from-primary/5 to-primary/10 px-4 py-3.5">
 						<div>
 							<div className="text-[11px] font-semibold uppercase tracking-wide text-primary">
 								A sua vantagem
@@ -169,7 +169,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 								</div>
 							)}
 						</div>
-						<div className="shrink-0 rounded-xl border border-primary/30 bg-card px-4 py-2.5 text-center">
+						<div className="shrink-0 rounded-xl border border-[color:var(--border-strong)] bg-card px-4 py-2.5 text-center">
 							<div className="text-2xl font-extrabold leading-none text-primary">0%</div>
 							<div className="mt-1 text-[11px] text-muted-foreground">de juros</div>
 						</div>
@@ -182,7 +182,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 				{/* Parcela CHEIA em destaque — a que o cliente paga até ser contemplada.
 				    Sem fabricar a pós-contemplação (handoff, correção #1). */}
 				{hasPayment && (
-					<div className="mb-4 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
+					<div className="mb-4 rounded-2xl border border-[color:var(--border-strong)] bg-primary/5 px-4 py-3.5">
 						<div className="text-xs font-semibold text-primary">Parcela mensal</div>
 						<div className="aja-num mt-0.5 text-2xl font-semibold tracking-tight text-primary">
 							{brl2(payload.monthlyPayment as number)}
@@ -266,7 +266,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 							Você participa dos sorteios mensais até ser contemplado.
 						</div>
 					</div>
-					<div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
+					<div className="rounded-2xl border border-[color:var(--border-strong)] bg-primary/5 px-4 py-3.5">
 						<div className="text-sm font-bold text-primary">Com lance</div>
 						<div className="mt-1.5 text-xs leading-relaxed text-foreground">
 							Com recursos próprios ou embutido, você antecipa a aquisição.
@@ -308,7 +308,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 			<div className="flex flex-col gap-2 border-t border-border px-5 py-4">
 				<Button
 					type="button"
-					className="min-h-[44px] w-full gap-2 rounded-[13px] shadow-[var(--shadow-primary)]"
+					className="min-h-[44px] w-full gap-2 rounded-full"
 					onClick={() =>
 						!isStreaming && void sendAction({ kind: "offer-confirm" }, "Confirmo essa carta")
 					}
@@ -322,7 +322,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="min-h-[44px] w-full rounded-[13px]"
+					className="min-h-[44px] w-full rounded-full"
 					onClick={() => !isStreaming && void sendUserMessage("Quero ver outras opções")}
 					disabled={isStreaming}
 					data-testid="offer-reject"

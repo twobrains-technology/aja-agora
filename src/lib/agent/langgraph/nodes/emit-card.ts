@@ -70,25 +70,9 @@ export function emitCardNode(
 		events.push({ type: "gate", gate: state.gate, modelAsked: state.modelAskedQuestion });
 	}
 
-	// FIX-361 — libera o hero PENDENTE (`discoveryNode` guardou quando
-	// `hero-awaits-reco-consent` suprimiu a emissão imediata) assim que o
-	// consentimento chega — payload JÁ coagido (I3), nunca recalculado. NÃO
-	// passa por `artifactAllowed` de novo: o guard já autorizou este payload
-	// especificamente A ESPERAR (é o que "pendente" significa); rodar o MESMO
-	// guard aqui bateria em `reveal-loop` (que suprime recommendation_card
-	// pós-reveal em qualquer turno de usuário sem troca de faixa) e o hero
-	// NUNCA sairia — o release é a resolução do hold, não um card novo.
-	if (funnel.recoConsentAnswered && funnel.pendingRecommendationCard) {
-		events.push({ type: "text-boundary" });
-		events.push({
-			type: "artifact",
-			artifactType: "recommendation_card",
-			payload: funnel.pendingRecommendationCard,
-			toolCallId: crypto.randomUUID(),
-		});
-		turnArtifactTypes.push("recommendation_card");
-		funnel = { ...funnel, pendingRecommendationCard: undefined };
-	}
+	// A liberação do hero pendente MUDOU DE LUGAR: vive no `advance`, que roda
+	// ANTES do `converse` — só assim o modelo sabe que vai recomendar e fala
+	// disso, em vez de já perguntar o prazo com o card caindo embaixo.
 
 	// FIX-360 — `topic_picker`: card ÚNICO pro usuário novato, assim que
 	// `experience` resolve (experiencePrev==="first") — independente do gate
@@ -122,6 +106,7 @@ export function emitCardNode(
 	if (
 		state.gate === "lance-embutido" &&
 		funnel.qualifyAnswers.lanceEmbutido === undefined &&
+		!funnel.qualifyAnswers.embeddedBidDispatched &&
 		artifactAllowed(guardCtx, "embedded_bid")
 	) {
 		const meta = projectToMeta({ ...state, funnel });
@@ -133,6 +118,10 @@ export function emitCardNode(
 			toolCallId: crypto.randomUUID(),
 		});
 		turnArtifactTypes.push("embedded_bid");
+		funnel = {
+			...funnel,
+			qualifyAnswers: { ...funnel.qualifyAnswers, embeddedBidDispatched: true },
+		};
 	}
 
 	if (state.gate === "decision" && !funnel.decisionDispatched) {

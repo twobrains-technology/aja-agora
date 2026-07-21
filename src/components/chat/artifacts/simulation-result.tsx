@@ -66,7 +66,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 	return (
 		<div
 			className={cn(
-				"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden",
+				"w-full max-w-sm bg-card border border-border rounded-[12px] overflow-hidden",
 				"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
 			)}
 		>
@@ -179,7 +179,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					size="lg"
 					data-testid="tenho-interesse-cta"
 					className={cn(
-						"w-full gap-2 min-h-[46px] rounded-[13px] font-semibold text-sm",
+						"w-full gap-2 min-h-[46px] rounded-full font-semibold text-sm",
 						"shadow-lg shadow-primary/30 ring-1 ring-primary/40",
 						"hover:shadow-primary/50 transition-shadow",
 					)}
@@ -213,7 +213,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 									type="button"
 									variant="ghost"
 									size="sm"
-									className="w-full min-h-[40px] rounded-[13px] border border-border hover:bg-muted/50"
+									className="w-full min-h-[40px] rounded-full border border-border hover:bg-muted/50"
 									onClick={() => handleAction(action)}
 									disabled={isStreaming}
 								>

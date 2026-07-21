@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { AdministradoraLogo } from "./administradora-logo";
 
 // Categorias mapeadas à paleta da marca (tokens --cat-*, com variante dark
-// embutida): Imóvel=azul · Automóvel=cyan · Moto=coral · Serviços=navy.
+// embutida): todas em tinta sobre areia — a distinção é o ÍCONE, não a cor.
 const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; className: string }> =
 	{
 		imovel: {
@@ -82,9 +82,9 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 			<button
 				type="button"
 				className={cn(
-					"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden cursor-pointer text-left",
+					"w-full max-w-sm bg-card border border-border rounded-[12px] overflow-hidden cursor-pointer text-left",
 					"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
-					"hover:border-primary/30 transition-colors",
+					"hover:border-[color:var(--border-strong)] transition-colors",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 				)}
 				aria-label={`Grupo ${payload.administradora} — credito ${formatBRL(payload.creditValue)}, parcela ${formatBRL(payload.monthlyPayment)}`}
@@ -120,7 +120,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 							<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 							<p
 								data-testid="group-card-hero-credit"
-								className="aja-num text-2xl font-bold leading-none text-primary mt-1 tracking-[-0.02em]"
+								className="aja-num text-2xl font-bold leading-none text-figure mt-1 tracking-[-0.02em]"
 							>
 								{formatBRL(payload.creditValue)}
 							</p>
@@ -192,7 +192,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 						size="sm"
 						variant="ghost"
 						className={cn(
-							"w-full h-10 gap-1.5 text-xs font-semibold rounded-[13px]",
+							"w-full h-10 gap-1.5 text-xs font-semibold rounded-full",
 							"border border-border hover:border-border/80 hover:bg-muted/50",
 						)}
 						disabled={isStreaming}

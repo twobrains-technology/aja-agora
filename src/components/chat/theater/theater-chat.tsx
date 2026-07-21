@@ -8,10 +8,13 @@ import { cn } from "@/lib/utils";
 import { ChatInput } from "../chat-input";
 import { MessageList } from "../message-list";
 import { ResumePrompt } from "./resume-prompt";
+import type { SeedOrigin } from "./theater-context";
 
 interface TheaterChatProps {
 	/** Mensagem-semente: não-vazia vira a próxima mensagem do usuário; vazia abre na saudação/retomada. */
 	seed: string;
+	/** Quem escreveu a semente — o cliente (`digitada`) ou o botão (`chip`). */
+	seedOrigin?: SeedOrigin;
 	/** Quando o morph assentou — controla o fade-in do stage + footer. */
 	settled: boolean;
 }
@@ -95,7 +98,7 @@ function comGatePendente(conv: ResumePayload, msgs: AjaUIMessage[]): AjaUIMessag
  * conversa anterior → conversa fresca (seed = 1ª mensagem, ou saudação se vazio).
  * ZERO mock — bate em /api/chat como produção.
  */
-export function TheaterChat({ seed, settled }: TheaterChatProps) {
+export function TheaterChat({ seed, seedOrigin = "digitada", settled }: TheaterChatProps) {
 	const [resume, setResume] = useState<ResumeState>({ phase: "loading" });
 
 	// Busca a retomada uma vez por abertura do teatro (o componente remonta a
@@ -170,16 +173,21 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 		);
 	}
 
+	const retomando = Boolean(resume.messages?.length);
+	const seedDoCliente = seedOrigin === "chip" && retomando ? "" : seed.trim();
+	const seedDeAbertura = seedDoCliente || (retomando ? "Voltei" : "");
+
 	return (
 		<ChatProvider initialConversationId={resume.conversationId} initialMessages={resume.messages}>
 			{/* Retomada sem nada digitado: o cliente anuncia que voltou. Sem esse
 			    sinal o agente ficava mudo esperando, sem chance de retomar o fio
 			    ("você estava vendo a ITAÚ, quer seguir daí?") — reusa o MESMO
-			    caminho do seed, então é mensagem de verdade, não turno fantasma. */}
-			<TheaterChatBody
-				seed={seed.trim() || (resume.messages?.length ? "Voltei" : "")}
-				settled={settled}
-			/>
+			    caminho do seed, então é mensagem de verdade, não turno fantasma.
+			    Numa conversa JÁ em andamento, a frase do chip ("Quero comprar um
+			    carro.") não é fala do cliente: é só o botão pelo qual ele reentrou.
+			    Reenviá-la fazia a conversa parecer reiniciada no meio do funil —
+			    quem volta diz "Voltei". Só o que ele DIGITOU sobrevive à retomada. */}
+			<TheaterChatBody seed={seedDeAbertura} settled={settled} />
 		</ChatProvider>
 	);
 }
@@ -189,7 +197,7 @@ function TheaterStage({ settled, children }: { settled: boolean; children?: Reac
 	return (
 		<div
 			className={cn(
-				"flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-card to-muted transition-opacity duration-300",
+				"flex min-h-0 flex-1 flex-col overflow-hidden bg-background transition-opacity duration-300",
 				settled ? "opacity-100" : "opacity-0",
 			)}
 		>

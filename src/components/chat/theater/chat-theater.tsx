@@ -29,7 +29,7 @@ function geo() {
  * aba throttled (com safety-timeout).
  */
 export function ChatTheater() {
-	const { isOpen, seed, originRef, closeTheater } = useTheater();
+	const { isOpen, seed, seedOrigin, originRef, closeTheater } = useTheater();
 	const reduce = useReducedMotion();
 	const [mounted, setMounted] = useState(false);
 	const [settled, setSettled] = useState(false);
@@ -217,7 +217,7 @@ export function ChatTheater() {
 				</div>
 
 				{/* Chat de produção real — stage (mensagens + artefatos) + footer (composer) */}
-				<TheaterChat seed={seed} settled={fade} />
+				<TheaterChat seed={seed} seedOrigin={seedOrigin} settled={fade} />
 			</div>
 		</div>,
 		document.body,

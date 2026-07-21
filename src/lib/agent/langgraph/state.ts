@@ -39,6 +39,8 @@ export type FunnelQualifyAnswers = {
 	lanceValue?: number;
 	lanceEmbutido?: boolean;
 	lanceEmbutidoPercent?: 30 | 50;
+	valorDoBemAlvo?: number;
+	embeddedBidDispatched?: boolean;
 };
 
 export type FunnelState = {
@@ -115,6 +117,8 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 			lanceValue: meta.qualifyAnswers?.lanceValue,
 			lanceEmbutido: meta.qualifyAnswers?.lanceEmbutido,
 			lanceEmbutidoPercent: meta.qualifyAnswers?.lanceEmbutidoPercent,
+			valorDoBemAlvo: meta.qualifyAnswers?.valorDoBemAlvo,
+			embeddedBidDispatched: meta.qualifyAnswers?.embeddedBidDispatched,
 		},
 		identityCollected: meta.identityCollected ?? false,
 		searchDispatched: meta.searchDispatched ?? false,
@@ -177,6 +181,27 @@ export const AgentGraphState = Annotation.Root({
 	modelAskedQuestion: Annotation<boolean>({
 		reducer: (a, b) => b ?? a,
 		default: () => false,
+	}),
+
+	/** Este turno APRESENTA uma oferta ao cliente — a lista recém-buscada
+	 * (`discovery`) ou o card de recomendação que estava pendente (`advance`).
+	 * É o que separa os DOIS TEMPOS da apresentação: primeiro o vendedor conta o
+	 * que encontrou e os cards entram embaixo da fala; só então, num segundo
+	 * balão, ele pergunta o que precisa saber antes de recomendar UMA delas.
+	 * Sem isso o modelo recebia "apresente as ofertas" e "pergunte a experiência"
+	 * no mesmo contexto e resolvia as duas coisas numa frase só — a pergunta
+	 * grudava no fim do anúncio e os atalhos ficavam órfãos embaixo dos cards. */
+	apresentaOfertaNesteTurno: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
+	/** `toolCallId` dos artifacts que o `converse` já empurrou AO VIVO (pra
+	 * aparecerem ENTRE os dois balões). O `persist` continua gravando todos no
+	 * banco, mas não pode reemitir estes — sairia o card duplicado na tela. */
+	streamedArtifactIds: Annotation<string[], string[] | null>({
+		reducer: (a, b) => (b === null ? [] : a.concat(b)),
+		default: () => [],
 	}),
 
 	// ── Autoridade do fluxo (mutado pelos nós conforme o turno avança) ──

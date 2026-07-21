@@ -145,7 +145,7 @@ export function PlanEstimatePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="overflow-hidden rounded-[18px] border-primary/30 shadow-lg">
+			<Card className="overflow-hidden rounded-[12px] border-[color:var(--border-strong)] shadow-lg">
 				<CardContent className="space-y-3.5 p-3.5">
 					<p className="flex items-center gap-2 text-sm font-medium">
 						<span className="flex size-[26px] items-center justify-center rounded-full bg-[var(--surface-ink)] p-1.5">
@@ -307,7 +307,7 @@ export function PlanEstimatePicker({
 						onClick={submit}
 						disabled={submitted || isStreaming}
 						size="sm"
-						className="w-full gap-1.5 rounded-[13px] text-xs shadow-[var(--shadow-primary)]"
+						className="w-full gap-1.5 rounded-full text-xs"
 						data-testid="plan-submit"
 					>
 						{submitted ? (

@@ -973,6 +973,17 @@ export class EphemeralTextFilter {
 		return scrubCpf(stripEmoji(out));
 	}
 
+	/** DESCARTA a pergunta segurada. Existe pra fronteira do reveal em dois
+	 * tempos (`converse.ts`): a primeira mensagem só APRESENTA (a lista ou a
+	 * recomendação) e a pergunta vem na segunda, depois dos cards. Instruir o
+	 * modelo a "não pergunte agora" não segurava — ele emendava a pergunta no
+	 * fim do anúncio assim mesmo e ela aparecia duas vezes. Aqui a estrutura
+	 * garante: a pergunta do bloco 1 é descartada, a do bloco 2 é a que vale.
+	 * Não inventa texto nem reescreve nada — só não deixa sair no balão errado. */
+	descartarPerguntaSegurada(): void {
+		this.heldQuestion = "";
+	}
+
 	private releaseHeldQuestion(): string {
 		const held = this.heldQuestion;
 		this.heldQuestion = "";

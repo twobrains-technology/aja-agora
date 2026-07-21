@@ -22,7 +22,13 @@ export function buildTwoPathsCard(meta: ConversationMetadata): ServerCard {
 }
 
 export function buildEmbeddedBidCard(meta: ConversationMetadata): ServerCard {
-	return { payload: coerceEmbeddedBidPayload({}, meta.recommendedOffer ?? null) };
+	return {
+		payload: coerceEmbeddedBidPayload(
+			{},
+			meta.recommendedOffer ?? null,
+			meta.qualifyAnswers?.valorDoBemAlvo ?? meta.qualifyAnswers?.creditMax,
+		),
+	};
 }
 
 /** Sem `groupId` ancorado (reveal anterior ao FIX-246, ou nenhuma oferta

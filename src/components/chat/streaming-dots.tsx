@@ -56,6 +56,15 @@ const TOOL_LABEL_STAGES: Record<string, ToolLabelStage[]> = {
 	capture_lead: [{ afterMs: 0, text: "Salvando dados", icon: UserCheck }],
 };
 
+/** Turno sem tool: os primeiros segundos ficam só nos pontinhos (é o "digitando"
+ * normal); passando disso, a espera precisa de palavra — senão lê como travado. */
+const ESPERA_SEM_TOOL: ToolLabelStage[] = [
+	{ afterMs: 0, text: "", icon: Sparkles },
+	{ afterMs: 6_000, text: "Montando sua resposta", icon: Sparkles },
+	{ afterMs: 15_000, text: "Ainda estou aqui, organizando os números", icon: Sparkles },
+	{ afterMs: 30_000, text: "Quase lá, finalizando", icon: Sparkles },
+];
+
 /** Estágio atual pro tempo decorrido: o último cujo `afterMs` já foi atingido. */
 function currentStage(stages: ToolLabelStage[], elapsedMs: number): ToolLabelStage {
 	let stage = stages[0];
@@ -73,14 +82,19 @@ export function StreamingDots({ tool }: { tool?: string } = {}) {
 	const [elapsedMs, setElapsedMs] = useState(0);
 	useEffect(() => {
 		setElapsedMs(0);
-		if (!tool || (TOOL_LABEL_STAGES[tool]?.length ?? 0) <= 1) return;
+		// O timer roda mesmo SEM tool: turno longo sem tool nenhuma (o reveal faz
+		// dois beats de modelo e chega perto de um minuto) deixava só três pontos
+		// mudos na tela, e a pessoa acha que travou.
+		if (tool && (TOOL_LABEL_STAGES[tool]?.length ?? 0) <= 1) return;
 		const interval = setInterval(() => {
 			setElapsedMs((prev) => prev + 1_000);
 		}, 1_000);
 		return () => clearInterval(interval);
 	}, [tool]);
 
-	const stages = tool ? TOOL_LABEL_STAGES[tool] : undefined;
+	const stages = tool ? TOOL_LABEL_STAGES[tool] : ESPERA_SEM_TOOL;
+	// Nos primeiros segundos o silêncio é natural (o agente está "digitando"); o
+	// rótulo só entra quando a espera começa a parecer travamento.
 	const label = stages ? currentStage(stages, elapsedMs) : undefined;
 
 	// Três pontos pulsantes (keyframe tyB: translateY -5px, opacity 1 → opaco, delay escalonado)
@@ -102,7 +116,8 @@ export function StreamingDots({ tool }: { tool?: string } = {}) {
 		</div>
 	);
 
-	if (label) {
+	// Rótulo vazio = ainda é o "digitando" normal: cai no balão de pontinhos.
+	if (label?.text) {
 		// Tool status: pill branca com borda + ícone azul + texto + dots
 		return (
 			<output

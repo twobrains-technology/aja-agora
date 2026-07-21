@@ -355,6 +355,19 @@ async function consumeEvents(
 				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
 				break;
 			case "tool-call":
+				// No WhatsApp não existe chip de progresso: se a busca na
+				// administradora demora, o cliente manda o CPF e fica olhando pra
+				// tela sem nenhum sinal de vida — e some. Uma linha do SISTEMA
+				// (determinística, sem promessa e sem número) faz o papel do
+				// indicador que a web desenha. Só na busca; nas outras tools o turno
+				// responde rápido e uma linha dessas viraria ruído.
+				if (ev.toolName === "recommend_groups" || ev.toolName === "search_groups") {
+					await flushText();
+					const ok = await sendText(from, "Consultando as administradoras agora — só um instante.");
+					hasSent = hasSent || ok;
+					lastWasInteractive = false;
+				}
+				break;
 			case "meta-update":
 			case "suppression":
 			case "usage":

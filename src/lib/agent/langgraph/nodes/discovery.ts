@@ -54,6 +54,20 @@ export async function discoveryNode(
 	// assumir que SEMPRE roda só a partir dali (futuras arestas da Rodada 1).
 	if (!category) return { events: [] };
 
+	// Avisa AO VIVO que a busca começou, ANTES de chamar a Bevi. A consulta leva
+	// de alguns segundos a meia dúzia deles, e até aqui o cliente mandava CPF e
+	// celular e a tela ficava MUDA o tempo todo — sem sinal nenhum de que algo
+	// estava acontecendo. A UI já sabe desenhar o progresso a partir deste evento
+	// (`streaming-dots.tsx`: "Comparando grupos" → "Rankeando as melhores opções"
+	// → "Quase lá"), e o adapter do WhatsApp manda o equivalente de lá. É status
+	// do SISTEMA, determinístico — nunca uma fala do modelo prometendo buscar.
+	config?.writer?.({
+		type: "tool-call",
+		toolName: "recommend_groups",
+		input: { category, creditMin: funnel.qualifyAnswers.creditMin, creditMax: funnel.qualifyAnswers.creditMax },
+		toolCallId: crypto.randomUUID(),
+	});
+
 	const tools = buildLangGraphTools({ conversationId, channel });
 	const result = await tools.recommend_groups.invoke({
 		category,
@@ -135,14 +149,16 @@ export async function discoveryNode(
 			termMonths: best.termMonths ?? 0,
 			monthlyPayment: best.monthlyPayment ?? 0,
 			groupId: best.id,
+			avgBidValue: best.avgBidValue,
 		};
 	}
 
-	// NÃO emite aqui — quem entrega é o `persist`, depois de `persistMeta`
-	// (o adapter relê a meta do banco pra montar o card).
-	void config;
+	// Os ARTIFACTS não saem aqui — quem entrega é o `converse` (entre os dois
+	// balões do reveal) ou o `persist`, depois de `persistMeta`.
 
 	return {
+		// Liga os DOIS TEMPOS da apresentação no `converse` (ver `state.ts`).
+		apresentaOfertaNesteTurno: true,
 		funnel: {
 			...funnel,
 			searchDispatched: true,

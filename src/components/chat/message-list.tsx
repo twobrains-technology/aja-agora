@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { Em } from "@/components/kv/em";
 import { Button } from "@/components/ui/button";
 import type { AjaUIMessage, TransitionPartData } from "@/lib/chat/ui-message";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
@@ -218,10 +219,10 @@ export function EmptyState() {
 		>
 			<div className="flex w-full items-start gap-2 sm:gap-3">
 				<AssistantAvatar />
-				<div className="flex min-w-0 flex-1 flex-col items-start gap-3">
-					<div className="max-w-full whitespace-pre-wrap rounded-2xl rounded-bl-lg bg-muted px-3 py-2 text-base text-foreground sm:px-4 sm:py-2.5">
+				<div className="flex min-w-0 flex-1 flex-col items-start gap-4">
+					<div className="max-w-[62ch] whitespace-pre-wrap rounded-2xl rounded-tl-[5px] border border-[color:var(--border-strong)] bg-card px-[14px] py-[10px] text-[15px] leading-[1.55] text-foreground shadow-[0_1px_2px_rgba(2,22,40,0.05)]">
 						Olá! Sou seu consultor de consórcio.{"\n\n"}
-						Me conta: o que você quer conquistar?
+						Me conta: o que você quer <Em>conquistar</Em>?
 					</div>
 					<div className="w-full">
 						<WelcomeCategories payload={{ options: WELCOME_OPTIONS }} />
