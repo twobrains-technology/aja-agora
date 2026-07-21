@@ -3,8 +3,8 @@
 // condicional `routeAfterConverse` usa — testado isolado (TDD strict, sem
 // grafo/DB) cobrindo a matriz completa de combinações.
 import { describe, expect, it } from "vitest";
-import { readyForDiscovery } from "./route";
 import type { FunnelState } from "../state";
+import { readyForDiscovery } from "./route";
 
 const BASE: FunnelState = {
 	currentPersona: "auto",
@@ -51,5 +51,31 @@ describe("FIX-358 — I1: readyForDiscovery (identidade + valor, nunca antes)", 
 
 	it("creditMax=0 é um valor válido (não confundir com undefined)", () => {
 		expect(readyForDiscovery({ ...BASE, qualifyAnswers: { creditMax: 0 } })).toBe(true);
+	});
+});
+
+describe("FIX-360 — readyForDiscovery: troca de faixa de valor pós-reveal re-dispara", () => {
+	const POS_REVEAL: FunnelState = {
+		...BASE,
+		searchDispatched: true,
+		revealCompleted: true,
+		discoveredCreditTarget: 90_000,
+	};
+
+	it("mesma faixa buscada (creditMax === discoveredCreditTarget) → false (idempotência)", () => {
+		expect(readyForDiscovery(POS_REVEAL)).toBe(false);
+	});
+
+	it("faixa NOVA (creditMax !== discoveredCreditTarget) → true (re-descoberta legítima)", () => {
+		expect(
+			readyForDiscovery({
+				...POS_REVEAL,
+				qualifyAnswers: { ...POS_REVEAL.qualifyAnswers, creditMax: 130_000 },
+			}),
+		).toBe(true);
+	});
+
+	it("sem discoveredCreditTarget (descoberta anterior ao fix) → false (fail-safe, não reabre sem baseline)", () => {
+		expect(readyForDiscovery({ ...POS_REVEAL, discoveredCreditTarget: undefined })).toBe(false);
 	});
 });

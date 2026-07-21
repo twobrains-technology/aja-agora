@@ -11,11 +11,20 @@ import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
 export function readyForDiscovery(funnel: FunnelState): boolean {
-	return (
+	const base =
 		funnel.identityCollected &&
 		funnel.qualifyAnswers.creditMax !== undefined &&
-		Boolean(funnel.currentCategory) &&
-		!funnel.searchDispatched
+		Boolean(funnel.currentCategory);
+	if (!base) return false;
+	if (!funnel.searchDispatched) return true;
+	// FIX-360 — troca de faixa de valor PÓS-reveal re-dispara a descoberta
+	// (equivalente a `revealValueTargetChanged`, tool-policy.ts): só quando o
+	// valor-alvo ATUAL diverge do que foi de fato buscado da última vez —
+	// afirmativo curto na MESMA faixa (`discoveredCreditTarget` ausente ou
+	// igual) segue idempotente (I1 original preservado).
+	return (
+		funnel.discoveredCreditTarget !== undefined &&
+		funnel.qualifyAnswers.creditMax !== funnel.discoveredCreditTarget
 	);
 }
 

@@ -2,8 +2,9 @@
 // pros 14 `TurnEvent` que os dois channel adapters consomem (FIX-357, fix
 // MÉDIA-7 do crítico). Contrato de interface — a implementação viva do
 // walking skeleton (quando/como cada evento é emitido) é o FIX-358.
-import type { ConversationMetadata } from "@/lib/agent/personas";
+
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { AgentGraphStateType, FunnelState } from "./state";
 
 /**
@@ -41,11 +42,22 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		currentPersona: funnel.currentPersona,
 		currentCategory: funnel.currentCategory,
 		desireAsked: funnel.desireAsked,
+		desireAnswered: funnel.desireAnswered,
 		identityCollected: funnel.identityCollected,
 		searchDispatched: funnel.searchDispatched,
+		discoveredCreditTarget: funnel.discoveredCreditTarget,
 		revealCompleted: funnel.revealCompleted,
 		recommendedAdministradora: funnel.recommendedAdministradora,
 		recommendedOffer: funnel.recommendedOffer,
+		motivationAsked: funnel.motivationAsked,
+		motivationMirrored: funnel.motivationMirrored,
+		experiencePrev: funnel.experiencePrev,
+		doubtsAddressed: funnel.doubtsAddressed,
+		topicPickerDispatched: funnel.topicPickerDispatched,
+		recoConsentDispatched: funnel.recoConsentDispatched,
+		recoConsentAnswered: funnel.recoConsentAnswered,
+		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
+		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
 		qualifyAnswers: {
 			...baseMeta.qualifyAnswers,
@@ -53,6 +65,11 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			creditMax: funnel.qualifyAnswers.creditMax,
 			desiredItem: funnel.qualifyAnswers.desiredItem,
 			motivation: funnel.qualifyAnswers.motivation,
+			prazoMeses: funnel.qualifyAnswers.prazoMeses,
+			hasLance: funnel.qualifyAnswers.hasLance,
+			lanceValue: funnel.qualifyAnswers.lanceValue,
+			lanceEmbutido: funnel.qualifyAnswers.lanceEmbutido,
+			lanceEmbutidoPercent: funnel.qualifyAnswers.lanceEmbutidoPercent,
 		},
 	};
 }
@@ -121,10 +138,9 @@ export const TURN_EVENT_TYPES: ReadonlyArray<TurnEvent["type"]> = [
 
 /** Helper de conveniência pro nó `persist`/`run-turn.ts`: monta o evento
  * `meta-update` a partir do estado atual do grafo. */
-export function metaUpdateEvent(state: AgentGraphStateType): Extract<
-	TurnEvent,
-	{ type: "meta-update" }
-> {
+export function metaUpdateEvent(
+	state: AgentGraphStateType,
+): Extract<TurnEvent, { type: "meta-update" }> {
 	return { type: "meta-update", meta: projectToMeta(state) };
 }
 

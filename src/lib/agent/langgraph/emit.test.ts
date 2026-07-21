@@ -13,8 +13,10 @@ const baseMeta: ConversationMetadata = {
 	contractClosed: false,
 	qualifyAnswers: {
 		// campo de QualifyAnswers fora do slice — também tem que sobreviver.
-		hasLance: "yes",
-		lanceValue: 15_000,
+		// (FIX-360 trouxe hasLance/lanceValue/prazoMeses/lanceEmbutido* PRA
+		// DENTRO do slice — monthlySavings/fgtsValue seguem fora.)
+		monthlySavings: 4_000,
+		fgtsValue: 12_000,
 	},
 };
 
@@ -80,9 +82,9 @@ describe("FIX-357 — projectToMeta: conjunto explícito, não diff cego", () =>
 
 		expect(projected.whatsappOptinShown).toBe(true);
 		expect(projected.contractClosed).toBe(false);
-		// QualifyAnswers fora do slice (hasLance/lanceValue) sobrevive junto.
-		expect(projected.qualifyAnswers?.hasLance).toBe("yes");
-		expect(projected.qualifyAnswers?.lanceValue).toBe(15_000);
+		// QualifyAnswers fora do slice (monthlySavings/fgtsValue) sobrevive junto.
+		expect(projected.qualifyAnswers?.monthlySavings).toBe(4_000);
+		expect(projected.qualifyAnswers?.fgtsValue).toBe(12_000);
 	});
 
 	it("metaUpdateEvent embrulha a mesma projeção no formato TurnEvent", () => {

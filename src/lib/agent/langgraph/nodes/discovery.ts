@@ -20,7 +20,7 @@
 // `persist.ts`/`emit.ts`), então só é seguro entregá-lo ao chamador DEPOIS
 // que `persist` gravar. `run-turn.ts` drena `state.events` do estado final
 // do grafo pra estes tipos, não do stream ao vivo.
-import type { Category } from "@/lib/agent/personas";
+
 import {
 	buildComparisonTableFromRevealGroups,
 	buildRecommendationCardFromRevealGroup,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import { scoringInputFromMeta } from "@/lib/agent/orchestrator/runner";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { Category } from "@/lib/agent/personas";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
@@ -110,6 +111,11 @@ export async function discoveryNode(
 			...funnel,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-360 — snapshot do valor-alvo REALMENTE buscado (equivalente a
+			// `discoveredCreditTarget`, tool-policy.ts) — permite ao `route`
+			// distinguir troca de faixa (re-descoberta legítima) de afirmativo
+			// curto na mesma faixa (idempotência original, I1).
+			discoveredCreditTarget: funnel.qualifyAnswers.creditMax,
 			recommendedAdministradora,
 			recommendedOffer,
 		},

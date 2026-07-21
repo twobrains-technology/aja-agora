@@ -1,7 +1,7 @@
 ---
 id: FIX-360
 titulo: "Funil completo no grafo (rapport, experience, reco-consent, timeframe, lance, simulator)"
-status: todo
+status: done
 bloco: bloco-funil-completo-langgraph
 arquivos:
   - src/lib/agent/langgraph/graph.ts
@@ -9,6 +9,7 @@ arquivos:
   - src/lib/agent/langgraph/nodes/
   - src/lib/agent/langgraph/state.ts
 rodada: 2026-07-20 — campanha runtime LangGraph, Rodada 1
+executado_em: 2026-07-20
 ---
 
 ## Palavras do operador
