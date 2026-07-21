@@ -23,6 +23,7 @@ import type {
 	GatePartData,
 	GatePartOption,
 	SliderField,
+	ToolStatusPartData,
 	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
@@ -317,6 +318,28 @@ export async function pipeOrchestratorToWriter(
 		}
 	};
 
+	// BATIMENTO. Entre o início do turno e a primeira palavra do modelo a stream
+	// fica em silêncio absoluto — e desde que a busca passou a rodar ANTES da
+	// fala, esse silêncio chega a 30s+. Proxy nenhum aguenta: o OrbStack corta
+	// com EOF e o cliente leva 502 no meio da conversa (aconteceu no clique de
+	// "Seguir com ITAÚ", o botão de fechar negócio). Um data-part transitório a
+	// cada 8s mantém a conexão viva; a UI ignora `data-heartbeat`.
+	const batimento = setInterval(() => {
+		try {
+			// Reusa o part de tool "transiente" que a UI já sabe descartar — nenhum
+			// tipo novo no protocolo só pra manter a conexão viva.
+			writer.write({
+				type: "data-tool",
+				id: crypto.randomUUID(),
+				data: { tool: "keepalive" } as unknown as ToolStatusPartData,
+				transient: true,
+			});
+		} catch {
+			// stream já fechada — o clearInterval do finally cuida do resto
+		}
+	}, 8000);
+
+	try {
 	for await (const ev of events) {
 		switch (ev.type) {
 			case "text-delta":
@@ -474,6 +497,9 @@ export async function pipeOrchestratorToWriter(
 				closeTextIfOpen();
 				break;
 		}
+	}
+	} finally {
+		clearInterval(batimento);
 	}
 
 	closeTextIfOpen();
