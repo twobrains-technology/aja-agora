@@ -9,12 +9,17 @@ export type ClosingItem =
 	| { kind: "text"; text: string }
 	| {
 			kind: "artifact";
-			type: "real_offer" | "signature_handoff" | "document_upload";
+			type: "real_offer" | "signature_handoff" | "document_upload" | "atendimento_handoff";
 			payload: Record<string, unknown>;
 	  };
 
-const fmtBRL = (n: number) =>
-	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/** O WhatsApp OFICIAL da Aja Agora — o único canal por onde o atendente fala
+ * com o cliente depois do fechamento. Fonte única: a copy do fecho, o card de
+ * handoff e o contexto do modelo (converse.ts) leem daqui. */
+export const WHATSAPP_OFICIAL_DIGITOS = "5511955020229";
+export const WHATSAPP_OFICIAL_EXIBICAO = "+55 11 95502-0229";
+
+const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** FIX-40: posição FACTUAL do lance declarado vs o lance médio do grupo. Rótulo
  * literal do campo, sem prometer contemplação (proibido derivar "chance" — a
@@ -93,11 +98,7 @@ export function realOfferPresentation(
 	// FIX-40: só compara quando há AMBOS — lance declarado (>0) E lance médio do
 	// grupo (fonte real). Sem um deles, silêncio (D11: nada de número sem fonte).
 	const declared = opts.declaredLanceValue;
-	if (
-		Number.isFinite(declared) &&
-		(declared as number) > 0 &&
-		Number.isFinite(offer.avgBidValue)
-	) {
+	if (Number.isFinite(declared) && (declared as number) > 0 && Number.isFinite(offer.avgBidValue)) {
 		items.push({
 			kind: "text",
 			text: bidPositionText(declared as number, offer.avgBidValue as number),
@@ -134,68 +135,77 @@ export function realOfferPresentation(
 export function closingPresentation(
 	res: ConfirmOfferResult,
 	opts: {
-		whatsappChannel?: "free_text" | "template" | "queued";
 		channel?: "web" | "whatsapp";
+		/** URL assinada da NOSSA proposta em PDF. Sem ela o card "Sua proposta está
+		 * pronta" não sai — melhor não ter card do que mandar o cliente pro PDF da
+		 * administradora em domínio de terceiro (abolido em 2026-07-21). */
+		propostaUrl?: string | null;
 	} = {},
 ): ClosingItem[] {
 	const administradora = res.administradora ?? "administradora";
-	const pedirOiText =
-		opts.whatsappChannel === "queued"
-			? "Pra gente seguir, olha só: assim que a janela abrir, eu te mando uma mensagenzinha no seu WhatsApp."
-			: "Pra gente seguir, olha só: acabei de te mandar uma mensagenzinha no seu WhatsApp.";
-	const whatsappPingBeat: ClosingItem[] =
+	// O handoff pro atendente humano: um BEAT só, com uma ação só. Na web vira
+	// card com botão de WhatsApp (o cliente precisa de um lugar pra clicar, não
+	// de um número no meio de um parágrafo); no WhatsApp é uma frase, porque a
+	// conversa já está no canal certo.
+	const handoffBeat: ClosingItem[] =
 		opts.channel === "whatsapp"
-			? []
-			: [
-					{ kind: "text", text: pedirOiText },
+			? [
 					{
 						kind: "text",
-						text: 'Me responde por lá com um "oi"? É só pra você já salvar o nosso contato.',
+						text: `Em breve um atendente da Aja Agora te chama por aqui mesmo, neste número, pra fazer a adesão na ${administradora}. Ele cuida dos documentos e do cadastro — você não precisa enviar nada agora, é só ficar de olho.`,
+					},
+				]
+			: [
+					{
+						kind: "artifact",
+						type: "atendimento_handoff",
+						payload: {
+							numero: WHATSAPP_OFICIAL_DIGITOS,
+							numeroFormatado: WHATSAPP_OFICIAL_EXIBICAO,
+							administradora: res.administradora ?? "",
+							mensagemInicial: `Oi! Acabei de fechar minha proposta${
+								res.administradora ? ` da ${res.administradora}` : ""
+							} pelo site da Aja Agora.`,
+						},
 					},
 				];
 	return [
+		// Um beat só, sem repetir a mesma ideia. Antes eram dois textos + o card da
+		// proposta, e "escolhida pela Aja Agora pro seu perfil" / "segue com você até
+		// a contemplação" apareciam DUAS vezes no mesmo balão — costura de blocos,
+		// não fala. "Booking" também saiu: o texto é em português.
 		{
 			kind: "text",
 			text:
-				`Perfeito! Sua cota da ${administradora} está reservada, ` +
-				"escolhida pela Aja Agora para o seu perfil. " +
-				"E a Aja Agora segue com você até a contemplação — e depois dela.",
+				`Perfeito! Sua cota da ${administradora} está reservada, escolhida pela Aja Agora ` +
+				"para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
+				"Você não paga nada agora: a primeira parcela só vence quando o boleto chegar na sua casa.",
 		},
-		{
-			kind: "text",
-			text: "Você não paga nada agora — é como um booking: só quando chegar o boleto na sua casa.",
-		},
-		{
-			kind: "artifact",
-			type: "signature_handoff",
-			payload: {
-				administradora: res.administradora ?? "",
-				consortiumProposalLink: res.consortiumProposalLink,
-			},
-		},
-		{
-			kind: "artifact",
-			type: "document_upload",
-			payload: {
-				proposalId: res.proposalId,
-				documentsLinkPersonal: res.documentsLinkPersonal,
-				optional: true,
-			},
-		},
+		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.
+		...(opts.propostaUrl
+			? [
+					{
+						kind: "artifact" as const,
+						type: "signature_handoff" as const,
+						payload: {
+							administradora: res.administradora ?? "",
+							proposalUrl: opts.propostaUrl,
+						},
+					},
+				]
+			: []),
+		// O card de upload de RG/CNH SAIU do fecho (Kairo, 2026-07-21): quem pede
+		// e recebe documento é o atendente que faz a adesão, na conversa dele. Pedir
+		// documento aqui era mais uma tarefa jogada no cliente logo depois do
+		// "Parabéns" — e ninguém do outro lado esperando por ela.
 		{
 			kind: "text",
 			text: "Parabéns! Agora você está oficialmente mais perto da sua conquista!",
 		},
-		// FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8): fecho pro
-		// WhatsApp. NUNCA "reservado/garantido/você já está no grupo" — a proposta
-		// foi enviada, mas nada foi contratado só com isso. O "oi" tem função
-		// TÉCNICA (abre a janela de 24h do WhatsApp, whatsapp/window.ts) — sem ele,
-		// o envio da especialista cai na fila de template.
-		// FIX-344: só existe fora do canal WhatsApp — ver whatsappPingBeat acima.
-		...whatsappPingBeat,
-		{
-			kind: "text",
-			text: "Daí, em alguns minutos, a nossa especialista em cadastros te chama pra pedir seus dados e os documentos pra dar entrada na administradora.",
-		},
+		// O "oi" no WhatsApp tem função TÉCNICA (abre a janela de 24h,
+		// whatsapp/window.ts) — sem ele, o envio do atendente cai na fila de
+		// template. Por isso o handoff é um card com botão, não um número solto
+		// no meio de um parágrafo.
+		...handoffBeat,
 	];
 }

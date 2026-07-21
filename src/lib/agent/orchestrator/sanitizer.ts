@@ -83,7 +83,8 @@ export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
 // Com dado concreto (número, valor, ou nome de administradora), é narração legítima
 // ("Vou simular a Rodobens com R$ 900 mil") e PASSA — o agente deve poder falar dos
 // números que já tem. O guard não pode virar mordaça.
-const ANNOUNCEMENT_VERB = /\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|trazer|apresentar|simular|detalhar|recomendar|destacar|aprofundar)\b/i;
+const ANNOUNCEMENT_VERB =
+	/\b(agora\s+)?(vou|deixa\s+eu)\s+(te\s+)?(mostrar|trazer|apresentar|simular|detalhar|recomendar|destacar|aprofundar)\b/i;
 /** Sinal de que a frase carrega CONTEÚDO real (não é só anúncio): qualquer dígito
  * (parcela, valor, prazo, quantidade) ou um nome próprio em CAIXA ALTA (as
  * administradoras chegam assim da Bevi: ITAÚ, ÂNCORA, RODOBENS…). */
@@ -422,7 +423,10 @@ const CONCRETE_SCENARIO_NUMBER =
  * de contemplação) DENTRO do turno de reveal (`ctx.hasSearchToolCall`) — esse
  * número é do card, não da narrativa do modelo. Explicar o mecanismo sem número
  * é livre, aqui e em qualquer turno. */
-export function isPrematureRevealScenario(segment: string, ctx?: StateVerificationContext): boolean {
+export function isPrematureRevealScenario(
+	segment: string,
+	ctx?: StateVerificationContext,
+): boolean {
 	if (ctx?.hasSearchToolCall !== true) return false;
 	const s = segment.trim();
 	if (!s) return false;
@@ -483,7 +487,10 @@ export function normalizeEmojiToPunctuation(text: string): string {
 	if (!text) return text;
 	return text.replace(EMOJI_RUN, (m: string, offset: number, full: string) => {
 		const after = full.slice(offset + m.length);
-		const prev = full.slice(0, offset).replace(/[ \t]+$/, "").slice(-1);
+		const prev = full
+			.slice(0, offset)
+			.replace(/[ \t]+$/, "")
+			.slice(-1);
 		if (!prev) return ""; // emoji no início do texto — nada a pontuar
 		if (/[.!?:;,…]/.test(prev)) return after === "" || /^\s/.test(after) ? "" : " ";
 		if (/^[ \t]*[.!?:;,…]/.test(after)) return ""; // pontuação já vem depois
@@ -653,9 +660,7 @@ export function isHallucinatedAdministradoraClaim(
 	if (!ctx?.shownAdministradoras) return false;
 	const s = segment.trim();
 	if (!s) return false;
-	return (
-		findUnavailableAdministradoraMention(s, ctx.shownAdministradoras) !== null
-	);
+	return findUnavailableAdministradoraMention(s, ctx.shownAdministradoras) !== null;
 }
 
 /** FIX-350(b) (P1.5, veredito rodada 4): o TEXTO DO USUÁRIO (não do modelo)
@@ -749,7 +754,10 @@ export type EphemeralDropReason =
 	| "score-percentage"
 	| "hallucinated-administradora"
 	| "internal-tool-leak"
-	| "premature-reveal-scenario";
+	| "premature-reveal-scenario"
+	/** Segunda pergunta do mesmo turno (ou pergunta no 1º beat do reveal, onde o
+	 * agente só apresenta). Uma pergunta por vez — as demais são dropadas. */
+	| "pergunta-extra";
 
 /** Motivo (guard) que classifica este segmento como EFÊMERO, ou `null` se o
  * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
@@ -784,7 +792,10 @@ function factualDropReason(
  * responde sempre a mesma coisa" que o CLAUDE.md proíbe. Ficou provado que
  * `isPrematureReservationClaim("Tem um dinheiro reservado pra isso?")` matava a
  * pergunta canônica do gate de lance. */
-function styleDropReason(segment: string, ctx?: StateVerificationContext): EphemeralDropReason | null {
+function styleDropReason(
+	segment: string,
+	ctx?: StateVerificationContext,
+): EphemeralDropReason | null {
 	// process-preamble fica por razão ESTRUTURAL, não estética: em multi-step o
 	// "deixa eu buscar" viraria bolha persistida ANTES do retorno da tool.
 	if (isProcessPreamble(segment)) return "process-preamble";
@@ -836,6 +847,27 @@ function isSegmentBoundary(text: string, index: number): boolean {
 /** Quebra o texto em segmentos (frases) mantendo o delimitador (. ! ? : \n) à
  * esquerda. Usado pelo sanitizer e pela normalização anti-colagem (FIX-189).
  * FIX-248: guarda de dígito — "." de milhar/decimal nunca é fronteira. */
+/** Cola dois trechos garantindo UM separador entre eles. O split por segmento
+ * corta no delimitador (`...chave!`) e o segmento seguinte já vem sem o espaço
+ * que os separava; ao remontar (pergunta segurada, segmento dropado no meio) o
+ * texto saía grudado — "virada de chave!Me conta", "Beatriz!O Corolla". Não
+ * reescreve nada: só não deixa duas frases virarem uma palavra. */
+export function emendar(esquerda: string, direita: string): string {
+	if (!esquerda) return direita;
+	if (!direita) return esquerda;
+	// A pergunta segurada volta no FIM do turno, então ela pode cair logo depois
+	// de um ponto final — e vinha em minúscula, como estava no meio da fala
+	// original ("…prazo ideal pra você. em quanto tempo você quer…"). Corrigir a
+	// caixa é normalização de pontuação, não reescrita: nenhuma palavra muda.
+	const fechouFrase = /[.!?]["')\]]?\s*$/.test(esquerda);
+	const alvo =
+		fechouFrase && /^\s*\p{Ll}/u.test(direita)
+			? direita.replace(/^(\s*)(\p{Ll})/u, (_, e, c) => e + c.toUpperCase())
+			: direita;
+	const precisaEspaco = !/[\s]$/.test(esquerda) && !/^[\s.,;:!?)\]}]/.test(alvo);
+	return precisaEspaco ? `${esquerda} ${alvo}` : esquerda + alvo;
+}
+
 export function splitSegments(text: string): string[] {
 	const out: string[] = [];
 	let start = 0;
@@ -903,7 +935,10 @@ export class EphemeralTextFilter {
 	// SEGUINTE no mesmo turno sempre substitui a anterior antes de qualquer
 	// uma delas chegar ao usuário (ao vivo, não dá pra "desmandar" uma frase já
 	// emitida — segurar é a única forma de garantir que só a última sobrevive).
-	private heldQuestion = "";
+	/** Já saiu UMA pergunta neste turno (a segunda em diante é dropada). */
+	private jaPerguntou = false;
+	/** Nenhuma pergunta pode sair (1º beat do reveal: só apresentação). */
+	private perguntasProibidas = false;
 	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
 	// turno — permite ao runner distinguir "o modelo não disse nada" de "o
 	// modelo disse algo e o sanitizer comeu tudo", pra dar uma segunda chance
@@ -960,8 +995,7 @@ export class EphemeralTextFilter {
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
-		const out = rest ? this.filterComplete(rest) : "";
-		return out + this.releaseHeldQuestion();
+		return rest ? this.filterComplete(rest) : "";
 	}
 
 	/** FIX-330 — mesma coisa que `flush()`, mas NUNCA libera a pergunta
@@ -994,10 +1028,22 @@ export class EphemeralTextFilter {
 				continue;
 			}
 			if (isInterrogativeSentence(seg)) {
-				this.heldQuestion = seg;
-				continue;
+				// A pergunta sai NA ORDEM em que o modelo a escreveu. Antes ela era
+				// segurada e reanexada no fim do turno — e quando o modelo escrevia
+				// "me diz uma coisa: [pergunta]. Isso ajuda muito." o texto chegava
+				// remontado ao contrário ("me diz uma coisa: Isso ajuda muito. em
+				// quanto tempo…"), com minúscula no meio. Reordenar a fala de alguém
+				// é pior do que o problema que isso resolvia.
+				//
+				// O que continua garantido é UMA pergunta por turno: da segunda em
+				// diante, dropa (é o mesmo invariante do FIX-298, por outro caminho).
+				if (this.perguntasProibidas || this.jaPerguntou) {
+					this.droppedReasons.add("pergunta-extra");
+					continue;
+				}
+				this.jaPerguntou = true;
 			}
-			out += seg;
+			out = emendar(out, seg);
 		}
 		return scrubCpf(stripEmoji(out));
 	}
@@ -1010,13 +1056,13 @@ export class EphemeralTextFilter {
 	 * garante: a pergunta do bloco 1 é descartada, a do bloco 2 é a que vale.
 	 * Não inventa texto nem reescreve nada — só não deixa sair no balão errado. */
 	descartarPerguntaSegurada(): void {
-		this.heldQuestion = "";
+		this.perguntasProibidas = true;
 	}
 
-	private releaseHeldQuestion(): string {
-		const held = this.heldQuestion;
-		this.heldQuestion = "";
-		return held ? scrubCpf(stripEmoji(held)) : "";
+	/** Volta a aceitar pergunta (2º beat do reveal, onde ela é o próximo passo). */
+	liberarPerguntas(): void {
+		this.perguntasProibidas = false;
+		this.jaPerguntou = false;
 	}
 
 	/** O modelo tem uma pergunta segurada pra este turno?
@@ -1028,7 +1074,7 @@ export class EphemeralTextFilter {
 	 * dele (`modelAsked` no evento de gate). A regra do cliente ("nunca 2 perguntas
 	 * no mesmo balão") continua valendo — só mudou quem cala. */
 	hasHeldQuestion(): boolean {
-		return this.heldQuestion.trim().length > 0;
+		return this.jaPerguntou;
 	}
 
 	/** Motivos (guards) que dropParam pelo menos 1 segmento neste turno, na

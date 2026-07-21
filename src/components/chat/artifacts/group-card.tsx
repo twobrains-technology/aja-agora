@@ -79,8 +79,19 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 			whileTap={prefersReduced ? undefined : { scale: 0.98 }}
 			transition={cardSpring}
 		>
-			<button
-				type="button"
+			{/* O card inteiro é clicável, mas NÃO pode ser um <button>: ele contém o
+			    botão "Simular esse", e botão dentro de botão é HTML inválido — o React
+			    acusava hydration error em toda tela com card de grupo. `role="button"`
+			    + teclado dá o mesmo comportamento sem quebrar a árvore. */}
+			{/* biome-ignore lint/a11y/useSemanticElements: <button> aqui aninharia botões (HTML inválido) */}
+			<div
+				role="button"
+				tabIndex={0}
+				onKeyDown={(e) => {
+					if (e.key !== "Enter" && e.key !== " ") return;
+					e.preventDefault();
+					handleClick();
+				}}
 				className={cn(
 					"w-full max-w-sm bg-card border border-border rounded-[12px] overflow-hidden cursor-pointer text-left",
 					"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
@@ -205,7 +216,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 						<ChevronRight className="size-3.5" />
 					</Button>
 				</div>
-			</button>
+			</div>
 		</motion.div>
 	);
 }

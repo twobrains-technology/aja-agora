@@ -206,6 +206,11 @@ export function gateQuestion(
 			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
 			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
 			return null;
+		case "contract":
+			// Passo 5: quem pede os dados é o card `contract_form`, e a fala que o
+			// antecede é do modelo — nunca uma pergunta canônica do servidor (CPF
+			// JAMAIS é pedido por texto).
+			return null;
 	}
 }
 

@@ -64,7 +64,13 @@ export function buildStartContractInput(
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
 	// (que segue servindo só o matching da oferta, FIX-73): `valor` é o
 	// creditValue da ÚLTIMA oferta vista, nunca o que o cliente pediu de fato.
-	const originalRequestedCreditValue = q.creditClampedFrom ?? q.creditMax;
+	// O aviso "você pediu X, a carta real ficou Y" tem que citar o que o CLIENTE
+	// disse. `creditMax` deixa de servir aqui quando ele aceita lance embutido: o
+	// alvo passa a ser o valor RECALCULADO (bem ÷ (1 − pct)) e o cliente lia
+	// "você pediu uma carta de ~R$ 428.571" sem nunca ter dito esse número — a
+	// conta interna do embutido apresentada como fala dele. `valorDoBemAlvo`
+	// guarda o preço do bem, que é o que ele efetivamente pediu.
+	const originalRequestedCreditValue = q.creditClampedFrom ?? q.valorDoBemAlvo ?? q.creditMax;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {

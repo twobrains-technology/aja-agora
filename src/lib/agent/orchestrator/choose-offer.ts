@@ -373,6 +373,39 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
 	return null;
 }
 
+/**
+ * O cliente NOMEOU uma administradora entre as exibidas. Diferente de
+ * `resolveOfferByMention`, que desiste quando a marca tem várias cotas na tela
+ * ("qual delas?"), aqui a resposta é a MELHOR cota daquela marca — a primeira
+ * na ordem exibida, que é a ordem do ranking.
+ *
+ * Existe porque desistir em silêncio era pior: o cliente dizia "a da Canopus me
+ * atende, bora fechar" e o fechamento saía na ITAÚ, sem uma palavra sobre a
+ * troca (visto ao vivo, 2026-07-21). Escolher a marca é decisão dele; escolher
+ * a melhor cota DENTRO da marca é o mesmo critério que o sistema já usou pra
+ * recomendar. `null` quando ele não nomeou nenhuma das exibidas.
+ */
+export function resolveAdministradoraMention(
+	offers: ChosenOffer[],
+	text: string,
+): ChosenOffer | null {
+	if (!text || offers.length === 0) return null;
+	const normalizedText = normalizeAdministradora(text);
+	const negadas = extractNegatedAdministradoras(text, offers);
+	const citadas = offers.filter(
+		(o) =>
+			o.administradora &&
+			!negadas.has(normalizeAdministradora(o.administradora)) &&
+			normalizedText.includes(normalizeAdministradora(o.administradora)),
+	);
+	if (citadas.length === 0) return null;
+	// Nomeou mais de uma marca ("entre a Itaú e a Canopus…") — aí não dá pra
+	// cravar nada: é pergunta, não escolha.
+	const marcas = new Set(citadas.map((o) => normalizeAdministradora(o.administradora ?? "")));
+	if (marcas.size > 1) return null;
+	return resolveOfferByMention(citadas, text) ?? citadas[0];
+}
+
 /** Resolve por menção textual a partir dos artifacts persistidos da conversa. */
 export async function resolveOfferMentionForConversation(
 	conversationId: string,
@@ -380,6 +413,15 @@ export async function resolveOfferMentionForConversation(
 ): Promise<ChosenOffer | null> {
 	const rows = await loadArtifactRows(conversationId);
 	return resolveOfferByMention(listShownOffers(rows), text);
+}
+
+/** `resolveAdministradoraMention` a partir dos artifacts da conversa. */
+export async function resolveAdministradoraMentionForConversation(
+	conversationId: string,
+	text: string,
+): Promise<ChosenOffer | null> {
+	const rows = await loadArtifactRows(conversationId);
+	return resolveAdministradoraMention(listShownOffers(rows), text);
 }
 
 // FIX-266 (P1, veredito Fable r6): quando a menção não resolve (genuinamente

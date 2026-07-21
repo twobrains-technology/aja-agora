@@ -46,6 +46,19 @@ function post(body: unknown): Request {
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+/** O webhook responde 200 IMEDIATAMENTE e processa em background (import
+ * dinâmico + fila). Um tick só do event loop às vezes não bastava — espera até
+ * o mock ser chamado, com teto. */
+async function ateSerChamado(mock: { mock: { calls: unknown[] } }, tentativas = 50) {
+	for (let i = 0; i < tentativas && mock.mock.calls.length === 0; i++) await flush();
+}
+
+/** ID de mensagem ÚNICO por execução. O webhook é idempotente de verdade
+ * (`claimInboundMessage` grava a chave no banco), então um id fixo passava na
+ * primeira rodada e falhava em todas as seguintes — a reentrega era descartada,
+ * corretamente, e o teste acusava um bug que não existia. */
+const wamid = () => `wamid.teste-${crypto.randomUUID()}`;
+
 beforeEach(() => {
 	delete process.env.WHATSAPP_APP_SECRET;
 	for (const m of Object.values(mocks)) m.mockClear();
@@ -83,7 +96,7 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 							{
 								field: "messages",
 								value: {
-									messages: [{ from: "5562999", type: "text", id: "wamid.1", text: { body: "oi" } }],
+									messages: [{ from: "5562999", type: "text", id: wamid(), text: { body: "oi" } }],
 								},
 							},
 						],
@@ -92,7 +105,7 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 			}) as any,
 		);
 		expect(res.status).toBe(200);
-		await flush();
+		await ateSerChamado(mocks.processTextMessage);
 		expect(mocks.processTextMessage).toHaveBeenCalledTimes(1);
 		expect(mocks.applyTemplateStatusUpdate).not.toHaveBeenCalled();
 	});

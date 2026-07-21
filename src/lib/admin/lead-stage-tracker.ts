@@ -5,7 +5,11 @@ import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { attachContact } from "@/lib/contacts";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
-export type TrackableStage = "engajado" | "qualificado";
+/** `em_negociacao` entra aqui porque a negociação COMEÇA na conversa, não na
+ * mesa: assim que o cliente vê os grupos reais e fala sobre eles, ele está
+ * negociando — e o kanban precisa mostrar isso enquanto o papo acontece, não
+ * só depois do handoff (decisão do Kairo, 2026-07-21). */
+export type TrackableStage = "engajado" | "qualificado" | "em_negociacao";
 
 /**
  * FIX-48: resolve o leadId da conversa (o lead já existe quando o fechamento
@@ -26,6 +30,7 @@ const STAGE_ORDER: Record<"novo" | TrackableStage, number> = {
 	novo: 0,
 	engajado: 1,
 	qualificado: 2,
+	em_negociacao: 3,
 };
 
 /**

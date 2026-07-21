@@ -42,10 +42,14 @@ describe("FIX-2 — cards de artifact sem jargão seco", () => {
 		"src/components/chat/artifacts/comparison-table.tsx",
 	];
 
+	// 2026-07: os cards passaram a usar "Carta de crédito" — é o termo que a
+	// administradora imprime na proposta e o que o cliente vai ler no contrato,
+	// então falar diferente aqui e igual lá confundia mais do que ajudava. O que
+	// segue PROIBIDO é o jargão seco "Crédito" sozinho, sem substantivo.
 	for (const file of cardsComLabelValorDoBem) {
-		it(`${file.split("/").pop()}: label "Valor do bem" (não "Crédito")`, () => {
+		it(`${file.split("/").pop()}: nomeia o valor ("Valor do bem" ou "Carta de crédito"), nunca "Crédito" seco`, () => {
 			const src = readSource(file);
-			expect(src).toMatch(/Valor do bem/);
+			expect(src).toMatch(/Valor do bem|Carta de crédito/);
 			expect(src).not.toMatch(/>Crédito</);
 		});
 	}
@@ -117,9 +121,15 @@ describe("FIX-2 — system prompt orienta vocabulário amigável", () => {
 });
 
 describe("FIX-2 — o que NÃO muda (guard-rails)", () => {
-	it("educação do lance embutido mantém 'própria carta de crédito' (copy literal do docx)", () => {
+	// A copy determinística que EXPLICAVA o lance embutido (`lanceEmbutidoEdu`)
+	// foi removida em 2026-07-21: ela ensinava o conselho ERRADO (usar uma fatia
+	// da carta já escolhida, quando o certo é mirar uma carta MAIOR) e, no
+	// WhatsApp, saía no lugar da fala do modelo. Explicação é conversa — é do
+	// modelo, com os números que o código apura. O gate hoje só faz a pergunta.
+	it("gate lance-embutido faz a PERGUNTA, sem carregar a explicação enlatada", () => {
 		const q = (gateQuestion("lance-embutido") ?? "").toLowerCase();
-		expect(q).toMatch(/própria carta de crédito|propria carta de credito/);
+		expect(q.length).toBeGreaterThan(0);
+		expect(q).not.toMatch(/uma fatia|parte desse valor/);
 	});
 
 	it("identificadores internos continuam creditValue/creditMin/creditMax", () => {

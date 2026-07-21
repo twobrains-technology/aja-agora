@@ -22,7 +22,7 @@
  */
 
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ─── Mocks (antes de qualquer import do código de produção) ─────────────────
 
@@ -174,6 +174,17 @@ async function fetchAdminHistory(leadId: string) {
 }
 
 // ─── Suite ──────────────────────────────────────────────────────────────────
+
+// Este teste exercita o pipeline do runtime VERCEL (o mock é de
+// `@/lib/agent/agents`, que só o runtime Vercel consome). Sob `AI_RUNTIME=
+// langgraph` o turno passa pelo GRAFO, o mock não é tocado e o teste acusava um
+// bug inexistente. Fixa o runtime que ele de fato cobre.
+beforeAll(() => {
+	vi.stubEnv("AI_RUNTIME", "vercel");
+});
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 describe("BUG-LEAD-HISTORY-INCOMPLETE — canal WEB persiste artifact emitido pelo agent", () => {
 	let convId: string;

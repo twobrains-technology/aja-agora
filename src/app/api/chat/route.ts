@@ -54,7 +54,6 @@ import {
 	prazoMesesForIntent,
 } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
-import { runtimeFlavor } from "@/lib/llm/runtime";
 import {
 	type ClosingItem,
 	closingPresentation,
@@ -68,9 +67,12 @@ import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
-import { generateAndStoreProposalPdf } from "@/lib/proposal/store";
 import type { ChatAction } from "@/lib/chat/actions";
-import { EMPTY_TURN_FALLBACK, isTurnEmpty, pickEmptyTurnFallback } from "@/lib/chat/empty-turn-guard";
+import {
+	EMPTY_TURN_FALLBACK,
+	isTurnEmpty,
+	pickEmptyTurnFallback,
+} from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
@@ -83,8 +85,10 @@ import {
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { normalizePhoneBR } from "@/lib/leads/phone";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { generateAndStoreProposalPdf } from "@/lib/proposal/store";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
 import { isUuid } from "@/lib/utils/id";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -296,7 +300,12 @@ async function pipeClosingCeremony(args: {
 			persona: meta.currentPersona ?? null,
 			writer,
 		});
-		await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, TWO_PATHS_FOLLOWUP_TEXT);
+		await writeAndSaveText(
+			writer,
+			conversationId,
+			meta.currentPersona ?? null,
+			TWO_PATHS_FOLLOWUP_TEXT,
+		);
 		return;
 	}
 	await pipeServerArtifact({
@@ -615,10 +624,7 @@ export async function POST(req: NextRequest) {
 						// demais). Este branch responde SÓ a dúvida específica — a cascata
 						// de reco-consent segue pelo caminho normal de `nextGateToFire`
 						// (idempotente, já disparado no turno anterior).
-						if (
-							body.action?.kind === "interest" &&
-							body.action.administradora === "topic-picker"
-						) {
+						if (body.action?.kind === "interest" && body.action.administradora === "topic-picker") {
 							const label = body.action.label;
 							await pipeDirectiveTurn({
 								conversationId,
@@ -960,15 +966,19 @@ export async function POST(req: NextRequest) {
 						if (body.action?.kind === "offer-confirm") {
 							try {
 								const res = await confirmOffer(conversationId);
-								// Proposta co-branded em PDF → S3 (bucket de docs de cliente) pra
-								// aparecer no card do atendimento (back office). Best-effort: o
-								// PDF NUNCA derruba o fechamento (mesmo padrão do sendFechoPedirOi).
-								void generateAndStoreProposalPdf(conversationId).catch((err) => {
-									console.error(
-										`[offer-confirm] geração da proposta PDF falhou (conv=${conversationId})`,
-										err,
-									);
-								});
+								// A NOSSA proposta em PDF, gerada ANTES da copy do fecho: ela é o
+								// card "Sua proposta está pronta" (que substituiu o link da
+								// administradora em domínio de terceiro). Best-effort — falhou,
+								// o fecho segue sem o card; nunca derruba a contratação.
+								const proposta = await import("@/lib/proposal/entrega")
+									.then((m) => m.prepararPropostaParaEnvio(conversationId))
+									.catch((err) => {
+										console.error(
+											`[offer-confirm] preparo da proposta PDF falhou (conv=${conversationId})`,
+											err,
+										);
+										return null;
+									});
 								// Estado TERMINAL: pós-confirmação o fechamento está feito — o
 								// agente não re-apresenta contract_form (merge sobre meta atual).
 								const fresh = await reloadMeta(conversationId);
@@ -989,35 +999,16 @@ export async function POST(req: NextRequest) {
 									// (é o único canal em que o cliente de fato precisa ir até o
 									// WhatsApp pra continuar).
 									closingPresentation(res, {
-										whatsappChannel: fechoPedirOi.channel,
 										channel: "web",
+										propostaUrl: proposta?.url ?? null,
 									}),
 									writer,
 									conversationId,
 									meta.currentPersona ?? null,
 								);
-								// A PROPOSTA em PDF também na WEB: link de download no próprio
-								// chat. O PDF já era gerado acima, mas só ia pro S3 do back
-								// office — o cliente ouvia "você vai receber um email" e não
-								// recebia nada onde estava conversando. Best-effort: falhou, o
-								// fecho segue; nunca se diz que mandou sem ter mandado.
-								try {
-									const { prepararPropostaParaEnvio } = await import("@/lib/proposal/entrega");
-									const proposta = await prepararPropostaParaEnvio(conversationId);
-									if (proposta) {
-										const texto = `Sua proposta em PDF, com a carta, a parcela e o prazo que combinamos: ${proposta.url}`;
-										const id = crypto.randomUUID();
-										writer.write({ type: "text-start", id });
-										writer.write({ type: "text-delta", id, delta: texto });
-										writer.write({ type: "text-end", id });
-										await saveMessage(conversationId, "assistant", texto, "web");
-									}
-								} catch (err) {
-									console.error(
-										`[offer-confirm] envio da proposta PDF na web falhou (conv=${conversationId})`,
-										err,
-									);
-								}
+								// A proposta em PDF entra como CARD (signature_handoff, acima) —
+								// não mais como uma URL assinada crua no meio do texto, com 400
+								// caracteres de assinatura AWS aparecendo pro cliente.
 								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
 								// Nunca quebra o fechamento — falha vira contractSummaryPending.
 								await sendContractSummary(conversationId);

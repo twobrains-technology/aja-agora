@@ -17,7 +17,8 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 const CONV_ID = "conv-fix203";
 const WA = "5562999887766";
 
-const resolveCalls: Array<{ usageKey: string; to: string; conversationId: string; text: string }> = [];
+const resolveCalls: Array<{ usageKey: string; to: string; conversationId: string; text: string }> =
+	[];
 
 const mocks = vi.hoisted(() => ({
 	sendText: vi.fn().mockResolvedValue(undefined),
@@ -35,14 +36,33 @@ vi.mock("./api", () => ({
 	sendInteractiveMessage: vi.fn(),
 }));
 vi.mock("@/lib/conversation/messages", () => ({ saveMessage: mocks.saveMessage }));
-vi.mock("@/lib/conversation/meta", () => ({ metaOf: () => mocks.meta, persistMeta: mocks.persistMeta }));
-vi.mock("@/db", () => ({
-	db: { query: { conversations: { findFirst: vi.fn(async () => ({ id: CONV_ID, metadata: mocks.meta })) } } },
+vi.mock("@/lib/conversation/meta", () => ({
+	metaOf: () => mocks.meta,
+	persistMeta: mocks.persistMeta,
 }));
-vi.mock("@/lib/bevi/fulfillment", () => ({ confirmOffer: mocks.confirmOffer, startContract: vi.fn() }));
+vi.mock("@/db", () => ({
+	db: {
+		query: {
+			conversations: { findFirst: vi.fn(async () => ({ id: CONV_ID, metadata: mocks.meta })) },
+		},
+	},
+}));
+vi.mock("@/lib/bevi/fulfillment", () => ({
+	confirmOffer: mocks.confirmOffer,
+	startContract: vi.fn(),
+}));
 vi.mock("@/lib/bevi/contract-summary", () => ({ sendContractSummary: mocks.sendContractSummary }));
 vi.mock("./contract-capture", () => ({ fireContract: vi.fn(), CONTRACT_CANCELLED_REPLY: "x" }));
 vi.mock("./template-dispatch", () => ({ resolveAndSend: mocks.resolveAndSend }));
+// O beat "Sua proposta está pronta" só existe quando a NOSSA proposta em PDF
+// está pronta — é ela que o cliente recebe (o link da administradora saiu).
+vi.mock("@/lib/proposal/entrega", () => ({
+	prepararPropostaParaEnvio: vi.fn(async () => ({
+		url: "https://app.aja.test/api/proposta/prop-row-1",
+		urlAssinada: "https://s3.aja.test/proposta.pdf?X-Amz-Signature=abc",
+		nomeArquivo: "Proposta-Aja-Agora.pdf",
+	})),
+}));
 
 import { dispatchInteractiveReply } from "./interactive-handlers";
 
@@ -52,24 +72,37 @@ function dispatch(replyId: string, replyTitle = "x") {
 
 beforeEach(() => {
 	resolveCalls.length = 0;
-	for (const m of [mocks.sendText, mocks.saveMessage, mocks.persistMeta, mocks.confirmOffer, mocks.sendContractSummary])
+	for (const m of [
+		mocks.sendText,
+		mocks.saveMessage,
+		mocks.persistMeta,
+		mocks.confirmOffer,
+		mocks.sendContractSummary,
+	])
 		m.mockClear();
 	mocks.meta = {} as ConversationMetadata;
 	// Simula JANELA ABERTA: resolveAndSend executa o freeTextFallback e registra a chave.
-	mocks.resolveAndSend.mockReset().mockImplementation(
-		async (a: {
-			usageKey: string;
-			to: string;
-			conversationId: string;
-			freeTextFallback: () => Promise<void> | void;
-		}) => {
-			const before = mocks.sendText.mock.calls.length;
-			await a.freeTextFallback();
-			const after = mocks.sendText.mock.calls[before]?.[1] ?? "";
-			resolveCalls.push({ usageKey: a.usageKey, to: a.to, conversationId: a.conversationId, text: after });
-			return { channel: "free_text" };
-		},
-	);
+	mocks.resolveAndSend
+		.mockReset()
+		.mockImplementation(
+			async (a: {
+				usageKey: string;
+				to: string;
+				conversationId: string;
+				freeTextFallback: () => Promise<void> | void;
+			}) => {
+				const before = mocks.sendText.mock.calls.length;
+				await a.freeTextFallback();
+				const after = mocks.sendText.mock.calls[before]?.[1] ?? "";
+				resolveCalls.push({
+					usageKey: a.usageKey,
+					to: a.to,
+					conversationId: a.conversationId,
+					text: after,
+				});
+				return { channel: "free_text" };
+			},
+		);
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -101,7 +134,9 @@ describe("FIX-203 — offer_confirm roteia a confirmação por resolveAndSend", 
 		const allText = resolveCalls.map((c) => c.text).join("\n");
 		expect(allText).toMatch(/cota da ANCORA está reservada/i); // FIX-278: terminologia reserva de cota
 		expect(allText).toMatch(/Parabéns/i);
-		expect(allText).toContain(CONFIRM_RESULT.consortiumProposalLink);
+		expect(allText).toContain("https://app.aja.test/api/proposta/prop-row-1");
+		expect(allText).not.toContain("X-Amz-Signature");
+		expect(allText).not.toContain(CONFIRM_RESULT.consortiumProposalLink);
 
 		// a signature handoff foi a que carregou a chave proposta_pronta
 		const proposta = resolveCalls.find((c) => c.usageKey === "proposta_pronta");

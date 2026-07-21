@@ -42,7 +42,7 @@ export type TurnEvent =
 	  }
 	| { type: "welcome-categories" }
 	| { type: "handoff"; reason: string; triggerId?: string }
-	| { type: "lead-stage"; stage: "novo" | "engajado" | "qualificado" }
+	| { type: "lead-stage"; stage: "novo" | "engajado" | "qualificado" | "em_negociacao" }
 	| { type: "meta-update"; meta: ConversationMetadata }
 	| { type: "lead-collection-prompt"; field: LeadCollectionField; text: string }
 	// FIX-24: telemetria de observabilidade — emitidos pelo runner pra alimentar

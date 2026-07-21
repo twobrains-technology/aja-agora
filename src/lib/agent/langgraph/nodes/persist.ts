@@ -13,6 +13,7 @@
 // `state.events` do ESTADO FINAL do grafo (depois deste nó já ter rodado),
 // nunca do stream ao vivo — garantia por TOPOLOGIA, não por timing.
 
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { db } from "@/db";
 import { artifacts as artifactsTable } from "@/db/schema";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -21,7 +22,6 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { AgentGraphStateType } from "../state";
 
 /** Texto com cara de directive interno (nunca é o cliente digitando). */
@@ -126,6 +126,13 @@ export async function persistNode(
 	// intactos) é forward-only e idempotente — reemitir a cada turno é seguro.
 	if (funnel.desireAsked) events.push({ type: "lead-stage", stage: "engajado" });
 	if (funnel.identityCollected) events.push({ type: "lead-stage", stage: "qualificado" });
+	// A negociação começa AQUI, não na mesa: o cliente já viu os grupos reais
+	// (`revealCompleted`) e voltou a falar sobre eles — está negociando, e o
+	// kanban tem que mostrar isso durante a conversa. Exige um turno de USUÁRIO
+	// pós-reveal de propósito: só ter recebido os cards não é negociar.
+	if (funnel.revealCompleted && state.isUserTurn) {
+		events.push({ type: "lead-stage", stage: "em_negociacao" });
+	}
 	events.push({ type: "meta-update", meta });
 	events.push({ type: "finish", reason: "ok" });
 

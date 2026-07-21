@@ -296,7 +296,10 @@ export type ConversationMetadata = {
 	};
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */
-	maxStageReached?: "engajado" | "qualificado";
+	maxStageReached?: "engajado" | "qualificado" | "em_negociacao";
+	/** A explicação de como o consórcio funciona já foi dada (cliente novato).
+	 * Uma vez por conversa — ver `converse.ts`, blocoNovato. */
+	explicouComoFunciona?: boolean;
 	/** Marca que o card WhatsApp opt-in foi mostrado nesta conversa.
 	 * Impede o agent de chamar present_whatsapp_optin de novo. */
 	whatsappOptinShown?: boolean;

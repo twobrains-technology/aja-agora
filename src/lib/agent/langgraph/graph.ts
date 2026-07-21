@@ -17,7 +17,7 @@
 // livre não pega (o nome no gate `name`) — o gate anterior (`gate`) diz o que a
 // resposta deste turno responde.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { Command, MemorySaver, START, StateGraph, interrupt } from "@langchain/langgraph";
+import { Command, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { getCheckpointer } from "./checkpointer";
 import { advanceFunnelNode } from "./nodes/advance";
 import { analyzeNode } from "./nodes/analyze";

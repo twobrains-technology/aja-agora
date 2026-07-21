@@ -9,10 +9,11 @@
 //  - "custom": `config.writer(...)` dos nós (text-delta/tool-call) sai AO VIVO.
 //  - "values": último snapshot (pós-`persist`) → drena `state.events` filtrando
 //    o que já saiu ao vivo (LIVE_EVENT_TYPES) pra não duplicar.
-import { eq } from "drizzle-orm";
+
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { Command } from "@langchain/langgraph";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
@@ -100,8 +101,8 @@ export function createRunTurnLangGraph(deps?: {
 				gate: undefined,
 				answeredGate: undefined,
 				modelAskedQuestion: false,
-			apresentaOfertaNesteTurno: false,
-			streamedArtifactIds: [],
+				apresentaOfertaNesteTurno: false,
+				streamedArtifactIds: [],
 				funnel: funnelFromMeta(baseMeta),
 				events: [],
 			} satisfies AgentGraphStateType;

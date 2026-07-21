@@ -303,11 +303,32 @@ export interface RealOfferPayload {
 	logoUrl?: string;
 }
 
-/** Encaminhamento pra assinatura digital da administradora (sem "trocar de
- * empresa" — frase do doc). consortiumProposalLink = link Bevi. */
+/** "Sua proposta está pronta" — o card que entrega a proposta ao cliente.
+ *
+ * `proposalUrl` é a NOSSA proposta em PDF (co-branded, gerada por
+ * `lib/proposal/store.ts` e servida por URL assinada). O card usa SÓ ela: o
+ * `consortiumProposalLink` da administradora (um PDF hospedado em domínio de
+ * terceiro) foi ABOLIDO da conversa em 2026-07-21 — o cliente não pode sair da
+ * Aja Agora pra ver a própria proposta. O campo segue no tipo porque o back
+ * office e a mesa ainda o consomem (recovery.ts, mesa/routing.ts); o que mudou
+ * é quem aparece pro cliente. Sem `proposalUrl`, o card NÃO é emitido. */
 export interface SignatureHandoffPayload {
 	administradora: string;
-	consortiumProposalLink: string;
+	proposalUrl: string;
+}
+
+/** Fecho da jornada: quem continua com o cliente é um ATENDENTE humano, pelo
+ * WhatsApp oficial. Card com uma ação só (abrir a conversa) — antes isso era
+ * um parágrafo no fim de um balão longo e o cliente ficava sem saber o que
+ * fazer depois de fechar. */
+export interface AtendimentoHandoffPayload {
+	/** Número oficial em dígitos com DDI (ex.: "5511955020229"). */
+	numero: string;
+	/** O mesmo número como o cliente lê (ex.: "+55 11 95502-0229"). */
+	numeroFormatado: string;
+	administradora?: string;
+	/** Texto pré-preenchido do wa.me — abre a janela de 24h já com contexto. */
+	mensagemInicial?: string;
 }
 
 /** Upload de documento no chat (RG/CNH frente+verso). Os links são o fallback se
@@ -407,6 +428,7 @@ export type ArtifactByType =
 	| { type: "contract_form"; payload: ContractFormPayload }
 	| { type: "real_offer"; payload: RealOfferPayload }
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
+	| { type: "atendimento_handoff"; payload: AtendimentoHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
 	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
 	| { type: "embedded_bid"; payload: EmbeddedBidPayload }

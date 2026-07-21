@@ -59,7 +59,9 @@ describe("ComparisonTable — sem Taxa no carrossel (Bernardo 2026-06-11)", () =
 	it("mantém o essencial: administradora, valor do bem, parcela e prazo", () => {
 		render(<ComparisonTable payload={payload} />);
 		expect(screen.getByText(/ITAÚ/)).toBeTruthy();
-		expect(screen.getAllByText(/valor do bem/i).length).toBe(2);
+		// O rótulo virou "Carta de crédito" (o termo que a administradora usa e o
+		// que aparece na proposta) — um por oferta listada.
+		expect(screen.getAllByText(/carta de crédito/i).length).toBe(2);
 		expect(document.body.textContent).toMatch(/29m/);
 	});
 });

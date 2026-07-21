@@ -53,6 +53,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		motivationMirrored: funnel.motivationMirrored,
 		experiencePrev: funnel.experiencePrev,
 		doubtsAddressed: funnel.doubtsAddressed,
+		explicouComoFunciona: funnel.explicouComoFunciona,
 		topicPickerDispatched: funnel.topicPickerDispatched,
 		recoConsentDispatched: funnel.recoConsentDispatched,
 		recoConsentAnswered: funnel.recoConsentAnswered,
@@ -62,6 +63,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
 		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
+		contractFormDispatched: funnel.contractFormDispatched,
 		qualifyAnswers: {
 			...baseMeta.qualifyAnswers,
 			creditMin: funnel.qualifyAnswers.creditMin,
@@ -69,6 +71,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			desiredItem: funnel.qualifyAnswers.desiredItem,
 			motivation: funnel.qualifyAnswers.motivation,
 			prazoMeses: funnel.qualifyAnswers.prazoMeses,
+			objetivo: funnel.qualifyAnswers.objetivo,
 			hasLance: funnel.qualifyAnswers.hasLance,
 			lanceValue: funnel.qualifyAnswers.lanceValue,
 			lanceEmbutido: funnel.qualifyAnswers.lanceEmbutido,
@@ -97,11 +100,14 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
  *  — group_card/scenarios/financing_comparison/value_picker/lead_form/
  *    quick_reply             TODO(rodada-2): cards do "what-if" avulso,
  *                            fora do funil determinístico desta rodada
- *  — whatsapp_optin/contract_form/real_offer/signature_handoff/
+ *  ✓ contract_form         — emitCardNode (gate `contract`, passo 5): o
+ *                            formulário que cria a proposta REAL, com a
+ *                            identidade já coletada em modo confirmação
+ *  — whatsapp_optin/real_offer/signature_handoff/atendimento_handoff/
  *    document_upload/contemplation_dial
- *                            TODO(rodada-2): cerimônia de fechamento — fora
- *                            de escopo (fork de pesquisa: sem lógica visível
- *                            além do disparo do contract_form em index.ts)
+ *                            emitidos pelo handler de `offer-confirm`
+ *                            (route.ts) — pós-submit do formulário, fora do
+ *                            grafo por natureza (dependem da resposta da Bevi)
  *
  * `whatsapp/formatter.ts` (`artifactToWhatsApp`) já mapeia os 19 tipos —
  * canal WhatsApp consome os 7 emitidos acima SEM mudança (contrato

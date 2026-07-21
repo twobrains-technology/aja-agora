@@ -137,6 +137,9 @@ async function gateInteractive(
 		case "doubts-wait":
 		case "search":
 		case "decision":
+		// "contract" (passo 5) não tem interactive: no WhatsApp a contratação é
+		// captura textual (contract-capture.ts), igual ao `identify`.
+		case "contract":
 			// FIX-17: "name" degrada pra texto no WhatsApp — a pergunta do nome já
 			// sai no texto do directive de primeiro contato; o card não existe aqui.
 			// "identify" não tem interactive — é coleta textual de CPF (fireGate
@@ -373,7 +376,10 @@ async function consumeEvents(
 				pendingArtifacts.push({ type: ev.artifactType, payload: ev.payload });
 				break;
 			case "lead-stage":
-				await recordStageReached(conversationId, ev.stage as "engajado" | "qualificado");
+				await recordStageReached(
+					conversationId,
+					ev.stage as "engajado" | "qualificado" | "em_negociacao",
+				);
 				break;
 			case "tool-call":
 				// No WhatsApp não existe chip de progresso: se a busca na

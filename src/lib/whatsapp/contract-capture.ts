@@ -245,10 +245,17 @@ export async function fireContract(from: string, conversationId: string): Promis
 		});
 		if (wa.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);
+			// Persiste o TEXTO QUE O CLIENTE VIU, não um resumo. O resumo antigo
+			// ("Carta real confirmada: X · R$ Y") escondia justamente a informação
+			// mais delicada do fechamento: quando a administradora muda na
+			// confirmação (a Bevi não tinha grupo na faixa), o aviso da troca vai no
+			// corpo do interativo — e quem lesse a conversa no admin veria só o
+			// resultado final, como se a carta tivesse mudado sozinha.
+			const corpo = (wa.interactive as { body?: { text?: string } }).body?.text;
 			await saveMessage(
 				conversationId,
 				"assistant",
-				`Carta real confirmada: ${offer.administradora} · ${brl(offer.creditValue)}`,
+				corpo ?? `Carta real confirmada: ${offer.administradora} · ${brl(offer.creditValue)}`,
 				"whatsapp",
 			);
 		}

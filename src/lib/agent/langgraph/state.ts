@@ -35,6 +35,14 @@ export type FunnelQualifyAnswers = {
 	// `QualifyAnswers` (personas.ts) de propósito — `projectToMeta` faz merge
 	// raso sem transformação.
 	prazoMeses?: number;
+	/** "contemplacao_rapida" | "investimento" — derivado do prazo escolhido
+	 * (`objetivoForPrazo`). Quem escolhe investimento quer a MENOR PARCELA, e
+	 * isso muda o que a descoberta procura (prazo mais longo). */
+	objetivo?: ConversationMetadata["qualifyAnswers"] extends infer Q
+		? Q extends { objetivo?: infer O }
+			? O
+			: never
+		: never;
 	hasLance?: "yes" | "maybe" | "no" | "so_parcela";
 	lanceValue?: number;
 	lanceEmbutido?: boolean;
@@ -74,6 +82,11 @@ export type FunnelState = {
 	// resolução do beat de dúvidas.
 	experiencePrev?: ExperiencePrev;
 	doubtsAddressed?: boolean;
+	/** A explicação de COMO FUNCIONA o consórcio já foi dada a este cliente.
+	 * Existe porque perguntar "primeira vez?" e não explicar nada é o
+	 * comportamento de formulário que este produto combate — e porque a
+	 * explicação precisa acontecer UMA vez, não a cada turno. */
+	explicouComoFunciona?: boolean;
 	// FIX-360 — card único (`topic_picker`) pro usuário novato logo após
 	// `experience` resolver, antes do convite de recomendação.
 	topicPickerDispatched?: boolean;
@@ -94,6 +107,10 @@ export type FunnelState = {
 	simulatorOfferDispatched?: boolean;
 	simulatorOfferAnswered?: boolean;
 	decisionDispatched: boolean;
+	/** Passo 5 — o formulário de contratação já apareceu. Idempotência do card
+	 * (nunca duas vezes) e pré-requisito do handler `contract-submit`
+	 * (route.ts, defesa em profundidade da família FIX-12). */
+	contractFormDispatched?: boolean;
 };
 
 /** Constrói o `FunnelState` inicial a partir do `ConversationMetadata`
@@ -113,6 +130,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 			desiredItem: meta.qualifyAnswers?.desiredItem,
 			motivation: meta.qualifyAnswers?.motivation,
 			prazoMeses: meta.qualifyAnswers?.prazoMeses,
+			objetivo: meta.qualifyAnswers?.objetivo,
 			hasLance: meta.qualifyAnswers?.hasLance,
 			lanceValue: meta.qualifyAnswers?.lanceValue,
 			lanceEmbutido: meta.qualifyAnswers?.lanceEmbutido,
@@ -130,6 +148,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		motivationMirrored: meta.motivationMirrored,
 		experiencePrev: meta.experiencePrev,
 		doubtsAddressed: meta.doubtsAddressed,
+		explicouComoFunciona: meta.explicouComoFunciona,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,
@@ -139,6 +158,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
 		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,
+		contractFormDispatched: meta.contractFormDispatched,
 	};
 }
 

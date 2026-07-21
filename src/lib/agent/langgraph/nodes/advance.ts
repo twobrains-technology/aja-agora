@@ -11,6 +11,15 @@
 // consultam. O `converse` (nó seguinte) sempre gera a fala via
 // `model.stream()`, cego a este nó.
 
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { resolveAdministradoraMentionForConversation } from "@/lib/agent/orchestrator/choose-offer";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+/** Sim/não em texto livre — FONTE ÚNICA, importada do orchestrator. Era
+ * duplicada aqui, e a cópia ficou para trás: mantinha o bug em que o "não"
+ * ganhava sempre por ser testado primeiro, então "não sei, pode mostrar sim"
+ * virava recusa. Duas cópias da mesma heurística = uma delas sempre desatualiza.
+ */
+import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
@@ -19,22 +28,13 @@ import {
 	shouldMirrorMotivation,
 	type UserIntent,
 } from "@/lib/agent/qualify-state";
-import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
-/** Sim/não em texto livre — FONTE ÚNICA, importada do orchestrator. Era
- * duplicada aqui, e a cópia ficou para trás: mantinha o bug em que o "não"
- * ganhava sempre por ser testado primeiro, então "não sei, pode mostrar sim"
- * virava recusa. Duas cópias da mesma heurística = uma delas sempre desatualiza.
- */
-import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
-
-export function advanceFunnelNode(
+export async function advanceFunnelNode(
 	state: AgentGraphStateType,
 	config?: LangGraphRunnableConfig,
-): Partial<AgentGraphStateType> {
+): Promise<Partial<AgentGraphStateType>> {
 	if (!state.isUserTurn) return {};
 
 	const meta = projectToMeta(state);
@@ -193,7 +193,36 @@ export function advanceFunnelNode(
 		}
 	}
 
-	return liberaHero
-		? { funnel, events, apresentaOfertaNesteTurno: true }
-		: { funnel };
+	// ── O CLIENTE NOMEOU UMA OPÇÃO: a âncora passa a ser ELA ──
+	// Ele diz "essa da Canopus me atende, bora fechar" e o fechamento saía com a
+	// administradora que o SISTEMA tinha recomendado — sem uma palavra sobre a
+	// troca (visto ao vivo, 2026-07-21). A resolução por menção já existia no
+	// runtime Vercel (`resolveOfferMentionForConversation`) e nunca foi ligada
+	// aqui. Só re-ancora quando a menção resolve pra UMA oferta REAL já exibida
+	// nesta conversa — nunca adivinha, nunca inventa grupo.
+	if (funnel.revealCompleted && state.userText?.trim()) {
+		const mencionada = await resolveAdministradoraMentionForConversation(
+			state.conversationId,
+			state.userText,
+		).catch(() => null);
+		const mudou =
+			mencionada?.administradora &&
+			mencionada.administradora !== funnel.recommendedOffer?.administradora;
+		if (mencionada && mudou) {
+			funnel = {
+				...funnel,
+				recommendedAdministradora: mencionada.administradora ?? funnel.recommendedAdministradora,
+				recommendedOffer: {
+					...funnel.recommendedOffer,
+					...(mencionada.groupId ? { groupId: mencionada.groupId } : {}),
+					administradora: mencionada.administradora ?? funnel.recommendedOffer?.administradora,
+					creditValue: mencionada.creditValue ?? funnel.recommendedOffer?.creditValue,
+					termMonths: mencionada.termMonths ?? funnel.recommendedOffer?.termMonths,
+					monthlyPayment: mencionada.monthlyPayment ?? funnel.recommendedOffer?.monthlyPayment,
+				} as FunnelState["recommendedOffer"],
+			};
+		}
+	}
+
+	return liberaHero ? { funnel, events, apresentaOfertaNesteTurno: true } : { funnel };
 }

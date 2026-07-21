@@ -20,7 +20,7 @@ vi.mock("@/lib/chat/provider", () => ({
 	useChatContext: () => ({ sendUserMessage, status: "ready" }),
 }));
 
-import { ValuePicker } from "./value-picker";
+import { VALUE_STEP, ValuePicker } from "./value-picker";
 
 // Mesmo que o backend ainda mande mais de um campo (legado), a agulha só usa o
 // VALOR DO BEM (primeiro campo currency) — parcela/prazo somem da entrada.
@@ -106,8 +106,13 @@ describe("FIX-107 — agulha simples de valor do bem (1k em 1k)", () => {
 		expect(src).not.toMatch(/identifyLinkRoles/);
 	});
 
-	it("o slider usa step de R$ 1.000 no source (agulha 1k em 1k)", () => {
+	// O passo da agulha virou R$ 10.000 (Kairo, 2026-07-21: "o componente de
+	// valor deve passar de 10 em 10 mil e não de 1 em 1 mil") — carro de R$ 260
+	// mil não se escolhe de mil em mil. O valor vem do payload (`field.step`, por
+	// categoria) e cai em `VALUE_STEP` quando ausente.
+	it("o passo da agulha é de R$ 10.000 (default), respeitando o step do payload", () => {
+		expect(VALUE_STEP).toBe(10_000);
 		const src = readFileSync("src/components/chat/artifacts/value-picker.tsx", "utf-8");
-		expect(src).toMatch(/step=\{(VALUE_STEP|1000|1_000)\}/);
+		expect(src).toMatch(/step=\{field\.step \|\| VALUE_STEP\}/);
 	});
 });

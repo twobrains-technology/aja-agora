@@ -1,6 +1,6 @@
 // Camada 1 (FIX-116 / D11) — PARIDADE DES-1 no canal WhatsApp.
 //
-// DESVIO-ASSINATURA (docs/jornada/CONTEXT.md, DES-1): o `consortiumProposalLink`
+// DESVIO-ASSINATURA (docs/jornada/CONTEXT.md, DES-1): o link da proposta
 // da API de Parceiro é o PDF da PROPOSTA de consórcio (S3, Content-Disposition:
 // attachment) — NÃO um portal de assinatura. A assinatura/efetivação é etapa
 // posterior da MESA. O web já cumpre (signature-handoff.tsx + .test.tsx proíbem
@@ -13,13 +13,13 @@ import { describe, expect, it } from "vitest";
 import { buildContractSummaryText } from "@/lib/bevi/contract-summary";
 import { signatureHandoffToWhatsApp } from "./formatter";
 
-const LINK = "https://www.uselink.me/abc123";
+const LINK = "https://docs.aja.test/proposta.pdf";
 
 describe("FIX-116 — WhatsApp apresenta PROPOSTA pronta, NÃO 'assinatura' (paridade DES-1)", () => {
 	it("signatureHandoffToWhatsApp: não promete 'assinatura'/'assinar' (etapa da mesa)", () => {
 		const wa = signatureHandoffToWhatsApp({
 			administradora: "ÂNCORA",
-			consortiumProposalLink: LINK,
+			proposalUrl: LINK,
 		});
 		expect(wa.type).toBe("text");
 		expect(wa.text ?? "").not.toMatch(/assinatura|assinar/i);
@@ -28,18 +28,20 @@ describe("FIX-116 — WhatsApp apresenta PROPOSTA pronta, NÃO 'assinatura' (par
 	it("signatureHandoffToWhatsApp: apresenta a PROPOSTA pronta e traz o link", () => {
 		const wa = signatureHandoffToWhatsApp({
 			administradora: "ÂNCORA",
-			consortiumProposalLink: LINK,
+			proposalUrl: LINK,
 		});
 		expect(wa.text ?? "").toMatch(/proposta/i);
 		expect(wa.text ?? "").toContain(LINK);
 	});
 
-	it("signatureHandoffToWhatsApp: mantém a continuidade da Aja Agora até a contemplação", () => {
+	// A continuidade da Aja Agora é dita na mensagem ANTERIOR do fecho; aqui a
+	// mensagem é sobre o documento, e cita a administradora do plano.
+	it("signatureHandoffToWhatsApp: é sobre o documento, citando a administradora", () => {
 		const wa = signatureHandoffToWhatsApp({
 			administradora: "ÂNCORA",
-			consortiumProposalLink: LINK,
+			proposalUrl: LINK,
 		});
-		expect(wa.text ?? "").toContain("Aja Agora");
+		expect(wa.text ?? "").toMatch(/carta.*parcela.*prazo/i);
 		expect(wa.text ?? "").toContain("ÂNCORA");
 	});
 

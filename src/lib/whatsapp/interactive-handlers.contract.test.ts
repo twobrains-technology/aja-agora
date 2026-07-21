@@ -42,6 +42,16 @@ vi.mock("@/lib/bevi/fulfillment", () => ({
 	startContract: vi.fn(),
 }));
 vi.mock("@/lib/bevi/contract-summary", () => ({ sendContractSummary: mocks.sendContractSummary }));
+// A proposta que o cliente recebe é a NOSSA (PDF co-branded). Sem ela o fecho
+// NÃO emite o beat "Sua proposta está pronta" — nunca cai no link da
+// administradora em domínio de terceiro (abolido em 2026-07-21).
+vi.mock("@/lib/proposal/entrega", () => ({
+	prepararPropostaParaEnvio: vi.fn(async () => ({
+		url: "https://app.aja.test/api/proposta/prop-row-1",
+		urlAssinada: "https://s3.aja.test/proposta.pdf?X-Amz-Signature=abc",
+		nomeArquivo: "Proposta-Aja-Agora.pdf",
+	})),
+}));
 // FIX-203: a confirmação agora roteia por resolveAndSend. Aqui simulamos JANELA
 // ABERTA — resolveAndSend só executa o freeTextFallback (manda a copy atual), então
 // as asserções de texto (reforço/Parabéns/link) seguem valendo. Roteamento por
@@ -131,7 +141,14 @@ describe("offer_confirm — terminal paridade web (CA-9)", () => {
 		const allSent = mocks.sendText.mock.calls.map((c) => c[1]).join("\n");
 		expect(allSent).toMatch(/cota da ANCORA está reservada/i); // reforço literal (FIX-278: terminologia reserva de cota)
 		expect(allSent).toMatch(/Parabéns/i);
-		expect(allSent).toContain(CONFIRM_RESULT.consortiumProposalLink); // assinatura
+		// A proposta entregue é a NOSSA; o link da administradora nunca vai pro cliente.
+		expect(allSent).toContain("https://app.aja.test/api/proposta/prop-row-1");
+		// A URL assinada (400+ chars, expira em 5 min) NUNCA vai no texto.
+		expect(allSent).not.toContain("X-Amz-Signature");
+		expect(allSent).not.toContain(CONFIRM_RESULT.consortiumProposalLink);
+		// Documento é assunto do atendente que faz a adesão — não do fecho.
+		expect(allSent.toLowerCase()).not.toMatch(/rg ou cnh/);
+		expect(allSent.toLowerCase()).toMatch(/atendente/);
 		expect(mocks.sendContractSummary).toHaveBeenCalledWith(CONV_ID);
 	});
 
