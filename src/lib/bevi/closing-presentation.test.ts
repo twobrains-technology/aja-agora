@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { closingPresentation, realOfferPresentation } from "./closing-presentation";
+import {
+	closingPresentation,
+	realOfferPresentation,
+	WHATSAPP_OFICIAL_DIGITOS,
+	WHATSAPP_OFICIAL_EXIBICAO,
+} from "./closing-presentation";
 
 // ============================================================================
 // Camada 1 — passo 5 do docx ("Contratar"): a apresentação do fechamento vive
@@ -220,8 +225,47 @@ describe("realOfferPresentation — oferta real a confirmar (passo 5.1)", () => 
 	});
 });
 
-describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, docx)", () => {
-	const items = closingPresentation(CONFIRM);
+// A carta real da administradora pode voltar com OUTRA parcela e OUTRO prazo —
+// o cliente decidiu olhando os números simulados. Confirmar em silêncio é
+// exatamente o que o aviso de carta (FIX-240, CDC art. 30) já impede pro valor;
+// parcela e prazo tinham ficado de fora, e ao vivo alguém disse sim a 48 meses
+// e assinou 55 (2026-07-21).
+describe("realOfferPresentation — mudança de plano entre o sim e a assinatura", () => {
+	const VISTA = { monthlyPayment: 10_689.51, termMonths: 48 };
+	const REAL = {
+		...START_OK,
+		offer: { ...START_OK.offer, monthlyPayment: 9_879, termMonths: 55 },
+	};
+
+	it("parcela e prazo diferentes do aprovado → payload carrega os dois valores vistos", () => {
+		const items = realOfferPresentation(REAL, { ofertaVista: VISTA });
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect(card.payload.parcelaVista).toBe(10_689.51);
+		expect(card.payload.prazoVisto).toBe(48);
+	});
+
+	it("plano IGUAL ao aprovado → nada a avisar (sem ruído no card)", () => {
+		const items = realOfferPresentation(REAL, {
+			ofertaVista: { monthlyPayment: 9_879, termMonths: 55 },
+		});
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("parcelaVista" in card.payload).toBe(false);
+		expect("prazoVisto" in card.payload).toBe(false);
+	});
+
+	it("sem a oferta vista (fluxo antigo) → comportamento de sempre", () => {
+		const items = realOfferPresentation(REAL);
+		const card = items.find((i) => i.kind === "artifact" && i.type === "real_offer");
+		if (card?.kind !== "artifact") throw new Error("real_offer ausente");
+		expect("parcelaVista" in card.payload).toBe(false);
+	});
+});
+
+describe("closingPresentation — o fecho (passo 5.2)", () => {
+	const PROPOSTA = "https://docs.aja.test/proposta.pdf";
+	const items = closingPresentation(CONFIRM, { channel: "web", propostaUrl: PROPOSTA });
 	const allText = items
 		.filter((i) => i.kind === "text")
 		.map((i) => i.text)
@@ -234,16 +278,12 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 	});
 
 	// FIX-278 (veredito r9, G2): terminologia RESERVA DE COTA (Ata 2026-07-04,
-	// item 2/P0) — nunca "consórcio fechado/contratado". O texto pinava
-	// "contratando um consórcio" (comportamento errado); TDD strict: falha com
-	// a copy antiga, passa com "reserv[a/ada]".
+	// item 2/P0) — nunca "consórcio fechado/contratado".
 	it("FIX-278: terminologia RESERVA DE COTA — nunca 'contratando/contratado/fechado', sempre 'reserv'", () => {
 		expect(allText.toLowerCase()).not.toMatch(/contratand[ao]|contratad[ao]|fechad[ao]/);
 		expect(allText.toLowerCase()).toMatch(/reserv/);
 	});
 
-	// FIX-278 (Ata 2026-07-04, item 2/P0): "Você não paga nada agora — tipo
-	// booking. Só quando chegar o boleto." — reforça que a reserva não é cobrança.
 	it("FIX-278: comunica que não paga nada agora (booking, só quando chegar o boleto)", () => {
 		expect(allText.toLowerCase()).toMatch(/n[ãa]o paga nada agora/);
 		expect(allText.toLowerCase()).toMatch(/boleto/);
@@ -260,23 +300,33 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		);
 	});
 
-	it("emite signature_handoff com o link de assinatura e document_upload opcional", () => {
+	// A proposta que o cliente abre é a NOSSA (PDF co-branded). O link da
+	// administradora em domínio de terceiro (useme.link) foi abolido em
+	// 2026-07-21 — o cliente não sai da Aja Agora pra ver o próprio plano.
+	it("emite signature_handoff com a NOSSA proposta (proposalUrl), nunca o link da administradora", () => {
 		const sig = items.find((i) => i.kind === "artifact" && i.type === "signature_handoff");
 		if (sig?.kind !== "artifact") throw new Error("signature_handoff ausente");
-		expect(sig.payload).toMatchObject({
-			administradora: "ÂNCORA",
-			consortiumProposalLink: "https://assina.example/p1",
-		});
-		const doc = items.find((i) => i.kind === "artifact" && i.type === "document_upload");
-		if (doc?.kind !== "artifact") throw new Error("document_upload ausente");
-		expect(doc.payload).toMatchObject({
-			proposalId: "prop-1",
-			documentsLinkPersonal: "https://docs.example/p1",
-			optional: true,
-		});
+		expect(sig.payload).toMatchObject({ administradora: "ÂNCORA", proposalUrl: PROPOSTA });
+		expect(JSON.stringify(sig.payload)).not.toContain(CONFIRM.consortiumProposalLink);
 	});
 
-	it("ordem do docx: reforços ANTES dos artifacts; Parabéns DEPOIS deles", () => {
+	it("sem a nossa proposta pronta, NÃO emite o card — melhor nenhum link do que o de terceiro", () => {
+		const semProposta = closingPresentation(CONFIRM, { channel: "web" });
+		expect(semProposta.some((i) => i.kind === "artifact" && i.type === "signature_handoff")).toBe(
+			false,
+		);
+		expect(JSON.stringify(semProposta)).not.toContain(CONFIRM.consortiumProposalLink);
+	});
+
+	// Quem pede e recebe RG/CNH é o atendente que faz a adesão, na conversa dele
+	// (Kairo, 2026-07-21). Pedir documento logo depois do "Parabéns" era jogar
+	// mais uma tarefa no cliente sem ninguém do outro lado esperando por ela.
+	it("NUNCA pede documento (document_upload saiu do fecho)", () => {
+		expect(items.some((i) => i.kind === "artifact" && i.type === "document_upload")).toBe(false);
+		expect(allText.toLowerCase()).not.toMatch(/rg ou cnh|documento/);
+	});
+
+	it("ordem: reforços ANTES dos artifacts; Parabéns DEPOIS deles", () => {
 		const idxReforco = items.findIndex(
 			(i) => i.kind === "text" && /escolhida pela Aja Agora/.test(i.text),
 		);
@@ -286,118 +336,66 @@ describe("closingPresentation — confirmação + assinatura + docs (passo 5.2, 
 		expect(idxSig).toBeGreaterThan(idxReforco);
 		expect(idxParabens).toBeGreaterThan(idxSig);
 	});
-});
 
-// FIX-235 (handoff agente-vendas-consorcio, 2026-07-09 — D8) — fecho pro
-// WhatsApp: depois do "Parabéns!", o agente avisa que mandou mensagem no
-// WhatsApp e pede o "oi" (abre a janela de 24h — função técnica), e que a
-// especialista em cadastros chama em seguida. NUNCA "garantido/você já
-// está no grupo" (a proposta foi enviada, mas a contemplação não).
-// NOTA (FIX-278): "reservado/reservada" deixou de ser banido — virou a
-// terminologia MANDATÓRIA (Ata 2026-07-04, "reserva de cota"). O que
-// continua proibido é afirmar contemplação/vaga no grupo como fato.
-describe("closingPresentation — FECHO pro WhatsApp (FIX-235, pede o 'oi')", () => {
-	const items = closingPresentation(CONFIRM);
-	const allText = items
-		.filter((i) => i.kind === "text")
-		.map((i) => i.text)
-		.join("\n");
-
-	it("avisa que mandou mensagem no WhatsApp e pede o 'oi'", () => {
-		expect(allText.toLowerCase()).toMatch(/whatsapp/);
-		expect(allText).toMatch(/["“]oi["”]/);
-	});
-
-	it("menciona a especialista em cadastros chamando em seguida", () => {
-		expect(allText.toLowerCase()).toMatch(/especialista em cadastros/);
-	});
-
-	it("NUNCA diz 'garantido/você já está no grupo' (nada de contemplação prometida)", () => {
-		expect(allText.toLowerCase()).not.toMatch(/garantid[ao]/);
+	it("NUNCA promete contemplação — e diz explicitamente que não há data garantida", () => {
+		// "garantida" aparece SÓ na ressalva ("não tem data garantida"), nunca como
+		// promessa. O que continua proibido é afirmar contemplação/vaga como fato.
+		expect(allText.toLowerCase()).toMatch(/n[ãa]o tem data garantida/);
+		expect(allText.toLowerCase()).not.toMatch(/contempla[çc][ãa]o garantida/);
 		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
-	});
-
-	it("o fecho vem DEPOIS do 'Parabéns!' (não quebra a ordem do docx já travada)", () => {
-		const idxParabens = items.findIndex((i) => i.kind === "text" && /Parabéns!/.test(i.text));
-		const idxOi = items.findIndex((i) => i.kind === "text" && /["“]oi["”]/.test(i.text));
-		expect(idxOi).toBeGreaterThan(idxParabens);
+		expect(allText.toLowerCase()).not.toMatch(/ser[áa] contemplad[ao]/);
 	});
 });
 
-// FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
-// mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE — inclusive
-// quando o envio (sendFechoPedirOi) só ENFILEIROU (sem janela/template
-// aprovado). Mentira observável em dev. A copy agora condiciona ao
-// `whatsappChannel` que o caller (route.ts) já sabe de `sendFechoPedirOi`.
-describe("closingPresentation — FIX-265: copy condicional do fecho WhatsApp (enviado vs enfileirado)", () => {
-	const textOf = (opts?: Parameters<typeof closingPresentation>[1]) =>
-		closingPresentation(CONFIRM, opts)
+// O handoff pro ATENDENTE humano fecha a jornada: é ele quem faz a adesão na
+// administradora. Na WEB isso é um CARD com botão de WhatsApp (o cliente precisa
+// de um lugar pra clicar — antes era um número solto no fim de um balão gigante,
+// junto com uma URL assinada de 400 caracteres); no WhatsApp é uma frase, porque
+// a conversa já está no canal certo.
+describe("closingPresentation — handoff pro atendente", () => {
+	const web = closingPresentation(CONFIRM, { channel: "web", propostaUrl: "https://x.test/p.pdf" });
+	const wpp = closingPresentation(CONFIRM, { channel: "whatsapp" });
+	const textoDe = (items: ReturnType<typeof closingPresentation>) =>
+		items
 			.filter((i) => i.kind === "text")
 			.map((i) => i.text)
 			.join("\n");
 
-	it("channel='free_text' → afirma que MANDOU (enviado agora, na janela aberta)", () => {
-		const text = textOf({ whatsappChannel: "free_text" });
-		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	it("web: emite o card atendimento_handoff com o número oficial e a administradora", () => {
+		const card = web.find((i) => i.kind === "artifact" && i.type === "atendimento_handoff");
+		if (card?.kind !== "artifact") throw new Error("atendimento_handoff ausente");
+		expect(card.payload).toMatchObject({
+			numero: WHATSAPP_OFICIAL_DIGITOS,
+			numeroFormatado: WHATSAPP_OFICIAL_EXIBICAO,
+			administradora: "ÂNCORA",
+		});
 	});
 
-	it("channel='template' → afirma que MANDOU (enviado agora, via template Meta)", () => {
-		const text = textOf({ whatsappChannel: "template" });
-		expect(text).toMatch(/mandei|te mandei|acabei de te mandar/i);
+	it("web: o número NÃO aparece solto no texto — quem carrega o contato é o card", () => {
+		expect(textoDe(web)).not.toContain(WHATSAPP_OFICIAL_EXIBICAO);
+		expect(textoDe(web)).not.toMatch(/95502-0229/);
 	});
 
-	it("channel='queued' → NÃO afirma que já mandou (só enfileirou) — nada de 'acabei de te mandar'", () => {
-		const text = textOf({ whatsappChannel: "queued" });
-		expect(text).not.toMatch(/acabei de te mandar|j[áa] mandei/i);
-		expect(text.toLowerCase()).toMatch(/whatsapp/);
+	it("web: o handoff é o ÚLTIMO passo, depois do 'Parabéns!'", () => {
+		const idxParabens = web.findIndex((i) => i.kind === "text" && /Parabéns!/.test(i.text));
+		const idxHandoff = web.findIndex(
+			(i) => i.kind === "artifact" && i.type === "atendimento_handoff",
+		);
+		expect(idxHandoff).toBeGreaterThan(idxParabens);
 	});
 
-	it("channel='queued' ainda pede o 'oi' e menciona a especialista (fecho não perde a função técnica)", () => {
-		const text = textOf({ whatsappChannel: "queued" });
-		expect(text).toMatch(/["“]oi["”]/);
-		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
+	it("whatsapp: sem card — uma frase dizendo que o atendente chama por este mesmo número", () => {
+		expect(wpp.some((i) => i.kind === "artifact" && i.type === "atendimento_handoff")).toBe(false);
+		expect(textoDe(wpp).toLowerCase()).toMatch(/atendente/);
+		expect(textoDe(wpp).toLowerCase()).toMatch(/por aqui mesmo|neste n[úu]mero/);
 	});
 
-	it("sem opts (canal omitido — default web) mantém o texto de sempre", () => {
-		const text = textOf(undefined);
-		expect(text).toContain("acabei de te mandar uma mensagenzinha no seu WhatsApp");
-	});
-});
-
-// FIX-344 (bloco-e-fallback-residual, rodada 2 — veredito Sonnet, P0 confirmado):
-// closingPresentation nunca soube distinguir "o canal ATUAL já é o WhatsApp" —
-// só "mandei agora" vs. "vou mandar quando a janela abrir" (FIX-265, acima).
-// interactive-handlers.ts (fecho por CLIQUE dentro do próprio WhatsApp) chamava
-// closingPresentation(res) sem NENHUM opts — a copy pedia pro cliente, que já
-// está na conversa de WhatsApp, "responder por lá com um oi" pra "salvar o
-// contato" e avisava "acabei de te mandar uma mensagenzinha", quando nenhuma
-// mensagem nova foi enviada. `channel` deixa esse beat (função técnica: abrir a
-// janela de 24h via mensagem NOVA) existir só onde faz sentido — o canal WEB,
-// que de fato depende de o cliente ir até o WhatsApp.
-describe("closingPresentation — FIX-344: beat de WhatsApp só existe fora do canal WhatsApp", () => {
-	const textOf = (channel?: "web" | "whatsapp") =>
-		closingPresentation(CONFIRM, channel ? { channel } : {})
-			.filter((i) => i.kind === "text")
-			.map((i) => i.text)
-			.join("\n");
-
-	it('canal "whatsapp" → NUNCA pede pro cliente responder "oi" nem menciona ter mandado mensagem no WhatsApp', () => {
-		const text = textOf("whatsapp");
-		expect(text).not.toMatch(/["“]oi["”]/);
-		expect(text.toLowerCase()).not.toMatch(/mensagenzinha/);
-		expect(text.toLowerCase()).not.toMatch(/whatsapp/);
+	it("whatsapp: NUNCA pede pro cliente 'responder com um oi' num canal em que ele já está", () => {
+		expect(textoDe(wpp)).not.toMatch(/["“]oi["”]/);
+		expect(textoDe(wpp).toLowerCase()).not.toMatch(/mensagenzinha/);
 	});
 
-	it('canal "whatsapp" → mantém o resto do fecho (reservado, Parabéns, especialista chama em seguida)', () => {
-		const text = textOf("whatsapp");
-		expect(text.toLowerCase()).toMatch(/reserv/);
-		expect(text).toMatch(/Parabéns!/);
-		expect(text.toLowerCase()).toMatch(/especialista em cadastros/);
-	});
-
-	it('canal "web" → o beat continua existindo (é lá que ele faz sentido — o cliente precisa ir até o WhatsApp)', () => {
-		const text = textOf("web");
-		expect(text).toMatch(/["“]oi["”]/);
-		expect(text.toLowerCase()).toMatch(/whatsapp/);
+	it("os dois canais dizem que o atendente faz a ADESÃO na administradora", () => {
+		expect(`${textoDe(wpp)} ${JSON.stringify(web)}`.toLowerCase()).toMatch(/ades[ãa]o/);
 	});
 });

@@ -82,7 +82,13 @@ describe("FIX-200 — listTemplates", () => {
 			return new Response(
 				JSON.stringify({
 					data: [
-						{ id: "t1", name: "aja_confirmacao_v1", status: "APPROVED", category: "UTILITY", language: "pt_BR" },
+						{
+							id: "t1",
+							name: "aja_confirmacao_v1",
+							status: "APPROVED",
+							category: "UTILITY",
+							language: "pt_BR",
+						},
 					],
 				}),
 				{ status: 200 },
@@ -112,15 +118,21 @@ describe("FIX-200 — listTemplates", () => {
 			if (call === 1) {
 				return new Response(
 					JSON.stringify({
-						data: [{ id: "t1", name: "a", status: "APPROVED", category: "UTILITY", language: "pt_BR" }],
-						paging: { next: "https://graph.facebook.com/v21.0/123456789/message_templates?after=CURSOR" },
+						data: [
+							{ id: "t1", name: "a", status: "APPROVED", category: "UTILITY", language: "pt_BR" },
+						],
+						paging: {
+							next: "https://graph.facebook.com/v21.0/123456789/message_templates?after=CURSOR",
+						},
 					}),
 					{ status: 200 },
 				);
 			}
 			return new Response(
 				JSON.stringify({
-					data: [{ id: "t2", name: "b", status: "PENDING", category: "UTILITY", language: "pt_BR" }],
+					data: [
+						{ id: "t2", name: "b", status: "PENDING", category: "UTILITY", language: "pt_BR" },
+					],
 				}),
 				{ status: 200 },
 			);

@@ -23,8 +23,8 @@ import {
 	type KnownGroupValue,
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
-import type { ArtifactType } from "@/lib/chat/types";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -51,14 +51,15 @@ import {
 	buildComparisonTableFromRevealGroups,
 	coerceComparisonPayload,
 	coerceRecommendationPayload,
+	coerceRevealCota,
 	indexRevealGroups,
 	pickBestRankedGroup,
 	type RevealGroupIndex,
 	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
-	EphemeralTextFilter,
 	type EphemeralDropReason,
+	EphemeralTextFilter,
 	joinSeparator,
 	normalizeGluedSentences,
 	type StateVerificationContext,
@@ -212,6 +213,18 @@ function artifactTypeFor(toolName: string): ArtifactType {
  * `coerceRecommendationPayload` RECALCULAR score/scoreBreakdown do hero a
  * partir do grupo real, já que o modelo não recebe mais o número cru.
  * Exportada — também usada pelo fallback de tool-error (FIX-286, index.ts). */
+/** O que o cliente consegue juntar de lance: o dinheiro declarado mais o
+ * embutido da carta recomendada (quando ele aceitou usar embutido). */
+export function lanceDisponivelDoCliente(meta: ConversationMetadata): number | undefined {
+	const q = meta.qualifyAnswers ?? {};
+	const bolso = q.lanceValue ?? 0;
+	const carta = meta.recommendedOffer?.creditValue ?? q.creditMax ?? 0;
+	const embutido =
+		q.lanceEmbutido === true && carta > 0 ? carta * ((q.lanceEmbutidoPercent ?? 30) / 100) : 0;
+	const total = bolso + embutido;
+	return total > 0 ? Math.round(total) : undefined;
+}
+
 export function scoringInputFromMeta(meta: ConversationMetadata): ScoringInput {
 	const q = meta.qualifyAnswers ?? {};
 	return {
@@ -219,6 +232,9 @@ export function scoringInputFromMeta(meta: ConversationMetadata): ScoringInput {
 		desiredTermMonths: q.prazoMeses ?? 0,
 		creditMax: q.creditMax,
 		hasLance: q.hasLance === "yes",
+		// Bolso + embutido: é o lance que ele consegue POR NA MESA. Sem isso o
+		// ranking recomendava o grupo cujo lance médio ele não tinha como disputar.
+		lanceDisponivel: lanceDisponivelDoCliente(meta),
 	};
 }
 
@@ -548,6 +564,13 @@ export async function* runAgentTurn(args: {
 				monthlyPayment: g.monthlyPayment,
 			})),
 			shownAdministradoras,
+			// Com a contratação concluída, afirmar a reserva é VERDADE — e é o que
+			// o system-prompt manda dizer no estado terminal. Sem este fato o guard
+			// apagava a confirmação e o turno da venda fechada caía no enlatado.
+			contractClosed: meta.contractClosed === true,
+			// Guards escritos pra web (ex.: "te aviso quando sair") não valem no
+			// WhatsApp, onde o retorno proativo existe de fato.
+			channel,
 		};
 	};
 	const ephemeralFilter = new EphemeralTextFilter(stateVerificationContext);
@@ -853,7 +876,10 @@ export async function* runAgentTurn(args: {
 									// cliente preenchia um pré-cadastro pra uma administradora e
 									// recebia reserva de outra. O form TEM que mostrar a MESMA
 									// administradora que vai fechar — nunca o texto livre do modelo.
-									payload = { ...(payload as Record<string, unknown>), administradora: resolved.administradora };
+									payload = {
+										...(payload as Record<string, unknown>),
+										administradora: resolved.administradora,
+									};
 								} else {
 									// FIX-316: resolução FALHOU (administradora citada não bate com
 									// nenhum grupo real exibido) — o form NUNCA pode mostrar uma
@@ -901,6 +927,28 @@ export async function* runAgentTurn(args: {
 								requestedCreditValue,
 								await getKnownCreditValues(),
 								scoringInputFromMeta(meta),
+							);
+						}
+						// O group_card era o ÚNICO card do reveal sem coerção nenhuma: o
+						// schema pede creditValue/monthlyPayment/adminFeePercent/termMonths/
+						// availableSlots/contemplationRate à LLM e o payload ia cru pra tela
+						// — inclusive o "N por mês" que o FIX-191/315 já tinha matado no hero.
+						// Número que nenhuma tool devolveu, e o cliente decide em cima dele.
+						// Mesma allowlist das outras cotas: só identidade vem do modelo.
+						if (artifactType === "group_card") {
+							const rawId =
+								typeof input === "object" && input !== null
+									? (input as Record<string, unknown>).id
+									: undefined;
+							const group = typeof rawId === "string" ? revealGroupsById.get(rawId) : undefined;
+							payload = coerceRevealCota(
+								(typeof input === "object" && input !== null ? input : {}) as Record<
+									string,
+									unknown
+								>,
+								group,
+								await getAdministradoraLogos(),
+								await getKnownCreditValues(),
 							);
 						}
 						if (artifactType === "comparison_table") {
@@ -1006,6 +1054,22 @@ export async function* runAgentTurn(args: {
 					: "o modelo ficou mudo: fallback determinístico assume o turno"
 			} (conv=${conversationId})`,
 		);
+		// A fala vai pro cliente pelo stream, mas este ramo dá `return` ANTES do
+		// bloco de persistência lá embaixo — então ela nunca era gravada. Efeito
+		// real: o agente ESQUECE o que acabou de dizer (não volta no histórico do
+		// próximo turno, some do admin e desaparece da tela num refresh). Entregar
+		// sem persistir é pior que não entregar: a conversa fica inconsistente
+		// entre o que o cliente leu e o que o sistema sabe.
+		if (modeloFalou) {
+			try {
+				await saveMessage(conversationId, "assistant", falaDoModelo, channel, currentPersona);
+			} catch (err) {
+				console.error(
+					`[tool-error-recovery] falha ao persistir a fala (conv=${conversationId})`,
+					err,
+				);
+			}
+		}
 		return {
 			fullResponse: modeloFalou ? falaDoModelo : "",
 			artifacts: [],
@@ -1090,7 +1154,10 @@ export async function* runAgentTurn(args: {
 			// Sem replicar, `nextGate()` previa "doubts-wait" (isento) enquanto o
 			// cálculo real, com o campo já limpo, avança pro próximo gate real.
 			const previewPendingFollowUpClearsNow =
-				isUserTurn && !previewProducedArtifact && Boolean(meta.pendingFollowUp) && previewUserReplied;
+				isUserTurn &&
+				!previewProducedArtifact &&
+				Boolean(meta.pendingFollowUp) &&
+				previewUserReplied;
 			// FIX-328 (rodada 10, veredito Sonnet A.7 — hipótese de código, não
 			// reproduzida ao vivo, mas mesma classe do doubtsAddressed acima):
 			// FIX-68 re-snapshota `discoveredCreditTarget` quando o reveal
@@ -1108,9 +1175,7 @@ export async function* runAgentTurn(args: {
 					: undefined;
 			const previewMeta: ConversationMetadata = {
 				...meta,
-				...(previewRevealCompletesNow
-					? { revealCompleted: true, searchDispatched: true }
-					: {}),
+				...(previewRevealCompletesNow ? { revealCompleted: true, searchDispatched: true } : {}),
 				...(previewDecisionDispatchesNow ? { decisionDispatched: true } : {}),
 				...(previewDoubtsAddressedNow ? { doubtsAddressed: true } : {}),
 				...(previewDiscoveredCreditTargetResync !== undefined
@@ -1584,7 +1649,11 @@ export async function* runAgentTurn(args: {
 			// no topo): se o modelo já antecipou "preciso do seu CPF e celular" neste
 			// turno, a pergunta canônica do gate `identify` se cala — o card mostra só
 			// os inputs (CPF/celular/LGPD), sem repetir o pedido em texto.
-			if (gate === "identify" && !modelAskedGateQuestion && modelAlreadyAskedIdentity(fullResponse)) {
+			if (
+				gate === "identify" &&
+				!modelAskedGateQuestion &&
+				modelAlreadyAskedIdentity(fullResponse)
+			) {
 				modelAskedGateQuestion = true;
 			}
 			// Com artifacts no turno, o texto já foi escrito no stream — sem prefixo.

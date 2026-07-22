@@ -109,95 +109,98 @@ async function metadataOf(convId: string): Promise<ConversationMetadata | undefi
 	return row?.metadata as ConversationMetadata | undefined;
 }
 
-describeIfDb("FIX-313 — clique no chip do topic_picker responde a dúvida, NÃO avança pro fecho", () => {
-	let convId: string;
-	beforeEach(() => vi.clearAllMocks());
-	afterEach(async () => {
-		if (convId) await cleanup(convId);
-	});
+describeIfDb(
+	"FIX-313 — clique no chip do topic_picker responde a dúvida, NÃO avança pro fecho",
+	() => {
+		let convId: string;
+		beforeEach(() => vi.clearAllMocks());
+		afterEach(async () => {
+			if (convId) await cleanup(convId);
+		});
 
-	it("clique em 'o que é lance?' NÃO dispara decisionDispatched/contract_form/scarcity", async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
-			.returning();
-		convId = c.id;
+		it("clique em 'o que é lance?' NÃO dispara decisionDispatched/contract_form/scarcity", async () => {
+			const [c] = await db
+				.insert(conversations)
+				.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
+				.returning();
+			convId = c.id;
 
-		const res = await POST(
-			makeReq({
-				conversationId: convId,
-				messages: [{ role: "user", parts: [{ type: "text", text: "o que é lance?" }] }],
-				action: { kind: "interest", administradora: "topic-picker", label: "o que é lance?" },
-			}),
-		);
-		const text = await res.text();
+			const res = await POST(
+				makeReq({
+					conversationId: convId,
+					messages: [{ role: "user", parts: [{ type: "text", text: "o que é lance?" }] }],
+					action: { kind: "interest", administradora: "topic-picker", label: "o que é lance?" },
+				}),
+			);
+			const text = await res.text();
 
-		expect(text).not.toContain('"type":"scarcity"');
-		expect(text).not.toContain('"type":"decision_prompt"');
-		expect(text).not.toContain('"type":"contract_form"');
-		expect(text).not.toContain('"type":"whatsapp_optin"');
+			expect(text).not.toContain('"type":"scarcity"');
+			expect(text).not.toContain('"type":"decision_prompt"');
+			expect(text).not.toContain('"type":"contract_form"');
+			expect(text).not.toContain('"type":"whatsapp_optin"');
 
-		const meta = await metadataOf(convId);
-		expect(meta?.decisionDispatched).not.toBe(true);
-	});
+			const meta = await metadataOf(convId);
+			expect(meta?.decisionDispatched).not.toBe(true);
+		});
 
-	it("clique em 'o que é lance?' não repete a pergunta de reco-consent (já feita, idempotente)", async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
-			.returning();
-		convId = c.id;
+		it("clique em 'o que é lance?' não repete a pergunta de reco-consent (já feita, idempotente)", async () => {
+			const [c] = await db
+				.insert(conversations)
+				.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
+				.returning();
+			convId = c.id;
 
-		const res = await POST(
-			makeReq({
-				conversationId: convId,
-				messages: [{ role: "user", parts: [{ type: "text", text: "o que é lance?" }] }],
-				action: { kind: "interest", administradora: "topic-picker", label: "o que é lance?" },
-			}),
-		);
-		const text = await res.text();
+			const res = await POST(
+				makeReq({
+					conversationId: convId,
+					messages: [{ role: "user", parts: [{ type: "text", text: "o que é lance?" }] }],
+					action: { kind: "interest", administradora: "topic-picker", label: "o que é lance?" },
+				}),
+			);
+			const text = await res.text();
 
-		const occurrences = text.split("Posso te mostrar a opção que eu recomendo?").length - 1;
-		expect(occurrences).toBeLessThanOrEqual(1);
-	});
+			const occurrences = text.split("Posso te mostrar a opção que eu recomendo?").length - 1;
+			expect(occurrences).toBeLessThanOrEqual(1);
+		});
 
-	it("clique em 'voltar' também NÃO avança pro fecho", async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
-			.returning();
-		convId = c.id;
+		it("clique em 'voltar' também NÃO avança pro fecho", async () => {
+			const [c] = await db
+				.insert(conversations)
+				.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
+				.returning();
+			convId = c.id;
 
-		const res = await POST(
-			makeReq({
-				conversationId: convId,
-				messages: [{ role: "user", parts: [{ type: "text", text: "voltar" }] }],
-				action: { kind: "interest", administradora: "topic-picker", label: "voltar" },
-			}),
-		);
-		const text = await res.text();
+			const res = await POST(
+				makeReq({
+					conversationId: convId,
+					messages: [{ role: "user", parts: [{ type: "text", text: "voltar" }] }],
+					action: { kind: "interest", administradora: "topic-picker", label: "voltar" },
+				}),
+			);
+			const text = await res.text();
 
-		expect(text).not.toContain('"type":"contract_form"');
-		const meta = await metadataOf(convId);
-		expect(meta?.decisionDispatched).not.toBe(true);
-	});
+			expect(text).not.toContain('"type":"contract_form"');
+			const meta = await metadataOf(convId);
+			expect(meta?.decisionDispatched).not.toBe(true);
+		});
 
-	it("REGRESSÃO — 'Tenho interesse' com administradora REAL continua indo pro fecho (decisionDispatched=true); a cerimônia scarcity→decision_prompt em si é coberta por FIX-311", async () => {
-		const [c] = await db
-			.insert(conversations)
-			.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
-			.returning();
-		convId = c.id;
+		it("REGRESSÃO — 'Tenho interesse' com administradora REAL continua indo pro fecho (decisionDispatched=true); a cerimônia scarcity→decision_prompt em si é coberta por FIX-311", async () => {
+			const [c] = await db
+				.insert(conversations)
+				.values({ contactName: "Kairo", channel: "web", metadata: POS_TOPIC_PICKER_META })
+				.returning();
+			convId = c.id;
 
-		await POST(
-			makeReq({
-				conversationId: convId,
-				messages: [{ role: "user", parts: [{ type: "text", text: "Tenho interesse!" }] }],
-				action: { kind: "interest", administradora: "CANOPUS", label: "Tenho interesse!" },
-			}),
-		);
+			await POST(
+				makeReq({
+					conversationId: convId,
+					messages: [{ role: "user", parts: [{ type: "text", text: "Tenho interesse!" }] }],
+					action: { kind: "interest", administradora: "CANOPUS", label: "Tenho interesse!" },
+				}),
+			);
 
-		const meta = await metadataOf(convId);
-		expect(meta?.decisionDispatched).toBe(true);
-	});
-});
+			const meta = await metadataOf(convId);
+			expect(meta?.decisionDispatched).toBe(true);
+		});
+	},
+);

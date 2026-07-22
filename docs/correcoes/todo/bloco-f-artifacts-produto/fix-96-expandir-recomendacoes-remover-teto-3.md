@@ -15,7 +15,6 @@ mexe_em:
   - src/components/chat/artifacts/recommendation-card.tsx
   - src/components/chat/artifacts/comparison-table.tsx
   - src/lib/agent/system-prompt.ts
-  - docs/jornada/jornada-canonica.md
 ---
 
 ## Palavras do operador
@@ -32,7 +31,7 @@ Decisão de UX fechada com o Kairo nesta sessão (AskUserQuestion):
 - **Atual (teto de 3):**
   1. `rankGroups(..., topN = 3)` (`recommendation.ts:99`) — corta no top-3, 1 por admin (`seenAdmins`); descarta o restante.
   2. `executeRecommendGroups` (`ai-sdk.ts:403-427`) — retorna só os 3 ranqueados (`ranked.map`, `total: ranked.length`). **Aqui é onde o excedente da Bevi morre.**
-  3. UI (`comparison-table.tsx` / `recommendation-card.tsx`) renderiza os 3. Copy canônica do docx = "Encontramos 3 boas opções".
+  3. UI (`comparison-table.tsx` / `recommendation-card.tsx`) renderiza os 3. Copy atual do anúncio: "Encontramos 3 boas opções" (herança do `jornada.docx`, hoje revogado — a copy de conversa é do modelo/produto, não de um documento; a mudança aqui é de UX/dado, a frase exata é do modelo adaptar).
 
 - **Esperado (hierarquia de 3 níveis, mobile-first):**
   1. **1 hero** — a #1 do ranking, card completo (`recommendation-card.tsx` atual: selo "Recomendação" + "Por que esta recomendação?").
@@ -51,5 +50,12 @@ Decisão de UX fechada com o Kairo nesta sessão (AskUserQuestion):
 5. **Prompt** (`system-prompt.ts`) — regra de "destacar 1 + 5" e copy ("Encontramos N opções — esta é a que mais combina"), substituindo a lógica de top-3.
 
 ## ⚠️ Dependência de produto (validar ao promover)
-- Muda a **jornada canônica**: copy "Encontramos 3 boas opções" (docx) → algo como "Encontramos N opções — esta é a melhor pra você + 5 alternativas". `CLAUDE.md` é inviolável: divergência código×docx = defeito. **Validar a nova copy/fluxo contra `docs/jornada/jornada-canonica.md` (e com o Bernardo) antes de implementar** — atualizar o docx se aprovado.
+- Muda o anúncio da descoberta: de "Encontramos 3 boas opções" pra algo que reflita N opções reais
+  (ex.: "Encontramos N opções — esta é a melhor pra você + 5 alternativas"). ⚠️ **Correção
+  2026-07-20:** isto NÃO é "divergência código×docx = defeito" — essa regra foi revogada em
+  2026-07-13 (`docs/decisoes/blocos/2026-07-13-revoga-jornada-soberana-desamarra-agente.md`); o
+  `jornada.docx`/`jornada-canonica.md` não existe mais como fonte normativa. A copy exata do
+  anúncio é do MODELO (não trave em regex nem em frase fixa no prompt/servidor) — o que precisa de
+  validação de produto é a MUDANÇA DE UX (hero+5+expansível) e o aval do Bernardo, contra a
+  referência viva (`docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/`).
 - Há decisões anteriores do Bernardo no card de recomendação (taxa adm escondida, rótulo qualitativo). Manter consistência.

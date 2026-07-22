@@ -52,6 +52,11 @@ export type ArtifactGuardInput = {
 	/** Types dos artifacts já emitidos NESTE turno (reservado pra regras
 	 * futuras de duplicação intra-turno — nenhuma regra atual consome). */
 	turnArtifactTypes?: string[];
+	/** O turno RODOU uma simulação nova (`simulate_quota`). Distingue conteúdo
+	 * novo (o usuário escolheu um grupo) de re-apresentação do que ele já viu —
+	 * é o que o guard `reveal-loop` precisa saber pra não engolir a simulação
+	 * pedida só porque o intent saiu `neutral`. */
+	freshSimulationThisTurn?: boolean;
 };
 
 export type ArtifactGuardVerdict =
@@ -160,7 +165,7 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// contract_form re-apresentado pós-Parabéns (contractClosed terminal).
 	{
 		name: "reveal-loop",
-		applies: ({ meta, artifactType, userIntent, isUserTurn }) => {
+		applies: ({ meta, artifactType, userIntent, isUserTurn, freshSimulationThisTurn }) => {
 			// FIX-68: trocou de FAIXA DE VALOR (valor-alvo ≠ o descoberto) → os cards
 			// da NOVA faixa são re-descoberta legítima, não re-reveal. Não suprime —
 			// a tool-policy já reabilitou search/recommend nesse caso. O afirmativo
@@ -173,7 +178,13 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 				(artifactType === "comparison_table" ||
 					artifactType === "recommendation_card" ||
 					artifactType === "group_card" ||
-					(artifactType === "simulation_result" && userIntent !== "providing_info"));
+					(artifactType === "simulation_result" &&
+						userIntent !== "providing_info" &&
+						// Simulação RECÉM-RODADA neste turno é conteúdo NOVO, não
+						// re-reveal. Sem isto, o usuário escolhia um grupo ("ITAÚ"), o
+						// intent saía `neutral` e o card da simulação era engolido — o
+						// agente dizia "dá uma olhada na simulação" e não havia simulação.
+						!freshSimulationThisTurn));
 			const isDecisionDup =
 				meta.decisionDispatched === true && isUserTurn && artifactType === "decision_prompt";
 			const isContractDup = meta.contractClosed === true && artifactType === "contract_form";
@@ -205,6 +216,16 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// `pendingSimulationResult` pra emissão determinística posterior
 	// (`emitServerCard`, nunca recalculado, nunca dependente de nova tool-call).
 	{
+		// Teto de 2 cards por turno. Ao vivo saíram QUATRO de uma vez (comparativo +
+		// recomendação + escassez + decisão) e o cliente rolava uma parede sem saber
+		// o que decidir. O reveal legítimo usa dois (lista + hero); do terceiro em
+		// diante é avalanche — o card espera o próximo turno.
+		name: "teto-de-cards-por-turno",
+		applies: ({ turnArtifactTypes }) => (turnArtifactTypes?.length ?? 0) >= 2,
+		logLine: ({ artifactType, conversationId }) =>
+			`[teto-de-cards-por-turno] guard: suprimindo ${artifactType} — já saíram 2 cards neste turno (conv=${conversationId})`,
+	},
+	{
 		name: "hero-awaits-reco-consent",
 		applies: ({ artifactType, meta, discoveryCount }) => {
 			// FIX-316 (rodada 10, onda 4 — veredito Fable, achado A2): a condição
@@ -215,6 +236,12 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			// novo) escapava do guard inteiro. A condição certa é o estado de
 			// consentimento em si — suprime enquanto `recoConsentAnswered` não
 			// for true, esteja o reveal recém-concluído ou não.
+			// 2026-07-21: o portão deixou de ser o CONVITE e passou a ser a
+			// EXPERIÊNCIA. O reveal continua em dois tempos — a lista sai na hora, o
+			// hero espera o cliente responder se já fez consórcio antes (é o que
+			// muda COMO a recomendação é explicada) — só que agora, respondida a
+			// experiência, o hero sai direto, sem pedir licença. Ver `nextGate`.
+			if (meta.experiencePrev !== undefined) return false;
 			if (meta.recoConsentAnswered === true) return false;
 			if (artifactType === "recommendation_card") return true;
 			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;

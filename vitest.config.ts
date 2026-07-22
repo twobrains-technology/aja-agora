@@ -20,11 +20,7 @@ export default defineConfig({
 		// (6/100 conexões). 20s dá headroom sem deixar de pegar hang real.
 		testTimeout: 20_000,
 		hookTimeout: 20_000,
-		include: [
-			"src/**/*.test.ts",
-			"src/**/*.test.tsx",
-			"tests/regression/**/*.test.ts",
-		],
+		include: ["src/**/*.test.ts", "src/**/*.test.tsx", "tests/regression/**/*.test.ts"],
 		setupFiles: ["./vitest.setup.ts"],
 		coverage: {
 			provider: "v8",

@@ -226,7 +226,7 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 								</p>
 								<KvCtaButton
 									size="sm"
-									onClick={(e) => onOpenChat(card.seed, e.currentTarget)}
+									onClick={(e) => onOpenChat(card.seed, e.currentTarget, "chip")}
 									className="mt-6 min-h-[40px] px-5 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2"
 								>
 									{card.button}

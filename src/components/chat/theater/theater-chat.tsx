@@ -8,18 +8,27 @@ import { cn } from "@/lib/utils";
 import { ChatInput } from "../chat-input";
 import { MessageList } from "../message-list";
 import { ResumePrompt } from "./resume-prompt";
+import type { SeedOrigin } from "./theater-context";
 
 interface TheaterChatProps {
 	/** Mensagem-semente: não-vazia vira a próxima mensagem do usuário; vazia abre na saudação/retomada. */
 	seed: string;
+	/** Quem escreveu a semente — o cliente (`digitada`) ou o botão (`chip`). */
+	seedOrigin?: SeedOrigin;
 	/** Quando o morph assentou — controla o fade-in do stage + footer. */
 	settled: boolean;
 }
 
 type ResumePayload = {
 	conversationId: string;
-	messages: { id: string; role: "user" | "assistant"; content: string }[];
+	messages: {
+		id: string;
+		role: "user" | "assistant";
+		content: string;
+		artifact?: { type: string; payload: unknown };
+	}[];
 	messageCount: number;
+	gate?: { kind: string } | null;
 	lastActivityAt: string;
 	meaningfulProgress: boolean;
 };
@@ -42,12 +51,42 @@ function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
 			({
 				id: m.id,
 				role: m.role,
-				parts: [{ type: "text", text: m.content }],
+				// Card volta como CARD. Antes tudo virava `text`, então ao retomar/dar
+				// refresh o cliente via a linha marcadora "[card: tipo]" em vez do
+				// componente.
+				parts: [
+					...(m.content ? [{ type: "text", text: m.content }] : []),
+					...(m.artifact
+						? [
+								{
+									type: "data-artifact",
+									id: `${m.id}-artifact`,
+									data: { type: m.artifact.type, payload: m.artifact.payload },
+								},
+							]
+						: []),
+				],
 				// FIX-49: marca o histórico hidratado — a UI ancora o scroll, mostra a
 				// âncora "Você voltou" e sela artifacts/gates antigos.
 				metadata: { resumed: true },
 			}) as AjaUIMessage,
 	);
+}
+
+/** Card do gate pendente, devolvido pelo resume, como última mensagem do
+ * assistente. Sem ele a retomada volta muda: o agente repete a pergunta e
+ * nenhum componente de input aparece. */
+function comGatePendente(conv: ResumePayload, msgs: AjaUIMessage[]): AjaUIMessage[] {
+	if (!conv.gate) return msgs;
+	return [
+		...msgs,
+		{
+			id: `${conv.conversationId}-gate-retomada`,
+			role: "assistant",
+			parts: [{ type: "data-gate", id: `${conv.conversationId}-gate`, data: conv.gate }],
+			metadata: { resumed: true },
+		} as unknown as AjaUIMessage,
+	];
 }
 
 /**
@@ -59,7 +98,7 @@ function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
  * conversa anterior → conversa fresca (seed = 1ª mensagem, ou saudação se vazio).
  * ZERO mock — bate em /api/chat como produção.
  */
-export function TheaterChat({ seed, settled }: TheaterChatProps) {
+export function TheaterChat({ seed, seedOrigin = "digitada", settled }: TheaterChatProps) {
 	const [resume, setResume] = useState<ResumeState>({ phase: "loading" });
 
 	// Busca a retomada uma vez por abertura do teatro (o componente remonta a
@@ -81,14 +120,14 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 						setResume({
 							phase: "prompt",
 							conversationId: conv.conversationId,
-							messages: toResumedMessages(conv),
+							messages: comGatePendente(conv, toResumedMessages(conv)),
 							lastActivityAt: conv.lastActivityAt,
 						});
 					} else {
 						setResume({
 							phase: "ready",
 							conversationId: conv.conversationId,
-							messages: toResumedMessages(conv),
+							messages: comGatePendente(conv, toResumedMessages(conv)),
 						});
 					}
 				} else {
@@ -134,9 +173,21 @@ export function TheaterChat({ seed, settled }: TheaterChatProps) {
 		);
 	}
 
+	const retomando = Boolean(resume.messages?.length);
+	const seedDoCliente = seedOrigin === "chip" && retomando ? "" : seed.trim();
+	const seedDeAbertura = seedDoCliente || (retomando ? "Voltei" : "");
+
 	return (
 		<ChatProvider initialConversationId={resume.conversationId} initialMessages={resume.messages}>
-			<TheaterChatBody seed={seed} settled={settled} />
+			{/* Retomada sem nada digitado: o cliente anuncia que voltou. Sem esse
+			    sinal o agente ficava mudo esperando, sem chance de retomar o fio
+			    ("você estava vendo a ITAÚ, quer seguir daí?") — reusa o MESMO
+			    caminho do seed, então é mensagem de verdade, não turno fantasma.
+			    Numa conversa JÁ em andamento, a frase do chip ("Quero comprar um
+			    carro.") não é fala do cliente: é só o botão pelo qual ele reentrou.
+			    Reenviá-la fazia a conversa parecer reiniciada no meio do funil —
+			    quem volta diz "Voltei". Só o que ele DIGITOU sobrevive à retomada. */}
+			<TheaterChatBody seed={seedDeAbertura} settled={settled} />
 		</ChatProvider>
 	);
 }
@@ -146,7 +197,7 @@ function TheaterStage({ settled, children }: { settled: boolean; children?: Reac
 	return (
 		<div
 			className={cn(
-				"flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-card to-muted transition-opacity duration-300",
+				"flex min-h-0 flex-1 flex-col overflow-hidden bg-background transition-opacity duration-300",
 				settled ? "opacity-100" : "opacity-0",
 			)}
 		>

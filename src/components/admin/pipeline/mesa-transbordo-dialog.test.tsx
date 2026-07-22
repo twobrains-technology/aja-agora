@@ -36,7 +36,9 @@ describe("MesaTransbordoDialog — transbordo por broadcast (FIX-124)", () => {
 	});
 
 	it("confirmar → POST /transbordo com body VAZIO (sem mesaAttendantId)", async () => {
-		render(<MesaTransbordoDialog leadId="lead-42" leadName="Fulano" open onOpenChange={() => {}} />);
+		render(
+			<MesaTransbordoDialog leadId="lead-42" leadName="Fulano" open onOpenChange={() => {}} />,
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: /Transbordar para a mesa/i }));
 

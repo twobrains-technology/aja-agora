@@ -54,7 +54,7 @@ describe("FIX-57 — próximo passo explícito + clareza meses×lance", () => {
 	});
 
 	it("microcopy meses×lance só aparece quando há cenário de lance", () => {
-		const { lanceScenario, ...semLance } = base;
+		const { lanceScenario: _lanceScenario, ...semLance } = base;
 		render(<SimulationResult payload={semLance as SimulationResultPayload} />);
 		expect(screen.queryByTestId("meses-lance-hint")).toBeNull();
 	});

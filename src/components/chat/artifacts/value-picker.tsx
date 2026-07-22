@@ -15,8 +15,8 @@ export type { ValuePickerField, ValuePickerPayload };
 
 // FIX-107 (revisão da jornada de entrada, 2026-06-28): a web trocou o value_picker
 // COMPLEXO (3 sliders interligados valor/parcela/prazo — FIX-16, com recálculo via
-// engine value-picker-link) por uma AGULHA SIMPLES só do VALOR DO BEM, de R$ 1.000
-// em R$ 1.000. Decisão do Kairo: o valor é coletado por conversa; a parcela vem das
+// engine value-picker-link) por uma AGULHA SIMPLES só do VALOR DO BEM, de R$ 10.000
+// em R$ 10.000. Decisão do Kairo: o valor é coletado por conversa; a parcela vem das
 // ofertas REAIS da Bevi (não é mais estimada/derivada na entrada) e o prazo saiu da
 // entrada. Este slider é só o apoio visual pro "quanto custa o que você quer".
 //
@@ -24,8 +24,11 @@ export type { ValuePickerField, ValuePickerPayload };
 // entrada (valor por conversa, FIX-104). Quando o shape final do que o backend
 // emitir estabilizar, alinhar o id/label do campo de valor lido aqui.
 
-/** Passo da agulha: R$ 1.000 (regra de produto — "1k em 1k", FIX-107). */
-export const VALUE_STEP = 1000;
+/** Passo da agulha: R$ 10.000 (decisão do Kairo, 2026-07-21). Arrastar de mil em
+ * mil obrigava dezenas de micro-ajustes pra atravessar a faixa de um carro; o
+ * cliente pensa em dezenas de milhar ("uns 80 mil"), não em unidades de mil. Quem
+ * precisa do valor EXATO digita no campo ao lado, que não faz snap no passo. */
+export const VALUE_STEP = 10_000;
 
 /** Escolhe o campo do VALOR DO BEM: o primeiro campo em reais (a entrada não tem
  * mais parcela/prazo). Fallback no primeiro campo do payload. */
@@ -54,7 +57,7 @@ export function ValuePicker({
 	const clampToSlider = (v: number) => Math.min(field.max, Math.max(field.min, v));
 
 	// FIX-55: input numérico livre ao lado da agulha — o usuário digita o valor
-	// exato (R$ 347.500), sem snap ao step de R$ 1.000. FIX-218 (Ata 2026-07-04):
+	// exato (R$ 347.500), sem snap ao step da agulha. FIX-218 (Ata 2026-07-04):
 	// o valor digitado NÃO é mais capado à faixa do slider — a faixa é só dica
 	// visual; a busca (FIX-219) traz a ordem de grandeza mais próxima. Estado de
 	// texto próprio (digitação livre), commit (parse via parseValorDoBem) no
@@ -85,7 +88,7 @@ export function ValuePicker({
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
-			<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg border-primary/30 overflow-hidden">
+			<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg border-[color:var(--border-strong)] overflow-hidden">
 				<CardContent className="space-y-4 p-[18px]">
 					<div className="space-y-2">
 						<div className="flex items-baseline justify-between gap-2.5">
@@ -108,7 +111,7 @@ export function ValuePicker({
 									}}
 									data-testid={`value-input-${field.id}`}
 									aria-label={field.label}
-									className="h-7 w-28 px-2 text-right text-sm font-bold text-primary tabular-nums"
+									className="h-7 w-28 px-2 text-right text-sm font-bold text-figure tabular-nums"
 								/>
 							</span>
 						</div>
@@ -116,7 +119,7 @@ export function ValuePicker({
 							value={[value]}
 							min={field.min}
 							max={field.max}
-							step={VALUE_STEP}
+							step={field.step || VALUE_STEP}
 							onValueChange={(val) => {
 								if (!submitted) setValue(clampToSlider(Array.isArray(val) ? val[0] : val));
 							}}
@@ -128,7 +131,7 @@ export function ValuePicker({
 						onClick={handleSubmit}
 						disabled={submitted || isStreaming}
 						size="sm"
-						className="w-full gap-1.5 rounded-[13px] min-h-[44px]"
+						className="w-full gap-1.5 rounded-full min-h-[44px]"
 					>
 						{submitted ? (
 							<>

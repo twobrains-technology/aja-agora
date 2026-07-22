@@ -16,11 +16,17 @@ import type {
 // `creditMax`) e passa a ser o fator DOMINANTE; monthlyFit perde peso (não
 // some — ainda desempata por conforto de parcela quando a proximidade empata).
 export const WEIGHTS = {
-	creditProximity: 0.4,
-	monthlyFit: 0.15,
-	contemplation: 0.2,
-	adminFee: 0.15,
-	termMatch: 0.1,
+	creditProximity: 0.35,
+	monthlyFit: 0.12,
+	contemplation: 0.15,
+	adminFee: 0.13,
+	termMatch: 0.08,
+	// O cliente diz que tem R$ 100 mil, o grupo recomendado pede R$ 183 mil de
+	// lance médio, e o card seguia rotulado "melhor opção" — ninguém confrontava.
+	// Entre dois grupos parecidos, o que ele CONSEGUE disputar vale mais que o de
+	// parcela um pouco menor. Só pesa quando há sinal de lance; sem isso o fator
+	// é neutro e o ranking não muda.
+	bidReach: 0.17,
 } as const;
 
 // ---- Factor scoring functions (all pure, deterministic) ----
@@ -106,6 +112,9 @@ export interface ScoringInput {
 	 * score empata — prioriza a coerente com lance (FREE_BID). Critério INVISÍVEL
 	 * (tipoOferta nunca vai pra UI). Ausente/false = desempate estável por ordem. */
 	hasLance?: boolean;
+	/** Lance que o cliente REALMENTE consegue juntar (bolso + embutido, R$).
+	 * Alimenta `bidReachScore`. Ausente → fator neutro. */
+	lanceDisponivel?: number;
 	/** FIX-226 (D6): invariante duro — quando o usuário tem apetite de lance
 	 * (`hasLance`) e este guardrail está configurado, candidatas de embutido
 	 * (`embeddedVariant === "com"`) cujo netCredit fica ABAIXO do valor do bem
@@ -133,6 +142,23 @@ export function respectsNetCreditGuardrail(
 ): boolean {
 	const netCredit = creditValue - creditValue * maxEmbutidoPct;
 	return netCredit >= valorDoBem;
+}
+
+/**
+ * O lance que o cliente consegue juntar (bolso + embutido) alcança o lance médio
+ * do grupo? 1 = alcança com folga, 0 = muito longe. Sem sinal de lance do
+ * cliente OU sem lance médio na oferta → 0.5 (neutro: não penaliza nem premia).
+ */
+export function bidReachScore(
+	avgBidValue: number | undefined,
+	lanceDisponivel: number | undefined,
+): number {
+	if (!avgBidValue || avgBidValue <= 0) return 0.5;
+	if (lanceDisponivel === undefined || lanceDisponivel <= 0) return 0.5;
+	const ratio = lanceDisponivel / avgBidValue;
+	if (ratio >= 1) return 1;
+	// Abaixo do lance médio cai linearmente; em 40% do necessário já é ~0.
+	return Math.max(0, (ratio - 0.4) / 0.6);
 }
 
 /** FIX-193: a oferta é da modalidade de lance livre? (case-insensitive, tolerante
@@ -170,6 +196,7 @@ export function scoreGroup(group: GroupSummary, input: ScoringInput): ScoredGrou
 		contemplation: contemplationScore(group.contemplationRate),
 		adminFee: adminFeeScore(group.adminFeePercent, group.category),
 		termMatch: termMatchScore(group.termMonths, input.desiredTermMonths),
+		bidReach: bidReachScore(group.avgBidValue, input.lanceDisponivel),
 	};
 
 	const score =
@@ -177,7 +204,8 @@ export function scoreGroup(group: GroupSummary, input: ScoringInput): ScoredGrou
 		factors.monthlyFit * WEIGHTS.monthlyFit +
 		factors.contemplation * WEIGHTS.contemplation +
 		factors.adminFee * WEIGHTS.adminFee +
-		factors.termMatch * WEIGHTS.termMatch;
+		factors.termMatch * WEIGHTS.termMatch +
+		factors.bidReach * WEIGHTS.bidReach;
 
 	return {
 		group,
@@ -199,7 +227,22 @@ export function rankGroups(
 	input: ScoringInput,
 	topN = Number.POSITIVE_INFINITY,
 ): ScoredGroup[] {
-	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, input));
+	// PARCELA VOLTA A DECIDIR. Sem orçamento declarado (`budget = 0`, que é o
+	// caso NORMAL — o cliente informa o valor do bem, nunca quanto pode pagar por
+	// mês), `monthlyFitScore` devolvia 0 pra TODOS os candidatos: o peso da
+	// parcela virava zero e a recomendação saía pela taxa/contemplação. Ao vivo
+	// isso recomendou a parcela MAIS CARA da mesa (R$ 3.728,90 quando existia
+	// R$ 2.025,62 na mesma carta) exibindo "Orçamento 0%" na tela. Num consórcio
+	// a parcela é a variável nº 1 da decisão. Sem orçamento, o parâmetro passa a
+	// ser RELATIVO ao conjunto: a menor parcela entre os candidatos vale 1.0 e as
+	// demais são penalizadas na proporção em que passam dela.
+	const menorParcela = groups.reduce(
+		(min, g) => (g.monthlyPayment > 0 && g.monthlyPayment < min ? g.monthlyPayment : min),
+		Number.POSITIVE_INFINITY,
+	);
+	const inputEfetivo: ScoringInput =
+		input.budget > 0 || !Number.isFinite(menorParcela) ? input : { ...input, budget: menorParcela };
+	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, inputEfetivo));
 
 	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
 	// candidatas de embutido ("com") que violam netCredit >= valorDoBem são
@@ -210,7 +253,11 @@ export function rankGroups(
 	const guardrail = input.hasLance ? input.embutidoGuardrail : undefined;
 	const passesEmbutidoGuardrail = (group: GroupSummary): boolean => {
 		if (!guardrail || group.embeddedVariant !== "com") return true;
-		return respectsNetCreditGuardrail(group.creditValue, guardrail.maxEmbutidoPct, guardrail.valorDoBem);
+		return respectsNetCreditGuardrail(
+			group.creditValue,
+			guardrail.maxEmbutidoPct,
+			guardrail.valorDoBem,
+		);
 	};
 
 	const sorted = scored.sort((a, b) => {

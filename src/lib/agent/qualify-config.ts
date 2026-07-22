@@ -83,10 +83,13 @@ export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 100_000, max: 2_000_000, step: 50_000, default: 400_000 },
 	// FIX-54: teto elevado 300k → 500k (carros novos/premium passavam de 300k).
 	// Alinha com `servicos` e cobre a faixa real sem virar irreal pra Bevi.
-	// FIX-55: step 10k → 1k (granularidade fina no slider; o input livre dos
-	// componentes cobre a precisão exata de valores quebrados).
-	auto: { min: 20_000, max: 500_000, step: 1_000, default: 80_000 },
-	moto: { min: 8_000, max: 80_000, step: 1_000, default: 25_000 },
+	// 2026-07-21 (Kairo): passo de volta a 10k. De mil em mil, atravessar a faixa
+	// de um carro (20k→500k) exigia centenas de micro-arrastes e o cliente pensa em
+	// dezenas de milhar ("uns 80 mil"). A precisão fina não se perde: o input ao
+	// lado da agulha aceita o valor exato sem snap no passo.
+	auto: { min: 20_000, max: 500_000, step: 10_000, default: 80_000 },
+	// Moto vai só até 80k — 10k aqui deixaria 8 posições no slider inteiro.
+	moto: { min: 8_000, max: 80_000, step: 5_000, default: 25_000 },
 	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };
 

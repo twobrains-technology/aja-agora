@@ -73,7 +73,14 @@ describe("FIX-336 — 'tenho interesse' por TEXTO LIVRE é self-service, não ha
 		expect(handled).toBe(true);
 		expect(mocks.runDirective).toHaveBeenCalledTimes(1);
 		const directive = mocks.runDirective.mock.calls[0]?.[0]?.directive as string;
-		expect(directive).toContain("present_contract_form");
+		// A diretiva não cita mais a TOOL: no runtime LangGraph o formulário é
+		// emitido pelo grafo (gate `contract`) e `present_contract_form` nem existe
+		// no toolset do modelo — mandá-lo chamar uma tool inexistente era turno
+		// perdido. O que importa é o AVANÇO pro passo 5 (pré-cadastro), não o nome
+		// da ferramenta.
+		expect(directive).toMatch(/pré-cadastro|dados rápidos/i);
+		// e segue proibindo o desvio pro caminho de lead humano
+		expect(directive).toMatch(/NUNCA inicie captura de lead/i);
 	});
 
 	it("'tenho interesse, quero fechar' também casa (regex não pode ser âncora estrita)", async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("recommendation-card — formatação de valores monetários sem quebra", () => {
 	it("deve formatar valor monetário como PT-BR (R$ x.xxx,xx)", () => {
@@ -18,7 +18,7 @@ describe("recommendation-card — formatação de valores monetários sem quebra
 	});
 
 	it("deve formatar valor grande corretamente", () => {
-		const formatted = formatBRL(25000.00);
+		const formatted = formatBRL(25000.0);
 		expect(formatted).toContain("R$");
 		expect(formatted).toContain("25.000,00");
 	});

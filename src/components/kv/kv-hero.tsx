@@ -109,7 +109,11 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 								<button
 									key={chip.label}
 									type="button"
-									onClick={(e) => onOpenChat(value.trim() || chip.fill, e.currentTarget)}
+									onClick={(e) =>
+										value.trim()
+											? onOpenChat(value.trim(), e.currentTarget, "digitada")
+											: onOpenChat(chip.fill, e.currentTarget, "chip")
+									}
 									className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#FBFBF9] px-3.5 py-1.5 text-[10px] font-semibold text-[#021628] transition-colors hover:bg-[#F2404F]/10"
 								>
 									<chip.icon className="size-3.5" strokeWidth={2} />

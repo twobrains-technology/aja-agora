@@ -228,8 +228,8 @@ export function KvJourney() {
 				<ol className="relative mt-8 flex flex-col items-center lg:hidden">
 					{STEPS.map((step, index) => (
 						<li key={step.title} className="relative flex flex-col items-center text-center">
-							{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
 							{index < JOURNEY_BURST_COUNT && (
+								// biome-ignore lint/performance/noImgElement: SVG decorativo (aria-hidden) de tamanho fixo — next/image só somaria pipeline de otimização sobre um vetor estático.
 								<img
 									src="/kv/journey-burst.svg"
 									alt=""

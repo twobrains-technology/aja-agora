@@ -56,7 +56,6 @@ describe("encryptIdentity/decryptIdentity — AES-256-GCM", () => {
 	});
 
 	it("falha alto sem IDENTITY_ENC_KEY (sem fallback silencioso)", () => {
-		// biome-ignore lint/performance/noDelete: teste de ausência da chave
 		delete process.env.IDENTITY_ENC_KEY;
 		expect(() => encryptIdentity({ cpf: "52998224725", celular: "62999887766" })).toThrow(
 			/IDENTITY_ENC_KEY/,

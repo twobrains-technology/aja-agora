@@ -101,9 +101,7 @@ export async function POST(req: NextRequest) {
 
 	// 4. Cookie novo — desvincula o device. Sem PII no log.
 	const newCookie = generateCookieValue();
-	console.log(
-		`[chat-reset] conversation=${conversationId ?? "none"} memoryPurged=${memoryPurged}`,
-	);
+	console.log(`[chat-reset] conversation=${conversationId ?? "none"} memoryPurged=${memoryPurged}`);
 
 	return new Response(JSON.stringify({ ok: true }), {
 		status: 200,

@@ -60,83 +60,86 @@ async function cleanup(convId: string): Promise<void> {
 	await db.delete(conversations).where(eq(conversations.id, convId));
 }
 
-describe.runIf(run)("FIX-172 — gate identify normaliza DDI do celular (paridade web×WhatsApp)", () => {
-	let convId: string;
+describe.runIf(run)(
+	"FIX-172 — gate identify normaliza DDI do celular (paridade web×WhatsApp)",
+	() => {
+		let convId: string;
 
-	afterEach(async () => {
-		if (convId) await cleanup(convId);
-	});
+		afterEach(async () => {
+			if (convId) await cleanup(convId);
+		});
 
-	it("celular digitado COM DDI (55) é normalizado pra DDD+número antes de cifrar", async () => {
-		// Estado pré-identidade: qualificação ainda incompleta (creditMax ausente)
-		// → após identify, nextGate() = "credit" (pipeGatePrompt, SEM LLM) — isola
-		// o teste na normalização, sem precisar mockar streamText.
-		const [conv] = await db
-			.insert(conversations)
-			.values({
-				contactName: "Kairo",
-				channel: "web",
-				metadata: {
-					currentPersona: "auto",
-					currentCategory: "auto",
-					experiencePrev: "first",
-					qualifyConsented: true,
-				},
-			})
-			.returning();
-		convId = conv.id;
+		it("celular digitado COM DDI (55) é normalizado pra DDD+número antes de cifrar", async () => {
+			// Estado pré-identidade: qualificação ainda incompleta (creditMax ausente)
+			// → após identify, nextGate() = "credit" (pipeGatePrompt, SEM LLM) — isola
+			// o teste na normalização, sem precisar mockar streamText.
+			const [conv] = await db
+				.insert(conversations)
+				.values({
+					contactName: "Kairo",
+					channel: "web",
+					metadata: {
+						currentPersona: "auto",
+						currentCategory: "auto",
+						experiencePrev: "first",
+						qualifyConsented: true,
+					},
+				})
+				.returning();
+			convId = conv.id;
 
-		const res = await POST(
-			makeChatReq({
-				conversationId: convId,
-				action: {
-					kind: "gate",
-					gate: "identify",
-					value: { cpf: DUMMY_CPF, celular: "5562992496793", lgpd: true },
-				},
-				messages: [{ role: "user", parts: [{ type: "text", text: "Enviei meus dados" }] }],
-			}),
-		);
-		expect(res.status).toBe(200);
-		await res.text(); // drena o stream (execute só roda até o fim quando lido)
+			const res = await POST(
+				makeChatReq({
+					conversationId: convId,
+					action: {
+						kind: "gate",
+						gate: "identify",
+						value: { cpf: DUMMY_CPF, celular: "5562992496793", lgpd: true },
+					},
+					messages: [{ role: "user", parts: [{ type: "text", text: "Enviei meus dados" }] }],
+				}),
+			);
+			expect(res.status).toBe(200);
+			await res.text(); // drena o stream (execute só roda até o fim quando lido)
 
-		const stored = await loadIdentity(convId);
-		expect(stored).not.toBeNull();
-		expect(stored?.celular).toBe("62992496793"); // 11 dígitos, SEM o "55"
-		expect(stored?.celular.length).toBe(11);
-	});
+			const stored = await loadIdentity(convId);
+			expect(stored).not.toBeNull();
+			expect(stored?.celular).toBe("62992496793"); // 11 dígitos, SEM o "55"
+			expect(stored?.celular.length).toBe(11);
+		});
 
-	it("celular digitado JÁ sem DDI (11 dígitos) continua funcionando (regressão)", async () => {
-		const [conv] = await db
-			.insert(conversations)
-			.values({
-				contactName: "Kairo",
-				channel: "web",
-				metadata: {
-					currentPersona: "auto",
-					currentCategory: "auto",
-					experiencePrev: "first",
-					qualifyConsented: true,
-				},
-			})
-			.returning();
-		convId = conv.id;
+		it("celular digitado JÁ sem DDI (11 dígitos) continua funcionando (regressão)", async () => {
+			const [conv] = await db
+				.insert(conversations)
+				.values({
+					contactName: "Kairo",
+					channel: "web",
+					metadata: {
+						currentPersona: "auto",
+						currentCategory: "auto",
+						experiencePrev: "first",
+						qualifyConsented: true,
+					},
+				})
+				.returning();
+			convId = conv.id;
 
-		const res = await POST(
-			makeChatReq({
-				conversationId: convId,
-				action: {
-					kind: "gate",
-					gate: "identify",
-					value: { cpf: DUMMY_CPF, celular: "62992496793", lgpd: true },
-				},
-				messages: [{ role: "user", parts: [{ type: "text", text: "Enviei meus dados" }] }],
-			}),
-		);
-		expect(res.status).toBe(200);
-		await res.text();
+			const res = await POST(
+				makeChatReq({
+					conversationId: convId,
+					action: {
+						kind: "gate",
+						gate: "identify",
+						value: { cpf: DUMMY_CPF, celular: "62992496793", lgpd: true },
+					},
+					messages: [{ role: "user", parts: [{ type: "text", text: "Enviei meus dados" }] }],
+				}),
+			);
+			expect(res.status).toBe(200);
+			await res.text();
 
-		const stored = await loadIdentity(convId);
-		expect(stored?.celular).toBe("62992496793");
-	});
-});
+			const stored = await loadIdentity(convId);
+			expect(stored?.celular).toBe("62992496793");
+		});
+	},
+);

@@ -188,14 +188,77 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 		isInterestExpression(text)
 	) {
 		await saveMessage(handoff.conversationId, "user", text, "whatsapp");
-		if (!typedMeta.decisionDispatched) {
-			await persistMeta(handoff.conversationId, { ...typedMeta, decisionDispatched: true });
+		// "A da Canopus me atende, bora fechar" — o cliente NOMEIA uma opção e
+		// fecha na mesma frase. Este atalho não passa pelo grafo (é
+		// determinístico de propósito), então a re-âncora por menção precisa
+		// acontecer AQUI: sem ela o fechamento saía com a administradora que o
+		// sistema tinha recomendado, calado, contra a escolha explícita do
+		// cliente (visto ao vivo, 2026-07-21). Só re-ancora contra oferta REAL
+		// já exibida nesta conversa.
+		const { resolveAdministradoraMentionForConversation } = await import(
+			"@/lib/agent/orchestrator/choose-offer"
+		);
+		const escolhida = await resolveAdministradoraMentionForConversation(
+			handoff.conversationId,
+			text,
+		).catch(() => null);
+		const trocouDeAdministradora =
+			escolhida?.administradora &&
+			escolhida.administradora !== typedMeta.recommendedOffer?.administradora;
+		// Substituição, não merge (mesma regra do nó `advance`): trocou de grupo,
+		// campo não reconfirmado — `avgBidValue` à frente — não sobrevive do grupo
+		// anterior.
+		const trocouDeGrupo = Boolean(
+			escolhida?.groupId && escolhida.groupId !== typedMeta.recommendedOffer?.groupId,
+		);
+		const herdado = trocouDeGrupo ? undefined : typedMeta.recommendedOffer;
+		const metaAncorado: ConversationMetadata =
+			escolhida && trocouDeAdministradora
+				? {
+						...typedMeta,
+						recommendedAdministradora: escolhida.administradora,
+						recommendedOffer: {
+							...(escolhida.groupId
+								? { groupId: escolhida.groupId }
+								: herdado?.groupId
+									? { groupId: herdado.groupId }
+									: {}),
+							...(herdado?.category ? { category: herdado.category } : {}),
+							administradora: escolhida.administradora,
+							creditValue: escolhida.creditValue ?? herdado?.creditValue,
+							termMonths: escolhida.termMonths ?? herdado?.termMonths,
+							monthlyPayment: escolhida.monthlyPayment ?? herdado?.monthlyPayment,
+							avgBidValue: escolhida.avgBidValue,
+						} as ConversationMetadata["recommendedOffer"],
+					}
+				: typedMeta;
+		if (!metaAncorado.decisionDispatched || !metaAncorado.escolha || metaAncorado !== typedMeta) {
+			const ancora = metaAncorado.recommendedOffer;
+			await persistMeta(handoff.conversationId, {
+				...metaAncorado,
+				decisionDispatched: true,
+				// "Bora fechar" sobre uma cota ancorada É a escolha. Sem registrá-la
+				// aqui, o turno seguinte voltava pelo grafo com o gate `decision` em
+				// aberto e o agente pedia confirmação do que ele já tinha fechado.
+				...(ancora
+					? {
+							escolha: {
+								...(ancora.groupId ? { groupId: ancora.groupId } : {}),
+								administradora: ancora.administradora,
+								creditValue: ancora.creditValue,
+								termMonths: ancora.termMonths,
+								monthlyPayment: ancora.monthlyPayment,
+								origem: escolhida && trocouDeAdministradora ? "mencao" : "afirmacao",
+							} as const,
+						}
+					: {}),
+			});
 		}
 		await runDirectiveWithOrchestrator({
 			from,
 			conversationId: handoff.conversationId,
 			directive: buildAdvanceToContractDirective({
-				administradora: typedMeta.recommendedAdministradora,
+				administradora: metaAncorado.recommendedAdministradora,
 			}),
 			guardEmptyTurn: true,
 		});

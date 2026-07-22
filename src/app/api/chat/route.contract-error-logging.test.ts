@@ -131,9 +131,9 @@ describe("contract-submit loga o erro do startContract (bug dev 2026-06-11)", ()
 		// CONTRATO: o erro ORIGINAL foi logado com a tag do handler — sem isso,
 		// CloudWatch fica vazio e o diagnóstico em dev/prod é impossível.
 		const calls = errorSpy.mock.calls.flat();
-		expect(
-			calls.some((arg) => typeof arg === "string" && arg.includes("[contract-submit]")),
-		).toBe(true);
+		expect(calls.some((arg) => typeof arg === "string" && arg.includes("[contract-submit]"))).toBe(
+			true,
+		);
 		expect(calls).toContain(beviErr);
 	});
 });

@@ -130,9 +130,8 @@ test.describe("Frente 1 — golden path web (Passos 1-4 até o reveal)", () => {
 			.join("\n");
 		const metaNarrativeLeak =
 			/vou (buscar|usar a ferramenta)|usando a ferramenta|dificuldade (em acessar|t[ée]cnica)/i;
-		expect(
-			assistantText,
-			`meta-narrativa vazou no histórico:\n${assistantText}`,
-		).not.toMatch(metaNarrativeLeak);
+		expect(assistantText, `meta-narrativa vazou no histórico:\n${assistantText}`).not.toMatch(
+			metaNarrativeLeak,
+		);
 	});
 });

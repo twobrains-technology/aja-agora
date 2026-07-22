@@ -53,7 +53,9 @@ export async function waitForLead(
 		if (lead) return lead;
 		await new Promise((r) => setTimeout(r, intervalMs));
 	}
-	throw new Error(`waitForLead: timeout (${timeoutMs}ms) esperando lead da conversation ${conversationId}`);
+	throw new Error(
+		`waitForLead: timeout (${timeoutMs}ms) esperando lead da conversation ${conversationId}`,
+	);
 }
 
 export async function getConversation(conversationId: string) {

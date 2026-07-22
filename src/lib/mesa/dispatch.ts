@@ -8,8 +8,8 @@
 // Reusável pela automação (sem `createdBy` de admin). Apoiado na idempotência de
 // `createMesaHandoff` (handoff_ativo_existe): re-polls do mesmo lead não duplicam o caso.
 
-import { createMesaHandoff } from "./handoff";
 import { broadcastCaseToAttendants } from "@/lib/whatsapp/mesa/outbound";
+import { createMesaHandoff } from "./handoff";
 
 export interface DispatchAutoTransbordoResult {
 	created: boolean;

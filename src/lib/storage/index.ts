@@ -25,6 +25,14 @@ export interface StorageConfig {
 	// SSE-KMS (FIX-82, bucket de documentos de cliente): quando setado, put usa
 	// aws:kms com esta key. MinIO local não tem KMS — dev fica sem (undefined).
 	kmsKeyId?: string;
+	/** Endpoint pelo qual o CLIENTE (browser/WhatsApp) alcança o storage —
+	 * usado SÓ pra assinar URL de download. Em dev, o app fala com o MinIO por
+	 * `http://aja-shared-minio:9000` (rede do Docker), um host que o browser do
+	 * Kairo não resolve: a URL assinada saía apontando pra lá e o link da
+	 * proposta simplesmente não abria. A assinatura SigV4 cobre o Host, então
+	 * não dá pra trocar o host depois — a URL tem que ser ASSINADA já com o
+	 * endpoint público. Vazio (prod/S3 real) = comportamento de sempre. */
+	publicEndpoint?: string;
 }
 
 export function getStorageConfig(
@@ -39,6 +47,10 @@ export function getStorageConfig(
 	// `minioadmin` aqui causava InvalidAccessKeyId → 500 no upload (bug dev AWS).
 	const accessKeyId = env.S3_ACCESS_KEY_ID || (endpoint ? "minioadmin" : undefined);
 	const secretAccessKey = env.S3_SECRET_ACCESS_KEY || (endpoint ? "minioadmin" : undefined);
+	const publicEndpoint =
+		env.S3_PUBLIC_ENDPOINT && env.S3_PUBLIC_ENDPOINT.trim() !== ""
+			? env.S3_PUBLIC_ENDPOINT.trim()
+			: undefined;
 	return {
 		endpoint,
 		region: env.S3_REGION || "us-east-1",
@@ -46,6 +58,7 @@ export function getStorageConfig(
 		accessKeyId,
 		secretAccessKey,
 		forcePathStyle,
+		publicEndpoint,
 	};
 }
 
@@ -65,13 +78,15 @@ export function getClientDocsStorageConfig(
 	};
 }
 
-let cachedClient: S3Client | null = null;
+// Cache POR ENDPOINT. Antes era um único `cachedClient` global: com o endpoint
+// público (URL de download) entrando em cena, o primeiro client criado venceria
+// pra sempre e as URLs sairiam com o host errado — silenciosamente.
+const clientCache = new Map<string, S3Client>();
 
-function getClient(cfg: StorageConfig): S3Client {
-	if (cachedClient) return cachedClient;
-	cachedClient = new S3Client({
+function buildClient(cfg: StorageConfig, endpoint: string | undefined): S3Client {
+	return new S3Client({
 		region: cfg.region,
-		endpoint: cfg.endpoint,
+		endpoint,
 		forcePathStyle: cfg.forcePathStyle,
 		// Sem chaves (AWS real) → omite `credentials` pra o SDK resolver via cadeia
 		// padrão (task role do ECS). Com chaves (MinIO/keys explícitas) → usa elas.
@@ -80,7 +95,28 @@ function getClient(cfg: StorageConfig): S3Client {
 				? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey }
 				: undefined,
 	});
-	return cachedClient;
+}
+
+function getClient(cfg: StorageConfig): S3Client {
+	const chave = `${cfg.region}|${cfg.endpoint ?? "aws"}|${cfg.forcePathStyle}`;
+	const existente = clientCache.get(chave);
+	if (existente) return existente;
+	const client = buildClient(cfg, cfg.endpoint);
+	clientCache.set(chave, client);
+	return client;
+}
+
+/** Client que ASSINA as URLs entregues ao cliente final. Igual ao de sempre em
+ * prod (S3 real, sem `publicEndpoint`); em dev assina com o host que o browser
+ * alcança. */
+function getSigningClient(cfg: StorageConfig): S3Client {
+	if (!cfg.publicEndpoint) return getClient(cfg);
+	const chave = `${cfg.region}|public:${cfg.publicEndpoint}|${cfg.forcePathStyle}`;
+	const existente = clientCache.get(chave);
+	if (existente) return existente;
+	const client = buildClient(cfg, cfg.publicEndpoint);
+	clientCache.set(chave, client);
+	return client;
 }
 
 /** Garante que o bucket existe (cria on-demand). Idempotente. */
@@ -173,5 +209,5 @@ export async function getSignedDownloadUrl(
 	expiresInSeconds: number = DEFAULT_DOWNLOAD_EXPIRES_SECONDS,
 ): Promise<string> {
 	const command = new GetObjectCommand({ Bucket: cfg.bucket, Key: key });
-	return getSignedUrl(getClient(cfg), command, { expiresIn: expiresInSeconds });
+	return getSignedUrl(getSigningClient(cfg), command, { expiresIn: expiresInSeconds });
 }

@@ -29,7 +29,7 @@ const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
 		icon: Car,
 		sub: "Novo ou seminovo",
 		bgSoft: "bg-[var(--cat-auto-soft)]",
-		iconColor: "text-[var(--cyan-600)]",
+		iconColor: "text-[var(--cat-auto)]",
 		hoverBg: "group-hover:bg-[var(--cat-auto)]",
 		hoverBorder: "group-hover:border-[var(--cat-auto)]",
 	},
@@ -37,7 +37,7 @@ const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
 		icon: Bike,
 		sub: "Nova ou usada",
 		bgSoft: "bg-[var(--cat-moto-soft)]",
-		iconColor: "text-[var(--coral-600)]",
+		iconColor: "text-[var(--cat-moto)]",
 		hoverBg: "group-hover:bg-[var(--cat-moto)]",
 		hoverBorder: "group-hover:border-[var(--cat-moto)]",
 	},
@@ -142,7 +142,7 @@ export function WelcomeCategories({
 										? { opacity: 0.3, scale: 0.94, filter: "blur(0.5px)" }
 										: undefined
 							}
-							className={`group relative overflow-hidden flex flex-col items-start gap-[11px] p-[15px] rounded-[18px] border border-border bg-card text-left cursor-pointer transition-[border-color,box-shadow] duration-200 ${config.hoverBorder} hover:shadow-md disabled:cursor-default`}
+							className={`group relative overflow-hidden flex flex-col items-start gap-[11px] p-[15px] rounded-[12px] border border-border bg-card text-left cursor-pointer transition-[border-color,box-shadow] duration-200 ${config.hoverBorder} hover:shadow-md disabled:cursor-default`}
 						>
 							{/* marca-sol marca-d'água */}
 							<SunMark
@@ -157,7 +157,7 @@ export function WelcomeCategories({
 
 							{/* ícone */}
 							<div
-								className={`relative flex size-[46px] items-center justify-center rounded-[13px] transition-[background,color,transform] duration-200 ${config.bgSoft} ${config.iconColor} ${config.hoverBg} ${reduced ? "" : "group-hover:scale-[1.05]"} group-hover:text-white`}
+								className={`relative flex size-[46px] items-center justify-center rounded-full transition-[background,color,transform] duration-200 ${config.bgSoft} ${config.iconColor} ${config.hoverBg} ${reduced ? "" : "group-hover:scale-[1.05]"} group-hover:text-white`}
 							>
 								<Icon className="size-6" strokeWidth={1.75} />
 							</div>

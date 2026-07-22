@@ -70,13 +70,13 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 
 	// Estilos do re-UX (develop #27) reaproveitados nos dois modos.
 	const primaryBtn =
-		"flex-1 h-[46px] min-h-[44px] rounded-[13px] bg-primary text-sm font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105";
+		"flex-1 h-[46px] min-h-[44px] rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105";
 	const secondaryBtn =
-		"flex-1 h-[46px] min-h-[44px] rounded-[13px] border border-border bg-card text-sm font-semibold text-foreground hover:bg-muted";
+		"flex-1 h-[46px] min-h-[44px] rounded-full border border-border bg-card text-sm font-semibold text-foreground hover:bg-muted";
 
 	return (
 		<motion.div {...anim}>
-			<div className="w-full max-w-sm rounded-[18px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+			<div className="w-full max-w-sm rounded-[12px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 				{/* header */}
 				<div className="flex flex-col gap-[2px]">
 					<div className="flex items-center gap-2">

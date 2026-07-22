@@ -13,6 +13,7 @@ import { SPECIALIST_BASE_PROMPT, SYSTEM_PROMPT } from "@/lib/agent/system-prompt
 // Ranges de emoji reais. NÃO inclui setas (→ U+2192) nem pontuação (• — …) que
 // são símbolos tipográficos legítimos no source, não emoticons.
 const EMOJI =
+	// biome-ignore lint/suspicious/noMisleadingCharacterClass: faixa FE00-FE0F (variation selectors) é intencional — o teste caça emoji no source, inclusive os seletores. Flag u garante code points, não surrogate pairs.
 	/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}]/u;
 const EMOJI_G = new RegExp(EMOJI.source, "gu");
 

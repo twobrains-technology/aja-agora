@@ -113,11 +113,13 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 	}, [conversationId, fetchSnapshot]);
 
 	if (collapsed) {
+		// Era <aside role="button"> com onClick: não focável, não abria por
+		// teclado. <button> real resolve os dois de graça.
 		return (
-			<aside
+			<button
+				type="button"
 				className="flex w-10 shrink-0 cursor-pointer flex-col items-center gap-2 border-l bg-muted/30 py-3 text-xs text-muted-foreground hover:bg-muted/50"
 				onClick={() => setCollapsed(false)}
-				role="button"
 				aria-label="Abrir painel de memória"
 			>
 				<ClockIcon className="size-4" />
@@ -127,7 +129,7 @@ export function MemoryDevPanel({ conversationId }: MemoryDevPanelProps) {
 				>
 					Memória
 				</span>
-			</aside>
+			</button>
 		);
 	}
 

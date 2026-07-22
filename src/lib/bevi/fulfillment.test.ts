@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PartnerOffer, SimulationResult } from "../adapters/proposal-gateway";
 import { MockProposalGateway } from "../../../tests/helpers/mock-proposal-gateway";
+import type { PartnerOffer, SimulationResult } from "../adapters/proposal-gateway";
 
 // Mock do repo (DB) — guarda em memória, mantém isOfferFresh real.
 const { store } = vi.hoisted(() => ({ store: new Map<string, Record<string, unknown>>() }));
@@ -235,11 +235,7 @@ describe("fulfillment — passo 5 Contratar (com MockProposalGateway)", () => {
 
 	it("FIX-259: administradora confirmada disponível na faixa → administradoraChanged=false (sem aviso falso)", async () => {
 		const gw = new MockProposalGateway();
-		const r = await startContract(
-			"conv-adm-ok",
-			{ ...input, administradoraPreferida: "ITAU" },
-			gw,
-		);
+		const r = await startContract("conv-adm-ok", { ...input, administradoraPreferida: "ITAU" }, gw);
 		// FIX-265 (menor #1): partnerOfferToRealOffer normaliza o código cru da
 		// Bevi ("ITAU") pro nome exibível acentuado (ITAÚ) — a copy do fecho
 		// nunca mais fala o nome sem acento.

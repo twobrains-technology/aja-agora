@@ -98,7 +98,7 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 	const anySent = SLOTS.some(({ slot }) => sent[slot]?.ok);
 
 	return (
-		<div className="w-full max-w-sm rounded-[18px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+		<div className="w-full max-w-sm rounded-[12px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
 			{/* header */}
 			<div className="flex flex-col gap-[2px]">
 				<p className="text-sm font-semibold text-foreground">Envie seu documento (RG ou CNH)</p>
@@ -151,7 +151,7 @@ export function DocumentUpload({ payload }: { payload: DocumentUploadPayload }) 
 			{anySent && !finished ? (
 				<Button
 					type="button"
-					className="w-full h-[40px] min-h-[44px] rounded-[13px] bg-primary text-xs font-semibold text-primary-foreground shadow-[0_6px_16px_-6px_rgba(3,110,255,0.5)] hover:brightness-105"
+					className="w-full h-[40px] min-h-[44px] rounded-full bg-primary text-xs font-semibold text-primary-foreground hover:brightness-105"
 					onClick={() => finish(sent)}
 					disabled={isStreaming}
 					data-testid="doc-done"

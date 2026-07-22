@@ -49,8 +49,7 @@ function makeReq(body: unknown, cookie: string | null = OLD_COOKIE): NextRequest
 	}) as unknown as NextRequest;
 	// Mesmo padrão dos demais route tests — só o get() é usado pela rota.
 	(req as { cookies: unknown }).cookies = {
-		get: (name: string) =>
-			cookie && name === COOKIE_NAME ? { name, value: cookie } : undefined,
+		get: (name: string) => (cookie && name === COOKIE_NAME ? { name, value: cookie } : undefined),
 	} as unknown as NextRequest["cookies"];
 	return req;
 }
@@ -83,9 +82,15 @@ describe("D17 — POST /api/chat/reset (P0-1: happy path no meio do funil)", () 
 		expect(await res.json()).toEqual({ ok: true });
 
 		// Cascade: conversa, mensagens e lead sumiram
-		expect(await db.query.conversations.findFirst({ where: eq(conversations.id, convId) })).toBeUndefined();
-		expect(await db.query.messages.findFirst({ where: eq(messages.conversationId, convId) })).toBeUndefined();
-		expect(await db.query.leads.findFirst({ where: eq(leads.conversationId, convId) })).toBeUndefined();
+		expect(
+			await db.query.conversations.findFirst({ where: eq(conversations.id, convId) }),
+		).toBeUndefined();
+		expect(
+			await db.query.messages.findFirst({ where: eq(messages.conversationId, convId) }),
+		).toBeUndefined();
+		expect(
+			await db.query.leads.findFirst({ where: eq(leads.conversationId, convId) }),
+		).toBeUndefined();
 
 		// Cookie novo: 32 hex, diferente do antigo, HttpOnly, 90d
 		const setCookie = res.headers.get("Set-Cookie") ?? "";
@@ -121,21 +126,27 @@ describe("D17 — edge cases (EC do test plan)", () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get("Set-Cookie")).toContain(`${COOKIE_NAME}=`);
 		// conversa de outro usuário intacta
-		expect(await db.query.conversations.findFirst({ where: eq(conversations.id, convId) })).toBeDefined();
+		expect(
+			await db.query.conversations.findFirst({ where: eq(conversations.id, convId) }),
+		).toBeDefined();
 		expect(purgeIdentityMock.mock.calls.map(([i]) => i.kind)).toEqual(["anon-cookie"]);
 	});
 
 	it("conversationId não-UUID → 200 sem crash, nada deletado", async () => {
 		const res = await POST(makeReq({ conversationId: "lixo'; DROP TABLE--" }));
 		expect(res.status).toBe(200);
-		expect(await db.query.conversations.findFirst({ where: eq(conversations.id, convId) })).toBeDefined();
+		expect(
+			await db.query.conversations.findFirst({ where: eq(conversations.id, convId) }),
+		).toBeDefined();
 	});
 
 	it("sem cookie na request → ainda reseta a conversa e seta cookie novo (purge só phone se houver identity)", async () => {
 		const res = await POST(makeReq({ conversationId: convId }, null));
 		expect(res.status).toBe(200);
 		expect(res.headers.get("Set-Cookie")).toMatch(new RegExp(`${COOKIE_NAME}=[a-f0-9]{32}`));
-		expect(await db.query.conversations.findFirst({ where: eq(conversations.id, convId) })).toBeUndefined();
+		expect(
+			await db.query.conversations.findFirst({ where: eq(conversations.id, convId) }),
+		).toBeUndefined();
 		// sem cookie e sem identity coletada → nenhum purge
 		expect(purgeIdentityMock).not.toHaveBeenCalled();
 	});
@@ -144,7 +155,9 @@ describe("D17 — edge cases (EC do test plan)", () => {
 		purgeIdentityMock.mockRejectedValueOnce(new Error("letta down"));
 		const res = await POST(makeReq({ conversationId: convId }));
 		expect(res.status).toBe(200);
-		expect(await db.query.conversations.findFirst({ where: eq(conversations.id, convId) })).toBeUndefined();
+		expect(
+			await db.query.conversations.findFirst({ where: eq(conversations.id, convId) }),
+		).toBeUndefined();
 	});
 
 	it("duplo /reset consecutivo → segundo é idempotente (conversa já não existe)", async () => {

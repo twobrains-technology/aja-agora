@@ -6,17 +6,15 @@ import { SignatureHandoff } from "./signature-handoff";
 
 afterEach(() => cleanup());
 
-// DESVIO-ASSINATURA (2026-06-04): o jornada.docx (visão do stakeholder) assume
-// "assinatura digital no fechamento". A realidade verificada da API de Parceiro:
-// o `consortiumProposalLink` (do choose_offer) é um PDF de PROPOSTA de consórcio
-// (S3, Content-Disposition: attachment) — NÃO um portal de assinatura. A
-// assinatura/efetivação é etapa posterior conduzida pela equipe (mesa). O card
-// não pode prometer "assinatura" — apresenta a PROPOSTA + continuidade Aja Agora.
-// Cadastrado em docs/jornada/CONTEXT.md (Desvios de entendimento, DES-1).
+// O card apresenta a PROPOSTA pronta + a continuidade da Aja Agora — nunca
+// promete "assinatura" (etapa posterior, do atendente). Desde 2026-07-21 o link
+// é o da NOSSA proposta em PDF (`proposalUrl`, URL assinada do nosso bucket): o
+// PDF da administradora em domínio de terceiro (useme.link) foi abolido — o
+// cliente não sai da Aja Agora pra ver o próprio plano.
 
 const payload: SignatureHandoffPayload = {
 	administradora: "ÂNCORA",
-	consortiumProposalLink: "https://www.uselink.me/abc123",
+	proposalUrl: "https://docs.ajaagora.com.br/proposals/abc123.pdf",
 };
 
 describe("SignatureHandoff — proposta pronta, NÃO assinatura (DESVIO-ASSINATURA)", () => {
@@ -31,12 +29,17 @@ describe("SignatureHandoff — proposta pronta, NÃO assinatura (DESVIO-ASSINATU
 		expect(document.body.textContent ?? "").toContain("ÂNCORA");
 	});
 
-	it("mantém a continuidade da Aja Agora (sem o cliente sentir que 'mudou de empresa')", () => {
+	// A continuidade da Aja Agora ("segue com você até a contemplação") é dita no
+	// BALÃO que antecede o card. Repetir aqui produzia o mesmo reforço duas vezes
+	// na mesma tela — costura de blocos, não fala. O card carrega o documento.
+	it("é sobre o DOCUMENTO da proposta, sem repetir o reforço do balão anterior", () => {
 		render(<SignatureHandoff payload={payload} />);
-		expect(document.body.textContent ?? "").toContain("Aja Agora");
+		const texto = document.body.textContent ?? "";
+		expect(texto).toMatch(/carta.*parcela.*prazo/i);
+		expect(texto).not.toMatch(/segue com você até a contemplação/i);
 	});
 
-	it("o botão abre o link da proposta (consortiumProposalLink) em nova aba", () => {
+	it("o botão abre a NOSSA proposta em PDF (proposalUrl) em nova aba", () => {
 		const open = vi.fn();
 		vi.stubGlobal("open", open);
 		render(<SignatureHandoff payload={payload} />);
@@ -44,7 +47,7 @@ describe("SignatureHandoff — proposta pronta, NÃO assinatura (DESVIO-ASSINATU
 		expect(btn.textContent ?? "").not.toMatch(/assinatura|assinar/i);
 		btn.click();
 		expect(open).toHaveBeenCalledWith(
-			"https://www.uselink.me/abc123",
+			"https://docs.ajaagora.com.br/proposals/abc123.pdf",
 			"_blank",
 			"noopener,noreferrer",
 		);

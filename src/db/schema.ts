@@ -912,6 +912,44 @@ export const whatsappOutboundQueue = pgTable(
 	],
 );
 
+// ─── WhatsApp: idempotência + serialização por conversa ──────────────────────
+
+// Chave de "isso só pode acontecer UMA vez" no canal WhatsApp. Insert-if-absent
+// (`claimOnce`, src/lib/whatsapp/once.ts) — quem inserir ganha, os demais são
+// duplicata. Usos:
+//   `inbound:<messageId>` — a Meta REENTREGA o webhook (ela re-tenta até receber
+//     200 e às vezes duplica mesmo com 200); sem isto a mesma mensagem vira dois
+//     turnos.
+//   `beat:<conversationId>:<gate>` — beat de contexto determinístico do canal
+//     (aviso LGPD do identify, educação do lance embutido) sai UMA vez por
+//     conversa; nos turnos seguintes quem fala é o modelo.
+//   `click:<conversationId>:<replyId>` — guard de clique duplo (janela curta):
+//     botão do WhatsApp não desabilita depois do clique.
+export const whatsappOnceKeys = pgTable(
+	"whatsapp_once_keys",
+	{
+		key: varchar("key", { length: 200 }).primaryKey(),
+		/** Rótulo do uso (`inbound`/`beat`/`click`) — só observabilidade/limpeza. */
+		scope: varchar("scope", { length: 32 }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("whatsapp_once_keys_created_at_idx").on(table.createdAt)],
+);
+
+// Lease de execução por conversa (wa_id). Duas mensagens seguidas do mesmo
+// contato (comportamento normalíssimo no WhatsApp) rodavam dois turnos EM
+// PARALELO sobre o mesmo metadata — `persistMeta` é read-modify-write de objeto
+// inteiro, então o segundo apagava o que o primeiro escreveu (lost update) e os
+// balões chegavam intercalados. Lease com expiração (não transação longa) pra
+// funcionar entre processos/tasks e nunca travar pra sempre se um processo cair.
+export const whatsappConversationLocks = pgTable("whatsapp_conversation_locks", {
+	waId: varchar("wa_id", { length: 50 }).primaryKey(),
+	/** Id do detentor atual — só ele solta/renova o lease. */
+	holder: varchar("holder", { length: 64 }).notNull(),
+	lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 // Better Auth relations

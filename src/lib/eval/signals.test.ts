@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	computePersonaSegments,
-	computeSignals,
-	type SignalsArtifact,
-	type SignalsMessage,
-} from "./signals";
+import { computePersonaSegments, computeSignals, type SignalsMessage } from "./signals";
 
 const ts = (s: string) => new Date(s);
 

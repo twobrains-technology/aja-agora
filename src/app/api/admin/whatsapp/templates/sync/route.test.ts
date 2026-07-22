@@ -40,9 +40,7 @@ describe("FIX resiliência — sync route resiliente a erro da reconciliação",
 	});
 
 	it("reconcile lança → 502 JSON com message (não 500 mudo)", async () => {
-		reconcileTemplateStatuses.mockRejectedValueOnce(
-			new Error("WHATSAPP_WABA_ID must be set"),
-		);
+		reconcileTemplateStatuses.mockRejectedValueOnce(new Error("WHATSAPP_WABA_ID must be set"));
 		const res = await POST();
 		expect(res.status).toBe(502);
 		const body = (await res.json()) as { error?: string; message?: string };

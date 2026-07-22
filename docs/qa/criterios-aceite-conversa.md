@@ -6,13 +6,22 @@
 > código (`arquivo:linha`, caminhos relativos a `/Users/kairo/code/aja-agora/`), como
 > verificar no browser e severidade.
 >
-> **Ordem SOBERANA dos gates (FIX-274, confirmada em `src/lib/agent/qualify-state.ts:51-181`):**
-> `name → desire[pergunta 1] → desire[pergunta 2: motivo, turno próprio] → identify →
-> credit → search/reveal → experience → timeframe → lance → [lance-value se tem como dar]
-> → lance-embutido → contemplation_dial → scarcity → decision → proposal (contract →
-> real_offer) → whatsapp-handoff`.
-> ⚠️ Nota: o handoff/mockup pedia valor ANTES do CPF e proposta ANTES da decisão — a ordem
-> acima (a do código E a declarada pelo Kairo hoje) VENCE. Ver seção de divergências.
+> **Ordem dos gates é a do CÓDIGO** (`nextGate`, `src/lib/agent/qualify-state.ts`) — não é
+> soberana por documento nenhum, é o que o código produz, e MUDA conforme decisão de
+> produto. ⚠️ **Reverificada em 2026-07-20** (leitura direta de `nextGate`, read-only) — a
+> versão anterior desta nota (FIX-274, 2026-07-11) já estava desatualizada em 2 pontos:
+> `credit` volta a vir ANTES de `identify` (Rodada 10, 2026-07-12, reverteu conscientemente
+> o FIX-53 — ver `docs/jornada/decisoes-do-cliente.md`), e falta o gate `reco-consent`
+> ("Posso te mostrar a opção que eu recomendo?", FIX-297/308/314) entre `experience` e
+> `timeframe`. Ordem confirmada em 2026-07-20:
+> `name → desire[pergunta 1] → desire[pergunta 2: motivo, turno próprio] → credit →
+> identify → search/reveal → experience → reco-consent → timeframe → lance → [lance-value
+> se tem como dar] → lance-embutido → contemplation_dial → scarcity → decision → proposal
+> (contract → real_offer) → whatsapp-handoff`.
+> ⚠️ Nota: o handoff/mockup pedia valor ANTES do CPF — hoje o código já concorda nisso
+> (`credit` antes de `identify`); a divergência real hoje é só "proposta ANTES da decisão"
+> (ver seção de divergências, DV-2). Trate esta ordem como FOTO do código HOJE, não como
+> regra — re-verifique antes de confiar em QA que já rodou há mais de algumas semanas.
 >
 > **Regras duras de 1ª classe (Kairo, 2026-07-11):** (a) NUNCA 2 perguntas na mesma
 > mensagem/balão; (b) explicação/dúvidas de consórcio SÓ no gate `experience`, pós-busca;
@@ -630,10 +639,15 @@
   pode gerar narração inconsistente (ex.: agente anunciar/presumir passos que não existem).
   Candidato a limpeza de prompt (médio).
 
-- **DV-6 — Ordem valor × identidade diverge do mockup.** Mockup Madalena: valor do Corolla
-  (value-picker) ANTES do CPF. Código e ordem declarada do Kairo hoje: identify ANTES do
-  credit (FIX-53, `qualify-state.ts:85-88`). Palavra nova vence — a rubrica cobra a ordem do
-  código; registrado porque o coletor não deve marcar FALHA ao ver CPF antes do valor.
+- **DV-6 — RESOLVIDA em 2026-07-12 (Rodada 10) — não é mais divergência.** Registro
+  original (FIX-274, 2026-07-11): mockup Madalena pedia valor do Corolla (value-picker)
+  ANTES do CPF, enquanto o código de então tinha `identify` ANTES de `credit` (FIX-53).
+  **A Rodada 10 (2026-07-12) reverteu conscientemente o FIX-53** — `credit` volta a vir
+  ANTES de `identify` (ver `docs/jornada/decisoes-do-cliente.md`) — exatamente o que o
+  mockup pedia. Reverificado em 2026-07-20 direto em `qualify-state.ts:nextGate`: confirmado
+  `credit` antes de `identify`. Deixo o registro histórico aqui só pra quem for auditar
+  reteste antigo entender por que um coletor de antes de 2026-07-12 marcava isso como FALHA
+  — hoje não marca mais.
 
 - **DV-7 — Copy do reveal (docx × handoff).** O directive manda a copy do docx
   ("Encontramos N boas opções para o seu perfil. Agora vamos te recomendar a mais

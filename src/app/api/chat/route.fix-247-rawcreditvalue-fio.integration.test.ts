@@ -13,11 +13,7 @@ import { eq, inArray } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import {
-	artifacts as artifactsTable,
-	conversations,
-	messages as messagesTable,
-} from "@/db/schema";
+import { artifacts as artifactsTable, conversations, messages as messagesTable } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
@@ -30,9 +26,8 @@ vi.mock("@/lib/middleware/rate-limit", () => ({
 // Única fronteira mocada: a Bevi (rede externa). O cenário reproduz o achado
 // ao vivo do veredito — pedido 150.000, carta real ajustada pra 157.845.
 vi.mock("@/lib/bevi/fulfillment", async () => {
-	const actual = await vi.importActual<typeof import("@/lib/bevi/fulfillment")>(
-		"@/lib/bevi/fulfillment",
-	);
+	const actual =
+		await vi.importActual<typeof import("@/lib/bevi/fulfillment")>("@/lib/bevi/fulfillment");
 	return {
 		...actual,
 		startContract: vi.fn().mockResolvedValue({

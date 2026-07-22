@@ -1,5 +1,5 @@
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import {
 	buildJudgePrompt,
 	type JudgeResult,

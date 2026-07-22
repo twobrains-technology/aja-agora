@@ -113,6 +113,16 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	if (replyId.startsWith("detail_")) return handleDetail(ctx);
 	if (replyId === "show_others") return handleShowOthers(ctx);
 	if (replyId === "decision_outras") return handleDecisionOutras(ctx);
+	// Os outros dois botões do card de decisão (`DECISION_PROMPT_OPTIONS`) eram
+	// EMITIDOS pelo formatter e não tinham handler nenhum: o clique caía no
+	// fallback de texto (`processTextMessage(replyTitle)`) e "Seguir agora" nem
+	// casa com `INTEREST_RE` — ou seja, o CTA principal do momento de maior
+	// intenção de compra da jornada virava texto solto pro LLM, sem
+	// `decisionDispatched`, sem avanço determinístico. "Seguir agora" reusa o
+	// MESMO caminho do "Tenho interesse"; "Falar c/ consultor" é handoff humano
+	// explícito (o único gatilho legítimo de handoff — pedido do cliente).
+	if (replyId === "decision_contratar") return handleInterest(ctx);
+	if (replyId === "decision_especialista") return handleDecisionEspecialista(ctx);
 	if (replyId.startsWith("interest_")) return handleInterest(ctx);
 	if (replyId === "contract_confirm") return handleContractConfirm(ctx);
 	if (replyId === "contract_cancel") return handleContractCancel(ctx);
@@ -148,7 +158,20 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 // (closing-presentation.ts, copy única produção+eval) → resumo por WhatsApp.
 async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
-	const { from, conversationId } = ctx;
+	await finalizarOfertaReal(ctx.from, ctx.conversationId);
+	return true;
+}
+
+/** O TERMINAL do fechamento: confirma a cota na administradora, marca o estado
+ * terminal e entrega o fecho (Parabéns, proposta em PDF, resumo, pedido de oi).
+ *
+ * Extraído do handler do BOTÃO porque era só dele — e no WhatsApp metade das
+ * pessoas responde "confirmado, pode seguir" em vez de tocar no botão. Quem
+ * respondia por texto nunca fechava: `confirmOffer` não rodava, `contractClosed`
+ * não virava true, o turno não tinha o que entregar (saía o "Acho que me perdi
+ * por aqui") e o modelo ainda improvisava uma fala de fechamento que não tinha
+ * acontecido. Agora os dois caminhos chamam exatamente o mesmo código. */
+export async function finalizarOfertaReal(from: string, conversationId: string): Promise<void> {
 	try {
 		const res = await confirmOffer(conversationId);
 		// Estado TERMINAL: pós-confirmação o agente não re-apresenta contract_form.
@@ -163,6 +186,15 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// aprovar. `templatedKeys` evita reenviar o mesmo template por chave (os vários
 		// textos de `confirmacao_contratacao` viram UM template fora da janela).
 		const { resolveAndSend } = await import("./template-dispatch");
+		// A NOSSA proposta em PDF, preparada ANTES da copy: ela é o beat "Sua
+		// proposta está pronta" (com link) e, logo abaixo, o documento anexado.
+		// Best-effort — sem ela o fecho segue sem esse beat.
+		const proposta = await import("@/lib/proposal/entrega")
+			.then((m) => m.prepararPropostaParaEnvio(conversationId))
+			.catch((err) => {
+				console.error(`[offer-confirm] preparo da proposta falhou (conv=${conversationId})`, err);
+				return null;
+			});
 		const admin = res.administradora ?? "";
 		const sentTexts: string[] = [];
 		const templatedKeys = new Set<string>();
@@ -170,7 +202,10 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// no botão do real_offer) — o beat "acabei de te mandar mensagem no seu
 		// WhatsApp, responde com um oi" não faz sentido nenhum aqui (não existe
 		// mensagem nova nenhuma, é o mesmo canal). Some só nesse canal.
-		for (const item of closingPresentation(res, { channel: "whatsapp" })) {
+		for (const item of closingPresentation(res, {
+			channel: "whatsapp",
+			propostaUrl: proposta?.url ?? null,
+		})) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
 			let usageKey = "confirmacao_contratacao";
 			if (item.kind === "text") wa = { type: "text", text: item.text };
@@ -181,7 +216,7 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 			if (wa?.type === "text" && wa.text) {
 				if (templatedKeys.has(usageKey)) continue;
 				const text = wa.text;
-				const link = (item.kind === "artifact" && (item.payload.consortiumProposalLink as string)) || "";
+				const link = (item.kind === "artifact" && (item.payload.proposalUrl as string)) || "";
 				const result = await resolveAndSend({
 					to: from,
 					conversationId,
@@ -203,6 +238,28 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 		// o fechamento — falha vira contractSummaryPending.
 		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
 		await sendContractSummary(conversationId).catch(() => {});
+
+		// A PROPOSTA em PDF — a peça do fechamento — vai pro cliente aqui. Antes o
+		// PDF era gerado e ficava só no S3 do back office, enquanto o agente dizia
+		// "você vai receber um email com os detalhes" e nada chegava no canal em que
+		// a conversa aconteceu. Best-effort: falhou, o fecho segue e o log registra
+		// — nunca se diz que enviou sem ter enviado.
+		try {
+			if (proposta) {
+				const { sendDocumentMessage } = await import("./api");
+				await sendDocumentMessage(
+					from,
+					// A Meta baixa o arquivo NA HORA — aqui vale a URL assinada direta
+					// (o link curto redireciona, e o fetch da Meta não segue 302).
+					proposta.urlAssinada,
+					proposta.nomeArquivo,
+					"Sua proposta, com a carta, a parcela e o prazo que combinamos.",
+				);
+				await saveMessage(conversationId, "assistant", "[proposta enviada em PDF]", "whatsapp");
+			}
+		} catch (err) {
+			console.error(`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`, err);
+		}
 		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
 		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
 		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
@@ -213,7 +270,6 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 			"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
 		);
 	}
-	return true;
 }
 
 async function handleOfferReject(ctx: Ctx): Promise<boolean> {
@@ -459,12 +515,17 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 	const gate = nextGate(updated);
 	if (gate === "search") {
 		await runSearchSummaryWithOrchestrator({ from, conversationId });
-	} else if (gate === "simulator-offer") {
-		// Idempotência (FIX-215): despachando o simulator-offer por AQUI (e não via
-		// index.ts), marca o dispatch — senão, se o usuário responder o card por
-		// TEXTO, nextGate recomputaria simulator-offer com a flag ainda false e o
-		// card sairia 2× (o "sim" do usuário não seria honrado).
-		const dispatched = { ...updated, simulatorOfferDispatched: true };
+	} else if (gate === "simulator-offer" || gate === "decision") {
+		// Idempotência (FIX-215): despachando o gate por AQUI (e não via index.ts),
+		// marca o dispatch — senão, se o usuário responder o card por TEXTO,
+		// nextGate recomputaria o MESMO gate com a flag ainda false e o card sairia
+		// 2× (o "sim" do usuário não seria honrado). Vale pros dois gates que este
+		// ramo pode alcançar: quem topa antecipar cai no simulador; quem recusou o
+		// lance vai direto pra decisão.
+		const dispatched =
+			gate === "simulator-offer"
+				? { ...updated, simulatorOfferDispatched: true }
+				: { ...updated, decisionDispatched: true };
 		await persistMeta(conversationId, dispatched);
 		await fireGate(from, conversationId, gate, dispatched);
 	} else {
@@ -526,7 +587,13 @@ async function handlePicker(ctx: Ctx): Promise<boolean> {
 // fechou com o número velho, divergente do que a simulação acabou de mostrar.
 async function anchorRecommendedOffer(
 	conversationId: string,
-	details: { administradora: string; category?: Category; creditValue: number; termMonths: number; monthlyPayment: number },
+	details: {
+		administradora: string;
+		category?: Category;
+		creditValue: number;
+		termMonths: number;
+		monthlyPayment: number;
+	},
 	groupId: string,
 ): Promise<void> {
 	const meta = await loadMeta(conversationId);
@@ -663,6 +730,21 @@ async function handleDecisionOutras(ctx: Ctx): Promise<boolean> {
 			"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
 		);
 	}
+	return true;
+}
+
+/** "Falar c/ consultor" do card de decisão — pedido EXPLÍCITO de humano, o único
+ * gatilho legítimo de handoff. Mesmo caminho determinístico do
+ * `handleHandoffConfirm`, sem passar pelo modelo. */
+async function handleDecisionEspecialista(ctx: Ctx): Promise<boolean> {
+	const { from, conversationId, contactName } = ctx;
+	await recordUserClick(ctx);
+	const handoff = await getHandoffState(from);
+	if (handoff?.isHandedOff) return true;
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+	});
+	await startInterestHandoff(from, conversationId, contactName ?? conv?.contactName ?? null);
 	return true;
 }
 

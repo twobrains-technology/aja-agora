@@ -135,7 +135,12 @@ export async function applyTemplateStatusUpdate(
 		flushed = true;
 	}
 
-	return { updated: true, usageKey: row.usageKey, status: nextStatus ?? (row.status as TemplateStatus), flushed };
+	return {
+		updated: true,
+		usageKey: row.usageKey,
+		status: nextStatus ?? (row.status as TemplateStatus),
+		flushed,
+	};
 }
 
 export interface ReconcileResult {

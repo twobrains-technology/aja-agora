@@ -14,8 +14,8 @@
 // Instale nos testes via __setDiscoveryAdapterFactoryForTests(() =>
 // fixtureDiscoveryAdapter()) — e restaure com (null) no afterAll.
 
-import okSimulationImovel from "@/lib/adapters/bevi/__fixtures__/ok-selfcontract-simulation-imovel.json";
 import okSimulation from "@/lib/adapters/bevi/__fixtures__/ok-selfcontract-simulation.json";
+import okSimulationImovel from "@/lib/adapters/bevi/__fixtures__/ok-selfcontract-simulation-imovel.json";
 import type { SelfContractIdentity } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractAdapter } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import type { BeviOffer } from "@/lib/adapters/bevi/offer-mapper";

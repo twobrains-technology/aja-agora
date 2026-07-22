@@ -276,10 +276,17 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	};
 }
 
+// Invariante I4 (docs/jornada/decisoes-do-cliente.md): NUNCA prometer reserva
+// antes da contratação real. Esta copy dizia "Para reservar essa opção" e o
+// `present_lead_form` está liberado na fase PRÉ-reveal (tool-policy.ts) — ou
+// seja, o cliente lia uma promessa de reserva ainda na qualificação, sem CPF e
+// sem busca feita. O guard de sanitização (PREMATURE_RESERVATION_PATTERNS) não
+// pegava: casa o particípio ("reservado/reservada"), não o infinitivo — e texto
+// de card do canal nem passa por ele.
 export function leadFormToWhatsApp(): WhatsAppResponse {
 	return {
 		type: "text",
-		text: "Ótimo! Para reservar essa opção, preciso de alguns dados.\n\n*Qual seu nome completo?*",
+		text: "Ótimo! Pra eu seguir com você, preciso de alguns dados.\n\n*Qual seu nome completo?*",
 	};
 }
 
@@ -1038,21 +1045,43 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const termMonths = Number(payload.termMonths);
 	const avgBidValue = Number(payload.avgBidValue);
 	const prazoLine = Number.isFinite(termMonths) ? `\n*Prazo:* ${termMonths} meses` : "";
-	const lanceLine = Number.isFinite(avgBidValue)
-		? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
-		: "";
+	// Lance médio só pra quem entrou na conversa de lance. Pra quem disse "sem
+	// pressa" e nunca ouviu o que é lance médio, o número aparecia solto no
+	// resumo da assinatura — R$ 199 mil sem nenhum significado, ao lado da carta.
+	const lanceLine =
+		Number.isFinite(avgBidValue) && payload.mostrarLanceMedio === true
+			? `\n*Lance médio do grupo:* ${brlWa(avgBidValue)}`
+			: "";
 	// FIX-240/FIX-247 (CDC art. 30, rodada 3 — Fable r2 N3): paridade com o
 	// aviso de ajuste do card web (real-offer.tsx) — quando a carta fechada
 	// diverge do valor pedido, o WhatsApp avisa igual, nunca confirma
 	// silenciosamente. Copy corrigida (pedido × carta real, sem inversão).
 	const rawCreditValue = Number(payload.rawCreditValue);
+	const cartaMaiorPorEmbutido = payload.cartaMaiorPorEmbutido === true;
 	const adjustmentLine =
 		Number.isFinite(rawCreditValue) && Math.round(rawCreditValue) !== Math.round(credit)
-			? `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
+			? cartaMaiorPorEmbutido
+				? `\n\n_O bem que você quer custa ~${brlWa(rawCreditValue)}; a carta é maior (${brlWa(credit)}) de propósito, porque o lance embutido sai dela._`
+				: `\n\n_Você pediu uma carta de ~${brlWa(rawCreditValue)} — a carta real ficou em ${brlWa(credit)}._`
 			: "";
 	// FIX-259 (P1, veredito Fable r4): paridade com o card web — quando o
 	// fechamento trocou a administradora confirmada, avisa explicitamente as
 	// duas marcas em vez de "Confirmado com a X" liso.
+	// A carta real pode voltar com parcela e prazo diferentes dos que o cliente
+	// aprovou — ele disse sim a 48 meses e assinava 55, calado. Avisar é o mesmo
+	// dever do aviso de carta logo acima (CDC art. 30: o que foi ofertado vincula).
+	const parcelaVista = Number(payload.parcelaVista);
+	const prazoVisto = Number(payload.prazoVisto);
+	const mudancaParcela = Number.isFinite(parcelaVista)
+		? `a parcela passou de ${brlWa(parcelaVista)} para ${brlWa(parcela)}`
+		: "";
+	const mudancaPrazo = Number.isFinite(prazoVisto)
+		? `o prazo passou de ${prazoVisto} para ${termMonths} meses`
+		: "";
+	const mudancas = [mudancaParcela, mudancaPrazo].filter(Boolean).join(" e ");
+	const planChangeLine = mudancas
+		? `\n\n_Atenção: essa cota não é a mesma que eu simulei — ${mudancas}._`
+		: "";
 	const previousAdministradora = payload.previousAdministradora as string | undefined;
 	const swapLine = previousAdministradora
 		? `\n\n_A ${previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${admin}._`
@@ -1065,7 +1094,7 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		interactive: {
 			type: "button",
 			body: {
-				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}${planChangeLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [
@@ -1077,17 +1106,17 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	};
 }
 
-/** Encaminhamento da proposta pronta (link). PARIDADE DES-1 (FIX-116): o
- * `consortiumProposalLink` é o PDF da PROPOSTA de consórcio, não um portal de
- * assinatura — a assinatura/efetivação é etapa posterior da mesa. Espelha o web
- * (signature-handoff.tsx: "Sua proposta está pronta" / "Ver minha proposta") e
- * compartilha a proibição de /assinatura|assinar/i com o canal web. */
+/** Encaminhamento da proposta pronta (link). Desde 2026-07-21 o link é o da
+ * NOSSA proposta em PDF (`proposalUrl`) — o PDF da administradora em domínio de
+ * terceiro saiu da conversa. Não promete assinatura (etapa posterior, do
+ * atendente): espelha o web (signature-handoff.tsx) e compartilha a proibição
+ * de /assinatura|assinar/i com o canal web. */
 export function signatureHandoffToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = (payload.administradora as string) ?? "administradora";
-	const link = payload.consortiumProposalLink as string;
+	const link = payload.proposalUrl as string;
 	return {
 		type: "text",
-		text: `Sua proposta está pronta! Sua proposta de consórcio da ${admin}, escolhida pela Aja Agora pro seu perfil, já está gerada — e a gente segue com você até a contemplação.\n\nÉ só ver a sua proposta aqui:\n${link}`,
+		text: `Sua proposta está pronta — o documento com a carta, a parcela e o prazo que combinamos com a ${admin}:\n${link}`,
 	};
 }
 
@@ -1334,12 +1363,12 @@ export function artifactToWhatsApp(
 	}
 }
 
-/** Card de decisão (jornada do .docx etapa 4). 3 botões. FIX-119 (D22):
- * "Ver outras opções" (decision_outras) tem handler DETERMINÍSTICO dedicado
- * (handleDecisionOutras → buildOtherOptions, paridade route.ts:521-548). Os
- * irmãos "Reservar agora"/"Falar c/ consultor" (decision_contratar/
- * decision_especialista) ainda caem no processamento de texto (contratar →
- * reserva, especialista → handoff) — fora do escopo da D22. */
+/** Card de decisão (jornada do .docx etapa 4). 3 botões, TODOS com handler
+ * determinístico em `dispatchInteractiveReply`: "Ver outras opções"
+ * (decision_outras → buildOtherOptions, FIX-119/D22), "Seguir agora"
+ * (decision_contratar → mesmo caminho do "Tenho interesse") e "Falar c/
+ * consultor" (decision_especialista → handoff humano). Até 2026-07-20 só o
+ * primeiro tinha handler: os outros dois viravam texto solto pro LLM. */
 export function decisionPromptToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const text = admin ? `${DECISION_PROMPT_QUESTION} (${admin})` : DECISION_PROMPT_QUESTION;

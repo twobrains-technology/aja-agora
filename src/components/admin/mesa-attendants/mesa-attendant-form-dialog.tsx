@@ -63,21 +63,25 @@ export function MesaAttendantFormDialog({ mode, attendant, open, onOpenChange, o
 		formState: { errors, isSubmitting },
 	} = useForm<FormValues>({ resolver, defaultValues });
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset/defaultValues mudam a cada render do useForm; re-sincronizar só na abertura é intencional.
 	useEffect(() => {
 		if (open) {
 			reset(defaultValues);
 			setSubmitError(null);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, attendant?.id]);
 
 	const onSubmit = handleSubmit(async (values) => {
 		setSubmitError(null);
-		const url =
-			mode === "create"
-				? "/api/admin/mesa-attendants"
-				: `/api/admin/mesa-attendants/${attendant!.id}`;
-		const method = mode === "create" ? "POST" : "PATCH";
+		// `attendant!` escondia o caso real de abrir em modo edição sem objeto
+		// (a URL viraria .../undefined e o PATCH morreria em 404 silencioso).
+		const editing = mode === "create" ? null : attendant;
+		if (mode !== "create" && !editing) {
+			setSubmitError("Não foi possível identificar o atendente a editar.");
+			return;
+		}
+		const url = editing ? `/api/admin/mesa-attendants/${editing.id}` : "/api/admin/mesa-attendants";
+		const method = editing ? "PATCH" : "POST";
 
 		const res = await fetch(url, {
 			method,

@@ -70,7 +70,9 @@ async function loginAdmin(page: Page): Promise<void> {
 }
 
 test.describe("FRENTE 2 — paridade WhatsApp (E2E de tela real via simulador)", () => {
-	test("reveal real + Tenho interesse avança direto + NUNCA promete assinatura", async ({ page }) => {
+	test("reveal real + Tenho interesse avança direto + NUNCA promete assinatura", async ({
+		page,
+	}) => {
 		test.setTimeout(180_000);
 		const seed = loadSeedFromEnv();
 		try {
@@ -108,9 +110,9 @@ test.describe("FRENTE 2 — paridade WhatsApp (E2E de tela real via simulador)",
 			await expect(page.getByText(/Esse plano faz sentido/i)).toHaveCount(0);
 
 			// Passo 6 (contratar) — algum indício de coleta de dados/proposta.
-			await expect(
-				page.getByText(/CPF|celular|proposta|dados/i).first(),
-			).toBeVisible({ timeout: 45_000 });
+			await expect(page.getByText(/CPF|celular|proposta|dados/i).first()).toBeVisible({
+				timeout: 45_000,
+			});
 
 			// Reconfirma DES-1 no transcript INTEIRO pós-avanço.
 			await expect(page.getByText(/assinatura|assinar/i)).toHaveCount(0);

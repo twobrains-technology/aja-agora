@@ -13,8 +13,6 @@
 // botões — o coletor então concluía "a jornada travou" com o agente respondendo
 // normal. Instrumento cego vira bug fantasma.
 
-import { execSync } from "node:child_process";
-
 const BASE = process.env.AJA_BASE_URL ?? "http://aja-refactor-desamarra-agente.orb.local";
 
 const [conv, a2, a3, a4] = process.argv.slice(2);
@@ -25,24 +23,35 @@ if (conv === "--new") {
 		headers: { "content-type": "application/json", origin: BASE },
 		body: JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD }),
 	});
-	if (!r0.ok) { console.error(`login ${r0.status}`); process.exit(1); }
+	if (!r0.ok) {
+		console.error(`login ${r0.status}`);
+		process.exit(1);
+	}
 	const ck = (r0.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
 	const s = await fetch(`${BASE}/api/admin/simulator/sessions`, {
 		method: "POST",
 		headers: { "content-type": "application/json", cookie: ck, origin: BASE },
 		body: JSON.stringify({ channel: "whatsapp" }),
 	});
-	if (!s.ok) { console.error(`HTTP ${s.status}: ${await s.text()}`); process.exit(1); }
+	if (!s.ok) {
+		console.error(`HTTP ${s.status}: ${await s.text()}`);
+		process.exit(1);
+	}
 	const { conversationId } = await s.json();
 	console.log(conversationId);
 	process.exit(0);
 }
 
 if (!conv || !a2) {
-	console.error('uso: wa-talk.mjs --new | wa-talk.mjs <conv> "texto" | wa-talk.mjs <conv> --btn <id> "<título>"');
+	console.error(
+		'uso: wa-talk.mjs --new | wa-talk.mjs <conv> "texto" | wa-talk.mjs <conv> --btn <id> "<título>"',
+	);
 	process.exit(2);
 }
-const body = a2 === "--btn" ? { kind: "interactive", replyId: a3, replyTitle: a4 ?? a3 } : { kind: "text", text: a2 };
+const body =
+	a2 === "--btn"
+		? { kind: "interactive", replyId: a3, replyTitle: a4 ?? a3 }
+		: { kind: "text", text: a2 };
 
 const res0 = await fetch(`${BASE}/api/auth/sign-in/email`, {
 	method: "POST",
@@ -149,7 +158,9 @@ for (const ev of baloes) {
 		const it = ev.interactive ?? {};
 		const corpo = it.body?.text ?? "";
 		const btns = (it.action?.buttons ?? []).map((b) => `[${b.reply.id}] ${b.reply.title}`);
-		const rows = (it.action?.sections ?? []).flatMap((s) => (s.rows ?? []).map((r) => `[${r.id}] ${r.title}`));
+		const rows = (it.action?.sections ?? []).flatMap((s) =>
+			(s.rows ?? []).map((r) => `[${r.id}] ${r.title}`),
+		);
 		console.log(corpo);
 		console.log(`[BOTÕES] ${[...btns, ...rows].join("  |  ") || JSON.stringify(it.action ?? {})}`);
 	} else {

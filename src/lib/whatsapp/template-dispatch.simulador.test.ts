@@ -15,8 +15,8 @@ vi.mock("./window", () => ({
 }));
 vi.mock("./api", () => ({ sendTemplate: vi.fn() }));
 
-import { isWindowOpen } from "./window";
 import { resolveAndSend } from "./template-dispatch";
+import { isWindowOpen } from "./window";
 
 describe("resolveAndSend — waId simulado pula template (fidelidade do simulador)", () => {
 	it("SIM-<uuid> com janela fechada → free-text (NÃO enfileira template)", async () => {

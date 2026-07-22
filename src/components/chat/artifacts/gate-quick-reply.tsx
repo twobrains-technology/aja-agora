@@ -67,7 +67,7 @@ export function GateQuickReply({
 	payload: ChipsPayload;
 	active?: boolean;
 }) {
-	const { sendAction, status } = useChatContext();
+	const { sendAction, sendUserMessage, status } = useChatContext();
 	const [submitted, setSubmitted] = useState(false);
 	const isStreaming = status === "submitted" || status === "streaming";
 
@@ -75,9 +75,16 @@ export function GateQuickReply({
 		async (option: GatePartOption) => {
 			if (submitted) return;
 			setSubmitted(true);
+			// `desire` são ATALHOS de texto, não uma escolha estruturada: o rótulo vai
+			// como mensagem normal e o motivo é extraído do texto livre, exatamente
+			// como se o usuário tivesse digitado. Zero handler novo no servidor.
+			if (payload.gate === "desire" || payload.gate === "reco-consent") {
+				await sendUserMessage(option.label);
+				return;
+			}
 			await sendAction(buildAction(payload.gate, option), option.label);
 		},
-		[payload.gate, sendAction, submitted],
+		[payload.gate, sendAction, sendUserMessage, submitted],
 	);
 
 	if (submitted || !active) return null;
@@ -95,7 +102,7 @@ export function GateQuickReply({
 					type="button"
 					onClick={() => onSelect(opt)}
 					disabled={isStreaming}
-					className="inline-flex items-center gap-[7px] h-[34px] px-[14px] border border-primary/[.28] rounded-full bg-primary/[.05] text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-primary/10 disabled:cursor-default disabled:opacity-50"
+					className="inline-flex items-center gap-[7px] h-[30px] px-[12px] border border-[rgb(5_36_64/.4)] rounded-full bg-transparent text-xs font-semibold text-[var(--aja-ink)] cursor-pointer transition-colors hover:bg-[var(--aja-sand)] disabled:cursor-default disabled:opacity-50"
 				>
 					{opt.label}
 				</button>

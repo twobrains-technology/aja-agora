@@ -42,7 +42,7 @@ export type TurnEvent =
 	  }
 	| { type: "welcome-categories" }
 	| { type: "handoff"; reason: string; triggerId?: string }
-	| { type: "lead-stage"; stage: "novo" | "engajado" | "qualificado" }
+	| { type: "lead-stage"; stage: "novo" | "engajado" | "qualificado" | "em_negociacao" }
 	| { type: "meta-update"; meta: ConversationMetadata }
 	| { type: "lead-collection-prompt"; field: LeadCollectionField; text: string }
 	// FIX-24: telemetria de observabilidade — emitidos pelo runner pra alimentar
@@ -99,7 +99,6 @@ export type TurnInput = {
 	 * `runAgentTurn` (runner.ts), agora exposto pro CHAMADOR de `runTurn`
 	 * (index.ts) escolher explicitamente, em vez de só a heurística interna.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: ToolChoice é genérico sobre o ToolSet do agent — repassado como-está até resolveAgent/buildAgent.
 	forceToolChoice?: "none";
 };
 

@@ -1,9 +1,9 @@
 // Wrapper de chamada do "doutor" — generateObject contra Claude com retry,
 // mesma forma do judge (lib/eval/judge.ts). Não persiste; só executa.
 
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import { sanitizeUnicode } from "@/lib/eval/judge";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import {
 	buildDiagnosisPrompt,
 	type ConversationContext,

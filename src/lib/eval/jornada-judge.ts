@@ -2,8 +2,8 @@
 // Mesmo padrão do judgeConversation (judge.ts): generateObject + Sonnet,
 // temperature 0, 1 retry, seam injetável pra testes (zero rede em PR).
 
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import {
 	buildJornadaJudgePrompt,
 	JORNADA_RUBRIC_SYSTEM_PROMPT,

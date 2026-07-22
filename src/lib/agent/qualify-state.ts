@@ -16,7 +16,12 @@ export type Gate =
 	| "search"
 	| "reco-consent"
 	| "simulator-offer"
-	| "decision";
+	| "decision"
+	/** Passo 5 — o formulário de contratação (CPF + celular + LGPD) que cria a
+	 * proposta REAL. Era o único passo da jornada sem gate: o funil terminava em
+	 * `search` (mudo) e quem dizia "bora fechar" ouvia "fico por aqui então",
+	 * sem nada na tela. Fechar é um passo do funil, não um favor do modelo. */
+	| "contract";
 
 /**
  * FIX-208: gates de COLETA ativa — quem responde direto a um destes está
@@ -68,6 +73,13 @@ export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"lance",
 	"lance-value",
 	"lance-embutido",
+	// `reco-consent` é um CONVITE ("posso te mostrar a que eu recomendo?"), não
+	// coleta de dado — e era o único gate sem NENHUMA saída: só o SIM o resolvia,
+	// então qualquer resposta que o classificador não entendesse congelava a
+	// venda para sempre (nunca vinha decisão, nunca vinha contrato, e ninguém
+	// percebia porque o agente seguia conversando educadamente). Com o teto de
+	// tentativas, o funil segue sem impor o hero — quem quiser ver, pede.
+	"reco-consent",
 ]);
 
 /** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
@@ -161,7 +173,34 @@ export function registerGateStuckTurn(
 		qualifyAnswers: { ...(meta.qualifyAnswers ?? {}), ...stuckGateDefaultPatch(gate, meta) },
 		gateStuckTurns: { ...meta.gateStuckTurns, [gate]: 0 },
 		gateDefaultsAssumed: { ...meta.gateDefaultsAssumed, [gate]: true },
+		// `reco-consent` não mora em `qualifyAnswers` — o default dele é um campo
+		// do próprio metadata. Sem isto, o gate entraria em STUCK_ESCAPE_GATES,
+		// zeraria o contador a cada teto e continuaria pendente para sempre: o
+		// escape existiria no papel e não no funil.
+		...(gate === "reco-consent" ? { recoConsentAnswered: true, recoConsentDeclined: true } : {}),
 	};
+}
+
+/**
+ * O dinheiro que o cliente DE FATO disse ter — nunca o que o funil assumiu por
+ * ele.
+ *
+ * Quando o gate `lance-value` trava, `stuckGateDefaultPatch` grava 20% da carta
+ * pra o funil não parar. Isso destrava a jornada, mas o número é do SISTEMA, não
+ * do cliente: usá-lo como "o que você tem guardado" faz a conta da contemplação
+ * mentir com a cara de quem repete o que ouviu. Visto ao vivo — o cliente disse
+ * três vezes que tinha R$ 80 mil, o estado guardou R$ 50 mil assumidos, e a
+ * simulação passou a calcular em cima do valor inventado.
+ *
+ * Mesmo princípio do FIX-307 no gate `credit`: promover o que o usuário já disse
+ * é legítimo; fabricar dado financeiro do zero, não.
+ */
+export function dinheiroDeclaradoPeloCliente(
+	meta: Pick<ConversationMetadata, "qualifyAnswers" | "gateDefaultsAssumed">,
+): number | undefined {
+	if (meta.gateDefaultsAssumed?.["lance-value"]) return undefined;
+	const valor = meta.qualifyAnswers?.lanceValue;
+	return typeof valor === "number" && Number.isFinite(valor) ? valor : undefined;
 }
 
 export type UserIntent =
@@ -185,6 +224,15 @@ export type UserIntent =
 	| "confused"
 	| "off_topic"
 	| "neutral";
+
+/** O cliente quer ANTECIPAR a contemplação? É o que separa quem passa pela
+ * conversa de lance (valor → embutido → simulador) de quem vai direto ao fecho.
+ * "Por enquanto não" e "só a parcela" são recusas explícitas — depois delas, os
+ * três passos seguintes deixam de fazer sentido. `lanceEmbutido === true` cobre
+ * quem aceitou o embutido por outro caminho (ex.: texto livre). Pura. */
+export function querAntecipar(q: NonNullable<ConversationMetadata["qualifyAnswers"]>): boolean {
+	return q.hasLance === "yes" || q.hasLance === "maybe" || q.lanceEmbutido === true;
+}
 
 export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
 	// PF-08 + FIX-17: enquanto o nome não foi capturado, o ÚNICO gate é o do
@@ -294,14 +342,26 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// que roda DEPOIS de reco-consent/timeframe nesta MESMA cascata — nenhum
 		// usuário real chegava a "so_parcela" a tempo de pular o hero. A
 		// recomendação é útil independente de o usuário dar lance ou não.
-		if (!meta.recoConsentAnswered) return "reco-consent";
+		// 2026-07-21 (decisão do Kairo, validando ao vivo): o CONVITE saiu do funil.
+		// "Posso te mostrar a que eu recomendo?" custava um clique e um turno inteiro
+		// pra perguntar o que o cliente já pediu ao entrar aqui — e era justamente
+		// nesse turno-ponte que o agente se enrolava ("só um instante que vou
+		// confirmar com a administradora"), sem nada a confirmar. Vendedor bom não
+		// pede licença pra recomendar: mostra e diz POR QUÊ. O gate `reco-consent`
+		// segue existindo no tipo (conversas antigas, WhatsApp, telemetria), só não
+		// é mais exigido pela cascata.
 
 		// FIX-233 (D1 — reverte FIX-103): o gate `timeframe` (prazo desejado de
 		// contemplação) REINTRODUZ, agora PÓS-recomendação — é a ponte natural
 		// pro simulador de contemplação (contemplation_dial). Perguntar antes da
 		// recomendação desperdiçava a pergunta (o usuário ainda não tinha visto
 		// nenhuma oferta real pra ancorar a resposta).
-		if (q.prazoMeses === undefined) return "timeframe";
+		// Quem JÁ escolheu e pediu pra fechar não precisa responder isto: o prazo
+		// desejado alimenta o SIMULADOR de contemplação, não a contratação (o
+		// prazo que vale é o da cota, `recommendedOffer.termMonths`). Segurar o
+		// fecho aqui foi o que fez o cliente pedir "bora contratar" três turnos
+		// seguidos enquanto o agente respondia que ainda não havia proposta.
+		if (!meta.escolha && q.prazoMeses === undefined) return "timeframe";
 	}
 
 	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +
@@ -312,35 +372,48 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// embutido — sem o dado coletado aqui, o dial só teria o cenário "sem
 	// lance" na primeira oferta. Decisão de design registrada em
 	// docs/decisoes/blocos/2026-07-04-bloco-jornada-conversa.md.
-	if (meta.revealCompleted) {
-		if (!q.hasLance) return "lance";
-		// FIX-233 — 3ª saída do gate lance: "não quero comprometer nada além da
-		// parcela". Pula lance-value/lance-embutido/simulator-offer (a "agulha")
-		// por completo — o agente chama present_two_paths e devolve a decisão
-		// ao usuário (sem recomendar sorteio vs. lance modesto).
-		if (q.hasLance === "so_parcela") {
-			if (!meta.decisionDispatched) return "decision";
-			return "search"; // terminal — mesma convenção do fallback abaixo
-		}
-		// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
-		// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
-		// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
-		if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
-		// Jornada do doc: TODO MUNDO passa pelo gate de lance embutido (educa +
-		// opt-in) — no docx a educação é sub-bullet PARALELO ao "Se sim", e o
-		// próprio texto diz que o lance embutido "ajuda quem não possui todo o
-		// valor do lance hoje" (= quem respondeu Não/Talvez). FIX-4 (teste manual
-		// Kairo 2026-06-05): a versão anterior pulava "maybe"/"no" — o ramo
-		// educativo "sumia" e parecia intermitência.
-		if (q.lanceEmbutido === undefined) return "lance-embutido";
-	}
+	// "Sem pressa, quero menor parcela" (prazo 120 / objetivo investimento) JÁ É a
+	// resposta da pergunta de lance — lance existe pra ANTECIPAR a contemplação.
+	// Perguntar "você teria como dar um lance pra antecipar?" logo depois é o
+	// agente ignorando o que o cliente acabou de dizer. Se ele mesmo trouxer o
+	// assunto (analyzer captura `hasLance`), a jornada de lance segue normal.
+	const semPressa = q.objetivo === "investimento" || (q.prazoMeses ?? 0) >= 120;
 
-	// docx passo 4 (linha 34-36): após apresentar o plano (e a conversa de
-	// lance já resolvida), OFERECER o simulador ("contemplado em 3, 6 ou 12
-	// meses — que tal?") ANTES do card de decisão. Conceito do Bernardo
-	// (simulador-agulha) no caminho padrão da jornada.
-	if (meta.revealCompleted && !meta.simulatorOfferDispatched) return "simulator-offer";
-	if (meta.revealCompleted && !meta.decisionDispatched) return "decision";
+	if (meta.revealCompleted) {
+		if (!q.hasLance && !semPressa) return "lance";
+		// Lance embutido e simulador de contemplação existem por UM motivo:
+		// ANTECIPAR a contemplação. Quem acabou de dizer "por enquanto não" ou "só
+		// a parcela" não quer isso — insistir depois da recusa é o agente
+		// perguntando o que o cliente já respondeu, e foi exatamente o que
+		// atravancou a venda de quem só queria a menor parcela (visto ao vivo,
+		// 2026-07-21). Quem topa (yes/maybe) segue a jornada inteira.
+		if (querAntecipar(q)) {
+			// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
+			// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
+			// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
+			if (q.hasLance === "yes" && q.lanceValue === undefined) return "lance-value";
+			// A educação do embutido é pra quem pode usá-la: ela ensina a completar o
+			// lance com parte da própria carta. Pra quem não vai dar lance nenhum,
+			// vira mais uma pergunta no caminho do fecho.
+			if (q.lanceEmbutido === undefined) return "lance-embutido";
+			// docx passo 4 (linha 34-36): após apresentar o plano (e a conversa de
+			// lance já resolvida), OFERECER o simulador ("contemplado em 3, 6 ou 12
+			// meses — que tal?") ANTES do card de decisão.
+			if (!meta.simulatorOfferDispatched) return "simulator-offer";
+		}
+		// A escolha já está FEITA e ancorada (`meta.escolha`, gravada no `advance`
+		// quando o cliente nomeou uma cota exibida ou quando o critério que decide
+		// já está no funil). Abrir o gate `decision` aqui seria perguntar o que ele
+		// acabou de responder — foi assim que o agente pediu confirmação da MESMA
+		// cota três turnos seguidos. Com a escolha em estado, o próximo passo é
+		// fechar.
+		if (!meta.escolha && !meta.decisionDispatched) return "decision";
+		// O funil NÃO termina num estado mudo. Enquanto o formulário de
+		// contratação não apareceu (e o contrato não fechou), o próximo passo É
+		// ele — sem isto, a cascata caía em "search" (sem card, sem condução) e o
+		// agente encerrava a conversa educadamente com a venda na mão.
+		if (!meta.contractFormDispatched && meta.contractClosed !== true) return "contract";
+	}
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
 }
 
@@ -395,9 +468,33 @@ export function gateAwaitingReply(
  * determinístico de "o gate desire recebeu uma resposta", independente do que
  * o analyzer conseguiu extrair.
  */
+/** A "motivação" registrada é MESMO um motivo, ou só a repetição do que ele quer
+ * comprar? O analyzer preenchia `motivation: "trocar de carro"` a partir da
+ * primeira frase ("quero um carro"), e como `shouldAskMotive` só olhava se o
+ * campo estava vazio, a pergunta que abre a venda — *por que agora?* — nunca
+ * acontecia. Motivo é narrativa ("meu carro vive na oficina", "vem bebê"), tem
+ * mais de três palavras e não é o próprio objeto do desejo. */
+export function motivacaoEhNarrativa(
+	motivation: string | undefined,
+	desiredItem: string | undefined,
+): boolean {
+	const m = motivation?.trim().toLowerCase();
+	if (!m) return false;
+	if (m.split(/\s+/).filter(Boolean).length < 4) return false;
+	const item = desiredItem?.trim().toLowerCase();
+	if (item && (m === item || m.includes(item)) && m.length <= item.length + 12) return false;
+	// "comprar/trocar de carro" é a categoria com um verbo na frente, não motivo.
+	if (/^(comprar|trocar|adquirir|ter)\b/.test(m) && m.length < 40) return false;
+	return true;
+}
+
 export function shouldAskMotive(meta: ConversationMetadata): boolean {
 	const q = meta.qualifyAnswers ?? {};
-	return Boolean(meta.desireAnswered) && q.motivation === undefined && !meta.motivationAsked;
+	return (
+		Boolean(meta.desireAnswered) &&
+		!motivacaoEhNarrativa(q.motivation, q.desiredItem) &&
+		!meta.motivationAsked
+	);
 }
 
 /**
@@ -527,6 +624,31 @@ export function decideShowGate(args: {
 	// off-topic. Idempotência garantida por decisionDispatched no orquestrador.
 	if (gate === "decision") {
 		return intent === "ready_to_proceed" || intent === "neutral";
+	}
+
+	// "contract" — passo 5, o formulário que cria a proposta real. Quem chegou
+	// aqui JÁ passou pelo card de decisão: o passo seguinte é o formulário, e ele
+	// aparece a menos que o cliente esteja perguntando/em dúvida (aí o agente
+	// atende primeiro e o gate espera o próximo turno). Com o critério estreito do
+	// `decision` (só ready_to_proceed/neutral), uma resposta como "pode ser a que
+	// você recomendou" virava `providing_info`, o form não saía, e o agente ficava
+	// dando voltas perguntando de novo qual opção — visto ao vivo em 2026-07-21.
+	if (gate === "contract") {
+		// Com a ESCOLHA já registrada, perguntar "e agora, o que eu preciso fazer?"
+		// / "preciso assinar alguma coisa?" NÃO é dúvida que adia — é o pedido do
+		// formulário, e a resposta certa é mostrá-lo. Suprimir aí criou um
+		// deadlock: a cliente perguntou três vezes o que fazer, o agente respondeu
+		// "os próximos passos já vão aparecer pra você" e o card nunca vinha,
+		// porque a própria pergunta é que o bloqueava (visto ao vivo, 2026-07-21).
+		if (meta.escolha) {
+			return !(intent === "expressing_doubt" || intent === "confused" || intent === "off_topic");
+		}
+		return !(
+			intent === "asking_question" ||
+			intent === "expressing_doubt" ||
+			intent === "confused" ||
+			intent === "off_topic"
+		);
 	}
 
 	// "simulator-offer" — oferta do simulador na sequência do reveal (docx).

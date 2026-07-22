@@ -38,13 +38,24 @@ export async function analyzeAndMerge(
 	text: string,
 	currentPersona: Persona,
 	meta: ConversationMetadata,
+	/** Última fala do assistente — a pergunta que o usuário está respondendo.
+	 * Ancora o classificador (ver `analyzeTurn`). Opcional: sem ela o
+	 * comportamento é o de antes. */
+	lastAssistantText?: string | null,
 ): Promise<AnalyzeResult> {
-	const analysis = await analyzeTurn(text, currentPersona, meta);
 	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
 	// de qualquer merge desta função alterar o estado (ver guard de hasLance
 	// abaixo — merges anteriores no mesmo turno não podem "destravar" o gate
 	// lance por baixo do pano).
+	// Subiu pra ANTES do analyzeTurn: o gate ativo é a âncora que diz ao
+	// classificador a que pergunta a mensagem responde. Sem ela, "não" respondido
+	// ao lance virava resposta do prazo — e cada erro desses virou um guard nesta
+	// função pra desfazer a extração errada.
 	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	const analysis = await analyzeTurn(text, currentPersona, meta, {
+		activeGate: activeGateAtTurnStart,
+		lastAssistantText,
+	});
 	// FIX-296: snapshot de `desireAnswered` ANTES de qualquer mutação deste
 	// turno (a marcação de `desireAnswered`, logo abaixo, pode acontecer NESTE
 	// MESMO turno — o guard de creditMax mais adiante precisa saber se o
@@ -60,11 +71,7 @@ export async function analyzeAndMerge(
 	// realmente ativo, e `nextGate()` pulava o gate achando que já tinha sido
 	// resolvido: o CARD nunca chegava a aparecer (dossiê Madalena, banco
 	// mostrava `experiencePrev` preenchido sem o artifact `gate:experience`).
-	if (
-		analysis.experiencePrev &&
-		!meta.experiencePrev &&
-		activeGateAtTurnStart === "experience"
-	) {
+	if (analysis.experiencePrev && !meta.experiencePrev && activeGateAtTurnStart === "experience") {
 		meta.experiencePrev = analysis.experiencePrev;
 		newlyExtractedExperience = analysis.experiencePrev;
 		metaChanged = true;
@@ -98,11 +105,40 @@ export async function analyzeAndMerge(
 	// (conversa a8b0a80d, 2026-06-22). Compara contra o valor ORIGINAL pedido
 	// (creditClampedFrom, quando clampado) pra não re-disparar por causa do clamp.
 	const lastRequested = q.creditClampedFrom ?? q.creditMax;
+	// Nos gates de LANCE, todo número que o cliente fala é o LANCE — não o preço
+	// do bem. O corte precisa valer aqui TAMBÉM: eu tinha barrado só a correção
+	// de valor, e o refit pós-reveal (esta condição) continuou aceitando — então
+	// "100k" respondido a "você teria como dar um lance?" voltou a virar carta de
+	// R$ 100.000, com direito ao aviso "você pediu ~R$ 270.000, a carta real
+	// ficou em R$ 100.000". Duas portas para o mesmo erro; agora as duas fecham.
+	const GATES_DE_LANCE = new Set(["lance", "lance-value", "lance-embutido"]);
+	const emConversaDeLance = GATES_DE_LANCE.has(activeGateAtTurnStart);
 	const isRevealRefit =
 		meta.revealCompleted === true &&
 		analysis.userIntent === "providing_info" &&
 		analysis.creditMax !== null &&
-		analysis.creditMax !== lastRequested;
+		analysis.creditMax !== lastRequested &&
+		!emConversaDeLance;
+	// CORREÇÃO do próprio cliente ("na verdade é 260k"), a qualquer momento —
+	// não só depois do reveal. Antes, uma vez preenchido, o `creditMax` só podia
+	// mudar no refit pós-reveal: quem corrigia ANTES da busca era reconhecido na
+	// FALA ("Entendido, R$ 260.000 então!") e ignorado no ESTADO — a busca saía
+	// com o valor velho e o cliente via 180 mil depois de ter dito 260 mil
+	// (validação ao vivo, 2026-07-21). Só o ANALYZER pode corrigir (ele lê o
+	// contexto da frase); o backstop de parse segue restrito à coleta inicial,
+	// pra número solto no meio de uma dúvida não virar valor do bem.
+	// Nos gates de LANCE, todo número que o cliente fala é o LANCE dele — não o
+	// preço do bem. Sem este corte, "só tenho 100k" (resposta a "você teria como
+	// dar um lance?") reescrevia o valor da carta pra R$ 100.000, re-disparava a
+	// busca nessa faixa e o card ainda avisava "você pediu ~R$ 260.000, a carta
+	// real ficou em R$ 100.000". A correção de valor existe pro cliente consertar
+	// o PREÇO DO BEM ("na verdade é 260k"), e isso acontece fora da conversa de
+	// lance.
+	const isCorrecaoDoValor =
+		q.creditMax !== undefined &&
+		analysis.creditMax !== null &&
+		analysis.creditMax !== lastRequested &&
+		!emConversaDeLance;
 	// FIX-115 (PROD 2026-06-30): backstop DETERMINÍSTICO do valor do bem. O valor é
 	// coletado por conversa (FIX-104) e depende do analyzer LLM extrair o creditMax
 	// — que cai em NEUTRAL_FALLBACK (creditMax=null) em timeout de cold-start. Sem
@@ -158,7 +194,8 @@ export async function analyzeAndMerge(
 	if (
 		sourceCreditMax !== null &&
 		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
-			isRevealRefit)
+			isRevealRefit ||
+			isCorrecaoDoValor)
 	) {
 		// FIX-33 (revogado por FIX-218, Ata 2026-07-04): o valor de texto livre NÃO
 		// é mais capado na faixa da categoria — `clampCreditToCategory` agora só
@@ -230,8 +267,7 @@ export async function analyzeAndMerge(
 	if (
 		analysis.hasLance &&
 		!q.hasLance &&
-		(activeGateAtTurnStart === "lance" ||
-			(isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
+		(activeGateAtTurnStart === "lance" || (isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
 	) {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;
@@ -260,7 +296,18 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
-	if (analysis.fgtsValue !== null && q.fgtsValue === undefined) {
+	// FGTS só existe se o cliente FALAR "FGTS". O prompt do analyzer já pede
+	// exatamente isso, e mesmo assim ele preencheu R$ 40.000 de FGTS pra uma
+	// cliente que disse "tenho 40 mil de reserva" — a palavra FGTS não aparece uma
+	// única vez na conversa dela. E FGTS não é dinheiro qualquer: tem regra própria
+	// (uso restrito, liberação pela administradora, só imóvel residencial). Anotar
+	// poupança livre como FGTS produz uma simulação de lance que ela NÃO CONSEGUE
+	// executar — e o agente devolve o número pra ela como se fosse dinheiro na mão.
+	//
+	// A palavra está no texto ou não está: invariante verificável é código, não
+	// instrução no prompt.
+	const falouFgts = /\bfgts\b/i.test(text ?? "");
+	if (analysis.fgtsValue !== null && q.fgtsValue === undefined && falouFgts) {
 		q.fgtsValue = analysis.fgtsValue;
 		meta.qualifyAnswers = q;
 		metaChanged = true;

@@ -20,8 +20,22 @@ const field = (partial: Partial<ValuePickerField> & { id: string }): ValuePicker
 
 // Payload típico do agent (mesmo shape da screenshot do bug: bem + parcela + prazo)
 const FIELDS: ValuePickerField[] = [
-	field({ id: "creditValue", label: "Valor do bem", min: 20_000, max: 300_000, step: 1_000, default: 80_000 }),
-	field({ id: "monthlyBudget", label: "Parcela mensal", min: 300, max: 5_000, step: 100, default: 2_000 }),
+	field({
+		id: "creditValue",
+		label: "Valor do bem",
+		min: 20_000,
+		max: 300_000,
+		step: 1_000,
+		default: 80_000,
+	}),
+	field({
+		id: "monthlyBudget",
+		label: "Parcela mensal",
+		min: 300,
+		max: 5_000,
+		step: 100,
+		default: 2_000,
+	}),
 	field({ id: "term", label: "Prazo", min: 24, max: 100, step: 1, default: 60, format: "months" }),
 ];
 
@@ -40,7 +54,11 @@ describe("FIX-16 — identifyLinkRoles (payload genérico → papéis)", () => {
 			field({ id: "parcelaMensal", max: 5_000 }),
 			field({ id: "prazoMeses", format: "months", max: 100 }),
 		]);
-		expect(roles).toEqual({ assetId: "valorBem", monthlyId: "parcelaMensal", termId: "prazoMeses" });
+		expect(roles).toEqual({
+			assetId: "valorBem",
+			monthlyId: "parcelaMensal",
+			termId: "prazoMeses",
+		});
 	});
 
 	it("sem slider de prazo → roles sem termId (usa prazo típico da categoria)", () => {
@@ -48,7 +66,11 @@ describe("FIX-16 — identifyLinkRoles (payload genérico → papéis)", () => {
 			field({ id: "creditValue", max: 300_000 }),
 			field({ id: "monthlyBudget", max: 5_000 }),
 		]);
-		expect(roles).toEqual({ assetId: "creditValue", monthlyId: "monthlyBudget", termId: undefined });
+		expect(roles).toEqual({
+			assetId: "creditValue",
+			monthlyId: "monthlyBudget",
+			termId: undefined,
+		});
 	});
 
 	it("ids opacos → fallback: maior teto é o bem, menor é a parcela", () => {

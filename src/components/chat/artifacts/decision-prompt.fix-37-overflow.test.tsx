@@ -32,9 +32,7 @@ describe("DecisionPrompt — FIX-37: label longo não transborda o card", () => 
 		const especialista = screen.getByTestId("decision-especialista");
 
 		// O label canônico mais longo renderiza por completo (sem corte "Aja Agor").
-		expect(especialista.textContent).toContain(
-			"Quero falar com um especialista da Aja Agora",
-		);
+		expect(especialista.textContent).toContain("Quero falar com um especialista da Aja Agora");
 
 		// A correção: quebra de linha permitida (em vez do nowrap da base do shadcn),
 		// altura automática pra crescer, e o min-h preservado pro toque (44px).

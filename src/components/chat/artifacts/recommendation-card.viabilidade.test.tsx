@@ -8,7 +8,7 @@
  * promessa de compatibilidade. Tom guia-não-empurra (jornada: "Seu objetivo primeiro").
  */
 
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecommendationCardPayload } from "@/lib/chat/types";
 import { RecommendationCard } from "./recommendation-card";

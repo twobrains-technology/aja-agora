@@ -22,11 +22,8 @@ describe("BeviApiAdapter — proteção de token", () => {
 	const prevBase = process.env.BEVI_BASE_URL;
 	const prevProduct = process.env.BEVI_PRODUCT_ID;
 	beforeEach(() => {
-		// biome-ignore lint/performance/noDelete: precisamos remover a chave
 		delete process.env.BEVI_API_TOKEN;
-		// biome-ignore lint/performance/noDelete: precisamos remover a chave
 		delete process.env.BEVI_BASE_URL;
-		// biome-ignore lint/performance/noDelete: precisamos remover a chave
 		delete process.env.BEVI_PRODUCT_ID;
 	});
 	afterEach(() => {
@@ -46,7 +43,7 @@ describe("BeviApiAdapter — proteção de token", () => {
 	// string vazia, e `??` não cai no default com "" — baseUrl "" quebraria o
 	// fechamento (passo 5) no container com TypeError Invalid URL. Mesma classe
 	// do bug do Trilho B (self-contract-client).
-	it("BEVI_BASE_URL/BEVI_PRODUCT_ID vazios (compose ${VAR:-}) caem nos defaults", () => {
+	it("BEVI_BASE_URL/BEVI_PRODUCT_ID vazios (compose com VAR:- vazio) caem nos defaults", () => {
 		process.env.BEVI_API_TOKEN = "token-teste";
 		process.env.BEVI_BASE_URL = "";
 		process.env.BEVI_PRODUCT_ID = "";
@@ -239,7 +236,8 @@ describe("BeviApiAdapter — contract contra capturas reais", () => {
 		let call = 0;
 		const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
 			call += 1;
-			if (call === 1) throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+			if (call === 1)
+				throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
 			calls.push({ url, init });
 			return { json: async () => okChoose } as Response;
 		});

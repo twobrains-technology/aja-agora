@@ -8,6 +8,7 @@
 //
 // Ver docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
 
+import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -37,14 +38,29 @@ vi.mock("@/app/actions/whatsapp", () => ({ updateLastInboundAt: mocks.updateLast
 import { POST } from "./route";
 
 // Sem WHATSAPP_APP_SECRET a verificação de assinatura é pulada (dev/test).
-function post(body: unknown): Request {
+// O cast pro shape do NextRequest fica AQUI, uma vez — antes cada chamada
+// carregava seu próprio `as any` (3 no arquivo, 2 sem sequer o ignore do biome).
+function post(body: unknown): NextRequest {
 	return new Request("https://x/api/webhook/whatsapp", {
 		method: "POST",
 		body: JSON.stringify(body),
-	});
+	}) as unknown as NextRequest;
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+/** O webhook responde 200 IMEDIATAMENTE e processa em background (import
+ * dinâmico + fila). Um tick só do event loop às vezes não bastava — espera até
+ * o mock ser chamado, com teto. */
+async function ateSerChamado(mock: { mock: { calls: unknown[] } }, tentativas = 50) {
+	for (let i = 0; i < tentativas && mock.mock.calls.length === 0; i++) await flush();
+}
+
+/** ID de mensagem ÚNICO por execução. O webhook é idempotente de verdade
+ * (`claimInboundMessage` grava a chave no banco), então um id fixo passava na
+ * primeira rodada e falhava em todas as seguintes — a reentrega era descartada,
+ * corretamente, e o teste acusava um bug que não existia. */
+const wamid = () => `wamid.teste-${crypto.randomUUID()}`;
 
 beforeEach(() => {
 	delete process.env.WHATSAPP_APP_SECRET;
@@ -62,8 +78,7 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 			message_template_language: "pt_BR",
 		};
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: NextRequest aceita o shape de Request no teste
-			post({ entry: [{ changes: [{ field: "message_template_status_update", value }] }] }) as any,
+			post({ entry: [{ changes: [{ field: "message_template_status_update", value }] }] }),
 		);
 		expect(res.status).toBe(200);
 		await flush();
@@ -75,7 +90,6 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 
 	it("mensagem inbound continua roteando pro processor (não-regressão)", async () => {
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			post({
 				entry: [
 					{
@@ -83,32 +97,36 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 							{
 								field: "messages",
 								value: {
-									messages: [{ from: "5562999", type: "text", id: "wamid.1", text: { body: "oi" } }],
+									messages: [{ from: "5562999", type: "text", id: wamid(), text: { body: "oi" } }],
 								},
 							},
 						],
 					},
 				],
-			}) as any,
+			}),
 		);
 		expect(res.status).toBe(200);
-		await flush();
+		await ateSerChamado(mocks.processTextMessage);
 		expect(mocks.processTextMessage).toHaveBeenCalledTimes(1);
 		expect(mocks.applyTemplateStatusUpdate).not.toHaveBeenCalled();
 	});
 
 	it("status de entrega (statuses) continua sendo tratado sem chamar o sync (não-regressão)", async () => {
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			post({
 				entry: [
 					{
 						changes: [
-							{ field: "statuses", value: { statuses: [{ status: "delivered", id: "wamid.1", recipient_id: "5562999" }] } },
+							{
+								field: "statuses",
+								value: {
+									statuses: [{ status: "delivered", id: "wamid.1", recipient_id: "5562999" }],
+								},
+							},
 						],
 					},
 				],
-			}) as any,
+			}),
 		);
 		expect(res.status).toBe(200);
 		await flush();

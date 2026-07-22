@@ -109,7 +109,7 @@ export async function POST(req: Request) {
 			inviteToken,
 			inviteExpiresAt,
 			invitedAt,
-			invitedBy: session!.user.id,
+			invitedBy: session.user.id,
 		})
 		.where(eq(userTable.id, createdUserId));
 

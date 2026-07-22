@@ -4,9 +4,8 @@
 // domínio já tem guard (offer-mapper.test.ts, partner-offer-mapper.test.ts);
 // este é o guard da camada de UI/tools, que ainda não existia.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..", "..");

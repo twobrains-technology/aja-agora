@@ -1,9 +1,11 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { markAsRead } from "@/lib/whatsapp/api";
-import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
-import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 import { updateLastInboundAt } from "@/app/actions/whatsapp";
+import { markAsRead } from "@/lib/whatsapp/api";
+import { withConversationLock } from "@/lib/whatsapp/conversation-lock";
+import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
+import { claimInboundMessage } from "@/lib/whatsapp/once";
+import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 
@@ -99,6 +101,16 @@ export async function POST(req: NextRequest) {
 				`[whatsapp] Message from ${from} (${contactName ?? "unknown"}) | type: ${msgType}`,
 			);
 
+			// IDEMPOTÊNCIA (obrigatória): a Meta REENTREGA webhook — ela re-tenta até
+			// receber 200 e, mesmo com 200, pode repetir a entrega. Sem isto a MESMA
+			// mensagem vira dois turnos (dois balões, dois gates, metadata
+			// sobrescrito). `message.id` é único por mensagem; quem reivindicar
+			// primeiro processa, a reentrega cai fora aqui. Ver src/lib/whatsapp/once.ts.
+			if (message.id && !(await claimInboundMessage(message.id))) {
+				console.log(`[whatsapp] Reentrega ignorada (já processada): ${message.id}`);
+				continue;
+			}
+
 			// Mark as read so the customer's blue checks update; typing indicator
 			// is fired later in the processor only on the AI path.
 			markAsRead(message.id).catch(() => {});
@@ -149,11 +161,16 @@ export async function POST(req: NextRequest) {
 					const media = msgType === "image" ? message.image : message.document;
 					const mediaId = media?.id;
 					if (mediaId) {
-						handleDocumentInbound({
-							from,
-							mediaId,
-							filename: message.document?.filename,
-						}).catch((err) => console.error("[whatsapp] Document inbound error:", err));
+						// Serializado como os demais inbounds: RG frente + verso chegam
+						// em sequência e os dois escrevem `documentSlotsSent` no mesmo
+						// metadata (lost update se rodarem em paralelo).
+						withConversationLock(from, () =>
+							handleDocumentInbound({
+								from,
+								mediaId,
+								filename: message.document?.filename,
+							}),
+						).catch((err) => console.error("[whatsapp] Document inbound error:", err));
 					} else {
 						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
 					}

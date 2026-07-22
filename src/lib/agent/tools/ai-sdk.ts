@@ -21,6 +21,7 @@ import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-poli
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
+import { dinheiroDeclaradoPeloCliente } from "@/lib/agent/qualify-state";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
 import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
@@ -157,7 +158,12 @@ export const recommendationSchema = z.object({
 	// então não tem de onde copiar um valor real aqui. Nunca foram lidos deste input
 	// de qualquer forma: `coerceRecommendationPayload` sempre RECALCULA score/
 	// scoreBreakdown a partir do grupo real (scoreGroup), nunca do que a LLM digita.
-	score: z.number().min(0).max(1).optional().describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
+	score: z
+		.number()
+		.min(0)
+		.max(1)
+		.optional()
+		.describe("Score de compatibilidade 0-1 (nao usado — ignorado pelo servidor)"),
 	scoreBreakdown: z
 		.object({
 			monthlyFit: z.number().describe("Score de adequacao ao orcamento 0-1"),
@@ -363,6 +369,15 @@ const STATUS_NO_CONTEXT = {
 		"Caminhos de produto usam buildConsorcioTools({ conversationId }).]",
 } as const;
 
+/** Sem oferta ancorada não existe cenário: os números do simulador saem do
+ * grupo REAL (carta, prazo, parcela, lance médio). Nunca fabricar um cenário
+ * "de exemplo" — ele seria narrado ao cliente como se fosse a cota dele. */
+const SIMULACAO_SEM_OFERTA = {
+	error:
+		"[Sem oferta ancorada nesta conversa: não há grupo real de onde tirar carta, prazo e lance " +
+		"médio. Apresente uma opção real antes de simular cenário de contemplação.]",
+} as const;
+
 // FIX-332 (P0.1, veredito rodada 1 do loop desamarra-agente) — pós-reveal SEM
 // troca de faixa, search_groups/recommend_groups NÃO re-buscam a Bevi: devolvem
 // os grupos JÁ EXIBIDOS nesta conversa (mesma fonte de dado do
@@ -517,12 +532,24 @@ export function looksLikeFabricatedGroupId(groupId: string): boolean {
  * pelas duas tools (simulate_quota / get_group_details). Degradacao graciosa
  * preservada — guidance pra retomar, nunca loop.
  */
-function rebuscaDirective(groupId: string): { error: string } {
+function rebuscaDirective(
+	groupId: string,
+	allowedToolNames?: readonly string[],
+): { error: string } {
+	// Mesma armadilha do `naoExibidoDirective`: mandar "refaça search_groups"
+	// numa fase em que a policy escondeu a tool faz o modelo tomar
+	// NoSuchToolError, o runner abortar a geração e o cliente receber o fallback
+	// enlatado. Em `closing`, por exemplo, `search_groups` NÃO está no toolset.
+	// Só citamos a tool quando ela realmente existe agora.
+	const podeRebuscar = (allowedToolNames ?? ["search_groups"]).includes("search_groups");
+	const saida = podeRebuscar
+		? "Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado."
+		: "Voce NAO tem a busca disponivel agora — entao pergunte ao usuario, com as suas palavras, qual das opcoes ja mostradas em tela ele quer, e siga pela escolha dele.";
 	return {
 		error:
 			`O groupId "${groupId}" nao existe na descoberta atual (nao e um id real retornado por search_groups/recommend_groups). ` +
 			"Use o id LITERAL e opaco do grupo escolhido — exatamente o que veio em search_groups / present_comparison_table / present_recommendation_card. " +
-			"Se nao tiver o id a mao, refaca search_groups na faixa e use o id real retornado. NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.",
+			`${saida} NUNCA derive nem componha o id de banco/categoria/valor/prazo/nome.`,
 	};
 }
 
@@ -540,11 +567,14 @@ function rebuscaDirective(groupId: string): { error: string } {
 export async function executeSimulateQuota(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof simulateQuotaInput>,
+	/** Tools expostas na fase — a diretiva de re-busca só pode citar `search_groups`
+	 * quando ela existe agora (senão vira NoSuchToolError → fallback enlatado). */
+	allowedToolNames?: readonly string[],
 ) {
 	// FIX-72 (fast-path): id com cara de slug fabricado (marcador de valor-em-k)
 	// NUNCA existe na descoberta — nem chama a Bevi, devolve guidance acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return rebuscaDirective(args.groupId);
+		return rebuscaDirective(args.groupId, allowedToolNames);
 	}
 	try {
 		const [details, simulation] = await Promise.all([
@@ -577,7 +607,8 @@ export async function executeSimulateQuota(
 	} catch (err) {
 		// FIX-72 (rede de seguranca): id fora do conjunto real (qualquer formato —
 		// hex inventado, oferta expirada) → diretiva de re-busca, nunca erro cru.
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		if (err instanceof GroupNotInDiscoveryError)
+			return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -593,17 +624,20 @@ async function executeGetRates(
 export async function executeGetGroupDetails(
 	adapter: AdministradoraAdapter,
 	args: z.infer<typeof getGroupDetailsInput>,
+	/** Ver `executeSimulateQuota`. */
+	allowedToolNames?: readonly string[],
 ) {
 	// FIX-72: mesma resolucao robusta de simulate_quota — o get_group_details
 	// recebia id fabricado (`auto-180k-kairo` no log) e devolvia erro cru. Fast-path
 	// pro slug + rede do GroupNotInDiscoveryError → diretiva de re-busca acionavel.
 	if (looksLikeFabricatedGroupId(args.groupId)) {
-		return rebuscaDirective(args.groupId);
+		return rebuscaDirective(args.groupId, allowedToolNames);
 	}
 	try {
 		return await adapter.getGroupDetails(args);
 	} catch (err) {
-		if (err instanceof GroupNotInDiscoveryError) return rebuscaDirective(args.groupId);
+		if (err instanceof GroupNotInDiscoveryError)
+			return rebuscaDirective(args.groupId, allowedToolNames);
 		throw err;
 	}
 }
@@ -745,7 +779,8 @@ export const consorcioTools = {
 		execute: async (args: z.infer<typeof recommendationSchema>) => {
 			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
 			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
-			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			const scoreSuffix =
+				typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	}),
@@ -927,7 +962,7 @@ export const consorcioTools = {
 	// motor puro (computeContemplationDial) — dial e conversa batem número a número.
 	simulate_contemplation: tool({
 		description:
-			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
+			"[FIX-106] Recalcula o cenário de contemplação para um MÊS-ALVO — a versão CONVERSACIONAL do simulador (passo 4). Use no LOOP: quando o usuário escolhe/pergunta um mês ('e em 6 meses?', 'e se eu quiser em 1 ano?', 'dá pra antecipar?'), chame com os dados do plano recomendado (creditValue, termMonths, monthlyPayment — os MESMOS que ele já viu) + targetMonth. Retorna lance necessário (R$ e %), lance embutido × dinheiro, crédito líquido, parcela até contemplar e parcela após — NARRE esses números (R$ X.XXX,XX) com UMA ressalva de estimativa. Reusa o motor do simulador-agulha (mesmos números da web). NUNCA invente valores; tudo vem do cálculo. Se vier `beyondEvidence: true`, o mês pedido exige lance ACIMA do lance médio do grupo: o `requiredLanceValue` devolvido é o TETO observado, NÃO uma estimativa pra aquele mês — não o narre como 'pra contemplar no mês X precisa de R$ Y'; diga que ali passa do que costuma vencer e use `earliestSupportedMonth` como o mês a partir do qual dá pra projetar. A WEB mantém a agulha (present_contemplation_dial); esta tool é o caminho por conversa.",
 		inputSchema: z.object({
 			creditValue: z
 				.number()
@@ -1156,6 +1191,11 @@ export type ConsorcioToolsContext = {
 	 * pelo chamador (builder.ts) a partir do meta; false/undefined preserva o
 	 * comportamento de busca real (pré-reveal ou troca legítima de faixa). */
 	reuseShownGroupsOnly?: boolean;
+	/** Tools que a policy REALMENTE expôs nesta fase. As diretivas de recuperação
+	 * (naoExibidoDirective) só podem nomear tool desta lista — nomear uma que a
+	 * policy escondeu faz o modelo tomar NoSuchToolError e o turno inteiro cair no
+	 * fallback enlatado. Ausente → comportamento antigo. */
+	allowedToolNames?: readonly string[];
 };
 
 /**
@@ -1165,7 +1205,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId, hasLance, reuseShownGroupsOnly } = ctx;
+	const { conversationId, hasLance, reuseShownGroupsOnly, allowedToolNames } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1291,7 +1331,8 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			await markShown("recommendation_card", args);
 			// FIX-334: score deixou de ser input real (a LLM nao recebe mais o numero
 			// cru) — a confirmacao textual so cita quando presente, nunca fabrica NaN%.
-			const scoreSuffix = typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
+			const scoreSuffix =
+				typeof args.score === "number" ? ` - Score ${(args.score * 100).toFixed(0)}%` : "";
 			return `[Recomendacao apresentada: ${args.administradora} - ${args.category}${scoreSuffix}]`;
 		},
 	});
@@ -1452,9 +1493,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			const verdict = evaluateActionPrecondition("simulate_quota", {
 				shown,
 				args: args as Record<string, unknown>,
+				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("simulate_quota", () => executeSimulateQuota(adapter, args));
+			return runDiscovery("simulate_quota", () =>
+				executeSimulateQuota(adapter, args, allowedToolNames),
+			);
 		},
 	});
 
@@ -1479,9 +1523,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			const verdict = evaluateActionPrecondition("get_group_details", {
 				shown,
 				args: args as Record<string, unknown>,
+				allowedTools: allowedToolNames,
 			});
 			if (!verdict.allow) return { error: verdict.directive };
-			return runDiscovery("get_group_details", () => executeGetGroupDetails(adapter, args));
+			return runDiscovery("get_group_details", () =>
+				executeGetGroupDetails(adapter, args, allowedToolNames),
+			);
 		},
 	});
 
@@ -1515,6 +1562,198 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// proposalId NUNCA vem do modelo: resolve via getLatestBeviProposal
 	// (conversationId via closure). checkProposalStatus nunca lança — erros viram
 	// { ok:false, userMessage } honesto com log estruturado proprio.
+	// A CURVA DO CÁLCULO NÃO É DO MODELO.
+	//
+	// O schema conversacional aceitava `creditValue`, `termMonths`,
+	// `historicalWinningBidPct`, `referenceMonth` e `maxEmbutidoPct` vindos da
+	// LLM e despejava tudo cru no motor. Resultado: o MESMO mês-alvo respondia
+	// números diferentes conforme o turno — "pra contemplar no mês 17 o lance é
+	// 37%" e, dois turnos depois, "46%" pra exatamente a mesma carta. O lance
+	// necessário é propriedade do GRUPO e do mês, não da origem do dinheiro;
+	// tirar o embutido muda só a REPARTIÇÃO (quem paga), nunca o total.
+	//
+	// A web nunca teve esse problema porque `coerceDialPayload` descarta o que o
+	// modelo manda e reancora na oferta real. Aqui é a mesma regra: o modelo
+	// escolhe O QUE perguntar (o mês, e se entra embutido); os números vêm da
+	// oferta ancorada. Sem oferta, não se fabrica cenário.
+	const simulate_contemplation = tool({
+		description: consorcioTools.simulate_contemplation.description,
+		inputSchema: z.object({
+			targetMonth: z
+				.number()
+				.int()
+				.positive()
+				.describe("Mês-alvo de contemplação que o usuário quer simular"),
+			usarLanceEmbutido: z
+				.boolean()
+				.optional()
+				.describe(
+					"false quando o cliente RECUSOU lance embutido (quer usar só dinheiro próprio). Muda apenas a repartição do lance, nunca o total necessário.",
+				),
+		}),
+		execute: async (args: { targetMonth: number; usarLanceEmbutido?: boolean }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!offer?.creditValue || !offer.termMonths || !offer.monthlyPayment) {
+				return SIMULACAO_SEM_OFERTA;
+			}
+			return computeContemplationDial({
+				creditValue: offer.creditValue,
+				termMonths: offer.termMonths,
+				monthlyPayment: offer.monthlyPayment,
+				targetMonth: args.targetMonth,
+				// Fonte preferencial do motor (contemplation-dial.ts) — não era nem
+				// exposta no schema conversacional, então nunca chegava.
+				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
+				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
+				// O que ele DECLAROU ter guardado entra antes de comer a carta — valor
+				// assumido pelo funil não conta como dinheiro do cliente.
+				...(meta && dinheiroDeclaradoPeloCliente(meta) != null
+					? { ownCashAvailable: dinheiroDeclaradoPeloCliente(meta) }
+					: {}),
+			});
+		},
+	});
+
+	// "ESSA PARCELA NÃO CABE PRA MIM" PRECISA TER RESPOSTA.
+	//
+	// Faltava o caminho inteiro: uma cliente disse que R$ 4.384 pesava no
+	// orçamento, pediu algo perto de R$ 2.500, o agente reconheceu certo — e
+	// então não existia nada pra fazer. Cinco tentativas de recalcular, cinco
+	// falhas, handoff, venda perdida. E é o perfil mais comum: quem tem orçamento
+	// apertado é justamente quem mais precisa de consórcio.
+	//
+	// A conta é determinística e sai da cota REAL ancorada (parcela e crédito que
+	// a administradora devolveu): crédito-alvo = crédito × (parcela desejada ÷
+	// parcela atual). Nenhum número é inventado — isto só reposiciona a FAIXA DE
+	// BUSCA; quem devolve as cotas continua sendo a administradora, no nó de
+	// descoberta, que re-dispara sozinho ao ver o alvo novo.
+	const ajustar_por_parcela = tool({
+		description:
+			"Use quando o cliente disser que a parcela está alta e indicar quanto caberia por mês ('só consigo uns 2500', 'no máximo 1800'). Reposiciona a busca para cartas cuja parcela caiba nesse valor e devolve o novo crédito-alvo. NÃO invente o valor da nova carta: apresente o que a busca seguinte trouxer.",
+		inputSchema: z.object({
+			parcelaDesejada: z
+				.number()
+				.positive()
+				.describe("Quanto o cliente disse que consegue pagar por mês, em reais"),
+		}),
+		execute: async (args: { parcelaDesejada: number }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!meta || !offer?.creditValue || !offer.monthlyPayment) return SIMULACAO_SEM_OFERTA;
+			if (args.parcelaDesejada >= offer.monthlyPayment) {
+				return {
+					jaCabe: true,
+					parcelaAtual: offer.monthlyPayment,
+					mensagem:
+						"A parcela atual já está dentro do que ele falou — não há o que reduzir; siga com a cota atual.",
+				};
+			}
+			const creditoAlvo = Math.round(
+				offer.creditValue * (args.parcelaDesejada / offer.monthlyPayment),
+			);
+			// NÃO persiste daqui. Esta tool roda DENTRO do nó de conversa, e o nó de
+			// persistência do grafo grava o estado dele logo depois — apagando o que
+			// fosse escrito por fora. Foi exatamente o que aconteceu: a busca nunca
+			// via a faixa nova e o agente ficava repetindo "as opções já vão aparecer"
+			// sem nada aparecer, travando o funil de quem pediu parcela menor.
+			// Quem aplica a mudança é o `converse`, pelo estado do grafo (mesmo
+			// padrão do `suggest_handoff`).
+			return {
+				creditoAlvo,
+				parcelaDesejada: args.parcelaDesejada,
+				parcelaAtual: offer.monthlyPayment,
+				creditoAtual: offer.creditValue,
+				aviso:
+					"Busca reposicionada. As cartas reais dessa faixa vêm no próximo passo — não antecipe valores. Diga a ele que a carta menor cobre menos do bem, com o número exato quando a busca voltar.",
+			};
+		},
+	});
+
+	// A ESCOLHA DA COTA VEM DO MODELO, A VERIFICAÇÃO É DO CÓDIGO.
+	//
+	// Entender que "quero a de menor parcela", "essa mesma", "a segunda que você
+	// mostrou" e "pode ser a do banco" apontam pra uma cota específica é
+	// COMPREENSÃO DE CONVERSA — o modelo faz isso bem, e provou: falou os números
+	// certos da cota escolhida três vezes seguidas. O servidor tentava re-derivar
+	// o mesmo fato por conta própria (regex de critério + classificação de
+	// intenção) e as duas leituras divergiam — o cliente escolhia uma carta de
+	// R$ 120 mil com parcela de R$ 1.289 e o contrato saía com outra, de R$ 132
+	// mil e R$ 3.375. Ele mesmo percebeu: "pera, não era essa que eu falei".
+	//
+	// Duas fontes de verdade pro mesmo fato é o defeito; esta tool colapsa pra
+	// uma. O invariante que continua sendo CÓDIGO é o que dá pra verificar: a
+	// cota tem que ser uma das REALMENTE exibidas nesta conversa. Grupo que o
+	// modelo inventar não ancora nada.
+	const escolher_cota = tool({
+		description:
+			"Chame SEMPRE que o cliente escolher uma das cotas que você mostrou — seja pelo nome da administradora, por característica ('a de menor parcela', 'a de prazo mais longo') ou por referência ('essa mesma', 'a primeira'). Passe o groupId da cota escolhida. É isto que faz a contratação sair com a cota certa: sem esta chamada, o sistema segue ancorado na cota anterior e o contrato fecha errado. Nunca invente groupId — use um dos que apareceram nos cards.",
+		inputSchema: z.object({
+			groupId: z
+				.string()
+				.min(1)
+				.describe("O groupId exato da cota que o cliente escolheu, como veio no card"),
+		}),
+		execute: async (args: { groupId: string }) => {
+			if (!conversationId) return { erro: "Sem conversa ativa para registrar a escolha." };
+			const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
+			const cota = exibidas.find((o) => o.groupId === args.groupId);
+			if (!cota) {
+				return {
+					erro: "Esse grupo não está entre as cotas que você mostrou nesta conversa. Confira o groupId nos cards e chame de novo — não siga com uma cota que o cliente não viu.",
+					gruposDisponiveis: exibidas.map((o) => o.groupId).filter(Boolean),
+				};
+			}
+			// Quem GRAVA é o nó `converse`, pelo estado do grafo — a persistência do
+			// grafo apagaria o que fosse escrito daqui (mesmo padrão do
+			// `ajustar_por_parcela` e do `suggest_handoff`).
+			return {
+				confirmada: true,
+				administradora: cota.administradora,
+				creditValue: cota.creditValue,
+				termMonths: cota.termMonths,
+				monthlyPayment: cota.monthlyPayment,
+				aviso:
+					"Cota registrada. Fale os números DESTA cota daqui pra frente — é ela que vai pro contrato.",
+			};
+		},
+	});
+
+	// Mesma ancoragem do `simulate_contemplation`: os cenários saem da oferta
+	// real, então o lance que o card mostra pro mês X é o MESMO que a conversa
+	// responde quando ele pergunta pelo mês X.
+	const compute_scenarios = tool({
+		description: consorcioTools.compute_scenarios.description,
+		inputSchema: z.object({
+			usarLanceEmbutido: z
+				.boolean()
+				.optional()
+				.describe("false quando o cliente recusou lance embutido"),
+		}),
+		execute: async (args: { usarLanceEmbutido?: boolean }) => {
+			if (!conversationId) return SIMULACAO_SEM_OFERTA;
+			const { reloadMeta } = await import("@/lib/conversation/meta");
+			const meta = await reloadMeta(conversationId).catch(() => null);
+			const offer = meta?.recommendedOffer;
+			if (!offer?.creditValue || !offer.termMonths) return SIMULACAO_SEM_OFERTA;
+			return computeScenarios({
+				creditValue: offer.creditValue,
+				termMonths: offer.termMonths,
+				...(offer.monthlyPayment != null ? { monthlyPayment: offer.monthlyPayment } : {}),
+				...(offer.avgBidValue != null ? { averageBid: offer.avgBidValue } : {}),
+				// Só o que o cliente DECLAROU — ver `dinheiroDeclaradoPeloCliente`.
+				...(meta && dinheiroDeclaradoPeloCliente(meta) != null
+					? { ownCashAvailable: dinheiroDeclaradoPeloCliente(meta) }
+					: {}),
+				...(args.usarLanceEmbutido === false ? { maxEmbutidoPct: 0 } : {}),
+			});
+		},
+	});
+
 	const check_proposal_status = tool({
 		description: consorcioTools.check_proposal_status.description,
 		inputSchema: z.object({}),
@@ -1548,5 +1787,14 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		present_decision_prompt,
 		// Override — status real da proposta (FIX-14).
 		check_proposal_status,
+		// Overrides — cenário de contemplação ancorado na oferta real (a LLM não
+		// calibra a curva; ver comentário na definição).
+		simulate_contemplation,
+		compute_scenarios,
+		// A resposta pra "essa parcela não cabe pra mim".
+		ajustar_por_parcela,
+		// O cliente escolheu uma cota — quem entende qual é o modelo, quem confere
+		// que ela existe é o código.
+		escolher_cota,
 	};
 }

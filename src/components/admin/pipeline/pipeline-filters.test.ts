@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("pipeline-filters — combobox de canal", () => {
 	it("deve renderizar label 'Todos' para valor 'all'", () => {

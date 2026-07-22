@@ -142,8 +142,21 @@ const s = StyleSheet.create({
 	kvValStrong: { fontSize: 11, fontFamily: "Helvetica-Bold", color: BLUE },
 	table: { borderWidth: 1, borderColor: BORDER, borderRadius: 10, overflow: "hidden" },
 	tRow: { flexDirection: "row" },
-	tHeadCell: { flex: 1, paddingHorizontal: 10, paddingVertical: 7, fontSize: 9, fontFamily: "Helvetica-Bold" },
-	tCell: { flex: 1, paddingHorizontal: 10, paddingVertical: 7, fontSize: 9, borderTopWidth: 1, borderTopColor: LINE },
+	tHeadCell: {
+		flex: 1,
+		paddingHorizontal: 10,
+		paddingVertical: 7,
+		fontSize: 9,
+		fontFamily: "Helvetica-Bold",
+	},
+	tCell: {
+		flex: 1,
+		paddingHorizontal: 10,
+		paddingVertical: 7,
+		fontSize: 9,
+		borderTopWidth: 1,
+		borderTopColor: LINE,
+	},
 	confRow: { flexDirection: "row", flexWrap: "wrap" },
 	confItem: { width: "50%", flexDirection: "row", gap: 7, marginBottom: 8, paddingRight: 10 },
 	confMark: { width: 8, height: 8, borderRadius: 4, backgroundColor: BLUE, marginTop: 3 },
@@ -177,8 +190,21 @@ const s = StyleSheet.create({
 	},
 	stepTitle: { fontSize: 10.5, fontFamily: "Helvetica-Bold", color: NAVY },
 	stepDesc: { fontSize: 9, color: MUTED, marginTop: 1 },
-	obs: { paddingHorizontal: 36, paddingVertical: 14, backgroundColor: "#f4f7fb", borderTopWidth: 1, borderTopColor: LINE },
-	obsTitle: { fontSize: 8, fontFamily: "Helvetica-Bold", color: MUTED, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
+	obs: {
+		paddingHorizontal: 36,
+		paddingVertical: 14,
+		backgroundColor: "#f4f7fb",
+		borderTopWidth: 1,
+		borderTopColor: LINE,
+	},
+	obsTitle: {
+		fontSize: 8,
+		fontFamily: "Helvetica-Bold",
+		color: MUTED,
+		textTransform: "uppercase",
+		letterSpacing: 1,
+		marginBottom: 6,
+	},
 	obsText: { fontSize: 8.5, color: MUTED, lineHeight: 1.5 },
 	footer: {
 		backgroundColor: NAVY,
@@ -262,8 +288,8 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 					</View>
 					<Text style={s.docTitle}>Proposta de Consórcio</Text>
 					<Text style={s.metaLine}>
-						Segmento {data.categoryLabel} · Gerada em {data.generatedAt} · Selecionada pela Aja Agora ·
-						Sem compromisso
+						Segmento {data.categoryLabel} · Gerada em {data.generatedAt} · Selecionada pela Aja
+						Agora · Sem compromisso
 					</Text>
 				</View>
 
@@ -312,7 +338,9 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 						<View style={s.paymentBox}>
 							<Text style={s.paymentLabel}>Parcela mensal</Text>
 							<Text style={s.paymentValue}>{brl2(data.monthlyPayment as number)}/mês</Text>
-							<Text style={s.paymentNote}>É a parcela cheia, que você paga até ser contemplada.</Text>
+							<Text style={s.paymentNote}>
+								É a parcela cheia, que você paga até ser contemplada.
+							</Text>
 						</View>
 					) : null}
 					<View style={s.kvGrid}>
@@ -340,16 +368,28 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 								<Text style={[s.tHeadCell, { backgroundColor: "#f0f3f8", color: MUTED }]}>
 									Descrição
 								</Text>
-								<Text style={[s.tHeadCell, { backgroundColor: "#e6f0ff", color: BLUE, textAlign: "right" }]}>
+								<Text
+									style={[
+										s.tHeadCell,
+										{ backgroundColor: "#e6f0ff", color: BLUE, textAlign: "right" },
+									]}
+								>
 									Consórcio
 								</Text>
-								<Text style={[s.tHeadCell, { backgroundColor: "#f0f3f8", color: MUTED, textAlign: "right" }]}>
+								<Text
+									style={[
+										s.tHeadCell,
+										{ backgroundColor: "#f0f3f8", color: MUTED, textAlign: "right" },
+									]}
+								>
 									Financiamento
 								</Text>
 							</View>
 							<View style={s.tRow}>
 								<Text style={s.tCell}>Parcela</Text>
-								<Text style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}>
+								<Text
+									style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}
+								>
 									{brl2(data.financing.consorcioMonthly)}
 								</Text>
 								<Text style={[s.tCell, { textAlign: "right", color: MUTED }]}>
@@ -358,14 +398,18 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 							</View>
 							<View style={s.tRow}>
 								<Text style={s.tCell}>Juros</Text>
-								<Text style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}>
+								<Text
+									style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}
+								>
 									Não
 								</Text>
 								<Text style={[s.tCell, { textAlign: "right", color: MUTED }]}>Sim</Text>
 							</View>
 							<View style={s.tRow}>
 								<Text style={s.tCell}>Entrada</Text>
-								<Text style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}>
+								<Text
+									style={[s.tCell, { textAlign: "right", color: BLUE, backgroundColor: "#f5f9ff" }]}
+								>
 									Opcional (lance)
 								</Text>
 								<Text style={[s.tCell, { textAlign: "right", color: MUTED }]}>Obrigatória</Text>
@@ -392,8 +436,9 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 					</View>
 					<View style={s.quote}>
 						<Text style={s.quoteText}>
-							“Você não paga nada até o primeiro boleto chegar. Nosso trabalho é escolher o melhor grupo
-							pro seu perfil e seguir com você em cada etapa — pode falar com a gente quando quiser.”
+							“Você não paga nada até o primeiro boleto chegar. Nosso trabalho é escolher o melhor
+							grupo pro seu perfil e seguir com você em cada etapa — pode falar com a gente quando
+							quiser.”
 						</Text>
 						<Text style={s.quoteSign}>— Equipe Aja Agora</Text>
 					</View>
@@ -406,7 +451,9 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 					<View style={s.strat}>
 						<View style={[s.stratCard, { borderColor: BORDER, backgroundColor: "#f4f7fb" }]}>
 							<Text style={[s.stratTitle, { color: NAVY }]}>Sem lance</Text>
-							<Text style={s.stratDesc}>Você participa dos sorteios mensais até ser contemplado.</Text>
+							<Text style={s.stratDesc}>
+								Você participa dos sorteios mensais até ser contemplado.
+							</Text>
 						</View>
 						<View style={[s.stratCard, { borderColor: "#cfe0ff", backgroundColor: SOFTBLUE }]}>
 							<Text style={[s.stratTitle, { color: BLUE }]}>Com lance</Text>
@@ -437,8 +484,8 @@ function ProposalDocument({ data }: { data: ProposalPdfData }) {
 					<Text style={s.obsTitle}>Observações</Text>
 					<Text style={s.obsText}>
 						Os valores são estimativas e podem sofrer alterações. A contemplação não é garantida —
-						depende de sorteio ou lance. A contratação está sujeita à disponibilidade de vagas no grupo
-						e à aprovação da administradora. O reajuste do crédito segue as regras do grupo.
+						depende de sorteio ou lance. A contratação está sujeita à disponibilidade de vagas no
+						grupo e à aprovação da administradora. O reajuste do crédito segue as regras do grupo.
 					</Text>
 				</View>
 

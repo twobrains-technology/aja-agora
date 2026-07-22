@@ -1,10 +1,10 @@
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leadInsights, leads } from "@/db/schema";
 import { buildInsightPrompt, INSIGHTS_SYSTEM_PROMPT } from "@/lib/admin/insights-prompt";
 import { requireRole } from "@/lib/admin/require-role";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

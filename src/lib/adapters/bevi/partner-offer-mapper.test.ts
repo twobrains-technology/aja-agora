@@ -24,9 +24,9 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 	// FIX-255) já normalizava; o trilho de FECHAMENTO (este mapper) não.
 	it("FIX-265: normaliza acento dos códigos conhecidos da Bevi (ITAU→ITAÚ, ANCORA→ÂNCORA, TRADICAO→TRADIÇÃO)", () => {
 		const base = offers[0];
-		expect(partnerOfferToRealOffer({ ...base, administradora: "ITAU" }, "AUTOS").administradora).toBe(
-			"ITAÚ",
-		);
+		expect(
+			partnerOfferToRealOffer({ ...base, administradora: "ITAU" }, "AUTOS").administradora,
+		).toBe("ITAÚ");
 		expect(
 			partnerOfferToRealOffer({ ...base, administradora: "ANCORA" }, "AUTOS").administradora,
 		).toBe("ÂNCORA");
@@ -261,10 +261,7 @@ describe("partnerOfferToRealOffer — parcela string pt-BR (API nova 2026-06)", 
 	// (closing-presentation) e no resumo WhatsApp — número FALSO sem fonte, que o
 	// próprio contrato da função ("ausente/ilegível → undefined, NUNCA") proíbe (D11/FIX-8).
 	it("parcela '' (vazia) ou whitespace → undefined, NUNCA 0 (Number('')===0)", () => {
-		const vazia = partnerOfferToRealOffer(
-			{ ...base, parcela: "" as unknown as number },
-			"AUTOS",
-		);
+		const vazia = partnerOfferToRealOffer({ ...base, parcela: "" as unknown as number }, "AUTOS");
 		expect(vazia.monthlyPayment).toBeUndefined();
 		const branca = partnerOfferToRealOffer(
 			{ ...base, parcela: "   " as unknown as number },
@@ -355,7 +352,9 @@ describe("partnerOfferToRealOffer — lance médio do grupo (API nova): avgBidVa
 	});
 
 	it("lanceMedio 0/negativo/ilegível → avgBidValue undefined, NUNCA chuta (D11)", () => {
-		expect(partnerOfferToRealOffer({ ...base, lanceMedio: 0 }, "AUTOS").avgBidValue).toBeUndefined();
+		expect(
+			partnerOfferToRealOffer({ ...base, lanceMedio: 0 }, "AUTOS").avgBidValue,
+		).toBeUndefined();
 		expect(
 			partnerOfferToRealOffer({ ...base, lanceMedio: -1 }, "AUTOS").avgBidValue,
 		).toBeUndefined();

@@ -146,10 +146,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 		<div
 			className={cn(
 				"w-full max-w-sm bg-card overflow-hidden",
-				"rounded-[18px]",
+				"rounded-[12px]",
 				// borda azul destacada (rec) + sombra card
-				"border border-primary/30",
-				"shadow-[0_0_0_1px_rgba(3,110,255,.18),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
+				"border border-[color:var(--border-strong)]",
+				"shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_18%,transparent),0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
 			)}
 		>
 			{/* Header */}
@@ -193,7 +193,11 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					{/* FIX-222 (Ata 2026-07-04) — logo da administradora (confiabilidade +
 					    "o cara sabe pra onde vai"); fallback gracioso (iniciais) enquanto
 					    os assets reais são PENDENTE (sourcing/design). */}
-					<AdministradoraLogo administradora={administradora} logoUrl={logoUrl} className="size-5 shrink-0 text-[9px]" />
+					<AdministradoraLogo
+						administradora={administradora}
+						logoUrl={logoUrl}
+						className="size-5 shrink-0 text-[9px]"
+					/>
 					<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
 				</div>
 			</div>
@@ -202,10 +206,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 			<div className="px-[18px] pt-[14px] pb-[18px] flex flex-col gap-[14px]">
 				{/* Hero — carta em destaque (FIX-231: é o que o cliente compra) */}
 				<div>
-					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 					<p
 						data-testid="recommendation-hero-credit"
-						className="aja-num text-[1.625rem] font-bold leading-none text-primary mt-1 tracking-[-0.02em] whitespace-nowrap"
+						className="aja-num text-[1.625rem] font-bold leading-none text-figure mt-1 tracking-[-0.02em] whitespace-nowrap"
 					>
 						{formatBRL(creditValue)}
 					</p>
@@ -271,8 +275,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 						<span className="whitespace-normal break-words">
-							Você pediu uma carta de ~<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real ficou em{" "}
-							<span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
+							Você pediu uma carta de ~
+							<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real
+							ficou em <span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
 						</span>
 					</p>
 				)}
@@ -289,7 +294,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						>
 							<span>Por que esta recomendação?</span>
 							<ChevronDown
-								className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
+								className={cn(
+									"h-4 w-4 transition-transform duration-200",
+									expanded && "rotate-180",
+								)}
 							/>
 						</button>
 						<AnimatePresence>
@@ -324,8 +332,8 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 				    legado (card isolado): "Tenho interesse" (avanço no funil). */}
 				<Button
 					className={cn(
-						"w-full min-h-[46px] rounded-[13px] font-semibold text-sm gap-2",
-						"shadow-[0_6px_16px_-6px_rgba(3,110,255,.5)]",
+						"w-full min-h-[46px] rounded-full font-semibold text-sm gap-2",
+						"shadow-[0_6px_16px_-6px_color-mix(in_oklab,var(--primary)_50%,transparent)]",
 						"hover:brightness-[1.06] transition-filter",
 					)}
 					size="lg"

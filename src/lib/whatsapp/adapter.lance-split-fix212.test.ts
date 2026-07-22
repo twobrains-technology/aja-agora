@@ -18,6 +18,16 @@ const mocks = vi.hoisted(() => ({
 	reloadMeta: vi.fn(),
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendText,
 	sendInteractiveMessage: mocks.sendInteractive,
@@ -36,17 +46,18 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
-describe("FIX-212 — lance-embutido em 2 tempos (educação + card curto)", () => {
-	it("fireGate('lance-embutido') emite a EDUCAÇÃO (texto) e depois o CARD (interactive)", async () => {
+// 2026-07-21: a EDUCAÇÃO enlatada do lance embutido saiu do servidor
+// (`lanceEmbutidoEdu` foi removida) — ela ensinava o conselho errado e, no
+// WhatsApp, ocupava o lugar da fala do modelo. Explicar é conversa, e conversa é
+// do modelo, com os números que o código apura (`converse.ts`, blocoEmbutido).
+// O canal entrega só a PERGUNTA curta com os botões.
+describe("lance-embutido no WhatsApp — só a pergunta, sem aula enlatada", () => {
+	it("fireGate('lance-embutido') emite o CARD com a pergunta curta, sem texto de educação", async () => {
 		await fireGate(WA, CONV_ID, "lance-embutido", { currentCategory: "auto" } as never);
 
-		// balão 1: educação como TEXTO (âncoras do docx preservadas)
-		expect(mocks.sendText).toHaveBeenCalledTimes(1);
-		const edu = mocks.sendText.mock.calls[0]?.[1] as string;
-		expect(edu).toMatch(/lance embutido/i);
-		expect(edu).toMatch(/R\$ 100 mil/);
+		expect(mocks.sendText).not.toHaveBeenCalled();
 
-		// balão 2: o CARD (interactive) com SÓ a pergunta curta + botões
+		// o CARD (interactive) com SÓ a pergunta curta + botões
 		expect(mocks.sendInteractive).toHaveBeenCalledTimes(1);
 		const card = JSON.stringify(mocks.sendInteractive.mock.calls[0]?.[1]);
 		expect(card).toMatch(/Quer considerar esse tipo de lance/);

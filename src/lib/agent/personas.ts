@@ -42,6 +42,21 @@ export type QualifyAnswers = {
 	lanceEmbutido?: boolean;
 	/** Percentual do lance embutido aceito (Bevi aceita 30 ou 50). Default 30. */
 	lanceEmbutidoPercent?: 30 | 50;
+	/** O preço do BEM que o cliente quer — o que precisa cair na mão dele.
+	 * Separado do `creditMax` porque, quando ele aceita o lance embutido, o alvo
+	 * da BUSCA deixa de ser o preço do bem e passa a ser uma carta MAIOR (o
+	 * embutido sai da própria carta, então a carta tem que comportar o bem + o
+	 * lance). Sem este campo o valor original se perdia na primeira re-busca. */
+	valorDoBemAlvo?: number;
+	/** Quanto o cliente disse que consegue pagar POR MÊS, quando reagiu à parcela
+	 * como alta. É o que reposiciona a faixa de busca pra uma carta que caiba no
+	 * bolso dele — antes disso, "essa parcela é pesada pra mim" não tinha
+	 * nenhuma resposta possível no produto e a venda simplesmente morria. */
+	parcelaAlvo?: number;
+	/** O card educativo do embutido já foi mostrado nesta conversa. Sem isto ele
+	 * reaparecia a cada turno em que o gate seguia sem resposta — na validação ao
+	 * vivo saíram dois cards idênticos empilhados. */
+	embeddedBidDispatched?: boolean;
 	/** FIX-233 — gate `desire` (não bloqueante): bem específico que o usuário
 	 * tem em mente ("um Corolla", "apê de 2 quartos"). Espelhado no card/copy
 	 * de forma livre, não normalizado. */
@@ -196,6 +211,10 @@ export type ConversationMetadata = {
 	 * hero em turnos seguintes com intent afirmativo/neutro. Espelha
 	 * `simulatorOfferAnswered`. */
 	recoConsentAnswered?: boolean;
+	/** O convite do reco-consent foi RECUSADO ("prefiro comparar sozinho"). O
+	 * funil segue normalmente (o gate é convite, não coleta), só sem impor o
+	 * hero. Serve pra telemetria e pra calibrar o tom — nunca pra travar. */
+	recoConsentDeclined?: boolean;
 	/** FIX-297 — hero (recommendation_card) computado no turno da busca original
 	 * mas SUPRIMIDO até o usuário consentir (`hero-awaits-reco-consent` em
 	 * artifact-guard.ts) — o payload já coagido server-side (Lei 1) fica aqui
@@ -235,6 +254,36 @@ export type ConversationMetadata = {
 		 * reveal, sem depender de um `RevealGroupIndex` de turno). Nunca
 		 * fabricado — ausente quando o artifact-âncora não o carrega. */
 		groupId?: string;
+		/** Lance médio do grupo (campo `lanceMedio` da administradora). Sem ele no
+		 * estado, o agente ficava sem o único número que dá sentido à conversa de
+		 * lance: o cliente dizia "tenho 100 mil", o card mostrava lance médio de
+		 * R$ 183 mil e ninguém ligava os dois pontos. Nunca vira promessa de
+		 * contemplação — só comparação factual de posição. */
+		avgBidValue?: number;
+	};
+	/** A ESCOLHA está feita: o cliente já resolveu qual cota quer.
+	 *
+	 * Existe porque o funil não tinha onde registrar isso. `decisionDispatched` só
+	 * virava true quando o CARD de decisão aparecia — e o card é suprimido quando
+	 * a resposta do cliente é classificada como `providing_info` ("quero a de
+	 * menor parcela", "pode ser a que você recomendou"). Resultado: o cliente
+	 * escolhia, nada era registrado, e o gate `decision` continuava ativo mandando
+	 * o agente perguntar de novo. Três confirmações seguidas da MESMA cota, visto
+	 * ao vivo (2026-07-21).
+	 *
+	 * Nunca é adivinhado: só é gravado quando uma cota REAL já exibida foi
+	 * resolvida (menção) ou quando o critério que decide já está capturado no
+	 * estado. Não é write-once — nova menção resolvida substitui (o cliente pode
+	 * mudar de ideia); imutável só depois de `contractClosed`. */
+	escolha?: {
+		groupId?: string;
+		administradora?: string;
+		creditValue?: number;
+		termMonths?: number;
+		monthlyPayment?: number;
+		/** Como o sistema soube: cota nomeada pelo cliente, critério já capturado
+		 * no funil, ou afirmação de avanço sobre uma âncora única. */
+		origem: "mencao" | "criterio" | "afirmacao";
 	};
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
@@ -272,11 +321,17 @@ export type ConversationMetadata = {
 	 * Limpo após o disparo (real_offer apresentado) ou recusa. WhatsApp-only — o web
 	 * fecha via POST de form (route.ts). */
 	contractCollection?: {
-		stage: "confirm" | "cpf";
+		/** `offer-confirm` = a carta REAL já foi apresentada e aguarda o aceite.
+		 * Existia só como clique no botão do `real_offer`; quem respondia "pode
+		 * seguir" por texto — o normal no WhatsApp — não fechava contrato nenhum. */
+		stage: "confirm" | "cpf" | "offer-confirm";
 	};
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */
-	maxStageReached?: "engajado" | "qualificado";
+	maxStageReached?: "engajado" | "qualificado" | "em_negociacao";
+	/** A explicação de como o consórcio funciona já foi dada (cliente novato).
+	 * Uma vez por conversa — ver `converse.ts`, blocoNovato. */
+	explicouComoFunciona?: boolean;
 	/** Marca que o card WhatsApp opt-in foi mostrado nesta conversa.
 	 * Impede o agent de chamar present_whatsapp_optin de novo. */
 	whatsappOptinShown?: boolean;

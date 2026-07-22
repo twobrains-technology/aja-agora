@@ -23,8 +23,8 @@ function defaultTo() {
 function KpiSkeleton() {
 	return (
 		<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-			{Array.from({ length: 4 }).map((_, i) => (
-				<Card key={i}>
+			{["credito", "leads", "conversas", "conversao"].map((slot) => (
+				<Card key={slot}>
 					<CardHeader className="pb-2">
 						<Skeleton className="h-4 w-24" />
 					</CardHeader>
@@ -38,7 +38,7 @@ function KpiSkeleton() {
 	);
 }
 
-function ChartSkeleton({ title }: { title: string }) {
+function ChartSkeleton(_props: { title: string }) {
 	return (
 		<Card>
 			<CardHeader>

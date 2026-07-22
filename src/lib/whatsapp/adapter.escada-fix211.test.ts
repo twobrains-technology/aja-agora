@@ -1,11 +1,15 @@
-// Camada 1 (FIX-211) — cobrança quando o usuário DESVIA de um gate obrigatório.
+// Camada 1 (FIX-211) — cobrança do gate obrigatório pendente.
 //
-// Kairo: "se o cara nao informar tem que cobrar ele ate informar". Antes só havia
-// re-pergunta quando o turno fechava MUDO (guard) ou após 90s (watchdog). Se o
-// usuário DESVIA (pergunta outra coisa, o LLM responde, o turno NÃO fecha mudo), o
-// pedido do CPF/valor sumia e a conversa seguia sem o dado. Aqui: o adapter, ao
-// fim do turno de usuário, re-cobra ESCALADO o gate obrigatório pendente — com
-// teto de 3 tentativas + saída pro especialista (anti-armadilha).
+// Kairo: "se o cara nao informar tem que cobrar ele ate informar".
+//
+// REVISADO em 2026-07-20 (auditoria multicanal): a cobrança vale pro turno MUDO
+// (nada saiu — rede de segurança legítima, nunca deixar o cliente no silêncio).
+// O ramo que colava a cobrança enlatada no fim de um turno que JÁ TINHA FALADO
+// foi removido: o cliente perguntava "consórcio tem juros?", o modelo explicava
+// bem, e logo abaixo chegava "Só falta isso pra eu seguir — é rapidinho." A web
+// nunca fez isso e a mesma conversa flui natural lá. Retomar o assunto pendente
+// é do CÉREBRO (o `systemContext` informa o gate pendente como INTENÇÃO e o
+// modelo retoma com as palavras dele), não do canal por texto fixo.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SPECIALIST_EXIT_OFFER } from "@/lib/agent/gate-reengage";
@@ -24,6 +28,16 @@ const mocks = vi.hoisted(() => ({
 	runTurn: vi.fn(),
 }));
 
+// Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
+// testes de unidade ela é sempre "pode" — o que se prova aqui é a ENTREGA, não a
+// idempotência.
+vi.mock("./once", () => ({
+	claimOnce: vi.fn().mockResolvedValue(true),
+	claimInboundMessage: vi.fn().mockResolvedValue(true),
+	claimContextBeat: vi.fn().mockResolvedValue(true),
+	claimButtonClick: vi.fn().mockResolvedValue(true),
+	DOUBLE_CLICK_WINDOW_MS: 12000,
+}));
 vi.mock("./api", () => ({
 	sendTextMessage: mocks.sendText,
 	sendInteractiveMessage: mocks.sendInteractive,
@@ -69,37 +83,34 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
-describe("FIX-211 — desvio num gate obrigatório re-cobra ESCALADO (não segue sem o dado)", () => {
-	it("usuário desvia no identify (LLM responde, sem gate) → re-cobra o CPF ao fim do turno", async () => {
+describe("FIX-211 — cobrança do gate obrigatório é do turno MUDO, nunca colada num turno que falou", () => {
+	it("usuário desvia no identify e o MODELO responde → a resposta dele é a única fala do turno (sem cobrança colada)", async () => {
 		mocks.reloadMeta.mockResolvedValue(identifyPendingMeta());
 		// o LLM RESPONDE a dúvida (turno NÃO fecha mudo) mas NÃO dispara o gate identify.
+		const respostaDoModelo = "Boa pergunta! O CPF serve pra liberar as simulações reais.";
 		mocks.runTurn.mockReturnValue(
 			emit([
-				{ type: "text-delta", text: "Boa pergunta! O CPF serve pra liberar as simulações reais." },
+				{ type: "text-delta", text: respostaDoModelo },
 				{ type: "finish", reason: "ok" },
 			]),
 		);
 
 		await processWithOrchestrator(WA, "por que você precisa do meu CPF?");
 
-		// a resposta à dúvida saiu E o pedido do CPF é re-cobrado como beat próprio
 		const textos = mocks.sendText.mock.calls.map((c) => c[1] as string);
-		expect(textos.some((t) => /CPF/i.test(t))).toBe(true);
-		// o contador de tentativas do gate foi incrementado (persistido)
-		expect(mocks.persistMeta).toHaveBeenCalled();
-		const persisted = mocks.persistMeta.mock.calls.at(-1)?.[1] as ConversationMetadata;
-		expect(persisted.gateAttempts?.identify).toBe(1);
+		// a resposta do modelo saiu…
+		expect(textos).toContain(respostaDoModelo);
+		// …e NADA foi colado depois dela (nada de "Só falta isso pra eu seguir").
+		expect(textos).toHaveLength(1);
+		// o contador de cobranças NÃO é incrementado por um turno que falou
+		const persistedCalls = mocks.persistMeta.mock.calls.map((c) => c[1] as ConversationMetadata);
+		expect(persistedCalls.every((m) => m.gateAttempts === undefined)).toBe(true);
 	});
 
-	it("na 4ª cobrança oferece o especialista (saída), não re-pergunta o CPF", async () => {
-		// já houve 3 desvios — o contador está em 3; este é o 4º.
+	it("turno MUDO segue coberto: re-cobra o gate e, no teto, oferece o especialista", async () => {
+		// já houve 3 cobranças — o contador está em 3; este é o 4º turno mudo.
 		mocks.reloadMeta.mockResolvedValue(identifyPendingMeta({ gateAttempts: { identify: 3 } }));
-		mocks.runTurn.mockReturnValue(
-			emit([
-				{ type: "text-delta", text: "Entendo a preocupação." },
-				{ type: "finish", reason: "ok" },
-			]),
-		);
+		mocks.runTurn.mockReturnValue(emit([{ type: "finish", reason: "ok" }]));
 
 		await processWithOrchestrator(WA, "ainda não quero passar meu CPF");
 

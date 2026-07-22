@@ -59,10 +59,16 @@ function magnitudeCount(raw: string): number | null {
  * cravar valor de uma pergunta solta com número ("e a taxa de 2%?"). Lei 4:
  * não age sobre número não-ancorado no valor do bem. Retorna o número ou null. */
 function bareNumberAsValue(t: string): number | null {
-	const digitGroups = t.match(/\d+/g) ?? [];
+	// O dígito precisa ser um TOKEN, não um pedaço de palavra. Sem esta âncora,
+	// "rav4" virava o número 4 → carta de R$ 4.000: o `creditMax` era gravado
+	// com lixo, o gate de valor nunca disparava (só dispara enquanto o valor é
+	// `undefined`) e o slider era substituído pelo formulário de CPF. Vale pra
+	// qualquer modelo com número no nome — hb20, 208, t-cross, i30.
+	const NUMERO_SOLTO = /(?<![\p{L}\d])\d+(?:[.,]\d{1,2})?(?![\p{L}])/gu;
+	const digitGroups = t.match(NUMERO_SOLTO) ?? [];
 	const words = t.trim().split(/\s+/).filter(Boolean);
 	if (digitGroups.length !== 1 || words.length > 4) return null;
-	const m = t.match(/(\d+)(?:[.,](\d{1,2}))?/);
+	const m = digitGroups[0].match(/(\d+)(?:[.,](\d{1,2}))?/);
 	if (!m) return null;
 	const n = Number.parseFloat(m[2] ? `${m[1]}.${m[2]}` : m[1]);
 	return Number.isFinite(n) && n > 0 ? n : null;
@@ -89,7 +95,15 @@ export function parseAssetValue(
 	ctx?: AssetValueContext,
 ): number | null {
 	if (!text) return null;
-	const t = text.toLowerCase();
+	// UM CPF NÃO É DINHEIRO. Escrito no formato brasileiro ele é indistinguível
+	// de um valor: "529.982.247-25" casa com a regra de separador de milhar
+	// (o "-25" do dígito verificador conta como fronteira de palavra) e vira uma
+	// carta de R$ 529.982.247. Visto ao vivo: a cliente mandou nome + CPF +
+	// celular numa frase só, a busca rodou com meio bilhão de crédito e ela
+	// recebeu na tela 15 grupos com cartas de R$ 530 MILHÕES. Some o CPF antes de
+	// qualquer regra numérica — inclusive da contagem de números do
+	// `bareNumberAsValue`, que também se confundia com ele.
+	const t = text.toLowerCase().replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, " ");
 	if (MONTHLY_MARKER.test(t)) return null;
 
 	// 1) Magnitude "milhão/milhões/mi": "1 milhão", "1,5 milhão", "2 mi".

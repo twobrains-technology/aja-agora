@@ -17,8 +17,8 @@ import {
 	whatsappOutboundQueue,
 	whatsappOutboundStatusEnum,
 	whatsappTemplateCategoryEnum,
-	whatsappTemplates,
 	whatsappTemplateStatusEnum,
+	whatsappTemplates,
 } from "./schema";
 
 describe("FIX-199 — enums de templates", () => {
@@ -77,7 +77,9 @@ describe("FIX-199 — tabela whatsapp_templates", () => {
 		const usageKey = cols.get("usage_key");
 		expect(usageKey?.notNull).toBe(false);
 		const uniqueIdx = cfg.indexes.find(
-			(i) => i.config.unique && i.config.columns.some((c) => (c as { name?: string }).name === "usage_key"),
+			(i) =>
+				i.config.unique &&
+				i.config.columns.some((c) => (c as { name?: string }).name === "usage_key"),
 		);
 		expect(uniqueIdx).toBeDefined();
 	});

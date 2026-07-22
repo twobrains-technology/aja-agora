@@ -76,7 +76,11 @@ describe("FIX-189 — pipeSearchSummaryTurn recupera a descoberta muda (não pen
 	it("descoberta MUDA (só chip) => emite o fallback determinístico, não silêncio", async () => {
 		mocks.runTurn.mockReturnValue(muteDiscovery());
 		const writer = fakeWriter();
-		await pipeSearchSummaryTurn({ conversationId: "c1", contactName: "Kairo", writer: writer as never });
+		await pipeSearchSummaryTurn({
+			conversationId: "c1",
+			contactName: "Kairo",
+			writer: writer as never,
+		});
 
 		const textDeltas = writer.parts.filter((p) => p.type === "text-delta").map((p) => p.delta);
 		expect(textDeltas.join("")).toContain(EMPTY_TURN_FALLBACK);
@@ -85,7 +89,11 @@ describe("FIX-189 — pipeSearchSummaryTurn recupera a descoberta muda (não pen
 	it("descoberta FALANTE (texto+artifact) => NÃO emite fallback (sem resposta duplicada)", async () => {
 		mocks.runTurn.mockReturnValue(speakingDiscovery());
 		const writer = fakeWriter();
-		await pipeSearchSummaryTurn({ conversationId: "c1", contactName: "Kairo", writer: writer as never });
+		await pipeSearchSummaryTurn({
+			conversationId: "c1",
+			contactName: "Kairo",
+			writer: writer as never,
+		});
 
 		const textDeltas = writer.parts.filter((p) => p.type === "text-delta").map((p) => p.delta);
 		expect(textDeltas.join("")).not.toContain(EMPTY_TURN_FALLBACK);
@@ -96,7 +104,11 @@ describe("FIX-189 — pipeSearchSummaryTurn recupera a descoberta muda (não pen
 	it("o fallback NÃO é frase de refresh técnico (respeita FIX-190)", async () => {
 		mocks.runTurn.mockReturnValue(muteDiscovery());
 		const writer = fakeWriter();
-		await pipeSearchSummaryTurn({ conversationId: "c1", contactName: "Kairo", writer: writer as never });
+		await pipeSearchSummaryTurn({
+			conversationId: "c1",
+			contactName: "Kairo",
+			writer: writer as never,
+		});
 		const allText = writer.parts
 			.filter((p) => p.type === "text-delta")
 			.map((p) => p.delta)

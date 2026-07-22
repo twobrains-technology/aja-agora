@@ -110,7 +110,10 @@ describe("FIX-340(c) — clique num grupo ancora recommendedOffer com o valor RE
 		const persisted = mocks.persistMeta.mock.calls.find(
 			(c) => (c[1] as ConversationMetadata | undefined)?.recommendedOffer?.groupId === "g-ancora-1",
 		);
-		expect(persisted, "esperava um persistMeta com recommendedOffer.groupId=g-ancora-1").toBeDefined();
+		expect(
+			persisted,
+			"esperava um persistMeta com recommendedOffer.groupId=g-ancora-1",
+		).toBeDefined();
 		const persistedMeta = persisted?.[1] as ConversationMetadata;
 		expect(persistedMeta.recommendedOffer?.creditValue).toBe(45000);
 		expect(persistedMeta.recommendedAdministradora).toBe("ÂNCORA");
@@ -145,7 +148,8 @@ describe("FIX-340(c) — clique num grupo ancora recommendedOffer com o valor RE
 		let ancoradoAntesDoDirective: number | undefined;
 		mocks.runDirective.mockImplementation(async () => {
 			const call = mocks.persistMeta.mock.calls.find(
-				(c) => (c[1] as ConversationMetadata | undefined)?.recommendedOffer?.groupId === "g-ancora-1",
+				(c) =>
+					(c[1] as ConversationMetadata | undefined)?.recommendedOffer?.groupId === "g-ancora-1",
 			);
 			ancoradoAntesDoDirective = (call?.[1] as ConversationMetadata | undefined)?.recommendedOffer
 				?.creditValue;

@@ -22,7 +22,7 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 	};
 
 	return (
-		<div className="w-full max-w-[340px] bg-card border border-border rounded-[18px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[13px]">
+		<div className="w-full max-w-[340px] bg-card border border-border rounded-[12px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[13px]">
 			{payload.prompt && (
 				<p className="text-xs font-medium text-muted-foreground">{payload.prompt}</p>
 			)}
@@ -34,7 +34,7 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 						type="button"
 						onClick={() => handleTopic(topic)}
 						disabled={isStreaming}
-						className="inline-flex items-center h-[34px] px-[14px] border border-border rounded-full bg-card text-xs font-medium text-muted-foreground cursor-pointer transition-colors hover:border-primary/30 hover:bg-primary/[.05] hover:text-foreground disabled:cursor-default disabled:opacity-50"
+						className="inline-flex items-center h-[30px] px-[12px] border border-[rgb(5_36_64/.4)] rounded-full bg-transparent text-xs font-semibold text-[var(--aja-ink)] cursor-pointer transition-colors hover:bg-[var(--aja-sand)] disabled:cursor-default disabled:opacity-50"
 					>
 						{topic}
 					</button>
@@ -47,7 +47,7 @@ export function TopicPicker({ payload }: { payload: TopicPickerPayload }) {
 					onClick={handleBack}
 					disabled={isStreaming}
 					data-testid="topic-picker-back"
-					className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[13px] text-xs font-medium text-muted-foreground cursor-pointer transition-colors hover:bg-muted hover:text-foreground self-start disabled:cursor-default disabled:opacity-50"
+					className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium text-muted-foreground cursor-pointer transition-colors hover:bg-muted hover:text-foreground self-start disabled:cursor-default disabled:opacity-50"
 				>
 					<ArrowLeft className="size-3.5" />
 					Voltar

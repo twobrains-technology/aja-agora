@@ -52,9 +52,7 @@ describeIfDb("PostgresMemoryAdapter (integration, real Postgres)", () => {
 
 	afterAll(async () => {
 		// Limpa tudo do namespace de teste.
-		await db
-			.delete(memoryIdentities)
-			.where(eq(memoryIdentities.namespace, TEST_NAMESPACE));
+		await db.delete(memoryIdentities).where(eq(memoryIdentities.namespace, TEST_NAMESPACE));
 	});
 
 	describe("isPersistent", () => {

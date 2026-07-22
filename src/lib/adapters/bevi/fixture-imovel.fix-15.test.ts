@@ -7,14 +7,14 @@
 // Roda em TODO PR (<1s) — não precisa de Anthropic nem DB.
 
 import { describe, expect, it } from "vitest";
-import okSimulationImovel from "./__fixtures__/ok-selfcontract-simulation-imovel.json";
 import okSimulation from "./__fixtures__/ok-selfcontract-simulation.json";
+import okSimulationImovel from "./__fixtures__/ok-selfcontract-simulation-imovel.json";
 import type { BeviOffer } from "./offer-mapper";
 
 const imovelOffers = (okSimulationImovel as unknown as { data: { data: { offers: BeviOffer[] } } })
 	.data.data.offers;
-const autoOffers = (okSimulation as unknown as { data: { data: { offers: BeviOffer[] } } }).data.data
-	.offers;
+const autoOffers = (okSimulation as unknown as { data: { data: { offers: BeviOffer[] } } }).data
+	.data.offers;
 
 describe("FIX-15 — fixture real de IMOVEL pra descoberta", () => {
 	it("tem >=3 ofertas (docx: 'Encontramos 3 boas opções')", () => {

@@ -7,7 +7,7 @@
 // O conceito de "concordância" aqui não é absoluto (não temos ground truth real)
 // — é a fração de expectativas que passaram. Útil pra detectar regressão no prompt.
 
-import type { Fixture, FixtureExpectations, FlagExpectation, ScoreRange } from "./fixtures";
+import type { Fixture, FixtureExpectations, ScoreRange } from "./fixtures";
 import { computeEvalFromData, type JudgeFn } from "./scorer-pipeline";
 
 export type CalibrationCheck = {

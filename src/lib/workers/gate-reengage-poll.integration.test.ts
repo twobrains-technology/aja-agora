@@ -16,7 +16,9 @@ const { db } = await import("@/db");
 const { conversations, messages } = await import("@/db/schema");
 const { metaOf } = await import("@/lib/conversation/meta");
 const { runReengageCycle } = await import("@/lib/workers/gate-reengage-poll");
-const { GATE_REENGAGE_TIMEOUT_MS, SPECIALIST_EXIT_OFFER } = await import("@/lib/agent/gate-reengage");
+const { GATE_REENGAGE_TIMEOUT_MS, SPECIALIST_EXIT_OFFER } = await import(
+	"@/lib/agent/gate-reengage"
+);
 const { getResumableConversation } = await import("@/lib/chat/resume");
 type ConversationMetadata = import("@/lib/agent/personas").ConversationMetadata;
 
@@ -68,7 +70,12 @@ describeIfDb("FIX-207 gate-reengage worker — re-abre o funil parado no WhatsAp
 		const [c] = await db
 			.insert(conversations)
 			.values({
-				waId: channel === "whatsapp" ? (over.waId === null ? null : (over.waId ?? `551199900${1000 + waCounter}`)) : null,
+				waId:
+					channel === "whatsapp"
+						? over.waId === null
+							? null
+							: (over.waId ?? `551199900${1000 + waCounter}`)
+						: null,
 				channel,
 				status: over.status ?? "active",
 				contactName: "Kairo",
@@ -185,7 +192,9 @@ describeIfDb("FIX-302 gate-reengage worker — canal WEB (sem sessão SSE viva)"
 		created.push(c.id);
 		// getResumableConversation exige pelo menos 1 mensagem existente pra
 		// "achar" a conversa (o turno de usuário que deixou o gate pendente).
-		await db.insert(messages).values({ conversationId: c.id, role: "user", content: "oi", channel: "web" });
+		await db
+			.insert(messages)
+			.values({ conversationId: c.id, role: "user", content: "oi", channel: "web" });
 		return { id: c.id, cookie };
 	}
 
@@ -252,7 +261,9 @@ describeIfDb("FIX-302 gate-reengage worker — canal WEB (sem sessão SSE viva)"
 		// dispara uma 5ª mensagem — anti-armadilha, nunca loop infinito.
 		await runReengageCycle({ now: new Date(now.getTime() + GATE_REENGAGE_TIMEOUT_MS + 1_000) });
 		const resumedAfter = await getResumableConversation(cookie);
-		const assistantTextsAfter = (resumedAfter?.messages ?? []).filter((m) => m.role === "assistant");
+		const assistantTextsAfter = (resumedAfter?.messages ?? []).filter(
+			(m) => m.role === "assistant",
+		);
 		expect(assistantTextsAfter.length).toBe(4);
 	});
 

@@ -56,7 +56,9 @@ describe("FIX-44 — stageForProposalStatus", () => {
 
 	it("approvedAt preenchido → fechado_ganho (precedência sobre history)", () => {
 		expect(
-			stageForProposalStatus(status({ approvedAt: "2026-06-14", systemicValue: "aguard_pag_cliente" })),
+			stageForProposalStatus(
+				status({ approvedAt: "2026-06-14", systemicValue: "aguard_pag_cliente" }),
+			),
 		).toBe("fechado_ganho");
 	});
 

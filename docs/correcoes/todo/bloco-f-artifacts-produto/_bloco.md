@@ -22,16 +22,25 @@ conflitos_esperados:
 ---
 # Bloco F — Artifacts de produto (⚠️ SEGURADO — aguarda aval do Bernardo)
 
-🚫 **NÃO LANÇAR sem o aval do Bernardo.** Regra inviolável do `CLAUDE.md`:
-> "Simulador do passo 4 = conceito do Bernardo (stakeholder). Consolidado no passo 5
-> da `docs/jornada/jornada-canonica.md` — não implementar versão final sem o aval dele."
+> ⚠️ **Nota de 2026-07-20 (expurgo do `jornada.docx`):** este card ainda citava
+> `docs/jornada/jornada-canonica.md` como "REGRA" e invocava uma "regra inviolável do
+> CLAUDE.md" de que "divergência código×docx = defeito" — **esse arquivo não existe mais**
+> (foi rebaixado a `docs/jornada/decisoes-do-cliente.md`, registro histórico, sem poder
+> normativo) **e essa regra do CLAUDE.md foi revogada em 2026-07-13** (o dogma engessou o
+> agente). Corrigido abaixo. O GATE HUMANO real (aval do Bernardo pro conceito do
+> simulador) continua de pé — não é sobre o docx, é sobre o stakeholder do produto.
 
-E o **FIX-96 muda a copy canônica da jornada** ("Encontramos 3 boas opções" →
-"Encontramos N opções…"), que é a visão do cliente (regra inviolável #1: divergência
-código×docx = defeito). Por isso este bloco fica **desenhado mas não disparado** até o
-Kairo validar com o Bernardo. Quando liberar: lançar como onda 2 (forka da base já com
-E/G/H integrados), validar a nova copy contra `docs/jornada/jornada-canonica.md` e
-atualizar o docx se aprovado.
+🚫 **NÃO LANÇAR sem o aval do Bernardo.** O simulador do passo 4 é conceito dele
+(stakeholder) — não implementar versão final sem o aval, independente de qualquer
+documento.
+
+O **FIX-96 muda a copy de anúncio da descoberta** ("Encontramos 3 boas opções" →
+"Encontramos N opções…"). Copy de conversa é do modelo/produto, não trava em documento —
+mas a MUDANÇA DE UX (tirar o teto de 3, mostrar hero+5+expansível) é decisão de produto já
+fechada com o Kairo (ver cards). Por isso este bloco fica **desenhado mas não disparado**
+até o Kairo validar com o Bernardo. Quando liberar: lançar como onda 2 (forka da base já
+com E/G/H integrados) e conferir a nova copy contra a referência viva
+(`docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/`) — não contra um docx.
 
 ## Itens
 1. **FIX-95** — trocar o simulador do passo 4 por seletor simples só de valor (slider de valor; sem prioridade/prazo/estimativa inline).

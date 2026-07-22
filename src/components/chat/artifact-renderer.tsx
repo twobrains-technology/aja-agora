@@ -1,4 +1,5 @@
 import type { Artifact } from "@/lib/chat/types";
+import { AtendimentoHandoff } from "./artifacts/atendimento-handoff";
 import { ComparisonTable } from "./artifacts/comparison-table";
 import { ContemplationDial } from "./artifacts/contemplation-dial";
 import { ContractForm } from "./artifacts/contract-form";
@@ -79,6 +80,8 @@ function renderArtifact(artifact: Artifact) {
 			return <ProposalDoc payload={artifact.payload} />;
 		case "signature_handoff":
 			return <SignatureHandoff payload={artifact.payload} />;
+		case "atendimento_handoff":
+			return <AtendimentoHandoff payload={artifact.payload} />;
 		case "document_upload":
 			return <DocumentUpload payload={artifact.payload} />;
 		case "contemplation_dial":

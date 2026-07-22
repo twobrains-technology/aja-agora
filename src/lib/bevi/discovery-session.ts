@@ -22,9 +22,9 @@ import { reloadMeta } from "@/lib/conversation/meta";
 export function prefsFromMeta(meta: ConversationMetadata): SelfContractSimulationPrefs {
 	const q = meta.qualifyAnswers ?? {};
 	return {
-		embeddedPercentage: String(
-			q.lanceEmbutidoPercent ?? LANCE_EMBUTIDO_DEFAULT_PERCENT,
-		) as "30" | "50",
+		embeddedPercentage: String(q.lanceEmbutidoPercent ?? LANCE_EMBUTIDO_DEFAULT_PERCENT) as
+			| "30"
+			| "50",
 		objective: q.objetivo === "investimento" ? "INVESTMENT" : "FAST_APPROVAL",
 	};
 }

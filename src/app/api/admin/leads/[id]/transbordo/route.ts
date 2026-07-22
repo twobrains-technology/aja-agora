@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 	const result = await createMesaHandoff({
 		leadId: id,
 		beviProposalId: parsed.data.beviProposalId ?? null,
-		createdBy: session!.user.id,
+		createdBy: session.user.id,
 	});
 
 	if (!result.ok) {

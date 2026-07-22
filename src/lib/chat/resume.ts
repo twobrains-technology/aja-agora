@@ -9,11 +9,17 @@
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import type { ConversationMetadata } from "@/lib/agent/personas";
+import { nextGate } from "@/lib/agent/qualify-state";
+import type { GatePartData } from "@/lib/chat/ui-message";
+import { gatePartData } from "@/lib/web/adapter";
 
 export interface ResumableMessage {
 	id: string;
 	role: "user" | "assistant";
 	content: string;
+	/** Card ligado a esta mensagem — reidratado como componente, não como texto. */
+	artifact?: { type: string; payload: unknown };
 }
 
 export interface ResumableConversation {
@@ -21,6 +27,9 @@ export interface ResumableConversation {
 	messages: ResumableMessage[];
 	/** FIX-51: metadados leves pro popup decidir/rotular (sem vazar dado sensível). */
 	messageCount: number;
+	/** Card do gate que o funil aguarda AGORA (derivado do estado, não do
+	 * histórico) — sem isto a retomada volta muda, sem componente de input. */
+	gate: GatePartData | null;
 	lastActivityAt: string;
 	/** Server-derived: a conversa tem progresso real (acima do limiar)? Decide se
 	 * o popup "voltar/nova" aparece — abaixo do limiar hidrata direto (zero ruído). */
@@ -68,6 +77,10 @@ export async function getResumableConversation(
 		with: {
 			messages: {
 				orderBy: (m, { asc }) => [asc(m.createdAt)],
+				// Os CARDS precisam voltar junto. Sem isto, ao dar refresh/voltar, o
+				// que reaparecia era a linha marcadora crua ("[card: contemplation_dial]")
+				// como se fosse fala do agente, e o componente sumia da tela.
+				with: { artifacts: true },
 			},
 		},
 	});
@@ -76,11 +89,27 @@ export async function getResumableConversation(
 
 	const messages: ResumableMessage[] = conv.messages
 		.filter((m) => m.role !== "system" && m.content.length > 0)
-		.map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content }));
+		.map((m) => {
+			const artifact = m.artifacts?.[0];
+			return {
+				id: m.id,
+				role: m.role as "user" | "assistant",
+				// Mensagem que é SÓ o marcador de card não tem texto pro cliente — o
+				// texto dela é o próprio card.
+				// Marcador interno NUNCA vira texto na tela — com ou sem artifact
+				// ligado. Sem artifact simplesmente não há o que mostrar.
+				content: /^\[card: .+\]$/.test(m.content.trim()) ? "" : m.content,
+				...(artifact
+					? { artifact: { type: artifact.type as string, payload: artifact.payload } }
+					: {}),
+			};
+		});
+
+	const visiveis = messages.filter((m) => m.content.length > 0 || m.artifact);
 
 	// Conversa existe mas sem mensagens úteis → trata como primeira vez (nada a
 	// reidratar), evita "ressuscitar" uma conversa vazia.
-	if (messages.length === 0) return null;
+	if (visiveis.length === 0) return null;
 
 	// FIX-51: metadados leves pro popup decidir (limiar) e rotular (recência).
 	const meta = (conv.metadata ?? {}) as {
@@ -88,10 +117,19 @@ export async function getResumableConversation(
 		maxStageReached?: string;
 		contractClosed?: boolean;
 	};
+	// O CARD DO GATE PENDENTE volta na retomada. Cards de input (valor, CPF,
+	// chips) não são artifacts persistidos — só os de dado —, então ao reabrir o
+	// agente repetia a pergunta e nenhum componente aparecia. O gate é derivado
+	// do estado, não do histórico: recalcula e devolve montado.
+	const metaCompleta = (conv.metadata ?? {}) as ConversationMetadata;
+	const gatePendente = nextGate(metaCompleta, { hasContactName: Boolean(conv.contactName) });
+	const gate = gatePartData(gatePendente, metaCompleta);
+
 	return {
 		conversationId: conv.id,
-		messages,
-		messageCount: messages.length,
+		messages: visiveis,
+		gate,
+		messageCount: visiveis.length,
 		lastActivityAt: (conv.updatedAt ?? conv.createdAt ?? new Date()).toISOString(),
 		meaningfulProgress: hasMeaningfulProgress(messages.length, meta),
 	};

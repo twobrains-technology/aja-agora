@@ -46,6 +46,11 @@ services:
       REDIS_URL: redis://aja-shared-redis:6379/${REDIS_DB_INDEX:-0}
       # Object storage compartilhado do projeto (MinIO local / S3 prod)
       S3_ENDPOINT: ${S3_ENDPOINT:-http://aja-shared-minio:9000}
+      # Host pelo qual o BROWSER alcança o MinIO — a URL de download é assinada
+      # com ele (SigV4 cobre o Host, então não dá pra trocar depois). Sem isso o
+      # link da proposta apontava pra `aja-shared-minio:9000`, que só existe
+      # dentro da rede do Docker. Em prod (S3 real) fica vazio.
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://aja-shared-minio.orb.local}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_BUCKET: ${S3_BUCKET:-aja-administradora-docs}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
@@ -56,6 +61,15 @@ services:
       S3_CLIENT_DOCS_BUCKET: ${S3_CLIENT_DOCS_BUCKET:-aja-client-docs}
       S3_CLIENT_DOCS_KMS_KEY_ID: ${S3_CLIENT_DOCS_KMS_KEY_ID:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      # Repasse explícito (removido por engano na limpeza de vars vazias de
+      # 2026-07-21 e restaurado aqui). Hoje o `.env.local` chega pelo bind `./:/app`
+      # e o Next o carrega sozinho, então o app funciona mesmo sem estas linhas —
+      # mas quem roda o container sem o bind (CI, imagem publicada) fica sem gateway
+      # e cai na Anthropic direta, cuja key está com cota estourada até 2026-08-01.
+      # `?.trim() ||` no código trata string vazia como ausente, então `:-` é seguro.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      LITELLM_SRV_NAME: ${LITELLM_SRV_NAME:-}
       # Roteamento LiteLLM (FIX-209 no código, builder.ts + gateway-anthropic.ts) —
       # AGORA REPASSADO ao container. Motivo (2026-07-15): a ANTHROPIC_API_KEY do
       # workspace está com COTA ESTOURADA até 2026-08-01 ("workspace API usage
@@ -72,8 +86,6 @@ services:
       # vazia; `LITELLM_API_KEY ?? ANTHROPIC_API_KEY` NÃO cai pro fallback em "".
       # Neutralizado na FONTE: gateway-anthropic.ts agora usa `?.trim() ||` (trata
       # string vazia como ausente). Por isso `${LITELLM_API_KEY:-}` aqui é seguro.
-      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       # Default EXPLÍCITO (nunca vazio): `${AI_MODEL:-}` virava "" quando a var não
       # está no shell/.env, e o código faz `process.env.AI_MODEL ?? "claude-sonnet-5"`
       # — `??` NÃO pega string vazia, então o app roteava com model VAZIO pro provider
@@ -85,25 +97,23 @@ services:
       MEMORY_ADAPTER: ${MEMORY_ADAPTER:-postgres}
       MEMORY_NAMESPACE: aja-agora-local-${WORKSPACE_NAME}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
-      BETTER_AUTH_URL: http://aja-${WORKSPACE_NAME}.orb.local
-      APP_URL: http://aja-${WORKSPACE_NAME}.orb.local
-      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
-      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      # O host do OrbStack vem do `container_name` (`aja-app-${WORKSPACE_NAME}`),
+      # não de `aja-${WORKSPACE_NAME}` — e o browser abre em HTTPS. Com a URL
+      # errada, o Better Auth recusava o login com "Invalid origin" (a origem do
+      # request não batia com a baseURL configurada).
+      # `WORKSPACE_NAME` também vai pro app: `origensConfiaveis()` (auth.ts) monta
+      # a lista de hosts aceitos a partir dele.
+      WORKSPACE_NAME: ${WORKSPACE_NAME}
+      BETTER_AUTH_URL: https://aja-app-${WORKSPACE_NAME}.orb.local
+      APP_URL: https://aja-app-${WORKSPACE_NAME}.orb.local
       WHATSAPP_AGENT_PHONES: ${WHATSAPP_AGENT_PHONES:-}
       WHATSAPP_AGENT_NAMES: ${WHATSAPP_AGENT_NAMES:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required (set in .env.local)}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required (set in .env.local)}
       FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
       # Bevi é a fonte ÚNICA (mock em runtime PROIBIDO — docs/jornada/CONTEXT.md).
-      BEVI_SELFCONTRACT_HASH: ${BEVI_SELFCONTRACT_HASH:-}
       BEVI_SELFCONTRACT_BASE_URL: ${BEVI_SELFCONTRACT_BASE_URL:-}
-      IDENTITY_ENC_KEY: ${IDENTITY_ENC_KEY:-}
       PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-bevi}
-      BEVI_API_TOKEN: ${BEVI_API_TOKEN:-}
-      BEVI_BASE_URL: ${BEVI_BASE_URL:-}
-      BEVI_PRODUCT_ID: ${BEVI_PRODUCT_ID:-}
     networks:
       - tb-local-net
     labels:

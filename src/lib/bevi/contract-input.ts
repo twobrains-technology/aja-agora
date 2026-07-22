@@ -25,6 +25,44 @@ export interface ContractLinkInput {
 	leadId?: string | null;
 }
 
+/** Re-ancora o estado na cota REAL que a administradora devolveu no fechamento.
+ *
+ * Até aqui o `recommendedOffer` continuava sendo a cota SIMULADA mesmo depois do
+ * contrato criado — e a carta real volta com outro grupo, outra parcela, outro
+ * prazo e outro lance médio. O agente seguia conversando com os números velhos:
+ * dizia "ainda falta R$ 106.013 pro lance médio" quando, na cota efetivamente
+ * contratada, faltavam ~R$ 23.000. Depois do fecho, a cota real é a única
+ * verdade — o card já mostra a divergência, o estado também tem que virar.
+ *
+ * Substituição total (nunca merge): campo que a cota real não trouxe não pode
+ * sobreviver da simulada. `category` fica porque é do cliente, não da cota. */
+export function ancorarOfertaReal(
+	meta: ConversationMetadata,
+	offer: {
+		administradora?: string | null;
+		grupo?: string | null;
+		creditValue?: number;
+		monthlyPayment?: number;
+		termMonths?: number;
+		avgBidValue?: number;
+	},
+): Pick<ConversationMetadata, "recommendedOffer" | "recommendedAdministradora"> {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) ? v : undefined;
+	return {
+		recommendedAdministradora: offer.administradora ?? meta.recommendedAdministradora,
+		recommendedOffer: {
+			...(meta.currentCategory ? { category: meta.currentCategory } : {}),
+			...(offer.grupo ? { groupId: offer.grupo } : {}),
+			administradora: offer.administradora ?? undefined,
+			creditValue: num(offer.creditValue) as number,
+			monthlyPayment: num(offer.monthlyPayment) as number,
+			termMonths: num(offer.termMonths) as number,
+			avgBidValue: num(offer.avgBidValue),
+		},
+	};
+}
+
 /** Monta o input do `startContract` a partir do estado da conversa + identidade.
  * Os defaults (valor 50000, objetivo rápido, lance "nenhum") espelham o web. */
 export function buildStartContractInput(
@@ -64,7 +102,14 @@ export function buildStartContractInput(
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
 	// (que segue servindo só o matching da oferta, FIX-73): `valor` é o
 	// creditValue da ÚLTIMA oferta vista, nunca o que o cliente pediu de fato.
-	const originalRequestedCreditValue = q.creditClampedFrom ?? q.creditMax;
+	// O aviso "você pediu X, a carta real ficou Y" tem que citar o que o CLIENTE
+	// disse. `creditMax` deixa de servir aqui quando ele aceita lance embutido: o
+	// alvo passa a ser o valor RECALCULADO (bem ÷ (1 − pct)) e o cliente lia
+	// "você pediu uma carta de ~R$ 428.571" sem nunca ter dito esse número — a
+	// conta interna do embutido apresentada como fala dele. `valorDoBemAlvo`
+	// guarda o preço do bem, que é o que ele efetivamente pediu.
+	const originalRequestedCreditValue =
+		q.creditClampedFrom ?? q.valorDoBemAlvo ?? q.creditMentionedAtDesire ?? q.creditMax;
 	const objetivo = q.objetivo ?? "contemplacao_rapida";
 	const lanceEmbutido = q.lanceEmbutido ? String(q.lanceEmbutidoPercent ?? 30) : "nenhum";
 	return {

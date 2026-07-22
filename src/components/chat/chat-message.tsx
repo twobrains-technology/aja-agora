@@ -182,14 +182,17 @@ export function ChatMessage({
 			parts
 				.filter((p): p is Extract<RenderablePart, { kind: "artifact" }> => p.kind === "artifact")
 				.map((p) => p.artifact),
-		// biome-ignore lint/correctness/useExhaustiveDependencies: `parts` deriva de `message` (recomputado a cada render); a message é a fonte estável
-		[message],
+		[parts.filter],
 	);
-	// FIX-49: interativo só no TURNO ATIVO. Mensagem hidratada da retomada
-	// (`metadata.resumed`) é histórico — artifacts/gates selados, mesmo sendo a
-	// última (até o usuário mandar a próxima mensagem). Fecha a duplicação (FIX-48).
+	// FIX-49 selava TODA mensagem hidratada da retomada — inclusive a ÚLTIMA. Ao
+	// vivo isso virou beco: o cliente voltava, o único card da tela estava com o
+	// botão desabilitado, e o agente ficava pedindo "clica no card" pra algo que
+	// não dava pra clicar. O histórico continua selado; só o ÚLTIMO card volta a
+	// responder, que é onde a conversa de fato está. A duplicação que o FIX-48
+	// temia hoje é coberta pelo `dup-click-guard` do route.ts.
 	const isResumed = message.metadata?.resumed === true;
-	const isInteractive = isLast && !isResumed;
+	const isInteractive = isLast;
+	void isResumed;
 	const [completedTextIds, setCompletedTextIds] = useState<Set<string>>(() => new Set());
 	const handleTextComplete = useCallback((id: string) => {
 		setCompletedTextIds((prev) => {
@@ -220,7 +223,7 @@ export function ChatMessage({
 		return (
 			<motion.div {...animationProps} className="flex w-full flex-col items-end gap-1">
 				{/* Balão do usuário: azul primário, texto branco, rabicho sup-dir */}
-				<div className="max-w-[84%] rounded-2xl rounded-tr-[5px] bg-primary px-[14px] py-[10px] text-sm leading-[1.5] text-primary-foreground sm:max-w-[80%]">
+				<div className="max-w-[46ch] rounded-2xl rounded-tr-[5px] bg-[var(--aja-ink-soft)] px-[14px] py-[10px] text-[15px] leading-[1.55] text-white">
 					<span className="whitespace-pre-wrap">{text}</span>
 				</div>
 			</motion.div>
@@ -276,103 +279,103 @@ export function ChatMessage({
 					)}
 
 					<RevealSelectionProvider artifacts={revealArtifacts}>
-					<AnimatePresence mode="popLayout" initial={false}>
-						{(() => {
-							const segments = groupAdjacentText(inlineSegments);
-							const lastTextIdx = segments.reduce(
-								(acc, s, idx) => (s.kind === "text-group" ? idx : acc),
-								-1,
-							);
-							const isStreamingLast = isStreaming && isLast;
-							const allTextsBeforeReady = (idx: number): boolean => {
-								for (let j = 0; j < idx; j++) {
-									const s = segments[j];
-									if (s.kind === "text-group" && !completedTextIds.has(s.id)) return false;
-								}
-								return true;
-							};
-							return segments.map((segment, i) => {
-								if (segment.kind === "text-group") {
-									const isFinal = i < segments.length - 1 || !isStreamingLast;
-									return (
-										<TextBubble
-											key={segment.id}
-											id={segment.id}
-											text={segment.text}
-											reducedMotion={prefersReduced}
-											showCursor={isStreamingLast && i === lastTextIdx}
-											isFinal={isFinal}
-											onComplete={handleTextComplete}
-										/>
-									);
-								}
-								if (!allTextsBeforeReady(i)) return null;
-								if (segment.kind === "artifact") {
-									return (
-										<motion.div
-											key={segment.id}
-											layout={!prefersReduced}
-											initial={prefersReduced ? false : { opacity: 0, scale: 0.96, y: 8 }}
-											animate={{ opacity: 1, scale: 1, y: 0 }}
-											exit={prefersReduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-											transition={{
-												type: "spring",
-												stiffness: 400,
-												damping: 25,
-												delay: prefersReduced ? 0 : i * 0.04,
-											}}
-											className="w-full"
-										>
-											<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
-										</motion.div>
-									);
-								}
-								if (segment.kind === "gate") {
-									return (
-										<motion.div
-											key={segment.id}
-											layout={!prefersReduced}
-											initial={prefersReduced ? false : { opacity: 0, y: 6 }}
-											animate={{ opacity: 1, y: 0 }}
-											transition={{ duration: 0.2 }}
-											className="w-full"
-										>
-											<GateRenderer payload={segment.data} active={isInteractive} />
-										</motion.div>
-									);
-								}
-								if (segment.kind === "welcome") {
-									return (
-										<motion.div
-											key={segment.id}
-											layout={!prefersReduced}
-											initial={prefersReduced ? false : { opacity: 0, y: 6 }}
-											animate={{ opacity: 1, y: 0 }}
-											transition={{ duration: 0.2 }}
-											className="w-full"
-										>
-											<WelcomeCategories payload={segment.data} active={isInteractive} />
-										</motion.div>
-									);
-								}
-								if (segment.kind === "handoff") {
-									return (
-										<motion.div
-											key={segment.id}
-											layout={!prefersReduced}
-											initial={prefersReduced ? false : { opacity: 0, y: 6 }}
-											animate={{ opacity: 1, y: 0 }}
-											transition={{ duration: 0.2 }}
-											className="w-full"
-										>
-											<HandoffPrompt data={segment.data} />
-										</motion.div>
-									);
-								}
-								return null;
-							});
-						})()}
-					</AnimatePresence>
+						<AnimatePresence mode="popLayout" initial={false}>
+							{(() => {
+								const segments = groupAdjacentText(inlineSegments);
+								const lastTextIdx = segments.reduce(
+									(acc, s, idx) => (s.kind === "text-group" ? idx : acc),
+									-1,
+								);
+								const isStreamingLast = isStreaming && isLast;
+								const allTextsBeforeReady = (idx: number): boolean => {
+									for (let j = 0; j < idx; j++) {
+										const s = segments[j];
+										if (s.kind === "text-group" && !completedTextIds.has(s.id)) return false;
+									}
+									return true;
+								};
+								return segments.map((segment, i) => {
+									if (segment.kind === "text-group") {
+										const isFinal = i < segments.length - 1 || !isStreamingLast;
+										return (
+											<TextBubble
+												key={segment.id}
+												id={segment.id}
+												text={segment.text}
+												reducedMotion={prefersReduced}
+												showCursor={isStreamingLast && i === lastTextIdx}
+												isFinal={isFinal}
+												onComplete={handleTextComplete}
+											/>
+										);
+									}
+									if (!allTextsBeforeReady(i)) return null;
+									if (segment.kind === "artifact") {
+										return (
+											<motion.div
+												key={segment.id}
+												layout={!prefersReduced}
+												initial={prefersReduced ? false : { opacity: 0, scale: 0.96, y: 8 }}
+												animate={{ opacity: 1, scale: 1, y: 0 }}
+												exit={prefersReduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+												transition={{
+													type: "spring",
+													stiffness: 400,
+													damping: 25,
+													delay: prefersReduced ? 0 : i * 0.04,
+												}}
+												className="w-full"
+											>
+												<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
+											</motion.div>
+										);
+									}
+									if (segment.kind === "gate") {
+										return (
+											<motion.div
+												key={segment.id}
+												layout={!prefersReduced}
+												initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+												animate={{ opacity: 1, y: 0 }}
+												transition={{ duration: 0.2 }}
+												className="w-full"
+											>
+												<GateRenderer payload={segment.data} active={isInteractive} />
+											</motion.div>
+										);
+									}
+									if (segment.kind === "welcome") {
+										return (
+											<motion.div
+												key={segment.id}
+												layout={!prefersReduced}
+												initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+												animate={{ opacity: 1, y: 0 }}
+												transition={{ duration: 0.2 }}
+												className="w-full"
+											>
+												<WelcomeCategories payload={segment.data} active={isInteractive} />
+											</motion.div>
+										);
+									}
+									if (segment.kind === "handoff") {
+										return (
+											<motion.div
+												key={segment.id}
+												layout={!prefersReduced}
+												initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+												animate={{ opacity: 1, y: 0 }}
+												transition={{ duration: 0.2 }}
+												className="w-full"
+											>
+												<HandoffPrompt data={segment.data} />
+											</motion.div>
+										);
+									}
+									return null;
+								});
+							})()}
+						</AnimatePresence>
 					</RevealSelectionProvider>
 
 					{showInflightDots && (
@@ -476,17 +479,20 @@ function TransitionDivider({ data }: { data: TransitionPartData }) {
 	);
 }
 
-function HandoffPrompt({ data }: { data: HandoffPartData }) {
+function HandoffPrompt(_props: { data: HandoffPartData }) {
 	return (
-		<div className="flex items-start gap-3 rounded-[13px] border border-warning/40 bg-warning/10 px-3 py-[10px]">
+		<div className="flex items-start gap-3 rounded-full border border-warning/40 bg-warning/10 px-3 py-[10px]">
 			<Headset className="mt-[1px] size-4 shrink-0 text-warning" aria-hidden="true" />
 			<div className="flex flex-col gap-1">
 				<p className="text-xs font-medium leading-[1.5] text-foreground">
 					Pra esse caso, recomendo conversar direto com nosso consultor humano.
 				</p>
-				{data.reason && (
-					<p className="text-[11px] leading-[1.5] text-muted-foreground">Motivo: {data.reason}</p>
-				)}
+				{/* O `reason` é diagnóstico INTERNO, escrito pelo modelo pra quem vai
+				    assumir a conversa — e vazava cru na tela do cliente: "Motivo:
+				    Cliente confirmou fechamento e dados, mas a proposta não foi criada
+				    no sistema (check_proposal_status retornou sem proposta)". Nome de
+				    função interna na cara de quem está comprando. Quem precisa do
+				    motivo é o atendente, e ele o lê no painel. */}
 			</div>
 		</div>
 	);
@@ -522,7 +528,7 @@ function TextBubble({
 			initial={reducedMotion ? false : { opacity: 0, y: 6 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.3, ease: "easeOut" }}
-			className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] text-sm leading-[1.5] text-foreground shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
+			className="max-w-[62ch] rounded-2xl rounded-tl-[5px] border border-[color:var(--border-strong)] bg-card px-[14px] py-[10px] text-[15px] leading-[1.55] text-foreground shadow-[0_1px_2px_rgba(2,22,40,0.05)]"
 		>
 			<div className={cursor ? `${proseClass} streaming-text` : proseClass}>
 				<ReactMarkdown>{smoothed}</ReactMarkdown>

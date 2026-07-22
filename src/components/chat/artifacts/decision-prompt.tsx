@@ -35,7 +35,7 @@ export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) 
 	};
 
 	return (
-		<Card className="w-full max-w-[340px] rounded-[18px] shadow-lg">
+		<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg">
 			<CardContent className="space-y-3 pt-4 px-4 pb-4">
 				<p className="text-sm font-semibold leading-snug">
 					{DECISION_PROMPT_QUESTION}
@@ -60,8 +60,8 @@ export function DecisionPrompt({ payload }: { payload: DecisionPromptPayload }) 
 									// shadcn Button é whitespace-nowrap — sem o override (twMerge),
 									// o texto saía pela borda. min-h-[44px] preserva o alvo de toque.
 									isPrimary
-										? "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full shadow-[var(--shadow-primary)]"
-										: "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-[13px] w-full text-muted-foreground"
+										? "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-full w-full"
+										: "justify-start gap-2 min-h-[44px] h-auto whitespace-normal text-left py-2 rounded-full w-full text-muted-foreground"
 								}
 								onClick={() => choose(opt.intent, opt.label)}
 								disabled={isStreaming}

@@ -134,13 +134,28 @@ describe("handoff (re-UX por intenção) — prazo escolhido direto no slider", 
 	});
 
 	it("prazo menor → parcela maior (a parcela é o resultado calmo da escolha)", () => {
-		const curto = computePlanEstimate({ category: "auto", assetValue: 90_000, targetMonth: 12, termMonths: 48 });
-		const longo = computePlanEstimate({ category: "auto", assetValue: 90_000, targetMonth: 12, termMonths: 96 });
+		const curto = computePlanEstimate({
+			category: "auto",
+			assetValue: 90_000,
+			targetMonth: 12,
+			termMonths: 48,
+		});
+		const longo = computePlanEstimate({
+			category: "auto",
+			assetValue: 90_000,
+			targetMonth: 12,
+			termMonths: 96,
+		});
 		expect(curto.monthlyPayment).toBeGreaterThan(longo.monthlyPayment);
 	});
 
 	it("termMonths é clampado a >= 1 (nunca divide por zero)", () => {
-		const e = computePlanEstimate({ category: "moto", assetValue: 20_000, targetMonth: 1, termMonths: 0 });
+		const e = computePlanEstimate({
+			category: "moto",
+			assetValue: 20_000,
+			targetMonth: 1,
+			termMonths: 0,
+		});
 		expect(e.termMonths).toBeGreaterThanOrEqual(1);
 	});
 });

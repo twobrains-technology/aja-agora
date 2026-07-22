@@ -13,7 +13,14 @@ afterEach(cleanup);
 describe("FIX-51 — ResumePrompt", () => {
 	it("mostra o título e as DUAS ações (voltar/nova)", () => {
 		render(<ResumePrompt onResume={vi.fn()} onFresh={vi.fn()} />);
-		expect(screen.getByText(/Continuar de onde você parou/i)).toBeDefined();
+		// O título tem "parou" em <Em> (itálico de marca), então o texto fica quebrado
+		// em dois nós — o matcher precisa olhar o conteúdo do elemento inteiro.
+		expect(
+			screen.getByText(
+				(_, el) =>
+					el?.tagName === "H2" && /Continuar de onde você parou\?/i.test(el.textContent ?? ""),
+			),
+		).toBeDefined();
 		expect(screen.getByRole("button", { name: /Voltar à conversa/i })).toBeDefined();
 		expect(screen.getByRole("button", { name: /Começar nova/i })).toBeDefined();
 	});

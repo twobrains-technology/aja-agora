@@ -9,7 +9,7 @@
 // e na suite full; CI integration valida.
 
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
 import { getOrCreateConversation } from "./session";

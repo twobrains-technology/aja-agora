@@ -54,8 +54,22 @@ describeIfDb("FIX-174 — simulador de atendente: clique interativo (claim da me
 		outbound = await import("@/lib/whatsapp/mesa/outbound");
 
 		await db.insert(schema.user).values([
-			{ id: USER_A, name: `E2E Claim A ${SUFFIX}`, email: `e2e-claim-a-${SUFFIX}@teste.local`, phone: PHONE_A, role: "attendant", isActive: true },
-			{ id: USER_B, name: `E2E Claim B ${SUFFIX}`, email: `e2e-claim-b-${SUFFIX}@teste.local`, phone: PHONE_B, role: "attendant", isActive: true },
+			{
+				id: USER_A,
+				name: `E2E Claim A ${SUFFIX}`,
+				email: `e2e-claim-a-${SUFFIX}@teste.local`,
+				phone: PHONE_A,
+				role: "attendant",
+				isActive: true,
+			},
+			{
+				id: USER_B,
+				name: `E2E Claim B ${SUFFIX}`,
+				email: `e2e-claim-b-${SUFFIX}@teste.local`,
+				phone: PHONE_B,
+				role: "attendant",
+				isActive: true,
+			},
 		]);
 
 		const created = await db

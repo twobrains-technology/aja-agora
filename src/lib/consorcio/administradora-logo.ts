@@ -10,11 +10,7 @@
 /** Normaliza pra casar administradoras com acento/caixa divergentes entre a
  * Descoberta ("ÂNCORA") e o cadastro (`administradoras.nome`). */
 const normalize = (s: string): string =>
-	s
-		.normalize("NFD")
-		.replace(/[̀-ͯ]/g, "")
-		.toUpperCase()
-		.trim();
+	s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
 
 /** Constrói o índice normalizado a partir das linhas de `administradoras`
  * (nome + logo_url). Linhas sem `logoUrl` (ainda não cadastrado) ficam FORA

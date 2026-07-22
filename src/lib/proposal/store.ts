@@ -9,8 +9,8 @@ import { db } from "@/db";
 import { beviProposals, conversations } from "@/db/schema";
 import { beviSegmentToCategory } from "@/lib/adapters/bevi/offer-mapper";
 import type { ConsorcioCategory } from "@/lib/adapters/types";
-import { compareWithFinancing } from "@/lib/finance/pmt";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import { compareWithFinancing } from "@/lib/finance/pmt";
 import {
 	getClientDocsStorageConfig,
 	getSignedDownloadUrl,

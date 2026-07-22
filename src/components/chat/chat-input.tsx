@@ -31,9 +31,7 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 				active instanceof HTMLElement &&
 				active !== document.body &&
 				active !== textareaRef.current &&
-				(active.tagName === "INPUT" ||
-					active.tagName === "TEXTAREA" ||
-					active.isContentEditable);
+				(active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
 			if (!outroCampoJaFocado) textareaRef.current?.focus();
 		});
 		return () => cancelAnimationFrame(id);
@@ -83,14 +81,14 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 		<div
 			className={cn(
 				"sticky bottom-0 z-10 border-t border-border pb-[env(safe-area-inset-bottom)]",
-				isTheater ? "bg-card px-5 py-3.5" : "bg-background",
+				isTheater ? "bg-[var(--aja-paper)] px-5 py-3.5" : "bg-background",
 			)}
 		>
 			<div
 				className={cn(
 					"mx-auto flex items-end",
 					isTheater
-						? "max-w-[720px] gap-2.5 rounded-[15px] border border-border bg-muted py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-primary/30 focus-within:bg-card"
+						? "max-w-[720px] gap-2.5 rounded-full border border-[color:var(--border-strong)] bg-white py-1.5 pr-1.5 pl-4 transition-[border-color,box-shadow] focus-within:border-[var(--ring)] focus-within:shadow-[var(--shadow-focus)]"
 						: "max-w-3xl gap-2 px-4 py-3",
 				)}
 			>
@@ -129,7 +127,16 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 					onClick={handleSend}
 					disabled={!canSend}
 					aria-label="Enviar mensagem"
-					className={cn("shrink-0", isTheater ? "size-10 rounded-[11px]" : "size-11")}
+					className={cn(
+						"shrink-0",
+						// O site resolve exatamente este botão (campo + chips + enviar) em
+						// coral SOBRE coral-100, sem sombra — não em bloco coral sólido.
+						// Guardar o único coral sólido da tela num botão que 90% das
+						// pessoas aciona com Enter deixava o CTA de verdade sem hierarquia.
+						isTheater
+							? "size-9 rounded-[8px] bg-[var(--coral-100)] text-[var(--primary)] shadow-none hover:bg-[var(--coral-300)] disabled:bg-[var(--aja-sand)] disabled:text-[var(--muted-foreground)] disabled:opacity-100"
+							: "size-11",
+					)}
 				>
 					<Send className="size-4" />
 				</Button>

@@ -57,21 +57,25 @@ export function AdministradoraFormDialog({
 		formState: { errors, isSubmitting },
 	} = useForm<FormValues>({ resolver, defaultValues });
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset/defaultValues mudam a cada render do useForm; re-sincronizar só na abertura é intencional.
 	useEffect(() => {
 		if (open) {
 			reset(defaultValues);
 			setSubmitError(null);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, administradora?.id]);
 
 	const onSubmit = handleSubmit(async (values) => {
 		setSubmitError(null);
-		const url =
-			mode === "create"
-				? "/api/admin/administradoras"
-				: `/api/admin/administradoras/${administradora!.id}`;
-		const method = mode === "create" ? "POST" : "PATCH";
+		// `administradora!` escondia o caso real de abrir em modo edição sem objeto
+		// (a URL viraria .../undefined e o PATCH morreria em 404 silencioso).
+		const editing = mode === "create" ? null : administradora;
+		if (mode !== "create" && !editing) {
+			setSubmitError("Não foi possível identificar a administradora a editar.");
+			return;
+		}
+		const url = editing ? `/api/admin/administradoras/${editing.id}` : "/api/admin/administradoras";
+		const method = editing ? "PATCH" : "POST";
 
 		const res = await fetch(url, {
 			method,

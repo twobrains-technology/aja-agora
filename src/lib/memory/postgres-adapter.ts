@@ -194,11 +194,7 @@ export class PostgresMemoryAdapter implements MemoryAdapter {
 						lastInteractionAt: new Date(merged.lastInteractionAt as string),
 					})
 					.onConflictDoUpdate({
-						target: [
-							memoryIdentities.namespace,
-							memoryIdentities.kind,
-							memoryIdentities.value,
-						],
+						target: [memoryIdentities.namespace, memoryIdentities.kind, memoryIdentities.value],
 						set: {
 							block: merged,
 							reconciledFrom: merged.reconciledFrom ?? null,
@@ -270,11 +266,7 @@ export class PostgresMemoryAdapter implements MemoryAdapter {
 					.for("update");
 				if (!fromRow) return; // nada a migrar — idempotente
 
-				const [toRow] = await tx
-					.select()
-					.from(memoryIdentities)
-					.where(keyWhere(to))
-					.for("update");
+				const [toRow] = await tx.select().from(memoryIdentities).where(keyWhere(to)).for("update");
 
 				const fromBlock = fromRow.block;
 				const toBlock = toRow?.block ?? emptyHumanBlock(to);
@@ -302,16 +294,10 @@ export class PostgresMemoryAdapter implements MemoryAdapter {
 						value: to.value,
 						block: merged,
 						reconciledFrom: fromKey,
-						lastInteractionAt: merged.lastInteractionAt
-							? new Date(merged.lastInteractionAt)
-							: null,
+						lastInteractionAt: merged.lastInteractionAt ? new Date(merged.lastInteractionAt) : null,
 					})
 					.onConflictDoUpdate({
-						target: [
-							memoryIdentities.namespace,
-							memoryIdentities.kind,
-							memoryIdentities.value,
-						],
+						target: [memoryIdentities.namespace, memoryIdentities.kind, memoryIdentities.value],
 						set: { block: merged, reconciledFrom: fromKey, updatedAt: new Date() }, // real-time-intentional: coluna de auditoria (wall-clock)
 					});
 			});

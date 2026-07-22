@@ -21,6 +21,27 @@ export async function loadConversationHistory(
 		}));
 }
 
+/** A última fala do assistente nesta conversa — a pergunta que o usuário está
+ * respondendo agora. Leitura barata (1 linha, index por conversa + ordem
+ * decrescente) usada para ANCORAR o classificador de turno: sem ela, uma
+ * resposta curta ("não", "uns 70 mil") é ambígua e acaba gravada no campo
+ * errado. Ignora as mensagens marcadoras de card (`[card: tipo]`), que não são
+ * fala. */
+export async function loadLastAssistantText(conversationId: string): Promise<string | null> {
+	const rows = await db.query.messages.findMany({
+		where: eq(messagesTable.conversationId, conversationId),
+		orderBy: (m, { desc }) => [desc(m.createdAt)],
+		limit: 6,
+	});
+	for (const m of rows) {
+		if (m.role !== "assistant") continue;
+		const content = m.content?.trim() ?? "";
+		if (!content || /^\[card:/i.test(content)) continue;
+		return content;
+	}
+	return null;
+}
+
 export async function saveMessage(
 	conversationId: string,
 	role: "user" | "assistant",

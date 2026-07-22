@@ -66,7 +66,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 	return (
 		<div
 			className={cn(
-				"w-full max-w-sm bg-card border border-border rounded-[18px] overflow-hidden",
+				"w-full max-w-sm bg-card border border-border rounded-[12px] overflow-hidden",
 				"shadow-[0_1px_2px_rgba(10,31,51,.04),0_18px_44px_-28px_rgba(10,31,51,.22)]",
 			)}
 		>
@@ -96,7 +96,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 				    é disclosed no PDF da proposta (signature_handoff "Ver minha proposta")
 				    ANTES da assinatura — ver docs/jornada/CONTEXT.md. */}
 				<div>
-					<p className="text-xs text-muted-foreground m-0">Valor do bem</p>
+					<p className="text-xs text-muted-foreground m-0">Carta de crédito</p>
 					<p className="aja-num text-sm font-semibold mt-0.5">{formatBRL(payload.creditValue)}</p>
 				</div>
 
@@ -159,8 +159,8 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 						</div>
 						<p className="text-xs text-muted-foreground mt-1">
 							Usa parte da própria carta como lance — sem precisar do valor todo em dinheiro
-							(estimativa, não garantia). Usar o embutido significa que você recebe menos crédito
-							da carta agora.
+							(estimativa, não garantia). Usar o embutido significa que você recebe menos crédito da
+							carta agora.
 						</p>
 					</div>
 				)}
@@ -179,7 +179,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					size="lg"
 					data-testid="tenho-interesse-cta"
 					className={cn(
-						"w-full gap-2 min-h-[46px] rounded-[13px] font-semibold text-sm",
+						"w-full gap-2 min-h-[46px] rounded-full font-semibold text-sm",
 						"shadow-lg shadow-primary/30 ring-1 ring-primary/40",
 						"hover:shadow-primary/50 transition-shadow",
 					)}
@@ -190,16 +190,16 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					Tenho interesse
 				</Button>
 
-					{/* FIX-57 (jornada2): o card terminava só no "Tenho interesse" e
+				{/* FIX-57 (jornada2): o card terminava só no "Tenho interesse" e
 					    parecia um beco sem saída — o usuário não percebia o que vinha
 					    depois. Esta linha sinaliza que a jornada continua (confirmação
 					    no card de decisão), sem poluir o card com mais um botão. */}
-					<p
-						data-testid="proximo-passo-hint"
-						className="text-[11px] text-muted-foreground text-center -mt-1.5 m-0"
-					>
-						Próximo passo: confirmar se esse plano faz sentido pra você.
-					</p>
+				<p
+					data-testid="proximo-passo-hint"
+					className="text-[11px] text-muted-foreground text-center -mt-1.5 m-0"
+				>
+					Próximo passo: confirmar se esse plano faz sentido pra você.
+				</p>
 
 				{/* CTAs secundárias (bug #12). FIX-7: o modelo às vezes repete
 				    "Tenho interesse" nas actions — o botão interno já cobre, filtra. */}
@@ -213,7 +213,7 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 									type="button"
 									variant="ghost"
 									size="sm"
-									className="w-full min-h-[40px] rounded-[13px] border border-border hover:bg-muted/50"
+									className="w-full min-h-[40px] rounded-full border border-border hover:bg-muted/50"
 									onClick={() => handleAction(action)}
 									disabled={isStreaming}
 								>

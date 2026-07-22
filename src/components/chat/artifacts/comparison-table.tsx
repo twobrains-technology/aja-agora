@@ -108,11 +108,11 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						<div>
 							<p
 								data-testid={`comparison-chip-hero-credit-${group.id}`}
-								className="aja-num text-lg font-bold leading-none text-primary"
+								className="aja-num text-lg font-bold leading-none text-figure"
 							>
 								{formatBRL(group.creditValue)}
 							</p>
-							<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+							<p className="text-[10px] text-muted-foreground mt-0.5">Carta de crédito</p>
 						</div>
 
 						{/* Divider */}
@@ -172,7 +172,6 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 			<p className="px-0.5 text-[11px] text-muted-foreground">
 				Toque numa cota pra ver no detalhe acima
 			</p>
-			{/* biome-ignore lint/a11y/useSemanticElements: listbox de cotas (chips button role=option) */}
 			<div
 				role="listbox"
 				aria-label="Escolha a cota"
@@ -251,11 +250,11 @@ function QuotaChip({
 			<div>
 				<p
 					data-testid={`quota-chip-hero-credit-${cota.groupId}`}
-					className="aja-num text-lg font-bold leading-none text-primary"
+					className="aja-num text-lg font-bold leading-none text-figure"
 				>
 					{formatBRL(cota.creditValue)}
 				</p>
-				<p className="text-[10px] text-muted-foreground mt-0.5">Valor do bem</p>
+				<p className="text-[10px] text-muted-foreground mt-0.5">Carta de crédito</p>
 				{/* FIX-287 — aviso discreto: esse grupo não aceitou o valor pedido
 				    (nominal real já provado por uma simulação nesta conversa). */}
 				{showAdjustNotice && cota.rawCreditValue != null && (

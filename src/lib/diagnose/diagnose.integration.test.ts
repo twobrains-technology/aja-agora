@@ -184,7 +184,7 @@ skipIfNoDb("diagnoseConversation — bug regressão prod (BUG-2026-05-18)", () =
 	// (igual o AI SDK faz internamente). Se Zod rejeitar, lança o MESMO erro
 	// que o usuário viu em prod ("response did not match schema").
 	function makeGenerateObjectMockFromRawLLMOutput(rawObject: unknown) {
-		return async (opts: { schema: { _zod?: unknown } } & Record<string, unknown>) => {
+		return async (_opts: { schema: { _zod?: unknown } } & Record<string, unknown>) => {
 			// Replica o comportamento de ai/dist/index.mjs:3439-3452:
 			// se schema rejeitar, lança NoObjectGeneratedError com a mesma message.
 			const { diagnosisResultSchema } = await import("./types");

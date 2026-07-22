@@ -130,7 +130,11 @@ describe.skipIf(!RUN)("FIX-202 — applyTemplateStatusUpdate", () => {
 			}),
 		);
 
-		expect(res).toMatchObject({ updated: true, flushed: true, usageKey: "confirmacao_contratacao" });
+		expect(res).toMatchObject({
+			updated: true,
+			flushed: true,
+			usageKey: "confirmacao_contratacao",
+		});
 		const row = await reload(id);
 		expect(row.status).toBe("APPROVED");
 		expect(row.approvedAt).toBeTruthy();

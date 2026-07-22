@@ -44,8 +44,7 @@ export function normalizePhoneBR(input: string | null | undefined): string | nul
 	// DDD + 8/9). Em 10-11 dígitos o "55" é o DDD (ex.: móvel de Santa Maria-RS),
 	// não o CC — removê-lo mutilava o número e rejeitava o usuário. Mesmo guard
 	// de lead-collection.ts (normalizePhone).
-	const withoutCC =
-		digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+	const withoutCC = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 
 	// BR: DDD (2) + 9 + 8 dígitos (móvel) = 11. Fixo: DDD + 8 = 10.
 	if (withoutCC.length < 10 || withoutCC.length > 11) return null;

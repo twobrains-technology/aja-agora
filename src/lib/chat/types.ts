@@ -285,6 +285,19 @@ export interface RealOfferPayload {
 	 * passou a trazê-lo (gap do FIX-13 acabou). Opcional: shape antigo não tinha e
 	 * a API pode voltar atrás → ausente mantém a copy de fallback do card. */
 	termMonths?: number;
+	/** A carta é maior que o pedido DE PROPÓSITO: o cliente aceitou lance
+	 * embutido, e o embutido sai da própria carta — mirar o tamanho do bem
+	 * deixaria faltar dinheiro. Sem isso, o aviso de divergência ("você pediu
+	 * 300 mil, a carta real ficou 435 mil") lia como erro do sistema. */
+	cartaMaiorPorEmbutido?: boolean;
+	/** O cliente entrou na conversa de lance — só então o lance médio do grupo
+	 * significa alguma coisa pra ele. Ausente = o número não aparece. */
+	mostrarLanceMedio?: boolean;
+	/** A parcela/prazo que o cliente VIU e aprovou, quando a carta real voltou
+	 * diferente. Presença = o card avisa a mudança; ausência = não mudou nada.
+	 * Sem isso o cliente dizia sim a 48 meses e assinava 55, sem uma palavra. */
+	parcelaVista?: number;
+	prazoVisto?: number;
 	/** FIX-40: lance médio do grupo (R$) — rótulo LITERAL do campo `lanceMedio` da
 	 * API nova. Opcional; exibido só com fonte (D11). NUNCA prometer contemplação a
 	 * partir dele (semântica não confirmada — só comparação factual de posição). */
@@ -303,11 +316,32 @@ export interface RealOfferPayload {
 	logoUrl?: string;
 }
 
-/** Encaminhamento pra assinatura digital da administradora (sem "trocar de
- * empresa" — frase do doc). consortiumProposalLink = link Bevi. */
+/** "Sua proposta está pronta" — o card que entrega a proposta ao cliente.
+ *
+ * `proposalUrl` é a NOSSA proposta em PDF (co-branded, gerada por
+ * `lib/proposal/store.ts` e servida por URL assinada). O card usa SÓ ela: o
+ * `consortiumProposalLink` da administradora (um PDF hospedado em domínio de
+ * terceiro) foi ABOLIDO da conversa em 2026-07-21 — o cliente não pode sair da
+ * Aja Agora pra ver a própria proposta. O campo segue no tipo porque o back
+ * office e a mesa ainda o consomem (recovery.ts, mesa/routing.ts); o que mudou
+ * é quem aparece pro cliente. Sem `proposalUrl`, o card NÃO é emitido. */
 export interface SignatureHandoffPayload {
 	administradora: string;
-	consortiumProposalLink: string;
+	proposalUrl: string;
+}
+
+/** Fecho da jornada: quem continua com o cliente é um ATENDENTE humano, pelo
+ * WhatsApp oficial. Card com uma ação só (abrir a conversa) — antes isso era
+ * um parágrafo no fim de um balão longo e o cliente ficava sem saber o que
+ * fazer depois de fechar. */
+export interface AtendimentoHandoffPayload {
+	/** Número oficial em dígitos com DDI (ex.: "5511955020229"). */
+	numero: string;
+	/** O mesmo número como o cliente lê (ex.: "+55 11 95502-0229"). */
+	numeroFormatado: string;
+	administradora?: string;
+	/** Texto pré-preenchido do wa.me — abre a janela de 24h já com contexto. */
+	mensagemInicial?: string;
 }
 
 /** Upload de documento no chat (RG/CNH frente+verso). Os links são o fallback se
@@ -356,6 +390,12 @@ export interface EmbeddedBidPayload {
 	embeddedBidValue: number;
 	netCredit: number;
 	disclaimer: string;
+	/** O que o cliente precisa RECEBER (o preço do bem que ele quer). */
+	valorDoBem?: number;
+	/** Carta que entrega `valorDoBem` líquido usando o embutido no teto:
+	 * `valorDoBem / (1 - pct)`. É a jogada que um vendedor bom faz — em vez de
+	 * cortar o crédito de quem não tem dinheiro pro lance, ele sobe a carta. */
+	cartaNecessaria?: number;
 }
 
 // ---- Card dois caminhos, sem lance (FIX-229, docs/02-cards-novos.md CARD 3) ----
@@ -401,6 +441,7 @@ export type ArtifactByType =
 	| { type: "contract_form"; payload: ContractFormPayload }
 	| { type: "real_offer"; payload: RealOfferPayload }
 	| { type: "signature_handoff"; payload: SignatureHandoffPayload }
+	| { type: "atendimento_handoff"; payload: AtendimentoHandoffPayload }
 	| { type: "document_upload"; payload: DocumentUploadPayload }
 	| { type: "contemplation_dial"; payload: ContemplationDialPayload }
 	| { type: "embedded_bid"; payload: EmbeddedBidPayload }

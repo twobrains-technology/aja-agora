@@ -39,16 +39,21 @@ async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
 
 test.beforeAll(async ({ request }, testInfo) => {
 	// Skip se a rota não existe (servidor é develop sem a branch).
-	const probe = await request.get(`/api/admin/contacts/${ids.contact}`, { failOnStatusCode: false });
+	const probe = await request.get(`/api/admin/contacts/${ids.contact}`, {
+		failOnStatusCode: false,
+	});
 	if (probe.status() === 404 && (await probe.text()).includes("Cannot")) {
 		testInfo.skip(true, "Rota /api/admin/contacts/[id] não existe no servidor alvo.");
 	}
 
 	await withDb(async (db) => {
-		await db.query(
-			`INSERT INTO contacts (id, phone, cpf, email, name) VALUES ($1,$2,$3,$4,$5)`,
-			[ids.contact, "62991450001", "52998224725", "helena.fix45@example.com", "Helena FIX45"],
-		);
+		await db.query(`INSERT INTO contacts (id, phone, cpf, email, name) VALUES ($1,$2,$3,$4,$5)`, [
+			ids.contact,
+			"62991450001",
+			"52998224725",
+			"helena.fix45@example.com",
+			"Helena FIX45",
+		]);
 		await db.query(
 			`INSERT INTO conversations (id, channel, status, contact_id, metadata) VALUES ($1,'web','active',$2,'{}')`,
 			[ids.convWeb, ids.contact],

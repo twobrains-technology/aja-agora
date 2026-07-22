@@ -16,7 +16,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sendTextMessage = vi.fn(async (_to: string, _text: string) => ({ messageId: "wamid.real-text" }));
+const sendTextMessage = vi.fn(async (_to: string, _text: string) => ({
+	messageId: "wamid.real-text",
+}));
 const sendTemplate = vi.fn(
 	async (_to: string, _templateName: string, _languageCode: string, _components?: unknown[]) => ({
 		messageId: "wamid.real-tmpl",
