@@ -1,14 +1,6 @@
 "use client";
 
-import {
-	AlertCircle,
-	Bike,
-	Car,
-	Headset,
-	Home,
-	type LucideIcon,
-	RotateCcw,
-} from "lucide-react";
+import { AlertCircle, Bike, Car, Headset, Home, type LucideIcon, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
