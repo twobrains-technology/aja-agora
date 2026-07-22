@@ -1,14 +1,39 @@
 ---
 id: FIX-364
 titulo: "Resume ('Voltei') não deve re-emitir gate de qualificação quando a proposta já fechou"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
 arquivos:
   - src/lib/agent/qualify-state.ts
   - src/lib/chat/resume.ts
 rodada: 2026-07-22 — campanha vendedor-matador-consorcio (goal doc .processo/loop/2026-07-22-1853-vendedor-matador-consorcio.md, ITEM 2)
+commit: 5c714d30
+executado_em: 2026-07-22
 ---
+
+## Execução (bloco-h-resume-mesa)
+`nextGate` (`qualify-state.ts:237`) ganhou um short-circuit **no topo da função**
+(antes até do gate `name`): `if (meta.contractClosed === true) return "search";` —
+mesmo terminal que a cauda da cascata já devolvia no caminho feliz, agora garantido
+independente de qualquer flag intermediária (credit/identify/lance/decisão/...)
+estar ausente no meta na hora do check (era exatamente essa lacuna que fazia um
+meta reidratado incompleto, ex. via `resume.ts`, cair de volta numa pergunta de
+qualificação já resolvida).
+
+`resume.ts` **não precisou de mudança de código**: `getResumableConversation` já
+deriva o `gate` da retomada via `nextGate(metaCompleta, ...)` — com o short-circuit
+em `nextGate`, o gate passa a vir `null` (nenhum card de qualificação) sem exigir
+lógica própria. A saudação em si (COPY) continua 100% do modelo: o turno normal
+("Voltei" via `/api/chat`) já injeta `contractClosedSection` (FIX-11, existente) +
+a instrução geral de que um atendente contata o cliente por WhatsApp após o fecho
+(`system-prompt.ts:415`, existente) — o FATO determinístico que faltava era só o
+`pendingGate` certo, agora corrigido na fonte única.
+
+Testes (TDD strict, falharam antes do fix, passam depois):
+- `src/lib/agent/qualify-state.fix-364.test.ts` — unit de `nextGate`.
+- `src/lib/chat/resume.fix-364.test.ts` — integração de `getResumableConversation`
+  (mock de `@/db`) provando que o `gate` da retomada é `null` com `contractClosed: true`.
 
 ## Palavras do operador
 > "qd volto para uma proposta ja finalizada o agente entende que eu estava num passo anterior e parece nem saber que eu fechei um plano. O comportamento do agente aqui nesse caso deve ser, olha se o plano já está tem que ver a etapa que ele tá né nesse caso é que ele ta na mesa lá então se ele ta numa mesa ele deve ele deve notificar assim: 'Olha você está aqui, já recebemos... Que bom que você voltou cara! Já recebendo a sua proposta. Daqui a pouco o atendente fala com você no WhatsApp pedindo seus documentos.' Enfim dá uma explicação pra ele de que o atendimento vai seguir, entendeu? Vai ter uma pessoa que vai falar com ele em seguida. Então você precisa tranquilizar o usuário nesse caso aí e sempre orientar ele a ir para o WhatsApp para ele conversar lá, para ficar mais dinâmico o fluxo. Aí lá o pessoal vai atender."

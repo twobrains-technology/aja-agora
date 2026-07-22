@@ -235,6 +235,17 @@ export function querAntecipar(q: NonNullable<ConversationMetadata["qualifyAnswer
 }
 
 export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
+	// FIX-364 (bloco-h-resume-mesa): contrato fechado é estado TERMINAL —
+	// checa ANTES de qualquer outro gate, independente de qual flag
+	// intermediário da cascata (credit/identify/lance/decisão/...) esteja
+	// ausente no meta na hora do check. Sem isto, um meta reidratado de forma
+	// incompleta (ex.: resume server-side, `src/lib/chat/resume.ts`) fazia a
+	// cascata de qualificação rodar por cima do fechamento e reabrir uma
+	// pergunta (lance/decisão) pra quem já fechou a proposta e só voltou pra
+	// retomar a conversa. "search" é o mesmo terminal que a cauda da cascata
+	// já devolvia no caminho feliz (linha ~417) — sem card, sem pergunta.
+	if (meta.contractClosed === true) return "search";
+
 	// PF-08 + FIX-17: enquanto o nome não foi capturado, o ÚNICO gate é o do
 	// nome. A pergunta sai no texto do agente (directive de 1o contato) e o card
 	// "name" complementa com input focado (gateQuestion('name')=null não duplica).
@@ -409,10 +420,13 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// fechar.
 		if (!meta.escolha && !meta.decisionDispatched) return "decision";
 		// O funil NÃO termina num estado mudo. Enquanto o formulário de
-		// contratação não apareceu (e o contrato não fechou), o próximo passo É
-		// ele — sem isto, a cascata caía em "search" (sem card, sem condução) e o
-		// agente encerrava a conversa educadamente com a venda na mão.
-		if (!meta.contractFormDispatched && meta.contractClosed !== true) return "contract";
+		// contratação não apareceu, o próximo passo É ele — sem isto, a cascata
+		// caía em "search" (sem card, sem condução) e o agente encerrava a
+		// conversa educadamente com a venda na mão. FIX-364: o check `!==
+		// contractClosed` que existia aqui morreu de redundante — o
+		// short-circuit no topo da função já garante contractClosed !== true
+		// neste ponto.
+		if (!meta.contractFormDispatched) return "contract";
 	}
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
 }

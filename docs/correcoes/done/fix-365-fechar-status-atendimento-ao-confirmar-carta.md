@@ -1,7 +1,7 @@
 ---
 id: FIX-365
 titulo: "Provar que a mesa é notificada UMA VEZ (não duplicada) quando o lead fecha a proposta e depois avança via polling da Bevi"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
@@ -13,7 +13,40 @@ arquivos:
   - src/lib/whatsapp/mesa/notify.ts
   - src/lib/whatsapp/workers/proposal-status-poll.ts
 rodada: 2026-07-22 — campanha vendedor-matador-consorcio (goal doc .processo/loop/2026-07-22-1853-vendedor-matador-consorcio.md, ITEM 3)
+commit: f48a3285
+executado_em: 2026-07-22
 ---
+
+## Execução (bloco-h-resume-mesa)
+Confirmado por leitura de código: **nenhuma correção de negócio foi necessária** — a
+ligação stage+notificação já existe (`createBeviProposal` →
+`transitionLeadStage(..., "proposta_enviada")`, `sendFechoPedirOi` →
+`dispatchAutoTransbordo`) e `createMesaHandoff` (`src/lib/mesa/handoff.ts:135-145`)
+**já é idempotente**: antes do INSERT, checa se existe handoff ATIVO
+(`aberto`/`em_andamento`) pro lead e devolve `handoff_ativo_existe` sem criar
+segunda linha. `dispatchAutoTransbordo` (`src/lib/mesa/dispatch.ts`) só dispara o
+broadcast WhatsApp quando o handoff foi de fato criado nesta chamada — no
+segundo disparo (poll) o broadcast nem roda. O worker de polling
+(`src/lib/workers/proposal-status-poll.ts:69`, não
+`whatsapp/workers/...` como o card original apontava — caminho desatualizado)
+só rechama o transbordo quando a raia REALMENTE mudou pra `na_administradora`
+nesta reconciliação (`applied && stage === "na_administradora"`), não a cada
+tick do mesmo status.
+
+Faltava só o teste de regressão provando isso pelo fluxo real (não reimplementar
+nada). Dois arquivos novos:
+- `src/lib/mesa/dispatch.fix-365.integration.test.ts` — DB real (`describeIfDb`,
+  skip sem `DATABASE_URL`, mesmo padrão de `handoff.integration.test.ts`):
+  simula aceite (`dispatchAutoTransbordo` com lead em `proposta_enviada`) seguido
+  do poll (lead avança pra `na_administradora`, `dispatchAutoTransbordo` de novo)
+  e prova **exatamente 1** handoff ativo pro lead. **Não executado neste
+  ambiente** (worker de bloco/onda não sobe stack de DB — convenção
+  `local-dev`) — roda em CI/sessão com Postgres.
+- `src/lib/mesa/dispatch.fix-365.structural.test.ts` — Camada 1 (sem DB, rodou e
+  passou aqui): trava em código-fonte os 3 guards que sustentam a garantia
+  (ordem check-antes-do-insert em `handoff.ts`, guard `result.ok` antes do
+  broadcast em `dispatch.ts`, guard `applied && stage === "na_administradora"`
+  no worker de polling).
 
 ## Palavras do operador
 > "Aqui vamos fazer o seguinte e aqui já é uma feature mesmo né. Quando for notificado esse card aqui a nossa status do nosso atendimento lá tem que ser fechado já, ganho né? Deixa eu lembrar aqui o funil pra nós, ó: ele tem que ir pra administradora, ele tem que estar em nosso funil na aba de administradora, e já tem que notificar o atendente de que tem alguém para ser atendido, ou seja os atendentes da mesa, igual a gente tem lá no back-end entendeu? Já tem que notificar isso lá e considerar também como uma tarefa a ser executada aqui porque daqui a pouco a gente vai executar todas."
