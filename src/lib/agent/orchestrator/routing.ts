@@ -7,7 +7,6 @@ const CATEGORY_KEYWORDS: Record<Category, RegExp> = {
 		/\b(im[oó]vel|im[oó]veis|apartamento|apto|casa|terreno|kitnet|comercial|sala\s+comercial)\b/i,
 	auto: /\b(carro|autom[oó]vel|caminhonete|caminh[aã]o|ve[ií]culo)\b/i,
 	moto: /\b(moto|motocicleta|motoca|motoneta)\b/i,
-	servicos: /\b(reforma|viagem|formatura|cirurgia|tratamento|servi[cç]o)\b/i,
 };
 
 export function fallbackDetectCategory(text: string): Category | null {

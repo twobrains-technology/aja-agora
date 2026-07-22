@@ -48,7 +48,7 @@ export const groupCardSchema = z.object({
 			"ID LITERAL e opaco do grupo, copiado EXATAMENTE como veio de search_groups/recommend_groups (um hash, ex.: 6a0ca9ca1b2c3d4e5f607182). NUNCA derive nem fabrique de banco/categoria/valor/prazo (ex.: 'bb-auto-200k-72m').",
 		),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal estimada em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -76,7 +76,7 @@ export const simulationResultSchema = z.object({
 	groupId: z.string().describe("ID do grupo simulado"),
 	administradora: z.string().describe("Nome da administradora do grupo (vem do search_groups)"),
 	category: z
-		.enum(["imovel", "auto", "moto", "servicos"])
+		.enum(["imovel", "auto", "moto"])
 		.describe("Categoria do bem (define indice de correcao prevista: imovel=INCC, auto=IPCA)"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
@@ -143,7 +143,7 @@ export const recommendationSchema = z.object({
 			"ID LITERAL e opaco do grupo recomendado, copiado EXATAMENTE como veio de search_groups/recommend_groups. NUNCA derive nem fabrique de banco/categoria/valor/prazo (ex.: 'bb-auto-200k-72m').",
 		),
 	administradora: z.string().describe("Nome da administradora"),
-	category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto"]).describe("Categoria do bem"),
 	creditValue: z.number().describe("Valor do credito em reais"),
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
@@ -233,7 +233,7 @@ const leadFormSchemaNoCtx = z.object({
 
 const valuePickerSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "moto", "servicos"])
+		.enum(["imovel", "auto", "moto"])
 		.describe("Categoria do bem para personalizar o visual"),
 	fields: z
 		.array(
@@ -293,7 +293,7 @@ export const topicPickerSchema = z.object({
 
 const compareWithFinancingSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "moto", "servicos"])
+		.enum(["imovel", "auto", "moto"])
 		.describe("Categoria do bem (define taxa CET padrao)"),
 	creditValue: z.number().positive().describe("Valor do credito em reais"),
 	termMonths: z.number().int().positive().describe("Prazo do consorcio em meses"),
@@ -305,7 +305,7 @@ const compareWithFinancingSchema = z.object({
 		.number()
 		.optional()
 		.describe(
-			"Override da taxa CET anual do financiamento. Default: imovel 10%, auto 22%, moto 28%, servicos 25%.",
+			"Override da taxa CET anual do financiamento. Default: imovel 10%, auto 22%, moto 28%.",
 		),
 });
 
@@ -315,8 +315,8 @@ const compareWithFinancingSchema = z.object({
 // comentario la pra raiz completa (espiral de negacao).
 export const recommendGroupsSchema = z.object({
 	category: z
-		.enum(["imovel", "auto", "moto", "servicos"])
-		.describe("Categoria do bem: imovel, automovel ou servicos"),
+		.enum(["imovel", "auto", "moto"])
+		.describe("Categoria do bem: imovel, automovel ou moto"),
 	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
 	// FIX-322: o usuario quase nunca declara orcamento mensal (so o valor do
@@ -879,7 +879,7 @@ export const consorcioTools = {
 		description:
 			"Apresenta como artifact visual a comparacao consorcio × financiamento (output de compare_with_financing). Use SEMPRE depois de chamar compare_with_financing — o output da tool de dados vai pro input desta. Bug #17.",
 		inputSchema: z.object({
-			category: z.enum(["imovel", "auto", "moto", "servicos"]),
+			category: z.enum(["imovel", "auto", "moto"]),
 			creditValue: z.number().positive(),
 			termMonths: z.number().int().positive(),
 			consorcio: z.object({
@@ -935,7 +935,7 @@ export const consorcioTools = {
 			"Apresenta o simulador-agulha de contemplação: o usuário arrasta a agulha pro mês em que quer ser contemplado e vê ao vivo a RECEITA pra chegar lá (lance embutido até 30% + lance próprio, crédito líquido, parcela). Use no passo 4, depois da recomendação/simulação, quando o usuário quer entender QUANDO e COMO antecipar a contemplação. Passe os dados do plano recomendado. Não mencione 'arraste o slider' — diga algo como 'escolhe quando você quer ser contemplado'.",
 		inputSchema: z.object({
 			administradora: z.string().optional().describe("Administradora do plano (contexto)"),
-			category: z.enum(["imovel", "auto", "moto", "servicos"]).describe("Categoria do bem"),
+			category: z.enum(["imovel", "auto", "moto"]).describe("Categoria do bem"),
 			creditValue: z.number().positive().describe("Valor da carta (crédito) em reais"),
 			termMonths: z.number().int().positive().describe("Prazo nominal do grupo em meses"),
 			monthlyPayment: z.number().positive().describe("Parcela base em reais"),

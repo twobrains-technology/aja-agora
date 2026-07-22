@@ -2,7 +2,7 @@
 
 // ---- Domain types ----
 
-export type ConsorcioCategory = "imovel" | "auto" | "moto" | "servicos";
+export type ConsorcioCategory = "imovel" | "auto" | "moto";
 
 export interface GroupSummary {
 	id: string;

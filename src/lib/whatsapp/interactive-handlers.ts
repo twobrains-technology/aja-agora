@@ -543,7 +543,6 @@ async function handleRange(ctx: Ctx): Promise<boolean> {
 		auto: "carro",
 		imovel: "imóvel",
 		moto: "moto",
-		servicos: "serviço",
 	};
 	const label = catLabel[range.category] ?? "consórcio";
 	const budgetFmt = range.budget.toLocaleString("pt-BR");

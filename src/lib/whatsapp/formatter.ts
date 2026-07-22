@@ -138,7 +138,7 @@ export interface WhatsAppResponse {
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
 	const body = [
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto")}`,
 		`Valor do bem: ${formatBRL(p.creditValue as number)}`,
 		`Parcela: ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: sem taxa admin no card (assusta o leigo) — composição
@@ -249,7 +249,7 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 	const body = [
 		`*Recomendação — ${score}% compatível*`,
 		"",
-		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto").replace("servicos", "Serviços")}`,
+		`*${p.administradora}* — ${(p.category as string)?.replace("imovel", "Imóvel").replace("auto", "Auto").replace("moto", "Moto")}`,
 		`${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: sem % admin no card (assusta o leigo).
 		`${p.termMonths} meses`,
@@ -427,48 +427,6 @@ const RANGES: Record<
 			budget: 1800,
 		},
 	],
-	servicos: [
-		{
-			id: "range_serv_30",
-			title: "Até R$ 30 mil",
-			desc: "Parcela ~R$ 400/mês • Reformas simples",
-			creditMin: 0,
-			creditMax: 30000,
-			budget: 400,
-		},
-		{
-			id: "range_serv_60",
-			title: "R$ 30 mil - R$ 60 mil",
-			desc: "Parcela ~R$ 700/mês • Reformas médias",
-			creditMin: 30000,
-			creditMax: 60000,
-			budget: 700,
-		},
-		{
-			id: "range_serv_100",
-			title: "R$ 60 mil - R$ 100 mil",
-			desc: "Parcela ~R$ 1.100/mês • Reformas completas",
-			creditMin: 60000,
-			creditMax: 100000,
-			budget: 1100,
-		},
-		{
-			id: "range_serv_200",
-			title: "R$ 100 mil - R$ 200 mil",
-			desc: "Parcela ~R$ 2.000/mês • Grandes projetos",
-			creditMin: 100000,
-			creditMax: 200000,
-			budget: 2000,
-		},
-		{
-			id: "range_serv_500",
-			title: "Acima de R$ 200 mil",
-			desc: "Parcela ~R$ 4.000/mês • Investimentos",
-			creditMin: 200000,
-			creditMax: 500000,
-			budget: 4000,
-		},
-	],
 };
 
 export function resolveRange(
@@ -499,7 +457,6 @@ export function valuePickerToWhatsApp(payload: Record<string, unknown>): WhatsAp
 		imovel: "imóvel",
 		auto: "carro",
 		moto: "moto",
-		servicos: "serviço",
 	};
 	const bem = (category && bemLabel[category]) || "bem";
 
@@ -531,7 +488,7 @@ import {
 // consumido aqui.
 
 export function timeframeQuestionToWhatsApp(
-	category: "imovel" | "auto" | "moto" | "servicos",
+	category: "imovel" | "auto" | "moto",
 	prefix?: string,
 ): WhatsAppResponse {
 	const question = gateQuestion("timeframe", category) ?? "";
@@ -784,9 +741,8 @@ export function welcomeButtonsToWhatsApp(): WhatsAppResponse {
 				text: "Escolhe abaixo ou digita livremente.",
 			},
 			action: {
-				// Bv2-01 / Bruna v1 #20: moto SUBSTITUI servicos nos chips
-				// (3 chips, mesma decisão da landing). WhatsApp limita
-				// interactive button a 3.
+				// 3 categorias (imóvel/auto/moto) cabem nos 3 botões — WhatsApp
+				// limita interactive button a 3. FIX-363: "serviços" foi extinta.
 				buttons: [
 					{ type: "reply", reply: { id: "category_imovel", title: "Imóvel" } },
 					{ type: "reply", reply: { id: "category_auto", title: "Carro" } },

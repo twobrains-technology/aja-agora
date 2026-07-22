@@ -23,7 +23,6 @@ const CATEGORY_LABEL: Record<ConsorcioCategory, string> = {
 	imovel: "IMÓVEL",
 	auto: "AUTOS",
 	moto: "MOTOS",
-	servicos: "SERVIÇOS",
 };
 
 /** Chave S3 determinística da proposta. Uma por proposalId (regenerar sobrescreve). */

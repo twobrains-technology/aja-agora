@@ -36,7 +36,6 @@ const VOICE_TONE_MAX = 2000;
 const CATEGORY_LABEL: Record<string, string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
-	servicos: "Serviços",
 };
 
 const DEFAULT_TOOLS = [
@@ -53,7 +52,7 @@ const DEFAULT_TOOLS = [
 
 type FormValues = {
 	displayName: string;
-	category: "imovel" | "auto" | "moto" | "servicos" | undefined;
+	category: "imovel" | "auto" | "moto" | undefined;
 	expertise: string | null;
 	voiceTone: string;
 	examples: PersonaExample[];
@@ -159,7 +158,7 @@ export function PersonaCreateForm() {
 										<Select
 											value={category ?? ""}
 											onValueChange={(v) =>
-												setValue("category", v as "imovel" | "auto" | "moto" | "servicos", {
+												setValue("category", v as "imovel" | "auto" | "moto", {
 													shouldValidate: true,
 												})
 											}
@@ -172,7 +171,6 @@ export function PersonaCreateForm() {
 											<SelectContent>
 												<SelectItem value="imovel">Imóvel</SelectItem>
 												<SelectItem value="auto">Automóvel</SelectItem>
-												<SelectItem value="servicos">Serviços</SelectItem>
 											</SelectContent>
 										</Select>
 										{errors.category?.message && (

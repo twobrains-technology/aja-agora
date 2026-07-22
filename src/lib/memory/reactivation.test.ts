@@ -222,9 +222,9 @@ describe("buildMemorySystemMessage", () => {
 		expect(out).not.toContain("Hit 5");
 	});
 
-	it("category 'servicos' é renderizada com acento", () => {
-		const out = buildMemorySystemMessage(ctx({ block: { ...emptyBlock, category: "servicos" } }));
-		expect(out).toContain("Categoria de interesse: serviços");
+	it("category 'imovel' é renderizada com acento", () => {
+		const out = buildMemorySystemMessage(ctx({ block: { ...emptyBlock, category: "imovel" } }));
+		expect(out).toContain("Categoria de interesse: imóvel");
 	});
 
 	it("objections array é renderizado como linha 'Objeções já levantadas: x; y'", () => {

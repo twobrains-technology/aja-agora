@@ -90,7 +90,6 @@ const CATEGORY_TO_SEGMENT: Record<ConsorcioCategory, string> = {
 	imovel: "IMOVEL",
 	auto: "AUTOS",
 	moto: "MOTOS",
-	servicos: "SERVICOS",
 };
 
 export function categoryToBeviSegment(category: ConsorcioCategory | null | undefined): string {

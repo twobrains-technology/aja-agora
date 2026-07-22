@@ -24,14 +24,12 @@ const TYPICAL_TERM_MONTHS: Record<Category, number> = {
 	imovel: 200,
 	auto: 80,
 	moto: 72,
-	servicos: 40,
 };
 
 const TYPICAL_ADMIN_FEE_PCT: Record<Category, number> = {
 	imovel: 18.5,
 	auto: 15,
 	moto: 17,
-	servicos: 17.5,
 };
 
 export interface PlanEstimateInput {

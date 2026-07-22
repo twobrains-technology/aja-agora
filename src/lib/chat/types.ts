@@ -5,7 +5,7 @@
 export interface GroupCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -40,7 +40,7 @@ export interface ComparisonTablePayload {
 export interface SimulationResultPayload {
 	groupId: string;
 	administradora: string;
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFee: number;
@@ -78,7 +78,7 @@ export interface SimulationResultPayload {
 export interface RecommendationCardPayload {
 	id: string;
 	administradora: string;
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	monthlyPayment: number;
 	adminFeePercent: number;
@@ -167,7 +167,7 @@ export interface ValuePickerField {
 }
 
 export interface ValuePickerPayload {
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	fields: ValuePickerField[];
 }
 
@@ -207,7 +207,7 @@ export interface ScenariosPayload {
 // ---- Comparador consórcio × financiamento (#17) ----
 
 export interface FinancingComparisonPayload {
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	termMonths: number;
 	consorcio: { monthlyPayment: number; totalCost: number };
@@ -276,7 +276,7 @@ export interface RealOfferPayload {
 	proposalId: string;
 	administradora: string;
 	grupo: string;
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	/** Pode vir null/ausente — a API da Bevi mudou o shape (BUG-PARCELA-STRING
 	 * 2026-06-12); o card omite a linha em vez de morrer. */
@@ -360,7 +360,7 @@ export interface DocumentUploadPayload {
  * inputs-base + a posição inicial. */
 export interface ContemplationDialPayload {
 	administradora?: string;
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	creditValue: number;
 	termMonths: number;
 	monthlyPayment: number;

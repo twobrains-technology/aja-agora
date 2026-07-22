@@ -33,7 +33,6 @@ type PersonaListItem = {
 const CATEGORY_LABEL: Record<string, string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
-	servicos: "Serviços",
 };
 
 function categoryDisplay(p: PersonaListItem): string {

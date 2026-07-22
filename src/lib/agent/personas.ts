@@ -6,7 +6,7 @@ export type Persona = string;
 
 // The 3 specialist categories the consórcio platform supports.
 // Concierge persona has category=null.
-export type Category = "imovel" | "auto" | "moto" | "servicos";
+export type Category = "imovel" | "auto" | "moto";
 
 export type ExpertiseLevel = "leigo" | "expert" | "neutro";
 export type ExperiencePrev = "first" | "returning" | "doubts";
@@ -370,5 +370,4 @@ export const ROUTABLE_CATEGORIES = [
 	"imovel",
 	"auto",
 	"moto",
-	"servicos",
 ] as const satisfies readonly Category[];

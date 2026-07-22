@@ -32,7 +32,6 @@ const CATEGORY_LABEL: Record<RealOfferPayload["category"], string> = {
 	imovel: "IMÓVEL",
 	auto: "AUTOS",
 	moto: "MOTOS",
-	servicos: "SERVIÇOS",
 };
 
 const CONFIANCA = [

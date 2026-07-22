@@ -149,7 +149,7 @@ export interface ProposalStatus {
 	}>;
 }
 
-/** Categoria de domínio (4) a partir do segmento Bevi (6). PESADOS→auto, OUTROS BENS→servicos. */
+/** Categoria de domínio (3) a partir do segmento Bevi (6). PESADOS/SERVICOS/OUTROS BENS→auto. */
 export type { ConsorcioCategory };
 
 export interface FinalizeResult {
