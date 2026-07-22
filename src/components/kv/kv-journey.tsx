@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { SunMark } from "@/components/brand/sun-mark";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
@@ -20,8 +19,6 @@ type JourneyStep = {
 	 */
 	iconX: number;
 	iconY: number;
-	/** Desktop: topo do bloco de texto (a pilha é centrada no eixo do ícone). */
-	textY: number;
 	/** Desktop: largura da coluna de texto (escala do Figma) no mesmo canvas. */
 	textW: number;
 };
@@ -47,6 +44,27 @@ const BURST_CENTER_WITH_CONNECTOR = 104;
 const CANVAS_W = 1240;
 const CANVAS_H = 680;
 
+// Ícone (desktop) e o gap fixo texto↔ícone (Figma Frame 111, auto V gap: 15).
+// O bloco de texto de cada passo é ancorado pelo lado OPOSTO ao ícone (pico =
+// texto acima → ancora por `bottom`; vale = texto abaixo → ancora por `top`),
+// nunca pelo lado que cresce em direção ao ícone. Isso garante o mesmo gap em
+// todos os passos, mesmo com descrições de tamanhos diferentes (uma pilha mais
+// alta cresce pra LONGE do ícone, não em cima dele — antes disso, alguns
+// textos mais longos ficavam colados no ícone).
+const DESKTOP_ICON_SIZE = 90;
+const DESKTOP_ICON_RADIUS = DESKTOP_ICON_SIZE / 2;
+const TEXT_ICON_GAP = 15;
+
+// journey-aja-badge.svg (passo "Desenrolamos"): asset final com sombra própria
+// embutida (filter no SVG) — viewBox 161x161, círculo navy <circle cx="80.5"
+// cy="68.5" r="52.5"/> NÃO centralizado no canvas (sombra bleeds mais embaixo).
+// StepCircle usa esses valores pra reposicionar a SVG de volta ao centro de
+// uma caixa `size`×`size`, igual aos outros ícones (ver comentário lá).
+const AJA_BADGE_VIEWBOX = 161;
+const AJA_BADGE_CIRCLE_DIAMETER = 105;
+const AJA_BADGE_CIRCLE_CX = 80.5;
+const AJA_BADGE_CIRCLE_CY = 68.5;
+
 // Ordem fiel ao blueprint (frame "Jornada - Como Funciona"):
 // objetivo → analisamos (Desenrolamos) → fundo comum → sorteio/lance →
 // carta de crédito → objetivo realizado. Os centros dos ícones formam um
@@ -59,10 +77,6 @@ const STEPS: JourneyStep[] = [
 		emoji: "🎯",
 		iconX: 200,
 		iconY: 300,
-		// Figma (Frame 111, auto V gap:15): o texto fica ACIMA do ícone com
-		// ~15px de folga — nunca sobreposto. Com o título em 1 linha (nowrap),
-		// a pilha termina em ~227px, deixando o círculo (topo em 255) livre.
-		textY: 90,
 		textW: 220,
 	},
 	{
@@ -74,7 +88,6 @@ const STEPS: JourneyStep[] = [
 		brand: true,
 		iconX: 310,
 		iconY: 432,
-		textY: 488,
 		textW: 341,
 	},
 	{
@@ -85,7 +98,6 @@ const STEPS: JourneyStep[] = [
 		emoji: "🤝",
 		iconX: 515,
 		iconY: 217,
-		textY: 11,
 		textW: 364,
 	},
 	{
@@ -95,7 +107,6 @@ const STEPS: JourneyStep[] = [
 		emoji: "🚀",
 		iconX: 726,
 		iconY: 456,
-		textY: 511,
 		textW: 278,
 	},
 	{
@@ -105,7 +116,6 @@ const STEPS: JourneyStep[] = [
 		emoji: "💳",
 		iconX: 931,
 		iconY: 178,
-		textY: 13,
 		textW: 269,
 	},
 	{
@@ -116,33 +126,9 @@ const STEPS: JourneyStep[] = [
 		emoji: "🏆",
 		iconX: 1030,
 		iconY: 356,
-		textY: 426,
 		textW: 255,
 	},
 ];
-
-// "AJA" — glifos reais da marca (mesmos vetores do lockup, top-row do wordmark),
-// usados dentro do círculo navy sob o sol. Sem depender de fonte.
-function AjaGlyphs({ className }: { className?: string }) {
-	return (
-		<svg viewBox="168 163 533 162" fill="#fff" aria-hidden="true" className={className}>
-			<polygon points="215.29 323.78 275.58 214.54 335.47 323.78 382.3 323.78 294.76 166.11 255.64 166.11 168.87 323.78 215.29 323.78" />
-			<path d="M456.44,163.77v60.32c0,33.62-27.35,60.97-60.97,60.97-7.1,0-13.89-1.28-20.21-3.55l-.35.35,23.13,41.67c53.7-1.38,96.99-45.4,96.99-99.44v-60.32h-38.6Z" />
-			<polygon points="533.64 323.22 593.94 213.98 653.82 323.22 700.65 323.22 613.12 165.55 573.99 165.55 487.22 323.22 533.64 323.22" />
-		</svg>
-	);
-}
-
-// Marca AJA branca (raios + "AJA") centralizada no círculo navy — reproduz o
-// Group 125 do Figma (Group 124 raios + Group 122 letras). NÃO é o SunMark solto.
-function AjaBrandMark() {
-	return (
-		<span className="flex flex-col items-center justify-center leading-none">
-			<SunMark variant="white" aria-hidden="true" className="w-[54%]" />
-			<AjaGlyphs className="-mt-[1px] w-[50%]" />
-		</span>
-	);
-}
 
 // Corpo do passo com a palavra-chave em coral (Figma: "adequado" / "Sonho").
 function StepDescription({ text, emphasis }: { text: string; emphasis?: string }): ReactNode {
@@ -158,15 +144,30 @@ function StepDescription({ text, emphasis }: { text: string; emphasis?: string }
 	);
 }
 
-// Círculo do ícone (branco + emoji, ou navy + marca AJA no passo Desenrolamos).
+// Círculo do ícone (branco + emoji, ou o badge AJA no passo Desenrolamos).
 function StepCircle({ step, size }: { step: JourneyStep; size: number }) {
 	if (step.brand) {
+		// Caixa exata `size`×`size` (igual aos outros ícones) — a SVG (maior, pra
+		// caber a sombra) fica absoluta dentro dela, deslocada pra que o círculo
+		// navy (não centralizado no viewBox) caia bem no centro da caixa. Sem
+		// isso, o ícone ficava maior que os outros e com espaçamento de texto
+		// diferente (o gap é calculado em cima do centro/raio desta caixa).
+		const badgeSize = size * (AJA_BADGE_VIEWBOX / AJA_BADGE_CIRCLE_DIAMETER);
+		const offsetLeft = size * (0.5 - AJA_BADGE_CIRCLE_CX / AJA_BADGE_CIRCLE_DIAMETER);
+		const offsetTop = size * (0.5 - AJA_BADGE_CIRCLE_CY / AJA_BADGE_CIRCLE_DIAMETER);
 		return (
-			<div
-				className={`flex items-center justify-center rounded-full bg-[#052440] ${CARD_SHADOW}`}
-				style={{ width: size, height: size }}
-			>
-				<AjaBrandMark />
+			<div className="relative" style={{ width: size, height: size }}>
+				{/* biome-ignore lint/performance/noImgElement: SVG estático com sombra própria embutida */}
+				<img
+					src="/kv/journey-aja-badge.svg"
+					alt=""
+					aria-hidden="true"
+					// max-w-none: o Preflight do Tailwind põe `max-width:100%` em <img> —
+					// como essa SVG é DELIBERADAMENTE maior que a caixa `size` que a
+					// contém (pra caber a sombra), esse limite encolhia o círculo junto.
+					className="absolute max-w-none"
+					style={{ width: badgeSize, height: badgeSize, left: offsetLeft, top: offsetTop }}
+				/>
 			</div>
 		);
 	}
@@ -203,7 +204,7 @@ const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 // e abaixo (vales).
 export function KvJourney() {
 	return (
-		<section className="relative overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3] py-14 lg:py-28">
+		<section className="relative overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3] py-6 lg:py-8">
 			{/* Blobs rosa de fundo (mobile) */}
 			<div
 				aria-hidden="true"
@@ -224,7 +225,7 @@ export function KvJourney() {
 				</div>
 
 				{/* Mobile/tablet (<lg): coluna única, conector vertical entre os passos */}
-				<ol className="relative mt-10 flex flex-col items-center lg:hidden">
+				<ol className="relative mt-8 flex flex-col items-center lg:hidden">
 					{STEPS.map((step, index) => (
 						<li key={step.title} className="relative flex flex-col items-center text-center">
 							{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
@@ -297,30 +298,40 @@ export function KvJourney() {
 								top: `${(step.iconY / CANVAS_H) * 100}%`,
 							}}
 						>
-							<StepCircle step={step} size={90} />
+							<StepCircle step={step} size={DESKTOP_ICON_SIZE} />
 						</div>
 					))}
 
-					{/* Blocos de texto */}
-					{STEPS.map((step) => (
-						<div
-							key={`text-${step.title}`}
-							className="absolute z-10 -translate-x-1/2 text-center"
-							style={{
-								left: `${(step.iconX / CANVAS_W) * 100}%`,
-								top: `${(step.textY / CANVAS_H) * 100}%`,
-								width: `${(step.textW / CANVAS_W) * 100}%`,
-							}}
-						>
-							<KvEyebrow className="leading-normal">{step.eyebrow}</KvEyebrow>
-							<h3 className="mt-2 whitespace-nowrap text-[27px] font-normal leading-[32px] text-[#052440]">
-								{step.title}
-							</h3>
-							<p className="mt-3 text-[14px] leading-[23px] text-[#2D2D2D]">
-								<StepDescription text={step.description} emphasis={step.emphasis} />
-							</p>
-						</div>
-					))}
+					{/* Blocos de texto — pico (índice par) ancora pelo `bottom` e cresce
+					    pra cima; vale (índice ímpar) ancora pelo `top` e cresce pra baixo.
+					    Nunca o lado que cresceria em direção ao ícone. */}
+					{STEPS.map((step, index) => {
+						const isAbove = index % 2 === 0;
+						const edgeY = isAbove
+							? step.iconY - DESKTOP_ICON_RADIUS - TEXT_ICON_GAP
+							: step.iconY + DESKTOP_ICON_RADIUS + TEXT_ICON_GAP;
+						return (
+							<div
+								key={`text-${step.title}`}
+								className="absolute z-10 -translate-x-1/2 text-center"
+								style={{
+									left: `${(step.iconX / CANVAS_W) * 100}%`,
+									width: `${(step.textW / CANVAS_W) * 100}%`,
+									...(isAbove
+										? { bottom: `${((CANVAS_H - edgeY) / CANVAS_H) * 100}%` }
+										: { top: `${(edgeY / CANVAS_H) * 100}%` }),
+								}}
+							>
+								<KvEyebrow className="leading-normal">{step.eyebrow}</KvEyebrow>
+								<h3 className="mt-2 whitespace-nowrap text-[27px] font-normal leading-[32px] text-[#052440]">
+									{step.title}
+								</h3>
+								<p className="mt-3 text-[14px] leading-[23px] text-[#2D2D2D]">
+									<StepDescription text={step.description} emphasis={step.emphasis} />
+								</p>
+							</div>
+						);
+					})}
 				</div>
 			</KvContainer>
 		</section>

@@ -1,7 +1,8 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
@@ -201,60 +202,197 @@ function waitForScrollSettle(el: HTMLElement, onSettle: () => void, signal: Abor
 	requestAnimationFrame(check);
 }
 
+// Variante usada só pro reset do loop (ver comentário acima): ao invés de
+// esperar 2 frames ESTÁVEIS (que deixa o navegador pintar o card clonado já
+// parado por um instante antes do salto — visível como um "flick" seco, bem
+// diferente do resto que anda suave), dispara assim que `scrollLeft` CHEGA no
+// alvo, e faz o reset na MESMA rAF, antes do navegador pintar esse frame. Como
+// `el.scrollLeft = x` é síncrono e cancela qualquer scroll suave em andamento,
+// o navegador nunca chega a pintar o card clonado parado — a troca pro card
+// real equivalente (pixel-a-pixel igual) acontece antes do primeiro paint.
+function waitForScrollArrival(
+	el: HTMLElement,
+	target: number,
+	onArrive: () => void,
+	signal: AbortSignal,
+) {
+	const check = () => {
+		if (signal.aborted) return;
+		if (Math.abs(el.scrollLeft - target) < 1) {
+			onArrive();
+			return;
+		}
+		requestAnimationFrame(check);
+	};
+
+	requestAnimationFrame(check);
+}
+
 function CriteriosCarousel() {
 	const listRef = useRef<HTMLUListElement>(null);
+	const settleAbortRef = useRef<AbortController | null>(null);
+	const dragRef = useRef<{ pointerId: number; startX: number; startScrollLeft: number } | null>(
+		null,
+	);
 	const [isHovered, setIsHovered] = useState(false);
+	const [isDragging, setIsDragging] = useState(false);
 
 	useEffect(() => {
 		listRef.current?.scrollTo({ left: CARROSSEL_CARD_STEP });
+		return () => settleAbortRef.current?.abort();
+	}, []);
+
+	// Avança (direction: 1) ou volta (direction: -1) um card. Compartilhada
+	// pelo autoplay e pelas setas de navegação pra não duplicar a lógica de
+	// reset sem glitch ao passar do trecho clonado (ver comentário acima de
+	// `waitForScrollSettle`). Voltar não usa clone/loop: trava em index 0, já
+	// que só o final da lista tem trecho duplicado.
+	//
+	// Espera o scroll assentar ANTES de ler `scrollLeft` — depois de um scroll
+	// manual (roda do mouse/trackpad), o snap-mandatory do CSS ainda pode estar
+	// puxando o carrossel pro card mais próximo quando o autoplay tenta avançar.
+	// Ler `scrollLeft` nesse meio-tempo dava um índice errado, que combinado
+	// entre vários ticks acabava dando gatilho cedo demais no reset do loop —
+	// o carrossel "voltava" pro primeiro card em vez de só avançar 1.
+	const advance = useCallback((direction: 1 | -1) => {
+		const list = listRef.current;
+		if (!list) return;
+
+		settleAbortRef.current?.abort();
+		const controller = new AbortController();
+		settleAbortRef.current = controller;
+
+		waitForScrollSettle(
+			list,
+			() => {
+				const currentIndex = Math.round(list.scrollLeft / CARROSSEL_CARD_STEP);
+				const nextIndex = direction > 0 ? currentIndex + 1 : Math.max(0, currentIndex - 1);
+				list.scrollTo({ left: nextIndex * CARROSSEL_CARD_STEP, behavior: "smooth" });
+
+				if (direction > 0 && nextIndex >= CRITERIOS.length) {
+					const wrapController = new AbortController();
+					settleAbortRef.current = wrapController;
+					waitForScrollArrival(
+						list,
+						nextIndex * CARROSSEL_CARD_STEP,
+						() => {
+							list.scrollLeft = (nextIndex - CRITERIOS.length) * CARROSSEL_CARD_STEP;
+						},
+						wrapController.signal,
+					);
+				}
+			},
+			controller.signal,
+		);
 	}, []);
 
 	useEffect(() => {
 		if (isHovered) return;
+		const id = window.setInterval(() => advance(1), CARROSSEL_AUTOPLAY_MS);
+		return () => window.clearInterval(id);
+	}, [isHovered, advance]);
+
+	// Ao soltar o arraste, encaixa no card mais próximo. Se o arraste terminou
+	// dentro do trecho clonado, remapeia na hora pro card real equivalente (mesmo
+	// truque "antes do paint" do reset do loop) — sem isso, arrastar até o fim
+	// deixava o índice "público" preso no trecho clonado, e o próximo avanço do
+	// autoplay tentava mirar um scrollLeft além do conteúdo real (sem mais pra
+	// onde crescer).
+	function snapToNearest() {
 		const list = listRef.current;
 		if (!list) return;
+		const nearestIndex = Math.round(list.scrollLeft / CARROSSEL_CARD_STEP);
+		if (nearestIndex >= CRITERIOS.length) {
+			list.scrollLeft = (nearestIndex - CRITERIOS.length) * CARROSSEL_CARD_STEP;
+			return;
+		}
+		list.scrollTo({ left: nearestIndex * CARROSSEL_CARD_STEP, behavior: "smooth" });
+	}
 
-		const controller = new AbortController();
-		const id = window.setInterval(() => {
-			const currentIndex = Math.round(list.scrollLeft / CARROSSEL_CARD_STEP);
-			const nextIndex = currentIndex + 1;
-			list.scrollTo({ left: nextIndex * CARROSSEL_CARD_STEP, behavior: "smooth" });
-
-			if (nextIndex >= CRITERIOS.length) {
-				waitForScrollSettle(
-					list,
-					() => {
-						list.scrollTo({
-							left: (nextIndex - CRITERIOS.length) * CARROSSEL_CARD_STEP,
-							behavior: "instant",
-						});
-					},
-					controller.signal,
-				);
-			}
-		}, CARROSSEL_AUTOPLAY_MS);
-
-		return () => {
-			window.clearInterval(id);
-			controller.abort();
+	// Arraste com o mouse (só ponteiro tipo "mouse" — touch/trackpad já rolam
+	// nativamente via overflow-x-auto, não precisam disso). `dragRef` fica fora
+	// do React state de propósito: pointermove dispara a cada frame, e colocar
+	// isso em state re-renderizaria o componente a cada pixel arrastado.
+	function handlePointerDown(e: React.PointerEvent<HTMLUListElement>) {
+		if (e.pointerType !== "mouse" || e.button !== 0) return;
+		const list = listRef.current;
+		if (!list) return;
+		dragRef.current = {
+			pointerId: e.pointerId,
+			startX: e.clientX,
+			startScrollLeft: list.scrollLeft,
 		};
-	}, [isHovered]);
+		list.setPointerCapture(e.pointerId);
+		// snap-mandatory disputa com o `scrollLeft` do arraste (o navegador tenta
+		// puxar de volta pro card mais próximo a cada frame) — sem desligar durante
+		// o arraste, o conteúdo "teleporta" entre cards em vez de seguir o mouse.
+		setIsDragging(true);
+	}
+
+	function handlePointerMove(e: React.PointerEvent<HTMLUListElement>) {
+		const drag = dragRef.current;
+		const list = listRef.current;
+		if (!drag || !list || drag.pointerId !== e.pointerId) return;
+		list.scrollLeft = drag.startScrollLeft - (e.clientX - drag.startX);
+	}
+
+	function handlePointerUp(e: React.PointerEvent<HTMLUListElement>) {
+		const list = listRef.current;
+		if (!dragRef.current || dragRef.current.pointerId !== e.pointerId) return;
+		dragRef.current = null;
+		list?.releasePointerCapture(e.pointerId);
+		setIsDragging(false);
+		snapToNearest();
+	}
 
 	return (
-		<ul
-			ref={listRef}
-			aria-label="Critérios que a AJA compara"
+		// biome-ignore lint/a11y/noStaticElementInteractions: só rastreia hover pra pausar o autoplay (mesmo comportamento de antes, agora cobrindo também as setas); não é um controle interativo em si.
+		<div
+			className="relative"
 			onMouseEnter={() => setIsHovered(true)}
 			onMouseLeave={() => setIsHovered(false)}
-			className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 		>
-			{CRITERIOS.map((criterio) => (
-				<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
-			))}
-			{CRITERIOS.map((criterio) => (
-				<CriterioCardItem key={`${criterio.id}-clone`} criterio={criterio} size="lg" aria-hidden />
-			))}
-		</ul>
+			<ul
+				ref={listRef}
+				aria-label="Critérios que a AJA compara"
+				onPointerDown={handlePointerDown}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerUp}
+				onPointerCancel={handlePointerUp}
+				className={`flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-grab select-none active:cursor-grabbing ${
+					isDragging ? "snap-none" : "snap-x snap-mandatory"
+				}`}
+			>
+				{CRITERIOS.map((criterio) => (
+					<CriterioCardItem key={criterio.id} criterio={criterio} size="lg" />
+				))}
+				{CRITERIOS.map((criterio) => (
+					<CriterioCardItem
+						key={`${criterio.id}-clone`}
+						criterio={criterio}
+						size="lg"
+						aria-hidden
+					/>
+				))}
+			</ul>
+
+			<button
+				type="button"
+				aria-label="Ver critério anterior"
+				onClick={() => advance(-1)}
+				className={`absolute left-2 top-1/2 z-20 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-[#FFFFFF] text-[#021628] transition hover:bg-[#F1F1DA] ${CARD_SHADOW}`}
+			>
+				<ChevronLeft className="size-5" strokeWidth={2.5} />
+			</button>
+			<button
+				type="button"
+				aria-label="Ver próximo critério"
+				onClick={() => advance(1)}
+				className={`absolute right-2 top-1/2 z-20 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-[#FFFFFF] text-[#021628] transition hover:bg-[#F1F1DA] ${CARD_SHADOW}`}
+			>
+				<ChevronRight className="size-5" strokeWidth={2.5} />
+			</button>
+		</div>
 	);
 }
 
@@ -320,7 +458,7 @@ export function KvConfianca() {
 
 			{/* DESKTOP (≥lg) */}
 			<div className="hidden lg:block">
-				<KvContainer className="max-w-[1280px] py-20 md:py-28">
+				<KvContainer className="max-w-[1280px] py-6 md:py-8">
 					{/* Painel coral: headline + subtítulo. Figma: banner 1234x242 (r:12), título
 					    844px de largura quebrando em 2 linhas ("Como a AJA compara as melhores /
 					    alternativas para você...."), padding topo ~37 / base ~11. */}
@@ -358,7 +496,12 @@ export function KvConfianca() {
 					    raios navy sutis (Group 43) numa camada interna overflow-hidden; a muda é um
 					    overlay absoluto ancorado à base do painel, com o topo transbordando ~1/3 da
 					    própria altura pra faixa bege acima (gesto-assinatura do Figma). */}
-					<div className="relative mt-8 md:mt-10">
+					{/* z-10: garante que o painel navy (+ muda) sempre fique ACIMA do blob
+					    decorativo da seção seguinte (KvComparacao), que vaza pra cima sem
+					    z-index próprio — sem isso a ordem de empilhamento por DOM (seção
+					    seguinte depois = por cima, por padrão) deixava o blob cobrindo o
+					    painel. */}
+					<div className="relative z-10 mt-8 md:mt-10">
 						<div className="relative flex flex-col gap-8 rounded-[12px] bg-[#021628] px-8 py-10 md:flex-row md:items-center md:gap-10 md:px-12 md:py-14">
 							{/* Raios brancos sutis (mesmo SVG do mobile) atrás da muda, recortados
 							    ao retângulo #021628: leque discreto, não dominante. */}

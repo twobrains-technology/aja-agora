@@ -26,6 +26,12 @@ type TipoCard = {
 	image: {
 		src: string;
 		alt: string;
+		/** Zoom manual do cutout dentro da caixa — classes Tailwind de `scale-*`
+		 *  literais (ex: "scale-110", ou responsivo "scale-125 md:scale-100").
+		 *  Precisa ser Tailwind válido pra classe ser gerada (nada de string
+		 *  interpolada/arbitrária calculada em runtime). Ajusta aqui pra afinar o
+		 *  "peso visual" entre os cards sem precisar reabrir o PNG num editor. */
+		scaleClassName?: string;
 	} | null;
 	/** Decoração coral atrás do cutout — SVG dedicado ao tipo (Imóvel: fita
 	 *  diagonal; Moto: anel), como em Home.png. Sem `decoration` (Carro, ainda
@@ -56,6 +62,13 @@ const CARDS: TipoCard[] = [
 		image: {
 			src: "image-3.png",
 			alt: "Carro em estrada ao entardecer",
+			// Carro é limitado pela LARGURA da caixa (sua foto é bem mais larga que
+			// alta); no mobile a caixa tem altura fixa mas largura variável (coluna
+			// única), então o carro encolhe (largura E altura) em telas estreitas
+			// enquanto casa/moto (limitados pela altura) não mudam — ficava baixo
+			// demais perto dos outros dois. scale-110 só no mobile compensa; md
+			// volta pro ajuste normal de desktop.
+			scaleClassName: "scale-110 md:scale-90",
 		},
 		decoration: {
 			src: "tipo-carro.svg",
@@ -78,6 +91,9 @@ const CARDS: TipoCard[] = [
 		image: {
 			src: "image-1.png",
 			alt: "Casa própria conquistada",
+			// Limitado pela ALTURA (mesma nos dois breakpoints) — sem o problema
+			// de encolher no mobile que o carro tinha, não precisa de responsivo.
+			scaleClassName: "scale-110",
 		},
 		decoration: {
 			src: "tipo-imovel.svg",
@@ -97,6 +113,7 @@ const CARDS: TipoCard[] = [
 		image: {
 			src: "image-2.png",
 			alt: "Motocicleta em destaque",
+			scaleClassName: "scale-110",
 		},
 		decoration: {
 			src: "tipo-moto.svg",
@@ -119,17 +136,25 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 			aria-labelledby="tipos-consorcio-heading"
 			className="relative w-full overflow-hidden bg-[#021628]"
 		>
-			{/* Ornamentos navy tone-on-tone do painel — sutis, atrás de todo o conteúdo. */}
-			<div
+			{/* Ornamento navy tone-on-tone do painel — sutil, atrás de todo o conteúdo.
+			    Mesmo vetor nos dois cantos: canto superior esquerdo normal, canto
+			    inferior direito espelhado (rotate-180 = mirror nos dois eixos). */}
+			{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+			<img
 				aria-hidden="true"
-				className="pointer-events-none absolute left-[16%] top-0 z-0 h-[38%] w-[13%] rounded-b-[64px] bg-[#1C2E3E] md:left-[19%] md:w-[12%]"
+				src={`${KV}/tipos-vetor.svg`}
+				alt=""
+				className="pointer-events-none absolute -left-10 -top-10 z-0 h-auto w-[380px] md:w-[560px]"
 			/>
-			<div
+			{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
+			<img
 				aria-hidden="true"
-				className="pointer-events-none absolute -bottom-[8%] right-[6%] z-0 h-[28%] w-[20%] rounded-t-[64px] bg-[#1C2E3E] md:right-[8%] md:w-[19%]"
+				src={`${KV}/tipos-vetor.svg`}
+				alt=""
+				className="pointer-events-none absolute -bottom-10 -right-10 z-0 h-auto w-[380px] rotate-180 md:w-[560px]"
 			/>
 
-			<KvContainer className="z-10 max-w-[1320px] py-16 md:py-24">
+			<KvContainer className="z-10 max-w-[1320px] py-6 md:py-8">
 				<div className="mx-auto max-w-[820px] text-center">
 					<KvEyebrow>QUAL É O SEU OBJETIVO</KvEyebrow>
 					<h2
@@ -140,7 +165,7 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 					</h2>
 				</div>
 
-				<div className="mt-12 grid gap-4 md:mt-16 md:grid-cols-3">
+				<div className="mt-8 grid gap-4 md:mt-10 md:grid-cols-3">
 					{CARDS.map((card) => (
 						<article
 							key={card.id}
@@ -164,8 +189,12 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 										</div>
 									) : null}
 									{/* Cutout transparente FLUTUANDO sobre o coral: object-contain, sem caixa
-									    retangular, sem crop. */}
-									<div className="absolute inset-x-6 inset-y-4 z-10">
+									    retangular, sem crop. `scaleClassName` (opcional, por card) aplica um
+									    zoom via classe Tailwind — não mexe no arquivo, só no "peso visual" na
+									    tela. Pode ser responsivo (ex: "scale-125 md:scale-90"). */}
+									<div
+										className={`absolute inset-x-6 inset-y-4 z-10 ${card.image.scaleClassName ?? ""}`}
+									>
 										<Image
 											src={`${KV}/${card.image.src}`}
 											alt={card.image.alt}

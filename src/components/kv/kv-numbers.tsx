@@ -80,7 +80,7 @@ export function KvNumbers() {
 					className="pointer-events-none absolute -right-[160px] -top-[100px] size-[450px] rounded-full bg-[#0C3357] opacity-30 blur-[100px]"
 				/>
 
-				<KvContainer className="max-w-[1240px] pb-16 pt-16 md:px-6 lg:px-0 md:pb-[119px] md:pt-[114px]">
+				<KvContainer className="max-w-[1240px] py-6 md:px-6 md:py-8 lg:px-0">
 					{/* Header */}
 					<div className="mx-auto flex flex-col items-center gap-4 text-center">
 						<KvEyebrow className="mx-auto max-w-[762px] tracking-[0.15em]">
@@ -96,7 +96,7 @@ export function KvNumbers() {
 					</div>
 
 					{/* Cards de métrica */}
-					<div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+					<div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
 						{metrics.map((metric) => (
 							<div
 								key={metric.label}

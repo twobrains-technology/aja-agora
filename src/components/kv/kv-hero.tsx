@@ -58,8 +58,11 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 		<section className="relative overflow-hidden bg-[#FAFAF3]">
 			{/* Blob navy desfocado (Figma 'Blob' 720x757 @(-236,635)) */}
 			<div className="pointer-events-none absolute -bottom-40 -left-40 size-[560px] rounded-full bg-[#021628] opacity-10 blur-[120px]" />
+			{/* Blob coral desfocado, canto superior direito (Figma: 720x756.67
+			    @(1021,-225), opacity .95, blur 334.8). */}
+			<div className="pointer-events-none absolute -top-[225px] -right-[301px] h-[757px] w-[720px] rounded-full bg-[#FFE0E3] opacity-95 blur-[335px]" />
 
-			<KvContainer className="grid max-w-[1240px] items-center gap-12 py-16 lg:grid-cols-[560px_1fr] lg:gap-[80px] lg:py-24">
+			<KvContainer className="grid max-w-[1240px] items-center gap-12 py-6 lg:grid-cols-[560px_1fr] lg:gap-[80px] lg:py-8">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
 					<span className="inline-flex items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3]">
@@ -134,73 +137,18 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					</div>
 				</div>
 
-				{/* Colagem de fotos */}
+				{/* Colagem de fotos — PNG único (tríptico + consultora + sunburst + balões
+				    já compostos na arte), substitui os componentes separados anteriores. */}
 				<div className="relative mx-auto aspect-[617/615] w-full max-w-[560px]">
-					{/* Tríptico de colunas ao fundo — carro · moto · casa (blueprint: 199/197/199
-					    largura, x 0/210/418 em 617, altura 492/615 ≈ 80%). */}
-					{[
-						{
-							src: "car-hero.jpg",
-							left: "0%",
-							pos: "object-center",
-						},
-						{ src: "moto-hero.jpg", left: "34%", pos: "object-center" },
-						{
-							src: "house-with-pool-house-background-1.jpg",
-							left: "67.7%",
-							pos: "object-[50%_42%]",
-						},
-					].map((col) => (
-						<div
-							key={col.src}
-							className="absolute top-0 z-10 h-[70%] w-[32.3%] overflow-hidden rounded-[12px]"
-							style={{ left: col.left }}
-						>
-							<Image
-								src={`${KV}/${col.src}`}
-								alt=""
-								fill
-								sizes="200px"
-								className={`object-cover ${col.pos}`}
-							/>
-						</div>
-					))}
-
-					{/* Recorte da consultora — elemento central dominante do key visual.
-					    object-cover num recorte quase-retrato amplia e centraliza a
-					    mulher, sobrepondo a metade inferior das fotos (como no Figma). */}
-					<div className="absolute left-1/2 top-[8%] z-20 h-[70%] w-[58%] -translate-x-1/2 overflow-hidden">
-						<Image
-							src={`${KV}/woman-hero.png`}
-							alt="Consultora da Aja Agora"
-							fill
-							sizes="440px"
-							className="object-cover object-top"
-						/>
-					</div>
-					{/* Sunburst coral (asset Figma) — na frente do tríptico (carro/moto/
-					    imóvel), atrás da consultora e dos balões. */}
-					{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
-					<img
-						src="/kv/hero-sunburst.svg"
-						alt=""
-						className="pointer-events-none absolute left-1/2 top-[69%] z-[15] w-[85%] -translate-x-1/2 -translate-y-1/2"
+					<Image
+						src={`${KV}/hero-collage.png`}
+						alt="Consultora da Aja Agora cercada por opções de carro, moto e imóvel, com balões de chat mostrando a conversa com o consórcio"
+						fill
+						sizes="(min-width: 1024px) 560px, 90vw"
+						priority
+						quality={100}
+						className="object-contain"
 					/>
-					{/* Balões de chat em escada (blueprint, coords no frame 581x555 @(28,60) →
-					    percentuais da colagem 617x615). Palavra-chave em Merriweather serif bold
-					    upright (<Em italic={false}>), corpo Poppins (branco) / Lato (azul). */}
-					<span className="absolute left-[7%] top-[55%] z-30 max-w-[55%] whitespace-normal rounded-2xl rounded-tl-[1px] bg-white px-3.5 py-2 text-[13px] text-[#1D174F] shadow-[0_8px_20px_-8px_rgba(2,22,40,.4)] sm:max-w-none sm:whitespace-nowrap sm:text-[15px] lg:text-[18px]">
-						Quero comprar um <Em italic={false}>imóvel</Em>. 🏠
-					</span>
-					<span className="absolute left-[31%] top-[64%] z-30 max-w-[62%] whitespace-normal rounded-2xl rounded-tr-[1px] bg-[#0E48B2] px-3.5 py-2 font-[family-name:var(--font-lato)] text-[13px] text-white shadow-[0_8px_20px_-8px_rgba(2,22,40,.4)] sm:max-w-none sm:whitespace-nowrap sm:text-[15px] lg:text-[18px]">
-						Aqui estão as <Em italic={false}>opções</Em> de consórcio... 🎯
-					</span>
-					<span className="absolute left-[7%] top-[73%] z-30 max-w-[55%] whitespace-normal rounded-2xl rounded-tl-[1px] bg-white px-3.5 py-2 text-[13px] text-[#1D174F] shadow-[0_8px_20px_-8px_rgba(2,22,40,.4)] sm:max-w-none sm:whitespace-nowrap sm:text-[15px] lg:text-[18px]">
-						Quero <Em italic={false}>simular</Em> as parcelas! 🗓️
-					</span>
-					<span className="absolute left-[27%] top-[82%] z-30 max-w-[62%] whitespace-normal rounded-2xl rounded-tr-[1px] bg-[#0E48B2] px-3.5 py-2 font-[family-name:var(--font-lato)] text-[13px] text-white shadow-[0_8px_20px_-8px_rgba(2,22,40,.4)] sm:max-w-none sm:whitespace-nowrap sm:text-[15px] lg:text-[18px]">
-						Quer considerar um <Em italic={false}>lance</Em> embutido? 📢
-					</span>
 				</div>
 			</KvContainer>
 		</section>

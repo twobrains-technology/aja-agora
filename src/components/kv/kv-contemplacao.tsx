@@ -172,7 +172,7 @@ export function KvContemplacao() {
 			{/* Blob coral desfocado atrás do header/1º card (mobile + tablet, até o breakpoint em que a colagem desktop assume) */}
 			<div className="pointer-events-none absolute left-[43%] top-[357px] size-[300px] -translate-x-1/2 rounded-full bg-[#FFE0E3] opacity-70 blur-[100px] xl:hidden" />
 
-			<KvContainer className="max-w-[1240px] px-5 pb-16 pt-2 md:px-8 lg:py-24">
+			<KvContainer className="max-w-[1240px] px-5 py-6 md:px-8 lg:py-8">
 				{/* Colagem absoluta (foto + card "Por Lance" flutuando) só cabe fiel ao
 				    Figma a partir de xl (1280px) — entre 1024-1279px ela vazava (card
 				    passava da borda, foto sobrepunha o texto). Abaixo de xl mantém o
@@ -199,7 +199,7 @@ export function KvContemplacao() {
 						    máscara quase quadrada (291x278), sem offset manual de crop cru. */}
 						<div className="relative mx-auto mb-3 mt-[39px] aspect-[291/278] w-full max-w-[291px] overflow-hidden rounded-[9px] xl:mt-0 xl:hidden">
 							<Image
-								src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.png`}
+								src={`${KV}/casal-contemplacao.png`}
 								alt="Casal feliz apertando a mão de corretor após ser contemplado"
 								fill
 								sizes="291px"
@@ -225,7 +225,7 @@ export function KvContemplacao() {
 					    caber CONTIDO sobre ela, como no Figma (foto desce além da base do card). */}
 					<div className="absolute right-0 top-0 z-0 hidden aspect-[638/814] h-[700px] overflow-hidden rounded-[12px] xl:block">
 						<Image
-							src={`${KV}/happy-couple-with-dog-shaking-hands-with-real-es.png`}
+							src={`${KV}/casal-contemplacao.png`}
 							alt="Casal feliz apertando a mão de corretor após ser contemplado"
 							fill
 							sizes="(min-width: 1280px) 549px, 100vw"
