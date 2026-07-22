@@ -11,8 +11,19 @@ import type { RecommendedOfferSnapshot } from "./dial-payload";
 // .embeddedBid.percent) — não a fração 0-1 do handoff original.
 const DEFAULT_MAX_EMBUTIDO_PCT = 30;
 
+// FIX-366 (bloco-i, campanha vendedor-matador-consorcio, ITEM 4): o disclaimer
+// só explicava o lado "crédito diminui" — faltava o lado que faz o cliente SEM
+// aporte hoje topar (o pedido literal do Kairo): a parcela fica ALTA até
+// contemplar, mas CAI depois porque o lance total (embutido + eventual
+// dinheiro) amortiza o saldo — mesma mecânica do dial (contemplation-dial.ts,
+// paymentAfterContemplation), aqui só o texto qualitativo que ancora a
+// explicação do modelo. Números exatos de antes/depois seguem vindo do dial;
+// este card não os recalcula (evita 2 fontes divergentes do mesmo dado).
 const EMBEDDED_BID_DISCLAIMER =
-	"O embutido sai da carta, então o crédito recebido diminui. Estimativa a partir dos dados da oferta.";
+	"O embutido sai da carta, então o crédito recebido diminui — mas ele antecipa a contemplação, " +
+	"e o lance (embutido + eventual dinheiro) amortiza o saldo depois dela: a parcela segue normal " +
+	"até contemplar e cai na sequência. Por isso, mesmo recebendo menos crédito agora, ainda pode " +
+	"valer a pena. Estimativa a partir dos dados da oferta.";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
