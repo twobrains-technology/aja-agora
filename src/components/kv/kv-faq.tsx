@@ -15,7 +15,7 @@ const FAQ_ITEMS = [
 	},
 	{
 		question: "Quanto tempo demora para ser contemplado?",
-		summary: "Depende do grupo e da estratégia — sorteio mensal ou lance antecipam.",
+		summary: "Sorteio mensal ou lance antecipam a contemplação.",
 		answer:
 			"Varia conforme o grupo, o valor do crédito e a estratégia usada. Todo mês há sorteio entre os participantes, e quem oferece lance aumenta as chances de ser contemplado antes do fim do prazo do plano.",
 	},
@@ -27,13 +27,13 @@ const FAQ_ITEMS = [
 	},
 	{
 		question: "Atrasei uma parcela do consórcio. E agora?",
-		summary: "Gera multa e juros, mas dá pra negociar com a administradora.",
+		summary: "Gera multa e juros; dá pra negociar com a administradora.",
 		answer:
 			"O atraso gera multa e juros conforme o contrato, mas não cancela sua participação automaticamente — é possível negociar diretamente com a administradora. Atrasos recorrentes podem levar à exclusão do grupo, com devolução dos valores pagos conforme as regras contratuais e da assembleia.",
 	},
 	{
 		question: "Posso vender minha carta de crédito?",
-		summary: "A cota pode ser transferida a outra pessoa, com aprovação da administradora.",
+		summary: "A cota pode ser transferida, com aprovação da administradora.",
 		answer:
 			"A carta de crédito em si não é vendida — ela representa o direito de uso vinculado ao seu CPF. O que é possível é transferir a cota (sua posição no grupo) para outra pessoa, mediante aprovação da administradora e assinatura de um termo de transferência.",
 	},
@@ -81,11 +81,11 @@ export function KvFaq() {
 									aria-controls={panelId}
 									className="flex min-h-[77px] w-full items-center justify-between gap-4 px-5 py-4 text-left md:px-[21px]"
 								>
-									<div className="flex flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-5">
+									<div className="flex flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-4">
 										<span className="text-[20px] font-normal leading-[1.2] text-[#052440] lg:shrink-0 lg:text-[32px] lg:leading-[38px]">
 											{item.question}
 										</span>
-										<span className="hidden max-w-[400px] text-[14px] font-light leading-5 text-[#6B6B66] lg:block">
+										<span className="hidden shrink-0 whitespace-nowrap text-[14px] font-light leading-5 text-[#6B6B66] lg:block">
 											{item.summary}
 										</span>
 									</div>

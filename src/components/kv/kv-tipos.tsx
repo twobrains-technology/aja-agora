@@ -68,7 +68,7 @@ const CARDS: TipoCard[] = [
 			// enquanto casa/moto (limitados pela altura) não mudam — ficava baixo
 			// demais perto dos outros dois. scale-110 só no mobile compensa; md
 			// volta pro ajuste normal de desktop.
-			scaleClassName: "scale-110 md:scale-90",
+			scaleClassName: "scale-110 translate-y-[20px] md:scale-90 md:translate-y-[20px]",
 		},
 		decoration: {
 			src: "tipo-carro.svg",
@@ -93,7 +93,7 @@ const CARDS: TipoCard[] = [
 			alt: "Casa própria conquistada",
 			// Limitado pela ALTURA (mesma nos dois breakpoints) — sem o problema
 			// de encolher no mobile que o carro tinha, não precisa de responsivo.
-			scaleClassName: "scale-110",
+			scaleClassName: "scale-75",
 		},
 		decoration: {
 			src: "tipo-imovel.svg",
@@ -113,7 +113,7 @@ const CARDS: TipoCard[] = [
 		image: {
 			src: "image-2.png",
 			alt: "Motocicleta em destaque",
-			scaleClassName: "scale-110",
+			scaleClassName: "scale-90",
 		},
 		decoration: {
 			src: "tipo-moto.svg",
