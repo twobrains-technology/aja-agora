@@ -42,7 +42,9 @@ import { enrichContractFormPayload } from "./contract-form-prefill";
 import {
 	coerceDialPayload,
 	offerSnapshotFromArtifact,
+	preserveAvailableSlotsAcrossResim,
 	type RecommendedOfferSnapshot,
+	resolveSnapshotAvailableSlots,
 } from "./dial-payload";
 import { extractDiscoveryCount } from "./discovery-count";
 import { coerceEmbeddedBidPayload } from "./embedded-bid-payload";
@@ -1448,6 +1450,23 @@ export async function* runAgentTurn(args: {
 		// recommendation_card aqui deixava o dial sem calibração (31% vs 24%).
 		const snapshotAnchorPayload = simulationPayload ?? recommendationPayload ?? groupCardPayload;
 		const offerSnapshot = offerSnapshotFromArtifact(snapshotAnchorPayload);
+		// FIX-367: `simulate_quota` nunca devolve `availableSlots` — quando o
+		// anchor acima é o simulation_result (prioridade pro par de lance), o
+		// número de vagas real (que veio no recommendation_card/group_card do
+		// MESMO turno) se perdia. Sem isso, o card de escassez pós-reveal
+		// (buildScarcityCard) ficava impossível de mostrar um número real mesmo
+		// com a Bevi trazendo o dado — não por falta de dado externo, por o
+		// código nunca propagar o que já tinha. Nunca inventa: cai pra undefined
+		// se nenhum dos dois payloads de busca trouxer o campo.
+		const availableSlots = resolveSnapshotAvailableSlots(
+			offerSnapshot,
+			recommendationPayload,
+			groupCardPayload,
+		);
+		const offerSnapshotWithSlots =
+			offerSnapshot && availableSlots != null
+				? { ...offerSnapshot, availableSlots }
+				: offerSnapshot;
 		await persistMeta(conversationId, {
 			...refreshed,
 			revealCompleted: true,
@@ -1461,7 +1480,7 @@ export async function* runAgentTurn(args: {
 			...(typeof refreshed.qualifyAnswers?.creditMax === "number"
 				? { discoveredCreditTarget: refreshed.qualifyAnswers.creditMax }
 				: {}),
-			...(offerSnapshot ? { recommendedOffer: offerSnapshot } : {}),
+			...(offerSnapshotWithSlots ? { recommendedOffer: offerSnapshotWithSlots } : {}),
 			// FIX-297: hero e simulação pendentes (guard hero-awaits-reco-consent) —
 			// sobrevivem no meta pra emissão determinística quando reco-consent
 			// resolver, muitos turnos depois (revealGroupsById já não existe fora
@@ -1551,9 +1570,18 @@ export async function* runAgentTurn(args: {
 					`[snapshot-whatif] FIX-265: what-if ${anchor.creditValue} não respaldado pelo texto do usuário — snapshot mantido em ${currentCredit} (conv=${conversationId})`,
 				);
 			} else {
+				// FIX-367: o `anchor` vem do simulation_result (what-if) — que nunca
+				// carrega `availableSlots` — e sobrescreveria o snapshot anterior
+				// apagando o número de vagas já conhecido. Preserva o valor prévio
+				// SÓ quando é o MESMO grupo (nunca herda de um grupo diferente).
+				const preservedSlots = preserveAvailableSlotsAcrossResim(
+					anchor,
+					refreshed.recommendedOffer,
+				);
 				await persistMeta(conversationId, {
 					...refreshed,
-					recommendedOffer: anchor,
+					recommendedOffer:
+						preservedSlots != null ? { ...anchor, availableSlots: preservedSlots } : anchor,
 					recommendedAdministradora: anchor.administradora ?? refreshed.recommendedAdministradora,
 				});
 			}

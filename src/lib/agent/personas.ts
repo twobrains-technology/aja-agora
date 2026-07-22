@@ -260,6 +260,12 @@ export type ConversationMetadata = {
 		 * R$ 183 mil e ninguém ligava os dois pontos. Nunca vira promessa de
 		 * contemplação — só comparação factual de posição. */
 		avgBidValue?: number;
+		/** FIX-367: vagas reais do grupo (Bevi `monthlyAwardedQuotas`), como veio
+		 * no recommendation_card/group_card do reveal — fonte ÚNICA do card de
+		 * escassez pós-reveal (buildScarcityCard). `simulate_quota` NUNCA devolve
+		 * esse campo; sem propagar aqui, o card ficava impossível de mostrar um
+		 * número real mesmo com a Bevi trazendo o dado. Nunca fabricado. */
+		availableSlots?: number;
 	};
 	/** A ESCOLHA está feita: o cliente já resolveu qual cota quer.
 	 *
