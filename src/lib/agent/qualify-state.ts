@@ -420,10 +420,13 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// fechar.
 		if (!meta.escolha && !meta.decisionDispatched) return "decision";
 		// O funil NÃO termina num estado mudo. Enquanto o formulário de
-		// contratação não apareceu (e o contrato não fechou), o próximo passo É
-		// ele — sem isto, a cascata caía em "search" (sem card, sem condução) e o
-		// agente encerrava a conversa educadamente com a venda na mão.
-		if (!meta.contractFormDispatched && meta.contractClosed !== true) return "contract";
+		// contratação não apareceu, o próximo passo É ele — sem isto, a cascata
+		// caía em "search" (sem card, sem condução) e o agente encerrava a
+		// conversa educadamente com a venda na mão. FIX-364: o check `!==
+		// contractClosed` que existia aqui morreu de redundante — o
+		// short-circuit no topo da função já garante contractClosed !== true
+		// neste ponto.
+		if (!meta.contractFormDispatched) return "contract";
 	}
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo
 }
