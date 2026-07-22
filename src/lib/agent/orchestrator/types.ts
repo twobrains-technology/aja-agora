@@ -99,7 +99,6 @@ export type TurnInput = {
 	 * `runAgentTurn` (runner.ts), agora exposto pro CHAMADOR de `runTurn`
 	 * (index.ts) escolher explicitamente, em vez de só a heurística interna.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: ToolChoice é genérico sobre o ToolSet do agent — repassado como-está até resolveAgent/buildAgent.
 	forceToolChoice?: "none";
 };
 

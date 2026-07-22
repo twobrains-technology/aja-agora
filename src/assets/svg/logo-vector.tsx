@@ -10,6 +10,7 @@ const LogoVector = (props: SVGAttributes<SVGElement>) => {
 			xmlns="http://www.w3.org/2000/svg"
 			{...props}
 		>
+			<title>Aja Agora</title>
 			{/* Geometric "A" */}
 			<path
 				d="M12 32L20 10L28 32"

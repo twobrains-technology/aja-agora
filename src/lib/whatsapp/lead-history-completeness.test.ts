@@ -59,7 +59,7 @@
  */
 
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ─── Mocks (TÊM que vir antes de qualquer import do código de produção) ─────
 

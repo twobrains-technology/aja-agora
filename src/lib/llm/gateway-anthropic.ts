@@ -5,8 +5,9 @@
 // O custom fetch resolve o SRV (Cloud Map, cache 30s) e reescreve só o host da
 // URL pro gateway, mantendo o path /v1/messages. Se o gateway não está
 // configurado/alcançável, vai direto pra Anthropic (fallback exige ANTHROPIC_API_KEY viva).
-import { createAnthropic } from "@ai-sdk/anthropic";
+
 import dns from "node:dns/promises";
+import { createAnthropic } from "@ai-sdk/anthropic";
 
 const SRV_CACHE_TTL_MS = 30_000;
 let _cache: { host: string; expiresAt: number } | null = null;
@@ -49,8 +50,7 @@ export function resetGatewayHostCache(): void {
 export const gatewayFetch: typeof globalThis.fetch = async (input, init) => {
 	const host = await resolveGatewayHost();
 	if (!host) return fetch(input, init);
-	const original =
-		typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+	const original = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
 	try {
 		const url = new URL(original);
 		url.protocol = "http:";

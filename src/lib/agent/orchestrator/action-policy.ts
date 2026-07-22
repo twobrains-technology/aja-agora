@@ -40,9 +40,7 @@ export type ActionPreconditionContext = {
 	allowedTools?: readonly string[];
 };
 
-export type PreconditionVerdict =
-	| { allow: true }
-	| { allow: false; directive: string };
+export type PreconditionVerdict = { allow: true } | { allow: false; directive: string };
 
 /**
  * FIX-179 — grupo real na Bevi mas nunca exibido em tela. Diretiva ACIONÁVEL
@@ -66,9 +64,7 @@ export function naoExibidoDirective(groupId: string, allowed?: readonly string[]
 		"present_group_card",
 		"present_recommendation_card",
 	];
-	const disponiveis = allowed
-		? REAPRESENTACAO.filter((t) => allowed.includes(t))
-		: REAPRESENTACAO;
+	const disponiveis = allowed ? REAPRESENTACAO.filter((t) => allowed.includes(t)) : REAPRESENTACAO;
 	const comum =
 		`O grupo "${groupId}" nao foi exibido em tela pro usuario nesta conversa. ` +
 		"PROIBIDO neste turno: negar que a administradora/opcao existe (se o usuario a citou pelo nome, " +

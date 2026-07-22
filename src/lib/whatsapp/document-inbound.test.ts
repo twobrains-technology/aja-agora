@@ -106,10 +106,7 @@ describe("FIX-122 — handleDocumentInbound (paridade com o web: mesmo uploadCon
 		await handleDocumentInbound({ from: "5562999", mediaId: "M2" }, deps);
 
 		expect(uploads[0].input.slot).toBe("identidade_verso");
-		expect(persisted[0]?.meta.documentSlotsSent).toEqual([
-			"identidade_frente",
-			"identidade_verso",
-		]);
+		expect(persisted[0]?.meta.documentSlotsSent).toEqual(["identidade_frente", "identidade_verso"]);
 		// FIX-216 (Ata 2026-07-04): "reserva confirmada", nunca "ficha completa".
 		expect(replies[0].toLowerCase()).toContain("confirmada");
 	});

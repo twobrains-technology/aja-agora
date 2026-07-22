@@ -12,7 +12,12 @@
 				"name": "Simulação",
 				"order": 5,
 				"state": "init",
-				"stepType": { "slug": "simulation", "label": "Simulação", "stepTypeCode": 80, "unique": true },
+				"stepType": {
+					"slug": "simulation",
+					"label": "Simulação",
+					"stepTypeCode": 80,
+					"unique": true
+				},
 				"fields": []
 			},
 			"selfContract": {

@@ -31,8 +31,7 @@ import { flushOutboundQueue, resolveAndSend } from "./template-dispatch";
 
 // Gate: só roda com DB real (o sentinel do vitest.setup NÃO conta). No host sem
 // Postgres migrado o bloco inteiro é pulado; no container do gate ele executa.
-const RUN =
-	!!process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("test_sentinel");
+const RUN = !!process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("test_sentinel");
 
 const created = { convIds: [] as string[], usageKeys: [] as string[] };
 
@@ -125,9 +124,7 @@ describe.skipIf(!RUN)("FIX-201 — resolveAndSend (janela decide o canal)", () =
 		expect(to).toBe("5562988887777");
 		expect(name).toBe(`tmpl_${uk}`);
 		expect(lang).toBe("pt_BR");
-		expect(components).toEqual([
-			{ type: "body", parameters: [{ type: "text", text: "ANCORA" }] },
-		]);
+		expect(components).toEqual([{ type: "body", parameters: [{ type: "text", text: "ANCORA" }] }]);
 		expect(res.channel).toBe("template");
 	});
 

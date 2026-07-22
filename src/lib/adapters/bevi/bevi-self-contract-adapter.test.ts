@@ -257,10 +257,12 @@ describe("BeviSelfContractAdapter — busca com/sem lance embutido (FIX-219)", (
 		const client = makeEmbeddedClient({
 			none: async () => [makeOffer("q-sem", "ITAÚ", 100000)],
 		});
-		client.simulate = vi.fn(async ({ embeddedPercentage }: { embeddedPercentage?: "30" | "50" }) => {
-			if (embeddedPercentage === "30") throw new Error("cota nao aceita embutido");
-			return [makeOffer("q-sem", "ITAÚ", 100000)];
-		});
+		client.simulate = vi.fn(
+			async ({ embeddedPercentage }: { embeddedPercentage?: "30" | "50" }) => {
+				if (embeddedPercentage === "30") throw new Error("cota nao aceita embutido");
+				return [makeOffer("q-sem", "ITAÚ", 100000)];
+			},
+		);
 		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
 
 		const groups = await adapter.searchGroups({ category: "auto", creditMax: 100000 });
@@ -275,9 +277,9 @@ describe("BeviSelfContractAdapter — busca com/sem lance embutido (FIX-219)", (
 		});
 		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
 
-		await expect(
-			adapter.searchGroups({ category: "auto", creditMax: 100000 }),
-		).rejects.toThrow(/indispon/i);
+		await expect(adapter.searchGroups({ category: "auto", creditMax: 100000 })).rejects.toThrow(
+			/indispon/i,
+		);
 	});
 });
 

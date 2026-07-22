@@ -11,8 +11,8 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
-import { gatePartData } from "@/lib/web/adapter";
 import type { GatePartData } from "@/lib/chat/ui-message";
+import { gatePartData } from "@/lib/web/adapter";
 
 export interface ResumableMessage {
 	id: string;

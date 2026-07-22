@@ -101,12 +101,12 @@ export function PersonaPreviewPanel({ personaId }: { personaId?: string }) {
 							((errorDetails.formErrors?.length ?? 0) > 0 ||
 								Object.keys(errorDetails.fieldErrors ?? {}).length > 0) && (
 								<ul className="list-disc pl-4 text-xs">
-									{errorDetails.formErrors?.map((msg, i) => (
-										<li key={`f-${i}`}>{msg}</li>
+									{errorDetails.formErrors?.map((msg) => (
+										<li key={`f-${msg}`}>{msg}</li>
 									))}
 									{Object.entries(errorDetails.fieldErrors ?? {}).map(([field, msgs]) =>
-										(msgs ?? []).map((msg, i) => (
-											<li key={`${field}-${i}`}>
+										(msgs ?? []).map((msg) => (
+											<li key={`${field}-${msg}`}>
 												<span className="font-medium">{field}:</span> {msg}
 											</li>
 										)),

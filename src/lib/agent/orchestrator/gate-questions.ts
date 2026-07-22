@@ -81,7 +81,7 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
 export function gateQuestion(
 	gate: Gate,
 	category?: Category | null,
-	creditValue?: number,
+	_creditValue?: number,
 	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): default "whatsapp" —
 	// preserva o comportamento de TODOS os chamadores pré-existentes
 	// (whatsapp/adapter.ts, identify-capture.ts, gate-reengage.ts), que já
@@ -135,7 +135,7 @@ export function gateQuestion(
 			// bastante (ex.: usuário só disse "um carro").
 			// FIX-312: "esse"/"essa" concorda com o género do item (nunca "esse
 			// um X") e a 2ª+ tentativa varia a copy em vez de repetir verbatim.
-			if (desiredItem && desiredItem.trim()) {
+			if (desiredItem?.trim()) {
 				const { demonstrative, item } = creditItemDemonstrative(desiredItem, category);
 				return isReask
 					? `Só retomando: quanto custa ${demonstrative} ${item}, mais ou menos?`

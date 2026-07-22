@@ -174,13 +174,13 @@ export function PlanEstimatePicker({
 						<span className="text-xs font-medium text-muted-foreground">
 							O que mais importa pra você agora?
 						</span>
-						{/* biome-ignore lint/a11y/useSemanticElements: segmented custom (radiogroup) */}
 						<div
 							role="radiogroup"
 							aria-label="O que mais importa pra você agora?"
 							className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
 						>
 							{INTENTS.map((opt) => (
+								// biome-ignore lint/a11y/useSemanticElements: segmented control — <input type="radio"> não aceita a estilização de chip, e o container já expõe role="radiogroup".
 								<button
 									key={opt.value}
 									type="button"
@@ -245,8 +245,8 @@ export function PlanEstimatePicker({
 								<div className="min-w-0">
 									<span className="text-xs font-medium">Somar lance embutido</span>
 									<p className="text-[11px] text-muted-foreground">
-										Usa parte do próprio valor do bem como lance — ajuda quem não tem todo o lance em
-										dinheiro hoje.
+										Usa parte do próprio valor do bem como lance — ajuda quem não tem todo o lance
+										em dinheiro hoje.
 									</p>
 								</div>
 								<Checkbox
@@ -288,7 +288,10 @@ export function PlanEstimatePicker({
 						) : null}
 						{withLance ? (
 							<p
-								className={cn("text-[11px]", estimate.lanceCoberto ? "text-success" : "text-warning")}
+								className={cn(
+									"text-[11px]",
+									estimate.lanceCoberto ? "text-success" : "text-warning",
+								)}
 								data-testid="plan-lance-feedback"
 							>
 								{estimate.lanceCoberto

@@ -20,7 +20,7 @@ import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { dispatchAutoTransbordo } from "@/lib/mesa/dispatch";
 import { sendTextMessage } from "@/lib/whatsapp/api";
-import { resolveAndSend, type ResolveAndSendResult } from "@/lib/whatsapp/template-dispatch";
+import { type ResolveAndSendResult, resolveAndSend } from "@/lib/whatsapp/template-dispatch";
 
 /** Chave lógica do template do fecho (FIX-235) — configurar no admin de
  * WhatsApp Templates antes de ir pra prod. Sem template aprovado, o envio cai

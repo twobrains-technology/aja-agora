@@ -1,6 +1,6 @@
 "use client";
 
-import { MenuIcon, XIcon } from "lucide-react";
+import { MenuIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMedia } from "react-use";

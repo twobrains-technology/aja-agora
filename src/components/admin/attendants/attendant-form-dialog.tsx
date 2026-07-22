@@ -77,20 +77,26 @@ export function AttendantFormDialog({ mode, attendant, open, onOpenChange, onSuc
 		defaultValues,
 	});
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset/defaultValues mudam a cada render do useForm; re-sincronizar só na abertura é intencional.
 	useEffect(() => {
 		if (open) {
 			reset(defaultValues);
 			setSubmitError(null);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, attendant?.id]);
 
 	const onSubmit = handleSubmit(async (values) => {
 		setSubmitError(null);
 
-		const url =
-			mode === "create" ? "/api/admin/attendants" : `/api/admin/attendants/${attendant!.id}`;
-		const method = mode === "create" ? "POST" : "PATCH";
+		// `attendant!` escondia o caso real de abrir em modo edição sem objeto
+		// (a URL viraria .../undefined e o PATCH morreria em 404 silencioso).
+		const editing = mode === "create" ? null : attendant;
+		if (mode !== "create" && !editing) {
+			setSubmitError("Não foi possível identificar o atendente a editar.");
+			return;
+		}
+		const url = editing ? `/api/admin/attendants/${editing.id}` : "/api/admin/attendants";
+		const method = editing ? "PATCH" : "POST";
 
 		const payload =
 			mode === "create"

@@ -35,8 +35,7 @@ export function coerceScarcityPayload(
 	const group = groupId ? index.get(groupId) : undefined;
 	const anchorId = group?.id ?? groupId;
 	const administradora =
-		group?.administradora ??
-		(typeof input.administradora === "string" ? input.administradora : "");
+		group?.administradora ?? (typeof input.administradora === "string" ? input.administradora : "");
 	if (!anchorId || !index.has(anchorId)) {
 		return {
 			groupCode: anchorId ?? "",

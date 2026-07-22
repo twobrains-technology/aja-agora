@@ -1,6 +1,6 @@
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 

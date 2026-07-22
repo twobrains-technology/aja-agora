@@ -9,7 +9,6 @@ import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import type { PersonaPatch } from "@/lib/validations/persona-patch";
 import { DiffCard, type DiffCardState } from "./diff-card";
 
@@ -161,7 +160,6 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 									if (m.role === "user") {
 										return (
 											<div
-												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
 												key={`${m.id}-text-${i}`}
 												className="text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground rounded-md bg-muted px-3 py-2"
 											>
@@ -171,7 +169,6 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 									}
 									return (
 										<div
-											// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
 											key={`${m.id}-text-${i}`}
 											className="prose prose-sm max-w-none dark:prose-invert text-foreground text-sm leading-relaxed break-words prose-p:my-1 prose-p:leading-relaxed prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-foreground prose-strong:font-semibold prose-headings:text-foreground prose-headings:text-sm prose-headings:font-semibold prose-headings:my-1.5 prose-code:text-xs prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 										>
@@ -197,7 +194,6 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 									if (output && !output.ok) {
 										return (
 											<div
-												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
 												key={`${m.id}-err-${i}`}
 												className="text-xs rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-foreground"
 											>
@@ -215,7 +211,6 @@ export function AIAssistantSidebar({ personaId, formMethods }: SidebarProps) {
 									if (output?.question) {
 										return (
 											<div
-												// biome-ignore lint/suspicious/noArrayIndexKey: parts não têm id
 												key={`${m.id}-q-${i}`}
 												className="text-sm rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-foreground"
 											>

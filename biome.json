@@ -7,7 +7,18 @@
 	},
 	"files": {
 		"ignoreUnknown": true,
-		"includes": ["**", "!node_modules", "!.next", "!dist", "!build"]
+		"includes": [
+			"**",
+			"!node_modules",
+			"!.next",
+			"!dist",
+			"!build",
+			"!drizzle/meta",
+			"!.processo",
+			"!.claude",
+			"!docs/**/*.json",
+			"!docs/**/*-referencia.ts"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -27,6 +38,12 @@
 			"react": "recommended"
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["src/components/ui/**", "src/components/shadcn-studio/**"],
+			"linter": { "enabled": false }
+		}
+	],
 	"assist": {
 		"actions": {
 			"source": {

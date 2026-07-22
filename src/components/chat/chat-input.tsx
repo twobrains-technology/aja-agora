@@ -31,9 +31,7 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 				active instanceof HTMLElement &&
 				active !== document.body &&
 				active !== textareaRef.current &&
-				(active.tagName === "INPUT" ||
-					active.tagName === "TEXTAREA" ||
-					active.isContentEditable);
+				(active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
 			if (!outroCampoJaFocado) textareaRef.current?.focus();
 		});
 		return () => cancelAnimationFrame(id);

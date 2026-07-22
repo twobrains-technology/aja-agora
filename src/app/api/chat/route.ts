@@ -89,7 +89,6 @@ import { normalizePhoneBR } from "@/lib/leads/phone";
 import { runtimeFlavor } from "@/lib/llm/runtime";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
-import { generateAndStoreProposalPdf } from "@/lib/proposal/store";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
 import { isUuid } from "@/lib/utils/id";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -1004,7 +1003,12 @@ export async function POST(req: NextRequest) {
 								// copy (abaixo) pra ela saber o CANAL real (free_text/template
 								// enviado agora × queued só enfileirado) — "acabei de te mandar"
 								// era dito mesmo quando só enfileirou (mentira observável).
-								const fechoPedirOi = await sendFechoPedirOi(conversationId);
+								// PENDENTE-KAIRO: o retorno ({ sent, channel }) NÃO é consumido — a
+								// copy abaixo continua sem saber se foi enviado agora ou só
+								// enfileirado, que é exatamente o que este FIX-265 dizia resolver.
+								// Ligar exige um parâmetro novo em closingPresentation e mexe na
+								// copy ao cliente (decisão de produto), então fica marcado aqui.
+								await sendFechoPedirOi(conversationId);
 								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
 								// (closing-presentation.ts — módulo único produção+eval).
 								await pipeAndSaveClosingItems(

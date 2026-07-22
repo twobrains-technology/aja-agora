@@ -6,7 +6,7 @@
 import { addDays, differenceInDays, format, subDays } from "date-fns";
 import { and, count, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, leadEvents, leads } from "@/db/schema";
+import { conversations, leads } from "@/db/schema";
 import {
 	type ChannelBreakdown,
 	type DailyVolume,

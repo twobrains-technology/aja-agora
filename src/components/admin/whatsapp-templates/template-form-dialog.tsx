@@ -107,11 +107,17 @@ export function TemplateFormDialog({ mode, template, open, onOpenChange, onSucce
 		setSubmitting(true);
 
 		try {
-			const url =
-				mode === "create"
-					? "/api/admin/whatsapp/templates"
-					: `/api/admin/whatsapp/templates/${template!.id}`;
-			const method = mode === "create" ? "POST" : "PATCH";
+			// `template!` escondia o caso real de abrir em modo edição sem objeto
+			// (a URL viraria .../undefined e o PATCH morreria em 404 silencioso).
+			const editing = mode === "create" ? null : template;
+			if (mode !== "create" && !editing) {
+				setSubmitError("Não foi possível identificar o template a editar.");
+				return;
+			}
+			const url = editing
+				? `/api/admin/whatsapp/templates/${editing.id}`
+				: "/api/admin/whatsapp/templates";
+			const method = editing ? "PATCH" : "POST";
 
 			// Fora de DRAFT: só o vínculo. Caso contrário: payload completo.
 			const payload = contentLocked
@@ -188,7 +194,9 @@ export function TemplateFormDialog({ mode, template, open, onOpenChange, onSucce
 							<Label htmlFor="category">Categoria</Label>
 							<Select
 								value={values.category}
-								onValueChange={(v) => { if (v) set("category", v); }}
+								onValueChange={(v) => {
+									if (v) set("category", v);
+								}}
 								disabled={submitting || contentLocked}
 							>
 								<SelectTrigger id="category">

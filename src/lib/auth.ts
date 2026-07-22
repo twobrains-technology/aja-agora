@@ -11,8 +11,8 @@ import * as schema from "@/db/schema";
  * de protocolo derruba o login com "Invalid origin", que foi exatamente o que
  * aconteceu (config em `http://aja-...`, browser em `https://aja-app-...`). */
 function origensConfiaveis(): string[] {
-	const nomes = [process.env.BETTER_AUTH_URL, process.env.APP_URL].filter(
-		(u): u is string => Boolean(u?.trim()),
+	const nomes = [process.env.BETTER_AUTH_URL, process.env.APP_URL].filter((u): u is string =>
+		Boolean(u?.trim()),
 	);
 	const workspace = process.env.WORKSPACE_NAME?.trim();
 	if (workspace) {

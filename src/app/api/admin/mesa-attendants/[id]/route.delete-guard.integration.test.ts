@@ -21,14 +21,7 @@ const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.i
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
 import { db } from "@/db";
-import {
-	administradoras,
-	beviProposals,
-	conversations,
-	leads,
-	mesaAttendants,
-	mesaHandoffs,
-} from "@/db/schema";
+import { beviProposals, conversations, leads, mesaAttendants, mesaHandoffs } from "@/db/schema";
 import { DELETE } from "./route";
 
 type Seed = {

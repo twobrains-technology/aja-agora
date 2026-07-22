@@ -32,7 +32,6 @@ export function toLangChainTool(name: string, aiSdkTool: AiSdkTool): DynamicStru
 	return new DynamicStructuredTool({
 		name,
 		description: aiSdkTool.description ?? name,
-		// biome-ignore lint/suspicious/noExplicitAny: FlexibleSchema<T> (AI SDK) é zod na prática em toda tool de tools/ai-sdk.ts — nenhuma usa JSON Schema puro.
 		schema: aiSdkTool.inputSchema as unknown as z.ZodTypeAny,
 		func: async (input) => execute(input as never, fakeToolExecutionOptions()),
 	});

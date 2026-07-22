@@ -23,11 +23,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-	Artifact,
-	ComparisonTablePayload,
-	RecommendationCardPayload,
-} from "@/lib/chat/types";
+import type { Artifact, ComparisonTablePayload, RecommendationCardPayload } from "@/lib/chat/types";
 import { RevealSelectionProvider } from "../reveal-selection";
 import { ComparisonTable } from "./comparison-table";
 import { RecommendationCard } from "./recommendation-card";

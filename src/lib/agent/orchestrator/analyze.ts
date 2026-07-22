@@ -71,11 +71,7 @@ export async function analyzeAndMerge(
 	// realmente ativo, e `nextGate()` pulava o gate achando que já tinha sido
 	// resolvido: o CARD nunca chegava a aparecer (dossiê Madalena, banco
 	// mostrava `experiencePrev` preenchido sem o artifact `gate:experience`).
-	if (
-		analysis.experiencePrev &&
-		!meta.experiencePrev &&
-		activeGateAtTurnStart === "experience"
-	) {
+	if (analysis.experiencePrev && !meta.experiencePrev && activeGateAtTurnStart === "experience") {
 		meta.experiencePrev = analysis.experiencePrev;
 		newlyExtractedExperience = analysis.experiencePrev;
 		metaChanged = true;
@@ -271,8 +267,7 @@ export async function analyzeAndMerge(
 	if (
 		analysis.hasLance &&
 		!q.hasLance &&
-		(activeGateAtTurnStart === "lance" ||
-			(isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
+		(activeGateAtTurnStart === "lance" || (isExplicitLanceRefusal && Boolean(meta.revealCompleted)))
 	) {
 		q.hasLance = analysis.hasLance;
 		meta.qualifyAnswers = q;

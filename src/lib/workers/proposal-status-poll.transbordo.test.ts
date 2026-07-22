@@ -21,7 +21,9 @@ describe("FIX-123 — gatilho automático do transbordo (structural)", () => {
 	it("só dispara quando a raia REALMENTE mudou (applied) e é na_administradora", () => {
 		// A guarda tem que amarrar applied + na_administradora — senão re-polls do mesmo
 		// status re-disparariam (applied) ou raias erradas transbordariam (na_administradora).
-		expect(workerSrc).toMatch(/applied[\s\S]{0,80}na_administradora|na_administradora[\s\S]{0,80}applied/);
+		expect(workerSrc).toMatch(
+			/applied[\s\S]{0,80}na_administradora|na_administradora[\s\S]{0,80}applied/,
+		);
 	});
 
 	it("o transbordo é best-effort — envolto em try/catch, não derruba o ciclo", () => {

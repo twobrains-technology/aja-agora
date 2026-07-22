@@ -23,11 +23,11 @@ import { DuplicatedProposalError } from "./bevi-errors";
 import {
 	type BeviOffer,
 	beviOfferToGroupSummary,
-	ofertaEhCoerente,
 	beviOfferToQuotaSimulation,
 	beviSegmentToCategory,
 	categoryToBeviSegment,
 	normalizeAdministradoraName,
+	ofertaEhCoerente,
 } from "./offer-mapper";
 import type { BeviSelfContractClient } from "./self-contract-client";
 

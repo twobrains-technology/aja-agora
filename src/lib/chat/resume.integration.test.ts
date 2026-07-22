@@ -44,14 +44,12 @@ describeIfDb("FIX-46 — getResumableConversation (integration)", () => {
 			.returning({ id: schema.conversations.id });
 		convIds.push(conv.id);
 		if (opts.withMessage ?? true) {
-			await db
-				.insert(schema.messages)
-				.values({
-					conversationId: conv.id,
-					role: "user",
-					content: "oi, quero um carro",
-					channel: "web",
-				});
+			await db.insert(schema.messages).values({
+				conversationId: conv.id,
+				role: "user",
+				content: "oi, quero um carro",
+				channel: "web",
+			});
 		}
 		return conv.id;
 	}

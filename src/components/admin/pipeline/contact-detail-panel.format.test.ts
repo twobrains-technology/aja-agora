@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("contact-detail-panel — formatação de propostas", () => {
 	it("deve formatar creditValue como moeda PT-BR", () => {

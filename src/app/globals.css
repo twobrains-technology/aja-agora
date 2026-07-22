@@ -401,9 +401,14 @@
 	*,
 	*::before,
 	*::after {
+		/* biome-ignore-start lint/complexity/noImportantStyles: aqui o !important é o
+		   ponto — prefers-reduced-motion tem que vencer QUALQUER animação declarada
+		   depois, inclusive as de biblioteca. Sem ele a preferência de acessibilidade
+		   do usuário é ignorada. */
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
+		/* biome-ignore-end lint/complexity/noImportantStyles: fim do bloco */
 	}
 }
 

@@ -29,6 +29,7 @@ function promptPhaseFromMeta(meta: ConversationMetadata): ToolPhase {
 	if (phase !== "qualify") return phase;
 	return meta.identityCollected === true ? "reveal" : "qualify";
 }
+
 import type { ConversationMetadata } from "../personas";
 import {
 	buildConciergePrompt,

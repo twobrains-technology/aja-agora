@@ -5,8 +5,9 @@
 // `tool_choice` ao traduzir a rota Anthropic Messages (/v1/messages) pra um
 // backend `openai/`-compatible — falando o formato OpenAI direto (/chat/
 // completions) isso não acontece (ver qwen-gateway-provider.test.ts).
-import { createOpenAI } from "@ai-sdk/openai";
+
 import dns from "node:dns/promises";
+import { createOpenAI } from "@ai-sdk/openai";
 
 const SRV_CACHE_TTL_MS = 30_000;
 let _cache: { host: string; expiresAt: number } | null = null;

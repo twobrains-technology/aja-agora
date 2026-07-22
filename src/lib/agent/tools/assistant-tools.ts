@@ -207,7 +207,7 @@ export async function executeProposePatch(
 		// CA-34: specialist de uma categoria não pode falar de outra.
 		if (ctx.role === "specialist" && ctx.category) {
 			const forbidden = CATEGORY_FORBIDDEN_TERMS[ctx.category];
-			if (forbidden && forbidden.test(patch.after.assistantResponse)) {
+			if (forbidden?.test(patch.after.assistantResponse)) {
 				return {
 					ok: false,
 					error: `persona specialist de "${ctx.category}" não fala de outra categoria. Mantenha o exemplo no escopo da especialidade.`,

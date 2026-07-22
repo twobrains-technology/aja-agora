@@ -77,7 +77,10 @@ describe("FIX-51 — TheaterChat gate de retomada", () => {
 		render(<TheaterChat seed="" settled={true} />);
 		// "parou" vem em <Em> — o texto fica em dois nós; matcher por elemento.
 		expect(
-			await screen.findByText((_, el) => el?.tagName === "H2" && /Continuar de onde você parou\?/i.test(el.textContent ?? "")),
+			await screen.findByText(
+				(_, el) =>
+					el?.tagName === "H2" && /Continuar de onde você parou\?/i.test(el.textContent ?? ""),
+			),
 		).toBeDefined();
 		expect(screen.queryByTestId("chat-provider")).toBeNull();
 		expect(captured.mounted).toBe(false);
@@ -112,7 +115,10 @@ describe("FIX-51 — TheaterChat gate de retomada", () => {
 		render(<TheaterChat seed="" settled={true} />);
 		await waitFor(() => expect(screen.getByTestId("chat-provider")).toBeDefined());
 		expect(
-			screen.queryByText((_, el) => el?.tagName === "H2" && /Continuar de onde você parou\?/i.test(el.textContent ?? "")),
+			screen.queryByText(
+				(_, el) =>
+					el?.tagName === "H2" && /Continuar de onde você parou\?/i.test(el.textContent ?? ""),
+			),
 		).toBeNull();
 		expect(captured.hasInitialMessages).toBe(true);
 	});

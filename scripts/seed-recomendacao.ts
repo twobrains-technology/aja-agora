@@ -32,7 +32,9 @@ async function main() {
 	const channel = (process.env.SEED_CHANNEL ?? "web") as "web" | "whatsapp";
 
 	if (!cpf || !celularRaw) {
-		throw new Error("SEED_CPF e SEED_CELULAR são obrigatórios (conta de teste real — nunca invente CPF).");
+		throw new Error(
+			"SEED_CPF e SEED_CELULAR são obrigatórios (conta de teste real — nunca invente CPF).",
+		);
 	}
 
 	// FIX-172: normaliza o DDI ("55") ANTES de cifrar — espelha o que o gate

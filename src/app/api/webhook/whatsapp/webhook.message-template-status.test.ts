@@ -8,6 +8,7 @@
 //
 // Ver docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
 
+import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -37,11 +38,13 @@ vi.mock("@/app/actions/whatsapp", () => ({ updateLastInboundAt: mocks.updateLast
 import { POST } from "./route";
 
 // Sem WHATSAPP_APP_SECRET a verificação de assinatura é pulada (dev/test).
-function post(body: unknown): Request {
+// O cast pro shape do NextRequest fica AQUI, uma vez — antes cada chamada
+// carregava seu próprio `as any` (3 no arquivo, 2 sem sequer o ignore do biome).
+function post(body: unknown): NextRequest {
 	return new Request("https://x/api/webhook/whatsapp", {
 		method: "POST",
 		body: JSON.stringify(body),
-	});
+	}) as unknown as NextRequest;
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -75,8 +78,7 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 			message_template_language: "pt_BR",
 		};
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: NextRequest aceita o shape de Request no teste
-			post({ entry: [{ changes: [{ field: "message_template_status_update", value }] }] }) as any,
+			post({ entry: [{ changes: [{ field: "message_template_status_update", value }] }] }),
 		);
 		expect(res.status).toBe(200);
 		await flush();
@@ -88,7 +90,6 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 
 	it("mensagem inbound continua roteando pro processor (não-regressão)", async () => {
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			post({
 				entry: [
 					{
@@ -102,7 +103,7 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 						],
 					},
 				],
-			}) as any,
+			}),
 		);
 		expect(res.status).toBe(200);
 		await ateSerChamado(mocks.processTextMessage);
@@ -112,16 +113,20 @@ describe("FIX-202 — webhook roteia message_template_status_update", () => {
 
 	it("status de entrega (statuses) continua sendo tratado sem chamar o sync (não-regressão)", async () => {
 		const res = await POST(
-			// biome-ignore lint/suspicious/noExplicitAny: shape de teste
 			post({
 				entry: [
 					{
 						changes: [
-							{ field: "statuses", value: { statuses: [{ status: "delivered", id: "wamid.1", recipient_id: "5562999" }] } },
+							{
+								field: "statuses",
+								value: {
+									statuses: [{ status: "delivered", id: "wamid.1", recipient_id: "5562999" }],
+								},
+							},
 						],
 					},
 				],
-			}) as any,
+			}),
 		);
 		expect(res.status).toBe(200);
 		await flush();

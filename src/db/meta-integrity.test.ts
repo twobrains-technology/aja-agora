@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -37,9 +37,7 @@ describe("drizzle meta integrity", () => {
 
 	it("toda entry do journal tem um snapshot correspondente em meta/", () => {
 		const onDisk = new Set(readdirSync(META_DIR));
-		const missing = entries
-			.map((e) => snapshotFileFor(e.idx))
-			.filter((f) => !onDisk.has(f));
+		const missing = entries.map((e) => snapshotFileFor(e.idx)).filter((f) => !onDisk.has(f));
 		expect(missing).toEqual([]);
 	});
 

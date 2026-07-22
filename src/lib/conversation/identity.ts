@@ -9,8 +9,8 @@
 // Sem a chave → falha alto, sem fallback silencioso.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { attachContact } from "@/lib/contacts";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 export interface StoredIdentity {
 	cpf: string; // só dígitos

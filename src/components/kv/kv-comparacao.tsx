@@ -24,7 +24,7 @@ const FINANCIAMENTO_ITEMS: { text: string; positive: boolean }[] = [
 /** Respiro entre a aresta reta do leque (burstSrc) e a foto — evita colar direto. */
 const BURST_GAP = 10;
 /** Tamanho do leque relativo ao diâmetro do medalhão (1 = mesma altura da foto). */
-const BURST_SCALE = 0.80;
+const BURST_SCALE = 0.8;
 
 /**
  * Medalhão da coluna (Figma 'Group 106/107') — foto clipada em MEIA-LUA (a
@@ -169,9 +169,7 @@ export function KvComparacao() {
 											<X className="size-3.5 text-white" strokeWidth={3} />
 										)}
 									</span>
-									<p className="text-left text-[16px] leading-[24px] text-[#052440]">
-										{item.text}
-									</p>
+									<p className="text-left text-[16px] leading-[24px] text-[#052440]">{item.text}</p>
 								</li>
 							))}
 						</ul>
@@ -196,9 +194,7 @@ export function KvComparacao() {
 									<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#22B464]">
 										<Check className="size-3.5 text-white" strokeWidth={3} />
 									</span>
-									<p className="text-left text-[16px] leading-[24px] text-[#052440]">
-										{item}
-									</p>
+									<p className="text-left text-[16px] leading-[24px] text-[#052440]">{item}</p>
 								</li>
 							))}
 						</ul>

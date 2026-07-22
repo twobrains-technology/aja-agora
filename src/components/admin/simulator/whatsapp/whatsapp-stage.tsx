@@ -58,6 +58,7 @@ export function WhatsAppStage({ conversationId, initialItems }: WhatsAppStagePro
 	initialItemsRef.current = initialItems;
 
 	// SSE: assina eventos do agente
+	// biome-ignore lint/correctness/useExhaustiveDependencies: initialItems entra pelo ref acima de propósito — vira dep dinâmica e re-abre a conexão SSE a cada render. O pai remonta via key={conversationId}, então o ref nunca fica stale.
 	useEffect(() => {
 		if (!conversationId) return;
 		// Em vez de zerar, hidrata com o histórico vindo do pai (re-abrir

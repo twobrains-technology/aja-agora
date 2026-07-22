@@ -235,7 +235,7 @@ async function gateTextPrompt(
 // como balão próprio ANTES do pedido, em vez de deixar o gancho a cargo do LLM.
 // null = o contexto vem do texto do LLM (buffer). O lance-embutido entra aqui no
 // FIX-212 (educação curta antes do card).
-async function gateContextBeat(gate: Gate, conversationId: string): Promise<string | null> {
+async function gateContextBeat(gate: Gate, _conversationId: string): Promise<string | null> {
 	if (gate === "identify") {
 		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
 		return IDENTIFY_CONTEXT_WHATSAPP;
@@ -729,7 +729,7 @@ export async function fireGate(
 	from: string,
 	conversationId: string,
 	gate: Gate,
-	meta: ConversationMetadata,
+	_meta: ConversationMetadata,
 	prefix?: string,
 ): Promise<void> {
 	// "identify" é textual (form não existe no WhatsApp). FIX-210: cadência 2-tempos

@@ -21,9 +21,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import okSimulation from "../adapters/bevi/__fixtures__/ok-simulation.json";
 import { BeviApiAdapter } from "../adapters/bevi/bevi-api-adapter";
 import { BeviApiError, ProposalOwnershipError } from "../adapters/bevi/bevi-errors";
-import okSimulation from "../adapters/bevi/__fixtures__/ok-simulation.json";
 
 const CONFIG = {
 	baseUrl: "https://api.test/services",

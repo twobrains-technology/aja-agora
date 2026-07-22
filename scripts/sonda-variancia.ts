@@ -121,7 +121,9 @@ async function sondaVariancia(): Promise<Resultado> {
 }
 
 async function main() {
-	console.log(`\nSonda de variância — modelo: ${process.env.AI_MODEL ?? "claude-haiku-4-5-20251001"}\n`);
+	console.log(
+		`\nSonda de variância — modelo: ${process.env.AI_MODEL ?? "claude-haiku-4-5-20251001"}\n`,
+	);
 	const resultados: Resultado[] = [];
 	try {
 		resultados.push(await sondaRepeticao());

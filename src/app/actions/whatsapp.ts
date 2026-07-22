@@ -14,7 +14,7 @@ import { conversations } from "@/db/schema";
  * @param from — phone_number_id do WhatsApp (ex.: 5562999998888)
  * @param messageId — ID da mensagem recebida do Meta
  */
-export async function updateLastInboundAt(from: string, messageId: string) {
+export async function updateLastInboundAt(from: string, _messageId: string) {
 	const db = globalDb;
 	if (!db) {
 		console.warn("[whatsapp] globalDb not available in updateLastInboundAt");
@@ -35,7 +35,7 @@ export async function updateLastInboundAt(from: string, messageId: string) {
 		}
 
 		// Atualiza lastInboundAt
-		const result = await db
+		await db
 			.update(conversations)
 			.set({
 				lastInboundAt: new Date(),

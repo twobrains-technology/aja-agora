@@ -1,5 +1,4 @@
-import { describe, it, expect } from "vitest";
-import type { FunnelStage } from "@/lib/admin/dashboard-types";
+import { describe, expect, it } from "vitest";
 
 describe("funnel-chart — delta formatting (--%, -0%)", () => {
 	it("deve renderizar delta normalizado (sem valores negativos do cálculo)", () => {

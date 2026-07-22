@@ -19,7 +19,12 @@ const DATABASE_URL =
 const PHONE = "62991471234";
 const CPF = "52998224725";
 const SECRET_LINK = "https://uselink.me/secret-fix47-pdf";
-const ids = { contact: randomUUID(), conv: randomUUID(), lead: randomUUID(), proposal: randomUUID() };
+const ids = {
+	contact: randomUUID(),
+	conv: randomUUID(),
+	lead: randomUUID(),
+	proposal: randomUUID(),
+};
 
 async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
 	const db = new Client({ connectionString: DATABASE_URL });

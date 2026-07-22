@@ -172,7 +172,6 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 			<p className="px-0.5 text-[11px] text-muted-foreground">
 				Toque numa cota pra ver no detalhe acima
 			</p>
-			{/* biome-ignore lint/a11y/useSemanticElements: listbox de cotas (chips button role=option) */}
 			<div
 				role="listbox"
 				aria-label="Escolha a cota"

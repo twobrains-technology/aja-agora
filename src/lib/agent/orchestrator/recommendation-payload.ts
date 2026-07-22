@@ -17,7 +17,7 @@
 
 import type { ConsorcioCategory } from "@/lib/adapters/types";
 import { matchAdministradoraLogo } from "@/lib/consorcio/administradora-logo";
-import { scoreGroup, type ScoringInput } from "../recommendation";
+import { type ScoringInput, scoreGroup } from "../recommendation";
 import type { KnownGroupValue } from "../tools/known-credit-values";
 
 /** Grupo real (model-facing) capturado do tool-result de recommend/search. É o

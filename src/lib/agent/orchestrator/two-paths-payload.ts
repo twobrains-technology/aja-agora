@@ -22,8 +22,7 @@ export function coerceTwoPathsPayload(
 	const monthlyPayment =
 		offer?.monthlyPayment ?? (Number.isFinite(inputParcela) ? inputParcela : 0);
 	const administradora =
-		offer?.administradora ??
-		(typeof input.administradora === "string" ? input.administradora : "");
+		offer?.administradora ?? (typeof input.administradora === "string" ? input.administradora : "");
 	return {
 		monthlyPayment,
 		administradora,

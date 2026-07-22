@@ -85,9 +85,7 @@ function chatDialog(page: Page) {
 }
 
 async function openTheaterAndResume(page: Page, webCookie: string): Promise<void> {
-	await page.context().addCookies([
-		{ name: "aja_uid", value: webCookie, url: BASE_URL },
-	]);
+	await page.context().addCookies([{ name: "aja_uid", value: webCookie, url: BASE_URL }]);
 	await page.goto("/", { waitUntil: "domcontentloaded" });
 	const start = page.getByRole("button", { name: "Começar", exact: true }).first();
 	await start.waitFor({ state: "visible", timeout: 20_000 });
@@ -180,7 +178,9 @@ test.describe("FRENTE 2 — Passo 5-7 (web, E2E de tela real)", () => {
 			});
 
 			if (await realOffer.isVisible()) {
-				console.log("=== D10 (Trilho A) OK ao vivo — proposta real criada, seguindo pro fechamento ===");
+				console.log(
+					"=== D10 (Trilho A) OK ao vivo — proposta real criada, seguindo pro fechamento ===",
+				);
 				await realOffer.click();
 
 				// closingPresentation bundla signature_handoff + document_upload +

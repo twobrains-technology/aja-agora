@@ -23,8 +23,8 @@ import {
 	type KnownGroupValue,
 	loadKnownGroupCreditValues,
 } from "@/lib/agent/tools/known-credit-values";
-import type { ArtifactType } from "@/lib/chat/types";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -58,8 +58,8 @@ import {
 	usableRevealGroupCount,
 } from "./recommendation-payload";
 import {
-	EphemeralTextFilter,
 	type EphemeralDropReason,
+	EphemeralTextFilter,
 	joinSeparator,
 	normalizeGluedSentences,
 	type StateVerificationContext,
@@ -876,7 +876,10 @@ export async function* runAgentTurn(args: {
 									// cliente preenchia um pré-cadastro pra uma administradora e
 									// recebia reserva de outra. O form TEM que mostrar a MESMA
 									// administradora que vai fechar — nunca o texto livre do modelo.
-									payload = { ...(payload as Record<string, unknown>), administradora: resolved.administradora };
+									payload = {
+										...(payload as Record<string, unknown>),
+										administradora: resolved.administradora,
+									};
 								} else {
 									// FIX-316: resolução FALHOU (administradora citada não bate com
 									// nenhum grupo real exibido) — o form NUNCA pode mostrar uma
@@ -937,12 +940,12 @@ export async function* runAgentTurn(args: {
 								typeof input === "object" && input !== null
 									? (input as Record<string, unknown>).id
 									: undefined;
-							const group =
-								typeof rawId === "string" ? revealGroupsById.get(rawId) : undefined;
+							const group = typeof rawId === "string" ? revealGroupsById.get(rawId) : undefined;
 							payload = coerceRevealCota(
-								(typeof input === "object" && input !== null
-									? input
-									: {}) as Record<string, unknown>,
+								(typeof input === "object" && input !== null ? input : {}) as Record<
+									string,
+									unknown
+								>,
 								group,
 								await getAdministradoraLogos(),
 								await getKnownCreditValues(),
@@ -1061,7 +1064,10 @@ export async function* runAgentTurn(args: {
 			try {
 				await saveMessage(conversationId, "assistant", falaDoModelo, channel, currentPersona);
 			} catch (err) {
-				console.error(`[tool-error-recovery] falha ao persistir a fala (conv=${conversationId})`, err);
+				console.error(
+					`[tool-error-recovery] falha ao persistir a fala (conv=${conversationId})`,
+					err,
+				);
 			}
 		}
 		return {
@@ -1148,7 +1154,10 @@ export async function* runAgentTurn(args: {
 			// Sem replicar, `nextGate()` previa "doubts-wait" (isento) enquanto o
 			// cálculo real, com o campo já limpo, avança pro próximo gate real.
 			const previewPendingFollowUpClearsNow =
-				isUserTurn && !previewProducedArtifact && Boolean(meta.pendingFollowUp) && previewUserReplied;
+				isUserTurn &&
+				!previewProducedArtifact &&
+				Boolean(meta.pendingFollowUp) &&
+				previewUserReplied;
 			// FIX-328 (rodada 10, veredito Sonnet A.7 — hipótese de código, não
 			// reproduzida ao vivo, mas mesma classe do doubtsAddressed acima):
 			// FIX-68 re-snapshota `discoveredCreditTarget` quando o reveal
@@ -1166,9 +1175,7 @@ export async function* runAgentTurn(args: {
 					: undefined;
 			const previewMeta: ConversationMetadata = {
 				...meta,
-				...(previewRevealCompletesNow
-					? { revealCompleted: true, searchDispatched: true }
-					: {}),
+				...(previewRevealCompletesNow ? { revealCompleted: true, searchDispatched: true } : {}),
 				...(previewDecisionDispatchesNow ? { decisionDispatched: true } : {}),
 				...(previewDoubtsAddressedNow ? { doubtsAddressed: true } : {}),
 				...(previewDiscoveredCreditTargetResync !== undefined
@@ -1642,7 +1649,11 @@ export async function* runAgentTurn(args: {
 			// no topo): se o modelo já antecipou "preciso do seu CPF e celular" neste
 			// turno, a pergunta canônica do gate `identify` se cala — o card mostra só
 			// os inputs (CPF/celular/LGPD), sem repetir o pedido em texto.
-			if (gate === "identify" && !modelAskedGateQuestion && modelAlreadyAskedIdentity(fullResponse)) {
+			if (
+				gate === "identify" &&
+				!modelAskedGateQuestion &&
+				modelAlreadyAskedIdentity(fullResponse)
+			) {
 				modelAskedGateQuestion = true;
 			}
 			// Com artifacts no turno, o texto já foi escrito no stream — sem prefixo.

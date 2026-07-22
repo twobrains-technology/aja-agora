@@ -10,6 +10,7 @@ const Logo = (props: SVGAttributes<SVGElement>) => {
 			xmlns="http://www.w3.org/2000/svg"
 			{...props}
 		>
+			<title>Aja Agora</title>
 			{/* Rounded square background */}
 			<rect width="40" height="40" rx="10" fill="currentColor" />
 

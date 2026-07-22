@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-	BeviSelfContractAdapter,
-	GroupNotInDiscoveryError,
-} from "./bevi-self-contract-adapter";
+import { BeviSelfContractAdapter, GroupNotInDiscoveryError } from "./bevi-self-contract-adapter";
 import type { BeviOffer } from "./offer-mapper";
 import type { BeviSelfContractClient } from "./self-contract-client";
 
@@ -60,9 +57,9 @@ describe("BeviSelfContractAdapter — id fora do offerIndex sinaliza re-busca (F
 	it("getGroupDetails com id fabricado (com nome do usuário) lança GroupNotInDiscoveryError", async () => {
 		const adapter = makeAdapter([makeOffer("6a0ca9c73e68cce9b61d30fd", 180000)]);
 		await adapter.searchGroups({ category: "auto", creditMax: 180000 });
-		await expect(
-			adapter.getGroupDetails({ groupId: "auto-180k-kairo" }),
-		).rejects.toBeInstanceOf(GroupNotInDiscoveryError);
+		await expect(adapter.getGroupDetails({ groupId: "auto-180k-kairo" })).rejects.toBeInstanceOf(
+			GroupNotInDiscoveryError,
+		);
 	});
 
 	it("o erro carrega o groupId ofensor e mensagem que cita oferta/grupo (não regride o teste legado)", async () => {

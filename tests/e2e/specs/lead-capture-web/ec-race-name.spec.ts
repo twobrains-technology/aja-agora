@@ -16,7 +16,7 @@ test.describe("EC-10 — Race condition em save_contact_name", () => {
 
 	test("CA-28: 2 save_contact_name paralelos não duplicam lead", async ({ request }) => {
 		// Disparar 2 user messages com nomes diferentes em paralelo
-		const resp1 = request.post("/api/chat", {
+		const _resp1 = request.post("/api/chat", {
 			headers: { "Content-Type": "application/json" },
 			data: {
 				conversationId,

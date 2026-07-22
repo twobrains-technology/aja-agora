@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 		return Response.json({ error: "Documento não encontrado" }, { status: 404 });
 	}
 
-	await recordClientDocumentDownload(id, session!.user.id);
+	await recordClientDocumentDownload(id, session.user.id);
 
 	return Response.json({ url });
 }

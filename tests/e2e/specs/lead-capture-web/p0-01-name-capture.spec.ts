@@ -75,7 +75,7 @@ test.describe("P0-01 — Captura de Nome", () => {
 		const lines = responseText.split("\n").filter((l) => l.trim());
 
 		let foundSaveContactNameToolCall = false;
-		let toolCallName = "";
+		let _toolCallName = "";
 
 		for (const line of lines) {
 			if (line.startsWith("data: ")) {
@@ -83,11 +83,11 @@ test.describe("P0-01 — Captura de Nome", () => {
 					const json = JSON.parse(line.substring(6));
 					if (json.type === "tool-call" && json.toolName === "save_contact_name") {
 						foundSaveContactNameToolCall = true;
-						toolCallName = json.args?.name || "";
+						_toolCallName = json.args?.name || "";
 						// CA-01: Verificar que tool call contém nome
 						expect(json.args.name).toBe("Kairo");
 					}
-				} catch (e) {
+				} catch (_e) {
 					// Ignorar linhas que não são JSON válido
 				}
 			}

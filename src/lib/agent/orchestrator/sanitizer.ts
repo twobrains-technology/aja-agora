@@ -465,6 +465,7 @@ function lastInterrogativeIndex(segments: string[]): number {
 // ZWJ). Não mexe em acentuação pt-BR (Latin-1 Supplement/Latin Extended-A
 // ficam fora de todas essas faixas).
 const EMOJI_PATTERN =
+	// biome-ignore lint/suspicious/noMisleadingCharacterClass: ZWJ (U+200D) e variation selector (U+FE0F) estão na classe DE PROPÓSITO — o strip remove os joiners soltos que sobram ao tirar os pictogramas. Com flag u os ranges são code points, não surrogate pairs.
 	/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu;
 
 const EMOJI_RUN = new RegExp(`[ \\t]*(?:${EMOJI_PATTERN.source})+[ \\t]*`, "gu");

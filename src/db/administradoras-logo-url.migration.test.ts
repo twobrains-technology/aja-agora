@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +14,10 @@ describe("FIX-222 — migration da coluna administradoras.logo_url gerada via dr
 		const migration = files
 			.map((f) => ({ f, sql: readFileSync(join(DRIZZLE_DIR, f), "utf-8") }))
 			.find(({ sql }) => /ALTER TABLE "administradoras" ADD COLUMN "logo_url"/i.test(sql));
-		expect(migration, "nenhuma migration versionada adiciona logo_url em administradoras").toBeTruthy();
+		expect(
+			migration,
+			"nenhuma migration versionada adiciona logo_url em administradoras",
+		).toBeTruthy();
 	});
 
 	it("o journal do drizzle referencia a migration (não é um .sql órfão fora do fluxo generate)", () => {
@@ -25,7 +28,8 @@ describe("FIX-222 — migration da coluna administradoras.logo_url gerada via dr
 
 	it("schema.ts declara logoUrl na tabela administradoras (fonte da migration)", () => {
 		const schema = readFileSync(join(process.cwd(), "src/db/schema.ts"), "utf-8");
-		const tableBlock = schema.match(/export const administradoras = pgTable\(([\s\S]*?)\n\);/)?.[0] ?? "";
+		const tableBlock =
+			schema.match(/export const administradoras = pgTable\(([\s\S]*?)\n\);/)?.[0] ?? "";
 		expect(tableBlock).toMatch(/logoUrl:\s*text\("logo_url"\)/);
 	});
 });

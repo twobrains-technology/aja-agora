@@ -1,12 +1,11 @@
 import { eq } from "drizzle-orm";
-import { detectYesNoText } from "./yes-no";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations } from "@/db/schema";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import { runTurnLangGraph } from "@/lib/agent/langgraph/run-turn";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
-import { decideShowGate, gateAwaitingReply, nextGate, type UserIntent } from "@/lib/agent/qualify-state";
+import { decideShowGate, gateAwaitingReply, nextGate } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import {
@@ -15,13 +14,13 @@ import {
 	saveMessage,
 } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { runtimeFlavor } from "@/lib/llm/runtime";
 import {
 	loadMemoryContextForTurn,
 	memorySystemMessageFromContext,
 	resolveIdentityForTurn,
 	storeMemoriesForTurn,
 } from "@/lib/memory/orchestrator-bridge";
-import { runtimeFlavor } from "@/lib/llm/runtime";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { extractCpf } from "@/lib/whatsapp/identify-capture";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
@@ -71,6 +70,7 @@ import { revealValueTargetChanged } from "./tool-policy";
 import { planTransition, yieldTransitionAbort } from "./transition";
 import type { Channel, ChatMessage, TurnEvent, TurnInput } from "./types";
 import { shouldEmitWhatsappOptin } from "./whatsapp-optin-guard";
+import { detectYesNoText } from "./yes-no";
 
 export type { TurnEvent, TurnInput } from "./types";
 
@@ -88,7 +88,6 @@ export type { TurnEvent, TurnInput } from "./types";
 // Madalena provou não estarem cobertas (o hero só liberou 6 turnos depois,
 // em "quero"). Risco de falso-positivo de "pode" sozinho é mitigado pelo
 // filtro de `intent` acima (pergunta/dúvida nunca chegam no regex).
-
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico no caminho de TEXTO LIVRE (whatsapp + web) —
@@ -266,7 +265,13 @@ async function* dispatchDecisionCascade(args: {
 			payload: buildTwoPathsCard(refreshed).payload,
 		});
 		yield { type: "text-delta", text: TWO_PATHS_FOLLOWUP_TEXT };
-		await saveMessage(conversationId, "assistant", TWO_PATHS_FOLLOWUP_TEXT, channel, currentPersona);
+		await saveMessage(
+			conversationId,
+			"assistant",
+			TWO_PATHS_FOLLOWUP_TEXT,
+			channel,
+			currentPersona,
+		);
 	} else {
 		// FIX-253 (rodada 4, veredito Fable FINAL §3): present_decision_prompt
 		// saiu do toolset (tool-policy.ts) — o card sai SERVER-SIDE
@@ -504,9 +509,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			// Só telemetria/tom: o hero não é imposto a quem recusou.
 			meta.recoConsentDeclined = true;
 			await persistMeta(conversationId, meta);
-			console.log(
-				`[reco-consent] conv=${conversationId} recusado — seguindo o funil sem o hero`,
-			);
+			console.log(`[reco-consent] conv=${conversationId} recusado — seguindo o funil sem o hero`);
 		}
 		if (
 			recoConsentGatePending &&
@@ -777,8 +780,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			? {
 					administradora: meta.recommendedOffer.administradora,
 					creditValue: meta.recommendedOffer.creditValue,
-					requestedValue:
-						meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
+					requestedValue: meta.qualifyAnswers?.creditClampedFrom ?? meta.qualifyAnswers?.creditMax,
 				}
 			: null;
 
@@ -800,7 +802,10 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			.filter((a): a is string => typeof a === "string" && a.length > 0);
 		const requested = findUnavailableAdministradoraMention(userText, shownAdministradoras);
 		if (requested) {
-			unavailableAdministradoraFacts = { requested, realOffers: [...new Set(shownAdministradoras)] };
+			unavailableAdministradoraFacts = {
+				requested,
+				realOffers: [...new Set(shownAdministradoras)],
+			};
 		}
 	}
 
@@ -808,9 +813,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// DESAMARRA: o modelo passa a SABER o que o funil quer descobrir a seguir, e
 	// faz a pergunta com as palavras dele (o card então só mostra o input). Antes,
 	// o servidor perguntava e o modelo era proibido de perguntar.
-	const pendingGate = isUserTurn
-		? nextGate(meta, { hasContactName: Boolean(knownName) })
-		: null;
+	const pendingGate = isUserTurn ? nextGate(meta, { hasContactName: Boolean(knownName) }) : null;
 	// FIX-340(a) (bloco-c-whatsapp-invariantes, dossiê auto-whatsapp t8-10): com
 	// a identidade já coletada, `captureIdentifyText` (WhatsApp) devolve
 	// handled:false e o texto cai livre aqui — sem NENHUM fato no contexto, o
@@ -886,7 +889,12 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 	// toolChoice é defesa em código — não depende de obediência do modelo.
 	let forceToolChoice: { type: "tool"; toolName: "save_contact_name" } | "none" | undefined =
 		callerForceToolChoice;
-	if (!callerForceToolChoice && isUserTurn && currentPersona !== "concierge" && !skipLeadCollection) {
+	if (
+		!callerForceToolChoice &&
+		isUserTurn &&
+		currentPersona !== "concierge" &&
+		!skipLeadCollection
+	) {
 		// Pega o último turn do assistant no histórico salvo (já inclui o
 		// turn anterior ao user-text atual).
 		const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");

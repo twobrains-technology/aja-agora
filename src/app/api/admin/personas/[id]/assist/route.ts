@@ -1,4 +1,3 @@
-import { anthropic } from "@/lib/llm/gateway-anthropic";
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -6,7 +5,9 @@ import { requireRole } from "@/lib/admin/require-role";
 import { buildAssistantPrompt } from "@/lib/agent/assistant-prompt";
 import { rateLimit } from "@/lib/agent/assistant-rate-limit";
 import { getPersonaForAdmin } from "@/lib/agent/personas-repo";
+import type { PersonaRow } from "@/lib/agent/system-prompt";
 import { buildAssistantTools } from "@/lib/agent/tools/assistant-tools";
+import { anthropic } from "@/lib/llm/gateway-anthropic";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,7 +44,7 @@ export async function POST(
 		);
 	}
 
-	let persona;
+	let persona: PersonaRow;
 	try {
 		persona = await getPersonaForAdmin(id);
 	} catch {

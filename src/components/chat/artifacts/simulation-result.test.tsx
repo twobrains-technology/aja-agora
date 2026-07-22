@@ -151,7 +151,7 @@ describe("SimulationResult — CTAs explícitos no fechamento (bug #12)", () => 
 	});
 
 	it("não quebra quando payload.actions é ausente (retrocompat)", () => {
-		const { actions, ...payloadWithoutActions } = {
+		const { actions: _actions, ...payloadWithoutActions } = {
 			...basePayload,
 			actions: undefined,
 		};

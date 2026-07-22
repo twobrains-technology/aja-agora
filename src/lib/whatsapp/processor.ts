@@ -13,7 +13,6 @@ import { dispatchInteractiveReply } from "./interactive-handlers";
 import { isMesaClaimReply } from "./mesa/claim";
 import { handleMesaClaim, handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
 import { claimButtonClick } from "./once";
-import { saveMessage } from "./session";
 import {
 	getHandoffState,
 	handleAgentMessage,
@@ -21,6 +20,7 @@ import {
 	isAttendantPhone,
 	relayUserToAgent,
 } from "./proxy";
+import { saveMessage } from "./session";
 import { isSimulatedWaId, publishToClient } from "./simulator-bus";
 
 async function handleBackIntent(from: string): Promise<void> {

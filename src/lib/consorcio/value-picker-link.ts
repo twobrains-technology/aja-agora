@@ -80,7 +80,9 @@ export function recalcLinkedValues(opts: {
 	const feeFactor = 1 + TYPICAL_ADMIN_FEE_PCT[category] / 100;
 	const term = Math.max(
 		1,
-		roles.termId ? (values[roles.termId] ?? TYPICAL_TERM_MONTHS[category]) : TYPICAL_TERM_MONTHS[category],
+		roles.termId
+			? (values[roles.termId] ?? TYPICAL_TERM_MONTHS[category])
+			: TYPICAL_TERM_MONTHS[category],
 	);
 
 	const fieldOf = (id: string) => fields.find((f) => f.id === id);

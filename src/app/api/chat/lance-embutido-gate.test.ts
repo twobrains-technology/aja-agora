@@ -63,7 +63,7 @@ describe("FIX-215 — handler do gate lance-embutido despacha o PRÓXIMO gate, n
 		expect(lanceEmbutidoHandler).toContain("pipeGatePrompt(");
 	});
 
-	it("só chama pipeSearchSummaryTurn dentro do ramo condicional (nextGate === \"search\")", () => {
+	it('só chama pipeSearchSummaryTurn dentro do ramo condicional (nextGate === "search")', () => {
 		const searchCallIdx = lanceEmbutidoHandler.indexOf("await pipeSearchSummaryTurn(");
 		const conditionIdx = lanceEmbutidoHandler.indexOf('=== "search"');
 		expect(searchCallIdx).toBeGreaterThan(-1);
@@ -85,7 +85,7 @@ describe("FIX-215 — handler do gate lance-embutido despacha o PRÓXIMO gate, n
 describe("FIX-272 — dup-click do gate lance-embutido não reprocessa (evita ar morto)", () => {
 	const src = readFileSync(join(process.cwd(), "src/app/api/chat/route.ts"), "utf8");
 	const start = src.indexOf('if (action.gate === "lance-embutido") {');
-	const end = src.indexOf("trace.setFinish(\"ok\")", start);
+	const end = src.indexOf('trace.setFinish("ok")', start);
 	const lanceEmbutidoHandler = src.slice(start, end);
 
 	it("guarda contra reprocessar um gate JÁ respondido (checa qualifyAnswers.lanceEmbutido antes de despachar)", () => {
@@ -93,7 +93,9 @@ describe("FIX-272 — dup-click do gate lance-embutido não reprocessa (evita ar
 	});
 
 	it("o guard vem ANTES do persistMeta/despacho do próximo gate (curto-circuita o replay)", () => {
-		const guardIdx = lanceEmbutidoHandler.search(/qualifyAnswers\?\.lanceEmbutido\s*!==\s*undefined/);
+		const guardIdx = lanceEmbutidoHandler.search(
+			/qualifyAnswers\?\.lanceEmbutido\s*!==\s*undefined/,
+		);
 		const dispatchIdx = lanceEmbutidoHandler.indexOf("nextAfterLanceEmbutido");
 		expect(guardIdx).toBeGreaterThan(-1);
 		expect(dispatchIdx).toBeGreaterThan(-1);

@@ -26,7 +26,7 @@ function toBaseMessage(m: { role: "user" | "assistant"; content: string }): Base
 	return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
 }
 
-const LIVE_EVENT_TYPES: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta", "tool-call"]);
+const _LIVE_EVENT_TYPES: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta", "tool-call"]);
 
 export function createRunTurnLangGraph(deps?: {
 	model?: BaseChatModel;

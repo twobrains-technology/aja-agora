@@ -36,17 +36,31 @@ describeIfDb("FIX-45 — getContactDetail (integration)", () => {
 			.returning({ id: schema.conversations.id });
 		const [convWa] = await db
 			.insert(schema.conversations)
-			.values({ channel: "whatsapp", status: "active", contactId, waId: "62991199001", metadata: {} })
+			.values({
+				channel: "whatsapp",
+				status: "active",
+				contactId,
+				waId: "62991199001",
+				metadata: {},
+			})
 			.returning({ id: schema.conversations.id });
 
 		// mensagens (ordem cronológica entre canais)
 		const [mWeb] = await db
 			.insert(schema.messages)
-			.values({ conversationId: convWeb.id, role: "user", content: "quero um carro", channel: "web" })
+			.values({
+				conversationId: convWeb.id,
+				role: "user",
+				content: "quero um carro",
+				channel: "web",
+			})
 			.returning({ id: schema.messages.id });
-		await db
-			.insert(schema.messages)
-			.values({ conversationId: convWa.id, role: "user", content: "voltei pelo zap", channel: "whatsapp" });
+		await db.insert(schema.messages).values({
+			conversationId: convWa.id,
+			role: "user",
+			content: "voltei pelo zap",
+			channel: "whatsapp",
+		});
 
 		// 2 artifacts numa mensagem
 		await db.insert(schema.artifacts).values([
@@ -68,7 +82,12 @@ describeIfDb("FIX-45 — getContactDetail (integration)", () => {
 		await db.insert(schema.leadEvents).values([
 			{ leadId: lead.id, fromStage: "novo", toStage: "engajado", actorType: "system" },
 			{ leadId: lead.id, fromStage: "engajado", toStage: "qualificado", actorType: "system" },
-			{ leadId: lead.id, fromStage: "qualificado", toStage: "proposta_enviada", actorType: "system" },
+			{
+				leadId: lead.id,
+				fromStage: "qualificado",
+				toStage: "proposta_enviada",
+				actorType: "system",
+			},
 		]);
 	});
 

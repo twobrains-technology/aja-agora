@@ -241,9 +241,7 @@ export function rankGroups(
 		Number.POSITIVE_INFINITY,
 	);
 	const inputEfetivo: ScoringInput =
-		input.budget > 0 || !Number.isFinite(menorParcela)
-			? input
-			: { ...input, budget: menorParcela };
+		input.budget > 0 || !Number.isFinite(menorParcela) ? input : { ...input, budget: menorParcela };
 	const scored: ScoredGroup[] = groups.map((group) => scoreGroup(group, inputEfetivo));
 
 	// FIX-226 (D6): quando há apetite de lance E o guardrail está configurado,
@@ -255,7 +253,11 @@ export function rankGroups(
 	const guardrail = input.hasLance ? input.embutidoGuardrail : undefined;
 	const passesEmbutidoGuardrail = (group: GroupSummary): boolean => {
 		if (!guardrail || group.embeddedVariant !== "com") return true;
-		return respectsNetCreditGuardrail(group.creditValue, guardrail.maxEmbutidoPct, guardrail.valorDoBem);
+		return respectsNetCreditGuardrail(
+			group.creditValue,
+			guardrail.maxEmbutidoPct,
+			guardrail.valorDoBem,
+		);
 	};
 
 	const sorted = scored.sort((a, b) => {

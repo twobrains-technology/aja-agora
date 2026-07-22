@@ -193,7 +193,11 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					{/* FIX-222 (Ata 2026-07-04) — logo da administradora (confiabilidade +
 					    "o cara sabe pra onde vai"); fallback gracioso (iniciais) enquanto
 					    os assets reais são PENDENTE (sourcing/design). */}
-					<AdministradoraLogo administradora={administradora} logoUrl={logoUrl} className="size-5 shrink-0 text-[9px]" />
+					<AdministradoraLogo
+						administradora={administradora}
+						logoUrl={logoUrl}
+						className="size-5 shrink-0 text-[9px]"
+					/>
 					<p className="text-xs text-muted-foreground m-0 truncate">{administradora}</p>
 				</div>
 			</div>
@@ -271,8 +275,9 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 					>
 						<Info className="mt-0.5 size-3 shrink-0 text-primary" />
 						<span className="whitespace-normal break-words">
-							Você pediu uma carta de ~<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real ficou em{" "}
-							<span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
+							Você pediu uma carta de ~
+							<span className="whitespace-nowrap">{formatBRL0(rawCreditValue)}</span> — a carta real
+							ficou em <span className="whitespace-nowrap">{formatBRL0(creditValue)}</span>.
 						</span>
 					</p>
 				)}
@@ -289,7 +294,10 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 						>
 							<span>Por que esta recomendação?</span>
 							<ChevronDown
-								className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")}
+								className={cn(
+									"h-4 w-4 transition-transform duration-200",
+									expanded && "rotate-180",
+								)}
 							/>
 						</button>
 						<AnimatePresence>

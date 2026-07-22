@@ -33,7 +33,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 	const result = await transitionLeadStage(
 		id,
 		parsed.data.stage,
-		{ type: "admin", id: session!.user.id },
+		{ type: "admin", id: session.user.id },
 		{ allowRegression: parsed.data.allowRegression ?? false },
 	);
 

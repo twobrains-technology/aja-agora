@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("kpi-cards — copy com acentuação PT-BR", () => {
 	it("deve conter 'Tempo Médio no Funil' com acento", () => {

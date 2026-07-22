@@ -125,7 +125,9 @@ describe("publishToAttendant — retrocompat + flag simulated", () => {
 		const interactive = {
 			type: "button" as const,
 			body: { text: "Novo caso na mesa" },
-			action: { buttons: [{ type: "reply", reply: { id: "mesa_claim:abc", title: "Vou atender" } }] },
+			action: {
+				buttons: [{ type: "reply", reply: { id: "mesa_claim:abc", title: "Vou atender" } }],
+			},
 		};
 		publishToAttendant(phone, "Novo caso na mesa", { interactive });
 
