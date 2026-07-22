@@ -59,11 +59,11 @@ describe("partnerOfferToRealOffer — oferta real (8 campos) → confirmação",
 		expect(real.adminFeePercent).toBeUndefined();
 	});
 
-	it("segmentos pesados/outros caem nas categorias de domínio (4)", () => {
+	it("segmentos pesados/outros caem nas categorias de domínio (3, FIX-363: servicos extinta)", () => {
 		expect(partnerOfferToRealOffer(offers[0], "IMOVEL").category).toBe("imovel");
 		expect(partnerOfferToRealOffer(offers[0], "MOTOS").category).toBe("moto");
 		expect(partnerOfferToRealOffer(offers[0], "PESADOS").category).toBe("auto");
-		expect(partnerOfferToRealOffer(offers[0], "OUTROS BENS").category).toBe("servicos");
+		expect(partnerOfferToRealOffer(offers[0], "OUTROS BENS").category).toBe("auto");
 	});
 });
 

@@ -66,14 +66,16 @@ export interface BeviOffer {
 }
 
 /** Segmento Bevi → categoria de domínio. Bevi tem 6 segmentos; o domínio Aja
- * tem 4. PESADOS e OUTROS BENS são mapeados pro mais próximo (auto/servicos). */
+ * tem 3 (FIX-363: "servicos" foi extinta — não é mais uma modalidade ofertada).
+ * PESADOS, SERVICOS e OUTROS BENS mapeiam pro mais próximo (auto) — nunca dá
+ * throw, pois a Bevi pode devolver qualquer um desses 6 segmentos em runtime. */
 const SEGMENT_TO_CATEGORY: Record<string, ConsorcioCategory> = {
 	IMOVEL: "imovel",
 	AUTOS: "auto",
 	MOTOS: "moto",
-	SERVICOS: "servicos",
+	SERVICOS: "auto",
 	PESADOS: "auto",
-	"OUTROS BENS": "servicos",
+	"OUTROS BENS": "auto",
 };
 
 export function beviSegmentToCategory(segment: string): ConsorcioCategory {
