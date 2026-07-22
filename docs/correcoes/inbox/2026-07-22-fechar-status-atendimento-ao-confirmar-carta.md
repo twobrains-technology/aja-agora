@@ -8,7 +8,14 @@ rodada: 2026-07-22 — Kairo revisando o card de confirmação de carta (feature
 evidencia:
   - _evidencia/2026-07-22-fechar-status-atendimento-ao-confirmar-carta.png
 mexe_em:
-  - (a confirmar — ver achados do find-code sobre stage do funil, aba administradora e notificação de mesa)
+  - src/db/schema.ts (enum leadStageEnum — já existem os stages "na_administradora", "em_atendimento", "fechado_ganho")
+  - src/lib/admin/lead-stages.ts (STAGE_ORDER — ordem canônica, forward-only)
+  - src/lib/admin/dashboard-types.ts (FUNNEL_STAGES — label "Na Administradora" já existe na aba do funil)
+  - src/lib/whatsapp/mesa/notify.ts (notifyMesaAttendant — mecanismo já existente de notificação de atendente via WhatsApp)
+  - src/lib/whatsapp/mesa/outbound.ts (buildDossierMessage — monta detalhes do caso pro atendente)
+  - src/lib/mesa/handoff.ts (claimMesaHandoff — transição pra "em_atendimento" quando atendente assume)
+  - src/app/api/chat/route.ts:789 (action "contract-submit" → startContract(), fluxo web)
+  - src/lib/whatsapp/contract-capture.ts:201 (fireContract(), fluxo WhatsApp)
 ---
 
 ## Palavras do operador
@@ -27,4 +34,11 @@ mexe_em:
 - **Atual:** A confirmação dispara a resposta de sucesso pro cliente e o card de "próximo passo com a gente" (WhatsApp), mas **não está confirmado que o pipeline interno reflete o fechamento nem que a notificação de mesa dispara** — Kairo está pedindo isso explicitamente como próxima entrega, não relatando uma regressão observada.
 
 ## Pista de causa (A CONFIRMAR — não investigado a fundo)
-Isto é pedido de **feature/comportamento**, não regressão confirmada — precisa antes checar se já existe algo parcial (pode ser que o stage mude mas a notificação de mesa não dispare, ou vice-versa). Busca ampla disparada via `find-code` pra localizar: (1) enum/coluna de stage do funil e onde fica a "aba administradora", (2) mecanismo existente de notificação de atendentes de mesa (já citado por Kairo como algo que "a gente já tem lá no back-end" — reaproveitar, não reinventar), (3) o handler/rota acionado quando o cliente confirma a carta. Resultado do find-code ainda pendente no momento da captura deste card — atualizar `mexe_em:` assim que chegar.
+Confirmado por busca ampla (find-code): **toda a peça já existe no código**, só falta confirmar se estão conectadas no momento certo:
+
+- O enum `leadStageEnum` (`schema.ts`) **já tem** `na_administradora`, `em_atendimento` e `fechado_ganho` — não precisa criar stage novo.
+- A aba "Na Administradora" **já existe** no funil do admin (`dashboard-types.ts`, `FUNNEL_STAGES`).
+- O mecanismo de notificar atendente de mesa **já existe** (`notifyMesaAttendant`, `buildDossierMessage`, `claimMesaHandoff`) — é o "a gente já tem lá no back-end" que o Kairo mencionou.
+- O ponto de confirmação da carta é conhecido: web = `contract-submit` → `startContract()` (`route.ts:789`); WhatsApp = `fireContract()` (`contract-capture.ts:201`).
+
+**O que falta confirmar (não investigado a fundo aqui):** se `startContract()`/`fireContract()`, no momento em que a proposta é confirmada com sucesso, (a) já move o lead pro stage `na_administradora`/`fechado_ganho`, e (b) já chama `notifyMesaAttendant()`. Se as três peças existem mas não estão ligadas nesse gatilho específico, é conectar; se já estão ligadas, o pedido do Kairo pode já estar satisfeito e vale só validar em produção (não assumir bug sem checar o código de `startContract`/`fireContract` linha a linha — evidência antes de cravar).
