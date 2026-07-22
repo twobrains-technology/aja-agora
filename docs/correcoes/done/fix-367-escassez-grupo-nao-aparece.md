@@ -1,14 +1,66 @@
 ---
 id: FIX-367
 titulo: "Investigar e corrigir por que o card de escassez do grupo não apareceu no fluxo testado"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
-  - src/lib/agent/orchestrator/index.ts
-  - src/lib/agent/orchestrator/scarcity-payload.ts
+  - src/lib/agent/orchestrator/dial-payload.ts
+  - src/lib/agent/orchestrator/server-cards.ts
+  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/personas.ts
 rodada: 2026-07-22 — campanha vendedor-matador-consorcio (goal doc .processo/loop/2026-07-22-1853-vendedor-matador-consorcio.md, ITEM 5)
+commit: 944790b42b52f059b237bd9b7e11031c18da78f0
+executado_em: 2026-07-22
 ---
+
+## Conclusão da investigação (bloco-i)
+
+Reproduzido por leitura de código + testes (não precisou de acesso à Bevi real — a
+causa é 100% determinística no código, não depende de dado externo):
+
+**Causa real: NENHUM dos 3 caminhos do fix doc original bate exatamente — é um 4º
+caminho, uma variante da hipótese (b)/(c).** `groupId` estava corretamente ancorado
+(a regra dura "recommendation_card + comparison_table são inseparáveis no ramo 2+
+grupos" garante isso — `coerceRevealCota` sempre grava `groupId` no artifact do
+reveal). O problema é que `buildScarcityCard` (server-cards.ts) resolve o grupo
+pós-reveal via `meta.recommendedOffer` — um snapshot (`RecommendedOfferSnapshot`,
+dial-payload.ts) que **nunca capturou `availableSlots`**, mesmo quando a oferta
+real da Bevi trazia o dado no `recommendation_card`/`group_card`. Pior: quando o
+snapshot ancora num `simulation_result` (prioridade dada ao par de lance, FIX-C2),
+o `simulate_quota` **nunca devolve `availableSlots`** — o número de vagas real
+capturado no reveal era perdido no primeiro what-if.
+
+Ou seja: o card de escassez estava **estruturalmente impossível de mostrar um
+número real** desde o FIX-246 (que só levou `groupId` pro snapshot, não
+`availableSlots`) — não por a Bevi não trazer o dado (confirmado contra as
+fixtures reais capturadas em `docs/integracoes/assets/segmentos/*/offers.json`:
+16 de 17 ofertas reais têm `monthlyAwardedQuotas > 0`, incluindo a de moto).
+
+Não é (a) so_parcela nem (c) gap de dado upstream — é um gap de propagação em
+código, corrigível sem violar a regra "nunca inventar número" (CDC art. 37): o
+dado real já existia, só não estava sendo carregado até o ponto de emissão do
+card.
+
+## Correção aplicada
+
+- `RecommendedOfferSnapshot`/`ConversationMetadata.recommendedOffer` ganharam o
+  campo `availableSlots?: number`.
+- `offerSnapshotFromArtifact` extrai `availableSlots` do payload quando presente
+  (recommendation_card/group_card).
+- `resolveSnapshotAvailableSlots` (nova, pura, testada): quando o anchor do
+  snapshot é o `simulation_result` (sem o campo), cai pro `recommendation_card`/
+  `group_card` do MESMO turno.
+- `preserveAvailableSlotsAcrossResim` (nova, pura, testada): numa re-simulação
+  (what-if), preserva o `availableSlots` conhecido SÓ quando é o MESMO grupo —
+  nunca herda de um grupo diferente, nunca inventa.
+- `buildScarcityCard` agora propaga `offer.availableSlots` pro índice que
+  `coerceScarcityPayload` usa — antes, o índice sempre chegava sem o campo.
+
+TDD strict: `server-cards.test.ts` (RED confirmado antes do fix — o teste
+falhava com `undefined` em vez de `1`) + `dial-payload.fix-367-available-slots.test.ts`
+(9 casos cobrindo extração/fallback/preservação). 16 testes verdes, typecheck e
+lint limpos nos arquivos tocados.
 
 ## Palavras do operador
 > "Tem um step ai que eu não encontrei que mostra a escassez ali no grupo pra forçar ele fazer logo sabe?"
