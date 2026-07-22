@@ -2,13 +2,13 @@ import type { GatePartOption } from "./ui-message";
 
 /**
  * Fonte ÚNICA das categorias clicáveis de ENTRADA do chat web (Passo 1 da
- * jornada canônica). Bv2-01 / Bruna v1 #20: 3 categorias — Imóvel, Automóvel,
- * Moto. Moto SUBSTITUIU "serviços"/"Outros" nos chips, em paridade com o
- * WhatsApp (`welcomeButtonsToWhatsApp`) e a landing (`hero` CHIPS).
+ * jornada canônica). 3 categorias — Imóvel, Automóvel, Moto — em paridade com
+ * o WhatsApp (`welcomeButtonsToWhatsApp`) e a landing (`hero` CHIPS).
  *
- * A categoria `servicos` continua VIVA no domínio (Category/CATEGORY_META/
- * turn-analyzer/qualify-config) e acessível por TEXTO LIVRE ("quero fazer uma
- * reforma") — só deixou de ser opção clicável de entrada.
+ * FIX-363: a categoria `servicos` foi EXTINTA de todas as camadas do domínio
+ * (Category/CATEGORY_META/turn-analyzer/qualify-config) — não é mais possível
+ * chegar nela nem por texto livre ("quero fazer uma reforma" não classifica
+ * como categoria válida).
  *
  * ⚠️ NÃO duplicar esta lista. Tanto o adapter web (evento `welcome-categories`)
  * quanto o `EmptyState` do chat (`message-list.tsx`) importam daqui. A

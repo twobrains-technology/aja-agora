@@ -1,6 +1,6 @@
 "use client";
 
-import { Bike, Briefcase, Car, Home } from "lucide-react";
+import { Bike, Car, Home } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
@@ -41,14 +41,6 @@ const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
 		hoverBg: "group-hover:bg-[var(--cat-moto)]",
 		hoverBorder: "group-hover:border-[var(--cat-moto)]",
 	},
-	servicos: {
-		icon: Briefcase,
-		sub: "Reforma ou viagem",
-		bgSoft: "bg-[var(--cat-servicos-soft)]",
-		iconColor: "text-[var(--cat-servicos)]",
-		hoverBg: "group-hover:bg-[var(--cat-servicos)]",
-		hoverBorder: "group-hover:border-[var(--cat-servicos)]",
-	},
 };
 
 export function WelcomeCategories({
@@ -68,7 +60,7 @@ export function WelcomeCategories({
 			if (selectedId) return;
 			setSelectedId(option.value);
 			await sendAction(
-				{ kind: "category", category: option.value as "imovel" | "auto" | "moto" | "servicos" },
+				{ kind: "category", category: option.value as "imovel" | "auto" | "moto" },
 				option.label,
 			);
 		},

@@ -55,7 +55,6 @@ export type DeterministicSignals = {
 const REQUIRED_BY_CATEGORY: Record<string, ReadonlyArray<keyof QualifyAnswers | "creditRange">> = {
 	imovel: ["creditRange", "prazoMeses"],
 	auto: ["creditRange", "hasLance"],
-	servicos: ["creditRange"],
 };
 
 // R$, %, e número + unidade temporal/parcela. Unidade necessária pra evitar

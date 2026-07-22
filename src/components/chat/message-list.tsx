@@ -20,7 +20,7 @@ import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 import { nextStickState } from "./scroll-intent";
 
-type Category = "imovel" | "auto" | "moto" | "servicos";
+type Category = "imovel" | "auto" | "moto";
 
 interface MessageListProps {
 	messages: AjaUIMessage[];

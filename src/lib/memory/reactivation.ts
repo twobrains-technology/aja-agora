@@ -49,7 +49,6 @@ function summarizeBlock(block: HumanMemoryBlock): string | null {
 			imovel: "imóvel",
 			auto: "auto",
 			moto: "moto",
-			servicos: "serviços",
 		};
 		parts.push(`Categoria de interesse: ${categoryLabel[block.category]}`);
 	}

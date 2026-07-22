@@ -131,7 +131,7 @@ export async function listExpertisesByCategory(): Promise<Record<Category, strin
 			),
 		);
 
-	const out: Record<Category, string[]> = { imovel: [], auto: [], moto: [], servicos: [] };
+	const out: Record<Category, string[]> = { imovel: [], auto: [], moto: [] };
 	for (const r of rows) {
 		if (!r.category || !r.expertise) continue;
 		const cat = r.category as Category;

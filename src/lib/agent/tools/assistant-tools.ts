@@ -70,10 +70,9 @@ const MONETARY_PATTERN =
  * aparecer no assistantResponse de um specialist daquela categoria (CA-34).
  */
 const CATEGORY_FORBIDDEN_TERMS: Record<string, RegExp> = {
-	auto: /\b(im[óo]vel|im[óo]veis|apartamento|casa|terreno|moto|motoc[ií]clo|servi[çc]o|reforma)\b/i,
-	imovel: /\b(carro|autom[óo]vel|moto|motoc[ií]clo|ve[íi]culo|servi[çc]o|reforma)\b/i,
-	moto: /\b(carro|autom[óo]vel|im[óo]vel|apartamento|casa|servi[çc]o|reforma)\b/i,
-	servicos: /\b(carro|autom[óo]vel|im[óo]vel|apartamento|casa|moto|motoc[ií]clo)\b/i,
+	auto: /\b(im[óo]vel|im[óo]veis|apartamento|casa|terreno|moto|motoc[ií]clo)\b/i,
+	imovel: /\b(carro|autom[óo]vel|moto|motoc[ií]clo|ve[íi]culo)\b/i,
+	moto: /\b(carro|autom[óo]vel|im[óo]vel|apartamento|casa)\b/i,
 };
 
 /**

@@ -27,7 +27,7 @@ export type SliderField = {
 export type PlanGatePartData = {
 	kind: "plan";
 	gate: "credit";
-	category: "imovel" | "auto" | "moto" | "servicos";
+	category: "imovel" | "auto" | "moto";
 	credit: SliderField;
 	/** Prazo do plano em meses (slider "Em quantos meses quer pagar"). */
 	term: SliderField;
@@ -67,7 +67,7 @@ export type GatePartData =
 	| {
 			kind: "slider";
 			gate: "credit";
-			category?: "imovel" | "auto" | "moto" | "servicos";
+			category?: "imovel" | "auto" | "moto";
 			fields: SliderField[];
 	  }
 	| {
@@ -81,7 +81,7 @@ export type GatePartData =
 export type TransitionPartData = {
 	toPersona: string;
 	toPersonaName: string;
-	toCategory: "imovel" | "auto" | "moto" | "servicos";
+	toCategory: "imovel" | "auto" | "moto";
 	bridgeText: string;
 };
 

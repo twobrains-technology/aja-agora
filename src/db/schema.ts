@@ -504,7 +504,7 @@ export const personas = pgTable(
 		check("personas_role_check", sql`${table.role} IN ('concierge', 'specialist')`),
 		check(
 			"personas_category_check",
-			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'moto', 'servicos')`,
+			sql`${table.category} IS NULL OR ${table.category} IN ('imovel', 'auto', 'moto')`,
 		),
 		check(
 			"personas_specialist_has_category",

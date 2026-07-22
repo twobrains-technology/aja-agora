@@ -56,7 +56,6 @@ const STATUS_VARIANTS: Record<ConversationItem["status"], "default" | "secondary
 const CATEGORY_LABELS: Record<string, string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
-	servicos: "Serviços",
 };
 
 const PAGE_SIZE = 10;

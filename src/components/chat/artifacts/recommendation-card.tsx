@@ -41,7 +41,6 @@ const CATEGORY_LABELS: Record<RecommendationCardPayload["category"], string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
 	moto: "Moto",
-	servicos: "Serviços",
 };
 
 // Decisão de produto (Bernardo, 2026-06-11): card mais direto — "Taxa adm" some

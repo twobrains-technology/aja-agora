@@ -20,13 +20,16 @@ function loadFixture(segment: string): { offers: BeviOffer[] } {
 }
 
 describe("beviSegmentToCategory", () => {
-	it("mapeia os 6 segmentos Bevi pras 4 categorias do domínio", () => {
+	it("mapeia os 6 segmentos Bevi pras 3 categorias do domínio (FIX-363: servicos extinta)", () => {
 		expect(beviSegmentToCategory("IMOVEL")).toBe("imovel");
 		expect(beviSegmentToCategory("AUTOS")).toBe("auto");
 		expect(beviSegmentToCategory("MOTOS")).toBe("moto");
-		expect(beviSegmentToCategory("SERVICOS")).toBe("servicos");
 		expect(beviSegmentToCategory("PESADOS")).toBe("auto");
-		expect(beviSegmentToCategory("OUTROS BENS")).toBe("servicos");
+		// FIX-363: SERVICOS e OUTROS BENS não têm mais categoria própria — a Bevi
+		// pode devolver esses segmentos em runtime e o mapeamento NUNCA pode dar
+		// throw (derrubaria a descoberta de grupos). Caem em "auto" (mais próximo).
+		expect(beviSegmentToCategory("SERVICOS")).toBe("auto");
+		expect(beviSegmentToCategory("OUTROS BENS")).toBe("auto");
 	});
 
 	it("lança em segmento desconhecido", () => {

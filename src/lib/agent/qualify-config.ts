@@ -82,7 +82,6 @@ export type TimeframeOption = {
 export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 100_000, max: 2_000_000, step: 50_000, default: 400_000 },
 	// FIX-54: teto elevado 300k → 500k (carros novos/premium passavam de 300k).
-	// Alinha com `servicos` e cobre a faixa real sem virar irreal pra Bevi.
 	// 2026-07-21 (Kairo): passo de volta a 10k. De mil em mil, atravessar a faixa
 	// de um carro (20k→500k) exigia centenas de micro-arrastes e o cliente pensa em
 	// dezenas de milhar ("uns 80 mil"). A precisão fina não se perde: o input ao
@@ -90,7 +89,6 @@ export const CREDIT_BOUNDS: Record<Category, Bounds> = {
 	auto: { min: 20_000, max: 500_000, step: 10_000, default: 80_000 },
 	// Moto vai só até 80k — 10k aqui deixaria 8 posições no slider inteiro.
 	moto: { min: 8_000, max: 80_000, step: 5_000, default: 25_000 },
-	servicos: { min: 10_000, max: 500_000, step: 10_000, default: 60_000 },
 };
 
 export type CreditClamp = {
@@ -223,29 +221,6 @@ export const CREDIT_BUCKETS: Record<Category, Bucket[]> = {
 			max: 80_000,
 		},
 	],
-	servicos: [
-		{
-			token: "30",
-			title: "Até R$ 30 mil",
-			desc: "Reformas simples, viagens",
-			min: 0,
-			max: 30_000,
-		},
-		{
-			token: "100",
-			title: "R$ 30 a 100 mil",
-			desc: "Reformas médias, formaturas",
-			min: 30_000,
-			max: 100_000,
-		},
-		{
-			token: "500",
-			title: "Acima de R$ 100 mil",
-			desc: "Grandes projetos",
-			min: 100_000,
-			max: 500_000,
-		},
-	],
 };
 
 // ---- Lance embutido (jornada do doc 2026-05-29) ----
@@ -339,7 +314,6 @@ export const MONTHLY_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 1_000, max: 15_000, step: 500, default: 3_000 },
 	auto: { min: 300, max: 3_000, step: 100, default: 800 },
 	moto: { min: 150, max: 1_500, step: 50, default: 500 },
-	servicos: { min: 200, max: 2_000, step: 100, default: 500 },
 };
 
 // ---- Prazo do plano (handoff, re-UX por intenção) ----
@@ -351,7 +325,6 @@ export const TERM_BOUNDS: Record<Category, Bounds> = {
 	imovel: { min: 120, max: 240, step: 12, default: 180 },
 	auto: { min: 36, max: 100, step: 6, default: 72 },
 	moto: { min: 24, max: 80, step: 6, default: 60 },
-	servicos: { min: 12, max: 60, step: 6, default: 40 },
 };
 
 // ---- Intenção do "Planeje sua conquista" (segmented control do handoff) ----

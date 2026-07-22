@@ -19,10 +19,10 @@ export const turnAnalysisSchema = z.object({
 			"Frase curta (max 1 linha) explicando os sinais detectados no texto. Use pra ancorar a decisão e facilitar debug.",
 		),
 	detectedCategory: z
-		.enum(["imovel", "auto", "moto", "servicos"])
+		.enum(["imovel", "auto", "moto"])
 		.nullable()
 		.describe(
-			"Categoria de consórcio detectada. imovel = apto/casa/terreno/comercial. auto = carro/automóvel/caminhonete/veículo. moto = moto/motocicleta/motoneta. servicos = reforma/viagem/formatura/saúde/qualquer outro. null se não houver indicação clara nesta mensagem.",
+			"Categoria de consórcio detectada. imovel = apto/casa/terreno/comercial. auto = carro/automóvel/caminhonete/veículo. moto = moto/motocicleta/motoneta. Só existem essas 3 categorias — a modalidade 'serviços' foi extinta, não é mais ofertada. null se não houver indicação clara nesta mensagem ou se o assunto não casar com nenhuma das 3 (ex: reforma, viagem, formatura).",
 		),
 	detectedSubTopic: z
 		.string()
@@ -162,7 +162,7 @@ Regras gerais:
 Exemplos:
 - "olá" -> { detectedCategory: null, detectedSubTopic: null, expertiseLevel: "neutro", todos os outros null }
 - "imóvel de 200k" -> { detectedCategory: "imovel", detectedSubTopic: null, isExplicitSwitch: false, expertiseLevel: "neutro", creditMax: 200000 }
-- "queria fazer uma reforma" -> { detectedCategory: "servicos", detectedSubTopic: null, expertiseLevel: "neutro" }
+- "queria fazer uma reforma" -> { detectedCategory: null, detectedSubTopic: null, expertiseLevel: "neutro" }  // "serviços" não é mais uma categoria — reforma/viagem/etc. não casam com imovel/auto/moto
 - "quero comprar um carro de uns 80 mil em 2 anos" -> { detectedCategory: "auto", creditMax: 80000, prazoMeses: 24 }
 - "carro de 80 mil, uns 850 por mês" -> { detectedCategory: "auto", creditMax: 80000, prazoMeses: null }  // 850/mês e orçamento mensal, NÃO prazo
 - "quero um imovel de 300k, pago uns 2 mil mensais" -> { detectedCategory: "imovel", creditMax: 300000, prazoMeses: null }  // 2 mil mensais e orçamento, NÃO prazo
@@ -269,7 +269,6 @@ export async function analyzeTurn(
 		imovel: [],
 		auto: [],
 		moto: [],
-		servicos: [],
 	}));
 
 	const start = Date.now();
