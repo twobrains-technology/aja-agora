@@ -1,6 +1,27 @@
 # Goal — Agente vendedor matador: fecha os bugs da rodada de teste do Kairo e prova venda de verdade em 3 perfis de cliente
 
-> 2026-07-22 · Operador: Kairo · Status: draft
+> 2026-07-22 · Operador: Kairo · Status: criticada
+
+## Decisões tomadas por default recomendado (Kairo ausente — `AskUserQuestion` dispensado 2x no ClaudeNotch)
+
+O crítico (Opus, ver LEDGER) levantou 4 decisões de produto que só o Kairo deveria cravar.
+Perguntei via `AskUserQuestion` duas vezes e as duas foram dispensadas no ClaudeNotch (ele não
+estava disponível). Como o pedido explícito da campanha é rodar em loop autônomo, sigo com a
+opção **recomendada** em cada uma, documentada aqui pra revisão dele quando quiser — **não é
+decisão final, é o default que destrava o loop**:
+
+1. **Segmento Bevi `OUTROS BENS`/`SERVICOS` ao remover Serviços →** mapear pra `auto` (evita o
+   `throw` em segmento desconhecido no `offer-mapper.ts`, não derruba a busca de grupos).
+2. **Erradicar `servicos` de todas as camadas (tipo/config/detecção/banco) →** sim, erradicar
+   tudo — é o que a citação original do Kairo pede ("nem opção, nem falar com ele").
+3. **Stage do lead no aceite da carta →** manter `proposta_enviada` (fiel ao processamento real
+   da Bevi; `na_administradora` só quando ela de fato processar via polling existente). A mesa
+   já é notificada nesse momento hoje — isso não muda.
+4. **Escassez no ramo `so_parcela` →** manter fora (escassez só reforça decisão de lance; quem já
+   escolheu só parcela não precisa do empurrão).
+
+**⚠️ PENDENTE-KAIRO:** revisar estas 4 decisões quando puder. Se discordar de alguma, é só falar
+que a próxima rodada ajusta.
 
 ## Objetivo macro
 
@@ -22,7 +43,7 @@ Só encerra quando **todas** as dimensões batem o teto E o juiz (Opus, no fecha
 |---|---|---|
 | Negócio | Nenhuma simulação/carta de "Serviços" é possível em nenhum canal; lead avança pro stage certo (`na_administradora`/`fechado_ganho`) e a mesa é notificada no momento da confirmação da carta; resume reconhece proposta já fechada/mesa sem regredir a etapa anterior | E2E dos 3 perfis + inspeção de stage/notificação no dossiê |
 | Funcional | `turn-analyzer` e qualquer outro ponto de detecção de categoria não classificam mais texto livre como `servicos`; busca de grupos com/sem lance embutido roda em paralelo (não sequencial); gate de "não tenho aporte" verifica se já há oferta de lance embutido pronta e oferece | log de asserções + diff dos arquivos tocados |
-| Vendedor (comercial) | Nos 3 cenários, quando faz sentido, o agente sugere lance embutido citando a vantagem real (parcela alta até contemplar → cai depois da amortização) e usa o card de escassez pra criar urgência sem inventar número | juiz (persona vendedor) lê a conversa completa do dossiê |
+| Vendedor (comercial) — **julgamento de conversa, não mecânico; só o juiz-LLM avalia esta linha** | Nos 3 cenários, quando faz sentido, o agente sugere lance embutido citando a vantagem real (parcela alta até contemplar → cai depois da amortização) e usa o card de escassez pra criar urgência sem inventar número | juiz (persona vendedor) lê a conversa completa do dossiê — é a única dimensão subjetiva da rubrica, aceita como tal |
 | UX | Sem beco-sem-saída; saudação de retomada ("Voltei") consistente com a etapa real do lead; nenhuma modalidade fantasma nos chips | juiz percorre os prints/transcript como cliente real |
 | UI | Copy pt-BR correta (acentos/cedilhas), cards renderizam sem erro nos 3 cenários (web) | screenshots do coletor |
 | E2E/integração | Testes pontuais de regressão (TDD rápido, só onde há lógica/invariante) passam; typecheck/lint da base integrada verdes | saída de `pnpm typecheck`/`pnpm test` no LEDGER |
@@ -45,40 +66,68 @@ testado.
 
 ## Itens (o que a rodada corrige/implementa)
 
-### ITEM 1 — Apagar a modalidade "Serviços" de vez (seed, banco de prod, detecção em texto livre)
+### ITEM 1 — Apagar a modalidade "Serviços" de vez (seed, banco de prod, detecção em texto livre) — **cross-cutting, roda SOZINHO e PRIMEIRO**
 - **Palavras do operador:** "temos que apagar do seed e do banco de prod o agent de servicos. nem pelo whats enm pela web deve podder falar com ele. nem ter essa ocpao."
 - **Cenário/evidência:** `docs/correcoes/inbox/2026-07-22-remover-agente-servicos-seed-e-prod.md` (card já capturado, com print da thread do time confirmando que um cliente simulou carta de Serviços mesmo a modalidade devendo estar desabilitada).
-- **Root cause (investigado):** os chips clicáveis (web/WhatsApp) já foram restringidos antes (`welcome-options.ts`, só imóvel/auto/moto) — remoção superficial. Mas a categoria `servicos` continua viva embaixo: `src/lib/agent/turn-analyzer.ts` ainda **detecta "servicos" em texto livre** (reforma/viagem/educação/saúde); a persona "Camila" (seed em `drizzle/0004_agents_crud.sql`) continua cadastrada; `Category` type (`src/lib/agent/personas.ts`), `CATEGORY_META`, `CREDIT_BOUNDS` (`qualify-config.ts`), ranges de recomendação (`recommendation.ts`), `plan-estimate.ts`, `gate-questions.ts` e o formatter do WhatsApp seguem tratando `servicos` como categoria válida; há CHECK constraint `personas_category_check` no schema/banco permitindo o valor.
-- **Correção proposta:** nova migration que remove a persona "Camila"/servicos do banco de prod + o valor `servicos` do CHECK constraint; `turn-analyzer.ts` para de classificar qualquer texto como `servicos` (trata como categoria inexistente, nunca ativável); tirar `servicos` de `Category`/`SPECIALIST_CATEGORIES`/`CATEGORY_META`/`CREDIT_BOUNDS`/ranges/`plan-estimate`/`gate-questions`/formatter — o objetivo é a modalidade deixar de existir em QUALQUER camada, não só na UI.
-- **Critério de aceitação:** nos 3 cenários E2E, mesmo se o cliente-agente de teste mencionar "reforma"/"viagem"/"serviço" em texto livre, o produto NUNCA oferece nem simula carta de Serviços — no máximo redireciona pra imóvel/auto/moto.
+- **Root cause (CONFIRMADO pelo crítico — blast radius bem maior que a v1 desta spec):** os chips clicáveis (web/WhatsApp) já foram restringidos antes (`welcome-options.ts:9-11`, documentando explicitamente que `servicos` foi **mantida viva de propósito** no domínio, só tirada dos chips — ver decisão #2 acima). A categoria vive em **~30 arquivos não-teste**, não só nos citados na v1: `turn-analyzer.ts:22,25,165` (enum + few-shot "reforma"→servicos), CHECK `personas_category_check` (`schema.ts:505-508`), seed da Camila (`drizzle/0004_agents_crud.sql:59`) **+ referências em migrations 0009/0014/0015/0016** (CHECK + UPDATEs de examples/tools — a persona acumulou config em 5+ migrations), `personas.ts:9,373`, `categories.ts:8,12`, `qualify-config.ts:93,226,342,354`, `recommendation.ts:81`, `plan-estimate.ts:27,34`, `routing.ts:10` (regex), `assistant-tools.ts:76` (regex), `chat/types.ts` (7×), `ui-message.ts` (3×), `tools/ai-sdk.ts` (7× zod enum), `tools/schemas.ts:19,35`, `validations/persona.ts:39,97,129`, `diagnose/types.ts:12`, `personas-repo.ts:134`, `reactivation.ts:52`, `whatsapp/formatter.ts` (5×), `gate-questions.ts`.
+  **Dependência escondida grave:** `src/lib/adapters/bevi/partner-offer-mapper.ts:70-83` (`beviSegmentToCategory`) mapeia segmentos REAIS da Bevi `SERVICOS` e `OUTROS BENS` → `servicos`, e **dá `throw` em segmento desconhecido (linha 81)**. Se `servicos` sair do enum sem tratar esse mapeamento, uma oferta real da Bevi nesses segmentos **derruba a descoberta em runtime** (não é só dado histórico). `messages.personaId` é `text` sem FK (`schema.ts:309`) — deletar a persona não quebra por cascata, mas deixa `personaId='servicos'` órfão em transcripts antigos (perda de segmentação de eval, aceitável).
+- **Correção proposta:** (1) `partner-offer-mapper.ts` — mapear segmentos `SERVICOS`/`OUTROS BENS` pra `auto` em vez de lançar/reconhecer `servicos` (decisão #1 acima); (2) migration que primeiro deleta/reatribui a persona "Camila" e SÓ DEPOIS aplica o `ADD CONSTRAINT` sem `servicos` (ordem importa — o constraint falha se a linha antiga ainda existir); (3) remover `servicos` de todo tipo/enum/config listados acima — tratar como categoria inexistente em qualquer camada; (4) `turn-analyzer.ts` para de classificar qualquer texto como `servicos`.
+- **Critério de aceitação:** nos 3 cenários E2E, mesmo se o cliente-agente de teste mencionar "reforma"/"viagem"/"serviço" em texto livre, o produto NUNCA oferece nem simula carta de Serviços — no máximo redireciona pra imóvel/auto/moto; `pnpm typecheck` verde após a remoção do tipo (prova que não sobrou referência solta); uma oferta Bevi simulada com segmento `SERVICOS`/`OUTROS BENS` não derruba a busca de grupos (mapeia pra `auto` sem throw).
+- **⚠️ Por que roda sozinho e primeiro:** este item muda o type `Category` (`personas.ts:9`), que rippla em `qualify-config.ts`, `recommendation.ts`, `gate-questions.ts`, `qualify-state.ts`, `chat/types.ts`, `tools/*` — arquivos que os ITEM 2/3/4/5 também tocam. Rodar em paralelo com os demais garante conflito de merge e branch quebrando no typecheck. Ver "Plano de blocos" abaixo.
 
 ### ITEM 2 — Resume ("Voltei") deve reconhecer a etapa real do lead (mesa/fechado), não voltar pra etapa anterior
 - **Palavras do operador:** "qd volto para uma proposta ja finalizada o agente entende que eu estava num passo anterior e parece nem saber que eu fechei um plano [...] se ele ta numa mesa ele deve notificar assim: 'Que bom que você voltou! Já recebemos sua proposta, daqui a pouco o atendente fala com você no WhatsApp pedindo seus documentos' [...] sempre orientar ele a ir para o WhatsApp."
 - **Cenário/evidência:** `docs/correcoes/inbox/2026-07-22-resume-nao-reconhece-etapa-mesa.md` (print: cliente com proposta já fechada/na mesa clica "Voltei" e o agente retoma perguntando "você decidiu qual caminho quer seguir — com lance ou só sorteio mesmo?", como se a proposta não tivesse sido fechada).
-- **Root cause (a confirmar, pista registrada):** suspeita em `src/components/chat/theater/theater-chat.tsx` / `message-list.tsx` — o resume provavelmente reconstrói contexto a partir do histórico de mensagens (pega a penúltima pergunta antes do fechamento) em vez de checar o `stage` real do lead (`na_administradora`/`em_atendimento`/`fechado_ganho`, ver ITEM 3). Precisa confirmar isso ao investigar o bloco.
-- **Correção proposta:** o resume deve, antes de montar a saudação, checar o stage atual do lead; se `>= na_administradora`, a saudação reconhece o fechamento e reforça o encaminhamento pro WhatsApp (comportamento é do modelo/prompt — copy exata não trava em regex, mas o FATO "proposta já fechada" vira dado determinístico que o prompt recebe).
-- **Critério de aceitação:** no cenário E2E onde a proposta já foi confirmada e o cliente volta, a saudação de resume reconhece o fechamento e direciona pro WhatsApp — nunca repete pergunta de etapa anterior (lance/sorteio) como se nada tivesse acontecido.
+- **Root cause (CORRIGIDO pelo crítico — a v1 apontava pro arquivo errado):** o resume é **server-side**, em `src/lib/chat/resume.ts:65-136` — e a linha `:125` **já deriva o gate do ESTADO** via `nextGate(metaCompleta)` (comentário `:120-123` explícito: "o gate é derivado do estado, não do histórico"). O client (`theater-chat.tsx`/`message-list.tsx`) NÃO é o problema. O root cause real: **`nextGate` (`src/lib/agent/qualify-state.ts:237`) não faz short-circuit quando a proposta já fechou** — existe um flag `contractClosed` em meta (usado em `resume.ts:56` por `hasMeaningfulProgress`), mas `nextGate` re-emite um gate de qualificação (o card "com lance ou só sorteio" = `two_paths`/`decision`) ignorando esse fechamento. Além disso, `resume.ts` lê `conversation.metadata`, **não** `lead.stage` — ligar o resume ao stage real da tabela `leads` é trabalho adicional que a v1 não mapeava.
+- **Correção proposta:** em `nextGate` (`qualify-state.ts:237`), checar `contractClosed`/stage do lead ANTES de qualquer outro gate — se fechado, retornar um gate terminal (nenhuma pergunta de qualificação); no `resume.ts`, quando esse gate terminal for detectado, montar a saudação reconhecendo o fechamento e reforçando o encaminhamento pro WhatsApp (comportamento é do modelo/prompt — copy exata não trava em regex, mas o FATO "proposta já fechada" vira dado determinístico que o prompt recebe).
+- **Critério de aceitação:** no cenário E2E onde a proposta já foi confirmada e o cliente volta, `nextGate` não re-emite gate de qualificação (`two_paths`/`decision`/etc.) — a saudação de resume reconhece o fechamento e direciona pro WhatsApp, nunca repetindo pergunta de etapa anterior.
 
 ### ITEM 3 — Ao confirmar a carta, mover o lead pra "administradora"/"fechado" e notificar a mesa
 - **Palavras do operador:** "Quando for notificado esse card aqui a nossa status do nosso atendimento lá tem que ser fechado já, ganho né? [...] ele tem que ir pra administradora, ele tem que estar em nosso funil na aba de administradora, e já tem que notificar o atendente [...] os atendentes da mesa, igual a gente tem lá no back-end."
 - **Cenário/evidência:** `docs/correcoes/inbox/2026-07-22-fechar-status-atendimento-ao-confirmar-carta.md` (print: tela de sucesso pós "Confirmo essa carta").
-- **Root cause (investigado):** todas as peças **já existem**: `leadStageEnum` (`src/db/schema.ts`) já tem `na_administradora`, `em_atendimento`, `fechado_ganho`; a aba "Na Administradora" já existe no funil (`src/lib/admin/dashboard-types.ts`, `FUNNEL_STAGES`); o mecanismo de notificar mesa já existe (`notifyMesaAttendant` em `src/lib/whatsapp/mesa/notify.ts`, `buildDossierMessage` em `outbound.ts`, `claimMesaHandoff` em `src/lib/mesa/handoff.ts`). O ponto de confirmação é `startContract()` (web, `src/app/api/chat/route.ts:789`, action `contract-submit`) e `fireContract()` (WhatsApp, `src/lib/whatsapp/contract-capture.ts:201`). **Falta confirmar** (é o trabalho do bloco): se esses dois pontos, ao ter sucesso, já chamam a mudança de stage e `notifyMesaAttendant()` — ou se as peças existem mas não estão ligadas nesse gatilho específico.
-- **Correção proposta:** se não estiver ligado, conectar `startContract()`/`fireContract()` (sucesso) → transição de stage pra `na_administradora` (ou `fechado_ganho`, decidir qual é o correto olhando o significado dos dois stages no funil) → `notifyMesaAttendant()` com o dossiê do lead. Reaproveitar os mecanismos existentes — não reinventar.
-- **Critério de aceitação:** nos 3 cenários E2E, ao confirmar a carta, o dossiê mostra (via query no banco/log) que o stage do lead mudou e que `notifyMesaAttendant` foi chamado.
+- **Root cause (CORRIGIDO pelo crítico — a v1 estava FACTUALMENTE ERRADA: isto já funciona hoje):** confirmado no código que **stage e notificação de mesa JÁ acontecem no aceite**: `createBeviProposal` (`src/lib/bevi/proposal-repo.ts:76`) chama `transitionLeadStage(leadId, "proposta_enviada")` no fechamento; e a mesa **já é notificada** — web `route.ts:1011` chama `sendFechoPedirOi` → `fecho-pedir-oi.ts:126` → `dispatchAutoTransbordo(leadId)` (`createMesaHandoff` + `broadcastCaseToAttendants`); WhatsApp faz o mesmo em `interactive-handlers.ts:265-266`. Existe ainda um SEGUNDO caminho: o worker `proposal-status-poll.ts:69-71` dispara `dispatchAutoTransbordo` de novo quando o lead entra em `na_administradora` (via polling da Bevi). **O critério da v1 ("mostra que notifyMesaAttendant foi chamado") passaria HOJE sem escrever uma linha** — não testava o que o Kairo realmente quer.
+  O gap real, confirmado por decisão #3 (acima): manter `proposta_enviada` no aceite é o comportamento correto (fiel ao processamento real da Bevi — `na_administradora` chega via polling quando ela de fato processa). Ou seja: **este item pode já estar resolvido** — o trabalho é *validar* que os dois caminhos (aceite + polling) não geram **notificação DUPLICADA de mesa** quando ambos disparam pro mesmo lead (risco real: `sendFechoPedirOi` no aceite E o poll de `na_administradora` chamando `dispatchAutoTransbordo` de novo).
+- **Correção proposta:** (1) não implementar nada novo de "conectar" — isso já existe; (2) escrever um teste/checagem pontual que prove que, no fluxo aceite→poll, `dispatchAutoTransbordo`/`createMesaHandoff` é chamado **exatamente uma vez** por lead (idempotência do handoff já ativo); (3) só then confirmar com o Kairo se o rótulo do funil no aceite deveria mudar de `proposta_enviada` pra outro stage (decisão #3 já tomada como default: manter).
+- **Critério de aceitação:** nos 3 cenários E2E, ao confirmar a carta, o stage do lead vira `proposta_enviada` e existe **exatamente 1** handoff de mesa criado por lead (não duplicado) mesmo que o polling de `na_administradora` rode depois.
 
 ### ITEM 4 — Sugerir lance embutido proativamente quando o cliente não tem aporte (com pré-busca em paralelo)
 - **Palavras do operador:** "se eu falo que não tenho grana agora [...] tem que ter aquela dinâmica [...] 'Cara, tem uma opção aqui, você já ouviu falar de lance embutido?' [...] em background, assim que buscar os grupos do valor que ele pediu, buscasse também os grupos do lance embutido [...] sem afetar a performance [...] explicar pra ele que você começa pagando até ser contemplado, sua parcela fica em um valor alto, mas logo que você é contemplado, como você amortiza, a parcela fica baixa [...] Tem que agir como vendedor mesmo, inteligente."
 - **Cenário/evidência:** `docs/correcoes/inbox/2026-07-22-sugerir-lance-embutido-proativamente-sem-grana.md` (print: cliente responde "Por enquanto não" ao lance, agente só segue com os 3 cenários padrão sem citar lance embutido).
-- **Root cause (investigado):** `src/lib/adapters/bevi/bevi-self-contract-adapter.ts:311-349` (`offersForValue`) busca grupos COM e SEM lance embutido, mas **sequencialmente** (baseline sem embutido, depois com embutido após um `sleep`) — não em paralelo. `src/lib/agent/orchestrator/gate-questions.ts:160-165` (`LANCE_EMBUTIDO_ASK`) só oferece lance embutido se perguntado especificamente ali; se o cliente recusa (linha 239-240), a resposta "vou seguir sem considerar... se quiser, a gente volta depois" **fecha o assunto** e não é reaberta quando o cliente, no gate do lance NORMAL (linha 156), diz que não tem aporte. `src/lib/agent/orchestrator/embedded-bid-payload.ts:14-15,49` já explica o lance embutido, mas focado em "o crédito diminui" — falta o ângulo comercial de parcela alta→baixa.
-- **Correção proposta:** (a) paralelizar as duas chamadas em `offersForValue` e cachear o resultado do lance embutido na memória da conversa assim que o valor é conhecido, mesmo sem o cliente ter pedido; (b) quando o gate de lance normal recebe recusa de aporte, checar se há oferta de lance embutido pré-buscada e a IA (via prompt/directive, não regex fixo) sugerir proativamente, citando a vantagem; (c) reforçar o texto de explicação do lance embutido com o ângulo "parcela alta até contemplar, cai depois da amortização, ainda vale a pena".
-- **Critério de aceitação:** no cenário 2 (moto, pressa) e no cenário 3 (carro, meio-a-meio), quando o cliente sinaliza que não tem aporte total, o agente sugere lance embutido citando a vantagem correta, sem atraso perceptível de resposta (grupos já pré-buscados).
+- **Root cause (investigado, com ressalva do crítico em (a)):** `src/lib/adapters/bevi/bevi-self-contract-adapter.ts:311-349` (`offersForValue`) busca grupos COM e SEM lance embutido **sequencialmente** (baseline sem embutido `:327`, `sleep` `:330`, com embutido `:332`). **⚠️ Isso pode NÃO ser um descuido paralelizável:** `ensureOffers` (`:261-296`) muta estado compartilhado da MESMA proposta ativa na Bevi (`this.proposalReady`, `setSegment` `:282-284`, `offerCache`, `offerIndex`), e comentários `:351-369` documentam que a Bevi opera com **"1 proposta ativa, re-PATCH sequencial" (cookbook §3)** — paralelizar duas chamadas que fazem `setSegment` na mesma proposta pode corromper o resultado ou violar o contrato do upstream. **Não crave "paralelizar" sem verificar isso primeiro** (regra epistêmica — não temos evidência de que a Bevi tolera concorrência na mesma proposta).
+  Separadamente: a lógica de ramificação do lance embutido não está em `gate-questions.ts` (que só tem strings de copy) — está em `qualify-state.ts` (`nextGate:237-398`, `stuckGateDefaultPatch:109-140`). `qualify-state.ts:398` mostra que `hasLance:"no"` **já roteia pro gate `lance-embutido`** — ou seja, a infra pra PERGUNTAR sobre o embutido já existe; o que falta é o agente **oferecer proativamente com o ângulo vendedor** (comportamento do modelo/prompt, não trava de código). `embedded-bid-payload.ts:14-15,49` já explica o lance embutido focado em "o crédito diminui" — falta o ângulo "parcela alta até contemplar, cai depois da amortização".
+- **Correção proposta:** (a) **investigar primeiro** se a Bevi tolera 2 chamadas concorrentes na mesma proposta ativa (testar contra sandbox/doc da API); se tolerar, paralelizar `offersForValue`; se NÃO tolerar, buscar o lance embutido de forma assíncrona em background **sem** usar a mesma proposta ativa (ex.: segunda sessão/proposta, ou aceitar que o pré-fetch começa um pouco depois do baseline mas ainda antes do cliente perguntar) — não implementar paralelização ingênua sem essa checagem; (b) reforçar, via prompt/directive (não regex), a sugestão proativa de lance embutido quando `hasLance:"no"` E já há oferta pré-buscada; (c) reforçar o texto de explicação com o ângulo "parcela alta até contemplar, cai depois da amortização, ainda vale a pena".
+- **Critério de aceitação (mecânico, só a parte (a)):** a busca do lance embutido não atrasa perceptivelmente a resposta do baseline (medir tempo, comparar com hoje) — SEM corromper o resultado da proposta Bevi (testar com asserção de integridade da oferta). **Critério (b)/(c) é julgamento de conversa** (dimensão "Vendedor" da rubrica, avaliado pelo juiz-LLM, não mecânico): no cenário 2 (moto, pressa) e cenário 3 (carro, meio-a-meio), quando o cliente sinaliza que não tem aporte total, o agente sugere lance embutido citando a vantagem correta.
 
 ### ITEM 5 — Card de escassez do grupo não apareceu no fluxo testado
 - **Palavras do operador:** "Tem um step ai que eu não encontrei que mostra a escassez ali no grupo pra forçar ele fazer logo sabe?"
 - **Cenário/evidência:** relato do Kairo durante o `/goal` — não fixado em print/card do inbox ainda (capturar como card formal ao promover pro bloco).
-- **Root cause (pista forte, NÃO totalmente confirmada — investigar no bloco antes de corrigir):** o card de escassez (`src/lib/agent/orchestrator/index.ts:204-233`, `buildScarcityCard`) **só dispara se `!isSoParcela`** (gate `hasLance !== "so_parcela"`, FIX-233) **e** se `buildScarcityCard(refreshed)` encontrar um `groupId` já ancorado — se não houver grupo ancorado, a função retorna `null` e nada aparece (comentário FIX-268 confirma esse caminho null). Hipótese: no fluxo que o Kairo testou, ou o cliente caiu no ramo "só parcela", ou chegou no ponto de decisão sem grupo ainda ancorado — em qualquer um dos dois casos o card de escassez é pulado por design atual, não por bug óbvio. **Antes de "corrigir"**, o bloco precisa reproduzir o cenário exato e confirmar qual dos dois caminhos é o real, porque já existe uma cadeia grande de fixes anteriores (FIX-230/237/246/253/268) sobre esse card — mexer sem reproduzir o cenário arrisca reabrir bug já fechado.
-- **Correção proposta:** reproduzir o cenário de teste do Kairo (moto com pressa é o mais provável de precisar de urgência); se cair no ramo `so_parcela`, decidir (com o Kairo, se for ambíguo) se a escassez também deveria aparecer nesse ramo; se cair sem grupo ancorado, garantir que o grupo seja ancorado antes do ponto de decisão nesse fluxo específico.
-- **Critério de aceitação:** no cenário 2 (moto, pressa), o card de escassez aparece com número real (nunca inventado) antes ou junto do card de decisão, reforçando a urgência.
+- **Root cause (pista forte + 1 caminho novo achado pelo crítico — NÃO totalmente confirmada, investigar no bloco antes de corrigir):** o card de escassez (`src/lib/agent/orchestrator/index.ts:204-233`, `buildScarcityCard`) **só dispara se `!isSoParcela`** (gate `hasLance !== "so_parcela"`, FIX-233 — mantido fora por decisão #4 acima) **e** se `buildScarcityCard(refreshed)` encontrar um `groupId` já ancorado (senão retorna `null`, comentário FIX-268). **Terceiro caminho (achado pelo crítico):** mesmo COM grupo ancorado, o card só renderiza se a oferta Bevi trouxer `availableSlots > 0` (`scarcity-payload.ts:49-52`) — o número **nunca é inventado de propósito** (comentário `:1-24` cita risco CDC art. 37). Se as ofertas de moto da Bevi não trouxerem `availableSlots`, o card é **impossível de exibir sem violar essa regra** — isso pode ser exatamente o que o Kairo viu (não um bug de lógica, mas ausência de dado upstream).
+  Já existe uma cadeia grande de fixes anteriores (FIX-230/237/246/253/268) sobre esse card — mexer sem reproduzir o cenário exato arrisca reabrir bug já fechado.
+- **Correção proposta:** reproduzir o cenário de teste do Kairo (moto com pressa, ramo COM lance — não `so_parcela`); checar nos 3 caminhos possíveis qual é o real: (1) caiu em `so_parcela` → por decisão #4, não é bug, é comportamento esperado; (2) sem grupo ancorado no ponto de decisão → garantir que o grupo seja ancorado antes desse ponto nesse fluxo específico; (3) grupo ancorado mas oferta Bevi sem `availableSlots` → **não forçar um número** (violaria a regra CDC), reportar como gap de dado upstream, não como bug de código.
+- **Critério de aceitação:** no cenário 2 (moto, pressa, com lance — não so_parcela), SE a oferta Bevi trouxer `availableSlots`, o card de escassez aparece com o número real antes ou junto do card de decisão. Se a oferta não trouxer o dado, o critério deste item passa a ser "gap de dado externo documentado no LEDGER", não bug de código — não inventar número pra forçar o teto da rubrica.
+
+## Plano de blocos (serialização — overlap de arquivos impede paralelo total)
+
+O crítico confirmou que nenhum par entre {1,2}, {1,3}, {1,4}, {2,4}, {2,5}, {4,5} é
+totalmente paralelo: `qualify-state.ts` é tocado por ITEM 2, 4 e 5; `gate-questions.ts` por
+ITEM 1 e 4; `route.ts` por ITEM 1 e 3; `orchestrator/index.ts` por ITEM 4 e 5; e o `Category`
+type do ITEM 1 rippla em ~30 arquivos que os demais itens tocam. Rodar os 5 em blocos
+totalmente paralelos (como a v1 desta spec sugeria implicitamente) garante conflito de merge e
+branch quebrando no typecheck. Ordem real de execução via `todo-blocks`:
+
+1. **Bloco A (sozinho, primeiro):** ITEM 1 completo — migration + remoção do tipo/enum em todas
+   as camadas + mapeamento de segmento Bevi. Só integra na base quando o typecheck da base
+   fechar limpo.
+2. **Depois que o Bloco A integrar, em paralelo entre si (arquivos não coincidem mais depois do
+   ITEM 1 fechado):**
+   - **Bloco B:** ITEM 2 (`resume.ts` + `qualify-state.ts:nextGate` — short-circuit de contrato fechado).
+   - **Bloco C:** ITEM 3 (teste pontual de idempotência do handoff de mesa — não é feature nova).
+   - **Bloco D:** ITEM 4 (investigação de concorrência Bevi + prompt/directive de sugestão proativa).
+   - **Bloco E:** ITEM 5 (reprodução do cenário de escassez + fix condicional).
+   - **Atenção:** Bloco B e Bloco D ainda coincidem em `qualify-state.ts` (nextGate) — se o
+     `todo-blocks` não conseguir dar disjunção real de linhas, rodar B e D em série também (B
+     primeiro, D forka da base pós-B). Bloco D e E coincidem em `orchestrator/index.ts` — mesma
+     regra: D antes de E, ou E antes de D, nunca simultâneos no mesmo arquivo.
 
 ## Cenários E2E (as 3 personas pedidas pelo Kairo — usadas na fase ④ VERIFICAR)
 
@@ -120,9 +169,12 @@ cada turno) a partir destas 3 descrições antes da 1ª rodada de verificação.
   do item, decompõe diferente, sobe o modelo do bloco daquele item, ou reforça o roteiro do
   planner. NÃO encerra.
 - Observabilidade: loga tokens/tempo por rodada no LEDGER.
-- Human checkpoint: se o ITEM 3 (qual stage exato — `na_administradora` vs `fechado_ganho`) ou o
-  ITEM 5 (qual dos dois ramos é o real, e se escassez deveria existir em `so_parcela`) exigir
-  decisão de produto ambígua que o código não resolve sozinho, `AskUserQuestion` antes de cravar.
+- Human checkpoint: as 4 decisões de produto já foram levantadas e resolvidas por default
+  recomendado (ver seção no topo, `AskUserQuestion` dispensado 2x) — retomar com o Kairo se ele
+  discordar de alguma ao revisar. Novas ambiguidades de produto que surgirem durante a execução
+  (ex.: ITEM 4(a) achar que a Bevi não tolera concorrência e a alternativa proposta não for óbvia)
+  também tentam `AskUserQuestion`; se dispensada, seguir com a opção mais conservadora e marcar
+  `PENDENTE-KAIRO` no LEDGER.
 
 ## LEDGER de rodadas (append-only)
 
@@ -134,16 +186,25 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 
 ## Riscos e gaps honestos
 
-- ITEM 1 (remover Serviços) toca uma CHECK constraint de banco em produção — é mudança
-  estrutural, não cosmética; o bloco que pegar esse item deve tratar como migração cuidadosa
-  (não é "apagar linha de config").
-- ITEM 3 e ITEM 5 têm partes "a confirmar" que só fecham depois de reproduzir o cenário real —
-  os blocos que pegarem esses itens devem investigar ANTES de implementar (regra epistêmica:
-  não cravar sem evidência).
+- ITEM 1 (remover Serviços) toca uma CHECK constraint de banco em produção **e** um mapeamento
+  de segmento real da Bevi que hoje dá `throw` em caso desconhecido — blast radius maior que uma
+  migração cosmética; o Bloco A deve tratar como migração cuidadosa (ordem: deletar persona antes
+  de aplicar o novo CHECK) e cobrir o mapeamento de segmento com teste pontual.
+- ITEM 3 pode já estar **resolvido hoje** (mesa notificada + stage muda no aceite) — o trabalho
+  real é provar não-duplicação, não implementar do zero. Evitar o desperdício de "reimplementar"
+  algo que já funciona.
+- ITEM 4(a) (paralelizar busca Bevi) tem risco real de corromper a proposta ativa se a API não
+  tolerar 2 chamadas concorrentes na mesma proposta — investigar antes de implementar, não
+  assumir que paralelizar é seguro só porque parece óbvio.
+- ITEM 5 pode esbarrar num gap de DADO EXTERNO (Bevi não trazer `availableSlots` pra moto) que
+  nenhum bloco consegue corrigir sem inventar número (proibido) — se for esse o caso, o item fecha
+  como "gap documentado", não como bug corrigido.
 - Existe uma campanha de loop **já rodando** em paralelo (`2026-07-20-1948-langgraph-runtime.md`,
   status "rodando") sobre o runtime LangGraph — esta campanha aqui é sobre o runtime Vercel AI
   SDK atual (`AI_RUNTIME=vercel`, é o que está em prod hoje pelos prints). Os blocos desta
   campanha devem tocar `src/lib/agent/orchestrator/*` (Vercel), não o grafo LangGraph — checar
   `AI_RUNTIME` antes de editar pra não pisar na campanha irmã.
+- As 4 decisões de produto no topo foram tomadas por default recomendado sem confirmação síncrona
+  do Kairo (`AskUserQuestion` dispensado 2x) — revisão dele é bem-vinda a qualquer momento.
 - Fora de escopo (YAGNI): não redesenhar o funil inteiro, não mexer em outras modalidades
   (imóvel/auto/moto) além do que os 5 itens pedem.
