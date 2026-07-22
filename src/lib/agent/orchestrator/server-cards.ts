@@ -33,13 +33,26 @@ export function buildEmbeddedBidCard(meta: ConversationMetadata): ServerCard {
 
 /** Sem `groupId` ancorado (reveal anterior ao FIX-246, ou nenhuma oferta
  * recomendada ainda) não fabrica — mesmo comportamento de "sem grupo
- * utilizável" do `coerceScarcityPayload` (nunca inventa `availableSlots`). */
+ * utilizável" do `coerceScarcityPayload` (nunca inventa `availableSlots`).
+ *
+ * FIX-367: o snapshot (`meta.recommendedOffer`) precisa carregar
+ * `availableSlots` (ver dial-payload.ts) — sem repassá-lo aqui pro índice, o
+ * card ficava IMPOSSÍVEL de mostrar um número real mesmo quando a oferta Bevi
+ * trazia o dado (o `RevealGroupLike` construído aqui é a ÚNICA fonte que
+ * `coerceScarcityPayload` enxerga pós-reveal). */
 export function buildScarcityCard(meta: ConversationMetadata): ServerCard | null {
 	const offer = meta.recommendedOffer;
 	const groupId = offer?.groupId;
 	if (!groupId) return null;
 	const index: RevealGroupIndex = new Map<string, RevealGroupLike>([
-		[groupId, { id: groupId, administradora: offer.administradora }],
+		[
+			groupId,
+			{
+				id: groupId,
+				administradora: offer.administradora,
+				availableSlots: offer.availableSlots,
+			},
+		],
 	]);
 	return { payload: coerceScarcityPayload({ groupId }, index) };
 }

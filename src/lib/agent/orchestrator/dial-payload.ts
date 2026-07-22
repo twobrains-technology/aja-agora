@@ -37,6 +37,53 @@ export interface RecommendedOfferSnapshot {
 	 * grupo sem depender de um `RevealGroupIndex` de turno (que só existe durante
 	 * a busca). Nunca fabricado — ausente quando o artifact-âncora não o carrega. */
 	groupId?: string;
+	/** FIX-367: vagas reais do grupo (Bevi `monthlyAwardedQuotas`), como veio no
+	 * recommendation_card/group_card do reveal — fonte ÚNICA do card de escassez
+	 * pós-reveal (buildScarcityCard). O `simulate_quota` NUNCA devolve esse
+	 * campo, então quando o simulation_result vira o anchor do snapshot (FIX-C2,
+	 * prioridade pro par de lance), o número de vagas tem que sobreviver por
+	 * fora — sem isso o card ficava impossível de mostrar um número real mesmo
+	 * quando a Bevi trazia o dado. Nunca fabricado.
+	 */
+	availableSlots?: number;
+}
+
+/** Extrai `availableSlots` de um payload de artifact do reveal (recommendation_
+ * card/group_card) — nunca inventa: só número real (>0). */
+export function extractAvailableSlots(
+	payload: Record<string, unknown> | undefined,
+): number | undefined {
+	const raw = Number(payload?.availableSlots);
+	return Number.isFinite(raw) && raw > 0 ? raw : undefined;
+}
+
+/** FIX-367: `simulate_quota` não devolve `availableSlots` — quando o snapshot
+ * ancora num simulation_result (prioridade de lance), o número de vagas some
+ * mesmo a oferta real tendo o dado. Resolve pelo payload de busca
+ * (recommendation_card/group_card, que sempre carrega o campo real via
+ * coerceRevealCota) — nunca inventa; sem nenhuma fonte, fica undefined (card
+ * de escassez não renderiza, comportamento existente preservado). */
+export function resolveSnapshotAvailableSlots(
+	offerSnapshot: RecommendedOfferSnapshot | null,
+	recommendationPayload: Record<string, unknown> | undefined,
+	groupCardPayload: Record<string, unknown> | undefined,
+): number | undefined {
+	if (offerSnapshot?.availableSlots != null) return offerSnapshot.availableSlots;
+	return extractAvailableSlots(recommendationPayload) ?? extractAvailableSlots(groupCardPayload);
+}
+
+/** FIX-367: numa re-simulação (what-if), o novo snapshot vem do simulation_
+ * result — que nunca carrega `availableSlots` — e sobrescrevia o snapshot
+ * anterior, apagando o número de vagas já conhecido. Preserva o valor prévio
+ * SÓ quando é o MESMO grupo (groupId igual); grupo diferente não herda o dado
+ * de outro grupo (nunca mistura, nunca inventa). */
+export function preserveAvailableSlotsAcrossResim(
+	anchor: RecommendedOfferSnapshot,
+	previous: RecommendedOfferSnapshot | undefined,
+): number | undefined {
+	if (anchor.availableSlots != null) return anchor.availableSlots;
+	if (anchor.groupId && previous?.groupId === anchor.groupId) return previous?.availableSlots;
+	return undefined;
 }
 
 /** Perfil declarado na qualificação — alimenta os defaults do dial (FIX-C5). */
@@ -149,6 +196,12 @@ export function offerSnapshotFromArtifact(
 		// artifacts do reveal) — nunca fabricado.
 		...(typeof payload.groupId === "string" && payload.groupId.length > 0
 			? { groupId: payload.groupId }
+			: {}),
+		// FIX-367: só existe quando o payload é recommendation_card/group_card
+		// (simulation_result não carrega); ausência aqui é normal — quem chama
+		// completa com resolveSnapshotAvailableSlots/preserveAvailableSlotsAcrossResim.
+		...(extractAvailableSlots(payload) != null
+			? { availableSlots: extractAvailableSlots(payload) }
 			: {}),
 	};
 }
