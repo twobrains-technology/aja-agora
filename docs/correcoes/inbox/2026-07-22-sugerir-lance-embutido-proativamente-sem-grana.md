@@ -8,7 +8,11 @@ rodada: 2026-07-22 — Kairo revisando o fluxo de lance após simulação de cen
 evidencia:
   - _evidencia/2026-07-22-sugerir-lance-embutido-proativamente-sem-grana.png
 mexe_em:
-  - (a confirmar — ver achados do find-code sobre gate de lance, busca de grupos na Bevi e lance embutido)
+  - src/lib/agent/orchestrator/gate-questions.ts:156 (pergunta sobre aporte/lance pra antecipar contemplação)
+  - src/lib/agent/orchestrator/gate-questions.ts:160-165 (LANCE_EMBUTIDO_ASK — hoje só é oferecido se perguntado nesse ponto específico)
+  - src/lib/agent/orchestrator/gate-questions.ts:239-240 (resposta quando cliente recusa lance embutido — hoje fecha a porta: "vou seguir sem considerar... se quiser, a gente volta depois", não é reaberta proativamente no gate de "não tenho aporte")
+  - src/lib/adapters/bevi/bevi-self-contract-adapter.ts:311-349 (offersForValue — busca COM e SEM embutido, mas SEQUENCIAL com sleep entre elas, não em paralelo/background)
+  - src/lib/agent/orchestrator/embedded-bid-payload.ts:14-15,49 (texto de explicação do lance embutido já existe, mas é sobre "o crédito diminui" — falta o ângulo comercial pedido: parcela alta até contemplar, depois cai)
 ---
 
 ## Palavras do operador
@@ -26,5 +30,11 @@ mexe_em:
   3. **Explicação didática:** o agente deve explicar a mecânica — parcela mais alta até a contemplação, depois cai porque parte da carta foi usada pra amortizar — "agir como vendedor inteligente", não só recusar/aceitar o "não" do cliente e seguir em frente.
 - **Atual:** O agente aceita o "não tenho aporte" e segue direto pros 3 cenários padrão (só sorteio / lance menor / lance + recursos próprios), sem citar lance embutido como saída pra quem não tem dinheiro agora. Fluxo tratado como "ruim" pelo próprio Kairo.
 
-## Pista de causa (A CONFIRMAR — não investigado a fundo)
-Já existe bastante infraestrutura de "lance embutido" no código (`contemplation-dial.ts`, `plan-estimate.ts`, `embedded-bid.tsx`, gate em `lance-embutido-gate.test.ts`) — não é feature do zero, é **ligar/melhorar um fluxo que já existe parcialmente**. Falta confirmar: (1) se a busca de grupos na Bevi já dispara em paralelo pro lance embutido ou só sob demanda; (2) se o gate/orquestrador, ao receber "não tenho aporte", já tem ramificação pra oferecer lance embutido ou simplesmente segue o funil padrão; (3) se falta só copy/prompt (regra: conversa é do modelo, não trava-se em regex) ou se falta de fato o pré-fetch em background (isso sim é código determinístico, pela regra do projeto "invariante verificável vira código"). Busca ampla disparada via `find-code` — resultado ainda pendente no momento da captura deste card; atualizar `mexe_em:` e esta seção assim que chegar.
+## Pista de causa (CONFIRMADO por leitura de código — ainda não é root cause fechado, mas já dá pra apontar os dois defeitos exatos)
+Confirmado por busca ampla (find-code): existem **dois problemas distintos**, ambos exatamente onde o Kairo apontou:
+
+1. **Performance/pré-fetch (código determinístico, pela regra do projeto):** `bevi-self-contract-adapter.ts:311-349` (`offersForValue`) busca os grupos **COM e SEM lance embutido**, mas de forma **sequencial** (baseline sem embutido na linha 327, depois com embutido na linha 332, com um `sleep` entre as duas chamadas) — não em paralelo/background como o Kairo pediu ("buscasse também os grupos do lance embutido... em background, sem afetar a performance"). Isso é mudança de código puro (paralelizar as duas chamadas), sem tocar em conversa/prompt.
+2. **Comportamento comercial (é do modelo/orquestrador, não regra-no-prompt):** em `gate-questions.ts`, o lance embutido só é oferecido se o cliente for perguntado especificamente sobre ele (`LANCE_EMBUTIDO_ASK`, linha 160-165) — e se ele disser "não" ali, a resposta do sistema (linha 239-240) **fecha o assunto** ("vou seguir sem considerar... se quiser, a gente volta depois") em vez de reabrir a sugestão de forma proativa quando o cliente, num momento diferente do funil, disser que **não tem aporte pro lance normal**. Hoje os dois gates (lance normal vs. lance embutido) não parecem conversar entre si — recusar um não aciona automaticamente a oferta do outro como alternativa vendedora.
+3. **Explicação didática:** `embedded-bid-payload.ts:14-15,49` já tem texto explicando o lance embutido, mas focado em "o crédito recebido diminui" — falta o ângulo que o Kairo quer explicitamente batido: "parcela alta até contemplar, depois cai porque você amortiza com parte da carta, e ainda assim vale a pena".
+
+**O que falta pra fechar (trabalho de execução, não desta captura):** (a) paralelizar as duas chamadas em `offersForValue` e cachear o resultado do embutido na memória da conversa mesmo sem o cliente ter pedido; (b) no orquestrador, quando o cliente nega aporte pro lance normal, verificar se já há oferta de lance embutido pré-buscada e sugerir proativamente (ajuste de fluxo/prompt, é "do modelo" pela regra do projeto — não travar em regex fixo); (c) enriquecer a explicação do lance embutido com o ângulo comercial de parcela alta→baixa.
