@@ -43,6 +43,9 @@ contas-teste.env
 # vercel
 .vercel
 
+# override local de docker compose (porta do app, específico da máquina)
+docker-compose.override.yml
+
 # bundles gerados em build-time (esbuild)
 scripts/*.bundle.mjs
 scripts/*.bundle.js
@@ -51,7 +54,6 @@ scripts/*.bundle.cjs
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-*.png
 .playwright-mcp/
 scripts/eval-calibrate.bundle.cjs
 

@@ -49,10 +49,10 @@ interface KvDepoimentosProps {
 export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 	return (
 		<section className="relative overflow-hidden bg-[#FAFAF3]">
-			{/* Blob decorativo desfocado */}
-			<div className="pointer-events-none absolute -left-52 top-36 size-[450px] rounded-full bg-[#FFE0E3] opacity-70 blur-[100px]" />
+			{/* Blob decorativo desfocado (Figma: 450x450 @(-200,150), opacity .6, blur 150) */}
+			<div className="pointer-events-none absolute -left-[200px] top-[150px] size-[450px] rounded-full bg-[#FFE0E3] opacity-60 blur-[150px]" />
 
-			<KvContainer className="max-w-[1440px] pt-14 pb-12 md:px-20 md:pt-[92px] md:pb-12">
+			<KvContainer className="max-w-[1440px] py-6 md:px-20 md:py-8">
 				{/* Header */}
 				<div className="text-center">
 					<KvEyebrow>CONFIANÇA E RESULTADO</KvEyebrow>
@@ -113,7 +113,7 @@ export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 				</div>
 
 				{/* CTA final */}
-				<div className="mt-16 flex flex-col items-center gap-6 text-center md:mt-[66px]">
+				<div className="mt-10 flex flex-col items-center gap-6 text-center md:mt-12">
 					<p className="text-[24px] font-normal text-[#021628] md:text-[32px]">
 						Quer ser o próximo a realizar o <Em w="black">seu sonho?</Em>
 					</p>

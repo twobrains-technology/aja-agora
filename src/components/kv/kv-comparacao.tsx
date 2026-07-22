@@ -22,22 +22,16 @@ const FINANCIAMENTO_ITEMS: { text: string; positive: boolean }[] = [
 ];
 
 /** Respiro entre a aresta reta do leque (burstSrc) e a foto — evita colar direto. */
-const BURST_GAP = 10;
-/** Tamanho do leque relativo ao diâmetro do medalhão (1 = mesma altura da foto). */
-const BURST_SCALE = 0.8;
+const BURST_GAP = 12;
+/** O leque fica só 5px mais baixo que a foto (quase a mesma altura, não um leque bem menor). */
+const BURST_SIZE_DELTA = 30;
 
 /**
- * Medalhão da coluna (Figma 'Group 106/107') — foto clipada em MEIA-LUA (a
- * metade direita de um círculo, com a aresta reta à esquerda) e um SVG
- * dedicado de leque atrás dela (`burstSrc` — semicírculo de raios já com a
- * aresta reta embutida no próprio arquivo, coral no lado Consórcio, cinza no
- * lado Financiamento), reproduzindo o Figma sem raio nenhum cruzando por cima
- * do corte reto da foto. Sem anel branco nem sombra (máscara direta, igual ao
- * Figma).
- *
- * A foto é renderizada num box "estourado" (maior que a janela visível,
- * controlado por `zoom` <1 = mais contexto/menos corte) pra caber o
- * rosto/gesto inteiro dentro da janela meia-lua estreita.
+ * Medalhão da coluna (Figma 'Group 106/107') — foto já pronta em meia-lua
+ * (PNG do design, sem clip/zoom em runtime) com um leque de raios (SVG
+ * dedicado, coral no Consórcio / cinza no Financiamento) atrás dela. A foto
+ * já traz a transparência e o corte certos — só posiciona no mesmo lugar
+ * onde antes ficava a janela recortada manualmente.
  *
  * A caixa externa é fixa em 260×260 pra que os dois medalhões alinhem os
  * rótulos e as listas por baixo; o medalhão do Financiamento é ~15% menor e
@@ -49,26 +43,18 @@ function Medalhao({
 	burstSrc,
 	diameter,
 	topOffset = 0,
-	objectPosition,
-	zoom = 1,
+	nativeWidth,
+	nativeHeight,
 }: {
 	src: string;
 	burstSrc: string;
 	diameter: number;
 	topOffset?: number;
-	objectPosition: string;
-	zoom?: number;
+	nativeWidth: number;
+	nativeHeight: number;
 }) {
-	const half = diameter / 2;
-	// object-fit:cover só depende da proporção da caixa — escalar largura E
-	// altura igualmente não muda o corte (mesma razão de aspecto). Pra
-	// "zoom out" de verdade, alarga só a LARGURA (o container já é
-	// estreito/alto e é a altura que domina o cover); a altura fica em
-	// 100% pra não sobrar vão vertical.
-	const wrapPct = 100 / zoom;
-	const wrapOffset = -(wrapPct - 100) / 2;
 	return (
-		<div className="relative mx-auto mb-6 h-[260px] w-[260px]">
+		<div className="relative mx-auto mb-4 h-[260px] w-[260px]">
 			<div
 				className="absolute left-1/2 -translate-x-1/2"
 				style={{ width: diameter, height: diameter, top: topOffset }}
@@ -82,29 +68,17 @@ function Medalhao({
 					// com `right-1/2` (= `half`, a mesma linha onde a foto começa) mais um
 					// respiro (BURST_GAP) pra não colar direto na foto.
 					className="pointer-events-none absolute top-1/2 w-auto -translate-y-1/2"
-					style={{ right: `calc(50% + ${BURST_GAP}px)`, height: diameter * BURST_SCALE }}
+					style={{ right: `calc(50% + ${BURST_GAP}px)`, height: diameter - BURST_SIZE_DELTA }}
 				/>
-				<div
-					className="absolute right-0 top-0 overflow-hidden rounded-r-full"
-					style={{ width: half, height: diameter }}
-				>
-					<div
-						className="absolute inset-y-0"
-						style={{
-							width: `${wrapPct}%`,
-							left: `${wrapOffset}%`,
-						}}
-					>
-						<Image
-							src={src}
-							alt=""
-							fill
-							sizes="200px"
-							className="object-cover"
-							style={{ objectPosition }}
-						/>
-					</div>
-				</div>
+				<Image
+					src={src}
+					alt=""
+					aria-hidden="true"
+					width={nativeWidth}
+					height={nativeHeight}
+					className="absolute right-0 top-0"
+					style={{ height: diameter, width: "auto" }}
+				/>
 			</div>
 		</div>
 	);
@@ -113,15 +87,29 @@ function Medalhao({
 // Frame 'Consórcio vs Financiamento' (Group 131): header centralizado + duas
 // colunas comparativas — Financiamento (à esquerda, com X coral nos itens
 // negativos) e Consórcio (à direita, só checks verdes). Cada coluna tem seu
-// próprio medalhão meia-lua com sunburst (coral no Consórcio, cinza no
-// Financiamento). Os assets vêm do .fig (blueprint Group 106/107 + img-manifest):
-// o jovem pensativo de camiseta bordô e mochila (arquivo 'paint-brush-2', mão na
-// testa — reforça o "sem planejamento") no lado Financiamento; e o rapaz sorrindo
-// de fone/jaqueta jeans (arquivo 'headphones-un') no lado Consórcio.
+// próprio medalhão meia-lua (menino-sol-cinza no Financiamento, menino-sol-
+// vermelho no Consórcio — PNG do design, já recortado, sem clip/zoom em
+// runtime) com o leque de raios (SVG dedicado) atrás.
 export function KvComparacao() {
 	return (
-		<section aria-labelledby="comparacao-heading" className="bg-[#FAFAF3]">
-			<KvContainer className="max-w-[1120px] py-16 md:py-24">
+		<section aria-labelledby="comparacao-heading" className="relative bg-[#FAFAF3]">
+			{/* Blob coral desfocado, canto superior direito — mesma peça do Hero,
+			    marcando a transição vindo da seção "Saúde financeira" (Figma: 720x757).
+			    SEM nenhum overflow na seção (de propósito, e importante: `overflow-x-
+			    hidden` sozinho NÃO funciona aqui — por spec do CSS, se um eixo vira
+			    algo != visible o outro eixo visible vira "auto" implicitamente, então
+			    overflow-x-hidden estava silenciosamente cortando o vazamento vertical
+			    também, sem scrollbar visível pra denunciar). Sem overflow nenhum, o
+			    blob vaza livre pra cima — SEM z-index (empilhamento padrão: fica atrás
+			    do painel navy da seção anterior e de qualquer card/imagem, só aparece
+			    nos vãos de fundo, nunca por cima de conteúdo real). Horizontal em
+			    `right-0` (dentro dos limites da viewport) em vez de bleed pra fora,
+			    pra não abrir scroll horizontal. blur/opacity reduzidos do valor
+			    literal do Figma (334.8/.95) pra 260/85%: com blur tão alto a cor
+			    ficava quase imperceptível. */}
+			<div className="pointer-events-none absolute -top-[230px] right-0 h-[870px] w-[830px] rounded-full bg-[#FFE0E3] opacity-85 blur-[260px]" />
+
+			<KvContainer className="relative z-20 max-w-[1120px] py-6 md:py-8">
 				<div className="mx-auto max-w-[700px] text-center">
 					<KvEyebrow className="tracking-[0.16em]">COMO FUNCIONA</KvEyebrow>
 					<h2
@@ -136,16 +124,16 @@ export function KvComparacao() {
 					</p>
 				</div>
 
-				<div className="mt-12 grid gap-12 md:mt-16 md:grid-cols-2 md:gap-x-16">
+				<div className="mt-8 grid gap-8 md:mt-10 md:grid-cols-2 md:gap-x-12">
 					{/* Coluna Financiamento — à esquerda (e primeiro no DOM/mobile) */}
 					<div className="flex flex-col items-center text-center">
 						<Medalhao
-							src={`${KV}/smiling-young-caucasian-woman-holds-paint-brush-2.jpg`}
+							src={`${KV}/menino-sol-cinza.png`}
 							burstSrc={`${KV}/consorcio-burst-cinza.svg`}
 							diameter={221}
 							topOffset={21}
-							objectPosition="55% 15%"
-							zoom={0.7}
+							nativeWidth={466}
+							nativeHeight={909}
 						/>
 						{/* Cinza (não KvEyebrow — o átomo é hardcoded vermelho; aqui a cor é
 						    semântica: lado negativo da comparação, não o eyebrow de seção). */}
@@ -155,7 +143,7 @@ export function KvComparacao() {
 						<h3 className="mt-2 text-[28px] font-normal leading-[1.15] text-[#052440] md:text-[32px] md:leading-[38px]">
 							Financiamento
 						</h3>
-						<ul className="mt-8 flex flex-col items-start gap-4 md:items-center">
+						<ul className="mt-5 flex flex-col items-start gap-3 md:items-center">
 							{FINANCIAMENTO_ITEMS.map((item) => (
 								<li key={item.text} className="flex w-fit items-center gap-3.5">
 									<span
@@ -178,17 +166,17 @@ export function KvComparacao() {
 					{/* Coluna Consórcio — à direita */}
 					<div className="flex flex-col items-center text-center">
 						<Medalhao
-							src={`${KV}/hispanic-young-man-smiling-wearing-headphones-un.jpg`}
+							src={`${KV}/menino-sol-vermelho.png`}
 							burstSrc={`${KV}/consorcio-burst-vermelho.svg`}
 							diameter={260}
-							objectPosition="55% 15%"
-							zoom={0.7}
+							nativeWidth={550}
+							nativeHeight={1073}
 						/>
 						<KvEyebrow className="tracking-[0.16em]">pode organizar a jornada</KvEyebrow>
 						<h3 className="mt-2 text-[28px] font-normal leading-[1.15] text-[#052440] md:text-[32px] md:leading-[38px]">
 							Consórcio Ideal para você
 						</h3>
-						<ul className="mt-8 flex flex-col items-start gap-4 md:items-center">
+						<ul className="mt-5 flex flex-col items-start gap-3 md:items-center">
 							{CONSORCIO_ITEMS.map((item) => (
 								<li key={item} className="flex w-fit items-center gap-3.5">
 									<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#22B464]">
