@@ -40,7 +40,11 @@ describe("C1 — referenceMonth calibra a curva no dado real da Bevi", () => {
 	it("com embutido real da oferta (49.28%) o lance no mês 6 sai TODO da carta — bolso zero", () => {
 		const r = computeContemplationDial({ ...BB, targetMonth: 6 });
 		expect(r.ownCashValue).toBe(0);
-		expect(r.embeddedBidValue).toBeCloseTo((262_309.8 * 49) / 100, 0);
+		// BUG-LANCE-ACIMA-DO-MEDIO (defeito 2, 2026-07-21): o esperado era
+		// `carta × 49/100` — o percentual REAL da oferta (49,28%) arredondado a
+		// inteiro antes de virar R$, o que jogava R$ 734,47 fora. O valor agora
+		// sai da fração exata, então o esperado passa a ser o bidPercentage real.
+		expect(r.embeddedBidValue).toBeCloseTo((262_309.8 * 49.28) / 100, 0);
 		// recebe = carta − embutido (semântica Bevi: receivedCredit)
 		expect(r.receivedCredit).toBeCloseTo(262_309.8 - r.embeddedBidValue, 2);
 	});
@@ -81,7 +85,10 @@ describe("C4/FIX-221 — parcela honesta: lance TOTAL (embutido + dinheiro) amor
 		// saldo restante = parcela × 28 − embutido; diluído nos 28 meses restantes
 		const expected = (9_828.92 * 28 - r.embeddedBidValue) / 28;
 		expect(r.paymentAfterContemplation).toBeCloseTo(expected, 1);
-		expect(r.paymentAfterContemplation).toBeCloseTo(5_238.5, 0);
+		// BUG-LANCE-ACIMA-DO-MEDIO (defeito 2): R$ 5.238,50 vinha do lance
+		// arredondado (49%); com o lance fiel à oferta (49,28%) o abatimento é
+		// maior e a parcela cai um pouco mais. Segue dentro do ~R$ 5.238 da Ata.
+		expect(r.paymentAfterContemplation).toBeCloseTo(5_212.27, 0);
 	});
 
 	it("lance em dinheiro E embutido somam no abatimento — dilui a parcela DEPOIS da contemplação", () => {

@@ -232,6 +232,8 @@ O simulador deixa a pessoa ver QUANDO consegue ser contemplada e COMO antecipar 
 - o lance necessário (requiredLanceValue em R$ e requiredLancePct em %), separando a parte via lance embutido (embeddedBidValue) e a parte em dinheiro (ownCashValue);
 - o crédito líquido recebido (receivedCredit) — deixe claro que usar o embutido significa receber MENOS crédito da carta agora, em troca da parcela menor depois.
 
+**Quando a tool devolver beyondEvidence = true, o mês pedido está ALÉM do que a oferta sustenta.** Ali o lance necessário passaria do lance médio do grupo — ou seja, de tudo que já se viu vencer. NÃO existe estimativa pra dar: o valor que vem em requiredLanceValue é o TETO observado (o próprio lance médio), não uma projeção pra aquele mês. É PROIBIDO narrá-lo como "pra contemplar no mês X você precisa de R$ Y" — isso é vender um número que ninguém observou. O honesto é dizer que pra esse prazo o lance teria que passar do que costuma vencer no grupo, que aí vira aposta e não estimativa, e apontar earliestSupportedMonth como o ponto a partir do qual dá pra projetar com base real ("do mês X em diante eu consigo te dar previsibilidade"). Reaja à pressa da pessoa em vez de despachá-la: quem quer o carro em 5 meses tem um motivo, e ele continua valendo. Sem beyondEvidence, narre os números normalmente.
+
 Formate em R$ X.XXX,XX (regra de valores literais) e dê UMA ressalva discreta de que é estimativa (não garanta contemplação em mês específico). Depois do PRIMEIRO cálculo, ofereça UMA vez explorar outro prazo ("quer ver como fica em outro prazo?"); a partir daí, só recalcule quando ele pedir — pode iterar quantas vezes ele quiser, sem empurrar. NÃO use present_contemplation_dial pra cada iteração de texto — a tool de cálculo é o caminho conversacional. NUNCA invente os números: todos vêm de simulate_contemplation.
 
 ### Status da proposta — SEMPRE via check_proposal_status (FIX-14)
@@ -975,8 +977,8 @@ export function desireFollowUpSection(
 	motivation: string | null | undefined,
 	desireAnswered?: boolean | null,
 ): string {
-	if (motivation && motivation.trim()) return "";
-	if (desiredItem && desiredItem.trim()) {
+	if (motivation?.trim()) return "";
+	if (desiredItem?.trim()) {
 		return `## Motivo do momento (gate "desire" — 2ª pergunta)
 O cliente já disse o que tem em mente: "${desiredItem}". Falta só o motivo — "o que fez você decidir agora?". Se você AINDA NÃO fez essa pergunta nesta conversa (confira o histórico), pergunte em UMA frase curta e natural, logo após reagir ao que ele acabou de dizer. Se você já perguntou antes (respondida ou não), NÃO repita — siga a conversa normalmente.`;
 	}

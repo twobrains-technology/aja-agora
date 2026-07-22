@@ -6,7 +6,7 @@
  * do lance declarado do usuário.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ContemplationDialPayload } from "@/lib/chat/types";
 import { ContemplationDial } from "./contemplation-dial";
@@ -58,9 +58,11 @@ describe("FIX-C4 — parcela honesta", () => {
 		const text = document.body.textContent ?? "";
 		expect(text).toMatch(/depois/i);
 		// "Até contemplar" continua a parcela real (R$ 9.829); "Após receber" agora
-		// cai pra ~R$ 5.238 (jornada-canonica.md D9) — nunca mais idêntica à de
-		// antes (PENDENTE-Bernardo validar o número exato antes de prod).
-		expect(text).toMatch(/5\.23[89]/);
+		// cai pra ~R$ 5.212 (jornada-canonica.md D9 fala em ~5.238, calculado com o
+		// lance arredondado a 49%; com o bidPercentage fiel da oferta — 49,28%,
+		// BUG-LANCE-ACIMA-DO-MEDIO defeito 2 — o abatimento é maior). Nunca mais
+		// idêntica à de antes (PENDENTE-Bernardo validar o número exato antes de prod).
+		expect(text).toMatch(/5\.212/);
 	});
 });
 

@@ -20,7 +20,10 @@ describe("FIX-245 — comentário de paymentAfterContemplation bate com o códig
 	});
 
 	it("documenta que o lance TOTAL (dinheiro + embutido) amortiza, igual ao código (FIX-221)", () => {
-		const docBlock = src.slice(src.indexOf("paymentAfterContemplation?:") - 400, src.indexOf("paymentAfterContemplation?:"));
+		const docBlock = src.slice(
+			src.indexOf("paymentAfterContemplation?:") - 400,
+			src.indexOf("paymentAfterContemplation?:"),
+		);
 		expect(docBlock).toMatch(/FIX-221/);
 		expect(docBlock.toLowerCase()).toMatch(/dinheiro \+ embutido|total/);
 	});
@@ -131,7 +134,9 @@ describe("FIX-225 — curva power calibrada (calibração + convergência + winn
 	it("curve(m) monotônica decrescente em [1, termMonths]", () => {
 		const input = { creditValue: 171_000, termMonths: 96, averageBid: 89_946, referenceMonth: 20 };
 		const months = [1, 3, 6, 12, 20, 40, 60, 80, 96];
-		const pcts = months.map((m) => computeContemplationDial({ ...input, targetMonth: m }).requiredLancePct);
+		const pcts = months.map(
+			(m) => computeContemplationDial({ ...input, targetMonth: m }).requiredLancePct,
+		);
 		for (let i = 1; i < pcts.length; i++) {
 			expect(pcts[i]).toBeLessThanOrEqual(pcts[i - 1]);
 		}
@@ -236,7 +241,11 @@ describe("contemplationDialMarks — fallback estático (WhatsApp)", () => {
 // fronteira: NaN/não-finito vira o degenerado seguro, NUNCA propaga NaN.
 describe("computeContemplationDial — blindagem contra NaN (input fora de contrato)", () => {
 	it("creditValue NaN → nenhum campo numérico vira NaN", () => {
-		const r = computeContemplationDial({ creditValue: Number.NaN, termMonths: 80, targetMonth: 12 });
+		const r = computeContemplationDial({
+			creditValue: Number.NaN,
+			termMonths: 80,
+			targetMonth: 12,
+		});
 		for (const [k, v] of Object.entries(r)) {
 			if (typeof v === "number") expect(Number.isNaN(v), `campo ${k}`).toBe(false);
 		}
@@ -255,6 +264,76 @@ describe("computeContemplationDial — blindagem contra NaN (input fora de contr
 		for (const [k, v] of Object.entries(r)) {
 			if (typeof v === "number") expect(Number.isNaN(v), `campo ${k}`).toBe(false);
 		}
+	});
+});
+
+// BUG-LANCE-ACIMA-DO-MEDIO (sessão 2026-07-21, oferta Itaú real): o cliente pediu
+// contemplação em 5 meses e o agente afirmou "lance de R$ 190.132,20 (90% da carta)"
+// — R$ 25 mil ACIMA do lance médio de R$ 164.591,11 que o próprio card exibia. O 90%
+// não era cálculo: era o clamp MAX_LANCE_PCT batendo (a curva pedia 103%). Dois
+// defeitos no mesmo invariante — "nunca afirmar número que a administradora não
+// sustenta" (CLAUDE.md: número vem de tool, nunca da cabeça do modelo):
+//   1. lance afirmado ACIMA do único dado real (averageBid) — pura extrapolação;
+//   2. no PRÓPRIO mês de referência o dial dava R$ 164.781,24 contra R$ 164.591,11
+//      do card (o pct arredondado a inteiro re-derivava o valor) — duas fontes de
+//      verdade pro mesmo número, exatamente o que o comentário do FIX-C1 promete
+//      que não acontece.
+describe("BUG-LANCE-ACIMA-DO-MEDIO — lance médio da oferta é TETO do que se afirma", () => {
+	// Oferta real da sessão: Itaú, automóvel, carta R$ 211.258, 48 meses.
+	// Sem referenceMonth (a Bevi não manda — Pendência P5), âncora heurística = 12.
+	const itau = {
+		creditValue: 211_258,
+		termMonths: 48,
+		averageBid: 164_591.11, // 77,91% da carta
+		monthlyPayment: 5_377.25,
+	};
+
+	it("mês agressivo NÃO devolve lance acima do lance médio real da oferta", () => {
+		const r = computeContemplationDial({ ...itau, targetMonth: 5 });
+		expect(r.requiredLanceValue).toBeLessThanOrEqual(164_591.11);
+	});
+
+	it("a composição continua fechando: embutido + bolso === lance total", () => {
+		const r = computeContemplationDial({ ...itau, targetMonth: 5 });
+		expect(r.embeddedBidValue + r.ownCashValue).toBeCloseTo(r.requiredLanceValue, 2);
+	});
+
+	it("sinaliza beyondEvidence e o mês mais cedo que o histórico sustenta", () => {
+		const r = computeContemplationDial({ ...itau, targetMonth: 5 });
+		expect(r.beyondEvidence).toBe(true);
+		expect(r.earliestSupportedMonth).toBe(12);
+	});
+
+	it("mês dentro do que o histórico sustenta NÃO é marcado como beyondEvidence", () => {
+		const r = computeContemplationDial({ ...itau, targetMonth: 24 });
+		expect(r.beyondEvidence).toBe(false);
+		expect(r.requiredLanceValue).toBeLessThan(164_591.11);
+	});
+
+	it("no mês de referência o dial bate CENTAVO A CENTAVO com o lance médio do card", () => {
+		const r = computeContemplationDial({ ...itau, targetMonth: 12 });
+		expect(r.requiredLanceValue).toBe(164_591.11);
+	});
+
+	it("sem averageBid (Trilho A, sem dado real) não há teto de evidência a aplicar", () => {
+		// Sem número da administradora não existe "acima do observado" — o
+		// comportamento legado (teto de 90%) permanece, e nada é marcado como
+		// beyondEvidence (não há evidência pra extrapolar).
+		const r = computeContemplationDial({
+			creditValue: 100_000,
+			termMonths: 80,
+			historicalWinningBidPct: 40,
+			targetMonth: 1,
+		});
+		expect(r.beyondEvidence).toBe(false);
+		expect(r.requiredLancePct).toBeGreaterThan(40);
+	});
+
+	it("monotonicidade preservada com o teto (nunca sobe conforme o mês avança)", () => {
+		const pcts = [1, 3, 5, 8, 12, 24, 36, 48].map(
+			(m) => computeContemplationDial({ ...itau, targetMonth: m }).requiredLanceValue,
+		);
+		for (let i = 1; i < pcts.length; i++) expect(pcts[i]).toBeLessThanOrEqual(pcts[i - 1]);
 	});
 });
 
@@ -311,7 +390,13 @@ describe("anchorMonth — mês em que o dinheiro do cliente alcança o lance (FI
 		// zero — a curva SEMPRE converge a 0 no último mês do prazo, então um
 		// prazo mais longo sempre acha âncora no fim; aqui não há "fim" pra
 		// esperar) e sem embutido (bolso = lance inteiro, nunca cai a zero).
-		const semSaida = { creditValue: 300_000, termMonths: 1, averageBid: 150_000, referenceMonth: 1, maxEmbutidoPct: 0 };
+		const semSaida = {
+			creditValue: 300_000,
+			termMonths: 1,
+			averageBid: 150_000,
+			referenceMonth: 1,
+			maxEmbutidoPct: 0,
+		};
 		const m = anchorMonth(semSaida, { initial: 0, monthlySavings: 0 });
 		expect(m).toBeNull();
 	});

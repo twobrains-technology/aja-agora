@@ -85,6 +85,17 @@ export interface ContemplationDialResult {
 	/** FIX-225: custo escondido do embutido (taxa de adm sobre a parte
 	 * embutida). `undefined` quando `admFeePct` não foi informado (Trilho A). */
 	admSobreEmbutido?: number;
+	/** BUG-LANCE-ACIMA-DO-MEDIO (2026-07-21): `true` quando o mês-alvo exigiria
+	 * lance ACIMA do lance médio real da oferta — ou seja, além de qualquer coisa
+	 * que já se observou vencer nesse grupo. O valor devolvido é o teto observado
+	 * (o próprio lance médio), NÃO uma estimativa: quem narra tem que dizer que
+	 * ali não dá pra cravar número, nunca vender o teto como cálculo.
+	 * Sempre `false` sem `averageBid` (sem observação não há o que extrapolar). */
+	beyondEvidence: boolean;
+	/** Primeiro mês em que a curva volta a caber dentro do lance médio observado.
+	 * Só presente quando `beyondEvidence` — é a resposta honesta pro "então quando
+	 * dá?" ("a partir do mês X eu consigo te dar previsibilidade"). */
+	earliestSupportedMonth?: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -108,12 +119,20 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	// reaproveitado de outra carta. `averageBid` (R$ absoluto) tem precedência;
 	// sem ele, cai pro legado `historicalWinningBidPct` (%, retrocompat).
 	const averageBid = finite(input.averageBid ?? Number.NaN, Number.NaN);
-	const winningBidPctRaw =
-		Number.isFinite(averageBid) && carta > 0
-			? averageBid / carta
-			: finite(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, DEFAULT_WINNING_BID_PCT) /
-				100;
+	/** Tem número REAL da administradora (não o default heurístico)? */
+	const hasRealBid = Number.isFinite(averageBid) && averageBid > 0 && carta > 0;
+	const winningBidPctRaw = hasRealBid
+		? averageBid / carta
+		: finite(input.historicalWinningBidPct ?? DEFAULT_WINNING_BID_PCT, DEFAULT_WINNING_BID_PCT) /
+			100;
 	const winningBidPct = clamp(winningBidPctRaw, 0.05, MAX_LANCE_PCT / 100);
+
+	// BUG-LANCE-ACIMA-DO-MEDIO (2026-07-21): o lance médio da oferta é o TETO do
+	// que se afirma. Acima dele não existe observação nenhuma — a curva estaria
+	// extrapolando, e o número sairia da cabeça do modelo em vez da administradora
+	// (CLAUDE.md: invariante verificável vira código). Sem dado real não há teto de
+	// evidência a aplicar: vale o teto duro de segurança.
+	const evidenceCap = hasRealBid ? winningBidPct : MAX_LANCE_PCT / 100;
 
 	// Mês de referência onde o lance de referência contempla. FIX-C1: quando a
 	// oferta REAL informa o par (lance%, mês) — probContemplacaoMeses da Bevi —
@@ -131,33 +150,48 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 	// prazo (o modo sorteio emerge sozinho, sem taper artificial).
 	const p = (m: number) => (term > 1 ? (m - 1) / (term - 1) : 0);
 	const L0 = winningBidPct / (1 - p(anchorMonth)) ** CURVE_K;
-	const requiredLancePctFraction = clamp(
-		L0 * (1 - p(targetMonth)) ** CURVE_K,
-		0,
-		MAX_LANCE_PCT / 100,
-	);
-	const requiredLancePct = Math.round(finite(requiredLancePctFraction, 0) * 100);
+	const rawFraction = finite(L0 * (1 - p(targetMonth)) ** CURVE_K, 0);
+	const requiredFraction = clamp(rawFraction, 0, Math.min(MAX_LANCE_PCT / 100, evidenceCap));
 
+	// BUG-LANCE-ACIMA-DO-MEDIO: a curva pediu mais do que o histórico da oferta
+	// sustenta. O número devolvido é o lance médio (o teto observado), mas quem
+	// narra PRECISA saber que ali não há estimativa possível — sem esta flag o
+	// agente venderia o teto como se fosse cálculo. `earliestSupportedMonth` é o
+	// mês em que a curva volta a caber no observado (a própria âncora, já que a
+	// curva passa por ela e é monotônica decrescente).
+	const beyondEvidence = hasRealBid && rawFraction > evidenceCap + 1e-9;
+	const earliestSupportedMonth = beyondEvidence ? anchorMonth : undefined;
+
+	const requiredLancePct = Math.round(requiredFraction * 100);
 	const mode: DialMode = requiredLancePct <= SORTEIO_THRESHOLD_PCT ? "sorteio" : "lance";
 
 	// O dinheiro do cliente entra PRIMEIRO; o embutido cobre só o que faltar —
 	// é o que um vendedor humano faria, e o que ele pede quando diz "não quero
 	// tirar nada da carta". Sem `ownCashAvailable` o comportamento é o antigo
 	// (embutido primeiro), que é o certo pra quem não declarou reserva nenhuma.
-	const bolsoDisponivelPct =
+	//
+	// BUG-LANCE-ACIMA-DO-MEDIO (defeito 2): os VALORES saem da fração exata, nunca
+	// do percentual arredondado a inteiro. Antes, `carta × round(pct)/100` re-derivava
+	// o lance e o dial mostrava R$ 164.781,24 onde o card mostrava R$ 164.591,11 —
+	// duas fontes de verdade pro mesmo número, contra o que o FIX-C1 promete. Os
+	// percentuais seguem inteiros, mas só para EXIBIÇÃO.
+	const maxEmbutidoFraction = maxEmbutido / 100;
+	const bolsoDisponivelFraction =
 		input.ownCashAvailable != null && carta > 0
-			? clamp((input.ownCashAvailable / carta) * 100, 0, requiredLancePct)
+			? clamp(finite(input.ownCashAvailable / carta, 0), 0, requiredFraction)
 			: null;
-	const embeddedBidPct =
-		bolsoDisponivelPct != null
-			? Math.min(requiredLancePct - bolsoDisponivelPct, maxEmbutido)
-			: Math.min(requiredLancePct, maxEmbutido);
-	const ownCashPct = Math.max(0, requiredLancePct - embeddedBidPct);
+	const embeddedFraction =
+		bolsoDisponivelFraction != null
+			? Math.max(0, Math.min(requiredFraction - bolsoDisponivelFraction, maxEmbutidoFraction))
+			: Math.min(requiredFraction, maxEmbutidoFraction);
 
-	const embeddedBidValue = round2((carta * embeddedBidPct) / 100);
-	const ownCashValue = round2((carta * ownCashPct) / 100);
-	const requiredLanceValue = round2((carta * requiredLancePct) / 100);
+	const requiredLanceValue = round2(carta * requiredFraction);
+	const embeddedBidValue = round2(carta * embeddedFraction);
+	const ownCashValue = round2(requiredLanceValue - embeddedBidValue);
 	const receivedCredit = round2(carta - embeddedBidValue);
+
+	const embeddedBidPct = Math.round(embeddedFraction * 100);
+	const ownCashPct = Math.max(0, requiredLancePct - embeddedBidPct);
 
 	// FIX-221 (Ata 2026-07-04, AMORTIZA — inverte o FIX-C4/D18 antigo): até a
 	// contemplação a parcela é a REAL do grupo. Depois dela, o lance TOTAL —
@@ -196,6 +230,8 @@ export function computeContemplationDial(input: ContemplationDialInput): Contemp
 		receivedCredit,
 		paymentAfterContemplation,
 		admSobreEmbutido,
+		beyondEvidence,
+		earliestSupportedMonth,
 	};
 }
 

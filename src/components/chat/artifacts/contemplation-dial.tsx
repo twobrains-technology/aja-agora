@@ -60,6 +60,12 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				creditValue,
 				termMonths,
 				targetMonth: activeMonth,
+				// BUG-LANCE-ACIMA-DO-MEDIO (2026-07-21): o payload carrega `avgBidValue`
+				// desde o FIX-40, mas a agulha nunca o repassava — calculava com o
+				// DEFAULT heurístico (40%) enquanto o card exibia o lance médio REAL da
+				// oferta. Além de divergir do card, sem ele o motor não tem o teto de
+				// evidência pra aplicar (é a fonte preferencial do winningBidPct).
+				averageBid: usesRichParams ? payload.avgBidValue : undefined,
 				// FIX-C1: calibra a curva no par real da oferta (lance% · mês).
 				historicalWinningBidPct: usesRichParams ? payload.historicalWinningBidPct : undefined,
 				referenceMonth: usesRichParams ? payload.referenceMonth : undefined,
@@ -102,7 +108,6 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 				</p>
 
 				{/* Gauge arrastável */}
-				{/* biome-ignore lint/a11y/useSemanticElements: gauge custom (role=slider) operavel por ponteiro+teclado */}
 				<div
 					ref={gaugeRef}
 					role="slider"
@@ -268,6 +273,17 @@ export function ContemplationDial({ payload }: { payload: ContemplationDialPaylo
 						<span className="text-muted-foreground">Valor que você recebe</span>
 						<b className="tabular-nums">{brl(r.receivedCredit)}</b>
 					</div>
+					{/* BUG-LANCE-ACIMA-DO-MEDIO: acima do lance médio observado não há
+					    estimativa — só extrapolação. O número ao lado é o TETO do que a
+					    administradora sustenta, e a UI precisa dizer isso em vez de
+					    vendê-lo como cálculo (D11: nunca afirmar o que não se observou). */}
+					{r.beyondEvidence ? (
+						<p className="text-xs text-warning" data-testid="dial-beyond-evidence">
+							Pra este prazo o lance teria que passar do que costuma vencer neste grupo — aí não dá
+							pra estimar. A partir do mês {r.earliestSupportedMonth} o histórico sustenta uma
+							projeção.
+						</p>
+					) : null}
 					{declaredCovers != null && payload.declaredLanceValue != null ? (
 						<p
 							className={cn("text-xs", declaredCovers ? "text-success" : "text-warning")}
