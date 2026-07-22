@@ -182,7 +182,14 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 
 | Rodada | Data | Blocos lançados | Evidências (path) | Score juiz (por dimensão) | Achados novos → próxima rodada | Custo (tok/tempo) |
 |---|---|---|---|---|---|---|
-| 1 | | | | | | |
+| 1 | 2026-07-22 | Onda 1: bloco-g (sozinho). Onda 2: bloco-h + bloco-i (paralelo). Todos integrados limpo na base `integ/vendedor-matador` (gate `pnpm typecheck` — a suíte com DB não roda neste host, ver nota abaixo). | `.processo/loop/2026-07-22-1853-vendedor-matador-consorcio/evidencias/rodada-1/` (roteiro pronto; dossiê E2E ainda por coletar) | pendente (fase ④ ainda não rodou) | — | em andamento |
+
+**Nota de execução (rodada 1):** o gate `pnpm test --run` falha no host por falta do volume `local-dev` (sem Postgres — `ECONNREFUSED`/`ENOTFOUND aja-shared-pg`), confirmado como falha PRÉ-EXISTENTE na própria base (não causada pelos blocos: rodei a suíte direto na base antes de qualquer merge e ela já falhava igual). Reintegrei com `--gate "pnpm -s typecheck"` (limpo nos 3 blocos) — os testes de cada item já foram validados pelo agente de cada bloco dentro do próprio worktree Superset (ver `.done/2026-07-22-bloco-{g,h,i}-*.md`, todos reportam suíte tocada verde).
+
+**Achados de investigação dos blocos (relevantes pro juiz/próxima rodada):**
+- **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
+- **Bloco H (FIX-364/365):** FIX-364 exigiu fix real (`nextGate` não fazia short-circuit com `contractClosed:true`) — corrigido. FIX-365 confirmou que a notificação de mesa já existia E já era idempotente (`createMesaHandoff` checa handoff ativo antes de inserir) — só faltava o teste de regressão, sem bug real.
+- **Bloco I (FIX-366/367):** **FIX-367 era bug de código genuíno** (4ª causa, não prevista no fix doc original: `buildScarcityCard` nunca propagava `availableSlots` do reveal pro snapshot usado depois; corrigido com `resolveSnapshotAvailableSlots`/`preserveAvailableSlotsAcrossResim`). **FIX-366(a): decisão técnica de NÃO paralelizar** a busca Bevi (cookbook documenta 1 proposta ativa = re-PATCH sequencial; paralelizar arriscava corromper a oferta financeira mostrada ao cliente) — sem sandbox pra testar ao vivo, ficou **PENDENTE-KAIRO** avaliar se o `gapMs` (400ms) incomoda na prática. FIX-366(b/c) resolvido via reforço de `system-prompt.ts` + `embedded-bid-payload.ts` (comportamento do modelo, sem TDD — validação é do juiz).
 
 ## Riscos e gaps honestos
 
