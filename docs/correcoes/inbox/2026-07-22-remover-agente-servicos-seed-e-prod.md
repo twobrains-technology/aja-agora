@@ -8,7 +8,20 @@ rodada: 2026-07-22 — thread interna do time relatando teste com cliente
 evidencia:
   - _evidencia/2026-07-22-remover-agente-servicos-thread-whatsapp-time.png
 mexe_em:
-  - (a confirmar — ver achados do find-code sobre seed/schema de personas)
+  - drizzle/0004_agents_crud.sql (CHECK constraint personas_category_check + seed persona Camila/servicos)
+  - src/db/schema.ts (CHECK constraint personas_category_check, TS)
+  - src/lib/agent/personas.ts (Category type + SPECIALIST_CATEGORIES inclui "servicos")
+  - src/lib/diagnose/types.ts (categoryEnum inclui "servicos")
+  - src/lib/agent/categories.ts (CATEGORY_META["servicos"])
+  - src/lib/agent/qualify-config.ts (CREDIT_BOUNDS.servicos)
+  - src/lib/agent/recommendation.ts (ranges de recomendação servicos)
+  - src/lib/consorcio/plan-estimate.ts (meses/taxa média servicos)
+  - src/lib/agent/orchestrator/gate-questions.ts (perguntas de gate por categoria, inclui servicos)
+  - src/lib/whatsapp/formatter.ts (formata "Serviços" em cards WhatsApp)
+  - src/lib/agent/turn-analyzer.ts (detecta categoria "servicos" em texto livre — reforma/viagem/etc.)
+  - drizzle/0016_personas_examples.sql, 0018_whatsapp_optin_narrative_examples.sql, 0021_auto_persona_gate_flow.sql (exemplos de treino da persona Camila/servicos)
+  - src/lib/agent/HARD_RULES.md (documenta "specialist serviços")
+  - welcome-options.ts (já restringe chips web/WhatsApp pra imóvel/auto/moto — só a superfície foi corrigida antes)
 ---
 
 ## Palavras do operador
@@ -30,4 +43,10 @@ Citação da thread anexada (print, equipe interna):
 - **Atual:** Mesmo com "as opções removidas" (tentativa anterior de tirar da UI/prompt), o agente "continuava no escritório" — ou seja, a remoção foi superficial (só na superfície de opções apresentadas), e o dado/registro de fundo (seed/banco) ainda permite a modalidade ser usada, causando simulação de carta de serviços que não deveria ser possível.
 
 ## Pista de causa (A CONFIRMAR — não investigado a fundo)
-Suspeita: existe uma persona/linha de seed "Serviços" no banco (ao lado de Imóvel/Auto/Moto) e/ou uma administradora/oferta cadastrada pra esse bem que o agente ainda consegue tool-call. Tentativa anterior de "remover as opções" provavelmente mexeu só em prompt/UI, não na fonte (seed + DB de prod), daí o agente continuar "no escritório". Precisa: (1) achar tabela/seed de personas e a entrada de Serviços, (2) remover do seed, (3) rodar migração/script pra apagar a persona correspondente do banco de prod, (4) garantir que nem tool-policy nem gate-questions ofereçam essa modalidade em nenhum canal. Busca ampla disparada via agente `find-code` pra apontar os arquivos exatos (seed, schema, tool-policy) — resultado ainda pendente no momento da captura deste card.
+Confirmado por busca ampla (find-code): a categoria `servicos` (persona "Camila", especialista) **está viva em várias camadas** e a remoção anterior só tocou a superfície:
+
+- **Já corrigido antes:** `welcome-options.ts` já restringe os chips clicáveis (web/WhatsApp) pra só imóvel/auto/moto — é por isso que "as opções foram removidas" da visão do time.
+- **Ainda vivo (explica "ele continuava no escritório"):** `turn-analyzer.ts` continua **detectando "servicos" em texto livre** (reforma/viagem/educação/saúde etc.) mesmo sem chip — ou seja, o cliente não precisa clicar em nada, só falar. Daí a persona Camila (seed em `drizzle/0004_agents_crud.sql`) ser ativada e simular carta de serviços de verdade.
+- Toda a cadeia de suporte pra essa categoria segue cadastrada: `Category` type, `CATEGORY_META`, `CREDIT_BOUNDS`, ranges de recomendação, `plan-estimate`, `gate-questions`, formatter do WhatsApp, CHECK constraint no schema/banco, e exemplos de treino em 3 migrations (`0016`, `0018`, `0021`).
+
+**O que falta pra fechar de vez (não feito aqui, é trabalho da todo-blocks/execução):** decidir se a remoção é (a) uma nova migration que apaga a persona "Camila"/servicos do banco de prod + bloqueia `turn-analyzer` de detectar essa categoria e todo o resto do código passa a tratar `servicos` como categoria inexistente, ou (b) manter o type mas garantir que NENHUM caminho (tool-policy, turn-analyzer, gate-questions, seed) consiga instanciar/ativar essa persona em prod. Como o pedido do Kairo é "apagar do seed e do banco de prod", a rota (a) parece a intenção — mas isso toca schema/CHECK constraint (`personas_category_check`) e é mudança estrutural, não cosmética; vale confirmar escopo exato na promoção pra bloco.
