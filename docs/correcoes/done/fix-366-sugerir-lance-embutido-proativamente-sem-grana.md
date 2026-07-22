@@ -1,16 +1,80 @@
 ---
 id: FIX-366
 titulo: "Investigar paralelização segura da busca de grupos com/sem lance embutido; sugerir lance embutido proativamente quando o cliente não tem aporte"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 arquivos:
   - src/lib/adapters/bevi/bevi-self-contract-adapter.ts
-  - src/lib/agent/qualify-state.ts
-  - src/lib/agent/orchestrator/gate-questions.ts
+  - src/lib/adapters/bevi/bevi-self-contract-adapter.test.ts
   - src/lib/agent/orchestrator/embedded-bid-payload.ts
+  - src/lib/agent/system-prompt.ts
 rodada: 2026-07-22 — campanha vendedor-matador-consorcio (goal doc .processo/loop/2026-07-22-1853-vendedor-matador-consorcio.md, ITEM 4)
+commit: 50eb2f0b1a46fa78b519c5d3abecc47f787a60a3
+executado_em: 2026-07-22
 ---
+
+## Conclusão da investigação — paralelização Bevi (parte a)
+
+**Decisão: NÃO paralelizar `offersForValue` com `Promise.all`.** Sem acesso a
+token/sandbox real da Bevi neste ambiente pra testar concorrência ao vivo,
+a evidência disponível é o comentário do próprio adapter (`bevi-self-contract-
+adapter.ts:351-369`, cookbook §3): **"1 proposta ativa, re-PATCH sequencial"**.
+`ensureOffers` muta estado compartilhado da MESMA proposta — `this.
+currentSegment` (guard de `setSegment`) e o `client.simulate()` (o PATCH real
+que muda o step de simulação da proposta ativa). Rodar as duas variantes
+(`sem`/`com` embutido) concorrentes na MESMA proposta arrisca:
+- Race no guard `currentSegment !== segment` (as duas em paralelo veem o
+  segmento "não setado" ao mesmo tempo, ambas fazem `setSegment`).
+- As duas respostas do `simulate()` refletirem o MESMO PATCH vencedor
+  (a Bevi processa 1 proposta = 1 estado de simulação por vez) — corromperia
+  a distinção "sem"/"com" embutido, mostrando ao cliente uma oferta "sem
+  lance" que na real já tem lance embutido aplicado (ou vice-versa). Isso é
+  dado financeiro real indo pro cliente errado — risco alto, não vale o
+  ganho de latência sem confirmação.
+
+O blast radius de corromper uma proposta financeira real (mostrada ao cliente)
+é alto demais pra arriscar sem evidência — regra epistêmica do projeto ("não
+crave o que não verificou"). **Nenhuma mudança de comportamento**: o código já
+é sequencial e correto. Adicionado 1 teste de regressão
+(`bevi-self-contract-adapter.test.ts`, describe "FIX-366") que TRANCA essa
+invariante — prova que as duas chamadas de `client.simulate` nunca se
+sobrepõem no tempo, protegendo contra uma futura "otimização" ingênua pra
+`Promise.all` sem reverificar a Bevi antes.
+
+Não há alternativa de latência implementada (ex.: fire-and-forget/2ª proposta)
+nesta rodada: investigação encontrou que o retorno combinado (sem+com,
+síncrono) de `offersForValue`/`searchGroups` é dependência ativa de
+`recommendation.ts` (scoring/dedup do `embutidoGuardrail`, FIX-226) e de 6
+testes de regressão do FIX-219 — alterar o contrato de retorno pra desacoplar
+a variante "com" do caminho crítico é uma mudança de escopo maior, com risco
+de regressão em lógica de scoring já validada. Fica registrado como
+**PENDENTE-KAIRO** (gap honesto): se a latência do `gapMs` (400ms, nunca
+calibrado — comentário do próprio código admite "spike FIX-69 calibra")
+incomodar na prática, o próximo passo é medir ao vivo antes de redesenhar.
+
+## Correção aplicada — parte comercial (b/c)
+
+A infra de roteamento já existia (`qualify-state.ts:398`: `hasLance:"no"` já
+leva pro gate `lance-embutido`) — faltava o agente OFERECER com o ângulo
+vendedor certo, em vez de aceitar o "não" e seguir reto. Reforçado via
+PROMPT (não regex/texto fixo, conforme a única regra do projeto):
+- `system-prompt.ts` (seção "Lance e lance embutido"): novo parágrafo
+  instruindo o modelo a puxar a sugestão de lance embutido PROATIVAMENTE
+  quando o cliente sinalizar que não tem aporte agora, com o trade-off
+  completo (parcela normal até contemplar, cai depois pela amortização,
+  crédito líquido menor agora) — nunca inventando número, sempre respeitando
+  quem disser que não quer.
+- `embedded-bid-payload.ts` (`EMBEDDED_BID_DISCLAIMER`): reforçado com a
+  mecânica "parcela segue normal até contemplar e cai na sequência" (mesmo
+  cálculo do dial, `contemplation-dial.ts:paymentAfterContemplation`) — dado
+  de contexto pro modelo, não texto fixo de UI (o card `embedded-bid.tsx` já
+  hardcoda seu próprio disclaimer regulatório por design, FIX-228).
+
+Validação: comportamento de conversa (não é invariante mecânica) — será
+avaliada pelo juiz da campanha nos 3 cenários E2E (moto+pressa, carro
+meio-a-meio), não por asserção de texto exato. Sem TDD nesta parte, conforme
+o próprio `_prompt.md` do bloco.
 
 ## Palavras do operador
 > "Nesse caso aqui eu preciso: se eu falo que não tenho grana agora, lembra que a gente comentou que sugeriria o lance embutido? Para ajudar ele no lance, tem que ter aquela dinâmica que a gente tinha combinado de falar: 'Cara, tem uma opção aqui, você já ouviu falar de lance embutido? É uma opção interessante...' E aí já traz isso pra ele. [...] Eu preciso que você, em background, assim que buscar os grupos do valor que ele pediu — já era bom, na sequência, em background, sem afetar a performance — buscasse também os grupos do lance embutido, entendeu? Deixasse na memória o lance embutido ali, só que sem ele falar nada ainda, beleza? Aí, quando chegar no step onde ele fala que tem a grana ou não tem a grana, com a inteligência do agente ele vai falar: 'Cara, eu vou te sugerir... funciona assim, é mais vantajoso, aí você consegue contemplar antes e já está com as opções do lance embutido na mão.' E mostrar pra ele umas opções com o lance embutido. Em seguida tem que explicar pra ele que você começa pagando — até ser contemplado, sua parcela fica em um valor alto, mas logo que você é contemplado, como você amortiza, a parcela fica baixa — então você consegue pegar parte da carta e mesmo assim tem vantagem, entendeu? Tem que agir como vendedor mesmo, inteligente. Por isso eu estou te pedindo pra melhorar esse fluxo ali, tá ruim, sabe."
