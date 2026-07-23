@@ -300,6 +300,44 @@ o pipeline Vercel (forçavam `AI_RUNTIME=vercel`), removidos junto. Não escrevi
 LangGraph-nativo (fora do escopo desta rodada) — fica como gap de cobertura pra registrar, não
 como bug confirmado.
 
+### Follow-up (mesmo dia — resposta ao veredito 7,5/10 condicional do juiz)
+
+O juiz reavaliou a rodada 3 (leu o commit `90270707` direto no código, não só a narrativa) e deu
+**7,5/10, veredito CONDICIONAL** — concordou que a correção do ITEM 2 é estruturalmente sólida
+(confirmou linha a linha), mas achou um gap real: **zero teste automatizado** cobrindo o
+replantio no LangGraph (só o spot-check manual). Pediu um roteiro de 4 passos antes de selar.
+Executados no mesmo commit da base:
+
+1. **TDD do FIX-368 replantado**: `blocoRetomadaPosFechamento` extraída de `createConverseNode`
+   pra função pura `resumeAfterCloseSection(contractClosed, isResumeGreeting, administradora)`
+   (testável sem montar o grafo/mockar o modelo) + `converse.resume-after-close.test.ts` (6
+   casos: seção presente com os 2 flags true, fallback sem administradora, `null` com qualquer
+   flag false, e checagem de que a REGRA DURA proíbe os 3 sintomas literais das personas da
+   rodada 1). 6/6 verdes.
+2. **`pnpm test` completo dentro do container** (pedido explícito do juiz — typecheck não
+   executa lógica): achou **8 falhas em 3 arquivos** que nenhum gate anterior tinha pegado:
+   - `branding-adherence.test.ts`: checava token `cat-servicos`, categoria já removida pelo
+     FIX-363 (rodada 1, bloco-g) — gap PRÉ-EXISTENTE, não causado pela remoção do Vercel.
+     Corrigido (lista de categorias vivas).
+   - `lance-embutido-gate.test.ts` (3 describes, 4 testes): assertion de STRING sobre o handler
+     `lance`/`lance-embutido` em `route.ts` — a remoção do Vercel simplificou o handler (agora
+     delega pro grafo via `pipeDirectiveTurn`/`pipeUserTurn` em vez de decidir o gate inline),
+     confirmado por `git log` que a mudança é EXCLUSIVA do commit `90270707` (regressão real
+     desta rodada, não pré-existente). Reescrito pra validar a invariante real (nunca chama
+     `pipeSearchSummaryTurn` direto, sempre delega pro grafo) no formato novo do handler.
+   - `route.fix-313-topic-picker-click.integration.test.ts`: mockava `resolveAgent` (pipeline
+     Vercel morto) — trava 20s por teste esperando rede real desde que `runTurn` só chama
+     `runTurnLangGraph`. Removido (mesma classe dos 3 já removidos no commit anterior).
+   - Re-rodada da suíte completa: 1 falha residual (`handoff.integration.test.ts`, colisão de
+     seed `administradoras_nome_unique` — confirmado por reprodução isolada que é **contaminação
+     de paralelismo entre arquivos de teste rodando contra o mesmo Postgres compartilhado, não
+     regressão de código** — passa 100% sozinho). Fragilidade pré-existente de infra de teste
+     (DB compartilhado sem isolamento por worker), fora do escopo desta correção — registrado
+     como gap, não bug.
+3. **`pnpm typecheck` limpo** em todos os pontos de checkpoint.
+4. **E2E reduzido (3 personas) + re-julgamento**: **ainda não feito** — é o próximo passo antes
+   de buscar o selo "matador pra prod" do Opus.
+
 ## Riscos e gaps honestos
 
 - ITEM 1 (remover Serviços) toca uma CHECK constraint de banco em produção **e** um mapeamento
