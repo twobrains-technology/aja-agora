@@ -953,6 +953,12 @@ export function createConverseNode(model: BaseChatModel) {
 									termMonths: prazo,
 									...(typeof p.groupId === "string" ? { groupId: p.groupId } : {}),
 									...(num(p.avgBidValue) != null ? { avgBidValue: num(p.avgBidValue) } : {}),
+									// FIX-375: mesma lacuna do FIX-374/375 — sem isto, a re-âncora
+									// via tool-result (present_recommendation_card/simulate_quota)
+									// apagava o `availableSlots` real que `discovery.ts` já tinha
+									// propagado no reveal, e o card de escassez pós-fechamento
+									// (FIX-372) nunca tinha o que mostrar.
+									...(num(p.availableSlots) != null ? { availableSlots: num(p.availableSlots) } : {}),
 								};
 							}
 						}
@@ -1109,6 +1115,11 @@ export function createConverseNode(model: BaseChatModel) {
 											// lance médio do grupo anterior fazia a conversa citar um número
 											// que não pertencia a esta cota.
 											avgBidValue: escolhaRef.cota.avgBidValue,
+											// FIX-375: mesma regra do avgBidValue acima — sem isto, escolher
+											// uma cota aqui apagava o `availableSlots` real propagado no
+											// reveal (FIX-374), e o card de escassez pós-fechamento (FIX-372)
+											// nunca tinha o que mostrar.
+											availableSlots: escolhaRef.cota.availableSlots,
 										} as FunnelState["recommendedOffer"],
 										...(escolhaRef.cota.administradora
 											? { recommendedAdministradora: escolhaRef.cota.administradora }

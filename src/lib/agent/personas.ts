@@ -200,6 +200,16 @@ export type ConversationMetadata = {
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
 	decisionDispatched?: boolean;
+	/** FIX-372 (rodada 4, achado ao vivo pelo orquestrador na verificação final):
+	 * idempotência do card `scarcity`, DESACOPLADA de `decisionDispatched` — o
+	 * card de escassez precisa de uma chance de aparecer mesmo quando o gate
+	 * `decision` nunca dispara (cliente decidido cedo, `escolha` ancorada por
+	 * "afirmação" antes do gate `decision` rodar, `nextGate` pula ele
+	 * silenciosamente — ver `qualify-state.ts:421`). Sem este flag, a única
+	 * forma de mostrar escassez dependia de o cliente NÃO ter decidido ainda —
+	 * exatamente o perfil de cliente que MENOS precisa do empurrão de urgência,
+	 * e o que MAIS precisa (o decidido/com pressa) nunca via o card. */
+	scarcityDispatched?: boolean;
 	/** FIX-297 (rodada 10, 2026-07-12) — gate `reco-consent` ("Posso te mostrar
 	 * a opção que eu recomendo?") já foi disparado nesta conversa. Mesmo padrão
 	 * de `simulatorOfferDispatched`: marcado na EMISSÃO, não na resposta —
