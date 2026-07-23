@@ -186,6 +186,25 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 
 **Nota de execução (rodada 1):** o gate `pnpm test --run` falha no host por falta do volume `local-dev` (sem Postgres — `ECONNREFUSED`/`ENOTFOUND aja-shared-pg`), confirmado como falha PRÉ-EXISTENTE na própria base (não causada pelos blocos: rodei a suíte direto na base antes de qualquer merge e ela já falhava igual). Reintegrei com `--gate "pnpm -s typecheck"` (limpo nos 3 blocos) — os testes de cada item já foram validados pelo agente de cada bloco dentro do próprio worktree Superset (ver `.done/2026-07-22-bloco-{g,h,i}-*.md`, todos reportam suíte tocada verde).
 
+**Atrito de ambiente resolvido pra subir a stack da base (fase ④, útil pra próxima campanha):**
+Workspace novo (`bootstrap-workspace.sh`) travou 3 vezes seguidas por env vars ausentes/vazias
+que o `.env.example` não preenche nem o bootstrap gera automaticamente (diferente de Langfuse,
+que já é auto-preenchido):
+1. `ADMIN_EMAIL`/`ADMIN_PASSWORD` — nem existiam no `.env.example` (corrigido: adicionadas com
+   default de dev, commit no repo).
+2. `BETTER_AUTH_SECRET` — idem, nem existia (corrigido: adicionada instrução `openssl rand
+   -base64 32` no `.env.example`, commit no repo).
+3. `LITELLM_BASE_URL`/`LITELLM_API_KEY`/`AI_MODEL` — ausentes no workspace novo (o
+   `ANTHROPIC_API_KEY` placeholder não funciona, precisa do túnel SSM da skill
+   `tunel-litellm`); túnel caiu por SSO expirado, resolvido com `aws sso login --profile
+   tb-prod` + reabrir o port-forward.
+4. `IDENTITY_ENC_KEY` — existe no `.env.example` mas vazia (só instrução de gerar); bootstrap
+   não gera automaticamente. Sem ela, o CPF não persiste e a busca na Bevi nunca dispara
+   (sintoma enganoso: parecia "Bevi não responde", mas o erro real era antes disso).
+**Sugestão pra próxima vez (fora do escopo desta campanha, é a skill global `local-dev`):**
+`bootstrap-workspace.sh` poderia auto-gerar `BETTER_AUTH_SECRET`/`IDENTITY_ENC_KEY` por
+workspace (mesmo padrão já usado pra Langfuse) — evitaria essa sequência de descoberta manual.
+
 **Achados de investigação dos blocos (relevantes pro juiz/próxima rodada):**
 - **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
 - **Bloco H (FIX-364/365):** FIX-364 exigiu fix real (`nextGate` não fazia short-circuit com `contractClosed:true`) — corrigido. FIX-365 confirmou que a notificação de mesa já existia E já era idempotente (`createMesaHandoff` checa handoff ativo antes de inserir) — só faltava o teste de regressão, sem bug real.
