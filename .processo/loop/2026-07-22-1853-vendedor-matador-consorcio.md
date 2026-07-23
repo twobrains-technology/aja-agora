@@ -183,7 +183,8 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 | Rodada | Data | Blocos lançados | Evidências (path) | Score juiz (por dimensão) | Achados novos → próxima rodada | Custo (tok/tempo) |
 |---|---|---|---|---|---|---|
 | 1 | 2026-07-22 | Onda 1: bloco-g (sozinho). Onda 2: bloco-h + bloco-i (paralelo). Todos integrados limpo na base `integ/vendedor-matador` (gate `pnpm typecheck` — a suíte com DB não roda neste host, ver nota abaixo). | `.processo/loop/2026-07-22-1853-vendedor-matador-consorcio/evidencias/rodada-1/` (dossiê completo — persona-1-helena.md, persona-2-diego.md, persona-3-renata.md, todas com screenshots) | **6/10.** Negócio ❌, Funcional ❌, UX ❌ (mesma causa: resume pós-fechamento) · Vendedor ✅ (o mais forte da rodada) · UI ✅ · E2E/integração ✅ (confiado no LEDGER, juiz não re-rodou). Não é "matador pra prod". | FIX-368 (resume "Voltei" pós-fechamento não reconhece o fato em nenhuma seção do prompt — hipótese client-side dos dossiês REFUTADA por leitura de código, causa real é ausência de seção de prompt dedicada) + FIX-369 (card de escassez 0/3, pista de bypass via `present_decision_prompt` chamado direto pelo modelo em `runner.ts:1595`, não confirmada ao vivo) — promovidos a `docs/correcoes/todo/bloco-j-resume-escassez-rodada2/` | juiz: 174k tok / 76 tool calls / ~11min |
-| 2 | (em andamento) | bloco-j (FIX-368 + FIX-369, único bloco por overlap em `runner.ts`), forkando da base `integ/vendedor-matador` | — | — | — | — |
+| 2 | 2026-07-22/23 | bloco-j (FIX-368 + FIX-369, único bloco por overlap em `runner.ts`), forkando da base `integ/vendedor-matador`. Integrado limpo (gate `pnpm typecheck` DENTRO do container desta vez — merge-wave detectou o volume local-dev). 41 testes verdes (TDD), FIX-369 refutou a hipótese de bypass do card e achou o root cause real (card fantasma sem `availableSlots`). | `.done/2026-07-22-bloco-j-resume-escassez-rodada2.md` | **INVALIDADA — ver nota da rodada 3.** O bloco implementou os fixes corretamente, mas em código do runtime Vercel, que não era o runtime em execução neste workspace. | — (achado só na rodada 3, ver abaixo) | bloco-j: ~1 bloco Sonnet |
+| 3 | 2026-07-23 | **Sem bloco novo — trabalho direto na base pelo orquestrador (achado grave demais pra esperar uma onda).** | commit `90270707` na base `integ/vendedor-matador` (push feito) | **N/A — pivô estrutural, não rodada de score.** Ver "Descoberta crítica" abaixo. | — | ~195k tok (agente de remoção) + investigação do orquestrador |
 
 **Nota de execução (rodada 1):** o gate `pnpm test --run` falha no host por falta do volume `local-dev` (sem Postgres — `ECONNREFUSED`/`ENOTFOUND aja-shared-pg`), confirmado como falha PRÉ-EXISTENTE na própria base (não causada pelos blocos: rodei a suíte direto na base antes de qualquer merge e ela já falhava igual). Reintegrei com `--gate "pnpm -s typecheck"` (limpo nos 3 blocos) — os testes de cada item já foram validados pelo agente de cada bloco dentro do próprio worktree Superset (ver `.done/2026-07-22-bloco-{g,h,i}-*.md`, todos reportam suíte tocada verde).
 
@@ -241,6 +242,63 @@ atrito ambiental, ver nota acima; papel "coletor não julga" mantido, só regist
 - **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
 - **Bloco H (FIX-364/365):** FIX-364 exigiu fix real (`nextGate` não fazia short-circuit com `contractClosed:true`) — corrigido. FIX-365 confirmou que a notificação de mesa já existia E já era idempotente (`createMesaHandoff` checa handoff ativo antes de inserir) — só faltava o teste de regressão, sem bug real.
 - **Bloco I (FIX-366/367):** **FIX-367 era bug de código genuíno** (4ª causa, não prevista no fix doc original: `buildScarcityCard` nunca propagava `availableSlots` do reveal pro snapshot usado depois; corrigido com `resolveSnapshotAvailableSlots`/`preserveAvailableSlotsAcrossResim`). **FIX-366(a): decisão técnica de NÃO paralelizar** a busca Bevi (cookbook documenta 1 proposta ativa = re-PATCH sequencial; paralelizar arriscava corromper a oferta financeira mostrada ao cliente) — sem sandbox pra testar ao vivo, ficou **PENDENTE-KAIRO** avaliar se o `gapMs` (400ms) incomoda na prática. FIX-366(b/c) resolvido via reforço de `system-prompt.ts` + `embedded-bid-payload.ts` (comportamento do modelo, sem TDD — validação é do juiz).
+
+## Descoberta crítica (rodada 3) — o workspace rodava o runtime ERRADO
+
+Depois do bloco-j integrar (FIX-368/369, ambos com TDD verde), fiz um spot-check ao vivo do
+FIX-368 antes de re-lançar o juiz — e o sintoma original **continuava idêntico**, mesmo com o
+código "corrigido" na base. Investigação (log `[route] gate=...` bateu com
+`src/lib/agent/langgraph/nodes/route.ts`, não com `orchestrator/index.ts` como eu assumia) levou
+a `/app/.env` (arquivo LOCAL do workspace, não versionado): `AI_RUNTIME=langgraph`. Este
+workspace **nunca rodou o runtime Vercel** — rodava LangGraph o tempo todo, inclusive durante
+TODA a rodada 1 (personas 1-3) e o juiz Sonnet que deu 6/10.
+
+Perguntei ao Kairo ao vivo. Resposta dele: **"não, só usamos o langgraph agora. inclusive já
+exclua o runtime vercel" → "apague todo codigo do runtime vercel" → "não quero resquício dele
+aí."** — decisão de produto, direta e repetida. A campanha irmã
+(`.processo/loop/2026-07-20-1948-langgraph-runtime.md`) encerrou com o LangGraph substituindo o
+runtime antigo por completo; esta linha do goal doc (que assumia `AI_RUNTIME=vercel` como
+default de produção) estava desatualizada.
+
+**Ação tomada (commit `90270707`, push feito na base):**
+1. Removido o runtime Vercel inteiro: `orchestrator/runner.ts` (motor de tool-loop do AI SDK,
+   1720 linhas), `orchestrator/index.ts` reescrito de ~1470 linhas pra 30 (só chama
+   `runTurnLangGraph` incondicionalmente), `route.ts` (9 pontos de bifurcação por
+   `runtimeFlavor()`, ~549 linhas de ramos Vercel mortos), `src/lib/llm/runtime.ts` deletado.
+   `scoringInputFromMeta` (única função de `runner.ts` usada fora dele, pelo `discovery.ts` do
+   LangGraph) extraída pra `src/lib/agent/scoring-input.ts`. Mantido intacto: `agents/index.ts`/
+   `agents/builder.ts` (`resolveAgent`/`buildAgent`) — usados só pelas rotas ADMIN de preview de
+   persona, fora do escopo de "runtime de conversa com cliente". `pnpm typecheck` limpo.
+2. **FIX-369 sobreviveu de graça** — vivia em `server-cards.ts` (compartilhado), que
+   `langgraph/nodes/emit-card.ts` já consumia. Nenhum trabalho extra.
+3. **FIX-368 replantado no LangGraph** (não sobrevivia — `resumeAfterCloseSection` em
+   `system-prompt.ts` só era chamada por `buildSpecialistPrompt`, que só as rotas admin de
+   preview chamam; `converse.ts` nunca invocava): novo campo `isResumeGreeting` em
+   `state.ts` (LangGraph `Annotation`, sem reducer custom — replaced a cada turno), propagado em
+   `run-turn.ts` (caminho `Command(resume)` E caminho de estado inicial), consumido em
+   `converse.ts` como novo `blocoRetomadaPosFechamento` (mesma regra dura do fix original).
+   **Confirmado ao vivo** (persona Marina, pós-restart do container, túnel LiteLLM saudável):
+   *"Que bom te ver de novo, Marina! Sua reserva com a ITAÚ já está confirmada, e um atendente
+   da Aja Agora vai te chamar no WhatsApp em breve pra seguir com os próximos passos da adesão.
+   Alguma dúvida enquanto isso?"* — reconhece o fechamento na primeira frase, cita WhatsApp,
+   não repete pergunta de etapa anterior. Bate o critério de aceitação original do ITEM 2.
+4. Removidos 3 testes de integração que só exercitavam o pipeline Vercel morto (forçavam
+   `AI_RUNTIME=vercel` + mockavam `resolveAgent`) — o teste unitário puro do FIX-369
+   (`server-cards.test.ts`) é runtime-agnóstico e segue intacto, sem perda de cobertura real.
+
+**Implicação pra rodada 4 (próxima):** a rodada 1 inteira (personas 1-3, juiz 6/10) rodou contra
+o LangGraph, então o veredito do juiz sobre ITEM 1/3/4/5 continua válido (esses itens já
+tocavam código compartilhado ou o próprio LangGraph desde o início — só o ITEM 2/resume estava
+no lugar errado). O que precisa de **nova verificação E2E** é especificamente o ITEM 2 (resume),
+já confirmado por spot-check acima mas ainda sem o dossiê formal das 3 personas nem o veredito
+do juiz. Próximo passo: re-rodar pelo menos o cenário de resume nas 3 personas (ou uma rodada
+completa, se o tempo permitir) e re-lançar o juiz Sonnet.
+
+**Gap residual honesto:** "lead history completeness" (invariante de que toda mensagem
+assistant é persistida, FIX-11) tinha 2 testes de integração cobrindo isso — ambos só testavam
+o pipeline Vercel (forçavam `AI_RUNTIME=vercel`), removidos junto. Não escrevi substituto
+LangGraph-nativo (fora do escopo desta rodada) — fica como gap de cobertura pra registrar, não
+como bug confirmado.
 
 ## Riscos e gaps honestos
 
