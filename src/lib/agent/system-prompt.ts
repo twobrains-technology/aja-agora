@@ -913,10 +913,8 @@ function brlNoCents(n: number): string {
 	});
 }
 
-export function contractClosedSection(info: ContractClosedInfo | null): string {
-	if (!info) return "";
-	const administradora = info.administradora ?? "a administradora escolhida";
-	const plano = [
+function planoDescricao(info: ContractClosedInfo): string {
+	return [
 		info.grupo ? `grupo ${info.grupo}` : null,
 		typeof info.creditValue === "number" ? `crédito de ${brlNoCents(info.creditValue)}` : null,
 		typeof info.monthlyPayment === "number"
@@ -925,6 +923,12 @@ export function contractClosedSection(info: ContractClosedInfo | null): string {
 	]
 		.filter(Boolean)
 		.join(" · ");
+}
+
+export function contractClosedSection(info: ContractClosedInfo | null): string {
+	if (!info) return "";
+	const administradora = info.administradora ?? "a administradora escolhida";
+	const plano = planoDescricao(info);
 	const statusLabel =
 		info.proposalStatus === "documentos"
 			? "documentos recebidos — a proposta está com a administradora"
@@ -937,6 +941,31 @@ REGRAS DURAS deste estado:
 - PROIBIDO re-rodar a descoberta: NÃO chame search_groups/recommend_groups, NÃO apresente recommendation_card, simulation_result, comparison_table nem contemplation_dial, e NUNCA ofereça OUTRA administradora ou "novas opções" — o plano já foi reservado com a ${administradora}.
 - Pergunta de status ("qual o status da proposta?", "como tá minha proposta?") → chame check_proposal_status (consulta a administradora AO VIVO — regra FIX-14 acima) e responda com base na userMessage dela. Se a tool falhar, responda DESTE estado: proposta com a ${administradora}${info.grupo ? `, grupo ${info.grupo}` : ""}, ${statusLabel}. Diga que a Aja Agora acompanha cada passo e avisa o usuário.
 - Se o usuário quiser OUTRO consórcio (nova cota/novo bem), diga que é possível iniciar um novo consórcio — uma nova jornada — a qualquer momento: a reserva já está concluída nesta conversa. NÃO reabra a qualificação.`;
+}
+
+/** FIX-368 (rodada 2, veredito do juiz — 3/3 personas): a primeira mensagem do
+ * usuário após retomar a conversa (`"Voltei"`, disparado automaticamente pelo
+ * teatro no reload/retomada — ver `theater-chat.tsx`) precisa reconhecer de
+ * cara que a proposta já foi fechada e reforçar o encaminhamento pro WhatsApp.
+ * `contractClosedSection` cobre CONTESTAÇÃO e PERGUNTA DE STATUS — nenhuma das
+ * duas instrui a ABERTURA da retomada, então o modelo tratava "Voltei" como
+ * início de conversa comum (cada persona "inventou" uma etapa pendente
+ * diferente: formulário travado / decisão não tomada / contratação pendente).
+ * Só dispara no turno sinalizado como retomada (`isResumeGreeting`, propagado
+ * desde `theater-chat.tsx` → `route.ts` → `runner.ts`/`resolveAgent`) — nunca
+ * por heurística de texto (não trava em regex de "Voltei"), e nunca em turnos
+ * normais pós-fechamento (aí quem cobre é `contractClosedSection` acima). */
+export function resumeAfterCloseSection(
+	info: ContractClosedInfo | null,
+	isResumeGreeting: boolean,
+): string {
+	if (!info || !isResumeGreeting) return "";
+	const administradora = info.administradora ?? "a administradora escolhida";
+	const plano = planoDescricao(info);
+	return `## Retomada pós-fechamento — primeira frase reconhece a reserva (FIX-368)
+Esta é a PRIMEIRA mensagem do usuário desde que ele voltou pra conversa — e a proposta JÁ está fechada: consórcio da ${administradora}${plano ? ` (${plano})` : ""}.
+
+REGRA DURA: a PRIMEIRA frase da sua resposta reconhece explicitamente que a reserva já está confirmada e com a administradora, e reforça que um atendente da Aja Agora fala com ele pelo WhatsApp em breve (pra pedir documentos/seguir os próximos passos). NUNCA trate esta retomada como se a jornada ainda estivesse em aberto: não pergunte se ele travou em alguma parte do formulário, não re-pergunte uma decisão que já foi tomada (ex.: qual cenário de lance embutido), não convide a "seguir com a contratação" — isso tudo já aconteceu. Escreva com SUAS próprias palavras (isto não é um texto fixo) — o fato determinístico é só o que está descrito acima.`;
 }
 
 /** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — o gate `desire`
@@ -1000,11 +1029,16 @@ function buildSpecialistDynamicBlocks(
 	// FIX-285: o gate `desire` foi respondido mesmo sem um `desiredItem`
 	// específico — variante genérica da 2ª pergunta (motivo).
 	desireAnswered = false,
+	// FIX-368: turno sinalizado como a primeira mensagem pós-retomada
+	// (ver `resumeAfterCloseSection` acima) — default false preserva o
+	// comportamento atual em paths que não derivam do sinal.
+	isResumeGreeting = false,
 ): string {
 	return [
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
+		resumeAfterCloseSection(contractClosedInfo, isResumeGreeting),
 		motivationMirrorSection(motivation, desiredItem),
 		desireFollowUpSection(desiredItem, motivation, desireAnswered),
 	]
@@ -1100,6 +1134,10 @@ export function buildSpecialistPrompt(
 	// contrato). Default "terminal" = tudo, preservando o comportamento de
 	// qualquer chamador que não passe a fase (testes, admin, paths antigos).
 	phase: ToolPhase = "terminal",
+	// FIX-368: este turno é a primeira mensagem do usuário desde que retomou a
+	// conversa (sinal propagado desde `theater-chat.tsx`) — default false
+	// preserva o comportamento atual em paths que não derivam do sinal.
+	isResumeGreeting = false,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1198,6 +1236,7 @@ ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 			motivation,
 			desiredItem,
 			desireAnswered,
+			isResumeGreeting,
 		),
 	};
 }

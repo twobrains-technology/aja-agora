@@ -113,6 +113,13 @@ type ChatRequestBody = {
 	conversationId?: string;
 	messages?: UIMessage[];
 	action?: ChatAction;
+	/**
+	 * FIX-368: sinaliza que esta mensagem é o seed sintético "Voltei" disparado
+	 * pelo teatro no reload/retomada (ver `theater-chat.tsx`) — nunca uma
+	 * heurística de texto no servidor. Combinado com `meta.contractClosed`,
+	 * dispara a seção do prompt que reconhece a reserva já feita.
+	 */
+	isResumeGreeting?: boolean;
 };
 
 // Exported pra teste (Bv2-08-novo: payload legacy sem parts crashava).
@@ -1742,7 +1749,14 @@ export async function POST(req: NextRequest) {
 			const writer = instrumentWriter(rawWriter, trace);
 			try {
 				await withSimulatorClockIfNeeded(conv ?? null, async () => {
-					await pipeUserTurn({ conversationId, userText, contactName, writer, userKey });
+					await pipeUserTurn({
+						conversationId,
+						userText,
+						contactName,
+						writer,
+						userKey,
+						isResumeGreeting: body.isResumeGreeting === true,
+					});
 				});
 				// FIX-110: o turno de texto-livre fechava 'ok' SEM emitir nenhuma part
 				// visível (agente mudo) — o usuário esperava e nada vinha, só destravava

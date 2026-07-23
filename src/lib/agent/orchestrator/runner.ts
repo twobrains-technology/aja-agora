@@ -329,6 +329,14 @@ export async function* runAgentTurn(args: {
 	 * cacheControl) — sem warning de prompt-injection e sem duplicar a memória.
 	 */
 	systemContextBlocks?: string[];
+	/**
+	 * FIX-368: este turno é a primeira mensagem do usuário desde que retomou a
+	 * conversa (sinal propagado desde `theater-chat.tsx` → `route.ts` →
+	 * `runTurn`/`runAgentTurn`) — repassado pro `resolveAgent` pra disparar a
+	 * seção de reconhecimento da reserva já feita quando o contrato está
+	 * fechado. Default false preserva o comportamento atual.
+	 */
+	isResumeGreeting?: boolean;
 }): AsyncGenerator<TurnEvent, RunAgentResult> {
 	const {
 		conversationId,
@@ -341,6 +349,7 @@ export async function* runAgentTurn(args: {
 		memoryContext = null,
 		forceToolChoice,
 		systemContextBlocks = [],
+		isResumeGreeting = false,
 	} = args;
 
 	let fullResponse = "";
@@ -487,6 +496,7 @@ export async function* runAgentTurn(args: {
 		channel,
 		toolChoice: forceToolChoice,
 		extraSystemBlocks,
+		isResumeGreeting,
 	});
 
 	// FIX-181: observabilidade de tool I/O (Lei 5) — o primitivo NATIVO do AI SDK 6
