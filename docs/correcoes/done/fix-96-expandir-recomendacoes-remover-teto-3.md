@@ -3,7 +3,7 @@ id: FIX-96
 bloco: bloco-f-artifacts-produto
 slug: expandir-recomendacoes-remover-teto-3
 titulo: "Remover o teto de 3 recomendações: 1 hero + 5 ranqueadas + 'ver todas' expansível (ordenar/filtrar)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 rodada: 2026-06-28 — revisão da etapa de recomendação (passo 5 da jornada)
@@ -15,6 +15,8 @@ mexe_em:
   - src/components/chat/artifacts/recommendation-card.tsx
   - src/components/chat/artifacts/comparison-table.tsx
   - src/lib/agent/system-prompt.ts
+commit: 77cad050
+executado_em: 2026-07-22
 ---
 
 ## Palavras do operador

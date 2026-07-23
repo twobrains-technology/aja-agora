@@ -3,7 +3,7 @@ id: FIX-95
 bloco: bloco-f-artifacts-produto
 slug: simplificar-simulador-passo4-so-valor
 titulo: "Trocar o simulador do passo 4 por um seletor simples só de valor (slider de valor, sem os demais campos)"
-status: todo
+status: done
 severidade: media
 projeto: aja-agora
 rodada: 2026-06-28 — revisão visual do card "Planeje sua conquista" (passo 4)
@@ -14,6 +14,8 @@ mexe_em:
   - src/components/chat/artifacts/plan-estimate-picker.test.tsx
   - src/lib/consorcio/plan-estimate.ts
   - src/lib/chat/ui-message.ts
+commit: 77cad050
+executado_em: 2026-07-22
 ---
 
 ## Palavras do operador
