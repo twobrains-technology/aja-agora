@@ -100,6 +100,15 @@ export type TurnInput = {
 	 * (index.ts) escolher explicitamente, em vez de só a heurística interna.
 	 */
 	forceToolChoice?: "none";
+	/**
+	 * FIX-368 (rodada 2, veredito do juiz): este turno é a primeira mensagem
+	 * do usuário desde que retomou a conversa (propagado desde
+	 * `theater-chat.tsx`, que dispara o seed sintético "Voltei" no
+	 * reload/retomada). Combinado com `meta.contractClosed`, dispara a seção
+	 * do prompt que instrui o modelo a reconhecer a reserva já feita na
+	 * PRIMEIRA frase, em vez de tratar a retomada como abertura comum.
+	 */
+	isResumeGreeting?: boolean;
 };
 
 export type TurnContext = {

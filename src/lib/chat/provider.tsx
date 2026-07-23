@@ -32,7 +32,7 @@ type ChatContextValue = {
 	status: "submitted" | "streaming" | "ready" | "error";
 	error: Error | undefined;
 	handoff: HandoffState;
-	sendUserMessage: (text: string) => Promise<void>;
+	sendUserMessage: (text: string, opts?: { isResumeGreeting?: boolean }) => Promise<void>;
 	sendAction: (action: ChatAction, label: string) => Promise<void>;
 	regenerate: () => Promise<void>;
 	reset: () => void;
@@ -214,8 +214,11 @@ export function ChatProvider({
 	}, [handoff.status, conversationId]);
 
 	const sendUserMessage = useCallback(
-		async (text: string) => {
-			await chat.sendMessage({ text });
+		async (text: string, opts?: { isResumeGreeting?: boolean }) => {
+			await chat.sendMessage(
+				{ text },
+				opts?.isResumeGreeting ? { body: { isResumeGreeting: true } } : undefined,
+			);
 		},
 		[chat],
 	);

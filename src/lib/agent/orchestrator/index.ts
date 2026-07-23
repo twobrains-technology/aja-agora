@@ -306,6 +306,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 		userKey,
 		suppressGateEvent,
 		forceToolChoice: callerForceToolChoice,
+		isResumeGreeting,
 	} = input;
 
 	const conversationId = providedConversationId;
@@ -923,6 +924,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 		memoryContext,
 		forceToolChoice,
 		systemContextBlocks,
+		isResumeGreeting,
 	});
 
 	// FIX-347 (loop-de-goal desamarra, rodada 4, P1.1 — "Acho que me perdi"
@@ -964,6 +966,7 @@ async function* runTurnVercel(input: TurnInput): AsyncGenerator<TurnEvent> {
 			memoryContext,
 			forceToolChoice,
 			systemContextBlocks: [...systemContextBlocks, retryDirective],
+			isResumeGreeting,
 		});
 	}
 

@@ -144,7 +144,9 @@ describe("Modo Teatro — casca de transição", () => {
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(500);
 			});
-			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.");
+			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.", {
+				isResumeGreeting: false,
+			});
 		} finally {
 			vi.useRealTimers();
 		}
@@ -178,7 +180,9 @@ describe("Modo Teatro — casca de transição", () => {
 				await vi.advanceTimersByTimeAsync(600);
 			});
 			expect(sendUserMessage).toHaveBeenCalledTimes(1);
-			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.");
+			expect(sendUserMessage).toHaveBeenCalledWith("Quero trocar de carro.", {
+				isResumeGreeting: false,
+			});
 		} finally {
 			vi.useRealTimers();
 		}
