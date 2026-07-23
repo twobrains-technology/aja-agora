@@ -201,9 +201,20 @@ que já é auto-preenchido):
 4. `IDENTITY_ENC_KEY` — existe no `.env.example` mas vazia (só instrução de gerar); bootstrap
    não gera automaticamente. Sem ela, o CPF não persiste e a busca na Bevi nunca dispara
    (sintoma enganoso: parecia "Bevi não responde", mas o erro real era antes disso).
+5. `BEVI_API_TOKEN` — vazio no `.env.local` do workspace novo (existe valor real no workspace
+   `develop`); sem ele, `BeviApiAdapter` falha alto ("exige BEVI_API_TOKEN"). Copiado do
+   workspace funcional.
+6. `S3_PUBLIC_ENDPOINT` — idem, vazio; copiado (`http://aja-shared-minio.orb.local`).
+
+**Validação manual pós-fix:** rodei a persona 1 manualmente até a busca real — a Bevi retornou
+oferta real (Itaú, carta R$ 309 mil, parcela R$ 1.899/221 meses), confirmando o pipeline
+completo (LLM + cifra de identidade + Bevi) operacional antes de gastar outro run do coletor.
+
 **Sugestão pra próxima vez (fora do escopo desta campanha, é a skill global `local-dev`):**
 `bootstrap-workspace.sh` poderia auto-gerar `BETTER_AUTH_SECRET`/`IDENTITY_ENC_KEY` por
-workspace (mesmo padrão já usado pra Langfuse) — evitaria essa sequência de descoberta manual.
+workspace (mesmo padrão já usado pra Langfuse) e copiar `BEVI_API_TOKEN`/`BEVI_SELFCONTRACT_HASH`/
+`S3_PUBLIC_ENDPOINT` de um workspace de referência — evitaria essa sequência de descoberta manual
+(6 variáveis, ~40min de troubleshooting nesta rodada).
 
 **Achados de investigação dos blocos (relevantes pro juiz/próxima rodada):**
 - **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
