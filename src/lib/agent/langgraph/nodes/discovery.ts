@@ -34,9 +34,9 @@ import {
 	type RevealGroupIndex,
 	usableRevealGroupCount,
 } from "@/lib/agent/orchestrator/recommendation-payload";
-import { scoringInputFromMeta } from "@/lib/agent/orchestrator/runner";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { Category } from "@/lib/agent/personas";
+import { scoringInputFromMeta } from "@/lib/agent/scoring-input";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
 

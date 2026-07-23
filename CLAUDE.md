@@ -32,9 +32,8 @@ cedilha e til. Acento faltando é defeito de entrega.
 
 | O quê | Onde |
 |---|---|
-| Runtime em uso | `AI_RUNTIME` (`src/lib/llm/runtime.ts`) — `langgraph` ou `vercel` |
-| Grafo (LangGraph) | `src/lib/agent/langgraph/` — `graph.ts` é a topologia |
-| Runtime Vercel AI SDK | `src/lib/agent/orchestrator/` |
+| Runtime (único) | LangGraph — `src/lib/agent/langgraph/` — `graph.ts` é a topologia |
+| Directives/cards/tool-policy (compartilhado com o grafo) | `src/lib/agent/orchestrator/` |
 | Ordem do funil | `nextGate` em `src/lib/agent/qualify-state.ts` — **o código é a fonte** |
 | Tools por fase | `src/lib/agent/orchestrator/tool-policy.ts` |
 | Prompt | `src/lib/agent/system-prompt.ts` |

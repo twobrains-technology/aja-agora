@@ -247,6 +247,14 @@ export const AgentGraphState = Annotation.Root({
 	contactName: Annotation<string | null>(),
 	isUserTurn: Annotation<boolean>(),
 	userText: Annotation<string>(),
+	// FIX-368 (rodada 2, veredito do juiz): este turno é a primeira mensagem do
+	// usuário desde que retomou a conversa (seed sintético "Voltei" do teatro,
+	// ver `theater-chat.tsx`) — propagado desde `route.ts`/`TurnInput` pra
+	// disparar, em `converse.ts`, o reconhecimento da reserva já feita. Sem
+	// reducer custom = default "última escrita vence": cada turno reafirma seu
+	// próprio valor (true só no turno de retomada, false nos demais), nunca
+	// "gruda" de um turno pro outro.
+	isResumeGreeting: Annotation<boolean>(),
 
 	// ── Snapshot completo do meta persistido — `projectToMeta` faz merge do
 	// `funnel` por cima disto no fim do turno (nunca perde campos que este

@@ -1,17 +1,13 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
-import { runtimeFlavor } from "@/lib/llm/runtime";
 import type { ChosenOffer } from "./choose-offer";
 import type { EphemeralDropReason } from "./sanitizer";
 
-/** Quem desenha o formulário de contratação depende do runtime: no LangGraph é
- * o nó `emitCard` (gate `contract`, determinístico — `present_contract_form`
- * nem existe no toolset), no Vercel é a tool-call do modelo. Mandar o modelo
- * chamar uma tool que não está no toolset dele é receita de turno perdido. */
-function instrucaoDoFormularioDeContrato(adminCtx: string): string {
-	return runtimeFlavor() === "langgraph"
-		? `O sistema pede os dados logo depois da sua fala (formulário na web, mensagem no WhatsApp) — você NÃO chama ferramenta nenhuma pra isso e NUNCA pede CPF por texto. Não descreva a interface ("na tela", "no card"): só conduza.`
-		: `e chame present_contract_form (proposta real${adminCtx}).`;
+/** Quem desenha o formulário de contratação: o nó `emitCard` (gate `contract`,
+ * determinístico — `present_contract_form` nem existe no toolset) — o modelo
+ * não chama ferramenta nenhuma pra isso. */
+function instrucaoDoFormularioDeContrato(): string {
+	return `O sistema pede os dados logo depois da sua fala (formulário na web, mensagem no WhatsApp) — você NÃO chama ferramenta nenhuma pra isso e NUNCA pede CPF por texto. Não descreva a interface ("na tela", "no card"): só conduza.`;
 }
 
 // ---- Transition ----
@@ -266,15 +262,13 @@ export function buildTopicPickerBackDirective(): string {
 
 /** FIX-29 — usuário JÁ viu o card de decisão e reafirmou avanco ("Tenho
  * interesse" de novo). Avanca pro passo 5 (contratação real), nunca lead. */
-export function buildAdvanceToContractDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
-	const adminCtx = administradora ? ` da "${administradora}"` : "";
+export function buildAdvanceToContractDirective(_args: { administradora?: string }): string {
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
 	// "reserva"/"pré-reserva" ainda implica compromisso fechado antes da
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato(adminCtx)} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato()} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -284,11 +278,10 @@ export function buildAdvanceToContractDirective(args: { administradora?: string 
  * problema", "preciso trazer os IDs reais"). CONTRATO com bloco-b (adendo B8). */
 export function buildChooseOfferDirective(args: { administradora?: string }): string {
 	const { administradora } = args;
-	const adminCtx = administradora ? ` da "${administradora}"` : "";
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato(adminCtx)} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato()} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {

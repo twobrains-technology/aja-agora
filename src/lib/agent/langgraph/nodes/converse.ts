@@ -606,6 +606,9 @@ export function createConverseNode(model: BaseChatModel) {
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
+					...(blocoRetomadaPosFechamento
+						? [{ type: "text" as const, text: blocoRetomadaPosFechamento }]
+						: []),
 					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
 					...(blocoEscolha ? [{ type: "text" as const, text: blocoEscolha }] : []),
 					...(blocoGrupoTrocado ? [{ type: "text" as const, text: blocoGrupoTrocado }] : []),
@@ -666,6 +669,30 @@ export function createConverseNode(model: BaseChatModel) {
 				`você, responda o que ele perguntar, com naturalidade. Nunca prometa prazo de ` +
 				`contemplação nem diga que a cota está reservada.`
 			: null;
+
+		// FIX-368 (rodada 2, veredito do juiz — 3/3 personas reproduziram): o
+		// `blocoFechamento` acima cobre CONTESTAÇÃO e PERGUNTA DE STATUS, mas
+		// nenhuma seção instruía a ABERTURA da retomada — o modelo tratava
+		// "Voltei" como início de conversa comum e cada persona "inventou" uma
+		// etapa pendente diferente (formulário travado / decisão não tomada /
+		// contratação pendente). Dispara SÓ no turno sinalizado como retomada
+		// (`isResumeGreeting`, ver `theater-chat.tsx`/`run-turn.ts`) — nunca por
+		// heurística de texto (não trava em regex de "Voltei").
+		const blocoRetomadaPosFechamento =
+			state.baseMeta.contractClosed && state.isResumeGreeting
+				? `## Retomada pós-fechamento — primeira frase reconhece a reserva (FIX-368)\n` +
+					`Esta é a PRIMEIRA mensagem do usuário desde que ele voltou pra conversa — e a ` +
+					`proposta JÁ está fechada, com a ` +
+					`${state.funnel.recommendedAdministradora ?? "administradora escolhida"}.\n\n` +
+					`REGRA DURA: a PRIMEIRA frase da sua resposta reconhece explicitamente que a reserva ` +
+					`já está confirmada e com a administradora, e reforça que um atendente da Aja Agora ` +
+					`fala com ele pelo WhatsApp em breve (pra pedir documentos/seguir os próximos ` +
+					`passos). NUNCA trate esta retomada como se a jornada ainda estivesse em aberto: não ` +
+					`pergunte se ele travou em alguma parte do formulário, não re-pergunte uma decisão ` +
+					`que já foi tomada (ex.: qual cenário de lance embutido), não convide a "seguir com a ` +
+					`contratação" — isso tudo já aconteceu. Escreva com SUAS próprias palavras (isto não ` +
+					`é um texto fixo) — o fato determinístico é só o que está descrito acima.`
+				: null;
 
 		const systemBeat1 = montarSystem(
 			revealEmDoisTempos
