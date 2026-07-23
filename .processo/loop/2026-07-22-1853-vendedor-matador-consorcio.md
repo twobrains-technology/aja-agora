@@ -182,7 +182,65 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 
 | Rodada | Data | Blocos lançados | Evidências (path) | Score juiz (por dimensão) | Achados novos → próxima rodada | Custo (tok/tempo) |
 |---|---|---|---|---|---|---|
-| 1 | | | | | | |
+| 1 | 2026-07-22 | Onda 1: bloco-g (sozinho). Onda 2: bloco-h + bloco-i (paralelo). Todos integrados limpo na base `integ/vendedor-matador` (gate `pnpm typecheck` — a suíte com DB não roda neste host, ver nota abaixo). | `.processo/loop/2026-07-22-1853-vendedor-matador-consorcio/evidencias/rodada-1/` (dossiê completo — persona-1-helena.md, persona-2-diego.md, persona-3-renata.md, todas com screenshots) | **6/10.** Negócio ❌, Funcional ❌, UX ❌ (mesma causa: resume pós-fechamento) · Vendedor ✅ (o mais forte da rodada) · UI ✅ · E2E/integração ✅ (confiado no LEDGER, juiz não re-rodou). Não é "matador pra prod". | FIX-368 (resume "Voltei" pós-fechamento não reconhece o fato em nenhuma seção do prompt — hipótese client-side dos dossiês REFUTADA por leitura de código, causa real é ausência de seção de prompt dedicada) + FIX-369 (card de escassez 0/3, pista de bypass via `present_decision_prompt` chamado direto pelo modelo em `runner.ts:1595`, não confirmada ao vivo) — promovidos a `docs/correcoes/todo/bloco-j-resume-escassez-rodada2/` | juiz: 174k tok / 76 tool calls / ~11min |
+| 2 | (em andamento) | bloco-j (FIX-368 + FIX-369, único bloco por overlap em `runner.ts`), forkando da base `integ/vendedor-matador` | — | — | — | — |
+
+**Nota de execução (rodada 1):** o gate `pnpm test --run` falha no host por falta do volume `local-dev` (sem Postgres — `ECONNREFUSED`/`ENOTFOUND aja-shared-pg`), confirmado como falha PRÉ-EXISTENTE na própria base (não causada pelos blocos: rodei a suíte direto na base antes de qualquer merge e ela já falhava igual). Reintegrei com `--gate "pnpm -s typecheck"` (limpo nos 3 blocos) — os testes de cada item já foram validados pelo agente de cada bloco dentro do próprio worktree Superset (ver `.done/2026-07-22-bloco-{g,h,i}-*.md`, todos reportam suíte tocada verde).
+
+**Atrito de ambiente resolvido pra subir a stack da base (fase ④, útil pra próxima campanha):**
+Workspace novo (`bootstrap-workspace.sh`) travou 3 vezes seguidas por env vars ausentes/vazias
+que o `.env.example` não preenche nem o bootstrap gera automaticamente (diferente de Langfuse,
+que já é auto-preenchido):
+1. `ADMIN_EMAIL`/`ADMIN_PASSWORD` — nem existiam no `.env.example` (corrigido: adicionadas com
+   default de dev, commit no repo).
+2. `BETTER_AUTH_SECRET` — idem, nem existia (corrigido: adicionada instrução `openssl rand
+   -base64 32` no `.env.example`, commit no repo).
+3. `LITELLM_BASE_URL`/`LITELLM_API_KEY`/`AI_MODEL` — ausentes no workspace novo (o
+   `ANTHROPIC_API_KEY` placeholder não funciona, precisa do túnel SSM da skill
+   `tunel-litellm`); túnel caiu por SSO expirado, resolvido com `aws sso login --profile
+   tb-prod` + reabrir o port-forward.
+4. `IDENTITY_ENC_KEY` — existe no `.env.example` mas vazia (só instrução de gerar); bootstrap
+   não gera automaticamente. Sem ela, o CPF não persiste e a busca na Bevi nunca dispara
+   (sintoma enganoso: parecia "Bevi não responde", mas o erro real era antes disso).
+5. `BEVI_API_TOKEN` — vazio no `.env.local` do workspace novo (existe valor real no workspace
+   `develop`); sem ele, `BeviApiAdapter` falha alto ("exige BEVI_API_TOKEN"). Copiado do
+   workspace funcional.
+6. `S3_PUBLIC_ENDPOINT` — idem, vazio; copiado (`http://aja-shared-minio.orb.local`).
+
+**Validação manual pós-fix:** rodei a persona 1 manualmente até a busca real — a Bevi retornou
+oferta real (Itaú, carta R$ 309 mil, parcela R$ 1.899/221 meses), confirmando o pipeline
+completo (LLM + cifra de identidade + Bevi) operacional antes de gastar outro run do coletor.
+
+**Sugestão pra próxima vez (fora do escopo desta campanha, é a skill global `local-dev`):**
+`bootstrap-workspace.sh` poderia auto-gerar `BETTER_AUTH_SECRET`/`IDENTITY_ENC_KEY` por
+workspace (mesmo padrão já usado pra Langfuse) e copiar `BEVI_API_TOKEN`/`BEVI_SELFCONTRACT_HASH`/
+`S3_PUBLIC_ENDPOINT` de um workspace de referência — evitaria essa sequência de descoberta manual
+(6 variáveis, ~40min de troubleshooting nesta rodada).
+
+**Dossiê consolidado (3 personas, coletado pelo orquestrador — coletor Haiku travou 5x em
+atrito ambiental, ver nota acima; papel "coletor não julga" mantido, só registro factual):**
+- **ITEM 1 (nunca oferece Serviços):** ✅ confirmado nas 3 personas — inclusive persona 3, que
+  pediu explicitamente "serviço de manutenção junto" e mesmo assim não recebeu a categoria.
+- **ITEM 4 (lance embutido proativo/consultivo):** ✅ confirmado com força nas 3 personas —
+  persona 1 (sem lance/sem pressa) foi consultiva e NÃO empurrou lance; persona 2 (pressa,
+  sem aporte) recebeu sugestão proativa antes mesmo da oferta real; persona 3 (meio a meio)
+  recebeu a explicação mais completa da mecânica (parcela sobre valor cheio vs. líquido).
+- **ITEM 3 (fechamento):** ✅ confirmado nas 3 personas — linguagem compliant, sem promessa de
+  prazo/contemplação garantida, cota "reservada" + "Parabéns" + card de proposta.
+- **ITEM 5 (escassez):** ⚠️ NÃO observado em nenhuma das 3 execuções (não só na persona 2, que
+  era o cenário desenhado pra testar). Registrado como fato, sem julgamento de causa — pode ser
+  gap de dado externo (Bevi não retorna `availableSlots`) ou o fluxo não passar pela etapa onde
+  o card apareceria.
+- **ITEM 2 (resume reconhece fechamento):** ❌ **reproduzido nas 3 personas**, com 3 variações
+  de sintoma diferentes (persona 1: sugere que o cliente "travou no formulário"; persona 2:
+  re-pergunta a decisão de cenário já tomada; persona 3: convida a "seguir com a contratação"
+  já concluída) — mesma causa-raiz aparente (saudação de retomada não checa `contractClosed`),
+  três manifestações de texto. Este é o achado mais consistente e mais grave da rodada.
+
+**Achados de investigação dos blocos (relevantes pro juiz/próxima rodada):**
+- **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
+- **Bloco H (FIX-364/365):** FIX-364 exigiu fix real (`nextGate` não fazia short-circuit com `contractClosed:true`) — corrigido. FIX-365 confirmou que a notificação de mesa já existia E já era idempotente (`createMesaHandoff` checa handoff ativo antes de inserir) — só faltava o teste de regressão, sem bug real.
+- **Bloco I (FIX-366/367):** **FIX-367 era bug de código genuíno** (4ª causa, não prevista no fix doc original: `buildScarcityCard` nunca propagava `availableSlots` do reveal pro snapshot usado depois; corrigido com `resolveSnapshotAvailableSlots`/`preserveAvailableSlotsAcrossResim`). **FIX-366(a): decisão técnica de NÃO paralelizar** a busca Bevi (cookbook documenta 1 proposta ativa = re-PATCH sequencial; paralelizar arriscava corromper a oferta financeira mostrada ao cliente) — sem sandbox pra testar ao vivo, ficou **PENDENTE-KAIRO** avaliar se o `gapMs` (400ms) incomoda na prática. FIX-366(b/c) resolvido via reforço de `system-prompt.ts` + `embedded-bid-payload.ts` (comportamento do modelo, sem TDD — validação é do juiz).
 
 ## Riscos e gaps honestos
 
