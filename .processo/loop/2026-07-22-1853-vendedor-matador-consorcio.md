@@ -182,7 +182,7 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 
 | Rodada | Data | Blocos lançados | Evidências (path) | Score juiz (por dimensão) | Achados novos → próxima rodada | Custo (tok/tempo) |
 |---|---|---|---|---|---|---|
-| 1 | 2026-07-22 | Onda 1: bloco-g (sozinho). Onda 2: bloco-h + bloco-i (paralelo). Todos integrados limpo na base `integ/vendedor-matador` (gate `pnpm typecheck` — a suíte com DB não roda neste host, ver nota abaixo). | `.processo/loop/2026-07-22-1853-vendedor-matador-consorcio/evidencias/rodada-1/` (roteiro pronto; dossiê E2E ainda por coletar) | pendente (fase ④ ainda não rodou) | — | em andamento |
+| 1 | 2026-07-22 | Onda 1: bloco-g (sozinho). Onda 2: bloco-h + bloco-i (paralelo). Todos integrados limpo na base `integ/vendedor-matador` (gate `pnpm typecheck` — a suíte com DB não roda neste host, ver nota abaixo). | `.processo/loop/2026-07-22-1853-vendedor-matador-consorcio/evidencias/rodada-1/` (dossiê completo — persona-1-helena.md, persona-2-diego.md, persona-3-renata.md, todas com screenshots) | pendente (juiz Sonnet disparado agora) | ver "Dossiê consolidado" abaixo | em andamento |
 
 **Nota de execução (rodada 1):** o gate `pnpm test --run` falha no host por falta do volume `local-dev` (sem Postgres — `ECONNREFUSED`/`ENOTFOUND aja-shared-pg`), confirmado como falha PRÉ-EXISTENTE na própria base (não causada pelos blocos: rodei a suíte direto na base antes de qualquer merge e ela já falhava igual). Reintegrei com `--gate "pnpm -s typecheck"` (limpo nos 3 blocos) — os testes de cada item já foram validados pelo agente de cada bloco dentro do próprio worktree Superset (ver `.done/2026-07-22-bloco-{g,h,i}-*.md`, todos reportam suíte tocada verde).
 
@@ -215,6 +215,26 @@ completo (LLM + cifra de identidade + Bevi) operacional antes de gastar outro ru
 workspace (mesmo padrão já usado pra Langfuse) e copiar `BEVI_API_TOKEN`/`BEVI_SELFCONTRACT_HASH`/
 `S3_PUBLIC_ENDPOINT` de um workspace de referência — evitaria essa sequência de descoberta manual
 (6 variáveis, ~40min de troubleshooting nesta rodada).
+
+**Dossiê consolidado (3 personas, coletado pelo orquestrador — coletor Haiku travou 5x em
+atrito ambiental, ver nota acima; papel "coletor não julga" mantido, só registro factual):**
+- **ITEM 1 (nunca oferece Serviços):** ✅ confirmado nas 3 personas — inclusive persona 3, que
+  pediu explicitamente "serviço de manutenção junto" e mesmo assim não recebeu a categoria.
+- **ITEM 4 (lance embutido proativo/consultivo):** ✅ confirmado com força nas 3 personas —
+  persona 1 (sem lance/sem pressa) foi consultiva e NÃO empurrou lance; persona 2 (pressa,
+  sem aporte) recebeu sugestão proativa antes mesmo da oferta real; persona 3 (meio a meio)
+  recebeu a explicação mais completa da mecânica (parcela sobre valor cheio vs. líquido).
+- **ITEM 3 (fechamento):** ✅ confirmado nas 3 personas — linguagem compliant, sem promessa de
+  prazo/contemplação garantida, cota "reservada" + "Parabéns" + card de proposta.
+- **ITEM 5 (escassez):** ⚠️ NÃO observado em nenhuma das 3 execuções (não só na persona 2, que
+  era o cenário desenhado pra testar). Registrado como fato, sem julgamento de causa — pode ser
+  gap de dado externo (Bevi não retorna `availableSlots`) ou o fluxo não passar pela etapa onde
+  o card apareceria.
+- **ITEM 2 (resume reconhece fechamento):** ❌ **reproduzido nas 3 personas**, com 3 variações
+  de sintoma diferentes (persona 1: sugere que o cliente "travou no formulário"; persona 2:
+  re-pergunta a decisão de cenário já tomada; persona 3: convida a "seguir com a contratação"
+  já concluída) — mesma causa-raiz aparente (saudação de retomada não checa `contractClosed`),
+  três manifestações de texto. Este é o achado mais consistente e mais grave da rodada.
 
 **Achados de investigação dos blocos (relevantes pro juiz/próxima rodada):**
 - **Bloco G (FIX-363):** removeu `servicos` de ~30 arquivos + migration de banco + mapeamento de segmento Bevi → `auto`. Sem gaps reportados.
