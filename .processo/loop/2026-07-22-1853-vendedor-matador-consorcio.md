@@ -186,6 +186,57 @@ Evidências do E2E ficam em `.processo/loop/2026-07-22-1853-vendedor-matador-con
 | 2 | 2026-07-22/23 | bloco-j (FIX-368 + FIX-369, único bloco por overlap em `runner.ts`), forkando da base `integ/vendedor-matador`. Integrado limpo (gate `pnpm typecheck` DENTRO do container desta vez — merge-wave detectou o volume local-dev). 41 testes verdes (TDD), FIX-369 refutou a hipótese de bypass do card e achou o root cause real (card fantasma sem `availableSlots`). | `.done/2026-07-22-bloco-j-resume-escassez-rodada2.md` | **INVALIDADA — ver nota da rodada 3.** O bloco implementou os fixes corretamente, mas em código do runtime Vercel, que não era o runtime em execução neste workspace. | — (achado só na rodada 3, ver abaixo) | bloco-j: ~1 bloco Sonnet |
 | 3 | 2026-07-23 | **Sem bloco novo — trabalho direto na base pelo orquestrador (achado grave demais pra esperar uma onda).** | commits `90270707`/`2a1d5a5b`/`b3d6bfe6` na base `integ/vendedor-matador` (push feito) | **7,5/10 condicional** (1ª leitura, código apenas) → follow-up (TDD + `pnpm test` completo + E2E reduzido 4/4) → **9,5/10 "matador pra prod"** (2ª leitura, verificou TDD/suíte/E2E AO VIVO, não só leu o LEDGER) — exige selo do Opus antes de encerrar. | ITEM 2 confirmado corrigido em 4/4 execuções, 3 categorias. ITEM4(a) (paralelizar Bevi) e ITEM5 (escassez) seguem como decisões/gaps já aceitos, não bloqueiam. 2 achados menores (colisão de sessão em QA paralelo, card duplicado) avaliados pelo juiz como não-bloqueantes (metodológico e nit de polimento, respectivamente). | juiz 1ª leitura: 122k tok/42 calls; juiz 2ª leitura: 125k tok/36 calls; 4 agentes E2E: ~680k tok total |
 | 4 (selo) | 2026-07-23 | — | dossiê completo da rodada 3 + veredito 9,5/10 do juiz Sonnet | **✅ SELO CONCEDIDO — "matador pra prod" (Opus).** Auditoria independente: código do FIX-368 rastreado ponta-a-ponta, teste 6/6 rodado ao vivo, typecheck limpo, suíte completa (1951/1957, 1 flake de infra confirmado isolado), remoção do runtime Vercel confirmada (zero `runtimeFlavor`/`AI_RUNTIME` funcional restante), FIX-367/escassez confirmado vivo em `emit-card.ts`. | Follow-ups não-bloqueantes pro Kairo: (1) cobertura de teste LangGraph-nativa pra "lead history completeness"; (2) resume só validado no canal web (WhatsApp não tem esse fluxo de reload); (3) 2 decisões PENDENTE-KAIRO já registradas (delay Bevi ~400ms, rótulo de funil no aceite); (4) nits de UI (botão duplicado, modal de escolha pulado). | Opus: 120k tok / 35 tool calls / ~5,5min |
+| 5 | 2026-07-23 | **Sem bloco novo — achado ao vivo pelo orquestrador durante verificação final, corrigido direto na base.** Commits `6f89b659`/`e45470b8` em `integ/vendedor-matador`. | Este LEDGER + logs do servidor citados abaixo (sem dossiê formal de 3 personas — achado durante spot-check ao vivo do ITEM 5, não uma rodada E2E completa) | **Gap "disponibilidade de dado upstream" do selo da rodada 4 estava ERRADO — REFUTADO com evidência.** A hipótese aceita no selo (Bevi não traria `availableSlots` pra algumas modalidades) nunca foi verificada por query direta; ao investigar de verdade, o dado real SEMPRE estava disponível (`monthlyAwardedQuotas` > 0 em `recommendation_card`/`group_card` de conversas reais do dia) — o bug era 100% de código, em 4 pontos distintos. | ~3h de sessão (túnel LiteLLM caiu e foi restabelecido 5x durante a verificação ao vivo — root cause de infra, não de código; ver detalhe abaixo) |
+
+**Os 4 bugs da rodada 5 (todos TDD — teste falha → fix → teste passa):**
+
+1. **FIX-372** (`emit-card.ts`) — `nextGate` (`qualify-state.ts:421`) pula o gate `decision`
+   pra sempre assim que `escolha` é ancorada por afirmação ("bora fechar"/"tenho interesse"),
+   que é o comportamento do cliente DECIDIDO — exatamente o perfil "com pressa" que o goal pede
+   ("garantir sugestão de lance embutido... trazendo vantagem pra ele"). Resultado observado: em
+   7 conversas reais desta campanha (rodadas 1-4), **0 mostraram o card de escassez**, mesmo com
+   dado real disponível. `shouldEmitLateScarcity` (função pura, 5 testes) dispara a escassez uma
+   vez no gate `contract` se ainda não foi mostrada nesta conversa — mesma exclusão `so_parcela`
+   já decidida (decisão de produto #4 do goal doc) pro gate `decision` original.
+2. **FIX-373** (`provider.tsx`) — o "batimento" que `web/adapter.ts` manda a cada 8s (`data-tool
+   keepalive`, `transient: true`) pra manter a conexão viva durante esperas longas na Bevi nunca
+   resetava o watchdog client-side de stream preso (FIX-110) — parts transientes não tocam
+   `chat.messages`, e o watchdog só ouvia isso. Achado ao vivo: turno de 86-110s (busca de lance
+   embutido em faixa alta) terminava em "Tentar novamente" **mesmo com o backend respondendo 200
+   no fim** — 2 redes de segurança construídas em momentos diferentes nunca se falaram. Fix:
+   `onData` no `useChat` (dispara pra QUALQUER data-part, inclusive transiente) reseta o relógio.
+   2 testes.
+3. **FIX-374** (`discovery.ts`) — o snapshot `recommendedOffer` que sobrevive no meta pro reveal
+   nunca copiava `availableSlots` do grupo real ranqueado (`best`), mesmo esse campo existindo em
+   `RevealGroupLike` desde o FIX-367 — que documentou a intenção mas nunca atualizou este
+   write-site. `buildScarcityCard` lê exatamente este campo pra decidir se mostra o card. Extraído
+   `buildRecommendedOfferSnapshot` (função pura, 3 testes).
+4. **FIX-375** (`choose-offer.ts` + `advance.ts` + `converse.ts`) — MESMA lacuna repetida em mais
+   3 pontos: sempre que o cliente reancora a escolha nomeando a administradora ("bora fechar com
+   o Itaú" — o padrão mais comum de fechamento decisivo), `pickOffer`/`ChosenOffer` não carregava
+   `availableSlots`, apagando o valor que o FIX-374 tinha acabado de propagar. 3 testes.
+
+**Confirmado AO VIVO** (persona decisiva "Alexandre", moto, R$25 mil, cota TRADIÇÃO, hasLance=yes
+não-so_parcela, escolha ancorada por menção — "bora fechar com a Tradição agora mesmo"): logs do
+servidor no gate de contrato — `"artifactsEmitted":["scarcity","contract_form"]` — o card de
+escassez disparou junto com o formulário de fechamento, exatamente o "step que faltava" descrito
+no goal original ("Tem um step ai que eu não encontrei que mostra a escassez ali no grupo pra
+forçar ele fazer logo"). Confirmado também via DB direto: `recommendedOffer.availableSlots: 123`
+sobrevivendo corretamente através da reconstrução por menção (conversa "Bruninho"/Banco do
+Brasil) — o exato ponto que o FIX-375 corrigiu.
+
+**Evidência de regressão:** `pnpm -s typecheck` limpo em cada commit; suíte completa dentro do
+container, **1964/1965 passando** (1 falha = o mesmo flake pré-existente de colisão de paralelismo
+em `handoff.integration.test.ts` já documentado nas rodadas 3/4, reconfirmado passando 100%
+isolado 3× nesta sessão).
+
+**Nota de infra (não afeta o veredito de código):** o túnel SSM do gateway LiteLLM caiu
+repetidamente durante a verificação ao vivo desta rodada (5 quedas, ~1-2min de inatividade entre
+ações do browser bastava pra sessão SSM cair) — cada queda foi diagnosticada (`fetch failed` na
+chamada real ao gateway) e resolvida re-subindo o túnel (`aws sso login` já estava válido). Isso
+custou a maior parte do tempo desta rodada e é a causa de várias tentativas de conversa
+abandonadas no meio (personas "Diego"/"Ricardo" ficaram em estados incompletos, sem problema —
+não são bugs de produto, são artefatos da verificação).
 
 ## 🏁 CAMPANHA ENCERRADA — "matador pra prod" (selo Opus, 2026-07-23)
 
