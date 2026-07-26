@@ -22,7 +22,7 @@ WORKDIR /app
 
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
-    PNPM_STORE_DIR=/pnpm/store \
+    pnpm_config_store_dir=/pnpm/store \
     NODE_ENV=development \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \

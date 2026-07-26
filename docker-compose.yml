@@ -35,7 +35,7 @@ services:
       - /app/.next
     environment:
       NODE_ENV: development
-      PNPM_STORE_DIR: /pnpm/store
+      pnpm_config_store_dir: /pnpm/store
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
       # migrate-guard libera destrutivas em local.

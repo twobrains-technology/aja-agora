@@ -1,0 +1,39 @@
+# Gateway LiteLLM LOCAL — roda o agente contra o modelo da própria máquina.
+#
+# Por quê: em dev, toda conversa dependia do túnel SSM pro gateway da VPC
+# (porta 4100), que cai a cada 1-2 min de inatividade. Pior, quando cai o
+# `gatewayFetch` (src/lib/llm/gateway-anthropic.ts:52) NÃO estoura erro — ele
+# vai direto pra api.anthropic.com, onde a chave do workspace está com cota
+# estourada. O sintoma vira "o agente travou", e o tempo vai embora
+# diagnosticando rede em vez de produto.
+#
+# Aqui o modelo é o Qwen servido pelo LM Studio no host (127.0.0.1:1234). O
+# LiteLLM traduz: recebe no dialeto ANTHROPIC (`/v1/messages`, que é o que o
+# `ChatAnthropic` do runtime LangGraph fala) e chama o LM Studio no dialeto
+# OpenAI. Por isso o app não muda uma linha — só `LITELLM_BASE_URL` e
+# `AI_MODEL` no .env.local.
+#
+# ⚠️ Isto é ambiente de DESENVOLVIMENTO. Um 4B não substitui o Sonnet na
+# qualidade da conversa de venda; serve pra iterar em fluxo, gate, card e
+# ordem sem gastar cota nem depender de túnel.
+model_list:
+  # O nome que o app pede em `AI_MODEL`. Mantido explícito ("qwen-local") em
+  # vez de mascarar como "claude-sonnet-5": ver o nome real no trace é o que
+  # evita alguém julgar a qualidade da conversa achando que era o Sonnet.
+  - model_name: qwen-local
+    litellm_params:
+      model: lm_studio/qwen3.5-4b-mlx
+      # `host.docker.internal` = o Mac, visto de dentro do container.
+      api_base: http://host.docker.internal:1234/v1
+      # LM Studio não valida a chave, mas o SDK exige o campo preenchido.
+      api_key: lm-studio
+
+litellm_settings:
+  # Sem telemetria pra fora numa stack local.
+  telemetry: false
+  # O agente tem prompt longo + toolset grande; um 4B local é lento no
+  # primeiro token. 120s evita timeout no meio de um turno de reveal.
+  request_timeout: 120
+
+general_settings:
+  master_key: sk-local-dev

@@ -1,0 +1,25 @@
+# Override que roda o app contra o gateway de LLM LOCAL (Qwen 3.5 4b no LM
+# Studio), em vez do gateway da VPC atrás do túnel SSM.
+#
+#   docker compose -f docker-compose.shared.yml --profile local-llm up -d litellm
+#   docker compose -f docker-compose.yml -f docker-compose.local-llm.yml \
+#     --profile containerized up -d app
+#
+# Voltar pro Sonnet real: subir o app SEM este arquivo (o `.env.local` volta a
+# mandar) e reabrir o túnel na 4100.
+#
+# É um override versionado de propósito — a alternativa seria editar
+# `.env.local`, que não é versionado e vive na máquina de uma pessoa só. Assim
+# a troca de modelo é reproduzível por quem for.
+services:
+  app:
+    environment:
+      LITELLM_BASE_URL: http://aja-shared-litellm:4000
+      LITELLM_API_KEY: sk-local-dev
+      AI_MODEL: qwen-local
+      # OBRIGATÓRIO junto com AI_MODEL: o `turn-analyzer` (src/lib/agent/
+      # turn-analyzer.ts:9) usa `AI_ANALYZER_MODEL ?? "claude-haiku-4-5"`. Sem
+      # esta linha ele pede um modelo que não existe no gateway local e TODO
+      # turno morre na classificação — com o agente parecendo travado, não
+      # com um erro que aponte pra cá.
+      AI_ANALYZER_MODEL: qwen-local

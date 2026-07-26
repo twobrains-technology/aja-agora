@@ -3,7 +3,7 @@ FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
-    PNPM_STORE_DIR=/pnpm/store
+    pnpm_config_store_dir=/pnpm/store
 
 # === builder ===
 FROM base AS builder
