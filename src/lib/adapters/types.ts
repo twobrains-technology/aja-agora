@@ -109,6 +109,13 @@ export interface SearchGroupsParams {
 	category: ConsorcioCategory;
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-382 — busca pela PARCELA que cabe no bolso, em vez do valor do bem.
+	 * A Bevi suporta nativamente (`simulationType: "INSTALLMENT_VALUE"` /
+	 * `tipoSimulacao: "valor_parcela"`); o funil só nunca pedia, então quem
+	 * dizia "só posso pagar X por mês" ficava sem resposta possível. Quando
+	 * presente E sem `creditMax`, a busca vira por parcela. NÃO é o padrão:
+	 * só entra quando o cliente fala em parcela (decisão do Kairo). */
+	parcelaAlvo?: number;
 	/** FIX-70: quando true, a descoberta varre 3-5 faixas de valor ao redor do
 	 * alvo (sweep sequencial), acumulando alternativas reais no índice pra montar
 	 * comparação. Default/omitido = busca rápida de 1 faixa. Adapters que não

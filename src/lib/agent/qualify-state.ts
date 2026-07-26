@@ -283,7 +283,15 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// FIX-53 era "dados antes do valor"; a intenção nova é confiança antes de
 	// dados, sem abrir mão do pré-requisito de identidade pro search.
 	const q = meta.qualifyAnswers ?? {};
-	if (q.creditMax === undefined) return "credit";
+	// FIX-382 — parcela declarada satisfaz o gate: a busca por parcela e um
+	// caminho real (Bevi `valor_parcela`), nao um fallback. Sem isto o cliente
+	// que so diz "1500 por mes" nunca sai daqui.
+	if (q.creditMax === undefined && (q.parcelaAlvo ?? 0) <= 0) return "credit";
+	if (q.creditMax === undefined) {
+		// Alvo e a parcela — as checagens de piso de CREDITO abaixo nao se aplicam.
+		if (!meta.identityCollected) return "identify";
+		if (!meta.searchDispatched) return "search";
+	}
 	// FIX-377 — valor ABAIXO DO PISO conta como valor ausente: a busca nessa
 	// faixa volta vazia toda vez, e o `discovery` tratava vazio devolvendo
 	// silêncio sem marcar `searchDispatched` ("retry liberado num turno

@@ -166,9 +166,19 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	}
 
 	async searchGroups(params: SearchGroupsParams): Promise<GroupSummary[]> {
-		const value = params.creditMax ?? params.creditMin;
+		// FIX-382 — dois alvos possiveis. O padrao segue sendo o VALOR DO BEM; a
+		// PARCELA entra so quando o cliente deu a parcela e nao o valor (a Bevi
+		// suporta nativamente: `simulationType: "INSTALLMENT_VALUE"`). Sem isto,
+		// quem dizia "so posso pagar X por mes" nao tinha resposta possivel.
+		const porParcela = params.creditMax === undefined && (params.parcelaAlvo ?? 0) > 0;
+		const simulationType: "TOTAL_VALUE" | "INSTALLMENT_VALUE" = porParcela
+			? "INSTALLMENT_VALUE"
+			: "TOTAL_VALUE";
+		const value = porParcela ? params.parcelaAlvo : (params.creditMax ?? params.creditMin);
 		if (!value || value <= 0) {
-			throw new Error("searchGroups exige creditMax/creditMin > 0 (valor do bem do passo 2).");
+			throw new Error(
+				"searchGroups exige creditMax/creditMin > 0 (valor do bem) OU parcelaAlvo > 0.",
+			);
 		}
 		const segment = categoryToBeviSegment(params.category);
 		const prefs = await this.session.getSimulationPrefs();
@@ -177,8 +187,8 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		// FIX-219: o valor-alvo SEMPRE varre com/sem lance embutido (offersForValue);
 		// o sweep de faixa de valor mantém 1 variante por faixa (a de `prefs`).
 		const offers = params.sweep
-			? await this.sweepOffers(segment, value, prefs.embeddedPercentage)
-			: await this.offersForValue(segment, value, prefs.embeddedPercentage);
+			? await this.sweepOffers(segment, value, prefs.embeddedPercentage, simulationType)
+			: await this.offersForValue(segment, value, prefs.embeddedPercentage, simulationType);
 		// Oferta aritmeticamente impossível não chega ao cliente (ver
 		// `ofertaEhCoerente`): uma carta de R$ 190 mil com parcela que somava
 		// R$ 168 mil no total foi apresentada e defendida na conversa.
@@ -262,8 +272,11 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		segment: string,
 		value: number,
 		embeddedPercentage: "30" | "50" | undefined,
+		simulationType: "TOTAL_VALUE" | "INSTALLMENT_VALUE" = "TOTAL_VALUE",
 	): Promise<BeviOffer[]> {
-		const key = `${segment}:${value}:${embeddedPercentage ?? "none"}`;
+		// O TIPO entra na chave: o mesmo numero significa coisas diferentes como
+		// valor do bem e como parcela — cachear junto devolveria oferta errada.
+		const key = `${segment}:${simulationType}:${value}:${embeddedPercentage ?? "none"}`;
 		const cached = this.offerCache.get(key);
 		if (cached) return cached;
 
@@ -286,6 +299,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 
 		const prefs = await this.session.getSimulationPrefs();
 		const offers = await this.client.simulate({
+			simulationType,
 			simulationValue: value,
 			embeddedPercentage,
 			objective: prefs.objective,
@@ -312,6 +326,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		segment: string,
 		value: number,
 		embeddedCandidate: "30" | "50" | undefined,
+		simulationType: "TOTAL_VALUE" | "INSTALLMENT_VALUE" = "TOTAL_VALUE",
 	): Promise<BeviOffer[]> {
 		const collected: BeviOffer[] = [];
 		const seen = new Set<string>();
@@ -324,12 +339,12 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 			}
 		};
 
-		merge(await this.ensureOffers(segment, value, undefined), "sem");
+		merge(await this.ensureOffers(segment, value, undefined, simulationType), "sem");
 
 		if (embeddedCandidate !== undefined) {
 			if (this.sweepConfig.gapMs > 0) await sleep(this.sweepConfig.gapMs);
 			try {
-				merge(await this.ensureOffers(segment, value, embeddedCandidate), "com");
+				merge(await this.ensureOffers(segment, value, embeddedCandidate, simulationType), "com");
 			} catch (err) {
 				console.warn(
 					JSON.stringify({
@@ -371,6 +386,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		segment: string,
 		target: number,
 		embeddedPercentage: "30" | "50" | undefined,
+		simulationType: "TOTAL_VALUE" | "INSTALLMENT_VALUE" = "TOTAL_VALUE",
 	): Promise<BeviOffer[]> {
 		const { spread, floor, gapMs, maxSweepMs } = this.sweepConfig;
 		const values = deriveSweepValues(target, { spread, floor });
@@ -401,7 +417,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 			}
 
 			try {
-				const offers = await this.ensureOffers(segment, value, embeddedPercentage);
+				const offers = await this.ensureOffers(segment, value, embeddedPercentage, simulationType);
 				for (const offer of offers) {
 					if (!seen.has(offer.quotaId)) {
 						seen.add(offer.quotaId);

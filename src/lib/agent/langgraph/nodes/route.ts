@@ -18,10 +18,14 @@ export function readyForDiscovery(funnel: FunnelState): boolean {
 		// da Bevi volta vazia sempre, e o `discovery` tratava vazio com silêncio +
 		// retry liberado — o que virava loop de "vou pesquisar agora". Barrar aqui
 		// economiza a chamada e devolve o funil pro gate `credit`.
-		creditoBuscavel(
+		// FIX-382 — a parcela tambem e um alvo de busca valido (a Bevi busca por
+		// `INSTALLMENT_VALUE`). Quem so disse quanto cabe no bolso deixa de ficar
+		// preso no gate `credit` sem nenhuma saida.
+		(creditoBuscavel(
 			funnel.qualifyAnswers.creditMax,
 			funnel.qualifyAnswers.creditoMinimoInformado,
-		) &&
+		) ||
+			(funnel.qualifyAnswers.parcelaAlvo ?? 0) > 0) &&
 		Boolean(funnel.currentCategory);
 	if (!base) return false;
 	if (!funnel.searchDispatched) return true;

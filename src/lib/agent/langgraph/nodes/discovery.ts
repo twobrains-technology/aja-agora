@@ -83,6 +83,8 @@ export type BuscaGrupos = (args: {
 	category: Category;
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-382 — alvo alternativo: a parcela que cabe no bolso. */
+	parcelaAlvo?: number;
 	budget: number;
 	desiredTermMonths: number;
 }) => Promise<unknown>;
@@ -137,6 +139,10 @@ export async function discoveryNode(
 		category,
 		creditMin: funnel.qualifyAnswers.creditMin,
 		creditMax: funnel.qualifyAnswers.creditMax,
+		// FIX-382 — sem valor do bem, o alvo e a parcela.
+		...(funnel.qualifyAnswers.creditMax === undefined && funnel.qualifyAnswers.parcelaAlvo
+			? { parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo }
+			: {}),
 		budget: 0,
 		desiredTermMonths: querMenorParcela ? PRAZO_ALVO_MENOR_PARCELA : 0,
 	});

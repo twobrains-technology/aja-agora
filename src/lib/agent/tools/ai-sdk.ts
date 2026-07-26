@@ -319,6 +319,13 @@ export const recommendGroupsSchema = z.object({
 		.describe("Categoria do bem: imovel, automovel ou moto"),
 	creditMin: z.coerce.number().min(0).optional().describe("Valor minimo de credito em reais"),
 	creditMax: z.coerce.number().positive().optional().describe("Valor maximo de credito em reais"),
+	parcelaAlvo: z.coerce
+		.number()
+		.positive()
+		.optional()
+		.describe(
+			"Parcela mensal que cabe no bolso do cliente, em reais. Use SOMENTE quando ele deu a parcela e nao o valor do bem — a busca passa a ser por parcela.",
+		),
 	// FIX-322: o usuario quase nunca declara orcamento mensal (so o valor do
 	// bem) — recommendation.ts:10-17 (FIX-276) ja documenta que esse campo e
 	// "INVENTADO pelo LLM" quando falta o dado real, e monthlyFitScore ja trata
