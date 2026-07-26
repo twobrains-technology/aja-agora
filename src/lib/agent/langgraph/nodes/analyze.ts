@@ -7,6 +7,7 @@ import { analyzeAndMerge } from "@/lib/agent/orchestrator/analyze";
 import { decideRouting } from "@/lib/agent/orchestrator/routing";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
+import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
 import { funnelFromMeta } from "../state";
@@ -71,6 +72,31 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 		// pergunta ao cliente, que é barato.
 		const antes = state.funnel.qualifyAnswers;
 		const depois = meta.qualifyAnswers;
+
+		// ── O NÚMERO DO CLIENTE É O NÚMERO DO CLIENTE (FIX-378) ──
+		// Ao vivo: ele escreveu "100 reais", insistiu ("foi 100 reais mesmo") e o
+		// estado guardou R$ 1.000,00 — dez vezes o que falou, um número que
+		// ninguém disse. Esse valor virou `creditMax`, ligou `readyForDiscovery`,
+		// disparou a busca abaixo do piso e produziu o loop do FIX-377.
+		//
+		// A checagem é ANCORAGEM, não julgamento de intenção: o valor gravado tem
+		// que sair dos números que estão na frase. O agente CONTINUA livre pra
+		// dizer em português que R$ 100 é pouco pra um carro — o que ele não pode
+		// é registrar outro número no lugar. Sem menção numérica na fala (slider,
+		// card, turno anterior), nada é bloqueado.
+		if (
+			depois?.creditMax !== undefined &&
+			depois.creditMax !== antes.creditMax &&
+			!valorAncoradoNoTexto(state.userText, depois.creditMax)
+		) {
+			console.log(
+				`[analyze] creditMax R$ ${depois.creditMax} nao ancorado na fala do cliente; devolvido a ${antes.creditMax ?? "vazio"}`,
+			);
+			meta.qualifyAnswers = { ...meta.qualifyAnswers };
+			if (antes.creditMax === undefined) delete meta.qualifyAnswers.creditMax;
+			else meta.qualifyAnswers.creditMax = antes.creditMax;
+		}
+
 		if (
 			depois?.lanceValue !== undefined &&
 			depois.creditMax !== undefined &&
